@@ -3,13 +3,14 @@ import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
 
 export async function GET(request: NextRequest) {
     try {
-        console.log('[DIGISAC][USERS] GET /users?perPage=40');
-        const response = await fetchDigisac('/users?perPage=40');
+        console.log('[DIGISAC][USERS] GET /users?perPage=200 (somente ativos)');
+        const response = await fetchDigisac('/users?perPage=200');
         const users = Array.isArray(response) ? response : (response.data || []);
 
-        console.log(`[DIGISAC][USERS] total=${users.length}`);
+        const active = users.filter((u: any) => u.archivedAt == null);
+        console.log(`[DIGISAC][USERS] total=${users.length} ativos=${active.length}`);
 
-        return NextResponse.json(users.map((u: any) => ({
+        return NextResponse.json(active.map((u: any) => ({
             id: u.id,
             name: u.name
         })));

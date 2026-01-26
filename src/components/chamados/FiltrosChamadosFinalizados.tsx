@@ -182,6 +182,8 @@ export function FiltrosChamadosFinalizados({ onPesquisar, isLoading }: FiltrosPr
                       <Input
                         value={lojaQuery}
                         onChange={(e) => setLojaQuery(e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        onKeyUp={(e) => e.stopPropagation()}
                         placeholder="Filtrar lojas..."
                         className="rounded-xl border-slate-200 focus:ring-[#00A5E6] focus:ring-2"
                       />
@@ -204,6 +206,8 @@ export function FiltrosChamadosFinalizados({ onPesquisar, isLoading }: FiltrosPr
                       <Input
                         value={userQuery}
                         onChange={(e) => setUserQuery(e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        onKeyUp={(e) => e.stopPropagation()}
                         placeholder="Filtrar consultoras..."
                         className="rounded-xl border-slate-200 focus:ring-[#00A5E6] focus:ring-2"
                       />

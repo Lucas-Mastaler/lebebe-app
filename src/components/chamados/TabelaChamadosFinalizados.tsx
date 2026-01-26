@@ -111,8 +111,11 @@ export function TabelaChamadosFinalizados({ data, isLoading, error, onPageChange
               </TableHeader>
               <TableBody>
                 {data.items.map((item: ChamadoFinalizadoItem) => (
-                  <TableRow key={item.contactId} className="hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0">
-                    <TableCell className="whitespace-nowrap font-medium text-slate-700 sticky left-0 bg-white z-10">
+                  <TableRow
+                    key={item.contactId}
+                    className={`transition-colors border-b last:border-0 ${item.qtdAgendamentosAbertos === 0 ? 'bg-red-50 hover:bg-red-50 border-red-100' : 'hover:bg-slate-50 border-slate-100'}`}
+                  >
+                    <TableCell className={`whitespace-nowrap font-medium text-slate-700 sticky left-0 z-10 ${item.qtdAgendamentosAbertos === 0 ? 'bg-red-50' : 'bg-white'}`}>
                       {item.nomeDigisac || "-"}
                     </TableCell>
                     <TableCell className="whitespace-nowrap">{item.loja || '-'}</TableCell>

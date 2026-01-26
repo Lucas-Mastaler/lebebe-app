@@ -40,7 +40,12 @@ async function buscarSchedulesDoContato(contactId: string, departmentId?: string
   const now = Date.now();
   const cached = scheduleCache.get(contactId);
   if (cached && now - cached.timestamp < CACHE_TTL) {
-    return { data: cached.data, cacheHit: true };
+    const filtered = (cached.data || []).filter((s: any) => {
+      const depOk = departmentId ? s.departmentId === departmentId : true;
+      const userOk = userId ? s.userId === userId : true;
+      return depOk && userOk;
+    });
+    return { data: filtered, cacheHit: true };
   }
   // Endpoint conforme checklist: include contact/department/user e order por createdAt DESC
   const base = new URLSearchParams();
@@ -56,13 +61,13 @@ async function buscarSchedulesDoContato(contactId: string, departmentId?: string
   try {
     const res = await fetchDigisac(url);
     const items = Array.isArray(res) ? res : (res.rows || res.data || []);
-    // Aplica filtros de loja/consultora nos schedules (para contagem)
+    // Cacheia o resultado bruto; o filtro é aplicado a cada chamada
+    scheduleCache.set(contactId, { data: items, timestamp: now });
     const filtered = items.filter((s: any) => {
       const depOk = departmentId ? s.departmentId === departmentId : true;
       const userOk = userId ? s.userId === userId : true;
       return depOk && userOk;
     });
-    scheduleCache.set(contactId, { data: filtered, timestamp: now });
     return { data: filtered, cacheHit: false };
   } catch (e) {
     console.error('[DIGISAC][SCHEDULE] erro ao buscar schedules', contactId, e);
@@ -100,10 +105,11 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
   if (filtros.departmentId) params.append('where[departmentId]', filtros.departmentId);
   if (filtros.userId) params.append('where[userId]', filtros.userId);
 
-  // Paginação da API de tickets (vamos agregar depois)
+  // Paginação: não repassar a página da UI para a API do Digisac.
+  // Buscamos um lote grande (primeira página) e paginamos localmente após agregar por contato.
   const requestedPage = filtros.page || 1;
   const requestedPerPage = Math.min(filtros.perPage || 30, 100);
-  params.append('page', String(requestedPage));
+  params.append('page', '1');
   params.append('perPage', '200');
 
   const url = `/tickets?${params.toString()}`;
@@ -111,7 +117,7 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
   const res = await fetchDigisac(url);
   const tickets = Array.isArray(res) ? res : (res.rows || res.data || []);
   const totalRet = (res && (res.count || res.total)) ?? tickets.length;
-  console.log('[DIGISAC][TICKETS] totalRetornado=', totalRet, 'page=', requestedPage);
+  console.log('[DIGISAC][TICKETS] totalRetornado=', totalRet, 'apiPage=1 uiPage=', requestedPage);
 
   // Agrupa por contactId e seleciona último fechado
   const byContact = new Map<string, any>();

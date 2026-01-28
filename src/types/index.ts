@@ -54,6 +54,27 @@ export interface PesquisaResponse {
   };
 }
 
+// Dashboard
+export interface DashboardLinha {
+  departmentId: string;
+  filial: string;
+  totalClientesUnicos: number;
+  agendamentosCriadosNoPeriodo: number;
+  ratioAgendamentosPorCliente: number;
+  totalChamadosAtivosNoPeriodo: number;
+  totalChamadosReceptivosNoPeriodo: number;
+  totalClientesUnicosAtivo: number;
+  totalClientesUnicosReceptivo: number;
+}
+
+export interface DashboardResponse {
+  periodo: {
+    inicio: string;
+    fim: string;
+  };
+  linhas: DashboardLinha[];
+}
+
 export interface Departamento {
   id: string;
   nome: string;

@@ -9,8 +9,8 @@ export async function POST(request: NextRequest) {
     const {
       dataUltimoChamadoFechadoInicio,
       dataUltimoChamadoFechadoFim,
-      departmentId,
-      userId,
+      departmentIds = [],
+      userIds = [],
       page = 1,
       perPage = 30,
     } = body || {};
@@ -19,8 +19,8 @@ export async function POST(request: NextRequest) {
       hasBody: !!body,
       page,
       perPage,
-      hasDepartment: !!departmentId,
-      hasUser: !!userId,
+      departmentsCount: Array.isArray(departmentIds) ? departmentIds.length : 0,
+      usersCount: Array.isArray(userIds) ? userIds.length : 0,
       dataUltimoChamadoFechadoInicio,
       dataUltimoChamadoFechadoFim,
     });
@@ -32,8 +32,8 @@ export async function POST(request: NextRequest) {
     const resultado = await pesquisarChamadosFinalizados({
       dataUltimoChamadoFechadoInicio,
       dataUltimoChamadoFechadoFim,
-      departmentId,
-      userId,
+      departmentIds,
+      userIds,
       page,
       perPage,
     });

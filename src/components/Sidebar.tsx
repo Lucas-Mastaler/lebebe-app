@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Calendar, ChevronLeft, ChevronRight, CheckCircle } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, CheckCircle, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps {
@@ -12,11 +12,18 @@ interface SidebarProps {
 }
 
 const navItems = [
+        {
+        label: 'DASHBOARD',
+        href: '/dashboard',
+        icon: BarChart3,
+    },
+, 
     {
         label: 'AGENDAMENTOS',
         href: '/agendamentos',
         icon: Calendar,
     },
+,
     {
         label: 'CHAMADOS FINALIZADOS',
         href: '/chamados-finalizados',

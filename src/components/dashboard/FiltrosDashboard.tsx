@@ -17,21 +17,12 @@ import { DEPARTAMENTOS_FIXOS } from '@/lib/digisac/departamentosFixos';
 
 interface FiltrosProps {
   onPesquisar: (filtros: {
-    dataUltimoChamadoFechadoInicio: string;
-    dataUltimoChamadoFechadoFim: string;
+    dataInicio: string;
+    dataFim: string;
     departmentIds: string[];
     userIds: string[];
-    page: number;
-    perPage: number;
   }) => void;
   isLoading: boolean;
-}
-
-function formatDateInput(value: string): string {
-  const numbers = value.replace(/\D/g, '');
-  if (numbers.length <= 2) return numbers;
-  if (numbers.length <= 4) return `${numbers.slice(0, 2)}/${numbers.slice(2)}`;
-  return `${numbers.slice(0, 2)}/${numbers.slice(2, 4)}/${numbers.slice(4, 8)}`;
 }
 
 function parseDate(dateStr: string): Date | undefined {
@@ -52,7 +43,7 @@ function formatDateToInput(date: Date | undefined): string {
   return `${day}/${month}/${year}`;
 }
 
-export function FiltrosChamadosFinalizados({ onPesquisar, isLoading }: FiltrosProps) {
+export function FiltrosDashboard({ onPesquisar, isLoading }: FiltrosProps) {
   const [isOpen, setIsOpen] = useState(true);
 
   const [dataInicio, setDataInicio] = useState('');
@@ -73,7 +64,7 @@ export function FiltrosChamadosFinalizados({ onPesquisar, isLoading }: FiltrosPr
         const data = await res.json();
         if (Array.isArray(data)) setUsersList(data.map((u: any) => ({ id: u.id, nome: u.name || u.nome })));
       } catch (e) {
-        console.error('Erro ao carregar usuários', e);
+        console.error('[DASHBOARD] Erro ao carregar usuários', e);
       }
     })();
   }, []);
@@ -85,14 +76,11 @@ export function FiltrosChamadosFinalizados({ onPesquisar, isLoading }: FiltrosPr
   const handlePesquisar = () => {
     if (!isRangeValid) return;
     const filtros = {
-      dataUltimoChamadoFechadoInicio: dataInicio,
-      dataUltimoChamadoFechadoFim: dataFim,
+      dataInicio,
+      dataFim,
       departmentIds: selectedDepartmentIds,
       userIds: selectedUserIds,
-      page: 1,
-      perPage: 30,
     };
-    console.log('[UI][CHAMADOS] filtros=', filtros);
     onPesquisar(filtros);
   };
 
@@ -119,7 +107,7 @@ export function FiltrosChamadosFinalizados({ onPesquisar, isLoading }: FiltrosPr
             {/* Datas */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-slate-600 mb-1">Data do último chamado fechado (início)</label>
+                <label className="block text-sm text-slate-600 mb-1">Data início</label>
                 <div className="flex gap-2">
                   <Popover open={inicioOpen} onOpenChange={setInicioOpen}>
                     <PopoverTrigger asChild>
@@ -140,7 +128,7 @@ export function FiltrosChamadosFinalizados({ onPesquisar, isLoading }: FiltrosPr
               </div>
 
               <div>
-                <label className="block text-sm text-slate-600 mb-1">Data do último chamado fechado (fim)</label>
+                <label className="block text-sm text-slate-600 mb-1">Data fim</label>
                 <div className="flex gap-2">
                   <Popover open={fimOpen} onOpenChange={setFimOpen}>
                     <PopoverTrigger asChild>

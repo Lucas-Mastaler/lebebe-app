@@ -7,8 +7,8 @@ import { PesquisaChamadosResponse, ChamadoFinalizadoItem } from '@/types';
 interface FiltrosChamadosService {
   dataUltimoChamadoFechadoInicio: string;
   dataUltimoChamadoFechadoFim: string;
-  departmentId?: string;
-  userId?: string;
+  departmentIds?: string[];
+  userIds?: string[];
   page?: number;
   perPage?: number;
 }
@@ -36,13 +36,13 @@ async function buscarContatoComTags(contactId: string) {
   }
 }
 
-async function buscarSchedulesDoContato(contactId: string, departmentId?: string, userId?: string) {
+async function buscarSchedulesDoContato(contactId: string, departmentIds?: string[], userIds?: string[]) {
   const now = Date.now();
   const cached = scheduleCache.get(contactId);
   if (cached && now - cached.timestamp < CACHE_TTL) {
     const filtered = (cached.data || []).filter((s: any) => {
-      const depOk = departmentId ? s.departmentId === departmentId : true;
-      const userOk = userId ? s.userId === userId : true;
+      const depOk = Array.isArray(departmentIds) && departmentIds.length > 0 ? departmentIds.includes(s.departmentId) : true;
+      const userOk = Array.isArray(userIds) && userIds.length > 0 ? userIds.includes(s.userId) : true;
       return depOk && userOk;
     });
     return { data: filtered, cacheHit: true };
@@ -64,8 +64,8 @@ async function buscarSchedulesDoContato(contactId: string, departmentId?: string
     // Cacheia o resultado bruto; o filtro é aplicado a cada chamada
     scheduleCache.set(contactId, { data: items, timestamp: now });
     const filtered = items.filter((s: any) => {
-      const depOk = departmentId ? s.departmentId === departmentId : true;
-      const userOk = userId ? s.userId === userId : true;
+      const depOk = Array.isArray(departmentIds) && departmentIds.length > 0 ? departmentIds.includes(s.departmentId) : true;
+      const userOk = Array.isArray(userIds) && userIds.length > 0 ? userIds.includes(s.userId) : true;
       return depOk && userOk;
     });
     return { data: filtered, cacheHit: false };
@@ -83,8 +83,8 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
   );
 
   console.log('[DIGISAC][TICKETS] filtros recebidos=', {
-    departmentId: filtros.departmentId,
-    userId: filtros.userId,
+    departmentIds: Array.isArray(filtros.departmentIds) ? filtros.departmentIds.length : 0,
+    userIds: Array.isArray(filtros.userIds) ? filtros.userIds.length : 0,
     page: filtros.page || 1,
     perPage: filtros.perPage || 30,
   });
@@ -101,9 +101,9 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
   params.append('order[0][0]', 'endedAt');
   params.append('order[0][1]', 'DESC');
 
-  // Filtros Loja/Consultora no endpoint, se possível
-  if (filtros.departmentId) params.append('where[departmentId]', filtros.departmentId);
-  if (filtros.userId) params.append('where[userId]', filtros.userId);
+  // Filtros Loja/Consultora no endpoint, se possível: apenas quando há 1 item
+  if (Array.isArray(filtros.departmentIds) && filtros.departmentIds.length === 1) params.append('where[departmentId]', filtros.departmentIds[0]);
+  if (Array.isArray(filtros.userIds) && filtros.userIds.length === 1) params.append('where[userId]', filtros.userIds[0]);
 
   // Paginação: não repassar a página da UI para a API do Digisac.
   // Buscamos um lote grande (primeira página) e paginamos localmente após agregar por contato.
@@ -141,12 +141,14 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
     const contatoRes = await buscarContatoComTags(contactId);
     if (contatoRes.cacheHit) contactCacheHits++;
 
-    const schedulesRes = await buscarSchedulesDoContato(contactId, filtros.departmentId, filtros.userId);
+    const schedulesRes = await buscarSchedulesDoContato(contactId, filtros.departmentIds, filtros.userIds);
     if (schedulesRes.cacheHit) scheduleCacheHits++;
     const schedules = schedulesRes.data;
 
     // Se filtros de loja/consultora foram aplicados e não há schedules compatíveis, pular
-    if ((filtros.departmentId || filtros.userId) && schedules.length === 0) continue;
+    const temFiltroDep = Array.isArray(filtros.departmentIds) && filtros.departmentIds.length > 0;
+    const temFiltroUser = Array.isArray(filtros.userIds) && filtros.userIds.length > 0;
+    if ((temFiltroDep || temFiltroUser) && schedules.length === 0) continue;
 
     // Contagens por status considerando apenas schedules filtrados
     const total = schedules.length;

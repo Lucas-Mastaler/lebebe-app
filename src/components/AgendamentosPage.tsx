@@ -116,12 +116,6 @@ export function AgendamentosPage() {
                     >
                         BUSCA DE AGENDAMENTOS
                     </TabsTrigger>
-                    <TabsTrigger
-                        value="dashboard"
-                        className="rounded-lg px-6 py-2 data-[state=active]:bg-[rgba(0,165,230,0.15)] data-[state=active]:text-[#00A5E6] data-[state=active]:font-semibold transition-all"
-                    >
-                        DASHBOARD
-                    </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="pesquisa" className="mt-6 space-y-6">
@@ -146,17 +140,7 @@ export function AgendamentosPage() {
                     />
                 </TabsContent>
 
-                <TabsContent value="dashboard" className="mt-6">
-                    <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center card-shadow">
-                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-100 mb-4">
-                            <span className="text-2xl">📊</span>
-                        </div>
-                        <h3 className="text-lg font-semibold text-slate-900 mb-2">Em breve</h3>
-                        <p className="text-slate-500">
-                            O dashboard de agendamentos está em desenvolvimento.
-                        </p>
-                    </div>
-                </TabsContent>
+                
             </Tabs>
         </div>
     );

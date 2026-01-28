@@ -73,6 +73,19 @@ export interface DashboardResponse {
     fim: string;
   };
   linhas: DashboardLinha[];
+  linhasConsultoras?: DashboardLinhaConsultora[];
+}
+
+export interface DashboardLinhaConsultora {
+  userId: string;
+  consultora: string;
+  totalClientesUnicos: number;
+  agendamentosCriadosNoPeriodo: number;
+  ratioAgendamentosPorCliente: number;
+  totalChamadosAtivosNoPeriodo: number;
+  totalChamadosReceptivosNoPeriodo: number;
+  totalClientesUnicosAtivo: number;
+  totalClientesUnicosReceptivo: number;
 }
 
 export interface Departamento {

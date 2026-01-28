@@ -1,7 +1,7 @@
 import { fetchDigisac } from './clienteDigisac';
 import { montarRangeUtcSaoPaulo } from './utilsDatas';
 import { buscarAgendamentosFormatados } from './agendamentos';
-import { DashboardLinha, DashboardResponse } from '@/types';
+import { DashboardLinha, DashboardLinhaConsultora, DashboardResponse } from '@/types';
 
 interface FiltrosDashboardService {
   dataInicio: string;
@@ -29,6 +29,18 @@ function agruparTicketsPorFilial(tickets: Ticket[]) {
     const g = grupos.get(depId) || { nome, tickets: [] };
     g.tickets.push(t);
     if (!grupos.has(depId)) grupos.set(depId, g);
+  }
+  return grupos;
+}
+
+function agruparTicketsPorConsultora(tickets: Ticket[]) {
+  const grupos = new Map<string, { nome: string; tickets: Ticket[] }>();
+  for (const t of tickets) {
+    const uid = t.userId || 'sem-user';
+    const nome = t.user?.name || 'Sem consultora';
+    const g = grupos.get(uid) || { nome, tickets: [] };
+    g.tickets.push(t);
+    if (!grupos.has(uid)) grupos.set(uid, g);
   }
   return grupos;
 }
@@ -172,6 +184,36 @@ async function contarAgendamentosCriadosNoPeriodoPorFilial(
   return total;
 }
 
+async function contarAgendamentosCriadosNoPeriodoPorConsultora(
+  userId: string,
+  filtros: FiltrosDashboardService
+): Promise<number> {
+  let total = 0;
+  if (Array.isArray(filtros.departmentIds) && filtros.departmentIds.length > 0) {
+    for (const depId of filtros.departmentIds) {
+      const res = await buscarAgendamentosFormatados({
+        dataCriacaoInicio: filtros.dataInicio,
+        dataCriacaoFim: filtros.dataFim,
+        departmentId: depId,
+        userId,
+        page: 1,
+        perPage: 1,
+      } as any);
+      total += Number(res?.meta?.total || 0);
+    }
+  } else {
+    const res = await buscarAgendamentosFormatados({
+      dataCriacaoInicio: filtros.dataInicio,
+      dataCriacaoFim: filtros.dataFim,
+      userId,
+      page: 1,
+      perPage: 1,
+    } as any);
+    total = Number(res?.meta?.total || 0);
+  }
+  return total;
+}
+
 export async function pesquisarDashboard(filtros: FiltrosDashboardService): Promise<DashboardResponse> {
   const start = Date.now();
   const tickets = await buscarTicketsPeriodo(filtros);
@@ -222,12 +264,54 @@ export async function pesquisarDashboard(filtros: FiltrosDashboardService): Prom
     });
   }
 
+  // Agrupar por consultoras
+  const gruposConsultoras = agruparTicketsPorConsultora(tickets);
+  const linhasConsultoras: DashboardLinhaConsultora[] = [];
+  for (const [userId, info] of gruposConsultoras.entries()) {
+    const ts = info.tickets;
+    const contatoIds = new Set(ts.map((t) => t.contactId).filter(Boolean));
+    const totalClientesUnicos = contatoIds.size;
+
+    let totalChamadosAtivosNoPeriodo = 0;
+    let totalChamadosReceptivosNoPeriodo = 0;
+    for (const t of ts) {
+      if (!t.firstMessage) continue;
+      if (t.firstMessage.isFromMe === true) totalChamadosAtivosNoPeriodo++;
+      else if (t.firstMessage.isFromMe === false) totalChamadosReceptivosNoPeriodo++;
+    }
+
+    const { totalClientesUnicosAtivo, totalClientesUnicosReceptivo } =
+      calcularAtivoReceptivoPrimeiroTicketPorContato(ts);
+
+    const agendamentosCriadosNoPeriodo = await contarAgendamentosCriadosNoPeriodoPorConsultora(
+      userId,
+      filtros
+    );
+
+    const ratioAgendamentosPorCliente = totalClientesUnicos > 0
+      ? Number((agendamentosCriadosNoPeriodo / totalClientesUnicos).toFixed(2))
+      : 0;
+
+    linhasConsultoras.push({
+      userId,
+      consultora: info.nome,
+      totalClientesUnicos,
+      agendamentosCriadosNoPeriodo,
+      ratioAgendamentosPorCliente,
+      totalChamadosAtivosNoPeriodo,
+      totalChamadosReceptivosNoPeriodo,
+      totalClientesUnicosAtivo,
+      totalClientesUnicosReceptivo,
+    });
+  }
+
   const { inicioUtc, fimUtc } = montarRangeUtcSaoPaulo(filtros.dataInicio, filtros.dataFim);
   const end = Date.now();
-  console.log('[DASHBOARD] linhas=', linhas.length, 'timeMs=', end - start);
+  console.log('[DASHBOARD] linhasFiliais=', linhas.length, 'linhasConsultoras=', linhasConsultoras.length, 'timeMs=', end - start);
 
   return {
     periodo: { inicio: inicioUtc, fim: fimUtc },
     linhas,
+    linhasConsultoras,
   };
 }

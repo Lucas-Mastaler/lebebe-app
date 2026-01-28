@@ -2,9 +2,10 @@
 
 import { Cell } from 'recharts';
 import { useCallback, useMemo, useState } from 'react';
-import { DashboardLinha, DashboardResponse } from '@/types';
+import { DashboardLinha, DashboardLinhaConsultora, DashboardResponse } from '@/types';
 import { FiltrosDashboard } from '@/components/dashboard/FiltrosDashboard';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   BarChart,
   Bar,
@@ -21,6 +22,7 @@ export default function Page() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentFiltros, setCurrentFiltros] = useState<any | null>(null);
+  const [activeTab, setActiveTab] = useState('filiais');
 
   const handlePesquisar = useCallback(async (filtros: any) => {
     setIsLoading(true);
@@ -104,6 +106,24 @@ export default function Page() {
 
       <FiltrosDashboard onPesquisar={handlePesquisar} isLoading={isLoading} />
 
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="bg-slate-100 p-1 rounded-xl">
+          <TabsTrigger
+            value="filiais"
+            className="rounded-lg px-6 py-2 data-[state=active]:bg-[rgba(0,165,230,0.15)] data-[state=active]:text-[#00A5E6] data-[state=active]:font-semibold transition-all"
+          >
+            FILIAIS
+          </TabsTrigger>
+          <TabsTrigger
+            value="consultoras"
+            className="rounded-lg px-6 py-2 data-[state=active]:bg-[rgba(0,165,230,0.15)] data-[state=active]:text-[#00A5E6] data-[state=active]:font-semibold transition-all"
+          >
+            CONSULTORAS
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="filiais" className="mt-6 space-y-6">
       {/* Tabela */}
       {isLoading ? (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 card-shadow">
@@ -145,10 +165,17 @@ export default function Page() {
                   <th className="text-center px-4 py-2">Clientes únicos</th>
                   <th className="text-center px-4 py-2">Agendamentos criados</th>
                   <th className="text-center px-4 py-2">Agendamentos/Cliente</th>
-                  <th className="text-center px-4 py-2">Chamados ATIVOS</th>
-                  <th className="text-center px-4 py-2">Chamados RECEPTIVOS</th>
-                  <th className="text-center px-4 py-2">Únicos ATIVO</th>
-                  <th className="text-center px-4 py-2">Únicos RECEPTIVO</th>
+                  <th className="text-center px-4 py-2">
+                    Chamados ATIVOS<br />
+                    (Chamamos o cliente)
+                  </th>
+                  <th className="text-center px-4 py-2">
+                    Chamados RECEPTIVOS<br />
+                    (Cliente chamou)
+                  </th>
+
+                  <th className="text-center px-4 py-2">Cl. Únicos<br /> ATIVO</th>
+                  <th className="text-center px-4 py-2">Cl. Únicos<br /> RECEPTIVO</th>
                 </tr>
               </thead>
               <tbody>
@@ -227,7 +254,7 @@ export default function Page() {
 
           {/* 2) Comparativo: Ativos vs Receptivos (mesma cor por filial) */}
           <div className="bg-white rounded-2xl border border-slate-200 p-4 card-shadow h-[360px] flex flex-col">
-            <h3 className="font-semibold text-slate-900 mb-3">Chamados ATIVOS vs RECEPTIVOS</h3>
+            <h3 className="font-semibold text-slate-900 mb-3">Chamados que Chamamos (ativo) vs Cliente chamou (receptivo)</h3>
 
             <div className="flex-1">
               <ResponsiveContainer width="100%" height="100%">
@@ -324,6 +351,84 @@ export default function Page() {
           </div>
         </div>
       )}
+        </TabsContent>
+
+        <TabsContent value="consultoras" className="mt-6">
+          {isLoading ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 card-shadow">
+              <div className="flex items-center justify-between mb-4">
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-6 w-20" />
+              </div>
+              <div className="space-y-3">
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            </div>
+          ) : error ? (
+            <div className="bg-white rounded-2xl border border-red-200 p-6">
+              <div className="flex items-center gap-3 text-red-600">
+                <span className="text-lg">⚠️</span>
+                <p>{error}</p>
+              </div>
+            </div>
+          ) : !data || !(data.linhasConsultoras && data.linhasConsultoras.length > 0) ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+              <p className="text-slate-500">Nenhum resultado. Use os filtros acima para pesquisar.</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-slate-200 card-shadow overflow-hidden">
+              <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+                <h3 className="font-semibold text-slate-900">Resultados por consultora</h3>
+                <span className="px-3 py-1 bg-slate-100 text-slate-600 text-sm rounded-full">
+                  {data.linhasConsultoras.length} {data.linhasConsultoras.length === 1 ? 'consultora' : 'consultoras'}
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-[960px] w-full">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="text-left px-4 py-2">Consultora</th>
+                      <th className="text-center px-4 py-2">Clientes únicos</th>
+                      <th className="text-center px-4 py-2">Agendamentos criados</th>
+                      <th className="text-center px-4 py-2">Agendamentos/Cliente</th>
+                      <th className="text-center px-4 py-2">Chamados ATIVOS</th>
+                      <th className="text-center px-4 py-2">Chamados RECEPTIVOS</th>
+                      <th className="text-center px-4 py-2">Cl. Únicos ATIVO</th>
+                      <th className="text-center px-4 py-2">Cl. Únicos RECEPTIVO</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.linhasConsultoras.map((l: DashboardLinhaConsultora, index: number) => (
+                      <tr
+                        key={l.userId}
+                        className={`
+                          border-b last:border-0
+                          ${index % 2 === 0 ? 'bg-white' : 'bg-sky-50'}
+                        `}
+                      >
+                        <td className="px-4 py-2 font-medium text-left">
+                          {l.consultora || '-'}
+                        </td>
+
+                        <td className="px-4 py-2 text-center">{l.totalClientesUnicos}</td>
+                        <td className="px-4 py-2 text-center">{l.agendamentosCriadosNoPeriodo}</td>
+                        <td className="px-4 py-2 text-center">{l.ratioAgendamentosPorCliente}</td>
+                        <td className="px-4 py-2 text-center">{l.totalChamadosAtivosNoPeriodo}</td>
+                        <td className="px-4 py-2 text-center">{l.totalChamadosReceptivosNoPeriodo}</td>
+                        <td className="px-4 py-2 text-center">{l.totalClientesUnicosAtivo}</td>
+                        <td className="px-4 py-2 text-center">{l.totalClientesUnicosReceptivo}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

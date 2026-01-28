@@ -12,18 +12,16 @@ interface SidebarProps {
 }
 
 const navItems = [
-        {
+    {
         label: 'DASHBOARD',
         href: '/dashboard',
         icon: BarChart3,
     },
-, 
     {
         label: 'AGENDAMENTOS',
         href: '/agendamentos',
         icon: Calendar,
     },
-,
     {
         label: 'CHAMADOS FINALIZADOS',
         href: '/chamados-finalizados',

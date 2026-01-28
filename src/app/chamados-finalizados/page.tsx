@@ -31,6 +31,22 @@ export default function Page() {
       const result: PesquisaChamadosResponse = await response.json();
 
       console.log(`[UI][CHAMADOS] resultados=${result.meta?.total ?? 0}`);
+      try {
+        const items = Array.isArray(result?.items) ? result.items : [];
+        const nomeParaIds = new Map<string, string[]>();
+        for (const it of items) {
+          const nome = (it.nomeDigisac || '').trim();
+          const arr = nomeParaIds.get(nome) || [];
+          arr.push(it.contactId);
+          nomeParaIds.set(nome, arr);
+        }
+        const duplicados = Array.from(nomeParaIds.entries()).filter(([n, ids]) => n && ids.length > 1);
+        if (duplicados.length > 0) {
+          console.warn('[UI][CHAMADOS] nomesDuplicadosDetectados=', duplicados.map(([nome, ids]) => ({ nome, contactIds: ids })));
+        }
+      } catch (e) {
+        console.warn('[UI][CHAMADOS] logResumoResultado falhou', e);
+      }
 
       setData(result);
     } catch (err) {

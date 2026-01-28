@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Parâmetro contactId é obrigatório' }, { status: 400 });
     }
 
+    console.log('[API][CHAMADOS][AGENDAMENTOS] GET contactId=', contactId);
     const url = `/schedule?where[contactId]=${contactId}&include[0][model]=contact&include[1][model]=department&include[2][model]=user&page=1&perPage=200&order[0][0]=createdAt&order[0][1]=DESC`;
     const res = await fetchDigisac(url);
     const items = Array.isArray(res) ? res : (res.rows || res.data || []);
@@ -31,6 +32,7 @@ export async function GET(request: NextRequest) {
       })(),
     }));
 
+    console.log('[API][CHAMADOS][AGENDAMENTOS] itemsRetornados=', items.length);
     return NextResponse.json(mapped);
   } catch (error) {
     console.error('[API][CHAMADOS] Erro ao listar agendamentos por contato:', error);

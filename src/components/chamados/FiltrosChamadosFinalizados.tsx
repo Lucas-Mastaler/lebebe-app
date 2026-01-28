@@ -134,15 +134,14 @@ export function FiltrosChamadosFinalizados({ onPesquisar, isLoading }: FiltrosPr
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="p-0">
-                      <Calendar mode="single" selected={parseDate(dataInicio)} onSelect={makeHandleDateSelect(setDataInicio, setInicioOpen)} initialFocus />
+                      <Calendar
+                        mode="single"
+                        selected={parseDate(dataInicio)}
+                        onSelect={makeHandleDateSelect(setDataInicio, setInicioOpen)}
+                        initialFocus
+                      />
                     </PopoverContent>
                   </Popover>
-                  <input
-                    value={dataInicio}
-                    onChange={(e) => setDataInicio(formatDateInput(e.target.value))}
-                    placeholder="dd/mm/aaaa"
-                    className="border border-slate-200 rounded-xl px-3 py-2 text-sm w-full"
-                  />
                 </div>
               </div>
 
@@ -156,15 +155,14 @@ export function FiltrosChamadosFinalizados({ onPesquisar, isLoading }: FiltrosPr
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="p-0">
-                      <Calendar mode="single" selected={parseDate(dataFim)} onSelect={makeHandleDateSelect(setDataFim, setFimOpen)} initialFocus />
+                      <Calendar
+                        mode="single"
+                        selected={parseDate(dataFim)}
+                        onSelect={makeHandleDateSelect(setDataFim, setFimOpen)}
+                        initialFocus
+                      />
                     </PopoverContent>
                   </Popover>
-                  <input
-                    value={dataFim}
-                    onChange={(e) => setDataFim(formatDateInput(e.target.value))}
-                    placeholder="dd/mm/aaaa"
-                    className="border border-slate-200 rounded-xl px-3 py-2 text-sm w-full"
-                  />
                 </div>
               </div>
             </div>

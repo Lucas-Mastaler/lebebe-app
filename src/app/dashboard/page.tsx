@@ -2,7 +2,7 @@
 
 import { Cell } from 'recharts';
 import { useCallback, useMemo, useState } from 'react';
-import { DashboardLinha, DashboardLinhaConsultora, DashboardResponse } from '@/types';
+import { DashboardClienteDetalhe, DashboardLinha, DashboardLinhaConsultora, DashboardResponse } from '@/types';
 import { FiltrosDashboard } from '@/components/dashboard/FiltrosDashboard';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -79,6 +79,74 @@ export default function Page() {
     return mapa;
   }, [data]);
 
+  const totaisFiliais = useMemo(() => {
+    const linhas = data?.linhas ?? [];
+
+    const totalClientesUnicos = linhas.reduce((acc, l) => acc + (Number(l.totalClientesUnicos) || 0), 0);
+    const agendamentosCriadosNoPeriodo = linhas.reduce((acc, l) => acc + (Number(l.agendamentosCriadosNoPeriodo) || 0), 0);
+    const totalChamadosAtivosNoPeriodo = linhas.reduce((acc, l) => acc + (Number(l.totalChamadosAtivosNoPeriodo) || 0), 0);
+    const totalChamadosReceptivosNoPeriodo = linhas.reduce((acc, l) => acc + (Number(l.totalChamadosReceptivosNoPeriodo) || 0), 0);
+    const totalClientesUnicosAtivo = linhas.reduce((acc, l) => acc + (Number(l.totalClientesUnicosAtivo) || 0), 0);
+    const totalClientesUnicosReceptivo = linhas.reduce((acc, l) => acc + (Number(l.totalClientesUnicosReceptivo) || 0), 0);
+    const totalChamadosHistoricoSomadoFilial = linhas.reduce((acc, l) => acc + (Number(l.totalChamadosHistoricoSomadoFilial) || 0), 0);
+
+    const ratioAgendamentosPorCliente =
+      totalClientesUnicos > 0 ? (agendamentosCriadosNoPeriodo / totalClientesUnicos).toFixed(2) : '-';
+
+    return {
+      totalClientesUnicos,
+      agendamentosCriadosNoPeriodo,
+      ratioAgendamentosPorCliente,
+      totalChamadosAtivosNoPeriodo,
+      totalChamadosReceptivosNoPeriodo,
+      totalClientesUnicosAtivo,
+      totalClientesUnicosReceptivo,
+      totalChamadosHistoricoSomadoFilial,
+    };
+  }, [data]);
+
+  const totaisConsultoras = useMemo(() => {
+    const linhas = data?.linhasConsultoras ?? [];
+
+    const totalClientesUnicos = linhas.reduce((acc, l) => acc + (Number(l.totalClientesUnicos) || 0), 0);
+    const agendamentosCriadosNoPeriodo = linhas.reduce((acc, l) => acc + (Number(l.agendamentosCriadosNoPeriodo) || 0), 0);
+    const totalChamadosAtivosNoPeriodo = linhas.reduce((acc, l) => acc + (Number(l.totalChamadosAtivosNoPeriodo) || 0), 0);
+    const totalChamadosReceptivosNoPeriodo = linhas.reduce((acc, l) => acc + (Number(l.totalChamadosReceptivosNoPeriodo) || 0), 0);
+    const totalClientesUnicosAtivo = linhas.reduce((acc, l) => acc + (Number(l.totalClientesUnicosAtivo) || 0), 0);
+    const totalClientesUnicosReceptivo = linhas.reduce((acc, l) => acc + (Number(l.totalClientesUnicosReceptivo) || 0), 0);
+    const totalChamadosHistoricoSomadoConsultora = linhas.reduce((acc, l) => acc + (Number(l.totalChamadosHistoricoSomadoConsultora) || 0), 0);
+
+    const ratioAgendamentosPorCliente =
+      totalClientesUnicos > 0 ? (agendamentosCriadosNoPeriodo / totalClientesUnicos).toFixed(2) : '-';
+
+    const ratioChamadosAtivosPorUnicoAtivo =
+      totalClientesUnicosAtivo > 0 ? (totalChamadosAtivosNoPeriodo / totalClientesUnicosAtivo).toFixed(2) : '-';
+
+    const ratioChamadosReceptivosPorUnicoReceptivo =
+      totalClientesUnicosReceptivo > 0 ? (totalChamadosReceptivosNoPeriodo / totalClientesUnicosReceptivo).toFixed(2) : '-';
+
+    return {
+      totalClientesUnicos,
+      agendamentosCriadosNoPeriodo,
+      ratioAgendamentosPorCliente,
+      totalChamadosAtivosNoPeriodo,
+      totalClientesUnicosAtivo,
+      ratioChamadosAtivosPorUnicoAtivo,
+      totalChamadosReceptivosNoPeriodo,
+      totalClientesUnicosReceptivo,
+      ratioChamadosReceptivosPorUnicoReceptivo,
+      totalChamadosHistoricoSomadoConsultora,
+    };
+  }, [data]);
+
+  const totaisClientesHistoricoTop = useMemo(() => {
+    const arr = data?.clientesHistoricoTop ?? [];
+    const chamadosNoPeriodo = arr.reduce((acc, c) => acc + (Number(c.chamadosNoPeriodo) || 0), 0);
+    const totalChamadosHistorico = arr.reduce((acc, c) => acc + (Number(c.totalChamadosHistorico) || 0), 0);
+    return { chamadosNoPeriodo, totalChamadosHistorico };
+  }, [data]);
+
+
   const chartDataAtivoReceptivo = useMemo(() => {
     const linhas = data?.linhas || [];
     return linhas.map((l: DashboardLinha) => ({
@@ -95,6 +163,10 @@ export default function Page() {
       unicosAtivo: l.totalClientesUnicosAtivo,
       unicosReceptivo: l.totalClientesUnicosReceptivo,
     }));
+  }, [data]);
+
+  const clientesHistoricoTop = useMemo(() => {
+    return data?.clientesHistoricoTop ?? [];
   }, [data]);
 
   return (
@@ -176,6 +248,7 @@ export default function Page() {
 
                   <th className="text-center px-4 py-2">Cl. Únicos<br /> ATIVO</th>
                   <th className="text-center px-4 py-2">Cl. Únicos<br /> RECEPTIVO</th>
+                  <th className="text-center px-4 py-2">Chamados históricos (soma)</th>
                 </tr>
               </thead>
               <tbody>
@@ -187,10 +260,7 @@ export default function Page() {
                       ${index % 2 === 0 ? 'bg-white' : 'bg-sky-50'}
                     `}
                   >
-                    <td className="px-4 py-2 font-medium text-left">
-                      {l.filial || '-'}
-                    </td>
-
+                    <td className="px-4 py-2 font-medium text-left">{l.filial || '-'}</td>
                     <td className="px-4 py-2 text-center">{l.totalClientesUnicos}</td>
                     <td className="px-4 py-2 text-center">{l.agendamentosCriadosNoPeriodo}</td>
                     <td className="px-4 py-2 text-center">{l.ratioAgendamentosPorCliente}</td>
@@ -198,8 +268,22 @@ export default function Page() {
                     <td className="px-4 py-2 text-center">{l.totalChamadosReceptivosNoPeriodo}</td>
                     <td className="px-4 py-2 text-center">{l.totalClientesUnicosAtivo}</td>
                     <td className="px-4 py-2 text-center">{l.totalClientesUnicosReceptivo}</td>
+                    <td className="px-4 py-2 text-center font-semibold">{l.totalChamadosHistoricoSomadoFilial ?? '-'}</td>
                   </tr>
                 ))}
+
+                {/* TOTAL */}
+                <tr className="border-t bg-slate-100 font-semibold">
+                  <td className="px-4 py-3 text-left">TOTAL</td>
+                  <td className="px-4 py-3 text-center">{totaisFiliais.totalClientesUnicos}</td>
+                  <td className="px-4 py-3 text-center">{totaisFiliais.agendamentosCriadosNoPeriodo}</td>
+                  <td className="px-4 py-3 text-center">{totaisFiliais.ratioAgendamentosPorCliente}</td>
+                  <td className="px-4 py-3 text-center">{totaisFiliais.totalChamadosAtivosNoPeriodo}</td>
+                  <td className="px-4 py-3 text-center">{totaisFiliais.totalChamadosReceptivosNoPeriodo}</td>
+                  <td className="px-4 py-3 text-center">{totaisFiliais.totalClientesUnicosAtivo}</td>
+                  <td className="px-4 py-3 text-center">{totaisFiliais.totalClientesUnicosReceptivo}</td>
+                  <td className="px-4 py-3 text-center">{totaisFiliais.totalChamadosHistoricoSomadoFilial}</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -351,6 +435,55 @@ export default function Page() {
           </div>
         </div>
       )}
+
+      {/* Legendas de cálculo (Filiais) */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 card-shadow">
+        <h3 className="font-semibold text-slate-900 mb-3">Legenda dos cálculos (Filiais)</h3>
+        <div className="overflow-x-auto">
+          <table className="min-w-[720px] w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="text-left px-4 py-2">Coluna</th>
+                <th className="text-left px-4 py-2">Como é calculado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b last:border-0">
+                <td className="px-4 py-2 font-medium">Filial</td>
+                <td className="px-4 py-2">Departamento/filial do chamado.</td>
+              </tr>
+              <tr className="border-b last:border-0 bg-sky-50/40">
+                <td className="px-4 py-2 font-medium">Clientes únicos</td>
+                <td className="px-4 py-2">Quantidade de clientes distintos com chamados no período filtrado.</td>
+              </tr>
+              <tr className="border-b last:border-0">
+                <td className="px-4 py-2 font-medium">Agendamentos criados</td>
+                <td className="px-4 py-2">Total de agendamentos criados no período (considerando os filtros escolhidos).</td>
+              </tr>
+              <tr className="border-b last:border-0 bg-sky-50/40">
+                <td className="px-4 py-2 font-medium">Agendamentos/Cliente</td>
+                <td className="px-4 py-2">Agendamentos criados ÷ Clientes únicos (arredondado em 2 casas decimais).</td>
+              </tr>
+              <tr className="border-b last:border-0">
+                <td className="px-4 py-2 font-medium">Chamados ATIVOS</td>
+                <td className="px-4 py-2">Chamados em que a loja iniciou a conversa no período.</td>
+              </tr>
+              <tr className="border-b last:border-0 bg-sky-50/40">
+                <td className="px-4 py-2 font-medium">Chamados RECEPTIVOS</td>
+                <td className="px-4 py-2">Chamados em que o cliente iniciou a conversa no período.</td>
+              </tr>
+              <tr className="border-b last:border-0">
+                <td className="px-4 py-2 font-medium">Cl. Únicos ATIVO</td>
+                <td className="px-4 py-2">Clientes únicos entre os chamados ATIVOS.</td>
+              </tr>
+              <tr className="border-b last:border-0 bg-sky-50/40">
+                <td className="px-4 py-2 font-medium">Cl. Únicos RECEPTIVO</td>
+                <td className="px-4 py-2">Clientes únicos entre os chamados RECEPTIVOS.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
         </TabsContent>
 
         <TabsContent value="consultoras" className="mt-6">
@@ -393,11 +526,14 @@ export default function Page() {
                       <th className="text-left px-4 py-2">Consultora</th>
                       <th className="text-center px-4 py-2">Clientes únicos</th>
                       <th className="text-center px-4 py-2">Agendamentos criados</th>
-                      <th className="text-center px-4 py-2">Agendamentos/Cliente</th>
+                      <th className="text-center px-4 py-2">Agendamentos/<br></br>Cliente</th>
                       <th className="text-center px-4 py-2">Chamados ATIVOS</th>
-                      <th className="text-center px-4 py-2">Chamados RECEPTIVOS</th>
                       <th className="text-center px-4 py-2">Cl. Únicos ATIVO</th>
+                      <th className="text-center px-4 py-2">Chamados ativos/<br></br>Cl. Únicos ativos</th>
+                      <th className="text-center px-4 py-2">Chamados RECEPTIVOS</th>
                       <th className="text-center px-4 py-2">Cl. Únicos RECEPTIVO</th>
+                      <th className="text-center px-4 py-2">Chamados RECEPTIVO/<br></br>Cl. Únicos RECEPTIVOS</th>
+                      <th className="text-center px-4 py-2">Chamados históricos (soma)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -409,26 +545,139 @@ export default function Page() {
                           ${index % 2 === 0 ? 'bg-white' : 'bg-sky-50'}
                         `}
                       >
-                        <td className="px-4 py-2 font-medium text-left">
-                          {l.consultora || '-'}
-                        </td>
+                        <td className="px-4 py-2 font-medium text-left">{l.consultora || '-'}</td>
 
                         <td className="px-4 py-2 text-center">{l.totalClientesUnicos}</td>
                         <td className="px-4 py-2 text-center">{l.agendamentosCriadosNoPeriodo}</td>
                         <td className="px-4 py-2 text-center">{l.ratioAgendamentosPorCliente}</td>
+
                         <td className="px-4 py-2 text-center">{l.totalChamadosAtivosNoPeriodo}</td>
-                        <td className="px-4 py-2 text-center">{l.totalChamadosReceptivosNoPeriodo}</td>
                         <td className="px-4 py-2 text-center">{l.totalClientesUnicosAtivo}</td>
+                        <td className="px-4 py-2 text-center">{l.ratioChamadosAtivosPorUnicoAtivo}</td>
+
+                        <td className="px-4 py-2 text-center">{l.totalChamadosReceptivosNoPeriodo}</td>
                         <td className="px-4 py-2 text-center">{l.totalClientesUnicosReceptivo}</td>
+                        <td className="px-4 py-2 text-center">{l.ratioChamadosReceptivosPorUnicoReceptivo}</td>
+
+                        <td className="px-4 py-2 text-center font-semibold">{l.totalChamadosHistoricoSomadoConsultora ?? '-'}</td>
                       </tr>
                     ))}
+
+                    {/* TOTAL */}
+                    <tr className="border-t bg-slate-100 font-semibold">
+                      <td className="px-4 py-3 text-left">TOTAL</td>
+
+                      <td className="px-4 py-3 text-center">{totaisConsultoras.totalClientesUnicos}</td>
+                      <td className="px-4 py-3 text-center">{totaisConsultoras.agendamentosCriadosNoPeriodo}</td>
+                      <td className="px-4 py-3 text-center">{totaisConsultoras.ratioAgendamentosPorCliente}</td>
+
+                      <td className="px-4 py-3 text-center">{totaisConsultoras.totalChamadosAtivosNoPeriodo}</td>
+                      <td className="px-4 py-3 text-center">{totaisConsultoras.totalClientesUnicosAtivo}</td>
+                      <td className="px-4 py-3 text-center">{totaisConsultoras.ratioChamadosAtivosPorUnicoAtivo}</td>
+
+                      <td className="px-4 py-3 text-center">{totaisConsultoras.totalChamadosReceptivosNoPeriodo}</td>
+                      <td className="px-4 py-3 text-center">{totaisConsultoras.totalClientesUnicosReceptivo}</td>
+                      <td className="px-4 py-3 text-center">{totaisConsultoras.ratioChamadosReceptivosPorUnicoReceptivo}</td>
+
+                      <td className="px-4 py-3 text-center">{totaisConsultoras.totalChamadosHistoricoSomadoConsultora}</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
             </div>
           )}
+
+          {/* Legendas de cálculo (Consultoras) */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 card-shadow mt-6">
+            <h3 className="font-semibold text-slate-900 mb-3">Legenda dos cálculos (Consultoras)</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-[720px] w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="text-left px-4 py-2">Coluna</th>
+                    <th className="text-left px-4 py-2">Como é calculado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b last:border-0">
+                    <td className="px-4 py-2 font-medium">Consultora</td>
+                    <td className="px-4 py-2">Atendente responsável pelos chamados/atendimentos.</td>
+                  </tr>
+                  <tr className="border-b last:border-0 bg-sky-50/40">
+                    <td className="px-4 py-2 font-medium">Clientes únicos</td>
+                    <td className="px-4 py-2">Quantidade de clientes distintos com chamados no período atribuídos à consultora.</td>
+                  </tr>
+                  <tr className="border-b last:border-0">
+                    <td className="px-4 py-2 font-medium">Agendamentos criados</td>
+                    <td className="px-4 py-2">Total de agendamentos criados no período atribuídos à consultora (respeitando os filtros).</td>
+                  </tr>
+                  <tr className="border-b last:border-0 bg-sky-50/40">
+                    <td className="px-4 py-2 font-medium">Agendamentos/Cliente</td>
+                    <td className="px-4 py-2">Agendamentos criados ÷ Clientes únicos (arredondado em 2 casas decimais).</td>
+                  </tr>
+                  <tr className="border-b last:border-0">
+                    <td className="px-4 py-2 font-medium">Chamados ATIVOS</td>
+                    <td className="px-4 py-2">Chamados em que a loja iniciou a conversa atribuídos à consultora.</td>
+                  </tr>
+                  <tr className="border-b last:border-0 bg-sky-50/40">
+                    <td className="px-4 py-2 font-medium">Cl. Únicos ATIVO</td>
+                    <td className="px-4 py-2">Clientes únicos entre os chamados ATIVOS da consultora.</td>
+                  </tr>
+                  <tr className="border-b last:border-0">
+                    <td className="px-4 py-2 font-medium">Chamados ATIVOS / Cl. Únicos ATIVO</td>
+                    <td className="px-4 py-2">Chamados ATIVOS ÷ Clientes únicos ATIVO (arredondado em 2 casas decimais).</td>
+                  </tr>
+                  <tr className="border-b last:border-0 bg-sky-50/40">
+                    <td className="px-4 py-2 font-medium">Chamados RECEPTIVOS</td>
+                    <td className="px-4 py-2">Chamados em que o cliente iniciou a conversa atribuídos à consultora.</td>
+                  </tr>
+                  <tr className="border-b last:border-0">
+                    <td className="px-4 py-2 font-medium">Cl. Únicos RECEPTIVO</td>
+                    <td className="px-4 py-2">Clientes únicos entre os chamados RECEPTIVOS da consultora.</td>
+                  </tr>
+                  <tr className="border-b last:border-0 bg-sky-50/40">
+                    <td className="px-4 py-2 font-medium">Chamados RECEPTIVO / Cl. Únicos RECEPTIVOS</td>
+                    <td className="px-4 py-2">Chamados RECEPTIVOS ÷ Clientes únicos RECEPTIVO (arredondado em 2 casas decimais).</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </TabsContent>
       </Tabs>
+
+      {clientesHistoricoTop && clientesHistoricoTop.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 card-shadow">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-slate-900">Clientes únicos e seus chamados (histórico) – Top 50</h3>
+            <span className="px-3 py-1 bg-slate-100 text-slate-600 text-sm rounded-full">
+              {clientesHistoricoTop.length}
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-[720px] w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="text-left px-4 py-2">Cliente</th>
+                  <th className="text-left px-4 py-2">Filial</th>
+                  <th className="text-center px-4 py-2">Chamados no período</th>
+                  <th className="text-center px-4 py-2">Chamados no histórico</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clientesHistoricoTop.map((c: DashboardClienteDetalhe, i: number) => (
+                  <tr key={`${c.contactId}-${i}`} className={`border-b last:border-0 ${i % 2 === 0 ? 'bg-white' : 'bg-sky-50'}`}>
+                    <td className="px-4 py-2">{c.nome || '-'}</td>
+                    <td className="px-4 py-2">{c.filial || '-'}</td>
+                    <td className="px-4 py-2 text-center">{c.chamadosNoPeriodo ?? '-'}</td>
+                    <td className="px-4 py-2 text-center font-semibold">{c.totalChamadosHistorico}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

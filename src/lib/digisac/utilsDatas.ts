@@ -29,7 +29,25 @@ export function montarRangeUtcSaoPaulo(dataDe: string, dataAte: string) {
     // Datas em SP: yyyy-mm-ddT00:00:00-03:00
     // Criar objetos Date a partir dessas strings ISO com offset
     const startSp = new Date(`${y1}-${m1}-${d1}T00:00:00-03:00`);
-    const endSp = new Date(`${y2}-${m2}-${d2}T23:59:59.999-03:00`);
+
+    // Se a data final é hoje (considerando SP), usar horário atual ao invés de 23:59:59.999
+    const agora = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const diaHoje = pad(agora.getDate());
+    const mesHoje = pad(agora.getMonth() + 1);
+    const anoHoje = String(agora.getFullYear());
+    const hojeStr = `${diaHoje}/${mesHoje}/${anoHoje}`;
+
+    let endSp: Date;
+    if (dataAte === hojeStr) {
+        const hh = pad(agora.getHours());
+        const mm = pad(agora.getMinutes());
+        const ss = pad(agora.getSeconds());
+        const ms = String(agora.getMilliseconds()).padStart(3, '0');
+        endSp = new Date(`${y2}-${m2}-${d2}T${hh}:${mm}:${ss}.${ms}-03:00`);
+    } else {
+        endSp = new Date(`${y2}-${m2}-${d2}T23:59:59.999-03:00`);
+    }
 
     if (isNaN(startSp.getTime()) || isNaN(endSp.getTime())) {
         throw new Error('Data inválida');

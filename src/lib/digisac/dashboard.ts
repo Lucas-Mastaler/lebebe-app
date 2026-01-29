@@ -1,7 +1,7 @@
 import { fetchDigisac } from './clienteDigisac';
 import { montarRangeUtcSaoPaulo } from './utilsDatas';
 import { buscarAgendamentosFormatados } from './agendamentos';
-import { DashboardLinha, DashboardLinhaConsultora, DashboardResponse } from '@/types';
+import { DashboardClienteDetalhe, DashboardLinha, DashboardLinhaConsultora, DashboardResponse } from '@/types';
 
 interface FiltrosDashboardService {
   dataInicio: string;
@@ -18,7 +18,65 @@ interface Ticket {
   createdAt: string;
   department?: { name?: string };
   user?: { name?: string };
+  contact?: { name?: string };
   firstMessage?: { isFromMe?: boolean } | null;
+}
+
+// Cache em memória dos totais históricos por contato (TTL 6h)
+const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+type CacheEntry = { total: number; at: number };
+const historicoCache = new Map<string, CacheEntry>();
+let cacheHits = 0;
+let cacheMisses = 0;
+
+function cacheGet(contactId: string): number | undefined {
+  const e = historicoCache.get(contactId);
+  if (!e) return undefined;
+  if (Date.now() - e.at > CACHE_TTL_MS) {
+    historicoCache.delete(contactId);
+    return undefined;
+  }
+  cacheHits++;
+  return e.total;
+}
+
+function cacheSet(contactId: string, total: number) {
+  historicoCache.set(contactId, { total, at: Date.now() });
+}
+
+async function buscarTotalHistoricoPorContato(contactId: string): Promise<number> {
+  const fromCache = cacheGet(contactId);
+  if (typeof fromCache === 'number') return fromCache;
+  cacheMisses++;
+  try {
+    const p = new URLSearchParams();
+    p.append('where[contactId]', contactId);
+    p.append('limit', '1');
+    p.append('skip', '0');
+    const url = `/tickets?${p.toString()}`;
+    const res: any = await fetchDigisac(url);
+    const total = Number(res?.total ?? res?.count ?? 0);
+    cacheSet(contactId, total);
+    return total;
+  } catch (err) {
+    console.error('[DASHBOARD] Erro ao buscar histórico de contato', contactId, err);
+    return 0;
+  }
+}
+
+async function processarEmLotes<T, R>(itens: T[], fn: (x: T) => Promise<R>, concorrencia = 12): Promise<R[]> {
+  const res: R[] = [];
+  let i = 0;
+  const workers = Array.from({ length: Math.min(concorrencia, Math.max(1, itens.length)) }, async () => {
+    while (true) {
+      const idx = i++;
+      if (idx >= itens.length) break;
+      const r = await fn(itens[idx]);
+      res[idx] = r;
+    }
+  });
+  await Promise.all(workers);
+  return res;
 }
 
 function agruparTicketsPorFilial(tickets: Ticket[]) {
@@ -116,6 +174,7 @@ async function buscarTicketsPeriodo(filtros: FiltrosDashboardService): Promise<T
         createdAt: r.createdAt,
         department: r.department,
         user: r.user,
+        contact: r.contact,
         firstMessage: r.firstMessage ?? null,
       };
       todos.push(t);
@@ -188,6 +247,8 @@ async function contarAgendamentosCriadosNoPeriodoPorConsultora(
   userId: string,
   filtros: FiltrosDashboardService
 ): Promise<number> {
+  // Se não houver userId válido, não consultar API (evita erro de UUID inválido)
+  if (!userId || userId === 'sem-user') return 0;
   let total = 0;
   if (Array.isArray(filtros.departmentIds) && filtros.departmentIds.length > 0) {
     for (const depId of filtros.departmentIds) {
@@ -221,7 +282,51 @@ export async function pesquisarDashboard(filtros: FiltrosDashboardService): Prom
   // Agrupar por filial
   const grupos = agruparTicketsPorFilial(tickets);
 
+  // Preparar estruturas para histórico por contato
+  const contatoNomePorId = new Map<string, string>();
+  const contatoFilialCounts = new Map<string, Map<string, number>>(); // contactId -> (departmentId -> count no período)
+  const contatosPorFilial = new Map<string, Set<string>>(); // departmentId -> set(contactId)
+  for (const t of tickets) {
+    if (!t.contactId) continue;
+    if (t.contact?.name && !contatoNomePorId.has(t.contactId)) {
+      contatoNomePorId.set(t.contactId, t.contact.name);
+    }
+    const byFilial = contatoFilialCounts.get(t.contactId) || new Map<string, number>();
+    byFilial.set(t.departmentId, (byFilial.get(t.departmentId) || 0) + 1);
+    contatoFilialCounts.set(t.contactId, byFilial);
+
+    const set = contatosPorFilial.get(t.departmentId) || new Set<string>();
+    set.add(t.contactId);
+    contatosPorFilial.set(t.departmentId, set);
+  }
+
+  const contatosUnicosPeriodo = Array.from(contatoFilialCounts.keys());
+  const inicioHist = Date.now();
+  console.log('[DASHBOARD][HIST] iniciando busca histórico - contatos únicos:', contatosUnicosPeriodo.length);
+  const totaisHistorico = await processarEmLotes(
+    contatosUnicosPeriodo,
+    (cid) => buscarTotalHistoricoPorContato(cid),
+    12
+  );
+  const fimHist = Date.now();
+  console.log('[DASHBOARD][HIST] concluído em ms=', fimHist - inicioHist, 'cacheHits=', cacheHits, 'cacheMisses=', cacheMisses);
+  const mapaHistorico = new Map<string, number>();
+  contatosUnicosPeriodo.forEach((cid, idx) => mapaHistorico.set(cid, totaisHistorico[idx] || 0));
+
   const linhas: DashboardLinha[] = [];
+  let totalChamadosHistoricoSomado = 0;
+  // Agregado por filial
+  const totalHistoricoPorFilial = new Map<string, number>();
+  for (const cid of contatosUnicosPeriodo) {
+    const total = mapaHistorico.get(cid) || 0;
+    totalChamadosHistoricoSomado += total;
+    const depCounts = contatoFilialCounts.get(cid);
+    if (depCounts) {
+      for (const depId of depCounts.keys()) {
+        totalHistoricoPorFilial.set(depId, (totalHistoricoPorFilial.get(depId) || 0) + total);
+      }
+    }
+  }
 
   for (const [departmentId, info] of grupos.entries()) {
     const ts = info.tickets;
@@ -251,6 +356,16 @@ export async function pesquisarDashboard(filtros: FiltrosDashboardService): Prom
       ? Number((agendamentosCriadosNoPeriodo / totalClientesUnicos).toFixed(2))
       : 0;
 
+    // Montar detalhes de clientes desta filial
+    const clientesDetalhe: DashboardClienteDetalhe[] = [];
+    const setFilial = contatosPorFilial.get(departmentId) || new Set<string>();
+    setFilial.forEach((cid) => {
+      const nome = contatoNomePorId.get(cid) || '-';
+      const totalHistorico = mapaHistorico.get(cid) || 0;
+      const chamadosNoPeriodo = contatoFilialCounts.get(cid)?.get(departmentId) || 0;
+      clientesDetalhe.push({ contactId: cid, nome, filial: info.nome, totalChamadosHistorico: totalHistorico, chamadosNoPeriodo });
+    });
+
     linhas.push({
       departmentId,
       filial: info.nome,
@@ -261,6 +376,8 @@ export async function pesquisarDashboard(filtros: FiltrosDashboardService): Prom
       totalChamadosReceptivosNoPeriodo,
       totalClientesUnicosAtivo,
       totalClientesUnicosReceptivo,
+      totalChamadosHistoricoSomadoFilial: totalHistoricoPorFilial.get(departmentId) || 0,
+      clientesDetalhe,
     });
   }
 
@@ -292,6 +409,19 @@ export async function pesquisarDashboard(filtros: FiltrosDashboardService): Prom
       ? Number((agendamentosCriadosNoPeriodo / totalClientesUnicos).toFixed(2))
       : 0;
 
+    const ratioChamadosAtivosPorUnicoAtivo = totalClientesUnicosAtivo > 0
+      ? Number((totalChamadosAtivosNoPeriodo / totalClientesUnicosAtivo).toFixed(2))
+      : 0;
+    const ratioChamadosReceptivosPorUnicoReceptivo = totalClientesUnicosReceptivo > 0
+      ? Number((totalChamadosReceptivosNoPeriodo / totalClientesUnicosReceptivo).toFixed(2))
+      : 0;
+
+    // Soma dos chamados históricos dos clientes únicos atendidos por esta consultora no período
+    let totalChamadosHistoricoSomadoConsultora = 0;
+    contatoIds.forEach((cid) => {
+      totalChamadosHistoricoSomadoConsultora += mapaHistorico.get(cid) || 0;
+    });
+
     linhasConsultoras.push({
       userId,
       consultora: info.nome,
@@ -302,16 +432,43 @@ export async function pesquisarDashboard(filtros: FiltrosDashboardService): Prom
       totalChamadosReceptivosNoPeriodo,
       totalClientesUnicosAtivo,
       totalClientesUnicosReceptivo,
+      ratioChamadosAtivosPorUnicoAtivo,
+      ratioChamadosReceptivosPorUnicoReceptivo,
+      totalChamadosHistoricoSomadoConsultora,
     });
   }
 
+  // Construir Top 50 por histórico (escolhendo filial com mais chamados no período)
+  const clientesHistoricoTop: DashboardClienteDetalhe[] = [];
+  for (const cid of contatosUnicosPeriodo) {
+    const nome = contatoNomePorId.get(cid) || '-';
+    const totalHistorico = mapaHistorico.get(cid) || 0;
+    const depCounts = contatoFilialCounts.get(cid) || new Map<string, number>();
+    let melhorDep = '';
+    let melhorCount = -1;
+    depCounts.forEach((c, depId) => {
+      if (c > melhorCount) {
+        melhorCount = c;
+        melhorDep = depId;
+      }
+    });
+    // Obter nome da filial
+    const nomeFilial = grupos.get(melhorDep)?.nome || '-';
+    const chamadosNoPeriodo = Array.from(depCounts.values()).reduce((a, b) => a + b, 0);
+    clientesHistoricoTop.push({ contactId: cid, nome, filial: nomeFilial, totalChamadosHistorico: totalHistorico, chamadosNoPeriodo });
+  }
+  clientesHistoricoTop.sort((a, b) => b.totalChamadosHistorico - a.totalChamadosHistorico);
+  const clientesHistoricoTop50 = clientesHistoricoTop.slice(0, 50);
+
   const { inicioUtc, fimUtc } = montarRangeUtcSaoPaulo(filtros.dataInicio, filtros.dataFim);
   const end = Date.now();
-  console.log('[DASHBOARD] linhasFiliais=', linhas.length, 'linhasConsultoras=', linhasConsultoras.length, 'timeMs=', end - start);
+  console.log('[DASHBOARD] linhasFiliais=', linhas.length, 'linhasConsultoras=', linhasConsultoras.length, 'timeMs=', end - start, 'totalHistoricoSomado=', totalChamadosHistoricoSomado);
 
   return {
     periodo: { inicio: inicioUtc, fim: fimUtc },
     linhas,
     linhasConsultoras,
+    totalChamadosHistoricoSomado,
+    clientesHistoricoTop: clientesHistoricoTop50,
   };
 }

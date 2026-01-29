@@ -55,6 +55,15 @@ export interface PesquisaResponse {
 }
 
 // Dashboard
+export interface DashboardClienteDetalhe {
+  contactId: string;
+  nome: string;
+  filial: string;
+  userId?: string;
+  chamadosNoPeriodo?: number;
+  totalChamadosHistorico: number;
+}
+
 export interface DashboardLinha {
   departmentId: string;
   filial: string;
@@ -65,6 +74,8 @@ export interface DashboardLinha {
   totalChamadosReceptivosNoPeriodo: number;
   totalClientesUnicosAtivo: number;
   totalClientesUnicosReceptivo: number;
+  totalChamadosHistoricoSomadoFilial?: number;
+  clientesDetalhe?: DashboardClienteDetalhe[];
 }
 
 export interface DashboardResponse {
@@ -74,6 +85,8 @@ export interface DashboardResponse {
   };
   linhas: DashboardLinha[];
   linhasConsultoras?: DashboardLinhaConsultora[];
+  totalChamadosHistoricoSomado?: number;
+  clientesHistoricoTop?: DashboardClienteDetalhe[];
 }
 
 export interface DashboardLinhaConsultora {
@@ -86,6 +99,9 @@ export interface DashboardLinhaConsultora {
   totalChamadosReceptivosNoPeriodo: number;
   totalClientesUnicosAtivo: number;
   totalClientesUnicosReceptivo: number;
+  ratioChamadosAtivosPorUnicoAtivo: number;
+  ratioChamadosReceptivosPorUnicoReceptivo: number;
+  totalChamadosHistoricoSomadoConsultora?: number;
 }
 
 export interface Departamento {

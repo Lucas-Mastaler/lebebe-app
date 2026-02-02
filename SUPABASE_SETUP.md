@@ -168,10 +168,14 @@ Template sugerido para Reset Password:
 
 Em **Authentication > URL Configuration**:
 
-- **Site URL**: `https://seu-dominio.vercel.app` (produção)
+- **Site URL**: `https://seu-dominio.vercel.app` (produção) ou `http://localhost:3000` (desenvolvimento)
 - **Redirect URLs**: Adicione:
-  - `http://localhost:3000/resetar-senha` (desenvolvimento)
-  - `https://seu-dominio.vercel.app/resetar-senha` (produção)
+  - `http://localhost:3000/resetar-senha` (desenvolvimento - reset de senha)
+  - `http://localhost:3000/definir-senha` (desenvolvimento - convite de usuário)
+  - `https://seu-dominio.vercel.app/resetar-senha` (produção - reset de senha)
+  - `https://seu-dominio.vercel.app/definir-senha` (produção - convite de usuário)
+
+⚠️ **IMPORTANTE**: Sem essas URLs configuradas, os links dos emails não funcionarão!
 
 ---
 
@@ -212,12 +216,32 @@ Em **Authentication > URL Configuration**:
 4. Registra auditoria `RESET_CONCLUIDO`
 5. Redireciona para `/login`
 
-### 4. Proteção de Rotas (Middleware)
+### 4. Convite de Novo Usuário (Superadmin)
+
+**Rota**: `/superadmin` → Tab Usuários → Adicionar Usuário
+
+1. Superadmin clica em "Adicionar Usuário"
+2. Informa email e role (user ou superadmin)
+3. Sistema chama API `/api/superadmin/adicionar-usuario` que:
+   - Valida que o usuário logado é superadmin
+   - Usa `inviteUserByEmail()` do Supabase (service role)
+   - Insere registro em `usuarios_permitidos`
+   - Registra auditoria `USUARIO_PERMITIDO_CRIADO`
+4. Supabase envia email automático com link de convite
+5. Usuário clica no link e é redirecionado para `/definir-senha`
+6. Usuário define sua senha
+7. Registra auditoria `SENHA_DEFINIDA`
+8. Redireciona para `/dashboard` com login automático
+
+**Importante**: O usuário recebe um email do Supabase (template "Invite User") com o link para definir a senha.
+
+### 5. Proteção de Rotas (Middleware)
 
 O `middleware.ts` protege todas as rotas exceto:
 - `/login`
 - `/recuperar-senha`
 - `/resetar-senha`
+- `/definir-senha`
 
 **Validações**:
 1. Verifica sessão válida
@@ -227,7 +251,7 @@ O `middleware.ts` protege todas as rotas exceto:
 
 Se qualquer validação falhar, redireciona para `/login`
 
-### 5. Logout
+### 6. Logout
 
 Chamada para `/api/auth/logout`:
 1. Registra auditoria `LOGOUT`
@@ -242,22 +266,28 @@ Chamada para `/api/auth/logout`:
 le-bebe/
 ├── supabase/
 │   └── migrations/
-│       └── 001_initial_schema.sql    # Schema inicial + seed
+│       ├── 001_initial_schema.sql    # Schema inicial + seed
+│       └── 002_fix_rls_recursion.sql # Fix RLS com SECURITY DEFINER
 ├── src/
 │   ├── app/
 │   │   ├── api/
 │   │   │   ├── auditoria/
 │   │   │   │   └── registrar/
 │   │   │   │       └── route.ts      # Endpoint de auditoria
-│   │   │   └── auth/
-│   │   │       └── logout/
-│   │   │           └── route.ts      # Endpoint de logout
+│   │   │   ├── auth/
+│   │   │   │   └── logout/
+│   │   │   │       └── route.ts      # Endpoint de logout
+│   │   │   └── superadmin/
+│   │   │       └── adicionar-usuario/
+│   │   │           └── route.ts      # Convite de usuário via email
 │   │   ├── login/
 │   │   │   └── page.tsx              # Página de login
 │   │   ├── recuperar-senha/
 │   │   │   └── page.tsx              # Página de recuperação
 │   │   ├── resetar-senha/
 │   │   │   └── page.tsx              # Página de reset
+│   │   ├── definir-senha/
+│   │   │   └── page.tsx              # Página para novo usuário definir senha
 │   │   ├── superadmin/
 │   │   │   └── page.tsx              # Área administrativa
 │   │   └── dashboard/
@@ -271,7 +301,7 @@ le-bebe/
 │   │       └── service.ts            # Cliente service role
 │   └── types/
 │       └── supabase.ts               # Tipos TypeScript
-├── middleware.ts                     # Middleware de autenticação
+├── src/middleware.ts                 # Middleware de autenticação
 ├── .env.local                        # Variáveis de ambiente (local)
 └── SUPABASE_SETUP.md                 # Este documento
 ```
@@ -331,15 +361,16 @@ Os seguintes usuários são criados automaticamente:
 
 ### Ações Auditadas
 
-- `LOGIN_SUCESSO`
-- `LOGIN_FALHA`
-- `LOGOUT`
-- `RESET_SOLICITADO`
-- `RESET_CONCLUIDO`
-- `USUARIO_PERMITIDO_CRIADO`
-- `USUARIO_BLOQUEADO`
-- `USUARIO_DESBLOQUEADO`
-- `ROLE_ALTERADA`
+- `LOGIN_SUCESSO` - Login bem-sucedido
+- `LOGIN_FALHA` - Tentativa de login com credenciais inválidas
+- `LOGOUT` - Usuário fez logout
+- `RESET_SOLICITADO` - Solicitação de reset de senha
+- `RESET_CONCLUIDO` - Reset de senha concluído
+- `SENHA_DEFINIDA` - Novo usuário definiu senha após convite
+- `USUARIO_PERMITIDO_CRIADO` - Superadmin criou novo usuário e enviou convite
+- `USUARIO_BLOQUEADO` - Superadmin bloqueou usuário
+- `USUARIO_DESBLOQUEADO` - Superadmin desbloqueou usuário
+- `ROLE_ALTERADA` - Superadmin alterou role de usuário
 
 ---
 

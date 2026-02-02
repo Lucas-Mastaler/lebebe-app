@@ -90,25 +90,31 @@ function SuperAdminPageContent() {
   async function handleAdicionarUsuario() {
     if (!novoEmail) return
 
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('usuarios_permitidos')
-      .insert({
-        email: novoEmail.toLowerCase().trim(),
-        role: novaRole,
-        ativo: true,
+    try {
+      const response = await fetch('/api/superadmin/adicionar-usuario', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: novoEmail.toLowerCase().trim(),
+          role: novaRole,
+        }),
       })
 
-    if (!error) {
-      await registrarAuditoria('USUARIO_PERMITIDO_CRIADO', currentUser || undefined, {
-        novo_usuario: novoEmail,
-        role: novaRole,
-      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        alert('Erro: ' + (data.error || 'Erro ao adicionar usuário'))
+        return
+      }
+
+      alert(data.message || 'Convite enviado com sucesso!')
       setNovoEmail('')
       setNovaRole('user')
       setDialogOpen(false)
       await loadUsuarios()
-    } else {
+    } catch (error: any) {
       alert('Erro ao adicionar usuário: ' + error.message)
     }
   }

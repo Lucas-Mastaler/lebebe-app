@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { createClient } from '@/lib/supabase/server'
 import { registrarAuditoria } from '@/lib/auth/helpers'
 import { enviarEmail, gerarHtmlConvite } from '@/lib/email/resend'
+import { gerarTokenConvite } from '@/lib/crypto/tokens'
 import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
@@ -64,44 +65,14 @@ export async function POST(request: Request) {
       }
     }
 
-    const supabaseAdmin = createServiceClient()
-
-    console.log(`[RESEND INVITE] Gerando novo link de convite para ${emailNormalizado}`)
+    console.log(`[RESEND INVITE] Gerando novo token seguro para ${emailNormalizado}`)
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3000'
+    const inviteToken = gerarTokenConvite()
+    const expiresAt = new Date()
+    expiresAt.setHours(expiresAt.getHours() + 24)
 
-    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'invite',
-      email: emailNormalizado,
-      options: {
-        redirectTo: `${appUrl}/definir-senha`,
-      }
-    })
-
-    if (inviteError || !inviteData.properties?.action_link) {
-      console.error('[RESEND INVITE ERROR]', inviteError)
-      
-      await supabase
-        .from('usuarios_permitidos')
-        .update({ invite_status: 'failed' })
-        .eq('email', emailNormalizado)
-
-      await registrarAuditoria('INVITE_EMAIL_FAILED', emailNormalizado, {
-        action: 'resend',
-        error: inviteError?.message || 'Link não gerado',
-      }, {
-        baseUrl: request.headers.get('origin') || undefined,
-      })
-
-      return NextResponse.json(
-        { ok: false, message: 'Erro ao gerar link de convite: ' + (inviteError?.message || 'Link não gerado') },
-        { status: 500 }
-      )
-    }
-
-    console.log(`[RESEND INVITE] Link gerado com sucesso para ${emailNormalizado}`)
-
-    const confirmUrl = inviteData.properties.action_link
+    const confirmUrl = `${appUrl}/api/auth/convite/${inviteToken}`
 
     console.log(`[RESEND] Enviando email para ${emailNormalizado}`)
 
@@ -151,6 +122,8 @@ export async function POST(request: Request) {
       .update({
         last_invite_sent_at: new Date().toISOString(),
         invite_status: 'sent',
+        invite_token: inviteToken,
+        invite_token_expires_at: expiresAt.toISOString(),
       })
       .eq('email', emailNormalizado)
 

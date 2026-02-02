@@ -68,14 +68,17 @@ export async function POST(request: Request) {
 
     console.log(`[RESEND INVITE] Gerando novo link de convite para ${emailNormalizado}`)
 
-    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
-      emailNormalizado,
-      {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/definir-senha`,
-      }
-    )
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3000'
 
-    if (inviteError) {
+    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'invite',
+      email: emailNormalizado,
+      options: {
+        redirectTo: `${appUrl}/definir-senha`,
+      }
+    })
+
+    if (inviteError || !inviteData.properties?.action_link) {
       console.error('[RESEND INVITE ERROR]', inviteError)
       
       await supabase
@@ -85,24 +88,26 @@ export async function POST(request: Request) {
 
       await registrarAuditoria('INVITE_EMAIL_FAILED', emailNormalizado, {
         action: 'resend',
-        error: inviteError.message,
+        error: inviteError?.message || 'Link não gerado',
       }, {
         baseUrl: request.headers.get('origin') || undefined,
       })
 
       return NextResponse.json(
-        { ok: false, message: 'Erro ao gerar link de convite: ' + inviteError.message },
+        { ok: false, message: 'Erro ao gerar link de convite: ' + (inviteError?.message || 'Link não gerado') },
         { status: 500 }
       )
     }
 
     console.log(`[RESEND INVITE] Link gerado com sucesso para ${emailNormalizado}`)
 
+    const confirmUrl = inviteData.properties.action_link
+
     console.log(`[RESEND] Enviando email para ${emailNormalizado}`)
 
     try {
       const htmlEmail = gerarHtmlConvite({ 
-        confirmUrl: `${process.env.NEXT_PUBLIC_APP_URL}/definir-senha`,
+        confirmUrl,
         email: emailNormalizado 
       })
 

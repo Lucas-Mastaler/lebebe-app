@@ -45,11 +45,13 @@ export async function POST(request: Request) {
 
     console.log(`[RESET] Gerando link de recuperação para ${emailNormalizado}`)
 
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3000'
+
     const { data, error: resetError } = await supabaseAdmin.auth.admin.generateLink({
       type: 'recovery',
       email: emailNormalizado,
       options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/resetar-senha`,
+        redirectTo: `${appUrl}/resetar-senha`,
       }
     })
 

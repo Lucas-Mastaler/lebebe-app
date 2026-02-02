@@ -84,14 +84,17 @@ export async function POST(request: Request) {
 
     console.log(`[INVITE] Gerando link de convite para ${emailNormalizado}`)
 
-    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
-      emailNormalizado,
-      {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/definir-senha`,
-      }
-    )
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3000'
 
-    if (inviteError) {
+    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'invite',
+      email: emailNormalizado,
+      options: {
+        redirectTo: `${appUrl}/definir-senha`,
+      }
+    })
+
+    if (inviteError || !inviteData.properties?.action_link) {
       console.error('[INVITE ERROR]', inviteError)
       
       if (usuarioExistente) {
@@ -103,28 +106,26 @@ export async function POST(request: Request) {
 
       await registrarAuditoria('INVITE_EMAIL_FAILED', user.email, {
         target_email: emailNormalizado,
-        error: inviteError.message,
+        error: inviteError?.message || 'Link não gerado',
       }, {
         baseUrl: request.headers.get('origin') || undefined,
       })
 
       return NextResponse.json(
-        { ok: false, message: 'Erro ao gerar link de convite: ' + inviteError.message },
+        { ok: false, message: 'Erro ao gerar link de convite: ' + (inviteError?.message || 'Link não gerado') },
         { status: 500 }
       )
     }
 
     console.log(`[INVITE] Link gerado com sucesso para ${emailNormalizado}`)
 
-    const confirmUrl = inviteData.user?.confirmation_sent_at 
-      ? `${process.env.NEXT_PUBLIC_APP_URL}/definir-senha` 
-      : `${process.env.NEXT_PUBLIC_APP_URL}/definir-senha`
+    const confirmUrl = inviteData.properties.action_link
 
     console.log(`[RESEND] Enviando email para ${emailNormalizado}`)
 
     try {
       const htmlEmail = gerarHtmlConvite({ 
-        confirmUrl: `${process.env.NEXT_PUBLIC_APP_URL}/definir-senha`,
+        confirmUrl,
         email: emailNormalizado 
       })
 

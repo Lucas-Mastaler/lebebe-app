@@ -15,20 +15,26 @@ export default function RecuperarSenhaPage() {
     setLoading(true)
 
     try {
-      const supabase = createClient()
+      const response = await fetch('/api/auth/recuperar-senha', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: email.toLowerCase().trim(),
+        }),
+      })
 
-      const { error } = await supabase.auth.resetPasswordForEmail(
-        email.toLowerCase().trim(),
-        {
-          redirectTo: `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/resetar-senha`,
-        }
-      )
+      const data = await response.json()
 
-      await registrarAuditoria('RESET_SOLICITADO', email.toLowerCase().trim())
+      if (!response.ok) {
+        console.error('Erro ao solicitar recuperação:', data.message)
+      }
 
       setSuccess(true)
     } catch (err) {
       console.error('Erro ao solicitar recuperação:', err)
+      setSuccess(true)
     } finally {
       setLoading(false)
     }

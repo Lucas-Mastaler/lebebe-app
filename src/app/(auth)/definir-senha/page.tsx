@@ -9,7 +9,7 @@ import { Eye, EyeOff } from 'lucide-react'
 function DefinirSenhaContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [step, setStep] = useState<'initial' | 'form' | 'success' | 'error'>('initial')
+  const [step, setStep] = useState<'initial' | 'form' | 'success' | 'error' | 'expired'>('initial')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -17,10 +17,20 @@ function DefinirSenhaContent() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [exchangeLoading, setExchangeLoading] = useState(false)
+  const [resendLoading, setResendLoading] = useState(false)
+  const [userEmail, setUserEmail] = useState('')
 
   useEffect(() => {
+    const errorCode = searchParams.get('error_code')
+    const errorDesc = searchParams.get('error_description')
     const token_hash = searchParams.get('token_hash')
     const type = searchParams.get('type')
+    
+    if (errorCode === 'otp_expired' || errorCode === 'access_denied') {
+      setStep('expired')
+      setError('Link expirou ou já foi usado.')
+      return
+    }
     
     if (!token_hash || !type) {
       setStep('error')
@@ -68,6 +78,46 @@ function DefinirSenhaContent() {
     }
   }
 
+  async function handleResendInvite() {
+    if (!userEmail) {
+      setError('Email não disponível. Por favor, contate o administrador.')
+      return
+    }
+
+    if (resendLoading) return
+
+    setResendLoading(true)
+    setError('')
+
+    try {
+      const response = await fetch('/api/superadmin/reenviar-convite', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: userEmail,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setError(data.message || 'Erro ao reenviar convite')
+        setResendLoading(false)
+        return
+      }
+
+      setStep('success')
+      setError('')
+      
+    } catch (err: any) {
+      setError('Erro ao processar requisição: ' + err.message)
+    } finally {
+      setResendLoading(false)
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
@@ -95,6 +145,8 @@ function DefinirSenhaContent() {
         return
       }
 
+      setUserEmail(currentUser.email)
+
       const { error: updateError } = await supabase.auth.updateUser({
         password: password,
       })
@@ -118,6 +170,75 @@ function DefinirSenhaContent() {
       setError('Erro ao processar requisição: ' + err.message)
       setLoading(false)
     }
+  }
+
+  if (step === 'expired') {
+    return (
+      <div className="w-full max-w-md">
+        <div className="bg-white rounded-2xl shadow-xl p-8">
+          <div className="text-center">
+            <div className="mx-auto w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">
+              Link Expirado
+            </h1>
+            <p className="text-gray-600 mb-6">
+              Este link de convite expirou ou já foi usado. Solicite um novo convite ao administrador ou clique no botão abaixo para reenviar.
+            </p>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm mb-4">
+                {error}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Seu e-mail
+                </label>
+                <input
+                  type="email"
+                  value={userEmail}
+                  onChange={(e) => setUserEmail(e.target.value)}
+                  disabled={resendLoading}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none disabled:bg-gray-100"
+                  placeholder="seu@email.com"
+                />
+              </div>
+
+              <button
+                onClick={handleResendInvite}
+                disabled={resendLoading || !userEmail}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-6 py-3 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {resendLoading ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                    </svg>
+                    Reenviando...
+                  </>
+                ) : (
+                  'Reenviar Convite'
+                )}
+              </button>
+
+              <a
+                href="/login"
+                className="block text-center text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+              >
+                Voltar para Login
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (step === 'error') {

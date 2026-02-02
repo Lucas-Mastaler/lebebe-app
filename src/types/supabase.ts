@@ -29,6 +29,10 @@ export type AcaoAuditoria =
   | 'USUARIO_BLOQUEADO'
   | 'USUARIO_DESBLOQUEADO'
   | 'ROLE_ALTERADA'
+  | 'INVITE_EMAIL_SENT'
+  | 'INVITE_EMAIL_FAILED'
+  | 'RESET_EMAIL_SENT'
+  | 'RESET_EMAIL_FAILED'
 
 export interface RegistrarAuditoriaParams {
   acao: AcaoAuditoria

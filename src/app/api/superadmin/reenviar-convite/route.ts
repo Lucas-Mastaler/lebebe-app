@@ -1,5 +1,4 @@
 import { createServiceClient } from '@/lib/supabase/service'
-import { createClient } from '@/lib/supabase/server'
 import { registrarAuditoria } from '@/lib/auth/helpers'
 import { enviarEmail, gerarHtmlConvite } from '@/lib/email/resend'
 import { gerarTokenConvite } from '@/lib/crypto/tokens'
@@ -25,9 +24,9 @@ export async function POST(request: Request) {
       )
     }
 
-    const supabase = await createClient()
+    const supabaseAdmin = createServiceClient()
     
-    const { data: usuarioExistente } = await supabase
+    const { data: usuarioExistente } = await supabaseAdmin
       .from('usuarios_permitidos')
       .select('id, ativo, last_invite_sent_at, invite_status, role')
       .eq('email', emailNormalizado)
@@ -72,14 +71,47 @@ export async function POST(request: Request) {
     const expiresAt = new Date()
     expiresAt.setHours(expiresAt.getHours() + 24)
 
-    const confirmUrl = `${appUrl}/api/auth/convite/${inviteToken}`
+    const confirmUrl = `${appUrl}/convite/${inviteToken}`
+
+    const updatePayload: Record<string, any> = {
+      last_invite_sent_at: new Date().toISOString(),
+      invite_status: 'sent',
+      invite_token: inviteToken,
+      invite_token_expires_at: expiresAt.toISOString(),
+      invite_token_used_at: null,
+    }
+
+    let updateError = (
+      await supabaseAdmin
+        .from('usuarios_permitidos')
+        .update(updatePayload)
+        .eq('email', emailNormalizado)
+    ).error
+
+    if (updateError && String(updateError.message || '').includes('invite_token_used_at')) {
+      delete updatePayload.invite_token_used_at
+      updateError = (
+        await supabaseAdmin
+          .from('usuarios_permitidos')
+          .update(updatePayload)
+          .eq('email', emailNormalizado)
+      ).error
+    }
+
+    if (updateError) {
+      console.error('[RESEND INVITE] Erro ao atualizar registro:', updateError)
+      return NextResponse.json(
+        { ok: false, message: 'Erro ao atualizar registro de permissão' },
+        { status: 500 }
+      )
+    }
 
     console.log(`[RESEND] Enviando email para ${emailNormalizado}`)
 
     try {
-      const htmlEmail = gerarHtmlConvite({ 
+      const htmlEmail = gerarHtmlConvite({
         confirmUrl,
-        email: emailNormalizado 
+        email: emailNormalizado,
       })
 
       await enviarEmail({
@@ -95,11 +127,10 @@ export async function POST(request: Request) {
       }, {
         baseUrl: request.headers.get('origin') || undefined,
       })
-
     } catch (emailError: any) {
       console.error('[RESEND ERROR]', emailError)
-      
-      await supabase
+
+      await supabaseAdmin
         .from('usuarios_permitidos')
         .update({ invite_status: 'failed' })
         .eq('email', emailNormalizado)
@@ -115,20 +146,6 @@ export async function POST(request: Request) {
         { ok: false, message: 'Erro ao enviar email: ' + emailError.message },
         { status: 500 }
       )
-    }
-
-    const { error: updateError } = await supabase
-      .from('usuarios_permitidos')
-      .update({
-        last_invite_sent_at: new Date().toISOString(),
-        invite_status: 'sent',
-        invite_token: inviteToken,
-        invite_token_expires_at: expiresAt.toISOString(),
-      })
-      .eq('email', emailNormalizado)
-
-    if (updateError) {
-      console.error('[RESEND INVITE] Erro ao atualizar registro:', updateError)
     }
 
     await registrarAuditoria('USUARIO_PERMITIDO_CRIADO', emailNormalizado, {

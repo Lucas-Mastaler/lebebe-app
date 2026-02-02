@@ -189,7 +189,7 @@ export async function POST(request: Request) {
       email: emailNormalizado,
       role: role,
       ativo: true,
-      created_by: user.email,
+      created_by: user.id,
       last_invite_sent_at: new Date().toISOString(),
       invite_status: 'sent',
       invite_token: inviteToken,

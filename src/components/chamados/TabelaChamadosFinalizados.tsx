@@ -98,15 +98,15 @@ export function TabelaChamadosFinalizados({ data, isLoading, error, onPageChange
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-50 border-b border-slate-200 hover:bg-slate-50">
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[220px] sticky left-0 bg-slate-50 z-10">Nome Digisac</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[150px]">Loja</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px]">Consultora</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px]">Mensagens agendadas</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[240px]">Tags</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[140px]">Qtd (total)</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[160px]">Qtd (em aberto)</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px]">Qtd (finalizados)</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[140px]">Qtd (erro)</TableHead>
+                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[220px] sticky left-0 top-0 bg-slate-50 z-10">Nome Digisac</TableHead>
+                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[150px] sticky top-0 bg-slate-50 z-10">Loja</TableHead>
+                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px] sticky top-0 bg-slate-50 z-10">Consultora</TableHead>
+                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px] sticky top-0 bg-slate-50 z-10">Mensagens agendadas</TableHead>
+                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[240px] sticky top-0 bg-slate-50 z-10">Tags</TableHead>
+                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[140px] sticky top-0 bg-slate-50 z-10">Qtd (total)</TableHead>
+                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[160px] sticky top-0 bg-slate-50 z-10">Qtd (em aberto)</TableHead>
+                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px] sticky top-0 bg-slate-50 z-10">Qtd (finalizados)</TableHead>
+                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[140px] sticky top-0 bg-slate-50 z-10">Qtd (erro)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

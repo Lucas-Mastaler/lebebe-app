@@ -356,6 +356,13 @@ export async function pesquisarDashboard(filtros: FiltrosDashboardService): Prom
       ? Number((agendamentosCriadosNoPeriodo / totalClientesUnicos).toFixed(2))
       : 0;
 
+    const ratioChamadosAtivosPorUnicoAtivo = totalClientesUnicosAtivo > 0
+      ? Number((totalChamadosAtivosNoPeriodo / totalClientesUnicosAtivo).toFixed(2))
+      : 0;
+    const ratioChamadosReceptivosPorUnicoReceptivo = totalClientesUnicosReceptivo > 0
+      ? Number((totalChamadosReceptivosNoPeriodo / totalClientesUnicosReceptivo).toFixed(2))
+      : 0;
+
     // Montar detalhes de clientes desta filial
     const clientesDetalhe: DashboardClienteDetalhe[] = [];
     const setFilial = contatosPorFilial.get(departmentId) || new Set<string>();
@@ -376,6 +383,8 @@ export async function pesquisarDashboard(filtros: FiltrosDashboardService): Prom
       totalChamadosReceptivosNoPeriodo,
       totalClientesUnicosAtivo,
       totalClientesUnicosReceptivo,
+      ratioChamadosAtivosPorUnicoAtivo,
+      ratioChamadosReceptivosPorUnicoReceptivo,
       totalChamadosHistoricoSomadoFilial: totalHistoricoPorFilial.get(departmentId) || 0,
       clientesDetalhe,
     });

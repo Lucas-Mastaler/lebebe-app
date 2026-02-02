@@ -76,6 +76,8 @@ export interface DashboardLinha {
   totalClientesUnicosReceptivo: number;
   totalChamadosHistoricoSomadoFilial?: number;
   clientesDetalhe?: DashboardClienteDetalhe[];
+  ratioChamadosAtivosPorUnicoAtivo?: number;
+  ratioChamadosReceptivosPorUnicoReceptivo?: number;
 }
 
 export interface DashboardResponse {

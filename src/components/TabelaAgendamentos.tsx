@@ -155,31 +155,31 @@ export function TabelaAgendamentos({
                         <Table>
                             <TableHeader>
                                 <TableRow className="bg-slate-50 border-b border-slate-200 hover:bg-slate-50">
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[150px]">Loja</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px]">Consultora</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px]">Nome Whatsapp</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px]">Nome Digisac</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[250px]">Mensagem agendada</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[250px]">Comentário</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[200px]">Tags</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[150px] sticky left-0 top-0 bg-slate-50 z-10">Loja</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px] sticky top-0 bg-slate-50 z-10">Consultora</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px] sticky top-0 bg-slate-50 z-10">Nome Whatsapp</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px] sticky top-0 bg-slate-50 z-10">Nome Digisac</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[250px] sticky top-0 bg-slate-50 z-10">Mensagem agendada</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[250px] sticky top-0 bg-slate-50 z-10">Comentário</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[200px] sticky top-0 bg-slate-50 z-10">Tags</TableHead>
                                     {/* Campos Personalizados REMOVIDO */}
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[100px]">Status</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[100px] sticky top-0 bg-slate-50 z-10">Status</TableHead>
                                     {/* Novas Colunas */}
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[120px]">Status chamado</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[160px]">Último chamado fechado</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[120px] sticky top-0 bg-slate-50 z-10">Status chamado</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[160px] sticky top-0 bg-slate-50 z-10">Último chamado fechado</TableHead>
 
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[100px]">Abrir ticket?</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[100px]">Notificar?</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[120px]">Agendado (dia)</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[100px]">Agendado (hr)</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[120px]">Criado em</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[120px]">Atualizado em</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[100px] sticky top-0 bg-slate-50 z-10">Abrir ticket?</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[100px] sticky top-0 bg-slate-50 z-10">Notificar?</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[120px] sticky top-0 bg-slate-50 z-10">Agendado (dia)</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[100px] sticky top-0 bg-slate-50 z-10">Agendado (hr)</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[120px] sticky top-0 bg-slate-50 z-10">Criado em</TableHead>
+                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[120px] sticky top-0 bg-slate-50 z-10">Atualizado em</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {filteredItems.map((item) => (
                                     <TableRow key={item.id} className="hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0">
-                                        <TableCell className="whitespace-nowrap font-medium text-slate-700">{item.loja || '-'}</TableCell>
+                                        <TableCell className="whitespace-nowrap font-medium text-slate-700 sticky left-0 bg-white z-10">{item.loja || '-'}</TableCell>
                                         <TableCell className="whitespace-nowrap">{item.consultora || '-'}</TableCell>
                                         <TableCell className="whitespace-nowrap font-medium text-slate-800">{item.nomeWhatsapp || '-'}</TableCell>
                                         <TableCell className="whitespace-nowrap text-slate-600">{item.nomeDigisac || '-'}</TableCell>

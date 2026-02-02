@@ -93,14 +93,22 @@ export default function Page() {
     const ratioAgendamentosPorCliente =
       totalClientesUnicos > 0 ? (agendamentosCriadosNoPeriodo / totalClientesUnicos).toFixed(2) : '-';
 
+    const ratioChamadosAtivosPorUnicoAtivo =
+      totalClientesUnicosAtivo > 0 ? (totalChamadosAtivosNoPeriodo / totalClientesUnicosAtivo).toFixed(2) : '-';
+
+    const ratioChamadosReceptivosPorUnicoReceptivo =
+      totalClientesUnicosReceptivo > 0 ? (totalChamadosReceptivosNoPeriodo / totalClientesUnicosReceptivo).toFixed(2) : '-';
+
     return {
       totalClientesUnicos,
       agendamentosCriadosNoPeriodo,
       ratioAgendamentosPorCliente,
       totalChamadosAtivosNoPeriodo,
+      ratioChamadosAtivosPorUnicoAtivo,
       totalChamadosReceptivosNoPeriodo,
       totalClientesUnicosAtivo,
       totalClientesUnicosReceptivo,
+      ratioChamadosReceptivosPorUnicoReceptivo,
       totalChamadosHistoricoSomadoFilial,
     };
   }, [data]);
@@ -233,22 +241,23 @@ export default function Page() {
             <table className="min-w-[960px] w-full">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="text-left px-4 py-2">Filial</th>
-                  <th className="text-center px-4 py-2">Clientes únicos</th>
-                  <th className="text-center px-4 py-2">Agendamentos criados</th>
-                  <th className="text-center px-4 py-2">Agendamentos/Cliente</th>
-                  <th className="text-center px-4 py-2">
+                  <th className="text-left px-4 py-2 sticky left-0 top-0 bg-slate-50 z-10">Filial</th>
+                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Clientes únicos</th>
+                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Agendamentos criados</th>
+                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Agendamentos/Cliente</th>
+                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">
                     Chamados ATIVOS<br />
                     (Chamamos o cliente)
                   </th>
-                  <th className="text-center px-4 py-2">
+                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Cl. Únicos<br /> ATIVO</th>
+                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados ativos/<br></br>Cl. Únicos ativos</th>
+                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">
                     Chamados RECEPTIVOS<br />
                     (Cliente chamou)
                   </th>
-
-                  <th className="text-center px-4 py-2">Cl. Únicos<br /> ATIVO</th>
-                  <th className="text-center px-4 py-2">Cl. Únicos<br /> RECEPTIVO</th>
-                  <th className="text-center px-4 py-2">Chamados históricos (soma)</th>
+                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Cl. Únicos<br /> RECEPTIVO</th>
+                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados RECEPTIVO/<br></br>Cl. Únicos RECEPTIVOS</th>
+                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados históricos (soma)</th>
                 </tr>
               </thead>
               <tbody>
@@ -260,28 +269,32 @@ export default function Page() {
                       ${index % 2 === 0 ? 'bg-white' : 'bg-sky-50'}
                     `}
                   >
-                    <td className="px-4 py-2 font-medium text-left">{l.filial || '-'}</td>
+                    <td className={`px-4 py-2 font-medium text-left sticky left-0 z-10 ${index % 2 === 0 ? 'bg-white' : 'bg-sky-50'}`}>{l.filial || '-'}</td>
                     <td className="px-4 py-2 text-center">{l.totalClientesUnicos}</td>
                     <td className="px-4 py-2 text-center">{l.agendamentosCriadosNoPeriodo}</td>
                     <td className="px-4 py-2 text-center">{l.ratioAgendamentosPorCliente}</td>
                     <td className="px-4 py-2 text-center">{l.totalChamadosAtivosNoPeriodo}</td>
-                    <td className="px-4 py-2 text-center">{l.totalChamadosReceptivosNoPeriodo}</td>
                     <td className="px-4 py-2 text-center">{l.totalClientesUnicosAtivo}</td>
+                    <td className="px-4 py-2 text-center">{l.ratioChamadosAtivosPorUnicoAtivo}</td>
+                    <td className="px-4 py-2 text-center">{l.totalChamadosReceptivosNoPeriodo}</td>
                     <td className="px-4 py-2 text-center">{l.totalClientesUnicosReceptivo}</td>
+                    <td className="px-4 py-2 text-center">{l.ratioChamadosReceptivosPorUnicoReceptivo}</td>
                     <td className="px-4 py-2 text-center font-semibold">{l.totalChamadosHistoricoSomadoFilial ?? '-'}</td>
                   </tr>
                 ))}
 
                 {/* TOTAL */}
                 <tr className="border-t bg-slate-100 font-semibold">
-                  <td className="px-4 py-3 text-left">TOTAL</td>
+                  <td className="px-4 py-3 text-left sticky left-0 z-10 bg-slate-100">TOTAL</td>
                   <td className="px-4 py-3 text-center">{totaisFiliais.totalClientesUnicos}</td>
                   <td className="px-4 py-3 text-center">{totaisFiliais.agendamentosCriadosNoPeriodo}</td>
                   <td className="px-4 py-3 text-center">{totaisFiliais.ratioAgendamentosPorCliente}</td>
                   <td className="px-4 py-3 text-center">{totaisFiliais.totalChamadosAtivosNoPeriodo}</td>
-                  <td className="px-4 py-3 text-center">{totaisFiliais.totalChamadosReceptivosNoPeriodo}</td>
                   <td className="px-4 py-3 text-center">{totaisFiliais.totalClientesUnicosAtivo}</td>
+                  <td className="px-4 py-3 text-center">{totaisFiliais.ratioChamadosAtivosPorUnicoAtivo}</td>
+                  <td className="px-4 py-3 text-center">{totaisFiliais.totalChamadosReceptivosNoPeriodo}</td>
                   <td className="px-4 py-3 text-center">{totaisFiliais.totalClientesUnicosReceptivo}</td>
+                  <td className="px-4 py-3 text-center">{totaisFiliais.ratioChamadosReceptivosPorUnicoReceptivo}</td>
                   <td className="px-4 py-3 text-center">{totaisFiliais.totalChamadosHistoricoSomadoFilial}</td>
                 </tr>
               </tbody>
@@ -523,17 +536,17 @@ export default function Page() {
                 <table className="min-w-[960px] w-full">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200">
-                      <th className="text-left px-4 py-2">Consultora</th>
-                      <th className="text-center px-4 py-2">Clientes únicos</th>
-                      <th className="text-center px-4 py-2">Agendamentos criados</th>
-                      <th className="text-center px-4 py-2">Agendamentos/<br></br>Cliente</th>
-                      <th className="text-center px-4 py-2">Chamados ATIVOS</th>
-                      <th className="text-center px-4 py-2">Cl. Únicos ATIVO</th>
-                      <th className="text-center px-4 py-2">Chamados ativos/<br></br>Cl. Únicos ativos</th>
-                      <th className="text-center px-4 py-2">Chamados RECEPTIVOS</th>
-                      <th className="text-center px-4 py-2">Cl. Únicos RECEPTIVO</th>
-                      <th className="text-center px-4 py-2">Chamados RECEPTIVO/<br></br>Cl. Únicos RECEPTIVOS</th>
-                      <th className="text-center px-4 py-2">Chamados históricos (soma)</th>
+                      <th className="text-left px-4 py-2 sticky left-0 top-0 bg-slate-50 z-10">Consultora</th>
+                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Clientes únicos</th>
+                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Agendamentos criados</th>
+                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Agendamentos/<br></br>Cliente</th>
+                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados ATIVOS</th>
+                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Cl. Únicos ATIVO</th>
+                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados ativos/<br></br>Cl. Únicos ativos</th>
+                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados RECEPTIVOS</th>
+                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Cl. Únicos RECEPTIVO</th>
+                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados RECEPTIVO/<br></br>Cl. Únicos RECEPTIVOS</th>
+                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados históricos (soma)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -545,7 +558,7 @@ export default function Page() {
                           ${index % 2 === 0 ? 'bg-white' : 'bg-sky-50'}
                         `}
                       >
-                        <td className="px-4 py-2 font-medium text-left">{l.consultora || '-'}</td>
+                        <td className={`px-4 py-2 font-medium text-left sticky left-0 z-10 ${index % 2 === 0 ? 'bg-white' : 'bg-sky-50'}`}>{l.consultora || '-'}</td>
 
                         <td className="px-4 py-2 text-center">{l.totalClientesUnicos}</td>
                         <td className="px-4 py-2 text-center">{l.agendamentosCriadosNoPeriodo}</td>
@@ -565,7 +578,7 @@ export default function Page() {
 
                     {/* TOTAL */}
                     <tr className="border-t bg-slate-100 font-semibold">
-                      <td className="px-4 py-3 text-left">TOTAL</td>
+                      <td className="px-4 py-3 text-left sticky left-0 z-10 bg-slate-100">TOTAL</td>
 
                       <td className="px-4 py-3 text-center">{totaisConsultoras.totalClientesUnicos}</td>
                       <td className="px-4 py-3 text-center">{totaisConsultoras.agendamentosCriadosNoPeriodo}</td>

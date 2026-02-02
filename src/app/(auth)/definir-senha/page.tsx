@@ -21,21 +21,40 @@ function DefinirSenhaContent() {
   const [userEmail, setUserEmail] = useState('')
 
   useEffect(() => {
-    const errorCode = searchParams.get('error_code')
-    const errorDesc = searchParams.get('error_description')
-    const token_hash = searchParams.get('token_hash')
-    const type = searchParams.get('type')
-    
-    if (errorCode === 'otp_expired' || errorCode === 'access_denied') {
-      setStep('expired')
-      setError('Link expirou ou já foi usado.')
-      return
+    const checkAuth = async () => {
+      const errorCode = searchParams.get('error_code')
+      const hash = window.location.hash
+      
+      if (errorCode === 'otp_expired' || errorCode === 'access_denied') {
+        setStep('expired')
+        setError('Link expirou ou já foi usado.')
+        return
+      }
+      
+      if (hash && hash.includes('access_token')) {
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (session?.user) {
+          setUserEmail(session.user.email || '')
+          setStep('form')
+        } else {
+          setStep('error')
+          setError('Sessão inválida. Solicite um novo convite ao administrador.')
+        }
+        return
+      }
+      
+      const token_hash = searchParams.get('token_hash')
+      const type = searchParams.get('type')
+      
+      if (!token_hash || !type) {
+        setStep('error')
+        setError('Link inválido ou expirado. Solicite um novo convite ao administrador.')
+      }
     }
     
-    if (!token_hash || !type) {
-      setStep('error')
-      setError('Link inválido ou expirado. Solicite um novo convite ao administrador.')
-    }
+    checkAuth()
   }, [searchParams])
 
   async function handleValidateInvite() {

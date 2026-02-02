@@ -4,10 +4,10 @@ import { NextResponse } from 'next/server'
 
 export async function GET(
   request: Request,
-  { params }: { params: { token: string } }
+  { params }: { params: Promise<{ token: string }> }
 ) {
   try {
-    const token = params.token
+    const { token } = await params
 
     if (!token || token.length !== 64) {
       return NextResponse.redirect(

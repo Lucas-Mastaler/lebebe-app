@@ -1,4 +1,3 @@
-import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { NextResponse } from 'next/server'
 
@@ -15,9 +14,9 @@ export async function GET(
       )
     }
 
-    const supabase = await createClient()
+    const supabaseAdmin = createServiceClient()
 
-    const { data: usuario, error } = await supabase
+    const { data: usuario, error } = await supabaseAdmin
       .from('usuarios_permitidos')
       .select('email, invite_token, invite_token_expires_at, invite_status')
       .eq('invite_token', token)
@@ -39,7 +38,7 @@ export async function GET(
     if (!usuario.invite_token_expires_at || new Date(usuario.invite_token_expires_at) < new Date()) {
       console.error('[CONVITE] Token expirado:', token)
       
-      await supabase
+      await supabaseAdmin
         .from('usuarios_permitidos')
         .update({ invite_status: 'expired' })
         .eq('invite_token', token)
@@ -49,7 +48,6 @@ export async function GET(
       )
     }
 
-    const supabaseAdmin = createServiceClient()
     const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') || 'http://localhost:3000'
 
     console.log(`[CONVITE] Gerando link OTP para ${usuario.email}`)

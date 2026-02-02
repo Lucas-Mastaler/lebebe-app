@@ -9,7 +9,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const pathname = usePathname();
 
-    const publicRoutes = ['/login', '/recuperar-senha', '/resetar-senha'];
+    const publicRoutes = ['/login', '/recuperar-senha', '/resetar-senha', '/definir-senha'];
     const isPublicRoute = publicRoutes.some(route => pathname?.startsWith(route));
 
     if (isPublicRoute) {

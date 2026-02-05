@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { deveDesconectarPorHorario } from '@/lib/auth/auto-logout'
 
 type CookieToSet = {
   name: string
@@ -69,6 +70,26 @@ export async function middleware(request: NextRequest) {
     if (!usuarioPermitido.ativo) {
       await supabase.auth.signOut()
       return NextResponse.redirect(new URL('/login', request.url))
+    }
+
+    // Verificar logout automático (apenas para não-superadmin)
+    if (usuarioPermitido.role !== 'superadmin') {
+      const { data: sessaoLogout } = await supabase
+        .from('sessoes_logout_automatico')
+        .select('ultimo_logout_automatico')
+        .eq('email', user.email?.toLowerCase())
+        .single()
+
+      const deveDesconectar = deveDesconectarPorHorario(
+        usuarioPermitido.role,
+        sessaoLogout?.ultimo_logout_automatico
+      )
+
+      if (deveDesconectar) {
+        console.log(`[MIDDLEWARE] Desconectando ${user.email} - passou das 19h BRT e não foi desconectado hoje`)
+        await supabase.auth.signOut()
+        return NextResponse.redirect(new URL('/login?auto_logout=true', request.url))
+      }
     }
 
     // Verificar acesso a área superadmin

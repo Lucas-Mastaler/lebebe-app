@@ -20,7 +20,7 @@ interface Props {
   isLoading: boolean;
   error: string | null;
   onPageChange: (page: number) => void;
-  onVerAgendamentos: (contactId: string) => void;
+  onVerAgendamentos: (contactId: string, nomeDigisac: string | null | undefined) => void;
 }
 
 function Badge({ color, children }: { color: "neutral" | "green" | "blue" | "red"; children: React.ReactNode }) {
@@ -121,7 +121,7 @@ export function TabelaChamadosFinalizados({ data, isLoading, error, onPageChange
                     <TableCell className="whitespace-nowrap">{item.loja || '-'}</TableCell>
                     <TableCell className="whitespace-nowrap">{item.consultora || '-'}</TableCell>
                     <TableCell className="whitespace-nowrap">
-                      <Button variant="outline" size="sm" className="rounded-xl" onClick={() => onVerAgendamentos(item.contactId)}>
+                      <Button variant="outline" size="sm" className="rounded-xl" onClick={() => onVerAgendamentos(item.contactId, item.nomeDigisac)}>
                         Ver agendamentos
                       </Button>
                     </TableCell>

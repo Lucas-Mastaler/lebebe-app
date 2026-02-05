@@ -12,6 +12,7 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [currentFiltros, setCurrentFiltros] = useState<any | null>(null);
   const [modalContactId, setModalContactId] = useState<string | null>(null);
+  const [modalNomeDigisac, setModalNomeDigisac] = useState<string | null>(null);
 
   const handlePesquisar = useCallback(async (filtros: any) => {
     setIsLoading(true);
@@ -72,9 +73,26 @@ export default function Page() {
 
       <FiltrosChamadosFinalizados onPesquisar={handlePesquisar} isLoading={isLoading} />
 
-      <TabelaChamadosFinalizados data={data} isLoading={isLoading} error={error} onPageChange={handlePageChange} onVerAgendamentos={(cid) => setModalContactId(cid)} />
+      <TabelaChamadosFinalizados
+        data={data}
+        isLoading={isLoading}
+        error={error}
+        onPageChange={handlePageChange}
+        onVerAgendamentos={(cid, nomeDigisac) => {
+          setModalContactId(cid);
+          setModalNomeDigisac(nomeDigisac?.trim() || null);
+        }}
+      />
 
-      <ModalAgendamentosCliente contactId={modalContactId} open={!!modalContactId} onClose={() => setModalContactId(null)} />
+      <ModalAgendamentosCliente
+        contactId={modalContactId}
+        nomeDigisac={modalNomeDigisac}
+        open={!!modalContactId}
+        onClose={() => {
+          setModalContactId(null);
+          setModalNomeDigisac(null);
+        }}
+      />
     </div>
   );
 }

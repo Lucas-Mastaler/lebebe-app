@@ -22,6 +22,7 @@ export type AcaoAuditoria =
   | 'LOGIN_SUCESSO'
   | 'LOGIN_FALHA'
   | 'LOGOUT'
+  | 'AUTO_LOGOUT_19H'
   | 'RESET_SOLICITADO'
   | 'RESET_CONCLUIDO'
   | 'SENHA_DEFINIDA'
@@ -38,4 +39,13 @@ export interface RegistrarAuditoriaParams {
   acao: AcaoAuditoria
   email?: string
   metadata?: Record<string, any>
+}
+
+export interface SessaoLogoutAutomatico {
+  id: string
+  usuario_id: string
+  email: string
+  ultimo_logout_automatico: string
+  created_at: string
+  updated_at: string
 }

@@ -12,6 +12,7 @@ import { AgendamentoContatoItem } from '@/types';
 
 interface Props {
   contactId: string | null;
+  nomeDigisac?: string | null;
   open: boolean;
   onClose: () => void;
 }
@@ -38,7 +39,7 @@ function rowStatusBgClasses(status: string) {
   return 'bg-green-100 hover:bg-green-200';
 }
 
-export function ModalAgendamentosCliente({ contactId, open, onClose }: Props) {
+export function ModalAgendamentosCliente({ contactId, nomeDigisac, open, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<AgendamentoContatoItem[]>([]);
 
@@ -70,8 +71,8 @@ export function ModalAgendamentosCliente({ contactId, open, onClose }: Props) {
       >
         {/* HEADER: fixo, sólido, sem “vazar”, e sem brigar com o X */}
         <DialogHeader className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm pr-12">
-          <DialogTitle className="text-lg font-semibold text-slate-900">
-            Agendamentos do cliente
+          <DialogTitle className="text-lg font-semibold text-slate-900 whitespace-pre-wrap break-words">
+            Agendamentos do cliente — {(nomeDigisac || '').trim() ? (nomeDigisac || '').trim() : '(Sem nome no Digisac)'}
           </DialogTitle>
         </DialogHeader>
 

@@ -42,6 +42,16 @@ export function Navigation({ userEmail, isSuperadmin }: NavigationProps) {
                 Agendamentos
               </Link>
               <Link
+                href="/horarios-agendamentos"
+                className={`px-3 py-2 rounded-md text-sm font-medium transition ${
+                  pathname === '/horarios-agendamentos'
+                    ? 'bg-indigo-100 text-indigo-700'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                Horários Agendamentos
+              </Link>
+              <Link
                 href="/chamados-finalizados"
                 className={`px-3 py-2 rounded-md text-sm font-medium transition ${
                   pathname === '/chamados-finalizados'

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { ChevronDown, ChevronUp, Search, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Calendar } from '@/components/ui/calendar';
@@ -12,6 +12,7 @@ import {
     CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Checkbox } from '@/components/ui/checkbox';
+import { cn } from '@/lib/utils';
 
 interface FiltrosHorariosAgendamentosProps {
     onPesquisar: (dataPesquisar: string, horaInicio: string, horaFim: string) => void;
@@ -62,6 +63,149 @@ function isValidTime(timeStr: string): boolean {
     return hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59;
 }
 
+function obterHojeBR(): Date {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function isHoje(dateStr: string): boolean {
+    const parsed = parseDate(dateStr);
+    if (!parsed) return false;
+    const hoje = obterHojeBR();
+    return parsed.getFullYear() === hoje.getFullYear()
+        && parsed.getMonth() === hoje.getMonth()
+        && parsed.getDate() === hoje.getDate();
+}
+
+function obterHorarioAtualMais1Min(): string {
+    const now = new Date();
+    const totalMin = now.getHours() * 60 + now.getMinutes() + 1;
+    const hh = Math.floor(totalMin / 60);
+    const mm = totalMin % 60;
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+// Gera lista de horas (0-23)
+const HORAS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+// Gera lista de minutos (0-59)
+const MINUTOS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+
+function SeletorHorario({
+    value,
+    onChange,
+    disabled,
+}: {
+    value: string;
+    onChange: (val: string) => void;
+    disabled?: boolean;
+}) {
+    const [open, setOpen] = useState(false);
+    const horaRef = useRef<HTMLDivElement>(null);
+    const minRef = useRef<HTMLDivElement>(null);
+
+    const [hh, mm] = value.split(':');
+    const horaAtual = hh || '07';
+    const minutoAtual = mm || '00';
+
+    useEffect(() => {
+        if (open) {
+            // Scroll para hora e minuto selecionados
+            setTimeout(() => {
+                const horaIdx = parseInt(horaAtual);
+                const minIdx = parseInt(minutoAtual);
+                if (horaRef.current) {
+                    const el = horaRef.current.children[horaIdx] as HTMLElement;
+                    el?.scrollIntoView({ block: 'center' });
+                }
+                if (minRef.current) {
+                    const el = minRef.current.children[minIdx] as HTMLElement;
+                    el?.scrollIntoView({ block: 'center' });
+                }
+            }, 50);
+        }
+    }, [open, horaAtual, minutoAtual]);
+
+    const handleSelectHora = (h: string) => {
+        onChange(`${h}:${minutoAtual}`);
+    };
+
+    const handleSelectMinuto = (m: string) => {
+        onChange(`${horaAtual}:${m}`);
+    };
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <div className="relative">
+                    <Input
+                        value={value}
+                        onChange={(e) => onChange(formatTimeInput(e.target.value))}
+                        placeholder="HH:mm"
+                        maxLength={5}
+                        disabled={disabled}
+                        className="rounded-xl border-slate-200 focus:ring-[#00A5E6] focus:ring-2 disabled:bg-slate-100 disabled:text-slate-500 pr-10"
+                    />
+                    <button
+                        type="button"
+                        onClick={() => { if (!disabled) setOpen(!open); }}
+                        disabled={disabled}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 disabled:opacity-50"
+                    >
+                        <Clock className="w-4 h-4" />
+                    </button>
+                </div>
+            </PopoverTrigger>
+            <PopoverContent className="w-[200px] p-0" align="start">
+                <div className="flex border-b border-slate-100 px-3 py-2">
+                    <span className="text-xs font-semibold text-slate-500 w-1/2 text-center">Hora</span>
+                    <span className="text-xs font-semibold text-slate-500 w-1/2 text-center">Min</span>
+                </div>
+                <div className="flex h-[200px]">
+                    <div ref={horaRef} className="w-1/2 overflow-y-auto border-r border-slate-100 scrollbar-thin">
+                        {HORAS.map(h => (
+                            <button
+                                key={h}
+                                type="button"
+                                onClick={() => handleSelectHora(h)}
+                                className={cn(
+                                    'w-full text-center py-1.5 text-sm hover:bg-[#00A5E6]/10 transition-colors',
+                                    h === horaAtual ? 'bg-[#00A5E6]/15 text-[#00A5E6] font-semibold' : 'text-slate-700'
+                                )}
+                            >
+                                {h}
+                            </button>
+                        ))}
+                    </div>
+                    <div ref={minRef} className="w-1/2 overflow-y-auto scrollbar-thin">
+                        {MINUTOS.map(m => (
+                            <button
+                                key={m}
+                                type="button"
+                                onClick={() => handleSelectMinuto(m)}
+                                className={cn(
+                                    'w-full text-center py-1.5 text-sm hover:bg-[#00A5E6]/10 transition-colors',
+                                    m === minutoAtual ? 'bg-[#00A5E6]/15 text-[#00A5E6] font-semibold' : 'text-slate-700'
+                                )}
+                            >
+                                {m}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <div className="border-t border-slate-100 p-2 flex justify-end">
+                    <Button
+                        size="sm"
+                        onClick={() => setOpen(false)}
+                        className="rounded-lg bg-[#00A5E6] hover:bg-[#0090cc] text-white text-xs h-7 px-3"
+                    >
+                        OK
+                    </Button>
+                </div>
+            </PopoverContent>
+        </Popover>
+    );
+}
+
 export function FiltrosHorariosAgendamentos({
     onPesquisar,
     isLoading,
@@ -75,7 +219,27 @@ export function FiltrosHorariosAgendamentos({
     const [horaFim, setHoraFim] = useState('20:59');
     const [diaTodo, setDiaTodo] = useState(true);
 
-    const isDataValida = dataPesquisar.length === 10 && parseDate(dataPesquisar) !== undefined;
+    const hoje = obterHojeBR();
+
+    const isDataValida = (() => {
+        if (dataPesquisar.length !== 10) return false;
+        const parsed = parseDate(dataPesquisar);
+        if (!parsed) return false;
+        // Não permitir datas passadas
+        const hojeSemHora = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+        const parsedSemHora = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+        return parsedSemHora >= hojeSemHora;
+    })();
+
+    const isDataPassada = (() => {
+        if (dataPesquisar.length !== 10) return false;
+        const parsed = parseDate(dataPesquisar);
+        if (!parsed) return false;
+        const hojeSemHora = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+        const parsedSemHora = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+        return parsedSemHora < hojeSemHora;
+    })();
+
     const isHoraInicioValida = isValidTime(horaInicio);
     const isHoraFimValida = isValidTime(horaFim);
     
@@ -88,8 +252,17 @@ export function FiltrosHorariosAgendamentos({
         if (!dateObj) return;
 
         const dataIso = formatDateToISO(dateObj);
-        const horaInicioFinal = diaTodo ? '07:00' : horaInicio;
+        let horaInicioFinal = diaTodo ? '07:00' : horaInicio;
         const horaFimFinal = diaTodo ? '20:59' : horaFim;
+
+        // Se for hoje, ajustar horaInicio para horário atual + 1 minuto
+        if (isHoje(dataPesquisar)) {
+            const horarioMinimo = obterHorarioAtualMais1Min();
+            if (horaInicioFinal < horarioMinimo) {
+                console.log(`⏰ Dia atual: ajustando hora início de ${horaInicioFinal} para ${horarioMinimo}`);
+                horaInicioFinal = horarioMinimo;
+            }
+        }
 
         console.log('🔍 Iniciando pesquisa com filtros:');
         console.log('   Data (BR):', dataPesquisar, '→', dataIso);
@@ -154,6 +327,7 @@ export function FiltrosHorariosAgendamentos({
                                                 mode="single"
                                                 selected={parseDate(dataPesquisar)}
                                                 onSelect={handleDateSelect}
+                                                disabled={(date) => date < hoje}
                                                 initialFocus
                                             />
                                         </PopoverContent>
@@ -162,25 +336,19 @@ export function FiltrosHorariosAgendamentos({
 
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium text-slate-700">Hora início</label>
-                                    <Input
+                                    <SeletorHorario
                                         value={horaInicio}
-                                        onChange={(e) => setHoraInicio(formatTimeInput(e.target.value))}
-                                        placeholder="HH:mm"
-                                        maxLength={5}
+                                        onChange={setHoraInicio}
                                         disabled={diaTodo}
-                                        className="rounded-xl border-slate-200 focus:ring-[#00A5E6] focus:ring-2 disabled:bg-slate-100 disabled:text-slate-500"
                                     />
                                 </div>
 
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium text-slate-700">Hora fim</label>
-                                    <Input
+                                    <SeletorHorario
                                         value={horaFim}
-                                        onChange={(e) => setHoraFim(formatTimeInput(e.target.value))}
-                                        placeholder="HH:mm"
-                                        maxLength={5}
+                                        onChange={setHoraFim}
                                         disabled={diaTodo}
-                                        className="rounded-xl border-slate-200 focus:ring-[#00A5E6] focus:ring-2 disabled:bg-slate-100 disabled:text-slate-500"
                                     />
                                 </div>
                             </div>
@@ -200,9 +368,21 @@ export function FiltrosHorariosAgendamentos({
                                 </label>
                             </div>
 
-                            {!canSearch && (
+                            {isHoje(dataPesquisar) && (
+                                <p className="text-sm text-blue-600 bg-blue-50 p-2 rounded-lg">
+                                    ℹ️ Pesquisa do dia atual: horários já passados serão automaticamente excluídos.
+                                </p>
+                            )}
+
+                            {isDataPassada && (
+                                <p className="text-sm text-red-600 bg-red-50 p-2 rounded-lg">
+                                    ⚠️ Não é possível pesquisar datas passadas. Selecione hoje ou uma data futura.
+                                </p>
+                            )}
+
+                            {!canSearch && !isDataPassada && (
                                 <p className="text-sm text-amber-600 bg-amber-50 p-2 rounded-lg">
-                                    {!isDataValida && 'Preencha uma data válida. '}
+                                    {dataPesquisar.length < 10 && 'Preencha uma data válida. '}
                                     {!isHoraInicioValida && 'Hora início inválida. '}
                                     {!isHoraFimValida && 'Hora fim inválida.'}
                                 </p>

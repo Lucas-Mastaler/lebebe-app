@@ -2,6 +2,12 @@
 
 import { Clock, RefreshCw, AlertCircle, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+function isHorarioNoturno(horario: string): boolean {
+    const [hh] = horario.split(':').map(Number);
+    return hh >= 18;
+}
 
 interface AgendamentoDigisac {
     id: string;
@@ -133,37 +139,40 @@ export function ListaHorariosDisponiveis({
                     )}
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
-                        {horarios.map((horario, index) => (
-                            <div
-                                key={index}
-                                className="flex items-center justify-center gap-2 p-3 rounded-xl border-2 border-slate-200 bg-slate-50 hover:border-[#00A5E6] hover:bg-[#00A5E6]/5 transition-all cursor-pointer group"
-                            >
-                                <Clock className="w-4 h-4 text-slate-400 group-hover:text-[#00A5E6] transition-colors" />
-                                <span className="font-mono font-semibold text-slate-900 group-hover:text-[#00A5E6] transition-colors">
-                                    {horario}
-                                </span>
-                            </div>
-                        ))}
+                        {horarios.map((horario, index) => {
+                            const noturno = isHorarioNoturno(horario);
+                            return (
+                                <div
+                                    key={index}
+                                    className={cn(
+                                        'flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer group',
+                                        noturno
+                                            ? 'border-red-200 bg-red-50 hover:border-red-400 hover:bg-red-100'
+                                            : 'border-slate-200 bg-slate-50 hover:border-[#00A5E6] hover:bg-[#00A5E6]/5'
+                                    )}
+                                >
+                                    <Clock className={cn(
+                                        'w-4 h-4 transition-colors',
+                                        noturno
+                                            ? 'text-red-400 group-hover:text-red-600'
+                                            : 'text-slate-400 group-hover:text-[#00A5E6]'
+                                    )} />
+                                    <span className={cn(
+                                        'font-mono font-semibold transition-colors',
+                                        noturno
+                                            ? 'text-red-600 group-hover:text-red-700'
+                                            : 'text-slate-900 group-hover:text-[#00A5E6]'
+                                    )}>
+                                        {horario}
+                                    </span>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             </div>
 
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border border-blue-100 p-4">
-                <div className="flex items-start gap-3">
-                    <div className="bg-blue-500 p-2 rounded-lg mt-0.5">
-                        <AlertCircle className="w-5 h-5 text-white" />
-                    </div>
-                    <div className="flex-1 space-y-2">
-                        <h4 className="font-semibold text-blue-900">Como funciona o agendamento</h4>
-                        <ul className="text-sm text-blue-800 space-y-1">
-                            <li>• Clique em um horário disponível para agendar</li>
-                            <li>• Intervalo mínimo de 7 minutos entre agendamentos</li>
-                            <li>• Horários calculados automaticamente para evitar conflitos</li>
-                            <li>• Pode agendar em qualquer minuto (ex: 12:02, 12:03, etc)</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
+
         </div>
     );
 }

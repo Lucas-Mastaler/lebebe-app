@@ -33,30 +33,26 @@ export function HorariosAgendamentosPage() {
         setHorariosDisponiveis([]);
 
         try {
-            console.log('🔍 Pesquisando horários disponíveis');
-            console.log('📅 Data (BR):', dataPesquisar);
-            console.log('⏰ Intervalo (BR):', `${horaInicio} - ${horaFim}`);
+            // 1) Montar ranges UTC (real e com folga)
+            const range = montarRangeUtcComFolga(dataPesquisar, horaInicio, horaFim);
 
-            const startUtcIso = converterBRParaUtcIso(dataPesquisar, horaInicio);
-            const endUtcIso = converterBRParaUtcIso(dataPesquisar, horaFim);
-
-            console.log('🌍 Intervalo (UTC):', `${startUtcIso} - ${endUtcIso}`);
-
-            const agendamentos = await buscarAgendamentos(startUtcIso, endUtcIso);
-            
-            console.log('📊 Agendamentos encontrados:', agendamentos.length);
-            
-            setAgendamentosExistentes(agendamentos);
-
-            const horariosCalculados = gerarHorariosSugeridos(
-                horaInicio,
-                horaFim,
-                agendamentos,
-                dataPesquisar
+            // 2) Buscar agendamentos com folga
+            const agendamentos = await buscarAgendamentosDigisac(
+                SERVICE_ID,
+                range.startBuscaUtcIso,
+                range.endBuscaUtcIso
             );
 
-            console.log('✅ Horários disponíveis calculados:', horariosCalculados.length);
-            
+            setAgendamentosExistentes(agendamentos);
+
+            // 3) Gerar horários disponíveis validando conflitos
+            const horariosCalculados = gerarHorariosDisponiveis(
+                dataPesquisar,
+                horaInicio,
+                horaFim,
+                agendamentos
+            );
+
             setHorariosDisponiveis(horariosCalculados);
             setUltimaPesquisa({ dataPesquisar, horaInicio, horaFim });
 
@@ -97,38 +93,65 @@ export function HorariosAgendamentosPage() {
     );
 }
 
-function converterBRParaUtcIso(dataPesquisar: string, hora: string): string {
-    const [ano, mes, dia] = dataPesquisar.split('-').map(Number);
-    const [hh, mm] = hora.split(':').map(Number);
-    
-    const dataBR = new Date(ano, mes - 1, dia, hh, mm, 0, 0);
-    
-    const offsetBR = -3 * 60;
-    const offsetLocal = dataBR.getTimezoneOffset();
-    const diffMinutes = offsetBR - offsetLocal;
-    
-    const dataUTC = new Date(dataBR.getTime() - diffMinutes * 60000);
-    
-    return dataUTC.toISOString();
+// ═══════════════════════════════════════════════════════════════
+// Constantes
+// ═══════════════════════════════════════════════════════════════
+const SERVICE_ID = '4af28025-c210-4336-a560-785d2fb8a778';
+const INTERVALO_MIN_MS = 7 * 60 * 1000;   // 7 minutos em ms
+const FOLGA_MS = 6 * 60 * 1000 + 59 * 1000; // 6min59s em ms
+
+// ═══════════════════════════════════════════════════════════════
+// converterBRParaUtcIso
+// Monta string ISO com offset -03:00 e converte para UTC.
+// Exemplo: "2026-02-05", "16:29" → "2026-02-05T19:29:00.000Z"
+// ═══════════════════════════════════════════════════════════════
+function converterBRParaUtcIso(dataPesquisar: string, horaHHMM: string): string {
+    const isoBR = `${dataPesquisar}T${horaHHMM}:00-03:00`;
+    const utcIso = new Date(isoBR).toISOString();
+    console.log(`[TZ] BR ${dataPesquisar} ${horaHHMM} → UTC ${utcIso}`);
+    return utcIso;
 }
 
-async function buscarAgendamentos(
-    startUtcIso: string,
-    endUtcIso: string
+// ═══════════════════════════════════════════════════════════════
+// montarRangeUtcComFolga
+// Retorna o range real (para gerar candidatos) e o range com
+// folga de ±6min59s (para buscar no Digisac e pegar conflitos
+// que estejam na borda).
+// ═══════════════════════════════════════════════════════════════
+function montarRangeUtcComFolga(dataPesquisar: string, horaInicio: string, horaFim: string) {
+    const startUtcIso = converterBRParaUtcIso(dataPesquisar, horaInicio);
+    const endUtcIso = converterBRParaUtcIso(dataPesquisar, horaFim);
+
+    const startBuscaUtcIso = new Date(new Date(startUtcIso).getTime() - FOLGA_MS).toISOString();
+    const endBuscaUtcIso = new Date(new Date(endUtcIso).getTime() + FOLGA_MS).toISOString();
+
+    console.log(`[RANGE] Intervalo real  (UTC): ${startUtcIso}  →  ${endUtcIso}`);
+    console.log(`[RANGE] Intervalo busca (UTC): ${startBuscaUtcIso}  →  ${endBuscaUtcIso}`);
+    console.log(`[RANGE] Intervalo real  (BR) : ${dataPesquisar} ${horaInicio}  →  ${dataPesquisar} ${horaFim}`);
+
+    return { startUtcIso, endUtcIso, startBuscaUtcIso, endBuscaUtcIso };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// buscarAgendamentosDigisac
+// GET /api/digisac/schedule com serviceId + between (com folga)
+// ═══════════════════════════════════════════════════════════════
+async function buscarAgendamentosDigisac(
+    serviceId: string,
+    startBuscaUtcIso: string,
+    endBuscaUtcIso: string
 ): Promise<AgendamentoDigisac[]> {
-    const serviceId = '4af28025-c210-4336-a560-785d2fb8a778';
-    
     const params = new URLSearchParams({
         'where[serviceId]': serviceId,
-        'where[scheduledAt][$between][0]': startUtcIso,
-        'where[scheduledAt][$between][1]': endUtcIso,
+        'where[scheduledAt][$between][0]': startBuscaUtcIso,
+        'where[scheduledAt][$between][1]': endBuscaUtcIso,
         'page': '1',
-        'perPage': '100'
+        'perPage': '200',
     });
 
     const url = `/api/digisac/schedule?${params.toString()}`;
-    
-    console.log('🔗 Buscando agendamentos:', url);
+
+    console.log(`[API] GET ${url}`);
 
     const response = await fetch(url);
 
@@ -137,70 +160,90 @@ async function buscarAgendamentos(
     }
 
     const data = await response.json();
-    
-    return data.items || [];
+    const items: AgendamentoDigisac[] = data.items || [];
+
+    console.log(`[API] Agendamentos retornados: ${items.length}`);
+
+    return items;
 }
 
-function gerarHorariosSugeridos(
-    horaInicioBR: string,
-    horaFimBR: string,
-    agendamentos: AgendamentoDigisac[],
-    dataPesquisar: string
-): string[] {
-    const [anoData, mesData, diaData] = dataPesquisar.split('-').map(Number);
-    const [hhInicio, mmInicio] = horaInicioBR.split(':').map(Number);
-    const [hhFim, mmFim] = horaFimBR.split(':').map(Number);
-
-    const inicioBRMs = new Date(anoData, mesData - 1, diaData, hhInicio, mmInicio, 0).getTime();
-    const fimBRMs = new Date(anoData, mesData - 1, diaData, hhFim, mmFim, 0).getTime();
-
-    const agendamentosMs = agendamentos.map(ag => {
-        const dataUtc = new Date(ag.scheduledAt);
-        const offsetBR = -3 * 60;
-        const offsetLocal = dataUtc.getTimezoneOffset();
-        const diffMinutes = offsetBR - offsetLocal;
-        const dataBR = new Date(dataUtc.getTime() + diffMinutes * 60000);
-        return dataBR.getTime();
-    }).sort((a, b) => a - b);
-
-    console.log('📍 Agendamentos existentes (BR):');
-    agendamentosMs.forEach(ms => {
-        const d = new Date(ms);
-        console.log(`   - ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`);
-    });
-
-    const intervaloMinimo = 7 * 60 * 1000;
-    const horariosSugeridos: string[] = [];
-    let candidatoMs = inicioBRMs;
-
-    while (candidatoMs <= fimBRMs) {
-        const conflito = existeConflito(candidatoMs, agendamentosMs, intervaloMinimo);
-        
-        if (!conflito) {
-            const d = new Date(candidatoMs);
-            const horarioFormatado = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-            horariosSugeridos.push(horarioFormatado);
-            candidatoMs += intervaloMinimo;
-        } else {
-            const proximoHorarioLivre = conflito.agendamentoConflitante + intervaloMinimo;
-            console.log(`   ⚠️ Conflito em ${new Date(candidatoMs).getHours()}:${new Date(candidatoMs).getMinutes()} -> ajustando para ${new Date(proximoHorarioLivre).getHours()}:${new Date(proximoHorarioLivre).getMinutes()}`);
-            candidatoMs = proximoHorarioLivre;
-        }
-    }
-
-    return horariosSugeridos;
+// ═══════════════════════════════════════════════════════════════
+// Helpers de conversão UTC ↔ BR (offset fixo -03:00)
+// ═══════════════════════════════════════════════════════════════
+function utcMsParaBRHHMM(utcMs: number): string {
+    // BR = UTC - 3h  →  criamos Date deslocado e usamos getUTC*
+    const brShifted = new Date(utcMs - 3 * 60 * 60 * 1000);
+    return `${String(brShifted.getUTCHours()).padStart(2, '0')}:${String(brShifted.getUTCMinutes()).padStart(2, '0')}`;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// existeConflito
+// Retorna o agendamento conflitante (em UTC ms) se abs < 7min.
+// ═══════════════════════════════════════════════════════════════
 function existeConflito(
-    candidatoMs: number,
-    agendamentosMs: number[],
-    intervaloMinimo: number
-): { agendamentoConflitante: number } | null {
-    for (const agMs of agendamentosMs) {
-        const distancia = Math.abs(candidatoMs - agMs);
-        if (distancia < intervaloMinimo) {
-            return { agendamentoConflitante: agMs };
+    candidatoUtcMs: number,
+    agendamentosUtcMs: number[]
+): { agendamentoConflitanteUtcMs: number } | null {
+    for (const agMs of agendamentosUtcMs) {
+        if (Math.abs(candidatoUtcMs - agMs) < INTERVALO_MIN_MS) {
+            return { agendamentoConflitanteUtcMs: agMs };
         }
     }
     return null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// gerarHorariosDisponiveis
+// Gera candidatos de 7 em 7 min dentro do range real,
+// empurrando para frente quando houver conflito.
+// Trabalha inteiramente em UTC ms para evitar erros de TZ.
+// ═══════════════════════════════════════════════════════════════
+function gerarHorariosDisponiveis(
+    dataPesquisar: string,
+    horaInicio: string,
+    horaFim: string,
+    agendamentos: AgendamentoDigisac[]
+): string[] {
+    // Limites reais em UTC ms
+    const startUtcMs = new Date(`${dataPesquisar}T${horaInicio}:00-03:00`).getTime();
+    const endUtcMs = new Date(`${dataPesquisar}T${horaFim}:00-03:00`).getTime();
+
+    // Agendamentos em UTC ms, ordenados
+    const agendamentosUtcMs = agendamentos
+        .map(ag => new Date(ag.scheduledAt).getTime())
+        .sort((a, b) => a - b);
+
+    console.log(`[SLOTS] Agendamentos existentes (${agendamentosUtcMs.length}):`);
+    agendamentosUtcMs.forEach(ms => {
+        console.log(`   - ${utcMsParaBRHHMM(ms)} (BR)  |  ${new Date(ms).toISOString()} (UTC)`);
+    });
+
+    const horariosSugeridos: string[] = [];
+    let candidatoUtcMs = startUtcMs;
+    let iteracoes = 0;
+    const MAX_ITER = 5000; // segurança contra loop infinito
+
+    while (candidatoUtcMs <= endUtcMs && iteracoes < MAX_ITER) {
+        iteracoes++;
+        const conflito = existeConflito(candidatoUtcMs, agendamentosUtcMs);
+
+        if (!conflito) {
+            // Sem conflito → adicionar horário
+            const horarioBR = utcMsParaBRHHMM(candidatoUtcMs);
+            horariosSugeridos.push(horarioBR);
+            candidatoUtcMs += INTERVALO_MIN_MS;
+        } else {
+            // Com conflito → empurrar para agendamentoConflitante + 7min
+            const empurradoUtcMs = conflito.agendamentoConflitanteUtcMs + INTERVALO_MIN_MS;
+            const candidatoBR = utcMsParaBRHHMM(candidatoUtcMs);
+            const conflitanteBR = utcMsParaBRHHMM(conflito.agendamentoConflitanteUtcMs);
+            const empurradoBR = utcMsParaBRHHMM(empurradoUtcMs);
+            console.log(`[SLOTS] Conflito: candidato ${candidatoBR} × agendamento ${conflitanteBR} → empurrando para ${empurradoBR}`);
+            candidatoUtcMs = empurradoUtcMs;
+        }
+    }
+
+    console.log(`[SLOTS] Total de horários disponíveis: ${horariosSugeridos.length}`);
+
+    return horariosSugeridos;
 }

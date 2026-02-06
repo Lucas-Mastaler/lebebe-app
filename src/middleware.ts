@@ -18,6 +18,13 @@ export async function middleware(request: NextRequest) {
   const publicRoutes = ['/login', '/recuperar-senha', '/resetar-senha', '/definir-senha', '/convite']
   const isPublicRoute = publicRoutes.some(route => request.nextUrl.pathname.startsWith(route))
 
+  // NOVA REGRA: Rota /horarios-agendamentos é 100% pública
+  const isHorariosAgendamentos = request.nextUrl.pathname.startsWith('/horarios-agendamentos')
+  if (isHorariosAgendamentos) {
+    console.log(`[AUTH] Rota pública liberada: ${request.nextUrl.pathname}`)
+    return response
+  }
+
   // Se as variáveis de ambiente não estão configuradas, redireciona para login
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     console.error('[MIDDLEWARE] Variáveis de ambiente do Supabase não configuradas!')

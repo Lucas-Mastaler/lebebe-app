@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
+import { checkRateLimit } from '@/lib/ratelimit';
 
 export async function GET(request: NextRequest) {
     try {
+        // Rate Limit Check
+        const { success, remaining } = await checkRateLimit(request);
+
+        if (!success) {
+            console.warn('[API] Rate limit excedido para IP', request.headers.get('x-forwarded-for') || 'unknown');
+            return NextResponse.json(
+                { error: 'Muitas requisições. Tente novamente em instantes.' },
+                { status: 429 }
+            );
+        }
         const searchParams = request.nextUrl.searchParams;
-        
+
         const serviceId = searchParams.get('where[serviceId]');
         const startUtc = searchParams.get('where[scheduledAt][$between][0]');
         const endUtc = searchParams.get('where[scheduledAt][$between][1]');
@@ -32,7 +43,7 @@ export async function GET(request: NextRequest) {
         });
 
         const endpoint = `/schedule?${digisacParams.toString()}`;
-        
+
         const response = await fetchDigisac(endpoint);
 
         console.log('✅ [API] Agendamentos retornados:', response?.data?.length || 0);
@@ -48,11 +59,11 @@ export async function GET(request: NextRequest) {
 
     } catch (error: any) {
         console.error('❌ [API] Erro ao buscar agendamentos:', error.message);
-        
+
         return NextResponse.json(
-            { 
+            {
                 error: 'Erro ao buscar agendamentos do Digisac',
-                details: error.message 
+                details: error.message
             },
             { status: 500 }
         );

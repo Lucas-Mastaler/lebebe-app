@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Calendar, ChevronLeft, ChevronRight, CheckCircle, BarChart3, LogOut, Users, ClipboardList, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -113,7 +114,16 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             {/* Header */}
             <div className="h-16 flex items-center justify-between px-4 border-b border-slate-200">
                 {!collapsed && (
-                    <span className="text-lg font-semibold text-slate-900">Menu</span>
+                    <div className="flex items-center gap-2 px-2">
+                        <Image
+                            src="/logo.png"
+                            alt="le bebé"
+                            width={120}
+                            height={40}
+                            className="object-contain h-10 w-auto"
+                            priority
+                        />
+                    </div>
                 )}
                 <button
                     onClick={onToggle}

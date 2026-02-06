@@ -12,12 +12,7 @@ export function Topbar({ sidebarCollapsed }: TopbarProps) {
         >
             {/* Left - Logo and Title */}
             <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#00A5E6] to-[#3BBAE8] flex items-center justify-center">
-                    <span className="text-white font-bold text-lg">⭐</span>
-                </div>
-                <h1 className="text-xl font-semibold text-slate-900">
-                    le bébé
-                </h1>
+                {/* Logo moved to Sidebar */}
             </div>
 
             {/* Right - Future features area */}

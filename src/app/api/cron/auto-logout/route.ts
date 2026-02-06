@@ -54,36 +54,62 @@ export async function GET(request: NextRequest) {
 
     console.log(`[AUTO-LOGOUT] ${usuariosPermitidos.length} usuários não-superadmin ativos encontrados`)
 
+    console.log('[AUTO-LOGOUT] Buscando todos os usuários do Supabase Auth...')
+    const { data: authUsersData, error: listError } = await supabaseAdmin.auth.admin.listUsers()
+    
+    if (listError) {
+      console.error('[AUTO-LOGOUT] ❌ Erro ao listar usuários do Auth:', listError.message)
+      return NextResponse.json({ 
+        error: 'Failed to list auth users', 
+        message: listError.message 
+      }, { status: 500 })
+    }
+
+    const authUsersMap = new Map(
+      authUsersData.users.map(user => [user.email?.toLowerCase(), user])
+    )
+    console.log(`[AUTO-LOGOUT] ${authUsersData.users.length} usuários encontrados no Auth`)
+
     let sessionsDisconnected = 0
     const errors: Array<{ email: string; error: string }> = []
     const agora = new Date().toISOString()
 
     for (const usuario of usuariosPermitidos) {
       try {
-        const { data: authUsers, error: listError } = await supabaseAdmin.auth.admin.listUsers()
-        
-        if (listError) {
-          console.error(`[AUTO-LOGOUT] Erro ao listar usuários auth para ${usuario.email}:`, listError)
-          errors.push({ email: usuario.email, error: listError.message })
-          continue
-        }
+        console.log(`[AUTO-LOGOUT] Processando ${usuario.email}...`)
 
-        const authUser = authUsers.users.find(u => u.email?.toLowerCase() === usuario.email.toLowerCase())
+        const authUser = authUsersMap.get(usuario.email.toLowerCase())
         
         if (!authUser) {
-          console.log(`[AUTO-LOGOUT] Usuário ${usuario.email} não tem sessão ativa no auth`)
+          console.log(`[AUTO-LOGOUT] ⚠️ Usuário ${usuario.email} não encontrado no Supabase Auth (nunca fez login)`)
           continue
         }
 
-        const { error: signOutError } = await supabaseAdmin.auth.admin.signOut(authUser.id)
+        console.log(`[AUTO-LOGOUT] → Usuário ${usuario.email} encontrado (ID: ${authUser.id})`)
 
-        if (signOutError) {
-          console.error(`[AUTO-LOGOUT] Erro ao desconectar ${usuario.email}:`, signOutError)
-          errors.push({ email: usuario.email, error: signOutError.message })
+        // Ban temporário de 1s invalida TODAS as sessões/refresh tokens do usuário
+        const { error: banError } = await supabaseAdmin.auth.admin.updateUserById(authUser.id, {
+          ban_duration: '1s'
+        })
+
+        if (banError) {
+          console.error(`[AUTO-LOGOUT] ❌ Erro ao banir temporariamente ${usuario.email}:`, banError.message)
+          errors.push({ email: usuario.email, error: `ban: ${banError.message}` })
           continue
         }
 
-        console.log(`[AUTO-LOGOUT] ✓ Sessão encerrada para ${usuario.email}`)
+        // Desbanir imediatamente para que o usuário possa logar novamente
+        const { error: unbanError } = await supabaseAdmin.auth.admin.updateUserById(authUser.id, {
+          ban_duration: 'none'
+        })
+
+        if (unbanError) {
+          console.error(`[AUTO-LOGOUT] ⚠️ Erro ao desbanir ${usuario.email} (sessão invalidada, mas ban pode persistir):`, unbanError.message)
+          errors.push({ email: usuario.email, error: `unban: ${unbanError.message}` })
+          // NÃO damos continue aqui - o logout já aconteceu, só o unban falhou
+        }
+
+        console.log(`[AUTO-LOGOUT] ✓ Sessão invalidada para ${usuario.email} (ban/unban)`)
         sessionsDisconnected++
 
         const { error: upsertError } = await supabaseAdmin
@@ -98,7 +124,10 @@ export async function GET(request: NextRequest) {
           })
 
         if (upsertError) {
-          console.error(`[AUTO-LOGOUT] Erro ao registrar logout na tabela de controle:`, upsertError)
+          console.error(`[AUTO-LOGOUT] ❌ Erro ao registrar logout na tabela de controle para ${usuario.email}:`, upsertError.message)
+          errors.push({ email: usuario.email, error: `upsert sessoes_logout: ${upsertError.message}` })
+        } else {
+          console.log(`[AUTO-LOGOUT] ✓ Registrado em sessoes_logout_automatico: ${usuario.email}`)
         }
 
         const { error: auditoriaError } = await supabaseAdmin
@@ -120,14 +149,14 @@ export async function GET(request: NextRequest) {
           })
 
         if (auditoriaError) {
-          console.error(`[AUTO-LOGOUT] Erro ao registrar auditoria para ${usuario.email}:`, auditoriaError)
+          console.error(`[AUTO-LOGOUT] ❌ Erro ao registrar auditoria para ${usuario.email}:`, auditoriaError.message)
         } else {
           console.log(`[AUTO-LOGOUT] ✓ Auditoria registrada para user=${usuario.email}`)
         }
 
       } catch (err: any) {
-        console.error(`[AUTO-LOGOUT] Exceção ao processar ${usuario.email}:`, err)
-        errors.push({ email: usuario.email, error: err.message || 'Unknown error' })
+        console.error(`[AUTO-LOGOUT] ❌ Exceção ao processar ${usuario.email}:`, err)
+        errors.push({ email: usuario.email, error: `exception: ${err.message || 'Unknown error'}` })
       }
     }
 

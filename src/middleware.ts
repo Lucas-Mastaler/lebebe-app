@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { deveDesconectarPorHorario } from '@/lib/auth/auto-logout'
+import { deveDesconectarPorHorario, getDataHojeBRT } from '@/lib/auth/auto-logout'
 
 type CookieToSet = {
   name: string
@@ -79,23 +79,31 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
 
-    // Verificar logout automático (apenas para não-superadmin)
+    // Verificar logout automático às 19h BRT (apenas para não-superadmin)
     if (usuarioPermitido.role !== 'superadmin') {
-      const { data: sessaoLogout } = await supabase
-        .from('sessoes_logout_automatico')
-        .select('ultimo_logout_automatico')
-        .eq('email', user.email?.toLowerCase())
-        .single()
+      const cookieLogoutDate = request.cookies.get('auto_logout_date')?.value
 
       const deveDesconectar = deveDesconectarPorHorario(
         usuarioPermitido.role,
-        sessaoLogout?.ultimo_logout_automatico
+        cookieLogoutDate
       )
 
       if (deveDesconectar) {
-        console.log(`[MIDDLEWARE] Desconectando ${user.email} - passou das 19h BRT e não foi desconectado hoje`)
+        const hojeBRT = getDataHojeBRT()
+        console.log(`[MIDDLEWARE-AUTO-LOGOUT] Desconectando ${user.email} - passou das 19h BRT (${hojeBRT}) e não foi desconectado hoje`)
+
         await supabase.auth.signOut()
-        return NextResponse.redirect(new URL('/login?auto_logout=true', request.url))
+
+        const redirectResponse = NextResponse.redirect(new URL('/login?auto_logout=true', request.url))
+        // Cookie marca que o usuário já foi deslogado hoje — impede loop infinito
+        redirectResponse.cookies.set('auto_logout_date', hojeBRT, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          path: '/',
+          maxAge: 60 * 60 * 12, // 12h — expira automaticamente na manhã seguinte
+        })
+        return redirectResponse
       }
     }
 

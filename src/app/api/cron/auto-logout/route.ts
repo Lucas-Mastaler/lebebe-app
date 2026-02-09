@@ -5,16 +5,25 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export async function GET(request: NextRequest) {
+  const horarioInicioUTC = new Date().toISOString()
+  const horarioInicioBRT = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+  console.log(`[AUTO-LOGOUT] ========================================`)
+  console.log(`[AUTO-LOGOUT] Cron disparado em ${horarioInicioBRT} (UTC: ${horarioInicioUTC})`)
+  console.log(`[AUTO-LOGOUT] CRON_SECRET configurado: ${!!process.env.CRON_SECRET}`)
+  console.log(`[AUTO-LOGOUT] SUPABASE_SERVICE_ROLE_KEY configurado: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`)
+
   try {
     const authHeader = request.headers.get('authorization')
     
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      console.error('[AUTO-LOGOUT] Unauthorized: Invalid CRON_SECRET')
+      console.error('[AUTO-LOGOUT] ❌ Unauthorized: CRON_SECRET não confere')
+      console.error(`[AUTO-LOGOUT] Header recebido: ${authHeader ? 'Bearer ***' : '(vazio)'}`)
+      console.error(`[AUTO-LOGOUT] CRON_SECRET env existe: ${!!process.env.CRON_SECRET}`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.error('[AUTO-LOGOUT] SUPABASE_SERVICE_ROLE_KEY não configurado')
+      console.error('[AUTO-LOGOUT] ❌ SUPABASE_SERVICE_ROLE_KEY não configurado')
       return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
     }
 
@@ -131,7 +140,7 @@ export async function GET(request: NextRequest) {
         }
 
         const { error: auditoriaError } = await supabaseAdmin
-          .from('auditoria_acesso')
+          .from('auditoria_acessos')
           .insert({
             acao: 'AUTO_LOGOUT_19H',
             email: usuario.email,

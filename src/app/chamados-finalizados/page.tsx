@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useRef } from 'react';
 import { PesquisaChamadosResponse } from '@/types';
 import { FiltrosChamadosFinalizados } from '@/components/chamados/FiltrosChamadosFinalizados';
 import { TabelaChamadosFinalizados } from '@/components/chamados/TabelaChamadosFinalizados';
@@ -13,6 +13,8 @@ export default function Page() {
   const [currentFiltros, setCurrentFiltros] = useState<any | null>(null);
   const [modalContactId, setModalContactId] = useState<string | null>(null);
   const [modalNomeDigisac, setModalNomeDigisac] = useState<string | null>(null);
+  const [observacoes, setObservacoes] = useState<Record<string, string>>({});
+  const observacoesRef = useRef<Record<string, string>>({});
 
   const handlePesquisar = useCallback(async (filtros: any) => {
     setIsLoading(true);
@@ -50,6 +52,22 @@ export default function Page() {
       }
 
       setData(result);
+
+      // Buscar observações para os contactIds retornados
+      try {
+        const ids = (result.items || []).map((it) => it.contactId).filter(Boolean);
+        if (ids.length > 0) {
+          const obsRes = await fetch(`/api/usuarios-info?contactIds=${ids.join(',')}`);
+          if (obsRes.ok) {
+            const obsJson = await obsRes.json();
+            const merged = { ...observacoesRef.current, ...(obsJson.data || {}) };
+            observacoesRef.current = merged;
+            setObservacoes(merged);
+          }
+        }
+      } catch (e) {
+        console.warn('[UI][CHAMADOS] Erro ao buscar observações:', e);
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erro ao pesquisar';
       setError(errorMessage);
@@ -81,6 +99,18 @@ export default function Page() {
         onVerAgendamentos={(cid, nomeDigisac) => {
           setModalContactId(cid);
           setModalNomeDigisac(nomeDigisac?.trim() || null);
+        }}
+        observacoes={observacoes}
+        onSalvarObservacao={async (contactId, observacao) => {
+          const res = await fetch('/api/usuarios-info', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contactId, observacao }),
+          });
+          if (!res.ok) throw new Error('Erro ao salvar');
+          const updated = { ...observacoesRef.current, [contactId]: observacao };
+          observacoesRef.current = updated;
+          setObservacoes(updated);
         }}
       />
 

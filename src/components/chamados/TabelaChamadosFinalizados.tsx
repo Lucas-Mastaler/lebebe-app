@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PesquisaChamadosResponse, ChamadoFinalizadoItem } from "@/types";
 import { BarraScrollHorizontalFixa } from "@/components/BarraScrollHorizontalFixa";
+import { CelulaObservacao } from "@/components/chamados/CelulaObservacao";
 
 interface Props {
   data: PesquisaChamadosResponse | null;
@@ -21,6 +22,8 @@ interface Props {
   error: string | null;
   onPageChange: (page: number) => void;
   onVerAgendamentos: (contactId: string, nomeDigisac: string | null | undefined) => void;
+  observacoes: Record<string, string>;
+  onSalvarObservacao: (contactId: string, observacao: string) => Promise<void>;
 }
 
 function Badge({ color, children }: { color: "neutral" | "green" | "blue" | "red"; children: React.ReactNode }) {
@@ -35,7 +38,7 @@ function Badge({ color, children }: { color: "neutral" | "green" | "blue" | "red
   );
 }
 
-export function TabelaChamadosFinalizados({ data, isLoading, error, onPageChange, onVerAgendamentos }: Props) {
+export function TabelaChamadosFinalizados({ data, isLoading, error, onPageChange, onVerAgendamentos, observacoes, onSalvarObservacao }: Props) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   if (isLoading) {
@@ -107,6 +110,7 @@ export function TabelaChamadosFinalizados({ data, isLoading, error, onPageChange
                   <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[160px] sticky top-0 bg-slate-50 z-10">Qtd (em aberto)</TableHead>
                   <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px] sticky top-0 bg-slate-50 z-10">Qtd (finalizados)</TableHead>
                   <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[140px] sticky top-0 bg-slate-50 z-10">Qtd (erro)</TableHead>
+                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[220px] sticky top-0 bg-slate-50 z-10">Observação</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -137,6 +141,13 @@ export function TabelaChamadosFinalizados({ data, isLoading, error, onPageChange
                     </TableCell>
                     <TableCell>
                       <Badge color="red">{item.qtdAgendamentosErro}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <CelulaObservacao
+                        contactId={item.contactId}
+                        valor={observacoes[item.contactId] || ''}
+                        onSalvar={onSalvarObservacao}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}

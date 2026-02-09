@@ -193,60 +193,49 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
     console.warn('[API][CHAMADOS] nomesDuplicadosDetectados=', duplicados.map(([nome, ids]) => ({ nome, contactIds: ids })));
   }
 
-  // Blindagem opcional: se houver nomes duplicados, acrescentar sufixo com 4 últimos dígitos de contato.number (fallback: sampleTicket.contact.number, senão contactId)
-  if (duplicados.length > 0) {
-    const dupSet = new Set(duplicados.map(([n]) => n));
+  // Padrão: sempre acrescentar sufixo com 4 últimos dígitos do telefone (quando disponível).
+  // Fontes: contatoCompleto.data.number (principal) -> sampleTicket.contact.data.number (fallback) -> (sem telefone) usa fallback contactId.
+  {
     let ajustados = 0;
     let usandoTelefone = 0;
     let usandoFallbackId = 0;
+
+    const pegarUltimos4 = (val: any): string | null => {
+      if (val === undefined || val === null) return null;
+      const digits = String(val).replace(/\D/g, '');
+      if (digits.length >= 8) return digits.slice(-4);
+      return null;
+    };
+
+    const removerSufixoUltimos4 = (nome: string): string => {
+      // remove apenas o sufixo final no formato " (1234)" para evitar duplicar
+      return nome.replace(/\s\(\d{4}\)\s*$/, '').trimEnd();
+    };
+
     for (const it of items) {
-      const nome = (it.nomeDigisac || '').trim();
-      if (nome && dupSet.has(nome)) {
-        const sampleTicket = byContact.get(it.contactId)?.sample || {};
-        const contactEmbed = sampleTicket?.contact || {};
-        const contatoCompleto = contactCache.get(it.contactId)?.data || {};
+      const sampleTicket = byContact.get(it.contactId)?.sample || {};
+      const contactEmbed = sampleTicket?.contact || {};
+      const contatoCompleto = contactCache.get(it.contactId)?.data || {};
 
-        // Fonte principal: contatoCompleto.data.number (pode vir como string ou number)
-        const rawPrincipal = (contatoCompleto as any)?.data?.number as any;
-        // Fallback: sampleTicket.contact.data.number
-        const rawFallback = (contactEmbed as any)?.data?.number as any;
+      const rawPrincipal = (contatoCompleto as any)?.data?.number as any;
+      const rawFallback = (contactEmbed as any)?.data?.number as any;
 
-        const pegarUltimos4 = (val: any): string | null => {
-          if (val === undefined || val === null) return null;
-          const digits = String(val).replace(/\D/g, '');
-          if (digits.length >= 8) return digits.slice(-4);
-          return null;
-        };
+      const last4 = pegarUltimos4(rawPrincipal) || pegarUltimos4(rawFallback);
 
-        const last4 = pegarUltimos4(rawPrincipal) || pegarUltimos4(rawFallback);
+      const nomeBase = removerSufixoUltimos4((it.nomeDigisac || '').trim());
+      if (!nomeBase) continue;
 
-        if (last4) {
-          it.nomeDigisac = `${it.nomeDigisac} (${last4})`;
-          usandoTelefone++;
-        } else {
-          // Logar ausência de data.number (sem dados sensíveis): contactId e informações do objeto data
-          try {
-            const dataObj = (contatoCompleto as any)?.data;
-            const hasData = !!dataObj && typeof dataObj === 'object';
-            const hasDataNumber = hasData && Object.prototype.hasOwnProperty.call(dataObj || {}, 'number');
-            const typeofData = typeof dataObj;
-            const dataKeys = hasData ? Object.keys(dataObj) : [];
-            console.warn('[API][CHAMADOS] blindagem sem data.number; usando fallback contactId', {
-              contactId: it.contactId,
-              hasData,
-              hasDataNumber,
-              typeofData,
-              dataKeys,
-            });
-          } catch {}
-
-          it.nomeDigisac = `${it.nomeDigisac} (${it.contactId.slice(0, 6)})`;
-          usandoFallbackId++;
-        }
-        ajustados++;
+      if (last4) {
+        it.nomeDigisac = `${nomeBase} (${last4})`;
+        usandoTelefone++;
+      } else {
+        it.nomeDigisac = `${nomeBase} (${it.contactId.slice(0, 6)})`;
+        usandoFallbackId++;
       }
+      ajustados++;
     }
-    console.log('[API][CHAMADOS] blindagemNomesDuplicados ajustados=', ajustados, 'comTelefone=', usandoTelefone, 'fallbackContactId=', usandoFallbackId);
+
+    console.log('[API][CHAMADOS] sufixoNomeComUltimos4 ajustados=', ajustados, 'comTelefone=', usandoTelefone, 'fallbackContactId=', usandoFallbackId);
   }
 
   // Ordena por nomeDigisac ASC para estabilidade

@@ -75,6 +75,37 @@ async function buscarSchedulesDoContato(contactId: string, departmentIds?: strin
   }
 }
 
+// ============================================================================
+// Sessão 1: Verificar se contato tem conversa (ticket) aberta
+// ============================================================================
+async function verificarConversaAberta(contactId: string): Promise<boolean> {
+  const params = new URLSearchParams();
+  params.append('where[contactId]', contactId);
+  params.append('where[isOpen]', 'true');
+  params.append('page', '1');
+  params.append('perPage', '1');
+
+  const url = `/tickets?${params.toString()}`;
+  console.log('[DIGISAC][TICKETS_ABERTOS] consultando contactId=', contactId, 'url=', url);
+
+  try {
+    const res = await fetchDigisac(url);
+    // Log amostra da resposta para confirmar estrutura
+    const amostra = JSON.stringify(res).slice(0, 500);
+    console.log('[DIGISAC][TICKETS_ABERTOS] resposta (amostra)=', amostra);
+
+    // Seguindo padrão do código: res pode ser array ou objeto com rows/data
+    const tickets = Array.isArray(res) ? res : (res.rows || res.data || []);
+    const total = (res && (res.count || res.total)) ?? tickets.length;
+
+    console.log('[DIGISAC][TICKETS_ABERTOS] contactId=', contactId, 'ticketsAbertos=', total);
+    return total > 0;
+  } catch (e) {
+    console.error('[DIGISAC][TICKETS_ABERTOS] erro ao verificar conversa aberta', contactId, e);
+    return false;
+  }
+}
+
 export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosService): Promise<PesquisaChamadosResponse> {
   const start = Date.now();
   const { inicioUtc, fimUtc } = montarRangeUtcSaoPaulo(
@@ -164,11 +195,18 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
     const contato = contatoRes.data || {};
     const tagsStr = formatarTags(contato?.tags || []);
 
+    // ============================================================================
+    // Sessão 2: Verificar status da conversa (ticket aberto ou fechado)
+    // ============================================================================
+    const conversaAberta = await verificarConversaAberta(contactId);
+    const statusConversa: 'Aberta' | 'Fechado' = conversaAberta ? 'Aberta' : 'Fechado';
+
     items.push({
       contactId,
       nomeDigisac: contato?.internalName || contato?.name || '',
       loja,
       consultora,
+      statusConversa,
       tags: tagsStr || '-',
       qtdAgendamentosTotal: total,
       qtdAgendamentosAbertos: abertos,

@@ -122,6 +122,7 @@ export interface ChamadoFinalizadoItem {
   nomeDigisac: string;
   loja: string;
   consultora: string;
+  statusConversa: 'Aberta' | 'Fechado';
   tags: string;
   qtdAgendamentosTotal: number;
   qtdAgendamentosAbertos: number;

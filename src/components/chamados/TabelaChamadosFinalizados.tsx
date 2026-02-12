@@ -105,6 +105,7 @@ export function TabelaChamadosFinalizados({ data, isLoading, error, onPageChange
                   <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[150px] sticky top-0 bg-slate-50 z-10">Loja</TableHead>
                   <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px] sticky top-0 bg-slate-50 z-10">Consultora</TableHead>
                   <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px] sticky top-0 bg-slate-50 z-10">Mensagens agendadas</TableHead>
+                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[160px] sticky top-0 bg-slate-50 z-10">Status da conversa</TableHead>
                   <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[240px] sticky top-0 bg-slate-50 z-10">Tags</TableHead>
                   <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[140px] sticky top-0 bg-slate-50 z-10">Qtd (total)</TableHead>
                   <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[160px] sticky top-0 bg-slate-50 z-10">Qtd (em aberto)</TableHead>
@@ -128,6 +129,11 @@ export function TabelaChamadosFinalizados({ data, isLoading, error, onPageChange
                       <Button variant="outline" size="sm" className="rounded-xl" onClick={() => onVerAgendamentos(item.contactId, item.nomeDigisac)}>
                         Ver agendamentos
                       </Button>
+                    </TableCell>
+                    <TableCell>
+                      <Badge color={item.statusConversa === 'Aberta' ? 'green' : 'neutral'}>
+                        {item.statusConversa}
+                      </Badge>
                     </TableCell>
                     <TableCell className="max-w-[240px] truncate" title={item.tags}>{item.tags || '-'}</TableCell>
                     <TableCell>

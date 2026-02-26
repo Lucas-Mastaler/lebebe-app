@@ -46,7 +46,7 @@ export default function ImportarNfePage() {
   const [fim, setFim] = useState('')
   const [result, setResult] = useState<ImportResult | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
-  const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const popupRef = useRef<Window | null>(null)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Auth check
@@ -70,10 +70,10 @@ export default function ImportarNfePage() {
       clearTimeout(timeoutRef.current)
       timeoutRef.current = null
     }
-    if (iframeRef.current) {
-      iframeRef.current.remove()
-      iframeRef.current = null
+    if (popupRef.current && !popupRef.current.closed) {
+      popupRef.current.close()
     }
+    popupRef.current = null
   }
 
   // postMessage listener — registered once, cleaned up on unmount
@@ -144,18 +144,20 @@ export default function ImportarNfePage() {
     cleanup()
     setImporting(true)
 
-    // 1) Create hidden iframe
-    const iframe = document.createElement('iframe')
-    iframe.name = 'appscript_iframe'
-    iframe.style.display = 'none'
-    document.body.appendChild(iframe)
-    iframeRef.current = iframe
+    // 1) Open popup (top-level window → Google auth cookies ARE sent)
+    const popup = window.open('about:blank', 'appscript_popup', 'width=500,height=300,scrollbars=yes')
+    if (!popup) {
+      setErrorMsg('Popup bloqueado pelo navegador. Permita popups para este site.')
+      setImporting(false)
+      return
+    }
+    popupRef.current = popup
 
-    // 2) Create form targeting the iframe
+    // 2) Create form targeting the popup
     const form = document.createElement('form')
     form.method = 'POST'
     form.action = APPSCRIPT_URL
-    form.target = 'appscript_iframe'
+    form.target = 'appscript_popup'
 
     const addField = (name: string, value: string) => {
       const input = document.createElement('input')
@@ -168,7 +170,7 @@ export default function ImportarNfePage() {
     addField('callback_origin', window.location.origin)
     addField('payload', JSON.stringify({ inicio, fim }))
 
-    // 3) Submit
+    // 3) Submit form into the popup
     document.body.appendChild(form)
     form.submit()
     form.remove()
@@ -180,10 +182,7 @@ export default function ImportarNfePage() {
         'Verifique se você está logado no Google Workspace (lebebe.com.br) neste navegador.'
       )
       setImporting(false)
-      if (iframeRef.current) {
-        iframeRef.current.remove()
-        iframeRef.current = null
-      }
+      cleanup()
     }, 60_000)
   }
 

@@ -719,7 +719,7 @@ function parsearNFeXMLRobusto_(xmlContent) {
 }
 
 // =========================================================
-// Sessão 1.1 — HTML postMessage (para iframe, contorna CORS)
+// Sessão 1.1 — HTML postMessage (popup ou iframe, contorna CORS)
 // =========================================================
 function htmlPostMessage_(data, origin) {
   var safeOrigin = (origin || "").toString().replace(/"/g, "&quot;");
@@ -727,13 +727,16 @@ function htmlPostMessage_(data, origin) {
 
   var html =
     '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>' +
-    '<p>Processando...</p>' +
+    '<p>Processando... pode fechar esta janela.</p>' +
     '<script>' +
     'try {' +
+    '  var target = window.opener || window.parent;' +
     '  var payload = ' + jsonStr + ';' +
-    '  window.parent.postMessage({ source: "appscript-nfe", data: payload }, "' + safeOrigin + '");' +
+    '  target.postMessage({ source: "appscript-nfe", data: payload }, "' + safeOrigin + '");' +
+    '  if (window.opener) setTimeout(function(){ window.close(); }, 500);' +
     '} catch(e) {' +
-    '  window.parent.postMessage({ source: "appscript-nfe", data: { ok:false, error: e.message } }, "' + safeOrigin + '");' +
+    '  var target2 = window.opener || window.parent;' +
+    '  target2.postMessage({ source: "appscript-nfe", data: { ok:false, error: e.message } }, "' + safeOrigin + '");' +
     '}' +
     '</script>' +
     '</body></html>';

@@ -1,11 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { CalendarDays, Download, AlertCircle, Package, Loader2, FileText, Search, Truck, Weight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import { isMaticEmail } from '@/lib/auth/matic-emails'
+
+const APPSCRIPT_URL = process.env.NEXT_PUBLIC_APPSCRIPT_IMPORT_URL || ''
 
 interface NfItem {
   nItem: number
@@ -44,6 +46,7 @@ export default function ImportarNfePage() {
   const [fim, setFim] = useState('')
   const [result, setResult] = useState<ImportResult | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
 
   useEffect(() => {
     async function checkAuth() {
@@ -59,9 +62,49 @@ export default function ImportarNfePage() {
     checkAuth()
   }, [router])
 
-  async function handleImport() {
+  // Listen for postMessage from the Apps Script iframe
+  const handleMessage = useCallback((event: MessageEvent) => {
+    // Accept messages from Google domains
+    if (
+      !event.origin.includes('googleusercontent.com') &&
+      !event.origin.includes('google.com') &&
+      !event.origin.includes('script.google.com')
+    ) {
+      return
+    }
+
+    const msg = event.data
+    if (!msg || msg.source !== 'appscript-nfe') return
+
+    const data = msg.data as ImportResult
+
+    if (!data.ok) {
+      setErrorMsg(data.error || 'Erro retornado pelo Apps Script.')
+    } else {
+      setResult(data)
+    }
+    setImporting(false)
+
+    // Cleanup iframe
+    if (iframeRef.current) {
+      iframeRef.current.remove()
+      iframeRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [handleMessage])
+
+  function handleImport() {
     setErrorMsg('')
     setResult(null)
+
+    if (!APPSCRIPT_URL) {
+      setErrorMsg('NEXT_PUBLIC_APPSCRIPT_IMPORT_URL não configurada.')
+      return
+    }
 
     if (!inicio || !fim) {
       setErrorMsg('Preencha as datas de início e fim.')
@@ -83,25 +126,48 @@ export default function ImportarNfePage() {
 
     setImporting(true)
 
-    try {
-      const res = await fetch('/api/matic/importar-nfe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inicio, fim }),
-      })
+    // Create hidden iframe
+    const iframe = document.createElement('iframe')
+    iframe.name = 'appscript-import-frame'
+    iframe.style.display = 'none'
+    document.body.appendChild(iframe)
+    iframeRef.current = iframe
 
-      const data: ImportResult = await res.json()
+    // Create form targeting the iframe
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = APPSCRIPT_URL
+    form.target = 'appscript-import-frame'
 
-      if (!data.ok) {
-        setErrorMsg(data.error || 'Erro desconhecido na importação.')
-      } else {
-        setResult(data)
+    // payload field (JSON with inicio/fim)
+    const payloadInput = document.createElement('input')
+    payloadInput.type = 'hidden'
+    payloadInput.name = 'payload'
+    payloadInput.value = JSON.stringify({ inicio, fim })
+    form.appendChild(payloadInput)
+
+    // callback_origin field (so Apps Script knows where to postMessage)
+    const originInput = document.createElement('input')
+    originInput.type = 'hidden'
+    originInput.name = 'callback_origin'
+    originInput.value = window.location.origin
+    form.appendChild(originInput)
+
+    document.body.appendChild(form)
+    form.submit()
+    form.remove()
+
+    // Timeout: 2 minutes
+    setTimeout(() => {
+      if (importing) {
+        setErrorMsg('Timeout: Apps Script demorou mais de 2 minutos para responder.')
+        setImporting(false)
+        if (iframeRef.current) {
+          iframeRef.current.remove()
+          iframeRef.current = null
+        }
       }
-    } catch (err) {
-      setErrorMsg('Erro de conexão: ' + String(err))
-    } finally {
-      setImporting(false)
-    }
+    }, 120000)
   }
 
   if (loading) {

@@ -5,13 +5,20 @@
  *
  * Publicar como Web App:
  *   - Execute as: Me (lucas@lebebe.com.br)
- *   - Who has access: Anyone
+ *   - Who has access: Anyone within lebebe.com.br
  *
- * Script Properties necessárias:
- *   - LEBEBE_IMPORT_TOKEN = "<token secreto forte>"
+ * Suporta DOIS modos de chamada:
  *
- * O endpoint recebe POST com JSON { inicio, fim } e retorna
- * as NFes encontradas no Gmail nesse período.
+ * 1) JSON API (server-to-server):
+ *    POST com body JSON { token, inicio, fim }
+ *    Retorna: ContentService JSON
+ *
+ * 2) Form via iframe (browser, contorna CORS):
+ *    POST com form fields: payload (JSON string), callback_origin
+ *    Retorna: HtmlService com postMessage para o parent
+ *
+ * A restrição de domínio (Anyone within lebebe.com.br) é a
+ * segurança principal. O token é opcional (defense-in-depth).
  * =========================================================
  */
 
@@ -19,72 +26,98 @@
 // Entry point — doPost
 // =========================================================
 function doPost(e) {
+  var callbackOrigin = '';
+
   try {
-    // 1) Validar token
-    var token = e.parameter['token'] || '';
-    // Apps Script Web Apps não recebem headers customizados via fetch normal,
-    // então o token é enviado como query param OU no body.
-    // Tentar ler do body também:
     var body = {};
-    try {
-      body = JSON.parse(e.postData.contents);
-    } catch (err) {
-      return jsonResponse_(401, { ok: false, error: 'invalid_body' });
+
+    // Detectar modo: form (iframe) vs JSON (API)
+    if (e.parameter && e.parameter.callback_origin) {
+      // MODO IFRAME: dados vêm como form field "payload" (JSON string)
+      callbackOrigin = e.parameter.callback_origin;
+      Logger.log('[LOG] Modo: iframe (callback_origin=' + callbackOrigin + ')');
+
+      try {
+        body = JSON.parse(e.parameter.payload || '{}');
+      } catch (err) {
+        return htmlPostMessage_({ ok: false, error: 'payload inválido' }, callbackOrigin);
+      }
+    } else {
+      // MODO API: dados vêm no body JSON
+      Logger.log('[LOG] Modo: API (JSON body)');
+      try {
+        body = JSON.parse(e.postData.contents);
+      } catch (err) {
+        return jsonResponse_(400, { ok: false, error: 'invalid_body' });
+      }
     }
 
+    // Token: validar se configurado (opcional — domínio já protege)
     var expectedToken = PropertiesService.getScriptProperties().getProperty('LEBEBE_IMPORT_TOKEN');
-    var receivedToken = token || body.token || '';
-
-    Logger.log('[LOG] Validando token...');
-    if (!expectedToken || receivedToken !== expectedToken) {
-      Logger.log('[LOG] Token inválido ou ausente');
-      return jsonResponse_(401, { ok: false, error: 'unauthorized' });
+    if (expectedToken && body.token && body.token !== expectedToken) {
+      Logger.log('[LOG] Token inválido');
+      var errAuth = { ok: false, error: 'unauthorized' };
+      if (callbackOrigin) return htmlPostMessage_(errAuth, callbackOrigin);
+      return jsonResponse_(401, errAuth);
     }
-    Logger.log('[LOG] Token válido');
+    Logger.log('[LOG] Auth OK (domínio + token)');
 
-    // 2) Validar datas
+    // Validar datas
     var inicio = body.inicio; // "YYYY-MM-DD"
     var fim = body.fim;       // "YYYY-MM-DD"
 
     if (!inicio || !fim) {
-      return jsonResponse_(400, { ok: false, error: 'inicio e fim são obrigatórios' });
+      var errDatas = { ok: false, error: 'inicio e fim são obrigatórios' };
+      if (callbackOrigin) return htmlPostMessage_(errDatas, callbackOrigin);
+      return jsonResponse_(400, errDatas);
     }
 
     var dInicio = new Date(inicio + 'T00:00:00');
     var dFim = new Date(fim + 'T23:59:59');
 
     if (isNaN(dInicio.getTime()) || isNaN(dFim.getTime())) {
-      return jsonResponse_(400, { ok: false, error: 'Datas inválidas' });
+      var errInv = { ok: false, error: 'Datas inválidas' };
+      if (callbackOrigin) return htmlPostMessage_(errInv, callbackOrigin);
+      return jsonResponse_(400, errInv);
     }
 
     if (dInicio > dFim) {
-      return jsonResponse_(400, { ok: false, error: 'inicio deve ser <= fim' });
+      var errOrd = { ok: false, error: 'inicio deve ser <= fim' };
+      if (callbackOrigin) return htmlPostMessage_(errOrd, callbackOrigin);
+      return jsonResponse_(400, errOrd);
     }
 
     // Janela máxima 90 dias
     var diffDays = (dFim - dInicio) / (1000 * 60 * 60 * 24);
     if (diffDays > 90) {
-      return jsonResponse_(400, { ok: false, error: 'Janela máxima de 90 dias' });
+      var errJanela = { ok: false, error: 'Janela máxima de 90 dias' };
+      if (callbackOrigin) return htmlPostMessage_(errJanela, callbackOrigin);
+      return jsonResponse_(400, errJanela);
     }
 
-    // 3) Buscar emails no Gmail
+    // Buscar emails no Gmail
     var result = buscarNFesNoGmail_(inicio, fim);
 
     Logger.log('[LOG] Total de NFs consolidadas: ' + result.nfs.length);
     Logger.log('[LOG] Total de erros: ' + result.erros.length);
 
-    return jsonResponse_(200, {
+    var response = {
       ok: true,
       inicio: inicio,
       fim: fim,
       query: result.query,
       nfs: result.nfs,
       erros: result.erros
-    });
+    };
+
+    if (callbackOrigin) return htmlPostMessage_(response, callbackOrigin);
+    return jsonResponse_(200, response);
 
   } catch (err) {
     Logger.log('[LOG] Erro geral: ' + err.message);
-    return jsonResponse_(500, { ok: false, error: err.message });
+    var errGeral = { ok: false, error: err.message };
+    if (callbackOrigin) return htmlPostMessage_(errGeral, callbackOrigin);
+    return jsonResponse_(500, errGeral);
   }
 }
 
@@ -303,6 +336,26 @@ function jsonResponse_(statusCode, data) {
   var output = ContentService.createTextOutput(JSON.stringify(data));
   output.setMimeType(ContentService.MimeType.JSON);
   return output;
+}
+
+function htmlPostMessage_(data, origin) {
+  // Retorna HTML que envia os dados via postMessage para o parent (iframe)
+  // setXFrameOptionsMode(ALLOWALL) permite carregar em iframe cross-origin
+  var jsonStr = JSON.stringify(data);
+  var safeOrigin = origin.replace(/"/g, '&quot;');
+  var html = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>' +
+    '<p>Processando...</p>' +
+    '<script>' +
+    'try {' +
+    '  var data = ' + jsonStr + ';' +
+    '  window.parent.postMessage({ source: "appscript-nfe", data: data }, "' + safeOrigin + '");' +
+    '} catch(e) {' +
+    '  window.parent.postMessage({ source: "appscript-nfe", data: { ok: false, error: e.message } }, "' + safeOrigin + '");' +
+    '}' +
+    '</script>' +
+    '</body></html>';
+  return HtmlService.createHtmlOutput(html)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 // =========================================================

@@ -129,6 +129,8 @@ export const config = {
     '/dashboard/:path*',
     '/chamados-finalizados/:path*',
     '/superadmin/:path*',
+    '/recebimento/:path*',
+    '/pos-venda/:path*',
     '/login',
     '/recuperar-senha',
     '/resetar-senha',

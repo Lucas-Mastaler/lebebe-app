@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Calendar, ChevronLeft, ChevronRight, CheckCircle, BarChart3, LogOut, Users, ClipboardList, Clock } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, CheckCircle, BarChart3, LogOut, Users, ClipboardList, Clock, Package, FileDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 
@@ -55,6 +55,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     const router = useRouter();
     const [loggingOut, setLoggingOut] = useState(false);
     const [isSuperadmin, setIsSuperadmin] = useState(false);
+    const [isMaticUser, setIsMaticUser] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
@@ -77,6 +78,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
                 if (!cancelled) {
                     setIsSuperadmin(data?.role === 'superadmin');
+                    const maticEmails = ['posvenda@lebebe.com.br', 'lucas@lebebe.com.br'];
+                    setIsMaticUser(maticEmails.includes(user.email!.toLowerCase()));
                 }
             } catch {
                 if (!cancelled) setIsSuperadmin(false);
@@ -170,6 +173,49 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                             </li>
                         );
                     })}
+
+                    {isMaticUser && (
+                        <>
+                            <li>
+                                <Link
+                                    href="/recebimento"
+                                    className={cn(
+                                        'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200',
+                                        pathname.startsWith('/recebimento')
+                                            ? 'bg-[rgba(0,165,230,0.10)] text-[#00A5E6] border-l-4 border-[#00A5E6] -ml-0.5'
+                                            : 'text-slate-600 hover:bg-slate-100',
+                                        collapsed && 'justify-center px-0'
+                                    )}
+                                >
+                                    <Package className={cn('w-5 h-5 flex-shrink-0', pathname.startsWith('/recebimento') && 'text-[#00A5E6]')} />
+                                    {!collapsed && (
+                                        <span className={cn('font-medium text-sm', pathname.startsWith('/recebimento') && 'font-semibold')}>
+                                            RECEBIMENTO
+                                        </span>
+                                    )}
+                                </Link>
+                            </li>
+                            <li>
+                                <Link
+                                    href="/pos-venda/importar-nfe"
+                                    className={cn(
+                                        'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200',
+                                        pathname.startsWith('/pos-venda/importar-nfe')
+                                            ? 'bg-[rgba(0,165,230,0.10)] text-[#00A5E6] border-l-4 border-[#00A5E6] -ml-0.5'
+                                            : 'text-slate-600 hover:bg-slate-100',
+                                        collapsed && 'justify-center px-0'
+                                    )}
+                                >
+                                    <FileDown className={cn('w-5 h-5 flex-shrink-0', pathname.startsWith('/pos-venda/importar-nfe') && 'text-[#00A5E6]')} />
+                                    {!collapsed && (
+                                        <span className={cn('font-medium text-sm', pathname.startsWith('/pos-venda/importar-nfe') && 'font-semibold')}>
+                                            IMPORTAR NFe
+                                        </span>
+                                    )}
+                                </Link>
+                            </li>
+                        </>
+                    )}
 
                     {isSuperadmin && (
                         <>

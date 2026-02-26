@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { CalendarDays, Download, AlertCircle, Package, Loader2, FileText, Search, Truck, Weight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -10,7 +10,7 @@ import { isMaticEmail } from '@/lib/auth/matic-emails'
 const APPSCRIPT_URL = process.env.NEXT_PUBLIC_APPSCRIPT_IMPORT_URL || ''
 
 interface NfItem {
-  nItem: number
+  n_item: number
   codigo_produto: string
   descricao: string
   quantidade: number
@@ -33,7 +33,7 @@ interface ImportResult {
   query?: string
   nfs?: Nf[]
   erros?: Array<{ etapa: string; message: string; emailMessageId?: string }>
-  stats?: { threads?: number; mensagens?: number; anexos_xml?: number }
+  stats?: { threads: number; mensagens: number; anexos_xml: number; nfs: number }
   error?: string
 }
 
@@ -47,7 +47,9 @@ export default function ImportarNfePage() {
   const [result, setResult] = useState<ImportResult | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Auth check
   useEffect(() => {
     async function checkAuth() {
       const supabase = createClient()
@@ -62,40 +64,54 @@ export default function ImportarNfePage() {
     checkAuth()
   }, [router])
 
-  // Listen for postMessage from the Apps Script iframe
-  const handleMessage = useCallback((event: MessageEvent) => {
-    // Accept messages from Google domains
-    if (
-      !event.origin.includes('googleusercontent.com') &&
-      !event.origin.includes('google.com') &&
-      !event.origin.includes('script.google.com')
-    ) {
-      return
+  // Cleanup helper
+  function cleanup() {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
     }
-
-    const msg = event.data
-    if (!msg || msg.source !== 'appscript-nfe') return
-
-    const data = msg.data as ImportResult
-
-    if (!data.ok) {
-      setErrorMsg(data.error || 'Erro retornado pelo Apps Script.')
-    } else {
-      setResult(data)
-    }
-    setImporting(false)
-
-    // Cleanup iframe
     if (iframeRef.current) {
       iframeRef.current.remove()
       iframeRef.current = null
     }
-  }, [])
+  }
 
+  // postMessage listener — registered once, cleaned up on unmount
   useEffect(() => {
+    function handleMessage(event: MessageEvent) {
+      // Validate origin: only accept Google domains
+      const origin = event.origin || ''
+      if (
+        !origin.includes('script.google.com') &&
+        !origin.includes('googleusercontent.com') &&
+        !origin.includes('google.com')
+      ) {
+        return
+      }
+
+      // Validate payload shape
+      const msg = event.data
+      if (!msg || msg.source !== 'appscript-nfe') return
+
+      const data = msg.data as ImportResult
+
+      if (!data.ok) {
+        setErrorMsg(data.error || 'Erro retornado pelo Apps Script.')
+      } else {
+        setResult(data)
+      }
+
+      setImporting(false)
+      cleanup()
+    }
+
     window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [handleMessage])
+    return () => {
+      window.removeEventListener('message', handleMessage)
+      cleanup()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function handleImport() {
     setErrorMsg('')
@@ -124,51 +140,54 @@ export default function ImportarNfePage() {
       return
     }
 
+    // Clean previous attempt
+    cleanup()
     setImporting(true)
 
-    // Create hidden iframe
+    // 1) Create hidden iframe
     const iframe = document.createElement('iframe')
-    iframe.name = 'appscript-import-frame'
+    iframe.name = 'appscript_iframe'
     iframe.style.display = 'none'
     document.body.appendChild(iframe)
     iframeRef.current = iframe
 
-    // Create form targeting the iframe
+    // 2) Create form targeting the iframe
     const form = document.createElement('form')
     form.method = 'POST'
     form.action = APPSCRIPT_URL
-    form.target = 'appscript-import-frame'
+    form.target = 'appscript_iframe'
 
-    // payload field (JSON with inicio/fim)
-    const payloadInput = document.createElement('input')
-    payloadInput.type = 'hidden'
-    payloadInput.name = 'payload'
-    payloadInput.value = JSON.stringify({ inicio, fim })
-    form.appendChild(payloadInput)
+    const addField = (name: string, value: string) => {
+      const input = document.createElement('input')
+      input.type = 'hidden'
+      input.name = name
+      input.value = value
+      form.appendChild(input)
+    }
 
-    // callback_origin field (so Apps Script knows where to postMessage)
-    const originInput = document.createElement('input')
-    originInput.type = 'hidden'
-    originInput.name = 'callback_origin'
-    originInput.value = window.location.origin
-    form.appendChild(originInput)
+    addField('callback_origin', window.location.origin)
+    addField('payload', JSON.stringify({ inicio, fim }))
 
+    // 3) Submit
     document.body.appendChild(form)
     form.submit()
     form.remove()
 
-    // Timeout: 2 minutes
-    setTimeout(() => {
-      if (importing) {
-        setErrorMsg('Timeout: Apps Script demorou mais de 2 minutos para responder.')
-        setImporting(false)
-        if (iframeRef.current) {
-          iframeRef.current.remove()
-          iframeRef.current = null
-        }
+    // 4) Timeout: 60s
+    timeoutRef.current = setTimeout(() => {
+      setErrorMsg(
+        'Timeout (60s): sem resposta do Apps Script. ' +
+        'Verifique se você está logado no Google Workspace (lebebe.com.br) neste navegador.'
+      )
+      setImporting(false)
+      if (iframeRef.current) {
+        iframeRef.current.remove()
+        iframeRef.current = null
       }
-    }, 120000)
+    }, 60_000)
   }
+
+  // ─── Render ───────────────────────────────────────────
 
   if (loading) {
     return (
@@ -193,7 +212,7 @@ export default function ImportarNfePage() {
         </p>
       </div>
 
-      {/* Form */}
+      {/* Date form */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
           <div>
@@ -225,9 +244,9 @@ export default function ImportarNfePage() {
         </div>
 
         {errorMsg && (
-          <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 rounded-lg px-3 py-2 mb-4">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            {errorMsg}
+          <div className="flex items-start gap-2 text-red-600 text-sm bg-red-50 rounded-lg px-3 py-2 mb-4">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <span>{errorMsg}</span>
           </div>
         )}
 
@@ -239,12 +258,12 @@ export default function ImportarNfePage() {
           {importing ? (
             <>
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Importando...
+              Buscando NFs...
             </>
           ) : (
             <>
               <Search className="w-4 h-4 mr-2" />
-              Importar NFs
+              Buscar NFs
             </>
           )}
         </Button>
@@ -253,26 +272,28 @@ export default function ImportarNfePage() {
       {/* Results */}
       {result && (
         <div className="space-y-4">
-          {/* Stats */}
-          {result.stats && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-              <h3 className="text-sm font-semibold text-slate-600 mb-3">Estatísticas da busca</h3>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-slate-50 rounded-xl p-3 text-center">
-                  <p className="text-2xl font-bold text-slate-700">{result.stats.threads ?? '-'}</p>
-                  <p className="text-xs text-slate-500">Threads</p>
-                </div>
-                <div className="bg-slate-50 rounded-xl p-3 text-center">
-                  <p className="text-2xl font-bold text-slate-700">{result.stats.mensagens ?? '-'}</p>
-                  <p className="text-xs text-slate-500">Mensagens</p>
-                </div>
-                <div className="bg-slate-50 rounded-xl p-3 text-center">
-                  <p className="text-2xl font-bold text-slate-700">{result.stats.anexos_xml ?? '-'}</p>
-                  <p className="text-xs text-slate-500">XMLs</p>
-                </div>
+          {/* Stats summary */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <h3 className="text-sm font-semibold text-slate-600 mb-3">Resumo</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-slate-700">{result.stats?.threads ?? '-'}</p>
+                <p className="text-xs text-slate-500">Threads</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-slate-700">{result.stats?.mensagens ?? '-'}</p>
+                <p className="text-xs text-slate-500">Mensagens</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-slate-700">{result.stats?.anexos_xml ?? '-'}</p>
+                <p className="text-xs text-slate-500">XMLs</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-slate-700">{result.stats?.nfs ?? result.nfs?.length ?? 0}</p>
+                <p className="text-xs text-slate-500">NFs</p>
               </div>
             </div>
-          )}
+          </div>
 
           {/* Query usada */}
           {result.query && (
@@ -285,7 +306,7 @@ export default function ImportarNfePage() {
             </div>
           )}
 
-          {/* Total NFs */}
+          {/* NF list */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
             <h3 className="text-lg font-semibold text-slate-800 mb-4">
               NFs encontradas: {result.nfs?.length || 0}
@@ -338,7 +359,7 @@ export default function ImportarNfePage() {
                       </div>
                     )}
 
-                    {/* Items (collapsed by default, expandable) */}
+                    {/* Items (collapsed) */}
                     {nf.itens && nf.itens.length > 0 && (
                       <details className="mt-2">
                         <summary className="text-xs text-[#00A5E6] cursor-pointer hover:underline">
@@ -346,8 +367,8 @@ export default function ImportarNfePage() {
                         </summary>
                         <div className="mt-2 space-y-1">
                           {nf.itens.map(item => (
-                            <div key={item.nItem} className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 rounded px-2 py-1">
-                              <span className="font-mono text-slate-400 w-6 text-right">{item.nItem}.</span>
+                            <div key={item.n_item} className="flex items-center gap-2 text-xs text-slate-600 bg-slate-50 rounded px-2 py-1">
+                              <span className="font-mono text-slate-400 w-6 text-right">{item.n_item}.</span>
                               <span className="font-semibold min-w-[50px]">{item.codigo_produto}</span>
                               <span className="flex-1 truncate">{item.descricao}</span>
                               <span className="font-medium text-slate-700">×{item.quantidade}</span>

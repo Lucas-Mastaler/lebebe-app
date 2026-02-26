@@ -45,16 +45,39 @@ function doPost(e) {
 
   try {
     // -----------------------------------------------------
-    // 1) Detectar modo IFRAME (form fields) vs JSON (API)
+    // 1) Detectar modo POPUP/IFRAME vs JSON API
+    //    callback_origin vem na query string (e.parameter)
+    //    payload vem no POST body (e.postData.contents) como form-encoded
     // -----------------------------------------------------
-    var isIframeMode = !!(e && e.parameter && e.parameter.callback_origin);
+    var isPopupMode = !!(e && e.parameter && e.parameter.callback_origin);
 
-    if (isIframeMode) {
+    if (isPopupMode) {
       callbackOrigin = (e.parameter.callback_origin || "").toString().trim();
-      Logger.log("[LOG][REST] Modo IFRAME. callback_origin=" + callbackOrigin);
+      Logger.log("[LOG][REST] Modo POPUP. callback_origin=" + callbackOrigin);
+
+      // payload vem no POST body como form-encoded: "payload=%7B...%7D"
+      var postContents = (e.postData && e.postData.contents) ? e.postData.contents : "";
+      var payloadStr = "";
+
+      // Tentar e.parameter.payload primeiro (caso Apps Script já parseou)
+      if (e.parameter.payload) {
+        payloadStr = e.parameter.payload.toString();
+      } else {
+        // Parsear manualmente o form-encoded body
+        var pairs = postContents.split("&");
+        for (var p = 0; p < pairs.length; p++) {
+          var kv = pairs[p].split("=");
+          if (decodeURIComponent(kv[0]) === "payload") {
+            payloadStr = decodeURIComponent(kv.slice(1).join("=") || "");
+            break;
+          }
+        }
+      }
+
+      Logger.log("[LOG][REST] payload raw (100chars): " + (payloadStr || "").substring(0, 100));
 
       try {
-        body = JSON.parse((e.parameter.payload || "{}").toString());
+        body = JSON.parse(payloadStr || "{}");
       } catch (errPayload) {
         return htmlPostMessage_({ ok: false, error: "payload_invalido" }, callbackOrigin);
       }
@@ -76,7 +99,7 @@ function doPost(e) {
     // Regra:
     // - modo API JSON: se existir expectedToken, exigir match
     // - modo IFRAME: token é opcional (domínio já restringe)
-    if (!isIframeMode) {
+    if (!isPopupMode) {
       if (expectedToken && receivedToken !== expectedToken) {
         Logger.log("[LOG][REST] Token inválido/ausente (API JSON)");
         return jsonResponse_({ ok: false, error: "unauthorized" });
@@ -96,7 +119,7 @@ function doPost(e) {
 
     if (!inicio || !fim) {
       var err1 = { ok: false, error: "inicio_e_fim_obrigatorios" };
-      return isIframeMode ? htmlPostMessage_(err1, callbackOrigin) : jsonResponse_(err1);
+      return isPopupMode ? htmlPostMessage_(err1, callbackOrigin) : jsonResponse_(err1);
     }
 
     var dataInicio = parseDateCell_(inicio);
@@ -104,7 +127,7 @@ function doPost(e) {
 
     if (!dataInicio || !dataFim) {
       var err2 = { ok: false, error: "datas_invalidas" };
-      return isIframeMode ? htmlPostMessage_(err2, callbackOrigin) : jsonResponse_(err2);
+      return isPopupMode ? htmlPostMessage_(err2, callbackOrigin) : jsonResponse_(err2);
     }
 
     dataInicio = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), dataInicio.getDate());
@@ -112,13 +135,13 @@ function doPost(e) {
 
     if (dataFim < dataInicio) {
       var err3 = { ok: false, error: "fim_menor_que_inicio" };
-      return isIframeMode ? htmlPostMessage_(err3, callbackOrigin) : jsonResponse_(err3);
+      return isPopupMode ? htmlPostMessage_(err3, callbackOrigin) : jsonResponse_(err3);
     }
 
     var diffDias = Math.floor((dataFim - dataInicio) / (1000 * 60 * 60 * 24));
     if (diffDias > 90) {
       var err4 = { ok: false, error: "janela_maxima_90_dias" };
-      return isIframeMode ? htmlPostMessage_(err4, callbackOrigin) : jsonResponse_(err4);
+      return isPopupMode ? htmlPostMessage_(err4, callbackOrigin) : jsonResponse_(err4);
     }
 
     // -----------------------------------------------------
@@ -139,7 +162,7 @@ function doPost(e) {
 
     Logger.log("[LOG][REST] OK. NFs=" + (motor.nfs || []).length + " | Erros=" + (motor.erros || []).length);
 
-    return isIframeMode ? htmlPostMessage_(response, callbackOrigin) : jsonResponse_(response);
+    return isPopupMode ? htmlPostMessage_(response, callbackOrigin) : jsonResponse_(response);
 
   } catch (err) {
     Logger.log("[LOG][REST] Erro geral: " + err);

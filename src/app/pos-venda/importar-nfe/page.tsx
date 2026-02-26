@@ -154,21 +154,20 @@ export default function ImportarNfePage() {
     popupRef.current = popup
 
     // 2) Create form targeting the popup
+    //    callback_origin goes in the URL query string (→ e.parameter in Apps Script)
+    //    payload goes as POST body form field (→ e.postData.contents)
+    const actionUrl = APPSCRIPT_URL + '?callback_origin=' + encodeURIComponent(window.location.origin)
+
     const form = document.createElement('form')
     form.method = 'POST'
-    form.action = APPSCRIPT_URL
+    form.action = actionUrl
     form.target = 'appscript_popup'
 
-    const addField = (name: string, value: string) => {
-      const input = document.createElement('input')
-      input.type = 'hidden'
-      input.name = name
-      input.value = value
-      form.appendChild(input)
-    }
-
-    addField('callback_origin', window.location.origin)
-    addField('payload', JSON.stringify({ inicio, fim }))
+    const payloadInput = document.createElement('input')
+    payloadInput.type = 'hidden'
+    payloadInput.name = 'payload'
+    payloadInput.value = JSON.stringify({ inicio, fim })
+    form.appendChild(payloadInput)
 
     // 3) Submit form into the popup
     document.body.appendChild(form)

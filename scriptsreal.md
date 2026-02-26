@@ -35,118 +35,71 @@
 
 
 // =========================================================
-// Sessão 1.0 — REST/IFRAME: doPost
+// Sessão 1.0 — POPUP/FORM: doPost (sem payload JSON)
 // =========================================================
 function doPost(e) {
   Logger.log("[LOG][REST] doPost iniciado");
 
-  var callbackOrigin = "";
-  var body = {};
-
   try {
-    // -----------------------------------------------------
-    // 1) Detectar modo POPUP/IFRAME vs JSON API
-    //    callback_origin vem na query string (e.parameter)
-    //    payload vem no POST body (e.postData.contents) como form-encoded
-    // -----------------------------------------------------
-    var isPopupMode = !!(e && e.parameter && e.parameter.callback_origin);
+    // ---------------------------------------------
+    // 1) Ler params do form (POST x-www-form-urlencoded)
+    //    Form fields chegam em e.parameter
+    // ---------------------------------------------
+    var callbackOrigin = (e && e.parameter && e.parameter.callback_origin)
+      ? String(e.parameter.callback_origin).trim()
+      : "";
 
-    if (isPopupMode) {
-      callbackOrigin = (e.parameter.callback_origin || "").toString().trim();
-      Logger.log("[LOG][REST] Modo POPUP. callback_origin=" + callbackOrigin);
+    var inicio = (e && e.parameter && e.parameter.inicio)
+      ? String(e.parameter.inicio).trim()
+      : "";
 
-      // payload vem no POST body como form-encoded: "payload=%7B...%7D"
-      var postContents = (e.postData && e.postData.contents) ? e.postData.contents : "";
-      var payloadStr = "";
+    var fim = (e && e.parameter && e.parameter.fim)
+      ? String(e.parameter.fim).trim()
+      : "";
 
-      // Tentar e.parameter.payload primeiro (caso Apps Script já parseou)
-      if (e.parameter.payload) {
-        payloadStr = e.parameter.payload.toString();
-      } else {
-        // Parsear manualmente o form-encoded body
-        var pairs = postContents.split("&");
-        for (var p = 0; p < pairs.length; p++) {
-          var kv = pairs[p].split("=");
-          if (decodeURIComponent(kv[0]) === "payload") {
-            payloadStr = decodeURIComponent(kv.slice(1).join("=") || "");
-            break;
-          }
-        }
-      }
+    Logger.log("[LOG][REST] callback_origin=" + callbackOrigin);
+    Logger.log("[LOG][REST] inicio=" + inicio + " | fim=" + fim);
 
-      Logger.log("[LOG][REST] payload raw (100chars): " + (payloadStr || "").substring(0, 100));
-
-      try {
-        body = JSON.parse(payloadStr || "{}");
-      } catch (errPayload) {
-        return htmlPostMessage_({ ok: false, error: "payload_invalido" }, callbackOrigin);
-      }
-    } else {
-      Logger.log("[LOG][REST] Modo API JSON");
-      try {
-        body = JSON.parse((e && e.postData && e.postData.contents) ? e.postData.contents : "{}");
-      } catch (errBody) {
-        return jsonResponse_({ ok: false, error: "invalid_body" });
-      }
+    // callback_origin é obrigatório no modo popup (postMessage)
+    if (!callbackOrigin) {
+      Logger.log("[LOG][REST] ERRO: missing_callback_origin");
+      return jsonResponse_({ ok: false, error: "missing_callback_origin" });
     }
-
-    // -----------------------------------------------------
-    // 2) Auth / token (opcional no iframe)
-    // -----------------------------------------------------
-    var expectedToken = PropertiesService.getScriptProperties().getProperty("LEBEBE_IMPORT_TOKEN");
-    var receivedToken = (body.token || "").toString().trim();
-
-    // Regra:
-    // - modo API JSON: se existir expectedToken, exigir match
-    // - modo IFRAME: token é opcional (domínio já restringe)
-    if (!isPopupMode) {
-      if (expectedToken && receivedToken !== expectedToken) {
-        Logger.log("[LOG][REST] Token inválido/ausente (API JSON)");
-        return jsonResponse_({ ok: false, error: "unauthorized" });
-      }
-    } else {
-      if (expectedToken && receivedToken && receivedToken !== expectedToken) {
-        Logger.log("[LOG][REST] Token inválido (IFRAME)");
-        return htmlPostMessage_({ ok: false, error: "unauthorized" }, callbackOrigin);
-      }
-    }
-
-    // -----------------------------------------------------
-    // 3) Datas
-    // -----------------------------------------------------
-    var inicio = (body.inicio || "").toString().trim(); // YYYY-MM-DD
-    var fim    = (body.fim    || "").toString().trim(); // YYYY-MM-DD
 
     if (!inicio || !fim) {
-      var err1 = { ok: false, error: "inicio_e_fim_obrigatorios" };
-      return isPopupMode ? htmlPostMessage_(err1, callbackOrigin) : jsonResponse_(err1);
+      Logger.log("[LOG][REST] ERRO: inicio_e_fim_obrigatorios");
+      return htmlPostMessage_({ ok: false, error: "inicio_e_fim_obrigatorios" }, callbackOrigin);
     }
 
+    // ---------------------------------------------
+    // 2) Validar datas (usa seu helper parseDateCell_)
+    // ---------------------------------------------
     var dataInicio = parseDateCell_(inicio);
-    var dataFim    = parseDateCell_(fim);
+    var dataFim = parseDateCell_(fim);
 
     if (!dataInicio || !dataFim) {
-      var err2 = { ok: false, error: "datas_invalidas" };
-      return isPopupMode ? htmlPostMessage_(err2, callbackOrigin) : jsonResponse_(err2);
+      Logger.log("[LOG][REST] ERRO: datas_invalidas");
+      return htmlPostMessage_({ ok: false, error: "datas_invalidas" }, callbackOrigin);
     }
 
+    // normalizar para meia-noite
     dataInicio = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), dataInicio.getDate());
-    dataFim    = new Date(dataFim.getFullYear(), dataFim.getMonth(), dataFim.getDate());
+    dataFim = new Date(dataFim.getFullYear(), dataFim.getMonth(), dataFim.getDate());
 
     if (dataFim < dataInicio) {
-      var err3 = { ok: false, error: "fim_menor_que_inicio" };
-      return isPopupMode ? htmlPostMessage_(err3, callbackOrigin) : jsonResponse_(err3);
+      Logger.log("[LOG][REST] ERRO: fim_menor_que_inicio");
+      return htmlPostMessage_({ ok: false, error: "fim_menor_que_inicio" }, callbackOrigin);
     }
 
     var diffDias = Math.floor((dataFim - dataInicio) / (1000 * 60 * 60 * 24));
     if (diffDias > 90) {
-      var err4 = { ok: false, error: "janela_maxima_90_dias" };
-      return isPopupMode ? htmlPostMessage_(err4, callbackOrigin) : jsonResponse_(err4);
+      Logger.log("[LOG][REST] ERRO: janela_maxima_90_dias");
+      return htmlPostMessage_({ ok: false, error: "janela_maxima_90_dias" }, callbackOrigin);
     }
 
-    // -----------------------------------------------------
-    // 4) Executar motor (no iframe NÃO precisa procv)
-    // -----------------------------------------------------
+    // ---------------------------------------------
+    // 3) Rodar motor
+    // ---------------------------------------------
     var emailAddress = "nfe@maticmoveis.com.br";
     var motor = buscarNFesMotor_(emailAddress, dataInicio, dataFim, null);
 
@@ -161,13 +114,14 @@ function doPost(e) {
     };
 
     Logger.log("[LOG][REST] OK. NFs=" + (motor.nfs || []).length + " | Erros=" + (motor.erros || []).length);
-
-    return isPopupMode ? htmlPostMessage_(response, callbackOrigin) : jsonResponse_(response);
+    return htmlPostMessage_(response, callbackOrigin);
 
   } catch (err) {
     Logger.log("[LOG][REST] Erro geral: " + err);
-    var errGeral = { ok: false, error: (err && err.message) ? err.message : String(err) };
-    return callbackOrigin ? htmlPostMessage_(errGeral, callbackOrigin) : jsonResponse_(errGeral);
+    return jsonResponse_({
+      ok: false,
+      error: (err && err.message) ? err.message : String(err)
+    });
   }
 }
 

@@ -79,26 +79,19 @@ export default function ImportarNfePage() {
   // postMessage listener — registered once, cleaned up on unmount
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
-      // Validate origin: only accept Google domains
-      const origin = event.origin || ''
-      if (
-        !origin.includes('script.google.com') &&
-        !origin.includes('googleusercontent.com') &&
-        !origin.includes('google.com')
-      ) {
-        return
-      }
+      console.log('[NFE][POSTMESSAGE] recebido', event.data)
 
-      // Validate payload shape
+      // Validate payload shape first
       const msg = event.data
       if (!msg || msg.source !== 'appscript-nfe') return
 
-      const data = msg.data as ImportResult
+      const payload = msg.data as ImportResult
+      console.log('[NFE][POSTMESSAGE] payload ok?', payload?.ok)
 
-      if (!data.ok) {
-        setErrorMsg(data.error || 'Erro retornado pelo Apps Script.')
+      if (!payload.ok) {
+        setErrorMsg(payload.error || 'Erro retornado pelo Apps Script.')
       } else {
-        setResult(data)
+        setResult(payload)
       }
 
       setImporting(false)
@@ -144,8 +137,11 @@ export default function ImportarNfePage() {
     cleanup()
     setImporting(true)
 
+    console.log('[NFE][POPUP] abrindo popup')
+
     // 1) Open popup (top-level window → Google auth cookies ARE sent)
-    const popup = window.open('about:blank', 'appscript_popup', 'width=500,height=300,scrollbars=yes')
+    const popupName = 'nfe_popup'
+    const popup = window.open('about:blank', popupName, 'width=520,height=680')
     if (!popup) {
       setErrorMsg('Popup bloqueado pelo navegador. Permita popups para este site.')
       setImporting(false)
@@ -153,21 +149,25 @@ export default function ImportarNfePage() {
     }
     popupRef.current = popup
 
-    // 2) Create form targeting the popup
-    //    callback_origin goes in the URL query string (→ e.parameter in Apps Script)
-    //    payload goes as POST body form field (→ e.postData.contents)
-    const actionUrl = APPSCRIPT_URL + '?callback_origin=' + encodeURIComponent(window.location.origin)
-
+    // 2) Create form targeting the popup — 3 flat fields, no payload JSON
     const form = document.createElement('form')
     form.method = 'POST'
-    form.action = actionUrl
-    form.target = 'appscript_popup'
+    form.action = APPSCRIPT_URL
+    form.target = popupName
 
-    const payloadInput = document.createElement('input')
-    payloadInput.type = 'hidden'
-    payloadInput.name = 'payload'
-    payloadInput.value = JSON.stringify({ inicio, fim })
-    form.appendChild(payloadInput)
+    const addField = (name: string, value: string) => {
+      const input = document.createElement('input')
+      input.type = 'hidden'
+      input.name = name
+      input.value = value
+      form.appendChild(input)
+    }
+
+    addField('callback_origin', window.location.origin)
+    addField('inicio', inicio)
+    addField('fim', fim)
+
+    console.log('[NFE][POPUP] enviando form', { inicio, fim, callback_origin: window.location.origin })
 
     // 3) Submit form into the popup
     document.body.appendChild(form)

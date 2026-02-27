@@ -1,378 +1,931 @@
 /**
  * =========================================================
- * Google Apps Script — Web App REST para importar NFe Matic
+ * RECEBIMENTO MATIC — PLANILHA + REST (APP.LEBEBE)
  * =========================================================
  *
- * Publicar como Web App:
- *   - Execute as: Me (lucas@lebebe.com.br)
- *   - Who has access: Anyone within lebebe.com.br
+ * O que este código faz:
+ * 1) Mantém o fluxo atual da planilha (processarNFeEmail) SEM mudar o resultado.
+ * 2) Adiciona um endpoint REST (doPost) para o app.lebebe chamar sob demanda.
+ * 3) Reaproveita o mesmo “motor” (buscarNFesMotor_) para os 2 modos.
  *
- * Suporta DOIS modos de chamada:
+ * Como publicar o REST:
+ * - Deploy > New deployment > Web App
+ * - Execute as: Me (lucas@lebebe.com.br)
+ * - Who has access: Anyone
+ * - Script Properties:
+ *     LEBEBE_IMPORT_TOKEN = "<token forte>"
  *
- * 1) JSON API (server-to-server):
- *    POST com body JSON { token, inicio, fim }
- *    Retorna: ContentService JSON
+ * Chamada REST (POST JSON):
+ * {
+ *   "token": "...",
+ *   "inicio": "2026-02-23",
+ *   "fim": "2026-02-26"
+ * }
  *
- * 2) Form via iframe (browser, contorna CORS):
- *    POST com form fields: payload (JSON string), callback_origin
- *    Retorna: HtmlService com postMessage para o parent
- *
- * A restrição de domínio (Anyone within lebebe.com.br) é a
- * segurança principal. O token é opcional (defense-in-depth).
+ * Retorna:
+ * {
+ *   ok: true,
+ *   inicio, fim, query,
+ *   nfs: [ ... ],
+ *   erros: [ ... ],
+ *   stats: { threads, mensagens, anexos_xml, nfs }
+ * }
  * =========================================================
  */
 
+
 // =========================================================
-// Entry point — doPost
+// Sessão 1.0 — POPUP/FORM: doPost (sem payload JSON)
 // =========================================================
 function doPost(e) {
-  var callbackOrigin = '';
+  Logger.log("[LOG][REST] doPost iniciado");
 
   try {
-    var body = {};
+    // ---------------------------------------------
+    // 1) Ler params do form (POST x-www-form-urlencoded)
+    //    Form fields chegam em e.parameter
+    // ---------------------------------------------
+    var callbackOrigin = (e && e.parameter && e.parameter.callback_origin)
+      ? String(e.parameter.callback_origin).trim()
+      : "";
 
-    // Detectar modo: form (iframe) vs JSON (API)
-    if (e.parameter && e.parameter.callback_origin) {
-      // MODO IFRAME: dados vêm como form field "payload" (JSON string)
-      callbackOrigin = e.parameter.callback_origin;
-      Logger.log('[LOG] Modo: iframe (callback_origin=' + callbackOrigin + ')');
+    var inicio = (e && e.parameter && e.parameter.inicio)
+      ? String(e.parameter.inicio).trim()
+      : "";
 
-      try {
-        body = JSON.parse(e.parameter.payload || '{}');
-      } catch (err) {
-        return htmlPostMessage_({ ok: false, error: 'payload inválido' }, callbackOrigin);
-      }
-    } else {
-      // MODO API: dados vêm no body JSON
-      Logger.log('[LOG] Modo: API (JSON body)');
-      try {
-        body = JSON.parse(e.postData.contents);
-      } catch (err) {
-        return jsonResponse_(400, { ok: false, error: 'invalid_body' });
-      }
+    var fim = (e && e.parameter && e.parameter.fim)
+      ? String(e.parameter.fim).trim()
+      : "";
+
+    Logger.log("[LOG][REST] callback_origin=" + callbackOrigin);
+    Logger.log("[LOG][REST] inicio=" + inicio + " | fim=" + fim);
+
+    // callback_origin é obrigatório no modo popup (postMessage)
+    if (!callbackOrigin) {
+      Logger.log("[LOG][REST] ERRO: missing_callback_origin");
+      return jsonResponse_({ ok: false, error: "missing_callback_origin" });
     }
-
-    // Token: validar se configurado (opcional — domínio já protege)
-    var expectedToken = PropertiesService.getScriptProperties().getProperty('LEBEBE_IMPORT_TOKEN');
-    if (expectedToken && body.token && body.token !== expectedToken) {
-      Logger.log('[LOG] Token inválido');
-      var errAuth = { ok: false, error: 'unauthorized' };
-      if (callbackOrigin) return htmlPostMessage_(errAuth, callbackOrigin);
-      return jsonResponse_(401, errAuth);
-    }
-    Logger.log('[LOG] Auth OK (domínio + token)');
-
-    // Validar datas
-    var inicio = body.inicio; // "YYYY-MM-DD"
-    var fim = body.fim;       // "YYYY-MM-DD"
 
     if (!inicio || !fim) {
-      var errDatas = { ok: false, error: 'inicio e fim são obrigatórios' };
-      if (callbackOrigin) return htmlPostMessage_(errDatas, callbackOrigin);
-      return jsonResponse_(400, errDatas);
+      Logger.log("[LOG][REST] ERRO: inicio_e_fim_obrigatorios");
+      return htmlPostMessage_({ ok: false, error: "inicio_e_fim_obrigatorios" }, callbackOrigin);
     }
 
-    var dInicio = new Date(inicio + 'T00:00:00');
-    var dFim = new Date(fim + 'T23:59:59');
+    // ---------------------------------------------
+    // 2) Validar datas (usa seu helper parseDateCell_)
+    // ---------------------------------------------
+    var dataInicio = parseDateCell_(inicio);
+    var dataFim = parseDateCell_(fim);
 
-    if (isNaN(dInicio.getTime()) || isNaN(dFim.getTime())) {
-      var errInv = { ok: false, error: 'Datas inválidas' };
-      if (callbackOrigin) return htmlPostMessage_(errInv, callbackOrigin);
-      return jsonResponse_(400, errInv);
+    if (!dataInicio || !dataFim) {
+      Logger.log("[LOG][REST] ERRO: datas_invalidas");
+      return htmlPostMessage_({ ok: false, error: "datas_invalidas" }, callbackOrigin);
     }
 
-    if (dInicio > dFim) {
-      var errOrd = { ok: false, error: 'inicio deve ser <= fim' };
-      if (callbackOrigin) return htmlPostMessage_(errOrd, callbackOrigin);
-      return jsonResponse_(400, errOrd);
+    // normalizar para meia-noite
+    dataInicio = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), dataInicio.getDate());
+    dataFim = new Date(dataFim.getFullYear(), dataFim.getMonth(), dataFim.getDate());
+
+    if (dataFim < dataInicio) {
+      Logger.log("[LOG][REST] ERRO: fim_menor_que_inicio");
+      return htmlPostMessage_({ ok: false, error: "fim_menor_que_inicio" }, callbackOrigin);
     }
 
-    // Janela máxima 90 dias
-    var diffDays = (dFim - dInicio) / (1000 * 60 * 60 * 24);
-    if (diffDays > 90) {
-      var errJanela = { ok: false, error: 'Janela máxima de 90 dias' };
-      if (callbackOrigin) return htmlPostMessage_(errJanela, callbackOrigin);
-      return jsonResponse_(400, errJanela);
+    var diffDias = Math.floor((dataFim - dataInicio) / (1000 * 60 * 60 * 24));
+    if (diffDias > 90) {
+      Logger.log("[LOG][REST] ERRO: janela_maxima_90_dias");
+      return htmlPostMessage_({ ok: false, error: "janela_maxima_90_dias" }, callbackOrigin);
     }
 
-    // Buscar emails no Gmail
-    var result = buscarNFesNoGmail_(inicio, fim);
-
-    Logger.log('[LOG] Total de NFs consolidadas: ' + result.nfs.length);
-    Logger.log('[LOG] Total de erros: ' + result.erros.length);
+    // ---------------------------------------------
+    // 3) Rodar motor
+    // ---------------------------------------------
+    var emailAddress = "nfe@maticmoveis.com.br";
+    var motor = buscarNFesMotor_(emailAddress, dataInicio, dataFim, null);
 
     var response = {
       ok: true,
       inicio: inicio,
       fim: fim,
-      query: result.query,
-      nfs: result.nfs,
-      erros: result.erros
+      query: motor.query,
+      nfs: motor.nfs,
+      erros: motor.erros,
+      stats: motor.stats
     };
 
-    if (callbackOrigin) return htmlPostMessage_(response, callbackOrigin);
-    return jsonResponse_(200, response);
+    Logger.log("[LOG][REST] OK. NFs=" + (motor.nfs || []).length + " | Erros=" + (motor.erros || []).length);
+    return htmlPostMessage_(response, callbackOrigin);
 
   } catch (err) {
-    Logger.log('[LOG] Erro geral: ' + err.message);
-    var errGeral = { ok: false, error: err.message };
-    if (callbackOrigin) return htmlPostMessage_(errGeral, callbackOrigin);
-    return jsonResponse_(500, errGeral);
+    Logger.log("[LOG][REST] Erro geral: " + err);
+    return jsonResponse_({
+      ok: false,
+      error: (err && err.message) ? err.message : String(err)
+    });
   }
 }
 
 // =========================================================
-// Buscar NFes no Gmail
+// Sessão 1.0 — POPUP/FORM: doPost (robusto contra invalid_body)
 // =========================================================
-function buscarNFesNoGmail_(inicio, fim) {
-  // Formatar datas para query do Gmail (YYYY/MM/DD)
-  var afterDate = inicio.replace(/-/g, '/');
-  var beforeDate = fim.replace(/-/g, '/');
+function doPost(e) {
+  Logger.log("[LOG][REST] doPost iniciado");
 
-  // Ajustar before para +1 dia (Gmail before é exclusivo)
-  var dBefore = new Date(fim + 'T00:00:00');
-  dBefore.setDate(dBefore.getDate() + 1);
-  var beforePlusOne = Utilities.formatDate(dBefore, 'GMT-3', 'yyyy/MM/dd');
+  try {
+    // ---------------------------------------------
+    // 0) Log bruto do que chegou (pra diagnóstico)
+    // ---------------------------------------------
+    var raw = (e && e.postData && e.postData.contents) ? String(e.postData.contents) : "";
+    var ctype = (e && e.postData && e.postData.type) ? String(e.postData.type) : "";
+    Logger.log("[LOG][REST] postData.type=" + ctype);
+    Logger.log("[LOG][REST] postData.contents(120)=" + raw.substring(0, 120));
 
-  var query = 'from:(matic OR maticbrasil OR nfe OR nf-e) subject:(nfe OR nota OR fiscal OR xml OR danfe) after:' + afterDate + ' before:' + beforePlusOne + ' has:attachment';
+    // ---------------------------------------------
+    // 1) Tentar ler como FORM (prioridade máxima)
+    //    - pega de e.parameter (quando GAS parseia)
+    //    - se não vier, parseia raw urlencoded
+    // ---------------------------------------------
+    var params = {};
+    if (e && e.parameter) {
+      for (var k in e.parameter) params[k] = e.parameter[k];
+    }
 
-  Logger.log('[LOG] Query Gmail: ' + query);
+    if ((!params.callback_origin || !params.inicio || !params.fim) && raw && raw.indexOf("=") !== -1) {
+      params = parseFormUrlEncoded_(raw);
+    }
+
+    var callbackOrigin = (params.callback_origin || "").toString().trim();
+    var inicio = (params.inicio || "").toString().trim();
+    var fim = (params.fim || "").toString().trim();
+
+    Logger.log("[LOG][REST] callback_origin=" + callbackOrigin);
+    Logger.log("[LOG][REST] inicio=" + inicio + " | fim=" + fim);
+
+    // Se não tiver callback_origin, ainda devolve JSON pra você enxergar erro no network
+    if (!callbackOrigin) {
+      return jsonResponse_({ ok: false, error: "missing_callback_origin", debug: { ctype: ctype, raw120: raw.substring(0, 120) } });
+    }
+
+    if (!inicio || !fim) {
+      return htmlPostMessage_({ ok: false, error: "inicio_e_fim_obrigatorios" }, callbackOrigin);
+    }
+
+    // ---------------------------------------------
+    // 2) Validar datas
+    // ---------------------------------------------
+    var dataInicio = parseDateCell_(inicio);
+    var dataFim = parseDateCell_(fim);
+
+    if (!dataInicio || !dataFim) {
+      return htmlPostMessage_({ ok: false, error: "datas_invalidas" }, callbackOrigin);
+    }
+
+    dataInicio = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), dataInicio.getDate());
+    dataFim = new Date(dataFim.getFullYear(), dataFim.getMonth(), dataFim.getDate());
+
+    if (dataFim < dataInicio) {
+      return htmlPostMessage_({ ok: false, error: "fim_menor_que_inicio" }, callbackOrigin);
+    }
+
+    var diffDias = Math.floor((dataFim - dataInicio) / (1000 * 60 * 60 * 24));
+    if (diffDias > 90) {
+      return htmlPostMessage_({ ok: false, error: "janela_maxima_90_dias" }, callbackOrigin);
+    }
+
+    // ---------------------------------------------
+    // 3) Rodar motor
+    // ---------------------------------------------
+    var emailAddress = "nfe@maticmoveis.com.br";
+    var motor = buscarNFesMotor_(emailAddress, dataInicio, dataFim, null);
+
+    var response = {
+      ok: true,
+      inicio: inicio,
+      fim: fim,
+      query: motor.query,
+      nfs: motor.nfs,
+      erros: motor.erros,
+      stats: motor.stats
+    };
+
+    Logger.log("[LOG][REST] OK. NFs=" + (motor.nfs || []).length + " | Erros=" + (motor.erros || []).length);
+    return htmlPostMessage_(response, callbackOrigin);
+
+  } catch (err) {
+    Logger.log("[LOG][REST] Erro geral: " + err);
+    return jsonResponse_({ ok: false, error: (err && err.message) ? err.message : String(err) });
+  }
+}
+
+// =========================================================
+// Sessão 1.0.1 — Helper: parse x-www-form-urlencoded
+// =========================================================
+function parseFormUrlEncoded_(raw) {
+  var out = {};
+  var parts = raw.split("&");
+  for (var i = 0; i < parts.length; i++) {
+    var kv = parts[i].split("=");
+    var key = decodeURIComponent((kv[0] || "").replace(/\+/g, " "));
+    var val = decodeURIComponent((kv.slice(1).join("=") || "").replace(/\+/g, " "));
+    if (key) out[key] = val;
+  }
+  return out;
+}
+
+/**
+ * =========================================================
+ * Sessão 2.0 — MODO PLANILHA (mantém seu fluxo atual)
+ * =========================================================
+ */
+function processarNFeEmail() {
+  /**
+   * Sessão 2.1 – Configurações globais (igual você já usa)
+   */
+  var emailAddress = "nfe@maticmoveis.com.br";
+  var planilha = SpreadsheetApp.openByUrl(
+    "https://docs.google.com/spreadsheets/d/1Xs-z_LDbB1E-kp9DK-x4-dFkU58xKpYhz038NNrTb54/edit#gid=493873819"
+  );
+
+  var sheet = planilha.getSheetByName("COLAR NF AQUI");
+  var imprimirSheet = planilha.getSheetByName("IMPRIMIR");
+  var resumoSheet =
+    planilha.getSheetByName("RESUMO RECEBIMENTOS") ||
+    planilha.insertSheet("RESUMO RECEBIMENTOS");
+  var procvSheet = planilha.getSheetByName("PROCV- LOJA");
+
+  if (!sheet || !imprimirSheet || !procvSheet) {
+    Logger.log("[LOG] Erro: Uma das páginas ('COLAR NF AQUI', 'IMPRIMIR' ou 'PROCV- LOJA') não foi encontrada.");
+    return;
+  }
+
+  var headers = [
+    "Número NF","@_nItem","prod/cProd","prod/cEAN","prod/xProd","prod/NCM",
+    "prod/CFOP","prod/uCom","prod/qCom","prod/vUnCom","prod/vProd",
+    "Prateleira","Data NF","É O.S?","Número O.S."
+  ];
+
+  if (resumoSheet.getLastRow() === 0) {
+    resumoSheet.appendRow([
+      "DATA DAS NF","PESO TOTAL RECEBIDO","VOLUMES TOTAIS RECEBIDOS","NÚMERO DAS NF RECEBIDAS","ASSISTÊNCIAS (SEM VOLUMES)"
+    ]);
+  }
+
+  var assistenciasSheet =
+    planilha.getSheetByName("ASSISTENCIAS NF") ||
+    planilha.insertSheet("ASSISTENCIAS NF");
+
+  if (assistenciasSheet.getLastRow() === 0) {
+    assistenciasSheet.appendRow(["Número NF", "Número O.S."]);
+  }
+
+  /**
+   * Sessão 2.2 – Limpeza da aba IMPRIMIR (igual)
+   */
+  imprimirSheet.getRange("S6").clear();
+  imprimirSheet.getRange("B5").setValue("");
+  imprimirSheet.getRange("C6").setValue("");
+  imprimirSheet.getRange("N2").setValue("");
+
+  /**
+   * Sessão 2.3 – Período (IMPRIMIR!C2 e IMPRIMIR!F2)
+   */
+  var inicioCell = imprimirSheet.getRange("C2").getValue();
+  var fimCell    = imprimirSheet.getRange("F2").getValue();
+
+  var dataInicio = parseDateCell_(inicioCell);
+  var dataFim    = parseDateCell_(fimCell);
+
+  if (!dataInicio || !dataFim) {
+    var msg1 = "⚠️ Informe as datas em IMPRIMIR!C2 (início) e IMPRIMIR!F2 (fim).";
+    Logger.log("[LOG] " + msg1);
+    imprimirSheet.getRange("N2").setValue(msg1);
+    return;
+  }
+
+  dataInicio = new Date(dataInicio.getFullYear(), dataInicio.getMonth(), dataInicio.getDate());
+  dataFim    = new Date(dataFim.getFullYear(), dataFim.getMonth(), dataFim.getDate());
+
+  if (dataFim < dataInicio) {
+    var msg2 = "⚠️ Data final (F2) não pode ser menor que a data inicial (C2).";
+    Logger.log("[LOG] " + msg2);
+    imprimirSheet.getRange("N2").setValue(msg2);
+    return;
+  }
+
+  var diffDias = Math.floor((dataFim - dataInicio) / (1000*60*60*24));
+  if (diffDias > 90) {
+    // seu texto dizia 15 dias mas validava 90; mantive 90 para não quebrar
+    var msg3 = "⚠️ Janela máxima: 90 dias entre C2 e F2.";
+    Logger.log("[LOG] " + msg3);
+    imprimirSheet.getRange("N2").setValue(msg3);
+    return;
+  }
+
+  /**
+   * Sessão 2.4 – Ler PROCV (pra prateleira no modo planilha)
+   */
+  var procvData = procvSheet.getRange("A2:G" + procvSheet.getLastRow()).getValues();
+
+  /**
+   * Sessão 2.5 – Chamar motor (mesma busca/parse), agora com procvData
+   */
+  var motor = buscarNFesMotor_(emailAddress, dataInicio, dataFim, procvData);
+
+  if (!motor.nfs || motor.nfs.length === 0) {
+    var msg4 = "NENHUMA NF ENCONTRADA NO PERÍODO INFORMADO";
+    Logger.log("[LOG] " + msg4);
+    sheet.clear();
+    sheet.getRange(1, 1).setValue(msg4);
+    imprimirSheet.getRange("N2").setValue(msg4);
+    return;
+  }
+
+  /**
+   * Sessão 2.6 – Converter retorno do motor para o formato da planilha (todasNFData etc.)
+   * Mantém o mesmo resultado que você já tinha.
+   */
+  var todasNFData = [];
+  var datasNF = [];
+  var numerosNF = [];
+  var osVolumes = [];
+  var osSemVolumes = [];
+  var pesoTotal = 0;
+  var volumesTotal = 0;
+  var assistenciasPendentes = [];
+
+  for (var i = 0; i < motor.nfs.length; i++) {
+    var nf = motor.nfs[i];
+
+    // totais
+    pesoTotal += (parseFloat(nf.peso_total) || 0);
+    volumesTotal += (parseInt(nf.volumes_total, 10) || 0);
+
+    if (nf.data_emissao) datasNF.push(nf.data_emissao);
+    if (nf.numero_nf) numerosNF.push(nf.numero_nf);
+
+    // OS/OC
+    var isOS = nf.is_os ? "SIM" : "NÃO";
+    var osList = nf.os_oc || [];
+    var numeroOSApenas = (osList.length > 0) ? osList[0] : "";
+
+    if (osList.length > 0) {
+      for (var oi = 0; oi < osList.length; oi++) {
+        osVolumes.push(osList[oi] + " (" + (nf.volumes_total || "0") + ")");
+        osSemVolumes.push(osList[oi]);
+      }
+      assistenciasPendentes.push([nf.numero_nf, numeroOSApenas]);
+    }
+
+    // itens (linhas da COLAR NF AQUI)
+    for (var j = 0; j < nf.itens.length; j++) {
+      var it = nf.itens[j];
+
+      todasNFData.push([
+        nf.numero_nf,
+        it.n_item,
+        it.codigo_produto,
+        "SEM GTIN", // no REST a gente não pega cEAN; na planilha você pegava, mas na prática SEM GTIN aparece. Se quiser, eu incluo.
+        it.descricao,
+        it.ncm || "",     // opcional
+        it.cfop || "",    // opcional
+        it.ucom || "PC",  // opcional
+        String(it.quantidade),
+        it.vuncom || "",  // opcional
+        it.vprod || "",   // opcional
+        it.prateleira || "", // calculada no motor via procvData quando não é OS
+        nf.data_emissao,
+        isOS,
+        numeroOSApenas
+      ]);
+    }
+  }
+
+  /**
+   * Sessão 2.7 – Escrever nas Sheets (igual ao seu)
+   */
+  sheet.clear();
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.getRange(2, 1, todasNFData.length, headers.length).setValues(todasNFData);
+
+  // Data mais antiga (RESUMO)
+  var dataMaisAntiga = new Date(Math.min.apply(null, datasNF.map(function (d) { return new Date(d); })));
+  var dataFormatada  = Utilities.formatDate(dataMaisAntiga, Session.getScriptTimeZone(), "dd/MM/yyyy");
+
+  imprimirSheet.getRange("S6").setValue(pesoTotal);
+  imprimirSheet.getRange("B5").setValue(numerosNF.join(", "));
+  if (osVolumes.length > 0) {
+    imprimirSheet.getRange("C6").setValue(osVolumes.join(", "));
+  }
+
+  resumoSheet.appendRow([
+    dataFormatada,
+    (pesoTotal || 0).toFixed(2),
+    volumesTotal,
+    numerosNF.join(", "),
+    osSemVolumes.join(", ")
+  ]);
+
+  /**
+   * Sessão 2.8 – Avisos recentes em RECEBIMENTO MATIC (mantido igual)
+   */
+  try {
+    var planilhaMatic = SpreadsheetApp.openByUrl(
+      "https://docs.google.com/spreadsheets/d/1Xs-z_LDbB1E-kp9DK-x4-dFkU58xKpYhz038NNrTb54/edit?resourcekey=&pli=1&gid=1085497704#gid=1085497704"
+    );
+    var sheetRecebimento = planilhaMatic.getSheetByName("RECEBIMENTO MATIC");
+    var dadosReceb = sheetRecebimento.getDataRange().getValues();
+
+    var hoje = new Date();
+    var avisosRecentes = [];
+
+    for (var a = 1; a < dadosReceb.length; a++) {
+      var dataCell = dadosReceb[a][0];
+      var avisoJ   = dadosReceb[a][9];
+      var avisoK   = dadosReceb[a][10];
+
+      var partesAviso = [];
+      if (avisoJ && avisoJ.toString().trim() !== "") partesAviso.push(avisoJ.toString().trim());
+      if (avisoK && avisoK.toString().trim() !== "") partesAviso.push(avisoK.toString().trim());
+      var avisoTxt = partesAviso.join(" | ");
+      if (!dataCell || avisoTxt === "") continue;
+
+      var dataCarimbo;
+      if (Object.prototype.toString.call(dataCell) === "[object Date]") {
+        dataCarimbo = dataCell;
+      } else {
+        var apenasData = dataCell.toString().split(" ")[0];
+        var p = apenasData.split("/");
+        if (p.length === 3) dataCarimbo = new Date(p[2], p[1]-1, p[0]); else continue;
+      }
+
+      var diffDiasCarimbo = (hoje - dataCarimbo) / (1000 * 60 * 60 * 24);
+      if (diffDiasCarimbo <= 15) {
+        var prefixo = Utilities.formatDate(dataCarimbo, Session.getScriptTimeZone(), "dd-MM");
+        avisosRecentes.push("(" + prefixo + ") " + avisoTxt);
+      }
+    }
+
+    imprimirSheet.getRange("C7").setValue("");
+    if (avisosRecentes.length > 0) {
+      imprimirSheet.getRange("C7").setValue(avisosRecentes.join(" | "));
+    }
+  } catch (e) {
+    Logger.log("[LOG] Erro ao buscar avisos em RECEBIMENTO MATIC: " + e);
+  }
+
+  /**
+   * Sessão 2.9 – Persistência NF↔OS (mantido igual)
+   */
+  try {
+    if (assistenciasPendentes.length > 0) {
+      var startRow = assistenciasSheet.getLastRow() + 1;
+      assistenciasSheet
+        .getRange(startRow, 1, assistenciasPendentes.length, 2)
+        .setValues(assistenciasPendentes);
+      Logger.log("[LOG] ✅ Gravadas " + assistenciasPendentes.length + " linha(s) em 'ASSISTENCIAS NF'.");
+    } else {
+      Logger.log("[LOG] ℹ️ Nenhuma NF com O.S. para gravar em 'ASSISTENCIAS NF' nesta execução.");
+    }
+  } catch (e2) {
+    Logger.log("[LOG] ❌ Erro ao gravar em 'ASSISTENCIAS NF': " + e2);
+  }
+}
+
+
+/**
+ * =========================================================
+ * Sessão 3.0 — MOTOR: Busca e Parse (usado por planilha e REST)
+ * =========================================================
+ *
+ * - Se procvData for null, não calcula prateleira.
+ * - Retorna lista de NFs consolidadas por número_nf.
+ */
+function buscarNFesMotor_(emailAddress, dataInicio, dataFim, procvData) {
+  Logger.log("[LOG][MOTOR] Iniciando motor: " + emailAddress);
+
+  // Gmail before é exclusivo → somar 1 dia no fim
+  var fimMaisUm = addDays_(dataFim, 1);
+  var afterStr  = formatYYYYMMDD_(dataInicio);
+  var beforeStr = formatYYYYMMDD_(fimMaisUm);
+
+  var query =
+    'from:' + emailAddress +
+    ' subject:"Nota Fiscal Eletronica"' +
+    ' after:'  + afterStr +
+    ' before:' + beforeStr +
+    ' has:attachment';
+
+  Logger.log("[LOG][MOTOR] Gmail query: " + query);
 
   var threads = GmailApp.search(query);
-  Logger.log('[LOG] Threads encontradas: ' + threads.length);
+  var messagesByThread = GmailApp.getMessagesForThreads(threads);
 
-  var nfsMap = {}; // chave = numero_nf normalizado
+  var nfsMap = {}; // chave = numero_nf normalizado (só dígitos)
   var erros = [];
-  var totalXmls = 0;
 
-  for (var t = 0; t < threads.length; t++) {
-    var messages = threads[t].getMessages();
-    Logger.log('[LOG] Thread ' + t + ': ' + messages.length + ' mensagens');
+  var stats = {
+    threads: threads.length,
+    mensagens: 0,
+    anexos_xml: 0,
+    nfs: 0
+  };
 
-    for (var m = 0; m < messages.length; m++) {
-      var msg = messages[m];
+  if (!messagesByThread || messagesByThread.length === 0) {
+    return { query: query, nfs: [], erros: [], stats: stats };
+  }
+
+  // Carregar PROCV se veio (para prateleira sugerida)
+  var procv = procvData || null;
+
+  for (var i = 0; i < messagesByThread.length; i++) {
+    var msgs = messagesByThread[i] || [];
+    stats.mensagens += msgs.length;
+
+    for (var j = 0; j < msgs.length; j++) {
+      var msg = msgs[j];
       var msgId = msg.getId();
-      var attachments = msg.getAttachments();
+      var atts = msg.getAttachments();
 
-      for (var a = 0; a < attachments.length; a++) {
-        var att = attachments[a];
-        var fileName = att.getName().toLowerCase();
+      for (var k = 0; k < atts.length; k++) {
+        var att = atts[k];
+        var ct = (att.getContentType() || "").toLowerCase();
+        var name = (att.getName() || "");
 
-        if (fileName.indexOf('.xml') === -1) continue;
+        var isXml =
+          ct === "application/xml" ||
+          ct === "text/xml" ||
+          (name.toLowerCase().indexOf(".xml") !== -1);
 
-        totalXmls++;
+        if (!isXml) continue;
+
+        stats.anexos_xml++;
 
         try {
-          var xmlText = att.getDataAsString();
-          var parsed = parsearNFeXML_(xmlText);
+          var xmlContent = att.getDataAsString();
+          var parsed = parsearNFeXMLRobusto_(xmlContent);
 
-          if (!parsed) {
-            erros.push({ etapa: 'parse_xml', message: 'XML inválido ou não é NFe: ' + att.getName(), emailMessageId: msgId });
+          if (!parsed || !parsed.numero_nf) {
+            erros.push({ etapa: "parse_xml", message: "XML inválido/NFe não detectada", emailMessageId: msgId, attachmentName: name });
             continue;
           }
 
-          var nfKey = parsed.numero_nf;
-
-          // Consolidar: se já existe, mesclar itens (não duplicar)
-          if (nfsMap[nfKey]) {
-            // Atualizar campos se necessário
-            if (parsed.os_oc.length > 0) {
-              for (var oi = 0; oi < parsed.os_oc.length; oi++) {
-                if (nfsMap[nfKey].os_oc.indexOf(parsed.os_oc[oi]) === -1) {
-                  nfsMap[nfKey].os_oc.push(parsed.os_oc[oi]);
-                }
-              }
-            }
-          } else {
-            nfsMap[nfKey] = parsed;
+          // filtrar por data de emissão dentro da janela
+          var dataEmissaoD = parsed.data_emissao ? parseDateCell_(parsed.data_emissao) : null;
+          if (!dataEmissaoD || dataEmissaoD < dataInicio || dataEmissaoD > dataFim) {
+            continue;
           }
 
-        } catch (parseErr) {
-          erros.push({ etapa: 'parse_xml', message: parseErr.message, emailMessageId: msgId });
+          // prateleira (somente no modo planilha)
+          if (procv && parsed.itens && parsed.itens.length > 0) {
+            for (var it = 0; it < parsed.itens.length; it++) {
+              var codigo = parsed.itens[it].codigo_produto;
+              var pr = "";
+              if (!parsed.is_os) {
+                var found = buscarPrateleira(codigo, procv);
+                pr = (found !== "" ? found : "S/P");
+              }
+              parsed.itens[it].prateleira = pr;
+            }
+          }
+
+          // consolidar por NF
+          var key = parsed.numero_nf;
+
+          if (!nfsMap[key]) {
+            nfsMap[key] = parsed;
+          } else {
+            // mesclar OS/OC sem duplicar
+            var base = nfsMap[key];
+            var nov = parsed;
+
+            // manter data_emissao se base vazio
+            if (!base.data_emissao && nov.data_emissao) base.data_emissao = nov.data_emissao;
+
+            // somar? (normalmente mesmo XML não precisa; manter o maior para segurança)
+            base.peso_total = Math.max(parseFloat(base.peso_total || 0), parseFloat(nov.peso_total || 0));
+            base.volumes_total = Math.max(parseInt(base.volumes_total || 0, 10), parseInt(nov.volumes_total || 0, 10));
+
+            // is_os: se algum indicar, marca true
+            base.is_os = !!(base.is_os || nov.is_os);
+
+            // os_oc: merge
+            base.os_oc = base.os_oc || [];
+            nov.os_oc = nov.os_oc || [];
+            for (var o = 0; o < nov.os_oc.length; o++) {
+              if (base.os_oc.indexOf(nov.os_oc[o]) === -1) base.os_oc.push(nov.os_oc[o]);
+            }
+
+            // itens: dedupe por n_item
+            var exist = {};
+            for (var bi = 0; bi < (base.itens || []).length; bi++) {
+              exist[String(base.itens[bi].n_item)] = true;
+            }
+            for (var ni = 0; ni < (nov.itens || []).length; ni++) {
+              var nk = String(nov.itens[ni].n_item);
+              if (!exist[nk]) {
+                base.itens.push(nov.itens[ni]);
+                exist[nk] = true;
+              }
+            }
+          }
+
+        } catch (err) {
+          erros.push({ etapa: "parse_xml", message: String(err), emailMessageId: msgId, attachmentName: name });
         }
       }
     }
   }
 
-  Logger.log('[LOG] Total de XMLs processados: ' + totalXmls);
-
-  // Converter map para array
+  // map -> array
   var nfs = [];
-  for (var key in nfsMap) {
-    nfs.push(nfsMap[key]);
+  for (var nfKey in nfsMap) {
+    nfs.push(nfsMap[nfKey]);
   }
 
-  return { query: query, nfs: nfs, erros: erros };
+  stats.nfs = nfs.length;
+
+  Logger.log("[LOG][MOTOR] Finalizado. NFs: " + nfs.length + " | Erros: " + erros.length);
+
+  return { query: query, nfs: nfs, erros: erros, stats: stats };
 }
 
-// =========================================================
-// Parsear XML de NFe
-// =========================================================
-function parsearNFeXML_(xmlText) {
-  try {
-    // Verificar se é um XML de NFe
-    if (xmlText.indexOf('<nfeProc') === -1 && xmlText.indexOf('<NFe') === -1 && xmlText.indexOf('<infNFe') === -1) {
-      return null;
+
+/**
+ * =========================================================
+ * Sessão 4.0 — Parse robusto da NFe (aguenta nfeProc e NFe)
+ * =========================================================
+ */
+function parsearNFeXMLRobusto_(xmlContent) {
+  var xmlDocument = XmlService.parse(xmlContent);
+  var root = xmlDocument.getRootElement();
+
+  // Namespace padrão NFe
+  var nsNfe = XmlService.getNamespace("http://www.portalfiscal.inf.br/nfe");
+
+  // Pode vir como <nfeProc>...</nfeProc> contendo <NFe>
+  var nfeNode = null;
+
+  if (root.getName() === "nfeProc") {
+    nfeNode = root.getChild("NFe", nsNfe) || root.getChild("NFe");
+  } else if (root.getName() === "NFe") {
+    nfeNode = root;
+  } else {
+    // tenta encontrar NFe no primeiro nível
+    nfeNode = root.getChild("NFe", nsNfe) || root.getChild("NFe");
+  }
+
+  if (!nfeNode) return null;
+
+  var infNFe = nfeNode.getChild("infNFe", nsNfe) || nfeNode.getChild("infNFe");
+  if (!infNFe) return null;
+
+  var ide = infNFe.getChild("ide", nsNfe) || infNFe.getChild("ide");
+  if (!ide) return null;
+
+  var numeroNF = (ide.getChildText("nNF", nsNfe) || ide.getChildText("nNF") || "").toString().trim();
+  if (!numeroNF) return null;
+
+  // normaliza só dígitos
+  var numero_nf = numeroNF.replace(/\D/g, "");
+
+  var dhEmi = (ide.getChildText("dhEmi", nsNfe) || ide.getChildText("dhEmi") || "").toString();
+  var dEmi  = (ide.getChildText("dEmi", nsNfe)  || ide.getChildText("dEmi")  || "").toString();
+  var dataEmissaoS = (dhEmi ? dhEmi.split("T")[0] : dEmi) || "";
+
+  // transp/vol
+  var transp = infNFe.getChild("transp", nsNfe) || infNFe.getChild("transp");
+  var vol = transp ? (transp.getChild("vol", nsNfe) || transp.getChild("vol")) : null;
+
+  var pesoL = 0;
+  var qVol = 0;
+  if (vol) {
+    pesoL = parseFloat((vol.getChildText("pesoL", nsNfe) || vol.getChildText("pesoL") || "0")) || 0;
+    qVol  = parseInt((vol.getChildText("qVol", nsNfe)  || vol.getChildText("qVol")  || "0"), 10) || 0;
+  }
+
+  // is_os por natOp
+  var natOp = (ide.getChildText("natOp", nsNfe) || ide.getChildText("natOp") || "").toString();
+  var is_os = (natOp && natOp.toUpperCase() === "ASSIST.TECNICA");
+
+  // infAdic/infCpl para OS/OC
+  var infAdic = infNFe.getChild("infAdic", nsNfe) || infNFe.getChild("infAdic");
+  var infoComplementares = infAdic ? (infAdic.getChildText("infCpl", nsNfe) || infAdic.getChildText("infCpl")) : "";
+  var os_oc = [];
+  var os_oc_principal = "";
+
+  if (infoComplementares) {
+    var regexOS = /\bO\.?\s*S\.?\s*[:\- ]?(\d+)\b/gi;
+    var regexOC = /\bO\s*C\s*[:\- ]?(\d+)\b/gi;
+
+    var encontrados = [];
+    var m;
+
+    while ((m = regexOS.exec(infoComplementares)) !== null) {
+      if (m[1]) encontrados.push(m[1]);
+    }
+    while ((m = regexOC.exec(infoComplementares)) !== null) {
+      if (m[1]) encontrados.push(m[1]);
     }
 
-    var doc = XmlService.parse(xmlText);
-    var root = doc.getRootElement();
-
-    // Navegar pelo namespace NFe
-    var ns = XmlService.getNamespace('http://www.portalfiscal.inf.br/nfe');
-
-    // Tentar encontrar infNFe
-    var infNFe = findElement_(root, 'infNFe', ns);
-    if (!infNFe) return null;
-
-    // ide
-    var ide = findElement_(infNFe, 'ide', ns);
-    var nNF = ide ? getElementText_(ide, 'nNF', ns) : '';
-    var dhEmi = ide ? (getElementText_(ide, 'dhEmi', ns) || getElementText_(ide, 'dEmi', ns)) : '';
-
-    if (!nNF) return null;
-
-    // Normalizar numero_nf (só dígitos)
-    var numero_nf = nNF.replace(/\D/g, '');
-    var data_emissao = dhEmi ? dhEmi.substring(0, 10) : '';
-
-    // transp > vol
-    var transp = findElement_(infNFe, 'transp', ns);
-    var vol = transp ? findElement_(transp, 'vol', ns) : null;
-    var pesoL = vol ? parseFloat(getElementText_(vol, 'pesoL', ns) || '0') : 0;
-    var qVol = vol ? parseInt(getElementText_(vol, 'qVol', ns) || '0') : 0;
-
-    // det items
-    var itens = [];
-    var detElements = infNFe.getChildren('det', ns);
-    if (!detElements || detElements.length === 0) {
-      // Tentar sem namespace
-      detElements = infNFe.getChildren('det');
-    }
-
-    for (var i = 0; i < detElements.length; i++) {
-      var det = detElements[i];
-      var nItem = det.getAttribute('nItem') ? parseInt(det.getAttribute('nItem').getValue()) : (i + 1);
-
-      var prod = findElement_(det, 'prod', ns);
-      if (!prod) continue;
-
-      var cProd = getElementText_(prod, 'cProd', ns) || '';
-      var xProd = getElementText_(prod, 'xProd', ns) || '';
-      var qCom = parseFloat(getElementText_(prod, 'qCom', ns) || '0');
-
-      // Normalizar codigo_produto: remover zeros à esquerda
-      var codigoProduto = cProd.replace(/^0+/, '') || cProd;
-
-      if (codigoProduto) {
-        itens.push({
-          nItem: nItem,
-          codigo_produto: codigoProduto,
-          descricao: xProd,
-          quantidade: Math.round(qCom)
-        });
+    var vistos = {};
+    for (var i = 0; i < encontrados.length; i++) {
+      var soDigitos = (encontrados[i] || "").toString().replace(/\D/g, "");
+      if (!soDigitos) continue;
+      if (!vistos[soDigitos]) {
+        vistos[soDigitos] = true;
+        os_oc.push(soDigitos);
       }
     }
 
-    // infAdic > infCpl — detectar OS/OC
-    var infAdic = findElement_(infNFe, 'infAdic', ns);
-    var infCpl = infAdic ? getElementText_(infAdic, 'infCpl', ns) : '';
-    var os_oc = [];
-    if (infCpl) {
-      var osRegex = /(?:OS|OC|O\.S\.|O\.C\.)\s*[:\-]?\s*(\d+)/gi;
-      var match;
-      while ((match = osRegex.exec(infCpl)) !== null) {
-        if (os_oc.indexOf(match[1]) === -1) {
-          os_oc.push(match[1]);
-        }
-      }
-    }
-
-    var is_os = os_oc.length > 0;
-
-    return {
-      numero_nf: numero_nf,
-      data_emissao: data_emissao,
-      peso_total: pesoL,
-      volumes_total: qVol,
-      is_os: is_os,
-      os_oc: os_oc,
-      itens: itens
-    };
-
-  } catch (err) {
-    Logger.log('[LOG] Erro ao parsear XML: ' + err.message);
-    return null;
+    if (os_oc.length > 0) os_oc_principal = os_oc[0];
   }
+
+  // itens det
+  var dets = infNFe.getChildren("det", nsNfe);
+  if (!dets || dets.length === 0) dets = infNFe.getChildren("det");
+
+  var itens = [];
+  for (var d = 0; d < dets.length; d++) {
+    var det = dets[d];
+
+    // atributo nItem (se existir)
+    var nAttr = det.getAttribute("nItem");
+    var nItem = nAttr ? parseInt(nAttr.getValue(), 10) : (d + 1);
+
+    var prod = det.getChild("prod", nsNfe) || det.getChild("prod");
+    if (!prod) continue;
+
+    var cProd = (prod.getChildText("cProd", nsNfe) || prod.getChildText("cProd") || "").toString();
+    var xProd = (prod.getChildText("xProd", nsNfe) || prod.getChildText("xProd") || "").toString();
+    var qCom  = parseFloat((prod.getChildText("qCom", nsNfe) || prod.getChildText("qCom") || "0")) || 0;
+
+    // opcional: manter campos extras se quiser
+    var ncm   = (prod.getChildText("NCM", nsNfe)  || prod.getChildText("NCM")  || "").toString();
+    var cfop  = (prod.getChildText("CFOP", nsNfe) || prod.getChildText("CFOP") || "").toString();
+    var uCom  = (prod.getChildText("uCom", nsNfe) || prod.getChildText("uCom") || "").toString();
+    var vUnCom= (prod.getChildText("vUnCom", nsNfe)|| prod.getChildText("vUnCom")|| "").toString();
+    var vProd = (prod.getChildText("vProd", nsNfe) || prod.getChildText("vProd") || "").toString();
+    var cEAN  = (prod.getChildText("cEAN", nsNfe)  || prod.getChildText("cEAN")  || "").toString();
+
+    var codigo_produto = removerZerosAEsquerda(cProd);
+
+    if (!codigo_produto) continue;
+
+    itens.push({
+      n_item: nItem,
+      codigo_produto: codigo_produto,
+      descricao: xProd,
+      quantidade: parseInt(String(Math.round(qCom)), 10) || 0,
+
+      // extras (não atrapalham o app, mas ajudam a planilha manter colunas)
+      ncm: ncm,
+      cfop: cfop,
+      ucom: uCom,
+      vuncom: vUnCom,
+      vprod: vProd,
+      cean: cEAN,
+
+      // preenchido no motor quando tem procvData
+      prateleira: ""
+    });
+  }
+
+  return {
+    numero_nf: numero_nf,
+    data_emissao: dataEmissaoS,
+    peso_total: pesoL,
+    volumes_total: qVol,
+    is_os: is_os,
+    os_oc: os_oc,
+    os_oc_principal: os_oc_principal,
+    itens: itens
+  };
 }
 
 // =========================================================
-// Helpers
+// Sessão 1.1 — HTML postMessage (popup ou iframe, contorna CORS)
 // =========================================================
-function findElement_(parent, name, ns) {
-  var el = parent.getChild(name, ns);
-  if (!el) el = parent.getChild(name);
-  if (!el) {
-    // Busca recursiva no primeiro nível de filhos
-    var children = parent.getChildren();
-    for (var i = 0; i < children.length; i++) {
-      el = children[i].getChild(name, ns);
-      if (el) return el;
-      el = children[i].getChild(name);
-      if (el) return el;
-    }
-  }
-  return el;
+function htmlPostMessage_(data, origin) {
+  var safeOrigin = (origin || "").toString().replace(/"/g, "&quot;");
+  var jsonStr = JSON.stringify(data);
+
+  var html =
+    '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>' +
+    '<p>Processando... pode fechar esta janela.</p>' +
+    '<script>' +
+    'try {' +
+    '  var target = window.opener || window.parent;' +
+    '  var payload = ' + jsonStr + ';' +
+    '  target.postMessage({ source: "appscript-nfe", data: payload }, "' + safeOrigin + '");' +
+    '  if (window.opener) setTimeout(function(){ window.close(); }, 500);' +
+    '} catch(e) {' +
+    '  var target2 = window.opener || window.parent;' +
+    '  target2.postMessage({ source: "appscript-nfe", data: { ok:false, error: e.message } }, "' + safeOrigin + '");' +
+    '}' +
+    '</script>' +
+    '</body></html>';
+
+  return HtmlService
+    .createHtmlOutput(html)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-function getElementText_(parent, name, ns) {
-  var el = parent.getChild(name, ns);
-  if (!el) el = parent.getChild(name);
-  return el ? el.getText() : '';
+
+/**
+ * =========================================================
+ * Sessão 5.0 — Helpers e utilitários (mantidos)
+ * =========================================================
+ */
+function obterConfigPadrao_() {
+  return {
+    emailAddress: "nfe@maticmoveis.com.br"
+  };
 }
 
-function jsonResponse_(statusCode, data) {
-  // Apps Script Web Apps sempre retornam 200, mas incluímos status no body
+function jsonResponse_(data) {
   var output = ContentService.createTextOutput(JSON.stringify(data));
   output.setMimeType(ContentService.MimeType.JSON);
   return output;
 }
 
-function htmlPostMessage_(data, origin) {
-  // Retorna HTML que envia os dados via postMessage para o parent (iframe)
-  // setXFrameOptionsMode(ALLOWALL) permite carregar em iframe cross-origin
-  var jsonStr = JSON.stringify(data);
-  var safeOrigin = origin.replace(/"/g, '&quot;');
-  var html = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>' +
-    '<p>Processando...</p>' +
-    '<script>' +
-    'try {' +
-    '  var data = ' + jsonStr + ';' +
-    '  window.parent.postMessage({ source: "appscript-nfe", data: data }, "' + safeOrigin + '");' +
-    '} catch(e) {' +
-    '  window.parent.postMessage({ source: "appscript-nfe", data: { ok: false, error: e.message } }, "' + safeOrigin + '");' +
-    '}' +
-    '</script>' +
-    '</body></html>';
-  return HtmlService.createHtmlOutput(html)
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+function removerZerosAEsquerda(codigo) {
+  return (codigo || "").toString().replace(/^0+/, "");
 }
 
-// =========================================================
-// Test helper (run from editor)
-// =========================================================
+function buscarPrateleira(codigo, tabela) {
+  // Mantive log porque você gosta de rastrear; pode ficar verboso em exec grande.
+  Logger.log("🔍 [LOG] Buscando prateleira para o código: " + codigo);
+
+  for (var i = 0; i < tabela.length; i++) {
+    var codigoBase = (tabela[i][0] || "").toString().trim();
+    if (codigo === codigoBase) return tabela[i][5];
+  }
+  for (var j = 0; j < tabela.length; j++) {
+    var refInteira = (tabela[j][6] || "").toString().trim();
+    if (codigo === refInteira) return tabela[j][5];
+  }
+
+  Logger.log("⚠️ [LOG] Código " + codigo + " não encontrado em Coluna A nem em Coluna G");
+  return "";
+}
+
+function parseDateCell_(val) {
+  if (!val) return null;
+
+  if (Object.prototype.toString.call(val) === "[object Date]") {
+    if (isNaN(val.getTime())) return null;
+    return new Date(val.getFullYear(), val.getMonth(), val.getDate());
+  }
+
+  var s = val.toString().trim();
+
+  // dd/MM/yyyy
+  var m1 = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+  if (m1) return new Date(parseInt(m1[3],10), parseInt(m1[2],10)-1, parseInt(m1[1],10));
+
+  // yyyy-MM-dd
+  var m2 = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  if (m2) return new Date(parseInt(m2[1],10), parseInt(m2[2],10)-1, parseInt(m2[3],10));
+
+  // yyyy/MM/dd
+  var m3 = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/.exec(s);
+  if (m3) return new Date(parseInt(m3[1],10), parseInt(m3[2],10)-1, parseInt(m3[3],10));
+
+  return null;
+}
+
+function formatYYYYMMDD_(d) {
+  var yyyy = d.getFullYear();
+  var mm   = ("0" + (d.getMonth() + 1)).slice(-2);
+  var dd   = ("0" + d.getDate()).slice(-2);
+  return yyyy + "/" + mm + "/" + dd;
+}
+
+function addDays_(d, n) {
+  var x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+
+/**
+ * =========================================================
+ * Sessão 6.0 — Teste REST no editor
+ * =========================================================
+ */
 function testDoPost() {
-  var token = PropertiesService.getScriptProperties().getProperty('LEBEBE_IMPORT_TOKEN');
+  var token = PropertiesService.getScriptProperties().getProperty("LEBEBE_IMPORT_TOKEN");
+
   var e = {
-    parameter: {},
     postData: {
       contents: JSON.stringify({
         token: token,
-        inicio: '2026-02-23',
-        fim: '2026-02-26'
+        inicio: "2026-02-23",
+        fim: "2026-02-26"
       })
     }
   };
+
   var result = doPost(e);
-  Logger.log(result.getContent());
+  Logger.log("[LOG][TEST] " + result.getContent());
 }

@@ -79,11 +79,28 @@ export default function ImportarNfePage() {
   // postMessage listener — registered once, cleaned up on unmount
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
-      console.log('[NFE][POSTMESSAGE] recebido', event.data)
+      console.log('[NFE][POSTMESSAGE] recebido', {
+        origin: event.origin,
+        source: event.data?.source,
+        data: event.data
+      })
 
-      // Validate payload shape first
+      // Validate origin: must be from Google domains
+      const allowedOrigins = [
+        'https://script.google.com',
+        'https://script.googleusercontent.com'
+      ]
+      if (!allowedOrigins.includes(event.origin)) {
+        console.log('[NFE][POSTMESSAGE] ignorado: origin não permitido', event.origin)
+        return
+      }
+
+      // Validate payload shape
       const msg = event.data
-      if (!msg || msg.source !== 'appscript-nfe') return
+      if (!msg || msg.source !== 'appscript-nfe') {
+        console.log('[NFE][POSTMESSAGE] ignorado: source inválido', msg?.source)
+        return
+      }
 
       const payload = msg.data as ImportResult
       console.log('[NFE][POSTMESSAGE] payload ok?', payload?.ok)
@@ -140,14 +157,16 @@ export default function ImportarNfePage() {
     console.log('[NFE][POPUP] abrindo popup')
 
     // 1) Open popup (top-level window → Google auth cookies ARE sent)
-    const popupName = 'nfe_popup'
-    const popup = window.open('about:blank', popupName, 'width=520,height=680')
+    const popupName = 'importar-nfe-matic'
+    const popup = window.open('about:blank', popupName, 'width=520,height=620')
     if (!popup) {
+      console.log('[NFE][POPUP] BLOQUEADO pelo navegador')
       setErrorMsg('Popup bloqueado pelo navegador. Permita popups para este site.')
       setImporting(false)
       return
     }
     popupRef.current = popup
+    console.log('[NFE][POPUP] popup aberto com sucesso')
 
     // 2) Create form targeting the popup — 3 flat fields, no payload JSON
     const form = document.createElement('form')
@@ -176,6 +195,7 @@ export default function ImportarNfePage() {
 
     // 4) Timeout: 60s
     timeoutRef.current = setTimeout(() => {
+      console.log('[NFE][TIMEOUT] 60s sem resposta do Apps Script')
       setErrorMsg(
         'Timeout (60s): sem resposta do Apps Script. ' +
         'Verifique se você está logado no Google Workspace (lebebe.com.br) neste navegador.'

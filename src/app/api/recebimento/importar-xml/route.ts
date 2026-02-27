@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
             data_emissao: parsed.data_emissao,
             peso_total: parsed.peso_total,
             volumes_total: parsed.volumes_total,
+            obs: parsed.obs || null,
             is_os: parsed.is_os,
           },
           { onConflict: 'numero_nf' }
@@ -129,6 +130,7 @@ interface ParsedNFe {
   data_emissao: string
   peso_total: number
   volumes_total: number
+  obs: string
   is_os: boolean
   itens: Array<{
     codigo_produto: string
@@ -187,6 +189,7 @@ function parseNFeXML(xml: string): ParsedNFe | null {
       data_emissao: dataEmissao,
       peso_total: pesoL,
       volumes_total: qVol,
+      obs: infCpl,
       is_os: isOs,
       itens,
       assistencias,

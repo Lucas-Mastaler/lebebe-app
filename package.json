@@ -25,6 +25,8 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "google-auth-library": "^10.6.1",
+    "googleapis": "^171.4.0",
     "lucide-react": "^0.562.0",
     "next": "16.1.4",
     "react": "19.2.3",
@@ -32,13 +34,15 @@
     "react-dom": "19.2.3",
     "recharts": "^2.15.4",
     "resend": "^6.9.1",
-    "tailwind-merge": "^3.4.0"
+    "tailwind-merge": "^3.4.0",
+    "xml2js": "^0.6.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/xml2js": "^0.4.14",
     "eslint": "^9",
     "eslint-config-next": "16.1.4",
     "tailwindcss": "^4",

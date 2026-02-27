@@ -1,40 +1,38 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarDays, Download, AlertCircle, Package, Loader2, FileText, Search, Truck, Weight } from 'lucide-react'
+import { CalendarDays, Download, AlertCircle, Package, Loader2, FileText, Search, Truck, Weight, Mail, Hash, Database } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import { isMaticEmail } from '@/lib/auth/matic-emails'
 
-const APPSCRIPT_URL = process.env.NEXT_PUBLIC_APPSCRIPT_IMPORT_URL || ''
-
 interface NfItem {
-  n_item: number
+  n_item: string
   codigo_produto: string
   descricao: string
-  quantidade: number
+  quantidade: string
+  ncm: string
+  cfop: string
 }
 
 interface Nf {
+  message_id: string
   numero_nf: string
   data_emissao: string
-  peso_total: number
-  volumes_total: number
-  is_os: boolean
-  os_oc: string[]
+  peso_total: string
+  volumes_total: string
   itens: NfItem[]
 }
 
 interface ImportResult {
   ok: boolean
-  inicio?: string
-  fim?: string
   query?: string
+  total_mensagens?: number
+  total_salvas?: number
   nfs?: Nf[]
-  erros?: Array<{ etapa: string; message: string; emailMessageId?: string }>
-  stats?: { threads: number; mensagens: number; anexos_xml: number; nfs: number }
-  error?: string
+  erros?: Array<{ message_id: string; erro: string }>
+  erro?: string
 }
 
 export default function ImportarNfePage() {
@@ -46,8 +44,6 @@ export default function ImportarNfePage() {
   const [fim, setFim] = useState('')
   const [result, setResult] = useState<ImportResult | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
-  const popupRef = useRef<Window | null>(null)
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Auth check
   useEffect(() => {
@@ -64,145 +60,54 @@ export default function ImportarNfePage() {
     checkAuth()
   }, [router])
 
-  // Cleanup helper
-  function cleanup() {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current)
-      timeoutRef.current = null
-    }
-    if (popupRef.current && !popupRef.current.closed) {
-      popupRef.current.close()
-    }
-    popupRef.current = null
+  function validate(): string | null {
+    if (!inicio || !fim) return 'Preencha as datas de início e fim.'
+    if (fim < inicio) return 'Data fim deve ser maior ou igual à data início.'
+    const dInicio = new Date(inicio + 'T00:00:00')
+    const dFim = new Date(fim + 'T00:00:00')
+    const diffDays = (dFim.getTime() - dInicio.getTime()) / (1000 * 60 * 60 * 24)
+    if (diffDays > 90) return 'Janela máxima de 90 dias.'
+    return null
   }
 
-  // postMessage listener — registered once, cleaned up on unmount
-  useEffect(() => {
-    function handleMessage(event: MessageEvent) {
-      console.log('[NFE][POSTMESSAGE] recebido', {
-        origin: event.origin,
-        source: event.data?.source,
-        data: event.data
+  async function handleImport() {
+    setErrorMsg('')
+
+    const validationError = validate()
+    if (validationError) {
+      setErrorMsg(validationError)
+      return
+    }
+
+    setImporting(true)
+    console.log('[NFE][UI] request', { inicio, fim })
+
+    try {
+      const res = await fetch('/api/nfe/importar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inicio, fim }),
       })
 
-      // Validate origin: must be from Google domains
-      const allowedOrigins = [
-        'https://script.google.com',
-        'https://script.googleusercontent.com'
-      ]
-      if (!allowedOrigins.includes(event.origin)) {
-        console.log('[NFE][POSTMESSAGE] ignorado: origin não permitido', event.origin)
+      console.log('[NFE][UI] response status', res.status)
+
+      const data: ImportResult = await res.json()
+
+      console.log('[NFE][UI] payload ok', data.ok, 'nfs', data.nfs?.length, 'erros', data.erros?.length)
+
+      if (res.status !== 200 || !data.ok) {
+        setErrorMsg(data.erro || `Erro HTTP ${res.status}`)
         return
       }
 
-      // Validate payload shape
-      const msg = event.data
-      if (!msg || msg.source !== 'appscript-nfe') {
-        console.log('[NFE][POSTMESSAGE] ignorado: source inválido', msg?.source)
-        return
-      }
-
-      const payload = msg.data as ImportResult
-      console.log('[NFE][POSTMESSAGE] payload ok?', payload?.ok)
-
-      if (!payload.ok) {
-        setErrorMsg(payload.error || 'Erro retornado pelo Apps Script.')
-      } else {
-        setResult(payload)
-      }
-
+      setResult(data)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[NFE][UI] fetch error', msg)
+      setErrorMsg(`Erro de conexão: ${msg}`)
+    } finally {
       setImporting(false)
-      cleanup()
     }
-
-    window.addEventListener('message', handleMessage)
-    return () => {
-      window.removeEventListener('message', handleMessage)
-      cleanup()
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  function handleImport() {
-    setErrorMsg('')
-    setResult(null)
-
-    if (!APPSCRIPT_URL) {
-      setErrorMsg('NEXT_PUBLIC_APPSCRIPT_IMPORT_URL não configurada.')
-      return
-    }
-
-    if (!inicio || !fim) {
-      setErrorMsg('Preencha as datas de início e fim.')
-      return
-    }
-
-    if (inicio > fim) {
-      setErrorMsg('Data início deve ser menor ou igual à data fim.')
-      return
-    }
-
-    const dInicio = new Date(inicio + 'T00:00:00')
-    const dFim = new Date(fim + 'T23:59:59')
-    const diffDays = (dFim.getTime() - dInicio.getTime()) / (1000 * 60 * 60 * 24)
-    if (diffDays > 90) {
-      setErrorMsg('Janela máxima de 90 dias.')
-      return
-    }
-
-    // Clean previous attempt
-    cleanup()
-    setImporting(true)
-
-    console.log('[NFE][POPUP] abrindo popup')
-
-    // 1) Open popup (top-level window → Google auth cookies ARE sent)
-    const popupName = 'importar-nfe-matic'
-    const popup = window.open('about:blank', popupName, 'width=520,height=620')
-    if (!popup) {
-      console.log('[NFE][POPUP] BLOQUEADO pelo navegador')
-      setErrorMsg('Popup bloqueado pelo navegador. Permita popups para este site.')
-      setImporting(false)
-      return
-    }
-    popupRef.current = popup
-    console.log('[NFE][POPUP] popup aberto com sucesso')
-
-    // 2) Create form targeting the popup — 3 flat fields, no payload JSON
-    const form = document.createElement('form')
-    form.method = 'POST'
-    form.action = APPSCRIPT_URL
-    form.target = popupName
-
-    const addField = (name: string, value: string) => {
-      const input = document.createElement('input')
-      input.type = 'hidden'
-      input.name = name
-      input.value = value
-      form.appendChild(input)
-    }
-
-    addField('callback_origin', window.location.origin)
-    addField('inicio', inicio)
-    addField('fim', fim)
-
-    console.log('[NFE][POPUP] enviando form', { inicio, fim, callback_origin: window.location.origin })
-
-    // 3) Submit form into the popup
-    document.body.appendChild(form)
-    form.submit()
-    form.remove()
-
-    // 4) Timeout: 60s
-    timeoutRef.current = setTimeout(() => {
-      console.log('[NFE][TIMEOUT] 60s sem resposta do Apps Script')
-      setErrorMsg(
-        'Timeout (60s): sem resposta do Apps Script. ' +
-        'Verifique se você está logado no Google Workspace (lebebe.com.br) neste navegador.'
-      )
-      setImporting(false)
-      cleanup()
-    }, 60_000)
   }
 
   // ─── Render ───────────────────────────────────────────
@@ -226,7 +131,7 @@ export default function ImportarNfePage() {
           Importar NFe Matic
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Busca NFs no Gmail por período via Apps Script
+          Busca NFs no Gmail por período (backend)
         </p>
       </div>
 
@@ -295,20 +200,32 @@ export default function ImportarNfePage() {
             <h3 className="text-sm font-semibold text-slate-600 mb-3">Resumo</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold text-slate-700">{result.stats?.threads ?? '-'}</p>
-                <p className="text-xs text-slate-500">Threads</p>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold text-slate-700">{result.stats?.mensagens ?? '-'}</p>
+                <p className="text-2xl font-bold text-slate-700 flex items-center justify-center gap-1">
+                  <Mail className="w-5 h-5 text-slate-400" />
+                  {result.total_mensagens ?? 0}
+                </p>
                 <p className="text-xs text-slate-500">Mensagens</p>
               </div>
               <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold text-slate-700">{result.stats?.anexos_xml ?? '-'}</p>
-                <p className="text-xs text-slate-500">XMLs</p>
+                <p className="text-2xl font-bold text-slate-700 flex items-center justify-center gap-1">
+                  <Hash className="w-5 h-5 text-slate-400" />
+                  {result.nfs?.length ?? 0}
+                </p>
+                <p className="text-xs text-slate-500">NFs</p>
               </div>
               <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold text-slate-700">{result.stats?.nfs ?? result.nfs?.length ?? 0}</p>
-                <p className="text-xs text-slate-500">NFs</p>
+                <p className="text-2xl font-bold text-green-600 flex items-center justify-center gap-1">
+                  <Database className="w-5 h-5 text-green-400" />
+                  {result.total_salvas ?? 0}
+                </p>
+                <p className="text-xs text-slate-500">Salvas no BD</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-slate-700 flex items-center justify-center gap-1">
+                  <AlertCircle className="w-5 h-5 text-slate-400" />
+                  {result.erros?.length ?? 0}
+                </p>
+                <p className="text-xs text-slate-500">Erros</p>
               </div>
             </div>
           </div>
@@ -332,21 +249,14 @@ export default function ImportarNfePage() {
 
             {result.nfs && result.nfs.length > 0 ? (
               <div className="space-y-3">
-                {result.nfs.map(nf => (
+                {result.nfs.map((nf, idx) => (
                   <div
-                    key={nf.numero_nf}
+                    key={`${nf.numero_nf}-${idx}`}
                     className="border border-slate-200 rounded-xl p-4 hover:bg-slate-50 transition-colors"
                   >
                     {/* NF header */}
                     <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <span className="text-lg font-bold text-slate-800">NF {nf.numero_nf}</span>
-                        {nf.is_os && (
-                          <span className="ml-2 bg-amber-100 text-amber-800 text-xs font-medium px-2 py-0.5 rounded-lg">
-                            OS
-                          </span>
-                        )}
-                      </div>
+                      <span className="text-lg font-bold text-slate-800">NF {nf.numero_nf}</span>
                       <span className="text-sm text-slate-500">{nf.data_emissao}</span>
                     </div>
 
@@ -366,17 +276,6 @@ export default function ImportarNfePage() {
                       </span>
                     </div>
 
-                    {/* OS/OC */}
-                    {nf.os_oc && nf.os_oc.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-2">
-                        {nf.os_oc.map(os => (
-                          <span key={os} className="bg-amber-50 text-amber-700 text-xs font-medium px-2 py-0.5 rounded">
-                            OS/OC {os}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
                     {/* Items (collapsed) */}
                     {nf.itens && nf.itens.length > 0 && (
                       <details className="mt-2">
@@ -389,7 +288,9 @@ export default function ImportarNfePage() {
                               <span className="font-mono text-slate-400 w-6 text-right">{item.n_item}.</span>
                               <span className="font-semibold min-w-[50px]">{item.codigo_produto}</span>
                               <span className="flex-1 truncate">{item.descricao}</span>
-                              <span className="font-medium text-slate-700">×{item.quantidade}</span>
+                              <span className="text-slate-400 text-[10px]">{item.ncm}</span>
+                              <span className="text-slate-400 text-[10px]">{item.cfop}</span>
+                              <span className="font-medium text-slate-700">&times;{item.quantidade}</span>
                             </div>
                           ))}
                         </div>
@@ -416,7 +317,7 @@ export default function ImportarNfePage() {
               <div className="max-h-48 overflow-y-auto space-y-1">
                 {result.erros.map((err, i) => (
                   <div key={i} className="text-xs text-red-600 bg-white rounded px-2 py-1">
-                    <span className="font-medium">[{err.etapa}]</span> {err.message}
+                    <span className="font-medium">[{err.message_id}]</span> {err.erro}
                   </div>
                 ))}
               </div>

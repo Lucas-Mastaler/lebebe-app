@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
     const resultado = await executarAppsScript({
       nomeFuncao: nomeFuncao,
       parametros: [validacao.payload],
-      devMode: true
+      devMode: false
     });
 
     // 3.6 – Processar resultado

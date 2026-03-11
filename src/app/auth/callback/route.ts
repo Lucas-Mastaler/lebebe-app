@@ -9,7 +9,11 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createClient()
-    const { data: { user }, error } = await supabase.auth.exchangeCodeForSession(code)
+    
+    // ─────────────────────────────────────────────────────────
+    // 1.0 – Trocar code por sessão (captura completa)
+    // ─────────────────────────────────────────────────────────
+    const { data: { user, session }, error } = await supabase.auth.exchangeCodeForSession(code)
 
     if (error) {
       console.error('[OAuth Callback] Erro ao trocar código por sessão:', error)
@@ -23,6 +27,44 @@ export async function GET(request: Request) {
 
     const email = user.email.toLowerCase()
     console.log('[OAuth Callback] Usuário autenticado:', email)
+
+    // ─────────────────────────────────────────────────────────
+    // 2.0 – Captura do Google Refresh Token (setup temporário)
+    // ─────────────────────────────────────────────────────────
+    if (session) {
+      const providerRefreshToken = session.provider_refresh_token
+      const providerToken = session.provider_token
+
+      if (providerRefreshToken) {
+        console.log('[OAuth Callback] ✓ provider_refresh_token capturado (salvando em tabela temporária)')
+        
+        try {
+          await supabase.from('google_oauth_setup').insert({
+            user_email: email,
+            provider_refresh_token: providerRefreshToken,
+            provider_token: providerToken || null,
+            notes: 'Token capturado automaticamente durante login OAuth'
+          })
+          console.log('[OAuth Callback] ✓ Token salvo na tabela google_oauth_setup')
+        } catch (insertError) {
+          console.error('[OAuth Callback] ⚠️ Erro ao salvar token (tabela pode não existir):', insertError)
+        }
+      } else {
+        console.warn('[OAuth Callback] ⚠️ provider_refresh_token NÃO retornado pelo Google')
+        console.warn('[OAuth Callback] Certifique-se que access_type=offline e prompt=consent estão configurados')
+        
+        try {
+          await supabase.from('google_oauth_setup').insert({
+            user_email: email,
+            provider_refresh_token: null,
+            provider_token: providerToken || null,
+            notes: 'provider_refresh_token NÃO retornado - verificar configuração OAuth'
+          })
+        } catch (insertError) {
+          console.error('[OAuth Callback] Erro ao registrar ausência de token:', insertError)
+        }
+      }
+    }
 
     const { data: usuarioPermitido, error: dbError } = await supabase
       .from('usuarios_permitidos')

@@ -149,3 +149,18 @@ export interface AgendamentoContatoItem {
   status: 'scheduled' | 'done' | 'error' | 'canceled' | string;
   statusLabel?: string;
 }
+
+// Google Apps Script API
+export interface AppsScriptExecutePayload {
+  enderecoCompleto: string;
+  tempoNecessario: string;
+  isRural?: boolean;
+  isCondominio?: boolean;
+  monthYear?: string;
+}
+
+export interface AppsScriptExecuteResponse {
+  ok: boolean;
+  resultado?: any;
+  error?: string;
+}

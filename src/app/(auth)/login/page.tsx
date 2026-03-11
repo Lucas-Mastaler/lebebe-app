@@ -34,7 +34,9 @@ function LoginContent() {
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
+            scope: 'openid email profile https://www.googleapis.com/auth/calendar',
           },
+          scopes: 'openid email profile https://www.googleapis.com/auth/calendar',
         },
       })
 

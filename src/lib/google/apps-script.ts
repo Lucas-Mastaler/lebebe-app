@@ -91,11 +91,13 @@ export async function executarAppsScript(
   }
 
   const deploymentId = process.env.GOOGLE_APPS_SCRIPT_DEPLOYMENT_ID_CEP;
-  if (!deploymentId) {
-    console.error("[APPS SCRIPT SERVICE] ❌ GOOGLE_APPS_SCRIPT_DEPLOYMENT_ID_CEP não configurado");
+  const scriptId = process.env.GOOGLE_APPS_SCRIPT_ID_CEP; // Fallback
+  
+  if (!deploymentId && !scriptId) {
+    console.error("[APPS SCRIPT SERVICE] ❌ Nenhum ID configurado (DEPLOYMENT_ID ou SCRIPT_ID)");
     return {
       sucesso: false,
-      erro: "Deployment ID não configurado no servidor."
+      erro: "Script ID ou Deployment ID não configurado no servidor."
     };
   }
 
@@ -103,12 +105,17 @@ export async function executarAppsScript(
     const scriptClient = await criarClienteAppsScript();
 
     console.log(`[APPS SCRIPT SERVICE] Chamando Apps Script API...`);
-    console.log(`[APPS SCRIPT SERVICE] Deployment ID: ${deploymentId}`);
+    console.log(`[APPS SCRIPT SERVICE] Deployment ID: ${deploymentId || 'não configurado'}`);
+    console.log(`[APPS SCRIPT SERVICE] Script ID (fallback): ${scriptId || 'não configurado'}`);
     console.log(`[APPS SCRIPT SERVICE] Função: ${nomeFuncao}`);
     console.log(`[APPS SCRIPT SERVICE] Dev Mode: ${devMode}`);
 
+    // Tentar com Deployment ID primeiro (recomendado)
+    const idParaUsar = deploymentId || scriptId;
+    console.log(`[APPS SCRIPT SERVICE] Usando ID: ${idParaUsar}`);
+
     const response = await scriptClient.scripts.run({
-      scriptId: deploymentId,
+      scriptId: idParaUsar!,
       requestBody: {
         function: nomeFuncao,
         parameters: parametros,

@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+
+    <style>
+        :root {
+            --brand: #10A5E4;
+            --brandDark: #0E8EC4;
+            --bg: #f6f9fc;
+            --card: #fff;
+            --text: #1f2937;
+            --muted: #6b7280;
+            --border: #e5e7eb;
+            --ok: #16a34a;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html,
+        body {
+            height: 100%;
+            font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+            color: var(--text);
+            background: var(--bg);
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, var(--brand), var(--brandDark));
+            color: #fff;
+            padding: 16px 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .header p {
+            font-size: 13px;
+            opacity: 0.9;
+        }
+
+        /* Mapa */
+        #map {
+            width: 100%;
+            flex: 1;
+            /* Ocupa o espaço restante */
+            min-height: 0;
+            /* Permite encolher se necessário */
+            background: #e5e7eb;
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            position: relative;
+            /* Para o z-index do Leaflet funcionar bem */
+        }
+
+        /* Painel info */
+        .info-panel {
+            background: var(--card);
+            border-top: 1px solid var(--border);
+            padding: 20px 24px;
+            /* 16px → 20px */
+            max-height: 250px;
+            /* 200px → 250px */
+            overflow-y: auto;
+            font-size: 15px;
+            /* ADICIONAR */
+        }
+
+        .info-panel.empty {
+            text-align: center;
+            color: var(--muted);
+            font-size: 14px;
+            padding: 24px;
+        }
+
+        .location-info {
+            display: none;
+        }
+
+        .location-info.show {
+            display: block;
+        }
+
+        .location-label {
+            font-size: 13px;
+            color: var(--muted);
+            margin-bottom: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .location-value {
+            font-size: 15px;
+            /* 14px → 15px */
+            color: var(--text);
+            margin-bottom: 14px;
+            /* 12px → 14px */
+            line-height: 1.5;
+            /* ADICIONAR */
+        }
+
+        .coords {
+            font-size: 12px;
+            color: var(--muted);
+            font-family: 'Courier New', monospace;
+        }
+
+        /* Ações */
+        .actions {
+            background: var(--card);
+            border-top: 1px solid var(--border);
+            padding: 16px 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        button {
+            border: 0;
+            border-radius: 10px;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: #111;
+            color: #fff;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #000;
+        }
+
+        .btn-ghost {
+            background: #f3f4f6;
+            color: #111;
+        }
+
+        .btn-ghost:hover:not(:disabled) {
+            background: #e5e7eb;
+        }
+
+        /* Loading */
+        .loading {
+            display: none;
+            position: absolute;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 12px 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .loading.show {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #e5e7eb;
+            border-top-color: var(--brand);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .custom-icon {
+            background: var(--brand);
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        /* DEBUG STATUS VISÍVEL */
+        #debugStatus {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            z-index: 2000;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            color: #111;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- DEBUG -->
+        <div id="debugStatus">Carregando HTML…</div>
+
+        <!-- Header -->
+        <div class="header">
+            <h1>📍 Selecione a Localização no Mapa</h1>
+            <p>Clique no mapa para marcar sua localização aproximada</p>
+        </div>
+
+        <!-- Loading indicator -->
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <span id="loadingText">Buscando endereço...</span>
+        </div>
+
+        <!-- Map -->
+        <div id="map"></div>
+
+        <!-- Info Panel -->
+        <div id="infoPanel" class="info-panel empty">
+            <div id="emptyMessage">Clique no mapa para selecionar uma localização</div>
+            <div id="locationInfo" class="location-info">
+                <div class="location-label">Endereço aproximado</div>
+                <div id="addressText" class="location-value">—</div>
+                <div class="coords">
+                    <span id="coordsText">—</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="actions">
+            <button type="button" class="btn-ghost" onclick="cancelar()">Cancelar</button>
+            <button type="button" id="btnConfirm" class="btn-primary" disabled onclick="confirmar()">
+                Confirmar Localização
+            </button>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+    <script>
+        // ====== ESTADO ======
+        var map;
+        var marker = null;
+        var selectedCoords = null;
+
+        function setDebug(msg) {
+            var el = document.getElementById('debugStatus');
+            if (el) {
+                el.textContent = msg;
+            }
+            console.log('[DEBUG MAP]', msg);
+        }
+
+        // ====== MAPA ======
+        function initMap() {
+            setDebug('initMap chamado');
+
+            if (typeof L === 'undefined') {
+                setDebug('ERRO: Leaflet (L) NÃO carregou');
+                alert('Erro ao carregar biblioteca de mapa (Leaflet).');
+                return;
+            }
+
+            setDebug('Leaflet carregado, criando mapa…');
+
+            var curitiba = [-25.4284, -49.2733];
+
+            map = L.map('map', {
+                center: curitiba,
+                zoom: 10,
+                zoomControl: true
+            });
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            map.on('click', onMapClick);
+
+            setTimeout(function () {
+                map.invalidateSize();
+                setDebug('Mapa criado e invalidateSize chamado');
+            }, 300);
+        }
+
+        function onMapClick(e) {
+            var lat = e.latlng.lat;
+            var lng = e.latlng.lng;
+
+            console.log('[Map] Clicked:', lat, lng);
+
+            if (marker) {
+                marker.setLatLng(e.latlng);
+            } else {
+                marker = L.marker(e.latlng, {
+                    draggable: true,
+                    icon: L.divIcon({
+                        className: 'custom-icon',
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 12]
+                    })
+                }).addTo(map);
+
+                marker.on('dragend', function (event) {
+                    var pos = event.target.getLatLng();
+                    console.log('[Map] Marker dragged:', pos.lat, pos.lng);
+                    reverseGeocode(pos.lat, pos.lng);
+                });
+            }
+
+            reverseGeocode(lat, lng);
+        }
+
+        // ====== REVERSE GEOCODE ======
+        function reverseGeocode(lat, lng) {
+            selectedCoords = { lat: lat, lng: lng };
+            showLoading(true);
+
+            document.getElementById('coordsText').textContent =
+                'Lat: ' + lat.toFixed(6) + ', Lng: ' + lng.toFixed(6);
+
+            var url =
+                'https://nominatim.openstreetmap.org/reverse?lat=' + lat +
+                '&lon=' + lng + '&format=json&zoom=18&addressdetails=1';
+
+            fetch(url)
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    console.log('[Nominatim] Response:', data);
+
+                    var displayAddress = 'Localização selecionada no mapa';
+
+                    if (data && data.address) {
+                        var addr = data.address;
+                        var parts = [];
+
+                        var p1 = addr.road || addr.residential || addr.pedestrian;
+                        var p2 = addr.suburb || addr.neighbourhood || addr.quarter;
+                        var p3 = addr.city || addr.town || addr.village || addr.municipality;
+                        var p4 = addr.state;
+
+                        if (p1) parts.push(p1);
+                        if (p2) parts.push(p2);
+                        if (p3) parts.push(p3);
+                        if (p4) parts.push(p4);
+
+                        if (parts.length > 0) {
+                            displayAddress = parts.join(', ');
+                        } else if (data.display_name) {
+                            displayAddress = data.display_name;
+                        }
+                    }
+
+                    selectedCoords.display = displayAddress;
+                    updateInfoPanel(displayAddress, lat, lng);
+                    showLoading(false);
+                })
+                .catch(function (err) {
+                    console.error('[Nominatim] Error:', err);
+                    var fallbackAddress = 'Localização selecionada no mapa';
+                    selectedCoords.display = fallbackAddress;
+                    updateInfoPanel(fallbackAddress, lat, lng);
+                    showLoading(false);
+                });
+        }
+
+        // ====== UI ======
+        function updateInfoPanel(address, lat, lng) {
+            document.getElementById('emptyMessage').style.display = 'none';
+            document.getElementById('locationInfo').classList.add('show');
+            document.getElementById('addressText').textContent = address;
+            document.getElementById('coordsText').textContent =
+                'Lat: ' + lat.toFixed(6) + ', Lng: ' + lng.toFixed(6);
+            document.getElementById('btnConfirm').disabled = false;
+            document.getElementById('infoPanel').classList.remove('empty');
+        }
+
+        function showLoading(show) {
+            var loading = document.getElementById('loading');
+            if (show) {
+                loading.classList.add('show');
+            } else {
+                loading.classList.remove('show');
+            }
+        }
+
+        // ====== AÇÕES ======
+        function confirmar() {
+            if (!selectedCoords) {
+                alert('Por favor, selecione uma localização no mapa.');
+                return;
+            }
+            console.log('[Map] Confirmed:', selectedCoords);
+
+            // ✅ Mostra loading
+            showLoading(true);
+
+            // Texto adicional
+            const infoPanel = document.getElementById('infoPanel');
+            const loadingText = document.createElement('div');
+            loadingText.id = 'loadingConfirm';
+            loadingText.style.cssText = 'text-align:center; padding:12px; font-weight:600; color:var(--brand);';
+            loadingText.textContent = 'Salvando e reabrindo modal...';
+            if (infoPanel) infoPanel.appendChild(loadingText);
+
+            console.log('[Map] Chamando saveMapSelection...');
+            google.script.run
+                .withSuccessHandler(function (result) {
+                    console.log('[Map] ✅ saveMapSelection SUCCESS! Resultado:', result);
+                    console.log('[Map] Fechando modal do mapa...');
+                    // Fecha este modal para permitir que o principal abra
+                    google.script.host.close();
+                })
+                .withFailureHandler(function (err) {
+                    showLoading(false);
+                    const elem = document.getElementById('loadingConfirm');
+                    if (elem) elem.remove();
+                    alert('Erro ao salvar: ' + err);
+                    console.error('[Map] ❌ Erro ao salvar:', err);
+                })
+                .saveMapSelection(selectedCoords);
+        }
+
+        function cancelar() {
+            google.script.host.close();
+        }
+
+        // ====== INIT ======
+        document.addEventListener('DOMContentLoaded', function () {
+            setDebug('DOMContentLoaded, chamando initMap…');
+            initMap();
+        });
+
+        window.onload = function () {
+            setDebug('window.onload disparado');
+        };
+    </script>
+</body>
+
+</html>

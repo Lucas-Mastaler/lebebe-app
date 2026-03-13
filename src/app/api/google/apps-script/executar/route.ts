@@ -30,21 +30,43 @@ function validarAutenticacao(request: NextRequest): boolean {
 // ─────────────────────────────────────────────────────────
 
 function validarPayload(body: any): { valido: boolean; erro?: string; payload?: AppsScriptExecutePayload } {
-  const { enderecoCompleto, tempoNecessario, isRural, isCondominio, monthYear } = body;
+  const { 
+    logradouro, numero, bairro, cidade, uf, cep,
+    enderecoCompleto, 
+    tempoNecessario, 
+    isRural, 
+    isCondominio, 
+    monthYear 
+  } = body;
 
-  if (!enderecoCompleto || typeof enderecoCompleto !== "string") {
-    return { valido: false, erro: "Campo 'enderecoCompleto' é obrigatório e deve ser string." };
+  // ─────────────────────────────────────────────────────────
+  // 1.0 – Validar endereço (estruturado OU completo)
+  // ─────────────────────────────────────────────────────────
+  const temEnderecoEstruturado = logradouro || numero || bairro || cidade || uf || cep;
+  const temEnderecoCompleto = enderecoCompleto && typeof enderecoCompleto === "string" && enderecoCompleto.trim();
+
+  if (!temEnderecoEstruturado && !temEnderecoCompleto) {
+    return { 
+      valido: false, 
+      erro: "Endereço não fornecido. Envie campos estruturados (logradouro, numero, bairro, cidade, uf, cep) OU enderecoCompleto." 
+    };
   }
 
+  // ─────────────────────────────────────────────────────────
+  // 2.0 – Validar tempoNecessario
+  // ─────────────────────────────────────────────────────────
   if (!tempoNecessario || typeof tempoNecessario !== "string") {
     return { valido: false, erro: "Campo 'tempoNecessario' é obrigatório e deve ser string." };
   }
 
-  const rgxTempo = /^\d{2}:\d{2}$/;
+  const rgxTempo = /^\d{1,2}:\d{2}$/;
   if (!rgxTempo.test(tempoNecessario)) {
     return { valido: false, erro: "Campo 'tempoNecessario' deve estar no formato HH:MM (ex: 00:30)." };
   }
 
+  // ─────────────────────────────────────────────────────────
+  // 3.0 – Validar campos opcionais
+  // ─────────────────────────────────────────────────────────
   if (isRural !== undefined && typeof isRural !== "boolean") {
     return { valido: false, erro: "Campo 'isRural' deve ser boolean." };
   }
@@ -64,14 +86,36 @@ function validarPayload(body: any): { valido: boolean; erro?: string; payload?: 
     }
   }
 
+  // ─────────────────────────────────────────────────────────
+  // 4.0 – Normalizar strings (UTF-8 seguro)
+  // ─────────────────────────────────────────────────────────
+  const normalizeString = (val: any): string => {
+    if (!val) return "";
+    return String(val).trim().normalize("NFC"); // NFC = Canonical Decomposition + Canonical Composition
+  };
+
+  // ─────────────────────────────────────────────────────────
+  // 5.0 – Montar payload normalizado
+  // ─────────────────────────────────────────────────────────
   return {
     valido: true,
     payload: {
-      enderecoCompleto,
-      tempoNecessario,
+      // Endereço estruturado (se fornecido)
+      logradouro: normalizeString(logradouro) || undefined,
+      numero: normalizeString(numero) || undefined,
+      bairro: normalizeString(bairro) || undefined,
+      cidade: normalizeString(cidade) || undefined,
+      uf: normalizeString(uf) || undefined,
+      cep: normalizeString(cep) || undefined,
+      
+      // Endereço completo (fallback)
+      enderecoCompleto: normalizeString(enderecoCompleto) || undefined,
+      
+      // Parâmetros de serviço
+      tempoNecessario: normalizeString(tempoNecessario),
       isRural: isRural ?? false,
       isCondominio: isCondominio ?? false,
-      monthYear: monthYear ?? undefined
+      monthYear: normalizeString(monthYear) || undefined
     }
   };
 }

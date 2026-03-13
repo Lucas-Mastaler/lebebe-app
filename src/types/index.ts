@@ -152,7 +152,18 @@ export interface AgendamentoContatoItem {
 
 // Google Apps Script API
 export interface AppsScriptExecutePayload {
-  enderecoCompleto: string;
+  // Endereço estruturado (PREFERIDO - melhor para geocodificação)
+  logradouro?: string;
+  numero?: string;
+  bairro?: string;
+  cidade?: string;
+  uf?: string;
+  cep?: string;
+  
+  // Endereço completo (FALLBACK - compatibilidade)
+  enderecoCompleto?: string;
+  
+  // Parâmetros de serviço
   tempoNecessario: string;
   isRural?: boolean;
   isCondominio?: boolean;

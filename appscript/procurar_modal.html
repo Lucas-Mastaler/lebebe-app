@@ -1,0 +1,1414 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <base target="_top">
+    <style>
+        :root {
+            --brand: #10A5E4;
+            --brandDark: #0E8EC4;
+            --bg: #f6f9fc;
+            --card: #fff;
+            --text: #1f2937;
+            --muted: #6b7280;
+            --border: #e5e7eb;
+            --danger: #ef4444;
+            --ok: #16a34a;
+            --fg: #1f2937;
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            background: var(--bg);
+            font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+            color: var(--text)
+        }
+
+        .wrap {
+            position: absolute;
+            inset: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        /* HERO */
+        .hero {
+            background: linear-gradient(135deg, var(--brand), var(--brandDark));
+            color: #fff;
+            padding: 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-radius: 14px;
+        }
+
+        .hero__logo {
+            max-width: 220px;
+            max-height: 56px;
+            object-fit: contain
+        }
+
+        .hero__title {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 800
+        }
+
+        .hero__subtitle {
+            margin: 2px 0 0;
+            font-size: 12px;
+            opacity: .95
+        }
+
+        .hero__right {
+            margin-left: auto
+        }
+
+        .btn-close {
+            background: rgba(255, 255, 255, .18);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, .35);
+            padding: 6px 10px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        /* CARD DO FORM */
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px;
+            position: relative;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            margin: 10px 0 6px
+        }
+
+        input[type="text"],
+        select {
+            width: 100%;
+            padding: 9px 11px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            font-size: 14px;
+            background: #fff;
+        }
+
+        input[type="text"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #cbd5e1;
+            box-shadow: 0 0 0 3px #e5f2fd;
+        }
+
+        .row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap
+        }
+
+        .col {
+            flex: 1 1 220px
+        }
+
+        .col-sm {
+            flex: 0 1 210px
+        }
+
+        .col-xs {
+            flex: 0 1 180px
+        }
+
+        .col-lg {
+            flex: 2 1 340px
+        }
+
+        /* CEP + endereço */
+        .cep-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-top: 8px
+        }
+
+        .addr {
+            margin-top: 8px;
+            padding: 10px 12px;
+            border: 1px dashed var(--border);
+            background: #f9fafb;
+            border-radius: 10px;
+            font-size: 13px;
+            color: #374151;
+            display: none;
+        }
+
+        .addr.show {
+            display: block
+        }
+
+        .addr .small {
+            font-size: 12px;
+            color: var(--muted)
+        }
+
+        .chips {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-top: 8px
+        }
+
+        /* Erro CEP */
+        .invalid {
+            border-color: var(--danger) !important;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, .1) !important
+        }
+
+        .err {
+            color: var(--danger);
+            font-size: 12px;
+            margin-top: 6px;
+            display: none
+        }
+
+        .err.show {
+            display: block
+        }
+
+        /* Tempo necessário bloqueado */
+        .readonly-wrap {
+            position: relative
+        }
+
+        .readonly-mask {
+            position: absolute;
+            inset: 0;
+            border-radius: 10px;
+            background: linear-gradient(0deg, rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.06));
+            pointer-events: auto;
+        }
+
+        #tempo {
+            background: #f3f4f6;
+            color: #4b5563;
+            pointer-events: none;
+            user-select: none;
+            cursor: not-allowed;
+        }
+
+        /* Gate (bloco cinza até validar CEP) */
+        .gate {
+            position: relative;
+            margin-top: 18px;
+        }
+
+        .gate-mask {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(243, 244, 246, .92);
+            color: #6b7280;
+            font-weight: 800;
+            letter-spacing: .4px;
+            border-radius: 12px;
+            border: 1px dashed var(--border);
+            z-index: 2;
+            text-align: center;
+        }
+
+        .gate-mask.hide {
+            display: none
+        }
+
+        .btns {
+            margin-top: 16px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap
+        }
+
+        button {
+            border: 0;
+            border-radius: 10px;
+            padding: 10px 14px;
+            cursor: pointer;
+            font-weight: 700
+        }
+
+        button[disabled] {
+            opacity: .55;
+            cursor: not-allowed
+        }
+
+        .primary {
+            background: #111;
+            color: #fff
+        }
+
+        .ghost {
+            background: #f3f4f6;
+            color: #111
+        }
+
+        .hint {
+            color: var(--muted);
+            font-size: 12px;
+            margin-top: 8px
+        }
+
+        .chkline {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            height: 40px
+        }
+
+        .chkline input {
+            width: 18px;
+            height: 18px
+        }
+
+        /* Overlay submit */
+        .card.busy form {
+            opacity: .45;
+            pointer-events: none;
+            filter: grayscale(.1);
+        }
+
+        .card .overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 3;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, .78);
+            border: 1px dashed var(--border);
+            font-weight: 700;
+        }
+
+        .card.busy .overlay {
+            display: flex;
+        }
+
+        .overlay .spinner {
+            width: 18px;
+            height: 18px;
+            margin-right: 8px;
+            border: 2px solid #e5e7eb;
+            border-top-color: var(--brand);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        #loading {
+            display: none;
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 10px;
+            background: #f9fafb;
+            border: 1px dashed var(--border);
+            white-space: pre-line
+        }
+
+        #done {
+            display: none;
+            margin-top: 10px;
+            color: var(--ok);
+            font-weight: 700
+        }
+
+        .notice {
+            background: #FEF3C7;
+            border: 1px solid #FCD34D;
+            color: #92400E;
+            padding: 10px 12px;
+            border-radius: 10px;
+            font-size: 13px;
+            margin: 6px 0 12px;
+        }
+
+        /* ✅ COLAPSAR CARD quando busy */
+        .card.busy {
+            max-height: 120px;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+
+        .card:not(.busy) {
+            max-height: none;
+        }
+
+        /* ========== PROGRESSIVE RESULTS ========== */
+        .progress-results {
+            margin-top: 16px;
+            padding: 16px;
+            background: #f9fafb;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            max-height: 350px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .progress-results.show {
+            display: block;
+        }
+
+        .progress-header {
+            margin-bottom: 12px;
+        }
+
+        .progress-header h3 {
+            margin: 0;
+            font-size: 15px;
+            color: var(--fg);
+            font-weight: 700;
+        }
+
+        .progress-count {
+            font-weight: 600;
+            color: var(--brand);
+        }
+
+        .progress-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .progress-item {
+            padding: 10px 12px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            font-size: 13px;
+            animation: slideIn 0.3s ease;
+        }
+
+        /* ✅ Destacar primeiro resultado */
+        .progress-item.first-result {
+            border: 2px solid var(--brand);
+            box-shadow: 0 4px 12px rgba(16, 165, 228, 0.2);
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .progress-item-date {
+            font-weight: 700;
+            color: var(--brand);
+            margin-bottom: 4px;
+        }
+
+        .progress-item-badge {
+            display: inline-block;
+            margin-left: 8px;
+            font-size: 12px;
+        }
+
+        .progress-item-badge.normal {
+            color: #059669;
+        }
+
+        .progress-item-badge.extra {
+            color: #d97706;
+        }
+
+        .progress-item-details {
+            font-size: 12px;
+            color: #6b7280;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <!-- HERO -->
+        <div class="hero">
+            <img class="hero__logo"
+                src="https://static.wixstatic.com/media/b1fd5e_a646fac4868449aa87093817e95af73a~mv2.png/v1/fill/w_263,h_107,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/b1fd5e_a646fac4868449aa87093817e95af73a~mv2.png"
+                alt="Le Bébé">
+            <div>
+                <div class="hero__title">PROCURAR DATAS</div>
+                <div class="hero__subtitle">Informe os dados e busque as melhores janelas de entrega</div>
+            </div>
+            <div class="hero__right">
+                <button class="btn-close" onclick="google.script.host.close()">Fechar</button>
+            </div>
+        </div>
+
+        <!-- CARD DO FORM -->
+        <div class="card">
+            <form id="form" onsubmit="return enviar();">
+
+                <!-- NOVO INPUT DE ENDEREÇO -->
+                <div class="row" style="margin-bottom:10px;">
+                    <div class="col-lg">
+                        <label>LOGRADOURO (Ex: Avenida Paulista) <span style="color:red">*</span></label>
+                        <input type="text" id="logradouro" placeholder="Nome da rua/avenida" required />
+                    </div>
+                    <div class="col-xs">
+                        <label>NÚMERO</label>
+                        <input type="text" id="numero" placeholder="Ex: 5636" />
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col">
+                        <label>BAIRRO</label>
+                        <input type="text" id="bairro" placeholder="Ex: Hauer" />
+                    </div>
+                    <div class="col">
+                        <label>CIDADE <span style="color:red">*</span></label>
+                        <input type="text" id="cidade" placeholder="Ex: Curitiba" value="Curitiba" required />
+                    </div>
+                    <div class="col-xs">
+                        <label>UF <span style="color:red">*</span></label>
+                        <select id="uf" required>
+                            <option value="PR" selected>PR</option>
+                            <option value="SP">SP</option>
+                            <option value="SC">SC</option>
+                            <option value="RS">RS</option>
+                            <option value="RJ">RJ</option>
+                            <option value="MG">MG</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="cep-actions">
+                    <button type="button" id="btnBuscarEndereco" class="ghost">Validar Endereço</button>
+                    <button type="button" id="btnAbrirMapa" class="ghost" style="display:none">📍 Selecionar no
+                        Mapa</button>
+                    <span id="addrStatus" class="hint"></span>
+                </div>
+
+                <div id="addrOkMsg" class="addr" aria-live="polite">
+                    <div class="small">Endereço Confirmado:</div>
+                    <div id="addrTextResult" style="margin-top:4px; font-weight:600"></div>
+                    <div id="addrGeoResult" style="margin-top:2px; font-size:11px; color:#6b7280;"></div>
+                    <div class="chips">
+                        <button type="button" id="btnConfirmAddr" class="primary">Confirmar este local</button>
+                        <button type="button" id="btnEditarAddr" class="ghost">Editar</button>
+                    </div>
+                </div>
+                <div id="addrErr" class="err">Informe Logradouro, Cidade e UF.</div>
+
+                <!-- RESTO DO FORM: começa bloqueado até confirmar o endereço -->
+                <div class="gate">
+                    <fieldset id="fsRest" disabled>
+                        <div class="notice" role="alert">
+                            <strong>AVISO:</strong> SE FOR ENCOMENDA, UTILIZAR 45 DIAS OU MAIS.
+                        </div>
+
+                        <div class="row">
+                            <div class="col-xs">
+                                <label>PROCURAR A PARTIR DE</label>
+                                <select id="mesPesquisa"></select>
+                            </div>
+                            <div class="col-sm">
+                                <label>ÁREA RURAL?</label>
+                                <div class="chkline">
+                                    <input type="checkbox" id="isRuralChk">
+                                    <span>Sim</span>
+                                </div>
+                            </div>
+                            <div class="col-sm">
+                                <label>É CONDOMÍNIO?</label>
+                                <div class="chkline">
+                                    <input type="checkbox" id="isCondominioChk">
+                                    <span>Sim</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col">
+                                <label>BERÇO / CAMA</label>
+                                <select id="tipoBerco">
+                                    <option value="">Carregando…</option>
+                                </select>
+                            </div>
+                            <div class="col">
+                                <label>CÔMODA</label>
+                                <select id="comoda">
+                                    <option value="">Carregando…</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col">
+                                <label>ROUPEIRO</label>
+                                <select id="roupeiro">
+                                    <option value="">Carregando…</option>
+                                </select>
+                            </div>
+                            <div class="col">
+                                <label>POLTRONA</label>
+                                <select id="poltrona">
+                                    <option value="">Carregando…</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col">
+                                <label>PAINEL</label>
+                                <select id="painel">
+                                    <option value="">Carregando…</option>
+                                </select>
+                            </div>
+                            <div class="col">
+                                <label>TEMPO NECESSÁRIO</label>
+                                <div class="readonly-wrap">
+                                    <input type="text" id="tempo" value="" placeholder="—" readonly tabindex="-1"
+                                        aria-readonly="true">
+                                    <div class="readonly-mask" title="Calculado automaticamente"></div>
+                                </div>
+                                <div id="tempoHint" class="hint">Calculado automaticamente a partir das opções acima.
+                                </div>
+                                <div id="tempoWarn" class="err" style="display:none">Precisa fazer 2 entregas separadas.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="btns">
+                            <button id="btnSubmit" class="primary" type="submit" disabled>PESQUISAR DATAS</button>
+                            <button class="ghost" type="button" onclick="google.script.host.close()">Fechar</button>
+                        </div>
+                        <div class="hint">Os resultados abrirão em um painel de pré-agendamento.</div>
+                    </fieldset>
+
+                    <div id="gateMask" class="gate-mask">PREENCHER CEP ACIMA ANTES</div>
+                </div>
+            </form>
+
+            <div class="overlay" id="overlay" role="status" aria-live="polite">
+                <div class="spinner"></div>
+                <div style="display:flex; flex-direction:column; align-items:center; gap:6px">
+                    <span id="overlayText">Pesquisando datas…</span>
+                    <span id="overlayPhase" style="font-size:11px; opacity:0.6;">Analisando primeiros candidatos</span>
+                    <span id="overlayTimer" style="font-size:13px; opacity:0.75; font-weight:600">0s</span>
+                </div>
+            </div>
+
+            <div id="loading">Pensando, aguarde…</div>
+            <div id="done">Concluído!</div>
+        </div>
+
+        <!-- ✅ Resultados Progressivos - FORA DO CARD -->
+        <div id="progressResults" class="progress-results">
+            <div class="progress-header">
+                <h3>🔍 Pré Visualização - Datas Encontradas <span id="progressCount" class="progress-count">(0)</span>
+                </h3>
+            </div>
+            <div id="progressList" class="progress-list"></div>
+        </div>
+    </div>
+
+    <script>
+        // ---------- STATE ----------
+        let addrConfirmed = false;
+        let tempoBusy = true;
+        let tempoReqId = 0;
+        let window__addrOk = null; // Cache local do endereço confirmado
+
+        let tempoTooLong = false; // trava quando HH:MM > 06:30
+
+        // Flags de boot/controle
+        let _booted = false;
+        let _optsLoaded = false;
+        let _tempoLoaded = false;
+        let _bootRetryTimer = null;
+
+        let _userTouched = false;
+        let _ready = false;
+
+        // ---------- Utils ----------
+        function setOptions(selectId, items, includeEmpty = true, force = false) {
+            const sel = document.getElementById(selectId);
+            if (!sel) return;
+
+            if (_optsLoaded && _userTouched && !force) return;
+
+            const prevValue = sel.value;
+            const frag = document.createDocumentFragment();
+            sel.innerHTML = '';
+
+            if (includeEmpty) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = '—';
+                frag.appendChild(opt);
+            }
+
+            (items || []).forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = String(v.value ?? v);
+                opt.textContent = String(v.label ?? v);
+                frag.appendChild(opt);
+            });
+
+            sel.appendChild(frag);
+
+            if (prevValue && [...sel.options].some(o => o.value === prevValue)) {
+                sel.value = prevValue;
+            } else if (!includeEmpty && sel.options.length > 0) {
+                sel.selectedIndex = 0;
+            }
+        }
+
+        function hhmmToMinutes(hhmm) {
+            const m = String(hhmm || '').trim().match(/^(\d{1,2}):(\d{2})$/); // <- sem escape duplo
+            if (!m) return 0;
+            return (+m[1]) * 60 + (+m[2]);
+        }
+
+        function monthListPT(startDate = new Date(), count = 6) {
+            const out = [];
+            const fmt = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' });
+            const yPad = n => String(n).padStart(2, '0');
+            let d = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+            for (let i = 0; i < count; i++) {
+                const label = fmt.format(d).replace(/^./, c => c.toUpperCase());
+                const value = d.getFullYear() + '-' + yPad(d.getMonth() + 1);
+                out.push({ label, value });
+                d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+            }
+            return out;
+        }
+        function tempoNormJS(s) {
+            const t = String(s || '').trim().toUpperCase();
+            return (t === 'NÃO' || t === 'NAO') ? '' : t;
+        }
+        function tempoKeyJS(a, b, c, d, e) {
+            return [a, b, c, d, e].map(tempoNormJS).join('|');
+        }
+        function addMinHHMM(hhmm, add) {
+            const m = String(hhmm || '').trim().match(/^(\d{1,2}):(\d{2})$/); // <- sem escape duplo
+            if (!m) return String(hhmm || '');
+            let tot = (+m[1]) * 60 + (+m[2]) + (+add || 0);
+            if (tot < 0) tot = 0;
+            const h = Math.floor(tot / 60), mm = String(tot % 60).padStart(2, '0');
+            return h + ':' + mm;
+        }
+        function getFormValues() {
+            return {
+                logradouro: document.getElementById('logradouro').value,
+                numero: document.getElementById('numero').value,
+                bairro: document.getElementById('bairro').value,
+                cidade: document.getElementById('cidade').value,
+                uf: document.getElementById('uf').value,
+                enderecoCompleto: window__addrOk ? window__addrOk.enderecoCompleto : '',
+                cep: window__addrOk ? window__addrOk.cep : '',
+                lat: window__addrOk ? window__addrOk.lat : null,
+                lng: window__addrOk ? window__addrOk.lng : null,
+                mesPesquisa: document.getElementById('mesPesquisa').value,
+                monthYear: document.getElementById('mesPesquisa').value,
+                isRural: document.getElementById('isRuralChk').checked,
+                isCondominio: document.getElementById('isCondominioChk').checked,
+                tipoBerco: document.getElementById('tipoBerco').value,
+                comoda: document.getElementById('comoda').value,
+                roupeiro: document.getElementById('roupeiro').value,
+                poltrona: document.getElementById('poltrona').value,
+                painel: document.getElementById('painel').value,
+                tempoNecessario: document.getElementById('tempo').value
+            };
+        }
+        function updateSubmitState() {
+            const tempoVal = (document.getElementById('tempo').value || '').trim();
+            const tempoOk = !!tempoVal && tempoVal !== '00:00';
+            const canSubmit = (addrConfirmed && !tempoBusy && tempoOk && !tempoTooLong);
+            document.getElementById('btnSubmit').disabled = !canSubmit;
+        }
+        function setGate(enabled) {
+            document.getElementById('fsRest').disabled = enabled;
+            document.getElementById('gateMask').classList.toggle('hide', !enabled);
+        }
+        function markTouched() {
+            if (_userTouched) return;
+            _userTouched = true;
+            if (_bootRetryTimer) { clearTimeout(_bootRetryTimer); _bootRetryTimer = null; }
+        }
+
+        // ---------- Carrega listas do backend ----------
+        function carregarOpcoes() {
+            if (_optsLoaded) return;
+
+            google.script.run
+                .withSuccessHandler(opts => {
+                    setOptions('tipoBerco', opts.tipoBerco || [], false);
+                    setOptions('comoda', opts.comoda || []);
+                    setOptions('roupeiro', opts.roupeiro || []);
+                    setOptions('poltrona', opts.poltrona || []);
+                    setOptions('painel', opts.painel || []);
+
+                    const selMes = document.getElementById('mesPesquisa');
+                    if (!(_userTouched && _optsLoaded)) {
+                        selMes.innerHTML = '';
+                        monthListPT(new Date(), 6).forEach(m => {
+                            const o = document.createElement('option');
+                            o.value = m.value; o.textContent = m.label;
+                            selMes.appendChild(o);
+                        });
+                    }
+
+                    _optsLoaded = true;
+                    tempoBusy = true; updateSubmitState();
+                    if (addrConfirmed) recalcTempo();
+                    bootMaybeDone();
+                })
+                .withFailureHandler(_ => {
+                    if (!_optsLoaded && !_userTouched) {
+                        setTimeout(carregarOpcoes, 2000);
+                    }
+                })
+                .GetFrontOptionLists();
+        }
+
+        // ---------- Tempo: load uma vez ----------
+        function loadTempoMapOnce() {
+            if (_tempoLoaded) return;
+            google.script.run
+                .withSuccessHandler(m => {
+                    window.__tempoMap = m || {};
+                    _tempoLoaded = true;
+                    if (addrConfirmed) recalcTempo();
+                    bootMaybeDone();
+                })
+                .withFailureHandler(_ => {
+                    if (!_tempoLoaded && !_userTouched) {
+                        setTimeout(loadTempoMapOnce, 2000);
+                    }
+                })
+                .GetTempoMap();
+        }
+
+        function bootMaybeDone() {
+            if (_optsLoaded && _tempoLoaded) {
+                _ready = true;
+                if (_bootRetryTimer) { clearTimeout(_bootRetryTimer); _bootRetryTimer = null; }
+                updateSubmitState();
+            }
+        }
+
+        // ---------- Boot inicial ----------
+        function bootInit() {
+            if (_booted) return;
+            _booted = true;
+
+            if (_bootRetryTimer) clearTimeout(_bootRetryTimer);
+            _bootRetryTimer = setTimeout(() => {
+                if (!_userTouched && (!_optsLoaded || !_tempoLoaded)) {
+                    _booted = false;
+                    _optsLoaded = false;
+                    _tempoLoaded = false;
+                    bootInit();
+                }
+            }, 5000);
+
+            google.script.run
+                .withSuccessHandler(() => {
+                    carregarOpcoes();
+                    loadTempoMapOnce();
+                    checkMapSelection();
+                })
+                .withFailureHandler(() => {
+                    if (!_userTouched) {
+                        setTimeout(bootInit, 1000);
+                    }
+                })
+                .ping();
+        }
+
+        // ========== VERIFICA SELEÇÃO DO MAPA AO BOOT ==========
+        function checkMapSelection() {
+            // ✅ PRIMEIRO: Verifica se dados foram injetados via script (INSTANTÂNEO!)
+            if (window._mapSelectionData) {
+                console.log('[Map] ✅ Dados INSTANTÂNEOS via injeção:', window._mapSelectionData);
+                const coords = window._mapSelectionData;
+                delete window._mapSelectionData; // Limpa após usar
+
+                applyMapData(coords);
+                return; // ✅ NÃO precisa buscar do PropertiesService
+            }
+
+            // Fallback: Busca do PropertiesService (caso legado)
+            if (window._checkingMapSelection) {
+                console.log('[Map] Já está verificando, pulando...');
+                return;
+            }
+            window._checkingMapSelection = true;
+
+            console.log('[Map] Verificando se há seleção de mapa salva...');
+            google.script.run
+                .withSuccessHandler(function (coords) {
+                    window._checkingMapSelection = false;
+                    if (coords && coords.ok) {
+                        console.log('[Map] ✅ Dados encontrados (fallback)!', coords);
+                        applyMapData(coords);
+                    } else {
+                        console.log('[Map] Nenhuma seleção encontrada.');
+                    }
+                })
+                .withFailureHandler(function (err) {
+                    window._checkingMapSelection = false;
+                    console.log('[Map] Erro ao verificar seleção:', err);
+                })
+                .getMapSelection();
+        }
+        // ✅ NOVA FUNÇÃO: Aplica dados do mapa na UI
+        function applyMapData(coords) {
+            lastCepObj = {
+                ok: true,
+                lat: coords.lat,
+                lng: coords.lng,
+                display: coords.display || 'Localização selecionada no mapa',
+                provider: 'map'
+            };
+            // UI - Preenche campo CEP
+            document.getElementById('cep').value = '(Mapa)';
+            document.getElementById('cep').disabled = true;
+            document.getElementById('addrText').textContent = lastCepObj.display;
+
+            // Muda texto do label
+            const addrContainer = document.getElementById('cepAddr');
+            const labelEl = addrContainer.querySelector('.small');
+            if (labelEl) {
+                labelEl.textContent = '📍 Localização selecionada no mapa:';
+            }
+            addrContainer.classList.add('show');
+
+            document.getElementById('cepStatus').textContent = '✅ Localização confirmada.';
+            document.getElementById('btnAbrirMapa').style.display = 'none';
+            // ⏳ NÃO confirma automaticamente - aguarda botão "Confirmar endereço"
+            cepConfirmed = false; // Mantém false
+            setGate(true);  // Mantém gate ATIVA
+            updateSubmitState();
+            console.log('[Map] ✅ CEP confirmado com dados do mapa!');
+        }
+
+        // ---------- Tempo automático ----------
+        let tempoDebounce = null;
+        function scheduleRecalcTempo() {
+            if (tempoDebounce) clearTimeout(tempoDebounce);
+            tempoDebounce = setTimeout(() => {
+                tempoDebounce = null;
+                recalcTempo();
+            }, 300);
+        }
+
+        function recalcTempo() {
+            tempoBusy = true; updateSubmitState();
+            const hint = document.getElementById('tempoHint');
+            hint.textContent = 'Recalculando tempo…';
+
+            const M = window.__tempoMap;
+            if (M && typeof M === 'object') {
+                const f = getFormValues();
+                const k = tempoKeyJS(f.tipoBerco, f.comoda, f.roupeiro, f.poltrona, f.painel);
+                if (!k.replace(/\|/g, '')) { // <- sem escape duplo
+                    document.getElementById('tempo').value = '';
+                    document.getElementById('tempo').placeholder = '—';
+                    tempoBusy = false; hint.textContent = 'Selecione os itens para calcular.';
+                    updateSubmitState(); return;
+                }
+                let t = M[k] || '';
+                if (t && f.isCondominio) t = addMinHHMM(t, 10);
+
+                const el = document.getElementById('tempo');
+                el.value = t || '';
+                el.placeholder = t || '—';
+
+                // regra: bloquear se > 06:30 (390 min)
+                const warn = document.getElementById('tempoWarn');
+                const minutes = hhmmToMinutes(t);
+                tempoTooLong = (minutes > 390);
+
+                warn.style.display = tempoTooLong ? 'block' : 'none';
+
+                tempoBusy = false;
+                hint.textContent = t ? 'Calculado automaticamente.' : 'Selecione os itens para calcular.';
+                updateSubmitState();
+                return;
+            }
+
+            // fallback: carregar mapa e tentar de novo
+            google.script.run
+                .withSuccessHandler(map => {
+                    window.__tempoMap = map || {};
+                    recalcTempo();
+                })
+                .withFailureHandler(_ => {
+                    tempoBusy = false; hint.textContent = 'Não foi possível carregar o tempo agora.';
+                    updateSubmitState();
+                })
+                .GetTempoMap();
+        }
+
+        // ========== PROGRESSIVE RESULTS ==========
+        let pollingInterval = null;
+        let currentToken = null;
+        let seenDates = new Set(); // Anti-duplicata
+
+        function startProgressPolling(token) {
+            currentToken = token;
+            seenDates.clear();
+
+            // ✅ Limpar lista anterior
+            document.getElementById('progressList').innerHTML = '';
+
+            // Mostrar área de resultados
+            document.getElementById('progressResults').classList.add('show');
+
+            // ✅ AGUARDA 10 SEGUNDOS antes de iniciar polling (resultados só aparecem após isso)
+            setTimeout(() => {
+                // ✅ POLLING a cada 1.5 segundos
+                pollingInterval = setInterval(() => {
+                    google.script.run
+                        .withSuccessHandler(handleProgressUpdate)
+                        .withFailureHandler(err => {
+                            console.error('[Polling] Erro:', err);
+                        })
+                        .GetProgressUpdate(currentToken);
+                }, 2000);
+            }, 12000); // Delay inicial de 10 segundos
+        }
+
+        function stopProgressPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+        }
+
+        function handleProgressUpdate(data) {
+            // ✅ DEBUG LOG
+            console.log('[Progressive] Polling recebeu:', data);
+
+            if (!data || data.status === 'error') return;
+
+            const $list = document.getElementById('progressList');
+            const $count = document.getElementById('progressCount');
+
+            // Combinar normais + extras
+            const allResults = [
+                ...(data.normais || []).map(c => ({ ...c, tipoResult: 'normal' })),
+                ...(data.extras || []).map(c => ({ ...c, tipoResult: 'extra' }))
+            ];
+
+            // Adicionar apenas novos resultados
+            allResults.forEach(cand => {
+                const dateKey = cand.date || 'unknown';
+                if (seenDates.has(dateKey)) return;
+
+                seenDates.add(dateKey);
+
+                // Criar elemento visual
+                const item = document.createElement('div');
+                item.className = 'progress-item';
+
+                const dateObj = new Date(cand.date);
+                const now = new Date();
+                const diffTime = dateObj - now;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                // Formatação mais próxima do modal final
+                const weekday = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][dateObj.getDay()];
+                const dateStr = dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                const fullDate = `${weekday}, ${dateStr}`;
+
+                const badge = cand.tipoResult === 'normal'
+                    ? '<span class="progress-item-badge normal">✓ Normal</span>'
+                    : '<span class="progress-item-badge extra">★ Extra (+R$ 100)</span>';
+
+                const deltaKm = (cand.delta || 0).toFixed(2);
+                const frete = cand.frete || 'R$ 0,00';
+
+                // ✅ Destacar primeiro resultado
+                if (seenDates.size === 1) {
+                    item.classList.add('first-result');
+                }
+
+                item.innerHTML = `
+                    <div class="progress-item-date">${fullDate} ${badge}</div>
+                    <div class="progress-item-details">
+                        <strong>Frete:</strong> ${frete} • 
+                        <strong>Equipe:</strong> ${cand.team || '?'} • 
+                        <strong>Δ:</strong> ${deltaKm}km • 
+                        <strong>Dias:</strong> ${diffDays}d
+                    </div>
+                    <div class="progress-item-details" style="font-size:11px; opacity:0.7;">
+                        ${cand.availStr || ''}
+                    </div>
+                `;
+
+                $list.appendChild(item);
+            });
+
+            // Atualizar contador
+            $count.textContent = `(${seenDates.size})`;
+
+            // Se terminou, parar polling
+            if (data.status === 'done') {
+                stopProgressPolling();
+                console.log('[Polling] Concluído! Total:', seenDates.size);
+            }
+        }
+
+        // ---------- Submit ----------
+        function enviar() {
+            const $btnSubmit = document.getElementById('btnSubmit');
+            const $card = document.querySelector('.card');
+            const $overlayTx = document.getElementById('overlayText');
+
+            // ✅ Aceita dados do mapa
+            if (lastCepObj && lastCepObj.provider === 'map') {
+                // Prossegue - dados do mapa são válidos
+                console.log('[Map] Submit com dados do mapa - pulando validação Endereço');
+            } else {
+                if (!validateAddrStrict()) { document.getElementById('logradouro').focus(); return false; }
+                if (!addrConfirmed) { alert('Confirme o endereço antes de continuar.'); return false; }
+            }
+            if (tempoBusy) { alert('Aguardando o cálculo do tempo necessário…'); return false; }
+
+            const form = getFormValues();
+            form.clientToken = 't' + Date.now() + '-' + Math.random().toString(16).slice(2);
+            form.returnOnly = true;
+            form.useModalDestOnly = true;
+
+            if (lastCepObj) {
+                form.destLat = Number(lastCepObj.lat || 0);
+                form.destLng = Number(lastCepObj.lng || 0);
+                form.destDisplay = String(lastCepObj.display || lastCepObj.display_name || '');
+                form.destProvider = String(lastCepObj.provider || 'google');
+            }
+
+            $btnSubmit.disabled = true;
+            $card.classList.add('busy');
+            if ($overlayTx) $overlayTx.textContent = 'Pesquisando datas…';
+
+            // ✅ Atualizar fase após FAST-PASS
+            setTimeout(() => {
+                const $phase = document.getElementById('overlayPhase');
+                if ($phase) $phase.textContent = 'Buscando melhores rotas';
+            }, 12000); // Após ~12s (FAST-PASS)
+
+            // ✅ INICIAR POLLING antes da chamada backend
+            startProgressPolling(form.clientToken);
+
+            // ===== TIMER DO OVERLAY =====
+            const $timer = document.getElementById('overlayTimer');
+            let timerSeconds = 0;
+            if ($timer) $timer.textContent = '0s';
+
+            const timerInterval = setInterval(() => {
+                timerSeconds++;
+                if ($timer) $timer.textContent = timerSeconds + 's';
+            }, 1000);
+
+            google.script.run
+                .withSuccessHandler(function (resp) {
+                    stopProgressPolling(); // ✅ PARAR POLLING
+                    clearInterval(timerInterval);
+
+                    if (resp && resp.ok) {
+                        if ($overlayTx) $overlayTx.textContent = 'Abrindo resultados…';
+                        google.script.host.close();
+                    } else {
+                        $btnSubmit.disabled = false; $card.classList.remove('busy');
+                        const msg = (resp && resp.error) ? String(resp.error) : 'Sem resultados. Tente novamente.';
+                        alert(msg);
+                    }
+                })
+                .withFailureHandler(function (err) {
+                    stopProgressPolling(); // ✅ PARAR POLLING
+                    clearInterval(timerInterval);
+
+                    $btnSubmit.disabled = false; $card.classList.remove('busy');
+                    alert('Falha ao pesquisar: ' + (err && err.message ? err.message : err));
+                })
+                .ExecutarPesquisaViaModalAndShow(form);
+
+            return false;
+        }
+
+        // ---------- VALIDAÇÃO E BUSCA DE ENDEREÇO ----------
+        function checkAddrFilled() {
+            const l = (document.getElementById('logradouro').value || '').trim();
+            const c = (document.getElementById('cidade').value || '').trim();
+            const u = (document.getElementById('uf').value || '').trim();
+            return l.length > 2 && c.length > 2 && u.length === 2;
+        }
+
+        function showAddrError(show) {
+            document.getElementById('logradouro').classList.toggle('invalid', !!show && !(document.getElementById('logradouro').value || '').trim());
+            document.getElementById('cidade').classList.toggle('invalid', !!show && !(document.getElementById('cidade').value || '').trim());
+            document.getElementById('addrErr').classList.toggle('show', !!show);
+        }
+
+        function validateAddrStrict() {
+            const ok = checkAddrFilled();
+            showAddrError(!ok);
+            return ok;
+        }
+
+        function resetAddrUI() {
+            addrConfirmed = false;
+            window__addrOk = null;
+            lastCepObj = null;
+            setGate(true);
+            document.getElementById('addrStatus').textContent = '';
+            document.getElementById('addrOkMsg').classList.remove('show');
+            document.getElementById('btnAbrirMapa').style.display = 'none';
+            updateSubmitState();
+        }
+
+        // ---------- DOMContentLoaded ----------
+        document.addEventListener('input', markTouched, { passive: true });
+        document.addEventListener('change', markTouched, { passive: true });
+        document.addEventListener('click', e => {
+            if (!(e.target && (e.target.id === 'btnBuscarEndereco' || e.target.id === 'btnConfirmAddr' || e.target.id === 'btnEditarAddr'))) {
+                markTouched();
+            }
+        }, { passive: true });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Endereço listeners
+            ['logradouro', 'cidade', 'uf'].forEach(id => {
+                document.getElementById(id).addEventListener('input', () => {
+                    showAddrError(false);
+                    resetAddrUI();
+                });
+            });
+
+            document.getElementById('btnBuscarEndereco').addEventListener('click', () => {
+                if (!validateAddrStrict()) return;
+
+                const formArgs = getFormValues();
+                const status = document.getElementById('addrStatus');
+                status.textContent = 'Buscando localização...';
+                setGate(true);
+
+                google.script.run
+                    .withSuccessHandler(resp => {
+                        if (resp && resp.ok && resp.lat) {
+                            window__addrOk = resp; // salva no cache da tela
+                            document.getElementById('addrTextResult').textContent = resp.enderecoCompleto;
+
+                            let geoStr = `Lat: ${Number(resp.lat).toFixed(5)}, Lng: ${Number(resp.lng).toFixed(5)} (${resp.provider})`;
+                            if (resp.cep) geoStr += ` • CEP-BASE: ${resp.cep}`;
+                            document.getElementById('addrGeoResult').textContent = geoStr;
+
+                            document.getElementById('addrOkMsg').classList.add('show');
+                            status.textContent = 'Confirme o local para continuar.';
+                            document.getElementById('btnAbrirMapa').style.display = 'none';
+                            lastCepObj = resp; // fallback p/ mapa leg
+                        } else {
+                            document.getElementById('addrOkMsg').classList.remove('show');
+                            status.textContent = 'Não conseguimos localizar este endereço com precisão segura.';
+                            document.getElementById('btnAbrirMapa').style.display = 'inline-block';
+                            window__addrOk = null;
+                            lastCepObj = null;
+                        }
+                        updateSubmitState();
+                    })
+                    .withFailureHandler(err => {
+                        document.getElementById('addrOkMsg').classList.remove('show');
+                        document.getElementById('addrStatus').textContent = 'Erro ao consultar endereço: ' + (err && err.message ? err.message : err);
+                        updateSubmitState();
+                    })
+                    .LookupCompletoPorEndereco(formArgs);
+            });
+
+            // ✅ Event listener para botão do mapa
+            document.getElementById('btnAbrirMapa').addEventListener('click', function () {
+                console.log('[Map] Abrindo modal do mapa...');
+
+                // Mostra loading
+                const overlay = document.querySelector('.overlay');
+                const overlayText = document.getElementById('overlayText');
+                if (overlay && overlayText) {
+                    overlayText.textContent = 'Carregando mapa, aguarde...';
+                    overlay.style.display = 'flex';
+                }
+
+                // Marca flag
+                mapModalOpened = true;
+                window.addEventListener('focus', onWindowFocus);
+
+                // Abre modal
+                google.script.run
+                    .withSuccessHandler(function () {
+                        // Modal abriu - esconde loading
+                        if (overlay) overlay.style.display = 'none';
+                    })
+                    .withFailureHandler(function (err) {
+                        if (overlay) overlay.style.display = 'none';
+                        alert('Erro ao abrir mapa: ' + err);
+                        console.error('[Map] Erro:', err);
+                        window.removeEventListener('focus', onWindowFocus);
+                    })
+                    .showMapSelector();
+            });
+
+            document.getElementById('btnConfirmAddr').addEventListener('click', () => {
+                // ✅ Se veio do mapa, confirma imediatamente
+                if (lastCepObj && lastCepObj.provider === 'map') {
+                    console.log('[Map] Confirmando endereço do mapa');
+                    document.getElementById('addrTextResult').textContent = lastCepObj.display || '';
+                    document.getElementById('addrOkMsg').classList.add('show');
+
+                    addrConfirmed = true;
+                    window__addrOk = lastCepObj;
+                    document.getElementById('addrStatus').textContent = '✅ Localização confirmada.';
+                    setGate(false);
+                    recalcTempo();
+                    updateSubmitState();
+                    document.getElementById('mesPesquisa').focus();
+                    return;
+                }
+
+                // Validação normal
+                if (!window__addrOk) {
+                    showAddrError(true);
+                    return;
+                }
+
+                addrConfirmed = true;
+                setGate(false);
+                document.getElementById('addrStatus').textContent = '✅ Localização confirmada.';
+                updateSubmitState();
+                recalcTempo();
+            });
+
+            document.getElementById('btnEditarAddr').addEventListener('click', () => {
+                document.getElementById('logradouro').focus();
+                resetAddrUI();
+            });
+
+            // ========== MAPA SELECTOR (COM WINDOW FOCUS) ==========
+            document.getElementById('btnAbrirMapa').addEventListener('click', function () {
+                console.log('[Map] Botão do mapa clicado');
+                // Flag para controlar o polling
+                var mapModalOpened = true;
+                var pollInterval = null;
+                // Função para iniciar o polling
+                function startPolling() {
+                    console.log('[Map] ✅ Iniciando polling após modal fechar...');
+                    var attempts = 0;
+                    var maxAttempts = 40; // 20 segundos
+                    pollInterval = setInterval(function () {
+                        attempts++;
+                        console.log('[Map] Polling tentativa ' + attempts + '/' + maxAttempts);
+                        google.script.run
+                            .withSuccessHandler(function (coords) {
+                                console.log('[Map] Resposta getMapSelection:', coords);
+                                if (coords && coords.ok) {
+                                    // ✅ Encontrou dados!
+                                    clearInterval(pollInterval);
+                                    window.removeEventListener('focus', onWindowFocus);
+                                    lastCepObj = {
+                                        ok: true,
+                                        lat: coords.lat,
+                                        lng: coords.lng,
+                                        display: coords.display || 'Localização selecionada no mapa',
+                                        provider: 'map'
+                                    };
+                                    document.getElementById('addrTextResult').textContent = lastCepObj.display;
+                                    document.getElementById('addrOkMsg').classList.add('show');
+                                    document.getElementById('addrStatus').textContent =
+                                        'Localização selecionada. Confirme para continuar.';
+                                    document.getElementById('btnAbrirMapa').style.display = 'none';
+                                    console.log('[Map] ✅ Interface atualizada com sucesso!');
+                                } else if (attempts >= maxAttempts) {
+                                    // Timeout
+                                    clearInterval(pollInterval);
+                                    window.removeEventListener('focus', onWindowFocus);
+                                    console.log('[Map] ⏱️ Timeout - provavelmente cancelado');
+                                }
+                            })
+                            .withFailureHandler(function (err) {
+                                console.error('[Map] Erro no polling:', err);
+                                if (attempts >= maxAttempts) {
+                                    clearInterval(pollInterval);
+                                    window.removeEventListener('focus', onWindowFocus);
+                                }
+                            })
+                            .getMapSelection();
+                    }, 500);
+                }
+                // Handler para quando a window recebe foco (modal fechou)
+                function onWindowFocus() {
+                    if (mapModalOpened) {
+                        console.log('[Map] 🎯 Window recebeu foco - modal do mapa fechou!');
+                        mapModalOpened = false;
+                        // Aguarda um pouco antes de iniciar polling
+                        setTimeout(startPolling, 300);
+                    }
+                }
+                // Adiciona listener de focus
+                window.addEventListener('focus', onWindowFocus);
+                // Abre o modal
+                console.log('[Map] Abrindo modal do mapa...');
+                google.script.run
+                    .withFailureHandler(function (err) {
+                        alert('Erro ao abrir mapa: ' + err);
+                        console.error('[Map] Erro ao abrir modal:', err);
+                        window.removeEventListener('focus', onWindowFocus);
+                    })
+                    .showMapSelector();
+            });
+
+
+            // Recalc tempo quando muda qualquer item relevante
+            ['tipoBerco', 'comoda', 'roupeiro', 'poltrona', 'painel', 'isRuralChk', 'isCondominioChk'].forEach(id => {
+                document.addEventListener('change', e => {
+                    if (e.target && e.target.id === id) scheduleRecalcTempo();
+                });
+            });
+
+            // inicia UI bloqueada e dispara boot
+            resetAddrUI();
+            setGate(true);
+            bootInit();
+        });
+    </script>
+
+
+</body>
+
+</html>

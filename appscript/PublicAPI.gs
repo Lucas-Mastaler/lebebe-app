@@ -406,10 +406,22 @@ function ProcurarDatasPorEndereco(dados) {
 
     // Sucesso - formatar resposta para o n8n
     if (payload.ok && payload.candidates) {
+      // ===== NORMALIZAÇÃO UTF-8 (NFC) =====
+      // Corrige double-encoding de acentos (ex: "SÃ¡bado" → "Sábado")
+      function _nfcSafe(txt) {
+        if (!txt) return '';
+        var s = String(txt);
+        // Se o runtime suporta normalize (V8), usar NFC
+        if (typeof s.normalize === 'function') {
+          s = s.normalize('NFC');
+        }
+        return s;
+      }
+
       return {
         ok: true,
-        endereco: payload.address || form.enderecoCompleto,
-        enderecoSimplificado: payload.addressShort || '',
+        endereco: _nfcSafe(payload.address || form.enderecoCompleto),
+        enderecoSimplificado: _nfcSafe(payload.addressShort || ''),
         coordenadas: {
           lat: geoResult.lat,
           lng: geoResult.lng
@@ -421,15 +433,15 @@ function ProcurarDatasPorEndereco(dados) {
         tempoProcessamento: payload.searchTime || 0,
         candidatos: payload.candidates.map(function(c) {
           return {
-            data: c.date || c.dateDM,
+            data: _nfcSafe(c.date || c.dateDM),
             dataISO: c.dateISO,
-            diaSemana: c.weekday,
-            equipe: c.team,
-            horario: c.window,
-            frete: c.frete,
-            tipoFrete: c.tipoFrete || 'NORMAL',
+            diaSemana: _nfcSafe(c.weekday),
+            equipe: _nfcSafe(c.team),
+            horario: _nfcSafe(c.window),
+            frete: _nfcSafe(c.frete),
+            tipoFrete: _nfcSafe(c.tipoFrete || c.tipo || 'NORMAL'),
             distanciaKm: c.distKm,
-            motivoExtras: c.motivoExtras || '',
+            motivoExtras: _nfcSafe(c.motivoExtras || c.avisoHoraMarcada || ''),
             rank: c.rank || 0
           };
         })

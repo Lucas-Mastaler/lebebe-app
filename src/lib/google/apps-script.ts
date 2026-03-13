@@ -58,6 +58,70 @@ export function isFuncaoPermitida(funcao: string): funcao is FuncaoPermitida {
 }
 
 // ─────────────────────────────────────────────────────────
+// 2.5 – Reparo de double-encoding UTF-8
+// ─────────────────────────────────────────────────────────
+
+/**
+ * Detecta e corrige strings com double-encoding UTF-8.
+ * Padrão: bytes UTF-8 interpretados como Latin-1, ex: "SÃ¡bado" → "Sábado"
+ * Aplica recursivamente em objetos e arrays.
+ */
+function repararDoubleEncodingUTF8(valor: any): any {
+  if (valor === null || valor === undefined) return valor;
+
+  if (typeof valor === "string") {
+    return repararStringUTF8(valor);
+  }
+
+  if (Array.isArray(valor)) {
+    return valor.map((item) => repararDoubleEncodingUTF8(item));
+  }
+
+  if (typeof valor === "object") {
+    const resultado: Record<string, any> = {};
+    for (const chave of Object.keys(valor)) {
+      resultado[chave] = repararDoubleEncodingUTF8(valor[chave]);
+    }
+    return resultado;
+  }
+
+  return valor;
+}
+
+/**
+ * Corrige uma string individual com possível double-encoding UTF-8.
+ * Converte para bytes Latin-1, depois decodifica como UTF-8.
+ * Se a decodificação produzir resultado válido (mais curto), usa o resultado corrigido.
+ */
+function repararStringUTF8(str: string): string {
+  if (!str) return str;
+
+  // Regex que detecta padrões comuns de double-encoding UTF-8
+  // Ã seguido de caractere Latin-1 indica bytes C3 xx interpretados errado
+  const padraoDoubleEncoding = /[\u00C0-\u00DF][\u0080-\u00BF]/;
+
+  if (!padraoDoubleEncoding.test(str)) {
+    return str; // String limpa, sem double-encoding
+  }
+
+  try {
+    // Converter string para bytes Latin-1, depois decodificar como UTF-8
+    const bytes = Buffer.from(str, "latin1");
+    const decoded = bytes.toString("utf8");
+
+    // Validação: string decodificada deve ser mais curta (menos bytes por caractere)
+    // e não deve conter caracteres de substituição (U+FFFD)
+    if (decoded.length < str.length && !decoded.includes("\uFFFD")) {
+      return decoded;
+    }
+  } catch {
+    // Se falhar, retornar original
+  }
+
+  return str;
+}
+
+// ─────────────────────────────────────────────────────────
 // 3.0 – Executar função no Apps Script
 // ─────────────────────────────────────────────────────────
 
@@ -140,9 +204,14 @@ export async function executarAppsScript(
       };
     }
 
-    const resultado = response.data.response?.result;
+    const resultadoBruto = response.data.response?.result;
     console.log(`[APPS SCRIPT SERVICE] ✅ Execução bem-sucedida`);
-    console.log(`[APPS SCRIPT SERVICE] Resultado:`, JSON.stringify(resultado));
+
+    // ─── Reparo de double-encoding UTF-8 ───
+    // Corrige padrão "SÃ¡bado" → "Sábado" (UTF-8 bytes lidos como Latin-1)
+    const resultado = repararDoubleEncodingUTF8(resultadoBruto);
+
+    console.log(`[APPS SCRIPT SERVICE] Resultado (pós-reparo UTF-8):`, JSON.stringify(resultado));
 
     return {
       sucesso: true,

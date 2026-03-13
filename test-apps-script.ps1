@@ -197,3 +197,42 @@ Write-Host "1. Verifique os logs do Apps Script (View > Executions)" -Foreground
 Write-Host "2. Procure por [API-ENDERECO-UTF8] nos logs" -ForegroundColor Gray
 Write-Host "3. Verifique se os acentos estão corretos" -ForegroundColor Gray
 Write-Host ""
+
+
+
+# CONFIGURE ESTAS VARIÁVEIS PRIMEIRO
+$API_URL = "https://lebebe.cloud/api/google/apps-script/executar"
+$BEARER_TOKEN = "wV8qf0mM4nJ7sP1xK9rL2aB6uD3yT5cH8zQ1eR4tY2U="
+
+$payload = @{
+    logradouro = "Rua Jose de Alencar" 
+    numero = "1683"
+    bairro = "Juveve" 
+    cidade = "Curitiba"
+    uf = "PR"
+    cep = "80040-070"
+    tempoNecessario = "00:30"
+    isRural = $false
+    isCondominio = $false
+} | ConvertTo-Json -Depth 10
+
+$headers = @{
+    "Content-Type" = "application/json; charset=utf-8"
+    "Authorization" = "Bearer $BEARER_TOKEN"
+}
+
+try {
+    $response = Invoke-RestMethod -Uri $API_URL -Method POST -Body $payload -Headers $headers
+    $response | ConvertTo-Json -Depth 10
+}
+catch {
+    Write-Host "STATUS:" $_.Exception.Response.StatusCode.value__
+    Write-Host "STATUS DESCRIPTION:" $_.Exception.Response.StatusDescription
+
+    $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+    $responseBody = $reader.ReadToEnd()
+    $reader.Close()
+
+    Write-Host "BODY:"
+    Write-Host $responseBody
+}

@@ -26,44 +26,58 @@ export async function GET(request: Request) {
     }
 
     const email = user.email.toLowerCase()
-    console.log('[OAuth Callback] Usuário autenticado:', email)
+    console.log('[OAuth Callback] ✓ Usuário autenticado:', email)
 
     // ─────────────────────────────────────────────────────────
-    // 2.0 – Captura do Google Refresh Token (setup temporário)
+    // 2.0 – Captura do Google Refresh Token + Escopos
     // ─────────────────────────────────────────────────────────
     if (session) {
       const providerRefreshToken = session.provider_refresh_token
       const providerToken = session.provider_token
 
+      console.log('[OAuth Callback] ── Detalhes da sessão OAuth ──')
+      console.log('[OAuth Callback] provider_token presente:', !!providerToken)
+      console.log('[OAuth Callback] provider_refresh_token presente:', !!providerRefreshToken)
+      console.log('[OAuth Callback] refresh_token (primeiros 10 chars):', providerRefreshToken ? providerRefreshToken.substring(0, 10) + '...' : 'AUSENTE')
+
       if (providerRefreshToken) {
-        console.log('[OAuth Callback] ✓ provider_refresh_token capturado (salvando em tabela temporária)')
+        console.log('[OAuth Callback] ✓ NOVO refresh_token capturado com sucesso!')
+        console.log('[OAuth Callback] ✓ Este token deve incluir os escopos: script.external_request, spreadsheets, drive, calendar, script.scriptapp')
         
         try {
           await supabase.from('google_oauth_setup').insert({
             user_email: email,
             provider_refresh_token: providerRefreshToken,
             provider_token: providerToken || null,
-            notes: 'Token capturado automaticamente durante login OAuth'
+            notes: 'Token capturado com escopos completos (script.external_request + spreadsheets + drive + calendar + script.scriptapp) - ' + new Date().toISOString()
           })
           console.log('[OAuth Callback] ✓ Token salvo na tabela google_oauth_setup')
+          console.log('[OAuth Callback] ⚠️ AÇÃO NECESSÁRIA: Copie o refresh_token da tabela google_oauth_setup e atualize a env var GOOGLE_OAUTH_REFRESH_TOKEN')
         } catch (insertError) {
           console.error('[OAuth Callback] ⚠️ Erro ao salvar token (tabela pode não existir):', insertError)
+          console.error('[OAuth Callback] Crie a tabela google_oauth_setup ou salve manualmente o refresh_token')
         }
       } else {
         console.warn('[OAuth Callback] ⚠️ provider_refresh_token NÃO retornado pelo Google')
-        console.warn('[OAuth Callback] Certifique-se que access_type=offline e prompt=consent estão configurados')
+        console.warn('[OAuth Callback] Possíveis causas:')
+        console.warn('[OAuth Callback]   1. access_type=offline não está sendo enviado')
+        console.warn('[OAuth Callback]   2. prompt=consent não está sendo enviado')
+        console.warn('[OAuth Callback]   3. O Supabase não repassa os query params para o Google')
+        console.warn('[OAuth Callback]   4. O usuário já tem um refresh_token ativo (revogar em https://myaccount.google.com/permissions)')
         
         try {
           await supabase.from('google_oauth_setup').insert({
             user_email: email,
             provider_refresh_token: null,
             provider_token: providerToken || null,
-            notes: 'provider_refresh_token NÃO retornado - verificar configuração OAuth'
+            notes: 'REFRESH TOKEN AUSENTE - verificar configuração OAuth - ' + new Date().toISOString()
           })
         } catch (insertError) {
           console.error('[OAuth Callback] Erro ao registrar ausência de token:', insertError)
         }
       }
+    } else {
+      console.warn('[OAuth Callback] ⚠️ Sessão não retornada pelo Supabase')
     }
 
     const { data: usuarioPermitido, error: dbError } = await supabase

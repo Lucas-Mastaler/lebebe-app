@@ -27,6 +27,21 @@ function LoginContent() {
       setLoading(true)
       setError('')
       const supabase = createClient()
+      // Escopos necessários para Apps Script Execution API
+      const googleScopes = [
+        'openid',
+        'email',
+        'profile',
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/script.external_request',
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive',
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/script.scriptapp',
+      ].join(' ')
+
+      console.log('[OAuth Login] Iniciando login Google com escopos:', googleScopes)
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -34,9 +49,11 @@ function LoginContent() {
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
-            scope: 'openid email profile https://www.googleapis.com/auth/calendar',
+            include_granted_scopes: 'true',
+            response_type: 'code',
+            scope: googleScopes,
           },
-          scopes: 'openid email profile https://www.googleapis.com/auth/calendar',
+          scopes: googleScopes,
         },
       })
 

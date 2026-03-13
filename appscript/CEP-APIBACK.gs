@@ -919,6 +919,11 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
         }
       }
       
+      // Inicializar arrays vazios para evitar undefined
+      var listaEspecial = [];
+      var listaPremium = [];
+      var listaHoraMarcada = [];
+      
       var lista = listaNormal;
       lista.sort(function(a,b){ return a.date - b.date; });
       

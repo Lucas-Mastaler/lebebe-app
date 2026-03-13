@@ -394,8 +394,15 @@ function ProcurarDatasPorEndereco(dados) {
       isRural: !!dados.isRural,
       isCondominio: !!dados.isCondominio,
       
-      // Período de busca (opcional)
+      // Período de busca (PRIORIDADE: dataInicial > monthYear)
+      dataInicial: dados.dataInicial || '',
       monthYear: dados.monthYear || dados.mesPesquisa || '',
+      
+      // Flags de limitação (backend API apenas)
+      limitResultsNormal: dados.limitResultsNormal || 0,
+      excludeEspecial: !!dados.excludeEspecial,
+      excludePremium: !!dados.excludePremium,
+      excludeHoraMarcada: !!dados.excludeHoraMarcada,
       
       // Token único para idempotência
       clientToken: 'n8n-' + Date.now() + '-' + Math.random().toString(16).slice(2),
@@ -484,16 +491,10 @@ function ProcurarDatasPorEndereco(dados) {
         tempoProcessamento: payload.searchTime || 0,
         candidatos: payload.candidates.map(function(c) {
           return {
-            data: _nfcSafe(c.date || c.dateDM),
-            dataISO: c.dateISO,
             diaSemana: _nfcSafe(c.weekday),
-            equipe: _nfcSafe(c.team),
-            horario: _nfcSafe(c.window),
-            frete: _nfcSafe(c.frete),
-            tipoFrete: _nfcSafe(c.tipoFrete || c.tipo || 'NORMAL'),
-            distanciaKm: c.distKm,
-            motivoExtras: _nfcSafe(c.motivoExtras || c.avisoHoraMarcada || ''),
-            rank: c.rank || 0
+            data: _nfcSafe(c.date || c.dateDM),
+            rank: c.rank || 0,
+            equipe: _nfcSafe(c.team)
           };
         })
       };

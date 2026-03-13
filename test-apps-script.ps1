@@ -214,6 +214,7 @@ $payload = @{
     tempoNecessario = "00:30"
     isRural = $false
     isCondominio = $false
+    dataInicial = "2026-04-15"
 } | ConvertTo-Json -Depth 10
 
 $headers = @{

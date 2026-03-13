@@ -98,6 +98,7 @@
         }
 
         input[type="text"],
+        input[type="date"],
         select {
             width: 100%;
             padding: 9px 11px;
@@ -108,6 +109,7 @@
         }
 
         input[type="text"]:focus,
+        input[type="date"]:focus,
         select:focus {
             outline: none;
             border-color: #cbd5e1;
@@ -535,8 +537,9 @@
 
                         <div class="row">
                             <div class="col-xs">
-                                <label>PROCURAR A PARTIR DE</label>
-                                <select id="mesPesquisa"></select>
+                                <label>DATA INICIAL DA BUSCA <span style="color:red">*</span></label>
+                                <input type="date" id="dataInicial" required />
+                                <div class="hint" style="margin-top:4px">Entre D+2 e D+90 (máx 90 dias)</div>
                             </div>
                             <div class="col-sm">
                                 <label>ÁREA RURAL?</label>
@@ -718,35 +721,12 @@
             return [a, b, c, d, e].map(tempoNormJS).join('|');
         }
         function addMinHHMM(hhmm, add) {
-            const m = String(hhmm || '').trim().match(/^(\d{1,2}):(\d{2})$/); // <- sem escape duplo
+            const m = String(hhmm || '').trim().match(/^(\d{1,2}):(\d{2})$/);
             if (!m) return String(hhmm || '');
             let tot = (+m[1]) * 60 + (+m[2]) + (+add || 0);
             if (tot < 0) tot = 0;
             const h = Math.floor(tot / 60), mm = String(tot % 60).padStart(2, '0');
             return h + ':' + mm;
-        }
-        function getFormValues() {
-            return {
-                logradouro: document.getElementById('logradouro').value,
-                numero: document.getElementById('numero').value,
-                bairro: document.getElementById('bairro').value,
-                cidade: document.getElementById('cidade').value,
-                uf: document.getElementById('uf').value,
-                enderecoCompleto: window__addrOk ? window__addrOk.enderecoCompleto : '',
-                cep: window__addrOk ? window__addrOk.cep : '',
-                lat: window__addrOk ? window__addrOk.lat : null,
-                lng: window__addrOk ? window__addrOk.lng : null,
-                mesPesquisa: document.getElementById('mesPesquisa').value,
-                monthYear: document.getElementById('mesPesquisa').value,
-                isRural: document.getElementById('isRuralChk').checked,
-                isCondominio: document.getElementById('isCondominioChk').checked,
-                tipoBerco: document.getElementById('tipoBerco').value,
-                comoda: document.getElementById('comoda').value,
-                roupeiro: document.getElementById('roupeiro').value,
-                poltrona: document.getElementById('poltrona').value,
-                painel: document.getElementById('painel').value,
-                tempoNecessario: document.getElementById('tempo').value
-            };
         }
         function updateSubmitState() {
             const tempoVal = (document.getElementById('tempo').value || '').trim();
@@ -776,14 +756,18 @@
                     setOptions('poltrona', opts.poltrona || []);
                     setOptions('painel', opts.painel || []);
 
-                    const selMes = document.getElementById('mesPesquisa');
-                    if (!(_userTouched && _optsLoaded)) {
-                        selMes.innerHTML = '';
-                        monthListPT(new Date(), 6).forEach(m => {
-                            const o = document.createElement('option');
-                            o.value = m.value; o.textContent = m.label;
-                            selMes.appendChild(o);
-                        });
+                    // Configurar date picker: D+2 a D+90
+                    const dataInput = document.getElementById('dataInicial');
+                    if (dataInput && !(_userTouched && _optsLoaded)) {
+                        const hoje = new Date();
+                        const minDate = new Date(hoje);
+                        minDate.setDate(hoje.getDate() + 2);
+                        const maxDate = new Date(hoje);
+                        maxDate.setDate(hoje.getDate() + 90);
+                        
+                        dataInput.min = minDate.toISOString().split('T')[0];
+                        dataInput.max = maxDate.toISOString().split('T')[0];
+                        dataInput.value = minDate.toISOString().split('T')[0]; // Default: D+2
                     }
 
                     _optsLoaded = true;
@@ -977,6 +961,31 @@
                     updateSubmitState();
                 })
                 .GetTempoMap();
+        }
+
+        // ---------- getFormValues ----------
+        function getFormValues() {
+            return {
+                logradouro: document.getElementById('logradouro').value,
+                numero: document.getElementById('numero').value,
+                bairro: document.getElementById('bairro').value,
+                cidade: document.getElementById('cidade').value,
+                uf: document.getElementById('uf').value,
+                enderecoCompleto: window.__addrOk ? window.__addrOk.enderecoCompleto : '',
+                cep: window.__addrOk ? window.__addrOk.cep : '',
+                lat: window.__addrOk ? window.__addrOk.lat : null,
+                lng: window.__addrOk ? window.__addrOk.lng : null,
+                dataInicial: document.getElementById('dataInicial').value,
+                monthYear: document.getElementById('dataInicial').value,
+                isRural: document.getElementById('isRuralChk').checked,
+                isCondominio: document.getElementById('isCondominioChk').checked,
+                tipoBerco: document.getElementById('tipoBerco').value,
+                comoda: document.getElementById('comoda').value,
+                roupeiro: document.getElementById('roupeiro').value,
+                poltrona: document.getElementById('poltrona').value,
+                painel: document.getElementById('painel').value,
+                tempoNecessario: document.getElementById('tempo').value
+            };
         }
 
         // ========== PROGRESSIVE RESULTS ==========
@@ -1298,7 +1307,7 @@
                     setGate(false);
                     recalcTempo();
                     updateSubmitState();
-                    document.getElementById('mesPesquisa').focus();
+                    document.getElementById('dataInicial').focus();
                     return;
                 }
 

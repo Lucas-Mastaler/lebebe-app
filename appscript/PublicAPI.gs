@@ -181,10 +181,53 @@ function apiProcurarDatasPorEndereco(dados) {
       isCondominio = true;
     }
     
-    // ===== VALIDAÇÃO 4: monthYear (opcional) =====
+    // ===== VALIDAÇÃO 4: dataInicial (novo parâmetro, prioridade sobre monthYear) =====
+    var dataInicial = String(dados.dataInicial || '').trim();
+    
+    if (dataInicial) {
+      // Validar formato ISO (YYYY-MM-DD)
+      var dataValid = /^\d{4}-\d{2}-\d{2}$/.test(dataInicial);
+      
+      if (!dataValid) {
+        Logger.log('[API-ERROR] Formato inválido de dataInicial: ' + dataInicial);
+        return {
+          ok: false,
+          error: 'Formato inválido de dataInicial. Esperado: YYYY-MM-DD (ex: 2026-04-15)',
+          dataInicialRecebida: dataInicial,
+          executionId: executionId
+        };
+      }
+      
+      // Validar range (D+2 a D+90)
+      var dataObj = new Date(dataInicial + 'T00:00:00');
+      var hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      
+      var minDate = new Date(hoje);
+      minDate.setDate(hoje.getDate() + 2);
+      
+      var maxDate = new Date(hoje);
+      maxDate.setDate(hoje.getDate() + 90);
+      
+      if (dataObj < minDate || dataObj > maxDate) {
+        var minStr = minDate.toISOString().split('T')[0];
+        var maxStr = maxDate.toISOString().split('T')[0];
+        Logger.log('[API-ERROR] dataInicial fora do range: ' + dataInicial);
+        return {
+          ok: false,
+          error: 'Data deve estar entre ' + minStr + ' (D+2) e ' + maxStr + ' (D+90)',
+          dataInicialRecebida: dataInicial,
+          rangeMinimo: minStr,
+          rangeMaximo: maxStr,
+          executionId: executionId
+        };
+      }
+    }
+    
+    // ===== VALIDAÇÃO 5: monthYear (opcional, fallback) =====
     var monthYear = String(dados.monthYear || dados.mesPesquisa || '').trim();
     
-    if (monthYear) {
+    if (monthYear && !dataInicial) {
       var monthYearValid = /^(\d{4})[-\/](\d{2})$/.test(monthYear) || /^(\d{2})[-\/](\d{4})$/.test(monthYear);
       
       if (!monthYearValid) {
@@ -213,6 +256,7 @@ function apiProcurarDatasPorEndereco(dados) {
       tempoNecessario: tempoNecessario,
       isRural: isRural,
       isCondominio: isCondominio,
+      dataInicial: dataInicial,
       monthYear: monthYear,
       tipoBerco: String(dados.tipoBerco || '').trim(),
       comoda: String(dados.comoda || '').trim(),
@@ -220,6 +264,13 @@ function apiProcurarDatasPorEndereco(dados) {
       poltrona: String(dados.poltrona || '').trim(),
       painel: String(dados.painel || '').trim()
     };
+    
+    // ===== FLAGS DE LIMITAÇÃO (SOMENTE PARA API BACKEND) =====
+    // Quando chamado via Execution API, limitar a 3 resultados normais
+    dadosNormalizados.limitResultsNormal = 3;
+    dadosNormalizados.excludeEspecial = true;
+    dadosNormalizados.excludePremium = true;
+    dadosNormalizados.excludeHoraMarcada = true;
     
     Logger.log('[API-PAYLOAD-NORMALIZED] ' + JSON.stringify(dadosNormalizados));
     Logger.log('[API-PROCESSING] Iniciando processamento...');

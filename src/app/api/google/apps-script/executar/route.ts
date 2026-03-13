@@ -36,7 +36,7 @@ function validarPayload(body: any): { valido: boolean; erro?: string; payload?: 
     tempoNecessario, 
     isRural, 
     isCondominio, 
-    monthYear 
+    dataInicial 
   } = body;
 
   // ─────────────────────────────────────────────────────────
@@ -75,14 +75,35 @@ function validarPayload(body: any): { valido: boolean; erro?: string; payload?: 
     return { valido: false, erro: "Campo 'isCondominio' deve ser boolean." };
   }
 
-  if (monthYear !== undefined && typeof monthYear !== "string") {
-    return { valido: false, erro: "Campo 'monthYear' deve ser string." };
+  if (dataInicial !== undefined && typeof dataInicial !== "string") {
+    return { valido: false, erro: "Campo 'dataInicial' deve ser string." };
   }
 
-  if (monthYear) {
-    const rgxMonth = /^\d{4}-\d{2}$/;
-    if (!rgxMonth.test(monthYear)) {
-      return { valido: false, erro: "Campo 'monthYear' deve estar no formato YYYY-MM (ex: 2026-04)." };
+  if (dataInicial) {
+    // Validar formato YYYY-MM-DD
+    const rgxDate = /^\d{4}-\d{2}-\d{2}$/;
+    if (!rgxDate.test(dataInicial)) {
+      return { valido: false, erro: "Campo 'dataInicial' deve estar no formato YYYY-MM-DD (ex: 2026-04-15)." };
+    }
+
+    // Validar range D+2 a D+90
+    const dataObj = new Date(dataInicial + 'T00:00:00');
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const minDate = new Date(hoje);
+    minDate.setDate(hoje.getDate() + 2);
+
+    const maxDate = new Date(hoje);
+    maxDate.setDate(hoje.getDate() + 90);
+
+    if (dataObj < minDate || dataObj > maxDate) {
+      const minStr = minDate.toISOString().split('T')[0];
+      const maxStr = maxDate.toISOString().split('T')[0];
+      return { 
+        valido: false, 
+        erro: `Campo 'dataInicial' deve estar entre ${minStr} (D+2) e ${maxStr} (D+90).` 
+      };
     }
   }
 
@@ -115,7 +136,7 @@ function validarPayload(body: any): { valido: boolean; erro?: string; payload?: 
       tempoNecessario: normalizeString(tempoNecessario),
       isRural: isRural ?? false,
       isCondominio: isCondominio ?? false,
-      monthYear: normalizeString(monthYear) || undefined
+      dataInicial: normalizeString(dataInicial) || undefined
     }
   };
 }

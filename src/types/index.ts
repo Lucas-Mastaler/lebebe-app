@@ -167,7 +167,7 @@ export interface AppsScriptExecutePayload {
   tempoNecessario: string;
   isRural?: boolean;
   isCondominio?: boolean;
-  monthYear?: string;
+  dataInicial?: string; // YYYY-MM-DD (D+2 a D+90)
 }
 
 export interface AppsScriptExecuteResponse {

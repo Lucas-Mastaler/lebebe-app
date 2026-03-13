@@ -247,7 +247,7 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       'COND='+!!form.isCondominio,
       'BERCO='+tipoBerco,
       'MIN='+serviceMin,
-      'MY='+(form.monthYear||form.mesPesquisa||'')
+      'DATE='+(form.dataInicial||form.monthYear||form.mesPesquisa||'')
     ].join('|');
     var payloadSig = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, payloadSigRaw)
       .map(function(b){ return ('0'+(b & 255).toString(16)).slice(-2); }).join('');
@@ -410,8 +410,8 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
     dlog('📏 Depósito → destino: ' + fmtBothKmM(distKm));
 
     /* ---------- 7 – Slots ---------- */
-    // NOVO: procura "a partir de" (sem travar no fim do mês)
-    var startPick = _resolveStartFrom_(form, null);
+    // NOVO: procura "a partir de" com suporte a dataInicial (prioridade) ou monthYear (fallback)
+    var startPick = _resolveStartFromDate_(form);
     var slots = startPick
       ? getSlots(shAv, serviceMin, LOOK_DAYS, startPick.startFrom /* sem end */)
       : getSlots(shAv, serviceMin, LOOK_DAYS);
@@ -635,10 +635,15 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
     // Slots vazios serão processados depois apenas se necessário
     var slotsParaProcessar = slotsComPontos.concat(slotsVazios);
 
-    // ✅ OTIMIZAÇÃO AGRESSIVA: Parar quando encontrar 10 candidatos TOTAIS
-    var MAX_CANDIDATOS_TOTAL = 10;
+    // ✅ CONFIGURAÇÃO DE EARLY STOP
+    var isBackendApiCall = !!(form.limitResultsNormal && form.limitResultsNormal > 0);
+    var MAX_CANDIDATOS_TOTAL = isBackendApiCall ? form.limitResultsNormal : 10;
     var totalCandidatos = 0;
     var earlyStop = false;
+    
+    if (isBackendApiCall) {
+      dlog('[BACKEND-API] Limite ativo: ' + MAX_CANDIDATOS_TOTAL + ' resultados normais (early stop habilitado)');
+    }
     
     for (var sIdx = 0; sIdx < slotsParaProcessar.length && !earlyStop; sIdx++){
       var slot = slotsParaProcessar[sIdx];
@@ -829,13 +834,29 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       }
 
       // ✅ EARLY STOP: Contar total de candidatos únicos encontrados
-      var diasUnicos = new Set();
-      Object.keys(porDiaBestNormal).forEach(function(k){ diasUnicos.add(k); });
-      Object.keys(porDiaBestEspecial).forEach(function(k){ diasUnicos.add(k); });
-      Object.keys(porDiaBestPremium).forEach(function(k){ diasUnicos.add(k); });
-      Object.keys(porDiaHoraMarcada).forEach(function(k){ diasUnicos.add(k); });
-      
-      totalCandidatos = diasUnicos.size;
+      if (isBackendApiCall) {
+        // Backend API: contar APENAS candidatos normais
+        totalCandidatos = Object.keys(porDiaBestNormal).length;
+        
+        // Parar quando atingir o limite de normais
+        if (totalCandidatos >= MAX_CANDIDATOS_TOTAL) {
+          dlog('[BACKEND-API] ✅ EARLY STOP: ' + totalCandidatos + ' resultados normais encontrados');
+          earlyStop = true;
+        }
+      } else {
+        // Modal: contar todos os tipos de candidatos
+        var diasUnicos = new Set();
+        Object.keys(porDiaBestNormal).forEach(function(k){ diasUnicos.add(k); });
+        Object.keys(porDiaBestEspecial).forEach(function(k){ diasUnicos.add(k); });
+        Object.keys(porDiaBestPremium).forEach(function(k){ diasUnicos.add(k); });
+        Object.keys(porDiaHoraMarcada).forEach(function(k){ diasUnicos.add(k); });
+        
+        totalCandidatos = diasUnicos.size;
+        
+        if (totalCandidatos >= MAX_CANDIDATOS_TOTAL) {
+          earlyStop = true;
+        }
+      }
       
       // ✅ SALVAR PROGRESSO quando tiver candidatos suficientes
       if (totalCandidatos >= 3 || sIdx % 5 === 0) { // A cada 3+ candidatos ou a cada 5 slots
@@ -884,46 +905,67 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
            horaMarcadas.map(function(c){ return formatDatePt(c.date) + ' | ' + c.team; }).join(', '));
     }
 
-    var chosenDays = new Set();
-    var listaNormal = [];
-    for (var n=0; n<normals.length && listaNormal.length<5; n++){
-      var dk = normals[n].date.toDateString();
-      if (!chosenDays.has(dk)) {
-        listaNormal.push(normals[n]);
-        chosenDays.add(dk);
+    // ✅ FILTRO BACKEND API: Retornar apenas 3 resultados normais
+    if (isBackendApiCall) {
+      dlog('[BACKEND-API] Filtrando para retornar apenas ' + MAX_CANDIDATOS_TOTAL + ' resultados normais');
+      
+      var chosenDays = new Set();
+      var listaNormal = [];
+      for (var n=0; n<normals.length && listaNormal.length<MAX_CANDIDATOS_TOTAL; n++){
+        var dk = normals[n].date.toDateString();
+        if (!chosenDays.has(dk)) {
+          listaNormal.push(normals[n]);
+          chosenDays.add(dk);
+        }
       }
-    }
-
-    var listaEspecial = [];
-    for (var e=0; e<especiais.length && listaEspecial.length<1; e++){
-      var dk2 = especiais[e].date.toDateString();
-      if (!chosenDays.has(dk2)) {
-        listaEspecial.push(especiais[e]);
-        chosenDays.add(dk2);
+      
+      var lista = listaNormal;
+      lista.sort(function(a,b){ return a.date - b.date; });
+      
+      dlog('[BACKEND-API] Retornando ' + lista.length + ' resultados normais (especial/premium/hora marcada excluídos)');
+    } else {
+      // Modal: retornar todos os tipos (comportamento original)
+      var chosenDays = new Set();
+      var listaNormal = [];
+      for (var n=0; n<normals.length && listaNormal.length<5; n++){
+        var dk = normals[n].date.toDateString();
+        if (!chosenDays.has(dk)) {
+          listaNormal.push(normals[n]);
+          chosenDays.add(dk);
+        }
       }
-    }
 
-    var listaPremium = [];
-    for (var p=0; p<premiums.length && listaPremium.length<1; p++){
-      var dk3 = premiums[p].date.toDateString();
-      if (!chosenDays.has(dk3)) {
-        listaPremium.push(premiums[p]);
-        chosenDays.add(dk3);
+      var listaEspecial = [];
+      for (var e=0; e<especiais.length && listaEspecial.length<1; e++){
+        var dk2 = especiais[e].date.toDateString();
+        if (!chosenDays.has(dk2)) {
+          listaEspecial.push(especiais[e]);
+          chosenDays.add(dk2);
+        }
       }
-    }
 
-    var listaHoraMarcada = [];
-    for (var h=0; h<horaMarcadas.length && listaHoraMarcada.length<1; h++){
-      var dk4 = horaMarcadas[h].date.toDateString();
-      if (!chosenDays.has(dk4)) {
-        listaHoraMarcada.push(horaMarcadas[h]);
-        chosenDays.add(dk4);
+      var listaPremium = [];
+      for (var p=0; p<premiums.length && listaPremium.length<1; p++){
+        var dk3 = premiums[p].date.toDateString();
+        if (!chosenDays.has(dk3)) {
+          listaPremium.push(premiums[p]);
+          chosenDays.add(dk3);
+        }
       }
-    }
 
-    // Combinar todas as listas e ordenar por data (mais próxima primeiro)
-    var lista = [].concat(listaNormal, listaEspecial, listaPremium, listaHoraMarcada);
-    lista.sort(function(a,b){ return a.date - b.date; }); // ✅ ORDENAÇÃO POR DATA
+      var listaHoraMarcada = [];
+      for (var h=0; h<horaMarcadas.length && listaHoraMarcada.length<1; h++){
+        var dk4 = horaMarcadas[h].date.toDateString();
+        if (!chosenDays.has(dk4)) {
+          listaHoraMarcada.push(horaMarcadas[h]);
+          chosenDays.add(dk4);
+        }
+      }
+
+      // Combinar todas as listas e ordenar por data (mais próxima primeiro)
+      var lista = [].concat(listaNormal, listaEspecial, listaPremium, listaHoraMarcada);
+      lista.sort(function(a,b){ return a.date - b.date; }); // ✅ ORDENAÇÃO POR DATA
+    }
     
     // ✅ LOG: Resultados SELECIONADOS para retorno
     dlog('[SELEÇÃO FINAL] Total selecionado: ' + lista.length + ' | Normais: ' + listaNormal.length + 
@@ -1335,6 +1377,35 @@ function _resolveStartFrom_(form, shCep){
   }
 
   return { startFrom: startFrom }; // não devolvemos "end" de propósito (sem limite de mês)
+}
+
+// ==== NOVO: resolve data inicial a partir de dataInicial (YYYY-MM-DD) ====
+// Prioriza form.dataInicial sobre form.monthYear
+// Validação: D+2 a D+90
+function _resolveStartFromDate_(form) {
+  // PRIORIDADE 1: dataInicial (data específica YYYY-MM-DD)
+  if (form && form.dataInicial) {
+    try {
+      var dataStr = String(form.dataInicial).trim();
+      var dataObj = new Date(dataStr + 'T00:00:00');
+      
+      // Validar se é data válida
+      if (isNaN(dataObj.getTime())) {
+        dlog('[DATE] dataInicial inválida: ' + dataStr);
+        return _resolveStartFrom_(form, null); // fallback
+      }
+      
+      dataObj.setHours(0, 0, 0, 0);
+      dlog('[DATE] Usando dataInicial: ' + dataStr + ' (' + dataObj.toISOString() + ')');
+      return { startFrom: dataObj };
+    } catch(e) {
+      dlog('[DATE] Erro ao processar dataInicial: ' + e);
+      return _resolveStartFrom_(form, null); // fallback
+    }
+  }
+  
+  // PRIORIDADE 2: monthYear (fallback para comportamento antigo)
+  return _resolveStartFrom_(form, null);
 }
 
 

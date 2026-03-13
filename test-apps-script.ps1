@@ -236,3 +236,19 @@ catch {
     Write-Host "BODY:"
     Write-Host $responseBody
 }
+
+POST /api/google/apps-script/executar
+Authorization: Bearer <seu-token>
+ 
+{
+  "logradouro": "Rua Jose de Alencar",
+  "numero": "1683",
+  "bairro": "Juveve",
+  "cidade": "Curitiba",
+  "uf": "PR",
+  "cep": "80040-070",
+  "tempoNecessario": "00:30",
+  "isRural": false,
+  "isCondominio": false,
+  "dataInicial": "2026-04-15"
+}

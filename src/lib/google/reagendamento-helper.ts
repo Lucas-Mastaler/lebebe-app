@@ -189,7 +189,8 @@ async function atualizarEventoOriginalParaHistorico(
   calendarIdAtual: string,
   payload: ReagendarClientePayload
 ): Promise<EventoCalendar> {
-  console.log(`[REAGENDAMENTO] Atualizando evento original com informações de reagendamento`);
+  console.log(`[REAGENDAMENTO] ========================================`);
+  console.log(`[REAGENDAMENTO] Atualizando evento original para formato histórico`);
 
   const dataHoraAtual = new Date().toISOString();
   const blocoReagendamento = montarBlocoReagendamento(payload, dataHoraAtual);
@@ -200,15 +201,34 @@ async function atualizarEventoOriginalParaHistorico(
 
   const tituloHistorico = `[REM. CLIENTE] ${eventoOriginal.summary || "Sem título"}`;
 
+  // ─────────────────────────────────────────────────────────
+  // GARANTIR FORMATO ALL-DAY CORRETO
+  // ─────────────────────────────────────────────────────────
+  // Calcular start.date e end.date usando a data original (payload.dataOriginal)
+  const { start, end } = calcularDatasAllDay(payload.dataOriginal);
+
+  console.log(`[REAGENDAMENTO] Garantindo formato all-day para evento histórico:`);
+  console.log(`[REAGENDAMENTO] - Data original: ${payload.dataOriginal}`);
+  console.log(`[REAGENDAMENTO] - Start: ${JSON.stringify(start)}`);
+  console.log(`[REAGENDAMENTO] - End: ${JSON.stringify(end)}`);
+
   const eventoAtualizado: Partial<EventoCalendar> = {
     summary: tituloHistorico,
     description: descricaoComHistorico,
+    start: start,
+    end: end,
   };
 
   console.log(`[REAGENDAMENTO] Título atualizado: ${tituloHistorico}`);
   console.log(`[REAGENDAMENTO] Descrição atualizada (primeiros 200 chars): ${descricaoComHistorico.substring(0, 200)}...`);
+  console.log(`[REAGENDAMENTO] Atualizando evento no Google Calendar...`);
 
-  return await atualizarEvento(calendarIdAtual, eventoOriginal.id!, eventoAtualizado);
+  const resultado = await atualizarEvento(calendarIdAtual, eventoOriginal.id!, eventoAtualizado);
+  
+  console.log(`[REAGENDAMENTO] ✓ Evento original atualizado e pronto para mover`);
+  console.log(`[REAGENDAMENTO] ========================================`);
+  
+  return resultado;
 }
 
 function montarBlocoReagendamento(

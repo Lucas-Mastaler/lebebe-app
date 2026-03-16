@@ -35,9 +35,15 @@ export async function reagendarEventoCliente(
   console.log(`[REAGENDAMENTO] Iniciando reagendamento do evento ${eventoId}`);
   console.log(`[REAGENDAMENTO] Cliente: ${nomeCliente}`);
   console.log(`[REAGENDAMENTO] Pedido: ${pedidoVenda}`);
-  console.log(`[REAGENDAMENTO] Data original: ${dataOriginal} -> Nova data: ${novaData}`);
-  console.log(`[REAGENDAMENTO] Calendário atual: ${calendarIdAtual}`);
-  console.log(`[REAGENDAMENTO] Calendário novo: ${calendarIdNovo}`);
+  console.log(`[REAGENDAMENTO] ========================================`);
+  console.log(`[REAGENDAMENTO] DATAS:`);
+  console.log(`[REAGENDAMENTO] - Data original: ${dataOriginal}`);
+  console.log(`[REAGENDAMENTO] - Nova data: ${novaData}`);
+  console.log(`[REAGENDAMENTO] - Tipo de evento: ALL-DAY (formato padrão do sistema)`);
+  console.log(`[REAGENDAMENTO] ========================================`);
+  console.log(`[REAGENDAMENTO] CALENDÁRIOS:`);
+  console.log(`[REAGENDAMENTO] - Calendário atual: ${calendarIdAtual}`);
+  console.log(`[REAGENDAMENTO] - Calendário novo: ${calendarIdNovo}`);
 
   // ─────────────────────────────────────────────────────────
   // 2.0 – Buscar evento original
@@ -52,7 +58,13 @@ export async function reagendarEventoCliente(
   }
 
   console.log(`[REAGENDAMENTO] ✓ Evento original encontrado: "${eventoOriginal.summary}"`);
-  console.log(`[REAGENDAMENTO] Descrição original: ${eventoOriginal.description?.substring(0, 100)}...`);
+  console.log(`[REAGENDAMENTO] ========================================`);
+  console.log(`[REAGENDAMENTO] EVENTO ORIGINAL:`);
+  console.log(`[REAGENDAMENTO] - Título: ${eventoOriginal.summary}`);
+  console.log(`[REAGENDAMENTO] - Start: ${JSON.stringify(eventoOriginal.start)}`);
+  console.log(`[REAGENDAMENTO] - End: ${JSON.stringify(eventoOriginal.end)}`);
+  console.log(`[REAGENDAMENTO] - Formato: ${eventoOriginal.start?.date ? 'ALL-DAY ✓' : 'DATETIME (inesperado)'}`);
+  console.log(`[REAGENDAMENTO] ========================================`);
 
   // ─────────────────────────────────────────────────────────
   // 3.0 – Verificar se é mesma agenda ou agenda diferente
@@ -140,22 +152,36 @@ async function criarEventoComNovaData(
   calendarId: string,
   novaData: string
 ): Promise<EventoCalendar> {
-  console.log(`[REAGENDAMENTO] Criando evento com nova data: ${novaData}`);
-
-  const novoStart = calcularNovaData(eventoOriginal.start!, novaData);
-  const novoEnd = calcularNovaData(eventoOriginal.end!, novaData);
+  console.log(`[REAGENDAMENTO] ========================================`);
+  console.log(`[REAGENDAMENTO] Criando evento operacional com nova data`);
+  console.log(`[REAGENDAMENTO] Nova data solicitada: ${novaData}`);
+  console.log(`[REAGENDAMENTO] Calendário destino: ${calendarId}`);
+  
+  // Calcular start e end para all-day event
+  const { start, end } = calcularDatasAllDay(novaData);
+  
+  console.log(`[REAGENDAMENTO] Montando objeto do evento:`);
+  console.log(`[REAGENDAMENTO] - Título: ${eventoOriginal.summary}`);
+  console.log(`[REAGENDAMENTO] - Start: ${JSON.stringify(start)}`);
+  console.log(`[REAGENDAMENTO] - End: ${JSON.stringify(end)}`);
+  console.log(`[REAGENDAMENTO] - Location: ${eventoOriginal.location || "não definido"}`);
 
   const novoEvento: Partial<EventoCalendar> = {
     summary: eventoOriginal.summary,
     description: eventoOriginal.description,
     location: eventoOriginal.location,
-    start: novoStart,
-    end: novoEnd,
+    start: start,
+    end: end,
     attendees: eventoOriginal.attendees,
     reminders: eventoOriginal.reminders,
   };
 
-  return await criarEvento(calendarId, novoEvento);
+  console.log(`[REAGENDAMENTO] Enviando evento para Google Calendar API...`);
+  const eventoCriado = await criarEvento(calendarId, novoEvento);
+  console.log(`[REAGENDAMENTO] ✓ Evento operacional criado com ID: ${eventoCriado.id}`);
+  console.log(`[REAGENDAMENTO] ========================================`);
+  
+  return eventoCriado;
 }
 
 async function atualizarEventoOriginalParaHistorico(
@@ -204,32 +230,57 @@ Registrado em: ${dataHoraAtual}
 ------------------------------`;
 }
 
-function calcularNovaData(
-  dataOriginal: { date?: string; dateTime?: string; timeZone?: string },
-  novaDataStr: string
-): { date?: string; dateTime?: string; timeZone?: string } {
-  if (dataOriginal.date) {
-    return {
-      date: novaDataStr,
-      timeZone: dataOriginal.timeZone,
-    };
-  }
+/**
+ * Calcula start e end para all-day events no Google Calendar.
+ * 
+ * Regra Google Calendar:
+ * - start.date = data do evento (YYYY-MM-DD)
+ * - end.date = dia seguinte (exclusivo)
+ * 
+ * Exemplo: evento no dia 2026-03-20
+ * - start.date = "2026-03-20"
+ * - end.date = "2026-03-21"
+ * 
+ * @param dataStr - Data no formato YYYY-MM-DD (ex: "2026-03-20")
+ * @returns Objeto com start e end para all-day event
+ */
+function calcularDatasAllDay(
+  dataStr: string
+): { start: { date: string }, end: { date: string } } {
+  console.log(`[REAGENDAMENTO] Calculando datas all-day para: ${dataStr}`);
+  
+  // Parse da data (YYYY-MM-DD)
+  const [ano, mes, dia] = dataStr.split("-").map(Number);
+  
+  // Start date = data do evento
+  const startDate = new Date(ano, mes - 1, dia);
+  
+  // End date = dia seguinte (exclusivo no Google Calendar)
+  const endDate = new Date(ano, mes - 1, dia);
+  endDate.setDate(endDate.getDate() + 1);
+  
+  // Formatar para YYYY-MM-DD
+  const startDateStr = formatarDataYYYYMMDD(startDate);
+  const endDateStr = formatarDataYYYYMMDD(endDate);
+  
+  console.log(`[REAGENDAMENTO] Tipo do evento: all-day`);
+  console.log(`[REAGENDAMENTO] Start date calculado: ${startDateStr}`);
+  console.log(`[REAGENDAMENTO] End date calculado: ${endDateStr} (exclusivo - dia seguinte)`);
+  
+  return {
+    start: { date: startDateStr },
+    end: { date: endDateStr }
+  };
+}
 
-  if (dataOriginal.dateTime) {
-    const dataTimeOriginal = new Date(dataOriginal.dateTime);
-    const [ano, mes, dia] = novaDataStr.split("-").map(Number);
-    
-    dataTimeOriginal.setFullYear(ano);
-    dataTimeOriginal.setMonth(mes - 1);
-    dataTimeOriginal.setDate(dia);
-
-    return {
-      dateTime: dataTimeOriginal.toISOString(),
-      timeZone: dataOriginal.timeZone,
-    };
-  }
-
-  return dataOriginal;
+/**
+ * Formata Date para string YYYY-MM-DD
+ */
+function formatarDataYYYYMMDD(data: Date): string {
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const dia = String(data.getDate()).padStart(2, '0');
+  return `${ano}-${mes}-${dia}`;
 }
 
 // ─────────────────────────────────────────────────────────

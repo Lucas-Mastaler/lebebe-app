@@ -237,3 +237,45 @@ catch {
     Write-Host "BODY:"
     Write-Host $responseBody
 }
+
+
+# ========================================
+# TESTE API - REAGENDAR CLIENTE
+# ========================================
+
+$API_URL = "https://lebebe.cloud/api/google/calendar/reagendar-cliente"
+$BEARER_TOKEN = "wV8qf0mM4nJ7sP1xK9rL2aB6uD3yT5cH8zQ1eR4tY2U="
+
+$payload = @{
+    eventoId        = "fbrvcd4hahou61jrq3dgocj1ik"
+    calendarIdAtual = "lebebe.com.br_jv9ficm9er76am9kpm86t05nfo@group.calendar.google.com"
+    calendarIdNovo  = "lebebe.com.br_jv9ficm9er76am9kpm86t05nfo@group.calendar.google.com"
+    dataOriginal    = "2026-04-17"
+    novaData        = "2026-03-20"
+    nomeCliente     = "ANA SOFIA PREHS"
+    pedidoVenda     = "54154"
+    enderecoCliente = "Rua João Pontoni, 149, Cristo Rei, Curitiba, PR - 80050-490"
+    produtos        = "BERÇO DESMONTÁVEL MOONLIGHT 2 ABC; BERCO NATURE NEW MATIC; POLTRONA MANON"
+    motivo          = "Remarcação solicitada pelo cliente"
+} | ConvertTo-Json -Depth 10
+
+$headers = @{
+    "Content-Type"  = "application/json; charset=utf-8"
+    "Authorization" = "Bearer $BEARER_TOKEN"
+}
+
+try {
+    $response = Invoke-RestMethod -Uri $API_URL -Method POST -Body $payload -Headers $headers
+    $response | ConvertTo-Json -Depth 10
+}
+catch {
+    Write-Host "STATUS:" $_.Exception.Response.StatusCode.value__
+    Write-Host "STATUS DESCRIPTION:" $_.Exception.Response.StatusDescription
+
+    $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+    $responseBody = $reader.ReadToEnd()
+    $reader.Close()
+
+    Write-Host "BODY:"
+    Write-Host $responseBody
+}

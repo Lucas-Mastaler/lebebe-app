@@ -1,29 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { executarAppsScript, isFuncaoPermitida } from "@/lib/google/apps-script";
 import { AppsScriptExecutePayload, AppsScriptExecuteResponse } from "@/types";
+import { validarBearerToken } from "@/lib/auth/bearer-auth";
 
 export const runtime = "nodejs";
-
-// ─────────────────────────────────────────────────────────
-// 1.0 – Validação de autenticação (Bearer token interno)
-// ─────────────────────────────────────────────────────────
-
-function validarAutenticacao(request: NextRequest): boolean {
-  const authHeader = request.headers.get("authorization");
-  const tokenEsperado = process.env.APPS_SCRIPT_API_TOKEN;
-
-  if (!tokenEsperado) {
-    console.error("[APPS SCRIPT API] ❌ APPS_SCRIPT_API_TOKEN não configurado");
-    return false;
-  }
-
-  if (authHeader !== `Bearer ${tokenEsperado}`) {
-    console.error("[APPS SCRIPT API] ❌ Token inválido ou ausente");
-    return false;
-  }
-
-  return true;
-}
 
 // ─────────────────────────────────────────────────────────
 // 2.0 – Validação do payload de entrada
@@ -152,14 +132,13 @@ export async function POST(request: NextRequest) {
 
   try {
     // 3.1 – Validar autenticação
-    if (!validarAutenticacao(request)) {
+    const validacaoAuth = validarBearerToken(request, "APPS SCRIPT API");
+    if (!validacaoAuth.valido) {
       return NextResponse.json(
-        { ok: false, error: "Não autorizado" } as AppsScriptExecuteResponse,
+        { ok: false, error: validacaoAuth.erro || "Não autorizado" } as AppsScriptExecuteResponse,
         { status: 401 }
       );
     }
-
-    console.log("[APPS SCRIPT API] ✓ Autenticação válida");
 
     // 3.2 – Parse do body
     let body: any;

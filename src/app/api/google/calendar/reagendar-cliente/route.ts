@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import {
   reagendarEventoCliente,
   validarPayloadReagendamento,
@@ -8,6 +7,7 @@ import {
   ReagendarClientePayload,
   ReagendarClienteError,
 } from "@/types/reagendamento";
+import { validarBearerToken } from "@/lib/auth/bearer-auth";
 
 // ─────────────────────────────────────────────────────────
 // POST /api/google/calendar/reagendar-cliente
@@ -20,53 +20,23 @@ export async function POST(request: NextRequest) {
 
   try {
     // ─────────────────────────────────────────────────────────
-    // 1.0 – Verificar autenticação
+    // 1.0 – Verificar autenticação Bearer
     // ─────────────────────────────────────────────────────────
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user || !user.email) {
-      console.error(`[API REAGENDAMENTO] ❌ Usuário não autenticado`);
+    const validacaoAuth = validarBearerToken(request, "API REAGENDAMENTO");
+    if (!validacaoAuth.valido) {
+      console.error(`[API REAGENDAMENTO] ❌ Autenticação falhou`);
       return NextResponse.json(
         {
           ok: false,
-          erro: "Não autenticado",
-          detalhes: "Faça login para usar esta API.",
+          erro: "Não autorizado",
+          detalhes: validacaoAuth.erro || "Token Bearer inválido ou ausente.",
         } as ReagendarClienteError,
         { status: 401 }
       );
     }
 
-    console.log(`[API REAGENDAMENTO] ✓ Usuário autenticado: ${user.email}`);
-
     // ─────────────────────────────────────────────────────────
-    // 2.0 – Verificar permissões (opcional - ajustar conforme necessidade)
-    // ─────────────────────────────────────────────────────────
-    const { data: usuarioPermitido, error: dbError } = await supabase
-      .from("usuarios_permitidos")
-      .select("ativo, role")
-      .eq("email", user.email.toLowerCase())
-      .single();
-
-    if (dbError || !usuarioPermitido || !usuarioPermitido.ativo) {
-      console.error(`[API REAGENDAMENTO] ❌ Usuário sem permissão: ${user.email}`);
-      return NextResponse.json(
-        {
-          ok: false,
-          erro: "Acesso negado",
-          detalhes: "Usuário não tem permissão para usar esta API.",
-        } as ReagendarClienteError,
-        { status: 403 }
-      );
-    }
-
-    console.log(`[API REAGENDAMENTO] ✓ Permissão verificada. Role: ${usuarioPermitido.role}`);
-
-    // ─────────────────────────────────────────────────────────
-    // 3.0 – Parsear e validar payload
+    // 2.0 – Parsear e validar payload
     // ─────────────────────────────────────────────────────────
     let body: any;
     
@@ -93,7 +63,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ─────────────────────────────────────────────────────────
-    // 4.0 – Validar campos obrigatórios
+    // 3.0 – Validar campos obrigatórios
     // ─────────────────────────────────────────────────────────
     const validacao = validarPayloadReagendamento(body);
 
@@ -116,7 +86,7 @@ export async function POST(request: NextRequest) {
     console.log(`[API REAGENDAMENTO] ✓ Payload validado com sucesso`);
 
     // ─────────────────────────────────────────────────────────
-    // 5.0 – Executar reagendamento
+    // 4.0 – Executar reagendamento
     // ─────────────────────────────────────────────────────────
     console.log(`[API REAGENDAMENTO] Iniciando processo de reagendamento...`);
 
@@ -133,7 +103,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     // ─────────────────────────────────────────────────────────
-    // 6.0 – Tratamento de erros
+    // 5.0 – Tratamento de erros
     // ─────────────────────────────────────────────────────────
     console.error(`[API REAGENDAMENTO] ========================================`);
     console.error(`[API REAGENDAMENTO] ❌ ERRO CRÍTICO NO REAGENDAMENTO`);

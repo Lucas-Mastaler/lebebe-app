@@ -555,6 +555,14 @@
                                     <span>Sim</span>
                                 </div>
                             </div>
+                            <div class="col">
+                                <label>VENDA MÓVEIS DE SHOWROOM?</label>
+                                <select id="vendaShowroom">
+                                    <option value="NAO">NÃO</option>
+                                    <option value="DESMONTAR_MONTAR">DESMONTAR E MONTAR OUTRO MÓVEL NO LUGAR</option>
+                                    <option value="APENAS_DESMONTAR">APENAS DESMONTAR</option>
+                                </select>
+                            </div>
                         </div>
 
                         <div class="row">
@@ -594,6 +602,9 @@
                                     <option value="">Carregando…</option>
                                 </select>
                             </div>
+                        </div>
+
+                        <div class="row">
                             <div class="col">
                                 <label>TEMPO NECESSÁRIO</label>
                                 <div class="readonly-wrap">
@@ -726,6 +737,15 @@
             let tot = (+m[1]) * 60 + (+m[2]) + (+add || 0);
             if (tot < 0) tot = 0;
             const h = Math.floor(tot / 60), mm = String(tot % 60).padStart(2, '0');
+            return h + ':' + mm;
+        }
+        function roundToNearest5(minutes) {
+            // Arredonda para múltiplos de 5 (final 0 ou 5)
+            return Math.round(minutes / 5) * 5;
+        }
+        function minutesToHHMM(minutes) {
+            const h = Math.floor(minutes / 60);
+            const mm = String(minutes % 60).padStart(2, '0');
             return h + ':' + mm;
         }
         function updateSubmitState() {
@@ -931,7 +951,50 @@
                     updateSubmitState(); return;
                 }
                 let t = M[k] || '';
-                if (t && f.isCondominio) t = addMinHHMM(t, 10);
+                console.log('[TEMPO-DEBUG] ═══════════════════════════════════════');
+                console.log('[TEMPO-DEBUG] 1️⃣ Tempo BASE (do mapa):', t);
+                
+                if (t && f.isCondominio) {
+                    const antes = t;
+                    t = addMinHHMM(t, 10);
+                    console.log('[TEMPO-DEBUG] 2️⃣ Condomínio (+10min):', antes, '→', t);
+                } else if (t) {
+                    console.log('[TEMPO-DEBUG] 2️⃣ Sem ajuste de condomínio');
+                }
+
+                // === NOVA LÓGICA: Ajuste por VENDA MÓVEIS DE SHOWROOM ===
+                const vendaShowroom = document.getElementById('vendaShowroom').value;
+                console.log('[TEMPO-DEBUG] 3️⃣ Showroom:', vendaShowroom);
+                
+                if (t && vendaShowroom && vendaShowroom !== 'NAO') {
+                    let minutes = hhmmToMinutes(t);
+                    const minutesOriginal = minutes;
+                    
+                    if (vendaShowroom === 'DESMONTAR_MONTAR') {
+                        // Adicionar 40% do tempo e arredondar para final 5 ou 0
+                        minutes = Math.round(minutes * 1.4);
+                        console.log('[TEMPO-DEBUG]    ├─ Aplicando +40%:', minutesOriginal, 'min →', minutes, 'min');
+                        minutes = roundToNearest5(minutes);
+                        console.log('[TEMPO-DEBUG]    └─ Arredondado (múltiplo 5):', minutes, 'min');
+                        t = minutesToHHMM(minutes);
+                    } else if (vendaShowroom === 'APENAS_DESMONTAR') {
+                        // Dividir por 2 com mínimo de 30 minutos
+                        minutes = Math.round(minutes / 2);
+                        console.log('[TEMPO-DEBUG]    ├─ Aplicando /2:', minutesOriginal, 'min →', minutes, 'min');
+                        if (minutes < 30) {
+                            console.log('[TEMPO-DEBUG]    ├─ Aplicando MÍNIMO 30min');
+                            minutes = 30;
+                        }
+                        minutes = roundToNearest5(minutes);
+                        console.log('[TEMPO-DEBUG]    └─ Arredondado (múltiplo 5):', minutes, 'min');
+                        t = minutesToHHMM(minutes);
+                    }
+                } else if (t) {
+                    console.log('[TEMPO-DEBUG] 3️⃣ Sem ajuste de showroom');
+                }
+                
+                console.log('[TEMPO-DEBUG] ✅ TEMPO FINAL A SER USADO:', t);
+                console.log('[TEMPO-DEBUG] ═══════════════════════════════════════');
 
                 const el = document.getElementById('tempo');
                 el.value = t || '';
@@ -984,6 +1047,7 @@
                 roupeiro: document.getElementById('roupeiro').value,
                 poltrona: document.getElementById('poltrona').value,
                 painel: document.getElementById('painel').value,
+                vendaShowroom: document.getElementById('vendaShowroom').value,
                 tempoNecessario: document.getElementById('tempo').value
             };
         }
@@ -1404,7 +1468,7 @@
 
 
             // Recalc tempo quando muda qualquer item relevante
-            ['tipoBerco', 'comoda', 'roupeiro', 'poltrona', 'painel', 'isRuralChk', 'isCondominioChk'].forEach(id => {
+            ['tipoBerco', 'comoda', 'roupeiro', 'poltrona', 'painel', 'vendaShowroom', 'isRuralChk', 'isCondominioChk'].forEach(id => {
                 document.addEventListener('change', e => {
                     if (e.target && e.target.id === id) scheduleRecalcTempo();
                 });

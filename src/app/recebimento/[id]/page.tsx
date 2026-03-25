@@ -176,13 +176,28 @@ export default function ConferenciaPage() {
       return codigo.includes(q) || desc.includes(q) || osNum.includes(q)
     })
     .sort((a, b) => {
+      // 1. Ordenar por corredor (A, B, OS)
+      const corredorA = a.corredor_final || a.sku_corredor_sugerido || ''
+      const corredorB = b.corredor_final || b.sku_corredor_sugerido || ''
+      
+      if (corredorA !== corredorB) {
+        return corredorA.localeCompare(corredorB)
+      }
+      
+      // 2. Ordenar por prateleira (numérica)
       const prateleiraA = a.prateleira_final || a.sku_prateleira_sugerida || ''
       const prateleiraB = b.prateleira_final || b.sku_prateleira_sugerida || ''
       
       if (prateleiraA !== prateleiraB) {
+        const numA = parseInt(prateleiraA) || 0
+        const numB = parseInt(prateleiraB) || 0
+        if (numA !== numB) {
+          return numA - numB
+        }
         return prateleiraA.localeCompare(prateleiraB)
       }
       
+      // 3. Ordenar por nome alfabético
       const nomeA = a.sku_descricao?.toLowerCase() || ''
       const nomeB = b.sku_descricao?.toLowerCase() || ''
       return nomeA.localeCompare(nomeB)

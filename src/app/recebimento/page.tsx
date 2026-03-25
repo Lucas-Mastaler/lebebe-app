@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Package, Plus, Calendar, Truck, ChevronRight, Upload, FileText, Weight, X, Hash } from 'lucide-react'
+import { Package, Plus, Calendar, Truck, ChevronRight, Upload, FileText, Weight, X, Hash, Download, AlertCircle, Loader2, Search, Mail, Database, TrendingUp, BarChart3, Clock, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import { isMaticEmail } from '@/lib/auth/matic-emails'
@@ -29,6 +29,8 @@ interface Recebimento {
   }>
 }
 
+type TabType = 'recebimentos' | 'notas' | 'dashboard'
+
 export default function RecebimentoPage() {
   const router = useRouter()
   const [recebimentos, setRecebimentos] = useState<Recebimento[]>([])
@@ -36,6 +38,7 @@ export default function RecebimentoPage() {
   const [authorized, setAuthorized] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [showImport, setShowImport] = useState(false)
+  const [activeTab, setActiveTab] = useState<TabType>('recebimentos')
 
   useEffect(() => {
     async function checkAuth() {
@@ -72,7 +75,7 @@ export default function RecebimentoPage() {
   if (!authorized) return null
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <Package className="w-7 h-7 text-[#00A5E6]" />
@@ -80,8 +83,8 @@ export default function RecebimentoPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setShowImport(true)} className="gap-2">
-            <Upload className="w-4 h-4" />
-            <span className="hidden sm:inline">Importar XML</span>
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">Importar NFe</span>
           </Button>
           <Button onClick={() => setShowCreate(true)} className="gap-2">
             <Plus className="w-4 h-4" />
@@ -90,8 +93,53 @@ export default function RecebimentoPage() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="bg-white rounded-xl border border-slate-200 mb-6">
+        <div className="flex border-b border-slate-200">
+          <button
+            onClick={() => setActiveTab('recebimentos')}
+            className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'recebimentos'
+                ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
+                : 'text-slate-600 hover:text-slate-800'
+            }`}
+          >
+            <div className="flex items-center justify-center gap-2">
+              <Package className="w-4 h-4" />
+              Recebimentos
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('notas')}
+            className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'notas'
+                ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
+                : 'text-slate-600 hover:text-slate-800'
+            }`}
+          >
+            <div className="flex items-center justify-center gap-2">
+              <FileText className="w-4 h-4" />
+              Notas Vinculadas
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'dashboard'
+                ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
+                : 'text-slate-600 hover:text-slate-800'
+            }`}
+          >
+            <div className="flex items-center justify-center gap-2">
+              <BarChart3 className="w-4 h-4" />
+              Dashboard
+            </div>
+          </button>
+        </div>
+      </div>
+
       {showImport && (
-        <ImportXMLModal
+        <ImportNFeModal
           onClose={() => setShowImport(false)}
           onSuccess={() => { setShowImport(false); loadRecebimentos() }}
         />
@@ -104,23 +152,30 @@ export default function RecebimentoPage() {
         />
       )}
 
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#00A5E6]" />
-        </div>
-      ) : recebimentos.length === 0 ? (
-        <div className="text-center py-20 text-slate-500">
-          <Package className="w-16 h-16 mx-auto mb-4 text-slate-300" />
-          <p className="text-lg font-medium">Nenhum recebimento encontrado</p>
-          <p className="text-sm mt-1">Importe NFs via XML e crie um novo recebimento</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {recebimentos.map((rec) => (
-            <RecebimentoCard key={rec.id} rec={rec} onReload={loadRecebimentos} />
-          ))}
-        </div>
+      {/* Tab Content */}
+      {activeTab === 'recebimentos' && (
+        loading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#00A5E6]" />
+          </div>
+        ) : recebimentos.length === 0 ? (
+          <div className="text-center py-20 text-slate-500">
+            <Package className="w-16 h-16 mx-auto mb-4 text-slate-300" />
+            <p className="text-lg font-medium">Nenhum recebimento encontrado</p>
+            <p className="text-sm mt-1">Importe NFs e crie um novo recebimento</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {recebimentos.map((rec) => (
+              <RecebimentoCard key={rec.id} rec={rec} onReload={loadRecebimentos} />
+            ))}
+          </div>
+        )
       )}
+
+      {activeTab === 'notas' && <NotasVinculadasTab />}
+
+      {activeTab === 'dashboard' && <DashboardTab recebimentos={recebimentos} />}
     </div>
   )
 }
@@ -402,21 +457,58 @@ function CreateRecebimentoModal({
 }
 
 // =========================================================
-// Import XML Modal
+// Import NFe Modal (XML ou Busca por Data)
 // =========================================================
 
-function ImportXMLModal({
+type ImportMode = 'xml' | 'data'
+
+interface NfItem {
+  n_item: string
+  codigo_produto: string
+  descricao: string
+  quantidade: string
+  ncm: string
+  cfop: string
+}
+
+interface Nf {
+  message_id: string
+  numero_nf: string
+  data_emissao: string
+  peso_total: string
+  volumes_total: string
+  itens: NfItem[]
+}
+
+interface ImportResult {
+  ok: boolean
+  query?: string
+  total_mensagens?: number
+  total_salvas?: number
+  nfs?: Nf[]
+  erros?: Array<{ message_id: string; erro: string }>
+  erro?: string
+}
+
+function ImportNFeModal({
   onClose,
   onSuccess,
 }: {
   onClose: () => void
   onSuccess: () => void
 }) {
+  const [mode, setMode] = useState<ImportMode>('data')
   const [files, setFiles] = useState<FileList | null>(null)
   const [uploading, setUploading] = useState(false)
-  const [results, setResults] = useState<Array<{ file: string; status: string; numero_nf?: string; error?: string }> | null>(null)
+  const [xmlResults, setXmlResults] = useState<Array<{ file: string; status: string; numero_nf?: string; error?: string }> | null>(null)
+  
+  const [inicio, setInicio] = useState('')
+  const [fim, setFim] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [dateResult, setDateResult] = useState<ImportResult | null>(null)
+  const [errorMsg, setErrorMsg] = useState('')
 
-  async function handleUpload() {
+  async function handleUploadXML() {
     if (!files || files.length === 0) return
 
     setUploading(true)
@@ -431,23 +523,197 @@ function ImportXMLModal({
         body: formData,
       })
       const data = await res.json()
-      setResults(data.results || [])
+      setXmlResults(data.results || [])
     } catch {
-      setResults([{ file: 'erro', status: 'erro', error: 'Falha na conexão' }])
+      setXmlResults([{ file: 'erro', status: 'erro', error: 'Falha na conexão' }])
     } finally {
       setUploading(false)
     }
   }
 
+  function validateDates(): string | null {
+    if (!inicio || !fim) return 'Preencha as datas de início e fim.'
+    if (fim < inicio) return 'Data fim deve ser maior ou igual à data início.'
+    const dInicio = new Date(inicio + 'T00:00:00')
+    const dFim = new Date(fim + 'T00:00:00')
+    const diffDays = (dFim.getTime() - dInicio.getTime()) / (1000 * 60 * 60 * 24)
+    if (diffDays > 90) return 'Janela máxima de 90 dias.'
+    return null
+  }
+
+  async function handleImportByDate() {
+    setErrorMsg('')
+    const validationError = validateDates()
+    if (validationError) {
+      setErrorMsg(validationError)
+      return
+    }
+
+    setImporting(true)
+    try {
+      const res = await fetch('/api/nfe/importar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inicio, fim }),
+      })
+
+      const data: ImportResult = await res.json()
+
+      if (res.status !== 200 || !data.ok) {
+        setErrorMsg(data.erro || `Erro HTTP ${res.status}`)
+        return
+      }
+
+      setDateResult(data)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setErrorMsg(`Erro de conexão: ${msg}`)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-          <FileText className="w-5 h-5 text-[#00A5E6]" />
-          Importar XML de NF-e
+          <Download className="w-5 h-5 text-[#00A5E6]" />
+          Importar NF-e
         </h2>
 
-        {!results ? (
+        {/* Mode Selector */}
+        <div className="flex gap-2 mb-6">
+          <button
+            onClick={() => setMode('data')}
+            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              mode === 'data'
+                ? 'bg-[#00A5E6] text-white'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            <div className="flex items-center justify-center gap-2">
+              <Calendar className="w-4 h-4" />
+              Buscar por Data
+            </div>
+          </button>
+          <button
+            onClick={() => setMode('xml')}
+            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              mode === 'xml'
+                ? 'bg-[#00A5E6] text-white'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            <div className="flex items-center justify-center gap-2">
+              <Upload className="w-4 h-4" />
+              Upload XML
+            </div>
+          </button>
+        </div>
+
+        {/* Mode: Buscar por Data */}
+        {mode === 'data' && !dateResult && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Data Início
+                </label>
+                <input
+                  type="date"
+                  value={inicio}
+                  onChange={e => setInicio(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#00A5E6] focus:border-transparent outline-none"
+                  disabled={importing}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Data Fim
+                </label>
+                <input
+                  type="date"
+                  value={fim}
+                  onChange={e => setFim(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#00A5E6] focus:border-transparent outline-none"
+                  disabled={importing}
+                />
+              </div>
+            </div>
+
+            {errorMsg && (
+              <div className="flex items-start gap-2 text-red-600 text-sm bg-red-50 rounded-lg px-3 py-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={onClose} className="flex-1" disabled={importing}>
+                Cancelar
+              </Button>
+              <Button onClick={handleImportByDate} className="flex-1" disabled={importing}>
+                {importing ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Buscando...</>
+                ) : (
+                  <><Search className="w-4 h-4 mr-2" />Buscar NFs</>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Mode: Date - Results */}
+        {mode === 'data' && dateResult && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-slate-700 flex items-center justify-center gap-1">
+                  <Mail className="w-5 h-5 text-slate-400" />
+                  {dateResult.total_mensagens ?? 0}
+                </p>
+                <p className="text-xs text-slate-500">Mensagens</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-slate-700 flex items-center justify-center gap-1">
+                  <FileText className="w-5 h-5 text-slate-400" />
+                  {dateResult.nfs?.length ?? 0}
+                </p>
+                <p className="text-xs text-slate-500">NFs</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 text-center">
+                <p className="text-2xl font-bold text-green-600 flex items-center justify-center gap-1">
+                  <Database className="w-5 h-5 text-green-400" />
+                  {dateResult.total_salvas ?? 0}
+                </p>
+                <p className="text-xs text-slate-500">Salvas</p>
+              </div>
+            </div>
+
+            {dateResult.nfs && dateResult.nfs.length > 0 && (
+              <div className="max-h-60 overflow-y-auto space-y-2">
+                {dateResult.nfs.map((nf, idx) => (
+                  <div key={`${nf.numero_nf}-${idx}`} className="border border-slate-200 rounded-lg p-3 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800">NF {nf.numero_nf}</span>
+                      <span className="text-xs text-slate-500">{nf.data_emissao.substring(0, 10)}</span>
+                    </div>
+                    <div className="flex gap-3 text-xs text-slate-600 mt-1">
+                      <span>{nf.volumes_total} volumes</span>
+                      <span>{nf.peso_total} kg</span>
+                      <span>{nf.itens?.length || 0} itens</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <Button onClick={onSuccess} className="w-full">Concluir</Button>
+          </div>
+        )}
+
+        {/* Mode: Upload XML */}
+        {mode === 'xml' && !xmlResults && (
           <div className="space-y-4">
             <div className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center">
               <Upload className="w-8 h-8 mx-auto text-slate-400 mb-2" />
@@ -470,7 +736,7 @@ function ImportXMLModal({
                 Cancelar
               </Button>
               <Button
-                onClick={handleUpload}
+                onClick={handleUploadXML}
                 className="flex-1"
                 disabled={uploading || !files || files.length === 0}
               >
@@ -478,10 +744,13 @@ function ImportXMLModal({
               </Button>
             </div>
           </div>
-        ) : (
+        )}
+
+        {/* Mode: XML - Results */}
+        {mode === 'xml' && xmlResults && (
           <div className="space-y-4">
             <div className="space-y-2 max-h-60 overflow-y-auto">
-              {results.map((r, i) => (
+              {xmlResults.map((r, i) => (
                 <div
                   key={i}
                   className={`flex items-center justify-between text-sm px-3 py-2 rounded-lg ${
@@ -498,6 +767,240 @@ function ImportXMLModal({
             <Button onClick={onSuccess} className="w-full">Fechar</Button>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// =========================================================
+// Helpers
+// =========================================================
+
+// =========================================================
+// Notas Vinculadas Tab
+// =========================================================
+
+function NotasVinculadasTab() {
+  const [nfes, setNfes] = useState<Array<{
+    id: string
+    numero_nf: string
+    data_emissao: string
+    peso_total: number
+    volumes_total: number
+    is_os: boolean
+    created_at: string
+  }>>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function loadNfes() {
+      setLoading(true)
+      try {
+        const supabase = createClient()
+        const { data, error } = await supabase
+          .from('nfe')
+          .select('id, numero_nf, data_emissao, peso_total, volumes_total, is_os, created_at')
+          .order('data_emissao', { ascending: false })
+          .limit(100)
+        
+        if (!error && data) {
+          setNfes(data)
+        }
+      } catch (err) {
+        console.error('Erro ao carregar NFes:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadNfes()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 animate-spin text-[#00A5E6]" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {nfes.length === 0 ? (
+        <div className="text-center py-20 text-slate-500">
+          <FileText className="w-16 h-16 mx-auto mb-4 text-slate-300" />
+          <p className="text-lg font-medium">Nenhuma NF-e importada</p>
+          <p className="text-sm mt-1">Importe NFs para começar</p>
+        </div>
+      ) : (
+        <>
+          <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4">
+            <p className="text-sm text-slate-600">
+              Total: <span className="font-bold text-slate-800">{nfes.length}</span> NF-e(s) importadas
+            </p>
+          </div>
+          {nfes.map((nfe) => (
+            <div key={nfe.id} className="bg-white rounded-xl border border-slate-200 p-4 hover:border-[#00A5E6]/40 hover:shadow-md transition-all">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-lg font-bold text-slate-800">NF {nfe.numero_nf}</span>
+                    {nfe.is_os && (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                        OS
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-4 text-sm text-slate-600">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-4 h-4 text-slate-400" />
+                      {formatDate(nfe.data_emissao)}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Package className="w-4 h-4 text-slate-400" />
+                      {nfe.volumes_total} volumes
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Weight className="w-4 h-4 text-slate-400" />
+                      {nfe.peso_total.toFixed(0)} kg
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  )
+}
+
+// =========================================================
+// Dashboard Tab
+// =========================================================
+
+function DashboardTab({ recebimentos }: { recebimentos: Recebimento[] }) {
+  const recebimentosFechados = recebimentos.filter(r => r.status === 'fechado')
+  
+  const totalRecebimentos = recebimentosFechados.length
+  const kgTotais = recebimentosFechados.reduce((sum, r) => sum + (r.peso_total || 0), 0)
+  const volumesTotais = recebimentosFechados.reduce((sum, r) => sum + r.total_recebido, 0)
+  
+  const temposMedios = recebimentosFechados
+    .filter(r => r.data_inicio && r.data_fim)
+    .map(r => {
+      const inicio = new Date(r.data_inicio).getTime()
+      const fim = new Date(r.data_fim!).getTime()
+      return (fim - inicio) / (1000 * 60 * 60)
+    })
+  
+  const tempoTotal = temposMedios.reduce((sum, t) => sum + t, 0)
+  const tempoMedio = temposMedios.length > 0 ? tempoTotal / temposMedios.length : 0
+  
+  const kgMedio = totalRecebimentos > 0 ? kgTotais / totalRecebimentos : 0
+  const volumesMedio = totalRecebimentos > 0 ? volumesTotais / totalRecebimentos : 0
+  
+  const chapasTotais = recebimentosFechados
+    .filter(r => r.quantos_chapas)
+    .reduce((sum, r) => sum + (r.quantos_chapas || 0), 0)
+  const chapasMedia = recebimentosFechados.filter(r => r.quantos_chapas).length > 0
+    ? chapasTotais / recebimentosFechados.filter(r => r.quantos_chapas).length
+    : 0
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+          <TrendingUp className="w-5 h-5 text-[#00A5E6]" />
+          Métricas Gerais
+        </h3>
+        
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Package className="w-5 h-5 text-blue-600" />
+              <p className="text-xs font-medium text-blue-700">Recebimentos</p>
+            </div>
+            <p className="text-3xl font-bold text-blue-900">{totalRecebimentos}</p>
+            <p className="text-xs text-blue-600 mt-1">Fechados</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Weight className="w-5 h-5 text-green-600" />
+              <p className="text-xs font-medium text-green-700">Peso Total</p>
+            </div>
+            <p className="text-3xl font-bold text-green-900">{kgTotais.toFixed(0)}</p>
+            <p className="text-xs text-green-600 mt-1">kg</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Clock className="w-5 h-5 text-purple-600" />
+              <p className="text-xs font-medium text-purple-700">Tempo Médio</p>
+            </div>
+            <p className="text-3xl font-bold text-purple-900">{tempoMedio.toFixed(1)}</p>
+            <p className="text-xs text-purple-600 mt-1">horas</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Users className="w-5 h-5 text-orange-600" />
+              <p className="text-xs font-medium text-orange-700">Chapas Média</p>
+            </div>
+            <p className="text-3xl font-bold text-orange-900">{chapasMedia.toFixed(1)}</p>
+            <p className="text-xs text-orange-600 mt-1">por recebimento</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-[#00A5E6]" />
+            Médias por Recebimento
+          </h3>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+              <span className="text-sm text-slate-600">Peso Médio</span>
+              <span className="text-lg font-bold text-slate-800">{kgMedio.toFixed(0)} kg</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+              <span className="text-sm text-slate-600">Volumes Médios</span>
+              <span className="text-lg font-bold text-slate-800">{volumesMedio.toFixed(0)}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+              <span className="text-sm text-slate-600">Tempo Total</span>
+              <span className="text-lg font-bold text-slate-800">{tempoTotal.toFixed(1)} h</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-[#00A5E6]" />
+            Status dos Recebimentos
+          </h3>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+              <span className="text-sm text-green-700 font-medium">Fechados</span>
+              <span className="text-lg font-bold text-green-800">
+                {recebimentos.filter(r => r.status === 'fechado').length}
+              </span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-amber-50 rounded-lg">
+              <span className="text-sm text-amber-700 font-medium">Abertos</span>
+              <span className="text-lg font-bold text-amber-800">
+                {recebimentos.filter(r => r.status === 'aberto').length}
+              </span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+              <span className="text-sm text-red-700 font-medium">Cancelados</span>
+              <span className="text-lg font-bold text-red-800">
+                {recebimentos.filter(r => r.status === 'cancelado').length}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )

@@ -72,6 +72,9 @@ interface RecebimentoDetail {
   status: string
   total_previsto: number
   total_recebido: number
+  timer_segundos_totais: number
+  timer_rodando: boolean
+  timer_ultima_acao: string | null
   itens: RecebimentoItem[]
   nfes: Array<{ nfe_id: string; nfe: { numero_nf: string } | null }>
 }
@@ -117,6 +120,8 @@ export default function ConferenciaPage() {
       if (res.ok) {
         const data = await res.json()
         setRecebimento(data)
+        // Load timer state from database
+        setTimerRunning(data.timer_rodando || false)
       }
     } catch (err) {
       console.error('Erro ao carregar recebimento:', err)
@@ -142,14 +147,53 @@ export default function ConferenciaPage() {
     return () => clearInterval(interval)
   }, [recebimento, loadRecebimento, localModal, divModal])
 
-  // Timer effect
+  // Calculate elapsed seconds from database
   useEffect(() => {
-    if (!timerRunning) return
-    const interval = setInterval(() => {
-      setElapsedSeconds(prev => prev + 1)
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [timerRunning])
+    if (!recebimento) return
+    
+    const calculateElapsed = () => {
+      const base = recebimento.timer_segundos_totais || 0
+      
+      if (recebimento.timer_rodando && recebimento.timer_ultima_acao) {
+        const lastAction = new Date(recebimento.timer_ultima_acao)
+        const now = new Date()
+        const elapsed = Math.floor((now.getTime() - lastAction.getTime()) / 1000)
+        return base + elapsed
+      }
+      
+      return base
+    }
+    
+    // Initial calculation
+    setElapsedSeconds(calculateElapsed())
+    
+    // Update every second if timer is running
+    if (recebimento.timer_rodando) {
+      const interval = setInterval(() => {
+        setElapsedSeconds(calculateElapsed())
+      }, 1000)
+      return () => clearInterval(interval)
+    }
+  }, [recebimento])
+  
+  // Toggle timer and save to database
+  const toggleTimer = useCallback(async () => {
+    const newState = !timerRunning
+    setTimerRunning(newState)
+    
+    try {
+      await fetch(`/api/recebimento/${recebimentoId}/timer`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timer_rodando: newState })
+      })
+      // Reload to get updated timer state
+      loadRecebimento()
+    } catch (err) {
+      console.error('Erro ao atualizar timer:', err)
+      setTimerRunning(!newState) // Revert on error
+    }
+  }, [timerRunning, recebimentoId, loadRecebimento])
 
   if (!authorized || loading) {
     return (
@@ -254,7 +298,7 @@ export default function ConferenciaPage() {
             {!isFechado && !isCancelado && (
               <div className="flex items-center gap-1 sm:gap-1.5 bg-slate-100 rounded-lg px-1.5 sm:px-2 py-1">
                 <button
-                  onClick={() => setTimerRunning(!timerRunning)}
+                  onClick={toggleTimer}
                   className="p-0.5 sm:p-1 hover:bg-slate-200 rounded transition-colors"
                   aria-label={timerRunning ? 'Pausar' : 'Iniciar'}
                 >

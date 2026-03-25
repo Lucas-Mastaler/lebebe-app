@@ -39,6 +39,7 @@ export default function RecebimentoPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>('recebimentos')
+  const [prefilledDates, setPrefilledDates] = useState<{ inicio: string; fim: string } | null>(null)
 
   useEffect(() => {
     async function checkAuth() {
@@ -142,13 +143,22 @@ export default function RecebimentoPage() {
         <ImportNFeModal
           onClose={() => setShowImport(false)}
           onSuccess={() => { setShowImport(false); loadRecebimentos() }}
+          onStartRecebimento={(dates) => {
+            setPrefilledDates(dates)
+            setShowImport(false)
+            setShowCreate(true)
+          }}
         />
       )}
 
       {showCreate && (
         <CreateRecebimentoModal
-          onClose={() => setShowCreate(false)}
+          onClose={() => {
+            setShowCreate(false)
+            setPrefilledDates(null)
+          }}
           onSuccess={(id) => { router.push(`/recebimento/${id}`) }}
+          initialDates={prefilledDates}
         />
       )}
 
@@ -332,12 +342,14 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
 function CreateRecebimentoModal({
   onClose,
   onSuccess,
+  initialDates,
 }: {
   onClose: () => void
   onSuccess: (id: string) => void
+  initialDates?: { inicio: string; fim: string } | null
 }) {
-  const [periodoInicio, setPeriodoInicio] = useState('')
-  const [periodoFim, setPeriodoFim] = useState('')
+  const [periodoInicio, setPeriodoInicio] = useState(initialDates?.inicio || '')
+  const [periodoFim, setPeriodoFim] = useState(initialDates?.fim || '')
   const [motorista, setMotorista] = useState('')
   const [chapas, setChapas] = useState('')
   const [obs, setObs] = useState('')
@@ -493,9 +505,11 @@ interface ImportResult {
 function ImportNFeModal({
   onClose,
   onSuccess,
+  onStartRecebimento,
 }: {
   onClose: () => void
   onSuccess: () => void
+  onStartRecebimento: (dates: { inicio: string; fim: string }) => void
 }) {
   const [mode, setMode] = useState<ImportMode>('data')
   const [files, setFiles] = useState<FileList | null>(null)
@@ -700,7 +714,7 @@ function ImportNFeModal({
                     </div>
                     <div className="flex gap-3 text-xs text-slate-600 mt-1">
                       <span>{nf.volumes_total} volumes</span>
-                      <span>{nf.peso_total} kg</span>
+                      <span>{parseFloat(nf.peso_total).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} kg</span>
                       <span>{nf.itens?.length || 0} itens</span>
                     </div>
                   </div>
@@ -708,7 +722,24 @@ function ImportNFeModal({
               </div>
             )}
 
-            <Button onClick={onSuccess} className="w-full">Concluir</Button>
+            <div className="flex gap-3">
+              {dateResult.total_salvas && dateResult.total_salvas > 0 && (
+                <Button
+                  onClick={() => onStartRecebimento({ inicio, fim })}
+                  className="flex-1 bg-[#00A5E6] hover:bg-[#0090cc]"
+                >
+                  <Package className="w-4 h-4 mr-2" />
+                  Iniciar Recebimento das Notas
+                </Button>
+              )}
+              <Button
+                onClick={onSuccess}
+                variant="outline"
+                className="flex-1 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+              >
+                Fechar
+              </Button>
+            </div>
           </div>
         )}
 

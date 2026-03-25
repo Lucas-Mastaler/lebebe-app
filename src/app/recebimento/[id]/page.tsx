@@ -95,6 +95,7 @@ export default function ConferenciaPage() {
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<'itens' | 'os'>('itens')
   const [statusFilter, setStatusFilter] = useState<'tudo' | 'incompleto' | 'conferido'>('tudo')
+  const [corredorFilter, setCorredorFilter] = useState<'todos' | 'A' | 'B'>('todos')
   const [timerRunning, setTimerRunning] = useState(false)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [showFinalizar, setShowFinalizar] = useState(false)
@@ -247,8 +248,14 @@ export default function ConferenciaPage() {
   const itensNormais = recebimento.itens.filter(item => !item.is_os)
   const itensOS = recebimento.itens.filter(item => item.is_os)
 
+  // Calculate counters for filters
+  const baseItems = activeTab === 'itens' ? itensNormais : itensOS
+  const totalCount = baseItems.length
+  const incompletoCount = baseItems.filter(item => item.volumes_recebidos_total < item.volumes_previstos_total).length
+  const conferidoCount = baseItems.filter(item => item.volumes_recebidos_total >= item.volumes_previstos_total).length
+  
   // Filter items by search - dynamic multi-word search
-  const filtered = (activeTab === 'itens' ? itensNormais : itensOS)
+  const filtered = baseItems
     .filter(item => {
       if (!search) return true
       const searchTerms = search.toLowerCase().trim().split(/\s+/)
@@ -265,6 +272,11 @@ export default function ConferenciaPage() {
       if (statusFilter === 'conferido') return isComplete
       if (statusFilter === 'incompleto') return !isComplete
       return true
+    })
+    .filter(item => {
+      if (corredorFilter === 'todos') return true
+      const corredor = item.corredor_final || item.sku_corredor_sugerido
+      return corredor === corredorFilter
     })
     .sort((a, b) => {
       // 1. Ordenar por corredor (A, B, OS)
@@ -433,7 +445,7 @@ export default function ConferenciaPage() {
       </div>
 
       {/* Status Filter */}
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-3">
         <Filter className="w-4 h-4 text-slate-500" />
         <div className="flex gap-1.5 flex-1">
           <button
@@ -444,7 +456,7 @@ export default function ConferenciaPage() {
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Tudo
+            Tudo <span className="opacity-75">({totalCount})</span>
           </button>
           <button
             onClick={() => setStatusFilter('incompleto')}
@@ -454,7 +466,7 @@ export default function ConferenciaPage() {
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Incompleto
+            Incompleto <span className="opacity-75">({incompletoCount})</span>
           </button>
           <button
             onClick={() => setStatusFilter('conferido')}
@@ -464,10 +476,49 @@ export default function ConferenciaPage() {
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Conferido
+            Conferido <span className="opacity-75">({conferidoCount})</span>
           </button>
         </div>
       </div>
+
+      {/* Corredor Filter - only for normal items */}
+      {activeTab === 'itens' && (
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-xs text-slate-500 font-medium">Corredor:</span>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => setCorredorFilter('todos')}
+              className={`py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${
+                corredorFilter === 'todos'
+                  ? 'bg-slate-700 text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Todos
+            </button>
+            <button
+              onClick={() => setCorredorFilter('A')}
+              className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${
+                corredorFilter === 'A'
+                  ? 'bg-orange-600 text-white shadow-sm'
+                  : 'bg-slate-100 text-orange-600 hover:bg-orange-50'
+              }`}
+            >
+              A
+            </button>
+            <button
+              onClick={() => setCorredorFilter('B')}
+              className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${
+                corredorFilter === 'B'
+                  ? 'bg-blue-700 text-white shadow-sm'
+                  : 'bg-slate-100 text-blue-700 hover:bg-blue-50'
+              }`}
+            >
+              B
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Items list */}
       <div className="space-y-3">
@@ -1037,13 +1088,34 @@ function FinalizarModal({
 }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [formData, setFormData] = useState({
+    quemPreencheu: '',
+    quantidadeChapas: '',
+    motoristaAjudou: 'Sim',
+    problemaProximosCarregamentos: '',
+    outrosProblemas: '',
+  })
 
   async function handleFinalizar() {
+    // Validação básica
+    if (!formData.quemPreencheu.trim()) {
+      setError('Por favor, preencha quem está finalizando o recebimento')
+      return
+    }
+    
     setSaving(true)
     setError('')
     try {
       const res = await fetch(`/api/recebimento/${recebimentoId}/finalizar`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quem_preencheu: formData.quemPreencheu,
+          quantidade_chapas: parseInt(formData.quantidadeChapas) || 0,
+          motorista_ajudou: formData.motoristaAjudou,
+          problema_proximos_carregamentos: formData.problemaProximosCarregamentos,
+          outros_problemas: formData.outrosProblemas,
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -1059,24 +1131,105 @@ function FinalizarModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-3 mb-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl my-8" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
             <CheckCircle2 className="w-5 h-5 text-green-600" />
           </div>
           <div>
             <h3 className="font-bold text-slate-800">Finalizar Recebimento</h3>
-            <p className="text-xs text-slate-500">Esta ação não pode ser desfeita</p>
+            <p className="text-xs text-slate-500">Preencha as informações para registro</p>
           </div>
         </div>
 
-        {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
+        {error && <p className="text-sm text-red-500 mb-4 p-3 bg-red-50 rounded-lg">{error}</p>}
+
+        <div className="space-y-4 mb-6">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Quem está finalizando? *</label>
+            <input
+              type="text"
+              value={formData.quemPreencheu}
+              onChange={(e) => setFormData({ ...formData, quemPreencheu: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500"
+              placeholder="Ex: LUCAS"
+              disabled={saving}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Quantidade de chapas</label>
+            <input
+              type="number"
+              value={formData.quantidadeChapas}
+              onChange={(e) => setFormData({ ...formData, quantidadeChapas: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500"
+              placeholder="0"
+              min="0"
+              disabled={saving}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Motorista ajudou?</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, motoristaAjudou: 'Sim' })}
+                className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                  formData.motoristaAjudou === 'Sim'
+                    ? 'bg-green-600 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+                disabled={saving}
+              >
+                Sim
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, motoristaAjudou: 'Não' })}
+                className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                  formData.motoristaAjudou === 'Não'
+                    ? 'bg-red-600 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+                disabled={saving}
+              >
+                Não
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Problemas para próximos carregamentos?</label>
+            <textarea
+              value={formData.problemaProximosCarregamentos}
+              onChange={(e) => setFormData({ ...formData, problemaProximosCarregamentos: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 resize-none"
+              rows={2}
+              placeholder="Descreva problemas que devem ser resolvidos..."
+              disabled={saving}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Outros tipos de problemas</label>
+            <textarea
+              value={formData.outrosProblemas}
+              onChange={(e) => setFormData({ ...formData, outrosProblemas: e.target.value })}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 resize-none"
+              rows={2}
+              placeholder="Outros problemas ou observações..."
+              disabled={saving}
+            />
+          </div>
+        </div>
 
         <div className="flex gap-3">
           <Button variant="outline" onClick={onClose} className="flex-1" disabled={saving}>Cancelar</Button>
           <Button onClick={handleFinalizar} className="flex-1 bg-green-600 hover:bg-green-700" disabled={saving}>
-            {saving ? 'Finalizando...' : 'Confirmar'}
+            {saving ? 'Finalizando...' : 'Finalizar'}
           </Button>
         </div>
       </div>

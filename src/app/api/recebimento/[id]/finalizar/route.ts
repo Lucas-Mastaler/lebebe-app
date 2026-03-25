@@ -9,7 +9,7 @@ function normalizeCode(code: string): string {
 
 // POST /api/recebimento/[id]/finalizar
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const auth = await validateMaticUser()
@@ -18,12 +18,13 @@ export async function POST(
   }
 
   const { id } = await params
+  const body = await request.json().catch(() => ({}))
   const supabase = await createClient()
 
   // Verify recebimento exists and is open
   const { data: rec } = await supabase
     .from('recebimentos')
-    .select('status')
+    .select('*, timer_segundos_totais, data_inicio, motorista')
     .eq('id', id)
     .single()
 
@@ -173,18 +174,78 @@ export async function POST(
 
   console.log(`[LOG] matic_sku atualizada com ${(itensCompletos || []).length} produtos`)
 
+  // Prepare data for Google Sheets
+  const dataFim = new Date()
+  const dataInicio = rec.data_inicio ? new Date(rec.data_inicio) : dataFim
+  
+  // Format time as HH:MM:SS
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  }
+
+  // Get NFe numbers
+  const { data: nfesData } = await supabase
+    .from('recebimento_nfes')
+    .select('nfe:nfe_id(numero_nf, peso_total)')
+    .eq('recebimento_id', id)
+
+  const nfeNumeros = (nfesData || []).map((nfe: Record<string, unknown>) => {
+    const nfeObj = nfe.nfe as { numero_nf: string } | null
+    return nfeObj?.numero_nf
+  }).filter(Boolean).join(', ')
+
+  const totalKilos = (nfesData || []).reduce((sum: number, nfe: Record<string, unknown>) => {
+    const nfeObj = nfe.nfe as { peso_total: number } | null
+    return sum + (nfeObj?.peso_total || 0)
+  }, 0)
+
   // Finalize
   const { error } = await supabase
     .from('recebimentos')
     .update({
       status: 'fechado',
-      data_fim: new Date().toISOString(),
+      data_fim: dataFim.toISOString(),
     })
     .eq('id', id)
 
   if (error) {
     console.error('[LOG] Erro ao finalizar recebimento:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  // Send to Google Sheets
+  try {
+    const sheetData = {
+      carimbo: dataFim.toLocaleString('pt-BR'),
+      quem_preencheu: body.quem_preencheu || auth.email,
+      horario_inicio: formatTime(dataInicio),
+      horario_fim: formatTime(dataFim),
+      tempo_total_segundos: rec.timer_segundos_totais || 0,
+      quantidade_chapas: body.quantidade_chapas || 0,
+      motorista_ajudou: body.motorista_ajudou || 'Não informado',
+      quantos_kilos: Math.round(totalKilos),
+      quantos_volumes: rec.total_previsto || 0,
+      numero_nfs: nfeNumeros,
+      motorista: rec.motorista || '',
+      problema_proximos_carregamentos: body.problema_proximos_carregamentos || '',
+      outros_problemas: body.outros_problemas || '',
+    }
+
+    // Send to Google Apps Script Web App
+    const GOOGLE_SHEET_URL = process.env.GOOGLE_SHEET_RECEBIMENTO_URL
+    if (GOOGLE_SHEET_URL) {
+      await fetch(GOOGLE_SHEET_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sheetData),
+      }).catch(err => {
+        console.error('[LOG] Erro ao enviar para Google Sheets:', err)
+        // Não falha a finalização se der erro no sheets
+      })
+    }
+  } catch (err) {
+    console.error('[LOG] Erro ao preparar dados para Google Sheets:', err)
+    // Não falha a finalização se der erro
   }
 
   console.log(`[LOG] Recebimento ${id} finalizado por ${auth.email}`)

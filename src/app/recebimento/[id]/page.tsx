@@ -165,15 +165,17 @@ export default function ConferenciaPage() {
   const itensNormais = recebimento.itens.filter(item => !item.is_os)
   const itensOS = recebimento.itens.filter(item => item.is_os)
 
-  // Filter items by search
+  // Filter items by search - dynamic multi-word search
   const filtered = (activeTab === 'itens' ? itensNormais : itensOS)
     .filter(item => {
       if (!search) return true
-      const q = search.toLowerCase()
+      const searchTerms = search.toLowerCase().trim().split(/\s+/)
       const codigo = item.nfe_item?.codigo_produto?.toLowerCase() || ''
       const desc = item.sku_descricao?.toLowerCase() || ''
       const osNum = item.os_numero?.toLowerCase() || ''
-      return codigo.includes(q) || desc.includes(q) || osNum.includes(q)
+      const fullText = `${codigo} ${desc} ${osNum}`
+      
+      return searchTerms.every(term => fullText.includes(term))
     })
     .sort((a, b) => {
       // 1. Ordenar por corredor (A, B, OS)
@@ -253,7 +255,7 @@ export default function ConferenciaPage() {
         )}
       </div>
 
-      {/* Progress bar (sticky) */}
+      {/* Progress bar and search (sticky) */}
       <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-sm -mx-6 px-6 py-3 border-b border-slate-100 mb-4">
         <div className="flex items-center justify-between text-sm mb-1.5">
           <span className="font-medium text-slate-700">Progresso Geral</span>
@@ -269,6 +271,23 @@ export default function ConferenciaPage() {
             }`}
             style={{ width: `${Math.min(pctGeral, 100)}%` }}
           />
+        </div>
+        
+        {/* Search - inside sticky container */}
+        <div className="relative mt-3">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            placeholder={activeTab === 'itens' ? 'Buscar produto...' : 'Buscar OS...'}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/20 focus:border-[#00A5E6]"
+          />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2">
+              <X className="w-4 h-4 text-slate-400" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -296,22 +315,6 @@ export default function ConferenciaPage() {
         </button>
       </div>
 
-      {/* Search */}
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-        <input
-          type="text"
-          placeholder={activeTab === 'itens' ? 'Buscar produto...' : 'Buscar OS...'}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/20 focus:border-[#00A5E6]"
-        />
-        {search && (
-          <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2">
-            <X className="w-4 h-4 text-slate-400" />
-          </button>
-        )}
-      </div>
 
       {/* Items list */}
       <div className="space-y-3">
@@ -508,15 +511,18 @@ function ItemCard({
       </div>
 
       {/* Local info */}
-      <div className="flex items-center gap-2 text-xs text-slate-500 mb-3">
-        <MapPin className="w-3.5 h-3.5" />
-        <span>
+      <div className="flex items-center gap-2 text-xs mb-3">
+        <MapPin className="w-3.5 h-3.5 text-slate-500" />
+        <span className={`font-bold ${
+          (item.corredor_final || item.sku_corredor_sugerido) === 'A' ? 'text-orange-600' :
+          (item.corredor_final || item.sku_corredor_sugerido) === 'B' ? 'text-blue-700' :
+          'text-slate-600'
+        }`}>
           {item.corredor_final || item.sku_corredor_sugerido || '—'}
           {' / '}
+          {(item.prateleira_final || item.sku_prateleira_sugerida) || '—'}
+          {' / '}
           {item.nivel_final || item.sku_nivel_sugerido || '—'}
-          {(item.prateleira_final || item.sku_prateleira_sugerida) && (
-            <> / {item.prateleira_final || item.sku_prateleira_sugerida}</>
-          )}
         </span>
         <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-medium">
           {item.recebimento_item_volumes.length}vol

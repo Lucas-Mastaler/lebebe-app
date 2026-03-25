@@ -47,35 +47,16 @@ export async function POST(
     return incompleto && semDivergencia
   })
 
-  // Also validate OS items
-  const { data: osItens } = await supabase
-    .from('recebimento_os')
-    .select('os_numero, volumes_previstos, volumes_recebidos')
-    .eq('recebimento_id', id)
-
-  const pendentesOS = (osItens || []).filter(osItem => {
-    const incompleto = osItem.volumes_recebidos < osItem.volumes_previstos
-    return incompleto
-  })
-
-  const totalPendentes = pendentesItens.length + pendentesOS.length
-
-  if (totalPendentes > 0) {
-    console.log('[LOG] Itens normais incompletos:', pendentesItens.map(p => ({
+  if (pendentesItens.length > 0) {
+    console.log('[LOG] Itens normais incompletos sem divergência:', pendentesItens.map(p => ({
       id: p.id,
       recebido: p.volumes_recebidos_total,
       previsto: p.volumes_previstos_total,
       divergencia: p.divergencia_tipo
     })))
-    console.log('[LOG] Itens OS incompletos:', pendentesOS.map(p => ({
-      os_numero: p.os_numero,
-      recebido: p.volumes_recebidos,
-      previsto: p.volumes_previstos
-    })))
     return NextResponse.json({
-      error: `Existem ${totalPendentes} item(ns) incompleto(s) sem divergência registrada`,
+      error: `Existem ${pendentesItens.length} item(ns) incompleto(s) sem divergência registrada`,
       itens_pendentes: pendentesItens.map(p => p.id),
-      os_pendentes: pendentesOS.map(p => p.os_numero),
     }, { status: 400 })
   }
 

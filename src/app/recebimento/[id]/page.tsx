@@ -166,14 +166,27 @@ export default function ConferenciaPage() {
   const itensOS = recebimento.itens.filter(item => item.is_os)
 
   // Filter items by search
-  const filtered = (activeTab === 'itens' ? itensNormais : itensOS).filter(item => {
-    if (!search) return true
-    const q = search.toLowerCase()
-    const codigo = item.nfe_item?.codigo_produto?.toLowerCase() || ''
-    const desc = item.sku_descricao?.toLowerCase() || ''
-    const osNum = item.os_numero?.toLowerCase() || ''
-    return codigo.includes(q) || desc.includes(q) || osNum.includes(q)
-  })
+  const filtered = (activeTab === 'itens' ? itensNormais : itensOS)
+    .filter(item => {
+      if (!search) return true
+      const q = search.toLowerCase()
+      const codigo = item.nfe_item?.codigo_produto?.toLowerCase() || ''
+      const desc = item.sku_descricao?.toLowerCase() || ''
+      const osNum = item.os_numero?.toLowerCase() || ''
+      return codigo.includes(q) || desc.includes(q) || osNum.includes(q)
+    })
+    .sort((a, b) => {
+      const prateleiraA = a.prateleira_final || a.sku_prateleira_sugerida || ''
+      const prateleiraB = b.prateleira_final || b.sku_prateleira_sugerida || ''
+      
+      if (prateleiraA !== prateleiraB) {
+        return prateleiraA.localeCompare(prateleiraB)
+      }
+      
+      const nomeA = a.sku_descricao?.toLowerCase() || ''
+      const nomeB = b.sku_descricao?.toLowerCase() || ''
+      return nomeA.localeCompare(nomeB)
+    })
 
   // Check if can finalize
   const canFinalize = recebimento.itens.every(item => {

@@ -212,6 +212,16 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
     var HORA_MARCADA_HORAS_A_MAIS = +getConfig('HORA MARCADA HORAS A MAIS', cfgSheet) || 0;
     var HORA_MARCADA_VALOR_ADICIONAL = +getConfig('HORA MARCADA VALOR ADICIONAL', cfgSheet) || 0;
 
+    // Ajuste global de frete: +20%, arredonda pra cima na dezena, mínimo R$110
+    function aplicarAjusteFrete(v){
+      if (typeof v === 'string') return v; // ex.: "Não fazemos"
+      var num = Number(v) || 0;
+      num = num * 1.2;
+      num = Math.ceil(num / 10) * 10;
+      if (num < 110) num = 110;
+      return num;
+    }
+
     dlog('[PARAMS] KM Especial=' + MAX_EXTRA_DYNAMIC + 'm | KM Premium=' + MAX_EXTRA_PREMIUM + 'm');
     dlog('[PARAMS] Valor Especial=R$' + VALOR_ADICIONAL_ESPECIAL + ' | Valor Premium=R$' + VALOR_ADICIONAL_PREMIUM);
     dlog('[PARAMS] Hora Marcada: +' + HORA_MARCADA_HORAS_A_MAIS + 'h | Valor=R$' + HORA_MARCADA_VALOR_ADICIONAL);
@@ -1037,6 +1047,9 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
         !!form.isCondominio,
         freightParams
       );
+
+      // Aplicar ajuste global de +20% com arredondamento/mínimo
+      freteNum = aplicarAjusteFrete(freteNum);
       
       // === APLICAR VALORES ADICIONAIS CONFORME TIPO ===
       var tipoLabel = '';
@@ -1078,8 +1091,8 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
     });
 
     /* 13 – Auditoria (sempre) */
-    var freteSemana = calcularFrete(distKm, false, isRural, !!form.isCondominio, freightParams);
-    var freteSabado = calcularFrete(distKm, true,  isRural, !!form.isCondominio, freightParams);
+    var freteSemana = aplicarAjusteFrete(calcularFrete(distKm, false, isRural, !!form.isCondominio, freightParams));
+    var freteSabado = aplicarAjusteFrete(calcularFrete(distKm, true,  isRural, !!form.isCondominio, freightParams));
     var freteStr    = 'semana: ' + freteSemana + ' / sábado: ' + freteSabado;
     function pick(oldBool, newVal){
       if (typeof newVal === 'string' && newVal.trim()) return newVal.trim();

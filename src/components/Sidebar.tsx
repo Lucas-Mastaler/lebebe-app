@@ -111,7 +111,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         <aside
             className={cn(
                 'fixed left-0 top-0 z-40 h-screen bg-white border-r border-slate-200 sidebar-transition flex flex-col',
-                collapsed ? 'w-[72px]' : 'w-[260px]'
+                collapsed ? 'w-0 md:w-[72px]' : 'w-[260px]'
             )}
         >
             {/* Header */}

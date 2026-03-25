@@ -35,13 +35,69 @@ export async function POST(
     return NextResponse.json({ error: 'Recebimento já está fechado' }, { status: 400 })
   }
 
-  // Validate: all items must be complete OR have divergência
-  const { data: itens } = await supabase
-    .from('recebimento_itens')
-    .select('id, volumes_previstos_total, volumes_recebidos_total, divergencia_tipo')
+  // Identify which NFs are OS type (to exclude their items from validation)
+  const { data: nfeLinks } = await supabase
+    .from('recebimento_nfes')
+    .select('nfe_id, nfe:nfe_id(is_os)')
     .eq('recebimento_id', id)
 
-  const pendentesItens = (itens || []).filter(item => {
+  const nfeOSIds = new Set(
+    (nfeLinks || [])
+      .filter((link: Record<string, unknown>) => (link.nfe as { is_os?: boolean } | null)?.is_os)
+      .map((link: Record<string, unknown>) => link.nfe_id as string)
+  )
+
+  // Fetch all items with their nfe_item link
+  const { data: itens } = await supabase
+    .from('recebimento_itens')
+    .select('id, nfe_item_id, volumes_previstos_total, volumes_recebidos_total, divergencia_tipo')
+    .eq('recebimento_id', id)
+
+  // Get nfe_item -> nfe mapping to identify OS items
+  const nfeItemIds = (itens || []).map(i => i.nfe_item_id).filter(Boolean)
+  let osItemIds = new Set<string>()
+  
+  if (nfeItemIds.length > 0 && nfeOSIds.size > 0) {
+    const { data: nfeItemsData } = await supabase
+      .from('nfe_itens')
+      .select('id, nfe_id')
+      .in('id', nfeItemIds)
+
+    for (const ni of (nfeItemsData || [])) {
+      if (nfeOSIds.has(ni.nfe_id)) {
+        // Find item with this nfe_item_id and mark as OS
+        const item = (itens || []).find(i => i.nfe_item_id === ni.id)
+        if (item) osItemIds.add(item.id)
+      }
+    }
+  }
+
+  // Filter to only normal items (exclude OS items which are tracked via recebimento_os)
+  const itensNormais = (itens || []).filter(item => !osItemIds.has(item.id))
+
+  console.log(`[LOG] Validação: ${(itens || []).length} itens total, ${osItemIds.size} OS excluídos, ${itensNormais.length} normais para validar`)
+
+  // Recalculate volumes_recebidos_total from actual volume records (fix any desync)
+  for (const item of itensNormais) {
+    const { data: volumes } = await supabase
+      .from('recebimento_item_volumes')
+      .select('qtd_recebida')
+      .eq('recebimento_item_id', item.id)
+
+    const realTotal = (volumes || []).reduce((sum, v) => sum + (v.qtd_recebida || 0), 0)
+
+    if (realTotal !== item.volumes_recebidos_total) {
+      console.log(`[LOG] Corrigindo dessincronia item ${item.id}: banco=${item.volumes_recebidos_total}, real=${realTotal}`)
+      await supabase
+        .from('recebimento_itens')
+        .update({ volumes_recebidos_total: realTotal })
+        .eq('id', item.id)
+      item.volumes_recebidos_total = realTotal
+    }
+  }
+
+  // Validate: all normal items must be complete OR have divergência
+  const pendentesItens = itensNormais.filter(item => {
     const incompleto = item.volumes_recebidos_total < item.volumes_previstos_total
     const semDivergencia = !item.divergencia_tipo
     return incompleto && semDivergencia

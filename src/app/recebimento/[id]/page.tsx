@@ -75,6 +75,7 @@ interface RecebimentoDetail {
   timer_segundos_totais: number
   timer_rodando: boolean
   timer_ultima_acao: string | null
+  ultima_atividade_conferencia: string | null
   itens: RecebimentoItem[]
   nfes: Array<{ nfe_id: string; nfe: { numero_nf: string } | null }>
 }
@@ -194,6 +195,28 @@ export default function ConferenciaPage() {
       setTimerRunning(!newState) // Revert on error
     }
   }, [timerRunning, recebimentoId, loadRecebimento])
+  
+  // Check for inactivity and auto-pause timer (every minute)
+  useEffect(() => {
+    if (!recebimento || recebimento.status !== 'aberto' || !recebimento.timer_rodando) return
+    if (!recebimento.ultima_atividade_conferencia) return
+    
+    const checkInactivity = () => {
+      const lastActivity = new Date(recebimento.ultima_atividade_conferencia!)
+      const now = new Date()
+      const minutesSinceActivity = (now.getTime() - lastActivity.getTime()) / 1000 / 60
+      
+      // If 5+ minutes of inactivity, reload to get updated state (backend will pause)
+      if (minutesSinceActivity >= 5) {
+        console.log('[LOG] Detectada inatividade de 5+ minutos, recarregando...')
+        loadRecebimento()
+      }
+    }
+    
+    // Check every minute
+    const interval = setInterval(checkInactivity, 60000)
+    return () => clearInterval(interval)
+  }, [recebimento, loadRecebimento])
 
   if (!authorized || loading) {
     return (

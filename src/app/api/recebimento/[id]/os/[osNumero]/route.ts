@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateMaticUser } from '@/lib/auth/matic-auth'
+import { registrarAtividadeConferencia } from '@/lib/recebimento/timer-activity'
 
 // POST /api/recebimento/[id]/os/[osNumero] — update OS volumes
 export async function POST(
@@ -52,6 +53,9 @@ export async function POST(
     console.error('[LOG] Erro ao atualizar OS:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  // Register activity and auto-resume timer if needed
+  await registrarAtividadeConferencia(supabase, id)
 
   return NextResponse.json(data)
 }

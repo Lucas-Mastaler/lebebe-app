@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateMaticUser } from '@/lib/auth/matic-auth'
+import { registrarAtividadeConferencia } from '@/lib/recebimento/timer-activity'
 
 // POST /api/recebimento/[id]/item/[itemId]/volume/[volumeNumero]
 // Body: { delta: +1 or -1 }
@@ -90,6 +91,9 @@ export async function POST(
   if (itemUpdateError) {
     console.error('[LOG] Erro ao atualizar item:', itemUpdateError)
   }
+
+  // Register activity and auto-resume timer if needed
+  await registrarAtividadeConferencia(supabase, id)
 
   // Determine status
   let status = 'pendente'

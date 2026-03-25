@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { validateMaticUser } from '@/lib/auth/matic-auth'
+import { registrarAtividadeConferencia } from '@/lib/recebimento/timer-activity'
 
 // PATCH /api/recebimento/[id]/item/[itemId] — update local or divergência
 export async function PATCH(
@@ -140,6 +141,9 @@ export async function PATCH(
     console.error('[LOG] Erro ao atualizar item:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  // Register activity and auto-resume timer if needed
+  await registrarAtividadeConferencia(supabase, id)
 
   console.log('[LOG] Item atualizado com sucesso:', data.id)
   return NextResponse.json(data)

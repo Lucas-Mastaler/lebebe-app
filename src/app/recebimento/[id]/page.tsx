@@ -11,6 +11,9 @@ import {
   MapPin,
   AlertTriangle,
   X,
+  Play,
+  Pause,
+  Filter,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
@@ -87,6 +90,9 @@ export default function ConferenciaPage() {
   const [authorized, setAuthorized] = useState(false)
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<'itens' | 'os'>('itens')
+  const [statusFilter, setStatusFilter] = useState<'tudo' | 'incompleto' | 'conferido'>('tudo')
+  const [timerRunning, setTimerRunning] = useState(false)
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [showFinalizar, setShowFinalizar] = useState(false)
   const [showCancelar, setShowCancelar] = useState(false)
   const [localModal, setLocalModal] = useState<RecebimentoItem | null>(null)
@@ -136,6 +142,15 @@ export default function ConferenciaPage() {
     return () => clearInterval(interval)
   }, [recebimento, loadRecebimento, localModal, divModal])
 
+  // Timer effect
+  useEffect(() => {
+    if (!timerRunning) return
+    const interval = setInterval(() => {
+      setElapsedSeconds(prev => prev + 1)
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [timerRunning])
+
   if (!authorized || loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -177,6 +192,13 @@ export default function ConferenciaPage() {
       
       return searchTerms.every(term => fullText.includes(term))
     })
+    .filter(item => {
+      if (statusFilter === 'tudo') return true
+      const isComplete = item.volumes_recebidos_total >= item.volumes_previstos_total
+      if (statusFilter === 'conferido') return isComplete
+      if (statusFilter === 'incompleto') return !isComplete
+      return true
+    })
     .sort((a, b) => {
       // 1. Ordenar por corredor (A, B, OS)
       const corredorA = a.corredor_final || a.sku_corredor_sugerido || ''
@@ -211,35 +233,63 @@ export default function ConferenciaPage() {
     return complete || !!item.divergencia_tipo
   })
 
+  // Format timer display
+  const formatTime = (seconds: number) => {
+    const hrs = Math.floor(seconds / 3600)
+    const mins = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+
   return (
     <div className="max-w-2xl mx-auto pb-24">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-4">
-        <button onClick={() => router.push('/recebimento')} className="p-2 -ml-2 rounded-xl hover:bg-slate-100">
+      <div className="flex items-center gap-2 sm:gap-3 mb-4">
+        <button onClick={() => router.push('/recebimento')} className="p-1.5 sm:p-2 -ml-2 rounded-xl hover:bg-slate-100 flex-shrink-0">
           <ArrowLeft className="w-5 h-5 text-slate-600" />
         </button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-lg font-bold text-slate-800 truncate">Conferência</h1>
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+            <h1 className="text-base sm:text-lg font-bold text-slate-800 truncate">Conferência</h1>
+            {!isFechado && !isCancelado && (
+              <div className="flex items-center gap-1 sm:gap-1.5 bg-slate-100 rounded-lg px-1.5 sm:px-2 py-1">
+                <button
+                  onClick={() => setTimerRunning(!timerRunning)}
+                  className="p-0.5 sm:p-1 hover:bg-slate-200 rounded transition-colors"
+                  aria-label={timerRunning ? 'Pausar' : 'Iniciar'}
+                >
+                  {timerRunning ? (
+                    <Pause className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-slate-600" />
+                  ) : (
+                    <Play className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-slate-600" />
+                  )}
+                </button>
+                <span className="text-[10px] sm:text-xs font-mono font-semibold text-slate-700">
+                  {formatTime(elapsedSeconds)}
+                </span>
+              </div>
+            )}
+          </div>
           <p className="text-xs text-slate-500">
             {recebimento.nfes?.length || 0} NF(s) • {recebimento.itens.length} itens
             {recebimento.motorista && ` • ${recebimento.motorista}`}
           </p>
         </div>
         {isFechado ? (
-          <span className="text-xs font-semibold px-3 py-1 rounded-full bg-green-100 text-green-700">
+          <span className="text-[10px] sm:text-xs font-semibold px-2 sm:px-3 py-1 rounded-full bg-green-100 text-green-700 flex-shrink-0">
             FECHADO
           </span>
         ) : isCancelado ? (
-          <span className="text-xs font-semibold px-3 py-1 rounded-full bg-red-100 text-red-700">
+          <span className="text-[10px] sm:text-xs font-semibold px-2 sm:px-3 py-1 rounded-full bg-red-100 text-red-700 flex-shrink-0">
             CANCELADO
           </span>
         ) : (
-          <div className="flex gap-2">
+          <div className="flex gap-1.5 sm:gap-2 flex-shrink-0">
             <Button
               size="sm"
               variant="outline"
               onClick={() => setShowCancelar(true)}
-              className="text-xs"
+              className="text-[10px] sm:text-xs px-2 sm:px-3"
             >
               Cancelar
             </Button>
@@ -247,7 +297,7 @@ export default function ConferenciaPage() {
               size="sm"
               onClick={() => setShowFinalizar(true)}
               disabled={!canFinalize}
-              className="text-xs"
+              className="text-[10px] sm:text-xs px-2 sm:px-3"
             >
               Finalizar
             </Button>
@@ -256,7 +306,7 @@ export default function ConferenciaPage() {
       </div>
 
       {/* Progress bar and search (sticky) */}
-      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-sm -mx-6 px-6 py-3 border-b border-slate-100 mb-4">
+      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-sm -mx-6 px-4 sm:px-6 py-3 border-b border-slate-100 mb-4">
         <div className="flex items-center justify-between text-sm mb-1.5">
           <span className="font-medium text-slate-700">Progresso Geral</span>
           <span className="font-bold text-slate-800">
@@ -292,7 +342,7 @@ export default function ConferenciaPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-3">
         <button
           onClick={() => setActiveTab('itens')}
           className={`flex-1 py-2.5 px-4 rounded-xl font-medium text-sm transition-all ${
@@ -315,6 +365,42 @@ export default function ConferenciaPage() {
         </button>
       </div>
 
+      {/* Status Filter */}
+      <div className="flex items-center gap-2 mb-4">
+        <Filter className="w-4 h-4 text-slate-500" />
+        <div className="flex gap-1.5 flex-1">
+          <button
+            onClick={() => setStatusFilter('tudo')}
+            className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all ${
+              statusFilter === 'tudo'
+                ? 'bg-slate-800 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Tudo
+          </button>
+          <button
+            onClick={() => setStatusFilter('incompleto')}
+            className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all ${
+              statusFilter === 'incompleto'
+                ? 'bg-amber-500 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Incompleto
+          </button>
+          <button
+            onClick={() => setStatusFilter('conferido')}
+            className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all ${
+              statusFilter === 'conferido'
+                ? 'bg-green-500 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Conferido
+          </button>
+        </div>
+      </div>
 
       {/* Items list */}
       <div className="space-y-3">

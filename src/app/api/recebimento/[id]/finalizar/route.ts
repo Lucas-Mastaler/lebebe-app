@@ -178,22 +178,28 @@ export async function POST(
   // Consolidar divergências para "Problemas do recebimento"
   const { data: itensDivergencias } = await supabase
     .from('recebimento_itens')
-    .select(`
-      divergencia_tipo,
-      divergencia_obs,
-      nfe_item:nfe_item_id(
-        codigo_produto,
-        nfe:nfe_id(numero_nf)
-      )
-    `)
+    .select('divergencia_tipo, divergencia_obs, nfe_item_id')
     .eq('recebimento_id', id)
     .not('divergencia_tipo', 'is', null)
 
+  // Buscar códigos dos produtos separadamente
+  const divergenciaItemIds = (itensDivergencias || []).map(i => i.nfe_item_id).filter(Boolean)
+  let codigosMap = new Map<string, string>()
+  
+  if (divergenciaItemIds.length > 0) {
+    const { data: nfeItems } = await supabase
+      .from('nfe_itens')
+      .select('id, codigo_produto')
+      .in('id', divergenciaItemIds)
+    
+    for (const nfeItem of (nfeItems || [])) {
+      codigosMap.set(nfeItem.id, nfeItem.codigo_produto)
+    }
+  }
+
   const problemasList: string[] = []
   for (const item of (itensDivergencias || [])) {
-    const nfeItemArray = item.nfe_item as Array<{ codigo_produto: string; nfe: Array<{ numero_nf: string }> }> | null
-    const nfeItem = Array.isArray(nfeItemArray) ? nfeItemArray[0] : null
-    const codigo = nfeItem?.codigo_produto || '?'
+    const codigo = codigosMap.get(item.nfe_item_id) || '?'
     const tipo = item.divergencia_tipo
     const obs = item.divergencia_obs || ''
     problemasList.push(`${codigo} (tipo: ${tipo}, observação: ${obs})`)
@@ -206,8 +212,12 @@ export async function POST(
   
   // Format time as HH:MM:SS (Brazil timezone UTC-3)
   const formatTime = (date: Date) => {
-    const brazilDate = new Date(date.getTime() - 3 * 60 * 60 * 1000)
-    return brazilDate.toISOString().substring(11, 19)
+    return date.toLocaleTimeString('pt-BR', { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit',
+      timeZone: 'America/Sao_Paulo'
+    })
   }
 
   const formatarTempo = (segundos: number): string => {
@@ -233,10 +243,13 @@ export async function POST(
     return sum + (nfeObj?.peso_total || 0)
   }, 0)
 
-  const totalVolumes = (nfesData || []).reduce((sum: number, nfe: Record<string, unknown>) => {
-    const nfeObj = nfe.nfe as { volumes_total: number } | null
-    return sum + (nfeObj?.volumes_total || 0)
-  }, 0)
+  // Calcular volumes totais a partir dos itens recebidos
+  const { data: itensRecebidos } = await supabase
+    .from('recebimento_itens')
+    .select('volumes_recebidos_total')
+    .eq('recebimento_id', id)
+  
+  const totalVolumes = (itensRecebidos || []).reduce((sum, item) => sum + (item.volumes_recebidos_total || 0), 0)
 
   // Finalize
   const { error } = await supabase
@@ -268,11 +281,11 @@ export async function POST(
   
   try {
     const sheetData = {
-      carimbo: dataFim.toLocaleString('pt-BR'),
+      carimbo: dataFim.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
       quem_finalizou: body.quem_finalizou || auth.email,
       horario_inicio: formatTime(dataInicio),
       horario_fim: formatTime(dataFim),
-      tempo_total_formatado: formatarTempo(rec.timer_segundos_totais || 0),
+      tempo_total_formatado: formatarTempo(Math.floor((dataFim.getTime() - dataInicio.getTime()) / 1000)),
       quantidade_chapas: body.quantidade_chapas || 0,
       motorista_ajudou: body.motorista_ajudou || 'Não informado',
       quantos_kilos: Math.round(totalKilos),

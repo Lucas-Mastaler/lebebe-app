@@ -29,7 +29,7 @@ interface Recebimento {
   }>
 }
 
-type TabType = 'recebimentos' | 'notas' | 'dashboard'
+type TabType = 'recebimentos' | 'notas' | 'divergencias' | 'dashboard'
 
 export default function RecebimentoPage() {
   const router = useRouter()
@@ -124,6 +124,19 @@ export default function RecebimentoPage() {
             </div>
           </button>
           <button
+            onClick={() => setActiveTab('divergencias')}
+            className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'divergencias'
+                ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
+                : 'text-slate-600 hover:text-slate-800'
+            }`}
+          >
+            <div className="flex items-center justify-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              Divergências
+            </div>
+          </button>
+          <button
             onClick={() => setActiveTab('dashboard')}
             className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
               activeTab === 'dashboard'
@@ -185,6 +198,8 @@ export default function RecebimentoPage() {
 
       {activeTab === 'notas' && <NotasVinculadasTab />}
 
+      {activeTab === 'divergencias' && <DivergenciasListagemTab />}
+
       {activeTab === 'dashboard' && <DashboardTab recebimentos={recebimentos} />}
     </div>
   )
@@ -199,12 +214,42 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
   const [showCancelarModal, setShowCancelarModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [canceling, setCanceling] = useState(false)
+  const [hasDivergencias, setHasDivergencias] = useState(false)
+  const [divergenciasPorNF, setDivergenciasPorNF] = useState<Map<string, number>>(new Map())
   const pct = rec.total_previsto > 0 ? Math.round((rec.total_recebido / rec.total_previsto) * 100) : 0
   const isFechado = rec.status === 'fechado'
   const isCancelado = rec.status === 'cancelado'
   const nfes = rec.recebimento_nfes || []
   const pesoTotal = rec.peso_total || 0
   const qtdOS = rec.qtd_os || 0
+
+  useEffect(() => {
+    async function checkDivergencias() {
+      try {
+        const res = await fetch(`/api/recebimento/${rec.id}`)
+        if (res.ok) {
+          const data = await res.json()
+          const itensComDivergencia = data.itens?.filter((item: any) => item.divergencia_tipo) || []
+          setHasDivergencias(itensComDivergencia.length > 0)
+          
+          // Contar divergências por NF
+          const countMap = new Map<string, number>()
+          for (const item of itensComDivergencia) {
+            const nf = item.numero_nf
+            if (nf) {
+              countMap.set(nf, (countMap.get(nf) || 0) + 1)
+            }
+          }
+          setDivergenciasPorNF(countMap)
+        }
+      } catch (err) {
+        console.error('Erro ao verificar divergências:', err)
+      }
+    }
+    if (isFechado) {
+      checkDivergencias()
+    }
+  }, [rec.id, isFechado])
 
   async function handleCancelar() {
     setCanceling(true)
@@ -296,13 +341,20 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
             <span className="font-mono text-xs">{pesoTotal.toFixed(0)}kg</span>
           </div>
           {nfes.length > 0 && (
-            <button
-              onClick={(e) => { e.stopPropagation(); setShowDetailsModal(true); }}
-              className="p-1 rounded-lg hover:bg-slate-100 transition-colors"
-              title="Ver detalhes das NFs"
-            >
-              <Eye className="w-4 h-4 text-slate-400 hover:text-[#00A5E6]" />
-            </button>
+            <div className="flex items-center gap-1">
+              {hasDivergencias && (
+                <div className="relative" title="Há divergências neste recebimento">
+                  <AlertCircle className="w-4 h-4 text-amber-500" />
+                </div>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowDetailsModal(true); }}
+                className="p-1 rounded-lg hover:bg-slate-100 transition-colors"
+                title="Ver detalhes das NFs"
+              >
+                <Eye className="w-4 h-4 text-slate-400 hover:text-[#00A5E6]" />
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -335,14 +387,25 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
               </button>
             </div>
             <div className="space-y-3">
-              {nfes.map((nfeLink, i) => (
-                <div key={i} className="border border-slate-200 rounded-lg p-4">
+              {nfes.map((nfeLink, i) => {
+                const nfNumero = nfeLink.nfe?.numero_nf || '?'
+                const qtdDivergencias = divergenciasPorNF.get(nfNumero) || 0
+                return (
+                <div key={i} className={`border rounded-lg p-4 ${
+                  qtdDivergencias > 0 ? 'border-amber-300 bg-amber-50' : 'border-slate-200'
+                }`}>
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold text-slate-800">NF {nfeLink.nfe?.numero_nf || '?'}</span>
+                      <span className="text-lg font-bold text-slate-800">NF {nfNumero}</span>
                       {nfeLink.nfe?.is_os && (
                         <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
                           OS
+                        </span>
+                      )}
+                      {qtdDivergencias > 0 && (
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-500 text-white flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          {qtdDivergencias} diverg{qtdDivergencias > 1 ? 'ências' : 'ência'}
                         </span>
                       )}
                     </div>
@@ -359,7 +422,8 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
                     </span>
                   </div>
                 </div>
-              ))}
+              )
+              })}
             </div>
             <div className="mt-4">
               <Button onClick={() => setShowDetailsModal(false)} className="w-full">
@@ -1162,6 +1226,117 @@ function DashboardTab({ recebimentos }: { recebimentos: Recebimento[] }) {
               </span>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =========================================================
+// Divergências Listagem Tab
+// =========================================================
+
+function DivergenciasListagemTab() {
+  const [problemasPendentes, setProblemasPendentes] = useState<Array<{
+    id: string
+    descricao: string
+    recebimento_id: string
+    created_at: string
+  }>>([])
+  const [loading, setLoading] = useState(true)
+  const [resolvendo, setResolvendo] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    loadProblemas()
+  }, [])
+
+  async function loadProblemas() {
+    setLoading(true)
+    try {
+      const res = await fetch('/api/recebimento/problemas-pendentes')
+      if (res.ok) {
+        const data = await res.json()
+        setProblemasPendentes(data)
+      }
+    } catch (err) {
+      console.error('Erro ao carregar problemas:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function marcarComoResolvido(problemaId: string) {
+    setResolvendo(prev => new Set(prev).add(problemaId))
+    try {
+      const res = await fetch('/api/recebimento/problemas-pendentes/resolver', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ problema_ids: [problemaId] }),
+      })
+      if (res.ok) {
+        await loadProblemas()
+      }
+    } catch (err) {
+      console.error('Erro ao resolver problema:', err)
+    } finally {
+      setResolvendo(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(problemaId)
+        return newSet
+      })
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#00A5E6]" />
+      </div>
+    )
+  }
+
+  if (problemasPendentes.length === 0) {
+    return (
+      <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
+        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Package className="w-8 h-8 text-green-600" />
+        </div>
+        <h3 className="text-lg font-semibold text-slate-800 mb-2">Nenhum problema pendente</h3>
+        <p className="text-sm text-slate-500">Todos os problemas foram resolvidos!</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <h3 className="font-semibold text-amber-900 mb-1 flex items-center gap-2">
+          <AlertCircle className="w-5 h-5" />
+          Problemas pendentes de recebimentos anteriores
+        </h3>
+        <p className="text-sm text-amber-700 mb-4">
+          {problemasPendentes.length} problema{problemasPendentes.length !== 1 ? 's' : ''} aguardando resolução
+        </p>
+        <div className="space-y-3">
+          {problemasPendentes.map(problema => (
+            <div key={problema.id} className="bg-white rounded-lg p-4 border border-amber-200">
+              <p className="text-sm text-slate-700 mb-3">{problema.descricao}</p>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500">
+                  Criado em: {new Date(problema.created_at).toLocaleDateString('pt-BR')} às{' '}
+                  {new Date(problema.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <Button
+                  size="sm"
+                  onClick={() => marcarComoResolvido(problema.id)}
+                  disabled={resolvendo.has(problema.id)}
+                  className="bg-green-600 hover:bg-green-700 text-xs h-8"
+                >
+                  {resolvendo.has(problema.id) ? 'Marcando...' : 'Marcar como resolvido'}
+                </Button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

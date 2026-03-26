@@ -124,6 +124,7 @@ export async function GET(
     .from('nfe_itens')
     .select('id, nfe_id, nfe:nfe_id(numero_nf)')
     .in('id', itemNfeItemIds)
+    .limit(10000)
   
   const nfeItemToNfeMap = new Map((nfeItemsData || []).map(ni => [ni.id, ni.nfe_id]))
   const nfeItemToNumeroMap = new Map((nfeItemsData || []).map(ni => {

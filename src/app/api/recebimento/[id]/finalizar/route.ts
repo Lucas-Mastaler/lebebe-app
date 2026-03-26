@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateMaticUser } from '@/lib/auth/matic-auth'
+import { enviarRecebimentoParaPlanilha } from '@/lib/google/sheets-service'
 
 // Helper: remove leading zeros for matching (02685 -> 2685)
 function normalizeCode(code: string): string {
@@ -213,9 +214,9 @@ export async function POST(
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Send to Google Sheets
+  // Send to Google Sheets via OAuth (usando mesma auth do app)
   let sheetsStatus = 'not_configured'
-  let sheetsError = null
+  let sheetsError: string | null = null
   
   try {
     const sheetData = {
@@ -234,45 +235,20 @@ export async function POST(
       outros_problemas: body.outros_problemas || '',
     }
 
-    // Send to Google Apps Script Web App
-    const GOOGLE_SHEET_URL = process.env.GOOGLE_SHEET_RECEBIMENTO_URL
-    if (GOOGLE_SHEET_URL) {
-      console.log('[LOG][SHEETS] Iniciando envio para Google Sheets...', { url: GOOGLE_SHEET_URL.substring(0, 50) + '...' })
-      console.log('[LOG][SHEETS] Dados a enviar:', JSON.stringify(sheetData, null, 2))
-      
-      try {
-        const response = await fetch(GOOGLE_SHEET_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sheetData),
-        })
-        
-        const responseText = await response.text()
-        console.log('[LOG][SHEETS] Status da resposta:', response.status)
-        console.log('[LOG][SHEETS] Resposta:', responseText)
-        
-        if (response.ok) {
-          sheetsStatus = 'success'
-          console.log('[LOG][SHEETS] ✅ Dados enviados com sucesso para a planilha')
-        } else {
-          sheetsStatus = 'error'
-          sheetsError = `HTTP ${response.status}: ${responseText.substring(0, 200)}`
-          console.error('[LOG][SHEETS] ❌ Erro HTTP ao enviar para planilha:', sheetsError)
-        }
-      } catch (fetchErr) {
-        sheetsStatus = 'error'
-        sheetsError = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
-        console.error('[LOG][SHEETS] ❌ Erro de conexão ao enviar para Google Sheets:', sheetsError)
-      }
+    const result = await enviarRecebimentoParaPlanilha(sheetData)
+    
+    if (result.sucesso) {
+      sheetsStatus = 'success'
+      console.log('[LOG][SHEETS] ✅ Dados enviados com sucesso para a planilha')
     } else {
-      console.warn('[LOG][SHEETS] ⚠️ GOOGLE_SHEET_RECEBIMENTO_URL não configurada - dados NÃO foram enviados para planilha')
-      sheetsStatus = 'not_configured'
-      sheetsError = 'URL da planilha não configurada no servidor'
+      sheetsStatus = 'error'
+      sheetsError = result.erro || 'Erro desconhecido'
+      console.error('[LOG][SHEETS] ❌ Erro ao enviar para planilha:', sheetsError)
     }
   } catch (err) {
     sheetsStatus = 'error'
     sheetsError = err instanceof Error ? err.message : String(err)
-    console.error('[LOG][SHEETS] ❌ Erro ao preparar dados para Google Sheets:', sheetsError)
+    console.error('[LOG][SHEETS] ❌ Erro ao preparar/enviar dados para Google Sheets:', sheetsError)
   }
 
   console.log(`[LOG] Recebimento ${id} finalizado por ${auth.email}`)

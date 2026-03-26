@@ -176,11 +176,12 @@ export async function POST(request: NextRequest) {
 
   const nfeIds = nfes.map(n => n.id)
 
-  // 2) Find NFe items
+  // 2) Find NFe items (limit high to avoid Supabase default 1000-row truncation)
   const { data: nfeItens, error: itensError } = await supabase
     .from('nfe_itens')
     .select(`
       id,
+      nfe_id,
       codigo_produto,
       descricao,
       quantidade,
@@ -188,10 +189,21 @@ export async function POST(request: NextRequest) {
       volumes_previstos_total
     `)
     .in('nfe_id', nfeIds)
+    .limit(10000)
 
   if (itensError) {
     console.error('[LOG] Erro ao buscar itens NF:', itensError)
     return NextResponse.json({ error: itensError.message }, { status: 500 })
+  }
+
+  // Audit: log item count per NF
+  const itensPerNf = new Map<string, number>()
+  for (const item of (nfeItens || [])) {
+    itensPerNf.set(item.nfe_id, (itensPerNf.get(item.nfe_id) || 0) + 1)
+  }
+  console.log(`[LOG][AUDIT] Total nfe_itens retornados: ${(nfeItens || []).length}`)
+  for (const [nfeId, count] of itensPerNf) {
+    console.log(`[LOG][AUDIT]   NF ${nfeId}: ${count} itens`)
   }
 
   // 3) Fetch matic_sku data for suggested locations (using ref_meia to match NF codigo_produto)
@@ -281,6 +293,13 @@ export async function POST(request: NextRequest) {
   }
 
   console.log(`[LOG] Agrupados ${(nfeItens || []).length} itens de NF em ${groupedItems.size} itens únicos`)
+  
+  // Audit: log items that came from multiple NFs
+  for (const [codigo, group] of groupedItems) {
+    if (group.nfe_item_ids.length > 1) {
+      console.log(`[LOG][AUDIT] Item ${group.codigo_produto} (norm: ${codigo}) agrupado de ${group.nfe_item_ids.length} NFs: qty_total=${group.quantidade_total}, vol/item=${group.volumes_por_item}`)
+    }
+  }
 
   // 7) Create recebimento_itens + recebimento_item_volumes (grouped)
   for (const [codigoNormalizado, group] of groupedItems) {

@@ -43,16 +43,16 @@ async function criarClienteSheets() {
 
 export interface DadosRecebimentoPlanilha {
   carimbo: string;
-  quem_preencheu: string;
+  quem_finalizou: string;
   horario_inicio: string;
   horario_fim: string;
-  tempo_total_segundos: number;
+  tempo_total_formatado: string;
   quantidade_chapas: number;
   motorista_ajudou: string;
   quantos_kilos: number;
   quantos_volumes: number;
+  problemas_recebimento: string;
   numero_nfs: string;
-  motorista: string;
   problema_proximos_carregamentos: string;
   outros_problemas: string;
 }
@@ -65,19 +65,18 @@ const SHEET_NAME = 'Recebimentos';
 
 const HEADERS = [
   'Carimbo de data/hora',
-  'QUEM ESTÁ PREENCHENDO?',
-  'HORÁRIO INICIO DO RECEBIMENTO',
-  'HORÁRIO FIM DO RECEBIMENTO',
-  'TEMPO TOTAL (segundos)',
-  'TEMPO TOTAL (formatado)',
-  'QUANTIDADE DE CHAPAS',
-  'MOTORISTA AJUDOU?',
-  'QUANTOS KILOS?',
-  'QUANTOS VOLUMES?',
-  'NÚMERO DAS NF RECEBIDAS',
-  'MOTORISTA',
-  'ALGUM PROBLEMA QUE DEVE SER RESOLVIDO NOS PRÓXIMOS CARREGAMENTOS?',
-  'OUTROS TIPOS DE PROBLEMAS',
+  'Quem finalizou',
+  'Horário início do recebimento',
+  'Horário fim do recebimento',
+  'Tempo total',
+  'Quantidade de chapas',
+  'Motorista ajudou?',
+  'Quantos kilos?',
+  'Quantos volumes?',
+  'Problemas do recebimento',
+  'Números das NF recebidas',
+  'Algum problema que deve ser resolvido nos próximos carregamentos?',
+  'Outros tipos de problemas',
 ];
 
 function formatarTempo(segundos: number): string {
@@ -150,17 +149,16 @@ export async function enviarRecebimentoParaPlanilha(
     // Montar linha de dados
     const row = [
       dados.carimbo,
-      dados.quem_preencheu,
+      dados.quem_finalizou,
       dados.horario_inicio,
       dados.horario_fim,
-      dados.tempo_total_segundos,
-      formatarTempo(dados.tempo_total_segundos),
+      dados.tempo_total_formatado,
       dados.quantidade_chapas,
       dados.motorista_ajudou,
       dados.quantos_kilos,
       dados.quantos_volumes,
+      dados.problemas_recebimento,
       dados.numero_nfs,
-      dados.motorista,
       dados.problema_proximos_carregamentos,
       dados.outros_problemas,
     ];
@@ -168,7 +166,7 @@ export async function enviarRecebimentoParaPlanilha(
     // Adicionar linha na planilha
     const appendResult = await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: `${SHEET_NAME}!A:N`,
+      range: `${SHEET_NAME}!A:M`,
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       requestBody: {

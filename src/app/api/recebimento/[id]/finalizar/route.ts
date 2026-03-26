@@ -175,19 +175,52 @@ export async function POST(
 
   console.log(`[LOG] matic_sku atualizada com ${(itensCompletos || []).length} produtos`)
 
+  // Consolidar divergências para "Problemas do recebimento"
+  const { data: itensDivergencias } = await supabase
+    .from('recebimento_itens')
+    .select(`
+      divergencia_tipo,
+      divergencia_obs,
+      nfe_item:nfe_item_id(
+        codigo_produto,
+        nfe:nfe_id(numero_nf)
+      )
+    `)
+    .eq('recebimento_id', id)
+    .not('divergencia_tipo', 'is', null)
+
+  const problemasList: string[] = []
+  for (const item of (itensDivergencias || [])) {
+    const nfeItemArray = item.nfe_item as Array<{ codigo_produto: string; nfe: Array<{ numero_nf: string }> }> | null
+    const nfeItem = Array.isArray(nfeItemArray) ? nfeItemArray[0] : null
+    const codigo = nfeItem?.codigo_produto || '?'
+    const tipo = item.divergencia_tipo
+    const obs = item.divergencia_obs || ''
+    problemasList.push(`${codigo} (tipo: ${tipo}, observação: ${obs})`)
+  }
+  const problemasRecebimento = problemasList.join('; ')
+
   // Prepare data for Google Sheets
   const dataFim = new Date()
   const dataInicio = rec.data_inicio ? new Date(rec.data_inicio) : dataFim
   
-  // Format time as HH:MM:SS
+  // Format time as HH:MM:SS (Brazil timezone UTC-3)
   const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    const brazilDate = new Date(date.getTime() - 3 * 60 * 60 * 1000)
+    return brazilDate.toISOString().substring(11, 19)
   }
 
-  // Get NFe numbers
+  const formatarTempo = (segundos: number): string => {
+    const horas = Math.floor(segundos / 3600)
+    const minutos = Math.floor((segundos % 3600) / 60)
+    const secs = segundos % 60
+    return `${String(horas).padStart(2, '0')}:${String(minutos).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+  }
+
+  // Get NFe numbers and total weight
   const { data: nfesData } = await supabase
     .from('recebimento_nfes')
-    .select('nfe:nfe_id(numero_nf, peso_total)')
+    .select('nfe:nfe_id(numero_nf, peso_total, volumes_total)')
     .eq('recebimento_id', id)
 
   const nfeNumeros = (nfesData || []).map((nfe: Record<string, unknown>) => {
@@ -198,6 +231,11 @@ export async function POST(
   const totalKilos = (nfesData || []).reduce((sum: number, nfe: Record<string, unknown>) => {
     const nfeObj = nfe.nfe as { peso_total: number } | null
     return sum + (nfeObj?.peso_total || 0)
+  }, 0)
+
+  const totalVolumes = (nfesData || []).reduce((sum: number, nfe: Record<string, unknown>) => {
+    const nfeObj = nfe.nfe as { volumes_total: number } | null
+    return sum + (nfeObj?.volumes_total || 0)
   }, 0)
 
   // Finalize
@@ -214,6 +252,16 @@ export async function POST(
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  // Salvar problema pendente se informado
+  if (body.problema_proximos_carregamentos && body.problema_proximos_carregamentos.trim()) {
+    await supabase
+      .from('recebimento_problemas_pendentes')
+      .insert({
+        recebimento_id: id,
+        descricao: body.problema_proximos_carregamentos.trim(),
+      })
+  }
+
   // Send to Google Sheets via OAuth (usando mesma auth do app)
   let sheetsStatus = 'not_configured'
   let sheetsError: string | null = null
@@ -221,16 +269,16 @@ export async function POST(
   try {
     const sheetData = {
       carimbo: dataFim.toLocaleString('pt-BR'),
-      quem_preencheu: body.quem_preencheu || auth.email,
+      quem_finalizou: body.quem_finalizou || auth.email,
       horario_inicio: formatTime(dataInicio),
       horario_fim: formatTime(dataFim),
-      tempo_total_segundos: rec.timer_segundos_totais || 0,
+      tempo_total_formatado: formatarTempo(rec.timer_segundos_totais || 0),
       quantidade_chapas: body.quantidade_chapas || 0,
       motorista_ajudou: body.motorista_ajudou || 'Não informado',
       quantos_kilos: Math.round(totalKilos),
-      quantos_volumes: rec.total_previsto || 0,
+      quantos_volumes: totalVolumes,
+      problemas_recebimento: problemasRecebimento,
       numero_nfs: nfeNumeros,
-      motorista: rec.motorista || '',
       problema_proximos_carregamentos: body.problema_proximos_carregamentos || '',
       outros_problemas: body.outros_problemas || '',
     }

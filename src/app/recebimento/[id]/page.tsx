@@ -10,6 +10,7 @@ import {
   Minus,
   MapPin,
   AlertTriangle,
+  AlertCircle,
   X,
   Play,
   Pause,
@@ -94,7 +95,7 @@ export default function ConferenciaPage() {
   const [loading, setLoading] = useState(true)
   const [authorized, setAuthorized] = useState(false)
   const [search, setSearch] = useState('')
-  const [activeTab, setActiveTab] = useState<'itens' | 'os'>('itens')
+  const [activeTab, setActiveTab] = useState<'itens' | 'os' | 'divergencias'>('itens')
   const [statusFilter, setStatusFilter] = useState<'tudo' | 'incompleto' | 'conferido'>('tudo')
   const [corredorFilter, setCorredorFilter] = useState<'todos' | 'A' | 'B'>('todos')
   const [timerRunning, setTimerRunning] = useState(false)
@@ -441,7 +442,17 @@ export default function ConferenciaPage() {
               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
           }`}
         >
-          O.S ({itensOS.length})
+          OS ({itensOS.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('divergencias')}
+          className={`flex-1 py-2.5 px-4 rounded-xl font-medium text-sm transition-all ${
+            activeTab === 'divergencias'
+              ? 'bg-amber-600 text-white shadow-sm'
+              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          }`}
+        >
+          Divergências
         </button>
       </div>
 
@@ -557,7 +568,7 @@ export default function ConferenciaPage() {
               />
             ))}
           </>
-        ) : (
+        ) : activeTab === 'os' ? (
           <>
             {filtered.map(item => (
               <OSItemCard
@@ -578,9 +589,11 @@ export default function ConferenciaPage() {
               />
             ))}
           </>
+        ) : (
+          <DivergenciasTab recebimentoId={recebimentoId} itens={recebimento.itens} onReload={loadRecebimento} />
         )}
 
-        {filtered.length === 0 && (
+        {filtered.length === 0 && activeTab !== 'divergencias' && (
           <p className="text-center py-10 text-slate-400 text-sm">Nenhum item encontrado</p>
         )}
       </div>
@@ -1087,6 +1100,13 @@ function DivergenciaModal({
 // Finalizar Modal
 // =========================================================
 
+interface ProblemaPendente {
+  id: string
+  descricao: string
+  recebimento_id: string
+  created_at: string
+}
+
 function FinalizarModal({
   recebimentoId,
   onClose,
@@ -1100,17 +1120,35 @@ function FinalizarModal({
   const [error, setError] = useState('')
   const [sheetsStatus, setSheetsStatus] = useState<'success' | 'error' | 'not_configured' | null>(null)
   const [sheetsError, setSheetsError] = useState<string | null>(null)
+  const [problemasPendentes, setProblemasPendentes] = useState<ProblemaPendente[]>([])
+  const [problemasResolvidos, setProblemasResolvidos] = useState<Set<string>>(new Set())
   const [formData, setFormData] = useState({
-    quemPreencheu: '',
+    quemFinalizou: '',
     quantidadeChapas: '',
     motoristaAjudou: 'Sim',
     problemaProximosCarregamentos: '',
     outrosProblemas: '',
   })
 
+  // Buscar problemas pendentes de recebimentos anteriores
+  useEffect(() => {
+    async function loadProblemasPendentes() {
+      try {
+        const res = await fetch(`/api/recebimento/problemas-pendentes`)
+        if (res.ok) {
+          const data = await res.json()
+          setProblemasPendentes(data)
+        }
+      } catch (err) {
+        console.error('Erro ao carregar problemas pendentes:', err)
+      }
+    }
+    loadProblemasPendentes()
+  }, [])
+
   async function handleFinalizar() {
     // Validação básica
-    if (!formData.quemPreencheu.trim()) {
+    if (!formData.quemFinalizou.trim()) {
       setError('Por favor, preencha quem está finalizando o recebimento')
       return
     }
@@ -1118,11 +1156,12 @@ function FinalizarModal({
     setSaving(true)
     setError('')
     try {
+      // Primeiro finalizar o recebimento
       const res = await fetch(`/api/recebimento/${recebimentoId}/finalizar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          quem_preencheu: formData.quemPreencheu,
+          quem_finalizou: formData.quemFinalizou,
           quantidade_chapas: parseInt(formData.quantidadeChapas) || 0,
           motorista_ajudou: formData.motoristaAjudou,
           problema_proximos_carregamentos: formData.problemaProximosCarregamentos,
@@ -1139,6 +1178,18 @@ function FinalizarModal({
       // Capturar status do envio para planilha
       setSheetsStatus(data.sheets_status || 'not_configured')
       setSheetsError(data.sheets_error || null)
+      
+      // Marcar problemas como resolvidos
+      if (problemasResolvidos.size > 0) {
+        await fetch('/api/recebimento/problemas-pendentes/resolver', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            problema_ids: Array.from(problemasResolvidos),
+          }),
+        })
+      }
+      
       setSaving(false)
       
       // Aguardar 3 segundos para mostrar o resultado antes de fechar
@@ -1202,12 +1253,45 @@ function FinalizarModal({
         )}
 
         <div className="space-y-4 mb-6">
+          {/* Problemas pendentes de recebimentos anteriores */}
+          {problemasPendentes.length > 0 && (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <h4 className="text-sm font-semibold text-amber-900 mb-2 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                Problemas do último recebimento
+              </h4>
+              <div className="space-y-2">
+                {problemasPendentes.map((problema) => (
+                  <label key={problema.id} className="flex items-start gap-2 text-sm text-amber-800 cursor-pointer hover:bg-amber-100 p-2 rounded">
+                    <input
+                      type="checkbox"
+                      checked={problemasResolvidos.has(problema.id)}
+                      onChange={(e) => {
+                        const newSet = new Set(problemasResolvidos)
+                        if (e.target.checked) {
+                          newSet.add(problema.id)
+                        } else {
+                          newSet.delete(problema.id)
+                        }
+                        setProblemasResolvidos(newSet)
+                      }}
+                      className="mt-0.5 rounded border-amber-300"
+                      disabled={saving}
+                    />
+                    <span className="flex-1">{problema.descricao}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-amber-700 mt-2">✓ Marque os problemas que foram resolvidos</p>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Quem está finalizando? *</label>
             <input
               type="text"
-              value={formData.quemPreencheu}
-              onChange={(e) => setFormData({ ...formData, quemPreencheu: e.target.value })}
+              value={formData.quemFinalizou}
+              onChange={(e) => setFormData({ ...formData, quemFinalizou: e.target.value })}
               className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500"
               placeholder="Ex: LUCAS"
               disabled={saving}
@@ -1258,12 +1342,17 @@ function FinalizarModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Problemas para próximos carregamentos?</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Algum problema que deve ser resolvido nos próximos carregamentos?
+            </label>
+            <p className="text-xs text-slate-500 mb-2">
+              Faltou algum volume, não veio alguma assistência, etc... Anote o que aconteceu, colocando número da NF ou os que faltou.
+            </p>
             <textarea
               value={formData.problemaProximosCarregamentos}
               onChange={(e) => setFormData({ ...formData, problemaProximosCarregamentos: e.target.value })}
               className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 resize-none"
-              rows={2}
+              rows={3}
               placeholder="Descreva problemas que devem ser resolvidos..."
               disabled={saving}
             />
@@ -1271,11 +1360,14 @@ function FinalizarModal({
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Outros tipos de problemas</label>
+            <p className="text-xs text-slate-500 mb-2">
+              Problemas que não precisam ser resolvidos nos próximos carregamentos, como por exemplo: Muitas caixas abertas, falar com a fábrica pra ajustar o processo interno.
+            </p>
             <textarea
               value={formData.outrosProblemas}
               onChange={(e) => setFormData({ ...formData, outrosProblemas: e.target.value })}
               className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 resize-none"
-              rows={2}
+              rows={3}
               placeholder="Outros problemas ou observações..."
               disabled={saving}
             />
@@ -1351,6 +1443,143 @@ function CancelarModal({
           </Button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// =========================================================
+// Divergências Tab
+// =========================================================
+
+function DivergenciasTab({
+  recebimentoId,
+  itens,
+  onReload,
+}: {
+  recebimentoId: string
+  itens: RecebimentoItem[]
+  onReload: () => void
+}) {
+  const [problemasPendentes, setProblemasPendentes] = useState<ProblemaPendente[]>([])
+  const [resolvendo, setResolvendo] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    loadProblemas()
+  }, [])
+
+  async function loadProblemas() {
+    try {
+      const res = await fetch('/api/recebimento/problemas-pendentes')
+      if (res.ok) {
+        const data = await res.json()
+        setProblemasPendentes(data)
+      }
+    } catch (err) {
+      console.error('Erro ao carregar problemas:', err)
+    }
+  }
+
+  async function marcarComoResolvido(problemaId: string) {
+    setResolvendo(prev => new Set(prev).add(problemaId))
+    try {
+      const res = await fetch('/api/recebimento/problemas-pendentes/resolver', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ problema_ids: [problemaId] }),
+      })
+      if (res.ok) {
+        await loadProblemas()
+      }
+    } catch (err) {
+      console.error('Erro ao resolver problema:', err)
+    } finally {
+      setResolvendo(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(problemaId)
+        return newSet
+      })
+    }
+  }
+
+  const itensDivergentes = itens.filter(item => item.divergencia_tipo)
+
+  return (
+    <div className="space-y-4">
+      {/* Problemas pendentes de outros recebimentos */}
+      {problemasPendentes.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <h3 className="font-semibold text-amber-900 mb-3 flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5" />
+            Problemas de recebimentos anteriores ({problemasPendentes.length})
+          </h3>
+          <div className="space-y-2">
+            {problemasPendentes.map(problema => (
+              <div key={problema.id} className="bg-white rounded-lg p-3 border border-amber-200">
+                <p className="text-sm text-slate-700 mb-2">{problema.descricao}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500">
+                    {new Date(problema.created_at).toLocaleDateString('pt-BR')}
+                  </span>
+                  <Button
+                    size="sm"
+                    onClick={() => marcarComoResolvido(problema.id)}
+                    disabled={resolvendo.has(problema.id)}
+                    className="bg-green-600 hover:bg-green-700 text-xs h-7"
+                  >
+                    {resolvendo.has(problema.id) ? 'Marcando...' : 'Marcar como resolvido'}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Itens com divergência neste recebimento */}
+      {itensDivergentes.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-orange-600" />
+            Itens com divergência neste recebimento ({itensDivergentes.length})
+          </h3>
+          <div className="space-y-2">
+            {itensDivergentes.map(item => (
+              <div key={item.id} className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex-1">
+                    <p className="font-medium text-slate-800 text-sm">
+                      {item.nfe_item?.codigo_produto} - {item.sku_descricao || item.nfe_item?.descricao}
+                    </p>
+                    {item.numero_nf && (
+                      <p className="text-xs text-slate-500">NF: {item.numero_nf}</p>
+                    )}
+                  </div>
+                  <span className="px-2 py-1 bg-orange-100 text-orange-800 text-xs font-medium rounded">
+                    {item.divergencia_tipo}
+                  </span>
+                </div>
+                {item.divergencia_obs && (
+                  <p className="text-sm text-slate-600 bg-white p-2 rounded border border-slate-200">
+                    {item.divergencia_obs}
+                  </p>
+                )}
+                <div className="mt-2 flex items-center gap-4 text-xs text-slate-500">
+                  <span>Previsto: {item.volumes_previstos_total} vol</span>
+                  <span>Recebido: {item.volumes_recebidos_total} vol</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {problemasPendentes.length === 0 && itensDivergentes.length === 0 && (
+        <div className="text-center py-12">
+          <CheckCircle2 className="w-12 h-12 text-green-600 mx-auto mb-3" />
+          <p className="text-slate-600 font-medium">Nenhuma divergência encontrada</p>
+          <p className="text-sm text-slate-400">Todos os itens estão corretos!</p>
+        </div>
+      )}
     </div>
   )
 }

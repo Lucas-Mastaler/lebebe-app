@@ -411,8 +411,6 @@ function CreateRecebimentoModal({
 }) {
   const [periodoInicio, setPeriodoInicio] = useState(initialDates?.inicio || '')
   const [periodoFim, setPeriodoFim] = useState(initialDates?.fim || '')
-  const [motorista, setMotorista] = useState('')
-  const [chapas, setChapas] = useState('')
   const [obs, setObs] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -432,8 +430,6 @@ function CreateRecebimentoModal({
         body: JSON.stringify({
           periodo_inicio: periodoInicio,
           periodo_fim: periodoFim,
-          motorista: motorista || null,
-          quantos_chapas: chapas ? parseInt(chapas) : null,
           obs: obs || null,
         }),
       })
@@ -478,28 +474,6 @@ function CreateRecebimentoModal({
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30 focus:border-[#00A5E6]"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-slate-600 block mb-1">Motorista</label>
-            <input
-              type="text"
-              value={motorista}
-              onChange={e => setMotorista(e.target.value)}
-              placeholder="Nome do motorista"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30 focus:border-[#00A5E6]"
-            />
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-slate-600 block mb-1">Qtd. Chapas</label>
-            <input
-              type="number"
-              value={chapas}
-              onChange={e => setChapas(e.target.value)}
-              placeholder="0"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30 focus:border-[#00A5E6]"
-            />
           </div>
 
           <div>

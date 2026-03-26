@@ -214,6 +214,9 @@ export async function POST(
   }
 
   // Send to Google Sheets
+  let sheetsStatus = 'not_configured'
+  let sheetsError = null
+  
   try {
     const sheetData = {
       carimbo: dataFim.toLocaleString('pt-BR'),
@@ -234,21 +237,50 @@ export async function POST(
     // Send to Google Apps Script Web App
     const GOOGLE_SHEET_URL = process.env.GOOGLE_SHEET_RECEBIMENTO_URL
     if (GOOGLE_SHEET_URL) {
-      await fetch(GOOGLE_SHEET_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sheetData),
-      }).catch(err => {
-        console.error('[LOG] Erro ao enviar para Google Sheets:', err)
-        // Não falha a finalização se der erro no sheets
-      })
+      console.log('[LOG][SHEETS] Iniciando envio para Google Sheets...', { url: GOOGLE_SHEET_URL.substring(0, 50) + '...' })
+      console.log('[LOG][SHEETS] Dados a enviar:', JSON.stringify(sheetData, null, 2))
+      
+      try {
+        const response = await fetch(GOOGLE_SHEET_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sheetData),
+        })
+        
+        const responseText = await response.text()
+        console.log('[LOG][SHEETS] Status da resposta:', response.status)
+        console.log('[LOG][SHEETS] Resposta:', responseText)
+        
+        if (response.ok) {
+          sheetsStatus = 'success'
+          console.log('[LOG][SHEETS] ✅ Dados enviados com sucesso para a planilha')
+        } else {
+          sheetsStatus = 'error'
+          sheetsError = `HTTP ${response.status}: ${responseText.substring(0, 200)}`
+          console.error('[LOG][SHEETS] ❌ Erro HTTP ao enviar para planilha:', sheetsError)
+        }
+      } catch (fetchErr) {
+        sheetsStatus = 'error'
+        sheetsError = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+        console.error('[LOG][SHEETS] ❌ Erro de conexão ao enviar para Google Sheets:', sheetsError)
+      }
+    } else {
+      console.warn('[LOG][SHEETS] ⚠️ GOOGLE_SHEET_RECEBIMENTO_URL não configurada - dados NÃO foram enviados para planilha')
+      sheetsStatus = 'not_configured'
+      sheetsError = 'URL da planilha não configurada no servidor'
     }
   } catch (err) {
-    console.error('[LOG] Erro ao preparar dados para Google Sheets:', err)
-    // Não falha a finalização se der erro
+    sheetsStatus = 'error'
+    sheetsError = err instanceof Error ? err.message : String(err)
+    console.error('[LOG][SHEETS] ❌ Erro ao preparar dados para Google Sheets:', sheetsError)
   }
 
   console.log(`[LOG] Recebimento ${id} finalizado por ${auth.email}`)
+  console.log(`[LOG][SHEETS] Status final: ${sheetsStatus}${sheetsError ? ` - Erro: ${sheetsError}` : ''}`)
 
-  return NextResponse.json({ message: 'Recebimento finalizado com sucesso' })
+  return NextResponse.json({
+    message: 'Recebimento finalizado com sucesso',
+    sheets_status: sheetsStatus,
+    sheets_error: sheetsError,
+  })
 }

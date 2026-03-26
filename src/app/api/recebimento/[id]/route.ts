@@ -122,10 +122,15 @@ export async function GET(
   const itemNfeItemIds = (itens || []).map((item: Record<string, unknown>) => item.nfe_item_id).filter(Boolean)
   const { data: nfeItemsData } = await supabase
     .from('nfe_itens')
-    .select('id, nfe_id')
+    .select('id, nfe_id, nfe:nfe_id(numero_nf)')
     .in('id', itemNfeItemIds)
   
   const nfeItemToNfeMap = new Map((nfeItemsData || []).map(ni => [ni.id, ni.nfe_id]))
+  const nfeItemToNumeroMap = new Map((nfeItemsData || []).map(ni => {
+    const nfeArray = ni.nfe as { numero_nf: string }[] | { numero_nf: string } | null
+    const nfe = Array.isArray(nfeArray) ? nfeArray[0] : nfeArray
+    return [ni.id, nfe?.numero_nf || '']
+  }))
   
   // Mark items from OS NFes
   const itensOSIds = new Set<string>()
@@ -153,10 +158,14 @@ export async function GET(
       if (totalRecebido > 0 && totalRecebido < totalPrevisto) status = 'parcial'
       if (totalRecebido >= totalPrevisto && totalPrevisto > 0) status = 'concluido'
 
+      const nfeItemId = item.nfe_item_id as string
+      const numeroNf = nfeItemToNumeroMap.get(nfeItemId) || ''
+
       return {
         ...item,
         is_os: false,
         os_numero: null,
+        numero_nf: numeroNf,
         status_calculado: status,
         sku_descricao: sku?.descricao || nfeItem?.descricao || '',
         sku_corredor_sugerido: sku?.corredor_sugerido,

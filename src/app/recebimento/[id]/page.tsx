@@ -53,6 +53,7 @@ interface RecebimentoItem {
   avaria_foto_url: string | null
   is_os: boolean
   os_numero: string | null
+  numero_nf: string | null
   nfe_item: NfeItem | null
   recebimento_item_volumes: Volume[]
   status_calculado: string
@@ -704,13 +705,22 @@ function ItemCard({
       {/* Header */}
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-mono text-slate-500">{item.nfe_item?.codigo_produto}</p>
-          <p className="font-semibold text-sm text-slate-800 leading-tight mt-0.5">
+          <div className="flex items-center gap-2 mb-0.5">
+            <p className="text-xs font-mono text-slate-500">{item.nfe_item?.codigo_produto}</p>
+            {item.numero_nf && (
+              <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-mono">
+                NF {item.numero_nf}
+              </span>
+            )}
+          </div>
+          <p className="font-semibold text-sm text-slate-800 leading-tight">
             {item.sku_descricao || item.nfe_item?.descricao}
           </p>
         </div>
         {status === 'concluido' && (
-          <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0 ml-2" />
+          <div className="ml-2 p-1 rounded-full bg-green-100">
+            <CheckCircle2 className="w-4 h-4 text-green-600" />
+          </div>
         )}
       </div>
 
@@ -1088,6 +1098,8 @@ function FinalizarModal({
 }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [sheetsStatus, setSheetsStatus] = useState<'success' | 'error' | 'not_configured' | null>(null)
+  const [sheetsError, setSheetsError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     quemPreencheu: '',
     quantidadeChapas: '',
@@ -1123,7 +1135,16 @@ function FinalizarModal({
         setSaving(false)
         return
       }
-      onSuccess()
+      
+      // Capturar status do envio para planilha
+      setSheetsStatus(data.sheets_status || 'not_configured')
+      setSheetsError(data.sheets_error || null)
+      setSaving(false)
+      
+      // Aguardar 3 segundos para mostrar o resultado antes de fechar
+      setTimeout(() => {
+        onSuccess()
+      }, 3000)
     } catch {
       setError('Erro de conexão')
       setSaving(false)
@@ -1144,6 +1165,41 @@ function FinalizarModal({
         </div>
 
         {error && <p className="text-sm text-red-500 mb-4 p-3 bg-red-50 rounded-lg">{error}</p>}
+        
+        {/* Status do envio para planilha */}
+        {sheetsStatus && (
+          <div className={`mb-4 p-3 rounded-lg text-sm ${
+            sheetsStatus === 'success' 
+              ? 'bg-green-50 text-green-700 border border-green-200' 
+              : sheetsStatus === 'error'
+              ? 'bg-red-50 text-red-700 border border-red-200'
+              : 'bg-amber-50 text-amber-700 border border-amber-200'
+          }`}>
+            <div className="flex items-start gap-2">
+              <div className="mt-0.5">
+                {sheetsStatus === 'success' && '✅'}
+                {sheetsStatus === 'error' && '❌'}
+                {sheetsStatus === 'not_configured' && '⚠️'}
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold mb-1">
+                  {sheetsStatus === 'success' && 'Dados enviados para a planilha!'}
+                  {sheetsStatus === 'error' && 'Erro ao enviar para a planilha'}
+                  {sheetsStatus === 'not_configured' && 'Planilha não configurada'}
+                </p>
+                {sheetsError && (
+                  <p className="text-xs opacity-90">{sheetsError}</p>
+                )}
+                {sheetsStatus === 'success' && (
+                  <p className="text-xs opacity-90">Os dados do recebimento foram registrados na planilha do Google.</p>
+                )}
+                {sheetsStatus === 'not_configured' && (
+                  <p className="text-xs opacity-90">O recebimento foi finalizado, mas a URL da planilha não está configurada no sistema.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-4 mb-6">
           <div>

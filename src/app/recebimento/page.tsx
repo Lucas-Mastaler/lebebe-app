@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Package, Plus, Calendar, Truck, ChevronRight, Upload, FileText, Weight, X, Hash, Download, AlertCircle, Loader2, Search, Mail, Database, TrendingUp, BarChart3, Clock, Users } from 'lucide-react'
+import { Package, Plus, Calendar, Truck, ChevronRight, Upload, FileText, Weight, X, Hash, Download, AlertCircle, Loader2, Search, Mail, Database, TrendingUp, BarChart3, Clock, Users, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import { isMaticEmail } from '@/lib/auth/matic-emails'
@@ -25,7 +25,7 @@ interface Recebimento {
   numeros_os: string[]
   recebimento_nfes: Array<{
     nfe_id: string
-    nfe: { numero_nf: string; data_emissao: string; peso_total: number; is_os: boolean } | null
+    nfe: { numero_nf: string; data_emissao: string; peso_total: number; volumes_total: number; is_os: boolean } | null
   }>
 }
 
@@ -197,6 +197,7 @@ export default function RecebimentoPage() {
 function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => void }) {
   const router = useRouter()
   const [showCancelarModal, setShowCancelarModal] = useState(false)
+  const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const pct = rec.total_previsto > 0 ? Math.round((rec.total_recebido / rec.total_previsto) * 100) : 0
   const isFechado = rec.status === 'fechado'
@@ -289,9 +290,20 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
             )}
           </div>
         </div>
-        <div className="flex items-center gap-1 text-slate-500">
-          <Weight className="w-3.5 h-3.5" />
-          <span className="font-mono text-xs">{pesoTotal.toFixed(0)}kg</span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 text-slate-500">
+            <Weight className="w-3.5 h-3.5" />
+            <span className="font-mono text-xs">{pesoTotal.toFixed(0)}kg</span>
+          </div>
+          {nfes.length > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowDetailsModal(true); }}
+              className="p-1 rounded-lg hover:bg-slate-100 transition-colors"
+              title="Ver detalhes das NFs"
+            >
+              <Eye className="w-4 h-4 text-slate-400 hover:text-[#00A5E6]" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -308,6 +320,55 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
           style={{ width: `${Math.min(pct, 100)}%` }}
         />
       </div>
+
+      {/* Modal Detalhes NFes */}
+      {showDetailsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowDetailsModal(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-xl max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-[#00A5E6]" />
+                Notas Fiscais do Recebimento
+              </h3>
+              <button onClick={() => setShowDetailsModal(false)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+            <div className="space-y-3">
+              {nfes.map((nfeLink, i) => (
+                <div key={i} className="border border-slate-200 rounded-lg p-4">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold text-slate-800">NF {nfeLink.nfe?.numero_nf || '?'}</span>
+                      {nfeLink.nfe?.is_os && (
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                          OS
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-sm text-slate-500">{formatDate(nfeLink.nfe?.data_emissao || '')}</span>
+                  </div>
+                  <div className="flex gap-4 text-sm text-slate-600">
+                    <span className="flex items-center gap-1">
+                      <Weight className="w-4 h-4 text-slate-400" />
+                      {nfeLink.nfe?.peso_total ? `${nfeLink.nfe.peso_total.toFixed(0)} kg` : '-'}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Package className="w-4 h-4 text-slate-400" />
+                      {nfeLink.nfe?.volumes_total || 0} volumes
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4">
+              <Button onClick={() => setShowDetailsModal(false)} className="w-full">
+                Fechar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Cancelar */}
       {showCancelarModal && (
@@ -822,6 +883,13 @@ function NotasVinculadasTab() {
     created_at: string
   }>>([])
   const [loading, setLoading] = useState(true)
+  const [selectedNfe, setSelectedNfe] = useState<string | null>(null)
+  const [nfeItens, setNfeItens] = useState<Array<{
+    codigo_produto: string
+    descricao: string
+    quantidade: number
+  }>>([])
+  const [loadingItens, setLoadingItens] = useState(false)
 
   useEffect(() => {
     async function loadNfes() {
@@ -854,6 +922,28 @@ function NotasVinculadasTab() {
     )
   }
 
+  async function loadNfeItens(nfeId: string) {
+    setLoadingItens(true)
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('nfe_itens')
+        .select('codigo_produto, descricao, quantidade')
+        .eq('nfe_id', nfeId)
+        .order('n_item', { ascending: true })
+      
+      if (!error && data) {
+        setNfeItens(data)
+      }
+    } catch (err) {
+      console.error('Erro ao carregar itens da NFe:', err)
+    } finally {
+      setLoadingItens(false)
+    }
+  }
+
+  const selectedNfeData = nfes.find(n => n.id === selectedNfe)
+
   return (
     <div className="space-y-3">
       {nfes.length === 0 ? (
@@ -870,7 +960,14 @@ function NotasVinculadasTab() {
             </p>
           </div>
           {nfes.map((nfe) => (
-            <div key={nfe.id} className="bg-white rounded-xl border border-slate-200 p-4 hover:border-[#00A5E6]/40 hover:shadow-md transition-all">
+            <div
+              key={nfe.id}
+              className="bg-white rounded-xl border border-slate-200 p-4 hover:border-[#00A5E6]/40 hover:shadow-md transition-all cursor-pointer"
+              onClick={() => {
+                setSelectedNfe(nfe.id)
+                loadNfeItens(nfe.id)
+              }}
+            >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
@@ -896,10 +993,70 @@ function NotasVinculadasTab() {
                     </span>
                   </div>
                 </div>
+                <ChevronRight className="w-5 h-5 text-slate-400" />
               </div>
             </div>
           ))}
         </>
+      )}
+
+      {/* Modal Itens da NFe */}
+      {selectedNfe && selectedNfeData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setSelectedNfe(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-3xl p-6 shadow-xl max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-[#00A5E6]" />
+                  Itens da NF {selectedNfeData.numero_nf}
+                </h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  {formatDate(selectedNfeData.data_emissao)} • {nfeItens.length} itens
+                </p>
+              </div>
+              <button onClick={() => setSelectedNfe(null)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+
+            {loadingItens ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-[#00A5E6]" />
+              </div>
+            ) : nfeItens.length === 0 ? (
+              <div className="text-center py-12 text-slate-500">
+                <Package className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                <p className="text-sm">Nenhum item encontrado</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {nfeItens.map((item, idx) => (
+                  <div key={idx} className="border border-slate-200 rounded-lg p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-mono text-sm font-bold text-slate-800">{item.codigo_produto}</span>
+                          <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">#{idx + 1}</span>
+                        </div>
+                        <p className="text-sm text-slate-600">{item.descricao}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm text-slate-500">Quantidade</p>
+                        <p className="text-lg font-bold text-slate-800">{item.quantidade}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-4">
+              <Button onClick={() => setSelectedNfe(null)} className="w-full">
+                Fechar
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

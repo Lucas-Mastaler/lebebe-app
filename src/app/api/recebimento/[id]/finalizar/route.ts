@@ -233,10 +233,13 @@ export async function POST(
     .select('nfe:nfe_id(numero_nf, peso_total, volumes_total)')
     .eq('recebimento_id', id)
 
-  const nfeNumeros = (nfesData || []).map((nfe: Record<string, unknown>) => {
-    const nfeObj = nfe.nfe as { numero_nf: string } | null
-    return nfeObj?.numero_nf
-  }).filter(Boolean).join(', ')
+  const nfeNumeros = (nfesData || [])
+    .map((nfe: Record<string, unknown>) => {
+      const nfeObj = nfe.nfe as { numero_nf: string } | null
+      return nfeObj?.numero_nf?.replace(/['`]/g, '')?.trim()
+    })
+    .filter(Boolean)
+    .join(', ')
 
   const totalKilos = (nfesData || []).reduce((sum: number, nfe: Record<string, unknown>) => {
     const nfeObj = nfe.nfe as { peso_total: number } | null

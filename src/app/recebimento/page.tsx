@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Package, Plus, Calendar, Truck, ChevronRight, Upload, FileText, Weight, X, Hash, Download, AlertCircle, Loader2, Search, Mail, Database, TrendingUp, BarChart3, Clock, Users, Eye } from 'lucide-react'
+import { Package, Plus, Calendar, Truck, ChevronRight, Upload, FileText, Weight, X, Hash, Download, AlertCircle, Loader2, Search, Mail, Database, TrendingUp, BarChart3, Clock, Users, Eye, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import { isMaticEmail } from '@/lib/auth/matic-emails'
@@ -95,58 +95,58 @@ export default function RecebimentoPage() {
       </div>
 
       {/* Tabs */}
-      <div className="bg-white rounded-xl border border-slate-200 mb-6">
-        <div className="flex border-b border-slate-200">
+      <div className="bg-white rounded-xl border border-slate-200 mb-6 overflow-hidden">
+        <div className="flex border-b border-slate-200 overflow-x-auto">
           <button
             onClick={() => setActiveTab('recebimentos')}
-            className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
+            className={`flex-shrink-0 px-3 sm:px-6 py-3 text-xs sm:text-sm font-medium transition-colors ${
               activeTab === 'recebimentos'
                 ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
                 : 'text-slate-600 hover:text-slate-800'
             }`}
           >
-            <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap">
               <Package className="w-4 h-4" />
-              Recebimentos
+              <span className="hidden xs:inline">Recebimentos</span>
             </div>
           </button>
           <button
             onClick={() => setActiveTab('notas')}
-            className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
+            className={`flex-shrink-0 px-3 sm:px-6 py-3 text-xs sm:text-sm font-medium transition-colors ${
               activeTab === 'notas'
                 ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
                 : 'text-slate-600 hover:text-slate-800'
             }`}
           >
-            <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap">
               <FileText className="w-4 h-4" />
-              Notas Vinculadas
+              <span className="hidden xs:inline">Notas Vinculadas</span>
             </div>
           </button>
           <button
             onClick={() => setActiveTab('divergencias')}
-            className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
+            className={`flex-shrink-0 px-3 sm:px-6 py-3 text-xs sm:text-sm font-medium transition-colors ${
               activeTab === 'divergencias'
                 ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
                 : 'text-slate-600 hover:text-slate-800'
             }`}
           >
-            <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap">
               <AlertCircle className="w-4 h-4" />
-              Divergências
+              <span className="hidden xs:inline">Divergências</span>
             </div>
           </button>
           <button
             onClick={() => setActiveTab('dashboard')}
-            className={`flex-1 px-6 py-3 text-sm font-medium transition-colors ${
+            className={`flex-shrink-0 px-3 sm:px-6 py-3 text-xs sm:text-sm font-medium transition-colors ${
               activeTab === 'dashboard'
                 ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
                 : 'text-slate-600 hover:text-slate-800'
             }`}
           >
-            <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap">
               <BarChart3 className="w-4 h-4" />
-              Dashboard
+              <span className="hidden xs:inline">Dashboard</span>
             </div>
           </button>
         </div>
@@ -216,6 +216,12 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
   const [canceling, setCanceling] = useState(false)
   const [hasDivergencias, setHasDivergencias] = useState(false)
   const [divergenciasPorNF, setDivergenciasPorNF] = useState<Map<string, number>>(new Map())
+  const [divergenciasDetalhes, setDivergenciasDetalhes] = useState<Map<string, Array<{
+    codigo_produto: string
+    descricao: string
+    tipo: string
+    obs: string
+  }>>>(new Map())
   const pct = rec.total_previsto > 0 ? Math.round((rec.total_recebido / rec.total_previsto) * 100) : 0
   const isFechado = rec.status === 'fechado'
   const isCancelado = rec.status === 'cancelado'
@@ -232,15 +238,28 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
           const itensComDivergencia = data.itens?.filter((item: any) => item.divergencia_tipo) || []
           setHasDivergencias(itensComDivergencia.length > 0)
           
-          // Contar divergências por NF
+          // Contar divergências por NF e armazenar detalhes
           const countMap = new Map<string, number>()
+          const detalhesMap = new Map<string, Array<any>>()
+          
           for (const item of itensComDivergencia) {
             const nf = item.numero_nf
             if (nf) {
               countMap.set(nf, (countMap.get(nf) || 0) + 1)
+              
+              const detalhes = detalhesMap.get(nf) || []
+              detalhes.push({
+                codigo_produto: item.nfe_item?.codigo_produto || '?',
+                descricao: item.sku_descricao || item.nfe_item?.descricao || 'Sem descrição',
+                tipo: item.divergencia_tipo,
+                obs: item.divergencia_obs || ''
+              })
+              detalhesMap.set(nf, detalhes)
             }
           }
+          
           setDivergenciasPorNF(countMap)
+          setDivergenciasDetalhes(detalhesMap)
         }
       } catch (err) {
         console.error('Erro ao verificar divergências:', err)
@@ -411,7 +430,7 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
                     </div>
                     <span className="text-sm text-slate-500">{formatDate(nfeLink.nfe?.data_emissao || '')}</span>
                   </div>
-                  <div className="flex gap-4 text-sm text-slate-600">
+                  <div className="flex gap-4 text-sm text-slate-600 mb-3">
                     <span className="flex items-center gap-1">
                       <Weight className="w-4 h-4 text-slate-400" />
                       {nfeLink.nfe?.peso_total ? `${nfeLink.nfe.peso_total.toFixed(0)} kg` : '-'}
@@ -421,6 +440,30 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
                       {nfeLink.nfe?.volumes_total || 0} volumes
                     </span>
                   </div>
+                  
+                  {/* Detalhes das divergências */}
+                  {qtdDivergencias > 0 && divergenciasDetalhes.get(nfNumero) && (
+                    <div className="mt-3 pt-3 border-t border-amber-300">
+                      <h4 className="text-sm font-semibold text-amber-900 mb-2">Itens com divergência:</h4>
+                      <div className="space-y-2">
+                        {divergenciasDetalhes.get(nfNumero)!.map((div, idx) => (
+                          <div key={idx} className="bg-white rounded p-2 border border-amber-200 text-xs">
+                            <div className="font-medium text-slate-800 mb-1">
+                              {div.codigo_produto} - {div.descricao}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded font-medium">
+                                {div.tipo}
+                              </span>
+                              {div.obs && (
+                                <span className="text-slate-600">{div.obs}</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
               })}
@@ -1237,11 +1280,20 @@ function DashboardTab({ recebimentos }: { recebimentos: Recebimento[] }) {
 // =========================================================
 
 function DivergenciasListagemTab() {
-  const [problemasPendentes, setProblemasPendentes] = useState<Array<{
+  const [problemas, setProblemas] = useState<Array<{
     id: string
     descricao: string
     recebimento_id: string
     created_at: string
+    resolvido: boolean
+    resolvido_em: string | null
+    recebimento: {
+      periodo_inicio: string
+      periodo_fim: string
+      recebimento_nfes: Array<{
+        nfe: { numero_nf: string } | null
+      }>
+    } | null
   }>>([])
   const [loading, setLoading] = useState(true)
   const [resolvendo, setResolvendo] = useState<Set<string>>(new Set())
@@ -1256,7 +1308,7 @@ function DivergenciasListagemTab() {
       const res = await fetch('/api/recebimento/problemas-pendentes')
       if (res.ok) {
         const data = await res.json()
-        setProblemasPendentes(data)
+        setProblemas(data)
       }
     } catch (err) {
       console.error('Erro ao carregar problemas:', err)
@@ -1295,50 +1347,128 @@ function DivergenciasListagemTab() {
     )
   }
 
-  if (problemasPendentes.length === 0) {
+  const problemasPendentes = problemas.filter(p => !p.resolvido)
+  const problemasResolvidos = problemas.filter(p => p.resolvido)
+
+  if (problemas.length === 0) {
     return (
       <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
         <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <Package className="w-8 h-8 text-green-600" />
         </div>
-        <h3 className="text-lg font-semibold text-slate-800 mb-2">Nenhum problema pendente</h3>
-        <p className="text-sm text-slate-500">Todos os problemas foram resolvidos!</p>
+        <h3 className="text-lg font-semibold text-slate-800 mb-2">Nenhum problema registrado</h3>
+        <p className="text-sm text-slate-500">Nenhum problema foi reportado ainda.</p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4">
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-        <h3 className="font-semibold text-amber-900 mb-1 flex items-center gap-2">
-          <AlertCircle className="w-5 h-5" />
-          Problemas pendentes de recebimentos anteriores
-        </h3>
-        <p className="text-sm text-amber-700 mb-4">
-          {problemasPendentes.length} problema{problemasPendentes.length !== 1 ? 's' : ''} aguardando resolução
-        </p>
-        <div className="space-y-3">
-          {problemasPendentes.map(problema => (
-            <div key={problema.id} className="bg-white rounded-lg p-4 border border-amber-200">
-              <p className="text-sm text-slate-700 mb-3">{problema.descricao}</p>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-500">
-                  Criado em: {new Date(problema.created_at).toLocaleDateString('pt-BR')} às{' '}
-                  {new Date(problema.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-                <Button
-                  size="sm"
-                  onClick={() => marcarComoResolvido(problema.id)}
-                  disabled={resolvendo.has(problema.id)}
-                  className="bg-green-600 hover:bg-green-700 text-xs h-8"
-                >
-                  {resolvendo.has(problema.id) ? 'Marcando...' : 'Marcar como resolvido'}
-                </Button>
-              </div>
-            </div>
-          ))}
+    <div className="space-y-6">
+      {/* Problemas Pendentes */}
+      {problemasPendentes.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <h3 className="font-semibold text-amber-900 mb-1 flex items-center gap-2">
+            <AlertCircle className="w-5 h-5" />
+            Problemas Pendentes
+          </h3>
+          <p className="text-sm text-amber-700 mb-4">
+            {problemasPendentes.length} problema{problemasPendentes.length !== 1 ? 's' : ''} aguardando resolução
+          </p>
+          <div className="space-y-3">
+            {problemasPendentes.map(problema => {
+              const nfs = problema.recebimento?.recebimento_nfes?.map(rn => rn.nfe?.numero_nf).filter(Boolean) || []
+              return (
+                <div key={problema.id} className="bg-white rounded-lg p-4 border border-amber-200">
+                  <p className="text-sm font-medium text-slate-800 mb-2">{problema.descricao}</p>
+                  
+                  {problema.recebimento && (
+                    <div className="mb-3 p-2 bg-slate-50 rounded text-xs">
+                      <div className="flex items-center gap-2 text-slate-600 mb-1">
+                        <Calendar className="w-3 h-3" />
+                        <span>
+                          Recebimento: {formatDate(problema.recebimento.periodo_inicio)} — {formatDate(problema.recebimento.periodo_fim)}
+                        </span>
+                      </div>
+                      {nfs.length > 0 && (
+                        <div className="flex items-center gap-2 text-slate-600">
+                          <FileText className="w-3 h-3" />
+                          <span>NFs: {nfs.join(', ')}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-500">
+                      {new Date(problema.created_at).toLocaleDateString('pt-BR')} às{' '}
+                      {new Date(problema.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <Button
+                      size="sm"
+                      onClick={() => marcarComoResolvido(problema.id)}
+                      disabled={resolvendo.has(problema.id)}
+                      className="bg-green-600 hover:bg-green-700 text-xs h-8"
+                    >
+                      {resolvendo.has(problema.id) ? 'Marcando...' : 'Marcar como resolvido'}
+                    </Button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Problemas Resolvidos */}
+      {problemasResolvidos.length > 0 && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+          <h3 className="font-semibold text-green-900 mb-1 flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5" />
+            Problemas Resolvidos
+          </h3>
+          <p className="text-sm text-green-700 mb-4">
+            {problemasResolvidos.length} problema{problemasResolvidos.length !== 1 ? 's' : ''} já resolvido{problemasResolvidos.length !== 1 ? 's' : ''}
+          </p>
+          <div className="space-y-3">
+            {problemasResolvidos.map(problema => {
+              const nfs = problema.recebimento?.recebimento_nfes?.map(rn => rn.nfe?.numero_nf).filter(Boolean) || []
+              return (
+                <div key={problema.id} className="bg-white rounded-lg p-4 border border-green-200 opacity-75">
+                  <p className="text-sm font-medium text-slate-800 mb-2">{problema.descricao}</p>
+                  
+                  {problema.recebimento && (
+                    <div className="mb-3 p-2 bg-slate-50 rounded text-xs">
+                      <div className="flex items-center gap-2 text-slate-600 mb-1">
+                        <Calendar className="w-3 h-3" />
+                        <span>
+                          Recebimento: {formatDate(problema.recebimento.periodo_inicio)} — {formatDate(problema.recebimento.periodo_fim)}
+                        </span>
+                      </div>
+                      {nfs.length > 0 && (
+                        <div className="flex items-center gap-2 text-slate-600">
+                          <FileText className="w-3 h-3" />
+                          <span>NFs: {nfs.join(', ')}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center justify-between text-xs text-slate-500">
+                    <span>
+                      Criado: {new Date(problema.created_at).toLocaleDateString('pt-BR')}
+                    </span>
+                    {problema.resolvido_em && (
+                      <span className="text-green-700 font-medium">
+                        Resolvido: {new Date(problema.resolvido_em).toLocaleDateString('pt-BR')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1134,7 +1134,7 @@ function FinalizarModal({
   useEffect(() => {
     async function loadProblemasPendentes() {
       try {
-        const res = await fetch(`/api/recebimento/problemas-pendentes`)
+        const res = await fetch(`/api/recebimento/problemas-pendentes?apenas_nao_resolvidos=true`)
         if (res.ok) {
           const data = await res.json()
           setProblemasPendentes(data)

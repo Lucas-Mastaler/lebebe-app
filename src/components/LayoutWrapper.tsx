@@ -79,10 +79,11 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
             </Suspense>
             <Topbar sidebarCollapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
             <main
-                className={`pt-14 sm:pt-16 min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'pl-0 md:pl-[72px]' : 'pl-[260px]'
-                    }`}
+                className={`pt-14 sm:pt-16 min-h-screen transition-all duration-300 ${
+                    sidebarCollapsed ? 'pl-0 md:pl-[72px]' : 'pl-0 md:pl-[260px]'
+                }`}
             >
-                <div className="p-4 sm:p-6">
+                <div className="p-4 sm:p-6 max-w-full overflow-x-hidden">
                     {children}
                 </div>
             </main>

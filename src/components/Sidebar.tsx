@@ -111,11 +111,14 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         <aside
             className={cn(
                 'fixed left-0 top-0 z-40 h-screen bg-white border-r border-slate-200 sidebar-transition flex flex-col',
-                collapsed ? 'w-0 md:w-[72px]' : 'w-[260px]'
+                collapsed ? 'w-0 md:w-[72px] overflow-hidden' : 'w-[260px]'
             )}
         >
             {/* Header */}
-            <div className="h-16 flex items-center justify-between px-4 border-b border-slate-200">
+            <div className={cn(
+                "h-16 flex items-center border-b border-slate-200",
+                collapsed ? "justify-center px-2" : "justify-between px-4"
+            )}>
                 {!collapsed && (
                     <div className="flex items-center gap-2 px-2">
                         <Image
@@ -130,10 +133,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 )}
                 <button
                     onClick={onToggle}
-                    className={cn(
-                        'p-2 rounded-xl hover:bg-slate-100 transition-colors text-slate-600',
-                        collapsed && 'mx-auto'
-                    )}
+                    className="p-2 rounded-xl hover:bg-slate-100 transition-colors text-slate-600 flex-shrink-0"
                     aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
                 >
                     {collapsed ? (
@@ -145,7 +145,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 p-3">
+            <nav className={cn(
+                "flex-1 p-3",
+                collapsed && "hidden md:block"
+            )}>
                 <ul className="space-y-2">
                     {navItems.map((item) => {
                         const isActive = pathname.startsWith(item.href);
@@ -232,7 +235,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 </ul>
             </nav>
 
-            <div className="p-3 border-t border-slate-200">
+            <div className={cn(
+                "p-3 border-t border-slate-200",
+                collapsed && "hidden md:block"
+            )}>
                 <button
                     onClick={handleLogout}
                     disabled={loggingOut}

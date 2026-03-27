@@ -5,7 +5,7 @@
 -- Tabela para armazenar problemas que devem ser resolvidos nos próximos carregamentos
 CREATE TABLE IF NOT EXISTS recebimento_problemas_pendentes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  recebimento_id UUID NOT NULL REFERENCES recebimentos(id) ON DELETE CASCADE,
+  recebimento_id UUID NOT NULL REFERENCES recebimentos(id) ON DELETE SET NULL,
   descricao TEXT NOT NULL,
   resolvido BOOLEAN NOT NULL DEFAULT FALSE,
   resolvido_em TIMESTAMPTZ,

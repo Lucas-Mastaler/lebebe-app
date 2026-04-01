@@ -456,40 +456,37 @@ export default function ConferenciaPage() {
         </div>
 
         {/* Status Filter */}
-        <div className="flex items-center gap-2 mb-3">
-          <Filter className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500" />
-          <div className="flex gap-1.5 flex-1">
-            <button
-              onClick={() => setStatusFilter('tudo')}
-              className={`flex-1 py-2 px-1 sm:px-3 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
-                statusFilter === 'tudo'
-                  ? 'bg-slate-800 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              Tudo <span className="opacity-75">({totalCount})</span>
-            </button>
-            <button
-              onClick={() => setStatusFilter('incompleto')}
-              className={`flex-1 py-2 px-1 sm:px-3 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
-                statusFilter === 'incompleto'
-                  ? 'bg-amber-500 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              Incompleto <span className="opacity-75">({incompletoCount})</span>
-            </button>
-            <button
-              onClick={() => setStatusFilter('conferido')}
-              className={`flex-1 py-2 px-1 sm:px-3 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
-                statusFilter === 'conferido'
-                  ? 'bg-green-500 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              Conferido <span className="opacity-75">({conferidoCount})</span>
-            </button>
-          </div>
+        <div className="flex gap-2 mb-3">
+          <button
+            onClick={() => setStatusFilter('tudo')}
+            className={`flex-1 py-2 px-1 sm:px-3 rounded-xl text-[10px] sm:text-sm font-medium transition-all ${
+              statusFilter === 'tudo'
+                ? 'bg-slate-800 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Tudo <span className="opacity-75">({totalCount})</span>
+          </button>
+          <button
+            onClick={() => setStatusFilter('incompleto')}
+            className={`flex-1 py-2 px-1 sm:px-3 rounded-xl text-[10px] sm:text-sm font-medium transition-all ${
+              statusFilter === 'incompleto'
+                ? 'bg-amber-500 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Incompleto <span className="opacity-75">({incompletoCount})</span>
+          </button>
+          <button
+            onClick={() => setStatusFilter('conferido')}
+            className={`flex-1 py-2 px-1 sm:px-3 rounded-xl text-[10px] sm:text-sm font-medium transition-all ${
+              statusFilter === 'conferido'
+                ? 'bg-green-500 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Conferido <span className="opacity-75">({conferidoCount})</span>
+          </button>
         </div>
 
         {/* Corredor Filter - only for normal items */}

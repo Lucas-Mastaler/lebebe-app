@@ -83,7 +83,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
                     sidebarCollapsed ? 'pl-0 md:pl-[72px]' : 'pl-0 md:pl-[260px]'
                 }`}
             >
-                <div className="p-4 sm:p-6 max-w-full overflow-x-hidden">
+                <div className="p-4 sm:p-6 max-w-full w-full">
                     {children}
                 </div>
             </main>

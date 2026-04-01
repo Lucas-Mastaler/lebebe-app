@@ -385,9 +385,9 @@ export default function ConferenciaPage() {
           </div>
         )}
       </div>
-
-      {/* Progress bar and search (sticky) */}
-      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur-sm -mx-6 px-4 sm:px-6 py-3 border-b border-slate-100 mb-4">
+      {/* Sticky Filters Container */}
+      <div className="sticky top-0 md:top-16 z-30 bg-white/95 backdrop-blur-md -mx-4 px-4 sm:-mx-6 sm:px-6 py-3 border-b border-slate-200 shadow-sm mb-4">
+        {/* Progress bar */}
         <div className="flex items-center justify-between text-sm mb-1.5">
           <span className="font-medium text-slate-700">Progresso Geral</span>
           <span className="font-bold text-slate-800">
@@ -395,7 +395,7 @@ export default function ConferenciaPage() {
             <span className="text-slate-400 font-normal ml-1">({pctGeral}%)</span>
           </span>
         </div>
-        <div className="w-full bg-slate-100 rounded-full h-3">
+        <div className="w-full bg-slate-100 rounded-full h-3 mb-3">
           <div
             className={`h-3 rounded-full transition-all duration-300 ${
               pctGeral >= 100 ? 'bg-green-500' : pctGeral > 0 ? 'bg-amber-400' : 'bg-slate-200'
@@ -404,15 +404,15 @@ export default function ConferenciaPage() {
           />
         </div>
         
-        {/* Search - inside sticky container */}
-        <div className="relative mt-3">
+        {/* Search */}
+        <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
             placeholder={activeTab === 'itens' ? 'Buscar produto...' : 'Buscar OS...'}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/20 focus:border-[#00A5E6]"
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/20 focus:border-[#00A5E6] text-sm"
           />
           {search && (
             <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -420,117 +420,117 @@ export default function ConferenciaPage() {
             </button>
           )}
         </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-3">
-        <button
-          onClick={() => setActiveTab('itens')}
-          className={`flex-1 py-2.5 px-4 rounded-xl font-medium text-sm transition-all ${
-            activeTab === 'itens'
-              ? 'bg-[#00A5E6] text-white shadow-sm'
-              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-          }`}
-        >
-          Itens ({itensNormais.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('os')}
-          className={`flex-1 py-2.5 px-4 rounded-xl font-medium text-sm transition-all ${
-            activeTab === 'os'
-              ? 'bg-[#00A5E6] text-white shadow-sm'
-              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-          }`}
-        >
-          OS ({itensOS.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('divergencias')}
-          className={`flex-1 py-2.5 px-4 rounded-xl font-medium text-sm transition-all ${
-            activeTab === 'divergencias'
-              ? 'bg-amber-600 text-white shadow-sm'
-              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-          }`}
-        >
-          Divergências
-        </button>
-      </div>
-
-      {/* Status Filter */}
-      <div className="flex items-center gap-2 mb-3">
-        <Filter className="w-4 h-4 text-slate-500" />
-        <div className="flex gap-1.5 flex-1">
+        {/* Tabs */}
+        <div className="flex gap-2 mb-3">
           <button
-            onClick={() => setStatusFilter('tudo')}
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all ${
-              statusFilter === 'tudo'
-                ? 'bg-slate-800 text-white shadow-sm'
+            onClick={() => setActiveTab('itens')}
+            className={`flex-1 py-2.5 px-2 sm:px-4 rounded-xl font-medium text-[11px] sm:text-sm transition-all ${
+              activeTab === 'itens'
+                ? 'bg-[#00A5E6] text-white shadow-sm'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Tudo <span className="opacity-75">({totalCount})</span>
+            Itens ({itensNormais.length})
           </button>
           <button
-            onClick={() => setStatusFilter('incompleto')}
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all ${
-              statusFilter === 'incompleto'
-                ? 'bg-amber-500 text-white shadow-sm'
+            onClick={() => setActiveTab('os')}
+            className={`flex-1 py-2.5 px-2 sm:px-4 rounded-xl font-medium text-[11px] sm:text-sm transition-all ${
+              activeTab === 'os'
+                ? 'bg-[#00A5E6] text-white shadow-sm'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Incompleto <span className="opacity-75">({incompletoCount})</span>
+            OS ({itensOS.length})
           </button>
           <button
-            onClick={() => setStatusFilter('conferido')}
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all ${
-              statusFilter === 'conferido'
-                ? 'bg-green-500 text-white shadow-sm'
+            onClick={() => setActiveTab('divergencias')}
+            className={`flex-1 py-2.5 px-2 sm:px-4 rounded-xl font-medium text-[11px] sm:text-sm transition-all ${
+              activeTab === 'divergencias'
+                ? 'bg-amber-600 text-white shadow-sm'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Conferido <span className="opacity-75">({conferidoCount})</span>
+            Divergências
           </button>
         </div>
-      </div>
 
-      {/* Corredor Filter - only for normal items */}
-      {activeTab === 'itens' && (
-        <div className="flex items-center gap-2 mb-4">
-          <span className="text-xs text-slate-500 font-medium">Corredor:</span>
-          <div className="flex gap-1.5">
+        {/* Status Filter */}
+        <div className="flex items-center gap-2 mb-3">
+          <Filter className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500" />
+          <div className="flex gap-1.5 flex-1">
             <button
-              onClick={() => setCorredorFilter('todos')}
-              className={`py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${
-                corredorFilter === 'todos'
-                  ? 'bg-slate-700 text-white shadow-sm'
+              onClick={() => setStatusFilter('tudo')}
+              className={`flex-1 py-2 px-1 sm:px-3 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
+                statusFilter === 'tudo'
+                  ? 'bg-slate-800 text-white shadow-sm'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              Todos
+              Tudo <span className="opacity-75">({totalCount})</span>
             </button>
             <button
-              onClick={() => setCorredorFilter('A')}
-              className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${
-                corredorFilter === 'A'
-                  ? 'bg-orange-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-orange-600 hover:bg-orange-50'
+              onClick={() => setStatusFilter('incompleto')}
+              className={`flex-1 py-2 px-1 sm:px-3 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
+                statusFilter === 'incompleto'
+                  ? 'bg-amber-500 text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              A
+              Incompleto <span className="opacity-75">({incompletoCount})</span>
             </button>
             <button
-              onClick={() => setCorredorFilter('B')}
-              className={`py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${
-                corredorFilter === 'B'
-                  ? 'bg-blue-700 text-white shadow-sm'
-                  : 'bg-slate-100 text-blue-700 hover:bg-blue-50'
+              onClick={() => setStatusFilter('conferido')}
+              className={`flex-1 py-2 px-1 sm:px-3 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
+                statusFilter === 'conferido'
+                  ? 'bg-green-500 text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              B
+              Conferido <span className="opacity-75">({conferidoCount})</span>
             </button>
           </div>
         </div>
-      )}
+
+        {/* Corredor Filter - only for normal items */}
+        {activeTab === 'itens' && (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] sm:text-xs text-slate-500 font-medium">Corredor:</span>
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+              <button
+                onClick={() => setCorredorFilter('todos')}
+                className={`flex-shrink-0 py-1.5 px-3 rounded-lg text-[10px] sm:text-xs font-medium transition-all ${
+                  corredorFilter === 'todos'
+                    ? 'bg-slate-700 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Todos
+              </button>
+              <button
+                onClick={() => setCorredorFilter('A')}
+                className={`flex-shrink-0 py-1.5 px-3 rounded-lg text-[10px] sm:text-xs font-bold transition-all ${
+                  corredorFilter === 'A'
+                    ? 'bg-orange-600 text-white shadow-sm'
+                    : 'bg-slate-100 text-orange-600 hover:bg-orange-50'
+                }`}
+              >
+                A
+              </button>
+              <button
+                onClick={() => setCorredorFilter('B')}
+                className={`flex-shrink-0 py-1.5 px-3 rounded-lg text-[10px] sm:text-xs font-bold transition-all ${
+                  corredorFilter === 'B'
+                    ? 'bg-blue-700 text-white shadow-sm'
+                    : 'bg-slate-100 text-blue-700 hover:bg-blue-50'
+                }`}
+              >
+                B
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Items list */}
       <div className="space-y-3">

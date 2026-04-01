@@ -20,6 +20,55 @@ const DIST_TTL_S      = 72 * 3600;     // cache distâncias
 const LAST_RUN_PROP   = 'LAST_RUN_SIMULATE';
 const BR_BBOX  = { left:-73.99, bottom:-33.75, right:-34.79, top:5.27 };
 
+// ===== LISTAS DE BAIRROS E CIDADES PARA PARSING INTELIGENTE =====
+// Lista completa de bairros de Curitiba (75 bairros oficiais)
+const BAIRROS_CURITIBA = [
+  'ABRANCHES', 'AGUA VERDE', 'AHÚ', 'ALTO BOQUEIRÃO', 'ALTO DA GLÓRIA', 'ALTO DA XV',
+  'ATUBA', 'AUGUSTA', 'BACACHERI', 'BAIRRO ALTO', 'BARREIRINHA', 'BATEL',
+  'BOA VISTA', 'BOM RETIRO', 'BOQUEIRÃO', 'BUTIATUVINHA', 'CABRAL', 'CACHOEIRA',
+  'CAJURU', 'CAMPINA DO SIQUEIRA', 'CAMPO COMPRIDO', 'CAMPO DE SANTANA', 'CAPÃO DA IMBUIA', 'CAPÃO RASO',
+  'CASCATINHA', 'CAXIMBA', 'CENTRO', 'CENTRO CÍVICO', 'CIDADE INDUSTRIAL', 'CRISTO REI',
+  'FANNY', 'FAZENDINHA', 'GANCHINHO', 'GUABIROTUBA', 'GUAÍRA', 'HAUER',
+  'HUGO LANGE', 'JARDIM BOTÂNICO', 'JARDIM DAS AMÉRICAS', 'JARDIM SOCIAL', 'JUVEVÊ', 'LAMENHA PEQUENA',
+  'LINDOIA', 'MERCÊS', 'MOSSUNGUÊ', 'NOVO MUNDO', 'ORLEANS', 'PAROLIN',
+  'PILARZINHO', 'PINHEIRINHO', 'PORTÃO', 'PRADO VELHO', 'REBOUÇAS', 'RIVIERA',
+  'SANTA CÂNDIDA', 'SANTA FELICIDADE', 'SANTA QUITÉRIA', 'SANTO INÁCIO', 'SÃO BRAZ', 'SÃO FRANCISCO',
+  'SÃO JOÃO', 'SÃO LOURENÇO', 'SÃO MIGUEL', 'SEMINÁRIO', 'SÍTIO CERCADO', 'TABOÃO',
+  'TARUMÃ', 'TATUQUARA', 'TINGUI', 'UBERABA', 'UMBARÁ', 'VILA IZABEL',
+  'VISTA ALEGRE', 'XAXIM', 'BIGORRILHO'
+];
+
+// Cidades da Região Metropolitana de Curitiba (principais e mais próximas)
+const CIDADES_RMC = [
+  'CURITIBA',
+  'ALMIRANTE TAMANDARÉ', 'ALMIRANTE TAMANDARE',
+  'ARAUCÁRIA', 'ARAUCARIA',
+  'COLOMBO',
+  'PINHAIS',
+  'SÃO JOSÉ DOS PINHAIS', 'SAO JOSE DOS PINHAIS',
+  'PIRAQUARA',
+  'FAZENDA RIO GRANDE',
+  'CAMPO LARGO',
+  'CAMPO MAGRO',
+  'QUATRO BARRAS',
+  'CAMPINA GRANDE DO SUL',
+  'BALSA NOVA',
+  'BOCAIÚVA DO SUL', 'BOCAIUVA DO SUL',
+  'CONTENDA',
+  'MANDIRITUBA',
+  'TIJUCAS DO SUL',
+  'ITAPERUÇU', 'ITAPERUCU',
+  'RIO BRANCO DO SUL'
+];
+
+// Palavras-chave que indicam complemento/referência (não são bairro nem cidade)
+const COMPLEMENTO_KEYWORDS = [
+  'SOBRADO', 'APARTAMENTO', 'APTO', 'AP', 'BLOCO', 'CASA', 'SALA', 'LOJA', 'ANDAR',
+  'AO LADO', 'PROXIMO', 'PERTO', 'PRÓXIMO', 'PROX', 'FRENTE', 'FUNDOS', 'LATERAL',
+  'CONDOMINIO', 'CONDOMÍNIO', 'COND', 'EDIFICIO', 'EDIFÍCIO', 'ED', 'TORRE', 'QD', 'QUADRA',
+  'PORTAO', 'PORTÃO', 'BRANCO', 'VERDE', 'AZUL', 'AMARELO', 'VERMELHO', 'PRETO'
+];
+
 // === BACKEND (Library) – Constantes usadas pelo modal/resultados ===
 const PRE_CALENDAR_ID = 'lebebe.com.br_ot8qr0qu24r0a5sni3rc97ero8@group.calendar.google.com';
 // Opcional (só para o logo no cabeçalho do modal de resultados)
@@ -48,6 +97,145 @@ function dlog(msg){ if (DEBUG) Logger.log(msg); }
 function toM(km){ return Math.round((km||0)*1000); }
 function fmtM(m){ return toM(m/1000) + ' m'; } // caso receba km por engano
 function fmtKm(km){ return (km||0).toFixed(2) + ' km'; }
+
+// ===== FUNÇÕES AUXILIARES PARA PARSING INTELIGENTE DE ENDEREÇOS =====
+
+/**
+ * Verifica se uma string contém palavras-chave de complemento
+ */
+function ehComplemento_(texto) {
+  if (!texto) return false;
+  var textoUpper = texto.toUpperCase().trim();
+  for (var i = 0; i < COMPLEMENTO_KEYWORDS.length; i++) {
+    if (textoUpper.indexOf(COMPLEMENTO_KEYWORDS[i]) >= 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Verifica se uma string é um bairro conhecido de Curitiba
+ */
+function ehBairroConhecido_(texto) {
+  if (!texto) return false;
+  var textoNorm = texto.toUpperCase().trim()
+    .replace(/Á/g, 'A').replace(/É/g, 'E').replace(/Í/g, 'I')
+    .replace(/Ó/g, 'O').replace(/Ú/g, 'U').replace(/Ç/g, 'C')
+    .replace(/Ã/g, 'A').replace(/Õ/g, 'O').replace(/Â/g, 'A')
+    .replace(/Ê/g, 'E').replace(/Ô/g, 'O');
+  
+  for (var i = 0; i < BAIRROS_CURITIBA.length; i++) {
+    var bairroNorm = BAIRROS_CURITIBA[i]
+      .replace(/Á/g, 'A').replace(/É/g, 'E').replace(/Í/g, 'I')
+      .replace(/Ó/g, 'O').replace(/Ú/g, 'U').replace(/Ç/g, 'C')
+      .replace(/Ã/g, 'A').replace(/Õ/g, 'O').replace(/Â/g, 'A')
+      .replace(/Ê/g, 'E').replace(/Ô/g, 'O');
+    if (textoNorm === bairroNorm) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Verifica se uma string é uma cidade da Região Metropolitana
+ */
+function ehCidadeRMC_(texto) {
+  if (!texto) return false;
+  var textoNorm = texto.toUpperCase().trim()
+    .replace(/Á/g, 'A').replace(/É/g, 'E').replace(/Í/g, 'I')
+    .replace(/Ó/g, 'O').replace(/Ú/g, 'U').replace(/Ç/g, 'C')
+    .replace(/Ã/g, 'A').replace(/Õ/g, 'O').replace(/Â/g, 'A')
+    .replace(/Ê/g, 'E').replace(/Ô/g, 'O');
+  
+  for (var i = 0; i < CIDADES_RMC.length; i++) {
+    var cidadeNorm = CIDADES_RMC[i]
+      .replace(/Á/g, 'A').replace(/É/g, 'E').replace(/Í/g, 'I')
+      .replace(/Ó/g, 'O').replace(/Ú/g, 'U').replace(/Ç/g, 'C')
+      .replace(/Ã/g, 'A').replace(/Õ/g, 'O').replace(/Â/g, 'A')
+      .replace(/Ê/g, 'E').replace(/Ô/g, 'O');
+    if (textoNorm === cidadeNorm) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Identifica cidade e bairro de forma inteligente em um array de partes de endereço
+ * Retorna: { cidade: string, bairro: string, idxCidade: number, idxBairro: number }
+ */
+function identificarCidadeBairro_(partes) {
+  var resultado = {
+    cidade: 'Curitiba',
+    bairro: '',
+    idxCidade: -1,
+    idxBairro: -1
+  };
+  
+  if (!partes || partes.length === 0) return resultado;
+  
+  // Busca de trás para frente procurando cidade
+  for (var i = partes.length - 1; i >= 0; i--) {
+    var parte = partes[i].trim();
+    if (!parte) continue;
+    
+    // Ignora partes que são claramente complementos
+    if (ehComplemento_(parte)) continue;
+    
+    // Verifica se é cidade conhecida
+    if (ehCidadeRMC_(parte)) {
+      resultado.cidade = parte;
+      resultado.idxCidade = i;
+      break;
+    }
+  }
+  
+  // Se encontrou cidade, procura bairro logo antes dela
+  if (resultado.idxCidade > 0) {
+    // Procura bairro entre a posição anterior à cidade e o início
+    for (var j = resultado.idxCidade - 1; j >= 0; j--) {
+      var parteBairro = partes[j].trim();
+      if (!parteBairro) continue;
+      
+      // Ignora complementos
+      if (ehComplemento_(parteBairro)) continue;
+      
+      // Verifica se é bairro conhecido
+      if (ehBairroConhecido_(parteBairro)) {
+        resultado.bairro = parteBairro;
+        resultado.idxBairro = j;
+        break;
+      }
+      
+      // Se não é complemento e não é bairro conhecido, assume como bairro
+      // (para casos de bairros novos ou não listados)
+      if (j === resultado.idxCidade - 1) {
+        resultado.bairro = parteBairro;
+        resultado.idxBairro = j;
+        break;
+      }
+    }
+  } else {
+    // Não encontrou cidade, procura só por bairro conhecido
+    for (var k = partes.length - 1; k >= 0; k--) {
+      var parteSozinha = partes[k].trim();
+      if (!parteSozinha) continue;
+      if (ehComplemento_(parteSozinha)) continue;
+      
+      if (ehBairroConhecido_(parteSozinha)) {
+        resultado.bairro = parteSozinha;
+        resultado.idxBairro = k;
+        // Se achou bairro de Curitiba, assume Curitiba como cidade
+        resultado.cidade = 'Curitiba';
+        break;
+      }
+    }
+  }
+  
+  return resultado;
+}
 function fmtBothKmM(km){ return `${fmtM(km*1000)} (${fmtKm(km)})`; }
 function isBrazilLatLng(lat, lng){
   return lat<=BR_BBOX.top && lat>=BR_BBOX.bottom && lng>=BR_BBOX.left && lng<=BR_BBOX.right;
@@ -1396,34 +1584,52 @@ function coletarPontosDoDia(slot,vals,disp){
       addrClean = addrClean.substring(0, addrClean.length - ufAddrM[0].length).replace(/[,\-\s]+$/, '').trim();
     }
     var addrParts = addrClean.split(/\s*,\s*/).filter(function(p){ return p.length > 0; });
-    if (addrParts.length >= 4) {
-      mockForm.logradouro = addrParts[0];
-      mockForm.numero = addrParts[1];
-      mockForm.bairro = addrParts[2];
-      mockForm.cidade = addrParts[3];
-    } else if (addrParts.length === 3) {
-      mockForm.logradouro = addrParts[0];
-      mockForm.numero = addrParts[1];
-      mockForm.bairro = addrParts[2];
-    } else if (addrParts.length === 2) {
-      mockForm.logradouro = addrParts[0];
-      if (/^\d/.test(addrParts[1])) {
-        var dashInPart = addrParts[1].match(/^(\d+[A-Za-z]?)\s*-\s*(.+)$/);
+    
+    // ✅ OPÇÃO 1 e 2: Usar parsing inteligente com listas de bairros/cidades
+    var cidadeBairroInfo = identificarCidadeBairro_(addrParts);
+    mockForm.cidade = cidadeBairroInfo.cidade;
+    mockForm.bairro = cidadeBairroInfo.bairro;
+    
+    // Determinar índice máximo útil (antes da cidade, se encontrada)
+    var idxMax = cidadeBairroInfo.idxCidade > 0 ? cidadeBairroInfo.idxCidade : addrParts.length;
+    if (cidadeBairroInfo.idxBairro >= 0 && cidadeBairroInfo.idxBairro < idxMax) {
+      idxMax = cidadeBairroInfo.idxBairro;
+    }
+    
+    // Processar logradouro e número das partes antes de bairro/cidade
+    var partesUteis = [];
+    for (var idx = 0; idx < idxMax; idx++) {
+      if (!ehComplemento_(addrParts[idx])) {
+        partesUteis.push(addrParts[idx]);
+      }
+    }
+    
+    if (partesUteis.length >= 2) {
+      mockForm.logradouro = partesUteis[0];
+      mockForm.numero = partesUteis[1];
+    } else if (partesUteis.length === 1) {
+      mockForm.logradouro = partesUteis[0];
+      // Tenta extrair número do logradouro se tiver padrão "nome, número"
+      if (/^\d/.test(mockForm.logradouro)) {
+        var dashInPart = mockForm.logradouro.match(/^(\d+[A-Za-z]?)\s*-\s*(.+)$/);
         if (dashInPart) {
           mockForm.numero = dashInPart[1];
-          mockForm.bairro = dashInPart[2].trim();
-        } else {
-          mockForm.numero = addrParts[1];
+          mockForm.logradouro = dashInPart[2].trim();
         }
-      } else {
-        mockForm.bairro = addrParts[1];
       }
-    } else {
+    } else if (addrParts.length > 0) {
       mockForm.logradouro = addrParts[0] || addr;
     }
+    
+    // Se ainda não tem bairro e tem partes úteis extras, usa a última como bairro
+    if (!mockForm.bairro && partesUteis.length >= 3) {
+      mockForm.bairro = partesUteis[partesUteis.length - 1];
+    }
+    
+    // Tenta extrair número do campo numero se tiver hífen
     if (mockForm.numero && !mockForm.bairro) {
       var dashInNum = mockForm.numero.match(/^(\d+[A-Za-z]?)\s*-\s*(.+)$/);
-      if (dashInNum) {
+      if (dashInNum && !ehComplemento_(dashInNum[2])) {
         mockForm.numero = dashInNum[1];
         mockForm.bairro = dashInNum[2].trim();
       }
@@ -1467,8 +1673,31 @@ function coletarPontosDoDia(slot,vals,disp){
     
     if(loc){
       var displayFinal = locRes.enderecoCompleto || addr;
-      pts.push({addr: displayFinal, loc: loc, eventTitle: disp[i][2]});
-      dlog(`[PTS] ${formatDatePt(slot.date)} | ${slot.team} | "${disp[i][2]}" | fonte=${source} | norm="${displayFinal}" (Provider: ${loc.provider})`);
+      
+      // ✅ ORIGEM CORRETA DO CEP: vem do geocoding (cache/provider), não de regex
+      var cepDoGeocoding = loc.cep ? String(loc.cep).replace(/\D/g, '') : null;
+      
+      // Fallback extremo: se geocoding não retornou CEP, tentar extrair do endereço original
+      var cepFallback = null;
+      if (!cepDoGeocoding) {
+        var cepMatch = addr.match(/\b(\d{5})-?(\d{3})\b/);
+        if (cepMatch) {
+          cepFallback = cepMatch[1] + cepMatch[2];
+        }
+      }
+      
+      var cepFinal = cepDoGeocoding || cepFallback;
+      var fonteCep = cepDoGeocoding ? 'geocoding' : (cepFallback ? 'regex_fallback' : 'nenhuma');
+      
+      pts.push({
+        addr: displayFinal, 
+        loc: loc, 
+        eventTitle: disp[i][2],
+        cep: cepFinal,
+        cepSource: fonteCep
+      });
+      
+      dlog(`[PTS] ${formatDatePt(slot.date)} | ${slot.team} | "${disp[i][2]}" | fonte=${source} | norm="${displayFinal}" | CEP=${cepFinal || 'vazio'} | fonteCEP=${fonteCep} | (Provider: ${loc.provider})`);
     }else{
       var erroTxt = locRes ? locRes.error : 'Desconhecido';
       dlog(`[PTS][ERRO] geocode falhou | "${disp[i][2]}" | raw_addr="${addr}" | erro=${erroTxt}`);
@@ -1592,6 +1821,577 @@ function formatDatePt(d){
   return Utilities.formatDate(d,'GMT-3','dd/MM')+` (${ds[d.getDay()]})`;
 }
 
+/* ===================================================== */
+/* Sessão 9.04 – Log Estruturado de Auditoria           */
+/* ===================================================== */
+
+// Flag global para habilitar/desabilitar logs de auditoria
+var ENABLE_AUDIT_LOGS = true;
+
+/**
+ * Helper de log estruturado para auditoria de candidatos.
+ * Formato: [TAG] campo1=valor1 | campo2=valor2 | ...
+ * 
+ * @param {string} tag - Tag identificadora (ex: CANDIDATO-BRUTO, REGIAO-COMPARACAO)
+ * @param {Object} fields - Objeto com campos chave-valor para logar
+ */
+function alog_(tag, fields) {
+  if (!ENABLE_AUDIT_LOGS) return;
+  
+  var parts = [];
+  for (var key in fields) {
+    if (!fields.hasOwnProperty(key)) continue;
+    var val = fields[key];
+    
+    // Formatar valores especiais
+    if (val === null || val === undefined) {
+      val = '?';
+    } else if (val instanceof Date) {
+      val = formatDatePt(val);
+    } else if (typeof val === 'object' && val.lat && val.lng) {
+      val = val.lat.toFixed(4) + ',' + val.lng.toFixed(4);
+    } else if (typeof val === 'number') {
+      val = val.toFixed(2);
+    } else if (typeof val === 'boolean') {
+      val = val ? 'SIM' : 'NÃO';
+    } else {
+      val = String(val);
+    }
+    
+    parts.push(key + '=' + val);
+  }
+  
+  dlog('[' + tag + '] ' + parts.join(' | '));
+}
+
+/* ===================================================== */
+/* Sessão 9.05 – Região Operacional e Janela de 3 Dias  */
+/* ===================================================== */
+
+/**
+ * Verifica se dois candidatos pertencem à mesma região operacional.
+ * NÃO decide quem ganha — apenas responde true/false.
+ * Ordem de força dos critérios:
+ *   1. Mesmo endereço âncora
+ *   2. Mesmo CEP exato
+ *   3. Prefixo CEP (5 dígitos) + distância parecida
+ *   4. Âncoras geograficamente muito próximas
+ * Conservadora: na dúvida retorna false.
+ */
+function saoMesmaRegiaoOperacional(cand1, cand2) {
+  if (!cand1 || !cand2) return false;
+  var np1 = cand1.nearestPoint;
+  var np2 = cand2.nearestPoint;
+  if (!np1 || !np2) {
+    dlog('[REGIAO] ❌ Sem âncora em um dos candidatos — conservador: regiões diferentes');
+    
+    // LOG: Dado incompleto
+    alog_('DADO-INCOMPLETO', {
+      candidatoA: formatDatePt(cand1.date) + ' ' + cand1.team,
+      candidatoB: formatDatePt(cand2.date) + ' ' + cand2.team,
+      campoFaltante: !np1 ? 'nearestPoint A' : 'nearestPoint B',
+      impacto: 'comparação de região não realizada',
+      decisao: 'tratados como regiões diferentes (conservador)'
+    });
+    return false;
+  }
+
+  // LOG: Início da comparação de região
+  var distEntreAncoras = null;
+  if (np1.loc && np2.loc && np1.loc.lat && np2.loc.lat) {
+    distEntreAncoras = haversineKm(np1.loc, np2.loc);
+  }
+  
+  alog_('REGIAO-COMPARACAO', {
+    candidatoA: formatDatePt(cand1.date) + ' ' + cand1.team,
+    candidatoB: formatDatePt(cand2.date) + ' ' + cand2.team,
+    ancoraA: np1.addr,
+    ancoraB: np2.addr,
+    cepA: np1.cep || '?',
+    cepB: np2.cep || '?',
+    locA: np1.loc,
+    locB: np2.loc,
+    distEntreAncoras: distEntreAncoras
+  });
+
+  // 1. Mesmo endereço âncora (string exata)
+  if (np1.addr && np2.addr && np1.addr === np2.addr) {
+    dlog('[REGIAO] ✅ Mesma região: mesmo endereço âncora "' + np1.addr + '"');
+    alog_('REGIAO-COMPARACAO', {
+      candidatoA: formatDatePt(cand1.date) + ' ' + cand1.team,
+      candidatoB: formatDatePt(cand2.date) + ' ' + cand2.team,
+      criterio: '1-MESMO-ENDERECO',
+      mesmaRegiao: true,
+      motivo: 'endereço âncora idêntico'
+    });
+    return true;
+  }
+
+  // 2. Mesmo CEP exato
+  if (np1.cep && np2.cep && np1.cep === np2.cep) {
+    dlog('[REGIAO] ✅ Mesma região: mesmo CEP=' + np1.cep);
+    alog_('REGIAO-COMPARACAO', {
+      candidatoA: formatDatePt(cand1.date) + ' ' + cand1.team,
+      candidatoB: formatDatePt(cand2.date) + ' ' + cand2.team,
+      criterio: '2-MESMO-CEP',
+      cep: np1.cep,
+      mesmaRegiao: true,
+      motivo: 'CEP exato idêntico'
+    });
+    return true;
+  }
+
+  // 3. Prefixo CEP (primeiros 5 dígitos) + âncoras realmente próximas entre si
+  if (np1.cep && np2.cep && np1.cep.length >= 5 && np2.cep.length >= 5) {
+    var prefix1 = np1.cep.replace(/-/g, '').substring(0, 5);
+    var prefix2 = np2.cep.replace(/-/g, '').substring(0, 5);
+    if (prefix1 === prefix2 && np1.loc && np2.loc && np1.loc.lat && np2.loc.lat) {
+      var distRealEntreAncoras = haversineKm(np1.loc, np2.loc);
+      if (distRealEntreAncoras < 3.0) {
+        dlog('[REGIAO] ✅ Mesma região: prefixo CEP=' + prefix1 + ' + dist real âncoras=' + distRealEntreAncoras.toFixed(2) + 'km');
+        alog_('REGIAO-COMPARACAO', {
+          candidatoA: formatDatePt(cand1.date) + ' ' + cand1.team,
+          candidatoB: formatDatePt(cand2.date) + ' ' + cand2.team,
+          criterio: '3-PREFIXO-CEP+DIST',
+          prefixoCEP: prefix1,
+          distRealAncoras: distRealEntreAncoras,
+          mesmaRegiao: true,
+          motivo: 'prefixo CEP igual + âncoras < 3km'
+        });
+        return true;
+      } else {
+        dlog('[REGIAO] ⚠️ Prefixo CEP=' + prefix1 + ' igual mas âncoras distantes=' + distRealEntreAncoras.toFixed(2) + 'km — conservador: diferente');
+      }
+    }
+  }
+
+  // 4. Âncoras geograficamente próximas (Haversine < 2 km)
+  if (np1.loc && np2.loc && np1.loc.lat && np2.loc.lat) {
+    var distEntreAncorasFinal = haversineKm(np1.loc, np2.loc);
+    if (distEntreAncorasFinal < 2.0) {
+      dlog('[REGIAO] ✅ Mesma região: âncoras próximas dist=' + distEntreAncorasFinal.toFixed(2) + 'km');
+      alog_('REGIAO-COMPARACAO', {
+        candidatoA: formatDatePt(cand1.date) + ' ' + cand1.team,
+        candidatoB: formatDatePt(cand2.date) + ' ' + cand2.team,
+        criterio: '4-ANCORAS-PROXIMAS',
+        distRealAncoras: distEntreAncorasFinal,
+        mesmaRegiao: true,
+        motivo: 'âncoras < 2km'
+      });
+      return true;
+    }
+  }
+
+  dlog('[REGIAO] ❌ Regiões diferentes: CEP1=' + (np1.cep || '?') + ' CEP2=' + (np2.cep || '?'));
+  
+  alog_('REGIAO-COMPARACAO', {
+    candidatoA: formatDatePt(cand1.date) + ' ' + cand1.team,
+    candidatoB: formatDatePt(cand2.date) + ' ' + cand2.team,
+    criterio: 'NENHUM',
+    mesmaRegiao: false,
+    motivo: 'nenhum critério satisfeito',
+    cepA: np1.cep || '?',
+    cepB: np2.cep || '?'
+  });
+  return false;
+}
+
+/**
+ * Dado dois candidatos da MESMA região dentro de 3 dias,
+ * determina quem é o melhor pela ordem de prioridade:
+ *   1. Dia já aberto (tem agendamento na região confirmada)
+ *   2. Dia mais próximo (data menor)
+ *   3. Consolidar agenda (desempate fraco, só com diferença ≥ 2 pontos)
+ *   4. Evitar dia vazio (preferir dia com pontos > 0)
+ * Retorna o vencedor, ou null se empate (nenhum domina).
+ *
+ * NOTA: ambos candidatos já passaram por saoMesmaRegiaoOperacional,
+ *   portanto a região operacional já está confirmada. "Dia já aberto"
+ *   significa que o candidato possui pontos e âncora na região,
+ *   sem depender de corte rígido de km.
+ *
+ * @param {Object} a - Candidato A
+ * @param {Object} b - Candidato B
+ * @param {number} limiteRegiaoKm - Não usado como gate principal; mantido para compatibilidade
+ * @return {Object|null} vencedor ou null se empate
+ */
+function melhorCandidatoRegiao_(a, b, limiteRegiaoKm) {
+
+  // --- Prioridade 1: Dia já aberto na região ---
+  // "Aberto" = o candidato já tem agendamento(s) E uma âncora existente naquela região.
+  // A região já está confirmada por saoMesmaRegiaoOperacional, então não precisamos
+  // de um corte rígido de km — basta que nearestPoint exista e haja pontos no dia.
+  var aAberto = !!(a.nearestPoint && a.pontos.length > 0);
+  var bAberto = !!(b.nearestPoint && b.pontos.length > 0);
+
+  if (aAberto && !bAberto) {
+    dlog('[REGIAO-RANK] Vencedor por dia aberto: ' + formatDatePt(a.date) + ' | ' + a.team +
+         ' (âncora="' + a.nearestPoint.addr + '", pontos=' + a.pontos.length + ')');
+    
+    alog_('RANK-DECISAO', {
+      candidatoA: formatDatePt(a.date) + ' ' + a.team,
+      candidatoB: formatDatePt(b.date) + ' ' + b.team,
+      diaAbertoA: true,
+      diaAbertoB: false,
+      pontosA: a.pontos.length,
+      pontosB: b.pontos.length,
+      deltaA: a.delta,
+      deltaB: b.delta,
+      vencedor: 'A',
+      motivoPrincipal: 'DIA-ABERTO',
+      detalhes: 'A tem rota ativa na região'
+    });
+    return a;
+  }
+  if (bAberto && !aAberto) {
+    dlog('[REGIAO-RANK] Vencedor por dia aberto: ' + formatDatePt(b.date) + ' | ' + b.team +
+         ' (âncora="' + b.nearestPoint.addr + '", pontos=' + b.pontos.length + ')');
+    
+    alog_('RANK-DECISAO', {
+      candidatoA: formatDatePt(a.date) + ' ' + a.team,
+      candidatoB: formatDatePt(b.date) + ' ' + b.team,
+      diaAbertoA: false,
+      diaAbertoB: true,
+      pontosA: a.pontos.length,
+      pontosB: b.pontos.length,
+      deltaA: a.delta,
+      deltaB: b.delta,
+      vencedor: 'B',
+      motivoPrincipal: 'DIA-ABERTO',
+      detalhes: 'B tem rota ativa na região'
+    });
+    return b;
+  }
+
+  // Sub-regra de equipe: ambos abertos, mesmo dia, equipes diferentes
+  // Prefere equipe com âncora mais próxima do novo destino
+  if (aAberto && bAberto && a.date.getTime() === b.date.getTime() && a.team !== b.team) {
+    if (a.nearestPoint.distancia < b.nearestPoint.distancia) {
+      dlog('[REGIAO-RANK] Vencedor por equipe na região: ' + a.team + ' (dist=' + a.nearestPoint.distancia.toFixed(2) + 'km vs ' + b.nearestPoint.distancia.toFixed(2) + 'km)');
+      
+      alog_('EQUIPE-DECISAO', {
+        data: formatDatePt(a.date),
+        equipeA: a.team,
+        equipeB: b.team,
+        ancoraA: a.nearestPoint.addr,
+        ancoraB: b.nearestPoint.addr,
+        distanciaA: a.nearestPoint.distancia,
+        distanciaB: b.nearestPoint.distancia,
+        pontosA: a.pontos.length,
+        pontosB: b.pontos.length,
+        vencedora: a.team,
+        motivo: 'âncora mais próxima do destino'
+      });
+      return a;
+    }
+    if (b.nearestPoint.distancia < a.nearestPoint.distancia) {
+      dlog('[REGIAO-RANK] Vencedor por equipe na região: ' + b.team + ' (dist=' + b.nearestPoint.distancia.toFixed(2) + 'km vs ' + a.nearestPoint.distancia.toFixed(2) + 'km)');
+      
+      alog_('EQUIPE-DECISAO', {
+        data: formatDatePt(b.date),
+        equipeA: a.team,
+        equipeB: b.team,
+        ancoraA: a.nearestPoint.addr,
+        ancoraB: b.nearestPoint.addr,
+        distanciaA: a.nearestPoint.distancia,
+        distanciaB: b.nearestPoint.distancia,
+        pontosA: a.pontos.length,
+        pontosB: b.pontos.length,
+        vencedora: b.team,
+        motivo: 'âncora mais próxima do destino'
+      });
+      return b;
+    }
+  }
+
+  // --- Prioridade 2: Dia mais próximo ---
+  if (a.date < b.date) {
+    dlog('[REGIAO-RANK] Vencedor por dia mais próximo: ' + formatDatePt(a.date));
+    
+    alog_('RANK-DECISAO', {
+      candidatoA: formatDatePt(a.date) + ' ' + a.team,
+      candidatoB: formatDatePt(b.date) + ' ' + b.team,
+      vencedor: 'A',
+      motivoPrincipal: 'DIA-MAIS-PROXIMO',
+      dataA: a.date,
+      dataB: b.date
+    });
+    return a;
+  }
+  if (b.date < a.date) {
+    dlog('[REGIAO-RANK] Vencedor por dia mais próximo: ' + formatDatePt(b.date));
+    
+    alog_('RANK-DECISAO', {
+      candidatoA: formatDatePt(a.date) + ' ' + a.team,
+      candidatoB: formatDatePt(b.date) + ' ' + b.team,
+      vencedor: 'B',
+      motivoPrincipal: 'DIA-MAIS-PROXIMO',
+      dataA: a.date,
+      dataB: b.date
+    });
+    return b;
+  }
+
+  // --- Prioridade 3: Consolidar agenda (desempate FRACO) ---
+  // Só decide se a diferença de pontos for significativa (≥ 2),
+  // evitando que 3 vs 2 pontos derrube um candidato injustamente.
+  var diffPontos = a.pontos.length - b.pontos.length;
+  if (diffPontos >= 2) {
+    dlog('[REGIAO-RANK] Desempate fraco por consolidação: ' + formatDatePt(a.date) + ' | ' + a.team + ' (pontos=' + a.pontos.length + ' vs ' + b.pontos.length + ', diff=' + diffPontos + ')');
+    
+    alog_('RANK-DECISAO', {
+      candidatoA: formatDatePt(a.date) + ' ' + a.team,
+      candidatoB: formatDatePt(b.date) + ' ' + b.team,
+      pontosA: a.pontos.length,
+      pontosB: b.pontos.length,
+      diffPontos: diffPontos,
+      vencedor: 'A',
+      motivoPrincipal: 'CONSOLIDACAO-FRACA',
+      detalhes: 'diferença >= 2 pontos'
+    });
+    return a;
+  }
+  if (diffPontos <= -2) {
+    dlog('[REGIAO-RANK] Desempate fraco por consolidação: ' + formatDatePt(b.date) + ' | ' + b.team + ' (pontos=' + b.pontos.length + ' vs ' + a.pontos.length + ', diff=' + Math.abs(diffPontos) + ')');
+    
+    alog_('RANK-DECISAO', {
+      candidatoA: formatDatePt(a.date) + ' ' + a.team,
+      candidatoB: formatDatePt(b.date) + ' ' + b.team,
+      pontosA: a.pontos.length,
+      pontosB: b.pontos.length,
+      diffPontos: Math.abs(diffPontos),
+      vencedor: 'B',
+      motivoPrincipal: 'CONSOLIDACAO-FRACA',
+      detalhes: 'diferença >= 2 pontos'
+    });
+    return b;
+  }
+
+  // --- Prioridade 4: Evitar dia vazio ---
+  if (a.pontos.length > 0 && b.pontos.length === 0) {
+    dlog('[REGIAO-RANK] Vencedor por evitar vazio: ' + formatDatePt(a.date));
+    
+    alog_('RANK-DECISAO', {
+      candidatoA: formatDatePt(a.date) + ' ' + a.team,
+      candidatoB: formatDatePt(b.date) + ' ' + b.team,
+      pontosA: a.pontos.length,
+      pontosB: b.pontos.length,
+      vencedor: 'A',
+      motivoPrincipal: 'EVITAR-VAZIO',
+      detalhes: 'A tem pontos, B é vazio'
+    });
+    return a;
+  }
+  if (b.pontos.length > 0 && a.pontos.length === 0) {
+    dlog('[REGIAO-RANK] Vencedor por evitar vazio: ' + formatDatePt(b.date));
+    
+    alog_('RANK-DECISAO', {
+      candidatoA: formatDatePt(a.date) + ' ' + a.team,
+      candidatoB: formatDatePt(b.date) + ' ' + b.team,
+      pontosA: a.pontos.length,
+      pontosB: b.pontos.length,
+      vencedor: 'B',
+      motivoPrincipal: 'EVITAR-VAZIO',
+      detalhes: 'B tem pontos, A é vazio'
+    });
+    return b;
+  }
+
+  // Empate total: nenhum domina claramente, manter ambos
+  dlog('[REGIAO-RANK] Empate — nenhum candidato domina claramente');
+  
+  alog_('RANK-DECISAO', {
+    candidatoA: formatDatePt(a.date) + ' ' + a.team,
+    candidatoB: formatDatePt(b.date) + ' ' + b.team,
+    vencedor: 'EMPATE',
+    motivoPrincipal: 'NENHUM-DOMINA',
+    detalhes: 'manter ambos'
+  });
+  return null;
+}
+
+/**
+ * Filtra candidatos normais pela regra de região operacional + janela de 3 dias.
+ * Apenas oculta candidatos quando outro claramente o domina.
+ * Aplica fallback para garantir mínimo de resultados.
+ *
+ * @param {Array} normais - Array de candidatos normais ordenados por data
+ * @param {number} minResultados - Mínimo de resultados desejado (ex: 5)
+ * @param {number} limiteRegiaoKm - Distância máxima para "dia aberto" na região
+ * @return {Array} candidatos filtrados (mantidos + fallback se necessário)
+ */
+function filtrarPorRegiaoOperacional_(normais, minResultados, limiteRegiaoKm) {
+  if (!normais || normais.length <= 1) return normais;
+
+  var JANELA_DIAS = 3;
+  var mantidos = [];
+  var ocultados = [];
+
+  // Cópia para não mutar array original
+  var candidatos = normais.slice();
+  var flags = candidatos.map(function() { return true; }); // true = mantido
+
+  dlog('[REGIAO-FILTER] Iniciando comparação: ' + candidatos.length + ' candidatos normais');
+
+  for (var i = 0; i < candidatos.length; i++) {
+    if (!flags[i]) continue;
+
+    for (var j = i + 1; j < candidatos.length; j++) {
+      if (!flags[j]) continue;
+
+      var ci = candidatos[i];
+      var cj = candidatos[j];
+
+      // Verificar janela de 3 dias corridos
+      var diffDias = Math.abs(Math.round((cj.date.getTime() - ci.date.getTime()) / 86400000));
+      
+      alog_('JANELA-3DIAS', {
+        candidatoA: formatDatePt(ci.date) + ' ' + ci.team,
+        candidatoB: formatDatePt(cj.date) + ' ' + cj.team,
+        diffDias: diffDias,
+        dentroJanela: diffDias <= JANELA_DIAS,
+        motivo: diffDias > JANELA_DIAS ? 'fora da janela de ' + JANELA_DIAS + ' dias' : 'dentro da janela'
+      });
+      
+      if (diffDias > JANELA_DIAS) {
+        dlog('[REGIAO-FILTER] ' + formatDatePt(ci.date) + ' vs ' + formatDatePt(cj.date) + ' | fora da janela (' + diffDias + 'd > ' + JANELA_DIAS + 'd)');
+        continue;
+      }
+
+      // Verificar mesma região operacional
+      if (!saoMesmaRegiaoOperacional(ci, cj)) continue;
+
+      dlog('[REGIAO-COMPARE] ' + formatDatePt(ci.date) + ' (' + ci.team + ')' +
+           ' vs ' + formatDatePt(cj.date) + ' (' + cj.team + ')' +
+           ' | mesma região | diff=' + diffDias + 'd');
+
+      // Determinar vencedor
+      var vencedor = melhorCandidatoRegiao_(ci, cj, limiteRegiaoKm);
+
+      if (vencedor === ci) {
+        flags[j] = false;
+        dlog('[REGIAO-OCULTAR] ❌ Ocultando ' + formatDatePt(cj.date) + ' | ' + cj.team +
+             ' | dominado por ' + formatDatePt(ci.date) + ' | ' + ci.team);
+        
+        alog_('CANDIDATO-OCULTADO', {
+          ocultado: formatDatePt(cj.date) + ' ' + cj.team,
+          vencedor: formatDatePt(ci.date) + ' ' + ci.team,
+          mesmaRegiao: true,
+          diffDias: diffDias,
+          deltaOcultado: cj.delta,
+          deltaVencedor: ci.delta,
+          pontosOcultado: cj.pontos.length,
+          pontosVencedor: ci.pontos.length,
+          motivoPrincipal: 'vencedor dominante na comparação'
+        });
+      } else if (vencedor === cj) {
+        flags[i] = false;
+        dlog('[REGIAO-OCULTAR] ❌ Ocultando ' + formatDatePt(ci.date) + ' | ' + ci.team +
+             ' | dominado por ' + formatDatePt(cj.date) + ' | ' + cj.team);
+        
+        alog_('CANDIDATO-OCULTADO', {
+          ocultado: formatDatePt(ci.date) + ' ' + ci.team,
+          vencedor: formatDatePt(cj.date) + ' ' + cj.team,
+          mesmaRegiao: true,
+          diffDias: diffDias,
+          deltaOcultado: ci.delta,
+          deltaVencedor: cj.delta,
+          pontosOcultado: ci.pontos.length,
+          pontosVencedor: cj.pontos.length,
+          motivoPrincipal: 'vencedor dominante na comparação'
+        });
+        break; // ci já ocultado, não comparar mais
+      }
+      // vencedor === null → empate, mantém ambos
+    }
+  }
+
+  // Separar mantidos e ocultados
+  for (var k = 0; k < candidatos.length; k++) {
+    if (flags[k]) {
+      mantidos.push(candidatos[k]);
+    } else {
+      ocultados.push(candidatos[k]);
+    }
+  }
+
+  dlog('[REGIAO-FILTER] Resultado: ' + mantidos.length + ' mantidos, ' + ocultados.length + ' ocultados');
+
+  // FALLBACK: Se sobraram menos que o mínimo, reintroduzir os menos ruins
+  // Ordem de prioridade do fallback (mesma lógica principal):
+  //   1. Dia já aberto (nearestPoint + pontos > 0)
+  //   2. Data mais próxima
+  //   3. Consolidação fraca (pontos, só com diff >= 2)
+  //   4. Evitar dia vazio (pontos > 0)
+  //   5. Delta como desempate técnico final
+  if (mantidos.length < minResultados && ocultados.length > 0) {
+    alog_('FALLBACK-INICIO', {
+      qtdMantidos: mantidos.length,
+      qtdNecessaria: minResultados,
+      qtdFaltante: minResultados - mantidos.length,
+      qtdOcultados: ocultados.length
+    });
+    
+    ocultados.sort(function(a, b) {
+      // 1. Dia já aberto primeiro
+      var aAberto = (a.nearestPoint && a.pontos.length > 0) ? 1 : 0;
+      var bAberto = (b.nearestPoint && b.pontos.length > 0) ? 1 : 0;
+      if (bAberto !== aAberto) return bAberto - aAberto; // aberto primeiro
+
+      // 2. Data mais próxima
+      if (a.date.getTime() !== b.date.getTime()) return a.date - b.date;
+
+      // 3. Consolidação fraca (só com diff >= 2)
+      var diffPts = b.pontos.length - a.pontos.length;
+      if (Math.abs(diffPts) >= 2) return diffPts > 0 ? 1 : -1;
+
+      // 4. Evitar dia vazio
+      var aVazio = a.pontos.length === 0 ? 1 : 0;
+      var bVazio = b.pontos.length === 0 ? 1 : 0;
+      if (aVazio !== bVazio) return aVazio - bVazio; // não-vazio primeiro
+
+      // 5. Delta como desempate técnico final
+      return Math.abs(a.delta) - Math.abs(b.delta);
+    });
+
+    var reintroduzidos = 0;
+    while (mantidos.length < minResultados && ocultados.length > 0) {
+      var reintro = ocultados.shift();
+      mantidos.push(reintro);
+      reintroduzidos++;
+      var motivoReintro = (reintro.nearestPoint && reintro.pontos.length > 0) ? 'dia aberto' : 
+                          (reintro.pontos.length > 0 ? 'dia com pontos' : 'dia vazio');
+      dlog('[REGIAO-FALLBACK] ♻️ Reintroduzindo ' + formatDatePt(reintro.date) + ' | ' + reintro.team +
+           ' | motivo=' + motivoReintro + ' | delta=' + reintro.delta.toFixed(2) + 'km');
+      
+      alog_('FALLBACK-REINTRODUZIDO', {
+        candidato: formatDatePt(reintro.date) + ' ' + reintro.team,
+        ordemVolta: reintroduzidos,
+        motivo: motivoReintro,
+        prioridade: (reintro.nearestPoint && reintro.pontos.length > 0) ? '1-DIA-ABERTO' :
+                    (reintro.pontos.length > 0) ? '4-DIA-COM-PONTOS' : '5-DIA-VAZIO',
+        delta: reintro.delta,
+        pontos: reintro.pontos.length
+      });
+    }
+
+    if (reintroduzidos > 0) {
+      dlog('[REGIAO-FALLBACK] Total reintroduzidos: ' + reintroduzidos + ' | lista final: ' + mantidos.length);
+      // Re-ordenar por data após reintrodução
+      mantidos.sort(function(a, b) { return a.date - b.date; });
+    }
+  }
+
+  // LOG: Vitrine final
+  alog_('VITRINE-FINAL', {
+    qtdFinal: mantidos.length,
+    qtdOcultadosFinais: ocultados.length,
+    selecionados: mantidos.map(function(c){ return formatDatePt(c.date) + ' ' + c.team; }).join(', ')
+  });
+  
+  return mantidos;
+}
+
 /* ===== Sessão 9.1 – Manutenção de Cache ===== */
 function clearCepCache(cepRaw){
   const cep = String(cepRaw).replace(/\D/g,'');
@@ -1615,7 +2415,7 @@ function logAuditRow(userEmail, cep, params, tempo, frete, scheduledDate, eventL
   if (!scheduledDate) {
     // registro da simulação
     auditSheet.appendRow([
-      timestamp, userEmail, cep, params, frete, tempo, '', '', resultsSummary || ''
+      timestamp, userEmail, cep, params, frete, tempo, '', resultsSummary || ''
     ]);
     PROP_STORE.setProperty(propKey, String(auditSheet.getLastRow()));
   } else {
@@ -1623,7 +2423,6 @@ function logAuditRow(userEmail, cep, params, tempo, frete, scheduledDate, eventL
     const saved = PROP_STORE.getProperty(propKey);
     if (saved) {
       auditSheet.getRange(+saved, 7).setValue(scheduledDate); // col G
-      auditSheet.getRange(+saved, 8).setValue(eventLink);     // col H
       // Não atualizamos resultsSummary aqui pois ele já foi gravado na simulação
       PROP_STORE.deleteProperty(propKey);
     }
@@ -1838,9 +2637,21 @@ function ValidarRetornoGeocode_(georesult, inputCity, inputUF, inputLogra, input
     conf += 0.3;
     logs.push('CIDADE_OK=+0.3');
   } else {
-    logs.push('CIDADE_DIFF=REJEITADO (esperado="' + reqCity + '", recebido="' + resCity + '")');
-    dlog('[VALIDAÇÃO] ❌ CIDADE INCORRETA | ' + logs.join(' | '));
-    return 0.1; // Red flag gigante
+    // ✅ OPÇÃO 3: Auto-correção - verifica se "cidade esperada" é na verdade um bairro
+    var cidadeEsperadaEhBairro = ehBairroConhecido_(inputCity);
+    var cidadeRecebidaEhCuritiba = resCity === 'CURITIBA';
+    
+    if (cidadeEsperadaEhBairro && cidadeRecebidaEhCuritiba) {
+      // A "cidade" que esperávamos era na verdade um bairro de Curitiba
+      conf += 0.25; // Penalidade leve vs 0.3 normal
+      logs.push('CIDADE_AUTO_FIX=+0.25 (esperado="' + reqCity + '" é bairro, recebido="CURITIBA" OK)');
+      dlog('[VALIDAÇÃO] ⚠️ AUTO-CORREÇÃO | "' + inputCity + '" é bairro de Curitiba, não cidade | ' + logs.join(' | '));
+    } else {
+      // Realmente é uma incompatibilidade
+      logs.push('CIDADE_DIFF=REJEITADO (esperado="' + reqCity + '", recebido="' + resCity + '")');
+      dlog('[VALIDAÇÃO] ❌ CIDADE INCORRETA | ' + logs.join(' | '));
+      return 0.1; // Red flag gigante
+    }
   }
   
   // ✅ NOVO: Validação de CEP (se disponível)

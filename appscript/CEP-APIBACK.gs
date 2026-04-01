@@ -728,13 +728,57 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
           }
         }
         
-        // ✅ Regex melhorado: aceita espaços no CEP (ex: "81230- 380" ou "81230 - 380")
-        var pontoCep = (String(near.addr).match(/(\d{5}\s*-\s*\d{3})/)||[null])[1];
-        var depoCep  = (DEPOSIT_ADDRESS.match(/(\d{5}\s*-\s*\d{3})/)||[null])[1];
+        // LOG: Decisão da âncora
+        alog_('ANCORA-DECISAO', {
+          data: slot.date,
+          equipe: slot.team,
+          destino: cepFmt,
+          qtdPontosAvaliados: slot.pontos.length,
+          ancoraVencedora: near.addr,
+          ancoraTitulo: near.eventTitle || '?',
+          ancoraDistancia: nearKm,
+          criterio: 'menor distância OSRM'
+        });
         
-        // Normalizar CEPs removendo espaços para comparação
-        if (pontoCep) pontoCep = pontoCep.replace(/\s+/g, '');
-        if (depoCep) depoCep = depoCep.replace(/\s+/g, '');
+        // ✅ ORIGEM CORRETA DO CEP DA ÂNCORA
+        // O CEP vem do PONTO GEOCODIFICADO (cache/provider), não de regex no endereço textual
+        var pontoCep = null;
+        var fonteCepOrigem = 'nenhuma';
+        var veioDoPontoGeocodificado = false;
+        var usouFallbackTextual = false;
+        
+        // FONTE PRINCIPAL: CEP do objeto do ponto geocodificado
+        if (near.cep) {
+          pontoCep = String(near.cep).replace(/\D/g, ''); // normalizar
+          fonteCepOrigem = near.cepSource || 'geocoding';
+          veioDoPontoGeocodificado = true;
+        } else {
+          // FALLBACK EXTREMO: tentar extrair do endereço textual apenas se geocoding não retornou CEP
+          var cepMatch = String(near.addr).match(/(\d{5})\s*-?\s*(\d{3})/);
+          if (cepMatch) {
+            pontoCep = cepMatch[1] + cepMatch[2];
+            fonteCepOrigem = 'regex_endereco_fallback';
+            usouFallbackTextual = true;
+          }
+        }
+        
+        // LOG DETALHADO: Rastreamento da origem do CEP da âncora
+        alog_('ANCORA-CEP', {
+          data: slot.date,
+          equipe: slot.team,
+          ancoraEndereco: near.addr,
+          ancoraTitulo: near.eventTitle || '?',
+          cepResolvido: pontoCep || '',
+          fonteOrigemCep: fonteCepOrigem,
+          veioDoPontoGeocodificado: veioDoPontoGeocodificado ? 'SIM' : 'NÃO',
+          usouFallbackTextual: usouFallbackTextual ? 'SIM' : 'NÃO',
+          sucesso: !!pontoCep ? 'SIM' : 'NÃO',
+          motivo: pontoCep ? 'cep_obtido_com_sucesso' : 'ponto_sem_cep_disponivel'
+        });
+        
+        // Normalizar CEP do depósito para comparação
+        var depoCep = (DEPOSIT_ADDRESS.match(/(\d{5})\s*-?\s*(\d{3})/)||[null, null])[0];
+        if (depoCep) depoCep = depoCep.replace(/\D/g, '');
 
         // ✅ FILTRO: Só descarta se ENCONTROU CEP diferente do depósito E distância excede limite PREMIUM
         // Agora consideramos o limite máximo possível (premium = +10km acima do normal)
@@ -800,7 +844,50 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       }
 
       var k = slot.date.toDateString();
-      var cand = { date: slot.date, team: slot.team, delta: bestKm, availStr: slot.availStr, pontos: slot.pontos };
+      var cand = { 
+        date: slot.date, 
+        team: slot.team, 
+        delta: bestKm, 
+        availStr: slot.availStr, 
+        pontos: slot.pontos,
+        nearestPoint: (slot.pontos.length > 0 && typeof near !== 'undefined' && near) ? {
+          addr: near.addr,
+          cep: pontoCep || null,
+          distancia: nearKm,
+          eventTitle: near.eventTitle || null,
+          loc: { lat: near.loc.lat, lng: near.loc.lng }
+        } : null
+      };
+
+      if (cand.nearestPoint) {
+        dlog('[ENRICH] ' + formatDatePt(slot.date) + ' | ' + slot.team + 
+             ' | âncora="' + cand.nearestPoint.addr + '"' +
+             ' | CEP=' + (cand.nearestPoint.cep || '?') + 
+             ' | dist=' + cand.nearestPoint.distancia.toFixed(2) + 'km');
+      } else {
+        dlog('[ENRICH] ' + formatDatePt(slot.date) + ' | ' + slot.team + ' | sem âncora (slot vazio)');
+      }
+
+      // LOG: Candidato bruto criado
+      var tipoCandidato = (bestKm <= limiteKmBase) ? 'NORMAL' :
+                          (bestKm <= limiteKmEspecial) ? 'ESPECIAL' :
+                          (bestKm <= limiteKmPremium) ? 'PREMIUM' : 'FORA-LIMITE';
+      
+      alog_('CANDIDATO-BRUTO', {
+        data: cand.date,
+        equipe: cand.team,
+        tipo: tipoCandidato,
+        delta: cand.delta,
+        disponibilidade: cand.availStr,
+        qtdPontos: cand.pontos.length,
+        destino: cepFmt,
+        ancoraAddr: cand.nearestPoint ? cand.nearestPoint.addr : '?',
+        ancoraCEP: cand.nearestPoint ? (cand.nearestPoint.cep || '?') : '?',
+        ancoraLoc: cand.nearestPoint ? cand.nearestPoint.loc : null,
+        ancoraDistancia: cand.nearestPoint ? cand.nearestPoint.distancia : null,
+        ancoraTitulo: cand.nearestPoint ? cand.nearestPoint.eventTitle : '?',
+        diaAberto: !!(cand.nearestPoint && cand.pontos.length > 0)
+      });
 
       // === SESSÃO: CLASSIFICAÇÃO DE CANDIDATOS POR TIPO ===
       
@@ -913,6 +1000,18 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
     if (horaMarcadas.length > 0) {
       dlog('  [HORA MARCADA] ' + horaMarcadas.length + ' candidatos: ' + 
            horaMarcadas.map(function(c){ return formatDatePt(c.date) + ' | ' + c.team; }).join(', '));
+    }
+
+    // === SESSÃO: FILTRO DE REGIÃO OPERACIONAL (JANELA 3 DIAS) ===
+    // Aplica apenas aos normais — não altera especial/premium/hora marcada
+    // Usa MAX_POINT_KM como limiteRegiaoKm para definir "dia aberto na região"
+    var minNormaisDesejado = isBackendApiCall ? MAX_CANDIDATOS_TOTAL : 5;
+    normals = filtrarPorRegiaoOperacional_(normals, minNormaisDesejado, MAX_POINT_KM);
+
+    dlog('[REGIAO-FILTER] Normais após filtro de região: ' + normals.length + ' candidatos');
+    if (normals.length > 0) {
+      dlog('  [NORMAIS PÓS-FILTRO] ' + 
+           normals.map(function(c){ return formatDatePt(c.date) + ' | ' + c.team + ' | Δ=' + c.delta.toFixed(2) + 'km'; }).join(', '));
     }
 
     // ✅ FILTRO BACKEND API: Retornar apenas 3 resultados normais
@@ -1108,6 +1207,15 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       }
     }
     
+    var vendaShowroomTexto = '-';
+    if (form.vendaShowroom) {
+      var vsValue = String(form.vendaShowroom);
+      if (vsValue === 'NAO') vendaShowroomTexto = 'NÃO';
+      else if (vsValue === 'DESMONTAR_MONTAR') vendaShowroomTexto = 'DESMONTAR E MONTAR OUTRO MÓVEL NO LUGAR';
+      else if (vsValue === 'APENAS_DESMONTAR') vendaShowroomTexto = 'APENAS DESMONTAR';
+      else vendaShowroomTexto = vsValue;
+    }
+    
     var paramsA = [
       'ÁREA RURAL?: ' + (isRural ? 'Sim' : 'Não'),
       'É CONDOMÍNIO?: ' + (form.isCondominio ? 'Sim' : 'Não'),
@@ -1117,6 +1225,7 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       'ROUPEIRO: ' + pick(form.temRoupeiro, form.roupeiro),
       'POLTRONA: ' + pick(form.temPoltrona, form.poltrona),
       'PAINEL: '   + pick(form.temPainel,   form.painel),
+      'VENDA MÓVEIS DE SHOWROOM?: ' + vendaShowroomTexto,
       'TEMPO NECESSÁRIO: ' + String(form.tempoNecessario || '')
     ].join('\n');
 
@@ -1131,7 +1240,22 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       return "- " + r.dateDM + " | " + r.team + " | " + r.frete + tipoTexto;
     }).join("\n");
 
-    logAuditRow(Session.getActiveUser().getEmail(), cepFmt, paramsA, String(form.tempoNecessario || ''), freteStr, '', '', resultsSummary);
+    var enderecoAudit = '';
+    var logradouro = String(form.logradouro || '').trim();
+    var numero = String(form.numero || '').trim();
+    var bairro = String(form.bairro || '').trim();
+    var uf = String(form.uf || '').trim().toUpperCase();
+    
+    var partsEndereco = [];
+    if (logradouro) partsEndereco.push(logradouro);
+    if (numero) partsEndereco.push(numero);
+    if (bairro) partsEndereco.push(bairro);
+    if (uf) partsEndereco.push(uf);
+    enderecoAudit = partsEndereco.join(', ');
+    
+    if (!enderecoAudit) enderecoAudit = cepFmt;
+    
+    logAuditRow(Session.getActiveUser().getEmail(), enderecoAudit, paramsA, String(form.tempoNecessario || ''), freteStr, '', '', resultsSummary);
 
     /* 14 – Saída: escrever na planilha OU retornar payload pro modal */
     if (!returnOnly) {

@@ -10,7 +10,7 @@ interface TopbarProps {
 export function Topbar({ sidebarCollapsed, onToggle }: TopbarProps) {
     return (
         <header
-            className={`fixed top-0 right-0 z-30 h-14 sm:h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 transition-all duration-300 ${sidebarCollapsed ? 'left-0 md:left-[72px]' : 'left-[260px]'
+            className={`absolute md:fixed top-0 right-0 z-30 h-14 sm:h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 transition-all duration-300 ${sidebarCollapsed ? 'left-0 md:left-[72px]' : 'left-[260px]'
                 }`}
         >
             {/* Left - Logo and Title */}

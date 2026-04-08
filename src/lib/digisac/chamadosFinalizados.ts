@@ -36,16 +36,11 @@ async function buscarContatoComTags(contactId: string) {
   }
 }
 
-async function buscarSchedulesDoContato(contactId: string, departmentIds?: string[], userIds?: string[]) {
+async function buscarSchedulesDoContato(contactId: string) {
   const now = Date.now();
   const cached = scheduleCache.get(contactId);
   if (cached && now - cached.timestamp < CACHE_TTL) {
-    const filtered = (cached.data || []).filter((s: any) => {
-      const depOk = Array.isArray(departmentIds) && departmentIds.length > 0 ? departmentIds.includes(s.departmentId) : true;
-      const userOk = Array.isArray(userIds) && userIds.length > 0 ? userIds.includes(s.userId) : true;
-      return depOk && userOk;
-    });
-    return { data: filtered, cacheHit: true };
+    return { data: cached.data || [], cacheHit: true };
   }
   // Endpoint conforme checklist: include contact/department/user e order por createdAt DESC
   const base = new URLSearchParams();
@@ -61,14 +56,9 @@ async function buscarSchedulesDoContato(contactId: string, departmentIds?: strin
   try {
     const res = await fetchDigisac(url);
     const items = Array.isArray(res) ? res : (res.rows || res.data || []);
-    // Cacheia o resultado bruto; o filtro é aplicado a cada chamada
+    // Cacheia todos os schedules do contato
     scheduleCache.set(contactId, { data: items, timestamp: now });
-    const filtered = items.filter((s: any) => {
-      const depOk = Array.isArray(departmentIds) && departmentIds.length > 0 ? departmentIds.includes(s.departmentId) : true;
-      const userOk = Array.isArray(userIds) && userIds.length > 0 ? userIds.includes(s.userId) : true;
-      return depOk && userOk;
-    });
-    return { data: filtered, cacheHit: false };
+    return { data: items, cacheHit: false };
   } catch (e) {
     console.error('[DIGISAC][SCHEDULE] erro ao buscar schedules', contactId, e);
     return { data: [], cacheHit: false };
@@ -164,7 +154,7 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
   const contactIds = Array.from(byContact.keys());
   console.log('[API][CHAMADOS] antesAgregacao.tickets=', tickets.length, 'aposAgregacao.contatosUnicos=', contactIds.length);
 
-  // Buscar contato + schedules por contato (com filtros department/user)
+  // Buscar contato + schedules por contato
   let contactCacheHits = 0;
   let scheduleCacheHits = 0;
   const items: ChamadoFinalizadoItem[] = [];
@@ -172,16 +162,13 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
     const contatoRes = await buscarContatoComTags(contactId);
     if (contatoRes.cacheHit) contactCacheHits++;
 
-    const schedulesRes = await buscarSchedulesDoContato(contactId, filtros.departmentIds, filtros.userIds);
+    const schedulesRes = await buscarSchedulesDoContato(contactId);
     if (schedulesRes.cacheHit) scheduleCacheHits++;
     const schedules = schedulesRes.data;
 
-    // Se filtros de loja/consultora foram aplicados e não há schedules compatíveis, pular
-    const temFiltroDep = Array.isArray(filtros.departmentIds) && filtros.departmentIds.length > 0;
-    const temFiltroUser = Array.isArray(filtros.userIds) && filtros.userIds.length > 0;
-    if ((temFiltroDep || temFiltroUser) && schedules.length === 0) continue;
-
-    // Contagens por status considerando apenas schedules filtrados
+    // Contagens por status considerando TODOS os schedules do contato
+    // Não filtramos por userId/departmentId porque agendamentos futuros pertencem ao contato,
+    // independente de qual consultora criou ou se ela foi arquivada
     const total = schedules.length;
     const abertos = schedules.filter((s: any) => s.status === 'scheduled').length;
     const finalizados = schedules.filter((s: any) => s.status === 'done').length;

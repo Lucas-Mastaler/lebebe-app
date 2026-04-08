@@ -518,7 +518,7 @@
                 </div>
 
                 <div id="addrOkMsg" class="addr" aria-live="polite">
-                    <div class="small">Endereço Confirmado:</div>
+                    <div class="small">Validação:</div>
                     <div id="addrTextResult" style="margin-top:4px; font-weight:600"></div>
                     <div id="addrGeoResult" style="margin-top:2px; font-size:11px; color:#6b7280;"></div>
                     <div class="chips">
@@ -532,7 +532,9 @@
                 <div class="gate">
                     <fieldset id="fsRest" disabled>
                         <div class="notice" role="alert">
-                            <strong>AVISO:</strong> SE FOR ENCOMENDA, UTILIZAR 45 DIAS OU MAIS.
+                            <strong>AVISO:</strong> SE FOR ENCOMENDA, UTILIZAR 45 DIAS OU MAIS.<br />
+                            <strong>AVISO:</strong> SE FOR VENDE SHOWROOM FALAR COM PÓS VENDA DATA PRA DESMONTAR E
+                            MONTAR.
                         </div>
 
                         <div class="row">
@@ -554,14 +556,6 @@
                                     <input type="checkbox" id="isCondominioChk">
                                     <span>Sim</span>
                                 </div>
-                            </div>
-                            <div class="col">
-                                <label>VENDA MÓVEIS DE SHOWROOM?</label>
-                                <select id="vendaShowroom">
-                                    <option value="NAO">NÃO</option>
-                                    <option value="DESMONTAR_MONTAR">DESMONTAR E MONTAR OUTRO MÓVEL NO LUGAR</option>
-                                    <option value="APENAS_DESMONTAR">APENAS DESMONTAR</option>
-                                </select>
                             </div>
                         </div>
 
@@ -784,7 +778,7 @@
                         minDate.setDate(hoje.getDate() + 2);
                         const maxDate = new Date(hoje);
                         maxDate.setDate(hoje.getDate() + 90);
-                        
+
                         dataInput.min = minDate.toISOString().split('T')[0];
                         dataInput.max = maxDate.toISOString().split('T')[0];
                         dataInput.value = minDate.toISOString().split('T')[0]; // Default: D+2
@@ -953,7 +947,7 @@
                 let t = M[k] || '';
                 console.log('[TEMPO-DEBUG] ═══════════════════════════════════════');
                 console.log('[TEMPO-DEBUG] 1️⃣ Tempo BASE (do mapa):', t);
-                
+
                 if (t && f.isCondominio) {
                     const antes = t;
                     t = addMinHHMM(t, 10);
@@ -961,38 +955,6 @@
                 } else if (t) {
                     console.log('[TEMPO-DEBUG] 2️⃣ Sem ajuste de condomínio');
                 }
-
-                // === NOVA LÓGICA: Ajuste por VENDA MÓVEIS DE SHOWROOM ===
-                const vendaShowroom = document.getElementById('vendaShowroom').value;
-                console.log('[TEMPO-DEBUG] 3️⃣ Showroom:', vendaShowroom);
-                
-                if (t && vendaShowroom && vendaShowroom !== 'NAO') {
-                    let minutes = hhmmToMinutes(t);
-                    const minutesOriginal = minutes;
-                    
-                    if (vendaShowroom === 'DESMONTAR_MONTAR') {
-                        // Adicionar 40% do tempo e arredondar para final 5 ou 0
-                        minutes = Math.round(minutes * 1.4);
-                        console.log('[TEMPO-DEBUG]    ├─ Aplicando +40%:', minutesOriginal, 'min →', minutes, 'min');
-                        minutes = roundToNearest5(minutes);
-                        console.log('[TEMPO-DEBUG]    └─ Arredondado (múltiplo 5):', minutes, 'min');
-                        t = minutesToHHMM(minutes);
-                    } else if (vendaShowroom === 'APENAS_DESMONTAR') {
-                        // Dividir por 2 com mínimo de 30 minutos
-                        minutes = Math.round(minutes / 2);
-                        console.log('[TEMPO-DEBUG]    ├─ Aplicando /2:', minutesOriginal, 'min →', minutes, 'min');
-                        if (minutes < 30) {
-                            console.log('[TEMPO-DEBUG]    ├─ Aplicando MÍNIMO 30min');
-                            minutes = 30;
-                        }
-                        minutes = roundToNearest5(minutes);
-                        console.log('[TEMPO-DEBUG]    └─ Arredondado (múltiplo 5):', minutes, 'min');
-                        t = minutesToHHMM(minutes);
-                    }
-                } else if (t) {
-                    console.log('[TEMPO-DEBUG] 3️⃣ Sem ajuste de showroom');
-                }
-                
                 console.log('[TEMPO-DEBUG] ✅ TEMPO FINAL A SER USADO:', t);
                 console.log('[TEMPO-DEBUG] ═══════════════════════════════════════');
 
@@ -1034,10 +996,10 @@
                 bairro: document.getElementById('bairro').value,
                 cidade: document.getElementById('cidade').value,
                 uf: document.getElementById('uf').value,
-                enderecoCompleto: window.__addrOk ? window.__addrOk.enderecoCompleto : '',
-                cep: window.__addrOk ? window.__addrOk.cep : '',
-                lat: window.__addrOk ? window.__addrOk.lat : null,
-                lng: window.__addrOk ? window.__addrOk.lng : null,
+                enderecoCompleto: window__addrOk ? window__addrOk.enderecoCompleto : '',
+                cep: window__addrOk ? window__addrOk.cep : '',
+                lat: window__addrOk ? window__addrOk.lat : null,
+                lng: window__addrOk ? window__addrOk.lng : null,
                 dataInicial: document.getElementById('dataInicial').value,
                 monthYear: document.getElementById('dataInicial').value,
                 isRural: document.getElementById('isRuralChk').checked,
@@ -1047,7 +1009,6 @@
                 roupeiro: document.getElementById('roupeiro').value,
                 poltrona: document.getElementById('poltrona').value,
                 painel: document.getElementById('painel').value,
-                vendaShowroom: document.getElementById('vendaShowroom').value,
                 tempoNecessario: document.getElementById('tempo').value
             };
         }
@@ -1067,9 +1028,9 @@
             // Mostrar área de resultados
             document.getElementById('progressResults').classList.add('show');
 
-            // ✅ AGUARDA 10 SEGUNDOS antes de iniciar polling (resultados só aparecem após isso)
+            // ✅ AGUARDA 30 SEGUNDOS antes de iniciar polling (resultados só aparecem após isso)
             setTimeout(() => {
-                // ✅ POLLING a cada 1.5 segundos
+                // ✅ POLLING a cada 3 segundos
                 pollingInterval = setInterval(() => {
                     google.script.run
                         .withSuccessHandler(handleProgressUpdate)
@@ -1077,8 +1038,8 @@
                             console.error('[Polling] Erro:', err);
                         })
                         .GetProgressUpdate(currentToken);
-                }, 2000);
-            }, 12000); // Delay inicial de 10 segundos
+                }, 3000);
+            }, 30000); // Delay inicial de 30 segundos
         }
 
         function stopProgressPolling() {
@@ -1300,11 +1261,38 @@
                     .withSuccessHandler(resp => {
                         if (resp && resp.ok && resp.lat) {
                             window__addrOk = resp; // salva no cache da tela
-                            document.getElementById('addrTextResult').textContent = resp.enderecoCompleto;
+                            
+                            let htmlStr = `<span style="color:#0e8ec4; font-size:11px; font-weight:700; text-transform:uppercase;">📌 Encontrado pelo Satélite:</span><br><span style="font-size:15px; color:#1f2937">${resp.enderecoCompleto}</span>`;
+                            
+                            let avisoExt = '';
+                            if (resp.address) {
+                                let achadoBairro = resp.address.suburb || resp.address.city_district || resp.address.neighbourhood || '';
+                                let achadoCidade = resp.address.city || resp.address.town || resp.address.municipality || '';
+                                
+                                let pesqBairro = (formArgs.bairro || '').toUpperCase().trim();
+                                let pesqCidade = (formArgs.cidade || '').toUpperCase().trim();
+                                
+                                let nAchadoBairro = achadoBairro.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+                                let nPesqBairro = pesqBairro.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+                                
+                                let diffBairro = (nAchadoBairro && nPesqBairro && nAchadoBairro !== nPesqBairro && nAchadoBairro.indexOf(nPesqBairro) === -1 && nPesqBairro.indexOf(nAchadoBairro) === -1);
+                                
+                                if (diffBairro) {
+                                    avisoExt = `<div style="margin-top:8px; padding:6px; background-color:#FEF3C7; color:#92400E; border:1px solid #F59E0B; border-radius:4px; font-size:12px; font-weight:600;">
+                                      ATENÇÃO: Bairro pesquisado parece diferente do encontrado.<br>Pesquisado: ${pesqBairro || pesqCidade} | Encontrado: ${achadoBairro.toUpperCase() || achadoCidade.toUpperCase()}<br>Confirme se a rota está correta no link abaixo.
+                                    </div>`;
+                                }
+                            }
+                            
+                            document.getElementById('addrTextResult').innerHTML = htmlStr + avisoExt;
 
                             let geoStr = `Lat: ${Number(resp.lat).toFixed(5)}, Lng: ${Number(resp.lng).toFixed(5)} (${resp.provider})`;
                             if (resp.cep) geoStr += ` • CEP-BASE: ${resp.cep}`;
-                            document.getElementById('addrGeoResult').textContent = geoStr;
+                            
+                            const typedDest = `${formArgs.logradouro}, ${formArgs.numero}, ${formArgs.cidade}, ${formArgs.uf}`;
+                            geoStr += `<br><a href="https://www.google.com/maps/dir/?api=1&origin=${Number(resp.lat).toFixed(5)},${Number(resp.lng).toFixed(5)}&destination=${encodeURIComponent(typedDest)}" target="_blank" style="color:#0e8ec4; text-decoration:underline; display:inline-block; margin-top:4px;">🌍 Comparar no Google Maps</a>`;
+                            
+                            document.getElementById('addrGeoResult').innerHTML = geoStr;
 
                             document.getElementById('addrOkMsg').classList.add('show');
                             status.textContent = 'Confirme o local para continuar.';
@@ -1468,7 +1456,7 @@
 
 
             // Recalc tempo quando muda qualquer item relevante
-            ['tipoBerco', 'comoda', 'roupeiro', 'poltrona', 'painel', 'vendaShowroom', 'isRuralChk', 'isCondominioChk'].forEach(id => {
+            ['tipoBerco', 'comoda', 'roupeiro', 'poltrona', 'painel', 'isRuralChk', 'isCondominioChk'].forEach(id => {
                 document.addEventListener('change', e => {
                     if (e.target && e.target.id === id) scheduleRecalcTempo();
                 });

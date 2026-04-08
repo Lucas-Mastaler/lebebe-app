@@ -1198,22 +1198,18 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       if (typeof oldBool === 'boolean') return oldBool ? 'SIM' : 'NÃO';
       return '-';
     }
-    // Format month/year from YYYY-MM to MM/YYYY for display
+    // Date from dataInicial or monthYear (Format: YYYY-MM-DD or YYYY-MM)
     var mesPesquisaFormatted = '-';
-    if (form.mesPesquisa) {
-      var mesParts = String(form.mesPesquisa).split('-');
-      if (mesParts.length === 2) {
-        mesPesquisaFormatted = mesParts[1] + '/' + mesParts[0]; // MM/YYYY
+    var rawDate = form.dataInicial || form.monthYear || form.mesPesquisa || '';
+    if (rawDate) {
+      var dParts = String(rawDate).split('-');
+      if (dParts.length === 3) {
+        mesPesquisaFormatted = dParts[2] + '/' + dParts[1] + '/' + dParts[0]; // DD/MM/YYYY
+      } else if (dParts.length === 2) {
+        mesPesquisaFormatted = dParts[1] + '/' + dParts[0]; // MM/YYYY
+      } else {
+        mesPesquisaFormatted = rawDate;
       }
-    }
-    
-    var vendaShowroomTexto = '-';
-    if (form.vendaShowroom) {
-      var vsValue = String(form.vendaShowroom);
-      if (vsValue === 'NAO') vendaShowroomTexto = 'NÃO';
-      else if (vsValue === 'DESMONTAR_MONTAR') vendaShowroomTexto = 'DESMONTAR E MONTAR OUTRO MÓVEL NO LUGAR';
-      else if (vsValue === 'APENAS_DESMONTAR') vendaShowroomTexto = 'APENAS DESMONTAR';
-      else vendaShowroomTexto = vsValue;
     }
     
     var paramsA = [
@@ -1225,7 +1221,6 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       'ROUPEIRO: ' + pick(form.temRoupeiro, form.roupeiro),
       'POLTRONA: ' + pick(form.temPoltrona, form.poltrona),
       'PAINEL: '   + pick(form.temPainel,   form.painel),
-      'VENDA MÓVEIS DE SHOWROOM?: ' + vendaShowroomTexto,
       'TEMPO NECESSÁRIO: ' + String(form.tempoNecessario || '')
     ].join('\n');
 
@@ -1244,12 +1239,14 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
     var logradouro = String(form.logradouro || '').trim();
     var numero = String(form.numero || '').trim();
     var bairro = String(form.bairro || '').trim();
+    var cidadeAudit = String(form.cidade || '').trim();
     var uf = String(form.uf || '').trim().toUpperCase();
     
     var partsEndereco = [];
     if (logradouro) partsEndereco.push(logradouro);
     if (numero) partsEndereco.push(numero);
     if (bairro) partsEndereco.push(bairro);
+    if (cidadeAudit) partsEndereco.push(cidadeAudit);
     if (uf) partsEndereco.push(uf);
     enderecoAudit = partsEndereco.join(', ');
     
@@ -2031,7 +2028,7 @@ body.busy .busy-banner{display:flex;}
     startFromDM:  payload.startFromDM  || '',
     isRural: !!payload.isRural,
     isCondominio: !!payload.isCondominio,
-    candidates: rows.map(o=>({dateISO:o.dateISO, team:o.team, frete:o.frete, isExtra: !!o.isExtra}))
+    candidates: rows.map(o=>({dateISO:o.dateISO, team:o.team, frete:o.frete, tipo:o.tipo, isExtra: !!o.isExtra}))
   });
 
   html += `
@@ -2053,7 +2050,7 @@ body.busy .busy-banner{display:flex;}
         const o = (PAY.candidates||[])[idx];
         if(!o) return;
         setBusy(true);
-        const cand = { dateISO:o.dateISO, team:o.team, frete:o.frete };
+        const cand = { dateISO:o.dateISO, team:o.team, frete:o.frete, tipo:o.tipo };
         const meta = { tempo:PAY.tempo, label:PAY.label, address:PAY.address, cep:PAY.cep, params:PAY.params };
         console.log('[PRE] meta enviado:', meta);
 
@@ -2276,13 +2273,19 @@ function preAgendarDireto(cand, meta){
   const fonteEndereco = meta.address || meta.label || '';
   Logger.log('[preAgendarDireto] fonteEndereco="' + fonteEndereco + '"');
   const bairro = normalizeBairro_(fonteEndereco) || 'SEM BAIRRO';
-  const titulo = `(${meta.tempo || ''}) ${bairro} (${(cand.team || '').toUpperCase()} - ${solicit})`.toUpperCase();
+  let titulo = `(${meta.tempo || ''}) ${bairro} (${(cand.team || '').toUpperCase()} - ${solicit})`.toUpperCase();
 
+  const tipoMdl = String(cand.tipo || '').toLowerCase();
+  if (tipoMdl === 'especial') titulo += ' (FRETE: ESPECIAL)';
+  else if (tipoMdl === 'premium') titulo += ' (FRETE: PREMIUM)';
+  else if (tipoMdl === 'hora-marcada' || tipoMdl === 'hora marcada') titulo += ' (FRETE: HORA MARCADA)';
+
+  const endFormatado = fonteEndereco || (meta.cep ? `CEP: ${meta.cep}` : '');
   const description =
     (meta.params||'').trim()
     + `\nEQUIPE: ${(cand.team||'').toUpperCase()}`
     + `\nFRETE: ${cand.frete||''}`
-    + (meta.cep ? `\nCEP: ${meta.cep}` : '');
+    + (endFormatado ? `\nENDEREÇO: ${endFormatado}` : '');
 
   const ev = cal.createAllDayEvent(titulo, d, { description });
   const eid = Utilities.base64EncodeWebSafe(ev.getId() + ' ' + PRE_CALENDAR_ID);
@@ -2612,6 +2615,7 @@ function _logCepSource_(cepFmt, source){
 // garante que não dá ReferenceError se não existir global
 if (typeof MAPSCO_API_KEY === 'undefined')     var MAPSCO_API_KEY = '';
 if (typeof LOCATIONIQ_API_KEY === 'undefined') var LOCATIONIQ_API_KEY = '';
+if (typeof LOCATIONIQ_API_KEY_RESERVA === 'undefined') var LOCATIONIQ_API_KEY_RESERVA = '';
 
 function LookupEnderecoPorCEP(cepRaw) {
 
@@ -2625,6 +2629,7 @@ function LookupEnderecoPorCEP(cepRaw) {
       // usa exatamente as chaves como estão na tua config
       try { MAPSCO_API_KEY     = getConfig('MAPS.CO API KEY', cfgSheet); } catch (e) {}
       try { LOCATIONIQ_API_KEY = getConfig('LOCATIONIQ API KEY', cfgSheet); } catch (e) {}
+      try { LOCATIONIQ_API_KEY_RESERVA = getConfig('LOCATIONIQ API KEY (reserva)', cfgSheet); } catch (e) {}
     }
   } catch (e) {}
 
@@ -2877,7 +2882,9 @@ function ResolverEnderecoComCache_(form, origin, preloadedCache) {
       _logCacheOperation_('READ', hashKey, addrNorm, origin, true, 'l1', l1Time);
       
       var objL1 = JSON.parse(L1);
-      objL1.enderecoCompleto = addrDisplay;
+      if (!objL1.enderecoCompleto || objL1.enderecoCompleto.trim() === '') {
+        objL1.enderecoCompleto = addrDisplay;
+      }
       
       var duration = Date.now() - startTime;
       RegistrarGeocodingAudit_(hashKey, addrDisplay, true, 'l1', objL1.confidence || 1.0, origin, duration);
@@ -2918,10 +2925,14 @@ function ResolverEnderecoComCache_(form, origin, preloadedCache) {
       };
       
       var toL1 = JSON.parse(JSON.stringify(L2Obj));
-      toL1.enderecoCompleto = addrDisplay;
+      if (!toL1.enderecoCompleto || toL1.enderecoCompleto.trim() === '') {
+         toL1.enderecoCompleto = addrDisplay;
+      }
       CacheService.getScriptCache().put(l1Key, JSON.stringify(toL1), 6 * 3600);
       
-      L2Obj.enderecoCompleto = addrDisplay;
+      if (!L2Obj.enderecoCompleto || L2Obj.enderecoCompleto.trim() === '') {
+         L2Obj.enderecoCompleto = addrDisplay;
+      }
       
       var duration = Date.now() - startTime;
       RegistrarGeocodingAudit_(hashKey, addrDisplay, true, 'supabase', L2Obj.confidence, origin, duration);
@@ -2973,13 +2984,22 @@ function ResolverEnderecoComCache_(form, origin, preloadedCache) {
     Logger.log('[ViaCEP] Erro: ' + (e && e.message));
   }
 
-  // 6. Monta Objeto Final de Sucesso
+  var partsDisplay = (geoOut.display_name || addrDisplay).split(',').map(function(s) { return s.trim(); });
+  if (partsDisplay.length > 0 && /^\d+[A-Za-z]?$/.test(partsDisplay[0])) {
+    partsDisplay.shift();
+  }
+  var rawDisplay = partsDisplay.filter(function(s) {
+    var sl = s.toLowerCase();
+    if (sl.indexOf('região') >= 0 || sl.indexOf('mesorregião') >= 0 || sl.indexOf('microrregião') >= 0) return false;
+    return true;
+  }).join(', ');
+
   var finalOut = {
     ok: true,
     lat: geoOut.lat,
     lng: geoOut.lng,
-    enderecoCompleto: addrDisplay,
-    display_name: geoOut.display_name || addrDisplay,
+    enderecoCompleto: rawDisplay,
+    display_name: rawDisplay,
     cep: cepCorreto,
     cepProvider: geoOut.postcode || '',
     bairroCorreios: bairroCorreios,

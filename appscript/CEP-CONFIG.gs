@@ -14,6 +14,7 @@ var API_KEY = '';
 var OSRM_BASE = 'https://router.project-osrm.org'; // default; pode ser trocado por config
 var MAPSCO_API_KEY = '';
 var LOCATIONIQ_API_KEY = ''; // ✅ Adicionado para suporte LocationIQ
+var LOCATIONIQ_API_KEY_RESERVA = ''; // ✅ Chave reserva
 const PROP_STORE      = PropertiesService.getScriptProperties();
 const GEO_TTL_S       = 14 * 24 * 3600;     // cache geocode (aumentado para 14d)
 const DIST_TTL_S      = 72 * 3600;     // cache distâncias
@@ -555,6 +556,9 @@ function fetchJsonWithHeaders(url, providerName) {
   const ctype = String(res.getHeaders()['Content-Type'] || '');
   if (code !== 200) {
     dlog(`[GEOCODE] HTTP ${code} (${providerName}) em ${url}\n${body.slice(0,180)}...`);
+    if (code === 429) {
+      throw new Error(`HTTP 429: Rate Limited (${providerName}) - ${body.slice(0,180)}`);
+    }
     return null;
   }
   if (ctype.toLowerCase().indexOf('json') === -1 && body.trim().charAt(0) !== '[' && body.trim().charAt(0) !== '{') {
@@ -2457,6 +2461,7 @@ function geocodeAddressGratisStrict_(addrFull, uf, city, logradouro) {
       try { LOCATIONIQ_API_KEY = getConfig('LOCATIONIQ API KEY', cfgSheet); } catch(e) {
         _logGeocodingError_('PERMISSION', 'Falha ao ler LOCATIONIQ API KEY da planilha backend', { error: e.message });
       }
+      try { LOCATIONIQ_API_KEY_RESERVA = getConfig('LOCATIONIQ API KEY (reserva)', cfgSheet); } catch(e) {}
     } else {
       _logGeocodingError_('PERMISSION', 'Config sheet (id=718532388) não encontrada na planilha backend', { 
         spreadsheetId: SOURCE_SPREADSHEET_ID 
@@ -2479,37 +2484,55 @@ function geocodeAddressGratisStrict_(addrFull, uf, city, logradouro) {
   
   // 1. Tentar LocationIQ primeiro (melhor para endereços completos no BR)
   var liqStart = Date.now();
-  _logProviderAttempt_('locationiq', 'TRYING', null, null);
-  try {
-    var liq = _geocodeAddressLocationIQ_(addrFull, uf, city, logradouro);
-    var liqTime = Date.now() - liqStart;
-    
-    if (liq && liq.ok) {
-      _logProviderAttempt_('locationiq', 'SUCCESS', { 
-        confidence: liq.confidence, 
-        display_name: liq.display_name,
-        lat: liq.lat,
-        lng: liq.lng
-      }, liqTime);
+  
+  function tryLocationIQ(useReserva) {
+    var tryLbl = useReserva ? 'locationiq_reserva' : 'locationiq';
+    _logProviderAttempt_(tryLbl, 'TRYING', null, null);
+    try {
+      var liq = _geocodeAddressLocationIQ_(addrFull, uf, city, logradouro, useReserva);
+      var liqTime = Date.now() - liqStart;
       
-      if (liq.confidence >= 0.8) {
-        Logger.log('[GEO-RESULT] ✅ SELECIONADO: locationiq (high confidence) | total=' + (Date.now() - startTime) + 'ms');
-        return liq; // Muito bom, retorna direto
+      if (liq && liq.ok) {
+        _logProviderAttempt_(tryLbl, 'SUCCESS', { 
+          confidence: liq.confidence, 
+          display_name: liq.display_name,
+          lat: liq.lat,
+          lng: liq.lng
+        }, liqTime);
+        if (liq.confidence >= 0.8) {
+          Logger.log('[GEO-RESULT] ✅ SELECIONADO: ' + tryLbl + ' (high confidence) | total=' + (Date.now() - startTime) + 'ms');
+        }
+        return liq;
+      } else {
+        _logProviderAttempt_(tryLbl, 'FAILED', { error: 'Sem resultado válido' }, liqTime);
       }
-      if (!bkp || liq.confidence > bkp.confidence) bkp = liq; // Salva como backup
-    } else {
-      _logProviderAttempt_('locationiq', 'FAILED', { error: 'Sem resultado válido' }, liqTime);
+    } catch(e) { 
+      var liqTime = Date.now() - liqStart;
+      _logProviderAttempt_(tryLbl, 'FAILED', { error: e.message }, liqTime);
+      
+      // Se for Rate Limit e tiver fallback, tenta a reserva
+      if (!useReserva && e.message && (e.message.indexOf('429') >= 0 || e.message.indexOf('Rate Limited') >= 0)) {
+        if (typeof LOCATIONIQ_API_KEY_RESERVA !== 'undefined' && LOCATIONIQ_API_KEY_RESERVA) {
+           Logger.log('[LocationIQ] ⚠️ Rate limit detectado. Tentando API Key reserva...');
+           liqStart = Date.now();
+           return tryLocationIQ(true);
+        }
+      }
+      
+      // Detalha erro
+      if (e.message && (e.message.indexOf('UrlFetchApp') >= 0 || e.message.indexOf('Permission') >= 0 || e.message.indexOf('Authorization') >= 0)) {
+        _logGeocodingError_('PERMISSION', tryLbl + ': Falha de permissão no UrlFetchApp', { error: e.message });
+      } else {
+        _logGeocodingError_('NETWORK', tryLbl + ': Erro de rede', { error: e.message, endpoint: 'https://us1.locationiq.com' });
+      }
     }
-  } catch(e) { 
-    var liqTime = Date.now() - liqStart;
-    _logProviderAttempt_('locationiq', 'FAILED', { error: e.message }, liqTime);
-    
-    // Detecta erro de permissão do UrlFetchApp
-    if (e.message && (e.message.indexOf('UrlFetchApp') >= 0 || e.message.indexOf('Permission') >= 0 || e.message.indexOf('Authorization') >= 0)) {
-      _logGeocodingError_('PERMISSION', 'LocationIQ: Falha de permissão no UrlFetchApp', { error: e.message });
-    } else {
-      _logGeocodingError_('NETWORK', 'LocationIQ: Erro de rede', { error: e.message, endpoint: 'https://us1.locationiq.com' });
-    }
+    return null;
+  }
+  
+  var liqRet = tryLocationIQ(false);
+  if (liqRet) {
+    if (liqRet.confidence >= 0.8) return liqRet;
+    if (!bkp || liqRet.confidence > bkp.confidence) bkp = liqRet;
   }
 
   // 2. Tentar maps.co
@@ -2701,9 +2724,11 @@ function ValidarRetornoGeocode_(georesult, inputCity, inputUF, inputLogra, input
   return finalConf;
 }
 
-function _geocodeAddressLocationIQ_(addrFull, uf, city, logradouro) {
-  if (typeof LOCATIONIQ_API_KEY === 'undefined' || !LOCATIONIQ_API_KEY) {
-    dlog('[LocationIQ] ❌ API Key não configurada');
+function _geocodeAddressLocationIQ_(addrFull, uf, city, logradouro, useReserva) {
+  var apiKey = useReserva ? LOCATIONIQ_API_KEY_RESERVA : LOCATIONIQ_API_KEY;
+  if (typeof apiKey === 'undefined' || !apiKey) {
+    if (!useReserva) dlog('[LocationIQ] ❌ API Key não configurada');
+    else dlog('[LocationIQ] ❌ API Key reserva não configurada');
     return null;
   }
   
@@ -2715,7 +2740,7 @@ function _geocodeAddressLocationIQ_(addrFull, uf, city, logradouro) {
     'country=Brazil'
   ].filter(Boolean).join('&');
   
-  var url = 'https://us1.locationiq.com/v1/search.php?key=' + encodeURIComponent(LOCATIONIQ_API_KEY)
+  var url = 'https://us1.locationiq.com/v1/search.php?key=' + encodeURIComponent(apiKey)
           + '&' + structuredQuery
           + '&format=json&addressdetails=1&limit=3&countrycodes=br&accept-language=pt-BR';
   

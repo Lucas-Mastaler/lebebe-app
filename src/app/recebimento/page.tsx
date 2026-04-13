@@ -6,6 +6,7 @@ import { Package, Plus, Calendar, Truck, ChevronRight, Upload, FileText, Weight,
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import { isMaticEmail } from '@/lib/auth/matic-emails'
+import { toast } from 'sonner'
 
 interface Recebimento {
   id: string
@@ -34,12 +35,19 @@ type TabType = 'recebimentos' | 'notas' | 'divergencias' | 'dashboard'
 export default function RecebimentoPage() {
   const router = useRouter()
   const [recebimentos, setRecebimentos] = useState<Recebimento[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [authorized, setAuthorized] = useState(false)
-  const [showCreate, setShowCreate] = useState(false)
+  const [showCreateModal, setShowCreateModal] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>('recebimentos')
   const [prefilledDates, setPrefilledDates] = useState<{ inicio: string; fim: string } | null>(null)
+
+  // Pagination and filters
+  const [currentPage, setCurrentPage] = useState(1)
+  const [filterDataInicio, setFilterDataInicio] = useState('')
+  const [filterDataFim, setFilterDataFim] = useState('')
+  const [filterNF, setFilterNF] = useState('')
+  const itemsPerPage = 20
 
   useEffect(() => {
     async function checkAuth() {
@@ -87,7 +95,7 @@ export default function RecebimentoPage() {
             <Download className="w-4 h-4" />
             <span className="hidden sm:inline">Importar NFe</span>
           </Button>
-          <Button onClick={() => setShowCreate(true)} className="gap-2">
+          <Button onClick={() => setShowCreateModal(true)} className="gap-2">
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Novo Recebimento</span>
           </Button>
@@ -104,6 +112,7 @@ export default function RecebimentoPage() {
                 ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
                 : 'text-slate-600 hover:text-slate-800'
             }`}
+            title="Lista de todos os recebimentos (abertos, fechados e cancelados)"
           >
             <div className="flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap">
               <Package className="w-4 h-4" />
@@ -117,6 +126,7 @@ export default function RecebimentoPage() {
                 ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
                 : 'text-slate-600 hover:text-slate-800'
             }`}
+            title="Notas fiscais importadas no sistema"
           >
             <div className="flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap">
               <FileText className="w-4 h-4" />
@@ -130,10 +140,11 @@ export default function RecebimentoPage() {
                 ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
                 : 'text-slate-600 hover:text-slate-800'
             }`}
+            title="Problemas anotados em recebimentos anteriores para resolver nos próximos carregamentos"
           >
             <div className="flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap">
               <AlertCircle className="w-4 h-4" />
-              <span className="hidden xs:inline">Divergências</span>
+              <span className="hidden xs:inline">Problemas Pendentes</span>
             </div>
           </button>
           <button
@@ -143,6 +154,7 @@ export default function RecebimentoPage() {
                 ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
                 : 'text-slate-600 hover:text-slate-800'
             }`}
+            title="Métricas e estatísticas dos recebimentos"
           >
             <div className="flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap">
               <BarChart3 className="w-4 h-4" />
@@ -152,48 +164,147 @@ export default function RecebimentoPage() {
         </div>
       </div>
 
-      {showImport && (
-        <ImportNFeModal
-          onClose={() => setShowImport(false)}
-          onSuccess={() => { setShowImport(false); loadRecebimentos() }}
-          onStartRecebimento={(dates) => {
-            setPrefilledDates(dates)
-            setShowImport(false)
-            setShowCreate(true)
-          }}
-        />
-      )}
-
-      {showCreate && (
-        <CreateRecebimentoModal
-          onClose={() => {
-            setShowCreate(false)
-            setPrefilledDates(null)
-          }}
-          onSuccess={(id) => { router.push(`/recebimento/${id}`) }}
-          initialDates={prefilledDates}
-        />
-      )}
+      {/* Filters */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">Data Início</label>
+            <input
+              type="date"
+              value={filterDataInicio}
+              onChange={e => { setFilterDataInicio(e.target.value); setCurrentPage(1) }}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">Data Fim</label>
+            <input
+              type="date"
+              value={filterDataFim}
+              onChange={e => { setFilterDataFim(e.target.value); setCurrentPage(1) }}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">Número NF</label>
+            <input
+              type="text"
+              value={filterNF}
+              onChange={e => { setFilterNF(e.target.value); setCurrentPage(1) }}
+              placeholder="Ex: 12345"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30"
+            />
+          </div>
+          <div className="flex items-end">
+            <Button
+              onClick={() => {
+                setFilterDataInicio('')
+                setFilterDataFim('')
+                setFilterNF('')
+                setCurrentPage(1)
+              }}
+              variant="outline"
+              className="w-full"
+            >
+              Limpar Filtros
+            </Button>
+          </div>
+        </div>
+      </div>
 
       {/* Tab Content */}
       {activeTab === 'recebimentos' && (
         loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#00A5E6]" />
-          </div>
-        ) : recebimentos.length === 0 ? (
-          <div className="text-center py-20 text-slate-500">
-            <Package className="w-16 h-16 mx-auto mb-4 text-slate-300" />
-            <p className="text-lg font-medium">Nenhum recebimento encontrado</p>
-            <p className="text-sm mt-1">Importe NFs e crie um novo recebimento</p>
-          </div>
-        ) : (
           <div className="space-y-3">
-            {recebimentos.map((rec) => (
-              <RecebimentoCard key={rec.id} rec={rec} onReload={loadRecebimentos} />
+            {[1, 2, 3].map(i => (
+              <div key={i} className="bg-white rounded-xl border border-slate-200 p-4 animate-pulse">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex-1">
+                    <div className="h-5 bg-slate-200 rounded w-32 mb-2"></div>
+                    <div className="h-4 bg-slate-100 rounded w-48"></div>
+                  </div>
+                  <div className="h-8 w-20 bg-slate-200 rounded-full"></div>
+                </div>
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="h-4 bg-slate-100 rounded"></div>
+                  <div className="h-4 bg-slate-100 rounded"></div>
+                  <div className="h-4 bg-slate-100 rounded"></div>
+                  <div className="h-4 bg-slate-100 rounded"></div>
+                </div>
+              </div>
             ))}
           </div>
-        )
+        ) : (() => {
+          // Apply filters
+          let filtered = recebimentos
+          
+          if (filterDataInicio) {
+            filtered = filtered.filter(r => r.data_inicio >= filterDataInicio)
+          }
+          if (filterDataFim) {
+            filtered = filtered.filter(r => r.data_inicio <= filterDataFim)
+          }
+          if (filterNF) {
+            filtered = filtered.filter(r => 
+              r.recebimento_nfes?.some(nfe => 
+                nfe.nfe?.numero_nf?.includes(filterNF)
+              )
+            )
+          }
+          
+          // Pagination
+          const totalPages = Math.ceil(filtered.length / itemsPerPage)
+          const startIndex = (currentPage - 1) * itemsPerPage
+          const paginatedRecebimentos = filtered.slice(startIndex, startIndex + itemsPerPage)
+          
+          return filtered.length === 0 ? (
+            <div className="text-center py-20 text-slate-500">
+              <Package className="w-16 h-16 mx-auto mb-4 text-slate-300" />
+              <p className="text-lg font-medium">Nenhum recebimento encontrado</p>
+              <p className="text-sm mt-1">Ajuste os filtros ou crie um novo recebimento</p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-3">
+                {paginatedRecebimentos.map((rec) => (
+                  <RecebimentoCard key={rec.id} rec={rec} onReload={loadRecebimentos} />
+                ))}
+              </div>
+              
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-6 bg-white rounded-xl border border-slate-200 p-4">
+                  <p className="text-sm text-slate-600">
+                    Mostrando {startIndex + 1}-{Math.min(startIndex + itemsPerPage, filtered.length)} de {filtered.length}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      variant="outline"
+                      className="px-4"
+                    >
+                      Anterior
+                    </Button>
+                    <div className="flex items-center gap-2 px-3">
+                      <span className="text-sm font-medium text-slate-700">
+                        Página {currentPage} de {totalPages}
+                      </span>
+                    </div>
+                    <Button
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      variant="outline"
+                      className="px-4"
+                    >
+                      Próxima
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )
+        })()
       )}
 
       {activeTab === 'notas' && <NotasVinculadasTab />}
@@ -502,8 +613,6 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
     </div>
   )
 }
-
-// =========================================================
 // Create Modal
 // =========================================================
 
@@ -521,12 +630,70 @@ function CreateRecebimentoModal({
   const [obs, setObs] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [loadingPreview, setLoadingPreview] = useState(false)
+  const [nfesPreview, setNfesPreview] = useState<Array<{id: string; numero_nf: string; data_emissao: string; volumes_total: number}>>([])
+  const [selectedNfes, setSelectedNfes] = useState<Set<string>>(new Set())
+
+  async function handleBuscarNfes() {
+    if (!periodoInicio || !periodoFim) {
+      setError('Informe o período')
+      return
+    }
+    setLoadingPreview(true)
+    setError('')
+    
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('nfe')
+        .select('id, numero_nf, data_emissao, volumes_total')
+        .gte('data_emissao', periodoInicio)
+        .lte('data_emissao', periodoFim)
+        .order('numero_nf', { ascending: false })
+      
+      if (error) {
+        toast.error('Erro ao buscar NFs: ' + error.message)
+      } else if (!data || data.length === 0) {
+        toast.warning('Nenhuma NF encontrada no período selecionado')
+        setNfesPreview([])
+        setSelectedNfes(new Set())
+      } else {
+        setNfesPreview(data)
+        // Selecionar todas por padrão
+        setSelectedNfes(new Set(data.map(nf => nf.id)))
+        toast.success(`${data.length} NF(s) encontrada(s)`)
+      }
+    } catch (err) {
+      console.error('Erro ao buscar NFes:', err)
+      toast.error('Erro de conexão ao buscar NFs')
+    } finally {
+      setLoadingPreview(false)
+    }
+  }
+
+  function toggleNfe(nfeId: string) {
+    setSelectedNfes(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(nfeId)) {
+        newSet.delete(nfeId)
+      } else {
+        newSet.add(nfeId)
+      }
+      return newSet
+    })
+  }
 
   async function handleCreate() {
     if (!periodoInicio || !periodoFim) {
       setError('Informe o período')
       return
     }
+    
+    if (nfesPreview.length > 0 && selectedNfes.size === 0) {
+      setError('Selecione pelo menos uma NF')
+      return
+    }
+    
     setSaving(true)
     setError('')
 
@@ -538,6 +705,7 @@ function CreateRecebimentoModal({
           periodo_inicio: periodoInicio,
           periodo_fim: periodoFim,
           obs: obs || null,
+          nfe_ids: nfesPreview.length > 0 ? Array.from(selectedNfes) : undefined,
         }),
       })
 
@@ -545,13 +713,16 @@ function CreateRecebimentoModal({
 
       if (!res.ok) {
         setError(data.error || 'Erro ao criar recebimento')
+        toast.error(data.error || 'Erro ao criar recebimento')
         setSaving(false)
         return
       }
 
+      toast.success('Recebimento criado com sucesso!')
       onSuccess(data.id)
     } catch {
       setError('Erro de conexão')
+      toast.error('Erro de conexão ao criar recebimento')
       setSaving(false)
     }
   }
@@ -583,6 +754,61 @@ function CreateRecebimentoModal({
             </div>
           </div>
 
+          <Button 
+            onClick={handleBuscarNfes} 
+            variant="outline" 
+            className="w-full"
+            disabled={loadingPreview || saving}
+          >
+            {loadingPreview ? 'Buscando...' : 'Buscar NFs no Período'}
+          </Button>
+
+          {/* Preview de NFs */}
+          {nfesPreview.length > 0 && (
+            <div className="border border-slate-200 rounded-lg p-3 max-h-60 overflow-y-auto">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-slate-700">
+                  {nfesPreview.length} NF(s) encontrada(s)
+                </p>
+                <button
+                  onClick={() => {
+                    if (selectedNfes.size === nfesPreview.length) {
+                      setSelectedNfes(new Set())
+                    } else {
+                      setSelectedNfes(new Set(nfesPreview.map(nf => nf.id)))
+                    }
+                  }}
+                  className="text-xs text-[#00A5E6] hover:underline"
+                >
+                  {selectedNfes.size === nfesPreview.length ? 'Desmarcar Todas' : 'Marcar Todas'}
+                </button>
+              </div>
+              <div className="space-y-1">
+                {nfesPreview.map(nf => (
+                  <label key={nf.id} className="flex items-center gap-2 p-2 hover:bg-slate-50 rounded cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedNfes.has(nf.id)}
+                      onChange={() => toggleNfe(nf.id)}
+                      className="w-4 h-4 text-[#00A5E6] rounded border-slate-300 focus:ring-[#00A5E6]"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800">
+                        NF {nf.numero_nf}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {new Date(nf.data_emissao).toLocaleDateString('pt-BR')} • {nf.volumes_total} vol
+                      </p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                {selectedNfes.size} de {nfesPreview.length} selecionada(s)
+              </p>
+            </div>
+          )}
+
           <div>
             <label className="text-sm font-medium text-slate-600 block mb-1">Observações</label>
             <textarea
@@ -600,7 +826,7 @@ function CreateRecebimentoModal({
             <Button variant="outline" onClick={onClose} className="flex-1" disabled={saving}>
               Cancelar
             </Button>
-            <Button onClick={handleCreate} className="flex-1" disabled={saving}>
+            <Button onClick={handleCreate} className="flex-1" disabled={saving || loadingPreview}>
               {saving ? 'Criando...' : 'Criar Recebimento'}
             </Button>
           </div>
@@ -962,6 +1188,7 @@ function NotasVinculadasTab() {
     volumes_total: number
     is_os: boolean
     created_at: string
+    is_vinculada: boolean
   }>>([])
   const [loading, setLoading] = useState(true)
   const [selectedNfe, setSelectedNfe] = useState<string | null>(null)
@@ -979,15 +1206,33 @@ function NotasVinculadasTab() {
         const supabase = createClient()
         const { data, error } = await supabase
           .from('nfe')
-          .select('id, numero_nf, data_emissao, peso_total, volumes_total, is_os, created_at')
-          .order('data_emissao', { ascending: false })
-          .limit(100)
+          .select(`
+            id, 
+            numero_nf, 
+            data_emissao, 
+            peso_total, 
+            volumes_total, 
+            is_os, 
+            created_at,
+            recebimento_nfes(nfe_id)
+          `)
+          .order('numero_nf', { ascending: false })
+          .limit(500)
         
         if (!error && data) {
-          setNfes(data)
+          // Marcar NFes vinculadas
+          const nfesWithVinculo = data.map(nf => ({
+            ...nf,
+            is_vinculada: (nf.recebimento_nfes as any)?.length > 0,
+            recebimento_nfes: undefined // Remove do objeto final
+          }))
+          setNfes(nfesWithVinculo as any)
+        } else if (error) {
+          toast.error('Erro ao carregar notas fiscais')
         }
       } catch (err) {
         console.error('Erro ao carregar NFes:', err)
+        toast.error('Erro de conexão ao carregar notas fiscais')
       } finally {
         setLoading(false)
       }
@@ -1056,6 +1301,15 @@ function NotasVinculadasTab() {
                     {nfe.is_os && (
                       <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
                         OS
+                      </span>
+                    )}
+                    {nfe.is_vinculada ? (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700" title="Vinculada a um recebimento">
+                        ✓ Vinculada
+                      </span>
+                    ) : (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" title="Não vinculada a nenhum recebimento">
+                        Não Vinculada
                       </span>
                     )}
                   </div>

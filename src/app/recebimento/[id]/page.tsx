@@ -20,6 +20,8 @@ import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import { isMaticEmail } from '@/lib/auth/matic-emails'
 import { OSItemCard } from './OSItemCard'
+import { toast } from 'sonner'
+import { fetchWithRetry } from '@/lib/fetch-with-retry'
 
 // =========================================================
 // Types
@@ -55,6 +57,7 @@ interface RecebimentoItem {
   is_os: boolean
   os_numero: string | null
   numero_nf: string | null
+  nf_sources?: string[]
   nfe_item: NfeItem | null
   recebimento_item_volumes: Volume[]
   status_calculado: string
@@ -138,7 +141,7 @@ export default function ConferenciaPage() {
     if (authorized) loadRecebimento()
   }, [authorized, loadRecebimento])
 
-  // Polling for real-time updates (every 5 seconds) - only if recebimento is open and not editing
+  // Polling for real-time updates (every 30 seconds) - only if recebimento is open and not editing
   useEffect(() => {
     if (!recebimento || recebimento.status !== 'aberto') return
     // Pause polling if user is editing (modal open)
@@ -146,7 +149,7 @@ export default function ConferenciaPage() {
     
     const interval = setInterval(() => {
       loadRecebimento()
-    }, 5000)
+    }, 30000)
     
     return () => clearInterval(interval)
   }, [recebimento, loadRecebimento, localModal, divModal])
@@ -201,30 +204,69 @@ export default function ConferenciaPage() {
   
   // Check for inactivity and auto-pause timer (every minute)
   useEffect(() => {
-    if (!recebimento || recebimento.status !== 'aberto' || !recebimento.timer_rodando) return
-    if (!recebimento.ultima_atividade_conferencia) return
+    if (!recebimento || recebimento.status !== 'aberto') return
     
-    const checkInactivity = () => {
-      const lastActivity = new Date(recebimento.ultima_atividade_conferencia!)
-      const now = new Date()
-      const minutesSinceActivity = (now.getTime() - lastActivity.getTime()) / 1000 / 60
-      
-      // If 5+ minutes of inactivity, reload to get updated state (backend will pause)
-      if (minutesSinceActivity >= 5) {
-        console.log('[LOG] Detectada inatividade de 5+ minutos, recarregando...')
-        loadRecebimento()
+    const checkInactivity = async () => {
+      try {
+        const res = await fetch(`/api/recebimento/${recebimentoId}/check-inactivity`, {
+          method: 'POST'
+        })
+        if (res.ok) {
+          const data = await res.json()
+          // If timer was auto-paused, reload to update UI
+          if (data.auto_paused) {
+            console.log('[LOG] Timer pausado automaticamente por inatividade')
+            loadRecebimento()
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao verificar inatividade:', err)
       }
     }
     
     // Check every minute
     const interval = setInterval(checkInactivity, 60000)
     return () => clearInterval(interval)
-  }, [recebimento, loadRecebimento])
+  }, [recebimento, recebimentoId, loadRecebimento])
 
   if (!authorized || loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#00A5E6]" />
+      <div className="max-w-7xl mx-auto p-4 space-y-4 animate-pulse">
+        {/* Header skeleton */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="h-6 bg-slate-200 rounded w-48"></div>
+            <div className="h-10 w-32 bg-slate-200 rounded"></div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-16 bg-slate-100 rounded"></div>
+            ))}
+          </div>
+        </div>
+        
+        {/* Filters skeleton */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <div className="flex gap-2 mb-3">
+            <div className="h-8 w-24 bg-slate-200 rounded"></div>
+            <div className="h-8 w-24 bg-slate-200 rounded"></div>
+          </div>
+          <div className="h-10 bg-slate-100 rounded"></div>
+        </div>
+        
+        {/* Items skeleton */}
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="bg-white rounded-xl border border-slate-200 p-4">
+              <div className="h-5 bg-slate-200 rounded w-40 mb-3"></div>
+              <div className="grid grid-cols-4 gap-2">
+                {[1, 2, 3, 4].map(j => (
+                  <div key={j} className="h-12 bg-slate-100 rounded"></div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
@@ -407,10 +449,10 @@ export default function ConferenciaPage() {
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder={activeTab === 'itens' ? 'Buscar produto...' : 'Buscar OS...'}
+              placeholder={activeTab === 'itens' ? 'Buscar produto... (use espaços para múltiplos termos)' : 'Buscar OS...'}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-8 pr-8 h-10 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/20 focus:border-[#00A5E6] text-sm bg-slate-50"
+              className="w-full pl-8 pr-8 h-10 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/20 focus:border-[#00A5E6] text-base bg-slate-50"
             />
             {search && (
               <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2">
@@ -445,6 +487,7 @@ export default function ConferenciaPage() {
               className={`px-3 py-1.5 rounded-lg font-medium text-[11px] transition-all ${
                 activeTab === 'divergencias' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-600'
               }`}
+              title="Itens com problemas neste recebimento (faltou, sobrou, avaria)"
             >
               Divergências
             </button>
@@ -672,21 +715,43 @@ function ItemCard({
   async function handleDelta(volumeNumero: number, delta: number) {
     if (isFechado) return
     setLoadingVolume(volumeNumero)
+    
+    // Optimistic update - save previous state for rollback
+    const volume = item.recebimento_item_volumes.find(v => v.volume_numero === volumeNumero)
+    const prevQtdRecebida = volume?.qtd_recebida || 0
+    const prevTotalRecebido = item.volumes_recebidos_total
+    
+    // Apply optimistic update
+    const newQtdRecebida = Math.max(0, prevQtdRecebida + delta)
+    const newTotalRecebido = prevTotalRecebido - prevQtdRecebida + newQtdRecebida
+    onVolumeUpdate(item.id, volumeNumero, newQtdRecebida, newTotalRecebido)
+    
     try {
-      const res = await fetch(
+      const res = await fetchWithRetry(
         `/api/recebimento/${recebimentoId}/item/${item.id}/volume/${volumeNumero}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ delta }),
-        }
+        },
+        3, // 3 retries
+        500 // 500ms initial delay
       )
+      
       if (res.ok) {
         const data = await res.json()
+        // Update with server response to ensure consistency
         onVolumeUpdate(item.id, volumeNumero, data.qtd_recebida, data.item_total_recebido)
+      } else {
+        // Rollback on error
+        onVolumeUpdate(item.id, volumeNumero, prevQtdRecebida, prevTotalRecebido)
+        toast.error('Não foi possível atualizar o volume. Tente novamente.')
       }
     } catch (err) {
       console.error('Erro ao atualizar volume:', err)
+      // Rollback on error
+      onVolumeUpdate(item.id, volumeNumero, prevQtdRecebida, prevTotalRecebido)
+      toast.error('Erro de conexão ao atualizar volume')
     } finally {
       setLoadingVolume(null)
     }
@@ -697,11 +762,19 @@ function ItemCard({
       {/* Header */}
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
+          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
             <p className="text-xs font-mono text-slate-500">{item.nfe_item?.codigo_produto}</p>
             {item.numero_nf && (
               <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-mono">
                 NF {item.numero_nf}
+              </span>
+            )}
+            {item.nf_sources && item.nf_sources.length > 1 && (
+              <span 
+                className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-semibold cursor-help" 
+                title={`Agrupado de ${item.nf_sources.length} NFs: ${item.nf_sources.join(', ')}`}
+              >
+                📦 {item.nf_sources.length} NFs
               </span>
             )}
           </div>
@@ -875,12 +948,16 @@ function LocalModal({
         }),
       })
       if (res.ok) {
+        toast.success('Local salvo com sucesso')
         await onSave(corredor, nivel, prateleira, volumesPorItem)
       } else {
-        console.error('Erro ao salvar:', await res.text())
+        const errorText = await res.text()
+        console.error('Erro ao salvar:', errorText)
+        toast.error('Não foi possível salvar o local. Verifique os dados.')
       }
     } catch (err) {
       console.error('Erro ao salvar local:', err)
+      toast.error('Erro de conexão ao salvar local')
     } finally {
       setSaving(false)
     }
@@ -1010,10 +1087,14 @@ function DivergenciaModal({
         }),
       })
       if (res.ok) {
+        toast.success(tipo ? 'Divergência registrada' : 'Divergência removida')
         onSave(tipo || null, obs || null)
+      } else {
+        toast.error('Não foi possível salvar a divergência')
       }
     } catch (err) {
       console.error('Erro ao salvar divergência:', err)
+      toast.error('Erro de conexão ao salvar divergência')
     } finally {
       setSaving(false)
     }
@@ -1097,8 +1178,6 @@ function FinalizarModal({
 }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [sheetsStatus, setSheetsStatus] = useState<'success' | 'error' | 'not_configured' | null>(null)
-  const [sheetsError, setSheetsError] = useState<string | null>(null)
   const [problemasPendentes, setProblemasPendentes] = useState<ProblemaPendente[]>([])
   const [problemasResolvidos, setProblemasResolvidos] = useState<Set<string>>(new Set())
   const [formData, setFormData] = useState({
@@ -1154,9 +1233,17 @@ function FinalizarModal({
         return
       }
       
-      // Capturar status do envio para planilha
-      setSheetsStatus(data.sheets_status || 'not_configured')
-      setSheetsError(data.sheets_error || null)
+      // Feedback sobre envio para planilha via toast
+      const sheetsStatus = data.sheets_status || 'not_configured'
+      const sheetsError = data.sheets_error || null
+      
+      if (sheetsStatus === 'success') {
+        toast.success('Dados enviados para a planilha do Google!', { duration: 5000 })
+      } else if (sheetsStatus === 'error') {
+        toast.error(`Erro ao enviar para planilha: ${sheetsError}`, { duration: 8000 })
+      } else if (sheetsStatus === 'not_configured') {
+        toast.warning('Planilha não configurada. Recebimento finalizado sem registro na planilha.', { duration: 6000 })
+      }
       
       // Marcar problemas como resolvidos
       if (problemasResolvidos.size > 0) {
@@ -1170,13 +1257,15 @@ function FinalizarModal({
       }
       
       setSaving(false)
+      toast.success('Recebimento finalizado com sucesso!')
       
-      // Aguardar 3 segundos para mostrar o resultado antes de fechar
+      // Aguardar 1.5 segundos antes de redirecionar
       setTimeout(() => {
         onSuccess()
-      }, 3000)
+      }, 1500)
     } catch {
       setError('Erro de conexão')
+      toast.error('Erro de conexão ao finalizar recebimento')
       setSaving(false)
     }
   }
@@ -1195,41 +1284,6 @@ function FinalizarModal({
         </div>
 
         {error && <p className="text-sm text-red-500 mb-4 p-3 bg-red-50 rounded-lg">{error}</p>}
-        
-        {/* Status do envio para planilha */}
-        {sheetsStatus && (
-          <div className={`mb-4 p-3 rounded-lg text-sm ${
-            sheetsStatus === 'success' 
-              ? 'bg-green-50 text-green-700 border border-green-200' 
-              : sheetsStatus === 'error'
-              ? 'bg-red-50 text-red-700 border border-red-200'
-              : 'bg-amber-50 text-amber-700 border border-amber-200'
-          }`}>
-            <div className="flex items-start gap-2">
-              <div className="mt-0.5">
-                {sheetsStatus === 'success' && '✅'}
-                {sheetsStatus === 'error' && '❌'}
-                {sheetsStatus === 'not_configured' && '⚠️'}
-              </div>
-              <div className="flex-1">
-                <p className="font-semibold mb-1">
-                  {sheetsStatus === 'success' && 'Dados enviados para a planilha!'}
-                  {sheetsStatus === 'error' && 'Erro ao enviar para a planilha'}
-                  {sheetsStatus === 'not_configured' && 'Planilha não configurada'}
-                </p>
-                {sheetsError && (
-                  <p className="text-xs opacity-90">{sheetsError}</p>
-                )}
-                {sheetsStatus === 'success' && (
-                  <p className="text-xs opacity-90">Os dados do recebimento foram registrados na planilha do Google.</p>
-                )}
-                {sheetsStatus === 'not_configured' && (
-                  <p className="text-xs opacity-90">O recebimento foi finalizado, mas a URL da planilha não está configurada no sistema.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         <div className="space-y-4 mb-6">
           {/* Problemas pendentes de recebimentos anteriores */}
@@ -1390,12 +1444,15 @@ function CancelarModal({
       const data = await res.json()
       if (!res.ok) {
         setError(data.error || 'Erro ao cancelar')
+        toast.error(data.error || 'Não foi possível cancelar o recebimento')
         setSaving(false)
         return
       }
+      toast.success('Recebimento cancelado com sucesso')
       onSuccess()
     } catch {
       setError('Erro de conexão')
+      toast.error('Erro de conexão ao cancelar recebimento')
       setSaving(false)
     }
   }
@@ -1448,18 +1505,23 @@ function DivergenciasTab({
 
   async function loadProblemas() {
     try {
-      const res = await fetch('/api/recebimento/problemas-pendentes')
+      const res = await fetch('/api/recebimento/problemas-pendentes?apenas_nao_resolvidos=true')
       if (res.ok) {
         const data = await res.json()
         setProblemasPendentes(data)
       }
     } catch (err) {
       console.error('Erro ao carregar problemas:', err)
+      toast.error('Não foi possível carregar os problemas pendentes')
     }
   }
 
   async function marcarComoResolvido(problemaId: string) {
     setResolvendo(prev => new Set(prev).add(problemaId))
+    
+    // Remover localmente para feedback imediato (optimistic update)
+    setProblemasPendentes(prev => prev.filter(p => p.id !== problemaId))
+    
     try {
       const res = await fetch('/api/recebimento/problemas-pendentes/resolver', {
         method: 'POST',
@@ -1467,10 +1529,17 @@ function DivergenciasTab({
         body: JSON.stringify({ problema_ids: [problemaId] }),
       })
       if (res.ok) {
+        toast.success('Problema marcado como resolvido')
+      } else {
+        // Reverter se falhar
         await loadProblemas()
+        toast.error('Não foi possível marcar o problema como resolvido')
       }
     } catch (err) {
       console.error('Erro ao resolver problema:', err)
+      // Reverter se falhar
+      await loadProblemas()
+      toast.error('Erro de conexão ao marcar problema como resolvido')
     } finally {
       setResolvendo(prev => {
         const newSet = new Set(prev)

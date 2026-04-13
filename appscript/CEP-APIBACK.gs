@@ -3023,13 +3023,17 @@ function ResolverEnderecoComCache_(form, origin, preloadedCache) {
   
   var supaWriteStart = Date.now();
   try {
+    var achadoBairro = (geoOut.address && (geoOut.address.suburb || geoOut.address.city_district || geoOut.address.neighbourhood)) || String(form.bairro || '').trim();
+    var achadoCidade = (geoOut.address && (geoOut.address.city || geoOut.address.town || geoOut.address.municipality)) || cidade;
+    var achadoLogra = (geoOut.address && (geoOut.address.road || geoOut.address.pedestrian)) || logradouro;
+
     var recordSupa = {
       chave_endereco: hashKey,
-      endereco_completo: addrDisplay,
-      logradouro: logradouro,
+      endereco_completo: finalOut.enderecoCompleto,
+      logradouro: achadoLogra,
       numero: String(form.numero || '').trim(),
-      bairro: String(form.bairro || '').trim(),
-      cidade: cidade,
+      bairro: achadoBairro,
+      cidade: achadoCidade,
       uf: uf,
       cep: finalOut.cep,
       lat: finalOut.lat,

@@ -1147,8 +1147,19 @@
             if (lastCepObj) {
                 form.destLat = Number(lastCepObj.lat || 0);
                 form.destLng = Number(lastCepObj.lng || 0);
-                form.destDisplay = String(lastCepObj.display || lastCepObj.display_name || '');
+                form.destDisplay = String(lastCepObj.enderecoCompleto || lastCepObj.display || lastCepObj.display_name || '');
                 form.destProvider = String(lastCepObj.provider || 'google');
+                
+                if (lastCepObj.address) {
+                    const achadoBairro = lastCepObj.address.suburb || lastCepObj.address.city_district || lastCepObj.address.neighbourhood || '';
+                    if (achadoBairro && (!form.bairro || form.bairro.toUpperCase() !== achadoBairro.toUpperCase())) {
+                        form.bairro = achadoBairro;
+                    }
+                    const achadoCidade = lastCepObj.address.city || lastCepObj.address.town || lastCepObj.address.municipality || '';
+                    if (achadoCidade && (!form.cidade || form.cidade.toUpperCase() !== achadoCidade.toUpperCase())) {
+                        form.cidade = achadoCidade;
+                    }
+                }
             }
 
             $btnSubmit.disabled = true;

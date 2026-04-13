@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { periodo_inicio, periodo_fim, motorista, quantos_chapas, obs } = body
+  const { periodo_inicio, periodo_fim, motorista, quantos_chapas, obs, nfe_ids } = body
 
   if (!periodo_inicio || !periodo_fim) {
     return NextResponse.json({ error: 'Período obrigatório' }, { status: 400 })
@@ -158,23 +158,31 @@ export async function POST(request: NextRequest) {
 
   const supabase = await createClient()
 
-  // 1) Find NFes in the period
-  const { data: nfes, error: nfeError } = await supabase
-    .from('nfe')
-    .select('id')
-    .gte('data_emissao', periodo_inicio)
-    .lte('data_emissao', periodo_fim)
+  let nfeIds: string[]
 
-  if (nfeError) {
-    console.error('[LOG] Erro ao buscar NFs:', nfeError)
-    return NextResponse.json({ error: nfeError.message }, { status: 500 })
+  // 1) Use provided nfe_ids or find all NFes in the period
+  if (nfe_ids && Array.isArray(nfe_ids) && nfe_ids.length > 0) {
+    // Use selected NFes
+    nfeIds = nfe_ids
+  } else {
+    // Find all NFes in the period
+    const { data: nfes, error: nfeError } = await supabase
+      .from('nfe')
+      .select('id')
+      .gte('data_emissao', periodo_inicio)
+      .lte('data_emissao', periodo_fim)
+
+    if (nfeError) {
+      console.error('[LOG] Erro ao buscar NFs:', nfeError)
+      return NextResponse.json({ error: nfeError.message }, { status: 500 })
+    }
+
+    if (!nfes || nfes.length === 0) {
+      return NextResponse.json({ error: 'Nenhuma NF encontrada no período selecionado' }, { status: 404 })
+    }
+
+    nfeIds = nfes.map(n => n.id)
   }
-
-  if (!nfes || nfes.length === 0) {
-    return NextResponse.json({ error: 'Nenhuma NF encontrada no período selecionado' }, { status: 404 })
-  }
-
-  const nfeIds = nfes.map(n => n.id)
 
   // 2) Find NFe items (limit high to avoid Supabase default 1000-row truncation)
   const { data: nfeItens, error: itensError } = await supabase

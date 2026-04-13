@@ -133,6 +133,16 @@ export async function GET(
     return [ni.id, nfe?.numero_nf || '']
   }))
   
+  // Create nfeId to numeroNf map
+  const nfeIdToNumeroMap = new Map<string, string>()
+  for (const ni of (nfeItemsData || [])) {
+    const nfeArray = ni.nfe as { numero_nf: string }[] | { numero_nf: string } | null
+    const nfe = Array.isArray(nfeArray) ? nfeArray[0] : nfeArray
+    if (nfe?.numero_nf && ni.nfe_id) {
+      nfeIdToNumeroMap.set(ni.nfe_id, nfe.numero_nf)
+    }
+  }
+  
   // Mark items from OS NFes
   const itensOSIds = new Set<string>()
   for (const item of (itens || [])) {
@@ -161,12 +171,30 @@ export async function GET(
 
       const nfeItemId = item.nfe_item_id as string
       const numeroNf = nfeItemToNumeroMap.get(nfeItemId) || ''
+      
+      // Find all NFs that contributed to this item (by codigo_produto)
+      const codigoProduto = nfeItem?.codigo_produto || ''
+      const nfSources: string[] = []
+      if (codigoProduto) {
+        for (const [nfeId, nfNumero] of nfeIdToNumeroMap) {
+          const nfeHasThisProduct = (itens || []).some((otherItem: any) => {
+            const otherNfeItemId = otherItem.nfe_item_id as string
+            const otherNfeItem = otherItem.nfe_item as any
+            return otherNfeItem?.codigo_produto === codigoProduto && 
+                   nfeItemToNfeMap.get(otherNfeItemId) === nfeId
+          })
+          if (nfeHasThisProduct && !nfSources.includes(nfNumero)) {
+            nfSources.push(nfNumero)
+          }
+        }
+      }
 
       return {
         ...item,
         is_os: false,
         os_numero: null,
         numero_nf: numeroNf,
+        nf_sources: nfSources.sort((a, b) => b.localeCompare(a)), // Sort DESC
         status_calculado: status,
         sku_descricao: sku?.descricao || nfeItem?.descricao || '',
         sku_corredor_sugerido: sku?.corredor_sugerido,

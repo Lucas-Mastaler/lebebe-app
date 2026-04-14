@@ -307,8 +307,9 @@ export default function RecebimentoPage() {
               </div>
             )}
           </>
-        )
-      )}
+        )}
+      </>
+    )}
 
       {activeTab === 'notas' && <NotasVinculadasTab />}
 

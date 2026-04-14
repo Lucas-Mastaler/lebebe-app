@@ -47,6 +47,8 @@ export default function RecebimentoPage() {
   const [filterDataInicio, setFilterDataInicio] = useState('')
   const [filterDataFim, setFilterDataFim] = useState('')
   const [filterNF, setFilterNF] = useState('')
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalItems, setTotalItems] = useState(0)
   const itemsPerPage = 20
 
   useEffect(() => {
@@ -62,24 +64,39 @@ export default function RecebimentoPage() {
     checkAuth()
   }, [router])
 
-  const loadRecebimentos = useCallback(async () => {
+  const loadRecebimentos = useCallback(async (page = 1) => {
     setLoading(true)
     try {
-      const res = await fetch('/api/recebimento')
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: itemsPerPage.toString(),
+      })
+      
+      if (filterDataInicio) params.append('data_inicio', filterDataInicio)
+      if (filterDataFim) params.append('data_fim', filterDataFim)
+      if (filterNF) params.append('numero_nf', filterNF)
+      
+      const res = await fetch(`/api/recebimento?${params.toString()}`)
       if (res.ok) {
-        const data = await res.json()
-        setRecebimentos(data)
+        const response = await res.json()
+        setRecebimentos(response.data || [])
+        setTotalPages(response.pagination?.totalPages || 1)
+        setTotalItems(response.pagination?.total || 0)
+        setCurrentPage(page)
+      } else {
+        toast.error('Erro ao carregar recebimentos')
       }
     } catch (err) {
       console.error('Erro ao carregar recebimentos:', err)
+      toast.error('Erro de conexão ao carregar recebimentos')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [filterDataInicio, filterDataFim, filterNF])
 
   useEffect(() => {
-    if (authorized) loadRecebimentos()
-  }, [authorized, loadRecebimentos])
+    if (authorized) loadRecebimentos(1)
+  }, [authorized])
 
   if (!authorized) return null
 
@@ -164,57 +181,67 @@ export default function RecebimentoPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">Data Início</label>
-            <input
-              type="date"
-              value={filterDataInicio}
-              onChange={e => { setFilterDataInicio(e.target.value); setCurrentPage(1) }}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">Data Fim</label>
-            <input
-              type="date"
-              value={filterDataFim}
-              onChange={e => { setFilterDataFim(e.target.value); setCurrentPage(1) }}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-slate-600 block mb-1">Número NF</label>
-            <input
-              type="text"
-              value={filterNF}
-              onChange={e => { setFilterNF(e.target.value); setCurrentPage(1) }}
-              placeholder="Ex: 12345"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30"
-            />
-          </div>
-          <div className="flex items-end">
-            <Button
-              onClick={() => {
-                setFilterDataInicio('')
-                setFilterDataFim('')
-                setFilterNF('')
-                setCurrentPage(1)
-              }}
-              variant="outline"
-              className="w-full"
-            >
-              Limpar Filtros
-            </Button>
-          </div>
-        </div>
-      </div>
-
       {/* Tab Content */}
       {activeTab === 'recebimentos' && (
-        loading ? (
+        <>
+          {/* Filters */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div>
+                <label className="text-xs font-medium text-slate-600 block mb-1">Data Início</label>
+                <input
+                  type="date"
+                  value={filterDataInicio}
+                  onChange={e => { setFilterDataInicio(e.target.value); setCurrentPage(1) }}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600 block mb-1">Data Fim</label>
+                <input
+                  type="date"
+                  value={filterDataFim}
+                  onChange={e => { setFilterDataFim(e.target.value); setCurrentPage(1) }}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600 block mb-1">Número NF (busca dinâmica)</label>
+                <input
+                  type="text"
+                  value={filterNF}
+                  onChange={e => { setFilterNF(e.target.value); setCurrentPage(1) }}
+                  onKeyDown={e => { if (e.key === 'Enter') loadRecebimentos(1) }}
+                  placeholder="Ex: 12345"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30"
+                />
+              </div>
+              <div className="flex items-end gap-2">
+                <Button
+                  onClick={() => loadRecebimentos(1)}
+                  className="flex-1"
+                >
+                  Filtrar
+                </Button>
+                <Button
+                  onClick={() => {
+                    setFilterDataInicio('')
+                    setFilterDataFim('')
+                    setFilterNF('')
+                    setCurrentPage(1)
+                    // Reload without filters
+                    setTimeout(() => loadRecebimentos(1), 0)
+                  }}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Limpar
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {loading ? (
           <div className="space-y-3">
             {[1, 2, 3].map(i => (
               <div key={i} className="bg-white rounded-xl border border-slate-200 p-4 animate-pulse">
@@ -234,77 +261,53 @@ export default function RecebimentoPage() {
               </div>
             ))}
           </div>
-        ) : (() => {
-          // Apply filters
-          let filtered = recebimentos
-          
-          if (filterDataInicio) {
-            filtered = filtered.filter(r => r.data_inicio >= filterDataInicio)
-          }
-          if (filterDataFim) {
-            filtered = filtered.filter(r => r.data_inicio <= filterDataFim)
-          }
-          if (filterNF) {
-            filtered = filtered.filter(r => 
-              r.recebimento_nfes?.some(nfe => 
-                nfe.nfe?.numero_nf?.includes(filterNF)
-              )
-            )
-          }
-          
-          // Pagination
-          const totalPages = Math.ceil(filtered.length / itemsPerPage)
-          const startIndex = (currentPage - 1) * itemsPerPage
-          const paginatedRecebimentos = filtered.slice(startIndex, startIndex + itemsPerPage)
-          
-          return filtered.length === 0 ? (
-            <div className="text-center py-20 text-slate-500">
-              <Package className="w-16 h-16 mx-auto mb-4 text-slate-300" />
-              <p className="text-lg font-medium">Nenhum recebimento encontrado</p>
-              <p className="text-sm mt-1">Ajuste os filtros ou crie um novo recebimento</p>
+        ) : recebimentos.length === 0 ? (
+          <div className="text-center py-20 text-slate-500">
+            <Package className="w-16 h-16 mx-auto mb-4 text-slate-300" />
+            <p className="text-lg font-medium">Nenhum recebimento encontrado</p>
+            <p className="text-sm mt-1">Ajuste os filtros ou crie um novo recebimento</p>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-3">
+              {recebimentos.map((rec) => (
+                <RecebimentoCard key={rec.id} rec={rec} onReload={() => loadRecebimentos(currentPage)} />
+              ))}
             </div>
-          ) : (
-            <>
-              <div className="space-y-3">
-                {paginatedRecebimentos.map((rec) => (
-                  <RecebimentoCard key={rec.id} rec={rec} onReload={loadRecebimentos} />
-                ))}
-              </div>
-              
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-6 bg-white rounded-xl border border-slate-200 p-4">
-                  <p className="text-sm text-slate-600">
-                    Mostrando {startIndex + 1}-{Math.min(startIndex + itemsPerPage, filtered.length)} de {filtered.length}
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                      variant="outline"
-                      className="px-4"
-                    >
-                      Anterior
-                    </Button>
-                    <div className="flex items-center gap-2 px-3">
-                      <span className="text-sm font-medium text-slate-700">
-                        Página {currentPage} de {totalPages}
-                      </span>
-                    </div>
-                    <Button
-                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                      disabled={currentPage === totalPages}
-                      variant="outline"
-                      className="px-4"
-                    >
-                      Próxima
-                    </Button>
+            
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-6 bg-white rounded-xl border border-slate-200 p-4">
+                <p className="text-sm text-slate-600">
+                  Mostrando {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, totalItems)} de {totalItems}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => loadRecebimentos(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    variant="outline"
+                    className="px-4"
+                  >
+                    Anterior
+                  </Button>
+                  <div className="flex items-center gap-2 px-3">
+                    <span className="text-sm font-medium text-slate-700">
+                      Página {currentPage} de {totalPages}
+                    </span>
                   </div>
+                  <Button
+                    onClick={() => loadRecebimentos(currentPage + 1)}
+                    disabled={currentPage >= totalPages}
+                    variant="outline"
+                    className="px-4"
+                  >
+                    Próxima
+                  </Button>
                 </div>
-              )}
-            </>
-          )
-        })()
+              </div>
+            )}
+          </>
+        )
       )}
 
       {activeTab === 'notas' && <NotasVinculadasTab />}
@@ -312,6 +315,33 @@ export default function RecebimentoPage() {
       {activeTab === 'divergencias' && <DivergenciasListagemTab />}
 
       {activeTab === 'dashboard' && <DashboardTab recebimentos={recebimentos} />}
+
+      {/* Modals */}
+      {showCreateModal && (
+        <CreateRecebimentoModal
+          onClose={() => setShowCreateModal(false)}
+          onSuccess={(id) => {
+            setShowCreateModal(false)
+            router.push(`/recebimento/${id}`)
+          }}
+          initialDates={prefilledDates}
+        />
+      )}
+
+      {showImport && (
+        <ImportNFeModal
+          onClose={() => setShowImport(false)}
+          onSuccess={() => {
+            setShowImport(false)
+            loadRecebimentos()
+          }}
+          onStartRecebimento={(dates) => {
+            setPrefilledDates(dates)
+            setShowImport(false)
+            setShowCreateModal(true)
+          }}
+        />
+      )}
     </div>
   )
 }

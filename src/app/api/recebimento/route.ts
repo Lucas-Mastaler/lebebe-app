@@ -7,16 +7,24 @@ function normalizeCode(code: string): string {
   return code.replace(/^0+/, '') || '0'
 }
 
-// GET /api/recebimento — list all recebimentos
-export async function GET() {
+// GET /api/recebimento — list all recebimentos with filters and pagination
+export async function GET(request: NextRequest) {
   const auth = await validateMaticUser()
   if (!auth.authorized) {
     return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
   }
 
+  const { searchParams } = new URL(request.url)
+  const page = parseInt(searchParams.get('page') || '1')
+  const limit = parseInt(searchParams.get('limit') || '20')
+  const dataInicio = searchParams.get('data_inicio')
+  const dataFim = searchParams.get('data_fim')
+  const numeroNF = searchParams.get('numero_nf')
+
   const supabase = await createClient()
 
-  const { data, error } = await supabase
+  // Build query with filters
+  let query = supabase
     .from('recebimentos')
     .select(`
       *,
@@ -46,8 +54,24 @@ export async function GET() {
         volumes_previstos,
         volumes_recebidos
       )
-    `)
-    .order('created_at', { ascending: false })
+    `, { count: 'exact' })
+
+  // Apply date filters
+  if (dataInicio) {
+    query = query.gte('data_inicio', dataInicio)
+  }
+  if (dataFim) {
+    query = query.lte('data_inicio', dataFim)
+  }
+
+  query = query.order('created_at', { ascending: false })
+
+  // Apply pagination
+  const from = (page - 1) * limit
+  const to = from + limit - 1
+  query = query.range(from, to)
+
+  const { data, error, count } = await query
 
   if (error) {
     console.error('[LOG] Erro ao listar recebimentos:', error)
@@ -139,7 +163,27 @@ export async function GET() {
     }
   })
 
-  return NextResponse.json(result)
+  // Apply numero_nf filter (dynamic partial search)
+  let filteredResult = result
+  if (numeroNF) {
+    filteredResult = result.filter(rec => {
+      const nfes = rec.recebimento_nfes || []
+      return nfes.some((nfeLink: any) => 
+        nfeLink.nfe?.numero_nf?.toString().includes(numeroNF)
+      )
+    })
+  }
+
+  // Return with pagination metadata
+  return NextResponse.json({
+    data: filteredResult,
+    pagination: {
+      page,
+      limit,
+      total: count || 0,
+      totalPages: Math.ceil((count || 0) / limit)
+    }
+  })
 }
 
 // POST /api/recebimento — create a new recebimento

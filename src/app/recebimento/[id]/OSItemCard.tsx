@@ -6,6 +6,7 @@ import { Package, Plus, Minus, CheckCircle2 } from 'lucide-react'
 interface RecebimentoItem {
   id: string
   os_numero: string | null
+  numero_nf: string | null
   volumes_previstos_total: number
   volumes_recebidos_total: number
   sku_descricao: string
@@ -102,9 +103,16 @@ export function OSItemCard({
             <p className="font-semibold text-sm text-slate-800 leading-tight">
               {item.sku_descricao}
             </p>
-            <p className="text-xs text-blue-600 font-medium mt-0.5">
-              Ordem de Serviço
-            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-xs text-blue-600 font-medium">
+                Ordem de Serviço
+              </p>
+              {item.numero_nf && (
+                <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-mono">
+                  NF {item.numero_nf}
+                </span>
+              )}
+            </div>
           </div>
         </div>
         {isComplete && (

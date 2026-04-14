@@ -51,11 +51,18 @@ export async function verificarInatividade(
     .eq('id', recebimentoId)
     .single()
 
-  if (!rec || !rec.timer_rodando || !rec.ultima_atividade_conferencia) return false
+  if (!rec || !rec.timer_rodando) return false
 
-  const lastActivity = new Date(rec.ultima_atividade_conferencia)
+  // Use ultima_atividade_conferencia ou fallback para timer_ultima_acao
+  const lastActivityTime = rec.ultima_atividade_conferencia || rec.timer_ultima_acao
+  if (!lastActivityTime) return false
+
+  const lastActivity = new Date(lastActivityTime)
   const now = new Date()
   const minutesSinceActivity = (now.getTime() - lastActivity.getTime()) / 1000 / 60
+
+  // Log para debug
+  console.log(`[LOG][TIMER] Verificando inatividade: ${minutesSinceActivity.toFixed(1)} min desde última atividade (timer_rodando: ${rec.timer_rodando})`)
 
   // If 5+ minutes of inactivity, pause timer
   if (minutesSinceActivity >= 5) {

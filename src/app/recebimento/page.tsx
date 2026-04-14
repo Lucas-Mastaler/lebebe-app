@@ -714,6 +714,13 @@ function CreateRecebimentoModal({
     })
   }
 
+  // Auto-buscar NFes quando ambas as datas estiverem preenchidas
+  useEffect(() => {
+    if (periodoInicio && periodoFim && nfesPreview.length === 0 && !loadingPreview) {
+      handleBuscarNfes()
+    }
+  }, [periodoInicio, periodoFim])
+
   async function handleCreate() {
     if (!periodoInicio || !periodoFim) {
       setError('Informe o período')
@@ -1027,7 +1034,7 @@ function ImportNFeModal({
         {/* Mode: Buscar por Data */}
         {mode === 'data' && !dateResult && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   Data Início

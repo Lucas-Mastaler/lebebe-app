@@ -248,6 +248,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: itensError.message }, { status: 500 })
   }
 
+  // Buscar informações das NFes para logs legíveis
+  const { data: nfesInfo } = await supabase
+    .from('nfe')
+    .select('id, numero_nf, is_os')
+    .in('id', nfeIds)
+
+  const nfeMap = new Map(nfesInfo?.map(n => [n.id, { numero_nf: n.numero_nf, is_os: n.is_os }]) || [])
+
   // Audit: log item count per NF
   const itensPerNf = new Map<string, number>()
   for (const item of (nfeItens || [])) {
@@ -255,7 +263,21 @@ export async function POST(request: NextRequest) {
   }
   console.log(`[LOG][AUDIT] Total nfe_itens retornados: ${(nfeItens || []).length}`)
   for (const [nfeId, count] of itensPerNf) {
-    console.log(`[LOG][AUDIT]   NF ${nfeId}: ${count} itens`)
+    const nfeInfo = nfeMap.get(nfeId)
+    const nfLabel = nfeInfo ? `NF ${nfeInfo.numero_nf}${nfeInfo.is_os ? ' (OS)' : ''}` : `ID ${nfeId.slice(0,8)}...`
+    console.log(`[LOG][AUDIT]   ${nfLabel}: ${count} itens`)
+  }
+
+  // Detectar NFes sem itens
+  const nfesComItens = new Set(nfeItens?.map(i => i.nfe_id) || [])
+  const nfesSemItens = nfeIds.filter(id => !nfesComItens.has(id))
+  if (nfesSemItens.length > 0) {
+    console.log(`[LOG][WARN] ${nfesSemItens.length} NFes vinculadas SEM itens:`)
+    for (const nfeId of nfesSemItens) {
+      const nfeInfo = nfeMap.get(nfeId)
+      const nfLabel = nfeInfo ? `NF ${nfeInfo.numero_nf}${nfeInfo.is_os ? ' (OS)' : ''}` : `ID ${nfeId.slice(0,8)}...`
+      console.log(`[LOG][WARN]   - ${nfLabel}: 0 itens encontrados`)
+    }
   }
 
   // 3) Fetch matic_sku data for suggested locations (using ref_meia to match NF codigo_produto)
@@ -346,14 +368,29 @@ export async function POST(request: NextRequest) {
 
   console.log(`[LOG] Agrupados ${(nfeItens || []).length} itens de NF em ${groupedItems.size} itens únicos`)
   
-  // Audit: log items that came from multiple NFs
+  // Audit: log items that came from multiple NFs with NF numbers
   for (const [codigo, group] of groupedItems) {
     if (group.nfe_item_ids.length > 1) {
-      console.log(`[LOG][AUDIT] Item ${group.codigo_produto} (norm: ${codigo}) agrupado de ${group.nfe_item_ids.length} NFs: qty_total=${group.quantidade_total}, vol/item=${group.volumes_por_item}`)
+      // Descobrir quais NFes contribuíram para este item
+      const nfesDoItem = new Set<string>()
+      for (const itemId of group.nfe_item_ids) {
+        const nfeItem = nfeItens?.find(i => i.id === itemId)
+        if (nfeItem) {
+          const nfeInfo = nfeMap.get(nfeItem.nfe_id)
+          if (nfeInfo) {
+            nfesDoItem.add(nfeInfo.numero_nf)
+          }
+        }
+      }
+      console.log(`[LOG][AUDIT] Item ${group.codigo_produto} (norm: ${codigo}) agrupado de ${group.nfe_item_ids.length} itens de NFs: ${Array.from(nfesDoItem).join(', ')} - qty_total=${group.quantidade_total}, vol/item=${group.volumes_por_item}`)
     }
   }
 
   // 7) Create recebimento_itens + recebimento_item_volumes (grouped)
+  console.log(`[LOG][AUDIT] Criando ${groupedItems.size} recebimento_itens...`)
+  let itensCreated = 0
+  let itensFailed = 0
+
   for (const [codigoNormalizado, group] of groupedItems) {
     const sku = skuMap.get(codigoNormalizado)
     const volumesPorItem = group.volumes_por_item
@@ -375,9 +412,12 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (riError) {
-      console.error('[LOG] Erro ao criar recebimento_item:', riError)
+      itensFailed++
+      console.error(`[LOG][ERROR] Falha ao criar item ${group.codigo_produto}:`, riError)
       continue
     }
+    
+    itensCreated++
 
     // Create volume records (1 per volume type)
     const volumes = []
@@ -401,6 +441,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  console.log(`[LOG][AUDIT] Resumo: ${itensCreated} itens criados, ${itensFailed} falharam`)
   console.log(`[LOG] Recebimento ${recId} criado com ${nfeIds.length} NFs e ${(nfeItens || []).length} itens`)
 
   return NextResponse.json({ id: recId, message: 'Recebimento criado com sucesso' }, { status: 201 })

@@ -42,6 +42,7 @@ export async function PATCH(
       // Starting timer - just update state and timestamp
       updateData.timer_rodando = true
       updateData.timer_ultima_acao = now
+      updateData.ultima_atividade_conferencia = now
     } else {
       // Pausing timer - accumulate elapsed time
       if (rec.timer_rodando && rec.timer_ultima_acao) {

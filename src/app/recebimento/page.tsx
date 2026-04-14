@@ -778,7 +778,7 @@ function CreateRecebimentoModal({
                 type="date"
                 value={periodoInicio}
                 onChange={e => setPeriodoInicio(e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30 focus:border-[#00A5E6]"
+                className="w-full min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30 focus:border-[#00A5E6]"
               />
             </div>
             <div>
@@ -787,7 +787,7 @@ function CreateRecebimentoModal({
                 type="date"
                 value={periodoFim}
                 onChange={e => setPeriodoFim(e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30 focus:border-[#00A5E6]"
+                className="w-full min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30 focus:border-[#00A5E6]"
               />
             </div>
           </div>
@@ -1043,7 +1043,7 @@ function ImportNFeModal({
                   type="date"
                   value={inicio}
                   onChange={e => setInicio(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#00A5E6] focus:border-transparent outline-none"
+                  className="w-full min-w-0 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#00A5E6] focus:border-transparent outline-none"
                   disabled={importing}
                 />
               </div>
@@ -1055,7 +1055,7 @@ function ImportNFeModal({
                   type="date"
                   value={fim}
                   onChange={e => setFim(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#00A5E6] focus:border-transparent outline-none"
+                  className="w-full min-w-0 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#00A5E6] focus:border-transparent outline-none"
                   disabled={importing}
                 />
               </div>

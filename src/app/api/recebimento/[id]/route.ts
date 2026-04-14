@@ -215,9 +215,11 @@ export async function GET(
   // Create virtual OS items (one per OS number)
   const osItems = []
   for (const nfeLink of nfesOS) {
-    const nfe = nfeLink.nfe as { volumes_total?: number; nfe_assistencias?: Array<{ os_oc_numero: string }> }
+    const nfe = nfeLink.nfe as { volumes_total?: number; nfe_assistencias?: Array<{ os_oc_numero: string }>; numero_nf?: string }
     const assistencias = nfe?.nfe_assistencias || []
     const volumesTotal = nfe?.volumes_total || 0
+    // Get the NF number directly from the nfeLink (already fetched in the query)
+    const numeroNfForOS = nfe?.numero_nf || ((nfeLink as { nfe_id?: string }).nfe_id ? (nfeIdToNumeroMap.get((nfeLink as { nfe_id: string }).nfe_id) || '') : '')
     
     for (const ass of assistencias) {
       const tracking = osTrackingMap.get(ass.os_oc_numero)
@@ -238,6 +240,7 @@ export async function GET(
         avaria_foto_url: null,
         is_os: true,
         os_numero: ass.os_oc_numero,
+        numero_nf: numeroNfForOS,
         nfe_item: null,
         recebimento_item_volumes: [],
         status_calculado: volumesRecebidos >= volumesPrevistos ? 'concluido' : volumesRecebidos > 0 ? 'parcial' : 'pendente',

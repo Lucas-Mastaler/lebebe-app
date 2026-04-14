@@ -275,10 +275,27 @@ export async function POST(request: NextRequest) {
     console.log(`[LOG][WARN] ${nfesSemItens.length} NFes vinculadas SEM itens:`)
     for (const nfeId of nfesSemItens) {
       const nfeInfo = nfeMap.get(nfeId)
-      const nfLabel = nfeInfo ? `NF ${nfeInfo.numero_nf}${nfeInfo.is_os ? ' (OS)' : ''}` : `ID ${nfeId.slice(0,8)}...`
+      const nfLabel = nfeInfo ? `NF ${nfeInfo.numero_nf}${nfeInfo.is_os ? ' (OS - esperado sem itens em nfe_itens)' : ' (NORMAL - verificar!)'}` : `ID ${nfeId.slice(0,8)}...`
       console.log(`[LOG][WARN]   - ${nfLabel}: 0 itens encontrados`)
     }
   }
+
+  // Resumo de NFes por tipo
+  const nfesNormais: string[] = []
+  const nfesOS: string[] = []
+  for (const [nfeId, info] of nfeMap) {
+    if (info.is_os) {
+      nfesOS.push(info.numero_nf)
+    } else {
+      nfesNormais.push(info.numero_nf)
+    }
+  }
+  console.log(`[LOG][AUDIT] Resumo de NFes vinculadas:`)
+  console.log(`[LOG][AUDIT]   - Total de NFes: ${nfeIds.length}`)
+  console.log(`[LOG][AUDIT]   - NFes com itens: ${nfesComItens.size}`)
+  console.log(`[LOG][AUDIT]   - NFes SEM itens: ${nfesSemItens.length}`)
+  console.log(`[LOG][AUDIT]   - NFes normais: ${nfesNormais.length} (${nfesNormais.join(', ')})`)
+  console.log(`[LOG][AUDIT]   - NFes OS: ${nfesOS.length} (${nfesOS.join(', ')})`)
 
   // 3) Fetch matic_sku data for suggested locations (using ref_meia to match NF codigo_produto)
   // Normalize codes: remove leading zeros (02685 -> 2685)

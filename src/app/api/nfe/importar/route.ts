@@ -257,9 +257,14 @@ async function parsearNFe(
   // observações (infCpl)
   const obs = infAdic.infCpl ?? "";
 
-  // is_os: baseado em natOp (natureza da operação)
+  // is_os: baseado em natOp (natureza da operação) OU obs (observações/infCpl)
   const natOp = String(ide.natOp ?? "").toUpperCase();
-  const is_os = natOp === "ASSIST.TECNICA";
+  const obsUpper = String(obs).toUpperCase();
+  const is_os = natOp.includes("ASSIST.TECNICA") || obsUpper.includes("ASSIST.TECNICA");
+
+  if (is_os) {
+    console.log(`[NFE][PARSE] NF ${String(ide.nNF ?? "")} detectada como OS: natOp="${natOp}", obs contém ASSIST.TECNICA: ${obsUpper.includes("ASSIST.TECNICA")}`)
+  }
 
   // itens
   const detRaw = infNFe.det;

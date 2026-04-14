@@ -291,6 +291,8 @@ async function parsearNFe(
   // Regex com \b (word boundary) para evitar falsos positivos
   const regexOS = /\bO\.?\s*S\.?\s*[:\-]?\s*(\d+)\b/gi;
   const regexOC = /\bO\s*C\s*[:\-]?\s*(\d+)\b/gi;
+  // Captura "S/PEDIDO: 4527" — número do pedido do cliente (usado em ASSIST.TECNICA)
+  const regexSPedido = /S\s*\/\s*PEDIDO\s*[:\s]+(\d{3,8})\b/gi;
   
   const encontrados: string[] = [];
   let osMatch;
@@ -300,6 +302,10 @@ async function parsearNFe(
   }
   
   while ((osMatch = regexOC.exec(obsStr)) !== null) {
+    if (osMatch[1]) encontrados.push(osMatch[1]);
+  }
+
+  while ((osMatch = regexSPedido.exec(obsStr)) !== null) {
     if (osMatch[1]) encontrados.push(osMatch[1]);
   }
   

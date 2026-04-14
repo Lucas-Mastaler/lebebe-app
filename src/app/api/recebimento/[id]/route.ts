@@ -118,7 +118,8 @@ export async function GET(
   })
   const nfeOSIds = new Set(nfesOS.map((link: Record<string, unknown>) => link.nfe_id))
   
-  // Fetch all nfe_itens to identify which items belong to OS NFes (single query optimization)
+  // Fetch nfe_itens for the items referenced in recebimento_itens
+  // (used to identify which items belong to OS NFes)
   const itemNfeItemIds = (itens || []).map((item: Record<string, unknown>) => item.nfe_item_id).filter(Boolean)
   const { data: nfeItemsData } = await supabase
     .from('nfe_itens')
@@ -133,14 +134,31 @@ export async function GET(
     return [ni.id, nfe?.numero_nf || '']
   }))
   
-  // Create nfeId to numeroNf map
+  // Build nfeId -> numero_nf map from ALL linked NFes (nfeLinks already has this data)
+  // This ensures ALL NFes are resolvable, not just those stored as item references
   const nfeIdToNumeroMap = new Map<string, string>()
-  for (const ni of (nfeItemsData || [])) {
-    const nfeArray = ni.nfe as { numero_nf: string }[] | { numero_nf: string } | null
-    const nfe = Array.isArray(nfeArray) ? nfeArray[0] : nfeArray
-    if (nfe?.numero_nf && ni.nfe_id) {
-      nfeIdToNumeroMap.set(ni.nfe_id, nfe.numero_nf)
+  for (const nfeLink of (nfeLinks || [])) {
+    const nfe = nfeLink.nfe as { numero_nf?: string } | null
+    if (nfe?.numero_nf && nfeLink.nfe_id) {
+      nfeIdToNumeroMap.set(nfeLink.nfe_id as string, nfe.numero_nf)
     }
+  }
+
+  // Fetch ALL nfe_itens for ALL NFes linked to this recebimento
+  // (needed to correctly build nf_sources for grouped items spanning multiple NFes)
+  const allLinkedNfeIds = (nfeLinks || []).map((l: Record<string, unknown>) => l.nfe_id as string).filter(Boolean)
+  const { data: allNfeItemsForRecebimento } = await supabase
+    .from('nfe_itens')
+    .select('id, nfe_id, codigo_produto')
+    .in('nfe_id', allLinkedNfeIds)
+    .limit(10000)
+
+  // Build: codigo_produto -> [nfe_ids] from ALL linked items
+  const codigoProdutoToNfeIds = new Map<string, string[]>()
+  for (const ni of (allNfeItemsForRecebimento || [])) {
+    const existing = codigoProdutoToNfeIds.get(ni.codigo_produto) || []
+    if (!existing.includes(ni.nfe_id)) existing.push(ni.nfe_id)
+    codigoProdutoToNfeIds.set(ni.codigo_produto, existing)
   }
   
   // Mark items from OS NFes
@@ -172,19 +190,18 @@ export async function GET(
       const nfeItemId = item.nfe_item_id as string
       const numeroNf = nfeItemToNumeroMap.get(nfeItemId) || ''
       
-      // Find all NFs that contributed to this item (by codigo_produto)
+      // Build nf_sources: ALL normal NFes that have this product
+      // Uses the comprehensive allNfeItemsForRecebimento to find all contributing NFes
       const codigoProduto = nfeItem?.codigo_produto || ''
       const nfSources: string[] = []
       if (codigoProduto) {
-        for (const [nfeId, nfNumero] of nfeIdToNumeroMap) {
-          const nfeHasThisProduct = (itens || []).some((otherItem: any) => {
-            const otherNfeItemId = otherItem.nfe_item_id as string
-            const otherNfeItem = otherItem.nfe_item as any
-            return otherNfeItem?.codigo_produto === codigoProduto && 
-                   nfeItemToNfeMap.get(otherNfeItemId) === nfeId
-          })
-          if (nfeHasThisProduct && !nfSources.includes(nfNumero)) {
-            nfSources.push(nfNumero)
+        const nfeIdsForCodigo = codigoProdutoToNfeIds.get(codigoProduto) || []
+        for (const nfeId of nfeIdsForCodigo) {
+          if (!nfeOSIds.has(nfeId)) { // exclude OS NFes from nf_sources
+            const nfNumero = nfeIdToNumeroMap.get(nfeId)
+            if (nfNumero && !nfSources.includes(nfNumero)) {
+              nfSources.push(nfNumero)
+            }
           }
         }
       }
@@ -213,21 +230,23 @@ export async function GET(
   const osTrackingMap = new Map((osTracking || []).map(ot => [ot.os_numero, ot]))
 
   // Create virtual OS items (one per OS number)
+  // For OS NFes with no assistencias extracted, a fallback item is created so they're visible
   const osItems = []
   for (const nfeLink of nfesOS) {
     const nfe = nfeLink.nfe as { volumes_total?: number; nfe_assistencias?: Array<{ os_oc_numero: string }>; numero_nf?: string }
     const assistencias = nfe?.nfe_assistencias || []
     const volumesTotal = nfe?.volumes_total || 0
-    // Get the NF number directly from the nfeLink (already fetched in the query)
-    const numeroNfForOS = nfe?.numero_nf || ((nfeLink as { nfe_id?: string }).nfe_id ? (nfeIdToNumeroMap.get((nfeLink as { nfe_id: string }).nfe_id) || '') : '')
+    const numeroNfForOS = nfe?.numero_nf || (nfeIdToNumeroMap.get((nfeLink as { nfe_id: string }).nfe_id) || '')
     
-    for (const ass of assistencias) {
-      const tracking = osTrackingMap.get(ass.os_oc_numero)
+    if (assistencias.length === 0) {
+      // OS NFe with no assistencias extracted — create fallback item keyed by NF number
+      const itemId = `os-nf-${numeroNfForOS || (nfeLink as { nfe_id: string }).nfe_id}`
+      const tracking = osTrackingMap.get(itemId)
       const volumesRecebidos = tracking?.volumes_recebidos || 0
       const volumesPrevistos = tracking?.volumes_previstos || volumesTotal
-      
+
       osItems.push({
-        id: `os-${ass.os_oc_numero}`,
+        id: itemId,
         recebimento_id: id,
         nfe_item_id: null,
         volumes_previstos_total: volumesPrevistos,
@@ -239,15 +258,44 @@ export async function GET(
         divergencia_obs: null,
         avaria_foto_url: null,
         is_os: true,
-        os_numero: ass.os_oc_numero,
+        os_numero: null,
         numero_nf: numeroNfForOS,
         nfe_item: null,
         recebimento_item_volumes: [],
         status_calculado: volumesRecebidos >= volumesPrevistos ? 'concluido' : volumesRecebidos > 0 ? 'parcial' : 'pendente',
-        sku_descricao: `OS ${ass.os_oc_numero}`,
+        sku_descricao: `OS-NF ${numeroNfForOS}`,
         sku_corredor_sugerido: null,
         sku_nivel_sugerido: null,
       })
+    } else {
+      for (const ass of assistencias) {
+        const tracking = osTrackingMap.get(ass.os_oc_numero)
+        const volumesRecebidos = tracking?.volumes_recebidos || 0
+        const volumesPrevistos = tracking?.volumes_previstos || volumesTotal
+        
+        osItems.push({
+          id: `os-${ass.os_oc_numero}`,
+          recebimento_id: id,
+          nfe_item_id: null,
+          volumes_previstos_total: volumesPrevistos,
+          volumes_recebidos_total: volumesRecebidos,
+          volumes_por_item: 1,
+          corredor_final: null,
+          nivel_final: null,
+          divergencia_tipo: null,
+          divergencia_obs: null,
+          avaria_foto_url: null,
+          is_os: true,
+          os_numero: ass.os_oc_numero,
+          numero_nf: numeroNfForOS,
+          nfe_item: null,
+          recebimento_item_volumes: [],
+          status_calculado: volumesRecebidos >= volumesPrevistos ? 'concluido' : volumesRecebidos > 0 ? 'parcial' : 'pendente',
+          sku_descricao: `OS ${ass.os_oc_numero}`,
+          sku_corredor_sugerido: null,
+          sku_nivel_sugerido: null,
+        })
+      }
     }
   }
 

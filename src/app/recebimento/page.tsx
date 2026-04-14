@@ -772,7 +772,7 @@ function CreateRecebimentoModal({
 
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <div>
+            <div className="min-w-0 overflow-hidden">
               <label className="text-sm font-medium text-slate-600 block mb-1">Período Início</label>
               <input
                 type="date"
@@ -781,7 +781,7 @@ function CreateRecebimentoModal({
                 className="w-full min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30 focus:border-[#00A5E6]"
               />
             </div>
-            <div>
+            <div className="min-w-0 overflow-hidden">
               <label className="text-sm font-medium text-slate-600 block mb-1">Período Fim</label>
               <input
                 type="date"
@@ -1035,7 +1035,7 @@ function ImportNFeModal({
         {mode === 'data' && !dateResult && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <div>
+              <div className="min-w-0 overflow-hidden">
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   Data Início
                 </label>
@@ -1047,7 +1047,7 @@ function ImportNFeModal({
                   disabled={importing}
                 />
               </div>
-              <div>
+              <div className="min-w-0 overflow-hidden">
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   Data Fim
                 </label>

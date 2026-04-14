@@ -355,6 +355,14 @@ export async function POST(request: NextRequest) {
   }
 
   // 6) Group items by codigo_produto (merge duplicates from different NFs)
+  // Skip items from OS NFes — they are tracked via nfe_assistencias, not recebimento_itens
+  const nfeOsIdSet = new Set(nfesInfo?.filter(n => n.is_os).map(n => n.id) || [])
+  const nfeItensParaAgrupar = (nfeItens || []).filter(item => !nfeOsIdSet.has(item.nfe_id))
+  if (nfeItensParaAgrupar.length < (nfeItens || []).length) {
+    const excluidos = (nfeItens || []).length - nfeItensParaAgrupar.length
+    console.log(`[LOG][AUDIT] Excluindo ${excluidos} itens de NFes OS do agrupamento (serão tratados via assistencias)`)
+  }
+
   const groupedItems = new Map<string, { 
     codigo_produto: string
     descricao: string
@@ -363,7 +371,7 @@ export async function POST(request: NextRequest) {
     volumes_por_item: number 
   }>()
 
-  for (const item of (nfeItens || [])) {
+  for (const item of nfeItensParaAgrupar) {
     const codigoNormalizado = normalizeCode(item.codigo_produto)
     const existing = groupedItems.get(codigoNormalizado)
     const sku = skuMap.get(codigoNormalizado)
@@ -383,7 +391,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  console.log(`[LOG] Agrupados ${(nfeItens || []).length} itens de NF em ${groupedItems.size} itens únicos`)
+  console.log(`[LOG] Agrupados ${nfeItensParaAgrupar.length} itens de NFes normais em ${groupedItems.size} itens únicos`)
   
   // Audit: log items that came from multiple NFs with NF numbers
   for (const [codigo, group] of groupedItems) {

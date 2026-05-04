@@ -6,6 +6,13 @@ import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 
 // ─────────────────────────────────────────────────────────
+// Helper: remove leading zeros for matching (02685 -> 2685)
+// ─────────────────────────────────────────────────────────
+function normalizeCode(code: string): string {
+  return code.replace(/^0+/, '') || '0'
+}
+
+// ─────────────────────────────────────────────────────────
 // Tipos
 // ─────────────────────────────────────────────────────────
 
@@ -446,9 +453,9 @@ export async function POST(request: NextRequest) {
             .or(`codigo_produto.eq.${item.codigo_produto},ref_meia.eq.${codigoNormalizado},ref_inteira.eq.${codigoNormalizado}`)
 
           // Prioridade: codigo_produto > ref_meia > ref_inteira
-          let sku = skus?.find(s => s.codigo_produto === item.codigo_produto)
-          if (!sku) sku = skus?.find(s => normalizeCode(s.ref_meia || '') === codigoNormalizado)
-          if (!sku) sku = skus?.find(s => normalizeCode(s.ref_inteira || '') === codigoNormalizado)
+          let sku = skus?.find((s: any) => s.codigo_produto === item.codigo_produto)
+          if (!sku) sku = skus?.find((s: any) => normalizeCode(s.ref_meia || '') === codigoNormalizado)
+          if (!sku) sku = skus?.find((s: any) => normalizeCode(s.ref_inteira || '') === codigoNormalizado)
 
           const volumesPorItem = sku?.volumes_por_item || 1;
           const qtd = Math.round(parseFloat(item.quantidade) || 0);

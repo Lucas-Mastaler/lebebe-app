@@ -100,7 +100,7 @@ export default function ConferenciaPage() {
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<'itens' | 'os' | 'divergencias'>('itens')
   const [statusFilter, setStatusFilter] = useState<'tudo' | 'incompleto' | 'conferido'>('tudo')
-  const [corredorFilter, setCorredorFilter] = useState<'todos' | 'A' | 'B'>('todos')
+  const [corredorFilter, setCorredorFilter] = useState<'todos' | 'A' | 'B' | 'sem_corredor'>('todos')
   const [timerRunning, setTimerRunning] = useState(false)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [showFinalizar, setShowFinalizar] = useState(false)
@@ -320,6 +320,10 @@ export default function ConferenciaPage() {
     })
     .filter(item => {
       if (corredorFilter === 'todos') return true
+      if (corredorFilter === 'sem_corredor') {
+        const corredor = item.corredor_final || item.sku_corredor_sugerido
+        return !corredor
+      }
       const corredor = item.corredor_final || item.sku_corredor_sugerido
       return corredor === corredorFilter
     })
@@ -549,6 +553,14 @@ export default function ConferenciaPage() {
                 }`}
               >
                 B
+              </button>
+              <button
+                onClick={() => setCorredorFilter('sem_corredor')}
+                className={`px-2 py-1.5 rounded-lg text-[11px] font-medium transition-all whitespace-nowrap ${
+                  corredorFilter === 'sem_corredor' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-600'
+                }`}
+              >
+                Sem corredor
               </button>
             </div>
           )}

@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateMaticUser } from '@/lib/auth/matic-auth'
 
-// Helper: remove leading zeros for matching (02685 -> 2685)
+// Helper: remove leading zeros and trim spaces for matching (02685 -> 2685)
 function normalizeCode(code: string): string {
-  return code.replace(/^0+/, '') || '0'
+  if (!code) return '0'
+  return code.trim().replace(/^0+/, '') || '0'
 }
 
 // GET /api/recebimento/[id] — get full recebimento detail with items and volumes
@@ -84,39 +85,30 @@ export async function GET(
     return NextResponse.json({ error: itensError.message }, { status: 500 })
   }
 
-  // Fetch matic_sku info for items (using ref_meia or ref_inteira to match NF codigo_produto)
+  // Fetch all matic_sku info (match ref_meia or ref_inteira with NF codigo_produto)
   // Normalize codes: remove leading zeros (02685 -> 2685)
-  const codigosNF = [...new Set((itens || []).map((i: Record<string, unknown>) => {
-    const nfeItem = i.nfe_item as { codigo_produto: string } | null
-    return nfeItem?.codigo_produto
-  }).filter(Boolean))] as string[]
+  const { data: allSkus } = await supabase
+    .from('matic_sku')
+    .select('ref_meia, ref_inteira, descricao, corredor_sugerido, nivel_sugerido, prateleira_sugerida, volumes_por_item')
 
-  const codigosNormalizados = codigosNF.map(c => normalizeCode(c))
-
-  let skuMap = new Map<string, { descricao: string; ref_meia: string | null; corredor_sugerido: string | null; nivel_sugerido: string | null; prateleira_sugerida: string | null; volumes_por_item: number }>()
-  if (codigosNormalizados.length > 0) {
-    // Fetch all SKUs and normalize ref_meia/ref_inteira for comparison
-    const { data: skus } = await supabase
-      .from('matic_sku')
-      .select('ref_meia, ref_inteira, descricao, corredor_sugerido, nivel_sugerido, prateleira_sugerida, volumes_por_item')
-      .or('ref_meia.not.is.null,ref_inteira.not.is.null')
-
-    // Build map with normalized codes (ref_meia has priority over ref_inteira)
-    if (skus) {
-      for (const sku of skus) {
-        // Match via ref_meia (priority 1)
-        const normalizedRefMeia = normalizeCode(sku.ref_meia || '')
-        if (normalizedRefMeia && codigosNormalizados.includes(normalizedRefMeia)) {
+  // Build map: normalized code -> SKU data
+  // For each SKU, add entries for both ref_meia and ref_inteira (if present)
+  const skuMap = new Map<string, { descricao: string; ref_meia: string | null; corredor_sugerido: string | null; nivel_sugerido: string | null; prateleira_sugerida: string | null; volumes_por_item: number }>()
+  if (allSkus) {
+    for (const sku of allSkus) {
+      // Add entry for ref_meia (if present)
+      if (sku.ref_meia) {
+        const normalizedRefMeia = normalizeCode(sku.ref_meia)
+        if (normalizedRefMeia && !skuMap.has(normalizedRefMeia)) {
           skuMap.set(normalizedRefMeia, sku)
         }
-        
-        // Fallback: match via ref_inteira (priority 2)
-        const normalizedRefInteira = normalizeCode(sku.ref_inteira || '')
-        if (normalizedRefInteira && codigosNormalizados.includes(normalizedRefInteira)) {
-          // Only add if not already found via ref_meia (ref_meia has priority)
-          if (!skuMap.has(normalizedRefInteira)) {
-            skuMap.set(normalizedRefInteira, sku)
-          }
+      }
+      
+      // Add entry for ref_inteira (if present and not already mapped)
+      if (sku.ref_inteira) {
+        const normalizedRefInteira = normalizeCode(sku.ref_inteira)
+        if (normalizedRefInteira && !skuMap.has(normalizedRefInteira)) {
+          skuMap.set(normalizedRefInteira, sku)
         }
       }
     }

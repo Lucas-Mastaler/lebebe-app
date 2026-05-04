@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateMaticUser } from '@/lib/auth/matic-auth'
 
-// Helper: remove leading zeros for matching (02685 -> 2685)
+// Helper: remove leading zeros and trim spaces for matching (02685 -> 2685)
 function normalizeCode(code: string): string {
-  return code.replace(/^0+/, '') || '0'
+  if (!code) return '0'
+  return code.trim().replace(/^0+/, '') || '0'
 }
 
 // GET /api/recebimento — list all recebimentos with filters and pagination

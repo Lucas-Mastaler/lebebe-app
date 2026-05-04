@@ -763,7 +763,7 @@ function ItemCard({
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-            <p className="text-xs font-mono text-slate-500">{item.nfe_item?.codigo_produto}</p>
+            <p className="text-xs font-mono text-slate-500">{(item as any).refs_display || item.nfe_item?.codigo_produto}</p>
             {item.nf_sources && item.nf_sources.length > 0 ? (
               item.nf_sources.map(nf => (
                 <span key={nf} className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-mono">

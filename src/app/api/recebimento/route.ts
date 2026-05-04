@@ -304,11 +304,11 @@ export async function POST(request: NextRequest) {
 
   const { data: skus } = await supabase
     .from('matic_sku')
-    .select('ref_meia, ref_inteira, corredor_sugerido, nivel_sugerido, prateleira_sugerida, volumes_por_item')
+    .select('codigo_produto, descricao, ref_meia, ref_inteira, corredor_sugerido, nivel_sugerido, prateleira_sugerida, volumes_por_item')
     .or('ref_meia.not.is.null,ref_inteira.not.is.null')
 
-  // Build map with normalized codes (ref_meia has priority over ref_inteira)
-  const skuMap = new Map<string, { ref_meia: string; corredor_sugerido: string | null; nivel_sugerido: string | null; prateleira_sugerida: string | null; volumes_por_item: number }>()
+  // Build map: normalized code from NF -> SKU data (including internal codigo_produto)
+  const skuMap = new Map<string, { codigo_produto: string; descricao: string; ref_meia: string | null; ref_inteira: string | null; corredor_sugerido: string | null; nivel_sugerido: string | null; prateleira_sugerida: string | null; volumes_por_item: number }>()
   if (skus) {
     for (const sku of skus) {
       // Match via ref_meia (priority 1)
@@ -378,25 +378,37 @@ export async function POST(request: NextRequest) {
     descricao: string
     quantidade_total: number
     nfe_item_ids: string[]
-    volumes_por_item: number 
+    volumes_por_item: number
+    refs_usadas: Set<string>
   }>()
 
   for (const item of nfeItensParaAgrupar) {
     const codigoNormalizado = normalizeCode(item.codigo_produto)
-    const existing = groupedItems.get(codigoNormalizado)
     const sku = skuMap.get(codigoNormalizado)
     const volumesPorItem = sku?.volumes_por_item || item.volumes_por_item || 1
+    
+    // Group by internal SKU codigo_produto (if found), otherwise by normalized NF code
+    const groupKey = sku?.codigo_produto || codigoNormalizado
+    const existing = groupedItems.get(groupKey)
+    
+    // Build description with ref_meia suffix
+    const descricao = sku?.descricao 
+      ? `${sku.descricao}${sku.ref_meia ? ` (${sku.ref_meia})` : ''}` 
+      : item.descricao
 
     if (existing) {
       existing.quantidade_total += item.quantidade
       existing.nfe_item_ids.push(item.id)
+      // Track all refs used for this SKU
+      existing.refs_usadas.add(item.codigo_produto)
     } else {
-      groupedItems.set(codigoNormalizado, {
+      groupedItems.set(groupKey, {
         codigo_produto: item.codigo_produto,
-        descricao: item.descricao,
+        descricao: descricao,
         quantidade_total: item.quantidade,
         nfe_item_ids: [item.id],
         volumes_por_item: volumesPorItem,
+        refs_usadas: new Set([item.codigo_produto])
       })
     }
   }
@@ -430,6 +442,10 @@ export async function POST(request: NextRequest) {
     const sku = skuMap.get(codigoNormalizado)
     const volumesPorItem = group.volumes_por_item
     const volumesPrevistos = group.quantidade_total * volumesPorItem
+    
+    // Build refs_display: all unique refs used, sorted and joined by /
+    const refsArray = Array.from(group.refs_usadas).sort()
+    const refsDisplay = refsArray.join('/')
 
     // Use first nfe_item_id as reference
     const { data: recItem, error: riError } = await supabase
@@ -442,6 +458,7 @@ export async function POST(request: NextRequest) {
         volumes_por_item: volumesPorItem,
         corredor_final: sku?.corredor_sugerido || null,
         nivel_final: sku?.nivel_sugerido || null,
+        refs_display: refsDisplay,
       })
       .select()
       .single()

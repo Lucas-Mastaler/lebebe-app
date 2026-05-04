@@ -63,6 +63,7 @@ export async function GET(
       divergencia_tipo,
       divergencia_obs,
       avaria_foto_url,
+      refs_display,
       nfe_item:nfe_item_id (
         codigo_produto,
         descricao,
@@ -92,7 +93,7 @@ export async function GET(
 
   const codigosNormalizados = codigosNF.map(c => normalizeCode(c))
 
-  let skuMap = new Map<string, { descricao: string; corredor_sugerido: string | null; nivel_sugerido: string | null; prateleira_sugerida: string | null; volumes_por_item: number }>()
+  let skuMap = new Map<string, { descricao: string; ref_meia: string | null; corredor_sugerido: string | null; nivel_sugerido: string | null; prateleira_sugerida: string | null; volumes_por_item: number }>()
   if (codigosNormalizados.length > 0) {
     // Fetch all SKUs and normalize ref_meia/ref_inteira for comparison
     const { data: skus } = await supabase
@@ -216,6 +217,11 @@ export async function GET(
         }
       }
 
+      // Build description with ref_meia suffix
+      const skuDescricao = sku?.descricao 
+        ? `${sku.descricao}${sku.ref_meia ? ` (${sku.ref_meia})` : ''}` 
+        : nfeItem?.descricao || ''
+
       return {
         ...item,
         is_os: false,
@@ -223,7 +229,7 @@ export async function GET(
         numero_nf: numeroNf,
         nf_sources: nfSources.sort((a, b) => b.localeCompare(a)), // Sort DESC
         status_calculado: status,
-        sku_descricao: sku?.descricao || nfeItem?.descricao || '',
+        sku_descricao: skuDescricao,
         sku_corredor_sugerido: sku?.corredor_sugerido,
         sku_nivel_sugerido: sku?.nivel_sugerido,
         sku_prateleira_sugerida: sku?.prateleira_sugerida,

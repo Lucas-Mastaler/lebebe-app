@@ -304,9 +304,10 @@ export default function ConferenciaPage() {
       if (!search) return true
       const searchTerms = search.toLowerCase().trim().split(/\s+/)
       const codigo = item.nfe_item?.codigo_produto?.toLowerCase() || ''
+      const refs = ((item as any).refs_display?.toLowerCase()) || ''
       const desc = item.sku_descricao?.toLowerCase() || ''
       const osNum = item.os_numero?.toLowerCase() || ''
-      const fullText = `${codigo} ${desc} ${osNum}`
+      const fullText = `${codigo} ${refs} ${desc} ${osNum}`
       
       return searchTerms.every(term => fullText.includes(term))
     })
@@ -455,8 +456,8 @@ export default function ConferenciaPage() {
               className="w-full pl-8 pr-8 h-10 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/20 focus:border-[#00A5E6] text-base bg-slate-50"
             />
             {search && (
-              <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2">
-                <X className="w-4 h-4 text-slate-400" />
+              <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 hover:bg-slate-100 rounded p-1 transition-colors">
+                <X className="w-5 h-5 text-slate-500" />
               </button>
             )}
           </div>

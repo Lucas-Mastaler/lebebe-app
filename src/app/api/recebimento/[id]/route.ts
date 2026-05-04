@@ -83,7 +83,7 @@ export async function GET(
     return NextResponse.json({ error: itensError.message }, { status: 500 })
   }
 
-  // Fetch matic_sku info for items (using ref_meia to match NF codigo_produto)
+  // Fetch matic_sku info for items (using ref_meia or ref_inteira to match NF codigo_produto)
   // Normalize codes: remove leading zeros (02685 -> 2685)
   const codigosNF = [...new Set((itens || []).map((i: Record<string, unknown>) => {
     const nfeItem = i.nfe_item as { codigo_produto: string } | null
@@ -94,18 +94,28 @@ export async function GET(
 
   let skuMap = new Map<string, { descricao: string; corredor_sugerido: string | null; nivel_sugerido: string | null; prateleira_sugerida: string | null; volumes_por_item: number }>()
   if (codigosNormalizados.length > 0) {
-    // Fetch all SKUs and normalize ref_meia for comparison
+    // Fetch all SKUs and normalize ref_meia/ref_inteira for comparison
     const { data: skus } = await supabase
       .from('matic_sku')
-      .select('ref_meia, descricao, corredor_sugerido, nivel_sugerido, prateleira_sugerida, volumes_por_item')
-      .not('ref_meia', 'is', null)
+      .select('ref_meia, ref_inteira, descricao, corredor_sugerido, nivel_sugerido, prateleira_sugerida, volumes_por_item')
+      .or('ref_meia.not.is.null,ref_inteira.not.is.null')
 
-    // Build map with normalized codes
+    // Build map with normalized codes (ref_meia has priority over ref_inteira)
     if (skus) {
       for (const sku of skus) {
+        // Match via ref_meia (priority 1)
         const normalizedRefMeia = normalizeCode(sku.ref_meia || '')
-        if (codigosNormalizados.includes(normalizedRefMeia)) {
+        if (normalizedRefMeia && codigosNormalizados.includes(normalizedRefMeia)) {
           skuMap.set(normalizedRefMeia, sku)
+        }
+        
+        // Fallback: match via ref_inteira (priority 2)
+        const normalizedRefInteira = normalizeCode(sku.ref_inteira || '')
+        if (normalizedRefInteira && codigosNormalizados.includes(normalizedRefInteira)) {
+          // Only add if not already found via ref_meia (ref_meia has priority)
+          if (!skuMap.has(normalizedRefInteira)) {
+            skuMap.set(normalizedRefInteira, sku)
+          }
         }
       }
     }

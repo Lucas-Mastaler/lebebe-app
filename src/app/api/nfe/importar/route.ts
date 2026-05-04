@@ -437,11 +437,18 @@ export async function POST(request: NextRequest) {
         await supabase.from("nfe_itens").delete().eq("nfe_id", nfeRow.id);
 
         for (const item of nf.itens) {
-          const { data: sku } = await supabase
+          // Busca SKU por codigo_produto, ref_meia ou ref_inteira (com fallback)
+          const codigoNormalizado = normalizeCode(item.codigo_produto)
+          
+          const { data: skus } = await supabase
             .from("matic_sku")
-            .select("volumes_por_item")
-            .eq("codigo_produto", item.codigo_produto)
-            .single();
+            .select("volumes_por_item, codigo_produto, ref_meia, ref_inteira")
+            .or(`codigo_produto.eq.${item.codigo_produto},ref_meia.eq.${codigoNormalizado},ref_inteira.eq.${codigoNormalizado}`)
+
+          // Prioridade: codigo_produto > ref_meia > ref_inteira
+          let sku = skus?.find(s => s.codigo_produto === item.codigo_produto)
+          if (!sku) sku = skus?.find(s => normalizeCode(s.ref_meia || '') === codigoNormalizado)
+          if (!sku) sku = skus?.find(s => normalizeCode(s.ref_inteira || '') === codigoNormalizado)
 
           const volumesPorItem = sku?.volumes_por_item || 1;
           const qtd = Math.round(parseFloat(item.quantidade) || 0);

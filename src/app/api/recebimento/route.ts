@@ -297,23 +297,33 @@ export async function POST(request: NextRequest) {
   console.log(`[LOG][AUDIT]   - NFes normais: ${nfesNormais.length} (${nfesNormais.join(', ')})`)
   console.log(`[LOG][AUDIT]   - NFes OS: ${nfesOS.length} (${nfesOS.join(', ')})`)
 
-  // 3) Fetch matic_sku data for suggested locations (using ref_meia to match NF codigo_produto)
+  // 3) Fetch matic_sku data for suggested locations (using ref_meia or ref_inteira to match NF codigo_produto)
   // Normalize codes: remove leading zeros (02685 -> 2685)
   const codigos = [...new Set((nfeItens || []).map(i => i.codigo_produto))]
   const codigosNormalizados = codigos.map(c => normalizeCode(c))
 
   const { data: skus } = await supabase
     .from('matic_sku')
-    .select('ref_meia, corredor_sugerido, nivel_sugerido, prateleira_sugerida, volumes_por_item')
-    .not('ref_meia', 'is', null)
+    .select('ref_meia, ref_inteira, corredor_sugerido, nivel_sugerido, prateleira_sugerida, volumes_por_item')
+    .or('ref_meia.not.is.null,ref_inteira.not.is.null')
 
-  // Build map with normalized codes
+  // Build map with normalized codes (ref_meia has priority over ref_inteira)
   const skuMap = new Map<string, { ref_meia: string; corredor_sugerido: string | null; nivel_sugerido: string | null; prateleira_sugerida: string | null; volumes_por_item: number }>()
   if (skus) {
     for (const sku of skus) {
+      // Match via ref_meia (priority 1)
       const normalizedRefMeia = normalizeCode(sku.ref_meia || '')
-      if (codigosNormalizados.includes(normalizedRefMeia)) {
+      if (normalizedRefMeia && codigosNormalizados.includes(normalizedRefMeia)) {
         skuMap.set(normalizedRefMeia, sku)
+      }
+      
+      // Fallback: match via ref_inteira (priority 2)
+      const normalizedRefInteira = normalizeCode(sku.ref_inteira || '')
+      if (normalizedRefInteira && codigosNormalizados.includes(normalizedRefInteira)) {
+        // Only add if not already found via ref_meia (ref_meia has priority)
+        if (!skuMap.has(normalizedRefInteira)) {
+          skuMap.set(normalizedRefInteira, sku)
+        }
       }
     }
   }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateMaticUser } from '@/lib/auth/matic-auth'
 import { enviarRecebimentoParaPlanilha } from '@/lib/google/sheets-service'
+import { dispararAutomacaoBaixaEncomendas } from '@/lib/integracoes/automacao-vps'
 
 // Helper: remove leading zeros and trim spaces for matching (02685 -> 2685)
 function normalizeCode(code: string): string {
@@ -315,6 +316,9 @@ export async function POST(
     sheetsError = err instanceof Error ? err.message : String(err)
     console.error('[LOG][SHEETS] ❌ Erro ao preparar/enviar dados para Google Sheets:', sheetsError)
   }
+
+  // Disparar gatilho VPS (não bloqueia a finalização em caso de falha)
+  await dispararAutomacaoBaixaEncomendas(id, dataFim.toISOString(), auth.email ?? '')
 
   console.log(`[LOG] Recebimento ${id} finalizado por ${auth.email}`)
   console.log(`[LOG][SHEETS] Status final: ${sheetsStatus}${sheetsError ? ` - Erro: ${sheetsError}` : ''}`)

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Package, Plus, Calendar, Truck, ChevronRight, Upload, FileText, Weight, X, Hash, Download, AlertCircle, Loader2, Search, Mail, Database, TrendingUp, BarChart3, Clock, Users, Eye, CheckCircle2 } from 'lucide-react'
+import { Package, Plus, Calendar, Truck, ChevronRight, Upload, FileText, Weight, X, Hash, Download, AlertCircle, Loader2, Search, Mail, Database, TrendingUp, BarChart3, Clock, Users, Eye, CheckCircle2, Edit } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import { isMaticEmail } from '@/lib/auth/matic-emails'
@@ -108,6 +108,10 @@ export default function RecebimentoPage() {
           <h1 className="text-2xl font-bold text-slate-800">Recebimento Matic</h1>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => router.push('/recebimento/produtos')} className="gap-2">
+            <Edit className="w-4 h-4" />
+            <span className="hidden sm:inline">Produtos</span>
+          </Button>
           <Button variant="outline" onClick={() => setShowImport(true)} className="gap-2">
             <Download className="w-4 h-4" />
             <span className="hidden sm:inline">Importar NFe</span>

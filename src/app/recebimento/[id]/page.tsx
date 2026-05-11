@@ -836,11 +836,11 @@ function ItemCard({
 
       {/* Progress */}
       <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-        <span>Total: <span className={
-          item.volumes_previstos_total >= 7 ? 'text-red-600 font-semibold' :
-          item.volumes_previstos_total >= 4 ? 'text-orange-500 font-semibold' :
+        <span>Total: <span className={`${
+          item.volumes_previstos_total >= 7 ? 'px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-semibold' :
+          item.volumes_previstos_total >= 4 ? 'px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-semibold' :
           ''
-        }>{item.volumes_recebidos_total}/{item.volumes_previstos_total}</span></span>
+        }`}>{item.volumes_recebidos_total}/{item.volumes_previstos_total}</span></span>
         <span>{totalPct}%</span>
       </div>
       <div className="w-full bg-slate-100 rounded-full h-1.5 mb-3">
@@ -876,7 +876,12 @@ function ItemCard({
                   style={{ width: `${volProgress}%` }}
                 />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className={`text-sm font-bold ${volComplete ? 'text-green-700' : 'text-slate-700'}`}>
+                  <span className={`text-sm font-bold ${
+                    volComplete ? 'text-green-700' :
+                    vol.qtd_prevista >= 7 ? 'px-1.5 py-0.5 rounded bg-red-100 text-red-700' :
+                    vol.qtd_prevista >= 4 ? 'px-1.5 py-0.5 rounded bg-orange-100 text-orange-700' :
+                    'text-slate-700'
+                  }`}>
                     {vol.qtd_recebida}/{vol.qtd_prevista}
                   </span>
                 </div>

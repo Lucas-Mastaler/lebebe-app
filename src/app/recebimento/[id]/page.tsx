@@ -836,7 +836,11 @@ function ItemCard({
 
       {/* Progress */}
       <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-        <span>Total: {item.volumes_recebidos_total}/{item.volumes_previstos_total}</span>
+        <span>Total: <span className={
+          item.volumes_previstos_total >= 7 ? 'text-red-600 font-semibold' :
+          item.volumes_previstos_total >= 4 ? 'text-orange-500 font-semibold' :
+          ''
+        }>{item.volumes_recebidos_total}/{item.volumes_previstos_total}</span></span>
         <span>{totalPct}%</span>
       </div>
       <div className="w-full bg-slate-100 rounded-full h-1.5 mb-3">

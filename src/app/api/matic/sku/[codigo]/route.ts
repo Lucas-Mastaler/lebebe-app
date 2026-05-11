@@ -108,7 +108,7 @@ export async function PATCH(
     } else if (atual) {
       const diffLog: Record<string, { antes: unknown; depois: unknown }> = {}
       for (const campo of camposSensiveisAlterados) {
-        const antes = (atual as Record<string, unknown>)[campo]
+        const antes = (atual as unknown as Record<string, unknown>)[campo]
         const depois = updateData[campo]
         if (antes !== depois) {
           diffLog[campo] = { antes, depois }

@@ -441,12 +441,12 @@ export default function ConferenciaPage() {
           {/* Progress Badge */}
           <div className="flex-shrink-0 flex flex-col items-center justify-center bg-slate-50 border border-slate-200 rounded-xl px-2.5 sm:px-3 h-10 relative overflow-hidden">
             <div 
-              className={`absolute bottom-0 left-0 h-1 transition-all duration-300 ${
-                pctGeral >= 100 ? 'bg-green-500' : pctGeral > 0 ? 'bg-amber-400' : 'bg-slate-200'
+              className={`absolute inset-0 transition-all duration-300 ${
+                pctGeral >= 100 ? 'bg-green-500/20' : pctGeral > 0 ? 'bg-amber-400/20' : ''
               }`}
               style={{ width: `${Math.min(pctGeral, 100)}%` }}
             />
-            <span className="text-[11px] sm:text-xs font-bold text-slate-800 tabular-nums">
+            <span className="relative z-10 text-[11px] sm:text-xs font-bold text-slate-800 tabular-nums">
               {recebimento.total_recebido}/{recebimento.total_previsto}
             </span>
           </div>

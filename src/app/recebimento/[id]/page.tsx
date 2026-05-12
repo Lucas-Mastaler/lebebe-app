@@ -442,7 +442,7 @@ export default function ConferenciaPage() {
           <div className="flex-shrink-0 flex flex-col items-center justify-center bg-slate-50 border border-slate-200 rounded-xl px-2.5 sm:px-3 h-10 relative overflow-hidden">
             <div 
               className={`absolute inset-0 transition-all duration-300 ${
-                pctGeral >= 100 ? 'bg-green-500/20' : pctGeral > 0 ? 'bg-amber-400/20' : ''
+                pctGeral >= 100 ? 'bg-green-500/35' : pctGeral > 0 ? 'bg-amber-400/35' : ''
               }`}
               style={{ width: `${Math.min(pctGeral, 100)}%` }}
             />

@@ -81,6 +81,7 @@ interface RecebimentoDetail {
   timer_rodando: boolean
   timer_ultima_acao: string | null
   ultima_atividade_conferencia: string | null
+  numero_recebimento?: number
   itens: RecebimentoItem[]
   nfes: Array<{ nfe_id: string; nfe: { numero_nf: string } | null }>
 }
@@ -381,6 +382,9 @@ export default function ConferenciaPage() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
             <h1 className="text-base sm:text-lg font-bold text-slate-800 truncate">Conferência</h1>
+            {recebimento.numero_recebimento && (
+              <span className="text-xs text-slate-400 font-mono">#{recebimento.numero_recebimento}</span>
+            )}
             {!isFechado && !isCancelado && (
               <div className="flex items-center gap-1 sm:gap-1.5 bg-slate-100 rounded-lg px-1.5 sm:px-2 py-1">
                 <button

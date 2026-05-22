@@ -317,6 +317,11 @@ async function parsearNFe(
     if (osMatch[1]) encontrados.push(osMatch[1]);
   }
   
+  const regexAssistTecnica = /ASSIST\.TECNICA\s*[;,]\s*(\d{3,8})\b/gi;
+  while ((osMatch = regexAssistTecnica.exec(obsStr)) !== null) {
+    if (osMatch[1]) encontrados.push(osMatch[1]);
+  }
+
   // Dedupe: remover duplicados
   const vistos = new Set<string>();
   for (const num of encontrados) {

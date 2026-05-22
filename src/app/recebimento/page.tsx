@@ -24,6 +24,7 @@ interface Recebimento {
   peso_total: number
   qtd_os: number
   numeros_os: string[]
+  numero_recebimento?: number
   recebimento_nfes: Array<{
     nfe_id: string
     nfe: { numero_nf: string; data_emissao: string; peso_total: number; volumes_total: number; is_os: boolean } | null
@@ -448,6 +449,9 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
           }`}>
             {isFechado ? 'FECHADO' : isCancelado ? 'CANCELADO' : 'ABERTO'}
           </span>
+          {rec.numero_recebimento && (
+            <span className="text-xs text-slate-400 font-mono">#{rec.numero_recebimento}</span>
+          )}
           {qtdOS > 0 && (
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700" title={rec.numeros_os?.join(', ')}>
               OS: {rec.numeros_os?.slice(0, 2).join(', ')}{rec.numeros_os && rec.numeros_os.length > 2 ? '...' : ''}

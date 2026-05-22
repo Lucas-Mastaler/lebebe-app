@@ -266,7 +266,7 @@ export async function GET(
         divergencia_obs: null,
         avaria_foto_url: null,
         is_os: true,
-        os_numero: null,
+        os_numero: itemId,
         numero_nf: numeroNfForOS,
         nfe_item: null,
         recebimento_item_volumes: [],

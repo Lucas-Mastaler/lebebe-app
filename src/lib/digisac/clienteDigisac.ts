@@ -2,6 +2,47 @@
 const BASE_URL = process.env.DIGISAC_BASE_URL;
 const TOKEN = process.env.DIGISAC_TOKEN;
 
+function buildDigisacRequest(endpoint: string, options: RequestInit): { url: string; init: RequestInit } {
+  if (!BASE_URL || !TOKEN) {
+    throw new Error('DIGISAC_BASE_URL ou DIGISAC_TOKEN não configurados');
+  }
+
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const url = `${BASE_URL}${cleanEndpoint}`;
+
+  const headers = {
+    'Authorization': `Bearer ${TOKEN}`,
+    'Accept': 'application/json',
+    ...options.headers,
+  };
+
+  const finalUrl = new URL(url);
+  console.log(`[DIGISAC] Request: ${options.method || 'GET'} ${finalUrl.pathname}${finalUrl.search}`);
+
+  return { url, init: { ...options, headers } };
+}
+
+export async function fetchDigisacRaw(endpoint: string, options: RequestInit = {}): Promise<Response> {
+  const { url, init } = buildDigisacRequest(endpoint, options);
+
+  try {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 30000);
+
+    const res = await fetch(url, { ...init, signal: controller.signal });
+
+    clearTimeout(id);
+
+    return res;
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      throw new Error('Digisac Request Timeout (30s)');
+    }
+    console.error('[DIGISAC] Falha de conexão/fetch:', error.message);
+    throw error;
+  }
+}
+
 export async function fetchDigisac(endpoint: string, options: RequestInit = {}) {
   if (!BASE_URL || !TOKEN) {
     throw new Error('DIGISAC_BASE_URL ou DIGISAC_TOKEN não configurados');

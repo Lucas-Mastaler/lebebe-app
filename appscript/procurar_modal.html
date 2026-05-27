@@ -490,7 +490,7 @@
 
                 <div class="row">
                     <div class="col">
-                        <label>BAIRRO</label>
+                        <label>BAIRRO <span style="color:red">*</span></label>
                         <input type="text" id="bairro" placeholder="Ex: Hauer" />
                     </div>
                     <div class="col">
@@ -532,25 +532,33 @@
                 <div class="gate">
                     <fieldset id="fsRest" disabled>
                         <div class="notice" role="alert">
-                            <strong>AVISO:</strong> SE FOR ENCOMENDA, UTILIZAR 45 DIAS OU MAIS.<br />
+                            <strong>AVISO:</strong> SE FOR ENCOMENDA, UTILIZAR 42 DIAS OU MAIS
+                            <span id="data42Dias" style="font-weight: bold; color: #b91c1c;"></span>.<br />
                             <strong>AVISO:</strong> SE FOR VENDE SHOWROOM FALAR COM PÓS VENDA DATA PRA DESMONTAR E
                             MONTAR.
                         </div>
 
-                        <div class="row">
-                            <div class="col-xs">
+                        <div class="row" style="flex-wrap:nowrap; align-items:flex-start; gap:12px;">
+                            <div style="flex:0 0 175px; min-width:0;">
                                 <label>DATA INICIAL DA BUSCA <span style="color:red">*</span></label>
-                                <input type="date" id="dataInicial" required />
-                                <div class="hint" style="margin-top:4px">Entre D+2 e D+90 (máx 90 dias)</div>
+                                <input type="date" id="dataInicial" required style="width:100%;" />
+                                <div id="dataInicialHint" class="hint" style="margin-top:4px">Entre D+2 e D+90 (máx 90 dias)</div>
                             </div>
-                            <div class="col-sm">
+                            <div style="flex:0 0 110px; min-width:0;">
+                                <label>É ENCOMENDA?</label>
+                                <div class="chkline">
+                                    <input type="checkbox" id="isEncomendaChk">
+                                    <span>Sim</span>
+                                </div>
+                            </div>
+                            <div style="flex:0 0 100px; min-width:0;">
                                 <label>ÁREA RURAL?</label>
                                 <div class="chkline">
                                     <input type="checkbox" id="isRuralChk">
                                     <span>Sim</span>
                                 </div>
                             </div>
-                            <div class="col-sm">
+                            <div style="flex:0 0 110px; min-width:0;">
                                 <label>É CONDOMÍNIO?</label>
                                 <div class="chkline">
                                     <input type="checkbox" id="isCondominioChk">
@@ -606,10 +614,17 @@
                                         aria-readonly="true">
                                     <div class="readonly-mask" title="Calculado automaticamente"></div>
                                 </div>
-                                <div id="tempoHint" class="hint">Calculado automaticamente a partir das opções acima.
+                                <div id="tempoHint" class="hint">Calculado automaticamente a partir das opções acima.</div>
+                                <div id="tempoWarn" class="err" style="display:none">Precisa fazer 2 entregas separadas.</div>
+                            </div>
+                            <div class="col">
+                                <label>VALOR INICIAL (MÍNIMO)</label>
+                                <div class="readonly-wrap">
+                                    <input type="text" id="valorInicial" value="" placeholder="—" readonly tabindex="-1"
+                                        aria-readonly="true" style="background:#f3f4f6; color:#4b5563; font-weight: bold;">
+                                    <div class="readonly-mask" title="Estimativa mínima calculada automaticamente"></div>
                                 </div>
-                                <div id="tempoWarn" class="err" style="display:none">Precisa fazer 2 entregas separadas.
-                                </div>
+                                <div class="hint">Estimativa para dias de semana, calculada pela distância do destino. Pode variar conforme data/equipe selecionada.</div>
                             </div>
                         </div>
 
@@ -655,6 +670,8 @@
         let window__addrOk = null; // Cache local do endereço confirmado
 
         let tempoTooLong = false; // trava quando HH:MM > 06:30
+        let valorInicialDebounce = null;
+        const valorInicialCache = {};
 
         // Flags de boot/controle
         let _booted = false;
@@ -770,18 +787,13 @@
                     setOptions('poltrona', opts.poltrona || []);
                     setOptions('painel', opts.painel || []);
 
-                    // Configurar date picker: D+2 a D+90
+                    window.__baseSemana = opts.baseSemana || 130;
+                    window.__adicionalCondominio = opts.adicionalCondominio || 0;
+
+                    // Configurar date picker: D+2 a D+90 (ou D+42 se encomenda)
                     const dataInput = document.getElementById('dataInicial');
                     if (dataInput && !(_userTouched && _optsLoaded)) {
-                        const hoje = new Date();
-                        const minDate = new Date(hoje);
-                        minDate.setDate(hoje.getDate() + 2);
-                        const maxDate = new Date(hoje);
-                        maxDate.setDate(hoje.getDate() + 90);
-
-                        dataInput.min = minDate.toISOString().split('T')[0];
-                        dataInput.max = maxDate.toISOString().split('T')[0];
-                        dataInput.value = minDate.toISOString().split('T')[0]; // Default: D+2
+                        atualizarDataMinima();
                     }
 
                     _optsLoaded = true;
@@ -910,13 +922,13 @@
             }
             addrContainer.classList.add('show');
 
-            document.getElementById('cepStatus').textContent = '✅ Localização confirmada.';
+            document.getElementById('cepStatus').textContent = ' Localização confirmada.';
             document.getElementById('btnAbrirMapa').style.display = 'none';
-            // ⏳ NÃO confirma automaticamente - aguarda botão "Confirmar endereço"
+            // NÃO confirma automaticamente - aguarda botão "Confirmar endereço"
             cepConfirmed = false; // Mantém false
             setGate(true);  // Mantém gate ATIVA
             updateSubmitState();
-            console.log('[Map] ✅ CEP confirmado com dados do mapa!');
+            console.log('[Map] CEP confirmado com dados do mapa!');
         }
 
         // ---------- Tempo automático ----------
@@ -938,9 +950,10 @@
             if (M && typeof M === 'object') {
                 const f = getFormValues();
                 const k = tempoKeyJS(f.tipoBerco, f.comoda, f.roupeiro, f.poltrona, f.painel);
-                if (!k.replace(/\|/g, '')) { // <- sem escape duplo
+                if (!k.replace(/\|/g, '')) { // sem escape duplo
                     document.getElementById('tempo').value = '';
                     document.getElementById('tempo').placeholder = '—';
+                    setValorInicialFallback();
                     tempoBusy = false; hint.textContent = 'Selecione os itens para calcular.';
                     updateSubmitState(); return;
                 }
@@ -968,24 +981,97 @@
                 tempoTooLong = (minutes > 390);
 
                 warn.style.display = tempoTooLong ? 'block' : 'none';
+            }
 
-                tempoBusy = false;
-                hint.textContent = t ? 'Calculado automaticamente.' : 'Selecione os itens para calcular.';
-                updateSubmitState();
+            tempoBusy = false;
+            hint.textContent = 'Calculado automaticamente.';
+            updateSubmitState();
+            triggerValorInicialCalc();
+        }
+
+        // ---------- Valor Inicial (mínimo) ----------
+        function setValorInicialField(text){
+            const el = document.getElementById('valorInicial');
+            if (el) el.value = text || '';
+        }
+
+        function setValorInicialLoading(){
+            setValorInicialField('Calculando...');
+        }
+
+        function calcValorInicialFallbackNumber(f){
+            if (!window.__baseSemana) return null;
+            let minFrete = window.__baseSemana;
+            if (f && f.isRural) minFrete += 100;
+            if (f && f.isCondominio) minFrete += window.__adicionalCondominio;
+            minFrete = Math.ceil(minFrete / 10) * 10;
+            minFrete = minFrete * 1.2;
+            minFrete = Math.ceil(minFrete / 10) * 10;
+            if (minFrete < 110) minFrete = 110;
+            return minFrete;
+        }
+
+        function setValorInicialFallback(){
+            const f = getFormValues();
+            const v = calcValorInicialFallbackNumber(f);
+            if (v != null) {
+                setValorInicialField('R$ ' + v.toFixed(2).replace('.', ','));
+                console.log('[VALOR-INICIAL] fallback usado');
+            }
+        }
+
+        function valorKey(coords, f){
+            if (!coords) return '';
+            return [coords.lat, coords.lng, f.isRural ? 1 : 0, f.isCondominio ? 1 : 0].join('|');
+        }
+
+        function triggerValorInicialCalc(){
+            if (valorInicialDebounce) clearTimeout(valorInicialDebounce);
+            valorInicialDebounce = setTimeout(() => {
+                valorInicialDebounce = null;
+                calcularValorInicialBackend();
+            }, 300);
+        }
+
+        function calcularValorInicialBackend(){
+            const f = getFormValues();
+            const coords = lastCepObj && lastCepObj.lat != null && lastCepObj.lng != null ? { lat:Number(lastCepObj.lat), lng:Number(lastCepObj.lng), display:lastCepObj.display, provider:lastCepObj.provider } : null;
+            if (!coords) { setValorInicialFallback(); return; }
+
+            const key = valorKey(coords, f);
+            if (key && valorInicialCache[key]) {
+                setValorInicialField(valorInicialCache[key].valorFormatado || valorInicialCache[key].valorFmt || valorInicialCache[key]);
+                console.log('[VALOR-INICIAL] cache hit', key);
                 return;
             }
 
-            // fallback: carregar mapa e tentar de novo
+            const payload = Object.assign({}, f, {
+                destLat: coords.lat,
+                destLng: coords.lng,
+                destDisplay: coords.display || '',
+                destProvider: coords.provider || 'validated',
+                returnOnly: true
+            });
+
+            setValorInicialLoading();
+            console.log('[VALOR-INICIAL] calculando após confirmar local');
+
             google.script.run
-                .withSuccessHandler(map => {
-                    window.__tempoMap = map || {};
-                    recalcTempo();
+                .withSuccessHandler(res => {
+                    if (res && res.ok && res.valorFormatado) {
+                        setValorInicialField(res.valorFormatado);
+                        if (key) valorInicialCache[key] = res;
+                        console.log('[VALOR-INICIAL] preenchido', res);
+                    } else {
+                        console.log('[VALOR-INICIAL] fallback usado', res);
+                        setValorInicialFallback();
+                    }
                 })
-                .withFailureHandler(_ => {
-                    tempoBusy = false; hint.textContent = 'Não foi possível carregar o tempo agora.';
-                    updateSubmitState();
+                .withFailureHandler(err => {
+                    console.log('[VALOR-INICIAL] fallback usado', err);
+                    setValorInicialFallback();
                 })
-                .GetTempoMap();
+                .calcularValorInicialModal(payload);
         }
 
         // ---------- getFormValues ----------
@@ -1004,6 +1090,7 @@
                 monthYear: document.getElementById('dataInicial').value,
                 isRural: document.getElementById('isRuralChk').checked,
                 isCondominio: document.getElementById('isCondominioChk').checked,
+                isEncomenda: document.getElementById('isEncomendaChk').checked,
                 tipoBerco: document.getElementById('tipoBerco').value,
                 comoda: document.getElementById('comoda').value,
                 roupeiro: document.getElementById('roupeiro').value,
@@ -1011,6 +1098,40 @@
                 painel: document.getElementById('painel').value,
                 tempoNecessario: document.getElementById('tempo').value
             };
+        }
+
+        // ---------- atualizarDataMinima ----------
+        function atualizarDataMinima() {
+            const dataInput = document.getElementById('dataInicial');
+            const hint = document.getElementById('dataInicialHint');
+            if (!dataInput) return;
+
+            const isEncomenda = document.getElementById('isEncomendaChk') &&
+                                document.getElementById('isEncomendaChk').checked;
+            const diasMin = isEncomenda ? 42 : 2;
+
+            const hoje = new Date();
+            const minDate = new Date(hoje);
+            minDate.setDate(hoje.getDate() + diasMin);
+            const maxDate = new Date(hoje);
+            maxDate.setDate(hoje.getDate() + 90);
+
+            const minISO = minDate.toISOString().split('T')[0];
+            const maxISO = maxDate.toISOString().split('T')[0];
+
+            dataInput.min = minISO;
+            dataInput.max = maxISO;
+
+            // Se a data selecionada ficou antes do novo mínimo, atualiza para o mínimo
+            if (!dataInput.value || dataInput.value < minISO) {
+                dataInput.value = minISO;
+            }
+
+            if (hint) {
+                hint.textContent = isEncomenda
+                    ? 'Encomenda: mín. D+42 (' + minDate.toLocaleDateString('pt-BR') + ')'
+                    : 'Entre D+2 e D+90 (máx 90 dias)';
+            }
         }
 
         // ========== PROGRESSIVE RESULTS ==========
@@ -1149,7 +1270,7 @@
                 form.destLng = Number(lastCepObj.lng || 0);
                 form.destDisplay = String(lastCepObj.enderecoCompleto || lastCepObj.display || lastCepObj.display_name || '');
                 form.destProvider = String(lastCepObj.provider || 'google');
-                
+
                 if (lastCepObj.address) {
                     const achadoBairro = lastCepObj.address.suburb || lastCepObj.address.city_district || lastCepObj.address.neighbourhood || '';
                     if (achadoBairro && (!form.bairro || form.bairro.toUpperCase() !== achadoBairro.toUpperCase())) {
@@ -1214,14 +1335,17 @@
         // ---------- VALIDAÇÃO E BUSCA DE ENDEREÇO ----------
         function checkAddrFilled() {
             const l = (document.getElementById('logradouro').value || '').trim();
+            const b = (document.getElementById('bairro').value || '').trim();
             const c = (document.getElementById('cidade').value || '').trim();
             const u = (document.getElementById('uf').value || '').trim();
-            return l.length > 2 && c.length > 2 && u.length === 2;
+            return l.length > 2 && b.length >= 2 && c.length > 2 && u.length === 2;
         }
 
         function showAddrError(show) {
             document.getElementById('logradouro').classList.toggle('invalid', !!show && !(document.getElementById('logradouro').value || '').trim());
+            document.getElementById('bairro').classList.toggle('invalid', !!show && (document.getElementById('bairro').value || '').trim().length < 2);
             document.getElementById('cidade').classList.toggle('invalid', !!show && !(document.getElementById('cidade').value || '').trim());
+            document.getElementById('addrErr').textContent = 'Informe Logradouro, Bairro e Cidade.';
             document.getElementById('addrErr').classList.toggle('show', !!show);
         }
 
@@ -1253,12 +1377,15 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             // Endereço listeners
-            ['logradouro', 'cidade', 'uf'].forEach(id => {
+            ['logradouro', 'bairro', 'cidade', 'uf'].forEach(id => {
                 document.getElementById(id).addEventListener('input', () => {
                     showAddrError(false);
                     resetAddrUI();
                 });
             });
+
+            // Listener do checkbox Encomenda: atualiza data mínima dinamicamente
+            document.getElementById('isEncomendaChk').addEventListener('change', atualizarDataMinima);
 
             document.getElementById('btnBuscarEndereco').addEventListener('click', () => {
                 if (!validateAddrStrict()) return;
@@ -1272,37 +1399,37 @@
                     .withSuccessHandler(resp => {
                         if (resp && resp.ok && resp.lat) {
                             window__addrOk = resp; // salva no cache da tela
-                            
+
                             let htmlStr = `<span style="color:#0e8ec4; font-size:11px; font-weight:700; text-transform:uppercase;">📌 Encontrado pelo Satélite:</span><br><span style="font-size:15px; color:#1f2937">${resp.enderecoCompleto}</span>`;
-                            
+
                             let avisoExt = '';
                             if (resp.address) {
                                 let achadoBairro = resp.address.suburb || resp.address.city_district || resp.address.neighbourhood || '';
                                 let achadoCidade = resp.address.city || resp.address.town || resp.address.municipality || '';
-                                
+
                                 let pesqBairro = (formArgs.bairro || '').toUpperCase().trim();
                                 let pesqCidade = (formArgs.cidade || '').toUpperCase().trim();
-                                
+
                                 let nAchadoBairro = achadoBairro.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
                                 let nPesqBairro = pesqBairro.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-                                
+
                                 let diffBairro = (nAchadoBairro && nPesqBairro && nAchadoBairro !== nPesqBairro && nAchadoBairro.indexOf(nPesqBairro) === -1 && nPesqBairro.indexOf(nAchadoBairro) === -1);
-                                
+
                                 if (diffBairro) {
                                     avisoExt = `<div style="margin-top:8px; padding:6px; background-color:#FEF3C7; color:#92400E; border:1px solid #F59E0B; border-radius:4px; font-size:12px; font-weight:600;">
                                       ATENÇÃO: Bairro pesquisado parece diferente do encontrado.<br>Pesquisado: ${pesqBairro || pesqCidade} | Encontrado: ${achadoBairro.toUpperCase() || achadoCidade.toUpperCase()}<br>Confirme se a rota está correta no link abaixo.
                                     </div>`;
                                 }
                             }
-                            
+
                             document.getElementById('addrTextResult').innerHTML = htmlStr + avisoExt;
 
                             let geoStr = `Lat: ${Number(resp.lat).toFixed(5)}, Lng: ${Number(resp.lng).toFixed(5)} (${resp.provider})`;
                             if (resp.cep) geoStr += ` • CEP-BASE: ${resp.cep}`;
-                            
+
                             const typedDest = `${formArgs.logradouro}, ${formArgs.numero}, ${formArgs.cidade}, ${formArgs.uf}`;
                             geoStr += `<br><a href="https://www.google.com/maps/dir/?api=1&origin=${Number(resp.lat).toFixed(5)},${Number(resp.lng).toFixed(5)}&destination=${encodeURIComponent(typedDest)}" target="_blank" style="color:#0e8ec4; text-decoration:underline; display:inline-block; margin-top:4px;">🌍 Comparar no Google Maps</a>`;
-                            
+
                             document.getElementById('addrGeoResult').innerHTML = geoStr;
 
                             document.getElementById('addrOkMsg').classList.add('show');
@@ -1368,6 +1495,8 @@
                     window__addrOk = lastCepObj;
                     document.getElementById('addrStatus').textContent = '✅ Localização confirmada.';
                     setGate(false);
+                    setValorInicialLoading();
+                    triggerValorInicialCalc();
                     recalcTempo();
                     updateSubmitState();
                     document.getElementById('dataInicial').focus();
@@ -1384,6 +1513,8 @@
                 setGate(false);
                 document.getElementById('addrStatus').textContent = '✅ Localização confirmada.';
                 updateSubmitState();
+                setValorInicialLoading();
+                triggerValorInicialCalc();
                 recalcTempo();
             });
 
@@ -1480,7 +1611,24 @@
         });
     </script>
 
+    <script>
+        function preencherData42Dias() {
+            const hoje = new Date();
 
+            const data42 = new Date(hoje);
+            data42.setDate(data42.getDate() + 42);
+
+            const dataFormatada = data42.toLocaleDateString('pt-BR');
+
+            const campoData = document.getElementById('data42Dias');
+
+            if (campoData) {
+                campoData.textContent = `(${dataFormatada})`;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', preencherData42Dias);
+    </script>
 </body>
 
 </html>

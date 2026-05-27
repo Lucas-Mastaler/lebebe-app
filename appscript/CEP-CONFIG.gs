@@ -485,6 +485,57 @@ function getConfig(prop, sheet) {
   throw new Error(`Config "${prop}" não encontrada`);
 }
 
+/**
+ * Interpreta valor de configuração como booleano (SIM/NÃO)
+ * Aceita: SIM, S, TRUE, VERDADEIRO, 1 → true
+ *         NÃO, NAO, N, FALSE, FALSO, 0 → false
+ * @param {string} valor - Valor a interpretar
+ * @param {boolean} padrao - Valor padrão caso não reconheça
+ * @returns {boolean}
+ */
+function interpretarSimNao_(valor, padrao) {
+  const v = String(valor || '').trim().toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, ''); // remove acentos
+
+  if (['SIM', 'S', 'TRUE', 'VERDADEIRO', '1'].indexOf(v) >= 0) return true;
+  if (['NAO', 'N', 'FALSE', 'FALSO', '0'].indexOf(v) >= 0) return false;
+
+  return padrao;
+}
+
+/**
+ * Carrega configuração de equipes ativas da aba de configuração
+ * Lê: EQUIPE 1 ATIVA? e EQUIPE 2 ATIVA?
+ * @param {Sheet} cfgSheet - Aba de configuração
+ * @returns {Object} - Objeto com status de cada equipe: { 'EQUIPE 1': boolean, 'EQUIPE 2': boolean }
+ */
+function carregarEquipesAtivas_(cfgSheet) {
+  let equipe1Ativa = true; // padrão: SIM (compatibilidade)
+  let equipe2Ativa = true; // padrão: SIM (compatibilidade)
+
+  try {
+    equipe1Ativa = interpretarSimNao_(getConfig('EQUIPE 1 ATIVA?', cfgSheet), true);
+  } catch(e) {
+    dlog('[EQUIPE-ATIVA] Config "EQUIPE 1 ATIVA?" não encontrada. Assumindo SIM.');
+  }
+
+  try {
+    equipe2Ativa = interpretarSimNao_(getConfig('EQUIPE 2 ATIVA?', cfgSheet), true);
+  } catch(e) {
+    dlog('[EQUIPE-ATIVA] Config "EQUIPE 2 ATIVA?" não encontrada. Assumindo SIM.');
+  }
+
+  const equipesAtivas = {
+    'EQUIPE 1': equipe1Ativa,
+    'EQUIPE 2': equipe2Ativa
+  };
+
+  dlog('[EQUIPE-ATIVA] EQUIPE 1=' + (equipe1Ativa ? 'SIM' : 'NÃO') + ' | EQUIPE 2=' + (equipe2Ativa ? 'SIM' : 'NÃO'));
+
+  return equipesAtivas;
+}
+
 /* ===================================================== */
 /* Sessão 4.0 – Geocodificação (OSM) & Distâncias (OSRM) */
 /* ===================================================== */
@@ -2408,7 +2459,7 @@ function clearCepCache(cepRaw){
 /* ===================================================== */
 /* Sessão 10.0 – Auditoria (atualizada)                   */
 /* ===================================================== */
-function logAuditRow(userEmail, cep, params, tempo, frete, scheduledDate, eventLink, resultsSummary) {
+function logAuditRow(userEmail, cep, params, tempo, frete, scheduledDate, eventLink, resultsSummary, eventTitle) {
   const ss         = SpreadsheetApp.getActiveSpreadsheet();
   const auditSheet = ss.getSheetByName('AUDITORIA');
   if (!auditSheet) return;
@@ -2417,17 +2468,17 @@ function logAuditRow(userEmail, cep, params, tempo, frete, scheduledDate, eventL
   const propKey   = 'LAST_AUDIT_ROW_' + userEmail;
 
   if (!scheduledDate) {
-    // registro da simulação
+    // registro da simulação — col I (TITULO DA AGENDA) fica vazia por enquanto
     auditSheet.appendRow([
-      timestamp, userEmail, cep, params, frete, tempo, '', resultsSummary || ''
+      timestamp, userEmail, cep, params, frete, tempo, '', resultsSummary || '', ''
     ]);
     PROP_STORE.setProperty(propKey, String(auditSheet.getLastRow()));
   } else {
     // completa quando pré-agendamento é feito
     const saved = PROP_STORE.getProperty(propKey);
     if (saved) {
-      auditSheet.getRange(+saved, 7).setValue(scheduledDate); // col G
-      // Não atualizamos resultsSummary aqui pois ele já foi gravado na simulação
+      auditSheet.getRange(+saved, 7).setValue(scheduledDate);       // col G – DIA DO PRÉ AGENDAMENTO
+      auditSheet.getRange(+saved, 9).setValue(eventTitle || '');    // col I – TITULO DA AGENDA
       PROP_STORE.deleteProperty(propKey);
     }
   }

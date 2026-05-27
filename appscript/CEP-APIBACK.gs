@@ -8,6 +8,167 @@ function _fmtMoneyBR(n){
   return 'R$ ' + Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.'); 
 }
 
+// ================= VALOR INICIAL (MÍNIMO) – BACKEND ================
+/**
+ * Calcula valor inicial no modal usando distância real (dia de semana).
+ * Reaproveita resolução de coordenadas, getDrivingKm, calcularFrete e aplicarAjusteFrete.
+ * Formato de retorno:
+ * { ok, valor, valorFormatado, distanciaKm, fallbackUsado, msg }
+ */
+function calcularValorInicialModal(form){
+  form = form || {};
+  try {
+    const searchStart = Date.now();
+
+    function aplicarAjusteFreteLocal(v){
+      if (typeof v === 'string') return v;
+      let num = Number(v) || 0;
+      num = num * 1.2;
+      num = Math.ceil(num / 10) * 10;
+      if (num < 110) num = 110;
+      return num;
+    }
+
+    // === 1) Resolver configs e parâmetros existentes ===
+    const ssSrc = abrirPlanilhaFonte_();
+    const cfgSheet = ssSrc.getSheets().find(function(s){ return s.getSheetId() === 718532388; });
+    if (!cfgSheet) return { ok:false, valor:null, valorFormatado:'', distanciaKm:null, fallbackUsado:true, msg:'CFG não encontrada' };
+
+    // Parâmetros de frete e locais fixos
+    const freightParams = loadFreightParams(cfgSheet);
+    API_KEY = getConfig('API_KEY', cfgSheet);
+    try { MAPSCO_API_KEY = String(getConfig('MAPS.CO API KEY', cfgSheet) || '').trim(); } catch(e) { MAPSCO_API_KEY=''; }
+    try {
+      const osrmCfg = getConfig('OSRM BASE URL', cfgSheet).trim();
+      if (osrmCfg) OSRM_BASE = osrmCfg.replace(/\/+$/,'');
+    } catch(e) {}
+
+    const DEPOSIT_ADDRESS = getConfig('ENDEREÇO DO DEPÓSITO', cfgSheet);
+    const HOME_SAT_E1     = getConfig('ENDEREÇO DA CASA EQP 1', cfgSheet);
+    const HOME_SAT_E2     = getConfig('ENDEREÇO DA CASA EQP 2', cfgSheet);
+    const FIXED_LOCS      = _getFixedLocations_(DEPOSIT_ADDRESS, HOME_SAT_E1, HOME_SAT_E2);
+
+    // === 2) Resolver destino (reuso da lógica do fluxo principal) ===
+    const cepInput = String(form.cep || '').trim();
+    const cepFmt   = cepInput.replace(/\D/g,'').replace(/^(\d{5})(\d{3})$/, '$1-$2');
+    const isRural  = !!form.isRural;
+    const isCondo  = !!form.isCondominio;
+
+    let locNovo = null;
+    let nomi    = null;
+
+    // (A) usar coords fornecidas pelo modal (mapa ou validação)
+    const modalHasDest = (form.destLat != null && form.destLng != null) || (form.lat != null && form.lng != null);
+    if (modalHasDest) {
+      const useLat = form.destLat != null ? Number(form.destLat) : Number(form.lat);
+      const useLng = form.destLng != null ? Number(form.destLng) : Number(form.lng);
+      const useDisplay = form.destDisplay || form.enderecoCompleto || '';
+      const useProvider = form.destProvider || 'validated';
+      locNovo = { lat: useLat, lng: useLng };
+      nomi = { lat: useLat, lng: useLng, display_name: String(useDisplay||''), provider: String(useProvider||'validated'), address:null, enderecoCompleto: String(useDisplay||'') };
+    }
+
+    // (B) se não veio modal-only, tentar CEP (mesma lógica do fluxo principal)
+    if (!locNovo && /^\d{5}-\d{3}$/.test(cepFmt)) {
+      try {
+        const cepLookup = LookupEnderecoPorCEP(cepFmt);
+        if (cepLookup && cepLookup.ok) {
+          locNovo = { lat: Number(cepLookup.lat||0), lng: Number(cepLookup.lng||0) };
+          const endCompleto = String(cepLookup.enderecoCompleto || cepLookup.display_name || cepLookup.display || '');
+          nomi = {
+            lat: locNovo.lat,
+            lng: locNovo.lng,
+            display_name: String(cepLookup.display_name || cepLookup.display || ''),
+            provider: String(cepLookup.provider||'free'),
+            address: cepLookup.address || null,
+            enderecoCompleto: endCompleto
+          };
+        }
+      } catch(_){ }
+    }
+
+    // (C) cache Google, fallback Google strict/Nominatim (mesmo fluxo)
+    if (!locNovo && /^\d{5}-\d{3}$/.test(cepFmt)) {
+      try {
+        const ck = 'cepaddr:GOOGLE:' + cepFmt;
+        const hit = CacheService.getScriptCache().get(ck);
+        if (hit) {
+          const obj = JSON.parse(hit);
+          locNovo = { lat: Number(obj.lat||0), lng: Number(obj.lng||0) };
+          nomi = { lat: locNovo.lat, lng: locNovo.lng, display_name: String(obj.display||''), provider:'google', address: obj.address || null };
+        }
+      } catch(e) {}
+
+      if (!locNovo) {
+        const gOnly = geocodeCepGoogleStrict(cepFmt.replace(/\D/g,''), ['PR','SP','SC']);
+        if (gOnly) { locNovo = { lat: gOnly.lat, lng: gOnly.lng }; nomi = gOnly; }
+        else {
+          nomi = geocodeCepNominatim(cepFmt);
+          if (nomi) locNovo = { lat: nomi.lat, lng: nomi.lng };
+        }
+      }
+    }
+
+    if (!locNovo || !nomi) {
+      Logger.log('[VALOR-INICIAL] fallback: sem coords válidas');
+      return _calcularValorInicialFallback_(freightParams, isRural, isCondo, true, 'Sem coordenadas');
+    }
+
+    // === 3) Distância depósito → destino (dia de semana) ===
+    const depositoLoc = FIXED_LOCS.deposit || geocodeAddressFree(DEPOSIT_ADDRESS);
+    const distKm = getDrivingKm(depositoLoc, locNovo);
+    if (distKm == null) {
+      Logger.log('[VALOR-INICIAL] fallback: OSRM falhou');
+      return _calcularValorInicialFallback_(freightParams, isRural, isCondo, true, 'OSRM falhou');
+    }
+
+    // === 4) Frete semana (sem sábado) ===
+    let freteNum = calcularFrete(distKm, /*isSat=*/false, isRural, isCondo, freightParams);
+    freteNum = aplicarAjusteFreteLocal(freteNum); // mesmo ajuste global usado no fluxo final
+
+    const valorFmt = _fmtMoneyBR(freteNum);
+    const tookMs = Date.now() - searchStart;
+    Logger.log('[VALOR-INICIAL] ok dist=' + distKm.toFixed(2) + 'km valor=' + freteNum + ' tempo=' + tookMs + 'ms fallback=false');
+
+    return {
+      ok:true,
+      valor: freteNum,
+      valorFormatado: valorFmt,
+      distanciaKm: distKm,
+      fallbackUsado: false,
+      msg: 'OK'
+    };
+
+  } catch(e) {
+    Logger.log('[VALOR-INICIAL] erro: ' + (e && e.stack ? e.stack : e));
+    return _calcularValorInicialFallback_(null, !!(form&&form.isRural), !!(form&&form.isCondominio), true, 'Erro: ' + (e&&e.message||e));
+  }
+}
+
+// Fallback reutilizando a lógica antiga do modal (base semana até 10km)
+function _calcularValorInicialFallback_(freightParams, isRural, isCondo, forcedFallback, msg){
+  try {
+    let baseSemana = 130;
+    let addCondo = 0;
+    if (freightParams) {
+      baseSemana = freightParams['VALOR SEMANA ATÉ 10KM'] || 130;
+      addCondo = Number(freightParams['PREÇO CONDOMINIO ADICIONAL'] || 0);
+    }
+    let minFrete = baseSemana;
+    if (isRural) minFrete += 100;
+    if (isCondo) minFrete += addCondo;
+    minFrete = Math.ceil(minFrete / 10) * 10;
+    minFrete = minFrete * 1.2;
+    minFrete = Math.ceil(minFrete / 10) * 10;
+    if (minFrete < 110) minFrete = 110;
+
+    Logger.log('[VALOR-INICIAL] fallback usado valor=' + minFrete + ' msg=' + (msg||''));
+    return { ok:false, valor:minFrete, valorFormatado:_fmtMoneyBR(minFrete), distanciaKm:null, fallbackUsado:true, msg: msg || 'fallback' };
+  } catch(e){
+    return { ok:false, valor:null, valorFormatado:'', distanciaKm:null, fallbackUsado:true, msg: 'fallback erro: '+(e&&e.message||e) };
+  }
+}
+
 // ========== PROGRESSIVE RESULTS ==========
 var _lastProgressSave = 0; // throttle timestamp
 
@@ -426,6 +587,35 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       ? getSlots(shAv, serviceMin, LOOK_DAYS, startPick.startFrom /* sem end */)
       : getSlots(shAv, serviceMin, LOOK_DAYS);
 
+    // 🔒 REGRA GLOBAL: Filtrar equipes inativas (EQUIPE 1 ATIVA? / EQUIPE 2 ATIVA?)
+    try {
+      var equipesAtivas = carregarEquipesAtivas_(cfgSheet);
+      var slotsAntesFiltroEquipeAtiva = slots.length;
+      
+      // Log dos slots removidos antes de filtrar
+      slots.forEach(function(s) {
+        var equipe = String(s.team || '').toUpperCase();
+        if (equipesAtivas[equipe] === false) {
+          dlog('[EQUIPE-ATIVA] Removido slot ' + formatDatePt(s.date) + ' | ' + equipe + ' | equipe inativa');
+        }
+      });
+      
+      // Filtrar: manter apenas slots de equipes ativas
+      slots = slots.filter(function(s) {
+        var equipe = String(s.team || '').toUpperCase();
+        return equipesAtivas[equipe] !== false;
+      });
+      
+      dlog('[EQUIPE-ATIVA] Slots filtrados: ' + slotsAntesFiltroEquipeAtiva + ' → ' + slots.length);
+      
+      // Aviso se não há equipes ativas
+      if (slots.length === 0 && slotsAntesFiltroEquipeAtiva > 0) {
+        dlog('[EQUIPE-ATIVA] ⚠️ Nenhuma equipe ativa para pesquisa. Todos os slots foram removidos.');
+      }
+    } catch(e) {
+      dlog('[EQUIPE-ATIVA] Erro ao filtrar equipes: ' + (e && e.message));
+    }
+
     // 🔒 Regra: bloquear EQUIPE 2 se (BERÇO/CAMA === "FORMARE") OU (ROUPEIRO === "4 PTS (TUTTO)")
     try {
       // Preferir valores do modal
@@ -451,10 +641,10 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       if (bloqueia) {
         var before2 = slots.length;
         slots = slots.filter(function(s){ return String(s.team||'').toUpperCase() !== 'EQUIPE 2'; });
-        dlog('[RULE] Bloqueio aplicado (withParams): BERÇO/CAMA="' + bercoVal + '", ROUPEIRO="' + roupeiroVal +
+        dlog('[RULE-PRODUTO] Bloqueio aplicado (withParams): BERÇO/CAMA="' + bercoVal + '", ROUPEIRO="' + roupeiroVal +
              '" → removidos ' + (before2 - slots.length) + ' slots da EQUIPE 2');
       } else {
-        dlog('[RULE] Bloqueio NÃO aplicado: BERÇO/CAMA="' + bercoVal + '", ROUPEIRO="' + roupeiroVal + '" → EQUIPE 2 permitida');
+        dlog('[RULE-PRODUTO] Produto não bloqueia EQUIPE 2 (status ativo validado separadamente): BERÇO/CAMA="' + bercoVal + '", ROUPEIRO="' + roupeiroVal + '"');
       }
     } catch(_){ /* silencioso */ }
 
@@ -481,17 +671,6 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
 
     // agora sim, ordena
     slots.sort((a,b)=>a.date - b.date);
-
-    // ✅ OTIMIZAÇÃO #5: Limitar a 45 dias da data inicial (economiza processamento)
-    if (startPick && startPick.startFrom) {
-      const limitDate = new Date(startPick.startFrom.getTime());
-      limitDate.setDate(limitDate.getDate() + 45); // 45 dias (reduzido de 60)
-      const slotsBefore = slots.length;
-      slots = slots.filter(function(s){ return s.date <= limitDate; });
-      if (slotsBefore > slots.length) {
-        dlog('[OTIMIZAÇÃO] Limitado a 45 dias: ' + slotsBefore + ' → ' + slots.length + ' slots (−' + (slotsBefore - slots.length) + ')');
-      }
-    }
 
     // ✅ OTIMIZAÇÃO #1: Processar apenas primeiros 35 slots com pontos para busca rápida
     const slotsComPontosTodos = slots.filter(function(s){ return s.pontos && s.pontos.length > 0; });
@@ -1014,30 +1193,53 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
            normals.map(function(c){ return formatDatePt(c.date) + ' | ' + c.team + ' | Δ=' + c.delta.toFixed(2) + 'km'; }).join(', '));
     }
 
-    // ✅ FILTRO BACKEND API: Retornar apenas 3 resultados normais
-    if (isBackendApiCall) {
-      dlog('[BACKEND-API] Filtrando para retornar apenas ' + MAX_CANDIDATOS_TOTAL + ' resultados normais');
-      
-      var chosenDays = new Set();
-      var listaNormal = [];
-      for (var n=0; n<normals.length && listaNormal.length<MAX_CANDIDATOS_TOTAL; n++){
-        var dk = normals[n].date.toDateString();
-        if (!chosenDays.has(dk)) {
-          listaNormal.push(normals[n]);
-          chosenDays.add(dk);
+    // === SESSÃO: BUSCA PROGRESSIVA POR JANELA (45→60→90 dias) ===
+    var baseStartDate = (startPick && startPick.startFrom) ? new Date(startPick.startFrom.getTime()) : null;
+    if (baseStartDate) baseStartDate.setHours(0,0,0,0);
+    var janelasBusca = [45, 60, 90];
+    var janelaMaxConfig = Math.min(LOOK_DAYS || 90, 90);
+
+    function filtrarJanela(arr, diasJanela) {
+      if (!baseStartDate) return arr;
+      var limit = new Date(baseStartDate.getTime());
+      limit.setDate(limit.getDate() + diasJanela);
+      return arr.filter(function(c){ return c.date <= limit; });
+    }
+
+    function selecionarResultados(normalsIn, especiaisIn, premiumsIn, horaMarcadasIn, diasJanela) {
+      var normals = filtrarJanela(normalsIn, diasJanela);
+      var especiais = filtrarJanela(especiaisIn, diasJanela);
+      var premiums = filtrarJanela(premiumsIn, diasJanela);
+      var horaMarcadas = filtrarJanela(horaMarcadasIn, diasJanela);
+
+      if (isBackendApiCall) {
+        dlog('[BACKEND-API] Filtrando para retornar apenas ' + MAX_CANDIDATOS_TOTAL + ' resultados normais (janela ' + diasJanela + ' dias)');
+        var chosenDaysApi = new Set();
+        var listaNormalApi = [];
+        for (var n=0; n<normals.length && listaNormalApi.length<MAX_CANDIDATOS_TOTAL; n++){
+          var dkApi = normals[n].date.toDateString();
+          if (!chosenDaysApi.has(dkApi)) {
+            listaNormalApi.push(normals[n]);
+            chosenDaysApi.add(dkApi);
+          }
         }
+
+        var listaEspecialApi = [];
+        var listaPremiumApi = [];
+        var listaHoraMarcadaApi = [];
+
+        var listaApi = listaNormalApi;
+        listaApi.sort(function(a,b){ return a.date - b.date; });
+
+        return {
+          lista: listaApi,
+          listaNormal: listaNormalApi,
+          listaEspecial: listaEspecialApi,
+          listaPremium: listaPremiumApi,
+          listaHoraMarcada: listaHoraMarcadaApi
+        };
       }
-      
-      // Inicializar arrays vazios para evitar undefined
-      var listaEspecial = [];
-      var listaPremium = [];
-      var listaHoraMarcada = [];
-      
-      var lista = listaNormal;
-      lista.sort(function(a,b){ return a.date - b.date; });
-      
-      dlog('[BACKEND-API] Retornando ' + lista.length + ' resultados normais (especial/premium/hora marcada excluídos)');
-    } else {
+
       // Modal: retornar todos os tipos (comportamento original)
       var chosenDays = new Set();
       var listaNormal = [];
@@ -1076,11 +1278,55 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
         }
       }
 
-      // Combinar todas as listas e ordenar por data (mais próxima primeiro)
       var lista = [].concat(listaNormal, listaEspecial, listaPremium, listaHoraMarcada);
-      lista.sort(function(a,b){ return a.date - b.date; }); // ✅ ORDENAÇÃO POR DATA
+      lista.sort(function(a,b){ return a.date - b.date; });
+
+      return {
+        lista: lista,
+        listaNormal: listaNormal,
+        listaEspecial: listaEspecial,
+        listaPremium: listaPremium,
+        listaHoraMarcada: listaHoraMarcada
+      };
     }
-    
+
+    var resultadoEscolhido = null;
+    var janelaUtilizada = null;
+    var minNormaisNecessario = 3;
+
+    janelasBusca.forEach(function(janelaDias, idx){
+      if (janelaUtilizada !== null) return; // já escolheu
+      var janelaRespeitada = Math.min(janelaDias, janelaMaxConfig);
+      var res = selecionarResultados(normals, especiais, premiums, horaMarcadas, janelaRespeitada);
+      dlog('[EXPANSAO-BUSCA] Janela ' + janelaRespeitada + ' dias retornou ' + res.listaNormal.length + ' fretes normais.');
+
+      if (res.listaNormal.length >= minNormaisNecessario) {
+        resultadoEscolhido = res;
+        janelaUtilizada = janelaRespeitada;
+      } else if (idx < janelasBusca.length - 1 && janelaRespeitada < 90) {
+        dlog('[EXPANSAO-BUSCA] Resultado insuficiente: mínimo necessário = ' + minNormaisNecessario + ' fretes normais. Expandindo busca para ' + janelasBusca[idx+1] + ' dias.');
+      } else {
+        // última janela ou já está em 90
+        resultadoEscolhido = res;
+        janelaUtilizada = janelaRespeitada;
+      }
+    });
+
+    // Garantia fallback
+    if (!resultadoEscolhido) {
+      resultadoEscolhido = selecionarResultados(normals, especiais, premiums, horaMarcadas, janelaMaxConfig);
+      janelaUtilizada = janelaMaxConfig;
+    }
+
+    var lista = resultadoEscolhido.lista;
+    var listaNormal = resultadoEscolhido.listaNormal;
+    var listaEspecial = resultadoEscolhido.listaEspecial;
+    var listaPremium = resultadoEscolhido.listaPremium;
+    var listaHoraMarcada = resultadoEscolhido.listaHoraMarcada;
+
+    dlog('[EXPANSAO-BUSCA] Janela final utilizada: ' + janelaUtilizada + ' dias.');
+    dlog('[EXPANSAO-BUSCA] Resultado final: ' + listaNormal.length + ' normais, ' + listaEspecial.length + ' especiais, ' + listaPremium.length + ' premium, ' + listaHoraMarcada.length + ' hora marcada.');
+
     // ✅ LOG: Resultados SELECIONADOS para retorno
     dlog('[SELEÇÃO FINAL] Total selecionado: ' + lista.length + ' | Normais: ' + listaNormal.length + 
          ' | Especial: ' + listaEspecial.length + ' | Premium: ' + listaPremium.length + 
@@ -1215,6 +1461,7 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
     var paramsA = [
       'ÁREA RURAL?: ' + (isRural ? 'Sim' : 'Não'),
       'É CONDOMÍNIO?: ' + (form.isCondominio ? 'Sim' : 'Não'),
+      'É ENCOMENDA?: ' + (form.isEncomenda ? 'Sim' : 'Não'),
       'PROCURAR A PARTIR DE: ' + mesPesquisaFormatted,
       'BERÇO/CAMA: ' + (tipoBerco || '-'),
       'CÔMODA: '   + pick(form.temComoda,   form.comoda),
@@ -1625,6 +1872,15 @@ function getFrontOptionLists() {
     poltrona:   readOptionsFromCell('G2') || ['NÃO','SIM'],
     painel:     readOptionsFromCell('H2') || ['NÃO','SIM']
   };
+
+  try {
+    var fParams = loadFreightParams(cfgSheet);
+    out.baseSemana = fParams['VALOR SEMANA ATÉ 10KM'] || 130;
+    out.adicionalCondominio = Number(fParams['PREÇO CONDOMINIO ADICIONAL'] || 0);
+  } catch(e) {
+    out.baseSemana = 130;
+    out.adicionalCondominio = 0;
+  }
 
   // guarda no cache por 5 minutos para reduzir chamadas repetidas
   // (invalidado automaticamente por DATA_VERSION)
@@ -2292,7 +2548,7 @@ function preAgendarDireto(cand, meta){
   const eventLink = 'https://calendar.google.com/calendar/u/0/r/eventedit/' + eid;
 
   const dataText = Utilities.formatDate(d,'GMT-3','dd/MM');
-  logAuditRow(userEmail, meta.cep||'', (meta.params||''), (meta.tempo||''), '', dataText, eventLink);
+  logAuditRow(userEmail, meta.cep||'', (meta.params||''), (meta.tempo||''), '', dataText, eventLink, '', titulo);
 
   SpreadsheetApp.getUi().alert(`Pré-agendado: ${titulo}`);
 }

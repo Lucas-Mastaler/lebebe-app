@@ -6,6 +6,14 @@ import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 
 // ─────────────────────────────────────────────────────────
+// Helper: remove leading zeros and trim spaces for matching (02685 -> 2685)
+// ─────────────────────────────────────────────────────────
+function normalizeCode(code: string): string {
+  if (!code) return '0'
+  return code.trim().replace(/^0+/, '') || '0'
+}
+
+// ─────────────────────────────────────────────────────────
 // Tipos
 // ─────────────────────────────────────────────────────────
 
@@ -66,10 +74,10 @@ function validarEntrada(body: Record<string, unknown>): string | null {
 // 2.0 – Autenticação JWT (Service Account + Domain-Wide)
 // ─────────────────────────────────────────────────────────
 
-function criarClienteGmail() {
+function criarClienteGmail(subject?: string) {
   const serviceEmail = process.env.GMAIL_SERVICE_EMAIL;
   const privateKeyRaw = process.env.GMAIL_PRIVATE_KEY;
-  const subjectUser = process.env.GMAIL_IMPERSONATE_USER || "lucas@lebebe.com.br";
+  const subjectUser = subject ?? process.env.GMAIL_IMPERSONATE_USER ?? "lucas@lebebe.com.br";
 
   if (!serviceEmail || !privateKeyRaw) {
     throw new Error("Variáveis GMAIL_SERVICE_EMAIL e GMAIL_PRIVATE_KEY são obrigatórias.");
@@ -309,6 +317,11 @@ async function parsearNFe(
     if (osMatch[1]) encontrados.push(osMatch[1]);
   }
   
+  const regexAssistTecnica = /ASSIST\.TECNICA\s*[;,]\s*(\d{3,8})\b/gi;
+  while ((osMatch = regexAssistTecnica.exec(obsStr)) !== null) {
+    if (osMatch[1]) encontrados.push(osMatch[1]);
+  }
+
   // Dedupe: remover duplicados
   const vistos = new Set<string>();
   for (const num of encontrados) {
@@ -366,8 +379,22 @@ export async function POST(request: NextRequest) {
     const gmail = criarClienteGmail();
 
     // 3.0 – Listar mensagens
-    const messageIds = await listarMensagens(gmail, query);
+    let messageIds = await listarMensagens(gmail, query);
     console.log("[NFE][GMAIL] Total mensagens encontradas:", messageIds.length);
+
+    // 3.1 – Fallback: tentar posvenda@lebebe.com.br se não encontrou nada
+    let gmailAtivo = gmail;
+    if (messageIds.length === 0) {
+      const fallbackEmail = "posvenda@lebebe.com.br";
+      console.log(`[NFE][GMAIL] Nenhuma mensagem encontrada. Tentando fallback: ${fallbackEmail}`);
+      const gmailFallback = criarClienteGmail(fallbackEmail);
+      const fallbackIds = await listarMensagens(gmailFallback, query);
+      console.log(`[NFE][GMAIL] Mensagens encontradas no fallback (${fallbackEmail}):`, fallbackIds.length);
+      if (fallbackIds.length > 0) {
+        messageIds = fallbackIds;
+        gmailAtivo = gmailFallback;
+      }
+    }
 
     // 4.0 + 5.0 – Processar cada mensagem
     const nfs: NFeData[] = [];
@@ -375,7 +402,7 @@ export async function POST(request: NextRequest) {
 
     for (const msgId of messageIds) {
       try {
-        const attachments = await baixarAttachmentsXml(gmail, msgId);
+        const attachments = await baixarAttachmentsXml(gmailAtivo, msgId);
 
         if (attachments.length === 0) {
           erros.push({ message_id: msgId, erro: "Nenhum anexo XML encontrado." });
@@ -437,11 +464,18 @@ export async function POST(request: NextRequest) {
         await supabase.from("nfe_itens").delete().eq("nfe_id", nfeRow.id);
 
         for (const item of nf.itens) {
-          const { data: sku } = await supabase
+          // Busca SKU por codigo_produto, ref_meia ou ref_inteira (com fallback)
+          const codigoNormalizado = normalizeCode(item.codigo_produto)
+          
+          const { data: skus } = await supabase
             .from("matic_sku")
-            .select("volumes_por_item")
-            .eq("codigo_produto", item.codigo_produto)
-            .single();
+            .select("volumes_por_item, codigo_produto, ref_meia, ref_inteira")
+            .or(`codigo_produto.eq.${item.codigo_produto},ref_meia.eq.${codigoNormalizado},ref_inteira.eq.${codigoNormalizado}`)
+
+          // Prioridade: codigo_produto > ref_meia > ref_inteira
+          let sku = skus?.find((s: any) => s.codigo_produto === item.codigo_produto)
+          if (!sku) sku = skus?.find((s: any) => normalizeCode(s.ref_meia || '') === codigoNormalizado)
+          if (!sku) sku = skus?.find((s: any) => normalizeCode(s.ref_inteira || '') === codigoNormalizado)
 
           const volumesPorItem = sku?.volumes_por_item || 1;
           const qtd = Math.round(parseFloat(item.quantidade) || 0);

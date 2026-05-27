@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateMaticUser } from '@/lib/auth/matic-auth'
 
-// Helper: remove leading zeros for matching (02685 -> 2685)
+// Helper: remove leading zeros and trim spaces for matching (02685 -> 2685)
 function normalizeCode(code: string): string {
-  return code.replace(/^0+/, '') || '0'
+  if (!code) return '0'
+  return code.trim().replace(/^0+/, '') || '0'
 }
 
 // GET /api/recebimento/[id] — get full recebimento detail with items and volumes
@@ -63,6 +64,7 @@ export async function GET(
       divergencia_tipo,
       divergencia_obs,
       avaria_foto_url,
+      refs_display,
       nfe_item:nfe_item_id (
         codigo_produto,
         descricao,
@@ -83,29 +85,30 @@ export async function GET(
     return NextResponse.json({ error: itensError.message }, { status: 500 })
   }
 
-  // Fetch matic_sku info for items (using ref_meia to match NF codigo_produto)
+  // Fetch all matic_sku info (match ref_meia or ref_inteira with NF codigo_produto)
   // Normalize codes: remove leading zeros (02685 -> 2685)
-  const codigosNF = [...new Set((itens || []).map((i: Record<string, unknown>) => {
-    const nfeItem = i.nfe_item as { codigo_produto: string } | null
-    return nfeItem?.codigo_produto
-  }).filter(Boolean))] as string[]
+  const { data: allSkus } = await supabase
+    .from('matic_sku')
+    .select('ref_meia, ref_inteira, descricao, corredor_sugerido, nivel_sugerido, prateleira_sugerida, volumes_por_item')
 
-  const codigosNormalizados = codigosNF.map(c => normalizeCode(c))
-
-  let skuMap = new Map<string, { descricao: string; corredor_sugerido: string | null; nivel_sugerido: string | null; prateleira_sugerida: string | null; volumes_por_item: number }>()
-  if (codigosNormalizados.length > 0) {
-    // Fetch all SKUs and normalize ref_meia for comparison
-    const { data: skus } = await supabase
-      .from('matic_sku')
-      .select('ref_meia, descricao, corredor_sugerido, nivel_sugerido, prateleira_sugerida, volumes_por_item')
-      .not('ref_meia', 'is', null)
-
-    // Build map with normalized codes
-    if (skus) {
-      for (const sku of skus) {
-        const normalizedRefMeia = normalizeCode(sku.ref_meia || '')
-        if (codigosNormalizados.includes(normalizedRefMeia)) {
+  // Build map: normalized code -> SKU data
+  // For each SKU, add entries for both ref_meia and ref_inteira (if present)
+  const skuMap = new Map<string, { descricao: string; ref_meia: string | null; corredor_sugerido: string | null; nivel_sugerido: string | null; prateleira_sugerida: string | null; volumes_por_item: number }>()
+  if (allSkus) {
+    for (const sku of allSkus) {
+      // Add entry for ref_meia (if present)
+      if (sku.ref_meia) {
+        const normalizedRefMeia = normalizeCode(sku.ref_meia)
+        if (normalizedRefMeia && !skuMap.has(normalizedRefMeia)) {
           skuMap.set(normalizedRefMeia, sku)
+        }
+      }
+      
+      // Add entry for ref_inteira (if present and not already mapped)
+      if (sku.ref_inteira) {
+        const normalizedRefInteira = normalizeCode(sku.ref_inteira)
+        if (normalizedRefInteira && !skuMap.has(normalizedRefInteira)) {
+          skuMap.set(normalizedRefInteira, sku)
         }
       }
     }
@@ -206,6 +209,11 @@ export async function GET(
         }
       }
 
+      // Build description with ref_meia suffix
+      const skuDescricao = sku?.descricao 
+        ? `${sku.descricao}${sku.ref_meia ? ` (${sku.ref_meia})` : ''}` 
+        : nfeItem?.descricao || ''
+
       return {
         ...item,
         is_os: false,
@@ -213,7 +221,7 @@ export async function GET(
         numero_nf: numeroNf,
         nf_sources: nfSources.sort((a, b) => b.localeCompare(a)), // Sort DESC
         status_calculado: status,
-        sku_descricao: sku?.descricao || nfeItem?.descricao || '',
+        sku_descricao: skuDescricao,
         sku_corredor_sugerido: sku?.corredor_sugerido,
         sku_nivel_sugerido: sku?.nivel_sugerido,
         sku_prateleira_sugerida: sku?.prateleira_sugerida,
@@ -258,7 +266,7 @@ export async function GET(
         divergencia_obs: null,
         avaria_foto_url: null,
         is_os: true,
-        os_numero: null,
+        os_numero: itemId,
         numero_nf: numeroNfForOS,
         nfe_item: null,
         recebimento_item_volumes: [],

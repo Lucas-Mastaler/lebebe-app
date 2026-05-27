@@ -81,6 +81,7 @@ interface RecebimentoDetail {
   timer_rodando: boolean
   timer_ultima_acao: string | null
   ultima_atividade_conferencia: string | null
+  numero_recebimento?: number
   itens: RecebimentoItem[]
   nfes: Array<{ nfe_id: string; nfe: { numero_nf: string } | null }>
 }
@@ -100,7 +101,7 @@ export default function ConferenciaPage() {
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState<'itens' | 'os' | 'divergencias'>('itens')
   const [statusFilter, setStatusFilter] = useState<'tudo' | 'incompleto' | 'conferido'>('tudo')
-  const [corredorFilter, setCorredorFilter] = useState<'todos' | 'A' | 'B'>('todos')
+  const [corredorFilter, setCorredorFilter] = useState<'todos' | 'A' | 'B' | 'sem_local'>('todos')
   const [timerRunning, setTimerRunning] = useState(false)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [showFinalizar, setShowFinalizar] = useState(false)
@@ -304,9 +305,10 @@ export default function ConferenciaPage() {
       if (!search) return true
       const searchTerms = search.toLowerCase().trim().split(/\s+/)
       const codigo = item.nfe_item?.codigo_produto?.toLowerCase() || ''
+      const refs = ((item as any).refs_display?.toLowerCase()) || ''
       const desc = item.sku_descricao?.toLowerCase() || ''
       const osNum = item.os_numero?.toLowerCase() || ''
-      const fullText = `${codigo} ${desc} ${osNum}`
+      const fullText = `${codigo} ${refs} ${desc} ${osNum}`
       
       return searchTerms.every(term => fullText.includes(term))
     })
@@ -319,6 +321,12 @@ export default function ConferenciaPage() {
     })
     .filter(item => {
       if (corredorFilter === 'todos') return true
+      if (corredorFilter === 'sem_local') {
+        const corredor = item.corredor_final || item.sku_corredor_sugerido
+        const nivel = item.nivel_final || item.sku_nivel_sugerido
+        const prateleira = item.prateleira_final || item.sku_prateleira_sugerida
+        return !corredor || !nivel || !prateleira
+      }
       const corredor = item.corredor_final || item.sku_corredor_sugerido
       return corredor === corredorFilter
     })
@@ -374,6 +382,9 @@ export default function ConferenciaPage() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
             <h1 className="text-base sm:text-lg font-bold text-slate-800 truncate">Conferência</h1>
+            {recebimento.numero_recebimento && (
+              <span className="text-xs text-slate-400 font-mono">#{recebimento.numero_recebimento}</span>
+            )}
             {!isFechado && !isCancelado && (
               <div className="flex items-center gap-1 sm:gap-1.5 bg-slate-100 rounded-lg px-1.5 sm:px-2 py-1">
                 <button
@@ -434,12 +445,12 @@ export default function ConferenciaPage() {
           {/* Progress Badge */}
           <div className="flex-shrink-0 flex flex-col items-center justify-center bg-slate-50 border border-slate-200 rounded-xl px-2.5 sm:px-3 h-10 relative overflow-hidden">
             <div 
-              className={`absolute bottom-0 left-0 h-1 transition-all duration-300 ${
-                pctGeral >= 100 ? 'bg-green-500' : pctGeral > 0 ? 'bg-amber-400' : 'bg-slate-200'
+              className={`absolute inset-0 transition-all duration-300 ${
+                pctGeral >= 100 ? 'bg-green-500/35' : pctGeral > 0 ? 'bg-amber-400/35' : ''
               }`}
               style={{ width: `${Math.min(pctGeral, 100)}%` }}
             />
-            <span className="text-[11px] sm:text-xs font-bold text-slate-800 tabular-nums">
+            <span className="relative z-10 text-[11px] sm:text-xs font-bold text-slate-800 tabular-nums">
               {recebimento.total_recebido}/{recebimento.total_previsto}
             </span>
           </div>
@@ -455,8 +466,8 @@ export default function ConferenciaPage() {
               className="w-full pl-8 pr-8 h-10 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/20 focus:border-[#00A5E6] text-base bg-slate-50"
             />
             {search && (
-              <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2">
-                <X className="w-4 h-4 text-slate-400" />
+              <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 hover:bg-slate-100 rounded p-1 transition-colors">
+                <X className="w-5 h-5 text-slate-500" />
               </button>
             )}
           </div>
@@ -548,6 +559,14 @@ export default function ConferenciaPage() {
                 }`}
               >
                 B
+              </button>
+              <button
+                onClick={() => setCorredorFilter('sem_local')}
+                className={`px-2 py-1.5 rounded-lg text-[11px] font-medium transition-all whitespace-nowrap ${
+                  corredorFilter === 'sem_local' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-600'
+                }`}
+              >
+                Sem local
               </button>
             </div>
           )}
@@ -763,7 +782,7 @@ function ItemCard({
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-            <p className="text-xs font-mono text-slate-500">{item.nfe_item?.codigo_produto}</p>
+            <p className="text-xs font-mono text-slate-500">{(item as any).refs_display || item.nfe_item?.codigo_produto}</p>
             {item.nf_sources && item.nf_sources.length > 0 ? (
               item.nf_sources.map(nf => (
                 <span key={nf} className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-mono">
@@ -821,7 +840,11 @@ function ItemCard({
 
       {/* Progress */}
       <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
-        <span>Total: {item.volumes_recebidos_total}/{item.volumes_previstos_total}</span>
+        <span>Total: <span className={`${
+          item.volumes_previstos_total >= 7 ? 'px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-semibold' :
+          item.volumes_previstos_total >= 4 ? 'px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-semibold' :
+          ''
+        }`}>{item.volumes_recebidos_total}/{item.volumes_previstos_total}</span></span>
         <span>{totalPct}%</span>
       </div>
       <div className="w-full bg-slate-100 rounded-full h-1.5 mb-3">
@@ -857,7 +880,12 @@ function ItemCard({
                   style={{ width: `${volProgress}%` }}
                 />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className={`text-sm font-bold ${volComplete ? 'text-green-700' : 'text-slate-700'}`}>
+                  <span className={`text-sm font-bold ${
+                    volComplete ? 'text-green-700' :
+                    vol.qtd_prevista >= 7 ? 'px-1.5 py-0.5 rounded bg-red-100 text-red-700' :
+                    vol.qtd_prevista >= 4 ? 'px-1.5 py-0.5 rounded bg-orange-100 text-orange-700' :
+                    'text-slate-700'
+                  }`}>
                     {vol.qtd_recebida}/{vol.qtd_prevista}
                   </span>
                 </div>

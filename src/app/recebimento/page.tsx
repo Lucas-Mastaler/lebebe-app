@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Package, Plus, Calendar, Truck, ChevronRight, Upload, FileText, Weight, X, Hash, Download, AlertCircle, Loader2, Search, Mail, Database, TrendingUp, BarChart3, Clock, Users, Eye, CheckCircle2 } from 'lucide-react'
+import { Package, Plus, Calendar, Truck, ChevronRight, Upload, FileText, Weight, X, Hash, Download, AlertCircle, Loader2, Search, Mail, Database, TrendingUp, BarChart3, Clock, Users, Eye, CheckCircle2, Edit } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase/client'
 import { isMaticEmail } from '@/lib/auth/matic-emails'
@@ -24,6 +24,7 @@ interface Recebimento {
   peso_total: number
   qtd_os: number
   numeros_os: string[]
+  numero_recebimento?: number
   recebimento_nfes: Array<{
     nfe_id: string
     nfe: { numero_nf: string; data_emissao: string; peso_total: number; volumes_total: number; is_os: boolean } | null
@@ -108,6 +109,10 @@ export default function RecebimentoPage() {
           <h1 className="text-2xl font-bold text-slate-800">Recebimento Matic</h1>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={() => router.push('/recebimento/produtos')} className="gap-2">
+            <Edit className="w-4 h-4" />
+            <span className="hidden sm:inline">Produtos</span>
+          </Button>
           <Button variant="outline" onClick={() => setShowImport(true)} className="gap-2">
             <Download className="w-4 h-4" />
             <span className="hidden sm:inline">Importar NFe</span>
@@ -444,6 +449,9 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
           }`}>
             {isFechado ? 'FECHADO' : isCancelado ? 'CANCELADO' : 'ABERTO'}
           </span>
+          {rec.numero_recebimento && (
+            <span className="text-xs text-slate-400 font-mono">#{rec.numero_recebimento}</span>
+          )}
           {qtdOS > 0 && (
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700" title={rec.numeros_os?.join(', ')}>
               OS: {rec.numeros_os?.slice(0, 2).join(', ')}{rec.numeros_os && rec.numeros_os.length > 2 ? '...' : ''}

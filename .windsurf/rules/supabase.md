@@ -60,3 +60,6 @@ Se o código e o banco divergirem:
 
 ## 7. Se não consultou o MCP, não conclua
 Se você não conseguiu validar no MCP do Supabase, não trate estrutura de banco como fato.
+
+## 8. Usar skill do Supabase
+Sempre que utilizar o MCP do Supabase, você DEVE invocar a skill do Supabase para obter instruções específicas e melhores práticas. Use o comando `skill` com o parâmetro `SkillName: "supabase"` antes de realizar qualquer operação com o Supabase.

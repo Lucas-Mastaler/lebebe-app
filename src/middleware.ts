@@ -130,6 +130,7 @@ export const config = {
     '/chamados-finalizados/:path*',
     '/superadmin/:path*',
     '/recebimento/:path*',
+    '/inteligencia-comercial/:path*',
     '/pos-venda/:path*',
     '/login',
     '/recuperar-senha',

@@ -185,6 +185,8 @@ export async function POST(request: NextRequest) {
 
   // --- Enriquecimento Digisac (best-effort, não bloqueia se falhar) ---
   let digisacMap = new Map<string, {
+    chamados_ciclo: number
+    interacoes_ciclo: number
     chamados_janela_90: number
     interacoes_janela_90: number
     primeiro_contato: string | null
@@ -197,7 +199,7 @@ export async function POST(request: NextRequest) {
       const [vinculosResult, jobsResult] = await Promise.all([
         supabase
           .from('venda_conversa_vinculos')
-          .select('numero_lancamento, digisac_ticket_id, considerada_na_janela_90_dias, inicio_chamado, ordem_conversa_para_venda')
+          .select('numero_lancamento, digisac_ticket_id, considerada_na_janela_90_dias, considerada_no_ciclo_venda, inicio_chamado, ordem_conversa_para_venda')
           .in('numero_lancamento', numeroLancamentos),
         supabase
           .from('digisac_sync_fila')
@@ -233,14 +235,23 @@ export async function POST(request: NextRequest) {
 
       for (const lancamento of numeroLancamentos) {
         const vinculosVenda = vinculos.filter((v) => v.numero_lancamento === lancamento)
+        // Ciclo da venda (métrica principal)
+        const vinculosCiclo = vinculosVenda.filter((v) => v.considerada_no_ciclo_venda)
+        // Janela 90 dias (compatibilidade)
         const vinculosJanela = vinculosVenda.filter((v) => v.considerada_na_janela_90_dias)
 
+        const chamados_ciclo = vinculosCiclo.length
+        const interacoes_ciclo = vinculosCiclo.reduce(
+          (sum, v) => sum + (interacoesMap.get(v.digisac_ticket_id) ?? 0), 0
+        )
         const chamados_janela_90 = vinculosJanela.length
         const interacoes_janela_90 = vinculosJanela.reduce(
           (sum, v) => sum + (interacoesMap.get(v.digisac_ticket_id) ?? 0), 0
         )
 
-        const primeiroVinculo = vinculosJanela.sort(
+        // Usa ciclo como base para primeiro_contato; fallback para janela
+        const vinculosRef = vinculosCiclo.length > 0 ? vinculosCiclo : vinculosJanela
+        const primeiroVinculo = [...vinculosRef].sort(
           (a, b) => (a.ordem_conversa_para_venda ?? 999) - (b.ordem_conversa_para_venda ?? 999)
         )[0]
         const primeiro_contato = primeiroVinculo?.inicio_chamado ?? null
@@ -250,6 +261,8 @@ export async function POST(request: NextRequest) {
         const ultima_sync = latestJob?.finalizado_em ?? null
 
         digisacMap.set(lancamento, {
+          chamados_ciclo,
+          interacoes_ciclo,
           chamados_janela_90,
           interacoes_janela_90,
           primeiro_contato,
@@ -267,6 +280,8 @@ export async function POST(request: NextRequest) {
     const d = digisacMap.get(lancamento)
     return {
       ...v,
+      digisac_chamados_ciclo: d?.chamados_ciclo ?? null,
+      digisac_interacoes_ciclo: d?.interacoes_ciclo ?? null,
       digisac_chamados_janela_90: d?.chamados_janela_90 ?? null,
       digisac_interacoes_janela_90: d?.interacoes_janela_90 ?? null,
       digisac_primeiro_contato: d?.primeiro_contato ?? null,

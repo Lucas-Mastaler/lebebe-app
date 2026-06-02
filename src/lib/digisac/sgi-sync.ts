@@ -467,40 +467,89 @@ export async function recalcularHistoricoTelefone(
 // 7. CALCULAR E SALVAR VÍNCULOS VENDA ↔ CONVERSA
 // ============================================================
 
+const DATA_MINIMA_CICLO = new Date('2026-01-01T00:00:00.000Z')
+
 export async function calcularVinculosVenda(
   documentoSaidaId: string,
   numeroLancamento: string,
   dataFechamento: string | null,
   tickets: ResumoTicket[],
-  supabase: SupabaseClient
-): Promise<{ totalJanela90Dias: number }> {
-  if (!tickets.length) return { totalJanela90Dias: 0 }
+  supabase: SupabaseClient,
+  telefonesVenda?: string[]
+): Promise<{ totalJanela90Dias: number; totalCicloVenda: number; inicioCiclo: string | null; fimCiclo: string | null; vendaAnterior: string | null }> {
+  if (!tickets.length) return { totalJanela90Dias: 0, totalCicloVenda: 0, inicioCiclo: null, fimCiclo: null, vendaAnterior: null }
 
   const dataVenda = dataFechamento ? new Date(dataFechamento) : null
-  const dataInicioJanela = dataVenda ? new Date(dataVenda.getTime() - 90 * 24 * 60 * 60 * 1000) : null
 
-  // Ordenar cronologicamente para calcular ordem
+  // ── Busca venda anterior do mesmo cliente/telefone ────────
+  let dataInicioCiclo: Date = DATA_MINIMA_CICLO
+  let vendaAnteriorLancamento: string | null = null
+
+  if (dataVenda && telefonesVenda && telefonesVenda.length > 0) {
+    // Busca contatos que tenham algum dos telefones da venda
+    const { data: contatosAnteriores } = await supabase
+      .from('sgi_documentos_saida_contatos')
+      .select('numero_lancamento')
+      .in('telefone_normalizado_ddi', telefonesVenda)
+
+    if (contatosAnteriores && contatosAnteriores.length > 0) {
+      const lancamentosEncontrados = [...new Set(
+        contatosAnteriores.map(c => c.numero_lancamento).filter(Boolean)
+      )].filter(l => l !== numeroLancamento)
+
+      if (lancamentosEncontrados.length > 0) {
+        // Busca data_fechamento das vendas encontradas, anteriores à atual
+        const { data: vendasAnteriores } = await supabase
+          .from('sgi_documentos_saida')
+          .select('numero_lancamento, data_fechamento')
+          .in('numero_lancamento', lancamentosEncontrados)
+          .not('data_fechamento', 'is', null)
+          .lt('data_fechamento', dataVenda.toISOString())
+          .order('data_fechamento', { ascending: false })
+          .limit(1)
+
+        if (vendasAnteriores && vendasAnteriores.length > 0) {
+          const anterior = vendasAnteriores[0]
+          vendaAnteriorLancamento = anterior.numero_lancamento
+          const dataAnterior = new Date(anterior.data_fechamento)
+          // inicio_ciclo = data_fechamento da venda anterior (exclusive — usando > no filtro)
+          dataInicioCiclo = dataAnterior > DATA_MINIMA_CICLO ? dataAnterior : DATA_MINIMA_CICLO
+        }
+      }
+    }
+  }
+
+  const fimCiclo = dataVenda ?? new Date()
+  const inicioCicloISO = dataInicioCiclo.toISOString()
+  const fimCicloISO = fimCiclo.toISOString()
+
+  // ── Ordenar cronologicamente para calcular ordem ──────────
   const ordenados = [...tickets].sort((a, b) => {
     const ta = a.started_at ? new Date(a.started_at).getTime() : 0
     const tb = b.started_at ? new Date(b.started_at).getTime() : 0
     return ta - tb
   })
 
-  let totalJanela90Dias = 0
+  let totalCicloVenda = 0
+  let totalJanela90Dias = 0 // mantido por compatibilidade
+  const dataInicioJanela90 = dataVenda ? new Date(dataVenda.getTime() - 90 * 24 * 60 * 60 * 1000) : null
+
   const vinculos = ordenados.map((ticket, idx) => {
     const dataConversa = ticket.started_at ? new Date(ticket.started_at) : null
     let diasAntes: number | null = null
-    let naJanela = false
+    let noCiclo = false
+    let naJanela90 = false
 
     if (dataVenda && dataConversa) {
       diasAntes = Math.round((dataVenda.getTime() - dataConversa.getTime()) / (1000 * 60 * 60 * 24))
-      naJanela =
-        dataInicioJanela !== null &&
-        dataConversa >= dataInicioJanela &&
-        dataConversa <= dataVenda
+      // Ciclo: > inicio (exclusive) e <= fim
+      noCiclo = dataConversa > dataInicioCiclo && dataConversa <= fimCiclo
+      // Janela 90 dias legada
+      naJanela90 = dataInicioJanela90 !== null && dataConversa >= dataInicioJanela90 && dataConversa <= dataVenda
     }
 
-    if (naJanela) totalJanela90Dias++
+    if (noCiclo) totalCicloVenda++
+    if (naJanela90) totalJanela90Dias++
 
     return {
       documento_saida_id: documentoSaidaId,
@@ -509,7 +558,11 @@ export async function calcularVinculosVenda(
       telefone_normalizado: ticket.telefone_normalizado,
       telefone_normalizado_ddi: ticket.telefone_normalizado_ddi,
       data_conversa: ticket.started_at,
-      considerada_na_janela_90_dias: naJanela,
+      considerada_na_janela_90_dias: naJanela90,
+      considerada_no_ciclo_venda: noCiclo,
+      data_inicio_ciclo_venda: inicioCicloISO,
+      data_fim_ciclo_venda: fimCicloISO,
+      numero_lancamento_venda_anterior: vendaAnteriorLancamento,
       ordem_conversa_para_venda: idx + 1,
       dias_antes_da_venda: diasAntes,
       inicio_chamado: ticket.inicio_chamado,
@@ -525,7 +578,7 @@ export async function calcularVinculosVenda(
     console.error(`[sgi-sync] calcularVinculos upsert erro:`, error)
   }
 
-  return { totalJanela90Dias }
+  return { totalJanela90Dias, totalCicloVenda, inicioCiclo: inicioCicloISO, fimCiclo: fimCicloISO, vendaAnterior: vendaAnteriorLancamento }
 }
 
 // ============================================================

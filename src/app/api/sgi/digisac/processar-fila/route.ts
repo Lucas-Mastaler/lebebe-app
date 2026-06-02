@@ -97,6 +97,10 @@ export async function POST(request: NextRequest) {
 
     let totalNovosOuAtualizados = 0
     let totalJanela90DiasGlobal = 0
+    let totalCicloVendaGlobal = 0
+    let inicioCicloGlobal: string | null = null
+    let fimCicloGlobal: string | null = null
+    let vendaAnteriorGlobal: string | null = null
     const todosTicketsResumo: ResumoTicket[] = []
     const todosTicketsResumoDedup = new Map<string, ResumoTicket>() // key = digisac_ticket_id
     const todosErroVariacoes: string[] = []
@@ -196,14 +200,19 @@ export async function POST(request: NextRequest) {
 
     // Calcula vínculos da venda usando tickets deduplicados
     if (venda && ticketsDedup.length > 0) {
-      const { totalJanela90Dias } = await calcularVinculosVenda(
+      const { totalJanela90Dias, totalCicloVenda, inicioCiclo, fimCiclo, vendaAnterior } = await calcularVinculosVenda(
         venda.id,
         numeroLancamento,
         venda.data_fechamento,
         ticketsDedup,
-        supabaseAdmin
+        supabaseAdmin,
+        telefonesDDI
       )
       totalJanela90DiasGlobal = totalJanela90Dias
+      totalCicloVendaGlobal = totalCicloVenda
+      inicioCicloGlobal = inicioCiclo
+      fimCicloGlobal = fimCiclo
+      vendaAnteriorGlobal = vendaAnterior
     }
 
     // Busca resumo final do histórico consolidado
@@ -235,6 +244,10 @@ export async function POST(request: NextRequest) {
       totalHistorico,
       totalNovosOuAtualizados,
       totalJanela90Dias: totalJanela90DiasGlobal,
+      totalCicloVenda: totalCicloVendaGlobal,
+      inicioCicloVenda: inicioCicloGlobal,
+      fimCicloVenda: fimCicloGlobal,
+      vendaAnterior: vendaAnteriorGlobal,
       totalAtivos,
       totalReceptivos,
       totalIndefinidos,

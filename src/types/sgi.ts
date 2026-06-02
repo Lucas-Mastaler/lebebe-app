@@ -31,6 +31,8 @@ export interface SgiDocumento {
   created_at: string
   updated_at: string
   // Digisac enrichment (optional — populated when synced)
+  digisac_chamados_ciclo?: number | null
+  digisac_interacoes_ciclo?: number | null
   digisac_chamados_janela_90?: number | null
   digisac_interacoes_janela_90?: number | null
   digisac_primeiro_contato?: 'ativo' | 'receptivo' | 'indefinido' | null

@@ -17,6 +17,10 @@ interface DigisacSyncStatus {
     totalHistorico?: number
     totalNovosOuAtualizados?: number
     totalJanela90Dias?: number
+    totalCicloVenda?: number
+    inicioCicloVenda?: string
+    fimCicloVenda?: string
+    vendaAnterior?: string | null
     totalAtivos?: number
     totalReceptivos?: number
     totalIndefinidos?: number
@@ -29,6 +33,10 @@ interface DigisacSyncStatus {
       ultimaAtualizacao?: string
       totalHistorico?: number
       totalJanela90Dias?: number
+      totalCicloVenda?: number
+      inicioCicloVenda?: string
+      fimCicloVenda?: string
+      vendaAnterior?: string | null
       totalAtivos?: number
       totalReceptivos?: number
       totalIndefinidos?: number
@@ -426,7 +434,10 @@ function DigisacSyncPanel({
   const cacheData = resultado?.resultadoCache ?? resultado
 
   const totalHistorico = cacheData?.totalHistorico ?? 0
-  const totalJanela = resultado?.totalJanela90Dias ?? cacheData?.totalJanela90Dias ?? 0
+  const totalCiclo = resultado?.totalCicloVenda ?? cacheData?.totalCicloVenda ?? resultado?.totalJanela90Dias ?? cacheData?.totalJanela90Dias ?? 0
+  const inicioCiclo = resultado?.inicioCicloVenda ?? cacheData?.inicioCicloVenda ?? null
+  const fimCiclo = resultado?.fimCicloVenda ?? cacheData?.fimCicloVenda ?? null
+  const vendaAnterior = resultado?.vendaAnterior ?? cacheData?.vendaAnterior ?? null
   const totalAtivos = cacheData?.totalAtivos ?? 0
   const totalReceptivos = cacheData?.totalReceptivos ?? 0
   const totalIndefinidos = cacheData?.totalIndefinidos ?? 0
@@ -520,12 +531,31 @@ function DigisacSyncPanel({
             <div className="flex items-center gap-1.5 mb-1">
               <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
               <span className="text-xs font-semibold text-emerald-700">Considerados nesta venda</span>
-              <span className="ml-1 text-xs text-emerald-500">(janela 90 dias antes do fechamento)</span>
+              <span className="ml-1 text-xs text-emerald-500">(desde a venda anterior até o fechamento)</span>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              <StatBlock value={totalJanela} label="Chamados na janela" color="emerald" large />
+              <StatBlock value={totalCiclo} label="Chamados no ciclo" color="emerald" large />
               <StatBlock value={totalIndefinidos} label="Indefinidos" color="slate" />
             </div>
+            {(inicioCiclo || fimCiclo || vendaAnterior) && (
+              <div className="mt-2 pt-2 border-t border-emerald-100 space-y-1">
+                {vendaAnterior && (
+                  <p className="text-xs text-emerald-600">
+                    Venda anterior: <span className="font-mono font-semibold">#{vendaAnterior}</span>
+                  </p>
+                )}
+                {inicioCiclo && (
+                  <p className="text-xs text-slate-500">
+                    Início ciclo: {new Date(inicioCiclo).toLocaleDateString('pt-BR')}
+                  </p>
+                )}
+                {fimCiclo && (
+                  <p className="text-xs text-slate-500">
+                    Fim ciclo: {new Date(fimCiclo).toLocaleDateString('pt-BR')}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
         </div>

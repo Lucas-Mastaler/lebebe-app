@@ -20,6 +20,7 @@ interface CardItem {
   value: string
   icon: React.ElementType
   color: string
+  title?: string
 }
 
 interface CardsSGIProps {
@@ -47,6 +48,7 @@ export function CardsSGI({ cards, isLoading }: CardsSGIProps) {
           value: brl(cards.valor_pago_novo),
           icon: CheckCircle2,
           color: 'text-green-600 bg-green-50',
+          title: 'Valor pago em vendas novas (exclui trocas/devoluções)',
         },
         {
           label: 'Crédito de troca',
@@ -107,6 +109,7 @@ export function CardsSGI({ cards, isLoading }: CardsSGIProps) {
           <div
             key={item.label}
             className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-1.5"
+            title={item.title}
           >
             <div className="flex items-center gap-2">
               <span className={`p-1.5 rounded-lg ${item.color}`}>

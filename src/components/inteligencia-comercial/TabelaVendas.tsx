@@ -97,7 +97,7 @@ export function TabelaVendas({
             <TableHead className="text-xs">Operação</TableHead>
             <TableHead className="text-xs">Status</TableHead>
             <TableHead className="text-xs text-right">Valor Total</TableHead>
-            <TableHead className="text-xs text-right">Pago Novo</TableHead>
+            <TableHead className="text-xs text-right" title="Valor pago em vendas novas (exclui trocas/devoluções)">Pago Novo</TableHead>
             <TableHead className="text-xs text-right">Créd. Troca</TableHead>
             <TableHead className="text-xs text-right">Pendente</TableHead>
             <TableHead className="text-xs text-right">Desc. %</TableHead>

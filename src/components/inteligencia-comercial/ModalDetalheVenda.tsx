@@ -91,7 +91,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[95vw] sm:w-[85vw] lg:w-[70vw] max-w-none max-h-[90vh] overflow-y-auto">
+      <DialogContent className="!w-[95vw] !sm:w-[85vw] !lg:w-[70vw] !max-w-none max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-base">
             Venda #{venda?.numero_lancamento}

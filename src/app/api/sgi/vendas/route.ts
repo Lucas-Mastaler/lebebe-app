@@ -34,12 +34,23 @@ export async function POST(request: NextRequest) {
     operacao,
     status,
     numeroLancamento,
+    filiais,
+    vendedores,
+    operacoes,
+    status: statusArray,
     page = 1,
   } = body || {}
 
+  // Backward compatibility: accept old single-value fields
+  const filiaisArr = filiais ?? (filial ? [filial] : [])
+  const vendedoresArr = vendedores ?? (vendedor ? [vendedor] : [])
+  const operacoesArr = operacoes ?? (operacao ? [operacao] : [])
+  const statusArr = statusArray ?? (status ? [status] : [])
+
   console.log('[API][SGI][VENDAS] POST filtros=', {
     dataInicio, dataFim, cliente, telefone: telefone ? '***' : undefined,
-    filial, vendedor, operacao, status, numeroLancamento, page,
+    filiais: filiaisArr, vendedores: vendedoresArr, operacoes: operacoesArr,
+    status: statusArr, numeroLancamento, page,
   })
 
   const supabase = await createClient()
@@ -49,10 +60,12 @@ export async function POST(request: NextRequest) {
   if (telefone?.trim()) {
     const cleaned = telefone.trim().replace(/\D/g, '')
     if (cleaned.length >= 3) {
+      // Try with cleaned phone and also with DDI prefix (55)
+      const withDDI = `55${cleaned}`
       const { data: contatosRows, error: contatosError } = await supabase
         .from('sgi_documentos_saida_contatos')
         .select('documento_saida_id')
-        .or(`telefone_normalizado.ilike.%${cleaned}%,telefone_normalizado_ddi.ilike.%${cleaned}%`)
+        .or(`telefone_normalizado.ilike.%${cleaned}%,telefone_normalizado_ddi.ilike.%${cleaned}%,telefone_normalizado.ilike.%${withDDI}%,telefone_normalizado_ddi.ilike.%${withDDI}%`)
 
       if (contatosError) {
         console.error('[API][SGI][VENDAS] Erro ao buscar contatos:', contatosError)
@@ -104,25 +117,35 @@ export async function POST(request: NextRequest) {
     listQ = listQ.lte('data_fechamento', fim)
     cardsQ = cardsQ.lte('data_fechamento', fim)
   }
+  // Multi-term cliente search: split by spaces and apply AND for each term
   if (cliente?.trim()) {
-    listQ = listQ.ilike('cliente', `%${cliente.trim()}%`)
-    cardsQ = cardsQ.ilike('cliente', `%${cliente.trim()}%`)
+    const terms = cliente.trim().split(/\s+/).filter(t => t.length > 0)
+    if (terms.length > 0) {
+      terms.forEach(term => {
+        listQ = listQ.ilike('cliente', `%${term}%`)
+        cardsQ = cardsQ.ilike('cliente', `%${term}%`)
+      })
+    }
   }
-  if (filial?.trim()) {
-    listQ = listQ.ilike('filial', `%${filial.trim()}%`)
-    cardsQ = cardsQ.ilike('filial', `%${filial.trim()}%`)
+  // Multi-select filiais
+  if (filiaisArr.length > 0) {
+    listQ = listQ.in('filial', filiaisArr)
+    cardsQ = cardsQ.in('filial', filiaisArr)
   }
-  if (vendedor?.trim()) {
-    listQ = listQ.ilike('vendedor', `%${vendedor.trim()}%`)
-    cardsQ = cardsQ.ilike('vendedor', `%${vendedor.trim()}%`)
+  // Multi-select vendedores
+  if (vendedoresArr.length > 0) {
+    listQ = listQ.in('vendedor', vendedoresArr)
+    cardsQ = cardsQ.in('vendedor', vendedoresArr)
   }
-  if (operacao?.trim()) {
-    listQ = listQ.ilike('operacao', `%${operacao.trim()}%`)
-    cardsQ = cardsQ.ilike('operacao', `%${operacao.trim()}%`)
+  // Multi-select operacoes
+  if (operacoesArr.length > 0) {
+    listQ = listQ.in('operacao', operacoesArr)
+    cardsQ = cardsQ.in('operacao', operacoesArr)
   }
-  if (status?.trim()) {
-    listQ = listQ.eq('status', status.trim())
-    cardsQ = cardsQ.eq('status', status.trim())
+  // Multi-select status
+  if (statusArr.length > 0) {
+    listQ = listQ.in('status', statusArr)
+    cardsQ = cardsQ.in('status', statusArr)
   }
   if (numeroLancamento?.trim()) {
     listQ = listQ.ilike('numero_lancamento', `%${numeroLancamento.trim()}%`)

@@ -94,10 +94,10 @@ export interface SgiFiltros {
   dataFim?: string
   cliente?: string
   telefone?: string
-  filial?: string
-  vendedor?: string
-  operacao?: string
-  status?: string
+  filiais?: string[]
+  vendedores?: string[]
+  operacoes?: string[]
+  status?: string[]
   numeroLancamento?: string
   page?: number
 }

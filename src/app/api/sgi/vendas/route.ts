@@ -119,9 +119,9 @@ export async function POST(request: NextRequest) {
   }
   // Multi-term cliente search: split by spaces and apply AND for each term
   if (cliente?.trim()) {
-    const terms = cliente.trim().split(/\s+/).filter(t => t.length > 0)
+    const terms = cliente.trim().split(/\s+/).filter((t: string) => t.length > 0)
     if (terms.length > 0) {
-      terms.forEach(term => {
+      terms.forEach((term: string) => {
         listQ = listQ.ilike('cliente', `%${term}%`)
         cardsQ = cardsQ.ilike('cliente', `%${term}%`)
       })

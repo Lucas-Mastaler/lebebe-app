@@ -1,5 +1,5 @@
 import { fetchDigisac } from './clienteDigisac'
-import { SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 // ============================================================
 // TIPOS
@@ -85,16 +85,66 @@ export interface ResumoTicket {
 }
 
 // ============================================================
-// 1. BUSCAR TICKETS POR TELEFONE (paginado)
+// 1. VARIAÇÕES DE TELEFONE (sem 9 tem prioridade)
 // ============================================================
 
-export async function buscarTicketsPorTelefonePaginado(
-  telefoneComDDI: string,
-  opts: BuscarTicketsOptions = {}
+/**
+ * Gera variações do telefone para busca no Digisac.
+ * Prioriza versão sem o 9º dígito (padrão histórico do Digisac).
+ * Input: qualquer formato. Output: array ordenado sem duplicatas.
+ *
+ * Exemplo: 5541984148660 →
+ *   [554184148660, 5541984148660, 4184148660, 41984148660]
+ */
+export function gerarVariacoesTelefone(telefoneInput: string): string[] {
+  const digits = telefoneInput.replace(/\D/g, '')
+
+  const isCelComDDI = (t: string) =>
+    t.length === 13 && t.startsWith('55') && /^55\d{2}9\d{8}$/.test(t)
+  const isCelSemDDI = (t: string) =>
+    t.length === 11 && /^\d{2}9\d{8}$/.test(t)
+
+  const removerNono = (t: string, posNono: number) =>
+    t.slice(0, posNono) + t.slice(posNono + 1)
+
+  const variants: string[] = []
+
+  if (isCelComDDI(digits)) {
+    // 5541984148660 → posição 4 é o 9
+    const semNonoDDI = removerNono(digits, 4) // 554184148660
+    const semDDI = digits.slice(2) // 41984148660
+    const semNonoSemDDI = removerNono(semDDI, 2) // 4184148660
+    variants.push(semNonoDDI, digits, semNonoSemDDI, semDDI)
+  } else if (isCelSemDDI(digits)) {
+    // 41984148660 → posição 2 é o 9
+    const semNono = removerNono(digits, 2) // 4184148660
+    const comDDI = `55${digits}` // 5541984148660
+    const semNonoComDDI = `55${semNono}` // 554184148660
+    variants.push(semNonoComDDI, comDDI, semNono, digits)
+  } else {
+    // Não identificado como celular com 9: tenta com e sem DDI
+    variants.push(digits)
+    if (digits.startsWith('55') && digits.length > 2) {
+      variants.push(digits.slice(2))
+    } else if (digits.length >= 10) {
+      variants.push(`55${digits}`)
+    }
+  }
+
+  // Remove duplicatas mantendo ordem e filtra valores muito curtos
+  return [...new Set(variants)].filter((v) => v.length >= 8)
+}
+
+// ============================================================
+// 2. BUSCAR TICKETS POR UMA VARIAÇÃO DE TELEFONE (paginado)
+// ============================================================
+
+async function buscarTicketsPorTelefonePaginado(
+  telefoneVariacao: string,
+  opts: BuscarTicketsOptions
 ): Promise<DigisacTicket[]> {
   const { dataInicioISO = null, usarUpdatedAt = true, perPage = 50 } = opts
   const todos: DigisacTicket[] = []
-
   let page = 1
 
   while (true) {
@@ -102,11 +152,7 @@ export async function buscarTicketsPorTelefonePaginado(
 
     if (dataInicioISO) {
       const filtroData = { $gte: dataInicioISO }
-      if (usarUpdatedAt) {
-        where.updatedAt = filtroData
-      } else {
-        where.startedAt = filtroData
-      }
+      where[usarUpdatedAt ? 'updatedAt' : 'startedAt'] = filtroData
     }
 
     const query = JSON.stringify({
@@ -116,20 +162,24 @@ export async function buscarTicketsPorTelefonePaginado(
       include: [
         {
           model: 'firstMessage',
-          attributes: ['id', 'type', 'text', 'timestamp', 'isFromMe', 'sent', 'data', 'visible', 'isComment'],
+          attributes: [
+            'id', 'type', 'text', 'timestamp', 'isFromMe', 'sent', 'data',
+            'accountId', 'serviceId', 'contactId', 'fromId', 'toId', 'userId',
+            'ticketId', 'isFromBot', 'isFromSync', 'visible', 'ticketUserId',
+            'ticketDepartmentId', 'origin', 'botId', 'campaignId', 'isComment',
+          ],
         },
         {
           model: 'contact',
           required: true,
           where: {
             visible: true,
-            data: {
-              number: { $like: `%${telefoneComDDI}%` },
-            },
+            data: { number: { $like: `%${telefoneVariacao}%` } },
           },
           include: [
             { model: 'service', required: true },
             { model: 'tags' },
+            { model: 'person' },
           ],
         },
         { model: 'user' },
@@ -140,15 +190,12 @@ export async function buscarTicketsPorTelefonePaginado(
       perPage,
     })
 
-    const endpoint = `/api/v1/tickets?query=${encodeURIComponent(query)}`
+    // CORREÇÃO CRÍTICA: BASE_URL já contém /api/v1 — usar apenas /tickets
+    const endpoint = `/tickets?query=${encodeURIComponent(query)}`
     let resp: { data?: DigisacTicket[]; total?: number; currentPage?: number; lastPage?: number }
 
-    try {
-      resp = await fetchDigisac(endpoint)
-    } catch (err) {
-      console.error(`[sgi-sync] buscarTickets página ${page} erro:`, err)
-      break
-    }
+    // Lança erro em vez de silenciosamente retornar vazio
+    resp = await fetchDigisac(endpoint)
 
     const items = Array.isArray(resp?.data) ? resp.data : []
     todos.push(...items)
@@ -162,7 +209,51 @@ export async function buscarTicketsPorTelefonePaginado(
 }
 
 // ============================================================
-// 2. BUSCAR MENSAGENS DE UM TICKET (paginado)
+// 3. BUSCAR TICKETS COM TODAS AS VARIAÇÕES DE TELEFONE (dedup)
+// ============================================================
+
+export async function buscarTicketsPorTelefoneComVariacoes(
+  telefoneBase: string,
+  opts: BuscarTicketsOptions = {}
+): Promise<{ tickets: DigisacTicket[]; variacaoUsada: string; erros: string[] }> {
+  const variacoes = gerarVariacoesTelefone(telefoneBase)
+  const todosMap = new Map<string, DigisacTicket>()
+  const erros: string[] = []
+  let variacaoUsada = variacoes[0] ?? telefoneBase
+
+  console.log(`[DIGISAC] Telefone base: ${telefoneBase}`)
+  console.log(`[DIGISAC] Variações testadas: ${variacoes.join(', ')}`)
+
+  for (const variacao of variacoes) {
+    let tickets: DigisacTicket[] = []
+    try {
+      tickets = await buscarTicketsPorTelefonePaginado(variacao, opts)
+      console.log(`[DIGISAC] ${variacao}: ${tickets.length} tickets`)
+
+      if (tickets.length > 0 && variacaoUsada === variacoes[0]) {
+        variacaoUsada = variacao
+      }
+
+      for (const t of tickets) {
+        if (!todosMap.has(t.id)) todosMap.set(t.id, t)
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[DIGISAC] ${variacao}: erro — ${msg}`)
+      erros.push(`${variacao}: ${msg}`)
+      // Continuar tentando outras variações em vez de abortar tudo
+      // Se for erro de auth/config (401/403), todas as variações falharão — não adianta continuar
+      if (msg.includes('autenticação') || msg.includes('401') || msg.includes('403')) {
+        throw new Error(`Erro de autenticação Digisac: ${msg}`)
+      }
+    }
+  }
+
+  return { tickets: [...todosMap.values()], variacaoUsada, erros }
+}
+
+// ============================================================
+// 4. BUSCAR MENSAGENS DE UM TICKET (paginado)
 // ============================================================
 
 export async function buscarMensagensTicketPaginado(
@@ -174,10 +265,11 @@ export async function buscarMensagensTicketPaginado(
   let incompleto = false
 
   while (true) {
+    // CORREÇÃO CRÍTICA: BASE_URL já contém /api/v1 — usar apenas /messages
+    const endpoint = `/messages?where[ticketId]=${encodeURIComponent(ticketId)}&perPage=${perPage}&page=${page}`
     let resp: { data?: DigisacMensagem[]; total?: number } | null = null
 
     try {
-      const endpoint = `/api/v1/messages?where[ticketId]=${encodeURIComponent(ticketId)}&perPage=${perPage}&page=${page}`
       resp = await fetchDigisac(endpoint)
     } catch (err) {
       console.error(`[sgi-sync] buscarMensagens ticketId=${ticketId} página ${page} erro:`, err)
@@ -187,10 +279,7 @@ export async function buscarMensagensTicketPaginado(
 
     const items = Array.isArray(resp?.data) ? resp.data : []
     const uteis = items.filter(
-      (m) =>
-        m.type === 'chat' &&
-        m.visible !== false &&
-        m.isComment !== true
+      (m) => m.type === 'chat' && m.visible !== false && m.isComment !== true
     )
     mensagens.push(...uteis)
 
@@ -198,7 +287,7 @@ export async function buscarMensagensTicketPaginado(
     page++
 
     if (page > 50) {
-      console.warn(`[sgi-sync] buscarMensagens ticketId=${ticketId} limite de segurança 50 páginas atingido`)
+      console.warn(`[sgi-sync] buscarMensagens ticketId=${ticketId} limite 50 páginas atingido`)
       incompleto = true
       break
     }
@@ -208,44 +297,50 @@ export async function buscarMensagensTicketPaginado(
 }
 
 // ============================================================
-// 3. CALCULAR INÍCIO DO CHAMADO
+// 5. CALCULAR INÍCIO DO CHAMADO
+// Retorna as mensagens se foram buscadas para evitar re-fetch
 // ============================================================
 
-export async function calcularInicioChamado(
-  ticket: DigisacTicket
-): Promise<{ inicio: 'ativo' | 'receptivo' | 'indefinido'; mensagensCarregadas: boolean }> {
+export async function calcularInicioChamado(ticket: DigisacTicket): Promise<{
+  inicio: 'ativo' | 'receptivo' | 'indefinido'
+  mensagens: DigisacMensagem[] | null  // null = não buscado (firstMessage suficiente)
+  incompleto: boolean
+}> {
   const fm = ticket.firstMessage
-  if (fm && fm.type !== undefined && fm.isFromMe !== undefined && fm.visible !== false && fm.isComment !== true) {
+  if (
+    fm &&
+    fm.type !== undefined &&
+    fm.isFromMe !== undefined &&
+    fm.visible !== false &&
+    fm.isComment !== true
+  ) {
     return {
       inicio: fm.isFromMe ? 'ativo' : 'receptivo',
-      mensagensCarregadas: false,
+      mensagens: null,
+      incompleto: false,
     }
   }
 
-  // Fallback: buscar mensagens do ticket
-  const { mensagens } = await buscarMensagensTicketPaginado(ticket.id)
-  const primeira = mensagens.find((m) => m.type === 'chat' && m.visible !== false && m.isComment !== true)
-
-  if (!primeira) {
-    return { inicio: 'indefinido', mensagensCarregadas: true }
-  }
+  // Fallback: buscar mensagens
+  const { mensagens, incompleto } = await buscarMensagensTicketPaginado(ticket.id)
+  const primeira = mensagens.find(
+    (m) => m.type === 'chat' && m.visible !== false && m.isComment !== true
+  )
 
   return {
-    inicio: primeira.isFromMe ? 'ativo' : 'receptivo',
-    mensagensCarregadas: true,
+    inicio: primeira ? (primeira.isFromMe ? 'ativo' : 'receptivo') : 'indefinido',
+    mensagens,
+    incompleto,
   }
 }
 
 // ============================================================
-// 4. CALCULAR QUANTIDADE DE INTERAÇÕES
+// 6. CALCULAR QUANTIDADE DE INTERAÇÕES
 // ============================================================
 
 export function calcularQuantidadeInteracoes(mensagens: DigisacMensagem[]): number {
   return mensagens.filter(
-    (m) =>
-      m.type === 'chat' &&
-      m.visible !== false &&
-      m.isComment !== true
+    (m) => m.type === 'chat' && m.visible !== false && m.isComment !== true
   ).length
 }
 
@@ -313,18 +408,18 @@ export async function recalcularHistoricoTelefone(
     return
   }
 
-  if (!tickets || tickets.length === 0) return
+  // Mesmo sem tickets, faz upsert para registrar que o telefone foi consultado (atualiza cache)
+  const total = tickets?.length ?? 0
+  const ticketsSafe = tickets ?? []
+  const totalInteracoes = ticketsSafe.reduce((acc, t) => acc + (t.quantidade_interacoes ?? 0), 0)
+  const ativos = ticketsSafe.filter((t) => t.inicio_chamado === 'ativo').length
+  const receptivos = ticketsSafe.filter((t) => t.inicio_chamado === 'receptivo').length
+  const indefinidos = ticketsSafe.filter((t) => t.inicio_chamado === 'indefinido').length
+  const primeiraConversa = ticketsSafe[0]?.started_at ?? null
+  const ultimaConversa = ticketsSafe[ticketsSafe.length - 1]?.started_at ?? null
+  const nomeDigisac = ticketsSafe.find((t) => t.cliente_nome_digisac)?.cliente_nome_digisac ?? null
 
-  const total = tickets.length
-  const totalInteracoes = tickets.reduce((acc, t) => acc + (t.quantidade_interacoes ?? 0), 0)
-  const ativos = tickets.filter((t) => t.inicio_chamado === 'ativo').length
-  const receptivos = tickets.filter((t) => t.inicio_chamado === 'receptivo').length
-  const indefinidos = tickets.filter((t) => t.inicio_chamado === 'indefinido').length
-  const primeiraConversa = tickets[0]?.started_at ?? null
-  const ultimaConversa = tickets[tickets.length - 1]?.started_at ?? null
-  const nomeDigisac = tickets.find((t) => t.cliente_nome_digisac)?.cliente_nome_digisac ?? null
-
-  const resumo = tickets.map((t) => ({
+  const resumo = ticketsSafe.map((t) => ({
     id: t.digisac_ticket_id,
     started_at: t.started_at,
     ended_at: t.ended_at,

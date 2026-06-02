@@ -180,8 +180,103 @@ export async function POST(request: NextRequest) {
 
   console.log('[API][SGI][VENDAS] total=', listResult.count, 'cards.total_vendas=', cards.total_vendas)
 
+  const listData: Record<string, unknown>[] = listResult.data ?? []
+  const numeroLancamentos = listData.map((v) => v.numero_lancamento as string).filter(Boolean)
+
+  // --- Enriquecimento Digisac (best-effort, não bloqueia se falhar) ---
+  let digisacMap = new Map<string, {
+    chamados_janela_90: number
+    interacoes_janela_90: number
+    primeiro_contato: string | null
+    status_digisac: string | null
+    ultima_sync: string | null
+  }>()
+
+  if (numeroLancamentos.length > 0) {
+    try {
+      const [vinculosResult, jobsResult] = await Promise.all([
+        supabase
+          .from('venda_conversa_vinculos')
+          .select('numero_lancamento, digisac_ticket_id, considerada_na_janela_90_dias, inicio_chamado, ordem_conversa_para_venda')
+          .in('numero_lancamento', numeroLancamentos),
+        supabase
+          .from('digisac_sync_fila')
+          .select('numero_lancamento, status, finalizado_em')
+          .in('numero_lancamento', numeroLancamentos)
+          .in('status', ['concluido', 'ignorado_cache_valido', 'erro', 'pendente', 'processando'])
+          .order('created_at', { ascending: false }),
+      ])
+
+      const vinculos = vinculosResult.data ?? []
+      const allTicketIds = vinculos.map((v) => v.digisac_ticket_id).filter(Boolean)
+
+      let interacoesMap = new Map<string, number>()
+      if (allTicketIds.length > 0) {
+        const { data: conversas } = await supabase
+          .from('digisac_conversas_resumo')
+          .select('digisac_ticket_id, quantidade_interacoes')
+          .in('digisac_ticket_id', allTicketIds)
+        for (const c of (conversas ?? [])) {
+          interacoesMap.set(c.digisac_ticket_id, c.quantidade_interacoes ?? 0)
+        }
+      }
+
+      // Deduplica jobs (primeiro por numero_lancamento = mais recente)
+      const jobsSeenSet = new Set<string>()
+      const jobsLatest = new Map<string, { status: string; finalizado_em: string | null }>()
+      for (const j of (jobsResult.data ?? [])) {
+        if (!jobsSeenSet.has(j.numero_lancamento)) {
+          jobsSeenSet.add(j.numero_lancamento)
+          jobsLatest.set(j.numero_lancamento, { status: j.status, finalizado_em: j.finalizado_em })
+        }
+      }
+
+      for (const lancamento of numeroLancamentos) {
+        const vinculosVenda = vinculos.filter((v) => v.numero_lancamento === lancamento)
+        const vinculosJanela = vinculosVenda.filter((v) => v.considerada_na_janela_90_dias)
+
+        const chamados_janela_90 = vinculosJanela.length
+        const interacoes_janela_90 = vinculosJanela.reduce(
+          (sum, v) => sum + (interacoesMap.get(v.digisac_ticket_id) ?? 0), 0
+        )
+
+        const primeiroVinculo = vinculosJanela.sort(
+          (a, b) => (a.ordem_conversa_para_venda ?? 999) - (b.ordem_conversa_para_venda ?? 999)
+        )[0]
+        const primeiro_contato = primeiroVinculo?.inicio_chamado ?? null
+
+        const latestJob = jobsLatest.get(lancamento)
+        const status_digisac = latestJob?.status ?? null
+        const ultima_sync = latestJob?.finalizado_em ?? null
+
+        digisacMap.set(lancamento, {
+          chamados_janela_90,
+          interacoes_janela_90,
+          primeiro_contato,
+          status_digisac,
+          ultima_sync,
+        })
+      }
+    } catch (enrichErr) {
+      console.warn('[API][SGI][VENDAS] Enriquecimento Digisac falhou (não crítico):', enrichErr)
+    }
+  }
+
+  const vendasEnriquecidas = listData.map((v) => {
+    const lancamento = v.numero_lancamento as string
+    const d = digisacMap.get(lancamento)
+    return {
+      ...v,
+      digisac_chamados_janela_90: d?.chamados_janela_90 ?? null,
+      digisac_interacoes_janela_90: d?.interacoes_janela_90 ?? null,
+      digisac_primeiro_contato: d?.primeiro_contato ?? null,
+      digisac_status: d?.status_digisac ?? null,
+      digisac_ultima_sync: d?.ultima_sync ?? null,
+    }
+  })
+
   return NextResponse.json({
-    vendas: listResult.data ?? [],
+    vendas: vendasEnriquecidas as unknown as import('@/types/sgi').SgiDocumento[],
     total: listResult.count ?? 0,
     cards,
   } satisfies SgiVendasResponse)

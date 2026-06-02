@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronLeft, ChevronRight, Eye } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Eye, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -42,6 +42,24 @@ function statusBadge(status: string | null) {
       {status}
     </span>
   )
+}
+
+function digisacStatusBadge(status: string | null, ultimaSync: string | null) {
+  if (!status) return <span className="text-slate-300 text-xs">—</span>
+  if (status === 'concluido' || status === 'ignorado_cache_valido') {
+    return (
+      <span className="flex items-center gap-1 text-xs text-emerald-600" title={ultimaSync ? `Sync: ${new Date(ultimaSync).toLocaleDateString('pt-BR')}` : undefined}>
+        <MessageCircle className="w-3 h-3" />
+      </span>
+    )
+  }
+  if (status === 'pendente' || status === 'processando') {
+    return <span className="text-xs text-sky-500 animate-pulse">⟳</span>
+  }
+  if (status === 'erro') {
+    return <span className="text-xs text-red-500" title="Erro na sync">!</span>
+  }
+  return <span className="text-slate-300 text-xs">—</span>
 }
 
 interface TabelaVendasProps {
@@ -102,13 +120,17 @@ export function TabelaVendas({
             <TableHead className="text-xs text-right">Pendente</TableHead>
             <TableHead className="text-xs text-right">Desc. %</TableHead>
             <TableHead className="text-xs text-right">Frete</TableHead>
+            <TableHead className="text-xs text-right" title="Chamados Digisac nos 90 dias antes da venda">Cham. 90d</TableHead>
+            <TableHead className="text-xs text-right" title="Interações nos 90 dias antes da venda">Interações</TableHead>
+            <TableHead className="text-xs" title="Primeiro tipo de contato na janela">1º Contato</TableHead>
+            <TableHead className="text-xs" title="Status sincronização Digisac">Digisac</TableHead>
             <TableHead className="text-xs w-10"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {vendas.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={15} className="text-center text-slate-400 py-12 text-sm">
+              <TableCell colSpan={20} className="text-center text-slate-400 py-12 text-sm">
                 Nenhuma venda encontrada para os filtros selecionados.
               </TableCell>
             </TableRow>
@@ -147,6 +169,35 @@ export function TabelaVendas({
                     : '—'}
                 </TableCell>
                 <TableCell className="text-xs text-right">{brl(venda.valor_frete)}</TableCell>
+                <TableCell className="text-xs text-right font-medium">
+                  {venda.digisac_chamados_janela_90 != null ? (
+                    <span className={venda.digisac_chamados_janela_90 > 0 ? 'text-sky-700' : 'text-slate-400'}>
+                      {venda.digisac_chamados_janela_90}
+                    </span>
+                  ) : '—'}
+                </TableCell>
+                <TableCell className="text-xs text-right">
+                  {venda.digisac_interacoes_janela_90 != null ? (
+                    <span className={venda.digisac_interacoes_janela_90 > 0 ? 'text-slate-700' : 'text-slate-400'}>
+                      {venda.digisac_interacoes_janela_90}
+                    </span>
+                  ) : '—'}
+                </TableCell>
+                <TableCell className="text-xs">
+                  {venda.digisac_primeiro_contato ? (
+                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                      venda.digisac_primeiro_contato === 'ativo' ? 'bg-sky-50 text-sky-700' :
+                      venda.digisac_primeiro_contato === 'receptivo' ? 'bg-violet-50 text-violet-700' :
+                      'bg-slate-50 text-slate-500'
+                    }`}>
+                      {venda.digisac_primeiro_contato === 'ativo' ? 'Ativo' :
+                       venda.digisac_primeiro_contato === 'receptivo' ? 'Receptivo' : 'Indef.'}
+                    </span>
+                  ) : '—'}
+                </TableCell>
+                <TableCell className="text-xs">
+                  {digisacStatusBadge(venda.digisac_status ?? null, venda.digisac_ultima_sync ?? null)}
+                </TableCell>
                 <TableCell>
                   <Button
                     variant="ghost"

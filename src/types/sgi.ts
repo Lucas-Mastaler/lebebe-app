@@ -30,6 +30,12 @@ export interface SgiDocumento {
   valor_pago_novo: number | null
   created_at: string
   updated_at: string
+  // Digisac enrichment (optional — populated when synced)
+  digisac_chamados_janela_90?: number | null
+  digisac_interacoes_janela_90?: number | null
+  digisac_primeiro_contato?: 'ativo' | 'receptivo' | 'indefinido' | null
+  digisac_status?: 'nao_sincronizado' | 'pendente' | 'processando' | 'concluido' | 'erro' | 'ignorado_cache_valido' | null
+  digisac_ultima_sync?: string | null
 }
 
 export interface SgiContato {

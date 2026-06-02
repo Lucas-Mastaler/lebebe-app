@@ -23,6 +23,8 @@ interface DigisacSyncStatus {
     totalInteracoes?: number
     ultimaAtualizacao?: string
     filtroPorCampo?: string
+    semChamados?: boolean
+    errosVariacoes?: string[]
     resultadoCache?: {
       ultimaAtualizacao?: string
       totalHistorico?: number
@@ -127,8 +129,8 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
         return
       }
 
-      // Job duplicado já em andamento
-      if (job.status === 'pendente' || job.status === 'processando') {
+      // Job criado com sucesso OU já estava pendente — sempre dispara processamento
+      if (job.status === 'pendente') {
         // 2. Dispara processamento
         const r2 = await fetch('/api/sgi/digisac/processar-fila', {
           method: 'POST',
@@ -413,6 +415,7 @@ function DigisacSyncPanel({
 
   const isCacheValido = status?.status === 'ignorado_cache_valido'
   const isConcluido = status?.status === 'concluido' || isCacheValido
+  const semChamados = isConcluido && (resultado?.semChamados === true || totalHistorico === 0)
   const isProcessando = status?.status === 'processando' || status?.status === 'pendente' || loading
   const isErro = status?.status === 'erro'
   const naoEncontrado = !status || status.status === 'nao_encontrado'
@@ -427,10 +430,16 @@ function DigisacSyncPanel({
             Sincronizando...
           </span>
         )}
-        {isConcluido && !isProcessando && (
+        {isConcluido && !isProcessando && !semChamados && (
           <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
             <CheckCircle2 className="w-3.5 h-3.5" />
             {isCacheValido ? 'Cache válido' : 'Sincronizado'}
+          </span>
+        )}
+        {semChamados && !isProcessando && (
+          <span className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+            <MessageCircle className="w-3.5 h-3.5" />
+            Nenhum chamado encontrado
           </span>
         )}
         {isErro && (

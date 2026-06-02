@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { validateComercialUser } from '@/lib/auth/sgi-auth'
 import {
-  buscarTicketsPorTelefonePaginado,
+  buscarTicketsPorTelefoneComVariacoes,
   calcularInicioChamado,
   buscarMensagensTicketPaginado,
   calcularQuantidadeInteracoes,
@@ -91,64 +91,66 @@ export async function POST(request: NextRequest) {
 
     const isPrimeiraSincronizacao = job.tipo_sincronizacao === 'primeira_sincronizacao'
 
-    // Testar suporte a updatedAt (uma única vez por job, no primeiro telefone)
+    // Testar suporte a updatedAt (uma vez por job, no primeiro telefone com dataInicio)
     let usarUpdatedAt = true
     let updatedAtTestado = false
 
     let totalNovosOuAtualizados = 0
     let totalJanela90DiasGlobal = 0
     const todosTicketsResumo: ResumoTicket[] = []
+    const todosErroVariacoes: string[] = []
 
     for (const telefoneDDI of telefonesDDI) {
       const atualizado_em = historicoMap.get(telefoneDDI) ?? null
 
       let dataInicioISO: string | null = null
       if (!isPrimeiraSincronizacao && atualizado_em) {
-        // Margem de segurança: 2h antes
         const dt = new Date(new Date(atualizado_em).getTime() - 2 * 60 * 60 * 1000)
         dataInicioISO = dt.toISOString()
       }
 
-      // Testa updatedAt uma vez (se falhar, usa startedAt para todos os próximos)
+      // Testa suporte a updatedAt uma única vez (se falhar, usa startedAt)
       if (!updatedAtTestado && dataInicioISO) {
         updatedAtTestado = true
         try {
-          const teste = await buscarTicketsPorTelefonePaginado(telefoneDDI, {
+          await buscarTicketsPorTelefoneComVariacoes(telefoneDDI, {
             dataInicioISO,
             usarUpdatedAt: true,
             perPage: 1,
           })
           usarUpdatedAt = true
-          console.log(`[processar-fila] updatedAt suportado. Tickets teste: ${teste.length}`)
-        } catch (e) {
+          console.log(`[processar-fila] updatedAt suportado`)
+        } catch {
           usarUpdatedAt = false
-          console.warn(`[processar-fila] updatedAt NÃO suportado, usando startedAt. Erro:`, e)
+          console.warn(`[processar-fila] updatedAt NÃO suportado, usando startedAt`)
         }
       }
 
-      const tickets = await buscarTicketsPorTelefonePaginado(telefoneDDI, {
+      // Busca com todas as variações de telefone (sem-9 primeiro)
+      const { tickets, erros } = await buscarTicketsPorTelefoneComVariacoes(telefoneDDI, {
         dataInicioISO,
         usarUpdatedAt,
         perPage: 50,
       })
 
+      if (erros.length > 0) todosErroVariacoes.push(...erros)
+
       console.log(`[processar-fila] telefone=${telefoneDDI} tickets=${tickets.length} dataInicio=${dataInicioISO ?? 'tudo'}`)
 
       for (const ticket of tickets) {
-        // Calcular início do chamado
-        const { inicio, mensagensCarregadas } = await calcularInicioChamado(ticket)
+        // Calcular início do chamado (retorna mensagens se buscadas no fallback)
+        const { inicio, mensagens: mensagensFallback, incompleto: incompletoFallback } =
+          await calcularInicioChamado(ticket)
 
-        // Calcular quantidade de interações
+        // Reutilizar mensagens do fallback OU buscar uma vez só para contagem
         let interacoes = 0
-        let incompleto = false
+        let incompleto = incompletoFallback
 
-        if (mensagensCarregadas) {
-          // Mensagens já foram carregadas no fallback — re-buscar com contagem completa
-          const { mensagens, incompleto: inc } = await buscarMensagensTicketPaginado(ticket.id)
-          interacoes = calcularQuantidadeInteracoes(mensagens)
-          incompleto = inc
+        if (mensagensFallback !== null) {
+          // Mensagens já foram buscadas no fallback — reutilizar
+          interacoes = calcularQuantidadeInteracoes(mensagensFallback)
         } else {
-          // firstMessage foi suficiente; ainda precisamos das mensagens para contagem
+          // firstMessage foi suficiente para inicio — buscar mensagens para contagem
           const { mensagens, incompleto: inc } = await buscarMensagensTicketPaginado(ticket.id)
           interacoes = calcularQuantidadeInteracoes(mensagens)
           incompleto = inc
@@ -157,7 +159,6 @@ export async function POST(request: NextRequest) {
         const resumo = montarResumoTicket(ticket, inicio, interacoes, incompleto, telefoneDDI)
         todosTicketsResumo.push(resumo)
 
-        // Upsert em digisac_conversas_resumo
         const { error: upsertErr } = await supabaseAdmin
           .from('digisac_conversas_resumo')
           .upsert(resumo, { onConflict: 'digisac_ticket_id' })
@@ -169,7 +170,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Recalcula histórico do telefone
+      // Recalcula histórico do telefone (mesmo com 0 tickets — atualiza timestamp)
       const nomeSgi = venda?.cliente ?? null
       await recalcularHistoricoTelefone(telefoneDDI, nomeSgi, supabaseAdmin)
     }
@@ -207,6 +208,7 @@ export async function POST(request: NextRequest) {
       status: 'concluido',
       origemDados,
       filtroPorCampo: usarUpdatedAt ? 'updatedAt' : 'startedAt',
+      semChamados: totalHistorico === 0,
       totalHistorico,
       totalNovosOuAtualizados,
       totalJanela90Dias: totalJanela90DiasGlobal,
@@ -215,6 +217,7 @@ export async function POST(request: NextRequest) {
       totalIndefinidos,
       totalInteracoes,
       ultimaAtualizacao,
+      errosVariacoes: todosErroVariacoes.length > 0 ? todosErroVariacoes : undefined,
     }
 
     // Atualiza job como concluido

@@ -97,6 +97,19 @@ export async function POST(request: NextRequest) {
   if (todosComCacheValido) {
     // Registra na fila como ignorado
     const historico = historicos[0]
+
+    // Busca dados do ciclo já calculados nos vínculos existentes
+    const { data: vinculos } = await supabase
+      .from('venda_conversa_vinculos')
+      .select('digisac_ticket_id, considerada_no_ciclo_venda, data_inicio_ciclo_venda, data_fim_ciclo_venda, numero_lancamento_venda_anterior')
+      .eq('numero_lancamento', numeroLancamento)
+
+    const vinculosCiclo = (vinculos ?? []).filter((v) => v.considerada_no_ciclo_venda)
+    const totalCicloVenda = vinculosCiclo.length
+    const inicioCicloVenda = vinculos?.[0]?.data_inicio_ciclo_venda ?? null
+    const fimCicloVenda = vinculos?.[0]?.data_fim_ciclo_venda ?? null
+    const vendaAnterior = vinculos?.[0]?.numero_lancamento_venda_anterior ?? null
+
     const resultadoCache = {
       ultimaAtualizacao: historico?.atualizado_em ?? null,
       totalHistorico: historicos.reduce((a, h) => a + (h.total_chamados_historico ?? 0), 0),
@@ -104,6 +117,10 @@ export async function POST(request: NextRequest) {
       totalReceptivos: historicos.reduce((a, h) => a + (h.total_chamados_receptivos ?? 0), 0),
       totalIndefinidos: historicos.reduce((a, h) => a + (h.total_chamados_indefinidos ?? 0), 0),
       totalInteracoes: historicos.reduce((a, h) => a + (h.total_interacoes_historico ?? 0), 0),
+      totalCicloVenda,
+      inicioCicloVenda,
+      fimCicloVenda,
+      vendaAnterior,
     }
 
     const { data: jobIgnorado } = await supabaseAdmin

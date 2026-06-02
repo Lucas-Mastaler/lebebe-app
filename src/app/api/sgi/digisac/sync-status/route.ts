@@ -51,18 +51,23 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  // Enriquece jobs ignorado_cache_valido que não têm dados históricos no resultado_json
-  // (jobs criados antes da correção tinham apenas {motivo: 'cache_valido_24h'})
+  // Enriquece jobs que não têm dados completos no resultado_json
+  // (jobs antigos, ou ignorado_cache_valido sem histórico/ciclo)
   let resultadoJson = job.resultado_json
-  if (
-    job.status === 'ignorado_cache_valido' &&
-    (resultadoJson?.totalHistorico == null)
-  ) {
+
+  const precisaEnriquecerHistorico =
+    (job.status === 'ignorado_cache_valido' || job.status === 'concluido') &&
+    resultadoJson?.totalHistorico == null
+
+  const precisaEnriquecerCiclo =
+    (job.status === 'ignorado_cache_valido' || job.status === 'concluido') &&
+    resultadoJson?.totalCicloVenda == null
+
+  if (precisaEnriquecerHistorico) {
     const telefonesJob: string[] = Array.isArray(job.resultado_json?.telefonesProcessados)
       ? job.resultado_json.telefonesProcessados.map((t: { telefoneBase: string }) => t.telefoneBase)
       : []
 
-    // Busca telefones do job via tabela de contatos se não estiver no resultado_json
     const telefonesParaBuscar = telefonesJob.length > 0
       ? telefonesJob
       : await (async () => {
@@ -91,6 +96,24 @@ export async function GET(request: NextRequest) {
           ultimaAtualizacao: historicos[0]?.atualizado_em ?? null,
           semChamados: historicos.reduce((a, h) => a + (h.total_chamados_historico ?? 0), 0) === 0,
         }
+      }
+    }
+  }
+
+  if (precisaEnriquecerCiclo) {
+    const { data: vinculos } = await supabase
+      .from('venda_conversa_vinculos')
+      .select('considerada_no_ciclo_venda, data_inicio_ciclo_venda, data_fim_ciclo_venda, numero_lancamento_venda_anterior')
+      .eq('numero_lancamento', job.numero_lancamento)
+
+    if (vinculos && vinculos.length > 0) {
+      const vinculosCiclo = vinculos.filter((v) => v.considerada_no_ciclo_venda)
+      resultadoJson = {
+        ...resultadoJson,
+        totalCicloVenda: vinculosCiclo.length,
+        inicioCicloVenda: vinculos[0]?.data_inicio_ciclo_venda ?? null,
+        fimCicloVenda: vinculos[0]?.data_fim_ciclo_venda ?? null,
+        vendaAnterior: vinculos[0]?.numero_lancamento_venda_anterior ?? null,
       }
     }
   }

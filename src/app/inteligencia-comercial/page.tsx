@@ -6,6 +6,8 @@ import { FiltrosSGI } from '@/components/inteligencia-comercial/FiltrosSGI'
 import { CardsSGI } from '@/components/inteligencia-comercial/CardsSGI'
 import { TabelaVendas } from '@/components/inteligencia-comercial/TabelaVendas'
 import { ModalDetalheVenda } from '@/components/inteligencia-comercial/ModalDetalheVenda'
+import { SyncLotePanel } from '@/components/inteligencia-comercial/SyncLotePanel'
+import { useSyncLote } from '@/hooks/useSyncLote'
 import type { SgiCards, SgiDocumento, SgiFiltros, SgiVendasResponse } from '@/types/sgi'
 
 export default function InteligenciaComercialPage() {
@@ -52,6 +54,13 @@ export default function InteligenciaComercialPage() {
     }
   }, [])
 
+  const recarregarPaginaAtual = useCallback(() => {
+    buscar({ ...filtrosAtivos, page })
+  }, [buscar, filtrosAtivos, page])
+
+  const { estado: estadoLote, iniciar: iniciarLote, cancelar: cancelarLote, resetar: resetarLote } =
+    useSyncLote(recarregarPaginaAtual)
+
   function handlePageChange(novaPagina: number) {
     buscar({ ...filtrosAtivos, page: novaPagina })
   }
@@ -59,6 +68,12 @@ export default function InteligenciaComercialPage() {
   function handleVerDetalhe(venda: SgiDocumento) {
     setVendaSelecionada(venda)
     setModalAberto(true)
+  }
+
+  function handleIniciarLote(forcar: boolean) {
+    iniciarLote(vendas, forcar).then(() => {
+      recarregarPaginaAtual()
+    })
   }
 
   return (
@@ -87,6 +102,17 @@ export default function InteligenciaComercialPage() {
       {/* Cards — só exibe após primeira busca */}
       {(buscouUmaVez || isLoading) && (
         <CardsSGI cards={cards} isLoading={isLoading} />
+      )}
+
+      {/* Sync em lote — só exibe após primeira busca */}
+      {buscouUmaVez && (
+        <SyncLotePanel
+          vendas={vendas}
+          estado={estadoLote}
+          onIniciar={handleIniciarLote}
+          onCancelar={cancelarLote}
+          onResetar={resetarLote}
+        />
       )}
 
       {/* Tabela — só exibe após primeira busca */}

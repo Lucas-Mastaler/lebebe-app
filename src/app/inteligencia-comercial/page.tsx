@@ -114,6 +114,7 @@ export default function InteligenciaComercialPage() {
         venda={vendaSelecionada}
         open={modalAberto}
         onOpenChange={setModalAberto}
+        onSyncCompleted={() => buscar({ ...filtrosAtivos, page })}
       />
     </div>
   )

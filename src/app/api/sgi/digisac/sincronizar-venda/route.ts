@@ -96,6 +96,16 @@ export async function POST(request: NextRequest) {
 
   if (todosComCacheValido) {
     // Registra na fila como ignorado
+    const historico = historicos[0]
+    const resultadoCache = {
+      ultimaAtualizacao: historico?.atualizado_em ?? null,
+      totalHistorico: historicos.reduce((a, h) => a + (h.total_chamados_historico ?? 0), 0),
+      totalAtivos: historicos.reduce((a, h) => a + (h.total_chamados_ativos ?? 0), 0),
+      totalReceptivos: historicos.reduce((a, h) => a + (h.total_chamados_receptivos ?? 0), 0),
+      totalIndefinidos: historicos.reduce((a, h) => a + (h.total_chamados_indefinidos ?? 0), 0),
+      totalInteracoes: historicos.reduce((a, h) => a + (h.total_interacoes_historico ?? 0), 0),
+    }
+
     const { data: jobIgnorado } = await supabaseAdmin
       .from('digisac_sync_fila')
       .insert({
@@ -104,28 +114,24 @@ export async function POST(request: NextRequest) {
         tipo_sincronizacao: 'incremental_cache_vencido',
         status: 'ignorado_cache_valido',
         solicitado_por: auth.email,
-        resultado_json: { motivo: 'cache_valido_24h' },
+        resultado_json: {
+          motivo: 'cache_valido_24h',
+          semChamados: resultadoCache.totalHistorico === 0,
+          ...resultadoCache,
+        },
         telefones_processados_json: telefonesDDI,
         solicitado_em: new Date().toISOString(),
       })
       .select('id')
       .single()
 
-    const historico = historicos[0]
     return NextResponse.json({
       jobId: jobIgnorado?.id ?? null,
       numeroLancamento,
       status: 'ignorado_cache_valido',
       tipoSincronizacao: 'ignorado_cache_valido',
       mensagem: 'Cache válido (< 24h). Use forcarAtualizacao=true para forçar.',
-      resultadoCache: {
-        ultimaAtualizacao: historico?.atualizado_em ?? null,
-        totalHistorico: historicos.reduce((a, h) => a + (h.total_chamados_historico ?? 0), 0),
-        totalAtivos: historicos.reduce((a, h) => a + (h.total_chamados_ativos ?? 0), 0),
-        totalReceptivos: historicos.reduce((a, h) => a + (h.total_chamados_receptivos ?? 0), 0),
-        totalIndefinidos: historicos.reduce((a, h) => a + (h.total_chamados_indefinidos ?? 0), 0),
-        totalInteracoes: historicos.reduce((a, h) => a + (h.total_interacoes_historico ?? 0), 0),
-      },
+      resultadoCache,
     })
   }
 

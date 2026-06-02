@@ -51,12 +51,56 @@ export async function GET(request: NextRequest) {
     })
   }
 
+  // Enriquece jobs ignorado_cache_valido que não têm dados históricos no resultado_json
+  // (jobs criados antes da correção tinham apenas {motivo: 'cache_valido_24h'})
+  let resultadoJson = job.resultado_json
+  if (
+    job.status === 'ignorado_cache_valido' &&
+    (resultadoJson?.totalHistorico == null)
+  ) {
+    const telefonesJob: string[] = Array.isArray(job.resultado_json?.telefonesProcessados)
+      ? job.resultado_json.telefonesProcessados.map((t: { telefoneBase: string }) => t.telefoneBase)
+      : []
+
+    // Busca telefones do job via tabela de contatos se não estiver no resultado_json
+    const telefonesParaBuscar = telefonesJob.length > 0
+      ? telefonesJob
+      : await (async () => {
+          const { data } = await supabase
+            .from('sgi_documentos_saida_contatos')
+            .select('telefone_normalizado_ddi')
+            .eq('numero_lancamento', job.numero_lancamento)
+            .not('telefone_normalizado_ddi', 'is', null)
+          return (data ?? []).map((c: { telefone_normalizado_ddi: string }) => c.telefone_normalizado_ddi)
+        })()
+
+    if (telefonesParaBuscar.length > 0) {
+      const { data: historicos } = await supabase
+        .from('digisac_cliente_historico_resumo')
+        .select('atualizado_em, total_chamados_historico, total_chamados_ativos, total_chamados_receptivos, total_chamados_indefinidos, total_interacoes_historico')
+        .in('telefone_normalizado_ddi', telefonesParaBuscar)
+
+      if (historicos && historicos.length > 0) {
+        resultadoJson = {
+          ...resultadoJson,
+          totalHistorico: historicos.reduce((a, h) => a + (h.total_chamados_historico ?? 0), 0),
+          totalAtivos: historicos.reduce((a, h) => a + (h.total_chamados_ativos ?? 0), 0),
+          totalReceptivos: historicos.reduce((a, h) => a + (h.total_chamados_receptivos ?? 0), 0),
+          totalIndefinidos: historicos.reduce((a, h) => a + (h.total_chamados_indefinidos ?? 0), 0),
+          totalInteracoes: historicos.reduce((a, h) => a + (h.total_interacoes_historico ?? 0), 0),
+          ultimaAtualizacao: historicos[0]?.atualizado_em ?? null,
+          semChamados: historicos.reduce((a, h) => a + (h.total_chamados_historico ?? 0), 0) === 0,
+        }
+      }
+    }
+  }
+
   return NextResponse.json({
     jobId: job.id,
     numeroLancamento: job.numero_lancamento,
     status: job.status,
     tipoSincronizacao: job.tipo_sincronizacao,
-    resultadoJson: job.resultado_json,
+    resultadoJson,
     erroMensagem: job.erro_mensagem,
     solicitadoPor: job.solicitado_por,
     solicitadoEm: job.solicitado_em,

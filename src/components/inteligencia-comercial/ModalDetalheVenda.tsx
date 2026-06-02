@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Loader2, Phone, Package, CreditCard, User, Building2, Calendar, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
+import { Loader2, Phone, Package, CreditCard, User, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock, TrendingUp, Users, Activity } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from '@/components/ui/dialog'
@@ -28,6 +28,7 @@ interface DigisacSyncStatus {
     resultadoCache?: {
       ultimaAtualizacao?: string
       totalHistorico?: number
+      totalJanela90Dias?: number
       totalAtivos?: number
       totalReceptivos?: number
       totalIndefinidos?: number
@@ -60,9 +61,10 @@ interface ModalDetalheVendaProps {
   venda: SgiDocumento | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  onSyncCompleted?: () => void
 }
 
-export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVendaProps) {
+export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }: ModalDetalheVendaProps) {
   const [detalhe, setDetalhe] = useState<SgiVendaDetalhe | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -71,6 +73,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
   const [digisacLoading, setDigisacLoading] = useState(false)
   const [digisacError, setDigisacError] = useState<string | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const syncedInSession = useRef(false)
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -153,6 +156,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
           finalizadoEm: resultado.ultimaAtualizacao,
         })
         setDigisacLoading(false)
+        if (resultado.status === 'concluido') syncedInSession.current = true
       }
     } catch {
       setDigisacError('Erro de conexão')
@@ -168,13 +172,20 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
       stopPolling()
       return
     }
+    syncedInSession.current = false
     fetchDigisacStatus(venda.numero_lancamento)
   }, [open, venda?.numero_lancamento, fetchDigisacStatus, stopPolling])
 
-  // Cleanup polling ao fechar
+  // Cleanup polling ao fechar + trigger refresh da tabela se houve sync
   useEffect(() => {
-    if (!open) stopPolling()
-  }, [open, stopPolling])
+    if (!open) {
+      stopPolling()
+      if (syncedInSession.current) {
+        syncedInSession.current = false
+        onSyncCompleted?.()
+      }
+    }
+  }, [open, stopPolling, onSyncCompleted])
 
   useEffect(() => {
     if (!open || !venda?.numero_lancamento) {
@@ -210,38 +221,20 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
     children: React.ReactNode
     variant?: 'default' | 'blue' | 'green' | 'amber' | 'purple' | 'rose'
   }) {
-    const variantStyles = {
-      default: 'bg-slate-50 border-slate-200',
-      blue: 'bg-sky-50 border-sky-200',
-      green: 'bg-emerald-50 border-emerald-200',
-      amber: 'bg-amber-50 border-amber-200',
-      purple: 'bg-violet-50 border-violet-200',
-      rose: 'bg-rose-50 border-rose-200',
-    }
-
-    const iconColors = {
-      default: 'text-slate-600',
-      blue: 'text-sky-600',
-      green: 'text-emerald-600',
-      amber: 'text-amber-600',
-      purple: 'text-violet-600',
-      rose: 'text-rose-600',
-    }
-
-    const titleColors = {
-      default: 'text-slate-800',
-      blue: 'text-sky-800',
-      green: 'text-emerald-800',
-      amber: 'text-amber-800',
-      purple: 'text-violet-800',
-      rose: 'text-rose-800',
-    }
+    const cfg = {
+      default: { bg: 'bg-white', border: 'border-slate-200', accent: 'border-l-slate-400', icon: 'text-slate-500', title: 'text-slate-700', divider: 'border-slate-100' },
+      blue:    { bg: 'bg-sky-50/60', border: 'border-sky-200', accent: 'border-l-sky-500', icon: 'text-sky-600', title: 'text-sky-800', divider: 'border-sky-100' },
+      green:   { bg: 'bg-emerald-50/60', border: 'border-emerald-200', accent: 'border-l-emerald-500', icon: 'text-emerald-600', title: 'text-emerald-800', divider: 'border-emerald-100' },
+      amber:   { bg: 'bg-amber-50/60', border: 'border-amber-200', accent: 'border-l-amber-500', icon: 'text-amber-600', title: 'text-amber-800', divider: 'border-amber-100' },
+      purple:  { bg: 'bg-violet-50/60', border: 'border-violet-200', accent: 'border-l-violet-500', icon: 'text-violet-600', title: 'text-violet-800', divider: 'border-violet-100' },
+      rose:    { bg: 'bg-rose-50/60', border: 'border-rose-200', accent: 'border-l-rose-500', icon: 'text-rose-600', title: 'text-rose-800', divider: 'border-rose-100' },
+    }[variant]
 
     return (
-      <div className={`rounded-lg border p-4 space-y-3 ${variantStyles[variant]}`}>
-        <div className="flex items-center gap-2 border-b border-current/20 pb-2">
-          <Icon className={`w-4 h-4 ${iconColors[variant]}`} />
-          <h4 className={`text-sm font-semibold ${titleColors[variant]}`}>{title}</h4>
+      <div className={`rounded-xl border border-l-4 p-4 space-y-3 ${cfg.bg} ${cfg.border} ${cfg.accent}`}>
+        <div className={`flex items-center gap-2 pb-2.5 border-b ${cfg.divider}`}>
+          <Icon className={`w-4 h-4 ${cfg.icon}`} />
+          <h4 className={`text-sm font-semibold ${cfg.title}`}>{title}</h4>
         </div>
         {children}
       </div>
@@ -250,9 +243,9 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
 
   function Row({ label, value }: { label: string; value: React.ReactNode }) {
     return (
-      <div className="flex items-start gap-2 text-sm">
-        <span className="text-slate-600 min-w-[160px] text-xs font-medium">{label}</span>
-        <span className="text-slate-900 text-xs font-medium">{value ?? '—'}</span>
+      <div className="flex items-start gap-2">
+        <span className="text-slate-500 min-w-[160px] text-xs">{label}</span>
+        <span className="text-slate-800 text-xs font-medium flex-1">{value ?? '—'}</span>
       </div>
     )
   }
@@ -433,7 +426,7 @@ function DigisacSyncPanel({
   const cacheData = resultado?.resultadoCache ?? resultado
 
   const totalHistorico = cacheData?.totalHistorico ?? 0
-  const totalJanela = resultado?.totalJanela90Dias ?? 0
+  const totalJanela = resultado?.totalJanela90Dias ?? cacheData?.totalJanela90Dias ?? 0
   const totalAtivos = cacheData?.totalAtivos ?? 0
   const totalReceptivos = cacheData?.totalReceptivos ?? 0
   const totalIndefinidos = cacheData?.totalIndefinidos ?? 0
@@ -443,94 +436,114 @@ function DigisacSyncPanel({
 
   const isCacheValido = status?.status === 'ignorado_cache_valido'
   const isConcluido = status?.status === 'concluido' || isCacheValido
-  const semChamados = isConcluido && (resultado?.semChamados === true || totalHistorico === 0)
+  const semChamados = isConcluido && totalHistorico === 0
   const isProcessando = status?.status === 'processando' || status?.status === 'pendente' || loading
   const isErro = status?.status === 'erro'
   const naoEncontrado = !status || status.status === 'nao_encontrado'
+  const temDados = isConcluido && totalHistorico > 0
 
   return (
-    <div className="space-y-3">
-      {/* Linha de status */}
+    <div className="space-y-4">
+
+      {/* ── Linha de status ─────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
         {isProcessando && (
-          <span className="flex items-center gap-1.5 text-xs text-sky-600 font-medium">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-sky-100 text-sky-700">
+            <Loader2 className="w-3 h-3 animate-spin" />
             Sincronizando...
           </span>
         )}
-        {isConcluido && !isProcessando && !semChamados && (
-          <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
-            <CheckCircle2 className="w-3.5 h-3.5" />
+        {temDados && !isProcessando && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
+            <CheckCircle2 className="w-3 h-3" />
             {isCacheValido ? 'Cache válido' : 'Sincronizado'}
           </span>
         )}
         {semChamados && !isProcessando && (
-          <span className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
-            <MessageCircle className="w-3.5 h-3.5" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
+            <MessageCircle className="w-3 h-3" />
             Nenhum chamado encontrado
           </span>
         )}
         {isErro && (
-          <span className="flex items-center gap-1.5 text-xs text-red-600 font-medium">
-            <AlertCircle className="w-3.5 h-3.5" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+            <AlertCircle className="w-3 h-3" />
             Erro na sincronização
           </span>
         )}
         {naoEncontrado && !loading && (
-          <span className="flex items-center gap-1.5 text-xs text-slate-400">
-            <Clock className="w-3.5 h-3.5" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-400">
+            <Clock className="w-3 h-3" />
             Nunca sincronizado
           </span>
         )}
         {ultimaAtualizacao && (
           <span className="text-xs text-slate-400 ml-auto">
-            Atualizado em {new Date(ultimaAtualizacao).toLocaleString('pt-BR', {
-              day: '2-digit', month: '2-digit', year: 'numeric',
-              hour: '2-digit', minute: '2-digit',
-            })}
+            {new Date(ultimaAtualizacao).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
           </span>
         )}
       </div>
 
+      {/* ── Mensagens de erro ───────────────────────────────── */}
       {error && (
-        <p className="text-xs text-red-600">{error}</p>
+        <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
       )}
-
       {isErro && status?.erroMensagem && (
-        <p className="text-xs text-red-500 bg-red-50 rounded px-2 py-1">{status.erroMensagem}</p>
+        <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2 font-mono">{status.erroMensagem}</p>
       )}
-
-      {/* Resumo */}
-      {isConcluido && totalHistorico > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          <StatCard label="Histórico total" value={totalHistorico} />
-          <StatCard label="Janela 90 dias" value={totalJanela} highlight />
-          <StatCard label="Interações" value={totalInteracoes} />
-          <StatCard label="Ativos" value={totalAtivos} color="text-sky-700" />
-          <StatCard label="Receptivos" value={totalReceptivos} color="text-violet-700" />
-          <StatCard label="Indefinidos" value={totalIndefinidos} color="text-slate-500" />
-        </div>
-      )}
-
       {filtroCampo === 'startedAt' && (
-        <p className="text-xs text-amber-600 bg-amber-50 rounded px-2 py-1">
-          ⚠ API Digisac não suporta filtro por updatedAt. Usando startedAt como fallback — alterações em chamados antigos podem não ter sido capturadas.
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          ⚠ API Digisac não suporta filtro por <code className="font-mono">updatedAt</code>. Usando <code className="font-mono">startedAt</code> — alterações em chamados antigos podem não ter sido capturadas.
         </p>
       )}
 
-      {/* Botões */}
+      {/* ── Blocos de dados ─────────────────────────────────── */}
+      {temDados && (
+        <div className="space-y-3">
+
+          {/* Histórico geral do cliente */}
+          <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-3 space-y-2">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Users className="w-3.5 h-3.5 text-violet-500" />
+              <span className="text-xs font-semibold text-violet-700">Histórico geral do cliente</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <StatBlock value={totalHistorico} label="Total chamados" color="violet" />
+              <StatBlock value={totalInteracoes} label="Interações" color="violet" />
+              <StatBlock value={totalAtivos} label="Ativos" color="sky" />
+              <StatBlock value={totalReceptivos} label="Receptivos" color="purple" />
+            </div>
+          </div>
+
+          {/* Considerados nesta venda */}
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 space-y-2">
+            <div className="flex items-center gap-1.5 mb-1">
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="text-xs font-semibold text-emerald-700">Considerados nesta venda</span>
+              <span className="ml-1 text-xs text-emerald-500">(janela 90 dias antes do fechamento)</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <StatBlock value={totalJanela} label="Chamados na janela" color="emerald" large />
+              <StatBlock value={totalIndefinidos} label="Indefinidos" color="slate" />
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* ── Botões ──────────────────────────────────────────── */}
       <div className="flex gap-2 pt-1">
         <Button
           size="sm"
           variant="outline"
           disabled={isProcessando}
           onClick={onSincronizar}
-          className="text-xs h-7"
+          className="text-xs h-8 border-violet-300 text-violet-700 hover:bg-violet-50"
         >
           {isProcessando ? (
             <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Sincronizando...</>
           ) : (
-            <><MessageCircle className="w-3 h-3 mr-1.5" />{naoEncontrado ? 'Sincronizar Digisac' : 'Atualizar'}</>
+            <><Activity className="w-3 h-3 mr-1.5" />{naoEncontrado ? 'Sincronizar com Digisac' : 'Atualizar'}</>
           )}
         </Button>
         {!naoEncontrado && (
@@ -539,7 +552,7 @@ function DigisacSyncPanel({
             variant="ghost"
             disabled={isProcessando}
             onClick={onForcar}
-            className="text-xs h-7 text-slate-500"
+            className="text-xs h-8 text-slate-500 hover:text-violet-700"
           >
             <RefreshCw className="w-3 h-3 mr-1.5" />
             Forçar atualização
@@ -550,18 +563,28 @@ function DigisacSyncPanel({
   )
 }
 
-function StatCard({
-  label, value, highlight, color,
+function StatBlock({
+  value,
+  label,
+  color = 'slate',
+  large,
 }: {
-  label: string
   value: number
-  highlight?: boolean
-  color?: string
+  label: string
+  color?: 'violet' | 'sky' | 'purple' | 'emerald' | 'slate'
+  large?: boolean
 }) {
+  const colors = {
+    violet:  { bg: 'bg-white border-violet-100',  num: 'text-violet-700' },
+    sky:     { bg: 'bg-white border-sky-100',      num: 'text-sky-600' },
+    purple:  { bg: 'bg-white border-purple-100',   num: 'text-purple-600' },
+    emerald: { bg: 'bg-white border-emerald-200',  num: 'text-emerald-700' },
+    slate:   { bg: 'bg-white border-slate-100',    num: 'text-slate-500' },
+  }[color]
   return (
-    <div className={`rounded-lg px-3 py-2 text-center ${highlight ? 'bg-emerald-50' : 'bg-slate-50'}`}>
-      <p className={`text-lg font-bold ${color ?? (highlight ? 'text-emerald-700' : 'text-slate-800')}`}>{value}</p>
-      <p className="text-xs text-slate-500">{label}</p>
+    <div className={`rounded-lg border px-3 py-2 text-center ${colors.bg}`}>
+      <p className={`font-bold ${large ? 'text-2xl' : 'text-xl'} ${colors.num}`}>{value}</p>
+      <p className="text-xs text-slate-400 mt-0.5">{label}</p>
     </div>
   )
 }

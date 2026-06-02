@@ -79,8 +79,7 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
   }
 
   function handleClienteChange(value: string) {
-    const trimmed = value.trim().slice(0, 20)
-    setField('cliente', trimmed)
+    setField('cliente', value.slice(0, 20))
   }
 
   function handleTelefoneChange(value: string) {

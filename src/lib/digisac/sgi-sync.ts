@@ -1,0 +1,443 @@
+import { fetchDigisac } from './clienteDigisac'
+import { SupabaseClient } from '@supabase/supabase-js'
+
+// ============================================================
+// TIPOS
+// ============================================================
+
+export interface DigisacTicket {
+  id: string
+  protocol?: string | number
+  isOpen?: boolean
+  comments?: string
+  origin?: string
+  startedAt?: string
+  endedAt?: string
+  metrics?: {
+    ticketTime?: number
+    messagingTime?: number
+  }
+  contact?: {
+    id?: string
+    name?: string
+    data?: { number?: string }
+    service?: { id?: string; name?: string }
+    tags?: unknown[]
+  }
+  user?: { id?: string; name?: string }
+  department?: { id?: string; name?: string }
+  ticketTopics?: unknown[]
+  firstMessage?: {
+    id?: string
+    type?: string
+    text?: string
+    isFromMe?: boolean
+    visible?: boolean
+    isComment?: boolean
+    timestamp?: number
+  } | null
+}
+
+export interface DigisacMensagem {
+  id: string
+  ticketId?: string
+  type?: string
+  text?: string
+  isFromMe?: boolean
+  visible?: boolean
+  isComment?: boolean
+  timestamp?: number
+}
+
+export interface BuscarTicketsOptions {
+  dataInicioISO?: string | null
+  usarUpdatedAt?: boolean
+  perPage?: number
+}
+
+export interface ResumoTicket {
+  digisac_ticket_id: string
+  protocolo: string | null
+  digisac_contact_id: string | null
+  telefone_normalizado: string | null
+  telefone_normalizado_ddi: string | null
+  cliente_nome_digisac: string | null
+  service_id: string | null
+  service_nome: string | null
+  department_id: string | null
+  department_nome: string | null
+  user_id: string | null
+  user_nome: string | null
+  status: string | null
+  is_open: boolean | null
+  comments: string | null
+  started_at: string | null
+  ended_at: string | null
+  ticket_time_segundos: number | null
+  messaging_time_segundos: number | null
+  quantidade_interacoes: number | null
+  interacoes_incompletas: boolean
+  inicio_chamado: 'ativo' | 'receptivo' | 'indefinido'
+  tags: unknown[]
+  assuntos: unknown[]
+  raw_json: unknown
+  updated_at: string
+}
+
+// ============================================================
+// 1. BUSCAR TICKETS POR TELEFONE (paginado)
+// ============================================================
+
+export async function buscarTicketsPorTelefonePaginado(
+  telefoneComDDI: string,
+  opts: BuscarTicketsOptions = {}
+): Promise<DigisacTicket[]> {
+  const { dataInicioISO = null, usarUpdatedAt = true, perPage = 50 } = opts
+  const todos: DigisacTicket[] = []
+
+  let page = 1
+
+  while (true) {
+    const where: Record<string, unknown> = {}
+
+    if (dataInicioISO) {
+      const filtroData = { $gte: dataInicioISO }
+      if (usarUpdatedAt) {
+        where.updatedAt = filtroData
+      } else {
+        where.startedAt = filtroData
+      }
+    }
+
+    const query = JSON.stringify({
+      distinct: true,
+      order: [['updatedAt', 'DESC']],
+      where,
+      include: [
+        {
+          model: 'firstMessage',
+          attributes: ['id', 'type', 'text', 'timestamp', 'isFromMe', 'sent', 'data', 'visible', 'isComment'],
+        },
+        {
+          model: 'contact',
+          required: true,
+          where: {
+            visible: true,
+            data: {
+              number: { $like: `%${telefoneComDDI}%` },
+            },
+          },
+          include: [
+            { model: 'service', required: true },
+            { model: 'tags' },
+          ],
+        },
+        { model: 'user' },
+        { model: 'department' },
+        { model: 'ticketTopics' },
+      ],
+      page,
+      perPage,
+    })
+
+    const endpoint = `/api/v1/tickets?query=${encodeURIComponent(query)}`
+    let resp: { data?: DigisacTicket[]; total?: number; currentPage?: number; lastPage?: number }
+
+    try {
+      resp = await fetchDigisac(endpoint)
+    } catch (err) {
+      console.error(`[sgi-sync] buscarTickets página ${page} erro:`, err)
+      break
+    }
+
+    const items = Array.isArray(resp?.data) ? resp.data : []
+    todos.push(...items)
+
+    const lastPage = resp?.lastPage ?? 1
+    if (items.length < perPage || page >= lastPage) break
+    page++
+  }
+
+  return todos
+}
+
+// ============================================================
+// 2. BUSCAR MENSAGENS DE UM TICKET (paginado)
+// ============================================================
+
+export async function buscarMensagensTicketPaginado(
+  ticketId: string,
+  perPage = 100
+): Promise<{ mensagens: DigisacMensagem[]; incompleto: boolean }> {
+  const mensagens: DigisacMensagem[] = []
+  let page = 1
+  let incompleto = false
+
+  while (true) {
+    let resp: { data?: DigisacMensagem[]; total?: number } | null = null
+
+    try {
+      const endpoint = `/api/v1/messages?where[ticketId]=${encodeURIComponent(ticketId)}&perPage=${perPage}&page=${page}`
+      resp = await fetchDigisac(endpoint)
+    } catch (err) {
+      console.error(`[sgi-sync] buscarMensagens ticketId=${ticketId} página ${page} erro:`, err)
+      incompleto = true
+      break
+    }
+
+    const items = Array.isArray(resp?.data) ? resp.data : []
+    const uteis = items.filter(
+      (m) =>
+        m.type === 'chat' &&
+        m.visible !== false &&
+        m.isComment !== true
+    )
+    mensagens.push(...uteis)
+
+    if (items.length < perPage) break
+    page++
+
+    if (page > 50) {
+      console.warn(`[sgi-sync] buscarMensagens ticketId=${ticketId} limite de segurança 50 páginas atingido`)
+      incompleto = true
+      break
+    }
+  }
+
+  return { mensagens, incompleto }
+}
+
+// ============================================================
+// 3. CALCULAR INÍCIO DO CHAMADO
+// ============================================================
+
+export async function calcularInicioChamado(
+  ticket: DigisacTicket
+): Promise<{ inicio: 'ativo' | 'receptivo' | 'indefinido'; mensagensCarregadas: boolean }> {
+  const fm = ticket.firstMessage
+  if (fm && fm.type !== undefined && fm.isFromMe !== undefined && fm.visible !== false && fm.isComment !== true) {
+    return {
+      inicio: fm.isFromMe ? 'ativo' : 'receptivo',
+      mensagensCarregadas: false,
+    }
+  }
+
+  // Fallback: buscar mensagens do ticket
+  const { mensagens } = await buscarMensagensTicketPaginado(ticket.id)
+  const primeira = mensagens.find((m) => m.type === 'chat' && m.visible !== false && m.isComment !== true)
+
+  if (!primeira) {
+    return { inicio: 'indefinido', mensagensCarregadas: true }
+  }
+
+  return {
+    inicio: primeira.isFromMe ? 'ativo' : 'receptivo',
+    mensagensCarregadas: true,
+  }
+}
+
+// ============================================================
+// 4. CALCULAR QUANTIDADE DE INTERAÇÕES
+// ============================================================
+
+export function calcularQuantidadeInteracoes(mensagens: DigisacMensagem[]): number {
+  return mensagens.filter(
+    (m) =>
+      m.type === 'chat' &&
+      m.visible !== false &&
+      m.isComment !== true
+  ).length
+}
+
+// ============================================================
+// 5. MONTAR RESUMO DO TICKET para upsert
+// ============================================================
+
+export function montarResumoTicket(
+  ticket: DigisacTicket,
+  inicio: 'ativo' | 'receptivo' | 'indefinido',
+  interacoes: number,
+  incompleto: boolean,
+  telefonePesquisado: string
+): ResumoTicket {
+  const contact = ticket.contact
+  const telOriginal = contact?.data?.number ?? null
+
+  return {
+    digisac_ticket_id: ticket.id,
+    protocolo: ticket.protocol != null ? String(ticket.protocol) : null,
+    digisac_contact_id: contact?.id ?? null,
+    telefone_normalizado: telOriginal ? normalizarTelefone(telOriginal) : normalizarTelefone(telefonePesquisado),
+    telefone_normalizado_ddi: telOriginal ? normalizarTelefoneDDI(telOriginal) : normalizarTelefoneDDI(telefonePesquisado),
+    cliente_nome_digisac: contact?.name ?? null,
+    service_id: contact?.service?.id ?? null,
+    service_nome: contact?.service?.name ?? null,
+    department_id: ticket.department?.id ?? null,
+    department_nome: ticket.department?.name ?? null,
+    user_id: ticket.user?.id ?? null,
+    user_nome: ticket.user?.name ?? null,
+    status: ticket.isOpen === false ? 'fechado' : ticket.isOpen === true ? 'aberto' : null,
+    is_open: ticket.isOpen ?? null,
+    comments: ticket.comments ?? null,
+    started_at: ticket.startedAt ?? null,
+    ended_at: ticket.endedAt ?? null,
+    ticket_time_segundos: ticket.metrics?.ticketTime ?? null,
+    messaging_time_segundos: ticket.metrics?.messagingTime ?? null,
+    quantidade_interacoes: interacoes,
+    interacoes_incompletas: incompleto,
+    inicio_chamado: inicio,
+    tags: Array.isArray(contact?.tags) ? contact.tags : [],
+    assuntos: Array.isArray(ticket.ticketTopics) ? ticket.ticketTopics : [],
+    raw_json: ticket,
+    updated_at: new Date().toISOString(),
+  }
+}
+
+// ============================================================
+// 6. RECALCULAR HISTÓRICO DO TELEFONE
+// ============================================================
+
+export async function recalcularHistoricoTelefone(
+  telefoneDDI: string,
+  nomeSgi: string | null,
+  supabase: SupabaseClient
+): Promise<void> {
+  const { data: tickets, error } = await supabase
+    .from('digisac_conversas_resumo')
+    .select('started_at, quantidade_interacoes, inicio_chamado, cliente_nome_digisac, digisac_ticket_id, ended_at, department_nome, user_nome')
+    .eq('telefone_normalizado_ddi', telefoneDDI)
+    .order('started_at', { ascending: true })
+
+  if (error) {
+    console.error(`[sgi-sync] recalcularHistorico erro leitura:`, error)
+    return
+  }
+
+  if (!tickets || tickets.length === 0) return
+
+  const total = tickets.length
+  const totalInteracoes = tickets.reduce((acc, t) => acc + (t.quantidade_interacoes ?? 0), 0)
+  const ativos = tickets.filter((t) => t.inicio_chamado === 'ativo').length
+  const receptivos = tickets.filter((t) => t.inicio_chamado === 'receptivo').length
+  const indefinidos = tickets.filter((t) => t.inicio_chamado === 'indefinido').length
+  const primeiraConversa = tickets[0]?.started_at ?? null
+  const ultimaConversa = tickets[tickets.length - 1]?.started_at ?? null
+  const nomeDigisac = tickets.find((t) => t.cliente_nome_digisac)?.cliente_nome_digisac ?? null
+
+  const resumo = tickets.map((t) => ({
+    id: t.digisac_ticket_id,
+    started_at: t.started_at,
+    ended_at: t.ended_at,
+    inicio_chamado: t.inicio_chamado,
+    interacoes: t.quantidade_interacoes ?? 0,
+    department: t.department_nome,
+    user: t.user_nome,
+  }))
+
+  const telefoneSemDDI = normalizarTelefone(telefoneDDI)
+
+  const { error: upsertErr } = await supabase
+    .from('digisac_cliente_historico_resumo')
+    .upsert(
+      {
+        telefone_normalizado: telefoneSemDDI,
+        telefone_normalizado_ddi: telefoneDDI,
+        cliente_nome_sgi: nomeSgi,
+        cliente_nome_digisac: nomeDigisac,
+        total_chamados_historico: total,
+        primeira_conversa_em: primeiraConversa,
+        ultima_conversa_em: ultimaConversa,
+        total_interacoes_historico: totalInteracoes,
+        total_chamados_ativos: ativos,
+        total_chamados_receptivos: receptivos,
+        total_chamados_indefinidos: indefinidos,
+        resumo_chamados_json: resumo,
+        atualizado_em: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'telefone_normalizado_ddi' }
+    )
+
+  if (upsertErr) {
+    console.error(`[sgi-sync] recalcularHistorico upsert erro:`, upsertErr)
+  }
+}
+
+// ============================================================
+// 7. CALCULAR E SALVAR VÍNCULOS VENDA ↔ CONVERSA
+// ============================================================
+
+export async function calcularVinculosVenda(
+  documentoSaidaId: string,
+  numeroLancamento: string,
+  dataFechamento: string | null,
+  tickets: ResumoTicket[],
+  supabase: SupabaseClient
+): Promise<{ totalJanela90Dias: number }> {
+  if (!tickets.length) return { totalJanela90Dias: 0 }
+
+  const dataVenda = dataFechamento ? new Date(dataFechamento) : null
+  const dataInicioJanela = dataVenda ? new Date(dataVenda.getTime() - 90 * 24 * 60 * 60 * 1000) : null
+
+  // Ordenar cronologicamente para calcular ordem
+  const ordenados = [...tickets].sort((a, b) => {
+    const ta = a.started_at ? new Date(a.started_at).getTime() : 0
+    const tb = b.started_at ? new Date(b.started_at).getTime() : 0
+    return ta - tb
+  })
+
+  let totalJanela90Dias = 0
+  const vinculos = ordenados.map((ticket, idx) => {
+    const dataConversa = ticket.started_at ? new Date(ticket.started_at) : null
+    let diasAntes: number | null = null
+    let naJanela = false
+
+    if (dataVenda && dataConversa) {
+      diasAntes = Math.round((dataVenda.getTime() - dataConversa.getTime()) / (1000 * 60 * 60 * 24))
+      naJanela =
+        dataInicioJanela !== null &&
+        dataConversa >= dataInicioJanela &&
+        dataConversa <= dataVenda
+    }
+
+    if (naJanela) totalJanela90Dias++
+
+    return {
+      documento_saida_id: documentoSaidaId,
+      numero_lancamento: numeroLancamento,
+      digisac_ticket_id: ticket.digisac_ticket_id,
+      telefone_normalizado: ticket.telefone_normalizado,
+      telefone_normalizado_ddi: ticket.telefone_normalizado_ddi,
+      data_conversa: ticket.started_at,
+      considerada_na_janela_90_dias: naJanela,
+      ordem_conversa_para_venda: idx + 1,
+      dias_antes_da_venda: diasAntes,
+      inicio_chamado: ticket.inicio_chamado,
+      tipo_vinculo: 'historico_telefone',
+    }
+  })
+
+  const { error } = await supabase
+    .from('venda_conversa_vinculos')
+    .upsert(vinculos, { onConflict: 'numero_lancamento,digisac_ticket_id' })
+
+  if (error) {
+    console.error(`[sgi-sync] calcularVinculos upsert erro:`, error)
+  }
+
+  return { totalJanela90Dias }
+}
+
+// ============================================================
+// UTILITÁRIOS DE TELEFONE
+// ============================================================
+
+export function normalizarTelefone(tel: string): string {
+  return tel.replace(/\D/g, '').replace(/^55/, '')
+}
+
+export function normalizarTelefoneDDI(tel: string): string {
+  const digits = tel.replace(/\D/g, '')
+  if (digits.startsWith('55') && digits.length >= 12) return digits
+  return `55${digits}`
+}

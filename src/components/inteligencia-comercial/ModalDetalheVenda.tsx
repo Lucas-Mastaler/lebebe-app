@@ -1,12 +1,41 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Loader2, Phone, Package, CreditCard, User, Building2, Calendar } from 'lucide-react'
+import { useEffect, useState, useRef, useCallback } from 'react'
+import { Loader2, Phone, Package, CreditCard, User, Building2, Calendar, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import type { SgiDocumento, SgiVendaDetalhe } from '@/types/sgi'
+
+interface DigisacSyncStatus {
+  jobId: string | null
+  status: 'nao_encontrado' | 'pendente' | 'processando' | 'concluido' | 'erro' | 'ignorado_cache_valido'
+  tipoSincronizacao?: string
+  resultadoJson?: {
+    totalHistorico?: number
+    totalNovosOuAtualizados?: number
+    totalJanela90Dias?: number
+    totalAtivos?: number
+    totalReceptivos?: number
+    totalIndefinidos?: number
+    totalInteracoes?: number
+    ultimaAtualizacao?: string
+    filtroPorCampo?: string
+    resultadoCache?: {
+      ultimaAtualizacao?: string
+      totalHistorico?: number
+      totalAtivos?: number
+      totalReceptivos?: number
+      totalIndefinidos?: number
+      totalInteracoes?: number
+    }
+  } | null
+  erroMensagem?: string | null
+  finalizadoEm?: string | null
+  solicitadoEm?: string | null
+}
 
 function brl(value: number | null | undefined): string {
   if (value == null) return '—'
@@ -35,6 +64,115 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
   const [detalhe, setDetalhe] = useState<SgiVendaDetalhe | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const [digisacStatus, setDigisacStatus] = useState<DigisacSyncStatus | null>(null)
+  const [digisacLoading, setDigisacLoading] = useState(false)
+  const [digisacError, setDigisacError] = useState<string | null>(null)
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+      pollingRef.current = null
+    }
+  }, [])
+
+  const fetchDigisacStatus = useCallback(async (numeroLancamento: string) => {
+    try {
+      const r = await fetch(`/api/sgi/digisac/sync-status?numeroLancamento=${encodeURIComponent(numeroLancamento)}`)
+      if (!r.ok) return
+      const data: DigisacSyncStatus = await r.json()
+      setDigisacStatus(data)
+      if (data.status !== 'pendente' && data.status !== 'processando') {
+        stopPolling()
+        setDigisacLoading(false)
+      }
+    } catch {
+      stopPolling()
+      setDigisacLoading(false)
+    }
+  }, [stopPolling])
+
+  const iniciarSincronizacao = useCallback(async (forcarAtualizacao: boolean) => {
+    if (!venda?.numero_lancamento) return
+    setDigisacLoading(true)
+    setDigisacError(null)
+    stopPolling()
+
+    try {
+      // 1. Cria o job
+      const r1 = await fetch('/api/sgi/digisac/sincronizar-venda', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numeroLancamento: venda.numero_lancamento, forcarAtualizacao }),
+      })
+      const job = await r1.json()
+
+      if (!r1.ok) {
+        setDigisacError(job.error ?? 'Erro ao criar job')
+        setDigisacLoading(false)
+        return
+      }
+
+      setDigisacStatus({ jobId: job.jobId, status: job.status })
+
+      // Se cache válido, apenas atualiza status
+      if (job.status === 'ignorado_cache_valido') {
+        setDigisacStatus({
+          jobId: job.jobId,
+          status: 'ignorado_cache_valido',
+          resultadoJson: { resultadoCache: job.resultadoCache, ...job.resultadoCache },
+        })
+        setDigisacLoading(false)
+        return
+      }
+
+      // Job duplicado já em andamento
+      if (job.status === 'pendente' || job.status === 'processando') {
+        // 2. Dispara processamento
+        const r2 = await fetch('/api/sgi/digisac/processar-fila', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobId: job.jobId }),
+        })
+        const resultado = await r2.json()
+
+        if (!r2.ok) {
+          setDigisacError(resultado.error ?? 'Erro ao processar job')
+          setDigisacLoading(false)
+          return
+        }
+
+        setDigisacStatus({
+          jobId: job.jobId,
+          status: resultado.status,
+          tipoSincronizacao: resultado.origemDados,
+          resultadoJson: resultado,
+          finalizadoEm: resultado.ultimaAtualizacao,
+        })
+        setDigisacLoading(false)
+      }
+    } catch {
+      setDigisacError('Erro de conexão')
+      setDigisacLoading(false)
+    }
+  }, [venda?.numero_lancamento, stopPolling])
+
+  // Busca status Digisac ao abrir o modal
+  useEffect(() => {
+    if (!open || !venda?.numero_lancamento) {
+      setDigisacStatus(null)
+      setDigisacError(null)
+      stopPolling()
+      return
+    }
+    fetchDigisacStatus(venda.numero_lancamento)
+  }, [open, venda?.numero_lancamento, fetchDigisacStatus, stopPolling])
+
+  // Cleanup polling ao fechar
+  useEffect(() => {
+    if (!open) stopPolling()
+  }, [open, stopPolling])
 
   useEffect(() => {
     if (!open || !venda?.numero_lancamento) {
@@ -197,6 +335,17 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
               )}
             </Section>
 
+            {/* Digisac */}
+            <Section icon={MessageCircle} title="Digisac — Histórico de Chamados">
+              <DigisacSyncPanel
+                status={digisacStatus}
+                loading={digisacLoading}
+                error={digisacError}
+                onSincronizar={() => iniciarSincronizacao(false)}
+                onForcar={() => iniciarSincronizacao(true)}
+              />
+            </Section>
+
             {/* Pagamentos */}
             <Section icon={CreditCard} title={`Pagamentos (${detalhe.pagamentos.length})`}>
               {detalhe.pagamentos.length === 0 ? (
@@ -234,5 +383,148 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+function DigisacSyncPanel({
+  status,
+  loading,
+  error,
+  onSincronizar,
+  onForcar,
+}: {
+  status: DigisacSyncStatus | null
+  loading: boolean
+  error: string | null
+  onSincronizar: () => void
+  onForcar: () => void
+}) {
+  const resultado = status?.resultadoJson
+  const cacheData = resultado?.resultadoCache ?? resultado
+
+  const totalHistorico = cacheData?.totalHistorico ?? 0
+  const totalJanela = resultado?.totalJanela90Dias ?? 0
+  const totalAtivos = cacheData?.totalAtivos ?? 0
+  const totalReceptivos = cacheData?.totalReceptivos ?? 0
+  const totalIndefinidos = cacheData?.totalIndefinidos ?? 0
+  const totalInteracoes = cacheData?.totalInteracoes ?? 0
+  const ultimaAtualizacao = cacheData?.ultimaAtualizacao ?? status?.finalizadoEm ?? null
+  const filtroCampo = resultado?.filtroPorCampo
+
+  const isCacheValido = status?.status === 'ignorado_cache_valido'
+  const isConcluido = status?.status === 'concluido' || isCacheValido
+  const isProcessando = status?.status === 'processando' || status?.status === 'pendente' || loading
+  const isErro = status?.status === 'erro'
+  const naoEncontrado = !status || status.status === 'nao_encontrado'
+
+  return (
+    <div className="space-y-3">
+      {/* Linha de status */}
+      <div className="flex flex-wrap items-center gap-2">
+        {isProcessando && (
+          <span className="flex items-center gap-1.5 text-xs text-sky-600 font-medium">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            Sincronizando...
+          </span>
+        )}
+        {isConcluido && !isProcessando && (
+          <span className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            {isCacheValido ? 'Cache válido' : 'Sincronizado'}
+          </span>
+        )}
+        {isErro && (
+          <span className="flex items-center gap-1.5 text-xs text-red-600 font-medium">
+            <AlertCircle className="w-3.5 h-3.5" />
+            Erro na sincronização
+          </span>
+        )}
+        {naoEncontrado && !loading && (
+          <span className="flex items-center gap-1.5 text-xs text-slate-400">
+            <Clock className="w-3.5 h-3.5" />
+            Nunca sincronizado
+          </span>
+        )}
+        {ultimaAtualizacao && (
+          <span className="text-xs text-slate-400 ml-auto">
+            Atualizado em {new Date(ultimaAtualizacao).toLocaleString('pt-BR', {
+              day: '2-digit', month: '2-digit', year: 'numeric',
+              hour: '2-digit', minute: '2-digit',
+            })}
+          </span>
+        )}
+      </div>
+
+      {error && (
+        <p className="text-xs text-red-600">{error}</p>
+      )}
+
+      {isErro && status?.erroMensagem && (
+        <p className="text-xs text-red-500 bg-red-50 rounded px-2 py-1">{status.erroMensagem}</p>
+      )}
+
+      {/* Resumo */}
+      {isConcluido && totalHistorico > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <StatCard label="Histórico total" value={totalHistorico} />
+          <StatCard label="Janela 90 dias" value={totalJanela} highlight />
+          <StatCard label="Interações" value={totalInteracoes} />
+          <StatCard label="Ativos" value={totalAtivos} color="text-sky-700" />
+          <StatCard label="Receptivos" value={totalReceptivos} color="text-violet-700" />
+          <StatCard label="Indefinidos" value={totalIndefinidos} color="text-slate-500" />
+        </div>
+      )}
+
+      {filtroCampo === 'startedAt' && (
+        <p className="text-xs text-amber-600 bg-amber-50 rounded px-2 py-1">
+          ⚠ API Digisac não suporta filtro por updatedAt. Usando startedAt como fallback — alterações em chamados antigos podem não ter sido capturadas.
+        </p>
+      )}
+
+      {/* Botões */}
+      <div className="flex gap-2 pt-1">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isProcessando}
+          onClick={onSincronizar}
+          className="text-xs h-7"
+        >
+          {isProcessando ? (
+            <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Sincronizando...</>
+          ) : (
+            <><MessageCircle className="w-3 h-3 mr-1.5" />{naoEncontrado ? 'Sincronizar Digisac' : 'Atualizar'}</>
+          )}
+        </Button>
+        {!naoEncontrado && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={isProcessando}
+            onClick={onForcar}
+            className="text-xs h-7 text-slate-500"
+          >
+            <RefreshCw className="w-3 h-3 mr-1.5" />
+            Forçar atualização
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function StatCard({
+  label, value, highlight, color,
+}: {
+  label: string
+  value: number
+  highlight?: boolean
+  color?: string
+}) {
+  return (
+    <div className={`rounded-lg px-3 py-2 text-center ${highlight ? 'bg-emerald-50' : 'bg-slate-50'}`}>
+      <p className={`text-lg font-bold ${color ?? (highlight ? 'text-emerald-700' : 'text-slate-800')}`}>{value}</p>
+      <p className="text-xs text-slate-500">{label}</p>
+    </div>
   )
 }

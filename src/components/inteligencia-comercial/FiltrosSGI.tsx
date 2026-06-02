@@ -79,8 +79,8 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
   }
 
   function handleClienteChange(value: string) {
-    const normalized = value.replace(/\s+/g, ' ').trim().slice(0, 20)
-    setField('cliente', normalized)
+    const trimmed = value.trim().slice(0, 20)
+    setField('cliente', trimmed)
   }
 
   function handleTelefoneChange(value: string) {
@@ -231,6 +231,7 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
                 selected={form.vendedores ?? []}
                 onChange={v => setField('vendedores', v)}
                 placeholder="Selecione vendedores..."
+                enableSearch
               />
             )}
           </div>

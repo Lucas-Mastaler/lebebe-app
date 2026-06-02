@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Check, X, ChevronDown } from 'lucide-react'
+import { Check, X, ChevronDown, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 
@@ -12,11 +13,17 @@ interface MultiSelectProps {
   onChange: (selected: string[]) => void
   placeholder?: string
   className?: string
+  enableSearch?: boolean
 }
 
-export function MultiSelect({ options, selected, onChange, placeholder = 'Selecione...', className }: MultiSelectProps) {
+export function MultiSelect({ options, selected, onChange, placeholder = 'Selecione...', className, enableSearch = false }: MultiSelectProps) {
   const [open, setOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
+
+  const filteredOptions = enableSearch
+    ? options.filter(opt => opt.toLowerCase().includes(searchQuery.toLowerCase()))
+    : options
 
   function toggleOption(value: string) {
     if (selected.includes(value)) {
@@ -32,6 +39,7 @@ export function MultiSelect({ options, selected, onChange, placeholder = 'Seleci
 
   function clearAll() {
     onChange([])
+    setSearchQuery('')
   }
 
   // Close dropdown when clicking outside
@@ -39,6 +47,7 @@ export function MultiSelect({ options, selected, onChange, placeholder = 'Seleci
     function handleClickOutside(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setOpen(false)
+        setSearchQuery('')
       }
     }
     if (open) {
@@ -103,13 +112,28 @@ export function MultiSelect({ options, selected, onChange, placeholder = 'Seleci
               </Button>
             </div>
           )}
-          {options.length === 0 ? (
+          {enableSearch && (
+            <div className="px-3 py-2 border-b border-slate-100">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                <Input
+                  type="text"
+                  placeholder="Buscar..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="h-7 pl-8 text-xs"
+                />
+              </div>
+            </div>
+          )}
+          {filteredOptions.length === 0 ? (
             <div className="px-3 py-4 text-sm text-slate-400 text-center">
-              Nenhuma opção disponível
+              {searchQuery ? 'Nenhuma opção encontrada' : 'Nenhuma opção disponível'}
             </div>
           ) : (
             <div className="p-1">
-              {options.map(option => (
+              {filteredOptions.map(option => (
                 <button
                   key={option}
                   type="button"

@@ -120,9 +120,9 @@ export function TabelaVendas({
             <TableHead className="text-xs text-right">Pendente</TableHead>
             <TableHead className="text-xs text-right">Desc. %</TableHead>
             <TableHead className="text-xs text-right">Frete</TableHead>
-            <TableHead className="text-xs text-right" title="Chamados Digisac no ciclo da venda (desde a venda anterior até esta)">Cham. ciclo</TableHead>
-            <TableHead className="text-xs text-right" title="Interações no ciclo da venda">Interações</TableHead>
-            <TableHead className="text-xs" title="Primeiro tipo de contato no ciclo">1º Contato</TableHead>
+            <TableHead className="text-xs text-center" title="Chamados Digisac no ciclo da venda (desde a venda anterior até esta)">Cham. ciclo</TableHead>
+            <TableHead className="text-xs text-center" title="Interações no ciclo da venda">Interações</TableHead>
+            <TableHead className="text-xs text-center" title="Primeiro tipo de contato no ciclo da venda">1º Contato</TableHead>
             <TableHead className="text-xs" title="Status sincronização Digisac">Digisac</TableHead>
             <TableHead className="text-xs w-10"></TableHead>
           </TableRow>
@@ -169,21 +169,21 @@ export function TabelaVendas({
                     : '—'}
                 </TableCell>
                 <TableCell className="text-xs text-right">{brl(venda.valor_frete)}</TableCell>
-                <TableCell className="text-xs text-right font-medium">
+                <TableCell className="text-xs text-center font-medium">
                   {venda.digisac_chamados_ciclo != null ? (
                     <span className={venda.digisac_chamados_ciclo > 0 ? 'text-sky-700' : 'text-slate-400'}>
                       {venda.digisac_chamados_ciclo}
                     </span>
                   ) : '—'}
                 </TableCell>
-                <TableCell className="text-xs text-right">
+                <TableCell className="text-xs text-center">
                   {venda.digisac_interacoes_ciclo != null ? (
                     <span className={venda.digisac_interacoes_ciclo > 0 ? 'text-slate-700' : 'text-slate-400'}>
                       {venda.digisac_interacoes_ciclo}
                     </span>
                   ) : '—'}
                 </TableCell>
-                <TableCell className="text-xs">
+                <TableCell className="text-xs text-center">
                   {venda.digisac_primeiro_contato ? (
                     <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
                       venda.digisac_primeiro_contato === 'ativo' ? 'bg-sky-50 text-sky-700' :

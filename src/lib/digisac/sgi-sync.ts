@@ -464,6 +464,74 @@ export async function recalcularHistoricoTelefone(
 }
 
 // ============================================================
+// 6b. BUSCAR TICKETS SALVOS NO SUPABASE (para recálculo de ciclo)
+// ============================================================
+
+/**
+ * Busca todos os tickets já salvos em digisac_conversas_resumo para um conjunto
+ * de telefones (com todas as variações). Usado para recalcular o ciclo da venda
+ * mesmo quando a sync incremental não trouxe tickets novos.
+ */
+export async function buscarTicketsSalvosNoSupabase(
+  telefonesDDI: string[],
+  supabase: SupabaseClient
+): Promise<ResumoTicket[]> {
+  if (!telefonesDDI.length) return []
+
+  // Expande cada telefone DDI para todas as variações (com/sem 9, com/sem DDI)
+  const todasVariacoes = [...new Set(
+    telefonesDDI.flatMap(t => gerarVariacoesTelefone(t))
+  )]
+
+  const { data, error } = await supabase
+    .from('digisac_conversas_resumo')
+    .select('*')
+    .in('telefone_normalizado_ddi', todasVariacoes)
+
+  if (error) {
+    console.error('[sgi-sync] buscarTicketsSalvosNoSupabase erro:', error)
+    return []
+  }
+
+  const rows = data ?? []
+  // Deduplicar por digisac_ticket_id (pode aparecer por variações diferentes)
+  const dedup = new Map<string, ResumoTicket>()
+  for (const row of rows) {
+    if (!dedup.has(row.digisac_ticket_id)) {
+      dedup.set(row.digisac_ticket_id, {
+        digisac_ticket_id: row.digisac_ticket_id,
+        protocolo: row.protocolo,
+        digisac_contact_id: row.digisac_contact_id,
+        telefone_normalizado: row.telefone_normalizado,
+        telefone_normalizado_ddi: row.telefone_normalizado_ddi,
+        cliente_nome_digisac: row.cliente_nome_digisac,
+        service_id: row.service_id,
+        service_nome: row.service_nome,
+        department_id: row.department_id,
+        department_nome: row.department_nome,
+        user_id: row.user_id,
+        user_nome: row.user_nome,
+        status: row.status,
+        is_open: row.is_open,
+        comments: row.comments,
+        started_at: row.started_at,
+        ended_at: row.ended_at,
+        ticket_time_segundos: row.ticket_time_segundos,
+        messaging_time_segundos: row.messaging_time_segundos,
+        quantidade_interacoes: row.quantidade_interacoes,
+        interacoes_incompletas: row.interacoes_incompletas ?? false,
+        inicio_chamado: row.inicio_chamado ?? 'indefinido',
+        tags: row.tags ?? [],
+        assuntos: row.assuntos ?? [],
+        raw_json: row.raw_json,
+        updated_at: row.updated_at ?? new Date().toISOString(),
+      })
+    }
+  }
+  return [...dedup.values()]
+}
+
+// ============================================================
 // 7. CALCULAR E SALVAR VÍNCULOS VENDA ↔ CONVERSA
 // ============================================================
 
@@ -486,11 +554,15 @@ export async function calcularVinculosVenda(
   let vendaAnteriorLancamento: string | null = null
 
   if (dataVenda && telefonesVenda && telefonesVenda.length > 0) {
-    // Busca contatos que tenham algum dos telefones da venda
+    // Expande para todas as variações (com/sem DDI, com/sem 9) para não perder matches
+    const todasVariacoesVenda = [...new Set(
+      telefonesVenda.flatMap(t => gerarVariacoesTelefone(t))
+    )]
+    // Busca contatos que tenham algum dos telefones da venda (qualquer variação)
     const { data: contatosAnteriores } = await supabase
       .from('sgi_documentos_saida_contatos')
       .select('numero_lancamento')
-      .in('telefone_normalizado_ddi', telefonesVenda)
+      .in('telefone_normalizado_ddi', todasVariacoesVenda)
 
     if (contatosAnteriores && contatosAnteriores.length > 0) {
       const lancamentosEncontrados = [...new Set(

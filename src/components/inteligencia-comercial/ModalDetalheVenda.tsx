@@ -65,6 +65,20 @@ function formatData(iso: string | null | undefined): string {
   }
 }
 
+// Exibe datas de negócio (ciclo de venda) sem conversão UTC→local
+// Evita que 2026-01-01T00:00:00Z vire 31/12/2025 no fuso -03:00
+function formatDataNegocio(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  try {
+    // Extrai apenas a parte YYYY-MM-DD sem interpretar timezone
+    const parte = iso.split('T')[0]
+    const [y, m, d] = parte.split('-')
+    return `${d}/${m}/${y}`
+  } catch {
+    return iso
+  }
+}
+
 interface ModalDetalheVendaProps {
   venda: SgiDocumento | null
   open: boolean
@@ -546,12 +560,12 @@ function DigisacSyncPanel({
                 )}
                 {inicioCiclo && (
                   <p className="text-xs text-slate-500">
-                    Início ciclo: {new Date(inicioCiclo).toLocaleDateString('pt-BR')}
+                    Início ciclo: {formatDataNegocio(inicioCiclo)}
                   </p>
                 )}
                 {fimCiclo && (
                   <p className="text-xs text-slate-500">
-                    Fim ciclo: {new Date(fimCiclo).toLocaleDateString('pt-BR')}
+                    Fim ciclo: {formatDataNegocio(fimCiclo)}
                   </p>
                 )}
               </div>

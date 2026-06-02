@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { validateComercialUser } from '@/lib/auth/sgi-auth'
 import {
   buscarTicketsPorTelefoneComVariacoes,
+  buscarTicketsSalvosNoSupabase,
   calcularInicioChamado,
   buscarMensagensTicketPaginado,
   calcularQuantidadeInteracoes,
@@ -195,24 +196,26 @@ export async function POST(request: NextRequest) {
       await recalcularHistoricoTelefone(telefoneDDI, nomeSgi, supabaseAdmin)
     }
 
-    // Deduplicar todosTicketsResumo para calcular vínculos (evita duplicatas cross-phone)
-    const ticketsDedup = [...todosTicketsResumoDedup.values()]
-
-    // Calcula vínculos da venda usando tickets deduplicados
-    if (venda && ticketsDedup.length > 0) {
-      const { totalJanela90Dias, totalCicloVenda, inicioCiclo, fimCiclo, vendaAnterior } = await calcularVinculosVenda(
-        venda.id,
-        numeroLancamento,
-        venda.data_fechamento,
-        ticketsDedup,
-        supabaseAdmin,
-        telefonesDDI
-      )
-      totalJanela90DiasGlobal = totalJanela90Dias
-      totalCicloVendaGlobal = totalCicloVenda
-      inicioCicloGlobal = inicioCiclo
-      fimCicloGlobal = fimCiclo
-      vendaAnteriorGlobal = vendaAnterior
+    // Sempre recalcula o ciclo da venda com TODOS os tickets salvos no banco local
+    // (não apenas os retornados pela sync incremental — que pode ser 0)
+    if (venda) {
+      const ticketsBanco = await buscarTicketsSalvosNoSupabase(telefonesDDI, supabaseAdmin)
+      if (ticketsBanco.length > 0) {
+        const { totalJanela90Dias, totalCicloVenda, inicioCiclo, fimCiclo, vendaAnterior } = await calcularVinculosVenda(
+          venda.id,
+          numeroLancamento,
+          venda.data_fechamento,
+          ticketsBanco,
+          supabaseAdmin,
+          telefonesDDI
+        )
+        totalJanela90DiasGlobal = totalJanela90Dias
+        totalCicloVendaGlobal = totalCicloVenda
+        inicioCicloGlobal = inicioCiclo
+        fimCicloGlobal = fimCiclo
+        vendaAnteriorGlobal = vendaAnterior
+        console.log(`[processar-fila] ciclo recalculado com ${ticketsBanco.length} tickets do banco: ciclo=${totalCicloVenda} inicio=${inicioCiclo}`)
+      }
     }
 
     // Busca resumo final do histórico consolidado

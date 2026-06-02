@@ -139,6 +139,11 @@ export function gerarVariacoesTelefone(telefoneInput: string): string[] {
 // 2. BUSCAR TICKETS POR UMA VARIAÇÃO DE TELEFONE (paginado)
 // ============================================================
 
+// Conexões excluídas da análise comercial (não usar nome — usar serviceId)
+const SERVICE_IDS_EXCLUIDOS_COMERCIAL = [
+  'ece0fdac-962e-491c-b47f-fa912b17a878', // POS VENDA (41 9119-1696)
+]
+
 async function buscarTicketsPorTelefonePaginado(
   telefoneVariacao: string,
   opts: BuscarTicketsOptions
@@ -146,6 +151,8 @@ async function buscarTicketsPorTelefonePaginado(
   const { dataInicioISO = null, usarUpdatedAt = true, perPage = 50 } = opts
   const todos: DigisacTicket[] = []
   let page = 1
+
+  console.log(`[DIGISAC] Excluindo conexões de pós-venda: serviceIds=${SERVICE_IDS_EXCLUIDOS_COMERCIAL.join(', ')}`)
 
   while (true) {
     const where: Record<string, unknown> = {}
@@ -174,6 +181,7 @@ async function buscarTicketsPorTelefonePaginado(
           required: true,
           where: {
             visible: true,
+            serviceId: { $notIn: SERVICE_IDS_EXCLUIDOS_COMERCIAL },
             data: { number: { $like: `%${telefoneVariacao}%` } },
           },
           include: [
@@ -198,6 +206,24 @@ async function buscarTicketsPorTelefonePaginado(
     resp = await fetchDigisac(endpoint)
 
     const items = Array.isArray(resp?.data) ? resp.data : []
+
+    // Log de auditoria: quais serviceIds estão vindo nesta página
+    if (items.length > 0) {
+      const serviceCount = new Map<string, number>()
+      for (const t of items) {
+        const svcId = (t.contact?.service as { id?: string } | undefined)?.id ?? 'desconhecido'
+        serviceCount.set(svcId, (serviceCount.get(svcId) ?? 0) + 1)
+      }
+      const resumo = [...serviceCount.entries()].map(([id, n]) => `${id}=${n}`).join(', ')
+      console.log(`[DIGISAC] Tickets retornados por serviceId (p.${page}): ${resumo}`)
+      // Alerta se algum excluído escapou
+      for (const excluido of SERVICE_IDS_EXCLUIDOS_COMERCIAL) {
+        if (serviceCount.has(excluido)) {
+          console.error(`[DIGISAC] ALERTA: serviceId excluído ${excluido} ainda apareceu na resposta!`)
+        }
+      }
+    }
+
     todos.push(...items)
 
     const lastPage = resp?.lastPage ?? 1

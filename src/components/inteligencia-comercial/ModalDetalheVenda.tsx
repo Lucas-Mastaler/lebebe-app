@@ -204,16 +204,44 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
     return () => { cancelled = true }
   }, [open, venda?.numero_lancamento])
 
-  function Section({ icon: Icon, title, children }: {
+  function Section({ icon: Icon, title, children, variant = 'default' }: {
     icon: React.ElementType
     title: string
     children: React.ReactNode
+    variant?: 'default' | 'blue' | 'green' | 'amber' | 'purple' | 'rose'
   }) {
+    const variantStyles = {
+      default: 'bg-slate-50 border-slate-200',
+      blue: 'bg-sky-50 border-sky-200',
+      green: 'bg-emerald-50 border-emerald-200',
+      amber: 'bg-amber-50 border-amber-200',
+      purple: 'bg-violet-50 border-violet-200',
+      rose: 'bg-rose-50 border-rose-200',
+    }
+
+    const iconColors = {
+      default: 'text-slate-600',
+      blue: 'text-sky-600',
+      green: 'text-emerald-600',
+      amber: 'text-amber-600',
+      purple: 'text-violet-600',
+      rose: 'text-rose-600',
+    }
+
+    const titleColors = {
+      default: 'text-slate-800',
+      blue: 'text-sky-800',
+      green: 'text-emerald-800',
+      amber: 'text-amber-800',
+      purple: 'text-violet-800',
+      rose: 'text-rose-800',
+    }
+
     return (
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
-          <Icon className="w-4 h-4 text-slate-500" />
-          <h4 className="text-sm font-semibold text-slate-700">{title}</h4>
+      <div className={`rounded-lg border p-4 space-y-3 ${variantStyles[variant]}`}>
+        <div className="flex items-center gap-2 border-b border-current/20 pb-2">
+          <Icon className={`w-4 h-4 ${iconColors[variant]}`} />
+          <h4 className={`text-sm font-semibold ${titleColors[variant]}`}>{title}</h4>
         </div>
         {children}
       </div>
@@ -223,8 +251,8 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
   function Row({ label, value }: { label: string; value: React.ReactNode }) {
     return (
       <div className="flex items-start gap-2 text-sm">
-        <span className="text-slate-500 min-w-[160px] text-xs">{label}</span>
-        <span className="text-slate-800 text-xs font-medium">{value ?? '—'}</span>
+        <span className="text-slate-600 min-w-[160px] text-xs font-medium">{label}</span>
+        <span className="text-slate-900 text-xs font-medium">{value ?? '—'}</span>
       </div>
     )
   }
@@ -256,7 +284,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
         {!loading && !error && detalhe && (
           <div className="space-y-6 py-2">
             {/* Dados principais */}
-            <Section icon={User} title="Dados da Venda">
+            <Section icon={User} title="Dados da Venda" variant="blue">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-1.5">
                 <Row label="Nº Lançamento" value={detalhe.numero_lancamento} />
                 <Row label="Nº Documento" value={detalhe.numero_documento} />
@@ -283,13 +311,13 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
             </Section>
 
             {/* Contatos */}
-            <Section icon={Phone} title={`Contatos (${detalhe.contatos_lista.length})`}>
+            <Section icon={Phone} title={`Contatos (${detalhe.contatos_lista.length})`} variant="green">
               {detalhe.contatos_lista.length === 0 ? (
                 <p className="text-xs text-slate-400">Nenhum contato registrado.</p>
               ) : (
                 <div className="space-y-1.5">
                   {detalhe.contatos_lista.map(c => (
-                    <div key={c.id} className="flex items-center gap-3 text-xs bg-slate-50 rounded-lg px-3 py-2">
+                    <div key={c.id} className="flex items-center gap-3 text-xs bg-white/60 rounded-lg px-3 py-2 border border-emerald-100">
                       <span className="font-mono text-slate-700">{c.telefone_normalizado ?? c.telefone_original ?? '—'}</span>
                       {c.telefone_normalizado_ddi && (
                         <span className="text-slate-400">DDI: {c.telefone_normalizado_ddi}</span>
@@ -306,7 +334,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
             </Section>
 
             {/* Produtos */}
-            <Section icon={Package} title={`Produtos (${detalhe.produtos.length})`}>
+            <Section icon={Package} title={`Produtos (${detalhe.produtos.length})`} variant="amber">
               {detalhe.produtos.length === 0 ? (
                 <p className="text-xs text-slate-400">Nenhum produto registrado.</p>
               ) : (
@@ -338,7 +366,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
             </Section>
 
             {/* Digisac */}
-            <Section icon={MessageCircle} title="Digisac — Histórico de Chamados">
+            <Section icon={MessageCircle} title="Digisac — Histórico de Chamados" variant="purple">
               <DigisacSyncPanel
                 status={digisacStatus}
                 loading={digisacLoading}
@@ -349,7 +377,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange }: ModalDetalheVen
             </Section>
 
             {/* Pagamentos */}
-            <Section icon={CreditCard} title={`Pagamentos (${detalhe.pagamentos.length})`}>
+            <Section icon={CreditCard} title={`Pagamentos (${detalhe.pagamentos.length})`} variant="rose">
               {detalhe.pagamentos.length === 0 ? (
                 <p className="text-xs text-slate-400">Nenhum pagamento registrado.</p>
               ) : (

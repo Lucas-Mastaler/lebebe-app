@@ -225,24 +225,24 @@ export async function buscarTicketsPorTelefoneComVariacoes(
   console.log(`[DIGISAC] Variações testadas: ${variacoes.join(', ')}`)
 
   for (const variacao of variacoes) {
-    let tickets: DigisacTicket[] = []
     try {
-      tickets = await buscarTicketsPorTelefonePaginado(variacao, opts)
+      const tickets = await buscarTicketsPorTelefonePaginado(variacao, opts)
       console.log(`[DIGISAC] ${variacao}: ${tickets.length} tickets`)
 
-      if (tickets.length > 0 && variacaoUsada === variacoes[0]) {
+      if (tickets.length > 0) {
         variacaoUsada = variacao
-      }
-
-      for (const t of tickets) {
-        if (!todosMap.has(t.id)) todosMap.set(t.id, t)
+        for (const t of tickets) {
+          if (!todosMap.has(t.id)) todosMap.set(t.id, t)
+        }
+        console.log(
+          `[DIGISAC] Encontrou ${tickets.length} tickets na variação ${variacao}. Parando demais variações deste telefone.`
+        )
+        break // Para aqui — não precisa testar outras variações
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error(`[DIGISAC] ${variacao}: erro — ${msg}`)
       erros.push(`${variacao}: ${msg}`)
-      // Continuar tentando outras variações em vez de abortar tudo
-      // Se for erro de auth/config (401/403), todas as variações falharão — não adianta continuar
       if (msg.includes('autenticação') || msg.includes('401') || msg.includes('403')) {
         throw new Error(`Erro de autenticação Digisac: ${msg}`)
       }
@@ -397,10 +397,15 @@ export async function recalcularHistoricoTelefone(
   nomeSgi: string | null,
   supabase: SupabaseClient
 ): Promise<void> {
+  // CORREÇÃO CRÍTICA: query por TODAS as variações do telefone
+  // O número salvo em telefone_normalizado_ddi pode ser a variação usada (ex: 554792629239)
+  // enquanto telefoneDDI é o número original do SGI (ex: 5547992629239) — matchs por exact falham
+  const variacoesTel = gerarVariacoesTelefone(telefoneDDI)
+
   const { data: tickets, error } = await supabase
     .from('digisac_conversas_resumo')
     .select('started_at, quantidade_interacoes, inicio_chamado, cliente_nome_digisac, digisac_ticket_id, ended_at, department_nome, user_nome')
-    .eq('telefone_normalizado_ddi', telefoneDDI)
+    .in('telefone_normalizado_ddi', variacoesTel)
     .order('started_at', { ascending: true })
 
   if (error) {

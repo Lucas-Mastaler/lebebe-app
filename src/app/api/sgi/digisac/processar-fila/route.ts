@@ -98,7 +98,13 @@ export async function POST(request: NextRequest) {
     let totalNovosOuAtualizados = 0
     let totalJanela90DiasGlobal = 0
     const todosTicketsResumo: ResumoTicket[] = []
+    const todosTicketsResumoDedup = new Map<string, ResumoTicket>() // key = digisac_ticket_id
     const todosErroVariacoes: string[] = []
+    const telefonesProcessados: Array<{
+      telefoneBase: string
+      variacaoUsada: string | null
+      totalTickets: number
+    }> = []
 
     for (const telefoneDDI of telefonesDDI) {
       const atualizado_em = historicoMap.get(telefoneDDI) ?? null
@@ -126,8 +132,8 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Busca com todas as variações de telefone (sem-9 primeiro)
-      const { tickets, erros } = await buscarTicketsPorTelefoneComVariacoes(telefoneDDI, {
+      // Busca com todas as variações de telefone (sem-9 primeiro, para na primeira com resultado)
+      const { tickets, variacaoUsada, erros } = await buscarTicketsPorTelefoneComVariacoes(telefoneDDI, {
         dataInicioISO,
         usarUpdatedAt,
         perPage: 50,
@@ -138,19 +144,21 @@ export async function POST(request: NextRequest) {
       console.log(`[processar-fila] telefone=${telefoneDDI} tickets=${tickets.length} dataInicio=${dataInicioISO ?? 'tudo'}`)
 
       for (const ticket of tickets) {
-        // Calcular início do chamado (retorna mensagens se buscadas no fallback)
+        // Pular tickets já processados de outro telefone da mesma venda (dedup global)
+        if (todosTicketsResumoDedup.has(ticket.id)) {
+          console.log(`[processar-fila] ticket ${ticket.id} já processado (dedup global) — pulando`)
+          continue
+        }
+
         const { inicio, mensagens: mensagensFallback, incompleto: incompletoFallback } =
           await calcularInicioChamado(ticket)
 
-        // Reutilizar mensagens do fallback OU buscar uma vez só para contagem
         let interacoes = 0
         let incompleto = incompletoFallback
 
         if (mensagensFallback !== null) {
-          // Mensagens já foram buscadas no fallback — reutilizar
           interacoes = calcularQuantidadeInteracoes(mensagensFallback)
         } else {
-          // firstMessage foi suficiente para inicio — buscar mensagens para contagem
           const { mensagens, incompleto: inc } = await buscarMensagensTicketPaginado(ticket.id)
           interacoes = calcularQuantidadeInteracoes(mensagens)
           incompleto = inc
@@ -158,6 +166,7 @@ export async function POST(request: NextRequest) {
 
         const resumo = montarResumoTicket(ticket, inicio, interacoes, incompleto, telefoneDDI)
         todosTicketsResumo.push(resumo)
+        todosTicketsResumoDedup.set(ticket.id, resumo)
 
         const { error: upsertErr } = await supabaseAdmin
           .from('digisac_conversas_resumo')
@@ -170,18 +179,28 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Recalcula histórico do telefone (mesmo com 0 tickets — atualiza timestamp)
+      // Registra por telefone para o resultado_json
+      telefonesProcessados.push({
+        telefoneBase: telefoneDDI,
+        variacaoUsada: tickets.length > 0 ? variacaoUsada : null,
+        totalTickets: tickets.length,
+      })
+
+      // Recalcula histórico do telefone (mesmo com 0 tickets — atualiza cache/timestamp)
       const nomeSgi = venda?.cliente ?? null
       await recalcularHistoricoTelefone(telefoneDDI, nomeSgi, supabaseAdmin)
     }
 
-    // Calcula vínculos da venda
-    if (venda && todosTicketsResumo.length > 0) {
+    // Deduplicar todosTicketsResumo para calcular vínculos (evita duplicatas cross-phone)
+    const ticketsDedup = [...todosTicketsResumoDedup.values()]
+
+    // Calcula vínculos da venda usando tickets deduplicados
+    if (venda && ticketsDedup.length > 0) {
       const { totalJanela90Dias } = await calcularVinculosVenda(
         venda.id,
         numeroLancamento,
         venda.data_fechamento,
-        todosTicketsResumo,
+        ticketsDedup,
         supabaseAdmin
       )
       totalJanela90DiasGlobal = totalJanela90Dias
@@ -202,13 +221,17 @@ export async function POST(request: NextRequest) {
 
     const origemDados = isPrimeiraSincronizacao ? 'digisac_primeira_sync' : 'digisac_incremental'
 
+    // semChamados = true somente se o histórico total consolidado for zero
+    // NÃO calcular por telefone isolado (um telefone com 0 não sobrescreve outro com 16)
+    const semChamadosFinal = totalHistorico === 0
+
     const resultado = {
       jobId,
       numeroLancamento,
       status: 'concluido',
       origemDados,
       filtroPorCampo: usarUpdatedAt ? 'updatedAt' : 'startedAt',
-      semChamados: totalHistorico === 0,
+      semChamados: semChamadosFinal,
       totalHistorico,
       totalNovosOuAtualizados,
       totalJanela90Dias: totalJanela90DiasGlobal,
@@ -217,6 +240,7 @@ export async function POST(request: NextRequest) {
       totalIndefinidos,
       totalInteracoes,
       ultimaAtualizacao,
+      telefonesProcessados,
       errosVariacoes: todosErroVariacoes.length > 0 ? todosErroVariacoes : undefined,
     }
 

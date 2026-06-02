@@ -141,121 +141,127 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
     <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
       <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Filtros</p>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-slate-500">Data início</label>
-          <Input
-            type="date"
-            min={DEFAULT_INICIO}
-            max={DEFAULT_FIM}
-            value={form.dataInicio ?? ''}
-            onChange={e => { setField('dataInicio', e.target.value); validateDates() }}
-            onKeyDown={handleKeyDown}
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-slate-500">Data fim</label>
-          <Input
-            type="date"
-            min={DEFAULT_INICIO}
-            max={DEFAULT_FIM}
-            value={form.dataFim ?? ''}
-            onChange={e => { setField('dataFim', e.target.value); validateDates() }}
-            onKeyDown={handleKeyDown}
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-slate-500">Nº Lançamento</label>
-          <Input
-            placeholder="ex: 28598"
-            value={form.numeroLancamento ?? ''}
-            onChange={e => handleNumeroLancamentoChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            maxLength={6}
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-slate-500">Cliente</label>
-          <Input
-            placeholder="Nome do cliente"
-            value={form.cliente ?? ''}
-            onChange={e => handleClienteChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            maxLength={20}
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-slate-500">Telefone</label>
-          <Input
-            placeholder="(41) 99999-9999"
-            value={formatTelefoneDisplay(form.telefone ?? '')}
-            onChange={e => handleTelefoneChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            maxLength={15}
-          />
-          <p className="text-[10px] text-slate-400">
-            Digite apenas DDD + número, sem código do país. Ex.: 41999999999
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-slate-500">Filial</label>
-          {loadingOptions ? (
-            <div className="h-9 bg-slate-100 rounded-md animate-pulse" />
-          ) : (
-            <MultiSelect
-              options={options.filiais}
-              selected={form.filiais ?? []}
-              onChange={v => setField('filiais', v)}
-              placeholder="Selecione filiais..."
+      <div className="space-y-3">
+        {/* First row: dates and simple inputs */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-slate-500">Data início</label>
+            <Input
+              type="date"
+              min={DEFAULT_INICIO}
+              max={DEFAULT_FIM}
+              value={form.dataInicio ?? ''}
+              onChange={e => { setField('dataInicio', e.target.value); validateDates() }}
+              onKeyDown={handleKeyDown}
             />
-          )}
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-slate-500">Data fim</label>
+            <Input
+              type="date"
+              min={DEFAULT_INICIO}
+              max={DEFAULT_FIM}
+              value={form.dataFim ?? ''}
+              onChange={e => { setField('dataFim', e.target.value); validateDates() }}
+              onKeyDown={handleKeyDown}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-slate-500">Nº Lançamento</label>
+            <Input
+              placeholder="ex: 28598"
+              value={form.numeroLancamento ?? ''}
+              onChange={e => handleNumeroLancamentoChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              maxLength={6}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-slate-500">Cliente</label>
+            <Input
+              placeholder="Nome do cliente"
+              value={form.cliente ?? ''}
+              onChange={e => handleClienteChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              maxLength={20}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-slate-500">Telefone</label>
+            <Input
+              placeholder="(41) 99999-9999"
+              value={formatTelefoneDisplay(form.telefone ?? '')}
+              onChange={e => handleTelefoneChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              maxLength={15}
+            />
+            <p className="text-[10px] text-slate-400">
+              Digite apenas DDD + número, sem código do país. Ex.: 41999999999
+            </p>
+          </div>
         </div>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-slate-500">Vendedor</label>
-          {loadingOptions ? (
-            <div className="h-9 bg-slate-100 rounded-md animate-pulse" />
-          ) : (
-            <MultiSelect
-              options={options.vendedores}
-              selected={form.vendedores ?? []}
-              onChange={v => setField('vendedores', v)}
-              placeholder="Selecione vendedores..."
-            />
-          )}
-        </div>
+        {/* Second row: multi-select filters - flex to occupy full line */}
+        <div className="flex flex-wrap gap-3">
+          <div className="flex flex-col gap-1 min-w-[140px] flex-1">
+            <label className="text-xs text-slate-500">Filial</label>
+            {loadingOptions ? (
+              <div className="h-9 bg-slate-100 rounded-md animate-pulse" />
+            ) : (
+              <MultiSelect
+                options={options.filiais}
+                selected={form.filiais ?? []}
+                onChange={v => setField('filiais', v)}
+                placeholder="Selecione filiais..."
+              />
+            )}
+          </div>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-slate-500">Operação</label>
-          {loadingOptions ? (
-            <div className="h-9 bg-slate-100 rounded-md animate-pulse" />
-          ) : (
-            <MultiSelect
-              options={options.operacoes}
-              selected={form.operacoes ?? []}
-              onChange={v => setField('operacoes', v)}
-              placeholder="Selecione operações..."
-            />
-          )}
-        </div>
+          <div className="flex flex-col gap-1 min-w-[140px] flex-1">
+            <label className="text-xs text-slate-500">Vendedor</label>
+            {loadingOptions ? (
+              <div className="h-9 bg-slate-100 rounded-md animate-pulse" />
+            ) : (
+              <MultiSelect
+                options={options.vendedores}
+                selected={form.vendedores ?? []}
+                onChange={v => setField('vendedores', v)}
+                placeholder="Selecione vendedores..."
+              />
+            )}
+          </div>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-xs text-slate-500">Status</label>
-          {loadingOptions ? (
-            <div className="h-9 bg-slate-100 rounded-md animate-pulse" />
-          ) : (
-            <MultiSelect
-              options={options.status}
-              selected={form.status ?? []}
-              onChange={v => setField('status', v)}
-              placeholder="Selecione status..."
-            />
-          )}
+          <div className="flex flex-col gap-1 min-w-[140px] flex-1">
+            <label className="text-xs text-slate-500">Operação</label>
+            {loadingOptions ? (
+              <div className="h-9 bg-slate-100 rounded-md animate-pulse" />
+            ) : (
+              <MultiSelect
+                options={options.operacoes}
+                selected={form.operacoes ?? []}
+                onChange={v => setField('operacoes', v)}
+                placeholder="Selecione operações..."
+              />
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1 min-w-[140px] flex-1">
+            <label className="text-xs text-slate-500">Status</label>
+            {loadingOptions ? (
+              <div className="h-9 bg-slate-100 rounded-md animate-pulse" />
+            ) : (
+              <MultiSelect
+                options={options.status}
+                selected={form.status ?? []}
+                onChange={v => setField('status', v)}
+                placeholder="Selecione status..."
+              />
+            )}
+          </div>
         </div>
       </div>
 

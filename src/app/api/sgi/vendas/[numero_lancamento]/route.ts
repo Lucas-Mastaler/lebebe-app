@@ -48,6 +48,8 @@ export async function GET(
       const variacoesArray = Array.from(todasVariacoes)
 
       if (variacoesArray.length > 0) {
+        console.log(`[API][SGI][VENDA] Buscando vendas relacionadas para ${numero_lancamento}. Variações:`, variacoesArray)
+
         // Buscar outras vendas com telefones em comum
         const { data: vendasRelacionadas } = await supabase
           .from('sgi_documentos_saida_contatos')
@@ -59,8 +61,11 @@ export async function GET(
           .or(variacoesArray.map(v => `telefone_normalizado.eq.${v},telefone_normalizado_ddi.eq.${v}`).join(','))
           .neq('numero_lancamento', numero_lancamento.trim())
 
+        console.log(`[API][SGI][VENDA] Vendas relacionadas encontradas:`, vendasRelacionadas?.length ?? 0, vendasRelacionadas)
+
         if (vendasRelacionadas && vendasRelacionadas.length > 0) {
           const lancamentosUnicos = [...new Set(vendasRelacionadas.map(v => v.numero_lancamento))]
+          console.log(`[API][SGI][VENDA] Lançamentos únicos após dedup:`, lancamentosUnicos)
 
           // Buscar dados completos das vendas relacionadas
           const { data: vendasDados } = await supabase
@@ -79,6 +84,8 @@ export async function GET(
             `)
             .in('numero_lancamento', lancamentosUnicos)
             .order('data_fechamento', { ascending: false })
+
+          console.log(`[API][SGI][VENDA] Dados completos das vendas:`, vendasDados?.length ?? 0)
 
           if (vendasDados) {
             vendasCliente = vendasDados.map(v => ({

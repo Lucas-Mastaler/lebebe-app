@@ -92,6 +92,7 @@ export async function GET(
             .from('sgi_documentos_saida')
             .select(`
               numero_lancamento,
+              numero_documento,
               data_fechamento,
               cliente,
               filial,
@@ -99,8 +100,7 @@ export async function GET(
               operacao,
               status,
               valor_total,
-              digisac_chamados_ciclo,
-              digisac_status
+              valor_total_texto
             `)
             .in('numero_lancamento', lancamentosUnicos)
             .order('data_fechamento', { ascending: false })
@@ -118,8 +118,8 @@ export async function GET(
               operacao: v.operacao,
               status: v.status,
               valor_total: v.valor_total,
-              digisac_chamados_ciclo: v.digisac_chamados_ciclo,
-              digisac_status: v.digisac_status,
+              digisac_chamados_ciclo: null, // campo calculado - não existe em sgi_documentos_saida
+              digisac_status: null, // campo calculado - não existe em sgi_documentos_saida
               venda_atual: String(v.numero_lancamento).trim() === numeroLancamentoAtual,
             }))
             console.log(`[VENDA-CLIENTE] vendasCliente mapeadas:`, vendasCliente.map(v => ({ n: v.numero_lancamento, atual: v.venda_atual })))

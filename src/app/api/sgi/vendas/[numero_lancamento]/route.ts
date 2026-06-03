@@ -159,27 +159,59 @@ export async function GET(
       .eq('documento_saida_id', doc.id),
   ])
 
-  // Adicionar a venda atual no início da lista
-  const vendaAtualResumo: SgiVendaClienteResumo = {
-    numero_lancamento: doc.numero_lancamento,
-    data_fechamento: doc.data_fechamento,
-    cliente: doc.cliente,
-    filial: doc.filial,
-    vendedor: doc.vendedor,
-    operacao: doc.operacao,
-    status: doc.status,
-    valor_total: doc.valor_total,
-    digisac_chamados_ciclo: doc.digisac_chamados_ciclo,
-    digisac_status: doc.digisac_status,
-    venda_atual: true,
+  // Deduplicar vendasCliente por numero_lancamento (evita duplicatas quando query já retorna a venda atual)
+  const vendasClienteMap = new Map<string, SgiVendaClienteResumo>()
+  const numeroLancamentoAtualStr = String(doc.numero_lancamento).trim()
+  
+  console.log(`[VENDA-CLIENTE] vendasCliente ANTES dedup:`, vendasCliente.length, vendasCliente.map(v => v.numero_lancamento))
+  
+  for (const venda of vendasCliente) {
+    const numero = String(venda.numero_lancamento).trim()
+    if (!numero) continue
+    
+    // Só adiciona se não existir, ou se for a venda atual (prioriza a venda atual)
+    if (!vendasClienteMap.has(numero) || numero === numeroLancamentoAtualStr) {
+      vendasClienteMap.set(numero, {
+        ...venda,
+        venda_atual: numero === numeroLancamentoAtualStr, // garante flag correta
+      })
+    }
   }
+  
+  // Se a venda atual não está no map, adicionar manualmente
+  if (!vendasClienteMap.has(numeroLancamentoAtualStr)) {
+    console.log(`[VENDA-CLIENTE] adicionando venda atual manualmente:`, numeroLancamentoAtualStr)
+    vendasClienteMap.set(numeroLancamentoAtualStr, {
+      numero_lancamento: doc.numero_lancamento,
+      data_fechamento: doc.data_fechamento,
+      cliente: doc.cliente,
+      filial: doc.filial,
+      vendedor: doc.vendedor,
+      operacao: doc.operacao,
+      status: doc.status,
+      valor_total: doc.valor_total,
+      digisac_chamados_ciclo: doc.digisac_chamados_ciclo,
+      digisac_status: doc.digisac_status,
+      venda_atual: true,
+    })
+  }
+  
+  // Converter para array e ordenar por data_fechamento DESC
+  const vendasClienteFinal = Array.from(vendasClienteMap.values())
+    .sort((a, b) => {
+      const dataA = new Date(a.data_fechamento || '1970-01-01').getTime()
+      const dataB = new Date(b.data_fechamento || '1970-01-01').getTime()
+      return dataB - dataA // DESC
+    })
+  
+  console.log(`[VENDA-CLIENTE] vendasCliente DEPOIS dedup:`, vendasClienteFinal.length, vendasClienteFinal.map(v => ({ n: v.numero_lancamento, atual: v.venda_atual })))
 
   const detalhe: SgiVendaDetalhe = {
     ...doc,
     contatos_lista: contatosResult.data ?? [],
     produtos: produtosResult.data ?? [],
     pagamentos: pagamentosResult.data ?? [],
-    vendasCliente: [vendaAtualResumo, ...vendasCliente],
+    vendasCliente: vendasClienteFinal,
   }
 
   return NextResponse.json(detalhe)

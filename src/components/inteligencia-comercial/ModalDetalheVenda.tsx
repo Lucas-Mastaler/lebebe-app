@@ -505,91 +505,6 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
               )}
             </Section>
 
-            {/* Digisac */}
-            <Section icon={MessageCircle} title="Digisac — Histórico de Chamados" variant="purple">
-              {venda?.digisac_dias_ate_fechamento != null && (
-                <div className="flex items-center gap-2 pb-2 border-b border-violet-100">
-                  <span className="text-xs text-slate-500">Dias até fechamento</span>
-                  <span className="text-sm font-semibold text-violet-700">{formatDias(venda.digisac_dias_ate_fechamento)}</span>
-                  <span className="text-[10px] text-slate-400">(desde 1º chamado do ciclo)</span>
-                </div>
-              )}
-              <DigisacSyncPanel
-                status={digisacStatus}
-                loading={digisacLoading}
-                error={digisacError}
-                onSincronizar={() => iniciarSincronizacao(false)}
-                onForcar={() => iniciarSincronizacao(true)}
-              />
-            </Section>
-
-            {/* Observações Comerciais */}
-            <Section icon={MessageSquarePlus} title="Observações Comerciais" variant="default">
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  <textarea
-                    className="flex-1 text-sm border border-slate-200 rounded-lg p-2 resize-none focus:outline-none focus:ring-2 focus:ring-sky-200 placeholder:text-slate-400"
-                    rows={2}
-                    placeholder="Adicionar observação..."
-                    value={novaObs}
-                    onChange={e => setNovaObs(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSalvarObs() }}
-                  />
-                  <Button size="sm" className="self-end" onClick={handleSalvarObs} disabled={savingObs || !novaObs.trim()}>
-                    {savingObs ? <Loader2 className="w-3 h-3 animate-spin" /> : <Tag className="w-3 h-3" />}
-                  </Button>
-                </div>
-                {!obsCarregada ? (
-                  <p className="text-xs text-slate-400">Carregando...</p>
-                ) : obsLista.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">Nenhuma observação ainda.</p>
-                ) : (
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                    {obsLista.map(o => (
-                      <div key={o.id} className="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-                        <p className="text-xs text-slate-700">{o.observacao}</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">{o.criado_por} · {new Date(o.created_at).toLocaleDateString('pt-BR')}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </Section>
-
-            {/* Pagamentos */}
-            <Section icon={CreditCard} title={`Pagamentos (${detalhe.pagamentos.length})`} variant="rose">
-              {detalhe.pagamentos.length === 0 ? (
-                <p className="text-xs text-slate-400">Nenhum pagamento registrado.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-100 text-slate-500">
-                        <th className="text-left py-1.5 pr-4">Forma</th>
-                        <th className="text-right py-1.5 pr-4">Parcelas</th>
-                        <th className="text-right py-1.5 pr-4">%</th>
-                        <th className="text-right py-1.5 pr-4">Valor</th>
-                        <th className="text-left py-1.5 pr-4">NSU</th>
-                        <th className="text-left py-1.5">Autorização</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detalhe.pagamentos.map(p => (
-                        <tr key={p.id} className="border-b border-slate-50">
-                          <td className="py-1.5 pr-4 max-w-[180px] truncate" title={p.forma_pagamento ?? undefined}>{p.forma_pagamento ?? '—'}</td>
-                          <td className="py-1.5 pr-4 text-right">{p.numero_parcelas_texto ?? p.numero_parcelas ?? '—'}</td>
-                          <td className="py-1.5 pr-4 text-right">{p.percentual_texto ?? (p.percentual != null ? `${p.percentual}%` : '—')}</td>
-                          <td className="py-1.5 pr-4 text-right font-medium">{brl(p.valor)}</td>
-                          <td className="py-1.5 pr-4 font-mono text-slate-500">{p.nsu ?? '—'}</td>
-                          <td className="py-1.5 font-mono text-slate-500">{p.numero_autorizacao ?? '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Section>
-
             {/* Vendas do Cliente */}
             <Section icon={Store} title={`Vendas do cliente (${detalhe.vendasCliente?.length ?? 0})`} variant="amber">
               {!detalhe.vendasCliente || detalhe.vendasCliente.length === 0 ? (
@@ -685,6 +600,92 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                 </div>
               )}
             </Section>
+
+            {/* Digisac */}
+            <Section icon={MessageCircle} title="Digisac — Histórico de Chamados" variant="purple">
+              {venda?.digisac_dias_ate_fechamento != null && (
+                <div className="flex items-center gap-2 pb-2 border-b border-violet-100">
+                  <span className="text-xs text-slate-500">Dias até fechamento</span>
+                  <span className="text-sm font-semibold text-violet-700">{formatDias(venda.digisac_dias_ate_fechamento)}</span>
+                  <span className="text-[10px] text-slate-400">(desde 1º chamado do ciclo)</span>
+                </div>
+              )}
+              <DigisacSyncPanel
+                status={digisacStatus}
+                loading={digisacLoading}
+                error={digisacError}
+                onSincronizar={() => iniciarSincronizacao(false)}
+                onForcar={() => iniciarSincronizacao(true)}
+              />
+            </Section>
+
+            {/* Observações Comerciais */}
+            <Section icon={MessageSquarePlus} title="Observações Comerciais" variant="default">
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <textarea
+                    className="flex-1 text-sm border border-slate-200 rounded-lg p-2 resize-none focus:outline-none focus:ring-2 focus:ring-sky-200 placeholder:text-slate-400"
+                    rows={2}
+                    placeholder="Adicionar observação..."
+                    value={novaObs}
+                    onChange={e => setNovaObs(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSalvarObs() }}
+                  />
+                  <Button size="sm" className="self-end" onClick={handleSalvarObs} disabled={savingObs || !novaObs.trim()}>
+                    {savingObs ? <Loader2 className="w-3 h-3 animate-spin" /> : <Tag className="w-3 h-3" />}
+                  </Button>
+                </div>
+                {!obsCarregada ? (
+                  <p className="text-xs text-slate-400">Carregando...</p>
+                ) : obsLista.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">Nenhuma observação ainda.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {obsLista.map(o => (
+                      <div key={o.id} className="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                        <p className="text-xs text-slate-700">{o.observacao}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">{o.criado_por} · {new Date(o.created_at).toLocaleDateString('pt-BR')}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Section>
+
+            {/* Pagamentos */}
+            <Section icon={CreditCard} title={`Pagamentos (${detalhe.pagamentos.length})`} variant="rose">
+              {detalhe.pagamentos.length === 0 ? (
+                <p className="text-xs text-slate-400">Nenhum pagamento registrado.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-slate-500">
+                        <th className="text-left py-1.5 pr-4">Forma</th>
+                        <th className="text-right py-1.5 pr-4">Parcelas</th>
+                        <th className="text-right py-1.5 pr-4">%</th>
+                        <th className="text-right py-1.5 pr-4">Valor</th>
+                        <th className="text-left py-1.5 pr-4">NSU</th>
+                        <th className="text-left py-1.5">Autorização</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detalhe.pagamentos.map(p => (
+                        <tr key={p.id} className="border-b border-slate-50">
+                          <td className="py-1.5 pr-4 max-w-[180px] truncate" title={p.forma_pagamento ?? undefined}>{p.forma_pagamento ?? '—'}</td>
+                          <td className="py-1.5 pr-4 text-right">{p.numero_parcelas_texto ?? p.numero_parcelas ?? '—'}</td>
+                          <td className="py-1.5 pr-4 text-right">{p.percentual_texto ?? (p.percentual != null ? `${p.percentual}%` : '—')}</td>
+                          <td className="py-1.5 pr-4 text-right font-medium">{brl(p.valor)}</td>
+                          <td className="py-1.5 pr-4 font-mono text-slate-500">{p.nsu ?? '—'}</td>
+                          <td className="py-1.5 font-mono text-slate-500">{p.numero_autorizacao ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Section>
+
           </div>
         )}
       </DialogContent>

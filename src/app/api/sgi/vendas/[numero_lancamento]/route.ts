@@ -48,24 +48,36 @@ export async function GET(
       const variacoesArray = Array.from(todasVariacoes)
 
       if (variacoesArray.length > 0) {
-        console.log(`[API][SGI][VENDA] Buscando vendas relacionadas para ${numero_lancamento}. Variações:`, variacoesArray)
+        console.log(`[VENDA-CLIENTE] numero_lancamento=${numero_lancamento}`)
+        console.log(`[VENDA-CLIENTE] contatos atuais:`, contatosAtuais)
+        console.log(`[VENDA-CLIENTE] variações geradas:`, variacoesArray)
 
-        // Buscar outras vendas com telefones em comum
-        const { data: vendasRelacionadas } = await supabase
-          .from('sgi_documentos_saida_contatos')
-          .select(`
-            numero_lancamento,
-            telefone_normalizado,
-            telefone_normalizado_ddi
-          `)
-          .or(variacoesArray.map(v => `telefone_normalizado.eq.${v},telefone_normalizado_ddi.eq.${v}`).join(','))
-          .neq('numero_lancamento', numero_lancamento.trim())
+        // Abordagem mais confiável: duas queries separadas com .in()
+        const [porTelefoneNormalizado, porTelefoneDdi] = await Promise.all([
+          supabase
+            .from('sgi_documentos_saida_contatos')
+            .select('numero_lancamento, telefone_normalizado, telefone_normalizado_ddi')
+            .in('telefone_normalizado', variacoesArray)
+            .neq('numero_lancamento', numero_lancamento.trim()),
+          supabase
+            .from('sgi_documentos_saida_contatos')
+            .select('numero_lancamento, telefone_normalizado, telefone_normalizado_ddi')
+            .in('telefone_normalizado_ddi', variacoesArray)
+            .neq('numero_lancamento', numero_lancamento.trim())
+        ])
 
-        console.log(`[API][SGI][VENDA] Vendas relacionadas encontradas:`, vendasRelacionadas?.length ?? 0, vendasRelacionadas)
+        // Unir resultados das duas queries
+        const todosContatosRelacionados = [
+          ...(porTelefoneNormalizado.data ?? []),
+          ...(porTelefoneDdi.data ?? [])
+        ]
 
-        if (vendasRelacionadas && vendasRelacionadas.length > 0) {
-          const lancamentosUnicos = [...new Set(vendasRelacionadas.map(v => v.numero_lancamento))]
-          console.log(`[API][SGI][VENDA] Lançamentos únicos após dedup:`, lancamentosUnicos)
+        console.log(`[VENDA-CLIENTE] contatos relacionados encontrados:`, todosContatosRelacionados.length)
+        console.log(`[VENDA-CLIENTE] lançamentos encontrados antes dedup:`, todosContatosRelacionados.map(c => c.numero_lancamento))
+
+        if (todosContatosRelacionados.length > 0) {
+          const lancamentosUnicos = [...new Set(todosContatosRelacionados.map(v => v.numero_lancamento))]
+          console.log(`[VENDA-CLIENTE] lançamentos únicos:`, lancamentosUnicos)
 
           // Buscar dados completos das vendas relacionadas
           const { data: vendasDados } = await supabase
@@ -85,7 +97,7 @@ export async function GET(
             .in('numero_lancamento', lancamentosUnicos)
             .order('data_fechamento', { ascending: false })
 
-          console.log(`[API][SGI][VENDA] Dados completos das vendas:`, vendasDados?.length ?? 0)
+          console.log(`[VENDA-CLIENTE] vendasCliente final:`, vendasDados?.length ?? 0, vendasDados?.map(v => v.numero_lancamento))
 
           if (vendasDados) {
             vendasCliente = vendasDados.map(v => ({

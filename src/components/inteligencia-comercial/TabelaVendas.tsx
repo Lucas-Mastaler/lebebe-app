@@ -44,13 +44,20 @@ function getDigisacRowState(venda: SgiDocumento): DigisacRowState {
   if (!s) return 'neutro'
   if (s === 'erro') return 'erro'
   if (s === 'pendente' || s === 'processando') return 'processando'
+
   const sincronizado = s === 'concluido' || s === 'ignorado_cache_valido'
   if (!sincronizado) return 'neutro'
-  const totalHistorico = venda.digisac_total_historico ?? 0
-  if (totalHistorico === 0) return 'sem_conversa'
+
+  // Prioridade 1: se tem chamado no ciclo, não pode ser "sem conversa"
   const chamadosCiclo = venda.digisac_chamados_ciclo ?? 0
-  if (chamadosCiclo === 0) return 'sem_ciclo'
-  return 'ok'
+  if (chamadosCiclo > 0) return 'ok'
+
+  // Prioridade 2: se tem histórico, mas não no ciclo
+  const totalHistorico = venda.digisac_total_historico ?? 0
+  if (totalHistorico > 0) return 'sem_ciclo'
+
+  // Prioridade 3: sincronizado e realmente sem nenhuma conversa histórica
+  return 'sem_conversa'
 }
 
 function rowHighlightCls(state: DigisacRowState): string {
@@ -274,12 +281,17 @@ export function TabelaVendas({
                       : <span className="text-slate-300">—</span>}
                   </div>
                 </TableCell>
-                <TableCell className="text-xs max-w-[140px]">
-                  <span className="text-slate-600 text-[10px] leading-tight">
+                <TableCell className="text-xs max-w-[220px]">
+                  <div className="flex flex-wrap gap-1">
                     {venda.subgrupos_venda && venda.subgrupos_venda.length > 0
-                      ? venda.subgrupos_venda.join(' + ')
+                      ? venda.subgrupos_venda.map((s, i) => (
+                          <span key={i} className="text-slate-600 text-[10px] leading-tight" title={s}>
+                            {s}
+                            {i < (venda.subgrupos_venda?.length ?? 0) - 1 && <span className="text-slate-400 mx-0.5">·</span>}
+                          </span>
+                        ))
                       : <span className="text-slate-300">—</span>}
-                  </span>
+                  </div>
                 </TableCell>
                 <TableCell className="text-xs">
                   <DigisacStatusCell venda={venda} />

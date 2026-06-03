@@ -361,8 +361,10 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
   const [iaChamados, setIaChamados] = useState<IaChamadoAnalise[]>([])
   const [iaConsolidado, setIaConsolidado] = useState<IaConsolidado | null>(null)
   const [iaProcessando, setIaProcessando] = useState(false)
+  const [iaPausado, setIaPausado] = useState(false)
   const [iaErro, setIaErro] = useState<string | null>(null)
   const iaCanceladoRef = useRef(false)
+  const iaFilaIdRef = useRef<string | null>(null)
   const [iaChamadoExpandido, setIaChamadoExpandido] = useState<string | null>(null)
 
   const carregarStatusIA = useCallback(async (numeroLancamento: string) => {
@@ -384,45 +386,21 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
       setIaChamados([])
       setIaConsolidado(null)
       setIaProcessando(false)
+      setIaPausado(false)
       setIaErro(null)
+      iaFilaIdRef.current = null
       return
     }
     carregarStatusIA(venda.numero_lancamento)
   }, [open, venda?.numero_lancamento, carregarStatusIA])
 
-  const iniciarAnaliseIA = useCallback(async (reanalisar = false) => {
-    if (!venda?.numero_lancamento) return
-    setIaProcessando(true)
-    setIaErro(null)
+  const executarLoop = useCallback(async (filaId: string) => {
     iaCanceladoRef.current = false
+    setIaProcessando(true)
+    setIaPausado(false)
+    setIaErro(null)
 
     try {
-      const r1 = await fetch('/api/sgi/ia/iniciar-analise', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ numeroLancamento: venda.numero_lancamento, reanalisar }),
-      })
-      const data1 = await r1.json()
-
-      if (!r1.ok) {
-        setIaErro(data1.error ?? 'Erro ao iniciar análise')
-        setIaProcessando(false)
-        return
-      }
-
-      if (data1.jaEmAndamento && !reanalisar) {
-        await carregarStatusIA(venda.numero_lancamento)
-        setIaProcessando(false)
-        return
-      }
-
-      const filaId: string = data1.filaId
-      const totalChamados: number = data1.totalChamados
-
-      setIaJob({ id: filaId, status: 'processando', totalChamados, chamadosProcessados: 0, chamadosComErro: 0, finalizadoEm: null })
-
-      // Loop sequencial — 1 chamado por vez
-      let processados = 0
       while (!iaCanceladoRef.current) {
         const r2 = await fetch('/api/sgi/ia/processar-proximo', {
           method: 'POST',
@@ -431,23 +409,80 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
         })
         const data2 = await r2.json()
 
-        processados = data2.progresso?.processados ?? processados + 1
-        setIaJob(prev => prev ? { ...prev, chamadosProcessados: processados, chamadosComErro: data2.progresso?.comErro ?? 0 } : prev)
+        const prog = data2.progresso
+        if (prog) {
+          setIaJob(prev => prev ? {
+            ...prev,
+            chamadosProcessados: prog.processados,
+            chamadosComErro: prog.comErro,
+            status: data2.concluido ? 'concluido' : 'processando',
+            finalizadoEm: data2.concluido ? new Date().toISOString() : prev.finalizadoEm,
+          } : prev)
+        }
 
-        if (data2.concluido) break
+        if (data2.concluido) {
+          setIaProcessando(false)
+          break
+        }
+
         if (!r2.ok && !data2.erroChamado) {
           setIaErro(data2.error ?? 'Erro ao processar chamado')
           break
         }
       }
 
-      await carregarStatusIA(venda.numero_lancamento)
+      if (iaCanceladoRef.current) {
+        setIaPausado(true)
+      }
+
+      await carregarStatusIA(venda!.numero_lancamento)
     } catch (err) {
       setIaErro(err instanceof Error ? err.message : 'Erro inesperado')
     } finally {
       setIaProcessando(false)
     }
-  }, [venda?.numero_lancamento, carregarStatusIA])
+  }, [venda, carregarStatusIA])
+
+  const iniciarAnaliseIA = useCallback(async (reanalisar = false) => {
+    if (!venda?.numero_lancamento) return
+    setIaErro(null)
+
+    const r1 = await fetch('/api/sgi/ia/iniciar-analise', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numeroLancamento: venda.numero_lancamento, reanalisar }),
+    }).catch(() => null)
+
+    if (!r1) { setIaErro('Erro de conexão'); return }
+    const data1 = await r1.json()
+
+    if (!r1.ok) {
+      setIaErro(data1.error ?? 'Erro ao iniciar análise')
+      return
+    }
+
+    const filaId: string = data1.filaId ?? data1.filaId
+    const totalChamados: number = data1.totalChamados ?? iaJob?.totalChamados ?? 0
+
+    iaFilaIdRef.current = filaId
+    setIaJob(prev => ({
+      id: filaId,
+      status: 'processando',
+      totalChamados,
+      chamadosProcessados: data1.jaEmAndamento ? (prev?.chamadosProcessados ?? 0) : 0,
+      chamadosComErro: data1.jaEmAndamento ? (prev?.chamadosComErro ?? 0) : 0,
+      finalizadoEm: null,
+    }))
+
+    await executarLoop(filaId)
+  }, [venda?.numero_lancamento, iaJob, executarLoop])
+
+  const continuarAnaliseIA = useCallback(async () => {
+    const filaId = iaFilaIdRef.current ?? iaJob?.id
+    if (!filaId) return
+    iaFilaIdRef.current = filaId
+    await executarLoop(filaId)
+  }, [iaJob, executarLoop])
 
   const digisacSincronizado = digisacStatus?.status === 'concluido' || digisacStatus?.status === 'ignorado_cache_valido'
   const chamadosCiclo = digisacStatus?.resultadoJson?.totalCicloVenda ?? digisacStatus?.resultadoJson?.resultadoCache?.totalCicloVenda ?? 0
@@ -769,13 +804,15 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                 chamados={iaChamados}
                 consolidado={iaConsolidado}
                 processando={iaProcessando}
+                pausado={iaPausado}
                 erro={iaErro}
                 podeAnalisar={podeAnalisarIA}
                 chamadoExpandido={iaChamadoExpandido}
                 onExpandirChamado={setIaChamadoExpandido}
                 onAnalisar={() => iniciarAnaliseIA(false)}
                 onReanalisar={() => iniciarAnaliseIA(true)}
-                onCancelar={() => { iaCanceladoRef.current = true; setIaProcessando(false) }}
+                onContinuar={continuarAnaliseIA}
+                onCancelar={() => { iaCanceladoRef.current = true }}
               />
             </Section>
 
@@ -1176,12 +1213,14 @@ function IaAnalisePanel({
   chamados,
   consolidado,
   processando,
+  pausado,
   erro,
   podeAnalisar,
   chamadoExpandido,
   onExpandirChamado,
   onAnalisar,
   onReanalisar,
+  onContinuar,
   onCancelar,
 }: {
   job: { id: string; status: string; totalChamados: number; chamadosProcessados: number; chamadosComErro: number; finalizadoEm: string | null } | null
@@ -1202,70 +1241,77 @@ function IaAnalisePanel({
     total_chamados_analisados: number; modelo_ia: string | null; gerado_em: string | null
   } | null
   processando: boolean
+  pausado: boolean
   erro: string | null
   podeAnalisar: boolean
   chamadoExpandido: string | null
   onExpandirChamado: (id: string | null) => void
   onAnalisar: () => void
   onReanalisar: () => void
+  onContinuar: () => void
   onCancelar: () => void
 }) {
   const nunca = !job
-  const emAndamento = processando || job?.status === 'processando' || job?.status === 'pendente'
-  const concluido = job?.status === 'concluido'
+  const emAndamento = processando
+  const concluido = !processando && !pausado && job?.status === 'concluido'
   const temErros = (job?.chamadosComErro ?? 0) > 0
+
+  // Progresso seguro: nunca exibe número maior que total
+  const total = job?.totalChamados ?? 0
+  const processados = Math.min(job?.chamadosProcessados ?? 0, total)
+  const porcentagem = total > 0 ? (processados / total) * 100 : 0
+  // Chamado sendo processado agora = próximo após os já concluídos, limitado ao total
+  const chamadoAtual = Math.min(processados + 1, total)
 
   return (
     <div className="space-y-4">
 
-      {/* ── Status ── */}
+      {/* ── Status unificado ── */}
       <div className="flex flex-wrap items-center gap-2">
         {emAndamento && (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
             <Loader2 className="w-3 h-3 animate-spin" />
-            Analisando {job ? `${job.chamadosProcessados} de ${job.totalChamados}` : ''}...
+            Processando chamado {chamadoAtual} de {total}
           </span>
         )}
-        {concluido && !emAndamento && (
+        {pausado && !emAndamento && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+            <Clock className="w-3 h-3" />
+            Análise pausada &mdash; {processados} de {total} processados
+          </span>
+        )}
+        {concluido && !temErros && (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
             <CheckCircle2 className="w-3 h-3" />
-            Análise concluída
+            Análise concluída &mdash; {job!.totalChamados} chamados analisados
           </span>
         )}
-        {temErros && (
+        {concluido && temErros && (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
             <AlertCircle className="w-3 h-3" />
-            {job!.chamadosComErro} chamado(s) com erro
+            Análise concluída com {job!.chamadosComErro} erro{job!.chamadosComErro > 1 ? 's' : ''} &mdash; {job!.totalChamados - job!.chamadosComErro} de {job!.totalChamados} analisados
           </span>
         )}
-        {nunca && !processando && (
+        {nunca && !processando && !pausado && (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-400">
             <Brain className="w-3 h-3" />
             Nunca analisado
           </span>
         )}
-        {job?.finalizadoEm && !emAndamento && (
+        {job?.finalizadoEm && concluido && (
           <span className="text-xs text-slate-400 ml-auto">
             {new Date(job.finalizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
           </span>
         )}
       </div>
 
-      {/* ── Progresso ── */}
+      {/* ── Barra de progresso (só durante processamento) ── */}
       {emAndamento && job && (
-        <div className="space-y-1">
-          <div className="w-full bg-indigo-100 rounded-full h-1.5">
-            <div
-              className="bg-indigo-500 h-1.5 rounded-full transition-all duration-500"
-              style={{ width: `${job.totalChamados > 0 ? (job.chamadosProcessados / job.totalChamados) * 100 : 0}%` }}
-            />
-          </div>
-          <p className="text-[10px] text-indigo-600">
-            {job.chamadosProcessados >= job.totalChamados
-              ? `Processando chamado ${job.totalChamados} de ${job.totalChamados}...`
-              : `Processando chamado ${job.chamadosProcessados + 1} de ${job.totalChamados}...`
-            }
-          </p>
+        <div className="w-full bg-indigo-100 rounded-full h-1.5">
+          <div
+            className="bg-indigo-500 h-1.5 rounded-full transition-all duration-500"
+            style={{ width: `${porcentagem}%` }}
+          />
         </div>
       )}
 
@@ -1444,38 +1490,38 @@ function IaAnalisePanel({
 
       {/* ── Botões ── */}
       <div className="flex gap-2 pt-1 flex-wrap">
-        {!concluido && !emAndamento && podeAnalisar && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onAnalisar}
-            disabled={processando}
-            className="text-xs h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-50"
-          >
-            <Brain className="w-3 h-3 mr-1.5" />
-            Analisar com IA
+        {/* Ainda não iniciado */}
+        {nunca && !emAndamento && podeAnalisar && (
+          <Button size="sm" variant="outline" onClick={onAnalisar}
+            className="text-xs h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+            <Brain className="w-3 h-3 mr-1.5" />Analisar com IA
           </Button>
         )}
-        {concluido && !emAndamento && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onReanalisar}
-            disabled={processando}
-            className="text-xs h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-50"
-          >
-            <RefreshCw className="w-3 h-3 mr-1.5" />
-            Reanalisar
+        {/* Pausado: continuar ou reanalisar */}
+        {pausado && !emAndamento && (
+          <>
+            <Button size="sm" variant="outline" onClick={onContinuar}
+              className="text-xs h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+              <Brain className="w-3 h-3 mr-1.5" />Continuar análise
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onReanalisar}
+              className="text-xs h-8 text-slate-500">
+              <RefreshCw className="w-3 h-3 mr-1.5" />Reanalisar do zero
+            </Button>
+          </>
+        )}
+        {/* Concluído: reanalisar */}
+        {concluido && !emAndamento && !pausado && (
+          <Button size="sm" variant="outline" onClick={onReanalisar}
+            className="text-xs h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+            <RefreshCw className="w-3 h-3 mr-1.5" />Reanalisar
           </Button>
         )}
+        {/* Em andamento: cancelar */}
         {emAndamento && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onCancelar}
-            className="text-xs h-8 text-slate-500"
-          >
-            Cancelar
+          <Button size="sm" variant="ghost" onClick={onCancelar}
+            className="text-xs h-8 text-slate-500">
+            Pausar
           </Button>
         )}
       </div>

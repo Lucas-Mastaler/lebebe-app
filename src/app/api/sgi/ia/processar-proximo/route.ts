@@ -161,19 +161,24 @@ export async function POST(request: NextRequest) {
       .eq('id', registroId)
 
     // Incrementa progresso
+    const novosProcessados = job.chamados_processados + 1
+    const novosErros = job.chamados_com_erro
+    const finalizou = (novosProcessados + novosErros) >= job.total_chamados
+
     await supabaseAdmin
       .from('ia_analise_comercial_fila')
       .update({
-        chamados_processados: job.chamados_processados + 1,
+        chamados_processados: novosProcessados,
         updated_at: new Date().toISOString(),
       })
       .eq('id', jobId)
 
-    const processados = job.chamados_processados + 1
-    const concluido = processados >= job.total_chamados
+    if (finalizou) {
+      return await finalizarJob(jobId, { ...job, chamados_processados: novosProcessados, chamados_com_erro: novosErros }, supabase, supabaseAdmin)
+    }
 
     return NextResponse.json({
-      concluido,
+      concluido: false,
       status: 'chamado_processado',
       chamadoProcessado: {
         ticketId,
@@ -185,8 +190,8 @@ export async function POST(request: NextRequest) {
       },
       progresso: {
         total: job.total_chamados,
-        processados,
-        comErro: job.chamados_com_erro,
+        processados: novosProcessados,
+        comErro: novosErros,
       },
     })
   } catch (err: unknown) {
@@ -205,26 +210,31 @@ export async function POST(request: NextRequest) {
       .eq('id', registroId)
 
     // Incrementa erros e processados
+    const novosProcessadosErr = job.chamados_processados + 1
+    const novosErrosErr = job.chamados_com_erro + 1
+    const finalizouErr = (novosProcessadosErr + novosErrosErr) >= job.total_chamados
+
     await supabaseAdmin
       .from('ia_analise_comercial_fila')
       .update({
-        chamados_processados: job.chamados_processados + 1,
-        chamados_com_erro: job.chamados_com_erro + 1,
+        chamados_processados: novosProcessadosErr,
+        chamados_com_erro: novosErrosErr,
         updated_at: new Date().toISOString(),
       })
       .eq('id', jobId)
 
-    const processados = job.chamados_processados + 1
-    const concluido = processados >= job.total_chamados
+    if (finalizouErr) {
+      return await finalizarJob(jobId, { ...job, chamados_processados: novosProcessadosErr, chamados_com_erro: novosErrosErr }, supabase, supabaseAdmin)
+    }
 
     return NextResponse.json({
-      concluido,
+      concluido: false,
       status: 'chamado_com_erro',
       erroChamado: errMsg,
       progresso: {
         total: job.total_chamados,
-        processados,
-        comErro: job.chamados_com_erro + 1,
+        processados: novosProcessadosErr,
+        comErro: novosErrosErr,
       },
     })
   }

@@ -77,11 +77,18 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const chamadosEnriquecidos = (chamados ?? []).map((c) => ({
-    ...c,
-    protocolo: ticketInfoMap[c.digisac_ticket_id]?.protocolo ?? null,
-    data_chamado: ticketInfoMap[c.digisac_ticket_id]?.started_at ?? null,
-  }))
+  const chamadosEnriquecidos = (chamados ?? [])
+    .map((c) => ({
+      ...c,
+      protocolo: ticketInfoMap[c.digisac_ticket_id]?.protocolo ?? null,
+      data_chamado: ticketInfoMap[c.digisac_ticket_id]?.started_at ?? null,
+    }))
+    .sort((a, b) => {
+      if (!a.data_chamado && !b.data_chamado) return 0
+      if (!a.data_chamado) return 1
+      if (!b.data_chamado) return -1
+      return new Date(a.data_chamado).getTime() - new Date(b.data_chamado).getTime()
+    })
 
   // Busca consolidado
   const { data: consolidado } = await supabase

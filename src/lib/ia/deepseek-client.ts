@@ -66,7 +66,8 @@ function validarResultadoChamado(raw: unknown): Omit<ResultadoChamadoIA, 'modelo
 async function callDeepSeek(
   systemPrompt: string,
   userPrompt: string,
-  model: string
+  model: string,
+  useJsonFormat = true
 ): Promise<string> {
   const apiKey = process.env.DEEPSEEK_API_KEY
   const baseUrl = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'
@@ -75,6 +76,18 @@ async function callDeepSeek(
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 45_000)
+
+  const body: Record<string, unknown> = {
+    model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ],
+    temperature: 0.1,
+  }
+  if (useJsonFormat) {
+    body.response_format = { type: 'json_object' }
+  }
 
   let attempt = 0
   while (attempt < 2) {
@@ -85,30 +98,43 @@ async function callDeepSeek(
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.1,
-          response_format: { type: 'json_object' },
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       })
 
       clearTimeout(timer)
 
       if (!res.ok) {
-        const body = await res.text().catch(() => '')
-        throw new Error(`DeepSeek API erro ${res.status}: ${body.slice(0, 200)}`)
+        const errBody = await res.text().catch(() => '')
+        // Se 400 e estava usando response_format, retentar sem ele
+        if (res.status === 400 && useJsonFormat) {
+          console.warn('[deepseek] response_format rejeitado (400), retentando sem ele')
+          return callDeepSeek(systemPrompt, userPrompt, model, false)
+        }
+        throw new Error(`DeepSeek API erro ${res.status}: ${errBody.slice(0, 200)}`)
       }
 
       const data = await res.json()
-      const content = data?.choices?.[0]?.message?.content
-      if (typeof content !== 'string') throw new Error('DeepSeek retornou resposta sem conteúdo')
+      const choice = data?.choices?.[0]
+      const content = choice?.message?.content
+      const finishReason = choice?.finish_reason
 
-      console.log(`[deepseek] modelo=${model} tokens=${data?.usage?.total_tokens ?? '?'}`)
+      if (typeof content !== 'string' || content.trim() === '') {
+        console.error('[deepseek] resposta inválida', {
+          model,
+          finish_reason: finishReason,
+          contentLength: content?.length ?? 0,
+          contentPreview: String(content ?? '').slice(0, 500),
+          hasChoices: Array.isArray(data?.choices),
+          choicesLength: data?.choices?.length ?? 0,
+          total_tokens: data?.usage?.total_tokens ?? '?',
+        })
+        throw new Error(
+          `DeepSeek retornou conteúdo vazio (finish_reason=${finishReason ?? 'desconhecido'}, tokens=${data?.usage?.total_tokens ?? '?'})`
+        )
+      }
+
+      console.log(`[deepseek] modelo=${model} tokens=${data?.usage?.total_tokens ?? '?'} finish=${finishReason}`)
       return content
     } catch (err: unknown) {
       attempt++
@@ -129,14 +155,29 @@ async function callDeepSeek(
 
 function extrairJSON(raw: string): unknown {
   const trimmed = raw.trim()
-  // Remove possível markdown ```json ... ```
-  const match = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)
-  const jsonStr = match ? match[1].trim() : trimmed
+  // Tenta parse direto
   try {
-    return JSON.parse(jsonStr)
-  } catch {
-    throw new Error(`DeepSeek retornou texto não-JSON: ${jsonStr.slice(0, 300)}`)
+    return JSON.parse(trimmed)
+  } catch { /* continua */ }
+  // Tenta extrair de bloco markdown ```json ... ```
+  const match = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (match) {
+    try {
+      return JSON.parse(match[1].trim())
+    } catch { /* continua */ }
   }
+  // Tenta extrair o primeiro objeto JSON da string
+  const objMatch = trimmed.match(/\{[\s\S]*\}/)
+  if (objMatch) {
+    try {
+      return JSON.parse(objMatch[0])
+    } catch { /* continua */ }
+  }
+  console.error('[deepseek] falha ao extrair JSON', {
+    rawLength: raw.length,
+    rawPreview: raw.slice(0, 500),
+  })
+  throw new Error(`DeepSeek retornou texto não-JSON (${raw.length} chars): ${raw.slice(0, 200)}`)
 }
 
 export async function analisarChamadoIA(userPrompt: string): Promise<ResultadoChamadoIA> {
@@ -151,7 +192,23 @@ Sempre justifique a classificação em motivo_influencia.
 Diferencie influência real de conversa operacional sem impacto na compra.`
 
   const raw = await callDeepSeek(systemPrompt, userPrompt, model)
-  const parsed = extrairJSON(raw)
+
+  let parsed: unknown
+  try {
+    parsed = extrairJSON(raw)
+  } catch (firstErr) {
+    // Retry com prompt de correção
+    console.warn('[deepseek] JSON inválido na 1ª tentativa, retentando com prompt de correção')
+    const correcaoPrompt = `Sua resposta anterior não foi um JSON válido. Retorne SOMENTE o JSON no schema solicitado, sem markdown e sem texto adicional.\n\nSchema esperado:\n${userPrompt.slice(userPrompt.lastIndexOf('Retorne exatamente este JSON'))}`
+    try {
+      const raw2 = await callDeepSeek(systemPrompt, correcaoPrompt, model)
+      parsed = extrairJSON(raw2)
+    } catch (secondErr) {
+      console.error('[deepseek] JSON inválido após retry de correção', { firstErr: String(firstErr), secondErr: String(secondErr) })
+      throw firstErr
+    }
+  }
+
   const validado = validarResultadoChamado(parsed)
 
   console.log(`[deepseek] análise chamado ok — modelo=${model} influencia=${validado.influencia_compra}`)

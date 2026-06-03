@@ -90,10 +90,25 @@ export interface SgiPagamento {
   numero_autorizacao: string | null
 }
 
+export interface SgiVendaClienteResumo {
+  numero_lancamento: string
+  data_fechamento: string | null
+  cliente: string | null
+  filial: string | null
+  vendedor: string | null
+  operacao: string | null
+  status: string | null
+  valor_total: number | null
+  digisac_chamados_ciclo?: number | null
+  digisac_status?: string | null
+  venda_atual: boolean
+}
+
 export interface SgiVendaDetalhe extends SgiDocumento {
   contatos_lista: SgiContato[]
   produtos: SgiProduto[]
   pagamentos: SgiPagamento[]
+  vendasCliente?: SgiVendaClienteResumo[]
 }
 
 export interface SgiCards {

@@ -103,17 +103,32 @@ export async function GET(request: NextRequest) {
   if (precisaEnriquecerCiclo) {
     const { data: vinculos } = await supabase
       .from('venda_conversa_vinculos')
-      .select('considerada_no_ciclo_venda, data_inicio_ciclo_venda, data_fim_ciclo_venda, numero_lancamento_venda_anterior')
+      .select('considerada_no_ciclo_venda, data_inicio_ciclo_venda, data_fim_ciclo_venda, numero_lancamento_venda_anterior, digisac_ticket_id, data_conversa')
       .eq('numero_lancamento', job.numero_lancamento)
+      .order('data_conversa', { ascending: true })
 
     if (vinculos && vinculos.length > 0) {
       const vinculosCiclo = vinculos.filter((v) => v.considerada_no_ciclo_venda)
+      const primeiroVinculoCiclo = vinculosCiclo[0]
+
+      // Busca a data do primeiro chamado no ciclo (started_at do ticket)
+      let primeiroChamadoCiclo: string | null = null
+      if (primeiroVinculoCiclo?.digisac_ticket_id) {
+        const { data: conversa } = await supabase
+          .from('digisac_conversas_resumo')
+          .select('started_at')
+          .eq('digisac_ticket_id', primeiroVinculoCiclo.digisac_ticket_id)
+          .single()
+        primeiroChamadoCiclo = conversa?.started_at ?? primeiroVinculoCiclo.data_conversa ?? null
+      }
+
       resultadoJson = {
         ...resultadoJson,
         totalCicloVenda: vinculosCiclo.length,
         inicioCicloVenda: vinculos[0]?.data_inicio_ciclo_venda ?? null,
         fimCicloVenda: vinculos[0]?.data_fim_ciclo_venda ?? null,
         vendaAnterior: vinculos[0]?.numero_lancamento_venda_anterior ?? null,
+        primeiroChamadoCiclo,
       }
     }
   }

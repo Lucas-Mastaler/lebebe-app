@@ -1,13 +1,13 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Loader2, Phone, Package, CreditCard, User, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock, TrendingUp, Users, Activity, Tag, MessageSquarePlus } from 'lucide-react'
+import { Loader2, Phone, Package, CreditCard, User, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock, TrendingUp, Users, Activity, Tag, MessageSquarePlus, Eye, Store } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import type { SgiDocumento, SgiVendaDetalhe } from '@/types/sgi'
+import type { SgiDocumento, SgiVendaDetalhe, SgiVendaClienteResumo } from '@/types/sgi'
 
 interface DigisacSyncStatus {
   jobId: string | null
@@ -21,6 +21,7 @@ interface DigisacSyncStatus {
     inicioCicloVenda?: string
     fimCicloVenda?: string
     vendaAnterior?: string | null
+    primeiroChamadoCiclo?: string | null
     totalAtivos?: number
     totalReceptivos?: number
     totalIndefinidos?: number
@@ -37,6 +38,7 @@ interface DigisacSyncStatus {
       inicioCicloVenda?: string
       fimCicloVenda?: string
       vendaAnterior?: string | null
+      primeiroChamadoCiclo?: string | null
       totalAtivos?: number
       totalReceptivos?: number
       totalIndefinidos?: number
@@ -104,6 +106,18 @@ function formatDataNegocio(iso: string | null | undefined): string {
   }
 }
 
+// Formata data apenas (sem hora)
+function formatDataSimples(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  try {
+    return new Date(iso).toLocaleDateString('pt-BR', {
+      day: '2-digit', month: '2-digit', year: 'numeric'
+    })
+  } catch {
+    return iso
+  }
+}
+
 interface ModalDetalheVendaProps {
   venda: SgiDocumento | null
   open: boolean
@@ -121,6 +135,12 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
   const [digisacError, setDigisacError] = useState<string | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const syncedInSession = useRef(false)
+
+  // Estado para modal secundário de venda do cliente
+  const [vendaSecundaria, setVendaSecundaria] = useState<SgiVendaClienteResumo | null>(null)
+  const [detalheSecundario, setDetalheSecundario] = useState<SgiVendaDetalhe | null>(null)
+  const [loadingSecundario, setLoadingSecundario] = useState(false)
+  const [modalSecundarioAberto, setModalSecundarioAberto] = useState(false)
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -144,6 +164,36 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
       setDigisacLoading(false)
     }
   }, [stopPolling])
+
+  // Handler para abrir modal secundário com detalhes da venda do cliente
+  const abrirVendaCliente = useCallback(async (vendaCliente: SgiVendaClienteResumo) => {
+    if (vendaCliente.venda_atual) {
+      // Se for a venda atual, apenas mostra um aviso ou não faz nada
+      // Opcional: scroll para o topo do modal atual
+      return
+    }
+
+    setVendaSecundaria(vendaCliente)
+    setModalSecundarioAberto(true)
+    setLoadingSecundario(true)
+
+    try {
+      const r = await fetch(`/api/sgi/vendas/${encodeURIComponent(vendaCliente.numero_lancamento)}`)
+      if (!r.ok) throw new Error(`Erro ${r.status}`)
+      const data: SgiVendaDetalhe = await r.json()
+      setDetalheSecundario(data)
+    } catch (err) {
+      console.error('[ModalDetalheVenda] Erro ao carregar venda secundária:', err)
+    } finally {
+      setLoadingSecundario(false)
+    }
+  }, [])
+
+  const fecharModalSecundario = useCallback(() => {
+    setModalSecundarioAberto(false)
+    setDetalheSecundario(null)
+    setVendaSecundaria(null)
+  }, [])
 
   const iniciarSincronizacao = useCallback(async (forcarAtualizacao: boolean) => {
     if (!venda?.numero_lancamento) return
@@ -539,9 +589,215 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                 </div>
               )}
             </Section>
+
+            {/* Vendas do Cliente */}
+            <Section icon={Store} title={`Vendas do cliente (${detalhe.vendasCliente?.length ?? 0})`} variant="amber">
+              {!detalhe.vendasCliente || detalhe.vendasCliente.length === 0 ? (
+                <p className="text-xs text-slate-400">Nenhuma venda encontrada para este cliente.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-slate-500">
+                        <th className="text-left py-1.5 pr-3">Nº Lançamento</th>
+                        <th className="text-left py-1.5 pr-3">Data fechamento</th>
+                        <th className="text-left py-1.5 pr-3">Filial</th>
+                        <th className="text-left py-1.5 pr-3">Vendedor</th>
+                        <th className="text-left py-1.5 pr-3">Operação</th>
+                        <th className="text-left py-1.5 pr-3">Status</th>
+                        <th className="text-right py-1.5 pr-3">Valor total</th>
+                        <th className="text-center py-1.5 pr-3">Cham. ciclo</th>
+                        <th className="text-left py-1.5 pr-3">Digisac</th>
+                        <th className="text-center py-1.5">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detalhe.vendasCliente.map((v) => (
+                        <tr key={v.numero_lancamento} className={`border-b border-slate-50 ${v.venda_atual ? 'bg-amber-50/50' : ''}`}>
+                          <td className="py-1.5 pr-3">
+                            <div className="flex items-center gap-1">
+                              <span className="font-mono font-semibold text-slate-700">#{v.numero_lancamento}</span>
+                              {v.venda_atual && (
+                                <span className="text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full font-medium">
+                                  Atual
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-1.5 pr-3 text-slate-600">{formatDataSimples(v.data_fechamento)}</td>
+                          <td className="py-1.5 pr-3 text-slate-600">{v.filial ?? '—'}</td>
+                          <td className="py-1.5 pr-3 text-slate-600">{v.vendedor ?? '—'}</td>
+                          <td className="py-1.5 pr-3 text-slate-600">{v.operacao ?? '—'}</td>
+                          <td className="py-1.5 pr-3">
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                              v.status?.toLowerCase().includes('conclu') ? 'bg-green-100 text-green-700' :
+                              v.status?.toLowerCase().includes('canc') ? 'bg-red-100 text-red-700' :
+                              v.status?.toLowerCase().includes('pend') ? 'bg-amber-100 text-amber-700' :
+                              'bg-slate-100 text-slate-600'
+                            }`}>
+                              {v.status ?? '—'}
+                            </span>
+                          </td>
+                          <td className="py-1.5 pr-3 text-right font-medium">{brl(v.valor_total)}</td>
+                          <td className="py-1.5 pr-3 text-center">
+                            {v.digisac_chamados_ciclo != null ? (
+                              <span className="text-emerald-600 font-medium">{v.digisac_chamados_ciclo}</span>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </td>
+                          <td className="py-1.5 pr-3">
+                            {v.digisac_status ? (
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                v.digisac_status === 'concluido' || v.digisac_status === 'ignorado_cache_valido' ? 'bg-emerald-100 text-emerald-700' :
+                                v.digisac_status === 'erro' ? 'bg-red-100 text-red-700' :
+                                v.digisac_status === 'processando' || v.digisac_status === 'pendente' ? 'bg-sky-100 text-sky-700' :
+                                'bg-slate-100 text-slate-600'
+                              }`}>
+                                {v.digisac_status === 'concluido' ? 'Sincronizado' :
+                                 v.digisac_status === 'ignorado_cache_valido' ? 'Cache válido' :
+                                 v.digisac_status === 'erro' ? 'Erro' :
+                                 v.digisac_status === 'pendente' ? 'Pendente' :
+                                 v.digisac_status === 'processando' ? 'Processando' :
+                                 v.digisac_status}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </td>
+                          <td className="py-1.5 text-center">
+                            {!v.venda_atual && (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="h-6 w-6"
+                                onClick={() => abrirVendaCliente(v)}
+                                title="Ver detalhes da venda"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-slate-500" />
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Section>
           </div>
         )}
       </DialogContent>
+
+      {/* Modal Secundário - Venda do Cliente */}
+      <Dialog open={modalSecundarioAberto} onOpenChange={setModalSecundarioAberto}>
+        <DialogContent className="!w-[90vw] !sm:w-[80vw] !lg:w-[65vw] !max-w-none max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              Venda #{vendaSecundaria?.numero_lancamento}
+              {vendaSecundaria?.cliente && (
+                <span className="ml-2 text-slate-500 font-normal text-sm">— {vendaSecundaria.cliente}</span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          {loadingSecundario && (
+            <div className="space-y-4 py-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 rounded-lg" />
+              ))}
+            </div>
+          )}
+
+          {!loadingSecundario && detalheSecundario && (
+            <div className="space-y-4 py-2">
+              {/* Dados da venda */}
+              <div className="rounded-xl border border-slate-200 p-3 space-y-2 bg-slate-50/50">
+                <h4 className="text-xs font-semibold text-slate-700">Dados da Venda</h4>
+                <div className="grid grid-cols-2 gap-y-1 text-xs">
+                  <div><span className="text-slate-500">Nº Lançamento:</span> <span className="font-mono font-medium">{detalheSecundario.numero_lancamento}</span></div>
+                  <div><span className="text-slate-500">Data fechamento:</span> {formatData(detalheSecundario.data_fechamento)}</div>
+                  <div><span className="text-slate-500">Cliente:</span> {detalheSecundario.cliente}</div>
+                  <div><span className="text-slate-500">Filial:</span> {detalheSecundario.filial}</div>
+                  <div><span className="text-slate-500">Vendedor:</span> {detalheSecundario.vendedor}</div>
+                  <div><span className="text-slate-500">Status:</span> {detalheSecundario.status}</div>
+                  <div><span className="text-slate-500">Valor total:</span> <span className="font-semibold">{brl(detalheSecundario.valor_total)}</span></div>
+                </div>
+              </div>
+
+              {/* Produtos */}
+              {detalheSecundario.produtos.length > 0 && (
+                <div className="rounded-xl border border-slate-200 p-3 space-y-2 bg-slate-50/50">
+                  <h4 className="text-xs font-semibold text-slate-700">Produtos ({detalheSecundario.produtos.length})</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-100 text-slate-500">
+                          <th className="text-left py-1 pr-2">Código</th>
+                          <th className="text-left py-1 pr-2">Produto</th>
+                          <th className="text-left py-1 pr-2">Depto.</th>
+                          <th className="text-right py-1">Valor</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {detalheSecundario.produtos.slice(0, 5).map((p) => (
+                          <tr key={p.id} className="border-b border-slate-50">
+                            <td className="py-1 pr-2 font-mono text-slate-600">{p.codigo ?? '—'}</td>
+                            <td className="py-1 pr-2 max-w-[150px] truncate" title={p.produto ?? undefined}>{p.produto ?? '—'}</td>
+                            <td className="py-1 pr-2">
+                              {p.departamento_classificado && p.departamento_classificado !== 'Não classificado'
+                                ? <DeptoChip depto={p.departamento_classificado} />
+                                : <span className="text-slate-300 text-[10px]">—</span>}
+                            </td>
+                            <td className="py-1 text-right font-medium">{brl(p.valor_total)}</td>
+                          </tr>
+                        ))}
+                        {detalheSecundario.produtos.length > 5 && (
+                          <tr>
+                            <td colSpan={4} className="py-1 text-center text-xs text-slate-400">
+                              +{detalheSecundario.produtos.length - 5} produtos...
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Digisac resumo */}
+              {detalheSecundario.digisac_chamados_ciclo != null && (
+                <div className="rounded-xl border border-violet-200 bg-violet-50/30 p-3 space-y-2">
+                  <h4 className="text-xs font-semibold text-violet-700 flex items-center gap-1">
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    Digisac
+                  </h4>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="bg-white rounded p-2 text-center">
+                      <div className="text-lg font-bold text-violet-600">{detalheSecundario.digisac_chamados_ciclo}</div>
+                      <div className="text-[10px] text-slate-500">Chamados no ciclo</div>
+                    </div>
+                    <div className="bg-white rounded p-2 text-center">
+                      <div className="text-lg font-bold text-violet-600">{detalheSecundario.digisac_interacoes_ciclo ?? '—'}</div>
+                      <div className="text-[10px] text-slate-500">Interações</div>
+                    </div>
+                    <div className="bg-white rounded p-2 text-center">
+                      <div className="text-lg font-bold text-violet-600">{detalheSecundario.digisac_dias_ate_fechamento ?? '—'}</div>
+                      <div className="text-[10px] text-slate-500">Dias até fechamento</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2">
+            <Button variant="outline" size="sm" onClick={fecharModalSecundario}>
+              Fechar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }
@@ -567,6 +823,7 @@ function DigisacSyncPanel({
   const inicioCiclo = resultado?.inicioCicloVenda ?? cacheData?.inicioCicloVenda ?? null
   const fimCiclo = resultado?.fimCicloVenda ?? cacheData?.fimCicloVenda ?? null
   const vendaAnterior = resultado?.vendaAnterior ?? cacheData?.vendaAnterior ?? null
+  const primeiroChamadoCiclo = resultado?.primeiroChamadoCiclo ?? cacheData?.primeiroChamadoCiclo ?? null
   const totalAtivos = cacheData?.totalAtivos ?? 0
   const totalReceptivos = cacheData?.totalReceptivos ?? 0
   const totalIndefinidos = cacheData?.totalIndefinidos ?? 0
@@ -668,19 +925,32 @@ function DigisacSyncPanel({
             </div>
             {(inicioCiclo || fimCiclo || vendaAnterior) && (
               <div className="mt-2 pt-2 border-t border-emerald-100 space-y-1">
-                {vendaAnterior && (
+                {/* Venda anterior ou mensagem quando não há */}
+                {vendaAnterior ? (
                   <p className="text-xs text-emerald-600">
                     Venda anterior: <span className="font-mono font-semibold">#{vendaAnterior}</span>
                   </p>
+                ) : (
+                  inicioCiclo && (
+                    <p className="text-xs text-slate-500">
+                      Venda anterior: <span className="text-slate-400">Nenhuma venda anterior encontrada desde {formatDataNegocio(inicioCiclo)}</span>
+                    </p>
+                  )
                 )}
-                {inicioCiclo && (
+                {/* Período considerado */}
+                {inicioCiclo && fimCiclo && (
                   <p className="text-xs text-slate-500">
-                    Início ciclo: {formatDataNegocio(inicioCiclo)}
+                    Período considerado: {formatDataNegocio(inicioCiclo)} até {formatDataNegocio(fimCiclo)}
                   </p>
                 )}
-                {fimCiclo && (
-                  <p className="text-xs text-slate-500">
-                    Fim ciclo: {formatDataNegocio(fimCiclo)}
+                {/* Primeiro chamado do ciclo */}
+                {primeiroChamadoCiclo ? (
+                  <p className="text-xs text-emerald-600">
+                    Primeiro chamado do ciclo: <span className="font-medium">{formatData(primeiroChamadoCiclo)}</span>
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-400">
+                    Primeiro chamado do ciclo: —
                   </p>
                 )}
               </div>

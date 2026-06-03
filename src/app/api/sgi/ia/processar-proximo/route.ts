@@ -102,8 +102,19 @@ export async function POST(request: NextRequest) {
       .eq('numero_lancamento', numeroLancamento)
       .maybeSingle()
 
+    // Busca produtos da venda para contextualizar o prompt
+    const { data: produtosVenda } = await supabase
+      .from('sgi_documentos_saida_produtos')
+      .select('produto, departamento_classificado, subgrupo_classificado')
+      .eq('numero_lancamento', numeroLancamento)
+
     // Monta transcript via Digisac API
     const { transcript, truncado, totalMensagens } = await montarTranscriptChamado(ticketId)
+
+    const produtosLista = (produtosVenda ?? []).map((p) => {
+      const partes = [p.produto, p.departamento_classificado, p.subgrupo_classificado].filter(Boolean)
+      return partes.join(' — ')
+    })
 
     // Monta prompt
     const userPrompt = montarPromptChamado({
@@ -117,6 +128,7 @@ export async function POST(request: NextRequest) {
       diasAntes: vinculo?.dias_antes_da_venda ?? null,
       ordemCiclo: vinculo?.ordem_conversa_para_venda ?? null,
       inicioChamado: vinculo?.inicio_chamado ?? 'indefinido',
+      produtosVenda: produtosLista,
       transcript,
     })
 
@@ -333,6 +345,7 @@ interface PromptChamadoParams {
   diasAntes: number | null
   ordemCiclo: number | null
   inicioChamado: string
+  produtosVenda: string[]
   transcript: string
 }
 
@@ -347,7 +360,51 @@ function montarPromptChamado(p: PromptChamadoParams): string {
     ? 'receptivo (cliente iniciou o contato)'
     : 'indefinido'
 
-  return `## Contexto da venda
+  const produtosStr = p.produtosVenda.length > 0
+    ? p.produtosVenda.map((pr, i) => `  ${i + 1}. ${pr}`).join('\n')
+    : '  (não informado)'
+
+  return `Você é um analista comercial de uma loja de bebês e puericultura. Sua tarefa é classificar a influência de uma conversa no WhatsApp sobre a decisão de compra do cliente.
+
+## REGRAS DE CLASSIFICAÇÃO
+
+### influencia_compra
+
+**Sim** — Use quando houver evidência clara de participação direta no fechamento ou decisão:
+- Orçamento, negociação, preço ou desconto discutido
+- Confirmação ou fechamento de compra
+- Escolha de modelo ou cor
+- Envio de link de pagamento
+- Marcação de visita à loja que resultou em compra
+
+**Parcialmente** — Use quando o chamado ajudou na jornada mesmo sem fechamento explícito:
+- Conversa sobre produto ou categoria que depois foi comprado na venda
+- Consultora enviou ou ofereceu vídeo, foto ou informação do produto
+- Consultora retomou atendimento anterior sobre produto comprado
+- Conversa manteve o lead ativo sobre produto relacionado
+- Consultora tentou levar o cliente à loja
+⚠️ REGRA CRÍTICA: Se o transcript menciona produto, categoria ou subgrupo que consta na lista de produtos comprados, classifique no mínimo como "Parcialmente".
+
+**Não** — Use APENAS quando:
+- Assunto completamente sem relação com os produtos comprados
+- Conversa errada ou de outro cliente
+- Atendimento administrativo ou operacional sem vínculo comercial
+- Pós-venda ou suporte após a compra, fora da jornada
+- Mensagem sem resposta e sem conteúdo sobre produto comprado
+
+**Indefinido** — Use APENAS quando:
+- Transcript vazio ou com mensagens insuficientes
+- Apenas mídias sem texto descritivo
+- Impossível determinar relação com a venda
+
+### grau_influencia
+
+**Alto** — Chamado teve papel direto no fechamento, negociação de preço, escolha final ou envio de link de pagamento.
+**Médio** — Chamado tratou diretamente de produto comprado e ajudou na jornada, mesmo sem fechamento explícito.
+**Baixo** — Chamado aqueceu o lead ou manteve contato, com pouca evidência de impacto direto.
+**Nenhum** — Use SOMENTE quando influencia_compra = "Não" ou "Indefinido".
+
+## CONTEXTO DA VENDA
 - Nº lançamento: ${p.numeroLancamento}
 - Cliente: ${p.clienteNome}
 - Data da venda: ${dataVenda}
@@ -359,10 +416,16 @@ function montarPromptChamado(p: PromptChamadoParams): string {
 - Ordem no ciclo: ${p.ordemCiclo != null ? `${p.ordemCiclo}ª conversa` : 'desconhecida'}
 - Tipo de início: ${tipoInicio}
 
-## Conversa
+## PRODUTOS COMPRADOS NESTA VENDA
+${produtosStr}
+
+## CONVERSA
 ${p.transcript || '(sem mensagens registradas)'}
 
-## Retorne exatamente este JSON (sem markdown, sem texto fora do JSON):
+## INSTRUÇÃO FINAL
+Compare o conteúdo da conversa com os produtos listados acima. Se houver menção a produto ou categoria que conste na lista, não classifique como "Não". Seja criterioso para não inventar influência, mas não ignore relação direta entre conversa e produto comprado.
+
+Retorne exatamente este JSON (sem markdown, sem texto fora do JSON):
 {
   "resumo_chamado": "...",
   "influencia_compra": "Sim | Parcialmente | Não | Indefinido",

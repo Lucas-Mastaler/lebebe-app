@@ -1261,7 +1261,10 @@ function IaAnalisePanel({
             />
           </div>
           <p className="text-[10px] text-indigo-600">
-            Processando chamado {job.chamadosProcessados + 1} de {job.totalChamados}...
+            {job.chamadosProcessados >= job.totalChamados
+              ? `Processando chamado ${job.totalChamados} de ${job.totalChamados}...`
+              : `Processando chamado ${job.chamadosProcessados + 1} de ${job.totalChamados}...`
+            }
           </p>
         </div>
       )}

@@ -346,13 +346,14 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
     icon: React.ElementType
     title: string
     children: React.ReactNode
-    variant?: 'default' | 'blue' | 'green' | 'amber' | 'purple' | 'rose'
+    variant?: 'default' | 'blue' | 'green' | 'amber' | 'brown' | 'purple' | 'rose'
   }) {
     const cfg = {
       default: { bg: 'bg-white', border: 'border-slate-200', accent: 'border-l-slate-400', icon: 'text-slate-500', title: 'text-slate-700', divider: 'border-slate-100' },
       blue:    { bg: 'bg-sky-50/60', border: 'border-sky-200', accent: 'border-l-sky-500', icon: 'text-sky-600', title: 'text-sky-800', divider: 'border-sky-100' },
       green:   { bg: 'bg-emerald-50/60', border: 'border-emerald-200', accent: 'border-l-emerald-500', icon: 'text-emerald-600', title: 'text-emerald-800', divider: 'border-emerald-100' },
       amber:   { bg: 'bg-amber-50/60', border: 'border-amber-200', accent: 'border-l-amber-500', icon: 'text-amber-600', title: 'text-amber-800', divider: 'border-amber-100' },
+      brown:   { bg: 'bg-orange-50/60', border: 'border-orange-200', accent: 'border-l-orange-600', icon: 'text-orange-700', title: 'text-orange-900', divider: 'border-orange-100' },
       purple:  { bg: 'bg-violet-50/60', border: 'border-violet-200', accent: 'border-l-violet-500', icon: 'text-violet-600', title: 'text-violet-800', divider: 'border-violet-100' },
       rose:    { bg: 'bg-rose-50/60', border: 'border-rose-200', accent: 'border-l-rose-500', icon: 'text-rose-600', title: 'text-rose-800', divider: 'border-rose-100' },
     }[variant]
@@ -506,7 +507,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
             </Section>
 
             {/* Vendas do Cliente */}
-            <Section icon={Store} title={`Vendas do cliente (${detalhe.vendasCliente?.length ?? 0})`} variant="amber">
+            <Section icon={Store} title={`Vendas do cliente (${detalhe.vendasCliente?.length ?? 0})`} variant="brown">
               {!detalhe.vendasCliente || detalhe.vendasCliente.length === 0 ? (
                 <p className="text-xs text-slate-400">Nenhuma venda encontrada para este cliente.</p>
               ) : (

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Loader2, Phone, Package, CreditCard, User, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock, TrendingUp, Users, Activity, Tag, MessageSquarePlus, Eye, Store } from 'lucide-react'
+import { Loader2, Phone, Package, CreditCard, User, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock, TrendingUp, Users, Activity, Tag, MessageSquarePlus, Eye, Store, Brain, ChevronDown, ChevronUp } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from '@/components/ui/dialog'
@@ -312,6 +312,147 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
     return () => { cancelled = true }
   }, [open, venda?.numero_lancamento])
 
+  // ── estado local para Análise IA ──────────────────────────────
+  interface IaChamadoAnalise {
+    id: string
+    digisac_ticket_id: string
+    protocolo: string | null
+    data_chamado: string | null
+    status: string
+    resumo_chamado: string | null
+    influencia_compra: string | null
+    grau_influencia: string | null
+    motivo_influencia: string | null
+    produtos_mencionados: string[]
+    objecoes_identificadas: string[]
+    intencao_cliente: string | null
+    sentimento_cliente: string | null
+    pontos_de_atencao: string[]
+    confianca_analise: string | null
+    transcript_truncado: boolean
+    total_mensagens: number | null
+    modelo_ia: string | null
+    erro_mensagem: string | null
+    analisado_em: string | null
+  }
+  interface IaConsolidado {
+    resumo_geral: string | null
+    chamados_que_influenciaram: { ticket_id: string; protocolo: string | null; resumo: string }[]
+    chamados_sem_influencia: { ticket_id: string; protocolo: string | null; resumo: string }[]
+    principais_motivos_compra: string[]
+    principais_objecoes: string[]
+    produtos_de_interesse: string[]
+    oportunidades_melhoria: string[]
+    conclusao_comercial: string | null
+    total_chamados_analisados: number
+    modelo_ia: string | null
+    gerado_em: string | null
+  }
+  interface IaJob {
+    id: string
+    status: string
+    totalChamados: number
+    chamadosProcessados: number
+    chamadosComErro: number
+    finalizadoEm: string | null
+  }
+
+  const [iaJob, setIaJob] = useState<IaJob | null>(null)
+  const [iaChamados, setIaChamados] = useState<IaChamadoAnalise[]>([])
+  const [iaConsolidado, setIaConsolidado] = useState<IaConsolidado | null>(null)
+  const [iaProcessando, setIaProcessando] = useState(false)
+  const [iaErro, setIaErro] = useState<string | null>(null)
+  const iaCanceladoRef = useRef(false)
+  const [iaChamadoExpandido, setIaChamadoExpandido] = useState<string | null>(null)
+
+  const carregarStatusIA = useCallback(async (numeroLancamento: string) => {
+    try {
+      const r = await fetch(`/api/sgi/ia/analise-status?numeroLancamento=${encodeURIComponent(numeroLancamento)}`)
+      if (!r.ok) return
+      const data = await r.json()
+      if (data.job) setIaJob(data.job)
+      if (data.chamados) setIaChamados(data.chamados)
+      if (data.consolidado) setIaConsolidado(data.consolidado)
+    } catch {
+      // silencioso
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!open || !venda?.numero_lancamento) {
+      setIaJob(null)
+      setIaChamados([])
+      setIaConsolidado(null)
+      setIaProcessando(false)
+      setIaErro(null)
+      return
+    }
+    carregarStatusIA(venda.numero_lancamento)
+  }, [open, venda?.numero_lancamento, carregarStatusIA])
+
+  const iniciarAnaliseIA = useCallback(async (reanalisar = false) => {
+    if (!venda?.numero_lancamento) return
+    setIaProcessando(true)
+    setIaErro(null)
+    iaCanceladoRef.current = false
+
+    try {
+      const r1 = await fetch('/api/sgi/ia/iniciar-analise', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numeroLancamento: venda.numero_lancamento, reanalisar }),
+      })
+      const data1 = await r1.json()
+
+      if (!r1.ok) {
+        setIaErro(data1.error ?? 'Erro ao iniciar análise')
+        setIaProcessando(false)
+        return
+      }
+
+      if (data1.jaEmAndamento && !reanalisar) {
+        await carregarStatusIA(venda.numero_lancamento)
+        setIaProcessando(false)
+        return
+      }
+
+      const filaId: string = data1.filaId
+      const totalChamados: number = data1.totalChamados
+
+      setIaJob({ id: filaId, status: 'processando', totalChamados, chamadosProcessados: 0, chamadosComErro: 0, finalizadoEm: null })
+
+      // Loop sequencial — 1 chamado por vez
+      let processados = 0
+      while (!iaCanceladoRef.current) {
+        const r2 = await fetch('/api/sgi/ia/processar-proximo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jobId: filaId }),
+        })
+        const data2 = await r2.json()
+
+        processados = data2.progresso?.processados ?? processados + 1
+        setIaJob(prev => prev ? { ...prev, chamadosProcessados: processados, chamadosComErro: data2.progresso?.comErro ?? 0 } : prev)
+
+        if (data2.concluido) break
+        if (!r2.ok && !data2.erroChamado) {
+          setIaErro(data2.error ?? 'Erro ao processar chamado')
+          break
+        }
+      }
+
+      await carregarStatusIA(venda.numero_lancamento)
+    } catch (err) {
+      setIaErro(err instanceof Error ? err.message : 'Erro inesperado')
+    } finally {
+      setIaProcessando(false)
+    }
+  }, [venda?.numero_lancamento, carregarStatusIA])
+
+  const digisacSincronizado = digisacStatus?.status === 'concluido' || digisacStatus?.status === 'ignorado_cache_valido'
+  const chamadosCiclo = digisacStatus?.resultadoJson?.totalCicloVenda ?? digisacStatus?.resultadoJson?.resultadoCache?.totalCicloVenda ?? 0
+  const podeAnalisarIA = digisacSincronizado && chamadosCiclo > 0
+
   // ── estado local para observações inline ──────────────────────
   const [novaObs, setNovaObs] = useState('')
   const [savingObs, setSavingObs] = useState(false)
@@ -346,7 +487,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
     icon: React.ElementType
     title: string
     children: React.ReactNode
-    variant?: 'default' | 'blue' | 'green' | 'amber' | 'brown' | 'purple' | 'rose'
+    variant?: 'default' | 'blue' | 'green' | 'amber' | 'brown' | 'purple' | 'rose' | 'indigo'
   }) {
     const cfg = {
       default: { bg: 'bg-white', border: 'border-slate-200', accent: 'border-l-slate-400', icon: 'text-slate-500', title: 'text-slate-700', divider: 'border-slate-100' },
@@ -356,6 +497,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
       brown:   { bg: 'bg-orange-50/60', border: 'border-orange-200', accent: 'border-l-orange-600', icon: 'text-orange-700', title: 'text-orange-900', divider: 'border-orange-100' },
       purple:  { bg: 'bg-violet-50/60', border: 'border-violet-200', accent: 'border-l-violet-500', icon: 'text-violet-600', title: 'text-violet-800', divider: 'border-violet-100' },
       rose:    { bg: 'bg-rose-50/60', border: 'border-rose-200', accent: 'border-l-rose-500', icon: 'text-rose-600', title: 'text-rose-800', divider: 'border-rose-100' },
+      indigo:  { bg: 'bg-indigo-50/60', border: 'border-indigo-200', accent: 'border-l-indigo-500', icon: 'text-indigo-600', title: 'text-indigo-800', divider: 'border-indigo-100' },
     }[variant]
 
     return (
@@ -617,6 +759,23 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                 error={digisacError}
                 onSincronizar={() => iniciarSincronizacao(false)}
                 onForcar={() => iniciarSincronizacao(true)}
+              />
+            </Section>
+
+            {/* Análise IA dos Chamados */}
+            <Section icon={Brain} title="Análise IA dos Chamados" variant="indigo">
+              <IaAnalisePanel
+                job={iaJob}
+                chamados={iaChamados}
+                consolidado={iaConsolidado}
+                processando={iaProcessando}
+                erro={iaErro}
+                podeAnalisar={podeAnalisarIA}
+                chamadoExpandido={iaChamadoExpandido}
+                onExpandirChamado={setIaChamadoExpandido}
+                onAnalisar={() => iniciarAnaliseIA(false)}
+                onReanalisar={() => iniciarAnaliseIA(true)}
+                onCancelar={() => { iaCanceladoRef.current = true; setIaProcessando(false) }}
               />
             </Section>
 
@@ -987,6 +1146,333 @@ function DigisacSyncPanel({
           >
             <RefreshCw className="w-3 h-3 mr-1.5" />
             Forçar atualização
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Helpers de cor para badges IA ───────────────────────────
+
+function badgeInfluencia(val: string | null) {
+  if (!val) return 'bg-slate-100 text-slate-400'
+  return val === 'Sim' ? 'bg-emerald-100 text-emerald-700'
+    : val === 'Parcialmente' ? 'bg-amber-100 text-amber-700'
+    : val === 'Não' ? 'bg-red-100 text-red-600'
+    : 'bg-slate-100 text-slate-500'
+}
+
+function badgeGrau(val: string | null) {
+  if (!val) return 'bg-slate-100 text-slate-400'
+  return val === 'Alto' ? 'bg-red-100 text-red-700'
+    : val === 'Médio' ? 'bg-amber-100 text-amber-700'
+    : val === 'Baixo' ? 'bg-sky-100 text-sky-700'
+    : 'bg-slate-100 text-slate-400'
+}
+
+function IaAnalisePanel({
+  job,
+  chamados,
+  consolidado,
+  processando,
+  erro,
+  podeAnalisar,
+  chamadoExpandido,
+  onExpandirChamado,
+  onAnalisar,
+  onReanalisar,
+  onCancelar,
+}: {
+  job: { id: string; status: string; totalChamados: number; chamadosProcessados: number; chamadosComErro: number; finalizadoEm: string | null } | null
+  chamados: {
+    id: string; digisac_ticket_id: string; protocolo: string | null; data_chamado: string | null
+    status: string; resumo_chamado: string | null; influencia_compra: string | null
+    grau_influencia: string | null; motivo_influencia: string | null
+    produtos_mencionados: string[]; objecoes_identificadas: string[]
+    intencao_cliente: string | null; sentimento_cliente: string | null
+    pontos_de_atencao: string[]; confianca_analise: string | null
+    transcript_truncado: boolean; total_mensagens: number | null
+    modelo_ia: string | null; erro_mensagem: string | null; analisado_em: string | null
+  }[]
+  consolidado: {
+    resumo_geral: string | null; conclusao_comercial: string | null
+    principais_motivos_compra: string[]; principais_objecoes: string[]
+    produtos_de_interesse: string[]; oportunidades_melhoria: string[]
+    total_chamados_analisados: number; modelo_ia: string | null; gerado_em: string | null
+  } | null
+  processando: boolean
+  erro: string | null
+  podeAnalisar: boolean
+  chamadoExpandido: string | null
+  onExpandirChamado: (id: string | null) => void
+  onAnalisar: () => void
+  onReanalisar: () => void
+  onCancelar: () => void
+}) {
+  const nunca = !job
+  const emAndamento = processando || job?.status === 'processando' || job?.status === 'pendente'
+  const concluido = job?.status === 'concluido'
+  const temErros = (job?.chamadosComErro ?? 0) > 0
+
+  return (
+    <div className="space-y-4">
+
+      {/* ── Status ── */}
+      <div className="flex flex-wrap items-center gap-2">
+        {emAndamento && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Analisando {job ? `${job.chamadosProcessados} de ${job.totalChamados}` : ''}...
+          </span>
+        )}
+        {concluido && !emAndamento && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
+            <CheckCircle2 className="w-3 h-3" />
+            Análise concluída
+          </span>
+        )}
+        {temErros && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+            <AlertCircle className="w-3 h-3" />
+            {job!.chamadosComErro} chamado(s) com erro
+          </span>
+        )}
+        {nunca && !processando && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-400">
+            <Brain className="w-3 h-3" />
+            Nunca analisado
+          </span>
+        )}
+        {job?.finalizadoEm && !emAndamento && (
+          <span className="text-xs text-slate-400 ml-auto">
+            {new Date(job.finalizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
+      </div>
+
+      {/* ── Progresso ── */}
+      {emAndamento && job && (
+        <div className="space-y-1">
+          <div className="w-full bg-indigo-100 rounded-full h-1.5">
+            <div
+              className="bg-indigo-500 h-1.5 rounded-full transition-all duration-500"
+              style={{ width: `${job.totalChamados > 0 ? (job.chamadosProcessados / job.totalChamados) * 100 : 0}%` }}
+            />
+          </div>
+          <p className="text-[10px] text-indigo-600">
+            Processando chamado {job.chamadosProcessados + 1} de {job.totalChamados}...
+          </p>
+        </div>
+      )}
+
+      {/* ── Erro global ── */}
+      {erro && (
+        <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erro}</p>
+      )}
+
+      {/* ── Alerta: não pode analisar ── */}
+      {!podeAnalisar && nunca && !processando && (
+        <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+          Sincronize o Digisac primeiro e certifique-se de que há chamados no ciclo da venda.
+        </p>
+      )}
+
+      {/* ── Resumo consolidado ── */}
+      {consolidado && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
+          <p className="text-xs font-semibold text-indigo-700 flex items-center gap-1">
+            <Brain className="w-3.5 h-3.5" /> Resumo consolidado da venda
+          </p>
+          {consolidado.resumo_geral && (
+            <p className="text-xs text-slate-700 leading-relaxed">{consolidado.resumo_geral}</p>
+          )}
+          {consolidado.conclusao_comercial && (
+            <p className="text-xs text-indigo-800 font-medium border-t border-indigo-100 pt-2">{consolidado.conclusao_comercial}</p>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+            {consolidado.principais_motivos_compra.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold text-slate-500 mb-1">Principais motivos</p>
+                <ul className="space-y-0.5">
+                  {consolidado.principais_motivos_compra.map((m, i) => (
+                    <li key={i} className="text-[11px] text-slate-700 flex gap-1"><span className="text-indigo-400">•</span>{m}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {consolidado.principais_objecoes.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold text-slate-500 mb-1">Objeções</p>
+                <ul className="space-y-0.5">
+                  {consolidado.principais_objecoes.map((o, i) => (
+                    <li key={i} className="text-[11px] text-slate-700 flex gap-1"><span className="text-amber-400">•</span>{o}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {consolidado.produtos_de_interesse.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold text-slate-500 mb-1">Produtos de interesse</p>
+                <ul className="space-y-0.5">
+                  {consolidado.produtos_de_interesse.map((p, i) => (
+                    <li key={i} className="text-[11px] text-slate-700 flex gap-1"><span className="text-emerald-400">•</span>{p}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {consolidado.oportunidades_melhoria.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold text-slate-500 mb-1">Oportunidades</p>
+                <ul className="space-y-0.5">
+                  {consolidado.oportunidades_melhoria.map((o, i) => (
+                    <li key={i} className="text-[11px] text-slate-700 flex gap-1"><span className="text-violet-400">•</span>{o}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+          {consolidado.modelo_ia && (
+            <p className="text-[10px] text-slate-400 pt-1 border-t border-indigo-100">modelo: {consolidado.modelo_ia}</p>
+          )}
+        </div>
+      )}
+
+      {/* ── Tabela de chamados ── */}
+      {chamados.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold text-indigo-700">Chamados do ciclo</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-indigo-100 text-slate-500 text-left">
+                  <th className="py-1.5 pr-3">Protocolo</th>
+                  <th className="py-1.5 pr-3">Data</th>
+                  <th className="py-1.5 pr-3 max-w-[180px]">Resumo</th>
+                  <th className="py-1.5 pr-3">Influenciou?</th>
+                  <th className="py-1.5 pr-3">Grau</th>
+                  <th className="py-1.5">Detalhes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {chamados.map((c) => (
+                  <>
+                    <tr key={c.id} className="border-b border-slate-50 hover:bg-indigo-50/30">
+                      <td className="py-1.5 pr-3 font-mono text-slate-600">{c.protocolo ?? '—'}</td>
+                      <td className="py-1.5 pr-3 text-slate-500 whitespace-nowrap">
+                        {c.data_chamado ? new Date(c.data_chamado).toLocaleDateString('pt-BR') : '—'}
+                      </td>
+                      <td className="py-1.5 pr-3 max-w-[180px]">
+                        {c.status === 'erro' ? (
+                          <span className="text-red-500 text-[10px]">Erro: {c.erro_mensagem?.slice(0, 60)}</span>
+                        ) : c.status === 'pendente' || c.status === 'processando' ? (
+                          <span className="text-slate-400 text-[10px] italic">
+                            {c.status === 'processando' ? 'Analisando...' : 'Aguardando...'}
+                          </span>
+                        ) : (
+                          <span className="line-clamp-2 text-slate-700">{c.resumo_chamado ?? '—'}</span>
+                        )}
+                      </td>
+                      <td className="py-1.5 pr-3">
+                        {c.influencia_compra ? (
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${badgeInfluencia(c.influencia_compra)}`}>
+                            {c.influencia_compra}
+                          </span>
+                        ) : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="py-1.5 pr-3">
+                        {c.grau_influencia ? (
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${badgeGrau(c.grau_influencia)}`}>
+                            {c.grau_influencia}
+                          </span>
+                        ) : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="py-1.5">
+                        {c.status === 'concluido' && (
+                          <button
+                            onClick={() => onExpandirChamado(chamadoExpandido === c.id ? null : c.id)}
+                            className="text-indigo-500 hover:text-indigo-700 flex items-center gap-0.5 text-[10px]"
+                          >
+                            {chamadoExpandido === c.id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            {chamadoExpandido === c.id ? 'Fechar' : 'Ver'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {chamadoExpandido === c.id && (
+                      <tr key={`${c.id}-expand`} className="bg-indigo-50/40">
+                        <td colSpan={6} className="px-3 py-3">
+                          <div className="space-y-2 text-xs">
+                            {c.motivo_influencia && (
+                              <p><span className="font-semibold text-slate-600">Motivo: </span><span className="text-slate-700">{c.motivo_influencia}</span></p>
+                            )}
+                            {c.intencao_cliente && (
+                              <p><span className="font-semibold text-slate-600">Intenção: </span><span className="text-slate-700">{c.intencao_cliente}</span></p>
+                            )}
+                            {c.sentimento_cliente && (
+                              <p><span className="font-semibold text-slate-600">Sentimento: </span><span className="text-slate-700">{c.sentimento_cliente}</span></p>
+                            )}
+                            {c.produtos_mencionados.length > 0 && (
+                              <p><span className="font-semibold text-slate-600">Produtos: </span><span className="text-slate-700">{c.produtos_mencionados.join(', ')}</span></p>
+                            )}
+                            {c.objecoes_identificadas.length > 0 && (
+                              <p><span className="font-semibold text-slate-600">Objeções: </span><span className="text-slate-700">{c.objecoes_identificadas.join(', ')}</span></p>
+                            )}
+                            {c.pontos_de_atencao.length > 0 && (
+                              <p><span className="font-semibold text-slate-600">Pontos de atenção: </span><span className="text-slate-700">{c.pontos_de_atencao.join(', ')}</span></p>
+                            )}
+                            <div className="flex gap-3 text-[10px] text-slate-400 pt-1 border-t border-indigo-100">
+                              {c.confianca_analise && <span>Confiança: {c.confianca_analise}</span>}
+                              {c.total_mensagens != null && <span>{c.total_mensagens} mensagens</span>}
+                              {c.transcript_truncado && <span className="text-amber-500">transcript truncado</span>}
+                              {c.modelo_ia && <span>modelo: {c.modelo_ia}</span>}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Botões ── */}
+      <div className="flex gap-2 pt-1 flex-wrap">
+        {!concluido && !emAndamento && podeAnalisar && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onAnalisar}
+            disabled={processando}
+            className="text-xs h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+          >
+            <Brain className="w-3 h-3 mr-1.5" />
+            Analisar com IA
+          </Button>
+        )}
+        {concluido && !emAndamento && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onReanalisar}
+            disabled={processando}
+            className="text-xs h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+          >
+            <RefreshCw className="w-3 h-3 mr-1.5" />
+            Reanalisar
+          </Button>
+        )}
+        {emAndamento && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onCancelar}
+            className="text-xs h-8 text-slate-500"
+          >
+            Cancelar
           </Button>
         )}
       </div>

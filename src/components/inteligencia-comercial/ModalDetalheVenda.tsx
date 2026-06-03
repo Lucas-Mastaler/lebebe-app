@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Loader2, Phone, Package, CreditCard, User, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock, TrendingUp, Users, Activity } from 'lucide-react'
+import { Loader2, Phone, Package, CreditCard, User, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock, TrendingUp, Users, Activity, Tag, MessageSquarePlus } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from '@/components/ui/dialog'
@@ -46,6 +46,31 @@ interface DigisacSyncStatus {
   erroMensagem?: string | null
   finalizadoEm?: string | null
   solicitadoEm?: string | null
+}
+
+const DEPTO_CLS: Record<string, string> = {
+  'Móveis':           'bg-blue-50 text-blue-700 border-blue-100',
+  'P. Pesada':        'bg-orange-50 text-orange-700 border-orange-100',
+  'Roupas':           'bg-pink-50 text-pink-700 border-pink-100',
+  'Enxoval':          'bg-green-50 text-green-700 border-green-100',
+  'Puericultura leve':'bg-violet-50 text-violet-700 border-violet-100',
+  'Outros':           'bg-slate-100 text-slate-500 border-slate-200',
+  'Não classificado': 'bg-slate-50 text-slate-400 border-slate-100',
+}
+
+function DeptoChip({ depto }: { depto: string }) {
+  const cls = DEPTO_CLS[depto] ?? 'bg-slate-50 text-slate-500 border-slate-100'
+  return (
+    <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded border ${cls}`}>
+      {depto}
+    </span>
+  )
+}
+
+function formatDias(dias: number | null | undefined): string {
+  if (dias == null) return '—'
+  if (dias < 1) return '< 1 dia'
+  return `${dias} dia${dias !== 1 ? 's' : ''}`
 }
 
 function brl(value: number | null | undefined): string {
@@ -237,6 +262,36 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
     return () => { cancelled = true }
   }, [open, venda?.numero_lancamento])
 
+  // ── estado local para observações inline ──────────────────────
+  const [novaObs, setNovaObs] = useState('')
+  const [savingObs, setSavingObs] = useState(false)
+  const [obsLista, setObsLista] = useState<{ id: string; observacao: string; criado_por: string | null; created_at: string }[]>([])
+  const [obsCarregada, setObsCarregada] = useState(false)
+
+  useEffect(() => {
+    if (!open || !venda?.numero_lancamento) { setObsCarregada(false); setObsLista([]); return }
+    fetch(`/api/sgi/observacoes?numeroLancamento=${venda.numero_lancamento}`)
+      .then(r => r.json())
+      .then(d => { setObsLista(d.observacoes ?? []); setObsCarregada(true) })
+      .catch(() => setObsCarregada(true))
+  }, [open, venda?.numero_lancamento])
+
+  async function handleSalvarObs() {
+    if (!novaObs.trim() || !venda?.numero_lancamento) return
+    setSavingObs(true)
+    try {
+      const res = await fetch('/api/sgi/observacoes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numeroLancamento: venda.numero_lancamento, observacao: novaObs }),
+      })
+      const data = await res.json()
+      if (res.ok) { setObsLista(prev => [data.observacao, ...prev]); setNovaObs('') }
+    } finally {
+      setSavingObs(false)
+    }
+  }
+
   function Section({ icon: Icon, title, children, variant = 'default' }: {
     icon: React.ElementType
     title: string
@@ -312,6 +367,20 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                 <Row label="Emissão" value={detalhe.emissao_texto} />
                 <Row label="Data fechamento" value={formatData(detalhe.data_fechamento)} />
               </div>
+              {venda?.departamentos_venda && venda.departamentos_venda.length > 0 && (
+                <div className="pt-2 border-t border-sky-100 mt-1 flex items-start gap-2">
+                  <span className="text-slate-500 min-w-[160px] text-xs">Departamentos</span>
+                  <div className="flex flex-wrap gap-1">
+                    {venda.departamentos_venda.map(d => <DeptoChip key={d} depto={d} />)}
+                  </div>
+                </div>
+              )}
+              {venda?.subgrupos_venda && venda.subgrupos_venda.length > 0 && (
+                <div className="flex items-start gap-2">
+                  <span className="text-slate-500 min-w-[160px] text-xs">Subgrupos</span>
+                  <span className="text-xs text-slate-600">{venda.subgrupos_venda.join(' · ')}</span>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-1.5 pt-2 border-t border-slate-100 mt-2">
                 <Row label="Valor mercadorias" value={brl(detalhe.valor_mercadorias)} />
@@ -359,7 +428,8 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                       <tr className="border-b border-slate-100 text-slate-500">
                         <th className="text-left py-1.5 pr-4">Código</th>
                         <th className="text-left py-1.5 pr-4">Produto</th>
-                        <th className="text-left py-1.5 pr-4">Local</th>
+                        <th className="text-left py-1.5 pr-4">Depto.</th>
+                        <th className="text-left py-1.5 pr-4">Subgrupo</th>
                         <th className="text-right py-1.5 pr-4">Qtd</th>
                         <th className="text-right py-1.5">Valor</th>
                       </tr>
@@ -368,8 +438,13 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                       {detalhe.produtos.map(p => (
                         <tr key={p.id} className="border-b border-slate-50">
                           <td className="py-1.5 pr-4 font-mono text-slate-600">{p.codigo ?? '—'}</td>
-                          <td className="py-1.5 pr-4 max-w-[200px] truncate" title={p.produto ?? undefined}>{p.produto ?? '—'}</td>
-                          <td className="py-1.5 pr-4 text-slate-500">{p.local_estocagem ?? '—'}</td>
+                          <td className="py-1.5 pr-4 max-w-[180px] truncate" title={p.produto ?? undefined}>{p.produto ?? '—'}</td>
+                          <td className="py-1.5 pr-4">
+                            {p.departamento_classificado && p.departamento_classificado !== 'Não classificado'
+                              ? <DeptoChip depto={p.departamento_classificado} />
+                              : <span className="text-slate-300 text-[10px]">—</span>}
+                          </td>
+                          <td className="py-1.5 pr-4 text-[10px] text-slate-500">{p.subgrupo_classificado && p.subgrupo_classificado !== 'Não classificado' ? p.subgrupo_classificado : '—'}</td>
                           <td className="py-1.5 pr-4 text-right">{p.quantidade_texto ?? p.quantidade ?? '—'}</td>
                           <td className="py-1.5 text-right font-medium">{brl(p.valor_total)}</td>
                         </tr>
@@ -382,6 +457,13 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
 
             {/* Digisac */}
             <Section icon={MessageCircle} title="Digisac — Histórico de Chamados" variant="purple">
+              {venda?.digisac_dias_ate_fechamento != null && (
+                <div className="flex items-center gap-2 pb-2 border-b border-violet-100">
+                  <span className="text-xs text-slate-500">Dias até fechamento</span>
+                  <span className="text-sm font-semibold text-violet-700">{formatDias(venda.digisac_dias_ate_fechamento)}</span>
+                  <span className="text-[10px] text-slate-400">(desde 1º chamado do ciclo)</span>
+                </div>
+              )}
               <DigisacSyncPanel
                 status={digisacStatus}
                 loading={digisacLoading}
@@ -389,6 +471,39 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                 onSincronizar={() => iniciarSincronizacao(false)}
                 onForcar={() => iniciarSincronizacao(true)}
               />
+            </Section>
+
+            {/* Observações Comerciais */}
+            <Section icon={MessageSquarePlus} title="Observações Comerciais" variant="default">
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <textarea
+                    className="flex-1 text-sm border border-slate-200 rounded-lg p-2 resize-none focus:outline-none focus:ring-2 focus:ring-sky-200 placeholder:text-slate-400"
+                    rows={2}
+                    placeholder="Adicionar observação..."
+                    value={novaObs}
+                    onChange={e => setNovaObs(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSalvarObs() }}
+                  />
+                  <Button size="sm" className="self-end" onClick={handleSalvarObs} disabled={savingObs || !novaObs.trim()}>
+                    {savingObs ? <Loader2 className="w-3 h-3 animate-spin" /> : <Tag className="w-3 h-3" />}
+                  </Button>
+                </div>
+                {!obsCarregada ? (
+                  <p className="text-xs text-slate-400">Carregando...</p>
+                ) : obsLista.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">Nenhuma observação ainda.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {obsLista.map(o => (
+                      <div key={o.id} className="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                        <p className="text-xs text-slate-700">{o.observacao}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">{o.criado_por} · {new Date(o.created_at).toLocaleDateString('pt-BR')}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </Section>
 
             {/* Pagamentos */}

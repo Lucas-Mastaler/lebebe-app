@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronLeft, ChevronRight, Eye, MessageCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Eye, MessageCircle, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -8,6 +8,85 @@ import {
   TableBody, TableCell
 } from '@/components/ui/table'
 import type { SgiDocumento } from '@/types/sgi'
+
+// ─── Helpers visuais ──────────────────────────────────────────────────────────
+
+const DEPTO_CLS: Record<string, string> = {
+  'Móveis':           'bg-blue-50 text-blue-700 border-blue-100',
+  'P. Pesada':        'bg-orange-50 text-orange-700 border-orange-100',
+  'Roupas':           'bg-pink-50 text-pink-700 border-pink-100',
+  'Enxoval':          'bg-green-50 text-green-700 border-green-100',
+  'Puericultura leve':'bg-violet-50 text-violet-700 border-violet-100',
+  'Outros':           'bg-slate-100 text-slate-500 border-slate-200',
+  'Não classificado': 'bg-slate-50 text-slate-400 border-slate-100',
+}
+
+function DeptoChip({ depto }: { depto: string }) {
+  const cls = DEPTO_CLS[depto] ?? 'bg-slate-50 text-slate-500 border-slate-100'
+  return (
+    <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded border ${cls}`}>
+      {depto}
+    </span>
+  )
+}
+
+function formatDias(dias: number | null | undefined): string {
+  if (dias == null) return '—'
+  if (dias < 1) return '< 1 dia'
+  return `${dias} dia${dias !== 1 ? 's' : ''}`
+}
+
+// Determina o estado visual Digisac da linha
+type DigisacRowState = 'neutro' | 'ok' | 'sem_conversa' | 'sem_ciclo' | 'erro' | 'processando'
+
+function getDigisacRowState(venda: SgiDocumento): DigisacRowState {
+  const s = venda.digisac_status
+  if (!s) return 'neutro'
+  if (s === 'erro') return 'erro'
+  if (s === 'pendente' || s === 'processando') return 'processando'
+  const sincronizado = s === 'concluido' || s === 'ignorado_cache_valido'
+  if (!sincronizado) return 'neutro'
+  const totalHistorico = venda.digisac_total_historico ?? 0
+  if (totalHistorico === 0) return 'sem_conversa'
+  const chamadosCiclo = venda.digisac_chamados_ciclo ?? 0
+  if (chamadosCiclo === 0) return 'sem_ciclo'
+  return 'ok'
+}
+
+function rowHighlightCls(state: DigisacRowState): string {
+  switch (state) {
+    case 'sem_conversa': return 'bg-red-50 hover:bg-red-100'
+    case 'sem_ciclo':    return 'bg-amber-50 hover:bg-amber-100'
+    case 'erro':         return 'bg-red-50 hover:bg-red-100'
+    case 'processando':  return 'bg-sky-50 hover:bg-sky-100'
+    default:             return 'hover:bg-slate-50'
+  }
+}
+
+function DigisacStatusCell({ venda }: { venda: SgiDocumento }) {
+  const state = getDigisacRowState(venda)
+  const sync = venda.digisac_ultima_sync
+  const title = sync ? `Sync: ${new Date(sync).toLocaleDateString('pt-BR')}` : undefined
+  switch (state) {
+    case 'neutro':
+      return <span className="text-slate-300 text-xs">—</span>
+    case 'ok':
+      return (
+        <span className="flex items-center gap-1 text-xs text-emerald-600" title={title}>
+          <MessageCircle className="w-3 h-3" />
+          <span>Sincronizado</span>
+        </span>
+      )
+    case 'sem_conversa':
+      return <span className="text-xs text-red-600 font-medium" title={title}>Sem conversa</span>
+    case 'sem_ciclo':
+      return <span className="text-xs text-amber-600 font-medium" title={title}>Sem chamado no ciclo</span>
+    case 'erro':
+      return <span className="text-xs text-red-500 font-medium">Erro</span>
+    case 'processando':
+      return <span className="text-xs text-sky-500 animate-pulse">⧓ Processando</span>
+  }
+}
 
 const PER_PAGE = 25
 
@@ -44,23 +123,6 @@ function statusBadge(status: string | null) {
   )
 }
 
-function digisacStatusBadge(status: string | null, ultimaSync: string | null) {
-  if (!status) return <span className="text-slate-300 text-xs">—</span>
-  if (status === 'concluido' || status === 'ignorado_cache_valido') {
-    return (
-      <span className="flex items-center gap-1 text-xs text-emerald-600" title={ultimaSync ? `Sync: ${new Date(ultimaSync).toLocaleDateString('pt-BR')}` : undefined}>
-        <MessageCircle className="w-3 h-3" />
-      </span>
-    )
-  }
-  if (status === 'pendente' || status === 'processando') {
-    return <span className="text-xs text-sky-500 animate-pulse">⟳</span>
-  }
-  if (status === 'erro') {
-    return <span className="text-xs text-red-500" title="Erro na sync">!</span>
-  }
-  return <span className="text-slate-300 text-xs">—</span>
-}
 
 interface TabelaVendasProps {
   vendas: SgiDocumento[]
@@ -69,10 +131,11 @@ interface TabelaVendasProps {
   isLoading?: boolean
   onPageChange: (page: number) => void
   onVerDetalhe: (venda: SgiDocumento) => void
+  onObsClick?: (venda: SgiDocumento) => void
 }
 
 export function TabelaVendas({
-  vendas, total, page, isLoading, onPageChange, onVerDetalhe
+  vendas, total, page, isLoading, onPageChange, onVerDetalhe, onObsClick
 }: TabelaVendasProps) {
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE))
 
@@ -123,7 +186,11 @@ export function TabelaVendas({
             <TableHead className="text-xs text-center" title="Chamados Digisac no ciclo da venda (desde a venda anterior até esta)">Cham. ciclo</TableHead>
             <TableHead className="text-xs text-center" title="Interações no ciclo da venda">Interações</TableHead>
             <TableHead className="text-xs text-center" title="Primeiro tipo de contato no ciclo da venda">1º Contato</TableHead>
+            <TableHead className="text-xs text-center" title="Dias entre o primeiro chamado do ciclo e o fechamento da venda">Dias fech.</TableHead>
+            <TableHead className="text-xs" title="Departamento(s) dos produtos da venda">Depto.</TableHead>
+            <TableHead className="text-xs" title="Subgrupo(s) dos produtos da venda">Subgrupo</TableHead>
             <TableHead className="text-xs" title="Status sincronização Digisac">Digisac</TableHead>
+            <TableHead className="text-xs w-8" title="Observações comerciais">Obs.</TableHead>
             <TableHead className="text-xs w-10"></TableHead>
           </TableRow>
         </TableHeader>
@@ -135,8 +202,10 @@ export function TabelaVendas({
               </TableCell>
             </TableRow>
           ) : (
-            vendas.map(venda => (
-              <TableRow key={venda.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => onVerDetalhe(venda)}>
+            vendas.map(venda => {
+              const rowState = getDigisacRowState(venda)
+              return (
+              <TableRow key={venda.id} className={`cursor-pointer ${rowHighlightCls(rowState)}`} onClick={() => onVerDetalhe(venda)}>
                 <TableCell className="font-mono text-xs font-semibold text-sky-700">
                   #{venda.numero_lancamento}
                 </TableCell>
@@ -195,8 +264,38 @@ export function TabelaVendas({
                     </span>
                   ) : '—'}
                 </TableCell>
+                <TableCell className="text-xs text-center">
+                  {formatDias(venda.digisac_dias_ate_fechamento)}
+                </TableCell>
                 <TableCell className="text-xs">
-                  {digisacStatusBadge(venda.digisac_status ?? null, venda.digisac_ultima_sync ?? null)}
+                  <div className="flex flex-wrap gap-0.5">
+                    {(venda.departamentos_venda && venda.departamentos_venda.length > 0)
+                      ? venda.departamentos_venda.map((d) => <DeptoChip key={d} depto={d} />)
+                      : <span className="text-slate-300">—</span>}
+                  </div>
+                </TableCell>
+                <TableCell className="text-xs max-w-[140px]">
+                  <span className="text-slate-600 text-[10px] leading-tight">
+                    {venda.subgrupos_venda && venda.subgrupos_venda.length > 0
+                      ? venda.subgrupos_venda.join(' + ')
+                      : <span className="text-slate-300">—</span>}
+                  </span>
+                </TableCell>
+                <TableCell className="text-xs">
+                  <DigisacStatusCell venda={venda} />
+                </TableCell>
+                <TableCell>
+                  {onObsClick && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={e => { e.stopPropagation(); onObsClick(venda) }}
+                      title="Observações"
+                      className={(venda.total_observacoes ?? 0) > 0 ? 'text-sky-600' : 'text-slate-300'}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
                 </TableCell>
                 <TableCell>
                   <Button
@@ -209,7 +308,8 @@ export function TabelaVendas({
                   </Button>
                 </TableCell>
               </TableRow>
-            ))
+              )
+            })
           )}
         </TableBody>
       </Table>

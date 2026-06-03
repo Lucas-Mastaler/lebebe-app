@@ -6,6 +6,7 @@ import { FiltrosSGI } from '@/components/inteligencia-comercial/FiltrosSGI'
 import { CardsSGI } from '@/components/inteligencia-comercial/CardsSGI'
 import { TabelaVendas } from '@/components/inteligencia-comercial/TabelaVendas'
 import { ModalDetalheVenda } from '@/components/inteligencia-comercial/ModalDetalheVenda'
+import { ModalObservacoes } from '@/components/inteligencia-comercial/ModalObservacoes'
 import { SyncLotePanel } from '@/components/inteligencia-comercial/SyncLotePanel'
 import { useSyncLote } from '@/hooks/useSyncLote'
 import type { SgiCards, SgiDocumento, SgiFiltros, SgiVendasResponse } from '@/types/sgi'
@@ -22,6 +23,8 @@ export default function InteligenciaComercialPage() {
 
   const [vendaSelecionada, setVendaSelecionada] = useState<SgiDocumento | null>(null)
   const [modalAberto, setModalAberto] = useState(false)
+  const [vendaObs, setVendaObs] = useState<SgiDocumento | null>(null)
+  const [modalObsAberto, setModalObsAberto] = useState(false)
 
   const buscar = useCallback(async (filtros: SgiFiltros) => {
     setIsLoading(true)
@@ -68,6 +71,11 @@ export default function InteligenciaComercialPage() {
   function handleVerDetalhe(venda: SgiDocumento) {
     setVendaSelecionada(venda)
     setModalAberto(true)
+  }
+
+  function handleObsClick(venda: SgiDocumento) {
+    setVendaObs(venda)
+    setModalObsAberto(true)
   }
 
   function handleIniciarLote(forcar: boolean) {
@@ -124,6 +132,7 @@ export default function InteligenciaComercialPage() {
           isLoading={isLoading}
           onPageChange={handlePageChange}
           onVerDetalhe={handleVerDetalhe}
+          onObsClick={handleObsClick}
         />
       )}
 
@@ -142,6 +151,16 @@ export default function InteligenciaComercialPage() {
         onOpenChange={setModalAberto}
         onSyncCompleted={() => buscar({ ...filtrosAtivos, page })}
       />
+
+      {/* Modal de observações */}
+      {vendaObs && (
+        <ModalObservacoes
+          open={modalObsAberto}
+          onOpenChange={setModalObsAberto}
+          numeroLancamento={vendaObs.numero_lancamento}
+          clienteNome={vendaObs.cliente ?? null}
+        />
+      )}
     </div>
   )
 }

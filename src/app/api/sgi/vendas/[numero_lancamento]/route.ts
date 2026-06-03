@@ -43,7 +43,7 @@ export async function GET(
       .order('principal', { ascending: false }),
     supabase
       .from('sgi_documentos_saida_produtos')
-      .select('id, documento_saida_id, numero_lancamento, codigo, produto, local_estocagem, quantidade, quantidade_texto, valor_total, valor_total_texto, categoria_sugerida')
+      .select('id, documento_saida_id, numero_lancamento, codigo, produto, local_estocagem, quantidade, quantidade_texto, valor_total, valor_total_texto, categoria_sugerida, departamento_classificado, subgrupo_classificado')
       .eq('documento_saida_id', doc.id),
     supabase
       .from('sgi_documentos_saida_pagamentos')

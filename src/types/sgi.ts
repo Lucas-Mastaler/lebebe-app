@@ -38,6 +38,15 @@ export interface SgiDocumento {
   digisac_primeiro_contato?: 'ativo' | 'receptivo' | 'indefinido' | null
   digisac_status?: 'nao_sincronizado' | 'pendente' | 'processando' | 'concluido' | 'erro' | 'ignorado_cache_valido' | null
   digisac_ultima_sync?: string | null
+  digisac_total_historico?: number | null
+  digisac_dias_ate_fechamento?: number | null
+  // Classificação de produtos
+  departamentos_venda?: string[] | null
+  subgrupos_venda?: string[] | null
+  departamentos_venda_texto?: string | null
+  subgrupos_venda_texto?: string | null
+  // Observações
+  total_observacoes?: number | null
 }
 
 export interface SgiContato {
@@ -62,6 +71,8 @@ export interface SgiProduto {
   valor_total: number | null
   valor_total_texto: string | null
   categoria_sugerida: string | null
+  departamento_classificado?: string | null
+  subgrupo_classificado?: string | null
 }
 
 export interface SgiPagamento {

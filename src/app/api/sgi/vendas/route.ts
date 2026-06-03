@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
   let listQ: any = supabase
     .from('sgi_documentos_saida')
     .select(
-      'id, numero_lancamento, numero_documento, cliente, telefone_principal, filial, operacao, data_fechamento, vendedor, status, valor_total, valor_total_texto, valor_pago_novo, valor_credito_troca, valor_pendente_pagamento, percentual_desconto, percentual_desconto_texto, valor_frete, valor_frete_texto',
+      'id, numero_lancamento, numero_documento, cliente, telefone_principal, filial, operacao, data_fechamento, vendedor, status, valor_total, valor_total_texto, valor_pago_novo, valor_credito_troca, valor_pendente_pagamento, percentual_desconto, percentual_desconto_texto, valor_frete, valor_frete_texto, departamentos_venda, subgrupos_venda, departamentos_venda_texto, subgrupos_venda_texto',
       { count: 'exact' }
     )
     .order('data_fechamento', { ascending: false, nullsFirst: false })
@@ -192,14 +192,16 @@ export async function POST(request: NextRequest) {
     primeiro_contato: string | null
     status_digisac: string | null
     ultima_sync: string | null
+    total_historico: number
+    dias_ate_fechamento: number | null
   }>()
 
   if (numeroLancamentos.length > 0) {
     try {
-      const [vinculosResult, jobsResult] = await Promise.all([
+      const [vinculosResult, jobsResult, historicoResult] = await Promise.all([
         supabase
           .from('venda_conversa_vinculos')
-          .select('numero_lancamento, digisac_ticket_id, considerada_na_janela_90_dias, considerada_no_ciclo_venda, inicio_chamado, ordem_conversa_para_venda')
+          .select('numero_lancamento, digisac_ticket_id, considerada_na_janela_90_dias, considerada_no_ciclo_venda, inicio_chamado, ordem_conversa_para_venda, data_conversa, telefone_normalizado_ddi')
           .in('numero_lancamento', numeroLancamentos),
         supabase
           .from('digisac_sync_fila')
@@ -207,10 +209,22 @@ export async function POST(request: NextRequest) {
           .in('numero_lancamento', numeroLancamentos)
           .in('status', ['concluido', 'ignorado_cache_valido', 'erro', 'pendente', 'processando'])
           .order('created_at', { ascending: false }),
+        supabase
+          .from('digisac_cliente_historico_resumo')
+          .select('telefone_normalizado_ddi, total_chamados_historico'),
       ])
 
       const vinculos = vinculosResult.data ?? []
       const allTicketIds = vinculos.map((v) => v.digisac_ticket_id).filter(Boolean)
+
+      // Mapa telefone → total histórico
+      const historicoTelefoneMap = new Map<string, number>()
+      for (const h of (historicoResult.data ?? [])) {
+        historicoTelefoneMap.set(h.telefone_normalizado_ddi, h.total_chamados_historico ?? 0)
+      }
+
+      // Mapa lancamento → total_historico (via vinculos e telefones)
+      const historicoLancamentoMap = new Map<string, number>()
 
       let interacoesMap = new Map<string, number>()
       if (allTicketIds.length > 0) {
@@ -256,6 +270,26 @@ export async function POST(request: NextRequest) {
         )[0]
         const primeiro_contato = primeiroVinculo?.inicio_chamado ?? null
 
+        // Total histórico: soma dos históricos dos telefones vinculados
+        const telefonesVenda = [...new Set(vinculosVenda.map((v) => v.telefone_normalizado_ddi).filter(Boolean))]
+        const total_historico = telefonesVenda.reduce(
+          (sum, tel) => sum + (historicoTelefoneMap.get(tel) ?? 0), 0
+        )
+        historicoLancamentoMap.set(lancamento, total_historico)
+
+        // Dias até fechamento: diferença entre data_fechamento da venda e min(data_conversa) do ciclo
+        const vendaRow = listData.find((v) => v.numero_lancamento === lancamento)
+        const dataFechamento = vendaRow?.data_fechamento ? new Date(vendaRow.data_fechamento as string) : null
+        const datasConversa = vinculosCiclo
+          .map((v) => v.data_conversa ? new Date(v.data_conversa as string) : null)
+          .filter((d): d is Date => d !== null)
+        let dias_ate_fechamento: number | null = null
+        if (dataFechamento && datasConversa.length > 0) {
+          const minConversa = new Date(Math.min(...datasConversa.map((d) => d.getTime())))
+          const diffMs = dataFechamento.getTime() - minConversa.getTime()
+          dias_ate_fechamento = diffMs > 0 ? Math.ceil(diffMs / (1000 * 60 * 60 * 24)) : 0
+        }
+
         const latestJob = jobsLatest.get(lancamento)
         const status_digisac = latestJob?.status ?? null
         const ultima_sync = latestJob?.finalizado_em ?? null
@@ -268,6 +302,8 @@ export async function POST(request: NextRequest) {
           primeiro_contato,
           status_digisac,
           ultima_sync,
+          total_historico,
+          dias_ate_fechamento,
         })
       }
     } catch (enrichErr) {
@@ -287,6 +323,8 @@ export async function POST(request: NextRequest) {
       digisac_primeiro_contato: d?.primeiro_contato ?? null,
       digisac_status: d?.status_digisac ?? null,
       digisac_ultima_sync: d?.ultima_sync ?? null,
+      digisac_total_historico: d?.total_historico ?? null,
+      digisac_dias_ate_fechamento: d?.dias_ate_fechamento ?? null,
     }
   })
 

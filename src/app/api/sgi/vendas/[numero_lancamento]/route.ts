@@ -53,17 +53,16 @@ export async function GET(
         console.log(`[VENDA-CLIENTE] variações geradas:`, variacoesArray)
 
         // Abordagem mais confiável: duas queries separadas com .in()
+        // IMPORTANTE: NÃO excluir o lançamento atual — precisamos dele para marcar venda_atual
         const [porTelefoneNormalizado, porTelefoneDdi] = await Promise.all([
           supabase
             .from('sgi_documentos_saida_contatos')
             .select('numero_lancamento, telefone_normalizado, telefone_normalizado_ddi')
-            .in('telefone_normalizado', variacoesArray)
-            .neq('numero_lancamento', numero_lancamento.trim()),
+            .in('telefone_normalizado', variacoesArray),
           supabase
             .from('sgi_documentos_saida_contatos')
             .select('numero_lancamento, telefone_normalizado, telefone_normalizado_ddi')
             .in('telefone_normalizado_ddi', variacoesArray)
-            .neq('numero_lancamento', numero_lancamento.trim())
         ])
 
         // Unir resultados das duas queries
@@ -75,12 +74,21 @@ export async function GET(
         console.log(`[VENDA-CLIENTE] contatos relacionados encontrados:`, todosContatosRelacionados.length)
         console.log(`[VENDA-CLIENTE] lançamentos encontrados antes dedup:`, todosContatosRelacionados.map(c => c.numero_lancamento))
 
-        if (todosContatosRelacionados.length > 0) {
-          const lancamentosUnicos = [...new Set(todosContatosRelacionados.map(v => v.numero_lancamento))]
-          console.log(`[VENDA-CLIENTE] lançamentos únicos:`, lancamentosUnicos)
+        // Garantir que lançamentos são strings limpas e incluir o atual
+        let lancamentosUnicos = [...new Set(todosContatosRelacionados.map(v => String(v.numero_lancamento).trim()))].filter(Boolean)
+        
+        // Sempre incluir o lançamento atual
+        const numeroLancamentoAtual = numero_lancamento.trim()
+        if (!lancamentosUnicos.includes(numeroLancamentoAtual)) {
+          lancamentosUnicos.push(numeroLancamentoAtual)
+        }
+        
+        console.log(`[VENDA-CLIENTE] lançamentos únicos:`, lancamentosUnicos)
 
           // Buscar dados completos das vendas relacionadas
-          const { data: vendasDados } = await supabase
+          console.log(`[VENDA-CLIENTE] buscando documentos para lançamentos:`, lancamentosUnicos)
+          
+          const { data: vendasDados, error: erroDocs } = await supabase
             .from('sgi_documentos_saida')
             .select(`
               numero_lancamento,
@@ -97,9 +105,10 @@ export async function GET(
             .in('numero_lancamento', lancamentosUnicos)
             .order('data_fechamento', { ascending: false })
 
-          console.log(`[VENDA-CLIENTE] vendasCliente final:`, vendasDados?.length ?? 0, vendasDados?.map(v => v.numero_lancamento))
+          console.log(`[VENDA-CLIENTE] documentos encontrados:`, vendasDados?.length ?? 0, vendasDados?.map(v => v.numero_lancamento))
+          console.log(`[VENDA-CLIENTE] erro documentos:`, erroDocs)
 
-          if (vendasDados) {
+          if (vendasDados && vendasDados.length > 0) {
             vendasCliente = vendasDados.map(v => ({
               numero_lancamento: v.numero_lancamento,
               data_fechamento: v.data_fechamento,
@@ -111,10 +120,12 @@ export async function GET(
               valor_total: v.valor_total,
               digisac_chamados_ciclo: v.digisac_chamados_ciclo,
               digisac_status: v.digisac_status,
-              venda_atual: false,
+              venda_atual: String(v.numero_lancamento).trim() === numeroLancamentoAtual,
             }))
+            console.log(`[VENDA-CLIENTE] vendasCliente mapeadas:`, vendasCliente.map(v => ({ n: v.numero_lancamento, atual: v.venda_atual })))
+          } else {
+            console.log(`[VENDA-CLIENTE] NENHUM documento encontrado para:`, lancamentosUnicos)
           }
-        }
       }
     }
   } catch (err) {

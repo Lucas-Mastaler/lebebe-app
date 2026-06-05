@@ -311,9 +311,94 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // --- Enriquecimento IA (best-effort, não bloqueia se falhar) ---
+  // iaMap: numero_lancamento → { chamados_influentes, nome_bebe, previsao_nascimento_bebe }
+  type IaEntry = {
+    chamados_influentes: number | null
+    nome_bebe: string | null
+    previsao_nascimento_bebe: string | null
+  }
+  let iaMap = new Map<string, IaEntry>()
+
+  if (numeroLancamentos.length > 0) {
+    try {
+      // 1. Consolidado: nome_bebe e previsao_nascimento_bebe de venda_analise_comercial_ia
+      const [consolidadoResult, influentesResult] = await Promise.all([
+        supabase
+          .from('venda_analise_comercial_ia')
+          .select('numero_lancamento, nome_bebe, previsao_nascimento_bebe')
+          .in('numero_lancamento', numeroLancamentos),
+        // 2. Contagem de chamados influentes: status=concluido e influencia_compra in (Sim, Parcialmente)
+        supabase
+          .from('digisac_chamados_analise_ia')
+          .select('numero_lancamento, influencia_compra')
+          .in('numero_lancamento', numeroLancamentos)
+          .eq('status', 'concluido')
+          .in('influencia_compra', ['Sim', 'Parcialmente']),
+      ])
+
+      // Monta mapa inicial com dados do consolidado
+      const consolidadoMap = new Map<string, { nome_bebe: string | null; previsao_nascimento_bebe: string | null }>()
+      for (const row of (consolidadoResult.data ?? [])) {
+        consolidadoMap.set(row.numero_lancamento, {
+          nome_bebe: row.nome_bebe ?? null,
+          previsao_nascimento_bebe: row.previsao_nascimento_bebe ?? null,
+        })
+      }
+
+      // Contagem de influentes por lançamento (só os que têm análise concluída)
+      // Para saber se há análise, basta verificar se o lançamento existe em consolidadoMap
+      const influentesCount = new Map<string, number>()
+      for (const row of (influentesResult.data ?? [])) {
+        influentesCount.set(row.numero_lancamento, (influentesCount.get(row.numero_lancamento) ?? 0) + 1)
+      }
+
+      // Fallback: se consolidado não tem nome_bebe/previsao, busca nos chamados individuais
+      // Coletar lançamentos que precisam de fallback
+      const precisamFallback = numeroLancamentos.filter((nl) => {
+        const c = consolidadoMap.get(nl)
+        return c && (!c.nome_bebe || !c.previsao_nascimento_bebe)
+      })
+
+      let fallbackMap = new Map<string, { nome_bebe: string | null; previsao_nascimento_bebe: string | null }>()
+      if (precisamFallback.length > 0) {
+        const { data: fbRows } = await supabase
+          .from('digisac_chamados_analise_ia')
+          .select('numero_lancamento, nome_bebe, previsao_nascimento_bebe')
+          .in('numero_lancamento', precisamFallback)
+          .eq('status', 'concluido')
+          .or('nome_bebe.not.is.null,previsao_nascimento_bebe.not.is.null')
+
+        for (const row of (fbRows ?? [])) {
+          const nl = row.numero_lancamento
+          const existing = fallbackMap.get(nl) ?? { nome_bebe: null, previsao_nascimento_bebe: null }
+          fallbackMap.set(nl, {
+            nome_bebe: existing.nome_bebe ?? (row.nome_bebe ?? null),
+            previsao_nascimento_bebe: existing.previsao_nascimento_bebe ?? (row.previsao_nascimento_bebe ?? null),
+          })
+        }
+      }
+
+      // Monta iaMap final para cada lançamento que tem consolidado (análise feita)
+      for (const nl of numeroLancamentos) {
+        const c = consolidadoMap.get(nl)
+        if (!c) continue // sem análise IA → iaMap não terá entrada → chamados_influentes = null
+        const fb = fallbackMap.get(nl)
+        iaMap.set(nl, {
+          chamados_influentes: influentesCount.get(nl) ?? 0,
+          nome_bebe: c.nome_bebe ?? fb?.nome_bebe ?? null,
+          previsao_nascimento_bebe: c.previsao_nascimento_bebe ?? fb?.previsao_nascimento_bebe ?? null,
+        })
+      }
+    } catch (iaErr) {
+      console.warn('[API][SGI][VENDAS] Enriquecimento IA falhou (não crítico):', iaErr)
+    }
+  }
+
   const vendasEnriquecidas = listData.map((v) => {
     const lancamento = v.numero_lancamento as string
     const d = digisacMap.get(lancamento)
+    const ia = iaMap.get(lancamento)
     return {
       ...v,
       digisac_chamados_ciclo: d?.chamados_ciclo ?? null,
@@ -325,6 +410,10 @@ export async function POST(request: NextRequest) {
       digisac_ultima_sync: d?.ultima_sync ?? null,
       digisac_total_historico: d?.total_historico ?? null,
       digisac_dias_ate_fechamento: d?.dias_ate_fechamento ?? null,
+      // IA — null se não há análise, 0 se há análise e nenhum influente
+      digisac_chamados_influentes_ia: ia?.chamados_influentes ?? null,
+      nome_bebe: ia?.nome_bebe ?? null,
+      previsao_nascimento_bebe: ia?.previsao_nascimento_bebe ?? null,
     }
   })
 

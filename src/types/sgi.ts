@@ -47,6 +47,10 @@ export interface SgiDocumento {
   subgrupos_venda_texto?: string | null
   // Observações
   total_observacoes?: number | null
+  // Análise IA (opcional — populado quando análise estiver concluída)
+  digisac_chamados_influentes_ia?: number | null
+  nome_bebe?: string | null
+  previsao_nascimento_bebe?: string | null
 }
 
 export interface SgiContato {

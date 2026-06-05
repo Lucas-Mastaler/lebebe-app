@@ -1,12 +1,15 @@
 'use client'
 
-import { ChevronLeft, ChevronRight, Eye, MessageCircle, MessageSquare } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Eye, MessageCircle, MessageSquare, HelpCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table, TableHeader, TableRow, TableHead,
   TableBody, TableCell
 } from '@/components/ui/table'
+import {
+  Tooltip, TooltipTrigger, TooltipContent
+} from '@/components/ui/tooltip'
 import type { SgiDocumento } from '@/types/sgi'
 
 // ─── Helpers visuais ──────────────────────────────────────────────────────────
@@ -185,7 +188,19 @@ export function TabelaVendas({
             <TableHead className="text-xs">Operação</TableHead>
             <TableHead className="text-xs">Status</TableHead>
             <TableHead className="text-xs text-right">Valor Total</TableHead>
-            <TableHead className="text-xs text-right" title="Valor pago em vendas novas (exclui trocas/devoluções)">Pago Novo</TableHead>
+            <TableHead className="text-xs text-right">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1 cursor-help">
+                    Valor recebido
+                    <HelpCircle className="w-3 h-3 text-slate-400" />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs text-xs">
+                  Valor efetivamente recebido na venda em dinheiro, cartão, PIX, boleto ou link de pagamento. Não considera crédito de troca como novo recebimento.
+                </TooltipContent>
+              </Tooltip>
+            </TableHead>
             <TableHead className="text-xs text-right">Créd. Troca</TableHead>
             <TableHead className="text-xs text-right">Pendente</TableHead>
             <TableHead className="text-xs text-right">Desc. %</TableHead>
@@ -194,6 +209,9 @@ export function TabelaVendas({
             <TableHead className="text-xs text-center" title="Interações no ciclo da venda">Interações</TableHead>
             <TableHead className="text-xs text-center" title="Primeiro tipo de contato no ciclo da venda">1º Contato</TableHead>
             <TableHead className="text-xs text-center" title="Dias entre o primeiro chamado do ciclo e o fechamento da venda">Dias fech.</TableHead>
+            <TableHead className="text-xs text-center" title="Chamados do ciclo classificados pela IA como Sim ou Parcialmente influentes">Cham. Influente IA</TableHead>
+            <TableHead className="text-xs" title="Previsão de nascimento do bebê identificada pela IA">Nascimento Bebê</TableHead>
+            <TableHead className="text-xs" title="Nome do bebê identificado pela IA">Nome Bebê</TableHead>
             <TableHead className="text-xs" title="Departamento(s) dos produtos da venda">Depto.</TableHead>
             <TableHead className="text-xs" title="Subgrupo(s) dos produtos da venda">Subgrupo</TableHead>
             <TableHead className="text-xs" title="Status sincronização Digisac">Digisac</TableHead>
@@ -204,7 +222,7 @@ export function TabelaVendas({
         <TableBody>
           {vendas.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={20} className="text-center text-slate-400 py-12 text-sm">
+              <TableCell colSpan={23} className="text-center text-slate-400 py-12 text-sm">
                 Nenhuma venda encontrada para os filtros selecionados.
               </TableCell>
             </TableRow>
@@ -273,6 +291,27 @@ export function TabelaVendas({
                 </TableCell>
                 <TableCell className="text-xs text-center">
                   {formatDias(venda.digisac_dias_ate_fechamento)}
+                </TableCell>
+                <TableCell className="text-xs text-center font-medium">
+                  {venda.digisac_chamados_influentes_ia != null ? (
+                    <span className={venda.digisac_chamados_influentes_ia > 0 ? 'text-emerald-700' : 'text-slate-400'}>
+                      {venda.digisac_chamados_influentes_ia}
+                    </span>
+                  ) : (
+                    <span className="text-slate-300">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-xs text-slate-600">
+                  {venda.previsao_nascimento_bebe
+                    ? <span className="text-pink-700 font-medium">{venda.previsao_nascimento_bebe}</span>
+                    : <span className="text-slate-300">—</span>
+                  }
+                </TableCell>
+                <TableCell className="text-xs max-w-[120px] truncate" title={venda.nome_bebe ?? undefined}>
+                  {venda.nome_bebe
+                    ? <span className="text-pink-700 font-medium">{venda.nome_bebe}</span>
+                    : <span className="text-slate-300">—</span>
+                  }
                 </TableCell>
                 <TableCell className="text-xs">
                   <div className="flex flex-wrap gap-0.5">

@@ -1,12 +1,15 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Loader2, Phone, Package, CreditCard, User, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock, TrendingUp, Users, Activity, Tag, MessageSquarePlus, Eye, Store, Brain, ChevronDown, ChevronUp } from 'lucide-react'
+import { Loader2, Phone, Package, CreditCard, User, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock, TrendingUp, Users, Activity, Tag, MessageSquarePlus, Eye, Store, Brain, ChevronDown, ChevronUp, HelpCircle } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import {
+  Tooltip, TooltipTrigger, TooltipContent
+} from '@/components/ui/tooltip'
 import type { SgiDocumento, SgiVendaDetalhe, SgiVendaClienteResumo } from '@/types/sgi'
 import type { Agendamento } from '@/types'
 
@@ -547,6 +550,12 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
   const chamadosCiclo = digisacStatus?.resultadoJson?.totalCicloVenda ?? digisacStatus?.resultadoJson?.resultadoCache?.totalCicloVenda ?? 0
   const podeAnalisarIA = digisacSincronizado && chamadosCiclo > 0
 
+  // Chamados influentes IA: Sim ou Parcialmente, só se há análise concluída
+  const temAnaliseIa = iaJob?.status === 'concluido' || (iaChamados.length > 0 && iaChamados.some(c => c.status === 'concluido'))
+  const chamadosInfluentesIa: number | null = temAnaliseIa
+    ? iaChamados.filter(c => c.status === 'concluido' && (c.influencia_compra === 'Sim' || c.influencia_compra === 'Parcialmente')).length
+    : null
+
   // ── estado local para observações inline ──────────────────────
   const [novaObs, setNovaObs] = useState('')
   const [savingObs, setSavingObs] = useState(false)
@@ -605,10 +614,24 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
     )
   }
 
-  function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  function Row({ label, value, tooltip }: { label: string; value: React.ReactNode; tooltip?: string }) {
     return (
       <div className="flex items-start gap-2">
-        <span className="text-slate-500 min-w-[160px] text-xs">{label}</span>
+        <span className="text-slate-500 min-w-[160px] text-xs flex items-center gap-1">
+          {label}
+          {tooltip && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-help text-slate-400 hover:text-slate-600">
+                  <HelpCircle className="w-3 h-3" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs text-xs">
+                {tooltip}
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </span>
         <span className="text-slate-800 text-xs font-medium flex-1">{value ?? '—'}</span>
       </div>
     )
@@ -675,7 +698,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                 <Row label="Desconto %" value={detalhe.percentual_desconto_texto ?? (detalhe.percentual_desconto != null ? `${detalhe.percentual_desconto}%` : '—')} />
                 <Row label="Frete" value={brl(detalhe.valor_frete)} />
                 <Row label="Valor total" value={<span className="font-bold">{brl(detalhe.valor_total)}</span>} />
-                <Row label="Valor pago novo" value={<span className="text-green-700">{brl(detalhe.valor_pago_novo)}</span>} />
+                <Row label="Valor recebido" value={<span className="text-green-700">{brl(detalhe.valor_pago_novo)}</span>} tooltip="Valor efetivamente recebido na venda em dinheiro, cartão, PIX, boleto ou link de pagamento. Não considera crédito de troca como novo recebimento." />
                 <Row label="Crédito de troca" value={<span className="text-violet-700">{brl(detalhe.valor_credito_troca)}</span>} />
                 <Row label="Pendente de pagamento" value={<span className="text-amber-700">{brl(detalhe.valor_pendente_pagamento)}</span>} />
               </div>
@@ -853,6 +876,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                 error={digisacError}
                 onSincronizar={() => iniciarSincronizacao(false)}
                 onForcar={() => iniciarSincronizacao(true)}
+                chamadosInfluentesIa={chamadosInfluentesIa}
               />
               {/* Botão Ver detalhes dos chamados do ciclo */}
               {(digisacStatus?.status === 'concluido' || digisacStatus?.status === 'ignorado_cache_valido') && (
@@ -1233,12 +1257,14 @@ function DigisacSyncPanel({
   error,
   onSincronizar,
   onForcar,
+  chamadosInfluentesIa,
 }: {
   status: DigisacSyncStatus | null
   loading: boolean
   error: string | null
   onSincronizar: () => void
   onForcar: () => void
+  chamadosInfluentesIa: number | null
 }) {
   const resultado = status?.resultadoJson
   const cacheData = resultado?.resultadoCache ?? resultado
@@ -1346,6 +1372,14 @@ function DigisacSyncPanel({
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <StatBlock value={totalCiclo} label="Chamados no ciclo" color="emerald" large />
+              {chamadosInfluentesIa != null ? (
+                <StatBlock value={chamadosInfluentesIa} label="Cham. influentes IA" color="emerald" />
+              ) : (
+                <div className="rounded-lg border border-slate-100 bg-white p-2 text-center">
+                  <span className="block text-lg font-bold text-slate-300">—</span>
+                  <span className="text-[10px] text-slate-400">Cham. influentes IA</span>
+                </div>
+              )}
               <StatBlock value={totalIndefinidos} label="Indefinidos" color="slate" />
             </div>
             {(inicioCiclo || fimCiclo || vendaAnterior) && (

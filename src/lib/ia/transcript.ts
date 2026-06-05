@@ -1,11 +1,12 @@
 import { buscarMensagensTicketPaginado, type DigisacMensagem } from '@/lib/digisac/sgi-sync'
 
-const TRANSCRIPT_MAX_CHARS = 20_000
+const TRANSCRIPT_MAX_CHARS = 22_000
 
 export interface TranscriptResult {
   transcript: string
   truncado: boolean
   totalMensagens: number
+  tamanhoOriginal: number
 }
 
 function formatarTimestamp(timestamp: number | undefined): string {
@@ -57,15 +58,31 @@ export async function montarTranscriptChamado(ticketId: string): Promise<Transcr
   }
 
   const transcriptCompleto = linhas.join('\n')
-  const truncado = transcriptCompleto.length > TRANSCRIPT_MAX_CHARS || incompleto
+  const tamanhoOriginal = transcriptCompleto.length
+  let truncado = tamanhoOriginal > TRANSCRIPT_MAX_CHARS || incompleto
+  let transcript = transcriptCompleto
 
-  const transcript = truncado && transcriptCompleto.length > TRANSCRIPT_MAX_CHARS
-    ? transcriptCompleto.slice(0, TRANSCRIPT_MAX_CHARS) + '\n[... transcript truncado por tamanho ...]'
-    : transcriptCompleto
+  if (tamanhoOriginal > TRANSCRIPT_MAX_CHARS) {
+    const MENSAGENS_INICIO = 20
+    const MENSAGENS_FIM = 20
+    const inicio = linhas.slice(0, MENSAGENS_INICIO)
+    const fim = linhas.slice(-MENSAGENS_FIM)
+
+    const marcador = '[... trecho intermediário removido por limite de tamanho ...]'
+    const base = inicio.join('\n') + '\n' + marcador + '\n' + fim.join('\n')
+
+    if (base.length > TRANSCRIPT_MAX_CHARS) {
+      // Se mesmo com início+fim estourar, força corte simples do final
+      transcript = base.slice(0, TRANSCRIPT_MAX_CHARS) + '\n[... transcript truncado por tamanho ...]'
+    } else {
+      transcript = base
+    }
+  }
 
   return {
     transcript,
     truncado,
     totalMensagens: ordenadas.length,
+    tamanhoOriginal,
   }
 }

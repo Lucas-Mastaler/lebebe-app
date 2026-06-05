@@ -109,12 +109,32 @@ export async function POST(request: NextRequest) {
       .eq('numero_lancamento', numeroLancamento)
 
     // Monta transcript via Digisac API
-    const { transcript, truncado, totalMensagens } = await montarTranscriptChamado(ticketId)
+    const { transcript, truncado, totalMensagens, tamanhoOriginal } = await montarTranscriptChamado(ticketId)
+
+    if (truncado) {
+      console.log(`[IA][TRUNCADO] numero_lancamento=${numeroLancamento} protocolo=${conversa?.protocolo ?? 'sem_protocolo'} ticketId=${ticketId} tamanhoOriginal=${tamanhoOriginal} limite=22000 mensagens=${totalMensagens} estrategia=inicio_fim_20`)
+    }
 
     const produtosLista = (produtosVenda ?? []).map((p) => {
       const partes = [p.produto, p.departamento_classificado, p.subgrupo_classificado].filter(Boolean)
       return partes.join(' — ')
     })
+
+    // Busca dados do bebê já conhecidos para contextualizar a IA
+    let dadosBebeConhecidos = { nomeBebe: null as string | null, previsaoNascimento: null as string | null }
+    if (conversa?.telefone_normalizado_ddi) {
+      const { data: clienteBebe } = await supabase
+        .from('inteligencia_comercial_clientes')
+        .select('nome_bebe, previsao_nascimento_bebe')
+        .eq('telefone_normalizado_ddi', conversa.telefone_normalizado_ddi)
+        .maybeSingle()
+      if (clienteBebe?.nome_bebe || clienteBebe?.previsao_nascimento_bebe) {
+        dadosBebeConhecidos = {
+          nomeBebe: clienteBebe.nome_bebe,
+          previsaoNascimento: clienteBebe.previsao_nascimento_bebe,
+        }
+      }
+    }
 
     // Monta prompt
     const userPrompt = montarPromptChamado({
@@ -130,6 +150,8 @@ export async function POST(request: NextRequest) {
       inicioChamado: vinculo?.inicio_chamado ?? 'indefinido',
       produtosVenda: produtosLista,
       transcript,
+      protocolo: conversa?.protocolo ?? null,
+      dadosBebe: dadosBebeConhecidos,
     })
 
     // Chama DeepSeek
@@ -153,7 +175,7 @@ export async function POST(request: NextRequest) {
         nome_bebe: resultado.nome_bebe,
         previsao_nascimento_bebe: resultado.previsao_nascimento_bebe,
         transcript_truncado: truncado,
-        transcript_tamanho_chars: transcript.length,
+        transcript_tamanho_chars: tamanhoOriginal,
         total_mensagens: totalMensagens,
         modelo_ia: resultado.modelo_ia,
         erro_mensagem: null,
@@ -296,10 +318,15 @@ async function finalizarJob(
       confianca_analise,
       nome_bebe,
       previsao_nascimento_bebe,
-      status
+      status,
+      transcript_truncado
     `)
     .eq('fila_id', jobId)
     .eq('status', 'concluido')
+
+  const chamadosAnalisados = (analisados ?? []).length
+  const chamadosTruncados = (analisados ?? []).filter((a) => a.transcript_truncado === true).length
+  console.log(`[IA][RESUMO-TRUNCAMENTO] numero_lancamento=${numeroLancamento} chamadosAnalisados=${chamadosAnalisados} chamadosTruncados=${chamadosTruncados}`)
 
   // Busca protocolos dos tickets para enriquecer o consolidado
   const ticketIds = (analisados ?? []).map((a) => a.digisac_ticket_id)
@@ -390,6 +417,8 @@ interface PromptChamadoParams {
   inicioChamado: string
   produtosVenda: string[]
   transcript: string
+  protocolo: string | null
+  dadosBebe: { nomeBebe: string | null; previsaoNascimento: string | null }
 }
 
 function montarPromptChamado(p: PromptChamadoParams): string {
@@ -449,6 +478,7 @@ function montarPromptChamado(p: PromptChamadoParams): string {
 
 ## CONTEXTO DA VENDA
 - Nº lançamento: ${p.numeroLancamento}
+- Protocolo do chamado: ${p.protocolo ?? 'Não informado'}
 - Cliente: ${p.clienteNome}
 - Data da venda: ${dataVenda}
 - Consultora: ${p.userName}
@@ -464,6 +494,12 @@ ${produtosStr}
 
 ## CONVERSA
 ${p.transcript || '(sem mensagens registradas)'}
+
+## DADOS DO BEBÊ JÁ CONHECIDOS (contexto, não verdade absoluta)
+- Nome do bebê: ${p.dadosBebe.nomeBebe ?? 'não informado'}
+- Previsão de nascimento: ${p.dadosBebe.previsaoNascimento ?? 'não informado'}
+
+Se a conversa atual trouxer dado diferente, sinalize como possível divergência/correção, mas não invente informação.
 
 ## INSTRUÇÃO FINAL
 Compare o conteúdo da conversa com os produtos listados acima. Se houver menção a produto ou categoria que conste na lista, não classifique como "Não". Seja criterioso para não inventar influência, mas não ignore relação direta entre conversa e produto comprado.

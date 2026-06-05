@@ -466,7 +466,37 @@ ${p.transcript || '(sem mensagens registradas)'}
 ## INSTRUÇÃO FINAL
 Compare o conteúdo da conversa com os produtos listados acima. Se houver menção a produto ou categoria que conste na lista, não classifique como "Não". Seja criterioso para não inventar influência, mas não ignore relação direta entre conversa e produto comprado.
 
-Se a conversa mencionar explicitamente nome do bebê ou previsão de nascimento, preencha os campos correspondentes. Não infira por produto, cor ou contexto. Se não houver menção explícita, retorne null.
+## DADOS DO BEBÊ — REGRAS OBRIGATÓRIAS
+
+Os campos "nome_bebe" e "previsao_nascimento_bebe" são INDEPENDENTES. Preencha cada um separadamente.
+
+### previsao_nascimento_bebe
+Capture qualquer indicação de data, mês ou período de nascimento, mesmo que parcial ou informal. Exemplos de frases que DEVEM ser capturadas:
+- "Previsão é dia 23/12" → "23/12"
+- "nasce em dezembro" → "dezembro"
+- "nasce em dezembro/2026" → "dezembro/2026"
+- "previsão para abril de 2026" → "abril de 2026"
+- "estou com 9 semanas" — NÃO capture: semanas gestacionais sem data não são previsão de nascimento
+- "DPP 15/01" → "15/01"
+- "data prevista 15/01/2027" → "15/01/2027"
+REGRA CRÍTICA: Salve EXATAMENTE como foi informado. Não complete o ano se não foi dito. Se disseram "23/12", salve "23/12", não "23/12/2026".
+
+### nome_bebe
+Capture SOMENTE quando o nome do bebê for mencionado explicitamente. Exemplos válidos:
+- "o nome vai ser Helena" → "Helena"
+- "vai se chamar Miguel" → "Miguel"
+- "a bebê se chama Alana" → "Alana"
+NÃO capture:
+- Descoberta ou não do sexo do bebê ("ainda não descobrimos o sexo") → nome_bebe: null
+- Produtos, cores ou contextos → nome_bebe: null
+- Inferências → nome_bebe: null
+
+### Combinações obrigatórias
+- Encontrou previsão mas não nome → {"previsao_nascimento_bebe": "valor", "nome_bebe": null}
+- Encontrou nome mas não previsão → {"nome_bebe": "valor", "previsao_nascimento_bebe": null}
+- Encontrou ambos → {"nome_bebe": "valor", "previsao_nascimento_bebe": "valor"}
+- Não encontrou nenhum → {"nome_bebe": null, "previsao_nascimento_bebe": null}
+Estes dois campos SEMPRE devem aparecer no JSON, mesmo que sejam null.
 
 Retorne exatamente este JSON (sem markdown, sem texto fora do JSON):
 {
@@ -480,8 +510,8 @@ Retorne exatamente este JSON (sem markdown, sem texto fora do JSON):
   "sentimento_cliente": "Positivo | Neutro | Negativo | Indefinido",
   "pontos_de_atencao": ["..."],
   "confianca_analise": "Alta | Média | Baixa",
-  "nome_bebe": "string ou null",
-  "previsao_nascimento_bebe": "string ou null"
+  "nome_bebe": null,
+  "previsao_nascimento_bebe": null
 }`
 }
 
@@ -708,7 +738,10 @@ function montarPromptConsolidado(
 ): string {
   const resumos = analisados.map((a, i) => {
     const protocolo = protocoloMap[a.digisac_ticket_id as string] ?? 'sem protocolo'
-    return `### Chamado ${i + 1} (protocolo: ${protocolo})
+    const dadosBebe = (a.nome_bebe || a.previsao_nascimento_bebe)
+      ? `\n- Dados do bebê: nome=${a.nome_bebe ?? 'null'}, previsão=${a.previsao_nascimento_bebe ?? 'null'}`
+      : ''
+    return `### Chamado ${i + 1} (ticket_id: ${a.digisac_ticket_id}, protocolo: ${protocolo})
 - Influência: ${a.influencia_compra}
 - Grau: ${a.grau_influencia}
 - Motivo: ${a.motivo_influencia}
@@ -717,20 +750,36 @@ function montarPromptConsolidado(
 - Sentimento: ${a.sentimento_cliente}
 - Produtos mencionados: ${JSON.stringify(a.produtos_mencionados)}
 - Objeções: ${JSON.stringify(a.objecoes_identificadas)}
-- Pontos de atenção: ${JSON.stringify(a.pontos_de_atencao)}`
+- Pontos de atenção: ${JSON.stringify(a.pontos_de_atencao)}${dadosBebe}`
   }).join('\n\n')
 
-  // Extrai dados de bebê já encontrados nos chamados individuais
-  const bebeEncontrado = analisados.find(a => a.nome_bebe || a.previsao_nascimento_bebe)
-  const ctxBebe = bebeEncontrado
-    ? `\n\nDados do bebê já identificados: nome=${bebeEncontrado.nome_bebe ?? 'não informado'}, previsão=${bebeEncontrado.previsao_nascimento_bebe ?? 'não informada'}. Inclua se confirmado.`
-    : ''
+  // Agrega dados de bebê de todos os chamados individuais para contexto do consolidado
+  const nomeBebeAgg = analisados.map(a => a.nome_bebe as string | null).find(v => v) ?? null
+  const previsaoAgg = analisados.map(a => a.previsao_nascimento_bebe as string | null).find(v => v) ?? null
+  const ctxBebe = (nomeBebeAgg || previsaoAgg)
+    ? `\n\nDados do bebê já identificados nos chamados individuais:
+- Nome do bebê: ${nomeBebeAgg ?? 'não encontrado'}
+- Previsão de nascimento: ${previsaoAgg ?? 'não encontrada'}
+Propague esses valores para os campos "nome_bebe" e "previsao_nascimento_bebe" do consolidado, mantendo exatamente o valor encontrado.`
+    : `\n\nNenhum dado do bebê encontrado nos chamados individuais. Retorne "nome_bebe": null e "previsao_nascimento_bebe": null.`
 
   return `## Análise consolidada da venda ${numeroLancamento}
 
 Total de chamados analisados: ${analisados.length}${ctxBebe}
 
 ${resumos}
+
+## REGRAS PARA oportunidades_melhoria, principais_objecoes e pontos_de_atencao
+Sempre que listar uma oportunidade, objeção ou ponto de atenção relevante, indique o chamado de origem quando possível.
+Use o formato: "(chamado N — protocolo XXXXXX)" onde N é o número do chamado na ordem acima.
+Exemplo: "Agilizar follow-up com clientes que adiam decisão até descobrir o sexo do bebê (chamado 5 — protocolo 2026052269390)"
+Se não houver chamado específico, omita a referência.
+
+## REGRAS PARA nome_bebe e previsao_nascimento_bebe
+Estes campos são INDEPENDENTES e SEMPRE devem aparecer no JSON.
+- Se algum chamado individual já trouxe esses dados, propague-os para o consolidado.
+- Se nenhum chamado trouxe, retorne null para ambos.
+- Não invente dados que não estejam nos chamados.
 
 ## Retorne exatamente este JSON (sem markdown, sem texto fora do JSON):
 {
@@ -742,7 +791,7 @@ ${resumos}
   "produtos_de_interesse": ["..."],
   "oportunidades_melhoria": ["..."],
   "conclusao_comercial": "...",
-  "nome_bebe": "string ou null",
-  "previsao_nascimento_bebe": "string ou null"
+  "nome_bebe": null,
+  "previsao_nascimento_bebe": null
 }`
 }

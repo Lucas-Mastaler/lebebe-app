@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
 
     const { data: venda } = await supabase
       .from('sgi_documentos_saida')
-      .select('cliente, data_fechamento')
+      .select('id, cliente, data_fechamento')
       .eq('numero_lancamento', numeroLancamento)
       .maybeSingle()
 
@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', registroId)
 
-    // Salva dados do bebê no cadastro do cliente/telefone
+    // Salva dados do bebê no cadastro do cliente/telefone + cria observação comercial
     const temDadosBebe = resultado.nome_bebe || resultado.previsao_nascimento_bebe
     if (temDadosBebe && conversa?.telefone_normalizado_ddi) {
       await salvarDadosBebeCliente({
@@ -173,6 +173,18 @@ export async function POST(request: NextRequest) {
         previsao: resultado.previsao_nascimento_bebe,
         numeroLancamento,
         ticketId,
+        supabaseAdmin,
+      })
+    }
+
+    if (temDadosBebe) {
+      await criarObservacaoBebeIA({
+        numeroLancamento,
+        documentoSaidaId: venda?.id ?? null,
+        clienteNome: venda?.cliente ?? conversa?.cliente_nome_digisac ?? null,
+        protocolo: conversa?.protocolo ?? null,
+        nomeBebe: resultado.nome_bebe,
+        previsao: resultado.previsao_nascimento_bebe,
         supabaseAdmin,
       })
     }
@@ -471,6 +483,138 @@ Retorne exatamente este JSON (sem markdown, sem texto fora do JSON):
   "nome_bebe": "string ou null",
   "previsao_nascimento_bebe": "string ou null"
 }`
+}
+
+// ── Cria observação comercial automática de dados do bebê ──────
+
+const PREFIXO_OBS_BEBE = 'IA Digisac: dado do bebê identificado'
+const PREFIXO_OBS_CORRECAO = 'IA Digisac: possível correção de dado do bebê'
+
+function normalizarValorIA(valor?: string | null) {
+  return String(valor || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+}
+
+interface CriarObservacaoBebeParams {
+  numeroLancamento: string
+  documentoSaidaId: string | null
+  clienteNome: string | null
+  protocolo: string | null
+  nomeBebe: string | null
+  previsao: string | null
+  supabaseAdmin: ReturnType<typeof createServiceClient>
+}
+
+async function criarObservacaoBebeIA(p: CriarObservacaoBebeParams) {
+  try {
+    // Busca observações automáticas de bebê já existentes neste lançamento
+    // Filtra em memória para evitar problemas com caracteres especiais no parser do PostgREST
+    const { data: todasObs } = await p.supabaseAdmin
+      .from('inteligencia_comercial_observacoes')
+      .select('id, observacao')
+      .eq('numero_lancamento', p.numeroLancamento)
+      .is('deleted_at', null)
+      .eq('criado_por', 'IA Digisac')
+
+    const obsExistentes = (todasObs ?? []).filter(
+      (o) => o.observacao?.startsWith(PREFIXO_OBS_BEBE) || o.observacao?.startsWith(PREFIXO_OBS_CORRECAO)
+    )
+
+    const textoOrigem = `Origem: chamado ${p.protocolo ?? 'sem protocolo'} / lançamento ${p.numeroLancamento}`
+    const rodape = 'Conferir informação antes de usar em comunicação sensível.'
+
+    // Extrai valores já registrados nas observações existentes
+    let nomeRegistrado: string | null = null
+    let previsaoRegistrada: string | null = null
+    for (const obs of obsExistentes ?? []) {
+      const linhas = obs.observacao.split('\n')
+      for (const linha of linhas) {
+        const mNome = linha.match(/^Nome do bebê:\s*(.+)$/)
+        if (mNome) nomeRegistrado = normalizarValorIA(mNome[1])
+        const mPrev = linha.match(/^Previsão de nascimento:\s*(.+)$/)
+        if (mPrev) previsaoRegistrada = normalizarValorIA(mPrev[1])
+      }
+    }
+
+    const linhasObs: string[] = []
+    const linhasCorrecao: string[] = []
+
+    // Lógica para nome_bebe
+    if (p.nomeBebe) {
+      const nomeNormalizado = normalizarValorIA(p.nomeBebe)
+      if (!nomeRegistrado) {
+        linhasObs.push(`Nome do bebê: ${p.nomeBebe}`)
+      } else if (nomeRegistrado !== nomeNormalizado) {
+        linhasCorrecao.push(`Nome do bebê corrigido pela IA (conferir): ${p.nomeBebe}`)
+        linhasCorrecao.push(`Valor anterior registrado: ${nomeRegistrado}`)
+      }
+      // Igual ao registrado: não duplica
+    }
+
+    // Lógica para previsao_nascimento_bebe
+    if (p.previsao) {
+      const previsaoNormalizada = normalizarValorIA(p.previsao)
+      if (!previsaoRegistrada) {
+        linhasObs.push(`Previsão de nascimento: ${p.previsao}`)
+      } else if (previsaoRegistrada !== previsaoNormalizada) {
+        linhasCorrecao.push(`Previsão corrigida pela IA (conferir): ${p.previsao}`)
+        linhasCorrecao.push(`Valor anterior registrado: ${previsaoRegistrada}`)
+      }
+      // Igual ao registrado: não duplica
+    }
+
+    const agora = new Date().toISOString()
+
+    // Cria observação de dado novo (se houver linha nova)
+    if (linhasObs.length > 0) {
+      const texto = [
+        `${PREFIXO_OBS_BEBE} na conversa.`,
+        ...linhasObs,
+        textoOrigem,
+        rodape,
+      ].join('\n')
+
+      await p.supabaseAdmin
+        .from('inteligencia_comercial_observacoes')
+        .insert({
+          numero_lancamento: p.numeroLancamento,
+          documento_saida_id: p.documentoSaidaId,
+          cliente_nome: p.clienteNome,
+          observacao: texto,
+          criado_por: 'IA Digisac',
+          atualizado_por: 'IA Digisac',
+          created_at: agora,
+          updated_at: agora,
+        })
+    }
+
+    // Cria observação de possível correção (se houver divergência)
+    if (linhasCorrecao.length > 0) {
+      const texto = [
+        `${PREFIXO_OBS_CORRECAO} identificada.`,
+        ...linhasCorrecao,
+        textoOrigem,
+        'Conferir antes de usar.',
+      ].join('\n')
+
+      await p.supabaseAdmin
+        .from('inteligencia_comercial_observacoes')
+        .insert({
+          numero_lancamento: p.numeroLancamento,
+          documento_saida_id: p.documentoSaidaId,
+          cliente_nome: p.clienteNome,
+          observacao: texto,
+          criado_por: 'IA Digisac',
+          atualizado_por: 'IA Digisac',
+          created_at: agora,
+          updated_at: agora,
+        })
+    }
+  } catch (err) {
+    console.error('[ia] erro ao criar observação bebê:', err)
+  }
 }
 
 // ── Salva dados do bebê no cadastro do cliente/telefone ──────

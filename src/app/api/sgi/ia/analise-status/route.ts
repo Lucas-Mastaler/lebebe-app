@@ -59,7 +59,9 @@ export async function GET(request: NextRequest) {
       total_mensagens,
       modelo_ia,
       erro_mensagem,
-      analisado_em
+      analisado_em,
+      nome_bebe,
+      previsao_nascimento_bebe
     `)
     .eq('fila_id', job.id)
     .order('created_at', { ascending: true })

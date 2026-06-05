@@ -294,6 +294,8 @@ async function finalizarJob(
       sentimento_cliente,
       pontos_de_atencao,
       confianca_analise,
+      nome_bebe,
+      previsao_nascimento_bebe,
       status
     `)
     .eq('fila_id', jobId)

@@ -8,6 +8,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import type { SgiDocumento, SgiVendaDetalhe, SgiVendaClienteResumo } from '@/types/sgi'
+import type { Agendamento } from '@/types'
 
 interface DigisacSyncStatus {
   jobId: string | null
@@ -400,6 +401,12 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
   const iaFilaIdRef = useRef<string | null>(null)
   const [iaChamadoExpandido, setIaChamadoExpandido] = useState<string | null>(null)
 
+  // ── estado local para Agendamentos Futuros ───────────────────
+  const [agendamentosFuturos, setAgendamentosFuturos] = useState<Agendamento[]>([])
+  const [agendamentosLoading, setAgendamentosLoading] = useState(false)
+  const [agendamentosCarregado, setAgendamentosCarregado] = useState(false)
+  const [agendamentoExpandido, setAgendamentoExpandido] = useState<string | null>(null)
+
   const carregarStatusIA = useCallback(async (numeroLancamento: string) => {
     try {
       const r = await fetch(`/api/sgi/ia/analise-status?numeroLancamento=${encodeURIComponent(numeroLancamento)}`)
@@ -424,10 +431,27 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
       iaFilaIdRef.current = null
       setDigisacChamadosCiclo([])
       setDigisacChamadosCicloAberto(false)
+      setAgendamentosFuturos([])
+      setAgendamentosCarregado(false)
+      setAgendamentoExpandido(null)
       return
     }
     carregarStatusIA(venda.numero_lancamento)
   }, [open, venda?.numero_lancamento, carregarStatusIA])
+
+  // Carrega agendamentos futuros ao abrir o modal
+  useEffect(() => {
+    if (!open || !venda?.numero_lancamento) return
+    let cancelled = false
+    setAgendamentosLoading(true)
+    setAgendamentosCarregado(false)
+    fetch(`/api/sgi/agendamentos-futuros?numeroLancamento=${encodeURIComponent(venda.numero_lancamento)}`)
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(data => { if (!cancelled) { setAgendamentosFuturos(data.agendamentos ?? []); setAgendamentosCarregado(true) } })
+      .catch(() => { if (!cancelled) setAgendamentosCarregado(true) })
+      .finally(() => { if (!cancelled) setAgendamentosLoading(false) })
+    return () => { cancelled = true }
+  }, [open, venda?.numero_lancamento])
 
   const executarLoop = useCallback(async (filaId: string) => {
     iaCanceladoRef.current = false
@@ -890,6 +914,114 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                   )}
                 </div>
               )}
+
+              {/* Agendamentos futuros */}
+              <div className="mt-4 pt-4 border-t border-violet-100">
+                <div className="flex items-center gap-2 mb-3">
+                  <Clock className="w-3.5 h-3.5 text-violet-500" />
+                  <span className="text-xs font-semibold text-violet-700">Agendamentos futuros</span>
+                  {agendamentosCarregado && (
+                    <span className="ml-auto text-[10px] text-slate-400">
+                      {agendamentosFuturos.length === 0 ? 'Nenhum' : `${agendamentosFuturos.length} encontrado${agendamentosFuturos.length !== 1 ? 's' : ''}`}
+                    </span>
+                  )}
+                </div>
+
+                {agendamentosLoading && (
+                  <div className="space-y-1.5">
+                    <div className="h-6 bg-violet-100/60 rounded animate-pulse" />
+                    <div className="h-6 bg-violet-100/40 rounded animate-pulse" />
+                  </div>
+                )}
+
+                {!agendamentosLoading && agendamentosCarregado && agendamentosFuturos.length === 0 && (
+                  <p className="text-xs text-slate-400 italic">
+                    Nenhum agendamento futuro encontrado para este cliente.
+                  </p>
+                )}
+
+                {!agendamentosLoading && agendamentosFuturos.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-violet-100 text-slate-500">
+                          <th className="text-left py-1.5 pr-2">Loja</th>
+                          <th className="text-left py-1.5 pr-2">Consultora</th>
+                          <th className="text-left py-1.5 pr-2">Nome Whatsapp</th>
+                          <th className="text-left py-1.5 pr-2">Nome Digisac</th>
+                          <th className="text-left py-1.5 pr-2 max-w-[160px]">Mensagem</th>
+                          <th className="text-left py-1.5 pr-2">Comentário</th>
+                          <th className="text-left py-1.5 pr-2">Tags</th>
+                          <th className="text-left py-1.5">Agendado</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {agendamentosFuturos.map((ag) => (
+                          <>
+                            <tr
+                              key={ag.id}
+                              className="border-b border-slate-50 hover:bg-violet-50/40 cursor-pointer"
+                              onClick={() => setAgendamentoExpandido(agendamentoExpandido === ag.id ? null : ag.id)}
+                            >
+                              <td className="py-1.5 pr-2 text-slate-600">{ag.loja || '—'}</td>
+                              <td className="py-1.5 pr-2 text-slate-600">{ag.consultora || '—'}</td>
+                              <td className="py-1.5 pr-2 text-slate-600">{ag.nomeWhatsapp || '—'}</td>
+                              <td className="py-1.5 pr-2 text-slate-600">{ag.nomeDigisac || '—'}</td>
+                              <td className="py-1.5 pr-2 max-w-[160px]">
+                                <span
+                                  className="block truncate text-slate-600"
+                                  title={ag.mensagemAgendada || ''}
+                                >
+                                  {ag.mensagemAgendada || '—'}
+                                </span>
+                              </td>
+                              <td className="py-1.5 pr-2 text-slate-500">{ag.comentario || '—'}</td>
+                              <td className="py-1.5 pr-2 text-slate-500">
+                                {ag.tags
+                                  ? <span className="inline-block px-1 py-0.5 bg-violet-100 text-violet-700 rounded text-[10px]">{ag.tags}</span>
+                                  : '—'
+                                }
+                              </td>
+                              <td className="py-1.5 text-slate-600 whitespace-nowrap">{ag.agendadoDia || '—'}</td>
+                            </tr>
+                            {agendamentoExpandido === ag.id && (
+                              <tr key={`${ag.id}-detalhe`} className="bg-violet-50/60">
+                                <td colSpan={8} className="px-3 py-3">
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1.5 text-xs">
+                                    <div><span className="text-slate-500">Loja:</span> <span className="text-slate-800 font-medium">{ag.loja || '—'}</span></div>
+                                    <div><span className="text-slate-500">Consultora:</span> <span className="text-slate-800 font-medium">{ag.consultora || '—'}</span></div>
+                                    <div><span className="text-slate-500">Nome Whatsapp:</span> <span className="text-slate-800 font-medium">{ag.nomeWhatsapp || '—'}</span></div>
+                                    <div><span className="text-slate-500">Nome Digisac:</span> <span className="text-slate-800 font-medium">{ag.nomeDigisac || '—'}</span></div>
+                                    <div><span className="text-slate-500">Status:</span> <span className="text-slate-800 font-medium">{ag.statusLabel || '—'}</span></div>
+                                    <div><span className="text-slate-500">Status chamado:</span> <span className="text-slate-800 font-medium">{ag.statusChamado || '—'}</span></div>
+                                    <div><span className="text-slate-500">Último chamado fechado:</span> <span className="text-slate-800 font-medium">{ag.ultimoChamadoFechado || '—'}</span></div>
+                                    <div><span className="text-slate-500">Abrir ticket?</span> <span className="text-slate-800 font-medium">{ag.abrirTicketLabel || '—'}</span></div>
+                                    <div><span className="text-slate-500">Notificar?</span> <span className="text-slate-800 font-medium">{ag.notificarLabel || '—'}</span></div>
+                                    <div><span className="text-slate-500">Agendado (dia):</span> <span className="text-slate-800 font-medium">{ag.agendadoDia || '—'}</span></div>
+                                    <div><span className="text-slate-500">Agendado (hr):</span> <span className="text-slate-800 font-medium">{ag.agendadoHora || '—'}</span></div>
+                                    <div><span className="text-slate-500">Criado em:</span> <span className="text-slate-800 font-medium">{ag.criadoEm || '—'}</span></div>
+                                    <div><span className="text-slate-500">Atualizado em:</span> <span className="text-slate-800 font-medium">{ag.atualizadoEm || '—'}</span></div>
+                                    <div className="col-span-2 sm:col-span-3">
+                                      <span className="text-slate-500">Tags:</span> <span className="text-slate-800 font-medium">{ag.tags || '—'}</span>
+                                    </div>
+                                    <div className="col-span-2 sm:col-span-3">
+                                      <span className="text-slate-500">Comentário:</span> <span className="text-slate-800 font-medium">{ag.comentario || '—'}</span>
+                                    </div>
+                                    <div className="col-span-2 sm:col-span-3">
+                                      <span className="text-slate-500 block mb-1">Mensagem agendada:</span>
+                                      <span className="text-slate-800 font-medium whitespace-pre-wrap break-words">{ag.mensagemAgendada || '—'}</span>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </Section>
 
             {/* Análise IA dos Chamados */}

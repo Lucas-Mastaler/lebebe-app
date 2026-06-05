@@ -2,9 +2,12 @@
 
 import {
   ShoppingCart, Banknote, CheckCircle2, ArrowLeftRight,
-  Clock, Truck, Percent, Receipt, BarChart3
+  Clock, Truck, Percent, Receipt, BarChart3, HelpCircle
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Tooltip, TooltipTrigger, TooltipContent
+} from '@/components/ui/tooltip'
 import type { SgiCards } from '@/types/sgi'
 
 function brl(value: number): string {
@@ -21,6 +24,7 @@ interface CardItem {
   icon: React.ElementType
   color: string
   title?: string
+  tooltip?: string
 }
 
 interface CardsSGIProps {
@@ -44,11 +48,11 @@ export function CardsSGI({ cards, isLoading }: CardsSGIProps) {
           color: 'text-emerald-600 bg-emerald-50',
         },
         {
-          label: 'Valor pago novo',
+          label: 'Valor recebido',
           value: brl(cards.valor_pago_novo),
           icon: CheckCircle2,
           color: 'text-green-600 bg-green-50',
-          title: 'Valor pago em vendas novas (exclui trocas/devoluções)',
+          tooltip: 'Valor efetivamente recebido na venda em dinheiro, cartão, PIX, boleto ou link de pagamento. Não considera crédito de troca como novo recebimento.',
         },
         {
           label: 'Crédito de troca',
@@ -116,6 +120,18 @@ export function CardsSGI({ cards, isLoading }: CardsSGIProps) {
                 <Icon className="w-3.5 h-3.5" />
               </span>
               <span className="text-xs text-slate-500 leading-tight">{item.label}</span>
+              {item.tooltip && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="ml-auto cursor-help text-slate-400 hover:text-slate-600">
+                      <HelpCircle className="w-3 h-3" />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs text-xs">
+                    {item.tooltip}
+                  </TooltipContent>
+                </Tooltip>
+              )}
             </div>
             <p className="text-sm font-semibold text-slate-800 leading-tight">{item.value}</p>
           </div>

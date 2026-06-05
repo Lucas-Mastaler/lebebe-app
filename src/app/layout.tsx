@@ -5,6 +5,7 @@ import { LayoutWrapper } from "@/components/LayoutWrapper";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 import { Toaster } from "sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -40,7 +41,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <LayoutWrapper>{children}</LayoutWrapper>
+        <TooltipProvider>
+          <LayoutWrapper>{children}</LayoutWrapper>
+        </TooltipProvider>
 
         {/* Toast Notifications */}
         <Toaster position="bottom-right" richColors />

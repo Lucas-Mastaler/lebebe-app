@@ -66,21 +66,23 @@ export async function GET(request: NextRequest) {
     .eq('fila_id', job.id)
     .order('created_at', { ascending: true })
 
-  // Enriquece com protocolo, data, tipo e telefone
+  // Enriquece com protocolo, data, tipo, telefone, loja e consultora
   const ticketIds = (chamados ?? []).map((c) => c.digisac_ticket_id)
-  let ticketInfoMap: Record<string, { protocolo: string | null; started_at: string | null; telefone_normalizado: string | null }> = {}
+  let ticketInfoMap: Record<string, { protocolo: string | null; started_at: string | null; telefone_normalizado: string | null; department_nome: string | null; user_nome: string | null }> = {}
   let vinculoMap: Record<string, { inicio_chamado: string | null }> = {}
 
   if (ticketIds.length > 0) {
     const { data: conversas } = await supabase
       .from('digisac_conversas_resumo')
-      .select('digisac_ticket_id, protocolo, started_at, telefone_normalizado')
+      .select('digisac_ticket_id, protocolo, started_at, telefone_normalizado, department_nome, user_nome')
       .in('digisac_ticket_id', ticketIds)
     for (const c of (conversas ?? [])) {
       ticketInfoMap[c.digisac_ticket_id] = {
         protocolo: c.protocolo,
         started_at: c.started_at,
         telefone_normalizado: c.telefone_normalizado,
+        department_nome: c.department_nome ?? null,
+        user_nome: c.user_nome ?? null,
       }
     }
 
@@ -101,6 +103,8 @@ export async function GET(request: NextRequest) {
       data_chamado: ticketInfoMap[c.digisac_ticket_id]?.started_at ?? null,
       telefone: ticketInfoMap[c.digisac_ticket_id]?.telefone_normalizado ?? null,
       tipo_chamado: vinculoMap[c.digisac_ticket_id]?.inicio_chamado ?? null,
+      department_nome: ticketInfoMap[c.digisac_ticket_id]?.department_nome ?? null,
+      user_nome: ticketInfoMap[c.digisac_ticket_id]?.user_nome ?? null,
     }))
     .sort((a, b) => {
       if (!a.data_chamado && !b.data_chamado) return 0

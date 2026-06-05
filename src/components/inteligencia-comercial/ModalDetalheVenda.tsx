@@ -324,6 +324,8 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
     data_chamado: string | null
     tipo_chamado: string | null
     telefone: string | null
+    department_nome: string | null
+    user_nome: string | null
     status: string
     resumo_chamado: string | null
     influencia_compra: string | null
@@ -1488,6 +1490,7 @@ function IaAnalisePanel({
   chamados: {
     id: string; digisac_ticket_id: string; protocolo: string | null; data_chamado: string | null
     tipo_chamado: string | null; telefone: string | null
+    department_nome: string | null; user_nome: string | null
     status: string; resumo_chamado: string | null; influencia_compra: string | null
     grau_influencia: string | null; motivo_influencia: string | null
     produtos_mencionados: string[]; objecoes_identificadas: string[]
@@ -1669,6 +1672,9 @@ function IaAnalisePanel({
                 <tr className="border-b border-indigo-100 text-slate-500 text-left">
                   <th className="py-1.5 pr-3">Protocolo</th>
                   <th className="py-1.5 pr-3">Data</th>
+                  <th className="py-1.5 pr-3">Loja/Depto.</th>
+                  <th className="py-1.5 pr-3">Consultora</th>
+                  <th className="py-1.5 pr-3">Telefone</th>
                   <th className="py-1.5 pr-3 max-w-[180px]">Resumo</th>
                   <th className="py-1.5 pr-3">Influenciou?</th>
                   <th className="py-1.5 pr-3">Grau</th>
@@ -1682,6 +1688,15 @@ function IaAnalisePanel({
                       <td className="py-1.5 pr-3 font-mono text-slate-600">{c.protocolo ?? '—'}</td>
                       <td className="py-1.5 pr-3 text-slate-500 whitespace-nowrap">
                         {c.data_chamado ? new Date(c.data_chamado).toLocaleDateString('pt-BR') : '—'}
+                      </td>
+                      <td className="py-1.5 pr-3 max-w-[120px] truncate" title={c.department_nome ?? undefined}>
+                        {c.department_nome ?? <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="py-1.5 pr-3 max-w-[120px] truncate" title={c.user_nome ?? undefined}>
+                        {c.user_nome ?? <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="py-1.5 pr-3 font-mono text-slate-600 whitespace-nowrap">
+                        {c.telefone ?? <span className="text-slate-300">—</span>}
                       </td>
                       <td className="py-1.5 pr-3 max-w-[180px]">
                         {c.status === 'erro' ? (
@@ -1722,7 +1737,7 @@ function IaAnalisePanel({
                     </tr>
                     {chamadoExpandido === c.id && (
                       <tr key={`${c.id}-expand`} className="bg-indigo-50/40">
-                        <td colSpan={6} className="px-3 py-3">
+                        <td colSpan={9} className="px-3 py-3">
                           <div className="space-y-2 text-sm">
                             {/* Auditoria do chamado */}
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 bg-white border border-indigo-100 rounded-lg px-3 py-2">

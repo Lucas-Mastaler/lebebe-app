@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     // Busca metadados do ticket
     const { data: conversa } = await supabase
       .from('digisac_conversas_resumo')
-      .select('protocolo, comments, department_nome, user_nome, service_nome, cliente_nome_digisac')
+      .select('protocolo, comments, department_nome, user_nome, service_nome, cliente_nome_digisac, telefone_normalizado, telefone_normalizado_ddi')
       .eq('digisac_ticket_id', ticketId)
       .maybeSingle()
 
@@ -150,6 +150,8 @@ export async function POST(request: NextRequest) {
         sentimento_cliente: resultado.sentimento_cliente,
         pontos_de_atencao: resultado.pontos_de_atencao,
         confianca_analise: resultado.confianca_analise,
+        nome_bebe: resultado.nome_bebe,
+        previsao_nascimento_bebe: resultado.previsao_nascimento_bebe,
         transcript_truncado: truncado,
         transcript_tamanho_chars: transcript.length,
         total_mensagens: totalMensagens,
@@ -159,6 +161,21 @@ export async function POST(request: NextRequest) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', registroId)
+
+    // Salva dados do bebê no cadastro do cliente/telefone
+    const temDadosBebe = resultado.nome_bebe || resultado.previsao_nascimento_bebe
+    if (temDadosBebe && conversa?.telefone_normalizado_ddi) {
+      await salvarDadosBebeCliente({
+        telefoneDdi: conversa.telefone_normalizado_ddi,
+        telefone: conversa.telefone_normalizado ?? null,
+        clienteNome: venda?.cliente ?? conversa.cliente_nome_digisac ?? null,
+        nomeBebe: resultado.nome_bebe,
+        previsao: resultado.previsao_nascimento_bebe,
+        numeroLancamento,
+        ticketId,
+        supabaseAdmin,
+      })
+    }
 
     // Incrementa progresso
     const novosProcessados = job.chamados_processados + 1
@@ -312,6 +329,8 @@ async function finalizarJob(
         produtos_de_interesse: consolidado.produtos_de_interesse,
         oportunidades_melhoria: consolidado.oportunidades_melhoria,
         conclusao_comercial: consolidado.conclusao_comercial,
+        nome_bebe: consolidado.nome_bebe,
+        previsao_nascimento_bebe: consolidado.previsao_nascimento_bebe,
         total_chamados_analisados: (analisados ?? []).length,
         modelo_ia: consolidado.modelo_ia,
         gerado_em: new Date().toISOString(),
@@ -435,6 +454,8 @@ ${p.transcript || '(sem mensagens registradas)'}
 ## INSTRUÇÃO FINAL
 Compare o conteúdo da conversa com os produtos listados acima. Se houver menção a produto ou categoria que conste na lista, não classifique como "Não". Seja criterioso para não inventar influência, mas não ignore relação direta entre conversa e produto comprado.
 
+Se a conversa mencionar explicitamente nome do bebê ou previsão de nascimento, preencha os campos correspondentes. Não infira por produto, cor ou contexto. Se não houver menção explícita, retorne null.
+
 Retorne exatamente este JSON (sem markdown, sem texto fora do JSON):
 {
   "resumo_chamado": "...",
@@ -446,8 +467,94 @@ Retorne exatamente este JSON (sem markdown, sem texto fora do JSON):
   "intencao_cliente": "Alta | Média | Baixa | Indefinida",
   "sentimento_cliente": "Positivo | Neutro | Negativo | Indefinido",
   "pontos_de_atencao": ["..."],
-  "confianca_analise": "Alta | Média | Baixa"
+  "confianca_analise": "Alta | Média | Baixa",
+  "nome_bebe": "string ou null",
+  "previsao_nascimento_bebe": "string ou null"
 }`
+}
+
+// ── Salva dados do bebê no cadastro do cliente/telefone ──────
+
+interface SalvarBebeParams {
+  telefoneDdi: string
+  telefone: string | null
+  clienteNome: string | null
+  nomeBebe: string | null
+  previsao: string | null
+  numeroLancamento: string
+  ticketId: string
+  supabaseAdmin: ReturnType<typeof createServiceClient>
+}
+
+async function salvarDadosBebeCliente(p: SalvarBebeParams) {
+  try {
+    const { data: existente } = await p.supabaseAdmin
+      .from('inteligencia_comercial_clientes')
+      .select('id, nome_bebe, previsao_nascimento_bebe, conflito_observacao')
+      .eq('telefone_normalizado_ddi', p.telefoneDdi)
+      .maybeSingle()
+
+    const agora = new Date().toISOString()
+
+    if (!existente) {
+      // Registro novo
+      await p.supabaseAdmin
+        .from('inteligencia_comercial_clientes')
+        .insert({
+          telefone_normalizado_ddi: p.telefoneDdi,
+          telefone_normalizado: p.telefone,
+          cliente_nome: p.clienteNome,
+          nome_bebe: p.nomeBebe,
+          previsao_nascimento_bebe: p.previsao,
+          numero_lancamento_origem: p.numeroLancamento,
+          digisac_ticket_id_origem: p.ticketId,
+          origem_dado: 'ia_digisac',
+          updated_at: agora,
+        })
+      return
+    }
+
+    // Registro existe — aplicar regras anti-sobrescrita
+    const updates: Record<string, unknown> = { updated_at: agora }
+    const conflitos: string[] = existente.conflito_observacao
+      ? [existente.conflito_observacao]
+      : []
+
+    // nome_bebe
+    if (p.nomeBebe) {
+      if (!existente.nome_bebe) {
+        updates.nome_bebe = p.nomeBebe
+      } else if (existente.nome_bebe !== p.nomeBebe) {
+        conflitos.push(
+          `IA encontrou nome do bebê "${p.nomeBebe}" no chamado ${p.ticketId} (lançamento ${p.numeroLancamento}), mas o cadastro já tinha "${existente.nome_bebe}". Valor antigo preservado.`
+        )
+      }
+    }
+
+    // previsao_nascimento_bebe
+    if (p.previsao) {
+      if (!existente.previsao_nascimento_bebe) {
+        updates.previsao_nascimento_bebe = p.previsao
+      } else if (existente.previsao_nascimento_bebe !== p.previsao) {
+        conflitos.push(
+          `IA encontrou previsão "${p.previsao}" no chamado ${p.ticketId} (lançamento ${p.numeroLancamento}), mas o cadastro já tinha "${existente.previsao_nascimento_bebe}". Valor antigo preservado.`
+        )
+      }
+    }
+
+    if (conflitos.length > 0) {
+      updates.conflito_observacao = conflitos.join(' | ')
+    }
+
+    if (Object.keys(updates).length > 1) {
+      await p.supabaseAdmin
+        .from('inteligencia_comercial_clientes')
+        .update(updates)
+        .eq('id', existente.id)
+    }
+  } catch (err) {
+    console.error('[ia] erro ao salvar dados bebê no cliente:', err)
+  }
 }
 
 function montarPromptConsolidado(
@@ -469,9 +576,15 @@ function montarPromptConsolidado(
 - Pontos de atenção: ${JSON.stringify(a.pontos_de_atencao)}`
   }).join('\n\n')
 
+  // Extrai dados de bebê já encontrados nos chamados individuais
+  const bebeEncontrado = analisados.find(a => a.nome_bebe || a.previsao_nascimento_bebe)
+  const ctxBebe = bebeEncontrado
+    ? `\n\nDados do bebê já identificados: nome=${bebeEncontrado.nome_bebe ?? 'não informado'}, previsão=${bebeEncontrado.previsao_nascimento_bebe ?? 'não informada'}. Inclua se confirmado.`
+    : ''
+
   return `## Análise consolidada da venda ${numeroLancamento}
 
-Total de chamados analisados: ${analisados.length}
+Total de chamados analisados: ${analisados.length}${ctxBebe}
 
 ${resumos}
 
@@ -484,6 +597,8 @@ ${resumos}
   "principais_objecoes": ["..."],
   "produtos_de_interesse": ["..."],
   "oportunidades_melhoria": ["..."],
-  "conclusao_comercial": "..."
+  "conclusao_comercial": "...",
+  "nome_bebe": "string ou null",
+  "previsao_nascimento_bebe": "string ou null"
 }`
 }

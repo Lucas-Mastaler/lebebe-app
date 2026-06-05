@@ -318,6 +318,8 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
     digisac_ticket_id: string
     protocolo: string | null
     data_chamado: string | null
+    tipo_chamado: string | null
+    telefone: string | null
     status: string
     resumo_chamado: string | null
     influencia_compra: string | null
@@ -334,6 +336,8 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
     modelo_ia: string | null
     erro_mensagem: string | null
     analisado_em: string | null
+    nome_bebe?: string | null
+    previsao_nascimento_bebe?: string | null
   }
   interface IaConsolidado {
     resumo_geral: string | null
@@ -344,9 +348,21 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
     produtos_de_interesse: string[]
     oportunidades_melhoria: string[]
     conclusao_comercial: string | null
+    nome_bebe?: string | null
+    previsao_nascimento_bebe?: string | null
     total_chamados_analisados: number
     modelo_ia: string | null
     gerado_em: string | null
+  }
+
+  interface DigisacChamadoCiclo {
+    digisac_ticket_id: string
+    protocolo: string | null
+    data_inicio: string | null
+    tipo_chamado: string | null
+    telefone: string | null
+    telefone_ddi: string | null
+    departamento: string | null
   }
   interface IaJob {
     id: string
@@ -356,6 +372,23 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
     chamadosComErro: number
     finalizadoEm: string | null
   }
+
+  const [digisacChamadosCiclo, setDigisacChamadosCiclo] = useState<DigisacChamadoCiclo[]>([])
+  const [digisacChamadosCicloAberto, setDigisacChamadosCicloAberto] = useState(false)
+  const [digisacChamadosCicloLoading, setDigisacChamadosCicloLoading] = useState(false)
+
+  const carregarChamadosCiclo = useCallback(async (numeroLancamento: string) => {
+    setDigisacChamadosCicloLoading(true)
+    try {
+      const r = await fetch(`/api/sgi/digisac/chamados-ciclo?numeroLancamento=${encodeURIComponent(numeroLancamento)}`)
+      if (r.ok) {
+        const data = await r.json()
+        setDigisacChamadosCiclo(data.chamados ?? [])
+      }
+    } catch { /* silencioso */ } finally {
+      setDigisacChamadosCicloLoading(false)
+    }
+  }, [])
 
   const [iaJob, setIaJob] = useState<IaJob | null>(null)
   const [iaChamados, setIaChamados] = useState<IaChamadoAnalise[]>([])
@@ -389,6 +422,8 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
       setIaPausado(false)
       setIaErro(null)
       iaFilaIdRef.current = null
+      setDigisacChamadosCiclo([])
+      setDigisacChamadosCicloAberto(false)
       return
     }
     carregarStatusIA(venda.numero_lancamento)
@@ -795,6 +830,66 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                 onSincronizar={() => iniciarSincronizacao(false)}
                 onForcar={() => iniciarSincronizacao(true)}
               />
+              {/* Botão Ver detalhes dos chamados do ciclo */}
+              {(digisacStatus?.status === 'concluido' || digisacStatus?.status === 'ignorado_cache_valido') && (
+                <div className="mt-3 pt-3 border-t border-violet-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-slate-600">Considerados nesta venda</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-xs h-7 text-violet-700 hover:bg-violet-50"
+                      onClick={() => {
+                        if (!digisacChamadosCicloAberto && digisacChamadosCiclo.length === 0 && venda?.numero_lancamento) {
+                          carregarChamadosCiclo(venda.numero_lancamento)
+                        }
+                        setDigisacChamadosCicloAberto(v => !v)
+                      }}
+                    >
+                      {digisacChamadosCicloAberto ? <ChevronUp className="w-3 h-3 mr-1" /> : <ChevronDown className="w-3 h-3 mr-1" />}
+                      Ver detalhes
+                    </Button>
+                  </div>
+                  {digisacChamadosCicloAberto && (
+                    digisacChamadosCicloLoading ? (
+                      <p className="text-xs text-slate-400">Carregando...</p>
+                    ) : digisacChamadosCiclo.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">Nenhum chamado considerado no ciclo desta venda.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-violet-100 text-slate-500">
+                              <th className="text-left py-1.5 pr-3">Data de início</th>
+                              <th className="text-left py-1.5 pr-3">Tipo</th>
+                              <th className="text-left py-1.5 pr-3">Telefone</th>
+                              <th className="text-left py-1.5">Protocolo</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {digisacChamadosCiclo.map((c) => (
+                              <tr key={c.digisac_ticket_id} className="border-b border-slate-50">
+                                <td className="py-1.5 pr-3 text-slate-600">{c.data_inicio ? new Date(c.data_inicio).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                                <td className="py-1.5 pr-3">
+                                  <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                    c.tipo_chamado === 'ativo' ? 'bg-blue-100 text-blue-700' :
+                                    c.tipo_chamado === 'receptivo' ? 'bg-emerald-100 text-emerald-700' :
+                                    'bg-slate-100 text-slate-500'
+                                  }`}>
+                                    {c.tipo_chamado === 'ativo' ? 'Ativo' : c.tipo_chamado === 'receptivo' ? 'Receptivo' : 'Indefinido'}
+                                  </span>
+                                </td>
+                                <td className="py-1.5 pr-3 font-mono text-slate-600">{c.telefone ?? c.telefone_ddi ?? '—'}</td>
+                                <td className="py-1.5 text-slate-500 font-mono">{c.protocolo ?? '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
             </Section>
 
             {/* Análise IA dos Chamados */}
@@ -814,39 +909,6 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                 onContinuar={continuarAnaliseIA}
                 onCancelar={() => { iaCanceladoRef.current = true }}
               />
-            </Section>
-
-            {/* Observações Comerciais */}
-            <Section icon={MessageSquarePlus} title="Observações Comerciais" variant="default">
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  <textarea
-                    className="flex-1 text-sm border border-slate-200 rounded-lg p-2 resize-none focus:outline-none focus:ring-2 focus:ring-sky-200 placeholder:text-slate-400"
-                    rows={2}
-                    placeholder="Adicionar observação..."
-                    value={novaObs}
-                    onChange={e => setNovaObs(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSalvarObs() }}
-                  />
-                  <Button size="sm" className="self-end" onClick={handleSalvarObs} disabled={savingObs || !novaObs.trim()}>
-                    {savingObs ? <Loader2 className="w-3 h-3 animate-spin" /> : <Tag className="w-3 h-3" />}
-                  </Button>
-                </div>
-                {!obsCarregada ? (
-                  <p className="text-xs text-slate-400">Carregando...</p>
-                ) : obsLista.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">Nenhuma observação ainda.</p>
-                ) : (
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                    {obsLista.map(o => (
-                      <div key={o.id} className="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-                        <p className="text-xs text-slate-700">{o.observacao}</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">{o.criado_por} · {new Date(o.created_at).toLocaleDateString('pt-BR')}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
             </Section>
 
             {/* Pagamentos */}
@@ -881,6 +943,39 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                   </table>
                 </div>
               )}
+            </Section>
+
+            {/* Observações Comerciais */}
+            <Section icon={MessageSquarePlus} title="Observações Comerciais" variant="default">
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <textarea
+                    className="flex-1 text-sm border border-slate-200 rounded-lg p-2 resize-none focus:outline-none focus:ring-2 focus:ring-sky-200 placeholder:text-slate-400"
+                    rows={2}
+                    placeholder="Adicionar observação..."
+                    value={novaObs}
+                    onChange={e => setNovaObs(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSalvarObs() }}
+                  />
+                  <Button size="sm" className="self-end" onClick={handleSalvarObs} disabled={savingObs || !novaObs.trim()}>
+                    {savingObs ? <Loader2 className="w-3 h-3 animate-spin" /> : <Tag className="w-3 h-3" />}
+                  </Button>
+                </div>
+                {!obsCarregada ? (
+                  <p className="text-xs text-slate-400">Carregando...</p>
+                ) : obsLista.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">Nenhuma observação ainda.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {obsLista.map(o => (
+                      <div key={o.id} className="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                        <p className="text-xs text-slate-700">{o.observacao}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">{o.criado_por} · {new Date(o.created_at).toLocaleDateString('pt-BR')}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </Section>
 
           </div>
@@ -1226,6 +1321,7 @@ function IaAnalisePanel({
   job: { id: string; status: string; totalChamados: number; chamadosProcessados: number; chamadosComErro: number; finalizadoEm: string | null } | null
   chamados: {
     id: string; digisac_ticket_id: string; protocolo: string | null; data_chamado: string | null
+    tipo_chamado: string | null; telefone: string | null
     status: string; resumo_chamado: string | null; influencia_compra: string | null
     grau_influencia: string | null; motivo_influencia: string | null
     produtos_mencionados: string[]; objecoes_identificadas: string[]
@@ -1233,11 +1329,13 @@ function IaAnalisePanel({
     pontos_de_atencao: string[]; confianca_analise: string | null
     transcript_truncado: boolean; total_mensagens: number | null
     modelo_ia: string | null; erro_mensagem: string | null; analisado_em: string | null
+    nome_bebe?: string | null; previsao_nascimento_bebe?: string | null
   }[]
   consolidado: {
     resumo_geral: string | null; conclusao_comercial: string | null
     principais_motivos_compra: string[]; principais_objecoes: string[]
     produtos_de_interesse: string[]; oportunidades_melhoria: string[]
+    nome_bebe?: string | null; previsao_nascimento_bebe?: string | null
     total_chamados_analisados: number; modelo_ia: string | null; gerado_em: string | null
   } | null
   processando: boolean
@@ -1329,60 +1427,68 @@ function IaAnalisePanel({
 
       {/* ── Resumo consolidado ── */}
       {consolidado && (
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 space-y-2">
-          <p className="text-xs font-semibold text-indigo-700 flex items-center gap-1">
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 space-y-3">
+          <p className="text-sm font-semibold text-indigo-700 flex items-center gap-1">
             <Brain className="w-3.5 h-3.5" /> Resumo consolidado da venda
           </p>
           {consolidado.resumo_geral && (
-            <p className="text-xs text-slate-700 leading-relaxed">{consolidado.resumo_geral}</p>
+            <p className="text-sm text-slate-700 leading-relaxed">{consolidado.resumo_geral}</p>
           )}
           {consolidado.conclusao_comercial && (
-            <p className="text-xs text-indigo-800 font-medium border-t border-indigo-100 pt-2">{consolidado.conclusao_comercial}</p>
+            <p className="text-sm text-indigo-800 font-medium border-t border-indigo-100 pt-2">{consolidado.conclusao_comercial}</p>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+          {/* Dados do bebê, se houver */}
+          {(consolidado.nome_bebe || consolidado.previsao_nascimento_bebe) && (
+            <div className="bg-pink-50 border border-pink-200 rounded-lg px-3 py-2 text-sm">
+              <p className="font-semibold text-pink-700 mb-1">Dados do bebê</p>
+              {consolidado.nome_bebe && <p className="text-slate-700">Nome: <span className="font-medium">{consolidado.nome_bebe}</span></p>}
+              {consolidado.previsao_nascimento_bebe && <p className="text-slate-700">Previsão de nascimento: <span className="font-medium">{consolidado.previsao_nascimento_bebe}</span></p>}
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             {consolidado.principais_motivos_compra.length > 0 && (
               <div>
-                <p className="text-[10px] font-semibold text-slate-500 mb-1">Principais motivos</p>
-                <ul className="space-y-0.5">
+                <p className="text-xs font-semibold text-slate-500 mb-1">Principais motivos</p>
+                <ul className="space-y-1">
                   {consolidado.principais_motivos_compra.map((m, i) => (
-                    <li key={i} className="text-[11px] text-slate-700 flex gap-1"><span className="text-indigo-400">•</span>{m}</li>
+                    <li key={i} className="text-sm text-slate-700 flex gap-1"><span className="text-indigo-400">•</span>{m}</li>
                   ))}
                 </ul>
               </div>
             )}
             {consolidado.principais_objecoes.length > 0 && (
               <div>
-                <p className="text-[10px] font-semibold text-slate-500 mb-1">Objeções</p>
-                <ul className="space-y-0.5">
+                <p className="text-xs font-semibold text-slate-500 mb-1">Objeções</p>
+                <ul className="space-y-1">
                   {consolidado.principais_objecoes.map((o, i) => (
-                    <li key={i} className="text-[11px] text-slate-700 flex gap-1"><span className="text-amber-400">•</span>{o}</li>
+                    <li key={i} className="text-sm text-slate-700 flex gap-1"><span className="text-amber-400">•</span>{o}</li>
                   ))}
                 </ul>
               </div>
             )}
             {consolidado.produtos_de_interesse.length > 0 && (
               <div>
-                <p className="text-[10px] font-semibold text-slate-500 mb-1">Produtos de interesse</p>
-                <ul className="space-y-0.5">
+                <p className="text-xs font-semibold text-slate-500 mb-1">Produtos de interesse</p>
+                <ul className="space-y-1">
                   {consolidado.produtos_de_interesse.map((p, i) => (
-                    <li key={i} className="text-[11px] text-slate-700 flex gap-1"><span className="text-emerald-400">•</span>{p}</li>
+                    <li key={i} className="text-sm text-slate-700 flex gap-1"><span className="text-emerald-400">•</span>{p}</li>
                   ))}
                 </ul>
               </div>
             )}
             {consolidado.oportunidades_melhoria.length > 0 && (
               <div>
-                <p className="text-[10px] font-semibold text-slate-500 mb-1">Oportunidades</p>
-                <ul className="space-y-0.5">
+                <p className="text-xs font-semibold text-slate-500 mb-1">Oportunidades</p>
+                <ul className="space-y-1">
                   {consolidado.oportunidades_melhoria.map((o, i) => (
-                    <li key={i} className="text-[11px] text-slate-700 flex gap-1"><span className="text-violet-400">•</span>{o}</li>
+                    <li key={i} className="text-sm text-slate-700 flex gap-1"><span className="text-violet-400">•</span>{o}</li>
                   ))}
                 </ul>
               </div>
             )}
           </div>
           {consolidado.modelo_ia && (
-            <p className="text-[10px] text-slate-400 pt-1 border-t border-indigo-100">modelo: {consolidado.modelo_ia}</p>
+            <p className="text-xs text-slate-400 pt-1 border-t border-indigo-100">modelo: {consolidado.modelo_ia}</p>
           )}
         </div>
       )}
@@ -1451,7 +1557,21 @@ function IaAnalisePanel({
                     {chamadoExpandido === c.id && (
                       <tr key={`${c.id}-expand`} className="bg-indigo-50/40">
                         <td colSpan={6} className="px-3 py-3">
-                          <div className="space-y-2 text-xs">
+                          <div className="space-y-2 text-sm">
+                            {/* Auditoria do chamado */}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 bg-white border border-indigo-100 rounded-lg px-3 py-2">
+                              <p><span className="text-xs font-semibold text-slate-500">Data de início</span><br /><span className="text-slate-700">{c.data_chamado ? new Date(c.data_chamado).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</span></p>
+                              <p><span className="text-xs font-semibold text-slate-500">Tipo</span><br />
+                                <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium mt-0.5 ${
+                                  c.tipo_chamado === 'ativo' ? 'bg-blue-100 text-blue-700' :
+                                  c.tipo_chamado === 'receptivo' ? 'bg-emerald-100 text-emerald-700' :
+                                  'bg-slate-100 text-slate-500'
+                                }`}>
+                                  {c.tipo_chamado === 'ativo' ? 'Ativo' : c.tipo_chamado === 'receptivo' ? 'Receptivo' : 'Indefinido'}
+                                </span>
+                              </p>
+                              <p><span className="text-xs font-semibold text-slate-500">Telefone</span><br /><span className="font-mono text-slate-700">{c.telefone ?? '—'}</span></p>
+                            </div>
                             {c.motivo_influencia && (
                               <p><span className="font-semibold text-slate-600">Motivo: </span><span className="text-slate-700">{c.motivo_influencia}</span></p>
                             )}
@@ -1470,7 +1590,14 @@ function IaAnalisePanel({
                             {c.pontos_de_atencao.length > 0 && (
                               <p><span className="font-semibold text-slate-600">Pontos de atenção: </span><span className="text-slate-700">{c.pontos_de_atencao.join(', ')}</span></p>
                             )}
-                            <div className="flex gap-3 text-[10px] text-slate-400 pt-1 border-t border-indigo-100">
+                            {(c.nome_bebe || c.previsao_nascimento_bebe) && (
+                              <div className="bg-pink-50 border border-pink-200 rounded px-2 py-1.5">
+                                <span className="text-xs font-semibold text-pink-700">Bebê: </span>
+                                {c.nome_bebe && <span className="text-slate-700 mr-2">Nome: {c.nome_bebe}</span>}
+                                {c.previsao_nascimento_bebe && <span className="text-slate-700">Previsão: {c.previsao_nascimento_bebe}</span>}
+                              </div>
+                            )}
+                            <div className="flex gap-3 text-xs text-slate-400 pt-1 border-t border-indigo-100">
                               {c.confianca_analise && <span>Confiança: {c.confianca_analise}</span>}
                               {c.total_mensagens != null && <span>{c.total_mensagens} mensagens</span>}
                               {c.transcript_truncado && <span className="text-amber-500">transcript truncado</span>}
@@ -1510,8 +1637,8 @@ function IaAnalisePanel({
             </Button>
           </>
         )}
-        {/* Concluído: reanalisar */}
-        {concluido && !emAndamento && !pausado && (
+        {/* Concluído (com ou sem erro): reanalisar */}
+        {!emAndamento && !pausado && job?.status === 'concluido' && (
           <Button size="sm" variant="outline" onClick={onReanalisar}
             className="text-xs h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-50">
             <RefreshCw className="w-3 h-3 mr-1.5" />Reanalisar

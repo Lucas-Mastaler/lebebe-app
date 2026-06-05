@@ -9,6 +9,8 @@ export interface ResultadoChamadoIA {
   sentimento_cliente: 'Positivo' | 'Neutro' | 'Negativo' | 'Indefinido'
   pontos_de_atencao: string[]
   confianca_analise: 'Alta' | 'Média' | 'Baixa'
+  nome_bebe: string | null
+  previsao_nascimento_bebe: string | null
   modelo_ia: string
 }
 
@@ -21,6 +23,8 @@ export interface ResultadoConsolidadoIA {
   produtos_de_interesse: string[]
   oportunidades_melhoria: string[]
   conclusao_comercial: string
+  nome_bebe: string | null
+  previsao_nascimento_bebe: string | null
   modelo_ia: string
 }
 
@@ -49,6 +53,13 @@ function validarResultadoChamado(raw: unknown): Omit<ResultadoChamadoIA, 'modelo
     return val as T
   }
 
+  const optionalString = (key: string): string | null => {
+    const v = obj[key]
+    if (v === null || v === undefined || v === '') return null
+    if (typeof v === 'string') return v
+    return null
+  }
+
   return {
     resumo_chamado: assertString('resumo_chamado'),
     influencia_compra: assertEnum('influencia_compra', VALID_INFLUENCIA),
@@ -60,6 +71,8 @@ function validarResultadoChamado(raw: unknown): Omit<ResultadoChamadoIA, 'modelo
     sentimento_cliente: assertEnum('sentimento_cliente', VALID_SENTIMENTO),
     pontos_de_atencao: assertStringArray('pontos_de_atencao'),
     confianca_analise: assertEnum('confianca_analise', VALID_CONFIANCA),
+    nome_bebe: optionalString('nome_bebe'),
+    previsao_nascimento_bebe: optionalString('previsao_nascimento_bebe'),
   }
 }
 
@@ -248,6 +261,13 @@ Baseie-se apenas nos dados fornecidos, não invente informações.`
 
   console.log(`[deepseek] análise consolidada ok — modelo=${model}`)
 
+  const toOptionalString = (key: string): string | null => {
+    const v = obj[key]
+    if (v === null || v === undefined || v === '') return null
+    if (typeof v === 'string') return v
+    return null
+  }
+
   return {
     resumo_geral: String(obj.resumo_geral ?? ''),
     chamados_que_influenciaram: toObjArray('chamados_que_influenciaram'),
@@ -257,6 +277,8 @@ Baseie-se apenas nos dados fornecidos, não invente informações.`
     produtos_de_interesse: toStringArray('produtos_de_interesse'),
     oportunidades_melhoria: toStringArray('oportunidades_melhoria'),
     conclusao_comercial: String(obj.conclusao_comercial ?? ''),
+    nome_bebe: toOptionalString('nome_bebe'),
+    previsao_nascimento_bebe: toOptionalString('previsao_nascimento_bebe'),
     modelo_ia: model,
   }
 }

@@ -64,16 +64,31 @@ export async function GET(request: NextRequest) {
     .eq('fila_id', job.id)
     .order('created_at', { ascending: true })
 
-  // Enriquece com protocolo e data do ticket
+  // Enriquece com protocolo, data, tipo e telefone
   const ticketIds = (chamados ?? []).map((c) => c.digisac_ticket_id)
-  let ticketInfoMap: Record<string, { protocolo: string | null; started_at: string | null }> = {}
+  let ticketInfoMap: Record<string, { protocolo: string | null; started_at: string | null; telefone_normalizado: string | null }> = {}
+  let vinculoMap: Record<string, { inicio_chamado: string | null }> = {}
+
   if (ticketIds.length > 0) {
     const { data: conversas } = await supabase
       .from('digisac_conversas_resumo')
-      .select('digisac_ticket_id, protocolo, started_at')
+      .select('digisac_ticket_id, protocolo, started_at, telefone_normalizado')
       .in('digisac_ticket_id', ticketIds)
     for (const c of (conversas ?? [])) {
-      ticketInfoMap[c.digisac_ticket_id] = { protocolo: c.protocolo, started_at: c.started_at }
+      ticketInfoMap[c.digisac_ticket_id] = {
+        protocolo: c.protocolo,
+        started_at: c.started_at,
+        telefone_normalizado: c.telefone_normalizado,
+      }
+    }
+
+    const { data: vinculos } = await supabase
+      .from('venda_conversa_vinculos')
+      .select('digisac_ticket_id, inicio_chamado')
+      .eq('numero_lancamento', numeroLancamento)
+      .in('digisac_ticket_id', ticketIds)
+    for (const v of (vinculos ?? [])) {
+      vinculoMap[v.digisac_ticket_id] = { inicio_chamado: v.inicio_chamado }
     }
   }
 
@@ -82,6 +97,8 @@ export async function GET(request: NextRequest) {
       ...c,
       protocolo: ticketInfoMap[c.digisac_ticket_id]?.protocolo ?? null,
       data_chamado: ticketInfoMap[c.digisac_ticket_id]?.started_at ?? null,
+      telefone: ticketInfoMap[c.digisac_ticket_id]?.telefone_normalizado ?? null,
+      tipo_chamado: vinculoMap[c.digisac_ticket_id]?.inicio_chamado ?? null,
     }))
     .sort((a, b) => {
       if (!a.data_chamado && !b.data_chamado) return 0

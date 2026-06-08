@@ -1,6 +1,8 @@
 'use client'
 
+import { useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Eye, MessageCircle, MessageSquare, HelpCircle } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -149,6 +151,44 @@ export function TabelaVendas({
 }: TabelaVendasProps) {
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE))
 
+  // Drag-to-scroll state
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const dragStartX = useRef(0)
+  const scrollStartLeft = useRef(0)
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement
+    // Don't start drag if clicking on interactive elements
+    if (
+      target.closest('button') ||
+      target.closest('a') ||
+      target.closest('input') ||
+      target.closest('select') ||
+      target.closest('textarea')
+    ) {
+      return
+    }
+    setIsDragging(true)
+    dragStartX.current = e.clientX
+    scrollStartLeft.current = scrollRef.current?.scrollLeft ?? 0
+  }
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDragging || !scrollRef.current) return
+    e.preventDefault()
+    const deltaX = e.clientX - dragStartX.current
+    scrollRef.current.scrollLeft = scrollStartLeft.current - deltaX
+  }
+
+  const handleMouseUp = () => {
+    setIsDragging(false)
+  }
+
+  const handleMouseLeave = () => {
+    setIsDragging(false)
+  }
+
   if (isLoading) {
     return (
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
@@ -176,7 +216,18 @@ export function TabelaVendas({
         )}
       </div>
 
-      <Table>
+      <div
+        ref={scrollRef}
+        className={cn(
+          "overflow-x-auto",
+          isDragging ? "cursor-grabbing select-none" : "cursor-grab"
+        )}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+      >
+        <Table>
         <TableHeader>
           <TableRow className="bg-slate-50">
             <TableHead className="text-xs">Nº Lanç.</TableHead>
@@ -365,6 +416,7 @@ export function TabelaVendas({
           )}
         </TableBody>
       </Table>
+      </div>
 
       {totalPages > 1 && (
         <div className="px-4 py-3 border-t border-slate-100 flex items-center justify-between">

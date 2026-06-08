@@ -18,7 +18,9 @@ export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
   // ─── Validação de segurança ───────────────────────────────────────────────────
-  const tokenRecebido = request.headers.get('x-internal-token')?.trim()
+  // Limpa o token recebido: remove espaços, quebras de linha, tabs, etc.
+  const tokenRecebidoRaw = request.headers.get('x-internal-token')
+  const tokenRecebido = tokenRecebidoRaw?.replace(/\s+/g, '').trim()
   const tokenEsperado = process.env.SGI_CLASSIFICACAO_TOKEN?.trim()
 
   // DEBUG: Log seguro para diagnosticar diferenças de token
@@ -33,7 +35,8 @@ export async function POST(request: NextRequest) {
   }
 
   console.log('[SGI-CLASSIFICAR-PENDENTES][AUTH-DEBUG]', {
-    recebido: fingerprintToken(tokenRecebido),
+    recebidoRaw: { tamanho: tokenRecebidoRaw?.length ?? 0 },
+    recebidoLimpo: fingerprintToken(tokenRecebido),
     esperado: fingerprintToken(tokenEsperado),
     confere: tokenRecebido === tokenEsperado,
   })

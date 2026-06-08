@@ -197,6 +197,17 @@ export function TabelaVendas({
     }
   }
 
+  // Log de diagnóstico — remover após validar
+  const handleDragLog = () => {
+    if (scrollRef.current) {
+      console.log('[TABELA-DRAG]', {
+        scrollWidth: scrollRef.current.scrollWidth,
+        clientWidth: scrollRef.current.clientWidth,
+        scrollLeft: scrollRef.current.scrollLeft,
+      })
+    }
+  }
+
   const handleMouseUp = () => {
     isMouseDown.current = false
     isDraggingRef.current = false
@@ -242,12 +253,12 @@ export function TabelaVendas({
           "overflow-x-auto",
           isDragging ? "cursor-grabbing select-none" : "cursor-grab"
         )}
-        onMouseDown={handleMouseDown}
+        onMouseDown={(e) => { handleMouseDown(e); handleDragLog() }}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
       >
-        <Table>
+        <Table className="min-w-[2600px]">
         <TableHeader>
           <TableRow className="bg-slate-50">
             <TableHead className="text-xs">Nº Lanç.</TableHead>

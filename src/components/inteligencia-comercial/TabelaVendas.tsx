@@ -216,7 +216,7 @@ export function TabelaVendas({
             <TableHead className="text-xs" title="Subgrupo(s) dos produtos da venda">Subgrupo</TableHead>
             <TableHead className="text-xs" title="Status sincronização Digisac">Digisac</TableHead>
             <TableHead className="text-xs w-8" title="Observações comerciais">Obs.</TableHead>
-            <TableHead className="text-xs w-10"></TableHead>
+            <TableHead className="text-xs w-10 text-center" title="Abrir detalhes da venda">Detalhes</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -230,7 +230,7 @@ export function TabelaVendas({
             vendas.map(venda => {
               const rowState = getDigisacRowState(venda)
               return (
-              <TableRow key={venda.id} className={`cursor-pointer ${rowHighlightCls(rowState)}`} onClick={() => onVerDetalhe(venda)}>
+              <TableRow key={venda.id} className={rowHighlightCls(rowState)}>
                 <TableCell className="font-mono text-xs font-semibold text-sky-700">
                   #{venda.numero_lancamento}
                 </TableCell>
@@ -348,12 +348,13 @@ export function TabelaVendas({
                     </Button>
                   )}
                 </TableCell>
-                <TableCell>
+                <TableCell className="text-center">
                   <Button
                     variant="ghost"
                     size="icon-sm"
                     onClick={e => { e.stopPropagation(); onVerDetalhe(venda) }}
                     title="Ver detalhe"
+                    className="cursor-pointer"
                   >
                     <Eye className="w-3.5 h-3.5" />
                   </Button>

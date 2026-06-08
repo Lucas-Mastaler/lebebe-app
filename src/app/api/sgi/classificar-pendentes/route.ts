@@ -34,11 +34,28 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Diagnóstico: encontrar primeira posição diferente
+  let primeiraDiferenca: { posicao: number; recebido: string; esperado: string } | null = null
+  if (tokenRecebido && tokenEsperado) {
+    const maxLen = Math.max(tokenRecebido.length, tokenEsperado.length)
+    for (let i = 0; i < maxLen; i++) {
+      if (tokenRecebido[i] !== tokenEsperado[i]) {
+        primeiraDiferenca = {
+          posicao: i,
+          recebido: tokenRecebido[i] ?? '[undefined]',
+          esperado: tokenEsperado[i] ?? '[undefined]',
+        }
+        break
+      }
+    }
+  }
+
   console.log('[SGI-CLASSIFICAR-PENDENTES][AUTH-DEBUG]', {
     recebidoRaw: { tamanho: tokenRecebidoRaw?.length ?? 0 },
     recebidoLimpo: fingerprintToken(tokenRecebido),
     esperado: fingerprintToken(tokenEsperado),
     confere: tokenRecebido === tokenEsperado,
+    primeiraDiferenca,
   })
 
   if (!tokenEsperado) {

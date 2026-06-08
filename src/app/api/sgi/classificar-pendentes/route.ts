@@ -21,6 +21,23 @@ export async function POST(request: NextRequest) {
   const tokenRecebido = request.headers.get('x-internal-token')?.trim()
   const tokenEsperado = process.env.SGI_CLASSIFICACAO_TOKEN?.trim()
 
+  // DEBUG: Log seguro para diagnosticar diferenças de token
+  function fingerprintToken(token?: string | null) {
+    if (!token) return { presente: false, tamanho: 0, inicio: null, fim: null }
+    return {
+      presente: true,
+      tamanho: token.length,
+      inicio: token.slice(0, 4),
+      fim: token.slice(-4),
+    }
+  }
+
+  console.log('[SGI-CLASSIFICAR-PENDENTES][AUTH-DEBUG]', {
+    recebido: fingerprintToken(tokenRecebido),
+    esperado: fingerprintToken(tokenEsperado),
+    confere: tokenRecebido === tokenEsperado,
+  })
+
   if (!tokenEsperado) {
     console.error('[SGI-CLASSIFICAR-PENDENTES] SGI_CLASSIFICACAO_TOKEN não configurado no ambiente')
     return NextResponse.json(
@@ -33,7 +50,6 @@ export async function POST(request: NextRequest) {
     console.warn('[SGI-CLASSIFICAR-PENDENTES] Tentativa de acesso não autorizado', {
       ip: request.headers.get('x-forwarded-for') ?? 'unknown',
       userAgent: request.headers.get('user-agent')?.slice(0, 50) ?? 'unknown',
-      tokenRecebido: tokenRecebido ? 'presente (não confere)' : 'ausente',
     })
     return NextResponse.json(
       { ok: false, erro: 'Não autorizado' },

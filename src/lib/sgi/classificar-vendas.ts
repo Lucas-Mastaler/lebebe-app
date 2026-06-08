@@ -22,6 +22,7 @@ export interface ClassificarVendasOptions {
 
 export interface ClassificarVendasResult {
   ok: boolean
+  parcial?: boolean
   numeroLancamentos: string[]
   produtosEncontrados: number
   classificadosReferencia: number
@@ -184,11 +185,25 @@ export async function classificarVendasPorLancamentos(
     let porReferencia = 0
     let porRegra = 0
     let naoClassificados = 0
+    let produtosSemId = 0
 
-    const updates: ClassResult[] = []
+    const updates: Array<{
+      id: string
+      departamento_classificado: string
+      subgrupo_classificado: string
+      classificacao_regra: string
+      classificacao_confianca: number
+    }> = []
     const porVenda = new Map<string, { departamento: string; subgrupo: string }[]>()
 
     for (const p of produtos as ProdutoRow[]) {
+      // Validação: produto deve ter id e documento_saida_id válidos
+      if (!p.id || !p.documento_saida_id) {
+        produtosSemId++
+        console.warn(`[SGI-CLASSIFICACAO][AVISO] Produto sem id ou documento_saida_id - ignorado: numero_lancamento=${p.numero_lancamento} codigo=${p.codigo}`)
+        continue
+      }
+
       const codigoNorm = p.codigo?.trim() ?? ''
       let departamento: string
       let subgrupo: string
@@ -233,24 +248,43 @@ export async function classificarVendasPorLancamentos(
       porVenda.get(p.numero_lancamento)!.push({ departamento, subgrupo })
     }
 
-    console.log(`[SGI-CLASSIFICACAO] classificadosReferencia=${porReferencia} classificadosKeyword=${porRegra} naoClassificados=${naoClassificados}`)
+    if (produtosSemId > 0) {
+      erros.push(`${produtosSemId} produtos ignorados por falta de id ou documento_saida_id`)
+    }
 
-    // 4. Upsert produtos em batches
-    let upsertErrors = 0
+    console.log(`[SGI-CLASSIFICACAO] classificadosReferencia=${porReferencia} classificadosKeyword=${porRegra} naoClassificados=${naoClassificados} produtosSemId=${produtosSemId}`)
+
+    // 4. Update produtos em batches (usa update em vez de upsert para evitar constraint violation)
+    let updateErrors = 0
     for (let i = 0; i < updates.length; i += BATCH_SIZE) {
       const batch = updates.slice(i, i + BATCH_SIZE)
-      const { error: upsertErr } = await supabase
-        .from('sgi_documentos_saida_produtos')
-        .upsert(batch, { onConflict: 'id' })
-      if (upsertErr) {
-        upsertErrors++
-        erros.push(`Erro upsert batch ${i}: ${upsertErr.message}`)
-        console.error('[SGI-CLASSIFICACAO] erro upsert batch:', upsertErr)
+
+      // Update individual por id para cada produto no batch
+      const updatePromises = batch.map((item) =>
+        supabase
+          .from('sgi_documentos_saida_produtos')
+          .update({
+            departamento_classificado: item.departamento_classificado,
+            subgrupo_classificado: item.subgrupo_classificado,
+            classificacao_regra: item.classificacao_regra,
+            classificacao_confianca: item.classificacao_confianca,
+          })
+          .eq('id', item.id)
+      )
+
+      const results = await Promise.allSettled(updatePromises)
+      const batchErrors = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+
+      if (batchErrors.length > 0) {
+        updateErrors++
+        const errorMessages = batchErrors.map((e) => (e.reason as Error)?.message || String(e.reason)).join('; ')
+        erros.push(`Erro update batch ${i}: ${errorMessages}`)
+        console.error('[SGI-CLASSIFICACAO] erro update batch:', errorMessages)
       }
     }
 
-    if (upsertErrors > 0) {
-      console.error(`[SGI-CLASSIFICACAO] ${upsertErrors} batches com erro`)
+    if (updateErrors > 0) {
+      console.error(`[SGI-CLASSIFICACAO] ${updateErrors} batches com erro`)
     }
 
     // 5. Agrega e atualiza vendas em batches
@@ -285,10 +319,20 @@ export async function classificarVendasPorLancamentos(
     console.log(`[SGI-CLASSIFICACAO] agregadosAtualizados=${agregadosAtualizados}`)
 
     const duration = Date.now() - startTime
-    console.log(`[SGI-CLASSIFICACAO] fim sucesso duracaoMs=${duration}`)
+
+    // Determina status final: ok só se não houver erros críticos de gravação
+    const hasCriticalErrors = updateErrors > 0 || vendaErrors > 0
+    const ok = !hasCriticalErrors
+
+    if (ok) {
+      console.log(`[SGI-CLASSIFICACAO] fim sucesso duracaoMs=${duration}`)
+    } else {
+      console.error(`[SGI-CLASSIFICACAO] fim com erros duracaoMs=${duration}`)
+    }
 
     return {
-      ok: true,
+      ok,
+      parcial: erros.length > 0 && !hasCriticalErrors,
       numeroLancamentos: Array.from(porVenda.keys()),
       produtosEncontrados: produtos.length,
       classificadosReferencia: porReferencia,

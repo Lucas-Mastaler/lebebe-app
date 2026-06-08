@@ -154,8 +154,12 @@ export function TabelaVendas({
   // Drag-to-scroll state
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const isMouseDown = useRef(false)
+  const isDraggingRef = useRef(false)
   const dragStartX = useRef(0)
   const scrollStartLeft = useRef(0)
+
+  const DRAG_THRESHOLD = 5
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement
@@ -165,27 +169,43 @@ export function TabelaVendas({
       target.closest('a') ||
       target.closest('input') ||
       target.closest('select') ||
-      target.closest('textarea')
+      target.closest('textarea') ||
+      target.closest('[role="button"]')
     ) {
       return
     }
-    setIsDragging(true)
+    isMouseDown.current = true
+    isDraggingRef.current = false
     dragStartX.current = e.clientX
     scrollStartLeft.current = scrollRef.current?.scrollLeft ?? 0
   }
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isDragging || !scrollRef.current) return
-    e.preventDefault()
+    if (!isMouseDown.current || !scrollRef.current) return
+
     const deltaX = e.clientX - dragStartX.current
-    scrollRef.current.scrollLeft = scrollStartLeft.current - deltaX
+
+    // Only start drag after threshold is exceeded
+    if (!isDraggingRef.current && Math.abs(deltaX) > DRAG_THRESHOLD) {
+      isDraggingRef.current = true
+      setIsDragging(true)
+    }
+
+    if (isDraggingRef.current) {
+      e.preventDefault()
+      scrollRef.current.scrollLeft = scrollStartLeft.current - deltaX
+    }
   }
 
   const handleMouseUp = () => {
+    isMouseDown.current = false
+    isDraggingRef.current = false
     setIsDragging(false)
   }
 
   const handleMouseLeave = () => {
+    isMouseDown.current = false
+    isDraggingRef.current = false
     setIsDragging(false)
   }
 
@@ -283,7 +303,16 @@ export function TabelaVendas({
               return (
               <TableRow key={venda.id} className={rowHighlightCls(rowState)}>
                 <TableCell className="font-mono text-xs font-semibold text-sky-700">
-                  #{venda.numero_lancamento}
+                  <button
+                    type="button"
+                    className="hover:underline cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onVerDetalhe(venda)
+                    }}
+                  >
+                    #{venda.numero_lancamento}
+                  </button>
                 </TableCell>
                 <TableCell className="text-xs max-w-[150px] truncate" title={venda.cliente ?? undefined}>
                   {venda.cliente ?? '—'}

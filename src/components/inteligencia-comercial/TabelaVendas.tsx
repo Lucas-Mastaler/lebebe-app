@@ -222,7 +222,7 @@ export function TabelaVendas({
 
   if (isLoading) {
     return (
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-xl">
         <div className="p-4 space-y-2">
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-10 rounded-lg" />
@@ -233,7 +233,7 @@ export function TabelaVendas({
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+    <div className="bg-white border border-slate-200 rounded-xl">
       <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
         <span className="text-sm text-slate-600">
           {total === 0

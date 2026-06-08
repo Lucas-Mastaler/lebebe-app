@@ -18,8 +18,8 @@ export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
   // ─── Validação de segurança ───────────────────────────────────────────────────
-  const tokenRecebido = request.headers.get('x-internal-token')
-  const tokenEsperado = process.env.SGI_CLASSIFICACAO_TOKEN
+  const tokenRecebido = request.headers.get('x-internal-token')?.trim()
+  const tokenEsperado = process.env.SGI_CLASSIFICACAO_TOKEN?.trim()
 
   if (!tokenEsperado) {
     console.error('[SGI-CLASSIFICAR-PENDENTES] SGI_CLASSIFICACAO_TOKEN não configurado no ambiente')

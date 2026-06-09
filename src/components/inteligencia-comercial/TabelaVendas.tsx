@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  Table, TableHeader, TableRow, TableHead,
+  TableHeader, TableRow, TableHead,
   TableBody, TableCell
 } from '@/components/ui/table'
 import {
@@ -154,14 +154,15 @@ export function TabelaVendas({
   // Drag-to-scroll state
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [isDragging, setIsDragging] = useState(false)
-  const isMouseDown = useRef(false)
+  const isPointerDown = useRef(false)
   const isDraggingRef = useRef(false)
   const dragStartX = useRef(0)
   const scrollStartLeft = useRef(0)
+  const activePointerId = useRef<number | null>(null)
 
   const DRAG_THRESHOLD = 5
 
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement
     // Don't start drag if clicking on interactive elements
     if (
@@ -170,18 +171,32 @@ export function TabelaVendas({
       target.closest('input') ||
       target.closest('select') ||
       target.closest('textarea') ||
-      target.closest('[role="button"]')
+      target.closest('[role="button"]') ||
+      target.closest('[data-no-drag]')
     ) {
       return
     }
-    isMouseDown.current = true
+
+    const el = scrollRef.current
+    if (!el || el.scrollWidth <= el.clientWidth) return
+
+    activePointerId.current = e.pointerId
+    el.setPointerCapture?.(e.pointerId)
+
+    isPointerDown.current = true
     isDraggingRef.current = false
     dragStartX.current = e.clientX
-    scrollStartLeft.current = scrollRef.current?.scrollLeft ?? 0
+    scrollStartLeft.current = el.scrollLeft
   }
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isMouseDown.current || !scrollRef.current) return
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (
+      !isPointerDown.current ||
+      activePointerId.current !== e.pointerId ||
+      !scrollRef.current
+    ) {
+      return
+    }
 
     const deltaX = e.clientX - dragStartX.current
 
@@ -197,26 +212,14 @@ export function TabelaVendas({
     }
   }
 
-  // Log de diagnóstico — remover após validar
-  const handleDragLog = () => {
-    if (scrollRef.current) {
-      console.log('[TABELA-DRAG]', {
-        scrollWidth: scrollRef.current.scrollWidth,
-        clientWidth: scrollRef.current.clientWidth,
-        scrollLeft: scrollRef.current.scrollLeft,
-      })
+  const endDrag = (e?: React.PointerEvent<HTMLDivElement>) => {
+    if (e && activePointerId.current === e.pointerId) {
+      scrollRef.current?.releasePointerCapture?.(e.pointerId)
     }
-  }
 
-  const handleMouseUp = () => {
-    isMouseDown.current = false
+    isPointerDown.current = false
     isDraggingRef.current = false
-    setIsDragging(false)
-  }
-
-  const handleMouseLeave = () => {
-    isMouseDown.current = false
-    isDraggingRef.current = false
+    activePointerId.current = null
     setIsDragging(false)
   }
 
@@ -250,15 +253,16 @@ export function TabelaVendas({
       <div
         ref={scrollRef}
         className={cn(
-          "overflow-x-auto",
+          "overflow-x-auto touch-pan-y",
           isDragging ? "cursor-grabbing select-none" : "cursor-grab"
         )}
-        onMouseDown={(e) => { handleMouseDown(e); handleDragLog() }}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={endDrag}
+        onPointerLeave={endDrag}
+        onPointerCancel={endDrag}
       >
-        <Table className="min-w-[2600px]">
+        <table className="w-full caption-bottom text-sm min-w-[2600px]">
         <TableHeader>
           <TableRow className="bg-slate-50">
             <TableHead className="text-xs">Nº Lanç.</TableHead>
@@ -455,7 +459,7 @@ export function TabelaVendas({
             })
           )}
         </TableBody>
-      </Table>
+      </table>
       </div>
 
       {totalPages > 1 && (

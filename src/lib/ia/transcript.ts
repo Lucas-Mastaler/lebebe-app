@@ -59,7 +59,7 @@ export async function montarTranscriptChamado(ticketId: string): Promise<Transcr
 
   const transcriptCompleto = linhas.join('\n')
   const tamanhoOriginal = transcriptCompleto.length
-  let truncado = tamanhoOriginal > TRANSCRIPT_MAX_CHARS || incompleto
+  const truncado = tamanhoOriginal > TRANSCRIPT_MAX_CHARS || incompleto
   let transcript = transcriptCompleto
 
   if (tamanhoOriginal > TRANSCRIPT_MAX_CHARS) {

@@ -39,6 +39,102 @@ function DoPreAgendarDireto(cand, meta){
   return preAgendarDireto(cand, meta);
 }
 
+function ApiPesquisarDatasApp(form) {
+  try {
+    form = form || {};
+    if (form.mesPesquisa && !form.monthYear) form.monthYear = form.mesPesquisa;
+    if (!form.clientToken) form.clientToken = 't' + Date.now() + '-' + Math.random().toString(16).slice(2);
+
+    form.returnOnly = true;
+    form.useModalDestOnly = true;
+    form.limitResultsNormal = 3;
+    form.excludeEspecial = true;
+    form.excludePremium = true;
+    form.excludeHoraMarcada = true;
+
+    if (form.destLat && !form.lat) form.lat = Number(form.destLat);
+    if (form.destLng && !form.lng) form.lng = Number(form.destLng);
+    if (form.destDisplay && !form.enderecoCompleto) form.enderecoCompleto = String(form.destDisplay || '');
+
+    const FRONT_ID = SpreadsheetApp.getActive().getId();
+    const TARGET_TAB = 'PROCURAR DATAS DE ENTREGA';
+    const payload = pesquisarRotaToTargetWithParams(FRONT_ID, TARGET_TAB, form);
+
+    if (!payload || payload === 'ERR_BAD_CEP' || payload === 'ERR_EXCEPTION' || payload === 'ERR_NO_SHEETS') {
+      return { ok: false, error: 'Nao foi possivel gerar resultados. (' + String(payload || 'erro') + ')' };
+    }
+
+    if (!payload.ok) {
+      return {
+        ok: false,
+        error: payload.error || 'Nenhum resultado encontrado.',
+        payload: payload
+      };
+    }
+
+    return {
+      ok: true,
+      payload: JSON.parse(JSON.stringify(payload))
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: (e && e.message) ? e.message : String(e || 'Erro desconhecido')
+    };
+  }
+}
+
+function ApiPreAgendarDireto(cand, meta) {
+  try {
+    cand = cand || {};
+    meta = meta || {};
+    if (!PRE_CALENDAR_ID) throw new Error('PRE_CALENDAR_ID nao definido no backend.');
+    if (!cand.dateISO) throw new Error('Data do candidato ausente.');
+    if (!cand.team) throw new Error('Equipe do candidato ausente.');
+
+    const cal = CalendarApp.getCalendarById(PRE_CALENDAR_ID);
+    if (!cal) throw new Error('Calendario nao encontrado. Verifique PRE_CALENDAR_ID.');
+
+    const userEmail = Session.getActiveUser().getEmail() || 'usuario@dominio.com';
+    const solicit = userEmail.replace('@lebebe.com.br', '').toUpperCase();
+    const d = new Date(cand.dateISO);
+
+    const fonteEndereco = meta.address || meta.label || '';
+    const bairro = normalizeBairro_(fonteEndereco) || 'SEM BAIRRO';
+    let titulo = `(${meta.tempo || ''}) ${bairro} (${(cand.team || '').toUpperCase()} - ${solicit})`.toUpperCase();
+
+    const tipoMdl = String(cand.tipo || '').toLowerCase();
+    if (tipoMdl === 'especial') titulo += ' (FRETE: ESPECIAL)';
+    else if (tipoMdl === 'premium') titulo += ' (FRETE: PREMIUM)';
+    else if (tipoMdl === 'hora-marcada' || tipoMdl === 'hora marcada') titulo += ' (FRETE: HORA MARCADA)';
+
+    const endFormatado = fonteEndereco || (meta.cep ? `CEP: ${meta.cep}` : '');
+    const description =
+      (meta.params || '').trim()
+      + `\nEQUIPE: ${(cand.team || '').toUpperCase()}`
+      + `\nFRETE: ${cand.frete || ''}`
+      + (endFormatado ? `\nENDERECO: ${endFormatado}` : '');
+
+    const ev = cal.createAllDayEvent(titulo, d, { description: description });
+    const eid = Utilities.base64EncodeWebSafe(ev.getId() + ' ' + PRE_CALENDAR_ID);
+    const eventLink = 'https://calendar.google.com/calendar/u/0/r/eventedit/' + eid;
+
+    const dataText = Utilities.formatDate(d, 'GMT-3', 'dd/MM');
+    logAuditRow(userEmail, meta.cep || '', (meta.params || ''), (meta.tempo || ''), '', dataText, eventLink, '', titulo);
+
+    return {
+      ok: true,
+      titulo: titulo,
+      eventLink: eventLink
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: (e && e.message) ? e.message : String(e || 'Erro desconhecido')
+    };
+  }
+}
+
 // ✅ Função de ping para verificação de conectividade
 function ping() {
   return true;

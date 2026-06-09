@@ -59,7 +59,7 @@ export async function POST(
 
   // Get nfe_item -> nfe mapping to identify OS items
   const nfeItemIds = (itens || []).map(i => i.nfe_item_id).filter(Boolean)
-  let osItemIds = new Set<string>()
+  const osItemIds = new Set<string>()
   
   if (nfeItemIds.length > 0 && nfeOSIds.size > 0) {
     const { data: nfeItemsData } = await supabase
@@ -186,7 +186,7 @@ export async function POST(
 
   // Buscar códigos dos produtos separadamente
   const divergenciaItemIds = (itensDivergencias || []).map(i => i.nfe_item_id).filter(Boolean)
-  let codigosMap = new Map<string, string>()
+  const codigosMap = new Map<string, string>()
   
   if (divergenciaItemIds.length > 0) {
     const { data: nfeItems } = await supabase

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
@@ -11,16 +11,12 @@ const ERROR_MESSAGES: Record<string, string> = {
 }
 
 function LoginContent() {
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
   const searchParams = useSearchParams()
+  const errorParam = searchParams.get('error')
+  const initialError = errorParam && ERROR_MESSAGES[errorParam] ? ERROR_MESSAGES[errorParam] : ''
 
-  useEffect(() => {
-    const errorParam = searchParams.get('error')
-    if (errorParam && ERROR_MESSAGES[errorParam]) {
-      setError(ERROR_MESSAGES[errorParam])
-    }
-  }, [searchParams])
+  const [error, setError] = useState(initialError)
+  const [loading, setLoading] = useState(false)
 
   async function handleGoogleLogin() {
     try {

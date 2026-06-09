@@ -75,7 +75,7 @@ export async function GET(
         console.log(`[VENDA-CLIENTE] lançamentos encontrados antes dedup:`, todosContatosRelacionados.map(c => c.numero_lancamento))
 
         // Garantir que lançamentos são strings limpas e incluir o atual
-        let lancamentosUnicos = [...new Set(todosContatosRelacionados.map(v => String(v.numero_lancamento).trim()))].filter(Boolean)
+        const lancamentosUnicos = [...new Set(todosContatosRelacionados.map(v => String(v.numero_lancamento).trim()))].filter(Boolean)
         
         // Sempre incluir o lançamento atual
         const numeroLancamentoAtual = numero_lancamento.trim()

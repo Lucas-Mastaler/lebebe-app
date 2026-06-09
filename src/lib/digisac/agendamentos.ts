@@ -165,8 +165,8 @@ export async function buscarAgendamentosFormatados(filtros: FiltrosService): Pro
     // 3. Chamada API
     const response = await fetchDigisac(url);
     let itemsRaw = Array.isArray(response) ? response : (response.rows || response.data || []);
-    let total = response.count || response.total || itemsRaw.length;
-    let lastPage = response.lastPage || 1;
+    const total = response.count || response.total || itemsRaw.length;
+    const lastPage = response.lastPage || 1;
 
     // 4. Filtragem Local de Status
     if (statusFilterLocal) {
@@ -207,7 +207,7 @@ export async function buscarAgendamentosFormatados(filtros: FiltrosService): Pro
     }
 
     // 6. Transformação Final + Filtros de Ticket
-    let items: Agendamento[] = [];
+    const items: Agendamento[] = [];
 
     // Pré-processamento filtro ticket (range)
     const rangeLastClosed = filtros.dataUltimoChamadoFechadoInicio && filtros.dataUltimoChamadoFechadoFim

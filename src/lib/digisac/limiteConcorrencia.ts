@@ -17,7 +17,7 @@ export async function executarComLimite<T>(tasks: (() => Promise<T>)[], limit: n
 
     // Vamos usar um worker simples
 
-    let i = 0;
+    const i = 0;
     const allResultPromises: Promise<T>[] = [];
 
     const runTask = async (index: number) => {

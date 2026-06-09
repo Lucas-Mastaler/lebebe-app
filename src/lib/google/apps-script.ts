@@ -48,7 +48,14 @@ async function criarClienteAppsScript() {
 // ─────────────────────────────────────────────────────────
 
 const FUNCOES_PERMITIDAS = [
-  "apiProcurarDatasPorEndereco"
+  "apiProcurarDatasPorEndereco",
+  "GetFrontOptionLists",
+  "GetTempoMap",
+  "GetTempoNecessario",
+  "LookupCompletoPorEndereco",
+  "GetProgressUpdate",
+  "ApiPesquisarDatasApp",
+  "ApiPreAgendarDireto"
 ] as const;
 
 type FuncaoPermitida = typeof FUNCOES_PERMITIDAS[number];

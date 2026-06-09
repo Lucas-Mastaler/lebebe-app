@@ -18,7 +18,7 @@ export async function buscarContatoCompleto(contactId: string): Promise<any> {
         // Tenta buscar endpoint padrão. A API do Digisac costuma ser /contacts/{id}
         // Se precisar de include, adicionamos query params.
         // O prompt pede tags e customFields. Geralmente vêm no detalhe, mas vamos garantir.
-        let contato = await fetchDigisac(`/contacts/${contactId}?include[0][model]=tag&include[1][model]=service`);
+        const contato = await fetchDigisac(`/contacts/${contactId}?include[0][model]=tag&include[1][model]=service`);
         // Nota: O prompt diz 'Incluir tags e customFields'. 
         // Em muitas impls do Digisac, customFields vem na raiz ou como 'data'. Tags vem como relação.
         // Ajuste conforme padrão comum se não especificado, mas o prompt deu dica de include.

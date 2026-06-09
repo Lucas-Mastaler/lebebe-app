@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 
   const ticketIds = (vinculos ?? []).map((v) => v.digisac_ticket_id)
 
-  let conversaMap: Record<string, { protocolo: string | null; started_at: string | null; department_nome: string | null }> = {}
+  const conversaMap: Record<string, { protocolo: string | null; started_at: string | null; department_nome: string | null }> = {}
   if (ticketIds.length > 0) {
     const { data: conversas } = await supabase
       .from('digisac_conversas_resumo')

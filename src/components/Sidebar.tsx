@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Calendar, ChevronLeft, ChevronRight, CheckCircle, BarChart3, LogOut, Users, ClipboardList, Clock, Package, FileDown, TrendingUp } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, CheckCircle, BarChart3, LogOut, Users, ClipboardList, Clock, Package, TrendingUp, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 
@@ -28,6 +28,11 @@ const navItems = [
         label: 'HORÁRIOS AGENDAMENTOS',
         href: '/horarios-agendamentos',
         icon: Clock,
+    },
+    {
+        label: 'PROCURAR DATAS',
+        href: '/procurar-datas',
+        icon: Search,
     },
     {
         label: 'CHAMADOS FINALIZADOS',

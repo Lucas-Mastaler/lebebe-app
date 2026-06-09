@@ -9,7 +9,7 @@ type CookieToSet = {
 }
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({
+  const response = NextResponse.next({
     request: {
       headers: request.headers,
     },
@@ -127,6 +127,7 @@ export const config = {
   matcher: [
     '/agendamentos/:path*',
     '/dashboard/:path*',
+    '/procurar-datas/:path*',
     '/chamados-finalizados/:path*',
     '/superadmin/:path*',
     '/recebimento/:path*',

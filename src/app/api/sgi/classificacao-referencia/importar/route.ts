@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
   const supabase = createServiceClient()
   const BATCH = 500
   let inseridos = 0
-  let erros: string[] = []
+  const erros: string[] = []
 
   for (let i = 0; i < validos.length; i += BATCH) {
     const lote = validos.slice(i, i + BATCH).map((item) => ({

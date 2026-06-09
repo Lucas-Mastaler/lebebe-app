@@ -330,7 +330,7 @@ async function finalizarJob(
 
   // Busca protocolos dos tickets para enriquecer o consolidado
   const ticketIds = (analisados ?? []).map((a) => a.digisac_ticket_id)
-  let protocoloMap: Record<string, string | null> = {}
+  const protocoloMap: Record<string, string | null> = {}
   if (ticketIds.length > 0) {
     const { data: conversas } = await supabase
       .from('digisac_conversas_resumo')

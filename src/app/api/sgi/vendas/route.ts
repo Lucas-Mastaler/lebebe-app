@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
   const numeroLancamentos = listData.map((v) => v.numero_lancamento as string).filter(Boolean)
 
   // --- Enriquecimento Digisac (best-effort, não bloqueia se falhar) ---
-  let digisacMap = new Map<string, {
+  const digisacMap = new Map<string, {
     chamados_ciclo: number
     interacoes_ciclo: number
     chamados_janela_90: number
@@ -226,7 +226,7 @@ export async function POST(request: NextRequest) {
       // Mapa lancamento → total_historico (via vinculos e telefones)
       const historicoLancamentoMap = new Map<string, number>()
 
-      let interacoesMap = new Map<string, number>()
+      const interacoesMap = new Map<string, number>()
       if (allTicketIds.length > 0) {
         const { data: conversas } = await supabase
           .from('digisac_conversas_resumo')
@@ -318,7 +318,7 @@ export async function POST(request: NextRequest) {
     nome_bebe: string | null
     previsao_nascimento_bebe: string | null
   }
-  let iaMap = new Map<string, IaEntry>()
+  const iaMap = new Map<string, IaEntry>()
 
   if (numeroLancamentos.length > 0) {
     try {
@@ -360,7 +360,7 @@ export async function POST(request: NextRequest) {
         return c && (!c.nome_bebe || !c.previsao_nascimento_bebe)
       })
 
-      let fallbackMap = new Map<string, { nome_bebe: string | null; previsao_nascimento_bebe: string | null }>()
+      const fallbackMap = new Map<string, { nome_bebe: string | null; previsao_nascimento_bebe: string | null }>()
       if (precisamFallback.length > 0) {
         const { data: fbRows } = await supabase
           .from('digisac_chamados_analise_ia')

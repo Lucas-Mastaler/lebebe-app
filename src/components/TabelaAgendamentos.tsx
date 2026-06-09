@@ -70,16 +70,18 @@ export function TabelaAgendamentos({
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
     // Filter by client name locally
+    const items = data?.items ?? [];
+
     const filteredItems = useMemo(() => {
-        if (!data?.items) return [];
-        if (!clienteNomeFiltro.trim()) return data.items;
+        if (!items.length) return [];
+        if (!clienteNomeFiltro.trim()) return items;
 
         const searchTerm = clienteNomeFiltro.toLowerCase().trim();
-        return data.items.filter((item) =>
+        return items.filter((item) =>
             item.nomeWhatsapp?.toLowerCase().includes(searchTerm) ||
             item.nomeDigisac?.toLowerCase().includes(searchTerm)
         );
-    }, [data?.items, clienteNomeFiltro]);
+    }, [items, clienteNomeFiltro]);
 
     // Loading state
     if (isLoading) {

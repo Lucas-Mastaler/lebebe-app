@@ -68,8 +68,8 @@ export async function GET(request: NextRequest) {
 
   // Enriquece com protocolo, data, tipo, telefone, loja e consultora
   const ticketIds = (chamados ?? []).map((c) => c.digisac_ticket_id)
-  let ticketInfoMap: Record<string, { protocolo: string | null; started_at: string | null; telefone_normalizado: string | null; department_nome: string | null; user_nome: string | null }> = {}
-  let vinculoMap: Record<string, { inicio_chamado: string | null }> = {}
+  const ticketInfoMap: Record<string, { protocolo: string | null; started_at: string | null; telefone_normalizado: string | null; department_nome: string | null; user_nome: string | null }> = {}
+  const vinculoMap: Record<string, { inicio_chamado: string | null }> = {}
 
   if (ticketIds.length > 0) {
     const { data: conversas } = await supabase

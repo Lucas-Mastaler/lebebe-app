@@ -129,8 +129,9 @@ function SuperAdminPageContent() {
         setAddUserSuccess('')
       }, 2000)
 
-    } catch (error: any) {
-      setAddUserError('Erro ao processar requisição: ' + error.message)
+    } catch (error: unknown) {
+      const mensagem = error instanceof Error ? error.message : 'Erro desconhecido'
+      setAddUserError('Erro ao processar requisição: ' + mensagem)
     } finally {
       setAddingUser(false)
     }

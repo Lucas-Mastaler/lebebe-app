@@ -3,7 +3,7 @@ import { AcaoAuditoria } from '@/types/supabase'
 export async function registrarAuditoria(
   acao: AcaoAuditoria,
   email?: string,
-  metadata?: Record<string, any>,
+  metadata?: Record<string, unknown>,
   options?: { baseUrl?: string }
 ) {
   try {
@@ -27,14 +27,15 @@ export async function registrarAuditoria(
   }
 }
 
-export function getErrorMessage(error: any): string {
-  if (error?.message?.includes('Invalid login credentials')) {
+export function getErrorMessage(error: unknown): string {
+  const errorWithMessage = error as { message?: string };
+  if (errorWithMessage?.message?.includes('Invalid login credentials')) {
     return 'Credenciais inválidas'
   }
-  if (error?.message?.includes('Email not confirmed')) {
+  if (errorWithMessage?.message?.includes('Email not confirmed')) {
     return 'Email não confirmado'
   }
-  if (error?.message?.includes('User not found')) {
+  if (errorWithMessage?.message?.includes('User not found')) {
     return 'Usuário não encontrado'
   }
   return 'Erro ao processar requisição'

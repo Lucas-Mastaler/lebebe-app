@@ -82,8 +82,8 @@ async function buscarTicketsPorContato(contactId: string): Promise<unknown[]> {
 }
 
 // Helper para concorrência
-async function buscarDadosEmLote(ids: string[], fn: (id: string) => Promise<any>, limite: number) {
-    const resultados = new Map<string, any>();
+async function buscarDadosEmLote(ids: string[], fn: (id: string) => Promise<unknown>, limite: number) {
+    const resultados = new Map<string, unknown>();
 
     for (let i = 0; i < ids.length; i += limite) {
         const chunk = ids.slice(i, i + limite);
@@ -191,7 +191,10 @@ export async function buscarAgendamentosFormatados(filtros: FiltrosService): Pro
 
     // Logs Contato/Tags
     let totalTags = 0;
-    mapContatos.forEach((c: { tags?: unknown[] }) => { if (c.tags?.length) totalTags++; });
+    mapContatos.forEach((value) => {
+      const c = value as { tags?: unknown[] };
+      if (c.tags?.length) totalTags++;
+    });
     console.log(`[DIGISAC][CONTATO] tags=${totalTags} contactCacheHit=${contactCache.size > 0}`);
 
     // Logs Tickets
@@ -200,10 +203,16 @@ export async function buscarAgendamentosFormatados(filtros: FiltrosService): Pro
     // Log de Debug Obrigatório para 1 contato
     if (contactIds.length > 0) {
         const sampleId = contactIds[0] as string;
-        const tks = mapTickets.get(sampleId);
-        const isOpen = tks?.some((t: { isOpen?: boolean }) => t.isOpen);
-        const lastClosed = tks?.find((t: { isOpen?: boolean; endedAt?: string; updatedAt?: string }) => !t.isOpen && (t.endedAt || t.updatedAt));
-        console.log(`[DIGISAC][TICKETS] contactId=${sampleId} isOpen=${isOpen} lastClosed=${lastClosed ? (lastClosed.endedAt || lastClosed.updatedAt) : 'null'}`);
+        const tks = mapTickets.get(sampleId) as unknown[];
+        const isOpen = tks?.some((t) => {
+            const ticket = t as { isOpen?: boolean };
+            return ticket.isOpen;
+        });
+        const lastClosed = tks?.find((t) => {
+            const ticket = t as { isOpen?: boolean; endedAt?: string; updatedAt?: string };
+            return !ticket.isOpen && (ticket.endedAt || ticket.updatedAt);
+        });
+        console.log(`[DIGISAC][TICKETS] contactId=${sampleId} isOpen=${isOpen} lastClosed=${lastClosed ? ((lastClosed as { endedAt?: string; updatedAt?: string }).endedAt || (lastClosed as { endedAt?: string; updatedAt?: string }).updatedAt) : 'null'}`);
     }
 
     // 6. Transformação Final + Filtros de Ticket
@@ -221,25 +230,34 @@ export async function buscarAgendamentosFormatados(filtros: FiltrosService): Pro
         const contactBasic = raw.contact || {};
         const contactFinal = { ...contactBasic, ...contactDetail };
 
-        const tickets = mapTickets.get(raw.contactId) || [];
+        const tickets = mapTickets.get(raw.contactId) as unknown[] || [];
 
         // Logica Ticket
-        const hasOpenTicket = tickets.some((t: { isOpen?: boolean }) => t.isOpen);
+        const hasOpenTicket = tickets.some((t) => {
+            const ticket = t as { isOpen?: boolean };
+            return ticket.isOpen;
+        });
 
         // Encontrar ultimo fechado (isOpe=false)
-        const closedTickets = tickets.filter((t: { isOpen?: boolean }) => !t.isOpen);
+        const closedTickets = tickets.filter((t) => {
+            const ticket = t as { isOpen?: boolean };
+            return !ticket.isOpen;
+        });
         // Ordenar por endedAt desc
-        closedTickets.sort((a: { endedAt?: string }, b: { endedAt?: string }) => {
-            const dA = new Date(a.endedAt || 0).getTime();
-            const dB = new Date(b.endedAt || 0).getTime();
+        closedTickets.sort((a, b) => {
+            const ticketA = a as { endedAt?: string };
+            const ticketB = b as { endedAt?: string };
+            const dA = new Date(ticketA.endedAt || 0).getTime();
+            const dB = new Date(ticketB.endedAt || 0).getTime();
             return dB - dA;
         });
 
         const lastClosedTicket = closedTickets[0];
         // Validar se tem endedAt para considerar fechado valido, conforme instrução do user?
         // "se endedAt for nulo, não conta como fechado válido"
-        const ultimoChamadoFechadoIso = (lastClosedTicket && lastClosedTicket.endedAt)
-            ? lastClosedTicket.endedAt
+        const ticketWithEndedAt = lastClosedTicket as { endedAt?: string };
+        const ultimoChamadoFechadoIso = (ticketWithEndedAt && ticketWithEndedAt.endedAt)
+            ? ticketWithEndedAt.endedAt
             : null;
 
         // Apply filters Strict Logic

@@ -34,11 +34,12 @@ export async function fetchDigisacRaw(endpoint: string, options: RequestInit = {
     clearTimeout(id);
 
     return res;
-  } catch (error: any) {
-    if (error.name === 'AbortError') {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'AbortError') {
       throw new Error('Digisac Request Timeout (30s)');
     }
-    console.error('[DIGISAC] Falha de conexão/fetch:', error.message);
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    console.error('[DIGISAC] Falha de conexão/fetch:', errorMessage);
     throw error;
   }
 }
@@ -90,11 +91,12 @@ export async function fetchDigisac(endpoint: string, options: RequestInit = {}) 
     }
 
     return await res.json();
-  } catch (error: any) {
-    if (error.name === 'AbortError') {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'AbortError') {
         throw new Error('Digisac Request Timeout (30s)');
     }
-    console.error('[DIGISAC] Falha de conexão/fetch:', error.message);
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    console.error('[DIGISAC] Falha de conexão/fetch:', errorMessage);
     throw error;
   }
 }

@@ -141,11 +141,12 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
   console.log('[DIGISAC][TICKETS] totalRetornado=', totalRet, 'apiPage=1 uiPage=', requestedPage);
 
   // Agrupa por contactId e seleciona último fechado
-  const byContact = new Map<string, any>();
+  const byContact = new Map<string, unknown>();
   for (const t of tickets) {
-    const cid = t.contactId;
+    const ticket = t as { contactId?: string; endedAt?: string; updatedAt?: string };
+    const cid = ticket.contactId;
     if (!cid) continue;
-    const endedAt = t.endedAt || t.updatedAt;
+    const endedAt = ticket.endedAt || ticket.updatedAt;
     if (!byContact.has(cid)) {
       byContact.set(cid, { lastClosed: endedAt, sample: t });
     }
@@ -175,7 +176,8 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
     const erro = schedules.filter((s: { status?: string }) => s.status === 'error' || s.status === 'canceled').length;
 
     // Loja/Consultora: do ticket mais recente fechado (sample)
-    const sampleTicket = byContact.get(contactId)?.sample || {};
+    const contactData = byContact.get(contactId) as { sample?: { department?: { name?: string }; user?: { name?: string } } } || {};
+    const sampleTicket = contactData.sample || {};
     const loja = sampleTicket?.department?.name || '';
     const consultora = sampleTicket?.user?.name || '';
 
@@ -238,12 +240,13 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
     };
 
     for (const it of items) {
-      const sampleTicket = byContact.get(it.contactId)?.sample || {};
+      const contactData = byContact.get(it.contactId) as { sample?: { contact?: { data?: { number?: string } } } } || {};
+      const sampleTicket = contactData.sample || {};
       const contactEmbed = sampleTicket?.contact || {};
       const contatoCompleto = contactCache.get(it.contactId)?.data || {};
 
-      const rawPrincipal = (contatoCompleto as any)?.data?.number as any;
-      const rawFallback = (contactEmbed as any)?.data?.number as any;
+      const rawPrincipal = (contatoCompleto as { data?: { number?: string } })?.data?.number;
+      const rawFallback = (contactEmbed as { data?: { number?: string } })?.data?.number;
 
       const last4 = pegarUltimos4(rawPrincipal) || pegarUltimos4(rawFallback);
 

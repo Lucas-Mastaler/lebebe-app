@@ -73,7 +73,7 @@ export async function POST(request: Request) {
 
     const confirmUrl = `${appUrl}/convite/${inviteToken}`
 
-    const updatePayload: Record<string, any> = {
+    const updatePayload: Record<string, unknown> = {
       last_invite_sent_at: new Date().toISOString(),
       invite_status: 'sent',
       invite_token: inviteToken,

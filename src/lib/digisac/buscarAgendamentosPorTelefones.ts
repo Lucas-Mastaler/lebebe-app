@@ -58,8 +58,9 @@ export async function buscarAgendamentosFuturos(
   // 4. Filtrar scheduledAt > dataFechamento (comparação exata, não início do dia)
   const dataFechamentoMs = new Date(dataFechamento).getTime();
   const futuros = agendamentosRaw.filter((item) => {
-    if (!item.scheduledAt) return false;
-    return new Date(item.scheduledAt).getTime() > dataFechamentoMs;
+    const schedule = item as { scheduledAt?: string };
+    if (!schedule.scheduledAt) return false;
+    return new Date(schedule.scheduledAt).getTime() > dataFechamentoMs;
   });
 
   console.log(`[AGENDAMENTOS-FUTUROS] Após filtro scheduledAt > ${dataFechamento}: ${futuros.length}`);
@@ -90,8 +91,8 @@ async function buscarContactIdsPorTelefones(variacoes: string[]): Promise<string
 
   try {
     const res = await fetchDigisac(url);
-    const itens: unknown[] = Array.isArray(res) ? res : (res.rows || res.data || []);
-    const ids = itens.map((c: { id?: string }) => c.id).filter(Boolean);
+    const itens: unknown[] = Array.isArray(res) ? res : ((res as { rows?: unknown[] })?.rows || (res as { data?: unknown[] })?.data || []);
+    const ids = itens.map((c) => (c as { id?: string }).id).filter((id): id is string => Boolean(id));
     return Array.from(new Set(ids));
   } catch (err) {
     console.error(`[AGENDAMENTOS-FUTUROS] Erro ao buscar contatos por telefone:`, err);
@@ -103,7 +104,7 @@ async function buscarContactIdsPorTelefones(variacoes: string[]): Promise<string
  * Busca schedules de um contactId específico no Digisac.
  * Usa GET /schedule?where[contactId]=ID com includes de contact, department e user.
  */
-async function buscarSchedulesPorContactId(contactId: string): Promise<any[]> {
+async function buscarSchedulesPorContactId(contactId: string): Promise<unknown[]> {
   const params = new URLSearchParams();
   params.append('where[contactId]', contactId);
   params.append('include[0][model]', 'contact');
@@ -116,24 +117,43 @@ async function buscarSchedulesPorContactId(contactId: string): Promise<any[]> {
   const url = `/schedule?${params.toString()}`;
 
   const res = await fetchDigisac(url);
-  const itens: any[] = Array.isArray(res) ? res : (res.rows || res.data || []);
+  const itens: unknown[] = Array.isArray(res) ? res : ((res as { rows?: unknown[] })?.rows || (res as { data?: unknown[] })?.data || []);
   return itens;
 }
 
 /**
  * Transforma o raw schedule da API Digisac no tipo Agendamento do projeto.
  */
-function transformarParaAgendamento(raw: { contact?: unknown; scheduledAt?: string; status?: string; id?: string; message?: string; data?: { message?: string }; notes?: string; department?: { name?: string }; user?: { name?: string }; createdAt?: string; updatedAt?: string }): Agendamento {
-  const contactBasic = raw.contact || {};
+function transformarParaAgendamento(raw: unknown): Agendamento {
+  const schedule = raw as {
+    contact?: unknown;
+    scheduledAt?: string;
+    status?: string;
+    id?: string;
+    message?: string;
+    data?: { message?: string };
+    notes?: string;
+    department?: { name?: string };
+    user?: { name?: string };
+    createdAt?: string;
+    updatedAt?: string;
+    accountId?: string;
+    departmentId?: string;
+    userId?: string;
+    contactId?: string;
+    openTicket?: boolean;
+    notificateUser?: boolean;
+  };
+  const contactBasic = (schedule.contact || {}) as { tags?: unknown[]; name?: string; internalName?: string };
 
   const tags: string = contactBasic.tags
-    ? contactBasic.tags
-        .map((t: { name?: string; label?: string; title?: string; tag?: { name?: string } }) => t.name || t.label || t.title || t.tag?.name || '')
-        .filter((s: string) => s.trim().length > 0)
+    ? (contactBasic.tags as { name?: string; label?: string; title?: string; tag?: { name?: string } }[])
+        .map((t) => t.name || t.label || t.title || t.tag?.name || '')
+        .filter((s) => s.trim().length > 0)
         .join(', ')
     : '';
 
-  const status = raw.status || 'scheduled';
+  const status = schedule.status || 'scheduled';
   let statusLabel = 'Agendado';
   let statusBadgeVariant: 'info' | 'success' | 'destructive' = 'success';
 
@@ -146,18 +166,18 @@ function transformarParaAgendamento(raw: { contact?: unknown; scheduledAt?: stri
   }
 
   return {
-    id: raw.id,
-    accountId: raw.accountId || '',
-    departmentId: raw.departmentId || '',
-    userId: raw.userId || '',
-    contactId: raw.contactId || '',
+    id: schedule.id || '',
+    accountId: schedule.accountId || '',
+    departmentId: schedule.departmentId || '',
+    userId: schedule.userId || '',
+    contactId: schedule.contactId || '',
 
-    loja: raw.department?.name || '',
-    consultora: raw.user?.name || '',
+    loja: schedule.department?.name || '',
+    consultora: schedule.user?.name || '',
     nomeWhatsapp: contactBasic.name || '',
     nomeDigisac: contactBasic.internalName || '',
-    mensagemAgendada: raw.message || raw.data?.message || '',
-    comentario: raw.notes || '',
+    mensagemAgendada: schedule.message || schedule.data?.message || '',
+    comentario: schedule.notes || '',
     tags,
 
     statusChamado: '',
@@ -167,12 +187,12 @@ function transformarParaAgendamento(raw: { contact?: unknown; scheduledAt?: stri
     statusLabel,
     statusBadgeVariant,
 
-    abrirTicketLabel: raw.openTicket ? 'Sim' : 'Não',
-    notificarLabel: raw.notificateUser ? 'Sim' : 'Não',
+    abrirTicketLabel: schedule.openTicket ? 'Sim' : 'Não',
+    notificarLabel: schedule.notificateUser ? 'Sim' : 'Não',
 
-    agendadoDia: formatarDataPtBr(raw.scheduledAt),
-    agendadoHora: formatarHoraPtBr(raw.scheduledAt),
-    criadoEm: formatarDataPtBr(raw.createdAt),
-    atualizadoEm: formatarDataPtBr(raw.updatedAt),
+    agendadoDia: formatarDataPtBr(schedule.scheduledAt || ''),
+    agendadoHora: formatarHoraPtBr(schedule.scheduledAt || ''),
+    criadoEm: formatarDataPtBr(schedule.createdAt || ''),
+    atualizadoEm: formatarDataPtBr(schedule.updatedAt || ''),
   } as unknown as Agendamento;
 }

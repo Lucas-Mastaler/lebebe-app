@@ -304,8 +304,15 @@ function formatarDataYYYYMMDD(data: Date): string {
 // 7.0 – Validação de payload
 // ─────────────────────────────────────────────────────────
 
+type PayloadReagendamento = {
+  eventoId?: string;
+  novoHorario?: string;
+  novaData?: string;
+  [key: string]: unknown;
+};
+
 export function validarPayloadReagendamento(
-  payload: any
+  payload: PayloadReagendamento
 ): { valido: boolean; erros: string[] } {
   const erros: string[] = [];
 

@@ -93,7 +93,7 @@ export async function POST(request: Request) {
     const confirmUrl = `${appUrl}/convite/${inviteToken}`
 
     if (usuarioExistente) {
-      const updatePayload: Record<string, any> = {
+      const updatePayload: Record<string, unknown> = {
         ativo: true,
         last_invite_sent_at: new Date().toISOString(),
         invite_status: 'sent',
@@ -186,7 +186,7 @@ export async function POST(request: Request) {
       })
     }
 
-    const insertPayload: Record<string, any> = {
+    const insertPayload: Record<string, unknown> = {
       email: emailNormalizado,
       role: role,
       ativo: true,

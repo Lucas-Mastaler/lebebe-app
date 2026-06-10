@@ -54,8 +54,8 @@ async function buscarTotalHistoricoPorContato(contactId: string): Promise<number
     p.append('limit', '1');
     p.append('skip', '0');
     const url = `/tickets?${p.toString()}`;
-    const res: any = await fetchDigisac(url);
-    const total = Number(res?.total ?? res?.count ?? 0);
+    const res: unknown = await fetchDigisac(url);
+    const total = Number((res as { total?: number; count?: number })?.total ?? (res as { total?: number; count?: number })?.count ?? 0);
     cacheSet(contactId, total);
     return total;
   } catch (err) {
@@ -161,21 +161,22 @@ async function buscarTicketsPeriodo(filtros: FiltrosDashboardService): Promise<T
     p.append('perPage', String(perPage));
     const url = `/tickets?${p.toString()}`;
     const res = await fetchDigisac(url);
-    const rows: any[] = Array.isArray(res) ? res : (res.rows || res.data || []);
-    total = Number(res?.count || res?.total || rows.length || 0);
+    const rows: unknown[] = Array.isArray(res) ? res : ((res as { rows?: unknown[] })?.rows || (res as { data?: unknown[] })?.data || []);
+    total = Number((res as { count?: number; total?: number })?.count || (res as { count?: number; total?: number })?.total || rows.length || 0);
     lastPage = Number(res?.lastPage || Math.ceil(total / perPage) || 1);
 
     for (const r of rows) {
+      const ticketRaw = r as Ticket;
       const t: Ticket = {
-        id: r.id,
-        contactId: r.contactId,
-        departmentId: r.departmentId,
-        userId: r.userId,
-        createdAt: r.createdAt,
-        department: r.department,
-        user: r.user,
-        contact: r.contact,
-        firstMessage: r.firstMessage ?? null,
+        id: ticketRaw.id,
+        contactId: ticketRaw.contactId,
+        departmentId: ticketRaw.departmentId,
+        userId: ticketRaw.userId,
+        createdAt: ticketRaw.createdAt,
+        department: ticketRaw.department,
+        user: ticketRaw.user,
+        contact: ticketRaw.contact,
+        firstMessage: ticketRaw.firstMessage ?? null,
       };
       todos.push(t);
     }
@@ -227,8 +228,8 @@ async function contarAgendamentosCriadosNoPeriodoPorFilial(
         userId: uid,
         page: 1,
         perPage: 1,
-      } as any);
-      total += Number(res?.meta?.total || 0);
+      });
+      total += Number((res as { meta?: { total?: number } })?.meta?.total || 0);
     }
   } else {
     const res = await buscarAgendamentosFormatados({
@@ -237,8 +238,8 @@ async function contarAgendamentosCriadosNoPeriodoPorFilial(
       departmentId,
       page: 1,
       perPage: 1,
-    } as any);
-    total = Number(res?.meta?.total || 0);
+    });
+    total = Number((res as { meta?: { total?: number } })?.meta?.total || 0);
   }
   return total;
 }
@@ -259,8 +260,8 @@ async function contarAgendamentosCriadosNoPeriodoPorConsultora(
         userId,
         page: 1,
         perPage: 1,
-      } as any);
-      total += Number(res?.meta?.total || 0);
+      });
+      total += Number((res as { meta?: { total?: number } })?.meta?.total || 0);
     }
   } else {
     const res = await buscarAgendamentosFormatados({
@@ -269,8 +270,8 @@ async function contarAgendamentosCriadosNoPeriodoPorConsultora(
       userId,
       page: 1,
       perPage: 1,
-    } as any);
-    total = Number(res?.meta?.total || 0);
+    });
+    total = Number((res as { meta?: { total?: number } })?.meta?.total || 0);
   }
   return total;
 }

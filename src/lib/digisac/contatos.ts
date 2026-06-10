@@ -2,10 +2,10 @@ import { fetchDigisac } from './clienteDigisac';
 import { executarComLimite } from './limiteConcorrencia';
 
 // Cache simples em memória: ContactId -> { data: ContactData, timestamp: number }
-const contactCache = new Map<string, { data: any, timestamp: number }>();
+const contactCache = new Map<string, { data: unknown, timestamp: number }>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutos
 
-export async function buscarContatoCompleto(contactId: string): Promise<any> {
+export async function buscarContatoCompleto(contactId: string): Promise<unknown> {
     const now = Date.now();
     const cached = contactCache.get(contactId);
 
@@ -60,7 +60,7 @@ export async function buscarContatoCompleto(contactId: string): Promise<any> {
     return { name: 'Desconhecido (Erro)' };
 }
 
-export async function buscarContatosPorIds(contactIds: string[]): Promise<Map<string, any>> {
+export async function buscarContatosPorIds(contactIds: string[]): Promise<Map<string, unknown>> {
     // Deduplicar IDs
     const uniqueIds = Array.from(new Set(contactIds)).filter(id => !!id);
 
@@ -78,7 +78,7 @@ export async function buscarContatosPorIds(contactIds: string[]): Promise<Map<st
 
     const resultados = await executarComLimite(tasks, 5); // 5 requisições simultâneas
 
-    const mapa = new Map<string, any>();
+    const mapa = new Map<string, unknown>();
     resultados.forEach(r => mapa.set(r.id, r.data));
 
     return mapa;

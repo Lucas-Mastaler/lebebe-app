@@ -17,14 +17,16 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 
+type FiltrosDashboardType = Record<string, unknown>;
+
 export default function Page() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [currentFiltros, setCurrentFiltros] = useState<any | null>(null);
+  const [currentFiltros, setCurrentFiltros] = useState<FiltrosDashboardType | null>(null);
   const [activeTab, setActiveTab] = useState('filiais');
 
-  const handlePesquisar = useCallback(async (filtros: any) => {
+  const handlePesquisar = useCallback(async (filtros: FiltrosDashboardType) => {
     setIsLoading(true);
     setError(null);
     setCurrentFiltros(filtros);

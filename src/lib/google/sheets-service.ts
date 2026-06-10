@@ -29,8 +29,9 @@ async function criarClienteSheets() {
     const { credentials } = await oauth2Client.refreshAccessToken();
     oauth2Client.setCredentials(credentials);
     console.log("[SHEETS SERVICE] ✓ Access token obtido com sucesso");
-  } catch (error: any) {
-    console.error("[SHEETS SERVICE] ❌ Erro ao fazer refresh do access_token:", error.message);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("[SHEETS SERVICE] ❌ Erro ao fazer refresh do access_token:", errorMessage);
     throw new Error("Falha ao renovar access token. Verifique o refresh_token.");
   }
 
@@ -179,12 +180,13 @@ export async function enviarRecebimentoParaPlanilha(
 
     return { sucesso: true };
 
-  } catch (error: any) {
-    const mensagem = error.message || String(error);
+  } catch (error: unknown) {
+    const mensagem = error instanceof Error ? error.message : String(error);
     console.error('[SHEETS SERVICE] ❌ Erro ao enviar para planilha:', mensagem);
-    
-    if (error.response?.data?.error) {
-      console.error('[SHEETS SERVICE] Detalhes:', JSON.stringify(error.response.data.error));
+
+    const errorWithResponse = error as { response?: { data?: { error?: unknown } } };
+    if (errorWithResponse.response?.data?.error) {
+      console.error('[SHEETS SERVICE] Detalhes:', JSON.stringify(errorWithResponse.response.data.error));
     }
 
     return { sucesso: false, erro: mensagem };

@@ -387,18 +387,24 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
 
           // Contar divergências por NF e armazenar detalhes
           const countMap = new Map<string, number>()
-          const detalhesMap = new Map<string, Array<unknown>>()
-          
+          type DivergenciaDetalhe = {
+            codigo_produto: string
+            descricao: string
+            tipo: string
+            obs: string
+          }
+          const detalhesMap = new Map<string, DivergenciaDetalhe[]>()
+
           for (const item of itensComDivergencia) {
             const nf = item.numero_nf
             if (nf) {
               countMap.set(nf, (countMap.get(nf) || 0) + 1)
-              
+
               const detalhes = detalhesMap.get(nf) || []
               detalhes.push({
                 codigo_produto: item.nfe_item?.codigo_produto || '?',
                 descricao: item.sku_descricao || item.nfe_item?.descricao || 'Sem descrição',
-                tipo: item.divergencia_tipo,
+                tipo: String(item.divergencia_tipo || ''),
                 obs: item.divergencia_obs || ''
               })
               detalhesMap.set(nf, detalhes)
@@ -1267,12 +1273,15 @@ function NotasVinculadasTab() {
         
         if (!error && data) {
           // Marcar NFes vinculadas
-          const nfesWithVinculo = data.map(nf => ({
-            ...nf,
-            is_vinculada: (nf.recebimento_nfes as any)?.length > 0,
-            recebimento_nfes: undefined // Remove do objeto final
-          }))
-          setNfes(nfesWithVinculo as any)
+          const nfesWithVinculo = data.map(nf => {
+            const nfWithRecebimento = nf as { recebimento_nfes?: unknown[] };
+            return {
+              ...nf,
+              is_vinculada: (nfWithRecebimento.recebimento_nfes?.length ?? 0) > 0,
+              recebimento_nfes: undefined // Remove do objeto final
+            };
+          });
+          setNfes(nfesWithVinculo);
         } else if (error) {
           toast.error('Erro ao carregar notas fiscais')
         }

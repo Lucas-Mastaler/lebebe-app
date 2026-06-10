@@ -25,7 +25,7 @@ export async function enviarEmail({ to, subject, html }: EnviarEmailParams) {
 
     console.log(`[RESEND] Email enviado com sucesso messageId=${data?.id}`)
     return { success: true, messageId: data?.id }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[RESEND] Erro ao enviar email:', error)
     throw error
   }

@@ -35,15 +35,22 @@ export function formatarHoraPtBr(isoString: string): string {
     }
 }
 
-export function formatarTags(tags: any[]): string {
+type TagItem = { label?: string; name?: string; title?: string; tag?: { name?: string } };
+
+export function formatarTags(tags: unknown[]): string {
     if (!Array.isArray(tags) || tags.length === 0) return '';
     // Preferir label quando existir (padrão n8n), com fallbacks comuns
     return tags
-        .map((t) => t.label || t.name || t.title || (t.tag?.name) || t)
+        .map((t) => {
+            const tag = t as TagItem;
+            return tag.label || tag.name || tag.title || (tag.tag?.name) || t;
+        })
         .join(', ');
 }
 
-export function formatarCamposPersonalizados(customFields: any): string {
+type CustomFieldItem = { label?: string; name?: string; value?: string };
+
+export function formatarCamposPersonalizados(customFields: unknown): string {
     if (!customFields) return '';
 
     // Pode vir como objeto { "key": "value" } ou array [{ label: "...", value: "..." }]
@@ -51,12 +58,15 @@ export function formatarCamposPersonalizados(customFields: any): string {
 
     if (Array.isArray(customFields)) {
         return customFields
-            .map(cf => `${cf.label || cf.name}: ${cf.value}`)
+            .map((cf) => {
+                const field = cf as CustomFieldItem;
+                return `${field.label || field.name}: ${field.value}`;
+            })
             .join(' | ');
     }
 
-    if (typeof customFields === 'object') {
-        return Object.entries(customFields)
+    if (typeof customFields === 'object' && customFields !== null) {
+        return Object.entries(customFields as Record<string, unknown>)
             .map(([k, v]) => `${k}: ${v}`)
             .join(' | ');
     }

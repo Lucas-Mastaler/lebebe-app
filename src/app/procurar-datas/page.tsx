@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarCheck, Loader2, MapPin, RefreshCw, Search, Send, TimerReset } from 'lucide-react'
+import { CalendarCheck, Loader2, MapPin, Search, Send, TimerReset } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -48,6 +48,16 @@ type SearchPayload = {
   params?: string
   candidates?: Candidate[]
   searchTime?: string
+}
+
+type ProgressStatus = 'idle' | 'queued' | 'running' | 'done' | 'error'
+
+type SearchProgress = {
+  status?: ProgressStatus | string
+  normais?: Candidate[]
+  extras?: Candidate[]
+  payload?: SearchPayload
+  error?: string
 }
 
 type FormState = {
@@ -129,6 +139,12 @@ function getTipoBadgeClass(tipo?: string) {
   }
 }
 
+function formatElapsed(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0')
+  const seconds = (totalSeconds % 60).toString().padStart(2, '0')
+  return `${minutes}:${seconds}`
+}
+
 async function readJson(response: Response) {
   const data = await response.json().catch(() => null)
   if (!response.ok || data?.ok === false) {
@@ -147,6 +163,9 @@ export default function ProcurarDatasPage() {
   const [clientToken, setClientToken] = useState('')
   const [phase, setPhase] = useState('Carregando opcoes')
   const [progressText, setProgressText] = useState('')
+  const [progressStatus, setProgressStatus] = useState<ProgressStatus>('idle')
+  const [searchError, setSearchError] = useState('')
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [valorInicial, setValorInicial] = useState('')
   const [loadingOptions, setLoadingOptions] = useState(true)
   const [validatingAddress, setValidatingAddress] = useState(false)
@@ -155,6 +174,8 @@ export default function ProcurarDatasPage() {
   const [searching, setSearching] = useState(false)
   const [schedulingIndex, setSchedulingIndex] = useState<number | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const activeSearchTokenRef = useRef('')
 
   const minDate = useMemo(() => isoDatePlus(form.isEncomenda ? 42 : 2), [form.isEncomenda])
   const maxDate = useMemo(() => isoDatePlus(90), [])
@@ -162,6 +183,8 @@ export default function ProcurarDatasPage() {
   const normalCandidates = candidates.filter((candidate) => (candidate.tipo || 'normal') === 'normal').slice(0, 3)
   const extraCandidates = candidates.filter((candidate) => (candidate.tipo || 'normal') !== 'normal')
   const serviceLocked = !addressResult?.ok
+  const formLocked = serviceLocked || searching
+  const showProgressBlock = progressStatus !== 'idle' || searching || !!searchError
 
   useEffect(() => {
     setForm((current) => {
@@ -286,6 +309,7 @@ export default function ProcurarDatasPage() {
   useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
+      if (timerRef.current) clearInterval(timerRef.current)
     }
   }, [])
 
@@ -337,26 +361,76 @@ export default function ProcurarDatasPage() {
     }
   }
 
+  function startTimer() {
+    if (timerRef.current) clearInterval(timerRef.current)
+    setElapsedSeconds(0)
+    timerRef.current = setInterval(() => {
+      setElapsedSeconds((current) => current + 1)
+    }, 1000)
+  }
+
+  function stopTimer() {
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+  }
+
+  function finalizarBuscaComErro(message: string) {
+    setSearchError(message)
+    setProgressStatus('error')
+    setPhase('Erro ao pesquisar datas')
+    setSearching(false)
+    stopPolling()
+    stopTimer()
+  }
+
   function startPolling(token: string) {
     if (pollRef.current) clearInterval(pollRef.current)
 
-    pollRef.current = setInterval(async () => {
+    const poll = async () => {
+      if (activeSearchTokenRef.current !== token) return
       try {
         const response = await fetch(`/api/procurar-datas/progresso?clientToken=${encodeURIComponent(token)}`)
         const data = await readJson(response)
-        const progress = data.progress || {}
-        const status = progress.status || ''
+        const progress = (data.progress || {}) as SearchProgress
+        const status = (progress.status || 'waiting') as ProgressStatus | string
         const normais = Array.isArray(progress.normais) ? progress.normais.length : 0
         const extras = Array.isArray(progress.extras) ? progress.extras.length : 0
 
+        if (activeSearchTokenRef.current !== token) return
+
         if (status) {
+          if (status === 'queued' || status === 'running' || status === 'done' || status === 'error') {
+            setProgressStatus(status)
+          }
           setProgressText(`Status: ${status}${normais || extras ? ` | candidatos: ${normais + extras}` : ''}`)
+        }
+
+        if (status === 'done') {
+          if (progress.payload) {
+            setSearchPayload(progress.payload)
+          }
+          setPhase('Resultados finalizados')
+          setSearching(false)
+          stopPolling()
+          stopTimer()
+          toast.success('Busca concluida.')
+        }
+
+        if (status === 'error') {
+          finalizarBuscaComErro(progress.error || 'Erro ao pesquisar datas.')
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Erro no polling.'
-        setProgressText(message)
+        if (activeSearchTokenRef.current === token) {
+          finalizarBuscaComErro(message)
+        }
       }
-    }, 3000)
+    }
+
+    void poll()
+    pollRef.current = setInterval(poll, 3000)
   }
 
   function stopPolling() {
@@ -377,12 +451,15 @@ export default function ProcurarDatasPage() {
     }
 
     const token = createClientToken()
+    activeSearchTokenRef.current = token
     setClientToken(token)
     setSearching(true)
     setSearchPayload(null)
+    setSearchError('')
+    setProgressStatus('queued')
     setProgressText('')
-    setPhase('Buscando datas')
-    startPolling(token)
+    setPhase('Iniciando pesquisa')
+    startTimer()
 
     try {
       const body = {
@@ -406,18 +483,37 @@ export default function ProcurarDatasPage() {
         body: JSON.stringify(body),
       })
       const data = await readJson(response)
-      const payload = data.payload as SearchPayload
-      setSearchPayload(payload || null)
-      setPhase('Resultados finalizados')
-      toast.success('Busca concluida.')
+      if (activeSearchTokenRef.current !== token) return
+      const startedToken = data.clientToken || token
+      activeSearchTokenRef.current = startedToken
+      setClientToken(startedToken)
+      setProgressStatus('queued')
+      setProgressText(`Status: ${data.status || 'started'}`)
+      setPhase('Buscando datas')
+      startPolling(startedToken)
     } catch (error) {
+      if (activeSearchTokenRef.current !== token) return
       const message = error instanceof Error ? error.message : 'Erro ao pesquisar datas.'
+      finalizarBuscaComErro(message)
       toast.error(message)
-      setPhase('Erro ao pesquisar datas')
-    } finally {
-      stopPolling()
-      setSearching(false)
     }
+  }
+
+  function editarFiltros() {
+    activeSearchTokenRef.current = ''
+    setSearching(false)
+    setProgressStatus('idle')
+    setProgressText('')
+    setSearchError('')
+    setClientToken('')
+    setPhase(addressResult?.ok ? 'Pronto para buscar datas' : 'Pronto para validar endereco')
+    stopPolling()
+    stopTimer()
+  }
+
+  function novaBusca() {
+    editarFiltros()
+    setSearchPayload(null)
   }
 
   async function preAgendar(candidate: Candidate, index: number) {
@@ -520,7 +616,7 @@ export default function ProcurarDatasPage() {
         <p className="text-sm text-slate-500">Fluxo operacional conectado ao motor atual do Apps Script.</p>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="space-y-4">
         <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
@@ -533,26 +629,26 @@ export default function ProcurarDatasPage() {
           <div className="grid gap-3 md:grid-cols-6">
             <label className="md:col-span-3">
               <span className="mb-1 block text-xs font-medium text-slate-600">Logradouro</span>
-              <Input value={form.logradouro} onChange={(e) => updateForm('logradouro', e.target.value)} />
+              <Input disabled={searching} value={form.logradouro} onChange={(e) => updateForm('logradouro', e.target.value)} />
             </label>
             <label>
               <span className="mb-1 block text-xs font-medium text-slate-600">Numero</span>
-              <Input value={form.numero} onChange={(e) => updateForm('numero', e.target.value)} />
+              <Input disabled={searching} value={form.numero} onChange={(e) => updateForm('numero', e.target.value)} />
             </label>
             <label className="md:col-span-2">
               <span className="mb-1 block text-xs font-medium text-slate-600">Bairro</span>
-              <Input value={form.bairro} onChange={(e) => updateForm('bairro', e.target.value)} />
+              <Input disabled={searching} value={form.bairro} onChange={(e) => updateForm('bairro', e.target.value)} />
             </label>
             <label className="md:col-span-3">
               <span className="mb-1 block text-xs font-medium text-slate-600">Cidade</span>
-              <Input value={form.cidade} onChange={(e) => updateForm('cidade', e.target.value)} />
+              <Input disabled={searching} value={form.cidade} onChange={(e) => updateForm('cidade', e.target.value)} />
             </label>
             <label>
               <span className="mb-1 block text-xs font-medium text-slate-600">UF</span>
-              <Input maxLength={2} value={form.uf} onChange={(e) => updateForm('uf', e.target.value.toUpperCase())} />
+              <Input disabled={searching} maxLength={2} value={form.uf} onChange={(e) => updateForm('uf', e.target.value.toUpperCase())} />
             </label>
             <div className="md:col-span-2 flex items-end">
-              <Button type="button" variant="outline" onClick={validarEndereco} disabled={validatingAddress || loadingOptions} className="w-full">
+              <Button type="button" variant="outline" onClick={validarEndereco} disabled={validatingAddress || loadingOptions || searching} className="w-full">
                 {validatingAddress ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
                 Validar endereco
               </Button>
@@ -576,9 +672,9 @@ export default function ProcurarDatasPage() {
           )}
 
           <fieldset
-            disabled={serviceLocked || validatingAddress}
-            aria-disabled={serviceLocked || validatingAddress}
-            className={`mt-5 rounded-lg border border-slate-200 p-4 transition ${serviceLocked ? 'bg-slate-50 opacity-60' : 'bg-white'}`}
+            disabled={formLocked || validatingAddress}
+            aria-disabled={formLocked || validatingAddress}
+            className={`mt-5 rounded-lg border border-slate-200 p-4 transition ${formLocked ? 'bg-slate-50 opacity-60' : 'bg-white'}`}
           >
           <div className="grid gap-3 md:grid-cols-6">
             <label className="md:col-span-2">
@@ -655,32 +751,67 @@ export default function ProcurarDatasPage() {
               disabled={searching || validatingAddress || calculatingTime || !addressResult?.ok || !tempoNecessario || tempoNecessario === '<--- PREENCHA'}
             >
               {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-              Pesquisar datas
+              {searching ? 'Pesquisando...' : 'Pesquisar datas'}
             </Button>
           </div>
           </fieldset>
         </section>
-
-        <aside className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center gap-2">
-            <RefreshCw className="h-4 w-4 text-[#00A5E6]" />
-            <h2 className="text-base font-semibold text-slate-900">Andamento</h2>
-          </div>
-          <div className="space-y-2 text-sm">
-            {['Validando endereco', 'Calculando tempo', 'Buscando datas', 'Calculando rotas', 'Finalizando resultados'].map((step) => {
-              const active = phase.toLowerCase().includes(step.toLowerCase().split(' ')[0])
-              return (
-                <div key={step} className={`border px-3 py-2 ${active ? 'border-sky-200 bg-sky-50 text-sky-800' : 'border-slate-200 text-slate-500'}`}>
-                  {step}
-                </div>
-              )
-            })}
-          </div>
-          <div className="mt-3 min-h-10 border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-            {progressText || (clientToken ? `Token: ${clientToken}` : 'Aguardando inicio da busca.')}
-          </div>
-        </aside>
       </div>
+
+      {showProgressBlock && (
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">Progresso da pesquisa</h2>
+              <p className="text-xs text-slate-500">Tempo total: {formatElapsed(elapsedSeconds)}</p>
+            </div>
+            <div className="flex gap-2">
+              {(searching || progressStatus === 'error') && (
+                <Button type="button" variant="outline" size="sm" onClick={editarFiltros}>
+                  Editar filtros
+                </Button>
+              )}
+              {progressStatus === 'done' && (
+                <Button type="button" variant="outline" size="sm" onClick={novaBusca}>
+                  Nova busca
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-2 md:grid-cols-5">
+            {[
+              { label: 'Endereco validado', done: !!addressResult?.ok, active: false },
+              { label: 'Tempo calculado', done: !!tempoNecessario && tempoNecessario !== '<--- PREENCHA', active: false },
+              { label: 'Buscando datas', done: progressStatus === 'done', active: progressStatus === 'queued' || progressStatus === 'running' },
+              { label: 'Calculando rotas', done: progressStatus === 'done', active: progressStatus === 'running' },
+              { label: 'Finalizando resultados', done: progressStatus === 'done', active: progressStatus === 'running' },
+            ].map((step) => (
+              <div
+                key={step.label}
+                className={`border px-3 py-2 text-sm ${
+                  step.done
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                    : step.active
+                      ? 'border-sky-200 bg-sky-50 text-sky-800'
+                      : 'border-slate-200 bg-slate-50 text-slate-500'
+                }`}
+              >
+                <span className="mr-2 font-semibold">{step.done ? '[OK]' : step.active ? '[~]' : '[ ]'}</span>
+                {step.label}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+            <div>Status: {progressStatus === 'idle' ? '-' : progressStatus}</div>
+            {progressText && <div className="mt-1 text-xs text-slate-500">{progressText}</div>}
+            {clientToken && <div className="mt-1 text-xs text-slate-400">Token: {clientToken}</div>}
+            {progressStatus === 'done' && <div className="mt-2 text-emerald-700">Pesquisa concluida.</div>}
+            {searchError && <div className="mt-2 text-red-700">{searchError}</div>}
+          </div>
+        </section>
+      )}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between gap-3">

@@ -82,6 +82,232 @@ function ApiPesquisarDatasApp(form) {
   }
 }
 
+function ApiIniciarPesquisaDatasApp(form) {
+  var lock = LockService.getScriptLock();
+  try {
+    form = form || {};
+    if (!form.clientToken) form.clientToken = 'app-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+    var clientToken = String(form.clientToken);
+    var props = PropertiesService.getScriptProperties();
+    var now = Date.now();
+    var jobKey = 'PROCURAR_DATAS_JOB_' + clientToken;
+    var queueKey = 'PROCURAR_DATAS_QUEUE';
+
+    lock.waitLock(5000);
+
+    var existingJob = props.getProperty(jobKey);
+    if (!existingJob) {
+      props.setProperty(jobKey, JSON.stringify({
+        clientToken: clientToken,
+        form: form,
+        status: 'queued',
+        createdAt: now
+      }));
+
+      var queue = _procurarDatasReadQueue_(props, queueKey);
+      if (queue.indexOf(clientToken) === -1) {
+        queue.push(clientToken);
+        props.setProperty(queueKey, JSON.stringify(queue));
+      }
+    }
+
+    props.setProperty('PROGRESS_' + clientToken, JSON.stringify({
+      status: 'queued',
+      clientToken: clientToken,
+      normais: [],
+      extras: [],
+      timestamp: now,
+      startedAt: new Date(now).toISOString()
+    }));
+
+    _procurarDatasEnsureWorkerTrigger_();
+
+    Logger.log('[PROCURAR-DATAS-ASYNC] job criado clientToken=' + clientToken);
+    return { ok: true, clientToken: clientToken, status: 'started' };
+  } catch (e) {
+    return {
+      ok: false,
+      error: (e && e.message) ? e.message : String(e || 'Erro ao iniciar pesquisa')
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+}
+
+function ApiExecutarPesquisaDatasWorker() {
+  var props = PropertiesService.getScriptProperties();
+  var queueKey = 'PROCURAR_DATAS_QUEUE';
+  var lock = LockService.getScriptLock();
+  var clientToken = '';
+  var job = null;
+  var startedAt = Date.now();
+
+  try {
+    lock.waitLock(10000);
+    var queue = _procurarDatasReadQueue_(props, queueKey);
+    clientToken = queue.shift() || '';
+    props.setProperty(queueKey, JSON.stringify(queue));
+
+    if (!clientToken) {
+      Logger.log('[PROCURAR-DATAS-ASYNC] worker sem jobs pendentes');
+      _procurarDatasDeleteWorkerTriggersIfQueueEmpty_(props, queueKey);
+      return;
+    }
+
+    var jobKey = 'PROCURAR_DATAS_JOB_' + clientToken;
+    var storedJob = props.getProperty(jobKey);
+    if (!storedJob) {
+      Logger.log('[PROCURAR-DATAS-ASYNC] job nao encontrado clientToken=' + clientToken);
+      _procurarDatasEnsureWorkerTriggerIfQueueHasItems_(props, queueKey);
+      _procurarDatasDeleteWorkerTriggersIfQueueEmpty_(props, queueKey);
+      return;
+    }
+
+    job = JSON.parse(storedJob);
+    job.status = 'running';
+    job.startedAt = startedAt;
+    props.setProperty(jobKey, JSON.stringify(job));
+  } catch (e) {
+    Logger.log('[PROCURAR-DATAS-ASYNC] erro ao preparar worker: ' + (e && e.stack ? e.stack : e));
+    return;
+  } finally {
+    try { lock.releaseLock(); } catch (_) {}
+  }
+
+  try {
+    _procurarDatasSalvarProgressoRaw_(clientToken, {
+      status: 'running',
+      clientToken: clientToken,
+      normais: [],
+      extras: [],
+      timestamp: Date.now(),
+      startedAt: new Date(startedAt).toISOString()
+    });
+
+    Logger.log('[PROCURAR-DATAS-ASYNC] worker iniciado clientToken=' + clientToken);
+    var result = ApiPesquisarDatasApp(job.form || {});
+
+    if (!result || !result.ok) {
+      throw new Error((result && result.error) ? result.error : 'Pesquisa sem resultado');
+    }
+
+    var payload = _procurarDatasCompactPayload_(result.payload || {});
+    var candidates = payload.candidates || [];
+    var normais = candidates.filter(function(c){ return String(c.tipo || 'normal') === 'normal'; });
+    var extras = candidates.filter(function(c){ return String(c.tipo || 'normal') !== 'normal'; });
+
+    _procurarDatasSalvarProgressoRaw_(clientToken, {
+      status: 'done',
+      clientToken: clientToken,
+      payload: payload,
+      normais: normais,
+      extras: extras,
+      timestamp: Date.now(),
+      startedAt: new Date(startedAt).toISOString(),
+      finishedAt: new Date().toISOString(),
+      durationMs: Date.now() - startedAt
+    });
+
+    Logger.log('[PROCURAR-DATAS-ASYNC] done clientToken=' + clientToken +
+      ' normais=' + normais.length + ' extras=' + extras.length +
+      ' duracaoMs=' + (Date.now() - startedAt));
+  } catch (e) {
+    var msg = (e && e.message) ? e.message : String(e || 'Erro desconhecido');
+    _procurarDatasSalvarProgressoRaw_(clientToken, {
+      status: 'error',
+      clientToken: clientToken,
+      error: msg,
+      timestamp: Date.now(),
+      startedAt: new Date(startedAt).toISOString(),
+      finishedAt: new Date().toISOString(),
+      durationMs: Date.now() - startedAt
+    });
+    Logger.log('[PROCURAR-DATAS-ASYNC] error clientToken=' + clientToken + ' erro=' + msg);
+  } finally {
+    try {
+      props.deleteProperty('PROCURAR_DATAS_JOB_' + clientToken);
+      _procurarDatasEnsureWorkerTriggerIfQueueHasItems_(props, queueKey);
+      _procurarDatasDeleteWorkerTriggersIfQueueEmpty_(props, queueKey);
+    } catch (cleanupError) {
+      Logger.log('[PROCURAR-DATAS-ASYNC] cleanup erro: ' + cleanupError);
+    }
+  }
+}
+
+function _procurarDatasReadQueue_(props, queueKey) {
+  try {
+    var raw = props.getProperty(queueKey);
+    var parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function _procurarDatasEnsureWorkerTrigger_() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction && triggers[i].getHandlerFunction() === 'ApiExecutarPesquisaDatasWorker') {
+      return;
+    }
+  }
+  ScriptApp.newTrigger('ApiExecutarPesquisaDatasWorker').timeBased().after(1000).create();
+}
+
+function _procurarDatasEnsureWorkerTriggerIfQueueHasItems_(props, queueKey) {
+  var queue = _procurarDatasReadQueue_(props, queueKey);
+  if (queue.length > 0) _procurarDatasEnsureWorkerTrigger_();
+}
+
+function _procurarDatasDeleteWorkerTriggersIfQueueEmpty_(props, queueKey) {
+  var queue = _procurarDatasReadQueue_(props, queueKey);
+  if (queue.length > 0) return;
+
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction && triggers[i].getHandlerFunction() === 'ApiExecutarPesquisaDatasWorker') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+}
+
+function _procurarDatasSalvarProgressoRaw_(clientToken, data) {
+  if (!clientToken) return;
+  var raw = JSON.stringify(data || {});
+  if (raw.length > 8500 && data && data.payload) {
+    data.payload.params = '';
+    raw = JSON.stringify(data);
+  }
+  if (raw.length > 8500 && data) {
+    data.normais = [];
+    data.extras = [];
+    raw = JSON.stringify(data);
+  }
+  PropertiesService.getScriptProperties().setProperty(
+    'PROGRESS_' + clientToken,
+    raw
+  );
+}
+
+function _procurarDatasCompactPayload_(payload) {
+  payload = payload || {};
+  return {
+    ok: payload.ok === false ? false : true,
+    cep: payload.cep || '',
+    tempo: payload.tempo || '',
+    label: payload.label || '',
+    address: payload.address || '',
+    addressShort: payload.addressShort || '',
+    startFromISO: payload.startFromISO || '',
+    startFromDM: payload.startFromDM || '',
+    isRural: !!payload.isRural,
+    isCondominio: !!payload.isCondominio,
+    params: payload.params || '',
+    candidates: Array.isArray(payload.candidates) ? payload.candidates : [],
+    searchTime: payload.searchTime || ''
+  };
+}
+
 function ApiPreAgendarDireto(cand, meta) {
   try {
     cand = cand || {};

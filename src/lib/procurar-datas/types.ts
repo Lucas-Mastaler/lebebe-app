@@ -6,6 +6,7 @@ export type AppsScriptProcurarDatasFunction =
   | 'calcularValorInicialModal'
   | 'GetProgressUpdate'
   | 'ApiPesquisarDatasApp'
+  | 'ApiIniciarPesquisaDatasApp'
   | 'ApiPreAgendarDireto'
 
 export interface ProcurarDatasEnderecoForm {

@@ -4,7 +4,7 @@ import { respostaErroProcurarDatas, validarAcessoProcurarDatas } from '@/lib/pro
 import type { ProcurarDatasServicoForm } from '@/lib/procurar-datas/types'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   const inicio = Date.now()
@@ -18,14 +18,22 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as ProcurarDatasServicoForm
     clientToken = body.clientToken || ''
 
-    const resultado = await chamarAppsScriptProcurarDatas('ApiPesquisarDatasApp', [body], {
+    const resultado = await chamarAppsScriptProcurarDatas<{ ok?: boolean; clientToken?: string; status?: string; error?: string }>('ApiIniciarPesquisaDatasApp', [body], {
       rota: 'pesquisar',
       clientToken,
-      timeoutMs: 300_000,
+      timeoutMs: 30_000,
     })
 
+    if (!resultado?.ok) {
+      throw new Error(resultado?.error || 'Nao foi possivel iniciar a pesquisa.')
+    }
+
     console.log(`[PROCURAR_DATAS][pesquisar] sucesso clientToken=${clientToken || '-'} duracaoMs=${Date.now() - inicio}`)
-    return NextResponse.json(resultado)
+    return NextResponse.json({
+      ok: true,
+      clientToken: resultado.clientToken || clientToken,
+      status: resultado.status || 'started',
+    })
   } catch (error) {
     console.error(`[PROCURAR_DATAS][pesquisar] erro clientToken=${clientToken || '-'} duracaoMs=${Date.now() - inicio}`, error)
     return respostaErroProcurarDatas(error)

@@ -57,6 +57,7 @@ const FUNCOES_PERMITIDAS = [
   "calcularValorInicialModal",
   "GetProgressUpdate",
   "ApiPesquisarDatasApp",
+  "ApiIniciarPesquisaDatasApp",
   "ApiPreAgendarDireto"
 ] as const;
 

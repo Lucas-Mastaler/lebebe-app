@@ -20,7 +20,10 @@ export function respostaErroProcurarDatas(error: unknown) {
 
   if (isTimeoutError(error)) {
     return NextResponse.json(
-      { ok: false, error: 'A busca demorou mais que o esperado. Tente novamente em instantes.' },
+      {
+        ok: false,
+        error: 'A busca demorou mais que o esperado. Tente novamente em alguns instantes. Se for a primeira busca do dia ou de uma regiao nova, o sistema pode levar mais tempo para aquecer os dados.',
+      },
       { status: 504 }
     )
   }

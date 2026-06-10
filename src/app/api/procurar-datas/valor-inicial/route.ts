@@ -4,30 +4,35 @@ import { respostaErroProcurarDatas, validarAcessoProcurarDatas } from '@/lib/pro
 import type { ProcurarDatasServicoForm } from '@/lib/procurar-datas/types'
 
 export const runtime = 'nodejs'
-export const maxDuration = 300
+
+type ValorInicialResponse = {
+  ok?: boolean
+  valor?: number | null
+  valorFormatado?: string
+  valorFmt?: string
+  distanciaKm?: number | null
+  fallbackUsado?: boolean
+  msg?: string
+}
 
 export async function POST(request: NextRequest) {
   const inicio = Date.now()
-  let clientToken = ''
-  console.log('[PROCURAR_DATAS][pesquisar] inicio')
+  console.log('[PROCURAR_DATAS][valor-inicial] inicio')
 
   try {
     const acesso = await validarAcessoProcurarDatas()
     if (acesso.response) return acesso.response
 
     const body = (await request.json()) as ProcurarDatasServicoForm
-    clientToken = body.clientToken || ''
-
-    const resultado = await chamarAppsScriptProcurarDatas('ApiPesquisarDatasApp', [body], {
-      rota: 'pesquisar',
-      clientToken,
-      timeoutMs: 300_000,
+    const resultado = await chamarAppsScriptProcurarDatas<ValorInicialResponse>('calcularValorInicialModal', [body], {
+      rota: 'valor-inicial',
+      timeoutMs: 60_000,
     })
 
-    console.log(`[PROCURAR_DATAS][pesquisar] sucesso clientToken=${clientToken || '-'} duracaoMs=${Date.now() - inicio}`)
-    return NextResponse.json(resultado)
+    console.log(`[PROCURAR_DATAS][valor-inicial] sucesso duracaoMs=${Date.now() - inicio}`)
+    return NextResponse.json({ ok: true, resultado })
   } catch (error) {
-    console.error(`[PROCURAR_DATAS][pesquisar] erro clientToken=${clientToken || '-'} duracaoMs=${Date.now() - inicio}`, error)
+    console.error(`[PROCURAR_DATAS][valor-inicial] erro duracaoMs=${Date.now() - inicio}`, error)
     return respostaErroProcurarDatas(error)
   }
 }

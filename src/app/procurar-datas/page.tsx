@@ -147,9 +147,11 @@ export default function ProcurarDatasPage() {
   const [clientToken, setClientToken] = useState('')
   const [phase, setPhase] = useState('Carregando opcoes')
   const [progressText, setProgressText] = useState('')
+  const [valorInicial, setValorInicial] = useState('')
   const [loadingOptions, setLoadingOptions] = useState(true)
   const [validatingAddress, setValidatingAddress] = useState(false)
   const [calculatingTime, setCalculatingTime] = useState(false)
+  const [calculatingValorInicial, setCalculatingValorInicial] = useState(false)
   const [searching, setSearching] = useState(false)
   const [schedulingIndex, setSchedulingIndex] = useState<number | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -159,6 +161,7 @@ export default function ProcurarDatasPage() {
   const candidates = searchPayload?.candidates || []
   const normalCandidates = candidates.filter((candidate) => (candidate.tipo || 'normal') === 'normal').slice(0, 3)
   const extraCandidates = candidates.filter((candidate) => (candidate.tipo || 'normal') !== 'normal')
+  const serviceLocked = !addressResult?.ok
 
   useEffect(() => {
     setForm((current) => {
@@ -200,6 +203,10 @@ export default function ProcurarDatasPage() {
 
   useEffect(() => {
     if (!tempoMapLoaded) return
+    if (!addressResult?.ok) {
+      setTempoNecessario('')
+      return
+    }
     const hasSelection = form.tipoBerco || form.comoda || form.roupeiro || form.poltrona || form.painel || form.isCondominio
     if (!hasSelection) {
       setTempoNecessario('')
@@ -231,6 +238,52 @@ export default function ProcurarDatasPage() {
   }, [form, tempoMapLoaded, addressResult])
 
   useEffect(() => {
+    if (!addressResult?.ok || !addressResult.lat || !addressResult.lng) {
+      setValorInicial('')
+      return
+    }
+
+    let active = true
+    const timeout = setTimeout(async () => {
+      setCalculatingValorInicial(true)
+      try {
+        const response = await fetch('/api/procurar-datas/valor-inicial', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cep: addressResult.cep || '',
+            lat: addressResult.lat,
+            lng: addressResult.lng,
+            destLat: addressResult.lat,
+            destLng: addressResult.lng,
+            destDisplay: addressResult.enderecoCompleto || addressResult.display || addressResult.display_name || '',
+            destProvider: addressResult.provider || '',
+            enderecoCompleto: addressResult.enderecoCompleto || addressResult.display || addressResult.display_name || '',
+            isRural: form.isRural,
+            isCondominio: form.isCondominio,
+          }),
+        })
+        const data = await readJson(response)
+        const resultado = data.resultado || {}
+        if (active) setValorInicial(resultado.valorFormatado || resultado.valorFmt || '')
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Erro ao calcular valor inicial.'
+        if (active) {
+          setValorInicial('')
+          toast.error(message)
+        }
+      } finally {
+        if (active) setCalculatingValorInicial(false)
+      }
+    }, 300)
+
+    return () => {
+      active = false
+      clearTimeout(timeout)
+    }
+  }, [addressResult, form.isRural, form.isCondominio])
+
+  useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current)
     }
@@ -241,6 +294,7 @@ export default function ProcurarDatasPage() {
     if (['logradouro', 'numero', 'bairro', 'cidade', 'uf'].includes(String(key))) {
       setAddressResult(null)
       setSearchPayload(null)
+      setValorInicial('')
       setPhase('Endereco alterado')
     }
   }
@@ -272,7 +326,7 @@ export default function ProcurarDatasPage() {
       }
 
       setAddressResult(resultado)
-      setPhase(tempoNecessario ? 'Pronto para buscar datas' : 'Calculando tempo')
+      setPhase('Endereco validado')
       toast.success('Endereco validado.')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao validar endereco.'
@@ -467,7 +521,7 @@ export default function ProcurarDatasPage() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <section className="border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-slate-900">Dados da busca</h2>
@@ -506,7 +560,7 @@ export default function ProcurarDatasPage() {
           </div>
 
           {addressResult?.ok && (
-            <div className="mt-3 border border-sky-100 bg-sky-50 p-3 text-sm text-slate-700">
+            <div className="mt-4 rounded-lg border border-sky-100 bg-sky-50 p-4 text-sm text-slate-700">
               <div className="font-medium text-slate-900">{addressResult.enderecoCompleto || addressResult.display || 'Endereco validado'}</div>
               <div className="mt-1 text-xs text-slate-500">
                 Lat {Number(addressResult.lat).toFixed(5)}, Lng {Number(addressResult.lng).toFixed(5)}
@@ -515,7 +569,18 @@ export default function ProcurarDatasPage() {
             </div>
           )}
 
-          <div className="mt-5 grid gap-3 md:grid-cols-6">
+          {serviceLocked && (
+            <div className="mt-4 rounded-lg border border-dashed border-sky-200 bg-sky-50/70 p-4 text-sm text-sky-800">
+              Valide o endereco para liberar data inicial, valor inicial, opcoes de servico e pesquisa de datas.
+            </div>
+          )}
+
+          <fieldset
+            disabled={serviceLocked || validatingAddress}
+            aria-disabled={serviceLocked || validatingAddress}
+            className={`mt-5 rounded-lg border border-slate-200 p-4 transition ${serviceLocked ? 'bg-slate-50 opacity-60' : 'bg-white'}`}
+          >
+          <div className="grid gap-3 md:grid-cols-6">
             <label className="md:col-span-2">
               <span className="mb-1 block text-xs font-medium text-slate-600">Data inicial</span>
               <Input
@@ -562,20 +627,41 @@ export default function ProcurarDatasPage() {
             ))}
           </div>
 
-          <div className="mt-5 flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2 text-sm text-slate-700">
-              <TimerReset className="h-4 w-4 text-[#00A5E6]" />
-              <span>Tempo necessario:</span>
-              <strong className="text-slate-900">{calculatingTime ? 'calculando...' : tempoNecessario || '-'}</strong>
+          <div className="mt-5 flex flex-col gap-3 border-t border-slate-200 pt-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="grid flex-1 gap-3 sm:grid-cols-2">
+              <div>
+                <span className="mb-1 block text-xs font-medium text-slate-600">Tempo necessario</span>
+                <div className="flex h-10 items-center gap-2 border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700">
+                  <TimerReset className="h-4 w-4 text-[#00A5E6]" />
+                  <strong className="text-slate-900">{calculatingTime ? 'calculando...' : tempoNecessario || '-'}</strong>
+                </div>
+              </div>
+              <div>
+                <span className="mb-1 block text-xs font-medium text-slate-600">Valor inicial (minimo)</span>
+                <Input
+                  readOnly
+                  tabIndex={-1}
+                  aria-readonly="true"
+                  value={calculatingValorInicial ? 'Calculando...' : valorInicial}
+                  placeholder="-"
+                  className="bg-slate-50 font-semibold text-slate-700"
+                />
+                <div className="mt-1 text-xs text-slate-500">Estimativa minima para dia de semana. Pode variar conforme data/equipe.</div>
+              </div>
             </div>
-            <Button type="button" onClick={pesquisarDatas} disabled={searching || validatingAddress || calculatingTime || !addressResult?.ok}>
+            <Button
+              type="button"
+              onClick={pesquisarDatas}
+              disabled={searching || validatingAddress || calculatingTime || !addressResult?.ok || !tempoNecessario || tempoNecessario === '<--- PREENCHA'}
+            >
               {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
               Pesquisar datas
             </Button>
           </div>
+          </fieldset>
         </section>
 
-        <aside className="border border-slate-200 bg-white p-4 shadow-sm">
+        <aside className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center gap-2">
             <RefreshCw className="h-4 w-4 text-[#00A5E6]" />
             <h2 className="text-base font-semibold text-slate-900">Andamento</h2>
@@ -596,7 +682,7 @@ export default function ProcurarDatasPage() {
         </aside>
       </div>
 
-      <section className="border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-slate-900">Resultados</h2>

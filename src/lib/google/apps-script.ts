@@ -54,6 +54,7 @@ const FUNCOES_PERMITIDAS = [
   "GetTempoMap",
   "GetTempoNecessario",
   "LookupCompletoPorEndereco",
+  "calcularValorInicialModal",
   "GetProgressUpdate",
   "ApiPesquisarDatasApp",
   "ApiPreAgendarDireto"

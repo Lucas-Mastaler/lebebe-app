@@ -3,6 +3,7 @@ export type AppsScriptProcurarDatasFunction =
   | 'GetTempoMap'
   | 'GetTempoNecessario'
   | 'LookupCompletoPorEndereco'
+  | 'calcularValorInicialModal'
   | 'GetProgressUpdate'
   | 'ApiPesquisarDatasApp'
   | 'ApiPreAgendarDireto'

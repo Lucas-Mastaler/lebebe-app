@@ -13,8 +13,8 @@ interface FiltrosChamadosService {
   perPage?: number;
 }
 // Caches locais para logs de cacheHit
-const contactCache = new Map<string, { data: any; timestamp: number }>();
-const scheduleCache = new Map<string, { data: any[]; timestamp: number }>();
+const contactCache = new Map<string, { data: unknown; timestamp: number }>();
+const scheduleCache = new Map<string, { data: unknown[]; timestamp: number }>();
 const CACHE_TTL = 10 * 60 * 1000; // 10 min
 
 async function buscarContatoComTags(contactId: string) {
@@ -170,9 +170,9 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
     // Não filtramos por userId/departmentId porque agendamentos futuros pertencem ao contato,
     // independente de qual consultora criou ou se ela foi arquivada
     const total = schedules.length;
-    const abertos = schedules.filter((s: any) => s.status === 'scheduled').length;
-    const finalizados = schedules.filter((s: any) => s.status === 'done').length;
-    const erro = schedules.filter((s: any) => s.status === 'error' || s.status === 'canceled').length;
+    const abertos = schedules.filter((s: { status?: string }) => s.status === 'scheduled').length;
+    const finalizados = schedules.filter((s: { status?: string }) => s.status === 'done').length;
+    const erro = schedules.filter((s: { status?: string }) => s.status === 'error' || s.status === 'canceled').length;
 
     // Loja/Consultora: do ticket mais recente fechado (sample)
     const sampleTicket = byContact.get(contactId)?.sample || {};
@@ -225,7 +225,7 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
     let usandoTelefone = 0;
     let usandoFallbackId = 0;
 
-    const pegarUltimos4 = (val: any): string | null => {
+    const pegarUltimos4 = (val: unknown): string | null => {
       if (val === undefined || val === null) return null;
       const digits = String(val).replace(/\D/g, '');
       if (digits.length >= 8) return digits.slice(-4);

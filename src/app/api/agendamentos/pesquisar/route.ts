@@ -36,18 +36,20 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json(resultado);
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('Erro na rota /api/agendamentos/pesquisar:', error);
 
+        const errorMessage = error instanceof Error ? error.message : '';
+
         // Tratamento de erros conhecidos
-        if (error.message.includes('autenticação')) {
+        if (errorMessage.includes('autenticação')) {
             return NextResponse.json({ error: 'Falha de autenticação com provedor' }, { status: 401 });
         }
-        if (error.message.includes('Rate Limit')) {
+        if (errorMessage.includes('Rate Limit')) {
             return NextResponse.json({ error: 'Muitas requisições. Tente novamente em instantes.' }, { status: 429 });
         }
-        if (error.message.includes('Data inválida')) {
-            return NextResponse.json({ error: error.message }, { status: 400 });
+        if (errorMessage.includes('Data inválida')) {
+            return NextResponse.json({ error: errorMessage }, { status: 400 });
         }
 
         return NextResponse.json(

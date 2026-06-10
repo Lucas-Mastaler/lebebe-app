@@ -6,17 +6,19 @@ import { FiltrosChamadosFinalizados } from '@/components/chamados/FiltrosChamado
 import { TabelaChamadosFinalizados } from '@/components/chamados/TabelaChamadosFinalizados';
 import { ModalAgendamentosCliente } from '@/components/chamados/ModalAgendamentosCliente';
 
+type FiltrosChamados = Record<string, unknown>;
+
 export default function Page() {
   const [data, setData] = useState<PesquisaChamadosResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [currentFiltros, setCurrentFiltros] = useState<any | null>(null);
+  const [currentFiltros, setCurrentFiltros] = useState<FiltrosChamados | null>(null);
   const [modalContactId, setModalContactId] = useState<string | null>(null);
   const [modalNomeDigisac, setModalNomeDigisac] = useState<string | null>(null);
   const [observacoes, setObservacoes] = useState<Record<string, string>>({});
   const observacoesRef = useRef<Record<string, string>>({});
 
-  const handlePesquisar = useCallback(async (filtros: any) => {
+  const handlePesquisar = useCallback(async (filtros: FiltrosChamados) => {
     setIsLoading(true);
     setError(null);
     setCurrentFiltros(filtros);

@@ -382,12 +382,12 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
         const res = await fetch(`/api/recebimento/${rec.id}`)
         if (res.ok) {
           const data = await res.json()
-          const itensComDivergencia = data.itens?.filter((item: any) => item.divergencia_tipo) || []
+          const itensComDivergencia = data.itens?.filter((item: { divergencia_tipo?: unknown }) => item.divergencia_tipo) || []
           setHasDivergencias(itensComDivergencia.length > 0)
-          
+
           // Contar divergências por NF e armazenar detalhes
           const countMap = new Map<string, number>()
-          const detalhesMap = new Map<string, Array<any>>()
+          const detalhesMap = new Map<string, Array<unknown>>()
           
           for (const item of itensComDivergencia) {
             const nf = item.numero_nf

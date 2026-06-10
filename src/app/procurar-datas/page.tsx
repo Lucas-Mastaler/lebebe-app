@@ -32,6 +32,7 @@ type Candidate = {
   frete?: string
   tipo?: string
   isExtra?: boolean
+  avisoHoraMarcada?: string
   weekday?: string
   date?: string
   dateDM?: string
@@ -98,6 +99,36 @@ function normalizeSelectValue(value?: string) {
   return value || ''
 }
 
+function getTipoLabel(tipo?: string) {
+  switch (tipo) {
+    case 'especial':
+      return 'Especial'
+    case 'premium':
+      return 'Premium'
+    case 'hora-marcada':
+    case 'hora marcada':
+      return 'Hora marcada'
+    case 'normal':
+    default:
+      return 'Normal'
+  }
+}
+
+function getTipoBadgeClass(tipo?: string) {
+  switch (tipo) {
+    case 'especial':
+      return 'border-violet-200 bg-violet-50 text-violet-700'
+    case 'premium':
+      return 'border-amber-200 bg-amber-50 text-amber-700'
+    case 'hora-marcada':
+    case 'hora marcada':
+      return 'border-orange-200 bg-orange-50 text-orange-700'
+    case 'normal':
+    default:
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  }
+}
+
 async function readJson(response: Response) {
   const data = await response.json().catch(() => null)
   if (!response.ok || data?.ok === false) {
@@ -126,6 +157,8 @@ export default function ProcurarDatasPage() {
   const minDate = useMemo(() => isoDatePlus(form.isEncomenda ? 42 : 2), [form.isEncomenda])
   const maxDate = useMemo(() => isoDatePlus(90), [])
   const candidates = searchPayload?.candidates || []
+  const normalCandidates = candidates.filter((candidate) => (candidate.tipo || 'normal') === 'normal').slice(0, 3)
+  const extraCandidates = candidates.filter((candidate) => (candidate.tipo || 'normal') !== 'normal')
 
   useEffect(() => {
     setForm((current) => {
@@ -370,6 +403,59 @@ export default function ProcurarDatasPage() {
     }
   }
 
+  function renderCandidatesTable(data: Candidate[], emptyText: string, indexOffset = 0) {
+    return (
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[720px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase text-slate-500">
+              <th className="px-3 py-2">Data</th>
+              <th className="px-3 py-2">Dia</th>
+              <th className="px-3 py-2">Equipe</th>
+              <th className="px-3 py-2">Frete</th>
+              <th className="px-3 py-2">Tipo</th>
+              <th className="px-3 py-2 text-right">Acao</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((candidate, index) => {
+              const actionIndex = indexOffset + index
+              return (
+                <tr key={`${candidate.dateISO}-${candidate.team}-${candidate.tipo || 'normal'}-${index}`} className="border-b border-slate-100">
+                  <td className="px-3 py-3 font-medium text-slate-900">{candidate.dateDM || candidate.date || candidate.dateISO}</td>
+                  <td className="px-3 py-3 text-slate-600">{candidate.weekday || '-'}</td>
+                  <td className="px-3 py-3 text-slate-600">{candidate.team}</td>
+                  <td className="px-3 py-3 text-slate-600">{candidate.frete || '-'}</td>
+                  <td className="px-3 py-3 text-slate-600">
+                    <span className={`inline-flex items-center border px-2 py-0.5 text-xs font-medium ${getTipoBadgeClass(candidate.tipo)}`}>
+                      {getTipoLabel(candidate.tipo)}
+                    </span>
+                    {candidate.avisoHoraMarcada && (
+                      <div className="mt-1 text-xs text-orange-700">{candidate.avisoHoraMarcada}</div>
+                    )}
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    <Button type="button" size="sm" onClick={() => preAgendar(candidate, actionIndex)} disabled={schedulingIndex !== null}>
+                      {schedulingIndex === actionIndex ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                      Pre-agendar
+                    </Button>
+                  </td>
+                </tr>
+              )
+            })}
+            {!data.length && (
+              <tr>
+                <td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-500">
+                  {emptyText}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
       <div className="flex flex-col gap-2 border-b border-slate-200 pb-4">
@@ -514,47 +600,30 @@ export default function ProcurarDatasPage() {
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-slate-900">Resultados</h2>
-            <p className="text-xs text-slate-500">{candidates.length ? `${candidates.length} data(s) retornada(s)` : 'Nenhuma busca finalizada.'}</p>
+            <p className="text-xs text-slate-500">
+              {candidates.length
+                ? `${normalCandidates.length} recomendada(s) e ${extraCandidates.length} outra(s) opcoes`
+                : 'Nenhuma busca finalizada.'}
+            </p>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase text-slate-500">
-                <th className="px-3 py-2">Data</th>
-                <th className="px-3 py-2">Dia</th>
-                <th className="px-3 py-2">Equipe</th>
-                <th className="px-3 py-2">Frete</th>
-                <th className="px-3 py-2">Tipo</th>
-                <th className="px-3 py-2 text-right">Acao</th>
-              </tr>
-            </thead>
-            <tbody>
-              {candidates.map((candidate, index) => (
-                <tr key={`${candidate.dateISO}-${candidate.team}-${index}`} className="border-b border-slate-100">
-                  <td className="px-3 py-3 font-medium text-slate-900">{candidate.dateDM || candidate.date || candidate.dateISO}</td>
-                  <td className="px-3 py-3 text-slate-600">{candidate.weekday || '-'}</td>
-                  <td className="px-3 py-3 text-slate-600">{candidate.team}</td>
-                  <td className="px-3 py-3 text-slate-600">{candidate.frete || '-'}</td>
-                  <td className="px-3 py-3 text-slate-600">{candidate.tipo || 'normal'}</td>
-                  <td className="px-3 py-3 text-right">
-                    <Button type="button" size="sm" onClick={() => preAgendar(candidate, index)} disabled={schedulingIndex !== null}>
-                      {schedulingIndex === index ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                      Pre-agendar
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-              {!candidates.length && (
-                <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-500">
-                    Os resultados da busca aparecerao aqui.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="space-y-5">
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-slate-900">Datas recomendadas</h3>
+              <span className="text-xs text-slate-500">Ate 3 normais</span>
+            </div>
+            {renderCandidatesTable(normalCandidates, 'As datas recomendadas aparecerao aqui.')}
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-slate-900">Outras opcoes</h3>
+              <span className="text-xs text-slate-500">Especial, premium e hora marcada</span>
+            </div>
+            {renderCandidatesTable(extraCandidates, 'Nenhuma outra opcao retornada.', normalCandidates.length)}
+          </div>
         </div>
       </section>
     </div>

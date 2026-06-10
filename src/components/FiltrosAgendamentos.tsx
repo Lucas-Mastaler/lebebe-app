@@ -109,7 +109,7 @@ export function FiltrosAgendamentos({
                 const data = await res.json();
                 if (Array.isArray(data)) {
                     // Map API 'name' to 'nome' to match Usuario type
-                    setUsersList(data.map((u: any) => ({ ...u, nome: u.name || u.nome })));
+                    setUsersList(data.map((u: { id?: string; name?: string; nome?: string }) => ({ id: u.id || '', nome: u.name || u.nome || '' })));
                 }
             } catch (err) {
                 console.error('Erro ao buscar usuários:', err);

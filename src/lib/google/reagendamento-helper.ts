@@ -77,9 +77,6 @@ export async function reagendarEventoCliente(
   // ─────────────────────────────────────────────────────────
   // 4.0 – Processar reagendamento conforme modo
   // ─────────────────────────────────────────────────────────
-  let eventoNovoId: string;
-  let eventoHistoricoId: string;
-
   console.log(`[REAGENDAMENTO] Cenário: ${modo}`);
   console.log(`[REAGENDAMENTO] 1. Criar novo evento operacional com nova data`);
   console.log(`[REAGENDAMENTO] 2. Atualizar e mover evento original para calendário de histórico`);
@@ -90,7 +87,7 @@ export async function reagendarEventoCliente(
     calendarIdNovo,
     novaData
   );
-  eventoNovoId = novoEvento.id!;
+  const eventoNovoId = novoEvento.id!;
 
   console.log(`[REAGENDAMENTO] ✓ Novo evento operacional criado: ${eventoNovoId}`);
   console.log(`[REAGENDAMENTO] ✓ Calendário do novo evento: ${calendarIdNovo}`);
@@ -110,7 +107,7 @@ export async function reagendarEventoCliente(
     CALENDAR_ID_REAGENDAMENTO,
     eventoId
   );
-  eventoHistoricoId = eventoHistorico.id!;
+  const eventoHistoricoId = eventoHistorico.id!;
 
   console.log(`[REAGENDAMENTO] ✓ Evento original movido para calendário de histórico: ${eventoHistoricoId}`);
   console.log(`[REAGENDAMENTO] ✓ Calendário de histórico: ${CALENDAR_ID_REAGENDAMENTO}`);

@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
 import { formatarDataPtBr, formatarHoraPtBr } from '@/lib/digisac/formatadores';
 
+type ScheduleItem = {
+  id: string;
+  message?: string;
+  data?: { message?: string };
+  createdAt?: string;
+  scheduledAt?: string;
+  notes?: string;
+  status?: string;
+}
+
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
@@ -17,7 +27,7 @@ export async function GET(request: NextRequest) {
     const res = await fetchDigisac(url);
     const items = Array.isArray(res) ? res : (res.rows || res.data || []);
 
-    const mapped = items.map((s: any) => ({
+    const mapped = items.map((s: ScheduleItem) => ({
       id: s.id,
       message: s.message || s.data?.message || '',
       createdAt: s.createdAt ? `${formatarDataPtBr(s.createdAt)} ${formatarHoraPtBr(s.createdAt)}` : '',

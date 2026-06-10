@@ -172,6 +172,6 @@ export interface AppsScriptExecutePayload {
 
 export interface AppsScriptExecuteResponse {
   ok: boolean;
-  resultado?: any;
+  resultado?: unknown;
   error?: string;
 }

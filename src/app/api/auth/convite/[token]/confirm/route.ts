@@ -1,6 +1,13 @@
 import { createServiceClient } from '@/lib/supabase/service'
 import { NextResponse } from 'next/server'
 
+type UsuarioPermitido = {
+  email: string
+  invite_status: string | null
+  invite_token_expires_at: string | null
+  invite_token_used_at?: string | null
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ token: string }> }
@@ -19,16 +26,9 @@ export async function POST(
 
     const supabaseAdmin = createServiceClient()
 
-    let usuario:
-      | {
-          email: string
-          invite_status: string | null
-          invite_token_expires_at: string | null
-          invite_token_used_at?: string | null
-        }
-      | null = null
+    let usuario: UsuarioPermitido | null = null
 
-    let fetchError: any = null
+    let fetchError: unknown = null
 
     {
       const res = await supabaseAdmin
@@ -37,19 +37,19 @@ export async function POST(
         .eq('invite_token', token)
         .single()
 
-      usuario = res.data as any
+      usuario = res.data as UsuarioPermitido | null
       fetchError = res.error
     }
 
     // Compatibilidade: caso a migration 005 ainda não tenha sido aplicada
-    if (fetchError && String(fetchError.message || '').includes('invite_token_used_at')) {
+    if (fetchError && String((fetchError as { message?: string }).message || '').includes('invite_token_used_at')) {
       const resFallback = await supabaseAdmin
         .from('usuarios_permitidos')
         .select('email, invite_status, invite_token_expires_at')
         .eq('invite_token', token)
         .single()
 
-      usuario = resFallback.data as any
+      usuario = resFallback.data as UsuarioPermitido | null
       fetchError = resFallback.error
     }
 

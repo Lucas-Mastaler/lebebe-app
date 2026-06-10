@@ -35,8 +35,9 @@ async function criarClienteAppsScript() {
     oauth2Client.setCredentials(credentials);
     console.log("[APPS SCRIPT SERVICE] ✓ Access token obtido com sucesso");
     console.log(`[APPS SCRIPT SERVICE] Token expira em: ${new Date(credentials.expiry_date || 0).toISOString()}`);
-  } catch (error: any) {
-    console.error("[APPS SCRIPT SERVICE] ❌ Erro ao fazer refresh do access_token:", error.message);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("[APPS SCRIPT SERVICE] ❌ Erro ao fazer refresh do access_token:", errorMessage);
     throw new Error("Falha ao renovar access token. Verifique o refresh_token.");
   }
 
@@ -73,7 +74,7 @@ export function isFuncaoPermitida(funcao: string): funcao is FuncaoPermitida {
  * Padrão: bytes UTF-8 interpretados como Latin-1, ex: "SÃ¡bado" → "Sábado"
  * Aplica recursivamente em objetos e arrays.
  */
-function repararDoubleEncodingUTF8(valor: any): any {
+function repararDoubleEncodingUTF8(valor: unknown): unknown {
   if (valor === null || valor === undefined) return valor;
 
   if (typeof valor === "string") {
@@ -85,9 +86,10 @@ function repararDoubleEncodingUTF8(valor: any): any {
   }
 
   if (typeof valor === "object") {
-    const resultado: Record<string, any> = {};
-    for (const chave of Object.keys(valor)) {
-      resultado[chave] = repararDoubleEncodingUTF8(valor[chave]);
+    const resultado: Record<string, unknown> = {};
+    const valorAsRecord = valor as Record<string, unknown>;
+    for (const chave of Object.keys(valorAsRecord)) {
+      resultado[chave] = repararDoubleEncodingUTF8(valorAsRecord[chave]);
     }
     return resultado;
   }
@@ -134,13 +136,13 @@ function repararStringUTF8(str: string): string {
 
 export interface ExecutarAppsScriptParams {
   nomeFuncao: string;
-  parametros: any[];
+  parametros: unknown[];
   devMode?: boolean;
 }
 
 export interface ExecutarAppsScriptResult {
   sucesso: boolean;
-  resultado?: any;
+  resultado?: unknown;
   erro?: string;
 }
 
@@ -225,16 +227,18 @@ export async function executarAppsScript(
       resultado: resultado
     };
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(`[APPS SCRIPT SERVICE] ❌ Exceção ao executar Apps Script:`, error);
-    console.error(`[APPS SCRIPT SERVICE] Stack:`, error.stack);
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.error(`[APPS SCRIPT SERVICE] Stack:`, stack);
 
     let mensagemErro = "Erro ao executar função no Apps Script.";
 
-    if (error.response?.data?.error) {
-      mensagemErro = error.response.data.error.message || mensagemErro;
-    } else if (error.message) {
-      mensagemErro = error.message;
+    const errorWithResponse = error as { response?: { data?: { error?: { message?: string } } }; message?: string };
+    if (errorWithResponse.response?.data?.error) {
+      mensagemErro = errorWithResponse.response.data.error.message || mensagemErro;
+    } else if (errorWithResponse.message) {
+      mensagemErro = errorWithResponse.message;
     }
 
     return {

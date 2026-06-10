@@ -46,8 +46,9 @@ export default function ConvitePage() {
       }
 
       window.location.href = redirectUrl
-    } catch (e: any) {
-      setError(e?.message || 'Erro ao confirmar convite.')
+    } catch (e: unknown) {
+      const mensagem = e instanceof Error ? e.message : 'Erro ao confirmar convite.'
+      setError(mensagem)
       setLoading(false)
     }
   }

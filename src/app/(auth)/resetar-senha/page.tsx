@@ -54,9 +54,10 @@ export default function ResetarSenhaPage() {
       setTimeout(() => {
         router.push('/login')
       }, 3000)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Erro ao redefinir senha:', err)
-      setError('Erro ao processar requisição: ' + err.message)
+      const mensagem = err instanceof Error ? err.message : 'Erro ao processar requisição'
+      setError('Erro ao processar requisição: ' + mensagem)
       setLoading(false)
     }
   }

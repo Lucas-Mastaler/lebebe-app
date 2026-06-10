@@ -43,7 +43,7 @@ export async function buscarAgendamentosFuturos(
   console.log(`[AGENDAMENTOS-FUTUROS] ContactIds encontrados:`, contactIds);
 
   // 3. Buscar agendamentos por contactId (um por vez, mais confiável)
-  const agendamentosRaw: any[] = [];
+  const agendamentosRaw: unknown[] = [];
   for (const contactId of contactIds) {
     try {
       const schedules = await buscarSchedulesPorContactId(contactId);
@@ -90,8 +90,8 @@ async function buscarContactIdsPorTelefones(variacoes: string[]): Promise<string
 
   try {
     const res = await fetchDigisac(url);
-    const itens: any[] = Array.isArray(res) ? res : (res.rows || res.data || []);
-    const ids = itens.map((c: any) => c.id).filter(Boolean);
+    const itens: unknown[] = Array.isArray(res) ? res : (res.rows || res.data || []);
+    const ids = itens.map((c: { id?: string }) => c.id).filter(Boolean);
     return Array.from(new Set(ids));
   } catch (err) {
     console.error(`[AGENDAMENTOS-FUTUROS] Erro ao buscar contatos por telefone:`, err);
@@ -123,12 +123,12 @@ async function buscarSchedulesPorContactId(contactId: string): Promise<any[]> {
 /**
  * Transforma o raw schedule da API Digisac no tipo Agendamento do projeto.
  */
-function transformarParaAgendamento(raw: any): Agendamento {
+function transformarParaAgendamento(raw: { contact?: unknown; scheduledAt?: string; status?: string; id?: string; message?: string; data?: { message?: string }; notes?: string; department?: { name?: string }; user?: { name?: string }; createdAt?: string; updatedAt?: string }): Agendamento {
   const contactBasic = raw.contact || {};
 
   const tags: string = contactBasic.tags
     ? contactBasic.tags
-        .map((t: any) => t.name || t.label || t.title || t.tag?.name || '')
+        .map((t: { name?: string; label?: string; title?: string; tag?: { name?: string } }) => t.name || t.label || t.title || t.tag?.name || '')
         .filter((s: string) => s.trim().length > 0)
         .join(', ')
     : '';

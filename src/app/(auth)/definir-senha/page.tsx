@@ -76,7 +76,7 @@ function DefinirSenhaContent() {
 
       const { data, error: exchangeError } = await supabase.auth.verifyOtp({
         token_hash,
-        type: type as any,
+        type: type as 'signup' | 'invite' | 'recovery',
       })
 
       if (exchangeError || !data.user) {
@@ -89,9 +89,10 @@ function DefinirSenhaContent() {
 
       setStep('form')
       setExchangeLoading(false)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Erro ao processar convite:', err)
-      setError('Erro ao processar convite: ' + err.message)
+      const mensagem = err instanceof Error ? err.message : 'Erro desconhecido'
+      setError('Erro ao processar convite: ' + mensagem)
       setStep('error')
       setExchangeLoading(false)
     }
@@ -129,9 +130,10 @@ function DefinirSenhaContent() {
 
       setStep('success')
       setError('')
-      
-    } catch (err: any) {
-      setError('Erro ao processar requisição: ' + err.message)
+
+    } catch (err: unknown) {
+      const mensagem = err instanceof Error ? err.message : 'Erro desconhecido'
+      setError('Erro ao processar requisição: ' + mensagem)
     } finally {
       setResendLoading(false)
     }
@@ -185,8 +187,9 @@ function DefinirSenhaContent() {
         router.refresh()
       }, 2000)
 
-    } catch (err: any) {
-      setError('Erro ao processar requisição: ' + err.message)
+    } catch (err: unknown) {
+      const mensagem = err instanceof Error ? err.message : 'Erro desconhecido'
+      setError('Erro ao processar requisição: ' + mensagem)
       setLoading(false)
     }
   }

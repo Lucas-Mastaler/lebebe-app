@@ -47,10 +47,8 @@ function ApiPesquisarDatasApp(form) {
 
     form.returnOnly = true;
     form.useModalDestOnly = true;
+    form.resultMode = 'app-3-com-extras';
     form.limitResultsNormal = 3;
-    form.excludeEspecial = true;
-    form.excludePremium = true;
-    form.excludeHoraMarcada = true;
 
     if (form.destLat && !form.lat) form.lat = Number(form.destLat);
     if (form.destLng && !form.lng) form.lng = Number(form.destLng);

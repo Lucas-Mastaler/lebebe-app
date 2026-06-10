@@ -35,8 +35,9 @@ export async function criarClienteCalendar() {
     oauth2Client.setCredentials(credentials);
     console.log("[CALENDAR SERVICE] ✓ Access token obtido com sucesso");
     console.log(`[CALENDAR SERVICE] Token expira em: ${new Date(credentials.expiry_date || 0).toISOString()}`);
-  } catch (error: any) {
-    console.error("[CALENDAR SERVICE] ❌ Erro ao fazer refresh do access_token:", error.message);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("[CALENDAR SERVICE] ❌ Erro ao fazer refresh do access_token:", errorMessage);
     throw new Error("Falha ao renovar access token. Verifique o refresh_token.");
   }
 
@@ -73,7 +74,7 @@ export interface EventoCalendar {
       minutes: number;
     }>;
   };
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export async function buscarEvento(
@@ -91,9 +92,10 @@ export async function buscarEvento(
 
     console.log(`[CALENDAR SERVICE] ✓ Evento encontrado: ${response.data.summary}`);
     return response.data as EventoCalendar;
-  } catch (error: any) {
-    console.error(`[CALENDAR SERVICE] ❌ Erro ao buscar evento:`, error.message);
-    if (error.code === 404) {
+  } catch (error: unknown) {
+    const errorWithCode = error as { message?: string; code?: number };
+    console.error(`[CALENDAR SERVICE] ❌ Erro ao buscar evento:`, errorWithCode.message);
+    if (errorWithCode.code === 404) {
       return null;
     }
     throw error;
@@ -111,13 +113,14 @@ export async function criarEvento(
     const calendar = await criarClienteCalendar();
     const response = await calendar.events.insert({
       calendarId: calendarId,
-      requestBody: evento as any,
+      requestBody: evento as Record<string, unknown>,
     });
 
     console.log(`[CALENDAR SERVICE] ✓ Evento criado com ID: ${response.data.id}`);
     return response.data as EventoCalendar;
-  } catch (error: any) {
-    console.error(`[CALENDAR SERVICE] ❌ Erro ao criar evento:`, error.message);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[CALENDAR SERVICE] ❌ Erro ao criar evento:`, errorMessage);
     throw error;
   }
 }
@@ -134,13 +137,14 @@ export async function atualizarEvento(
     const response = await calendar.events.update({
       calendarId: calendarId,
       eventId: eventoId,
-      requestBody: evento as any,
+      requestBody: evento as Record<string, unknown>,
     });
 
     console.log(`[CALENDAR SERVICE] ✓ Evento atualizado com sucesso`);
     return response.data as EventoCalendar;
-  } catch (error: any) {
-    console.error(`[CALENDAR SERVICE] ❌ Erro ao atualizar evento:`, error.message);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[CALENDAR SERVICE] ❌ Erro ao atualizar evento:`, errorMessage);
     throw error;
   }
 }
@@ -162,8 +166,9 @@ export async function moverEvento(
 
     console.log(`[CALENDAR SERVICE] ✓ Evento movido com sucesso`);
     return response.data as EventoCalendar;
-  } catch (error: any) {
-    console.error(`[CALENDAR SERVICE] ❌ Erro ao mover evento:`, error.message);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[CALENDAR SERVICE] ❌ Erro ao mover evento:`, errorMessage);
     throw error;
   }
 }

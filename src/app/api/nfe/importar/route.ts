@@ -28,6 +28,18 @@ interface NFeItem {
 
 interface NFeData {
   message_id: string;
+  // ... outras propriedades
+}
+
+type SkuMatic = {
+  volumes_por_item: number;
+  codigo_produto: string;
+  ref_meia?: string;
+  ref_inteira?: string;
+}
+
+interface NFeData {
+  message_id: string;
   numero_nf: string;
   data_emissao: string;
   peso_total: string;
@@ -473,9 +485,9 @@ export async function POST(request: NextRequest) {
             .or(`codigo_produto.eq.${item.codigo_produto},ref_meia.eq.${codigoNormalizado},ref_inteira.eq.${codigoNormalizado}`)
 
           // Prioridade: codigo_produto > ref_meia > ref_inteira
-          let sku = skus?.find((s: any) => s.codigo_produto === item.codigo_produto)
-          if (!sku) sku = skus?.find((s: any) => normalizeCode(s.ref_meia || '') === codigoNormalizado)
-          if (!sku) sku = skus?.find((s: any) => normalizeCode(s.ref_inteira || '') === codigoNormalizado)
+          let sku = skus?.find((s: SkuMatic) => s.codigo_produto === item.codigo_produto)
+          if (!sku) sku = skus?.find((s: SkuMatic) => normalizeCode(s.ref_meia || '') === codigoNormalizado)
+          if (!sku) sku = skus?.find((s: SkuMatic) => normalizeCode(s.ref_inteira || '') === codigoNormalizado)
 
           const volumesPorItem = sku?.volumes_por_item || 1;
           const qtd = Math.round(parseFloat(item.quantidade) || 0);

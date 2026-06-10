@@ -825,12 +825,59 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
     var slotsParaProcessar = slotsComPontos.concat(slotsVazios);
 
     // ✅ CONFIGURAÇÃO DE EARLY STOP
-    var isBackendApiCall = !!(form.limitResultsNormal && form.limitResultsNormal > 0);
-    var MAX_CANDIDATOS_TOTAL = isBackendApiCall ? form.limitResultsNormal : 10;
+    var isApp3ComExtras = String(form.resultMode || '') === 'app-3-com-extras';
+    var limitResultsNormal = Number(form.limitResultsNormal || 0);
+    var isBackendApiCall = !!(limitResultsNormal > 0);
+    var MAX_NORMAIS_RETORNO = isBackendApiCall ? limitResultsNormal : 5;
+    var MAX_CANDIDATOS_TOTAL = isApp3ComExtras ? 10 : (isBackendApiCall ? MAX_NORMAIS_RETORNO : 10);
     var totalCandidatos = 0;
     var earlyStop = false;
+
+    function selecionarConjuntoApp3ComExtras_(normalsIn, especiaisIn, premiumsIn, horaMarcadasIn) {
+      function byDate(a,b){ return a.date - b.date; }
+      function filtrarJanelaLocal(arr) {
+        return (arr || []).slice().sort(byDate);
+      }
+      function pushUnicos(origem, limite, destino, chosenDays) {
+        for (var i=0; i<origem.length && destino.length<limite; i++){
+          var dk = origem[i].date.toDateString();
+          if (!chosenDays.has(dk)) {
+            destino.push(origem[i]);
+            chosenDays.add(dk);
+          }
+        }
+      }
+
+      var chosenDays = new Set();
+      var listaNormalApp = [];
+      var listaEspecialApp = [];
+      var listaPremiumApp = [];
+      var listaHoraMarcadaApp = [];
+
+      pushUnicos(filtrarJanelaLocal(normalsIn), MAX_NORMAIS_RETORNO, listaNormalApp, chosenDays);
+      pushUnicos(filtrarJanelaLocal(especiaisIn), 1, listaEspecialApp, chosenDays);
+      pushUnicos(filtrarJanelaLocal(premiumsIn), 1, listaPremiumApp, chosenDays);
+      pushUnicos(filtrarJanelaLocal(horaMarcadasIn), 1, listaHoraMarcadaApp, chosenDays);
+
+      var listaApp = [].concat(listaNormalApp, listaEspecialApp, listaPremiumApp, listaHoraMarcadaApp);
+      listaApp.sort(byDate);
+
+      return {
+        lista: listaApp,
+        listaNormal: listaNormalApp,
+        listaEspecial: listaEspecialApp,
+        listaPremium: listaPremiumApp,
+        listaHoraMarcada: listaHoraMarcadaApp,
+        completo: listaNormalApp.length >= MAX_NORMAIS_RETORNO &&
+          listaEspecialApp.length >= 1 &&
+          listaPremiumApp.length >= 1 &&
+          listaHoraMarcadaApp.length >= 1
+      };
+    }
     
-    if (isBackendApiCall) {
+    if (isApp3ComExtras) {
+      dlog('[APP-3-COM-EXTRAS] Modo ativo: ' + MAX_NORMAIS_RETORNO + ' normais + especial/premium/hora marcada (early stop por conjunto)');
+    } else if (isBackendApiCall) {
       dlog('[BACKEND-API] Limite ativo: ' + MAX_CANDIDATOS_TOTAL + ' resultados normais (early stop habilitado)');
     }
     
@@ -1110,7 +1157,30 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       }
 
       // ✅ EARLY STOP: Contar total de candidatos únicos encontrados
-      if (isBackendApiCall) {
+      if (isApp3ComExtras) {
+        var normaisApp = Object.keys(porDiaBestNormal).map(function(dk){ return porDiaBestNormal[dk]; });
+        var especiaisApp = Object.keys(porDiaBestEspecial).map(function(dk){ return porDiaBestEspecial[dk]; });
+        var premiumsApp = Object.keys(porDiaBestPremium).map(function(dk){ return porDiaBestPremium[dk]; });
+        var horaMarcadasApp = Object.keys(porDiaHoraMarcada).map(function(dk){ return porDiaHoraMarcada[dk]; });
+        var conjuntoApp = selecionarConjuntoApp3ComExtras_(normaisApp, especiaisApp, premiumsApp, horaMarcadasApp);
+
+        var diasUnicosApp = new Set();
+        Object.keys(porDiaBestNormal).forEach(function(k){ diasUnicosApp.add(k); });
+        Object.keys(porDiaBestEspecial).forEach(function(k){ diasUnicosApp.add(k); });
+        Object.keys(porDiaBestPremium).forEach(function(k){ diasUnicosApp.add(k); });
+        Object.keys(porDiaHoraMarcada).forEach(function(k){ diasUnicosApp.add(k); });
+
+        totalCandidatos = diasUnicosApp.size;
+
+        if (conjuntoApp.completo) {
+          dlog('[APP-3-COM-EXTRAS] EARLY STOP: conjunto completo (' +
+               conjuntoApp.listaNormal.length + ' normais, ' +
+               conjuntoApp.listaEspecial.length + ' especial, ' +
+               conjuntoApp.listaPremium.length + ' premium, ' +
+               conjuntoApp.listaHoraMarcada.length + ' hora marcada)');
+          earlyStop = true;
+        }
+      } else if (isBackendApiCall) {
         // Backend API: contar APENAS candidatos normais
         totalCandidatos = Object.keys(porDiaBestNormal).length;
         
@@ -1138,6 +1208,11 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       if (totalCandidatos >= 3 || sIdx % 5 === 0) { // A cada 3+ candidatos ou a cada 5 slots
         var normaisList = Object.keys(porDiaBestNormal).map(function(dk){ return porDiaBestNormal[dk]; });
         var extrasList = Object.keys(porDiaBestEspecial).map(function(dk){ return porDiaBestEspecial[dk]; });
+        if (isApp3ComExtras) {
+          extrasList = extrasList
+            .concat(Object.keys(porDiaBestPremium).map(function(dk){ return porDiaBestPremium[dk]; }))
+            .concat(Object.keys(porDiaHoraMarcada).map(function(dk){ return porDiaHoraMarcada[dk]; }));
+        }
         var ctx = { freightParams: freightParams, isRural: isRural, isCondominio: !!form.isCondominio };
         saveProgress_(clientToken, normaisList, extrasList, 'running', ctx);
       }
@@ -1211,6 +1286,11 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       var especiais = filtrarJanela(especiaisIn, diasJanela);
       var premiums = filtrarJanela(premiumsIn, diasJanela);
       var horaMarcadas = filtrarJanela(horaMarcadasIn, diasJanela);
+
+      if (isApp3ComExtras) {
+        dlog('[APP-3-COM-EXTRAS] Selecionando ' + MAX_NORMAIS_RETORNO + ' normais + extras (janela ' + diasJanela + ' dias)');
+        return selecionarConjuntoApp3ComExtras_(normals, especiais, premiums, horaMarcadas);
+      }
 
       if (isBackendApiCall) {
         dlog('[BACKEND-API] Filtrando para retornar apenas ' + MAX_CANDIDATOS_TOTAL + ' resultados normais (janela ' + diasJanela + ' dias)');

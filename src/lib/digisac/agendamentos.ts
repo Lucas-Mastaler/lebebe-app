@@ -25,17 +25,17 @@ interface FiltrosService {
 }
 
 // Cache de Contatos (Tags) - 10 min
-const contactCache = new Map<string, { data: any, timestamp: number }>();
+const contactCache = new Map<string, { data: unknown, timestamp: number }>();
 // Cache de Tickets - 10 min
-const ticketCache = new Map<string, { data: any[], timestamp: number }>();
+const ticketCache = new Map<string, { data: unknown[], timestamp: number }>();
 const CACHE_TTL = 10 * 60 * 1000;
 
-async function buscarContatoCompleto(contactId: string): Promise<any> {
+async function buscarContatoCompleto(contactId: string): Promise<unknown> {
     const now = Date.now();
     const cached = contactCache.get(contactId);
 
     if (cached && (now - cached.timestamp < CACHE_TTL)) {
-        return { ...cached.data, _cacheHit: true };
+        return { ...(cached.data as Record<string, unknown>), _cacheHit: true };
     }
 
     // Apenas tags agora, removemos customFieldValues
@@ -58,7 +58,7 @@ async function buscarContatoCompleto(contactId: string): Promise<any> {
     }
 }
 
-async function buscarTicketsPorContato(contactId: string): Promise<any[]> {
+async function buscarTicketsPorContato(contactId: string): Promise<unknown[]> {
     const now = Date.now();
     const cached = ticketCache.get(contactId);
 
@@ -171,14 +171,14 @@ export async function buscarAgendamentosFormatados(filtros: FiltrosService): Pro
     // 4. Filtragem Local de Status
     if (statusFilterLocal) {
         const antes = itemsRaw.length;
-        itemsRaw = itemsRaw.filter((item: any) => statusFilterLocal!.includes(item.status));
+        itemsRaw = itemsRaw.filter((item: { status?: string }) => statusFilterLocal!.includes(item.status || ''));
         console.log(`[DIGISAC] Filtro status local: ${antes} -> ${itemsRaw.length} itens.`);
     }
 
     console.log(`[DIGISAC] Schedules retornados (pós-filtro status): ${itemsRaw.length}`);
 
     // 5. Enriquecimento (Dados do Contato + Tickets)
-    const contactIds = Array.from(new Set(itemsRaw.map((i: any) => i.contactId).filter(Boolean)));
+    const contactIds = Array.from(new Set(itemsRaw.map((i: { contactId?: string }) => i.contactId).filter(Boolean)));
     console.log(`[DIGISAC] ContactIds únicos a processar: ${contactIds.length}`);
 
     // Busca Contatos (Limit 5)
@@ -191,7 +191,7 @@ export async function buscarAgendamentosFormatados(filtros: FiltrosService): Pro
 
     // Logs Contato/Tags
     let totalTags = 0;
-    mapContatos.forEach((c: any) => { if (c.tags?.length) totalTags++; });
+    mapContatos.forEach((c: { tags?: unknown[] }) => { if (c.tags?.length) totalTags++; });
     console.log(`[DIGISAC][CONTATO] tags=${totalTags} contactCacheHit=${contactCache.size > 0}`);
 
     // Logs Tickets
@@ -201,8 +201,8 @@ export async function buscarAgendamentosFormatados(filtros: FiltrosService): Pro
     if (contactIds.length > 0) {
         const sampleId = contactIds[0] as string;
         const tks = mapTickets.get(sampleId);
-        const isOpen = tks?.some((t: any) => t.isOpen);
-        const lastClosed = tks?.find((t: any) => !t.isOpen && (t.endedAt || t.updatedAt));
+        const isOpen = tks?.some((t: { isOpen?: boolean }) => t.isOpen);
+        const lastClosed = tks?.find((t: { isOpen?: boolean; endedAt?: string; updatedAt?: string }) => !t.isOpen && (t.endedAt || t.updatedAt));
         console.log(`[DIGISAC][TICKETS] contactId=${sampleId} isOpen=${isOpen} lastClosed=${lastClosed ? (lastClosed.endedAt || lastClosed.updatedAt) : 'null'}`);
     }
 
@@ -224,12 +224,12 @@ export async function buscarAgendamentosFormatados(filtros: FiltrosService): Pro
         const tickets = mapTickets.get(raw.contactId) || [];
 
         // Logica Ticket
-        const hasOpenTicket = tickets.some((t: any) => t.isOpen);
+        const hasOpenTicket = tickets.some((t: { isOpen?: boolean }) => t.isOpen);
 
         // Encontrar ultimo fechado (isOpe=false)
-        const closedTickets = tickets.filter((t: any) => !t.isOpen);
+        const closedTickets = tickets.filter((t: { isOpen?: boolean }) => !t.isOpen);
         // Ordenar por endedAt desc
-        closedTickets.sort((a: any, b: any) => {
+        closedTickets.sort((a: { endedAt?: string }, b: { endedAt?: string }) => {
             const dA = new Date(a.endedAt || 0).getTime();
             const dB = new Date(b.endedAt || 0).getTime();
             return dB - dA;
@@ -293,7 +293,7 @@ export async function buscarAgendamentosFormatados(filtros: FiltrosService): Pro
 
             tags: contactFinal.tags ? (
                 contactFinal.tags
-                    .map((t: any) => t.name || t.label || t.title || t.tag?.name || '')
+                    .map((t: { name?: string; label?: string; title?: string; tag?: { name?: string } }) => t.name || t.label || t.title || t.tag?.name || '')
                     .filter((s: string) => s && s.trim().length > 0)
                     .join(', ')
             ) : '',

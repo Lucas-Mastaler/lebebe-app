@@ -105,17 +105,19 @@ export async function POST(request: Request) {
         message: 'Email de recuperação enviado com sucesso. Verifique sua caixa de entrada.',
       })
 
-    } catch (emailError: any) {
+    } catch (emailError: unknown) {
       console.error('[RESEND ERROR]', emailError)
 
+      const errorMessage = emailError instanceof Error ? emailError.message : 'Erro desconhecido'
+
       await registrarAuditoria('RESET_EMAIL_FAILED', emailNormalizado, {
-        error: emailError.message,
+        error: errorMessage,
       }, {
         baseUrl: request.headers.get('origin') || undefined,
       })
 
       return NextResponse.json(
-        { ok: false, message: 'Erro ao enviar email: ' + emailError.message },
+        { ok: false, message: 'Erro ao enviar email: ' + errorMessage },
         { status: 500 }
       )
     }

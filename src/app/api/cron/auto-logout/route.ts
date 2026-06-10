@@ -163,9 +163,10 @@ export async function GET(request: NextRequest) {
           console.log(`[AUTO-LOGOUT] ✓ Auditoria registrada para user=${usuario.email}`)
         }
 
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(`[AUTO-LOGOUT] ❌ Exceção ao processar ${usuario.email}:`, err)
-        errors.push({ email: usuario.email, error: `exception: ${err.message || 'Unknown error'}` })
+        const errMessage = err instanceof Error ? err.message : 'Unknown error'
+        errors.push({ email: usuario.email, error: `exception: ${errMessage}` })
       }
     }
 
@@ -186,12 +187,13 @@ export async function GET(request: NextRequest) {
       timestampBRT: horarioBRT
     })
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[AUTO-LOGOUT] Erro crítico no processo:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
       { 
         error: 'Internal server error', 
-        message: error.message 
+        message: errorMessage 
       }, 
       { status: 500 }
     )

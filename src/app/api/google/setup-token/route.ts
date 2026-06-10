@@ -158,12 +158,13 @@ export async function GET(request: NextRequest) {
       }
     );
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[SETUP TOKEN] Erro crítico:", error);
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     return NextResponse.json(
       { 
         error: "Erro interno",
-        message: error.message 
+        message: errorMessage 
       },
       { status: 500 }
     );

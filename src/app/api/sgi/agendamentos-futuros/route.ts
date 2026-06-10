@@ -85,13 +85,14 @@ export async function GET(request: NextRequest) {
     const agendamentos = await buscarAgendamentosFuturos(telefonesUnicos, dataFechamento)
     console.log(`[AGENDAMENTOS-FUTUROS] Resultado final: ${agendamentos.length} agendamento(s) futuros`)
     return NextResponse.json({ agendamentos, total: agendamentos.length })
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(`[AGENDAMENTOS-FUTUROS] Erro ao buscar agendamentos:`, err)
 
-    if (err.message?.includes('autenticação')) {
+    const errMessage = err instanceof Error ? err.message : ''
+    if (errMessage.includes('autenticação')) {
       return NextResponse.json({ error: 'Falha de autenticação com Digisac' }, { status: 401 })
     }
-    if (err.message?.includes('Rate Limit')) {
+    if (errMessage.includes('Rate Limit')) {
       return NextResponse.json({ error: 'Muitas requisições ao Digisac. Tente novamente.' }, { status: 429 })
     }
 

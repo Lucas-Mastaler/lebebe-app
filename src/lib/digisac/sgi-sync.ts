@@ -200,10 +200,9 @@ async function buscarTicketsPorTelefonePaginado(
 
     // CORREÇÃO CRÍTICA: BASE_URL já contém /api/v1 — usar apenas /tickets
     const endpoint = `/tickets?query=${encodeURIComponent(query)}`
-    let resp: { data?: DigisacTicket[]; total?: number; currentPage?: number; lastPage?: number }
 
     // Lança erro em vez de silenciosamente retornar vazio
-    resp = await fetchDigisac(endpoint)
+    const resp: { data?: DigisacTicket[]; total?: number; currentPage?: number; lastPage?: number } = await fetchDigisac(endpoint)
 
     const items = Array.isArray(resp?.data) ? resp.data : []
 

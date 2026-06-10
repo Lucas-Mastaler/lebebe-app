@@ -38,12 +38,15 @@ export interface ProcurarDatasServicoForm extends ProcurarDatasEnderecoForm {
   tempoNecessario?: string
 }
 
+export type ProcurarDatasCandidateTipo = 'normal' | 'especial' | 'premium' | 'hora-marcada'
+
 export interface ProcurarDatasCandidate {
   dateISO: string
   team: string
   frete?: string
-  tipo?: string
+  tipo?: ProcurarDatasCandidateTipo | string
   isExtra?: boolean
+  avisoHoraMarcada?: string
   [key: string]: unknown
 }
 

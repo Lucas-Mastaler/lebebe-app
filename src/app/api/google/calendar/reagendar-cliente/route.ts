@@ -38,10 +38,22 @@ export async function POST(request: NextRequest) {
     // ─────────────────────────────────────────────────────────
     // 2.0 – Parsear e validar payload
     // ─────────────────────────────────────────────────────────
-    let body: any;
-    
+    type ReagendamentoBody = {
+      eventoId: string;
+      calendarIdAtual: string;
+      calendarIdNovo: string;
+      dataOriginal: string;
+      novaData: string;
+      nomeCliente: string;
+      pedidoVenda: string;
+      enderecoCliente: string;
+      produtos: string;
+      motivo: string;
+    }
+    let body: ReagendamentoBody;
+
     try {
-      body = await request.json();
+      body = await request.json() as ReagendamentoBody;
       console.log(`[API REAGENDAMENTO] Payload recebido:`);
       console.log(`[API REAGENDAMENTO] - eventoId: ${body.eventoId}`);
       console.log(`[API REAGENDAMENTO] - calendarIdAtual: ${body.calendarIdAtual}`);
@@ -50,8 +62,9 @@ export async function POST(request: NextRequest) {
       console.log(`[API REAGENDAMENTO] - novaData: ${body.novaData}`);
       console.log(`[API REAGENDAMENTO] - nomeCliente: ${body.nomeCliente}`);
       console.log(`[API REAGENDAMENTO] - pedidoVenda: ${body.pedidoVenda}`);
-    } catch (parseError: any) {
-      console.error(`[API REAGENDAMENTO] ❌ Erro ao parsear JSON:`, parseError.message);
+    } catch (parseError: unknown) {
+      const errorMessage = parseError instanceof Error ? parseError.message : 'Erro desconhecido';
+      console.error(`[API REAGENDAMENTO] ❌ Erro ao parsear JSON:`, errorMessage);
       return NextResponse.json(
         {
           ok: false,
@@ -101,31 +114,34 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(resultado, { status: 200 });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     // ─────────────────────────────────────────────────────────
     // 5.0 – Tratamento de erros
     // ─────────────────────────────────────────────────────────
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
     console.error(`[API REAGENDAMENTO] ========================================`);
     console.error(`[API REAGENDAMENTO] ❌ ERRO CRÍTICO NO REAGENDAMENTO`);
-    console.error(`[API REAGENDAMENTO] Mensagem: ${error.message}`);
-    console.error(`[API REAGENDAMENTO] Stack:`, error.stack);
+    console.error(`[API REAGENDAMENTO] Mensagem: ${errorMessage}`);
+    console.error(`[API REAGENDAMENTO] Stack:`, errorStack);
     console.error(`[API REAGENDAMENTO] ========================================`);
 
     let mensagemErro = "Erro interno ao processar reagendamento.";
-    let detalhes = error.message;
+    let detalhes = errorMessage;
 
-    if (error.message.includes("não encontrado")) {
+    if (errorMessage.includes("não encontrado")) {
       return NextResponse.json(
         {
           ok: false,
           erro: "Evento não encontrado",
-          detalhes: error.message,
+          detalhes: errorMessage,
         } as ReagendarClienteError,
         { status: 404 }
       );
     }
 
-    if (error.message.includes("access token") || error.message.includes("refresh")) {
+    if (errorMessage.includes("access token") || errorMessage.includes("refresh")) {
       mensagemErro = "Erro de autenticação com Google Calendar";
       detalhes = "Verifique as credenciais OAuth do sistema.";
     }

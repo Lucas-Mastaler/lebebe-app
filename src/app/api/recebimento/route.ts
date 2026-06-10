@@ -169,7 +169,7 @@ export async function GET(request: NextRequest) {
   if (numeroNF) {
     filteredResult = result.filter(rec => {
       const nfes = rec.recebimento_nfes || []
-      return nfes.some((nfeLink: any) => 
+      return nfes.some((nfeLink: { nfe?: { numero_nf?: string | number } }) => 
         nfeLink.nfe?.numero_nf?.toString().includes(numeroNF)
       )
     })

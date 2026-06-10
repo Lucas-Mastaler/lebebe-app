@@ -38,8 +38,9 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(resultado);
-  } catch (error: any) {
-    console.error('[API][DASHBOARD] Erro na rota /api/dashboard/pesquisar:', error?.message || error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('[API][DASHBOARD] Erro na rota /api/dashboard/pesquisar:', errorMessage);
     return NextResponse.json({ error: 'Erro interno ao processar dashboard' }, { status: 500 });
   }
 }

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
 
+type User = {
+  id: string;
+  name: string;
+}
+
 export async function GET(request: NextRequest) {
     try {
         const searchParams = request.nextUrl.searchParams;
@@ -30,7 +35,7 @@ export async function GET(request: NextRequest) {
         const items = Array.isArray(response) ? response : (response.rows || []);
 
         // Mapear para formato simples
-        const formatted = items.map((u: any) => ({
+        const formatted = items.map((u: User) => ({
             id: u.id,
             name: u.name
         }));

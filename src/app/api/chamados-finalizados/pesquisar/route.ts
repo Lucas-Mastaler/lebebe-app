@@ -57,10 +57,11 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(resultado);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[API][CHAMADOS] Erro na rota /api/chamados-finalizados/pesquisar:', error);
-    if (typeof error?.message === 'string' && error.message.includes('inválid')) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    const errorMessage = error instanceof Error ? error.message : '';
+    if (typeof errorMessage === 'string' && errorMessage.includes('inválid')) {
+      return NextResponse.json({ error: errorMessage }, { status: 400 });
     }
     return NextResponse.json({ error: 'Erro interno ao processar pesquisa' }, { status: 500 });
   }

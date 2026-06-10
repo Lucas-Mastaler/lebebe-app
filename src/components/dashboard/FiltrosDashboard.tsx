@@ -62,7 +62,7 @@ export function FiltrosDashboard({ onPesquisar, isLoading }: FiltrosProps) {
       try {
         const res = await fetch('/api/users');
         const data = await res.json();
-        if (Array.isArray(data)) setUsersList(data.map((u: any) => ({ id: u.id, nome: u.name || u.nome })));
+        if (Array.isArray(data)) setUsersList(data.map((u: { id?: string; name?: string; nome?: string }) => ({ id: u.id || '', nome: u.name || u.nome || '' })));
       } catch (e) {
         console.error('[DASHBOARD] Erro ao carregar usuários', e);
       }

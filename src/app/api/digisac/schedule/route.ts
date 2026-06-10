@@ -57,13 +57,14 @@ export async function GET(request: NextRequest) {
             }
         });
 
-    } catch (error: any) {
-        console.error('❌ [API] Erro ao buscar agendamentos:', error.message);
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error('❌ [API] Erro ao buscar agendamentos:', errorMessage);
 
         return NextResponse.json(
             {
                 error: 'Erro ao buscar agendamentos do Digisac',
-                details: error.message
+                details: errorMessage
             },
             { status: 500 }
         );

@@ -127,8 +127,9 @@ export async function POST(request: Request) {
       }, {
         baseUrl: request.headers.get('origin') || undefined,
       })
-    } catch (emailError: any) {
+    } catch (emailError: unknown) {
       console.error('[RESEND ERROR]', emailError)
+      const errorMessage = emailError instanceof Error ? emailError.message : 'Erro desconhecido'
 
       await supabaseAdmin
         .from('usuarios_permitidos')
@@ -137,13 +138,13 @@ export async function POST(request: Request) {
 
       await registrarAuditoria('INVITE_EMAIL_FAILED', emailNormalizado, {
         action: 'resend',
-        error: emailError.message,
+        error: errorMessage,
       }, {
         baseUrl: request.headers.get('origin') || undefined,
       })
 
       return NextResponse.json(
-        { ok: false, message: 'Erro ao enviar email: ' + emailError.message },
+        { ok: false, message: 'Erro ao enviar email: ' + errorMessage },
         { status: 500 }
       )
     }

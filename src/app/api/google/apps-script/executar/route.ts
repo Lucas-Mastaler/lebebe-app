@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 // 2.0 – Validação do payload de entrada
 // ─────────────────────────────────────────────────────────
 
-function validarPayload(body: any): { valido: boolean; erro?: string; payload?: AppsScriptExecutePayload } {
+function validarPayload(body: Record<string, unknown>): { valido: boolean; erro?: string; payload?: AppsScriptExecutePayload } {
   const { 
     logradouro, numero, bairro, cidade, uf, cep,
     enderecoCompleto, 
@@ -90,7 +90,7 @@ function validarPayload(body: any): { valido: boolean; erro?: string; payload?: 
   // ─────────────────────────────────────────────────────────
   // 4.0 – Normalizar strings (UTF-8 seguro)
   // ─────────────────────────────────────────────────────────
-  const normalizeString = (val: any): string => {
+  const normalizeString = (val: unknown): string => {
     if (!val) return "";
     return String(val).trim().normalize("NFC"); // NFC = Canonical Decomposition + Canonical Composition
   };
@@ -141,9 +141,9 @@ export async function POST(request: NextRequest) {
     }
 
     // 3.2 – Parse do body
-    let body: any;
+    let body: Record<string, unknown>;
     try {
-      body = await request.json();
+      body = await request.json() as Record<string, unknown>;
     } catch (parseError) {
       console.error("[APPS SCRIPT API] ❌ Erro ao fazer parse do JSON:", parseError);
       return NextResponse.json(
@@ -204,9 +204,10 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[APPS SCRIPT API] ❌ Erro crítico:", error);
-    console.error("[APPS SCRIPT API] Stack:", error.stack);
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.error("[APPS SCRIPT API] Stack:", stack);
 
     return NextResponse.json(
       { ok: false, error: "Erro interno do servidor" } as AppsScriptExecuteResponse,

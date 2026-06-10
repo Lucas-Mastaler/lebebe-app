@@ -38,7 +38,7 @@ export type AcaoAuditoria =
 export interface RegistrarAuditoriaParams {
   acao: AcaoAuditoria
   email?: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 export interface SessaoLogoutAutomatico {

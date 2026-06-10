@@ -113,6 +113,13 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(new URL('/dashboard', request.url))
       }
     }
+
+    // Verificar acesso a área de configurações (superadmin only)
+    if (request.nextUrl.pathname.startsWith('/configuracoes')) {
+      if (usuarioPermitido.role !== 'superadmin') {
+        return NextResponse.redirect(new URL('/dashboard', request.url))
+      }
+    }
   }
 
   // Usuário autenticado tentando acessar página de login
@@ -128,6 +135,7 @@ export const config = {
     '/agendamentos/:path*',
     '/dashboard/:path*',
     '/procurar-datas/:path*',
+    '/configuracoes/:path*',
     '/chamados-finalizados/:path*',
     '/superadmin/:path*',
     '/recebimento/:path*',

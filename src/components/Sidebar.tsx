@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Calendar, ChevronLeft, ChevronRight, CheckCircle, BarChart3, LogOut, Users, ClipboardList, Clock, Package, TrendingUp, Search } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, CheckCircle, BarChart3, LogOut, Users, ClipboardList, Clock, Package, TrendingUp, Search, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
 
@@ -56,6 +56,11 @@ const superadminNavItems = [
         label: 'AUDITORIA',
         href: '/superadmin?tab=auditoria',
         icon: ClipboardList,
+    },
+    {
+        label: 'CONFIG BUSCA',
+        href: '/configuracoes/procurar-datas',
+        icon: Settings,
     },
 ];
 

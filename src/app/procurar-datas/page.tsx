@@ -145,7 +145,7 @@ function formatElapsed(totalSeconds: number) {
   return `${minutes}:${seconds}`
 }
 
-const SEARCH_UI_TIMEOUT_MS = 10 * 60 * 1000
+const SEARCH_UI_TIMEOUT_MS = 4 * 60 * 1000
 
 function isNormalCandidate(candidate: Candidate) {
   return (candidate.tipo || 'normal') === 'normal'
@@ -510,7 +510,7 @@ export default function ProcurarDatasPage() {
     }
 
     void poll()
-    pollRef.current = setInterval(poll, 3000)
+    pollRef.current = setInterval(poll, 5000)
   }
 
   function stopPolling() {

@@ -1,3 +1,6 @@
+// TTL dos jobs de pesquisa de datas assíncrona (5 minutos)
+var PROCURAR_DATAS_JOB_TTL_MS = 5 * 60 * 1000;
+
 function AbrirProcurarData() {
   const html = HtmlService.createHtmlOutputFromFile('procurar_modal')
     .setWidth(840)
@@ -103,7 +106,7 @@ function ApiIniciarPesquisaDatasApp(form) {
         var parsedExistingJob = JSON.parse(existingJob);
         existingJobStatus = String(parsedExistingJob.status || '');
         var existingCreatedAt = Number(parsedExistingJob.createdAt || 0);
-        if (existingCreatedAt && (now - existingCreatedAt) > 15 * 60 * 1000) {
+        if (existingCreatedAt && (now - existingCreatedAt) > PROCURAR_DATAS_JOB_TTL_MS) {
           props.deleteProperty(jobKey);
           props.deleteProperty('PROGRESS_' + clientToken);
           existingJob = '';
@@ -170,8 +173,12 @@ function ApiExecutarPesquisaDatasWorker() {
   var job = null;
   var startedAt = Date.now();
 
+  if (!lock.tryLock(5000)) {
+    Logger.log('[PROCURAR-DATAS-ASYNC] worker ignorado: outro worker ja esta rodando');
+    return;
+  }
+
   try {
-    lock.waitLock(10000);
     var queue = _procurarDatasReadQueue_(props, queueKey);
     clientToken = queue.shift() || '';
     props.setProperty(queueKey, JSON.stringify(queue));
@@ -192,7 +199,7 @@ function ApiExecutarPesquisaDatasWorker() {
     }
 
     job = JSON.parse(storedJob);
-    if (job.createdAt && (Date.now() - Number(job.createdAt)) > 15 * 60 * 1000) {
+    if (job.createdAt && (Date.now() - Number(job.createdAt)) > PROCURAR_DATAS_JOB_TTL_MS) {
       props.deleteProperty(jobKey);
       _procurarDatasSalvarProgressoRaw_(clientToken, {
         status: 'error',
@@ -202,7 +209,6 @@ function ApiExecutarPesquisaDatasWorker() {
         finishedAt: new Date().toISOString()
       });
       Logger.log('[PROCURAR-DATAS-ASYNC] job expirado antes do worker clientToken=' + clientToken);
-      _procurarDatasEnsureWorkerTriggerIfQueueHasItems_(props, queueKey);
       _procurarDatasDeleteWorkerTriggersIfQueueEmpty_(props, queueKey);
       return;
     }
@@ -290,7 +296,8 @@ function _procurarDatasEnsureWorkerTrigger_() {
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
     if (triggers[i].getHandlerFunction && triggers[i].getHandlerFunction() === 'ApiExecutarPesquisaDatasWorker') {
-      return;
+      ScriptApp.deleteTrigger(triggers[i]);
+      Logger.log('[PROCURAR-DATAS-ASYNC] trigger antigo removido ApiExecutarPesquisaDatasWorker');
     }
   }
   ScriptApp.newTrigger('ApiExecutarPesquisaDatasWorker').timeBased().after(1000).create();

@@ -145,6 +145,36 @@ function formatElapsed(totalSeconds: number) {
   return `${minutes}:${seconds}`
 }
 
+const SEARCH_UI_TIMEOUT_MS = 10 * 60 * 1000
+
+function isNormalCandidate(candidate: Candidate) {
+  return (candidate.tipo || 'normal') === 'normal'
+}
+
+function isHoraMarcadaCandidate(candidate: Candidate) {
+  const tipo = String(candidate.tipo || '').toLowerCase()
+  return tipo === 'hora-marcada' || tipo === 'hora marcada'
+}
+
+function optionStatus(found: boolean, done: boolean) {
+  if (found) return 'encontrado'
+  return done ? 'nao encontrado' : 'aguardando'
+}
+
+function progressStepClass(state: 'done' | 'active' | 'pending' | 'error') {
+  if (state === 'done') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
+  if (state === 'active') return 'border-sky-200 bg-sky-50 text-sky-800'
+  if (state === 'error') return 'border-red-200 bg-red-50 text-red-800'
+  return 'border-slate-200 bg-slate-50 text-slate-500'
+}
+
+function progressStepMark(state: 'done' | 'active' | 'pending' | 'error') {
+  if (state === 'done') return '[OK]'
+  if (state === 'active') return '[~]'
+  if (state === 'error') return '[!]'
+  return '[ ]'
+}
+
 async function readJson(response: Response) {
   const data = await response.json().catch(() => null)
   if (!response.ok || data?.ok === false) {
@@ -160,9 +190,8 @@ export default function ProcurarDatasPage() {
   const [tempoNecessario, setTempoNecessario] = useState('')
   const [addressResult, setAddressResult] = useState<AddressResult | null>(null)
   const [searchPayload, setSearchPayload] = useState<SearchPayload | null>(null)
-  const [clientToken, setClientToken] = useState('')
   const [phase, setPhase] = useState('Carregando opcoes')
-  const [progressText, setProgressText] = useState('')
+  const [progressSnapshot, setProgressSnapshot] = useState<SearchProgress | null>(null)
   const [progressStatus, setProgressStatus] = useState<ProgressStatus>('idle')
   const [searchError, setSearchError] = useState('')
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
@@ -176,15 +205,59 @@ export default function ProcurarDatasPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const activeSearchTokenRef = useRef('')
+  const searchStartedAtRef = useRef(0)
 
   const minDate = useMemo(() => isoDatePlus(form.isEncomenda ? 42 : 2), [form.isEncomenda])
   const maxDate = useMemo(() => isoDatePlus(90), [])
   const candidates = searchPayload?.candidates || []
-  const normalCandidates = candidates.filter((candidate) => (candidate.tipo || 'normal') === 'normal').slice(0, 3)
-  const extraCandidates = candidates.filter((candidate) => (candidate.tipo || 'normal') !== 'normal')
+  const normalCandidates = candidates.filter(isNormalCandidate).slice(0, 3)
+  const extraCandidates = candidates.filter((candidate) => !isNormalCandidate(candidate))
+  const progressPayloadCandidates = progressSnapshot?.payload?.candidates || []
+  const progressSourceCandidates = progressPayloadCandidates.length
+    ? progressPayloadCandidates
+    : [...(progressSnapshot?.normais || []), ...(progressSnapshot?.extras || [])]
+  const progressNormalCount = Math.min(progressSourceCandidates.filter(isNormalCandidate).length, 3)
+  const progressEspecialFound = progressSourceCandidates.some((candidate) => candidate.tipo === 'especial')
+  const progressPremiumFound = progressSourceCandidates.some((candidate) => candidate.tipo === 'premium')
+  const progressHoraMarcadaFound = progressSourceCandidates.some(isHoraMarcadaCandidate)
   const serviceLocked = !addressResult?.ok
   const formLocked = serviceLocked || searching
   const showProgressBlock = progressStatus !== 'idle' || searching || !!searchError
+  const progressDone = progressStatus === 'done'
+  const progressError = progressStatus === 'error'
+  const progressSteps = [
+    {
+      label: 'Endereco validado',
+      detail: addressResult?.ok ? 'Confirmado' : 'Pendente',
+      state: addressResult?.ok ? 'done' : progressError ? 'error' : 'pending',
+    },
+    {
+      label: 'Tempo calculado',
+      detail: tempoNecessario && tempoNecessario !== '<--- PREENCHA' ? tempoNecessario : 'Pendente',
+      state: tempoNecessario && tempoNecessario !== '<--- PREENCHA' ? 'done' : progressError ? 'error' : 'pending',
+    },
+    {
+      label: 'Buscando datas',
+      detail: `${progressNormalCount}/3 normais encontrados`,
+      state: progressError ? 'error' : progressDone || progressNormalCount >= 3 ? 'done' : searching ? 'active' : 'pending',
+    },
+    {
+      label: 'Outras opcoes',
+      detail: `Especial: ${optionStatus(progressEspecialFound, progressDone)} | Premium: ${optionStatus(progressPremiumFound, progressDone)} | Hora marcada: ${optionStatus(progressHoraMarcadaFound, progressDone)}`,
+      state: progressError
+        ? 'error'
+        : progressDone
+          ? 'done'
+          : progressNormalCount >= 3
+            ? 'active'
+            : 'pending',
+    },
+    {
+      label: 'Finalizando resultados',
+      detail: progressDone ? 'Pesquisa concluida' : 'Aguardando resultado final',
+      state: progressError ? 'error' : progressDone ? 'done' : progressNormalCount >= 3 && searching ? 'active' : 'pending',
+    },
+  ] as const
 
   useEffect(() => {
     setForm((current) => {
@@ -377,6 +450,7 @@ export default function ProcurarDatasPage() {
   }
 
   function finalizarBuscaComErro(message: string) {
+    activeSearchTokenRef.current = ''
     setSearchError(message)
     setProgressStatus('error')
     setPhase('Erro ao pesquisar datas')
@@ -390,27 +464,33 @@ export default function ProcurarDatasPage() {
 
     const poll = async () => {
       if (activeSearchTokenRef.current !== token) return
+      if (searchStartedAtRef.current && Date.now() - searchStartedAtRef.current > SEARCH_UI_TIMEOUT_MS) {
+        finalizarBuscaComErro('A busca demorou demais e foi interrompida na tela. Tente novamente ou ajuste os filtros.')
+        return
+      }
       try {
         const response = await fetch(`/api/procurar-datas/progresso?clientToken=${encodeURIComponent(token)}`)
         const data = await readJson(response)
         const progress = (data.progress || {}) as SearchProgress
         const status = (progress.status || 'waiting') as ProgressStatus | string
-        const normais = Array.isArray(progress.normais) ? progress.normais.length : 0
-        const extras = Array.isArray(progress.extras) ? progress.extras.length : 0
 
         if (activeSearchTokenRef.current !== token) return
+        setProgressSnapshot(progress)
 
         if (status) {
           if (status === 'queued' || status === 'running' || status === 'done' || status === 'error') {
             setProgressStatus(status)
           }
-          setProgressText(`Status: ${status}${normais || extras ? ` | candidatos: ${normais + extras}` : ''}`)
         }
 
         if (status === 'done') {
-          if (progress.payload) {
-            setSearchPayload(progress.payload)
+          const rootCandidates = (progress as SearchProgress & { candidates?: Candidate[] }).candidates
+          const payload = progress.payload || (Array.isArray(rootCandidates) ? { candidates: rootCandidates } : null)
+          if (!payload || !Array.isArray(payload.candidates) || payload.candidates.length === 0) {
+            finalizarBuscaComErro('A busca terminou, mas nao retornou resultados validos. Verifique logs pelo token.')
+            return
           }
+          setSearchPayload(payload)
           setPhase('Resultados finalizados')
           setSearching(false)
           stopPolling()
@@ -451,13 +531,15 @@ export default function ProcurarDatasPage() {
     }
 
     const token = createClientToken()
+    stopPolling()
+    stopTimer()
     activeSearchTokenRef.current = token
-    setClientToken(token)
+    searchStartedAtRef.current = Date.now()
     setSearching(true)
     setSearchPayload(null)
+    setProgressSnapshot(null)
     setSearchError('')
     setProgressStatus('queued')
-    setProgressText('')
     setPhase('Iniciando pesquisa')
     startTimer()
 
@@ -486,9 +568,7 @@ export default function ProcurarDatasPage() {
       if (activeSearchTokenRef.current !== token) return
       const startedToken = data.clientToken || token
       activeSearchTokenRef.current = startedToken
-      setClientToken(startedToken)
       setProgressStatus('queued')
-      setProgressText(`Status: ${data.status || 'started'}`)
       setPhase('Buscando datas')
       startPolling(startedToken)
     } catch (error) {
@@ -501,11 +581,12 @@ export default function ProcurarDatasPage() {
 
   function editarFiltros() {
     activeSearchTokenRef.current = ''
+    searchStartedAtRef.current = 0
     setSearching(false)
     setProgressStatus('idle')
-    setProgressText('')
+    setProgressSnapshot(null)
     setSearchError('')
-    setClientToken('')
+    setElapsedSeconds(0)
     setPhase(addressResult?.ok ? 'Pronto para buscar datas' : 'Pronto para validar endereco')
     stopPolling()
     stopTimer()
@@ -780,35 +861,33 @@ export default function ProcurarDatasPage() {
           </div>
 
           <div className="mt-4 grid gap-2 md:grid-cols-5">
-            {[
-              { label: 'Endereco validado', done: !!addressResult?.ok, active: false },
-              { label: 'Tempo calculado', done: !!tempoNecessario && tempoNecessario !== '<--- PREENCHA', active: false },
-              { label: 'Buscando datas', done: progressStatus === 'done', active: progressStatus === 'queued' || progressStatus === 'running' },
-              { label: 'Calculando rotas', done: progressStatus === 'done', active: progressStatus === 'running' },
-              { label: 'Finalizando resultados', done: progressStatus === 'done', active: progressStatus === 'running' },
-            ].map((step) => (
+            {progressSteps.map((step) => (
               <div
                 key={step.label}
-                className={`border px-3 py-2 text-sm ${
-                  step.done
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                    : step.active
-                      ? 'border-sky-200 bg-sky-50 text-sky-800'
-                      : 'border-slate-200 bg-slate-50 text-slate-500'
-                }`}
+                className={`min-h-24 border px-3 py-2 text-sm ${progressStepClass(step.state)}`}
               >
-                <span className="mr-2 font-semibold">{step.done ? '[OK]' : step.active ? '[~]' : '[ ]'}</span>
-                {step.label}
+                <div className="flex items-center gap-2 font-semibold">
+                  <span>{progressStepMark(step.state)}</span>
+                  <span>{step.label}</span>
+                </div>
+                <div className="mt-2 text-xs leading-relaxed opacity-80">{step.detail}</div>
+                {step.state === 'active' && (
+                  <Loader2 className="mt-2 h-4 w-4 animate-spin" />
+                )}
               </div>
             ))}
           </div>
 
           <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-            <div>Status: {progressStatus === 'idle' ? '-' : progressStatus}</div>
-            {progressText && <div className="mt-1 text-xs text-slate-500">{progressText}</div>}
-            {clientToken && <div className="mt-1 text-xs text-slate-400">Token: {clientToken}</div>}
-            {progressStatus === 'done' && <div className="mt-2 text-emerald-700">Pesquisa concluida.</div>}
-            {searchError && <div className="mt-2 text-red-700">{searchError}</div>}
+            {searchError ? (
+              <div className="text-red-700">{searchError}</div>
+            ) : progressDone ? (
+              <div className="text-emerald-700">Pesquisa concluida.</div>
+            ) : (
+              <div className="text-slate-600">
+                A pesquisa esta em andamento. Os resultados aparecerao automaticamente quando a busca terminar.
+              </div>
+            )}
           </div>
         </section>
       )}

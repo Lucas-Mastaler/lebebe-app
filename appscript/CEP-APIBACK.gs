@@ -225,7 +225,7 @@ function saveProgress_(clientToken, normais, extras, status, context) {
           delta: c.delta,
           availStr: c.availStr,
           frete: _fmtMoneyBR(freteNum),
-          tipo: ctx.tipoExtra || 'extra'
+          tipo: c.tipoProgress || ctx.tipoExtra || 'extra'
         };
       }),
       status: status || 'running',
@@ -829,7 +829,7 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
     var limitResultsNormal = Number(form.limitResultsNormal || 0);
     var isBackendApiCall = !!(limitResultsNormal > 0);
     var MAX_NORMAIS_RETORNO = isBackendApiCall ? limitResultsNormal : 5;
-    var MAX_CANDIDATOS_TOTAL = isApp3ComExtras ? 10 : (isBackendApiCall ? MAX_NORMAIS_RETORNO : 10);
+    var MAX_CANDIDATOS_TOTAL = isApp3ComExtras ? MAX_NORMAIS_RETORNO : (isBackendApiCall ? MAX_NORMAIS_RETORNO : 10);
     var totalCandidatos = 0;
     var earlyStop = false;
 
@@ -868,15 +868,13 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
         listaEspecial: listaEspecialApp,
         listaPremium: listaPremiumApp,
         listaHoraMarcada: listaHoraMarcadaApp,
-        completo: listaNormalApp.length >= MAX_NORMAIS_RETORNO &&
-          listaEspecialApp.length >= 1 &&
-          listaPremiumApp.length >= 1 &&
-          listaHoraMarcadaApp.length >= 1
+        completo: listaNormalApp.length >= MAX_NORMAIS_RETORNO
       };
     }
     
     if (isApp3ComExtras) {
-      dlog('[APP-3-COM-EXTRAS] Modo ativo: ' + MAX_NORMAIS_RETORNO + ' normais + especial/premium/hora marcada (early stop por conjunto)');
+      dlog('[APP-3-COM-EXTRAS] Obrigatório: ' + MAX_NORMAIS_RETORNO + ' normais');
+      dlog('[APP-3-COM-EXTRAS] Extras opcionais: especial/premium/hora marcada');
     } else if (isBackendApiCall) {
       dlog('[BACKEND-API] Limite ativo: ' + MAX_CANDIDATOS_TOTAL + ' resultados normais (early stop habilitado)');
     }
@@ -1164,16 +1162,12 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
         var horaMarcadasApp = Object.keys(porDiaHoraMarcada).map(function(dk){ return porDiaHoraMarcada[dk]; });
         var conjuntoApp = selecionarConjuntoApp3ComExtras_(normaisApp, especiaisApp, premiumsApp, horaMarcadasApp);
 
-        var diasUnicosApp = new Set();
-        Object.keys(porDiaBestNormal).forEach(function(k){ diasUnicosApp.add(k); });
-        Object.keys(porDiaBestEspecial).forEach(function(k){ diasUnicosApp.add(k); });
-        Object.keys(porDiaBestPremium).forEach(function(k){ diasUnicosApp.add(k); });
-        Object.keys(porDiaHoraMarcada).forEach(function(k){ diasUnicosApp.add(k); });
-
-        totalCandidatos = diasUnicosApp.size;
+        totalCandidatos = conjuntoApp.listaNormal.length;
 
         if (conjuntoApp.completo) {
-          dlog('[APP-3-COM-EXTRAS] EARLY STOP: conjunto completo (' +
+          dlog('[APP-3-COM-EXTRAS] 3 normais encontrados dentro da janela padrão');
+          dlog('[APP-3-COM-EXTRAS] Finalizando sem prolongar por extras ausentes');
+          dlog('[APP-3-COM-EXTRAS] EARLY STOP: obrigatórios completos (' +
                conjuntoApp.listaNormal.length + ' normais, ' +
                conjuntoApp.listaEspecial.length + ' especial, ' +
                conjuntoApp.listaPremium.length + ' premium, ' +
@@ -1207,18 +1201,24 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       // ✅ SALVAR PROGRESSO quando tiver candidatos suficientes
       if (totalCandidatos >= 3 || sIdx % 5 === 0) { // A cada 3+ candidatos ou a cada 5 slots
         var normaisList = Object.keys(porDiaBestNormal).map(function(dk){ return porDiaBestNormal[dk]; });
-        var extrasList = Object.keys(porDiaBestEspecial).map(function(dk){ return porDiaBestEspecial[dk]; });
+        var extrasList = Object.keys(porDiaBestEspecial).map(function(dk){
+          return Object.assign({}, porDiaBestEspecial[dk], { tipoProgress: 'especial' });
+        });
         if (isApp3ComExtras) {
           extrasList = extrasList
-            .concat(Object.keys(porDiaBestPremium).map(function(dk){ return porDiaBestPremium[dk]; }))
-            .concat(Object.keys(porDiaHoraMarcada).map(function(dk){ return porDiaHoraMarcada[dk]; }));
+            .concat(Object.keys(porDiaBestPremium).map(function(dk){
+              return Object.assign({}, porDiaBestPremium[dk], { tipoProgress: 'premium' });
+            }))
+            .concat(Object.keys(porDiaHoraMarcada).map(function(dk){
+              return Object.assign({}, porDiaHoraMarcada[dk], { tipoProgress: 'hora-marcada' });
+            }));
         }
         var ctx = { freightParams: freightParams, isRural: isRural, isCondominio: !!form.isCondominio };
         saveProgress_(clientToken, normaisList, extrasList, 'running', ctx);
       }
       
       // ✅ PARAR QUANDO ENCONTRAR 10 CANDIDATOS
-      if (totalCandidatos >= MAX_CANDIDATOS_TOTAL) {
+      if (!isApp3ComExtras && totalCandidatos >= MAX_CANDIDATOS_TOTAL) {
         searchElapsedSeconds = ((Date.now() - searchStartTime) / 1000).toFixed(1);
         dlog('[EARLY-STOP] ✅ Encontrou ' + totalCandidatos + ' candidatos únicos em ' + searchElapsedSeconds + 's — PARANDO BUSCA');
         dlog('[EARLY-STOP] Processados ' + (sIdx + 1) + '/' + slotsParaProcessar.length + ' slots (' + 
@@ -1381,9 +1381,16 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       dlog('[EXPANSAO-BUSCA] Janela ' + janelaRespeitada + ' dias retornou ' + res.listaNormal.length + ' fretes normais.');
 
       if (res.listaNormal.length >= minNormaisNecessario) {
+        if (isApp3ComExtras) {
+          dlog('[APP-3-COM-EXTRAS] 3 normais encontrados dentro da janela padrão');
+          dlog('[APP-3-COM-EXTRAS] Finalizando sem prolongar por extras ausentes');
+        }
         resultadoEscolhido = res;
         janelaUtilizada = janelaRespeitada;
       } else if (idx < janelasBusca.length - 1 && janelaRespeitada < 90) {
+        if (isApp3ComExtras) {
+          dlog('[APP-3-COM-EXTRAS] Menos de 3 normais encontrados; expandindo janela');
+        }
         dlog('[EXPANSAO-BUSCA] Resultado insuficiente: mínimo necessário = ' + minNormaisNecessario + ' fretes normais. Expandindo busca para ' + janelasBusca[idx+1] + ' dias.');
       } else {
         // última janela ou já está em 90
@@ -1701,8 +1708,10 @@ function pesquisarRotaToTargetWithParams(targetSpreadsheetId, targetSheetName, f
       try { _cache.put(payloadKey, JSON.stringify(payload), 30*60); } catch(e){}
       
       // ✅ PROGRESSIVE: Marcar como concluído
-      var ctx = { freightParams: freightParams, isRural: isRural, isCondominio: !!form.isCondominio };
-      saveProgress_(clientToken, payload.normais || [], payload.extras || [], 'done', ctx);
+      if (!(form && form.suppressFinalProgressDone)) {
+        var ctx = { freightParams: freightParams, isRural: isRural, isCondominio: !!form.isCondominio };
+        saveProgress_(clientToken, payload.normais || [], payload.extras || [], 'done', ctx);
+      }
       
       return payload;
     }

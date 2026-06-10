@@ -87,6 +87,7 @@ function ApiIniciarPesquisaDatasApp(form) {
   try {
     form = form || {};
     if (!form.clientToken) form.clientToken = 'app-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+    form.suppressFinalProgressDone = true;
     var clientToken = String(form.clientToken);
     var props = PropertiesService.getScriptProperties();
     var now = Date.now();
@@ -96,6 +97,27 @@ function ApiIniciarPesquisaDatasApp(form) {
     lock.waitLock(5000);
 
     var existingJob = props.getProperty(jobKey);
+    var existingJobStatus = '';
+    if (existingJob) {
+      try {
+        var parsedExistingJob = JSON.parse(existingJob);
+        existingJobStatus = String(parsedExistingJob.status || '');
+        var existingCreatedAt = Number(parsedExistingJob.createdAt || 0);
+        if (existingCreatedAt && (now - existingCreatedAt) > 15 * 60 * 1000) {
+          props.deleteProperty(jobKey);
+          props.deleteProperty('PROGRESS_' + clientToken);
+          existingJob = '';
+          existingJobStatus = '';
+          Logger.log('[PROCURAR-DATAS-ASYNC] job expirado removido clientToken=' + clientToken);
+        }
+      } catch (_) {
+        props.deleteProperty(jobKey);
+        existingJob = '';
+        existingJobStatus = '';
+        Logger.log('[PROCURAR-DATAS-ASYNC] job corrompido removido clientToken=' + clientToken);
+      }
+    }
+
     if (!existingJob) {
       props.setProperty(jobKey, JSON.stringify({
         clientToken: clientToken,
@@ -109,21 +131,27 @@ function ApiIniciarPesquisaDatasApp(form) {
         queue.push(clientToken);
         props.setProperty(queueKey, JSON.stringify(queue));
       }
+    } else {
+      Logger.log('[PROCURAR-DATAS-ASYNC] job existente mantido clientToken=' + clientToken);
     }
 
-    props.setProperty('PROGRESS_' + clientToken, JSON.stringify({
-      status: 'queued',
-      clientToken: clientToken,
-      normais: [],
-      extras: [],
-      timestamp: now,
-      startedAt: new Date(now).toISOString()
-    }));
+    if (!existingJob) {
+      props.setProperty('PROGRESS_' + clientToken, JSON.stringify({
+        status: 'queued',
+        clientToken: clientToken,
+        normais: [],
+        extras: [],
+        timestamp: now,
+        startedAt: new Date(now).toISOString()
+      }));
+    }
 
-    _procurarDatasEnsureWorkerTrigger_();
+    if (!existingJob || existingJobStatus !== 'running') {
+      _procurarDatasEnsureWorkerTrigger_();
+    }
 
-    Logger.log('[PROCURAR-DATAS-ASYNC] job criado clientToken=' + clientToken);
-    return { ok: true, clientToken: clientToken, status: 'started' };
+    Logger.log('[PROCURAR-DATAS-ASYNC] job ' + (existingJob ? 'ja_existente' : 'criado') + ' clientToken=' + clientToken);
+    return { ok: true, clientToken: clientToken, status: existingJob ? 'already_started' : 'started' };
   } catch (e) {
     return {
       ok: false,
@@ -164,6 +192,20 @@ function ApiExecutarPesquisaDatasWorker() {
     }
 
     job = JSON.parse(storedJob);
+    if (job.createdAt && (Date.now() - Number(job.createdAt)) > 15 * 60 * 1000) {
+      props.deleteProperty(jobKey);
+      _procurarDatasSalvarProgressoRaw_(clientToken, {
+        status: 'error',
+        clientToken: clientToken,
+        error: 'Pesquisa expirada antes de iniciar. Tente novamente.',
+        timestamp: Date.now(),
+        finishedAt: new Date().toISOString()
+      });
+      Logger.log('[PROCURAR-DATAS-ASYNC] job expirado antes do worker clientToken=' + clientToken);
+      _procurarDatasEnsureWorkerTriggerIfQueueHasItems_(props, queueKey);
+      _procurarDatasDeleteWorkerTriggersIfQueueEmpty_(props, queueKey);
+      return;
+    }
     job.status = 'running';
     job.startedAt = startedAt;
     props.setProperty(jobKey, JSON.stringify(job));
@@ -252,6 +294,7 @@ function _procurarDatasEnsureWorkerTrigger_() {
     }
   }
   ScriptApp.newTrigger('ApiExecutarPesquisaDatasWorker').timeBased().after(1000).create();
+  Logger.log('[PROCURAR-DATAS-ASYNC] trigger criado ApiExecutarPesquisaDatasWorker');
 }
 
 function _procurarDatasEnsureWorkerTriggerIfQueueHasItems_(props, queueKey) {
@@ -267,6 +310,7 @@ function _procurarDatasDeleteWorkerTriggersIfQueueEmpty_(props, queueKey) {
   for (var i = 0; i < triggers.length; i++) {
     if (triggers[i].getHandlerFunction && triggers[i].getHandlerFunction() === 'ApiExecutarPesquisaDatasWorker') {
       ScriptApp.deleteTrigger(triggers[i]);
+      Logger.log('[PROCURAR-DATAS-ASYNC] trigger removido ApiExecutarPesquisaDatasWorker');
     }
   }
 }

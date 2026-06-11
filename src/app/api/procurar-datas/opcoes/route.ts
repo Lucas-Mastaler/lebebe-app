@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { chamarAppsScriptProcurarDatas } from '@/lib/procurar-datas/apps-script'
 import { respostaErroProcurarDatas, validarAcessoProcurarDatas } from '@/lib/procurar-datas/api'
+import type { OpcoesProcurarDatasResponseSucesso, OpcoesFront, TempoMap } from '@/lib/procurar-datas/contratos'
 
 export const runtime = 'nodejs'
 
@@ -15,10 +16,11 @@ export async function GET() {
     const [opcoes, tempoMap] = await Promise.all([
       chamarAppsScriptProcurarDatas('GetFrontOptionLists', [], { rota: 'opcoes' }),
       chamarAppsScriptProcurarDatas('GetTempoMap', [], { rota: 'opcoes' }),
-    ])
+    ]) as [OpcoesFront, TempoMap]
 
     console.log(`[PROCURAR_DATAS][opcoes] sucesso duracaoMs=${Date.now() - inicio}`)
-    return NextResponse.json({ ok: true, opcoes, tempoMap })
+    const resposta: OpcoesProcurarDatasResponseSucesso = { ok: true, opcoes, tempoMap }
+    return NextResponse.json(resposta)
   } catch (error) {
     console.error(`[PROCURAR_DATAS][opcoes] erro duracaoMs=${Date.now() - inicio}`, error)
     return respostaErroProcurarDatas(error)

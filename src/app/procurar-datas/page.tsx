@@ -5,6 +5,7 @@ import { CalendarCheck, Loader2, MapPin, Search, Send, TimerReset } from 'lucide
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import type { CalcularTempoRequest, CalcularTempoResponseSucesso, OpcoesProcurarDatasResponseSucesso, ValidarEnderecoRequest, ValidarEnderecoResponseSucesso, ValorInicialRequest, ValorInicialResponseSucesso, PesquisarDatasRequest, PesquisarDatasResponseSucesso, ProgressoPesquisaResponseSucesso, PreAgendarRequest, PreAgendarResponseSucesso } from '@/lib/procurar-datas/contratos'
 
 type OptionLists = {
   tipoBerco?: string[]
@@ -145,7 +146,7 @@ function formatElapsed(totalSeconds: number) {
   return `${minutes}:${seconds}`
 }
 
-const SEARCH_UI_TIMEOUT_MS = 4 * 60 * 1000
+const SEARCH_UI_TIMEOUT_MS = 7 * 60 * 1000
 
 function isNormalCandidate(candidate: Candidate) {
   return (candidate.tipo || 'normal') === 'normal'
@@ -276,7 +277,7 @@ export default function ProcurarDatasPage() {
       setPhase('Carregando opcoes')
       try {
         const response = await fetch('/api/procurar-datas/opcoes')
-        const data = await readJson(response)
+        const data = (await readJson(response)) as OpcoesProcurarDatasResponseSucesso
         if (!active) return
         setOpcoes(data.opcoes || {})
         setTempoMapLoaded(!!data.tempoMap)
@@ -313,12 +314,13 @@ export default function ProcurarDatasPage() {
       setCalculatingTime(true)
       setPhase('Calculando tempo')
       try {
+        const body: CalcularTempoRequest = form
         const response = await fetch('/api/procurar-datas/calcular-tempo', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(form),
+          body: JSON.stringify(body),
         })
-        const data = await readJson(response)
+        const data = (await readJson(response)) as CalcularTempoResponseSucesso
         setTempoNecessario(data.tempoNecessario || '')
         setPhase(addressResult ? 'Pronto para buscar datas' : 'Pronto para validar endereco')
       } catch (error) {
@@ -343,23 +345,24 @@ export default function ProcurarDatasPage() {
     const timeout = setTimeout(async () => {
       setCalculatingValorInicial(true)
       try {
+        const body: ValorInicialRequest = {
+          cep: addressResult.cep || '',
+          lat: addressResult.lat,
+          lng: addressResult.lng,
+          destLat: addressResult.lat,
+          destLng: addressResult.lng,
+          destDisplay: addressResult.enderecoCompleto || addressResult.display || addressResult.display_name || '',
+          destProvider: addressResult.provider || '',
+          enderecoCompleto: addressResult.enderecoCompleto || addressResult.display || addressResult.display_name || '',
+          isRural: form.isRural,
+          isCondominio: form.isCondominio,
+        }
         const response = await fetch('/api/procurar-datas/valor-inicial', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cep: addressResult.cep || '',
-            lat: addressResult.lat,
-            lng: addressResult.lng,
-            destLat: addressResult.lat,
-            destLng: addressResult.lng,
-            destDisplay: addressResult.enderecoCompleto || addressResult.display || addressResult.display_name || '',
-            destProvider: addressResult.provider || '',
-            enderecoCompleto: addressResult.enderecoCompleto || addressResult.display || addressResult.display_name || '',
-            isRural: form.isRural,
-            isCondominio: form.isCondominio,
-          }),
+          body: JSON.stringify(body),
         })
-        const data = await readJson(response)
+        const data = (await readJson(response)) as ValorInicialResponseSucesso
         const resultado = data.resultado || {}
         if (active) setValorInicial(resultado.valorFormatado || resultado.valorFmt || '')
       } catch (error) {
@@ -407,12 +410,13 @@ export default function ProcurarDatasPage() {
     setSearchPayload(null)
 
     try {
+      const body: ValidarEnderecoRequest = form
       const response = await fetch('/api/procurar-datas/validar-endereco', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify(body),
       })
-      const data = await readJson(response)
+      const data = (await readJson(response)) as ValidarEnderecoResponseSucesso
       const resultado = data.resultado as AddressResult
 
       if (!resultado?.ok || !resultado.lat || !resultado.lng) {
@@ -465,12 +469,12 @@ export default function ProcurarDatasPage() {
     const poll = async () => {
       if (activeSearchTokenRef.current !== token) return
       if (searchStartedAtRef.current && Date.now() - searchStartedAtRef.current > SEARCH_UI_TIMEOUT_MS) {
-        finalizarBuscaComErro('A busca demorou demais e foi interrompida na tela. Tente novamente ou ajuste os filtros.')
+        finalizarBuscaComErro('A busca está demorando mais que o normal. A tela parou de acompanhar, mas o processamento pode continuar em segundo plano. Tente novamente em alguns instantes.')
         return
       }
       try {
         const response = await fetch(`/api/procurar-datas/progresso?clientToken=${encodeURIComponent(token)}`)
-        const data = await readJson(response)
+        const data = (await readJson(response)) as ProgressoPesquisaResponseSucesso
         const progress = (data.progress || {}) as SearchProgress
         const status = (progress.status || 'waiting') as ProgressStatus | string
 
@@ -544,7 +548,7 @@ export default function ProcurarDatasPage() {
     startTimer()
 
     try {
-      const body = {
+      const body: PesquisarDatasRequest = {
         ...form,
         clientToken: token,
         tempoNecessario,
@@ -564,7 +568,7 @@ export default function ProcurarDatasPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      const data = await readJson(response)
+      const data = (await readJson(response)) as PesquisarDatasResponseSucesso
       if (activeSearchTokenRef.current !== token) return
       const startedToken = data.clientToken || token
       activeSearchTokenRef.current = startedToken
@@ -603,26 +607,27 @@ export default function ProcurarDatasPage() {
     setPhase('Pre-agendando')
 
     try {
+      const body: PreAgendarRequest = {
+        cand: {
+          dateISO: candidate.dateISO,
+          team: candidate.team,
+          frete: candidate.frete || '',
+          tipo: candidate.tipo || '',
+        },
+        meta: {
+          tempo: searchPayload.tempo || tempoNecessario,
+          label: searchPayload.label || '',
+          address: searchPayload.address || searchPayload.addressShort || '',
+          cep: searchPayload.cep || '',
+          params: searchPayload.params || '',
+        },
+      }
       const response = await fetch('/api/procurar-datas/pre-agendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cand: {
-            dateISO: candidate.dateISO,
-            team: candidate.team,
-            frete: candidate.frete || '',
-            tipo: candidate.tipo || '',
-          },
-          meta: {
-            tempo: searchPayload.tempo || tempoNecessario,
-            label: searchPayload.label || '',
-            address: searchPayload.address || searchPayload.addressShort || '',
-            cep: searchPayload.cep || '',
-            params: searchPayload.params || '',
-          },
-        }),
+        body: JSON.stringify(body),
       })
-      const data = await readJson(response)
+      const data = (await readJson(response)) as PreAgendarResponseSucesso
       toast.success(data.titulo ? `Pre-agendado: ${data.titulo}` : 'Pre-agendamento criado.')
       setPhase('Pre-agendamento concluido')
     } catch (error) {

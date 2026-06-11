@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { chamarAppsScriptProcurarDatas } from '@/lib/procurar-datas/apps-script'
 import { respostaErroProcurarDatas, validarAcessoProcurarDatas } from '@/lib/procurar-datas/api'
-import type { ProcurarDatasServicoForm } from '@/lib/procurar-datas/types'
+import type { PesquisarDatasRequest, PesquisarDatasResponseSucesso, PesquisarDatasStatus } from '@/lib/procurar-datas/contratos'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     const acesso = await validarAcessoProcurarDatas()
     if (acesso.response) return acesso.response
 
-    const body = (await request.json()) as ProcurarDatasServicoForm
+    const body = (await request.json()) as PesquisarDatasRequest
     clientToken = body.clientToken || ''
 
     const resultado = await chamarAppsScriptProcurarDatas<{ ok?: boolean; clientToken?: string; status?: string; error?: string }>('ApiIniciarPesquisaDatasApp', [body], {
@@ -29,11 +29,12 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[PROCURAR_DATAS][pesquisar] sucesso clientToken=${clientToken || '-'} duracaoMs=${Date.now() - inicio}`)
-    return NextResponse.json({
+    const resposta: PesquisarDatasResponseSucesso = {
       ok: true,
       clientToken: resultado.clientToken || clientToken,
-      status: resultado.status || 'started',
-    })
+      status: (resultado.status || 'started') as PesquisarDatasStatus,
+    }
+    return NextResponse.json(resposta)
   } catch (error) {
     console.error(`[PROCURAR_DATAS][pesquisar] erro clientToken=${clientToken || '-'} duracaoMs=${Date.now() - inicio}`, error)
     return respostaErroProcurarDatas(error)

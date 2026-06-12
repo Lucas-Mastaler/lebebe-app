@@ -26,6 +26,8 @@ import { buscarConfiguracoesProcurarDatas } from '@/lib/procurar-datas/config-se
 import { parseMinutos, formatarMinutos } from '@/lib/procurar-datas/motor/tempo'
 import { normalizarEquipe } from '@/lib/procurar-datas/motor/equipe'
 import { normalizarEntradaPesquisaV2 } from '@/lib/procurar-datas/motor/entrada'
+import { haversineKm } from '@/lib/procurar-datas/motor/distancia'
+import { calcularFrete } from '@/lib/procurar-datas/motor/frete'
 import type { PesquisarDatasRequest } from '@/lib/procurar-datas/contratos'
 
 export const runtime = 'nodejs'
@@ -91,7 +93,68 @@ export async function POST(request: NextRequest) {
           origemErro: configResult.origemErro,
         }
 
-    // 6. Testar helpers puros
+    // 6. Diagnóstico de distância/frete (usando helpers puros, sem OSRM)
+    let diagnosticoFrete: Record<string, unknown>
+
+    const temCoordsOrigem = entradaNormalizada.coordenadasOrigemInformada !== null
+    const temCoordsDestino = entradaNormalizada.coordenadasDestino !== null
+
+    if (temCoordsOrigem && temCoordsDestino && configResult.ok) {
+      const origem = entradaNormalizada.coordenadasOrigemInformada!
+      const destino = entradaNormalizada.coordenadasDestino!
+      const distKm = haversineKm(origem, destino)
+
+      const params = configResult.config
+      const freteResult = calcularFrete({
+        distKm,
+        isSabado: false,
+        isRural: entradaNormalizada.isRural,
+        isCondominio: entradaNormalizada.isCondominio,
+        params: {
+          kmMaxViagem: params.kmMaxViagem,
+          kmMaxValorFixo: params.kmMaxValorFixo,
+          kmMaxLongaCidade: params.kmMaxLongaCidade,
+          kmMaxNaoViagem: params.kmMaxNaoViagem,
+          valorSemanaAte10km: params.valorSemanaAte10km,
+          valorSabadoAte10km: params.valorSabadoAte10km,
+          fatorMultiplicadorKmViagem: params.fatorMultiplicadorKmViagem,
+          multiplicadorKmNaoViagem: params.multiplicadorKmNaoViagem,
+          valorDiaApos25kmSemana: params.valorDiaApos25kmSemana,
+          valorDiaApos25kmSabado: params.valorDiaApos25kmSabado,
+          precoCondominioAdicional: params.precoCondominioAdicional,
+        },
+        tipo: 'normal',
+      })
+
+      diagnosticoFrete = {
+        executado: true,
+        tipoDistancia: 'haversine_diagnostico',
+        distanciaKm: Number(distKm.toFixed(2)),
+        frete: freteResult.ok
+          ? {
+              valor: freteResult.valorFrete,
+              valorFormatado: freteResult.valorFormatado,
+              faixaAplicada: freteResult.faixaAplicada,
+            }
+          : {
+              valor: 0,
+              valorFormatado: freteResult.valorFormatado,
+              faixaAplicada: freteResult.faixaAplicada,
+            },
+        avisos: [
+          'Distância calculada por Haversine apenas para diagnóstico. Não substitui OSRM do motor legado.',
+        ],
+      }
+    } else {
+      diagnosticoFrete = {
+        executado: false,
+        motivo: !temCoordsOrigem || !temCoordsDestino
+          ? 'Coordenadas insuficientes para diagnóstico de distância/frete.'
+          : 'Config não carregada corretamente.',
+      }
+    }
+
+    // 7. Testar helpers puros
     const helpers = {
       // Tempo: converter HH:MM para minutos e voltar
       tempoTeste: entrada.tempoNecessario
@@ -111,7 +174,7 @@ export async function POST(request: NextRequest) {
       },
     }
 
-    // 7. Montar resposta diagnóstica
+    // 8. Montar resposta diagnóstica
     const duracaoMs = Date.now() - inicio
 
     return NextResponse.json(
@@ -136,12 +199,14 @@ export async function POST(request: NextRequest) {
           isCondominio: entradaNormalizada.isCondominio,
           avisos: entradaNormalizada.avisos,
         },
+        diagnosticoFrete,
         config,
         helpers,
         avisos: [
           'Rota diagnóstica. Não busca candidatos e não substitui o motor legado.',
           'Normalizador de entrada v2 integrado: normalizarEntradaPesquisaV2().',
-          'Helpers puros testados: tempo (parse/format), equipe (normalização).',
+          'Diagnóstico de distância/frete usa Haversine e não substitui OSRM/ranking do motor legado.',
+          'Helpers puros testados: tempo (parse/format), equipe (normalização), distância (haversine), frete.',
           'Config carregada via config-service com fallback para planilha.',
         ],
       },

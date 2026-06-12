@@ -589,8 +589,10 @@ As rotas que chamam Apps Script dependem **indiretamente** dos seguintes serviç
 **O que faz:**
 - Recebe payload usando contrato existente da pesquisa atual
 - Diagnostica entrada (flags simples: temCep, temLatLng, tempoMinutos, etc.)
+- **Normaliza entrada via `normalizarEntradaPesquisaV2()`** (entradaNormalizada)
 - Carrega config normalizada com fallback para planilha
 - Testa helpers puros: `parseMinutos()`, `formatarMinutos()`, `normalizarEquipe()`
+- **Diagnostica distância/frete via Haversine + `calcularFrete()`** (diagnosticoFrete)
 - Retorna metadados seguros de config (origem, usandoFallbackPlanilha, faltantesNoSupabase)
 
 **O que NÃO faz:**
@@ -643,6 +645,32 @@ As rotas que chamam Apps Script dependem **indiretamente** dos seguintes serviç
     "isRural": false,
     "isCondominio": false
   },
+  "entradaNormalizada": {
+    "cep": "80000-000",
+    "temEnderecoCompleto": true,
+    "dataInicialISO": "2026-06-13",
+    "tempoNecessarioTexto": "00:40",
+    "tempoNecessarioMin": 40,
+    "temEnderecoMinimo": true,
+    "temCoordenadasDestino": true,
+    "temCoordenadasOrigemInformada": true,
+    "isRural": false,
+    "isCondominio": false,
+    "avisos": []
+  },
+  "diagnosticoFrete": {
+    "executado": true,
+    "tipoDistancia": "haversine_diagnostico",
+    "distanciaKm": 0.0,
+    "frete": {
+      "valor": 480,
+      "valorFormatado": "R$ 480",
+      "faixaAplicada": "fixo"
+    },
+    "avisos": [
+      "Distância calculada por Haversine apenas para diagnóstico. Não substitui OSRM do motor legado."
+    ]
+  },
   "config": {
     "origem": "supabase",
     "usandoFallbackPlanilha": false,
@@ -674,7 +702,9 @@ As rotas que chamam Apps Script dependem **indiretamente** dos seguintes serviç
   },
   "avisos": [
     "Rota diagnóstica. Não busca candidatos e não substitui o motor legado.",
-    "Helpers puros testados: tempo (parse/format), equipe (normalização).",
+    "Normalizador de entrada v2 integrado: normalizarEntradaPesquisaV2().",
+    "Diagnóstico de distância/frete usa Haversine e não substitui OSRM/ranking do motor legado.",
+    "Helpers puros testados: tempo (parse/format), equipe (normalização), distância (haversine), frete.",
     "Config carregada via config-service com fallback para planilha."
   ]
 }
@@ -683,9 +713,11 @@ As rotas que chamam Apps Script dependem **indiretamente** dos seguintes serviç
 **Validação:**
 - ✅ Teste manual em ambiente dev retornou 200 OK
 - ✅ Config carregada de Supabase (origem: "supabase", usandoFallbackPlanilha: false)
-- ✅ Helpers de tempo/equipe funcionando corretamente
+- ✅ Normalizador de entrada v2 integrado e funcionando
+- ✅ Diagnóstico de distância/frete (Haversine + calcularFrete) funcionando
+- ✅ Helpers de tempo/equipe/distância/frete funcionando corretamente
 - ✅ Typecheck passou com 0 erros
-- ✅ Testes do motor passaram: 135 testes
+- ✅ Testes do motor passaram: 154 testes
 
 **Arquivo:** `src/app/api/procurar-datas/v2/diagnostico/route.ts`
 

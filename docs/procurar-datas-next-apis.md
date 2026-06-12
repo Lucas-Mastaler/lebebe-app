@@ -593,6 +593,7 @@ As rotas que chamam Apps Script dependem **indiretamente** dos seguintes serviç
 - Carrega config normalizada com fallback para planilha
 - Testa helpers puros: `parseMinutos()`, `formatarMinutos()`, `normalizarEquipe()`
 - **Diagnostica distância/frete via Haversine + `calcularFrete()`** (diagnosticoFrete)
+- **Diagnostica janela bruta de datas via `gerarJanelaDatasPesquisaV2()`** (diagnosticoJanelaDatas)
 - Retorna metadados seguros de config (origem, usandoFallbackPlanilha, faltantesNoSupabase)
 
 **O que NÃO faz:**
@@ -671,6 +672,32 @@ As rotas que chamam Apps Script dependem **indiretamente** dos seguintes serviç
       "Distância calculada por Haversine apenas para diagnóstico. Não substitui OSRM do motor legado."
     ]
   },
+  "diagnosticoJanelaDatas": {
+    "executado": true,
+    "diasSolicitados": 90,
+    "quantidadeGerada": 90,
+    "primeiraDataISO": "2026-06-13",
+    "ultimaDataISO": "2026-09-10",
+    "amostra": [
+      {
+        "dataISO": "2026-06-13",
+        "indice": 0,
+        "diaSemana": 6,
+        "ehSabado": true,
+        "ehDomingo": false
+      },
+      {
+        "dataISO": "2026-06-14",
+        "indice": 1,
+        "diaSemana": 0,
+        "ehSabado": false,
+        "ehDomingo": true
+      }
+    ],
+    "avisos": [
+      "Janela bruta de datas. Não consulta agenda, disponibilidade ou ranking."
+    ]
+  },
   "config": {
     "origem": "supabase",
     "usandoFallbackPlanilha": false,
@@ -704,7 +731,8 @@ As rotas que chamam Apps Script dependem **indiretamente** dos seguintes serviç
     "Rota diagnóstica. Não busca candidatos e não substitui o motor legado.",
     "Normalizador de entrada v2 integrado: normalizarEntradaPesquisaV2().",
     "Diagnóstico de distância/frete usa Haversine e não substitui OSRM/ranking do motor legado.",
-    "Helpers puros testados: tempo (parse/format), equipe (normalização), distância (haversine), frete.",
+    "Janela de datas v2 gerada apenas para diagnóstico. Não consulta agenda nem disponibilidade.",
+    "Helpers puros testados: tempo (parse/format), equipe (normalização), distância (haversine), frete, janela de datas.",
     "Config carregada via config-service com fallback para planilha."
   ]
 }
@@ -715,9 +743,10 @@ As rotas que chamam Apps Script dependem **indiretamente** dos seguintes serviç
 - ✅ Config carregada de Supabase (origem: "supabase", usandoFallbackPlanilha: false)
 - ✅ Normalizador de entrada v2 integrado e funcionando
 - ✅ Diagnóstico de distância/frete (Haversine + calcularFrete) funcionando
-- ✅ Helpers de tempo/equipe/distância/frete funcionando corretamente
+- ✅ Diagnóstico de janela de datas (gerarJanelaDatasPesquisaV2) funcionando
+- ✅ Helpers de tempo/equipe/distância/frete/janela funcionando corretamente
 - ✅ Typecheck passou com 0 erros
-- ✅ Testes do motor passaram: 154 testes
+- ✅ Testes do motor passaram: 170 testes
 
 **Arquivo:** `src/app/api/procurar-datas/v2/diagnostico/route.ts`
 

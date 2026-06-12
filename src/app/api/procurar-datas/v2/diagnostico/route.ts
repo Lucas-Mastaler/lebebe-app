@@ -28,6 +28,7 @@ import { normalizarEquipe } from '@/lib/procurar-datas/motor/equipe'
 import { normalizarEntradaPesquisaV2 } from '@/lib/procurar-datas/motor/entrada'
 import { haversineKm } from '@/lib/procurar-datas/motor/distancia'
 import { calcularFrete } from '@/lib/procurar-datas/motor/frete'
+import { gerarJanelaDatasPesquisaV2 } from '@/lib/procurar-datas/motor/janela-datas'
 import type { PesquisarDatasRequest } from '@/lib/procurar-datas/contratos'
 
 export const runtime = 'nodejs'
@@ -154,7 +155,58 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 7. Testar helpers puros
+    // 7. Diagnóstico de janela de datas (usando helper puro, sem agenda)
+    let diagnosticoJanelaDatas: Record<string, unknown>
+
+    if (entradaNormalizada.dataInicialISO && configResult.ok) {
+      const janelaResult = gerarJanelaDatasPesquisaV2({
+        dataInicialISO: entradaNormalizada.dataInicialISO,
+        diasPesquisaAgenda: configResult.config.diasPesquisaAgenda,
+      })
+
+      if (janelaResult.ok) {
+        const diasSolicitados = configResult.config.diasPesquisaAgenda
+        const quantidadeGerada = janelaResult.datas.length
+        const primeiraDataISO = janelaResult.datas[0]?.dataISO ?? null
+        const ultimaDataISO = janelaResult.datas[janelaResult.datas.length - 1]?.dataISO ?? null
+
+        // Amostra com no máximo 5 datas
+        const amostra = janelaResult.datas.slice(0, 5).map((d) => ({
+          dataISO: d.dataISO,
+          indice: d.indice,
+          diaSemana: d.diaSemana,
+          ehSabado: d.ehSabado,
+          ehDomingo: d.ehDomingo,
+        }))
+
+        diagnosticoJanelaDatas = {
+          executado: true,
+          diasSolicitados,
+          quantidadeGerada,
+          primeiraDataISO,
+          ultimaDataISO,
+          amostra,
+          avisos: [
+            'Janela bruta de datas. Não consulta agenda, disponibilidade ou ranking.',
+            ...janelaResult.avisos,
+          ],
+        }
+      } else {
+        diagnosticoJanelaDatas = {
+          executado: false,
+          motivo: janelaResult.avisos.join(' '),
+        }
+      }
+    } else {
+      diagnosticoJanelaDatas = {
+        executado: false,
+        motivo: !entradaNormalizada.dataInicialISO
+          ? 'Data inicial ausente ou inválida.'
+          : 'Config não carregada corretamente.',
+      }
+    }
+
+    // 8. Testar helpers puros
     const helpers = {
       // Tempo: converter HH:MM para minutos e voltar
       tempoTeste: entrada.tempoNecessario
@@ -174,7 +226,7 @@ export async function POST(request: NextRequest) {
       },
     }
 
-    // 8. Montar resposta diagnóstica
+    // 9. Montar resposta diagnóstica
     const duracaoMs = Date.now() - inicio
 
     return NextResponse.json(
@@ -200,13 +252,15 @@ export async function POST(request: NextRequest) {
           avisos: entradaNormalizada.avisos,
         },
         diagnosticoFrete,
+        diagnosticoJanelaDatas,
         config,
         helpers,
         avisos: [
           'Rota diagnóstica. Não busca candidatos e não substitui o motor legado.',
           'Normalizador de entrada v2 integrado: normalizarEntradaPesquisaV2().',
           'Diagnóstico de distância/frete usa Haversine e não substitui OSRM/ranking do motor legado.',
-          'Helpers puros testados: tempo (parse/format), equipe (normalização), distância (haversine), frete.',
+          'Janela de datas v2 gerada apenas para diagnóstico. Não consulta agenda nem disponibilidade.',
+          'Helpers puros testados: tempo (parse/format), equipe (normalização), distância (haversine), frete, janela de datas.',
           'Config carregada via config-service com fallback para planilha.',
         ],
       },

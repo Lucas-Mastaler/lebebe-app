@@ -6,6 +6,20 @@ import type { PesquisarDatasRequest, PesquisarDatasResponseSucesso, PesquisarDat
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
+const ERRO_TEMPO_NECESSARIO_INVALIDO = 'Tempo necessario ausente ou invalido.'
+const TEMPO_NECESSARIO_RE = /^(\d{2}):([0-5]\d)(?::([0-5]\d))?$/
+
+export function isTempoNecessarioValido(tempoNecessario: unknown): tempoNecessario is string {
+  if (typeof tempoNecessario !== 'string') return false
+
+  const match = tempoNecessario.trim().match(TEMPO_NECESSARIO_RE)
+  if (!match) return false
+
+  const horas = Number(match[1])
+  const minutos = Number(match[2])
+  return horas * 60 + minutos > 0
+}
+
 export async function POST(request: NextRequest) {
   const inicio = Date.now()
   let clientToken = ''
@@ -17,6 +31,11 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json()) as PesquisarDatasRequest
     clientToken = body.clientToken || ''
+
+    if (!isTempoNecessarioValido(body.tempoNecessario)) {
+      console.warn(`[PROCURAR_DATAS][pesquisar] tempoNecessario invalido clientToken=${clientToken || '-'} duracaoMs=${Date.now() - inicio}`)
+      return NextResponse.json({ ok: false, error: ERRO_TEMPO_NECESSARIO_INVALIDO }, { status: 400 })
+    }
 
     const resultado = await chamarAppsScriptProcurarDatas<{ ok?: boolean; clientToken?: string; status?: string; error?: string }>('ApiIniciarPesquisaDatasApp', [body], {
       rota: 'pesquisar',

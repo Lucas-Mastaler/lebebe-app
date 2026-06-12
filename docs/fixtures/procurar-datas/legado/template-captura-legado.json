@@ -1,0 +1,110 @@
+{
+  "_aviso": "Template base. Duplicar este arquivo, renomear e preencher com dados reais capturados no DevTools. Anonimizar antes de salvar.",
+
+  "meta": {
+    "nome": "PENDENTE_CAPTURA_REAL",
+    "descricao": "PENDENTE_CAPTURA_REAL",
+    "dataCaptura": "PENDENTE_CAPTURA_REAL",
+    "origem": "DevTools Network",
+    "ambiente": "PENDENTE_CAPTURA_REAL",
+    "endpoint": "/api/procurar-datas/pesquisar",
+    "caso": "PENDENTE_CAPTURA_REAL",
+    "observacoes": [
+      "Remover dados sensíveis antes de salvar.",
+      "Não usar dados reais de cliente.",
+      "Anonimizar: nomes, endereços, CEPs, coordenadas precisas, clientToken."
+    ]
+  },
+
+  "request": {
+    "method": "POST",
+    "url": "/api/procurar-datas/pesquisar",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "payload": {
+      "_nota": "Preencher com o payload real capturado no DevTools (aba Payload). Anonimizar campos sensíveis.",
+      "clientToken": "PENDENTE_CAPTURA_REAL",
+      "cep": "PENDENTE_CAPTURA_REAL",
+      "enderecoCompleto": "PENDENTE_CAPTURA_REAL",
+      "lat": "PENDENTE_CAPTURA_REAL",
+      "lng": "PENDENTE_CAPTURA_REAL",
+      "destLat": "PENDENTE_CAPTURA_REAL",
+      "destLng": "PENDENTE_CAPTURA_REAL",
+      "destDisplay": "PENDENTE_CAPTURA_REAL",
+      "destProvider": "PENDENTE_CAPTURA_REAL",
+      "dataInicial": "PENDENTE_CAPTURA_REAL",
+      "monthYear": "PENDENTE_CAPTURA_REAL",
+      "isRural": "PENDENTE_CAPTURA_REAL",
+      "isCondominio": "PENDENTE_CAPTURA_REAL",
+      "isEncomenda": "PENDENTE_CAPTURA_REAL",
+      "tipoBerco": "PENDENTE_CAPTURA_REAL",
+      "comoda": "PENDENTE_CAPTURA_REAL",
+      "roupeiro": "PENDENTE_CAPTURA_REAL",
+      "poltrona": "PENDENTE_CAPTURA_REAL",
+      "painel": "PENDENTE_CAPTURA_REAL",
+      "tempoNecessario": "PENDENTE_CAPTURA_REAL"
+    }
+  },
+
+  "responseInicio": {
+    "_nota": "Response síncrono da rota POST /pesquisar (não é o resultado final — apenas confirma que a pesquisa foi iniciada).",
+    "status": "PENDENTE_CAPTURA_REAL",
+    "body": {
+      "ok": "PENDENTE_CAPTURA_REAL",
+      "clientToken": "PENDENTE_CAPTURA_REAL",
+      "status": "PENDENTE_CAPTURA_REAL"
+    }
+  },
+
+  "responseDone": {
+    "_nota": "Response final do polling GET /progresso quando status = 'done'. Capturar a última resposta do polling com payload completo.",
+    "status": "PENDENTE_CAPTURA_REAL",
+    "body": {
+      "ok": "PENDENTE_CAPTURA_REAL",
+      "progress": {
+        "status": "PENDENTE_CAPTURA_REAL",
+        "clientToken": "PENDENTE_CAPTURA_REAL",
+        "payload": {
+          "_nota": "Payload compacto retornado pelo Apps Script.",
+          "ok": "PENDENTE_CAPTURA_REAL",
+          "cep": "PENDENTE_CAPTURA_REAL",
+          "tempo": "PENDENTE_CAPTURA_REAL",
+          "label": "PENDENTE_CAPTURA_REAL",
+          "address": "PENDENTE_CAPTURA_REAL",
+          "addressShort": "PENDENTE_CAPTURA_REAL",
+          "startFromISO": "PENDENTE_CAPTURA_REAL",
+          "startFromDM": "PENDENTE_CAPTURA_REAL",
+          "isRural": "PENDENTE_CAPTURA_REAL",
+          "isCondominio": "PENDENTE_CAPTURA_REAL",
+          "params": "PENDENTE_CAPTURA_REAL",
+          "candidates": [],
+          "searchTime": "PENDENTE_CAPTURA_REAL"
+        },
+        "normais": [],
+        "extras": [],
+        "timestamp": "PENDENTE_CAPTURA_REAL",
+        "startedAt": "PENDENTE_CAPTURA_REAL",
+        "finishedAt": "PENDENTE_CAPTURA_REAL",
+        "durationMs": "PENDENTE_CAPTURA_REAL"
+      }
+    }
+  },
+
+  "analise": {
+    "_nota": "Preencher após capturar fixture real.",
+    "casoTestado": "PENDENTE_CAPTURA_REAL",
+    "quantidadeCandidatosNormais": "PENDENTE_CAPTURA_REAL",
+    "quantidadeCandidatosExtras": "PENDENTE_CAPTURA_REAL",
+    "tiposObservados": [],
+    "camposConfirmados": [],
+    "camposPendentes": [],
+    "observacoes": []
+  },
+
+  "sensibilidade": {
+    "dadosAnonimizados": false,
+    "camposRemovidos": [],
+    "observacoes": "Preencher com lista de campos anonimizados e como foram substituídos."
+  }
+}

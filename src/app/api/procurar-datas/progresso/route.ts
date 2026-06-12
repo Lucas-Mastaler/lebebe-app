@@ -5,9 +5,17 @@ import type { ProgressoPesquisaResponseSucesso, ProgressoPesquisa } from '@/lib/
 
 export const runtime = 'nodejs'
 
+export const PROGRESS_TIMEOUT_MS = 20_000
+export const PROGRESS_CAPTURE_TIMEOUT_MS = 420_000
+
+export function getProgressoTimeoutMs(searchParams: URLSearchParams) {
+  return searchParams.get('modoCaptura') === '1' ? PROGRESS_CAPTURE_TIMEOUT_MS : PROGRESS_TIMEOUT_MS
+}
+
 export async function GET(request: NextRequest) {
   const inicio = Date.now()
   const clientToken = request.nextUrl.searchParams.get('clientToken') || ''
+  const timeoutMs = getProgressoTimeoutMs(request.nextUrl.searchParams)
   console.log(`[PROCURAR_DATAS][progresso] inicio clientToken=${clientToken || '-'}`)
 
   try {
@@ -21,7 +29,7 @@ export async function GET(request: NextRequest) {
     const progress = await chamarAppsScriptProcurarDatas('GetProgressUpdate', [clientToken], {
       rota: 'progresso',
       clientToken,
-      timeoutMs: 20_000,
+      timeoutMs,
     }) as ProgressoPesquisa
 
     console.log(`[PROCURAR_DATAS][progresso] sucesso clientToken=${clientToken} duracaoMs=${Date.now() - inicio}`)

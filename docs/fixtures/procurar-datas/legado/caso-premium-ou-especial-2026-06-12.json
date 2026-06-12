@@ -1,0 +1,300 @@
+{
+  "_aviso": "Fixture real/controlada do legado /procurar-datas capturada via DevTools Console. Dados revisados antes de salvar.",
+
+  "meta": {
+    "nome": "caso-premium-ou-especial-2026-06-12",
+    "descricao": "Caso premium ou especial com endereco urbano, tempo necessario de 01:00 e retorno final com candidatos normais e extras.",
+    "dataCaptura": "2026-06-12",
+    "origem": "DevTools Console",
+    "ambiente": "controlado",
+    "endpoint": "/api/procurar-datas/pesquisar",
+    "caso": "caso-premium-ou-especial",
+    "observacoes": [
+      "Captura feita com POST /api/procurar-datas/pesquisar.",
+      "Polling feito em GET /api/procurar-datas/progresso com modoCaptura=1.",
+      "Resultado final chegou em status done.",
+      "Payload final contem 5 candidatos: 3 normais e 2 extras."
+    ]
+  },
+
+  "request": {
+    "method": "POST",
+    "url": "/api/procurar-datas/pesquisar",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "payload": {
+      "_nota": "Payload real/controlado capturado no DevTools Console.",
+      "clientToken": "fixture-1781288993895",
+      "cep": "83045-350",
+      "enderecoCompleto": "Avenida Rui Barbosa, Afonso Pena, São José dos Pinhais, Paraná, 83045-350, Brasil",
+      "lat": -25.5314,
+      "lng": -49.1781,
+      "destLat": -25.5314,
+      "destLng": -49.1781,
+      "destDisplay": "Avenida Rui Barbosa, Afonso Pena, São José dos Pinhais, Paraná, 83045-350, Brasil",
+      "destProvider": "locationiq",
+      "dataInicial": "2026-06-13",
+      "monthYear": "2026-06-13",
+      "isRural": false,
+      "isCondominio": false,
+      "isEncomenda": false,
+      "tipoBerco": "",
+      "comoda": "",
+      "roupeiro": "",
+      "poltrona": "",
+      "painel": "",
+      "tempoNecessario": "01:00"
+    }
+  },
+
+  "responseInicio": {
+    "_nota": "Response sincrono da rota POST /pesquisar. O resultado final vem no polling /progresso.",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "ok": true,
+      "clientToken": "fixture-1781288993895",
+      "status": "started"
+    }
+  },
+
+  "responseDone": {
+    "_nota": "Response final do polling GET /progresso quando status = 'done'. Capturado com modoCaptura=1.",
+    "status": 200,
+    "ok": true,
+    "body": {
+      "ok": true,
+      "progress": {
+        "status": "done",
+        "clientToken": "fixture-1781288993895",
+        "payload": {
+          "_nota": "Payload compacto retornado pelo Apps Script.",
+          "ok": true,
+          "cep": "83045-350",
+          "tempo": "01:00",
+          "label": "São José dos Pinhais",
+          "address": "Avenida Rui Barbosa, Afonso Pena, São José dos Pinhais, Paraná, 83045-350, Brasil",
+          "addressShort": "",
+          "startFromISO": "",
+          "startFromDM": "",
+          "isRural": false,
+          "isCondominio": false,
+          "params": "ÁREA RURAL?: Não\nÉ CONDOMÍNIO?: Não\nÉ ENCOMENDA?: Não\nPROCURAR A PARTIR DE: 13/06/2026\nBERÇO/CAMA: -\nCÔMODA: -\nROUPEIRO: -\nPOLTRONA: -\nPAINEL: -\nTEMPO NECESSÁRIO: 01:00",
+          "candidates": [
+            {
+              "dateISO": "2026-06-30T03:00:00.000Z",
+              "avisoHoraMarcada": "",
+              "tipo": "premium",
+              "dateDM": "30/06",
+              "isExtra": true,
+              "frete": "R$ 320",
+              "weekday": "Terça",
+              "rank": 1,
+              "team": "EQUIPE 1",
+              "encomenda": "Não",
+              "daysLeftTxt": "18 d"
+            },
+            {
+              "dateISO": "2026-07-11T03:00:00.000Z",
+              "avisoHoraMarcada": "",
+              "tipo": "normal",
+              "dateDM": "11/07",
+              "isExtra": false,
+              "frete": "R$ 180",
+              "weekday": "Sábado",
+              "rank": 2,
+              "team": "EQUIPE 1",
+              "encomenda": "Não",
+              "daysLeftTxt": "29 d"
+            },
+            {
+              "avisoHoraMarcada": "",
+              "dateISO": "2026-07-24T03:00:00.000Z",
+              "tipo": "especial",
+              "isExtra": true,
+              "dateDM": "24/07",
+              "weekday": "Sexta",
+              "frete": "R$ 220",
+              "rank": 3,
+              "team": "EQUIPE 1",
+              "encomenda": "Não",
+              "daysLeftTxt": "42 d"
+            },
+            {
+              "avisoHoraMarcada": "",
+              "dateISO": "2026-07-25T03:00:00.000Z",
+              "tipo": "normal",
+              "isExtra": false,
+              "dateDM": "25/07",
+              "weekday": "Sábado",
+              "frete": "R$ 180",
+              "rank": 4,
+              "team": "EQUIPE 1",
+              "encomenda": "Não",
+              "daysLeftTxt": "43 d"
+            },
+            {
+              "dateISO": "2026-08-06T03:00:00.000Z",
+              "avisoHoraMarcada": "",
+              "tipo": "normal",
+              "dateDM": "06/08",
+              "isExtra": false,
+              "frete": "R$ 120",
+              "weekday": "Quinta",
+              "rank": 5,
+              "team": "EQUIPE 1",
+              "daysLeftTxt": "55 d",
+              "encomenda": "Não"
+            }
+          ],
+          "searchTime": "187.0"
+        },
+        "normais": [
+          {
+            "avisoHoraMarcada": "",
+            "dateISO": "2026-07-11T03:00:00.000Z",
+            "tipo": "normal",
+            "isExtra": false,
+            "dateDM": "11/07",
+            "weekday": "Sábado",
+            "frete": "R$ 180",
+            "rank": 2,
+            "team": "EQUIPE 1",
+            "encomenda": "Não",
+            "daysLeftTxt": "29 d"
+          },
+          {
+            "dateISO": "2026-07-25T03:00:00.000Z",
+            "avisoHoraMarcada": "",
+            "tipo": "normal",
+            "dateDM": "25/07",
+            "isExtra": false,
+            "frete": "R$ 180",
+            "weekday": "Sábado",
+            "rank": 4,
+            "team": "EQUIPE 1",
+            "encomenda": "Não",
+            "daysLeftTxt": "43 d"
+          },
+          {
+            "dateISO": "2026-08-06T03:00:00.000Z",
+            "avisoHoraMarcada": "",
+            "tipo": "normal",
+            "dateDM": "06/08",
+            "isExtra": false,
+            "frete": "R$ 120",
+            "weekday": "Quinta",
+            "rank": 5,
+            "team": "EQUIPE 1",
+            "encomenda": "Não",
+            "daysLeftTxt": "55 d"
+          }
+        ],
+        "extras": [
+          {
+            "avisoHoraMarcada": "",
+            "dateISO": "2026-06-30T03:00:00.000Z",
+            "tipo": "premium",
+            "isExtra": true,
+            "dateDM": "30/06",
+            "weekday": "Terça",
+            "frete": "R$ 320",
+            "rank": 1,
+            "team": "EQUIPE 1",
+            "daysLeftTxt": "18 d",
+            "encomenda": "Não"
+          },
+          {
+            "avisoHoraMarcada": "",
+            "dateISO": "2026-07-24T03:00:00.000Z",
+            "tipo": "especial",
+            "isExtra": true,
+            "dateDM": "24/07",
+            "weekday": "Sexta",
+            "frete": "R$ 220",
+            "rank": 3,
+            "team": "EQUIPE 1",
+            "encomenda": "Não",
+            "daysLeftTxt": "42 d"
+          }
+        ],
+        "timestamp": 1781289297535,
+        "startedAt": "2026-06-12T18:31:48.788Z",
+        "finishedAt": "2026-06-12T18:34:57.535Z",
+        "durationMs": 188747
+      }
+    }
+  },
+
+  "analise": {
+    "_nota": "Preenchido apos capturar fixture real/controlada.",
+    "casoTestado": "caso-premium-ou-especial",
+    "statusFinal": "done",
+    "quantidadeCandidatosNormais": 3,
+    "quantidadeCandidatosExtras": 2,
+    "quantidadePayloadCandidates": 5,
+    "temPayloadFinal": true,
+    "tiposObservados": [
+      "premium",
+      "normal",
+      "especial"
+    ],
+    "fretesObservados": [
+      "R$ 320",
+      "R$ 180",
+      "R$ 220",
+      "R$ 120"
+    ],
+    "equipesObservadas": [
+      "EQUIPE 1"
+    ],
+    "encontrouPremiumOuEspecial": true,
+    "camposConfirmados": [
+      "responseInicio.ok",
+      "responseInicio.clientToken",
+      "responseInicio.status",
+      "responseDone.progress.status",
+      "responseDone.progress.payload",
+      "responseDone.progress.payload.candidates",
+      "responseDone.progress.normais",
+      "responseDone.progress.extras",
+      "candidate.dateISO",
+      "candidate.dateDM",
+      "candidate.weekday",
+      "candidate.tipo",
+      "candidate.isExtra",
+      "candidate.frete",
+      "candidate.rank",
+      "candidate.team",
+      "candidate.daysLeftTxt",
+      "candidate.encomenda",
+      "candidate.avisoHoraMarcada"
+    ],
+    "camposPendentes": [
+      "hora marcada",
+      "sem disponibilidade",
+      "erro de entrada inválida"
+    ],
+    "observacoes": [
+      "Segunda fixture real/controlada capturada com modoCaptura=1.",
+      "Foram retornados 5 candidatos no payload final.",
+      "O payload.candidates contém candidatos normais e extras juntos.",
+      "progress.normais contém somente candidatos normal/isExtra false.",
+      "progress.extras contém candidatos premium/especial/isExtra true.",
+      "Os ranks são globais entre normais e extras.",
+      "Premium apareceu com isExtra true e frete R$ 320.",
+      "Especial apareceu com isExtra true e frete R$ 220."
+    ]
+  },
+
+  "sensibilidade": {
+    "dadosAnonimizados": true,
+    "camposRemovidos": [
+      "clientToken sintético gerado para fixture.",
+      "Endereço de teste controlado, sem identificação de cliente.",
+      "Coordenadas mantidas por serem necessárias para reproduzir o contrato da fixture."
+    ],
+    "observacoes": "Revisar antes de uso externo ao repositório."
+  }
+}

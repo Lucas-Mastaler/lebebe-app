@@ -68,3 +68,15 @@ trigger: always_on
 - Antes de criar novo helper, schema, hook, util ou service, verificar se já existe algo equivalente no projeto.
 - Evitar duplicação de regra de negócio.
 - Não espalhar regra nova em vários arquivos se o projeto já tiver um ponto central para isso.
+
+## 11. Continuidade entre agentes e log de progresso
+- Antes de iniciar qualquer tarefa relevante, ler `docs/ia/log_progress.md`, se existir.
+- Tratar esse arquivo como resumo de continuidade — não como fonte absoluta da verdade. Validar no código real qualquer informação necessária antes de alterar arquivos.
+- Ao finalizar uma tarefa relevante, atualizar `docs/ia/log_progress.md` registrando: data; agente/ferramenta usada; resumo do que foi feito; arquivos lidos; arquivos alterados/criados; validações realizadas; comandos rodados e resultados; pendências; riscos conhecidos; próximo passo recomendado.
+- Não apagar histórico validado.
+- Não inventar validação que não foi realizada.
+- Não registrar secrets, tokens, senhas ou dados sensíveis.
+- Não transformar o log em cópia do chat.
+- Não tratar o log como substituto da leitura do código.
+- Se algo não foi confirmado, escrever explicitamente "não confirmado".
+- Quando houver banco de dados, consultar o MCP Supabase antes de assumir tabelas, colunas, relações, policies, migrations ou queries.

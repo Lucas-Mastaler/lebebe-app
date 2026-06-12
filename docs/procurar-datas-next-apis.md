@@ -574,6 +574,123 @@ As rotas que chamam Apps Script dependem **indiretamente** dos seguintes serviç
 
 ---
 
+## 12.1. Rota diagnóstica v2 — implementada
+
+### `POST /api/procurar-datas/v2/diagnostico`
+
+**Status:** ✅ Implementada e validada (200 OK)
+
+**Propósito:**
+- Validar estrutura de entrada usando contrato existente (`PesquisarDatasRequest`)
+- Testar carregamento de config normalizada via `config-service.ts`
+- Demonstrar uso de helpers puros já migrados (tempo, equipe)
+- Confirmar que a arquitetura Next.js está pronta para o motor v2
+
+**O que faz:**
+- Recebe payload usando contrato existente da pesquisa atual
+- Diagnostica entrada (flags simples: temCep, temLatLng, tempoMinutos, etc.)
+- Carrega config normalizada com fallback para planilha
+- Testa helpers puros: `parseMinutos()`, `formatarMinutos()`, `normalizarEquipe()`
+- Retorna metadados seguros de config (origem, usandoFallbackPlanilha, faltantesNoSupabase)
+
+**O que NÃO faz:**
+- ❌ Não busca candidatos reais
+- ❌ Não chama Apps Script
+- ❌ Não chama OSRM
+- ❌ Não chama Google Calendar
+- ❌ Não altera produção
+- ❌ Não é usada pela tela atual
+- ❌ Não substitui `/api/procurar-datas/pesquisar`
+- ❌ Não agenda nada
+- ❌ Não grava dados
+- ❌ Não consulta agenda
+
+**Exemplo de request:**
+
+```json
+{
+  "cep": "80000-000",
+  "enderecoCompleto": "Endereco sintetico",
+  "lat": -25,
+  "lng": -49,
+  "destLat": -25,
+  "destLng": -49,
+  "tempoNecessario": "00:40",
+  "dataInicial": "2026-06-13",
+  "isRural": false,
+  "isCondominio": false
+}
+```
+
+**Exemplo de response (resumido):**
+
+```json
+{
+  "ok": true,
+  "versao": "v2-diagnostico",
+  "motor": "nextjs",
+  "modo": "diagnostico",
+  "producaoAfetada": false,
+  "duracaoMs": 245,
+  "entrada": {
+    "temCep": true,
+    "temEnderecoCompleto": true,
+    "temLatLng": true,
+    "temDestLatLng": true,
+    "tempoNecessario": "00:40",
+    "tempoMinutos": 40,
+    "dataInicial": "2026-06-13",
+    "isRural": false,
+    "isCondominio": false
+  },
+  "config": {
+    "origem": "supabase",
+    "usandoFallbackPlanilha": false,
+    "faltantesNoSupabase": [],
+    "resumo": {
+      "diasPesquisaAgenda": 90,
+      "equipe1Ativa": true,
+      "equipe2Ativa": true,
+      "kmMaximoNaSemanaM": 16000,
+      "kmMaximoNoSabadoM": 20000,
+      "valorSemanaAte10km": 400,
+      "valorSabadoAte10km": 500
+    }
+  },
+  "helpers": {
+    "tempoTeste": {
+      "input": "00:40",
+      "minutos": 40,
+      "formatado": "00:40"
+    },
+    "equipeTeste": {
+      "exemplos": [
+        { "input": "EQUIPE 1", "normalizado": "EQUIPE 1" },
+        { "input": "EQP 2", "normalizado": "EQUIPE 2" },
+        { "input": "equipe 01", "normalizado": "EQUIPE 1" },
+        { "input": "eqp inválida", "normalizado": null }
+      ]
+    }
+  },
+  "avisos": [
+    "Rota diagnóstica. Não busca candidatos e não substitui o motor legado.",
+    "Helpers puros testados: tempo (parse/format), equipe (normalização).",
+    "Config carregada via config-service com fallback para planilha."
+  ]
+}
+```
+
+**Validação:**
+- ✅ Teste manual em ambiente dev retornou 200 OK
+- ✅ Config carregada de Supabase (origem: "supabase", usandoFallbackPlanilha: false)
+- ✅ Helpers de tempo/equipe funcionando corretamente
+- ✅ Typecheck passou com 0 erros
+- ✅ Testes do motor passaram: 135 testes
+
+**Arquivo:** `src/app/api/procurar-datas/v2/diagnostico/route.ts`
+
+---
+
 ## 13. O que não deve ser alterado agora
 
 - Frontend (`src/app/procurar-datas/page.tsx`);

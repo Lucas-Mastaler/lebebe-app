@@ -25,6 +25,7 @@ import { validarAcessoProcurarDatas, respostaErroProcurarDatas } from '@/lib/pro
 import { buscarConfiguracoesProcurarDatas } from '@/lib/procurar-datas/config-service'
 import { parseMinutos, formatarMinutos } from '@/lib/procurar-datas/motor/tempo'
 import { normalizarEquipe } from '@/lib/procurar-datas/motor/equipe'
+import { normalizarEntradaPesquisaV2 } from '@/lib/procurar-datas/motor/entrada'
 import type { PesquisarDatasRequest } from '@/lib/procurar-datas/contratos'
 
 export const runtime = 'nodejs'
@@ -47,7 +48,10 @@ export async function POST(request: NextRequest) {
     // 2. Parse do body usando contrato existente
     const body = (await request.json()) as PesquisarDatasRequest
 
-    // 3. Diagnóstico da entrada (flags simples, sem expor dados sensíveis)
+    // 3. Normalizar entrada usando o normalizador puro do motor v2
+    const entradaNormalizada = normalizarEntradaPesquisaV2(body)
+
+    // 4. Diagnóstico da entrada (flags simples, sem expor dados sensíveis)
     const entrada = {
       temCep: !!body.cep && body.cep.trim().length > 0,
       temEnderecoCompleto: !!body.enderecoCompleto && body.enderecoCompleto.trim().length > 0,
@@ -60,7 +64,7 @@ export async function POST(request: NextRequest) {
       isCondominio: !!body.isCondominio,
     }
 
-    // 4. Carregar config normalizada (com fallback para planilha)
+    // 5. Carregar config normalizada (com fallback para planilha)
     const configResult = await buscarConfiguracoesProcurarDatas()
 
     const config = configResult.ok
@@ -87,7 +91,7 @@ export async function POST(request: NextRequest) {
           origemErro: configResult.origemErro,
         }
 
-    // 5. Testar helpers puros
+    // 6. Testar helpers puros
     const helpers = {
       // Tempo: converter HH:MM para minutos e voltar
       tempoTeste: entrada.tempoNecessario
@@ -107,7 +111,7 @@ export async function POST(request: NextRequest) {
       },
     }
 
-    // 6. Montar resposta diagnóstica
+    // 7. Montar resposta diagnóstica
     const duracaoMs = Date.now() - inicio
 
     return NextResponse.json(
@@ -119,10 +123,24 @@ export async function POST(request: NextRequest) {
         producaoAfetada: false,
         duracaoMs,
         entrada,
+        entradaNormalizada: {
+          cep: entradaNormalizada.cep,
+          temEnderecoCompleto: Boolean(entradaNormalizada.enderecoCompleto),
+          dataInicialISO: entradaNormalizada.dataInicialISO,
+          tempoNecessarioTexto: entradaNormalizada.tempoNecessarioTexto,
+          tempoNecessarioMin: entradaNormalizada.tempoNecessarioMin,
+          temEnderecoMinimo: entradaNormalizada.temEnderecoMinimo,
+          temCoordenadasDestino: entradaNormalizada.temCoordenadasDestino,
+          temCoordenadasOrigemInformada: Boolean(entradaNormalizada.coordenadasOrigemInformada),
+          isRural: entradaNormalizada.isRural,
+          isCondominio: entradaNormalizada.isCondominio,
+          avisos: entradaNormalizada.avisos,
+        },
         config,
         helpers,
         avisos: [
           'Rota diagnóstica. Não busca candidatos e não substitui o motor legado.',
+          'Normalizador de entrada v2 integrado: normalizarEntradaPesquisaV2().',
           'Helpers puros testados: tempo (parse/format), equipe (normalização).',
           'Config carregada via config-service com fallback para planilha.',
         ],

@@ -8,7 +8,7 @@
 
 ## 1. Estado atual resumido
 
-Última atualização: 2026-06-12 16:55  
+Última atualização: 2026-06-15 10:54  
 Agente/ferramenta: Cascade
 
 ### Resumo
@@ -189,6 +189,22 @@ Nenhuma.
 ---
 
 ## 10. Histórico resumido
+
+### 2026-06-15 — Módulo de recebimento: migrar edição de refs SKU para dentro do LocalModal
+
+Agente/ferramenta: Cascade  
+Resumo: Migrado o bloco de edição de Ref meia e Ref inteira do `ItemCard` (que aparecia diretamente na listagem) para dentro do `LocalModal` (que abre ao clicar no botão "Local"). Removidos estados e funções de refs do `ItemCard` (linhas 728-792 e 911-976). Adicionados estados e funções ao `LocalModal` com lógica de salvamento integrada: se refs não foram alteradas, salva apenas local; se refs foram alteradas, mostra confirmação obrigatória antes de salvar local + refs. Inputs de refs posicionados após "Volumes por Item" e antes dos botões finais do modal. Tratamento de erro: se salvamento das refs falhar, modal não fecha e mantém valores na tela. APIs, banco, timer, volumes, OS, divergências, finalização e Google Sheets não foram alterados.  
+Arquivos lidos: `src/app/recebimento/[id]/page.tsx`, `src/app/api/matic/sku/route.ts`, `src/app/api/matic/sku/[codigo]/route.ts`, `src/app/api/recebimento/[id]/route.ts`, `docs/ia/log_progress.md`.  
+Arquivos alterados: `src/app/recebimento/[id]/page.tsx` (remoção do bloco de refs do ItemCard, adição ao LocalModal com lógica de salvamento integrada), `docs/ia/log_progress.md`.  
+Arquivos criados: nenhum.  
+Validações realizadas: `npx tsc --noEmit --pretty` → sem erros. MCP Supabase não aplicado (tarefa não toca banco, queries, policies, migrations ou RLS).  
+Comandos rodados e resultados: `npx tsc --noEmit --pretty` → exit 0.  
+Pendências: validação manual em ambiente real para confirmar fluxo de salvamento e UX do modal.  
+Riscos conhecidos: nenhum em produção — apenas reorganização de UI existente, sem alteração de lógica de negócio ou APIs.  
+Próximo passo recomendado: validar manualmente em ambiente de desenvolvimento/teste o fluxo completo: abrir modal, alterar refs, confirmar, salvar, verificar se modal fecha corretamente e se dados persistem.  
+Status: concluído.
+
+---
 
 ### 2026-06-13 — Frente 3 / rota diagnóstica disponibilidade-diagnostico
 

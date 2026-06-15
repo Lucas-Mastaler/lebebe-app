@@ -89,11 +89,11 @@ export async function GET(
   // Normalize codes: remove leading zeros (02685 -> 2685)
   const { data: allSkus } = await supabase
     .from('matic_sku')
-    .select('ref_meia, ref_inteira, descricao, corredor_sugerido, nivel_sugerido, prateleira_sugerida, volumes_por_item')
+    .select('codigo_produto, ref_meia, ref_inteira, descricao, corredor_sugerido, nivel_sugerido, prateleira_sugerida, volumes_por_item')
 
   // Build map: normalized code -> SKU data
   // For each SKU, add entries for both ref_meia and ref_inteira (if present)
-  const skuMap = new Map<string, { descricao: string; ref_meia: string | null; corredor_sugerido: string | null; nivel_sugerido: string | null; prateleira_sugerida: string | null; volumes_por_item: number }>()
+  const skuMap = new Map<string, { codigo_produto: string; descricao: string; ref_meia: string | null; ref_inteira: string | null; corredor_sugerido: string | null; nivel_sugerido: string | null; prateleira_sugerida: string | null; volumes_por_item: number }>()
   if (allSkus) {
     for (const sku of allSkus) {
       // Add entry for ref_meia (if present)
@@ -225,6 +225,10 @@ export async function GET(
         sku_corredor_sugerido: sku?.corredor_sugerido,
         sku_nivel_sugerido: sku?.nivel_sugerido,
         sku_prateleira_sugerida: sku?.prateleira_sugerida,
+        sku_codigo_produto: sku?.codigo_produto || null,
+        sku_ref_meia: sku?.ref_meia || null,
+        sku_ref_inteira: sku?.ref_inteira || null,
+        sku_existe: !!sku,
         recebimento_item_volumes: volumes,
       }
     })

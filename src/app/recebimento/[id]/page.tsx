@@ -65,6 +65,10 @@ interface RecebimentoItem {
   sku_corredor_sugerido: string | null
   sku_nivel_sugerido: string | null
   sku_prateleira_sugerida: string | null
+  sku_codigo_produto: string | null
+  sku_ref_meia: string | null
+  sku_ref_inteira: string | null
+  sku_existe: boolean
 }
 
 interface RecebimentoDetail {
@@ -721,6 +725,71 @@ function ItemCard({
   onDivClick: () => void
 }) {
   const [loadingVolume, setLoadingVolume] = useState<number | null>(null)
+  const [editRefMeia, setEditRefMeia] = useState(item.sku_ref_meia || '')
+  const [editRefInteira, setEditRefInteira] = useState(item.sku_ref_inteira || '')
+  const [savingRefs, setSavingRefs] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+
+  const refChanged = editRefMeia !== (item.sku_ref_meia || '') || editRefInteira !== (item.sku_ref_inteira || '')
+
+  async function executeSaveRefs() {
+    setSavingRefs(true)
+    try {
+      if (item.sku_existe && item.sku_codigo_produto) {
+        // PATCH em SKU existente
+        const payload: Record<string, unknown> = {}
+        if (editRefMeia !== (item.sku_ref_meia || '')) payload.ref_meia = editRefMeia || null
+        if (editRefInteira !== (item.sku_ref_inteira || '')) payload.ref_inteira = editRefInteira || null
+        const res = await fetch(`/api/matic/sku/${encodeURIComponent(item.sku_codigo_produto)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const json = await res.json()
+        if (!res.ok) {
+          toast.error(`Erro ao salvar refs: ${json.error || 'desconhecido'}`)
+        } else {
+          toast.success('Refs salvas com sucesso')
+        }
+      } else {
+        // POST cria SKU novo
+        const codigoNF = item.nfe_item?.codigo_produto || ''
+        const payload = {
+          codigo_produto: codigoNF,
+          descricao: item.sku_descricao || item.nfe_item?.descricao || '',
+          ref_meia: editRefMeia || null,
+          ref_inteira: editRefInteira || null,
+          volumes_por_item: item.volumes_por_item || 1,
+          ativo: true,
+        }
+        const res = await fetch('/api/matic/sku', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const json = await res.json()
+        if (!res.ok) {
+          toast.error(`Erro ao criar SKU: ${json.error || 'desconhecido'}`)
+        } else {
+          toast.success('SKU criado e refs salvas')
+        }
+      }
+    } catch {
+      toast.error('Erro de conexão ao salvar refs')
+    } finally {
+      setSavingRefs(false)
+      setShowConfirm(false)
+    }
+  }
+
+  function handleSaveRefs() {
+    if (!refChanged) return
+    setShowConfirm(true)
+  }
+
+  function handleCancelConfirm() {
+    setShowConfirm(false)
+  }
 
   const status = item.status_calculado
   const bgColor =
@@ -838,6 +907,73 @@ function ItemCard({
           </span>
         )}
       </div>
+
+      {/* Refs edit (sensíveis) */}
+      {!isFechado && (
+        <div className="bg-amber-50/40 border border-amber-200 rounded-lg p-2 mb-3">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <AlertTriangle className="w-3 h-3 text-amber-600" />
+            <span className="text-[10px] font-semibold text-amber-700">Refs do cadastro SKU (sensível)</span>
+          </div>
+          <div className="flex gap-2 items-end">
+            <div className="flex-1 min-w-0">
+              <label className="text-[10px] text-amber-600 block mb-0.5">Ref meia</label>
+              <input
+                type="text"
+                value={editRefMeia}
+                onChange={e => setEditRefMeia(e.target.value)}
+                className="w-full border border-amber-300 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white"
+                placeholder="Ref meia"
+              />
+            </div>
+            <div className="flex-1 min-w-0">
+              <label className="text-[10px] text-amber-600 block mb-0.5">Ref inteira</label>
+              <input
+                type="text"
+                value={editRefInteira}
+                onChange={e => setEditRefInteira(e.target.value)}
+                className="w-full border border-amber-300 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white"
+                placeholder="Ref inteira"
+              />
+            </div>
+            <button
+              onClick={handleSaveRefs}
+              disabled={!refChanged || savingRefs}
+              className={`flex-shrink-0 px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                refChanged && !savingRefs
+                  ? 'bg-amber-600 text-white hover:bg-amber-700'
+                  : 'bg-amber-200 text-amber-500 cursor-not-allowed'
+              }`}
+            >
+              {savingRefs ? '...' : item.sku_existe ? 'Salvar' : 'Criar SKU'}
+            </button>
+          </div>
+
+          {/* Modal de confirmação inline */}
+          {showConfirm && (
+            <div className="mt-2 p-2 bg-amber-100 border border-amber-300 rounded-md">
+              <p className="text-[11px] text-amber-800 mb-2 leading-relaxed">
+                <strong>Atenção:</strong> Alterar Ref meia ou Ref inteira pode afetar o matching de futuras notas fiscais e pode gerar SKU duplicado se preenchido incorretamente. Confirma salvar?
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleCancelConfirm}
+                  className="flex-1 py-1.5 rounded-md text-xs font-medium border border-amber-300 text-amber-700 hover:bg-amber-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={executeSaveRefs}
+                  disabled={savingRefs}
+                  className="flex-1 py-1.5 rounded-md text-xs font-medium bg-amber-600 text-white hover:bg-amber-700 transition-colors disabled:opacity-50"
+                >
+                  {savingRefs ? 'Salvando...' : 'Confirmar e Salvar'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Progress */}
       <div className="flex items-center justify-between text-xs text-slate-500 mb-2">

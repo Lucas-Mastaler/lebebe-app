@@ -36,12 +36,18 @@ function criarCandidatoBase(
     },
     motivos: [],
     avisos: [],
+    ...overrides,
+    limites: overrides?.limites ?? {
+      limiteBaseM: 5000,
+      limiteEspecialM: 10000,
+      limitePremiumM: 15000,
+    },
     diagnostico: {
       origem: 'v2-preliminar',
-      classificacaoTipo: 'normal',
-      classificacaoElegivel: true,
+      classificacaoTipo: overrides?.tipo ?? 'normal',
+      classificacaoElegivel: overrides?.elegivel ?? true,
+      ...overrides?.diagnostico,
     },
-    ...overrides,
   }
 }
 

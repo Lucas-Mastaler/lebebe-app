@@ -153,9 +153,8 @@ export function normalizarEntradaPesquisaV2(
   let tempoNecessarioMin: number | null = null
   if (tempoNecessarioTexto) {
     const minutos = parseMinutos(tempoNecessarioTexto)
-    // parseMinutos retorna 0 para string vazia; aqui já garantimos não-vazio.
-    // Consideramos inválido se retornar 0 para string não-vazia (ex: "abc" → 0)
-    // ou se o formato não for HH:MM com horas > 0 ou minutos > 0.
+    // parseMinutos agora retorna 0 para formatos inválidos (abc, 2, 2:, :05, 99:99)
+    // e retorna o valor correto para formatos válidos (2:05, 02:05, 0:40, 00:40)
     if (minutos > 0) {
       tempoNecessarioMin = minutos
     } else {

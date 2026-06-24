@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { validateComercialUser } from '@/lib/auth/sgi-auth'
 import { montarTranscriptChamado } from '@/lib/ia/transcript'
+import { extrairTrechosFatuais } from '@/lib/ia/extrair-trechos-fatuais'
 import { analisarChamadoIA, analisarConsolidadoIA } from '@/lib/ia/deepseek-client'
 
 export const runtime = 'nodejs'
@@ -328,9 +329,11 @@ async function finalizarJob(
   const chamadosTruncados = (analisados ?? []).filter((a) => a.transcript_truncado === true).length
   console.log(`[IA][RESUMO-TRUNCAMENTO] numero_lancamento=${numeroLancamento} chamadosAnalisados=${chamadosAnalisados} chamadosTruncados=${chamadosTruncados}`)
 
-  // Busca protocolos dos tickets para enriquecer o consolidado
+  // Busca protocolos e ordem do ciclo para enriquecer o consolidado
   const ticketIds = (analisados ?? []).map((a) => a.digisac_ticket_id)
   const protocoloMap: Record<string, string | null> = {}
+  const ordemMap: Record<string, number | null> = {}
+  const dataConversaMap: Record<string, string | null> = {}
   if (ticketIds.length > 0) {
     const { data: conversas } = await supabase
       .from('digisac_conversas_resumo')
@@ -339,13 +342,65 @@ async function finalizarJob(
     for (const c of (conversas ?? [])) {
       protocoloMap[c.digisac_ticket_id] = c.protocolo
     }
+
+    const { data: vinculos } = await supabase
+      .from('venda_conversa_vinculos')
+      .select('digisac_ticket_id, ordem_conversa_para_venda, data_conversa')
+      .eq('numero_lancamento', numeroLancamento)
+      .in('digisac_ticket_id', ticketIds)
+    for (const v of (vinculos ?? [])) {
+      ordemMap[v.digisac_ticket_id] = v.ordem_conversa_para_venda ?? null
+      dataConversaMap[v.digisac_ticket_id] = v.data_conversa ?? null
+    }
   }
+
+  // Rebusca transcripts para extrair trechos fatuais (datas, valores, prazo, link, pagamento)
+  // que podem ter sido omitidos no resumo individual mas são necessários ao consolidado
+  const transcriptFatuaisMap: Record<string, string[]> = {}
+  if (ticketIds.length > 0) {
+    await Promise.all(
+      ticketIds.map(async (ticketId) => {
+        try {
+          const { transcript } = await montarTranscriptChamado(ticketId)
+          transcriptFatuaisMap[ticketId] = extrairTrechosFatuais(transcript)
+        } catch {
+          transcriptFatuaisMap[ticketId] = []
+        }
+      })
+    )
+  }
+
+  // Busca produtos comprados da venda para incluir no contexto do consolidado
+  const { data: produtosVendaConsolidado } = await supabase
+    .from('sgi_documentos_saida_produtos')
+    .select('produto, departamento_classificado, subgrupo_classificado')
+    .eq('numero_lancamento', numeroLancamento)
+
+  const produtosCompradosLista = (produtosVendaConsolidado ?? []).map((p) => {
+    const partes = [p.produto, p.departamento_classificado, p.subgrupo_classificado].filter(Boolean)
+    return partes.join(' — ')
+  })
+
+  const { data: vendaConsolidado } = await supabase
+    .from('sgi_documentos_saida')
+    .select('data_fechamento')
+    .eq('numero_lancamento', numeroLancamento)
+    .maybeSingle()
+
+  const dataFechamentoVenda = vendaConsolidado?.data_fechamento
+    ? new Date(vendaConsolidado.data_fechamento).toLocaleDateString('pt-BR')
+    : null
 
   try {
     const consolidadoPrompt = montarPromptConsolidado(
       numeroLancamento,
       analisados ?? [],
-      protocoloMap
+      protocoloMap,
+      ordemMap,
+      dataConversaMap,
+      dataFechamentoVenda,
+      produtosCompradosLista,
+      transcriptFatuaisMap
     )
 
     const consolidado = await analisarConsolidadoIA(consolidadoPrompt)
@@ -372,6 +427,16 @@ async function finalizarJob(
         conclusao_comercial: consolidado.conclusao_comercial,
         nome_bebe: consolidado.nome_bebe,
         previsao_nascimento_bebe: consolidado.previsao_nascimento_bebe,
+        produtos_fechados: consolidado.produtos_fechados,
+        produtos_interesse_nao_fechados: consolidado.produtos_interesse_nao_fechados,
+        tipo_fechamento: consolidado.tipo_fechamento,
+        confianca_tipo_fechamento: consolidado.confianca_tipo_fechamento,
+        evidencias_tipo_fechamento: consolidado.evidencias_tipo_fechamento,
+        negociacoes_prazo: consolidado.negociacoes_prazo,
+        negociacoes_frete: consolidado.negociacoes_frete,
+        negociacoes_desconto: consolidado.negociacoes_desconto,
+        negociacoes_pagamento: consolidado.negociacoes_pagamento,
+        valores_citados: consolidado.valores_citados,
         total_chamados_analisados: (analisados ?? []).length,
         modelo_ia: consolidado.modelo_ia,
         gerado_em: new Date().toISOString(),
@@ -503,6 +568,47 @@ Se a conversa atual trouxer dado diferente, sinalize como possível divergência
 
 ## INSTRUÇÃO FINAL
 Compare o conteúdo da conversa com os produtos listados acima. Se houver menção a produto ou categoria que conste na lista, não classifique como "Não". Seja criterioso para não inventar influência, mas não ignore relação direta entre conversa e produto comprado.
+
+## REGRA SOBRE PRODUTOS RELACIONADOS E INFLUÊNCIA INDIRETA
+
+### Móveis do quarto de bebê — jornada forte
+No contexto da Le Bébé, berço, cômoda, roupeiro, cama, cama auxiliar, poltrona e colchão pertencem à mesma jornada forte de móveis do quarto de bebê.
+Se o chamado tratou de um desses móveis e a venda fechou outro móvel da mesma lista:
+- NÃO classifique automaticamente como "Não" apenas porque o móvel conversado difere do comprado.
+- Avalie se houve intenção de compra, orçamento, prazo, condição de pagamento, visita à loja ou continuidade do atendimento.
+- Se houver qualquer um desses sinais comerciais, classifique como "Parcialmente" com grau "Baixo" ou "Médio".
+- Explique no "motivo_influencia" a divergência de produto e a relação indireta com a jornada de compra.
+
+### Enxoval e acessórios — categoria separada
+Lençol, kit berço, toalha, fronha, trocador, enxoval de quarto, itens têxteis, higiene e acessórios são outra categoria.
+Não trate enxoval como equivalente direto a móveis.
+- Se o chamado tratou apenas de enxoval/acessórios e a venda final foi de móveis: influência Baixa ou Nenhuma, salvo se houver evidência clara de que a conversa levou à visita à loja, pagamento ou continuidade comercial relevante.
+- Se o chamado tratou apenas de móvel e a venda final foi apenas de enxoval/acessórios: influência Baixa ou Nenhuma, salvo se houver evidência de continuidade comercial clara.
+
+### Influência por ida à loja
+Se a conversa via WhatsApp levou o cliente à loja e a venda foi registrada depois da visita, a ida à loja pode ser considerada evidência de influência parcial/indireta, mesmo que o produto comprado seja diferente do tratado na conversa.
+Sinal forte: cliente disse que iria à loja pagar/comprar e a venda foi registrada após o chamado.
+
+Exemplo:
+Conversa: roupeiro, valor, pagamento, cliente diz que irá à loja. Venda registrada: cômoda (móvel).
+Classificação esperada:
+- influencia_compra: "Parcialmente"
+- grau_influencia: "Médio" ou "Baixo"
+- motivo_influencia: "O chamado tratou de roupeiro (móvel de quarto), valor, pagamento e ida à loja. O produto conversado é diferente do comprado, mas ambos são móveis da mesma jornada. A conversa pode ter contribuído indiretamente para a visita e o fechamento."
+
+Chamado com abordagem sem resposta do cliente: manter "Não / Nenhum" se não houver conteúdo comercial relevante.
+
+## REGRA CONTRA INFERÊNCIA FORTE
+Não transforme informação recebida (prazo, frete, desconto, condição de pagamento) em causa principal de fechamento sem evidência explícita.
+
+Se o cliente apenas perguntou o prazo e a consultora informou uma data:
+- NÃO afirmar: "O prazo adequado foi o principal motivo do fechamento."
+- Afirmar com cautela: "O prazo foi informado e pode ter sido um fator de apoio na decisão." ou "Prazo tratado; não há confirmação de que foi determinante."
+
+Se o cliente não demonstrou resistência explícita a nenhum item, não registre objeção.
+Se o cliente apenas recebeu informação de preço/condição sem negociar, não registre como negociação ou motivo de fechamento.
+
+Estas regras valem para os campos "motivo_influencia", "objecoes_identificadas" e "pontos_de_atencao".
 
 ## DADOS DO BEBÊ — REGRAS OBRIGATÓRIAS
 
@@ -772,14 +878,37 @@ async function salvarDadosBebeCliente(p: SalvarBebeParams) {
 function montarPromptConsolidado(
   numeroLancamento: string,
   analisados: Record<string, unknown>[],
-  protocoloMap: Record<string, string | null>
+  protocoloMap: Record<string, string | null>,
+  ordemMap: Record<string, number | null>,
+  dataConversaMap: Record<string, string | null>,
+  dataFechamentoVenda: string | null,
+  produtosComprados: string[],
+  transcriptFatuaisMap: Record<string, string[]> = {}
 ): string {
-  const resumos = analisados.map((a, i) => {
-    const protocolo = protocoloMap[a.digisac_ticket_id as string] ?? 'sem protocolo'
+  // Ordena por ordem_conversa_para_venda ASC; fallback: mantém ordem atual
+  const analisadosOrdenados = [...analisados].sort((a, b) => {
+    const oA = ordemMap[a.digisac_ticket_id as string] ?? Number.MAX_SAFE_INTEGER
+    const oB = ordemMap[b.digisac_ticket_id as string] ?? Number.MAX_SAFE_INTEGER
+    return oA - oB
+  })
+
+  const resumos = analisadosOrdenados.map((a, i) => {
+    const ticketId = a.digisac_ticket_id as string
+    const protocolo = protocoloMap[ticketId] ?? 'sem protocolo'
+    const numeroCiclo = ordemMap[ticketId] ?? (i + 1)
+    const dataRawChamado = dataConversaMap[ticketId] ?? null
+    const dataChamadoFmt = dataRawChamado
+      ? (() => { try { return new Date(dataRawChamado).toLocaleDateString('pt-BR') } catch { return dataRawChamado } })()
+      : 'não informada'
     const dadosBebe = (a.nome_bebe || a.previsao_nascimento_bebe)
       ? `\n- Dados do bebê: nome=${a.nome_bebe ?? 'null'}, previsão=${a.previsao_nascimento_bebe ?? 'null'}`
       : ''
-    return `### Chamado ${i + 1} (ticket_id: ${a.digisac_ticket_id}, protocolo: ${protocolo})
+    const trechos = transcriptFatuaisMap[ticketId] ?? []
+    const trechosFatuaisStr = trechos.length > 0
+      ? `\n- Trechos fatuais da conversa (datas, valores, prazo, pagamento, link):\n${trechos.map((t) => `  • ${t}`).join('\n')}`
+      : ''
+    return `### Chamado Nº ${numeroCiclo} — Protocolo ${protocolo}
+- Data do chamado: ${dataChamadoFmt}
 - Influência: ${a.influencia_compra}
 - Grau: ${a.grau_influencia}
 - Motivo: ${a.motivo_influencia}
@@ -788,12 +917,12 @@ function montarPromptConsolidado(
 - Sentimento: ${a.sentimento_cliente}
 - Produtos mencionados: ${JSON.stringify(a.produtos_mencionados)}
 - Objeções: ${JSON.stringify(a.objecoes_identificadas)}
-- Pontos de atenção: ${JSON.stringify(a.pontos_de_atencao)}${dadosBebe}`
+- Pontos de atenção: ${JSON.stringify(a.pontos_de_atencao)}${dadosBebe}${trechosFatuaisStr}`
   }).join('\n\n')
 
   // Agrega dados de bebê de todos os chamados individuais para contexto do consolidado
-  const nomeBebeAgg = analisados.map(a => a.nome_bebe as string | null).find(v => v) ?? null
-  const previsaoAgg = analisados.map(a => a.previsao_nascimento_bebe as string | null).find(v => v) ?? null
+  const nomeBebeAgg = analisadosOrdenados.map(a => a.nome_bebe as string | null).find(v => v) ?? null
+  const previsaoAgg = analisadosOrdenados.map(a => a.previsao_nascimento_bebe as string | null).find(v => v) ?? null
   const ctxBebe = (nomeBebeAgg || previsaoAgg)
     ? `\n\nDados do bebê já identificados nos chamados individuais:
 - Nome do bebê: ${nomeBebeAgg ?? 'não encontrado'}
@@ -801,23 +930,226 @@ function montarPromptConsolidado(
 Propague esses valores para os campos "nome_bebe" e "previsao_nascimento_bebe" do consolidado, mantendo exatamente o valor encontrado.`
     : `\n\nNenhum dado do bebê encontrado nos chamados individuais. Retorne "nome_bebe": null e "previsao_nascimento_bebe": null.`
 
+  const produtosCompradosStr = produtosComprados.length > 0
+    ? produtosComprados.map((pr, i) => `  ${i + 1}. ${pr}`).join('\n')
+    : '  (não informado)'
+
+  const ctxDataVenda = dataFechamentoVenda
+    ? `\nData da venda registrada no SGI: ${dataFechamentoVenda}`
+    : ''
+
   return `## Análise consolidada da venda ${numeroLancamento}
 
-Total de chamados analisados: ${analisados.length}${ctxBebe}
+Total de chamados analisados: ${analisadosOrdenados.length}${ctxDataVenda}${ctxBebe}
+
+## PRODUTOS COMPRADOS NESTA VENDA (fonte: SGI)
+${produtosCompradosStr}
 
 ${resumos}
 
-## REGRAS PARA oportunidades_melhoria, principais_objecoes e pontos_de_atencao
-Sempre que listar uma oportunidade, objeção ou ponto de atenção relevante, indique o chamado de origem quando possível.
-Use o formato: "(chamado N — protocolo XXXXXX)" onde N é o número do chamado na ordem acima.
-Exemplo: "Agilizar follow-up com clientes que adiam decisão até descobrir o sexo do bebê (chamado 5 — protocolo 2026052269390)"
+## REGRAS DE NUMERAÇÃO
+Cada chamado acima tem um "Nº" explícito (ex: "Chamado Nº 1", "Chamado Nº 2").
+Ao referenciar chamados em qualquer campo do JSON, use SEMPRE o Nº informado acima.
+Não crie numeração própria. Não use a posição do texto como referência.
+Sempre cite também o protocolo quando disponível.
+Formato obrigatório: "(chamado Nº N — protocolo XXXXXX)"
+Exemplo: "Cliente indeciso sobre o modelo (chamado Nº 2 — protocolo 2026052269390)"
 Se não houver chamado específico, omita a referência.
+
+## REGRA SOBRE STATUS DA VENDA
+Esta análise sempre parte de uma venda já registrada no SGI. Não trate a venda como em andamento, pendente, a finalizar ou com perspectiva de conclusão. Analise no passado, considerando que a venda já existe. O objetivo é entender se os chamados influenciaram essa venda, quais produtos apareceram na conversa, quais produtos foram comprados e quais oportunidades ficaram abertas. Se houver divergência entre produtos da conversa e produtos comprados, descreva como divergência ou oportunidade não convertida, não como venda futura.
+Use expressões como: "a venda foi registrada", "a venda foi fechada", "os chamados influenciaram a venda", "os chamados não influenciaram a venda", "houve relação parcial com a venda", "há possível divergência entre conversa e itens comprados".
+Evite expressões como: "a venda está em andamento", "a venda está em estágio avançado", "com perspectiva de conclusão", "deve dar continuidade para finalizar a venda", "cliente com intenção de pagamento" como se a venda ainda não tivesse acontecido.
+O campo "resumo_geral" deve resumir a relação dos chamados com uma venda já registrada.
+O campo "conclusao_comercial" deve concluir a influência comercial sobre a venda já registrada.
 
 ## REGRAS PARA nome_bebe e previsao_nascimento_bebe
 Estes campos são INDEPENDENTES e SEMPRE devem aparecer no JSON.
 - Se algum chamado individual já trouxe esses dados, propague-os para o consolidado.
 - Se nenhum chamado trouxe, retorne null para ambos.
 - Não invente dados que não estejam nos chamados.
+
+## REGRAS PARA CAMPOS COMERCIAIS NOVOS
+
+### produtos_fechados
+- Liste SOMENTE os produtos que constam em "PRODUTOS COMPRADOS NESTA VENDA" acima.
+- Não inclua produtos mencionados na conversa que não estejam na lista de comprados.
+- Se a lista de comprados estiver vazia, retorne array vazio.
+- Use o nome do produto exatamente como aparece na lista de comprados, sem abreviar.
+
+### produtos_interesse_nao_fechados
+- Liste produtos ou categorias mencionados nos chamados que NÃO aparecem em "PRODUTOS COMPRADOS NESTA VENDA".
+- Compare pelo nome/categoria: se um produto mencionado for equivalente a um comprado (mesmo que nome ligeiramente diferente), não o inclua como oportunidade, ou marque como "possível oportunidade (confirmar nomenclatura)".
+- Se não houver produto mencionado diferente do comprado, retorne array vazio.
+
+### REGRA SOBRE PRODUTOS RELACIONADOS DE QUARTO DE BEBÊ
+
+#### Móveis do quarto — jornada forte
+Berço, cômoda, roupeiro, cama, cama auxiliar, poltrona e colchão pertencem à mesma jornada forte de móveis do quarto de bebê.
+Se a conversa menciona um desses móveis e a venda registrada fecha outro móvel da mesma lista:
+- Não trate automaticamente como ausência de influência.
+- Avalie se houve intenção de compra, visita à loja, negociação de prazo/pagamento ou continuidade de atendimento — se sim, classifique como influência parcial ou indireta.
+- Registre a divergência entre produto mencionado e produto comprado.
+- Trate o produto mencionado e não comprado como oportunidade não convertida em "produtos_interesse_nao_fechados".
+- Não descarte a influência do atendimento apenas porque o item final foi diferente do item tratado na conversa.
+
+#### Enxoval e acessórios — categoria separada
+Lençol, kit berço, toalha, fronha, trocador, enxoval de quarto, itens têxteis, higiene e acessórios são outra categoria. Não os trate como equivalentes diretos a móveis.
+Se a conversa foi apenas sobre enxoval/acessórios e a venda fechou móveis (ou vice-versa): não classifique automaticamente como influência. Avalie se a conversa levou à visita à loja, pagamento ou continuidade comercial relevante antes de atribuir influência parcial.
+
+#### Influência por ida à loja
+Se a conversa via WhatsApp levou o cliente à loja e a venda foi registrada depois, a ida à loja pode ser evidência de influência parcial/indireta mesmo que o produto comprado seja diferente do tratado na conversa.
+Exemplo: cliente conversou sobre roupeiro (móvel), disse que iria à loja pagar, e a venda fechou cômoda (outro móvel). Nesse caso: o atendimento tem influência parcial, o roupeiro é oportunidade não convertida, e o tipo de fechamento deve refletir que houve conversa digital antes da ida à loja.
+
+### tipo_fechamento
+Classifique obrigatoriamente com UM dos valores exatos abaixo:
+- "Presencial — visitou a loja e comprou na loja"
+- "Digital — não visitou a loja e comprou online"
+- "Misto — visitou a loja e comprou depois online"
+- "Misto — conversou online e comprou depois presencialmente"
+- "Indefinido — não há evidência suficiente"
+
+CRITÉRIOS DETALHADOS — leia com atenção antes de classificar:
+
+"Presencial — visitou a loja e comprou na loja"
+Use SOMENTE quando:
+- Não há atendimento digital relevante antes do fechamento; OU
+- O atendimento digital existente é claramente irrelevante ou sem influência na venda.
+NÃO use este valor quando houve conversa no WhatsApp sobre produto, prazo, orçamento, condições de pagamento ou visita antes da venda ser registrada.
+
+"Misto — conversou online e comprou depois presencialmente"
+Use quando:
+- Houve conversa relevante no WhatsApp antes da venda (tratou de produto, prazo, orçamento, pagamento ou visita à loja).
+- O cliente indicou que iria à loja pagar/comprar; E
+- Não há evidência de link de pagamento enviado, pagamento remoto ou fechamento pelo WhatsApp.
+Na operação da Le Bébé, quando a venda é remota normalmente há evidência na conversa de link de pagamento ou confirmação de pagamento digital. Se não há essa evidência e o cliente disse que iria à loja, o pagamento/fechamento foi presencial — mas como houve atendimento digital relevante antes, a classificação correta é MISTO, não presencial puro.
+Exemplo: cliente conversou no WhatsApp sobre móvel de quarto de bebê, recebeu prazo/condições, disse que iria à loja passar o cartão, a venda foi registrada no SGI. → "Misto — conversou online e comprou depois presencialmente".
+
+"Digital — não visitou a loja e comprou online"
+Use quando:
+- Há evidência de link de pagamento enviado/usado; OU
+- Pagamento remoto confirmado; OU
+- Fechamento pelo WhatsApp sem indicação de visita à loja.
+
+"Misto — visitou a loja e comprou depois online"
+Use quando:
+- Há evidência de visita presencial à loja; E depois
+- Há envio/uso de link de pagamento ou fechamento remoto.
+
+"Indefinido — não há evidência suficiente"
+Use quando não há evidência suficiente sobre visita, link, pagamento ou caminho de fechamento. Não force conclusão.
+
+Use "Indefinido" se não houver evidência clara. Prefira "Misto — conversou online e comprou depois presencialmente" a "Presencial puro" sempre que houver atendimento digital relevante antes da venda.
+
+### confianca_tipo_fechamento
+Um dos valores exatos: "Alta" | "Média" | "Baixa"
+
+### evidencias_tipo_fechamento
+- Array de strings curtas e auditáveis.
+- Cite "chamado Nº X — protocolo XXXXXX" quando possível.
+- Não invente evidência.
+- Se classificou como "Indefinido", explique quais evidências faltaram.
+
+## REGRAS DE FORMATO
+- Datas devem estar em dd/mm/aaaa quando citadas.
+- Valores monetários devem estar em R$ 0,00 quando citados.
+
+## REGRA SOBRE DATAS E ANO DE REFERÊNCIA
+Cada chamado acima tem uma "Data do chamado" explícita. Use essa data como referência principal para interpretar datas mencionadas na conversa.
+A venda analisada também tem data registrada no SGI (informada no cabeçalho desta análise) como referência secundária para validar o ciclo.
+- Quando a conversa mencionar uma data sem ano (ex: "05/03"), complete o ano usando o ano do chamado se a data fizer sentido no ciclo da venda.
+- Exemplo: chamado ocorreu em 25/02/2026, conversa menciona entrega em "05/03" → registre como 05/03/2026.
+- Se a data dd/mm já passou em relação à data do chamado e o contexto indicar prazo futuro, use o próximo ano somente quando fizer sentido claro.
+- Não escreva "ano não confirmado" quando o ano puder ser inferido com segurança pela data do chamado e pelo ciclo da venda.
+- Marque como ambíguo (confianca "Baixa") somente quando houver conflito real ou ausência de contexto.
+- Nunca invente data sem base na conversa ou no chamado.
+
+## USO DOS TRECHOS FATUAIS
+
+Cada chamado acima pode conter uma seção "Trechos fatuais da conversa". Esses trechos são extraídos diretamente da conversa original e têm PRIORIDADE MÁXIMA para extração de negociações comerciais.
+
+REGRAS OBRIGATÓRIAS:
+- Se um trecho fatual contém uma data (ex: "05/03", "dia 05/03"), use essa data em data_prometida. Não escreva "data não especificada na conversa" se a data aparece nos trechos.
+- Se um trecho fatual contém um valor monetário (ex: "R$ 1.400,00"), registre em valores_citados ou negociações conforme contexto.
+- Se um trecho fatual contém menção a link de pagamento, pagamento via cartão/pix/boleto, registre em negociacoes_pagamento.
+- Se um trecho fatual contém menção a entrega, montagem, prazo ou data prometida, registre em negociacoes_prazo.
+- Se um trecho fatual contém menção a frete, registre em negociacoes_frete.
+- Se um trecho fatual contém menção a desconto ou condição especial, registre em negociacoes_desconto.
+- Não ignore trechos fatuais. Eles existem porque o resumo individual pode ter omitido informações objetivas.
+- Nunca escreva "data não especificada na conversa" se a data aparece nos trechos fatuais.
+- Nunca escreva "ano não confirmado" se o ano é dedutível pela data do chamado.
+
+## NEGOCIAÇÕES COMERCIAIS — EXTRAIR DOS CHAMADOS
+
+Extraia negociações reais encontradas nos chamados analisados. Todos os campos são arrays que devem ser retornados mesmo que vazios.
+
+### negociacoes_prazo
+Registre APENAS quando houver conversa real sobre entrega, montagem, retirada, data prometida, urgência ou prazo comercial.
+- Não registre prazo apenas por menção de produto.
+- Não diga que prazo foi o motivo principal do fechamento sem evidência explícita.
+- Se prazo foi apenas informado (sem negociação), use resumo como "Prazo informado" e confianca "Média" ou "Baixa".
+- data_prometida: sempre em dd/mm/aaaa. Use a "Data do chamado" do bloco correspondente para inferir o ano quando a data da conversa vier sem ano (ex: "05/03" no chamado de 25/02/2026 → 05/03/2026). Não escreva "ano não confirmado" se o ano for deduízvel pela data do chamado. Se a data for relativa ("amanhã", "semana que vem") e não houver data numérica na conversa, registre no resumo exatamente como foi dito e deixe data_prometida como null.
+- Cite chamado_numero e protocolo quando possível.
+- Se não houver negociação de prazo: retorne array vazio [].
+Estrutura de cada item:
+{ "tipo": "prazo", "resumo": "...", "data_prometida": "dd/mm/aaaa ou null", "evidencia": "...", "chamado_numero": N ou null, "protocolo": "..." ou null, "confianca": "Alta|Média|Baixa" }
+
+### negociacoes_frete
+Registre APENAS quando houver menção clara a frete, entrega paga, taxa de entrega, isenção de frete ou negociação de entrega.
+- Não invente frete a partir de endereço ou CEP.
+- Não assuma desconto no frete se só houve consulta de CEP.
+- Valores em R$ 0,00.
+- Se não houver negociação de frete: retorne array vazio [].
+Estrutura de cada item:
+{ "tipo": "frete", "valor_original": "R$ 0,00 ou null", "valor_negociado": "R$ 0,00 ou null", "resumo": "...", "evidencia": "...", "chamado_numero": N ou null, "protocolo": "..." ou null, "confianca": "Alta|Média|Baixa" }
+
+### negociacoes_desconto
+Registre APENAS quando houver pedido ou oferta clara de desconto, abatimento, condição especial, redução de preço ou comparação de valor.
+- Não considere valor citado como desconto automaticamente.
+- Se a conversa apenas cita preço: registrar em valores_citados, não aqui.
+- Se houver valor original e final: preencher ambos. Se houver percentual explícito: preencher percentual.
+- Não calcule percentual se não foi informado explicitamente.
+- Se não houver desconto: retorne array vazio [].
+Estrutura de cada item:
+{ "tipo": "desconto", "valor_original": "R$ 0,00 ou null", "valor_final": "R$ 0,00 ou null", "percentual": "...% ou null", "resumo": "...", "evidencia": "...", "chamado_numero": N ou null, "protocolo": "..." ou null, "confianca": "Alta|Média|Baixa" }
+
+### negociacoes_pagamento
+Registre quando houver menção a cartão, pix, boleto, dinheiro, parcelamento, link de pagamento, pagamento na loja ou pagamento remoto.
+
+REGRAS OBRIGATÓRIAS PARA LINK DE PAGAMENTO:
+- houve_link_pagamento = true SEMPRE QUE: a atendente ofereceu enviar o link, sugeriu o link, perguntou se o cliente quer receber o link, ou disse "posso enviar o link", "prefere receber o link", "posso estar enviando o link" — mesmo que o link não tenha sido enviado ou usado.
+- houve_link_pagamento = false apenas quando não há nenhuma menção a link de pagamento na conversa.
+- link_usado_confirmado = true SOMENTE quando há confirmação de pagamento pelo link, fechamento remoto confirmado ou mensagem explícita de uso do link.
+- link_usado_confirmado = false quando: o link foi apenas oferecido/sugerido mas não há confirmação de envio ou uso; o cliente disse que iria à loja; o cliente não respondeu sobre o link.
+- Não confunda oferta de link com envio de link. Não confunda envio de link com uso de link.
+- O campo "resumo" deve descrever o estado real: "Link oferecido/sugerido — não confirmado como enviado ou usado." quando aplicável.
+- O campo "evidencia" deve citar a mensagem exata e o chamado.
+- Se o cliente já indicou que iria à loja passar cartão e não há confirmação de uso do link: forma = "cartão na loja" (ou equivalente), link_usado_confirmado = false.
+- Não classifique venda como digital apenas porque houve oferta de link.
+- Não retorne houve_link_pagamento = false quando houve oferta/sugestão de link.
+- Se não houver negociação de pagamento: retorne array vazio [].
+Estrutura de cada item:
+{ "tipo": "pagamento", "forma": "..." ou null, "houve_link_pagamento": true/false, "link_usado_confirmado": true/false, "resumo": "...", "evidencia": "...", "chamado_numero": N ou null, "protocolo": "..." ou null, "confianca": "Alta|Média|Baixa" }
+
+### valores_citados
+Capture valores monetários citados na conversa que não sejam negociação de desconto ou frete já registrados.
+- Não transforme valor citado em desconto sem evidência.
+- Não transforme valor citado em valor final da venda sem evidência.
+- tipo_valor: "produto", "frete", "desconto", "pagamento" ou "outro".
+- Se não houver: retorne array vazio [].
+Estrutura de cada item:
+{ "valor": "R$ 0,00", "contexto": "...", "tipo_valor": "produto|frete|desconto|pagamento|outro", "chamado_numero": N ou null, "protocolo": "..." ou null, "confianca": "Alta|Média|Baixa" }
+
+### REGRAS GERAIS DAS NEGOCIAÇÕES
+1. Não invente negociação não evidenciada na conversa.
+2. Não transforme informação recebida em causa principal sem evidência explícita.
+3. Separe valor citado de desconto real.
+4. Separe link oferecido de link usado.
+5. Datas sempre em dd/mm/aaaa.
+6. Valores sempre em R$ 0,00.
+7. Cite chamado Nº e protocolo nas evidências sempre que possível.
+8. A venda já está registrada no SGI; analise no passado.
+9. Se não houver evidência, retorne arrays vazios.
 
 ## Retorne exatamente este JSON (sem markdown, sem texto fora do JSON):
 {
@@ -830,6 +1162,16 @@ Estes campos são INDEPENDENTES e SEMPRE devem aparecer no JSON.
   "oportunidades_melhoria": ["..."],
   "conclusao_comercial": "...",
   "nome_bebe": null,
-  "previsao_nascimento_bebe": null
+  "previsao_nascimento_bebe": null,
+  "produtos_fechados": ["..."],
+  "produtos_interesse_nao_fechados": ["..."],
+  "tipo_fechamento": "Indefinido — não há evidência suficiente",
+  "confianca_tipo_fechamento": "Baixa",
+  "evidencias_tipo_fechamento": ["..."],
+  "negociacoes_prazo": [],
+  "negociacoes_frete": [],
+  "negociacoes_desconto": [],
+  "negociacoes_pagamento": [],
+  "valores_citados": []
 }`
 }

@@ -520,11 +520,12 @@ Formato real confirmado pelo usuário:
 ### Próxima etapa recomendada
 
 ✅ Rota diagnóstica criada: `GET /api/procurar-datas/v2/disponibilidade-diagnostico`
-- Lê planilha real `TEMPO DISPONIVEL` via Google Sheets API v4 (somente leitura)
+- Lê planilha real via Google Sheets API v4 (somente leitura)
+- Resolve nome de aba pelo `gid/sheetId = 65861376` (não depende mais de string fixa do nome)
 - Converte linhas brutas via `converterTabelaTempoDisponivel()` → `LinhaTempoDisponivelV2[]`
 - Chama `parsearDisponibilidadeTempoDisponivelV2()` e retorna resumo + amostra
 - Não afeta produção, não escreve, não chama Apps Script
-- 12 testes unitários passando (mock de `lerPlanilhaTempoDisponivel`)
+- 14 testes unitários passando
 
 Próximo passo: chamar a rota em ambiente real para capturar fixture real de `shAv` e confirmar dados.
 
@@ -532,14 +533,16 @@ Próximo passo: chamar a rota em ambiente real para capturar fixture real de `sh
 
 ## 15. Checklist antes de implementar disponibilidade real no v2
 
-- [x] **Confirmar o formato real de `DATA`** — confirmado: `DD/MM/YYYY` (string)
+- [x] **Confirmar o formato real de `DATA`** — confirmado: `DD/MM/YYYY`, `DD/MM` e `DD/MM (dia-da-semana)` (string)
 - [x] **Confirmar o formato real de `TEMPO DISPONÍVEL`** — confirmado: `HH:MM` (string)
 - [x] **Confirmar os status possíveis** — confirmados: `disponível`, `agenda fechada`, `excedeu`
 - [x] **Confirmar estrutura das colunas reais** — confirmadas: `DATA | EQUIPE | TEMPO UTILIZADO | TEMPO DISPONÍVEL | TEMPO EXCEDIDO | STATUS`
-- [x] **Criar helper puro de parse** — criado: `motor/parse-disponibilidade-tempo-disponivel.ts` (41 testes)
-- [x] **Criar rota diagnóstica de leitura real** — criada: `GET /api/procurar-datas/v2/disponibilidade-diagnostico` (12 testes)
+- [x] **Criar helper puro de parse** — criado: `motor/parse-disponibilidade-tempo-disponivel.ts` (54 testes)
+- [x] **Criar rota diagnóstica de leitura real** — criada: `GET /api/procurar-datas/v2/disponibilidade-diagnostico` (17 testes)
+- [x] **Resolver nome de aba pelo gid/sheetId** — implementado: busca metadados da planilha, encontra aba com `sheetId === 65861376`, monta range A1 escapado
+- [x] **Parser aceita datas sem ano com inferência via `dataInicialISO`** — implementado: `DD/MM` e `DD/MM (texto)` com virada automática de ano; rota aceita `?dataInicialISO=YYYY-MM-DD`
+- [x] **Integrar disponibilidade real em `/v2/diagnostico` como bloco opcional** — implementado: rota aceita `usarDisponibilidadeRealDiagnostica: true` no body; reutiliza `dataInicialISO` da entrada; retorna bloco `diagnosticoDisponibilidadeReal` no response; não afeta comportamento padrão nem disponibilidade sintética
 - [ ] Chamar a rota em produção e capturar fixture real de `shAv` (sem dados de clientes)
-- [ ] Confirmar nome real da aba `TEMPO DISPONIVEL` na planilha via rota diagnóstica
 - [ ] Confirmar nome real da aba `AGENDA` na planilha
 - [ ] Confirmar timezone da planilha `SOURCE_SPREADSHEET_ID`
 - [ ] Confirmar o conteúdo real da coluna 3 de `shAv`

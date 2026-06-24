@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
   // Enriquece com protocolo, data, tipo, telefone, loja e consultora
   const ticketIds = (chamados ?? []).map((c) => c.digisac_ticket_id)
   const ticketInfoMap: Record<string, { protocolo: string | null; started_at: string | null; telefone_normalizado: string | null; department_nome: string | null; user_nome: string | null }> = {}
-  const vinculoMap: Record<string, { inicio_chamado: string | null }> = {}
+  const vinculoMap: Record<string, { inicio_chamado: string | null; ordem_conversa_para_venda: number | null }> = {}
 
   if (ticketIds.length > 0) {
     const { data: conversas } = await supabase
@@ -88,11 +88,14 @@ export async function GET(request: NextRequest) {
 
     const { data: vinculos } = await supabase
       .from('venda_conversa_vinculos')
-      .select('digisac_ticket_id, inicio_chamado')
+      .select('digisac_ticket_id, inicio_chamado, ordem_conversa_para_venda')
       .eq('numero_lancamento', numeroLancamento)
       .in('digisac_ticket_id', ticketIds)
     for (const v of (vinculos ?? [])) {
-      vinculoMap[v.digisac_ticket_id] = { inicio_chamado: v.inicio_chamado }
+      vinculoMap[v.digisac_ticket_id] = {
+        inicio_chamado: v.inicio_chamado,
+        ordem_conversa_para_venda: v.ordem_conversa_para_venda ?? null,
+      }
     }
   }
 
@@ -103,10 +106,16 @@ export async function GET(request: NextRequest) {
       data_chamado: ticketInfoMap[c.digisac_ticket_id]?.started_at ?? null,
       telefone: ticketInfoMap[c.digisac_ticket_id]?.telefone_normalizado ?? null,
       tipo_chamado: vinculoMap[c.digisac_ticket_id]?.inicio_chamado ?? null,
+      ordem_ciclo: vinculoMap[c.digisac_ticket_id]?.ordem_conversa_para_venda ?? null,
       department_nome: ticketInfoMap[c.digisac_ticket_id]?.department_nome ?? null,
       user_nome: ticketInfoMap[c.digisac_ticket_id]?.user_nome ?? null,
     }))
     .sort((a, b) => {
+      // Ordena pela mesma ordem usada pela IA no prompt consolidado
+      // (ordem_conversa_para_venda) com fallback para started_at
+      const aOrdem = a.ordem_ciclo ?? Number.MAX_SAFE_INTEGER
+      const bOrdem = b.ordem_ciclo ?? Number.MAX_SAFE_INTEGER
+      if (aOrdem !== bOrdem) return aOrdem - bOrdem
       if (!a.data_chamado && !b.data_chamado) return 0
       if (!a.data_chamado) return 1
       if (!b.data_chamado) return -1

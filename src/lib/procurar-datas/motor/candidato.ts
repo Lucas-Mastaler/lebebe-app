@@ -25,6 +25,7 @@ export interface MontarCandidatoPreliminarV2Input {
   diaSemana: number
   ehSabado: boolean
   ehDomingo: boolean
+  slotTemPontos?: boolean
 
   equipe: string
   disponivelMin: number
@@ -35,6 +36,12 @@ export interface MontarCandidatoPreliminarV2Input {
 
   distanciaKm: number | null
   kmAdicionalNaRotaM: number | null
+
+  /** 'slot' quando km veio do mapa por slot; 'global-fallback' quando usou km global. */
+  origemKmAdicional?: 'slot' | 'global-fallback' | null
+
+  /** Chave do mapa por slot usada, ex: '2026-07-03::EQUIPE 1'. null se fallback global. */
+  chaveSlotKm?: string | null
 
   valorFrete?: number | null
   tipoFrete?: string | null
@@ -47,12 +54,15 @@ export interface CandidatoPreliminarV2 {
   id: string
   elegivel: boolean
   tipo: TipoClassificacaoCandidatoV2
+  horaMarcada?: boolean
+  elegivelHoraMarcada?: boolean
 
   dataISO: string
   indice: number
   diaSemana: number
   ehSabado: boolean
   ehDomingo: boolean
+  slotTemPontos?: boolean
 
   equipe: string
 
@@ -61,11 +71,17 @@ export interface CandidatoPreliminarV2 {
     disponivelMin: number
     suficienteParaServico: boolean
     tempoNecessarioMin: number | null
+    slotAvailMin?: number | null
+    serviceMin?: number | null
   }
 
   distancia: {
     distanciaKm: number | null
     kmAdicionalNaRotaM: number | null
+    /** 'slot' quando km veio do mapa por slot; 'global-fallback' quando usou km global. */
+    origemKmAdicional?: 'slot' | 'global-fallback' | null
+    /** Chave do mapa por slot usada. null se fallback global. */
+    chaveSlotKm?: string | null
   }
 
   frete: {
@@ -76,10 +92,23 @@ export interface CandidatoPreliminarV2 {
   motivos: string[]
   avisos: string[]
 
+  /** Limites usados na classificação (em metros) — propagados dos detalhes da classificação. */
+  limites: {
+    limiteBaseM: number | null
+    limiteEspecialM: number | null
+    limitePremiumM: number | null
+  }
+
   diagnostico: {
     origem: 'v2-preliminar'
     classificacaoTipo: TipoClassificacaoCandidatoV2
     classificacaoElegivel: boolean
+    horaMarcada?: boolean
+    elegivelHoraMarcada?: boolean
+    motivoHoraMarcada?: string | null
+    horaMarcadaHorasAMais?: number | null
+    limiteMinimoHoraMarcadaMin?: number | null
+    horaMarcadaCalculadaPorTempo?: boolean | null
   }
 }
 
@@ -143,6 +172,9 @@ export function montarCandidatoPreliminarV2(
     : input.classificacao.tipo
 
   const elegivel = dadosEssenciaisInvalidos ? false : input.classificacao.elegivel
+  const horaMarcada = dadosEssenciaisInvalidos
+    ? false
+    : input.classificacao.elegivelHoraMarcada === true
 
   const motivos = dedup([
     ...motivosProprios,
@@ -165,12 +197,15 @@ export function montarCandidatoPreliminarV2(
     id,
     elegivel,
     tipo,
+    horaMarcada,
+    elegivelHoraMarcada: horaMarcada,
 
     dataISO: input.dataISO ?? '',
     indice: input.indice ?? 0,
     diaSemana: input.diaSemana ?? 0,
     ehSabado: input.ehSabado ?? false,
     ehDomingo: input.ehDomingo ?? false,
+    slotTemPontos: input.slotTemPontos ?? true,
 
     equipe: input.equipe ?? '',
 
@@ -179,11 +214,15 @@ export function montarCandidatoPreliminarV2(
       disponivelMin: input.disponivelMin ?? 0,
       suficienteParaServico: input.suficienteParaServico ?? false,
       tempoNecessarioMin: input.tempoNecessarioMin ?? null,
+      slotAvailMin: input.classificacao?.detalhes?.slotAvailMin ?? null,
+      serviceMin: input.classificacao?.detalhes?.serviceMin ?? null,
     },
 
     distancia: {
       distanciaKm: input.distanciaKm ?? null,
       kmAdicionalNaRotaM: input.kmAdicionalNaRotaM ?? null,
+      origemKmAdicional: input.origemKmAdicional ?? null,
+      chaveSlotKm: input.chaveSlotKm ?? null,
     },
 
     frete: {
@@ -198,6 +237,20 @@ export function montarCandidatoPreliminarV2(
       origem: 'v2-preliminar',
       classificacaoTipo: tipo,
       classificacaoElegivel: elegivel,
+      horaMarcada,
+      elegivelHoraMarcada: horaMarcada,
+      motivoHoraMarcada: input.classificacao?.detalhes?.motivoHoraMarcada ?? null,
+      horaMarcadaHorasAMais: input.classificacao?.detalhes?.horaMarcadaHorasAMais ?? null,
+      limiteMinimoHoraMarcadaMin:
+        input.classificacao?.detalhes?.limiteMinimoHoraMarcadaMin ?? null,
+      horaMarcadaCalculadaPorTempo:
+        input.classificacao?.detalhes?.horaMarcadaCalculadaPorTempo ?? null,
+    },
+
+    limites: {
+      limiteBaseM: input.classificacao?.detalhes?.limiteBaseM ?? null,
+      limiteEspecialM: input.classificacao?.detalhes?.limiteEspecialM ?? null,
+      limitePremiumM: input.classificacao?.detalhes?.limitePremiumM ?? null,
     },
   }
 }

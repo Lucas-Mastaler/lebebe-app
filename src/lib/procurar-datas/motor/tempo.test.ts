@@ -59,22 +59,52 @@ describe('parseMinutos', () => {
     expect(parseMinutos(1)).toBe(1440)
   })
 
-  it('string com apenas horas → minutos', () => {
-    expect(parseMinutos('5')).toBe(300)
+  it('string com apenas horas → 0 (formato inválido, sem minutos)', () => {
+    expect(parseMinutos('5')).toBe(0)
   })
 
-  it('string com mais de dois segmentos → ignora após minutos', () => {
-    expect(parseMinutos('01:30:45')).toBe(90)
+  it('string com mais de dois segmentos → 0 (formato inválido)', () => {
+    expect(parseMinutos('01:30:45')).toBe(0)
   })
 
-  it('string inválida → NaN coagido para 0 nos campos', () => {
-    // "abc" split => ["abc"] => h=NaN||0=0, m=undefined||0=0 => 0
+  it('string inválida → 0', () => {
     expect(parseMinutos('abc')).toBe(0)
   })
 
   it('boolean true → 0 (coerção)', () => {
-    // String(true) => "true" => split => ["true"] => h=NaN||0=0
     expect(parseMinutos(true as unknown as string)).toBe(0)
+  })
+
+  it('formato sem minutos → 0', () => {
+    expect(parseMinutos('2:')).toBe(0)
+  })
+
+  it('formato sem horas → 0', () => {
+    expect(parseMinutos(':05')).toBe(0)
+  })
+
+  it('minutos inválidos > 59 → 0', () => {
+    expect(parseMinutos('99:99')).toBe(0)
+  })
+
+  it('minutos negativos → 0', () => {
+    expect(parseMinutos('-1:30')).toBe(0)
+  })
+
+  it('casos válidos da tela real: 2:05 → 125', () => {
+    expect(parseMinutos('2:05')).toBe(125)
+  })
+
+  it('casos válidos da tela real: 02:05 → 125', () => {
+    expect(parseMinutos('02:05')).toBe(125)
+  })
+
+  it('casos válidos da tela real: 0:40 → 40', () => {
+    expect(parseMinutos('0:40')).toBe(40)
+  })
+
+  it('casos válidos da tela real: 00:40 → 40', () => {
+    expect(parseMinutos('00:40')).toBe(40)
   })
 })
 

@@ -80,3 +80,49 @@ trigger: always_on
 - Não tratar o log como substituto da leitura do código.
 - Se algo não foi confirmado, escrever explicitamente "não confirmado".
 - Quando houver banco de dados, consultar o MCP Supabase antes de assumir tabelas, colunas, relações, policies, migrations ou queries.
+
+## 12. Regras obrigatórias para o motor `/procurar-datas` (migração legado x v2)
+
+> **Aplicação:** Toda tarefa relacionada ao motor `/procurar-datas`, incluindo pesquisa de datas, disponibilidade, candidatos, classificação, ranking, OSRM, agenda, frete e diagnóstico.
+
+### 12.1 Leitura obrigatória antes de iniciar
+
+Toda tarefa relacionada a `/procurar-datas` deve começar lendo:
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md` — **contrato de escopo da migração**
+- `docs/procurar-datas-motor-v2-progresso.md` — progresso técnico atual
+- `docs/ia/log_progress.md` — continuidade entre agentes
+
+### 12.2 Fonte de verdade
+
+- **Legado Apps Script** (`appscript/CEP-APIBACK.gs`, `appscript/CEP-CONFIG.gs`) é a **fonte de verdade** para todas as regras de negócio do motor `/procurar-datas`.
+- A meta da v2 é **equivalência funcional** com o legado, não reinterpretação.
+
+### 12.3 Consulta obrigatória ao legado
+
+Se houver dúvida sobre:
+- Regra de cálculo (distância, frete, delta, ranking)
+- Fallback de erro
+- Origem (depósito vs casa da equipe em sábado)
+- Classificação (normal/especial/premium/hora-marcada/indisponível)
+- Fonte de dados (agenda, disponibilidade, OSRM)
+- Comportamento esperado
+
+**Consultar o código legado Apps Script antes de alterar ou propor alteração.** Não inventar comportamento por suposição.
+
+### 12.4 Proibições sem decisão explícita
+
+- **Não** substituir regra do legado por "melhoria" sem decisão explícita do usuário.
+- **Não** alterar Frente 2 (candidatos/classificação/adaptação legado) enquanto equivalência OSRM legado × v2 não estiver validada.
+- **Não** usar Haversine como cálculo oficial de `kmAdicionalNaRotaM` — **risco alto**.
+
+### 12.5 OSRM e Haversine
+
+- **OSRM** é o cálculo oficial de rota/distância quando disponível no legado.
+- **Haversine** só pode ser usado como apoio/filtro/fallback onde o legado também usar assim.
+- Qualquer uso de Haversine como cálculo oficial deve ser tratado como risco alto, salvo se o legado confirmar esse comportamento naquele ponto específico.
+
+### 12.6 Atualização de documentação
+
+- Toda alteração relevante deve atualizar `docs/ia/log_progress.md`.
+- Quando uma regra da migração for validada ou uma pendência for resolvida, atualizar também `docs/procurar-datas-escopo-equivalencia-legado-v2.md`.
+- Preservar encoding e não reformatar o documento inteiro.

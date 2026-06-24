@@ -75,6 +75,104 @@ describe('parsearDisponibilidadeTempoDisponivelV2 — data', () => {
     const res = parsear({ linhas: [linhaDisponivel({ data: d })] })
     expect(res.disponibilidades[0].dataISO).toBe('2026-06-23')
   })
+
+  // ── Formatos reais da planilha: DD/MM (texto) ──
+
+  it('parseia "15/06 (segunda-feira)" com dataInicialISO=2026-06-15 → 2026-06-15', () => {
+    const res = parsear({
+      linhas: [linhaDisponivel({ data: '15/06 (segunda-feira)' })],
+      dataInicialISO: '2026-06-15',
+    })
+    expect(res.disponibilidades[0].dataISO).toBe('2026-06-15')
+    expect(res.erros).toHaveLength(0)
+  })
+
+  it('parseia "23/06 (terça-feira)" com dataInicialISO=2026-06-15 → 2026-06-23', () => {
+    const res = parsear({
+      linhas: [linhaDisponivel({ data: '23/06 (terça-feira)' })],
+      dataInicialISO: '2026-06-15',
+    })
+    expect(res.disponibilidades[0].dataISO).toBe('2026-06-23')
+  })
+
+  it('parseia "05/12 (sábado)" com dataInicialISO=2026-06-15 → 2026-12-05', () => {
+    const res = parsear({
+      linhas: [linhaDisponivel({ data: '05/12 (sábado)' })],
+      dataInicialISO: '2026-06-15',
+    })
+    expect(res.disponibilidades[0].dataISO).toBe('2026-12-05')
+  })
+
+  it('virada de ano: "05/01 (segunda-feira)" com dataInicialISO=2026-12-15 → 2027-01-05', () => {
+    const res = parsear({
+      linhas: [linhaDisponivel({ data: '05/01 (segunda-feira)' })],
+      dataInicialISO: '2026-12-15',
+    })
+    expect(res.disponibilidades[0].dataISO).toBe('2027-01-05')
+  })
+
+  it('virada de ano: "15/01" com dataInicialISO=2026-12-15 → 2027-01-15', () => {
+    const res = parsear({
+      linhas: [linhaDisponivel({ data: '15/01' })],
+      dataInicialISO: '2026-12-15',
+    })
+    expect(res.disponibilidades[0].dataISO).toBe('2027-01-15')
+  })
+
+  it('mesmo ano: "20/12" com dataInicialISO=2026-12-15 → 2026-12-20', () => {
+    const res = parsear({
+      linhas: [linhaDisponivel({ data: '20/12' })],
+      dataInicialISO: '2026-12-15',
+    })
+    expect(res.disponibilidades[0].dataISO).toBe('2026-12-20')
+  })
+
+  it('DD/MM sem dataInicialISO → erro controlado', () => {
+    const res = parsear({ linhas: [linhaDisponivel({ data: '15/06 (segunda-feira)' })] })
+    expect(res.disponibilidades).toHaveLength(0)
+    expect(res.erros[0]).toMatch(/data sem ano e dataInicialISO ausente/)
+  })
+
+  it('data inválida "32/06 (segunda-feira)" com dataInicialISO → ignorada', () => {
+    const res = parsear({
+      linhas: [linhaDisponivel({ data: '32/06 (segunda-feira)' })],
+      dataInicialISO: '2026-06-15',
+    })
+    expect(res.disponibilidades).toHaveLength(0)
+    expect(res.erros[0]).toMatch(/data inválida/)
+  })
+
+  it('data inválida "15/13 (segunda-feira)" com dataInicialISO → ignorada', () => {
+    const res = parsear({
+      linhas: [linhaDisponivel({ data: '15/13 (segunda-feira)' })],
+      dataInicialISO: '2026-06-15',
+    })
+    expect(res.disponibilidades).toHaveLength(0)
+    expect(res.erros[0]).toMatch(/data inválida/)
+  })
+
+  it('DD/MM/YYYY continua funcionando sem dataInicialISO', () => {
+    const res = parsear({ linhas: [linhaDisponivel({ data: '05/12/2026' })] })
+    expect(res.disponibilidades[0].dataISO).toBe('2026-12-05')
+    expect(res.erros).toHaveLength(0)
+  })
+
+  it('29/02 em ano bissexto inferido (2024) → aceita', () => {
+    const res = parsear({
+      linhas: [linhaDisponivel({ data: '29/02' })],
+      dataInicialISO: '2024-02-01',
+    })
+    expect(res.disponibilidades[0].dataISO).toBe('2024-02-29')
+  })
+
+  it('29/02 em ano não bissexto inferido (2025) → rejeita', () => {
+    const res = parsear({
+      linhas: [linhaDisponivel({ data: '29/02' })],
+      dataInicialISO: '2025-02-01',
+    })
+    expect(res.disponibilidades).toHaveLength(0)
+    expect(res.erros[0]).toMatch(/data inválida/)
+  })
 })
 
 // ─── 3–5. Normalização de equipe ──────────────────────────────────────────────
@@ -448,5 +546,26 @@ describe('parsearDisponibilidadeTempoDisponivelV2 — exemplos reais da planilha
     expect(res.disponibilidades).toHaveLength(3)
     expect(res.resumo.disponiveis).toBe(2)
     expect(res.resumo.agendasFechadas).toBe(1)
+  })
+
+  it('parseia lote no formato real da planilha (DD/MM com texto) com dataInicialISO → linhasValidas > 0', () => {
+    const linhas: LinhaTempoDisponivelV2[] = [
+      { data: '15/06 (segunda-feira)', equipe: 'Equipe 1', tempoDisponivel: '01:00', status: 'disponível' },
+      { data: '16/06 (terça-feira)', equipe: 'Equipe 1', tempoDisponivel: '00:00', status: 'excedeu' },
+      { data: '23/06 (terça-feira)', equipe: 'Equipe 2', tempoDisponivel: '02:30', status: 'disponível' },
+      { data: '05/01 (segunda-feira)', equipe: 'Equipe 1', tempoDisponivel: '01:00', status: 'disponível' },
+    ]
+    const res = parsear({ linhas, dataInicialISO: '2026-06-15' })
+
+    expect(res.ok).toBe(true)
+    expect(res.resumo.linhasValidas).toBe(4)
+    expect(res.resumo.linhasIgnoradas).toBe(0)
+    expect(res.erros).toHaveLength(0)
+
+    expect(res.disponibilidades).toHaveLength(4)
+    expect(res.disponibilidades[0].dataISO).toBe('2026-06-15')
+    expect(res.disponibilidades[1].dataISO).toBe('2026-06-16')
+    expect(res.disponibilidades[2].dataISO).toBe('2026-06-23')
+    expect(res.disponibilidades[3].dataISO).toBe('2027-01-05')
   })
 })

@@ -99,6 +99,12 @@ export interface ProgressoPesquisa {
   startedAt?: string
   finishedAt?: string
   durationMs?: number
+  /** Diagnostico v2 opcional, presente apenas quando uma rota interna ativa a flag diagnostica. */
+  diagnosticoPerformanceV2?: unknown
+  /** Diagnostico dirigido opcional do resultado v2 na tela. */
+  diagnosticoResultadoTelaV2SantoAmaro?: unknown
+  /** Diagnostico enxuto do delta do 16/07 em Santo Amaro. */
+  diagnosticoDeltaSantoAmaro16Jul?: unknown
   /** Presente apenas em 'error'. */
   error?: string
 }

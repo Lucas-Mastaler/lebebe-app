@@ -54,11 +54,16 @@ describe('isTempoNecessarioValido', () => {
     expect(isTempoNecessarioValido('01:00')).toBe(true)
   })
 
+  it('aceita H:mm (hora sem zero à esquerda) maior que zero', () => {
+    expect(isTempoNecessarioValido('2:05')).toBe(true)
+    expect(isTempoNecessarioValido('0:40')).toBe(true)
+  })
+
   it('aceita HH:mm:ss quando horas ou minutos representam tempo maior que zero', () => {
     expect(isTempoNecessarioValido('01:00:00')).toBe(true)
   })
 
-  it('recusa formatos ausentes, zerados ou fora do contrato HH:mm', () => {
+  it('recusa formatos ausentes, zerados ou fora do contrato', () => {
     expect(isTempoNecessarioValido('')).toBe(false)
     expect(isTempoNecessarioValido('   ')).toBe(false)
     expect(isTempoNecessarioValido(null)).toBe(false)
@@ -67,6 +72,10 @@ describe('isTempoNecessarioValido', () => {
     expect(isTempoNecessarioValido('00:00:00')).toBe(false)
     expect(isTempoNecessarioValido('abc')).toBe(false)
     expect(isTempoNecessarioValido('1 hora')).toBe(false)
+    expect(isTempoNecessarioValido('2')).toBe(false)
+    expect(isTempoNecessarioValido('2:')).toBe(false)
+    expect(isTempoNecessarioValido(':05')).toBe(false)
+    expect(isTempoNecessarioValido('99:99')).toBe(false)
   })
 })
 
@@ -110,6 +119,42 @@ describe('POST /api/procurar-datas/pesquisar', () => {
     })
     expect(chamarAppsScriptMock).toHaveBeenCalledTimes(1)
     expect(chamarAppsScriptMock).toHaveBeenCalledWith('ApiIniciarPesquisaDatasApp', [{ ...payloadBase, tempoNecessario: '01:00' }], {
+      rota: 'pesquisar',
+      clientToken: 'fixture-test-token',
+      timeoutMs: 30_000,
+    })
+  })
+
+  it('mantem tempoNecessario H:mm valido (2:05) e chama Apps Script', async () => {
+    const response = await POST(criarRequest({ ...payloadBase, tempoNecessario: '2:05' }))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toEqual({
+      ok: true,
+      clientToken: 'fixture-test-token',
+      status: 'started',
+    })
+    expect(chamarAppsScriptMock).toHaveBeenCalledTimes(1)
+    expect(chamarAppsScriptMock).toHaveBeenCalledWith('ApiIniciarPesquisaDatasApp', [{ ...payloadBase, tempoNecessario: '2:05' }], {
+      rota: 'pesquisar',
+      clientToken: 'fixture-test-token',
+      timeoutMs: 30_000,
+    })
+  })
+
+  it('mantem tempoNecessario H:mm valido (0:40) e chama Apps Script', async () => {
+    const response = await POST(criarRequest({ ...payloadBase, tempoNecessario: '0:40' }))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body).toEqual({
+      ok: true,
+      clientToken: 'fixture-test-token',
+      status: 'started',
+    })
+    expect(chamarAppsScriptMock).toHaveBeenCalledTimes(1)
+    expect(chamarAppsScriptMock).toHaveBeenCalledWith('ApiIniciarPesquisaDatasApp', [{ ...payloadBase, tempoNecessario: '0:40' }], {
       rota: 'pesquisar',
       clientToken: 'fixture-test-token',
       timeoutMs: 30_000,

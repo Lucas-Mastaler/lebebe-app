@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, Fragment } from 'react'
 import { Loader2, Phone, Package, CreditCard, User, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock, TrendingUp, Users, Activity, Tag, MessageSquarePlus, Eye, Store, Brain, ChevronDown, ChevronUp, HelpCircle } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle
@@ -121,6 +121,114 @@ function formatDataSimples(iso: string | null | undefined): string {
     return iso
   }
 }
+
+// ─── Seção de observações inline (fora do ModalDetalheVenda para isolar re-renders) ──────────
+
+type ObsItem = { id: string; observacao: string; criado_por: string | null; created_at: string; numero_lancamento?: string }
+
+function ObservacoesInline({ numeroLancamento, open }: { numeroLancamento: string; open: boolean }) {
+  const [novaObs, setNovaObs] = useState('')
+  const [savingObs, setSavingObs] = useState(false)
+  const [obsLista, setObsLista] = useState<ObsItem[]>([])
+  const [obsCliente, setObsCliente] = useState<ObsItem[]>([])
+  const [obsCarregada, setObsCarregada] = useState(false)
+  const [mostrarCliente, setMostrarCliente] = useState(false)
+
+  useEffect(() => {
+    if (!open || !numeroLancamento) {
+      setObsCarregada(false)
+      setObsLista([])
+      setObsCliente([])
+      setMostrarCliente(false)
+      return
+    }
+    Promise.all([
+      fetch(`/api/sgi/observacoes?numeroLancamento=${numeroLancamento}`).then(r => r.json()),
+      fetch(`/api/sgi/observacoes/cliente?numeroLancamento=${numeroLancamento}`).then(r => r.json()),
+    ]).then(([d1, d2]) => {
+      setObsLista(d1.observacoes ?? [])
+      setObsCliente(d2.observacoes ?? [])
+      setObsCarregada(true)
+    }).catch(() => setObsCarregada(true))
+  }, [open, numeroLancamento])
+
+  async function handleSalvarObs() {
+    if (!novaObs.trim() || !numeroLancamento) return
+    setSavingObs(true)
+    try {
+      const res = await fetch('/api/sgi/observacoes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numeroLancamento, observacao: novaObs }),
+      })
+      const data = await res.json()
+      if (res.ok) { setObsLista(prev => [data.observacao, ...prev]); setNovaObs('') }
+    } finally {
+      setSavingObs(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* Campo nova observação */}
+      <div className="flex gap-2">
+        <textarea
+          className="flex-1 text-sm border border-slate-200 rounded-lg p-2 resize-none focus:outline-none focus:ring-2 focus:ring-sky-200 placeholder:text-slate-400"
+          rows={2}
+          placeholder="Adicionar observação..."
+          value={novaObs}
+          onChange={e => setNovaObs(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSalvarObs() }}
+        />
+        <Button size="sm" className="self-end" onClick={handleSalvarObs} disabled={savingObs || !novaObs.trim()}>
+          {savingObs ? <Loader2 className="w-3 h-3 animate-spin" /> : <Tag className="w-3 h-3" />}
+        </Button>
+      </div>
+
+      {/* Observações deste lançamento */}
+      {!obsCarregada ? (
+        <p className="text-xs text-slate-400">Carregando...</p>
+      ) : obsLista.length === 0 ? (
+        <p className="text-xs text-slate-400 italic">Nenhuma observação ainda.</p>
+      ) : (
+        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+          {obsLista.map(o => (
+            <div key={o.id} className="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+              <p className="text-xs text-slate-700 whitespace-pre-wrap break-words">{o.observacao}</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">{o.criado_por} · {new Date(o.created_at).toLocaleDateString('pt-BR')}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Histórico do cliente — outras vendas */}
+      {obsCarregada && obsCliente.length > 0 && (
+        <div className="border-t border-slate-100 pt-2">
+          <button
+            className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wide hover:text-slate-700"
+            onClick={() => setMostrarCliente(v => !v)}
+          >
+            <ChevronDown className={`w-3 h-3 transition-transform ${mostrarCliente ? 'rotate-180' : ''}`} />
+            Histórico do cliente — outras vendas ({obsCliente.length})
+          </button>
+          {mostrarCliente && (
+            <div className="mt-1.5 space-y-1.5 max-h-40 overflow-y-auto">
+              {obsCliente.map(o => (
+                <div key={o.id} className="p-2 bg-amber-50 border border-amber-100 rounded-lg">
+                  <p className="text-[10px] text-amber-700 font-medium mb-0.5">Lançamento #{o.numero_lancamento}</p>
+                  <p className="text-xs text-slate-700 whitespace-pre-wrap break-words">{o.observacao}</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">{o.criado_por} · {new Date(o.created_at).toLocaleDateString('pt-BR')}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── ModalDetalheVenda ────────────────────────────────────────────────────────
 
 interface ModalDetalheVendaProps {
   venda: SgiDocumento | null
@@ -323,6 +431,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
     protocolo: string | null
     data_chamado: string | null
     tipo_chamado: string | null
+    ordem_ciclo: number | null
     telefone: string | null
     department_nome: string | null
     user_nome: string | null
@@ -356,6 +465,60 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
     conclusao_comercial: string | null
     nome_bebe?: string | null
     previsao_nascimento_bebe?: string | null
+    produtos_fechados?: string[] | null
+    produtos_interesse_nao_fechados?: string[] | null
+    tipo_fechamento?: string | null
+    confianca_tipo_fechamento?: string | null
+    evidencias_tipo_fechamento?: string[] | null
+    negociacoes_prazo?: Array<{
+      tipo: 'prazo'
+      resumo: string
+      data_prometida: string | null
+      evidencia: string
+      chamado_numero: number | null
+      protocolo: string | null
+      confianca: string
+    }> | null
+    negociacoes_frete?: Array<{
+      tipo: 'frete'
+      valor_original: string | null
+      valor_negociado: string | null
+      resumo: string
+      evidencia: string
+      chamado_numero: number | null
+      protocolo: string | null
+      confianca: string
+    }> | null
+    negociacoes_desconto?: Array<{
+      tipo: 'desconto'
+      valor_original: string | null
+      valor_final: string | null
+      percentual: string | null
+      resumo: string
+      evidencia: string
+      chamado_numero: number | null
+      protocolo: string | null
+      confianca: string
+    }> | null
+    negociacoes_pagamento?: Array<{
+      tipo: 'pagamento'
+      forma: string | null
+      houve_link_pagamento: boolean
+      link_usado_confirmado: boolean
+      resumo: string
+      evidencia: string
+      chamado_numero: number | null
+      protocolo: string | null
+      confianca: string
+    }> | null
+    valores_citados?: Array<{
+      valor: string
+      contexto: string
+      tipo_valor: string
+      chamado_numero: number | null
+      protocolo: string | null
+      confianca: string
+    }> | null
     total_chamados_analisados: number
     modelo_ia: string | null
     gerado_em: string | null
@@ -419,7 +582,9 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
       const data = await r.json()
       if (data.job) setIaJob(data.job)
       if (data.chamados) setIaChamados(data.chamados)
-      if (data.consolidado) setIaConsolidado(data.consolidado)
+      // Sempre sobrescreve iaConsolidado, inclusive quando null,
+      // para não exibir consolidado antigo durante reanálise
+      setIaConsolidado(data.consolidado ?? null)
     } catch {
       // silencioso
     }
@@ -537,6 +702,11 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
       chamadosComErro: data1.jaEmAndamento ? (prev?.chamadosComErro ?? 0) : 0,
       finalizadoEm: null,
     }))
+    // Limpa dados do job anterior para não misturar com o novo processamento
+    if (reanalisar) {
+      setIaChamados([])
+      setIaConsolidado(null)
+    }
 
     await executarLoop(filaId)
   }, [venda?.numero_lancamento, iaJob, executarLoop])
@@ -557,36 +727,6 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
   const chamadosInfluentesIa: number | null = temAnaliseIa
     ? iaChamados.filter(c => c.status === 'concluido' && (c.influencia_compra === 'Sim' || c.influencia_compra === 'Parcialmente')).length
     : null
-
-  // ── estado local para observações inline ──────────────────────
-  const [novaObs, setNovaObs] = useState('')
-  const [savingObs, setSavingObs] = useState(false)
-  const [obsLista, setObsLista] = useState<{ id: string; observacao: string; criado_por: string | null; created_at: string }[]>([])
-  const [obsCarregada, setObsCarregada] = useState(false)
-
-  useEffect(() => {
-    if (!open || !venda?.numero_lancamento) { setObsCarregada(false); setObsLista([]); return }
-    fetch(`/api/sgi/observacoes?numeroLancamento=${venda.numero_lancamento}`)
-      .then(r => r.json())
-      .then(d => { setObsLista(d.observacoes ?? []); setObsCarregada(true) })
-      .catch(() => setObsCarregada(true))
-  }, [open, venda?.numero_lancamento])
-
-  async function handleSalvarObs() {
-    if (!novaObs.trim() || !venda?.numero_lancamento) return
-    setSavingObs(true)
-    try {
-      const res = await fetch('/api/sgi/observacoes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ numeroLancamento: venda.numero_lancamento, observacao: novaObs }),
-      })
-      const data = await res.json()
-      if (res.ok) { setObsLista(prev => [data.observacao, ...prev]); setNovaObs('') }
-    } finally {
-      setSavingObs(false)
-    }
-  }
 
   function Section({ icon: Icon, title, children, variant = 'default' }: {
     icon: React.ElementType
@@ -983,7 +1123,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                       </thead>
                       <tbody>
                         {agendamentosFuturos.map((ag) => (
-                          <>
+                          <Fragment key={ag.id}>
                             <tr
                               key={ag.id}
                               className="border-b border-slate-50 hover:bg-violet-50/40 cursor-pointer"
@@ -1041,7 +1181,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                                 </td>
                               </tr>
                             )}
-                          </>
+                          </Fragment>
                         ))}
                       </tbody>
                     </table>
@@ -1105,35 +1245,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
 
             {/* Observações Comerciais */}
             <Section icon={MessageSquarePlus} title="Observações Comerciais" variant="default">
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  <textarea
-                    className="flex-1 text-sm border border-slate-200 rounded-lg p-2 resize-none focus:outline-none focus:ring-2 focus:ring-sky-200 placeholder:text-slate-400"
-                    rows={2}
-                    placeholder="Adicionar observação..."
-                    value={novaObs}
-                    onChange={e => setNovaObs(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSalvarObs() }}
-                  />
-                  <Button size="sm" className="self-end" onClick={handleSalvarObs} disabled={savingObs || !novaObs.trim()}>
-                    {savingObs ? <Loader2 className="w-3 h-3 animate-spin" /> : <Tag className="w-3 h-3" />}
-                  </Button>
-                </div>
-                {!obsCarregada ? (
-                  <p className="text-xs text-slate-400">Carregando...</p>
-                ) : obsLista.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">Nenhuma observação ainda.</p>
-                ) : (
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                    {obsLista.map(o => (
-                      <div key={o.id} className="bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-                        <p className="text-xs text-slate-700">{o.observacao}</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">{o.criado_por} · {new Date(o.created_at).toLocaleDateString('pt-BR')}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <ObservacoesInline numeroLancamento={venda?.numero_lancamento ?? ''} open={open} />
             </Section>
 
           </div>
@@ -1489,7 +1601,7 @@ function IaAnalisePanel({
   job: { id: string; status: string; totalChamados: number; chamadosProcessados: number; chamadosComErro: number; finalizadoEm: string | null } | null
   chamados: {
     id: string; digisac_ticket_id: string; protocolo: string | null; data_chamado: string | null
-    tipo_chamado: string | null; telefone: string | null
+    tipo_chamado: string | null; ordem_ciclo: number | null; telefone: string | null
     department_nome: string | null; user_nome: string | null
     status: string; resumo_chamado: string | null; influencia_compra: string | null
     grau_influencia: string | null; motivo_influencia: string | null
@@ -1505,6 +1617,16 @@ function IaAnalisePanel({
     principais_motivos_compra: string[]; principais_objecoes: string[]
     produtos_de_interesse: string[]; oportunidades_melhoria: string[]
     nome_bebe?: string | null; previsao_nascimento_bebe?: string | null
+    produtos_fechados?: string[] | null
+    produtos_interesse_nao_fechados?: string[] | null
+    tipo_fechamento?: string | null
+    confianca_tipo_fechamento?: string | null
+    evidencias_tipo_fechamento?: string[] | null
+    negociacoes_prazo?: Array<{ tipo: 'prazo'; resumo: string; data_prometida: string | null; evidencia: string; chamado_numero: number | null; protocolo: string | null; confianca: string }> | null
+    negociacoes_frete?: Array<{ tipo: 'frete'; valor_original: string | null; valor_negociado: string | null; resumo: string; evidencia: string; chamado_numero: number | null; protocolo: string | null; confianca: string }> | null
+    negociacoes_desconto?: Array<{ tipo: 'desconto'; valor_original: string | null; valor_final: string | null; percentual: string | null; resumo: string; evidencia: string; chamado_numero: number | null; protocolo: string | null; confianca: string }> | null
+    negociacoes_pagamento?: Array<{ tipo: 'pagamento'; forma: string | null; houve_link_pagamento: boolean; link_usado_confirmado: boolean; resumo: string; evidencia: string; chamado_numero: number | null; protocolo: string | null; confianca: string }> | null
+    valores_citados?: Array<{ valor: string; contexto: string; tipo_valor: string; chamado_numero: number | null; protocolo: string | null; confianca: string }> | null
     total_chamados_analisados: number; modelo_ia: string | null; gerado_em: string | null
   } | null
   processando: boolean
@@ -1518,6 +1640,27 @@ function IaAnalisePanel({
   onContinuar: () => void
   onCancelar: () => void
 }) {
+  const [resumoExpandido, setResumoExpandido] = useState<string | null>(null)
+  const [conversaExpandida, setConversaExpandida] = useState<string | null>(null)
+  const [conversaLoading, setConversaLoading] = useState(false)
+  const [conversaErro, setConversaErro] = useState<string | null>(null)
+  const [conversaCache, setConversaCache] = useState<Record<string, { id: string; text: string; isFromMe: boolean; timestamp: number | null }[]>>({})
+
+  function formatarTimestampMensagem(ts: number | null): string | null {
+    if (ts === null || ts === undefined) return null
+    // Tenta unix seconds (Digisac retorna segundos)
+    const dSec = new Date(ts * 1000)
+    if (!isNaN(dSec.getTime()) && dSec.getFullYear() > 2000 && dSec.getFullYear() < 2100) {
+      return dSec.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    }
+    // Fallback: tenta como milissegundos
+    const dMs = new Date(ts)
+    if (!isNaN(dMs.getTime()) && dMs.getFullYear() > 2000 && dMs.getFullYear() < 2100) {
+      return dMs.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    }
+    return null
+  }
+
   const nunca = !job
   const emAndamento = processando
   const concluido = !processando && !pausado && job?.status === 'concluido'
@@ -1559,6 +1702,18 @@ function IaAnalisePanel({
             Análise concluída com {job!.chamadosComErro} erro{job!.chamadosComErro > 1 ? 's' : ''} &mdash; {job!.totalChamados - job!.chamadosComErro} de {job!.totalChamados} analisados
           </span>
         )}
+        {!emAndamento && !pausado && !concluido && job?.status === 'erro' && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+            <AlertCircle className="w-3 h-3" />
+            Erro na análise
+          </span>
+        )}
+        {!emAndamento && !pausado && !concluido && (job?.status === 'pendente' || job?.status === 'processando') && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+            <AlertCircle className="w-3 h-3" />
+            Análise incompleta &mdash; reanalize para atualizar
+          </span>
+        )}
         {nunca && !processando && !pausado && (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-400">
             <Brain className="w-3 h-3" />
@@ -1566,9 +1721,21 @@ function IaAnalisePanel({
           </span>
         )}
         {job?.finalizadoEm && concluido && (
-          <span className="text-xs text-slate-400 ml-auto">
+          <span className="text-xs text-slate-400">
             {new Date(job.finalizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
           </span>
+        )}
+        {Boolean(job || chamados.length > 0 || consolidado) && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onReanalisar}
+            disabled={processando}
+            className="ml-auto text-xs h-7 border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+          >
+            <RefreshCw className="w-3 h-3 mr-1" />
+            {processando ? 'Reanalisando...' : 'Reanalisar IA'}
+          </Button>
         )}
       </div>
 
@@ -1594,74 +1761,6 @@ function IaAnalisePanel({
         </p>
       )}
 
-      {/* ── Resumo consolidado ── */}
-      {consolidado && (
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 space-y-3">
-          <p className="text-sm font-semibold text-indigo-700 flex items-center gap-1">
-            <Brain className="w-3.5 h-3.5" /> Resumo consolidado da venda
-          </p>
-          {consolidado.resumo_geral && (
-            <p className="text-sm text-slate-700 leading-relaxed">{consolidado.resumo_geral}</p>
-          )}
-          {consolidado.conclusao_comercial && (
-            <p className="text-sm text-indigo-800 font-medium border-t border-indigo-100 pt-2">{consolidado.conclusao_comercial}</p>
-          )}
-          {/* Dados do bebê, se houver */}
-          {(consolidado.nome_bebe || consolidado.previsao_nascimento_bebe) && (
-            <div className="bg-pink-50 border border-pink-200 rounded-lg px-3 py-2 text-sm">
-              <p className="font-semibold text-pink-700 mb-1">Dados do bebê</p>
-              {consolidado.nome_bebe && <p className="text-slate-700">Nome: <span className="font-medium">{consolidado.nome_bebe}</span></p>}
-              {consolidado.previsao_nascimento_bebe && <p className="text-slate-700">Previsão de nascimento: <span className="font-medium">{consolidado.previsao_nascimento_bebe}</span></p>}
-            </div>
-          )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-            {consolidado.principais_motivos_compra.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-slate-500 mb-1">Principais motivos</p>
-                <ul className="space-y-1">
-                  {consolidado.principais_motivos_compra.map((m, i) => (
-                    <li key={i} className="text-sm text-slate-700 flex gap-1"><span className="text-indigo-400">•</span>{m}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {consolidado.principais_objecoes.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-slate-500 mb-1">Objeções</p>
-                <ul className="space-y-1">
-                  {consolidado.principais_objecoes.map((o, i) => (
-                    <li key={i} className="text-sm text-slate-700 flex gap-1"><span className="text-amber-400">•</span>{o}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {consolidado.produtos_de_interesse.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-slate-500 mb-1">Produtos de interesse</p>
-                <ul className="space-y-1">
-                  {consolidado.produtos_de_interesse.map((p, i) => (
-                    <li key={i} className="text-sm text-slate-700 flex gap-1"><span className="text-emerald-400">•</span>{p}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {consolidado.oportunidades_melhoria.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-slate-500 mb-1">Oportunidades</p>
-                <ul className="space-y-1">
-                  {consolidado.oportunidades_melhoria.map((o, i) => (
-                    <li key={i} className="text-sm text-slate-700 flex gap-1"><span className="text-violet-400">•</span>{o}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-          {consolidado.modelo_ia && (
-            <p className="text-xs text-slate-400 pt-1 border-t border-indigo-100">modelo: {consolidado.modelo_ia}</p>
-          )}
-        </div>
-      )}
-
       {/* ── Tabela de chamados ── */}
       {chamados.length > 0 && (
         <div className="space-y-1.5">
@@ -1670,7 +1769,9 @@ function IaAnalisePanel({
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-indigo-100 text-slate-500 text-left">
+                  <th className="py-1.5 pr-3">Nº</th>
                   <th className="py-1.5 pr-3">Protocolo</th>
+                  <th className="py-1.5 pr-3">Tipo</th>
                   <th className="py-1.5 pr-3">Data</th>
                   <th className="py-1.5 pr-3">Loja/Depto.</th>
                   <th className="py-1.5 pr-3">Consultora</th>
@@ -1683,9 +1784,21 @@ function IaAnalisePanel({
               </thead>
               <tbody>
                 {chamados.map((c) => (
-                  <>
-                    <tr key={c.id} className="border-b border-slate-50 hover:bg-indigo-50/30">
+                  <Fragment key={c.id}>
+                    <tr className="border-b border-slate-50 hover:bg-indigo-50/30">
+                      <td className="py-1.5 pr-3 text-center font-semibold text-indigo-600">
+                        {c.ordem_ciclo ?? '—'}
+                      </td>
                       <td className="py-1.5 pr-3 font-mono text-slate-600">{c.protocolo ?? '—'}</td>
+                      <td className="py-1.5 pr-3 whitespace-nowrap">
+                        <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                          c.tipo_chamado === 'ativo' ? 'bg-blue-100 text-blue-700' :
+                          c.tipo_chamado === 'receptivo' ? 'bg-emerald-100 text-emerald-700' :
+                          'bg-slate-100 text-slate-500'
+                        }`}>
+                          {c.tipo_chamado === 'ativo' ? 'Ativo' : c.tipo_chamado === 'receptivo' ? 'Receptivo' : 'Indefinido'}
+                        </span>
+                      </td>
                       <td className="py-1.5 pr-3 text-slate-500 whitespace-nowrap">
                         {c.data_chamado ? new Date(c.data_chamado).toLocaleDateString('pt-BR') : '—'}
                       </td>
@@ -1705,8 +1818,24 @@ function IaAnalisePanel({
                           <span className="text-slate-400 text-[10px] italic">
                             {c.status === 'processando' ? 'Analisando...' : 'Aguardando...'}
                           </span>
+                        ) : !c.resumo_chamado ? (
+                          <span className="text-slate-400 italic">Resumo não disponível.</span>
+                        ) : c.resumo_chamado.length > 160 ? (
+                          <div className="space-y-0.5">
+                            <span className="text-slate-700">
+                              {resumoExpandido === c.id
+                                ? c.resumo_chamado
+                                : <span className="line-clamp-2">{c.resumo_chamado}</span>}
+                            </span>
+                            <button
+                              onClick={() => setResumoExpandido(resumoExpandido === c.id ? null : c.id)}
+                              className="text-indigo-500 hover:text-indigo-700 text-[10px]"
+                            >
+                              {resumoExpandido === c.id ? 'Ocultar resumo' : 'Ver resumo completo'}
+                            </button>
+                          </div>
                         ) : (
-                          <span className="line-clamp-2 text-slate-700">{c.resumo_chamado ?? '—'}</span>
+                          <span className="text-slate-700">{c.resumo_chamado}</span>
                         )}
                       </td>
                       <td className="py-1.5 pr-3">
@@ -1736,8 +1865,8 @@ function IaAnalisePanel({
                       </td>
                     </tr>
                     {chamadoExpandido === c.id && (
-                      <tr key={`${c.id}-expand`} className="bg-indigo-50/40">
-                        <td colSpan={9} className="px-3 py-3">
+                      <tr className="bg-indigo-50/40">
+                        <td colSpan={11} className="px-3 py-3">
                           <div className="space-y-2 text-sm">
                             {/* Auditoria do chamado */}
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 bg-white border border-indigo-100 rounded-lg px-3 py-2">
@@ -1788,11 +1917,344 @@ function IaAnalisePanel({
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* ── Histórico do atendimento ── */}
+      {chamados.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold text-indigo-700">Histórico do atendimento</p>
+          <div className="space-y-1">
+            {chamados.map((c) => (
+              <div key={`hist-${c.id}`} className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="font-semibold text-indigo-600">Nº {c.ordem_ciclo ?? '—'}</span>
+                <span className="font-mono text-slate-600">{c.protocolo ?? '—'}</span>
+                {c.status === 'concluido' ? (
+                  <button
+                    onClick={async () => {
+                      if (conversaExpandida === c.digisac_ticket_id) {
+                        setConversaExpandida(null)
+                        return
+                      }
+                      setConversaExpandida(c.digisac_ticket_id)
+                      setConversaErro(null)
+                      if (conversaCache[c.digisac_ticket_id]) return
+                      setConversaLoading(true)
+                      try {
+                        const r = await fetch(`/api/sgi/digisac/mensagens?ticketId=${encodeURIComponent(c.digisac_ticket_id)}`)
+                        if (!r.ok) throw new Error('Erro ao buscar conversa')
+                        const data = await r.json()
+                        setConversaCache(prev => ({ ...prev, [c.digisac_ticket_id]: data.mensagens ?? [] }))
+                      } catch {
+                        setConversaErro('Não foi possível carregar a conversa.')
+                      } finally {
+                        setConversaLoading(false)
+                      }
+                    }}
+                    className="text-indigo-500 hover:text-indigo-700 text-[10px]"
+                  >
+                    {conversaExpandida === c.digisac_ticket_id ? 'Ocultar conversa' : 'Ver conversa'}
+                  </button>
+                ) : c.status === 'erro' ? (
+                  <span className="text-[10px] text-red-500 italic">Erro na análise</span>
+                ) : (
+                  <span className="text-[10px] text-slate-400 italic">Aguardando análise</span>
+                )}
+                {c.status === 'concluido' && conversaExpandida === c.digisac_ticket_id && (
+                  <div className="w-full mt-1">
+                    {conversaLoading ? (
+                      <div className="flex items-center gap-1.5 text-slate-400 text-[10px] py-1">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Carregando conversa...
+                      </div>
+                    ) : conversaErro ? (
+                      <p className="text-red-500 text-[10px] py-1">{conversaErro}</p>
+                    ) : (conversaCache[c.digisac_ticket_id] ?? []).length === 0 ? (
+                      <p className="text-slate-400 text-[10px] italic py-1">Nenhuma mensagem encontrada.</p>
+                    ) : (
+                      <div className="max-h-60 overflow-y-auto bg-slate-50 border border-slate-100 rounded-lg p-2 space-y-1.5">
+                        {[...(conversaCache[c.digisac_ticket_id] ?? [])].sort((a, b) => {
+                          if (a.timestamp === null && b.timestamp === null) return 0
+                          if (a.timestamp === null) return 1
+                          if (b.timestamp === null) return -1
+                          return a.timestamp - b.timestamp
+                        }).map((m) => (
+                          <div key={m.id} className={`text-[11px] leading-relaxed ${m.isFromMe ? 'text-right' : 'text-left'}`}>
+                            <span className={`inline-block px-2 py-1 rounded-lg max-w-[85%] ${m.isFromMe ? 'bg-indigo-100 text-indigo-800' : 'bg-white text-slate-700 border border-slate-100'}`}>
+                              {m.text || '(mensagem sem texto)'}
+                              {m.timestamp !== null && (
+                                <span className="block text-[8px] text-slate-400 mt-0.5">
+                                  {formatarTimestampMensagem(m.timestamp) ?? 'Data não disponível'}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Resumo consolidado da venda ── */}
+      {consolidado && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 space-y-2">
+          <p className="text-sm font-semibold text-indigo-700 flex items-center gap-1">
+            <Brain className="w-3.5 h-3.5" /> Resumo consolidado da venda
+          </p>
+          {consolidado.resumo_geral
+            ? <p className="text-sm text-slate-700 leading-relaxed">{consolidado.resumo_geral}</p>
+            : <p className="text-xs text-slate-400 italic">Resumo consolidado não disponível.</p>
+          }
+          {consolidado.modelo_ia && (
+            <p className="text-xs text-slate-400 pt-1 border-t border-indigo-100">modelo: {consolidado.modelo_ia}</p>
+          )}
+        </div>
+      )}
+
+      {/* ── Avaliação comercial ── */}
+      {consolidado && (
+        <div className="rounded-xl border border-indigo-100 bg-white p-4 space-y-2">
+          <p className="text-sm font-semibold text-indigo-700 flex items-center gap-1">
+            <TrendingUp className="w-3.5 h-3.5" /> Avaliação comercial
+          </p>
+          {consolidado.conclusao_comercial
+            ? <p className="text-sm text-indigo-800 leading-relaxed">{consolidado.conclusao_comercial}</p>
+            : <p className="text-xs text-slate-400 italic">Avaliação comercial não disponível.</p>
+          }
+        </div>
+      )}
+
+      {/* ── Dados do bebê ── */}
+      {consolidado && (consolidado.nome_bebe || consolidado.previsao_nascimento_bebe) && (
+        <div className="rounded-xl border border-pink-200 bg-pink-50/60 p-4 space-y-2">
+          <p className="text-sm font-semibold text-pink-700">Dados do bebê</p>
+          {consolidado.nome_bebe && (
+            <p className="text-sm text-slate-700">Nome: <span className="font-medium">{consolidado.nome_bebe}</span></p>
+          )}
+          {consolidado.previsao_nascimento_bebe && (
+            <p className="text-sm text-slate-700">Previsão de nascimento: <span className="font-medium">{consolidado.previsao_nascimento_bebe}</span></p>
+          )}
+        </div>
+      )}
+
+      {/* ── Análise detalhada ── */}
+      {consolidado && (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
+          <p className="text-sm font-semibold text-slate-700">Análise detalhada</p>
+
+          <div>
+            <p className="text-xs font-semibold text-slate-500 mb-1">Principais motivos para fechamento</p>
+            {consolidado.principais_motivos_compra.length > 0
+              ? <ul className="space-y-1">
+                  {consolidado.principais_motivos_compra.map((m, i) => (
+                    <li key={`motivo-${i}`} className="text-sm text-slate-700 flex gap-1"><span className="text-indigo-400">•</span>{m}</li>
+                  ))}
+                </ul>
+              : <p className="text-xs text-slate-400 italic">Nenhum item identificado.</p>
+            }
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold text-slate-500 mb-1">Produtos de interesse</p>
+            {consolidado.produtos_de_interesse.length > 0
+              ? <ul className="space-y-1">
+                  {consolidado.produtos_de_interesse.map((p, i) => (
+                    <li key={`produto-${i}`} className="text-sm text-slate-700 flex gap-1"><span className="text-emerald-400">•</span>{p}</li>
+                  ))}
+                </ul>
+              : <p className="text-xs text-slate-400 italic">Nenhum item identificado.</p>
+            }
+          </div>
+
+          {(consolidado.produtos_fechados ?? []).length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-slate-500 mb-1">Produtos fechados</p>
+              <ul className="space-y-1">
+                {(consolidado.produtos_fechados ?? []).map((p, i) => (
+                  <li key={`pfech-${i}`} className="text-sm text-slate-700 flex gap-1"><span className="text-teal-500">✓</span>{p}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {(consolidado.produtos_interesse_nao_fechados ?? []).length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-slate-500 mb-1">Produtos de interesse não fechados / oportunidades de produto</p>
+              <ul className="space-y-1">
+                {(consolidado.produtos_interesse_nao_fechados ?? []).map((p, i) => (
+                  <li key={`pnfech-${i}`} className="text-sm text-slate-700 flex gap-1"><span className="text-orange-400">◦</span>{p}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div>
+            <p className="text-xs font-semibold text-slate-500 mb-1">Objeções da venda</p>
+            {consolidado.principais_objecoes.length > 0
+              ? <ul className="space-y-1">
+                  {consolidado.principais_objecoes.map((o, i) => (
+                    <li key={`objecao-${i}`} className="text-sm text-slate-700 flex gap-1"><span className="text-amber-400">•</span>{o}</li>
+                  ))}
+                </ul>
+              : <p className="text-xs text-slate-400 italic">Nenhum item identificado.</p>
+            }
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold text-slate-500 mb-1">Oportunidades comerciais</p>
+            {consolidado.oportunidades_melhoria.length > 0
+              ? <ul className="space-y-1">
+                  {consolidado.oportunidades_melhoria.map((o, i) => (
+                    <li key={`oportunidade-${i}`} className="text-sm text-slate-700 flex gap-1"><span className="text-violet-400">•</span>{o}</li>
+                  ))}
+                </ul>
+              : <p className="text-xs text-slate-400 italic">Nenhum item identificado.</p>
+            }
+          </div>
+
+          {consolidado.tipo_fechamento && (
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-2">
+              <p className="text-xs font-semibold text-slate-500">Tipo de fechamento</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-slate-700 font-medium">{consolidado.tipo_fechamento}</span>
+                {consolidado.confianca_tipo_fechamento && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                    consolidado.confianca_tipo_fechamento === 'Alta'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : consolidado.confianca_tipo_fechamento === 'Média'
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-slate-200 text-slate-500'
+                  }`}>
+                    Confiança: {consolidado.confianca_tipo_fechamento}
+                  </span>
+                )}
+              </div>
+              {(consolidado.evidencias_tipo_fechamento ?? []).length > 0 && (
+                <ul className="space-y-1 pt-1">
+                  {(consolidado.evidencias_tipo_fechamento ?? []).map((e, i) => (
+                    <li key={`evid-${i}`} className="text-xs text-slate-500 flex gap-1"><span className="text-slate-400">—</span>{e}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {/* ── Negociações comerciais ── */}
+          {(() => {
+            const prazo = consolidado.negociacoes_prazo ?? []
+            const frete = consolidado.negociacoes_frete ?? []
+            const desconto = consolidado.negociacoes_desconto ?? []
+            const pagamento = consolidado.negociacoes_pagamento ?? []
+            const valores = consolidado.valores_citados ?? []
+            const temDados = prazo.length > 0 || frete.length > 0 || desconto.length > 0 || pagamento.length > 0 || valores.length > 0
+            return (
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-3">
+                <p className="text-xs font-semibold text-slate-500">Negociações comerciais</p>
+                {!temDados && (
+                  <p className="text-xs text-slate-400 italic">Nenhuma negociação comercial identificada.</p>
+                )}
+
+                {prazo.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-500">Prazo</p>
+                    {prazo.map((item, i) => (
+                      <div key={`prazo-${i}`} className="text-xs text-slate-700 bg-white rounded border border-slate-100 p-2 space-y-0.5">
+                        <p className="font-medium">{item.resumo}</p>
+                        {item.data_prometida && <p className="text-slate-500">Data prometida: <span className="font-medium">{item.data_prometida}</span></p>}
+                        <p className="text-slate-400 italic">{item.evidencia}</p>
+                        {(item.chamado_numero != null || item.protocolo) && (
+                          <p className="text-slate-400">Chamado Nº {item.chamado_numero ?? '?'}{item.protocolo ? ` — ${item.protocolo}` : ''}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {frete.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-500">Frete</p>
+                    {frete.map((item, i) => (
+                      <div key={`frete-${i}`} className="text-xs text-slate-700 bg-white rounded border border-slate-100 p-2 space-y-0.5">
+                        <p className="font-medium">{item.resumo}</p>
+                        {item.valor_original && <p className="text-slate-500">Valor original: {item.valor_original}</p>}
+                        {item.valor_negociado && <p className="text-slate-500">Valor negociado: {item.valor_negociado}</p>}
+                        <p className="text-slate-400 italic">{item.evidencia}</p>
+                        {(item.chamado_numero != null || item.protocolo) && (
+                          <p className="text-slate-400">Chamado Nº {item.chamado_numero ?? '?'}{item.protocolo ? ` — ${item.protocolo}` : ''}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {desconto.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-500">Desconto</p>
+                    {desconto.map((item, i) => (
+                      <div key={`desc-${i}`} className="text-xs text-slate-700 bg-white rounded border border-slate-100 p-2 space-y-0.5">
+                        <p className="font-medium">{item.resumo}</p>
+                        {item.valor_original && <p className="text-slate-500">Valor original: {item.valor_original}</p>}
+                        {item.valor_final && <p className="text-slate-500">Valor final: {item.valor_final}</p>}
+                        {item.percentual && <p className="text-slate-500">Percentual: {item.percentual}</p>}
+                        <p className="text-slate-400 italic">{item.evidencia}</p>
+                        {(item.chamado_numero != null || item.protocolo) && (
+                          <p className="text-slate-400">Chamado Nº {item.chamado_numero ?? '?'}{item.protocolo ? ` — ${item.protocolo}` : ''}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {pagamento.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-500">Pagamento</p>
+                    {pagamento.map((item, i) => (
+                      <div key={`pag-${i}`} className="text-xs text-slate-700 bg-white rounded border border-slate-100 p-2 space-y-0.5">
+                        <p className="font-medium">{item.resumo}</p>
+                        {item.forma && <p className="text-slate-500">Forma: {item.forma}</p>}
+                        <p className="text-slate-500">
+                          Link:{' '}
+                          {!item.houve_link_pagamento
+                            ? 'não mencionado'
+                            : item.link_usado_confirmado
+                              ? 'enviado e usado/confirmado'
+                              : 'oferecido/sugerido — não confirmado como enviado ou usado'}
+                        </p>
+                        <p className="text-slate-400 italic">{item.evidencia}</p>
+                        {(item.chamado_numero != null || item.protocolo) && (
+                          <p className="text-slate-400">Chamado Nº {item.chamado_numero ?? '?'}{item.protocolo ? ` — ${item.protocolo}` : ''}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {valores.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-500">Valores citados</p>
+                    {valores.map((item, i) => (
+                      <div key={`val-${i}`} className="text-xs text-slate-700 bg-white rounded border border-slate-100 p-2 space-y-0.5">
+                        <p className="font-medium">{item.valor} <span className="text-slate-400 font-normal">— {item.contexto}</span></p>
+                        <p className="text-slate-400">Tipo: {item.tipo_valor}</p>
+                        {(item.chamado_numero != null || item.protocolo) && (
+                          <p className="text-slate-400">Chamado Nº {item.chamado_numero ?? '?'}{item.protocolo ? ` — ${item.protocolo}` : ''}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </div>
       )}
 
@@ -1818,11 +2280,12 @@ function IaAnalisePanel({
             </Button>
           </>
         )}
-        {/* Concluído (com ou sem erro): reanalisar */}
-        {!emAndamento && !pausado && job?.status === 'concluido' && (
+        {/* Concluído, com erro, stale ou inconsistente: reanalisar */}
+        {!emAndamento && !pausado && Boolean(job || chamados.length > 0 || consolidado) && (
           <Button size="sm" variant="outline" onClick={onReanalisar}
+            disabled={processando}
             className="text-xs h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-50">
-            <RefreshCw className="w-3 h-3 mr-1.5" />Reanalisar
+            <RefreshCw className="w-3 h-3 mr-1.5" />Reanalisar IA
           </Button>
         )}
         {/* Em andamento: cancelar */}

@@ -37,6 +37,8 @@ type Candidate = {
   weekday?: string
   date?: string
   dateDM?: string
+  daysLeftTxt?: string
+  encomenda?: string
   rank?: number
 }
 
@@ -146,34 +148,33 @@ function formatElapsed(totalSeconds: number) {
   return `${minutes}:${seconds}`
 }
 
+function extractISODate(value?: string) {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return match ? { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) } : null
+}
+
+function formatDaysLeftFromToday(candidate: Candidate) {
+  const parsed = extractISODate(candidate.date || candidate.dateISO)
+  if (!parsed) return '-'
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const target = new Date(parsed.year, parsed.month - 1, parsed.day)
+  target.setHours(0, 0, 0, 0)
+
+  const diffDays = Math.round((target.getTime() - today.getTime()) / 86400000)
+  return diffDays < 0 ? '-' : `${diffDays} d`
+}
+
 const SEARCH_UI_TIMEOUT_MS = 7 * 60 * 1000
+const ENDPOINTS_PROCURAR_DATAS = {
+  pesquisar: '/api/procurar-datas/v2/pesquisar-compat-async',
+  progresso: '/api/procurar-datas/v2/progresso-compat',
+} as const
 
 function isNormalCandidate(candidate: Candidate) {
   return (candidate.tipo || 'normal') === 'normal'
-}
-
-function isHoraMarcadaCandidate(candidate: Candidate) {
-  const tipo = String(candidate.tipo || '').toLowerCase()
-  return tipo === 'hora-marcada' || tipo === 'hora marcada'
-}
-
-function optionStatus(found: boolean, done: boolean) {
-  if (found) return 'encontrado'
-  return done ? 'nao encontrado' : 'aguardando'
-}
-
-function progressStepClass(state: 'done' | 'active' | 'pending' | 'error') {
-  if (state === 'done') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
-  if (state === 'active') return 'border-sky-200 bg-sky-50 text-sky-800'
-  if (state === 'error') return 'border-red-200 bg-red-50 text-red-800'
-  return 'border-slate-200 bg-slate-50 text-slate-500'
-}
-
-function progressStepMark(state: 'done' | 'active' | 'pending' | 'error') {
-  if (state === 'done') return '[OK]'
-  if (state === 'active') return '[~]'
-  if (state === 'error') return '[!]'
-  return '[ ]'
 }
 
 async function readJson(response: Response) {
@@ -213,52 +214,9 @@ export default function ProcurarDatasPage() {
   const candidates = searchPayload?.candidates || []
   const normalCandidates = candidates.filter(isNormalCandidate).slice(0, 3)
   const extraCandidates = candidates.filter((candidate) => !isNormalCandidate(candidate))
-  const progressPayloadCandidates = progressSnapshot?.payload?.candidates || []
-  const progressSourceCandidates = progressPayloadCandidates.length
-    ? progressPayloadCandidates
-    : [...(progressSnapshot?.normais || []), ...(progressSnapshot?.extras || [])]
-  const progressNormalCount = Math.min(progressSourceCandidates.filter(isNormalCandidate).length, 3)
-  const progressEspecialFound = progressSourceCandidates.some((candidate) => candidate.tipo === 'especial')
-  const progressPremiumFound = progressSourceCandidates.some((candidate) => candidate.tipo === 'premium')
-  const progressHoraMarcadaFound = progressSourceCandidates.some(isHoraMarcadaCandidate)
   const serviceLocked = !addressResult?.ok
   const formLocked = serviceLocked || searching
-  const showProgressBlock = progressStatus !== 'idle' || searching || !!searchError
   const progressDone = progressStatus === 'done'
-  const progressError = progressStatus === 'error'
-  const progressSteps = [
-    {
-      label: 'Endereco validado',
-      detail: addressResult?.ok ? 'Confirmado' : 'Pendente',
-      state: addressResult?.ok ? 'done' : progressError ? 'error' : 'pending',
-    },
-    {
-      label: 'Tempo calculado',
-      detail: tempoNecessario && tempoNecessario !== '<--- PREENCHA' ? tempoNecessario : 'Pendente',
-      state: tempoNecessario && tempoNecessario !== '<--- PREENCHA' ? 'done' : progressError ? 'error' : 'pending',
-    },
-    {
-      label: 'Buscando datas',
-      detail: `${progressNormalCount}/3 normais encontrados`,
-      state: progressError ? 'error' : progressDone || progressNormalCount >= 3 ? 'done' : searching ? 'active' : 'pending',
-    },
-    {
-      label: 'Outras opcoes',
-      detail: `Especial: ${optionStatus(progressEspecialFound, progressDone)} | Premium: ${optionStatus(progressPremiumFound, progressDone)} | Hora marcada: ${optionStatus(progressHoraMarcadaFound, progressDone)}`,
-      state: progressError
-        ? 'error'
-        : progressDone
-          ? 'done'
-          : progressNormalCount >= 3
-            ? 'active'
-            : 'pending',
-    },
-    {
-      label: 'Finalizando resultados',
-      detail: progressDone ? 'Pesquisa concluida' : 'Aguardando resultado final',
-      state: progressError ? 'error' : progressDone ? 'done' : progressNormalCount >= 3 && searching ? 'active' : 'pending',
-    },
-  ] as const
 
   useEffect(() => {
     setForm((current) => {
@@ -390,7 +348,10 @@ export default function ProcurarDatasPage() {
   }, [])
 
   function updateForm<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((current) => ({ ...current, [key]: value }))
+    const nextValue = key === 'numero' && typeof value === 'string'
+      ? value.replace(/\D/g, '')
+      : value
+    setForm((current) => ({ ...current, [key]: nextValue }))
     if (['logradouro', 'numero', 'bairro', 'cidade', 'uf'].includes(String(key))) {
       setAddressResult(null)
       setSearchPayload(null)
@@ -463,7 +424,7 @@ export default function ProcurarDatasPage() {
     stopTimer()
   }
 
-  function startPolling(token: string) {
+  function startPolling(token: string, endpointProgresso: string) {
     if (pollRef.current) clearInterval(pollRef.current)
 
     const poll = async () => {
@@ -473,7 +434,7 @@ export default function ProcurarDatasPage() {
         return
       }
       try {
-        const response = await fetch(`/api/procurar-datas/progresso?clientToken=${encodeURIComponent(token)}`)
+        const response = await fetch(`${endpointProgresso}?clientToken=${encodeURIComponent(token)}`)
         const data = (await readJson(response)) as ProgressoPesquisaResponseSucesso
         const progress = (data.progress || {}) as SearchProgress
         const status = (progress.status || 'waiting') as ProgressStatus | string
@@ -548,6 +509,7 @@ export default function ProcurarDatasPage() {
     startTimer()
 
     try {
+      const endpoints = ENDPOINTS_PROCURAR_DATAS
       const body: PesquisarDatasRequest = {
         ...form,
         clientToken: token,
@@ -563,7 +525,7 @@ export default function ProcurarDatasPage() {
         monthYear: form.dataInicial,
       }
 
-      const response = await fetch('/api/procurar-datas/pesquisar', {
+      const response = await fetch(endpoints.pesquisar, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -574,7 +536,7 @@ export default function ProcurarDatasPage() {
       activeSearchTokenRef.current = startedToken
       setProgressStatus('queued')
       setPhase('Buscando datas')
-      startPolling(startedToken)
+      startPolling(startedToken, endpoints.progresso)
     } catch (error) {
       if (activeSearchTokenRef.current !== token) return
       const message = error instanceof Error ? error.message : 'Erro ao pesquisar datas.'
@@ -642,14 +604,16 @@ export default function ProcurarDatasPage() {
   function renderCandidatesTable(data: Candidate[], emptyText: string, indexOffset = 0) {
     return (
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] border-collapse text-sm">
+        <table className="w-full min-w-[900px] border-collapse text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase text-slate-500">
               <th className="px-3 py-2">Data</th>
               <th className="px-3 py-2">Dia</th>
+              <th className="px-3 py-2">Faltam</th>
               <th className="px-3 py-2">Equipe</th>
               <th className="px-3 py-2">Frete</th>
               <th className="px-3 py-2">Tipo</th>
+              <th className="px-3 py-2">Encomenda</th>
               <th className="px-3 py-2 text-right">Acao</th>
             </tr>
           </thead>
@@ -660,6 +624,7 @@ export default function ProcurarDatasPage() {
                 <tr key={`${candidate.dateISO}-${candidate.team}-${candidate.tipo || 'normal'}-${index}`} className="border-b border-slate-100">
                   <td className="px-3 py-3 font-medium text-slate-900">{candidate.dateDM || candidate.date || candidate.dateISO}</td>
                   <td className="px-3 py-3 text-slate-600">{candidate.weekday || '-'}</td>
+                  <td className="px-3 py-3 text-slate-600">{formatDaysLeftFromToday(candidate)}</td>
                   <td className="px-3 py-3 text-slate-600">{candidate.team}</td>
                   <td className="px-3 py-3 text-slate-600">{candidate.frete || '-'}</td>
                   <td className="px-3 py-3 text-slate-600">
@@ -670,6 +635,7 @@ export default function ProcurarDatasPage() {
                       <div className="mt-1 text-xs text-orange-700">{candidate.avisoHoraMarcada}</div>
                     )}
                   </td>
+                  <td className="px-3 py-3 text-slate-600">{candidate.encomenda || '-'}</td>
                   <td className="px-3 py-3 text-right">
                     <Button type="button" size="sm" onClick={() => preAgendar(candidate, actionIndex)} disabled={schedulingIndex !== null}>
                       {schedulingIndex === actionIndex ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
@@ -681,7 +647,7 @@ export default function ProcurarDatasPage() {
             })}
             {!data.length && (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-sm text-slate-500">
+                <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">
                   {emptyText}
                 </td>
               </tr>
@@ -699,7 +665,7 @@ export default function ProcurarDatasPage() {
           <CalendarCheck className="h-5 w-5" />
           <h1 className="text-xl font-semibold text-slate-900">Procurar Datas</h1>
         </div>
-        <p className="text-sm text-slate-500">Fluxo operacional conectado ao motor atual do Apps Script.</p>
+        <p className="text-sm text-slate-500">Fluxo operacional para pesquisa de datas disponiveis.</p>
       </div>
 
       <div className="space-y-4">
@@ -844,59 +810,6 @@ export default function ProcurarDatasPage() {
         </section>
       </div>
 
-      {showProgressBlock && (
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900">Progresso da pesquisa</h2>
-              <p className="text-xs text-slate-500">Tempo total: {formatElapsed(elapsedSeconds)}</p>
-            </div>
-            <div className="flex gap-2">
-              {(searching || progressStatus === 'error') && (
-                <Button type="button" variant="outline" size="sm" onClick={editarFiltros}>
-                  Editar filtros
-                </Button>
-              )}
-              {progressStatus === 'done' && (
-                <Button type="button" variant="outline" size="sm" onClick={novaBusca}>
-                  Nova busca
-                </Button>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-2 md:grid-cols-5">
-            {progressSteps.map((step) => (
-              <div
-                key={step.label}
-                className={`min-h-24 border px-3 py-2 text-sm ${progressStepClass(step.state)}`}
-              >
-                <div className="flex items-center gap-2 font-semibold">
-                  <span>{progressStepMark(step.state)}</span>
-                  <span>{step.label}</span>
-                </div>
-                <div className="mt-2 text-xs leading-relaxed opacity-80">{step.detail}</div>
-                {step.state === 'active' && (
-                  <Loader2 className="mt-2 h-4 w-4 animate-spin" />
-                )}
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-            {searchError ? (
-              <div className="text-red-700">{searchError}</div>
-            ) : progressDone ? (
-              <div className="text-emerald-700">Pesquisa concluida.</div>
-            ) : (
-              <div className="text-slate-600">
-                A pesquisa esta em andamento. Os resultados aparecerao automaticamente quando a busca terminar.
-              </div>
-            )}
-          </div>
-        </section>
-      )}
-
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
@@ -906,6 +819,27 @@ export default function ProcurarDatasPage() {
                 ? `${normalCandidates.length} recomendada(s) e ${extraCandidates.length} outra(s) opcoes`
                 : 'Nenhuma busca finalizada.'}
             </p>
+            {(searching || progressDone || searchError) && (
+              <p className={`mt-1 text-xs ${searchError ? 'text-red-700' : progressDone ? 'text-emerald-700' : 'text-slate-500'}`}>
+                {searchError
+                  ? searchError
+                  : progressDone
+                    ? `Pesquisa concluida em ${formatElapsed(elapsedSeconds)}`
+                    : `Tempo total da pesquisa: ${formatElapsed(elapsedSeconds)}`}
+              </p>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {(searching || progressStatus === 'error') && (
+              <Button type="button" variant="outline" size="sm" onClick={editarFiltros}>
+                Editar filtros
+              </Button>
+            )}
+            {progressDone && (
+              <Button type="button" variant="outline" size="sm" onClick={novaBusca}>
+                Nova busca
+              </Button>
+            )}
           </div>
         </div>
 

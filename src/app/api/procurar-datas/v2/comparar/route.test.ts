@@ -18,6 +18,8 @@ vi.mock('@/lib/procurar-datas/api', () => ({
 const validarAcessoMock = vi.mocked(validarAcessoProcurarDatas)
 const chamarAppsScriptMock = vi.mocked(chamarAppsScriptProcurarDatas)
 
+const REGEX_LEGADO_GMT3 = /^\d{4}-\d{2}-\d{2}T03:00:00\.000Z$/
+
 describe('gerarDiagnosticoAdapterV2Comparar', () => {
   it('gera bloco sintetico deterministico com quatro tipos adaptados', () => {
     const diagnostico = gerarDiagnosticoAdapterV2Comparar()
@@ -36,6 +38,40 @@ describe('gerarDiagnosticoAdapterV2Comparar', () => {
     expect(diagnostico.amostra.map((c) => c.rank)).toEqual([1, 2, 3, 4])
   })
 
+  it('retorna formatoDateISO legado-gmt3 no bloco diagnosticoAdapterV2', () => {
+    const diagnostico = gerarDiagnosticoAdapterV2Comparar()
+
+    expect(diagnostico.formatoDateISO).toBe('legado-gmt3')
+  })
+
+  it('amostra adaptada retorna dateISO no formato YYYY-MM-DDT03:00:00.000Z', () => {
+    const { amostra } = gerarDiagnosticoAdapterV2Comparar()
+
+    for (const candidato of amostra) {
+      expect(candidato.dateISO).toMatch(REGEX_LEGADO_GMT3)
+    }
+  })
+
+  it('amostra adaptada retorna dateDM correto independente do formato dateISO', () => {
+    const { amostra } = gerarDiagnosticoAdapterV2Comparar()
+    const porTipo = Object.fromEntries(amostra.map((c) => [c.tipo, c]))
+
+    expect(porTipo.normal?.dateDM).toBe('23/06')
+    expect(porTipo.premium?.dateDM).toBe('30/06')
+    expect(porTipo.especial?.dateDM).toBe('24/07')
+    expect(porTipo['hora-marcada']?.dateDM).toBe('25/07')
+  })
+
+  it('amostra adaptada retorna weekday correto', () => {
+    const { amostra } = gerarDiagnosticoAdapterV2Comparar()
+    const porTipo = Object.fromEntries(amostra.map((c) => [c.tipo, c]))
+
+    expect(porTipo.normal?.weekday).toBe('Terça')
+    expect(porTipo.premium?.weekday).toBe('Terça')
+    expect(porTipo.especial?.weekday).toBe('Sexta')
+    expect(porTipo['hora-marcada']?.weekday).toBe('Sábado')
+  })
+
   it('adapta isExtra conforme contrato legado observado/documentado', () => {
     const { amostra } = gerarDiagnosticoAdapterV2Comparar()
     const porTipo = Object.fromEntries(amostra.map((candidato) => [candidato.tipo, candidato]))
@@ -44,6 +80,27 @@ describe('gerarDiagnosticoAdapterV2Comparar', () => {
     expect(porTipo.premium?.isExtra).toBe(true)
     expect(porTipo.especial?.isExtra).toBe(true)
     expect(porTipo['hora-marcada']?.isExtra).toBe(true)
+  })
+
+  it('retorna rank, tipo, frete e team corretos para cada candidato', () => {
+    const { amostra } = gerarDiagnosticoAdapterV2Comparar()
+    const porTipo = Object.fromEntries(amostra.map((c) => [c.tipo, c]))
+
+    expect(porTipo.normal?.rank).toBe(1)
+    expect(porTipo.normal?.frete).toBe('R$ 110')
+    expect(porTipo.normal?.team).toBe('EQUIPE 1')
+
+    expect(porTipo.premium?.rank).toBe(2)
+    expect(porTipo.premium?.frete).toBe('R$ 320')
+    expect(porTipo.premium?.team).toBe('EQUIPE 1')
+
+    expect(porTipo.especial?.rank).toBe(3)
+    expect(porTipo.especial?.frete).toBe('R$ 220')
+    expect(porTipo.especial?.team).toBe('EQUIPE 1')
+
+    expect(porTipo['hora-marcada']?.rank).toBe(4)
+    expect(porTipo['hora-marcada']?.frete).toBe('R$ 200')
+    expect(porTipo['hora-marcada']?.team).toBe('EQUIPE 2')
   })
 
   it('mantem aviso diagnostico de pendencia para hora marcada', () => {
@@ -80,6 +137,7 @@ describe('GET /api/procurar-datas/v2/comparar', () => {
     expect(body.diagnosticoAdapterV2).toMatchObject({
       executado: true,
       modo: 'sintetico',
+      formatoDateISO: 'legado-gmt3',
       quantidadeCandidatosAdaptados: 4,
     })
     expect(body.diagnosticoAdapterV2.tiposDemonstrados).toEqual([
@@ -95,5 +153,36 @@ describe('GET /api/procurar-datas/v2/comparar', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
 
     fetchSpy.mockRestore()
+  })
+
+  it('diagnosticoAdapterV2 retorna dateISO da amostra no formato YYYY-MM-DDT03:00:00.000Z', async () => {
+    const response = await GET()
+    const body = await response.json()
+
+    const amostra: Array<{ dateISO: string }> = body.diagnosticoAdapterV2?.amostra ?? []
+    expect(amostra.length).toBeGreaterThan(0)
+    for (const candidato of amostra) {
+      expect(candidato.dateISO).toMatch(REGEX_LEGADO_GMT3)
+    }
+  })
+
+  it('comparacao estrutural retorna 2 comparacoes sem chamar Apps Script ou planilha', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    const response = await GET()
+    const body = await response.json()
+
+    expect(body.comparacoes).toHaveLength(2)
+    expect(chamarAppsScriptMock).not.toHaveBeenCalled()
+    expect(fetchSpy).not.toHaveBeenCalled()
+
+    fetchSpy.mockRestore()
+  })
+
+  it('producaoAfetada e false e nao altera producao', async () => {
+    const response = await GET()
+    const body = await response.json()
+
+    expect(body.producaoAfetada).toBe(false)
   })
 })

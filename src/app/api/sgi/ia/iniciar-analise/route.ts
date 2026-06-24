@@ -129,10 +129,34 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Erro ao preparar registros dos chamados' }, { status: 500 })
   }
 
-  // Atualiza fila_id nos registros (necessário se fez upsert em registros existentes)
+  // Atualiza fila_id nos registros e limpa todos os campos da análise anterior
+  // para evitar que dados antigos (influencia_compra, grau_influencia etc.) apareçam
+  // durante o processamento do novo job
   await supabaseAdmin
     .from('digisac_chamados_analise_ia')
-    .update({ fila_id: filaId, status: 'pendente', erro_mensagem: null, updated_at: new Date().toISOString() })
+    .update({
+      fila_id: filaId,
+      status: 'pendente',
+      erro_mensagem: null,
+      resumo_chamado: null,
+      influencia_compra: null,
+      grau_influencia: null,
+      motivo_influencia: null,
+      produtos_mencionados: [],
+      objecoes_identificadas: [],
+      intencao_cliente: null,
+      sentimento_cliente: null,
+      pontos_de_atencao: [],
+      confianca_analise: null,
+      nome_bebe: null,
+      previsao_nascimento_bebe: null,
+      transcript_truncado: false,
+      transcript_tamanho_chars: null,
+      total_mensagens: null,
+      modelo_ia: null,
+      analisado_em: null,
+      updated_at: new Date().toISOString(),
+    })
     .eq('numero_lancamento', numeroLancamento)
     .in('digisac_ticket_id', vinculos.map((v) => v.digisac_ticket_id))
 

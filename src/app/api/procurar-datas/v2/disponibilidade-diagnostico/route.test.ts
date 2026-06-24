@@ -64,7 +64,9 @@ const LEITURA_OK = {
   ok: true as const,
   tabela: TABELA_MOCK,
   planilhaId: PLANILHA_ID,
-  abaNome: 'TEMPO DISPONIVEL',
+  gid: 65861376,
+  abaNomeResolvido: 'TEMPO DISPONIVEL POR EQUIPE',
+  range: "'TEMPO DISPONIVEL POR EQUIPE'!A:F",
 }
 
 const CONFIG_OK = {
@@ -107,6 +109,12 @@ const CONFIG_OK = {
     fatorMultiplicadorKmViagem: 1,
     multiplicadorKmNaoViagem: 1,
     tempoMaximoViagemSabadoMin: 60,
+    latDeposito: -25.4876648,
+    lngDeposito: -49.2692262,
+    latCasaE1: -25.494297,
+    lngCasaE1: -49.277091,
+    latCasaE2: -25.494297,
+    lngCasaE2: -49.277091,
   },
 }
 
@@ -229,16 +237,43 @@ describe('GET /api/procurar-datas/v2/disponibilidade-diagnostico', () => {
     expect(body.avisos).toContain('Não altera agenda ou planilha.')
   })
 
-  it('10. usa planilhaDeTempoDisponivel da config (origemId: config)', async () => {
+  it('10. sempre usa o spreadsheetId real (constante), independente da config', async () => {
     const res = await GET(criarRequest())
     const body = await res.json()
 
-    expect(body.origem.origemId).toBe('config')
-    expect(body.origem.planilhaId).toBe(PLANILHA_ID)
-    expect(body.origem.abaNome).toBe('TEMPO DISPONIVEL')
+    expect(body.origem.spreadsheetId).toBe('1H8mFLzEL8XcFh0UX_hOJF-ublRZcdbhwLc7ooNEeJ5U')
+    expect(body.origem.gid).toBe(65861376)
+    expect(body.origem.tipo).toBe('google-sheets')
   })
 
-  it('11. usa fallback diagnóstico quando config falha', async () => {
+  it('10b. expõe nomeLogicoConfig, abaNomeResolvido e range da leitura', async () => {
+    const res = await GET(criarRequest())
+    const body = await res.json()
+
+    expect(body.origem.nomeLogicoConfig).toBe(PLANILHA_ID)
+    expect(body.origem.abaNomeResolvido).toBe('TEMPO DISPONIVEL POR EQUIPE')
+    expect(body.origem.range).toBe("'TEMPO DISPONIVEL POR EQUIPE'!A:F")
+    expect(body.origem.origemId).toBe('fallback-diagnostico-confirmado')
+    expect(body.leitura.range).toBe("'TEMPO DISPONIVEL POR EQUIPE'!A:F")
+    expect(body.leitura.gid).toBe(65861376)
+  })
+
+  it('10c. quando config retorna nome lógico real, exibe-o como nomeLogicoConfig; aba resolvida pelo gid separada', async () => {
+    buscarConfigMock.mockResolvedValue({
+      ...CONFIG_OK,
+      config: { ...CONFIG_OK.config, planilhaDeTempoDisponivel: 'TEMPO DISPONIVEL POR EQUIPE' },
+    })
+
+    const res = await GET(criarRequest())
+    const body = await res.json()
+
+    expect(body.origem.nomeLogicoConfig).toBe('TEMPO DISPONIVEL POR EQUIPE')
+    expect(body.origem.abaNomeResolvido).toBe('TEMPO DISPONIVEL POR EQUIPE')
+    expect(body.origem.spreadsheetId).toBe('1H8mFLzEL8XcFh0UX_hOJF-ublRZcdbhwLc7ooNEeJ5U')
+    expect(body.origem.origemId).toBe('fallback-diagnostico-confirmado')
+  })
+
+  it('11. quando config falha, origemId é fallback-diagnostico e spreadsheetId real ainda é usado', async () => {
     buscarConfigMock.mockResolvedValue({
       ok: false,
       erro: 'Supabase inacessível',
@@ -249,7 +284,9 @@ describe('GET /api/procurar-datas/v2/disponibilidade-diagnostico', () => {
     const body = await res.json()
 
     expect(body.origem.origemId).toBe('fallback-diagnostico')
-    expect(body.avisos.some((a: string) => a.includes('fallback diagnóstico'))).toBe(true)
+    expect(body.origem.spreadsheetId).toBe('1H8mFLzEL8XcFh0UX_hOJF-ublRZcdbhwLc7ooNEeJ5U')
+    expect(body.origem.nomeLogicoConfig).toBeNull()
+    expect(body.avisos.some((a: string) => a.includes('constante diagnóstica'))).toBe(true)
   })
 
   it('12. tabela vazia retorna ok: true com resumo zerado', async () => {
@@ -257,7 +294,9 @@ describe('GET /api/procurar-datas/v2/disponibilidade-diagnostico', () => {
       ok: true,
       tabela: [],
       planilhaId: PLANILHA_ID,
-      abaNome: 'TEMPO DISPONIVEL',
+      gid: 65861376,
+      abaNomeResolvido: 'TEMPO DISPONIVEL POR EQUIPE',
+      range: "'TEMPO DISPONIVEL POR EQUIPE'!A:F",
     })
 
     const res = await GET(criarRequest())
@@ -267,5 +306,57 @@ describe('GET /api/procurar-datas/v2/disponibilidade-diagnostico', () => {
     expect(body.leitura.linhasLidas).toBe(0)
     expect(body.parser.resumo.linhasRecebidas).toBe(0)
     expect(body.amostra).toHaveLength(0)
+  })
+
+  it('13. aceita ?dataInicialISO=YYYY-MM-DD e expõe parametros no response', async () => {
+    const res = await GET(criarRequest({ dataInicialISO: '2026-12-15', limite: '50', amostra: '10' }))
+    const body = await res.json()
+
+    expect(body.parametros).toBeDefined()
+    expect(body.parametros.dataInicialISO).toBe('2026-12-15')
+    expect(body.parametros.origemDataInicialISO).toBe('query')
+    expect(body.parametros.limite).toBe(50)
+    expect(body.parametros.tamAmostra).toBe(10)
+  })
+
+  it('14. fallback diagnostico-hoje quando dataInicialISO não é informado', async () => {
+    const res = await GET(criarRequest())
+    const body = await res.json()
+
+    expect(body.parametros).toBeDefined()
+    expect(body.parametros.origemDataInicialISO).toBe('diagnostico-hoje')
+    expect(body.parametros.dataInicialISO).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  it('15. parseia dados no formato real da planilha (DD/MM com texto) e retorna linhasValidas > 0', async () => {
+    const tabelaReal: string[][] = [
+      ['DATA', 'EQUIPE', 'TEMPO UTILIZADO', 'TEMPO DISPONÍVEL', 'TEMPO EXCEDIDO', 'STATUS'],
+      ['15/06 (segunda-feira)', 'Equipe 1', '06:00', '01:00', '', 'disponível'],
+      ['23/06 (terça-feira)', 'Equipe 1', '05:45', '00:00', '01:45', 'excedeu'],
+      ['05/01 (segunda-feira)', 'Equipe 2', '07:00', '02:00', '', 'disponível'],
+    ]
+
+    lerPlanilhaMock.mockResolvedValue({
+      ok: true,
+      tabela: tabelaReal,
+      planilhaId: PLANILHA_ID,
+      gid: 65861376,
+      abaNomeResolvido: 'TEMPO DISPONIVEL POR EQUIPE',
+      range: "'TEMPO DISPONIVEL POR EQUIPE'!A:F",
+    })
+
+    const res = await GET(criarRequest({ dataInicialISO: '2026-06-15' }))
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.ok).toBe(true)
+    expect(body.parser.resumo.linhasValidas).toBe(3)
+    expect(body.parser.resumo.linhasIgnoradas).toBe(0)
+    expect(body.parser.erros).toHaveLength(0)
+    expect(body.amostra).toHaveLength(3)
+
+    expect(body.amostra[0].dataISO).toBe('2026-06-15')
+    expect(body.amostra[1].dataISO).toBe('2026-06-23')
+    expect(body.amostra[2].dataISO).toBe('2027-01-05')
   })
 })

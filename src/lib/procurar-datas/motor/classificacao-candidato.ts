@@ -28,6 +28,7 @@ export interface ConfigClassificacaoV2 {
   kmAdicionalMaxNaRotaPremiumM: number | null
   kmMaximoNaSemanaM: number | null
   kmMaximoNoSabadoM: number | null
+  horaMarcadaHorasAMais?: number | null
 }
 
 /** Entrada para classificação de um cenário operacional. */
@@ -36,6 +37,7 @@ export interface ClassificarCandidatoOperacionalV2Input {
   diaSemana: number
   ehSabado: boolean
   ehDomingo: boolean
+  slotTemPontos?: boolean
 
   equipe: string
   ativa: boolean
@@ -61,6 +63,8 @@ export interface ClassificarCandidatoOperacionalV2Input {
 export interface ClassificacaoCandidatoOperacionalV2 {
   tipo: TipoClassificacaoCandidatoV2
   elegivel: boolean
+  horaMarcada?: boolean
+  elegivelHoraMarcada?: boolean
   motivos: string[]
   avisos: string[]
   detalhes: {
@@ -69,12 +73,24 @@ export interface ClassificacaoCandidatoOperacionalV2 {
     diaSemana: number
     ehSabado: boolean
     ehDomingo: boolean
+    slotTemPontos: boolean
     ativa: boolean
     disponivelMin: number
     suficienteParaServico: boolean
     tempoNecessarioMin: number | null
     distanciaKm: number | null
     kmAdicionalNaRotaM: number | null
+    limiteBaseM: number | null
+    limiteEspecialM: number | null
+    limitePremiumM: number | null
+    horaMarcada?: boolean
+    elegivelHoraMarcada?: boolean
+    motivoHoraMarcada?: string | null
+    slotAvailMin?: number | null
+    serviceMin?: number | null
+    horaMarcadaHorasAMais?: number | null
+    limiteMinimoHoraMarcadaMin?: number | null
+    horaMarcadaCalculadaPorTempo?: boolean
   }
 }
 
@@ -137,9 +153,11 @@ export function classificarCandidatoOperacionalV2(
     return resultado('indisponivel', false, motivos, avisos, input)
   }
 
+  // distanciaKm é opcional para equivalência com legado
+  // Legado usa apenas bestKm (kmAdicionalNaRotaM) para classificar normal/especial/premium
+  // Se distanciaKm estiver ausente, avisa mas não bloqueia (continua com kmAdicionalNaRotaM)
   if (input.distanciaKm === null || !Number.isFinite(input.distanciaKm)) {
-    motivos.push('Distância ausente ou inválida.')
-    return resultado('indisponivel', false, motivos, avisos, input)
+    avisos.push('Distância base (origem → destino) ausente. Classificação baseada apenas em km adicional de rota.')
   }
 
   if (input.ehDomingo) {
@@ -159,16 +177,16 @@ export function classificarCandidatoOperacionalV2(
   }
 
   // Validar config essencial (todos os limites são obrigatórios)
-  const limiteBaseM = input.config.kmAdicionalMaxNaRotaM
-  const limiteEspecialM = input.config.kmAdicionalMaxNaRotaEspecialM
-  const limitePremiumM = input.config.kmAdicionalMaxNaRotaPremiumM
+  const kmAdicionalMaxNaRotaM = input.config.kmAdicionalMaxNaRotaM
+  const guardaEspecialM = input.config.kmAdicionalMaxNaRotaEspecialM
+  const guardaPremiumM = input.config.kmAdicionalMaxNaRotaPremiumM
   const maxSemanaM = input.config.kmMaximoNaSemanaM
   const maxSabadoM = input.config.kmMaximoNoSabadoM
 
   if (
-    limiteBaseM === null || !Number.isFinite(limiteBaseM) || limiteBaseM < 0 ||
-    limiteEspecialM === null || !Number.isFinite(limiteEspecialM) || limiteEspecialM < 0 ||
-    limitePremiumM === null || !Number.isFinite(limitePremiumM) || limitePremiumM < 0 ||
+    kmAdicionalMaxNaRotaM === null || !Number.isFinite(kmAdicionalMaxNaRotaM) || kmAdicionalMaxNaRotaM < 0 ||
+    guardaEspecialM === null || !Number.isFinite(guardaEspecialM) || guardaEspecialM < 0 ||
+    guardaPremiumM === null || !Number.isFinite(guardaPremiumM) || guardaPremiumM < 0 ||
     maxSemanaM === null || !Number.isFinite(maxSemanaM) || maxSemanaM < 0 ||
     maxSabadoM === null || !Number.isFinite(maxSabadoM) || maxSabadoM < 0
   ) {
@@ -176,19 +194,31 @@ export function classificarCandidatoOperacionalV2(
     return resultado('indisponivel', false, motivos, avisos, input)
   }
 
-  // ── 2. Validar limites máximos de semana/sábado ──────────────────────────
-  // distanciaKm está em km; limites estão em METROS na config → converter km→m
-  const distanciaM = input.distanciaKm * KM_PARA_METROS
+  const slotTemPontos = input.slotTemPontos ?? true
+  const limiteBaseM = slotTemPontos
+    ? kmAdicionalMaxNaRotaM
+    : input.ehSabado
+      ? maxSabadoM
+      : maxSemanaM
+  const limiteEspecialM = limiteBaseM + 5000
+  const limitePremiumM = limiteBaseM + 10000
 
-  if (input.ehSabado) {
-    if (maxSabadoM !== null && Number.isFinite(maxSabadoM) && distanciaM > maxSabadoM) {
-      motivos.push('Distância acima do limite máximo de sábado.')
-      return resultado('indisponivel', false, motivos, avisos, input)
-    }
-  } else {
-    if (maxSemanaM !== null && Number.isFinite(maxSemanaM) && distanciaM > maxSemanaM) {
-      motivos.push('Distância acima do limite máximo da semana.')
-      return resultado('indisponivel', false, motivos, avisos, input)
+  // ── 2. Validação de limites máximos de semana/sábado (apenas se distanciaKm disponível)
+  // Legado não valida isso antes da classificação normal/especial/premium
+  // Esta validação só é aplicada se distanciaKm estiver disponível
+  if (input.distanciaKm !== null && Number.isFinite(input.distanciaKm)) {
+    const distanciaM = input.distanciaKm * KM_PARA_METROS
+
+    if (input.ehSabado) {
+      if (maxSabadoM !== null && Number.isFinite(maxSabadoM) && distanciaM > maxSabadoM) {
+        motivos.push('Distância acima do limite máximo de sábado.')
+        return resultado('indisponivel', false, motivos, avisos, input)
+      }
+    } else {
+      if (maxSemanaM !== null && Number.isFinite(maxSemanaM) && distanciaM > maxSemanaM) {
+        motivos.push('Distância acima do limite máximo da semana.')
+        return resultado('indisponivel', false, motivos, avisos, input)
+      }
     }
   }
 
@@ -203,10 +233,7 @@ export function classificarCandidatoOperacionalV2(
 
   // ── 4. Hora marcada ──────────────────────────────────────────────────────
 
-  if (input.horaMarcada) {
-    motivos.push('Atendimento classificado como hora marcada.')
-    return resultado('hora-marcada', true, motivos, avisos, input)
-  }
+  // Hora marcada e calculada como flag diagnostica nao exclusiva em resultado().
 
   // ── 5. Normal ────────────────────────────────────────────────────────────
 
@@ -216,13 +243,13 @@ export function classificarCandidatoOperacionalV2(
 
   // ── 6. Especial ────────────────────────────────────────────────────────────
 
-  if (kmAdicionalM <= limiteEspecialM) {
+  if (guardaEspecialM > 0 && kmAdicionalM <= limiteEspecialM) {
     return resultado('especial', true, motivos, avisos, input)
   }
 
   // ── 7. Premium ─────────────────────────────────────────────────────────────
 
-  if (kmAdicionalM <= limitePremiumM) {
+  if (guardaPremiumM > 0 && kmAdicionalM <= limitePremiumM) {
     return resultado('premium', true, motivos, avisos, input)
   }
 
@@ -241,9 +268,26 @@ function resultado(
   avisos: string[],
   input: ClassificarCandidatoOperacionalV2Input
 ): ClassificacaoCandidatoOperacionalV2 {
+  const limites = calcularLimitesDiagnosticos(input)
+  const kmAdicionalNaRotaM =
+    input.kmAdicionalNaRotaM !== undefined &&
+    input.kmAdicionalNaRotaM !== null &&
+    Number.isFinite(input.kmAdicionalNaRotaM)
+      ? input.kmAdicionalNaRotaM
+      : null
+  const horaMarcada = calcularHoraMarcadaDiagnostico(
+    input,
+    limites.limiteBaseM,
+    kmAdicionalNaRotaM,
+    tipo,
+    elegivel
+  )
+
   return {
     tipo,
     elegivel,
+    horaMarcada: horaMarcada.elegivelHoraMarcada,
+    elegivelHoraMarcada: horaMarcada.elegivelHoraMarcada,
     motivos: [...motivos],
     avisos: [...avisos],
     detalhes: {
@@ -252,17 +296,182 @@ function resultado(
       diaSemana: input.diaSemana,
       ehSabado: input.ehSabado,
       ehDomingo: input.ehDomingo,
+      slotTemPontos: input.slotTemPontos ?? true,
       ativa: input.ativa,
       disponivelMin: input.disponivelMin,
       suficienteParaServico: input.suficienteParaServico,
       tempoNecessarioMin: input.tempoNecessarioMin,
       distanciaKm: input.distanciaKm,
-      kmAdicionalNaRotaM:
-        input.kmAdicionalNaRotaM !== undefined &&
-        input.kmAdicionalNaRotaM !== null &&
-        Number.isFinite(input.kmAdicionalNaRotaM)
-          ? input.kmAdicionalNaRotaM
-          : null,
+      kmAdicionalNaRotaM,
+      limiteBaseM: limites.limiteBaseM,
+      limiteEspecialM: limites.limiteEspecialM,
+      limitePremiumM: limites.limitePremiumM,
+      horaMarcada: horaMarcada.elegivelHoraMarcada,
+      elegivelHoraMarcada: horaMarcada.elegivelHoraMarcada,
+      motivoHoraMarcada: horaMarcada.motivoHoraMarcada,
+      slotAvailMin: horaMarcada.slotAvailMin,
+      serviceMin: horaMarcada.serviceMin,
+      horaMarcadaHorasAMais: horaMarcada.horaMarcadaHorasAMais,
+      limiteMinimoHoraMarcadaMin: horaMarcada.limiteMinimoHoraMarcadaMin,
+      horaMarcadaCalculadaPorTempo: horaMarcada.horaMarcadaCalculadaPorTempo,
     },
+  }
+}
+
+function calcularHoraMarcadaDiagnostico(
+  input: ClassificarCandidatoOperacionalV2Input,
+  limiteBaseM: number | null,
+  kmAdicionalNaRotaM: number | null,
+  tipo: TipoClassificacaoCandidatoV2,
+  elegivel: boolean
+): {
+  elegivelHoraMarcada: boolean
+  motivoHoraMarcada: string | null
+  slotAvailMin: number | null
+  serviceMin: number | null
+  horaMarcadaHorasAMais: number | null
+  limiteMinimoHoraMarcadaMin: number | null
+  horaMarcadaCalculadaPorTempo: boolean
+} {
+  const slotAvailMin = Number.isFinite(input.disponivelMin) ? input.disponivelMin : null
+  const serviceMin =
+    input.tempoNecessarioMin !== null && Number.isFinite(input.tempoNecessarioMin)
+      ? input.tempoNecessarioMin
+      : null
+  const horasAMais = input.config.horaMarcadaHorasAMais
+  const horaMarcadaHorasAMais =
+    typeof horasAMais === 'number' && Number.isFinite(horasAMais) ? horasAMais : null
+  const limiteMinimoHoraMarcadaMin =
+    serviceMin !== null && horaMarcadaHorasAMais !== null && horaMarcadaHorasAMais > 0
+      ? serviceMin + horaMarcadaHorasAMais * 60
+      : null
+
+  if (horaMarcadaHorasAMais === null) {
+    return {
+      elegivelHoraMarcada: false,
+      motivoHoraMarcada: 'Config HORA MARCADA HORAS A MAIS ausente ou invalida.',
+      slotAvailMin,
+      serviceMin,
+      horaMarcadaHorasAMais,
+      limiteMinimoHoraMarcadaMin,
+      horaMarcadaCalculadaPorTempo: false,
+    }
+  }
+
+  if (horaMarcadaHorasAMais <= 0) {
+    return {
+      elegivelHoraMarcada: false,
+      motivoHoraMarcada: 'HORA MARCADA HORAS A MAIS menor ou igual a zero no legado nao ativa hora marcada.',
+      slotAvailMin,
+      serviceMin,
+      horaMarcadaHorasAMais,
+      limiteMinimoHoraMarcadaMin,
+      horaMarcadaCalculadaPorTempo: false,
+    }
+  }
+
+  if (slotAvailMin === null || serviceMin === null || limiteMinimoHoraMarcadaMin === null) {
+    return {
+      elegivelHoraMarcada: false,
+      motivoHoraMarcada: 'Tempo disponivel ou tempo necessario ausente para hora marcada.',
+      slotAvailMin,
+      serviceMin,
+      horaMarcadaHorasAMais,
+      limiteMinimoHoraMarcadaMin,
+      horaMarcadaCalculadaPorTempo: false,
+    }
+  }
+
+  if (limiteBaseM === null || kmAdicionalNaRotaM === null) {
+    return {
+      elegivelHoraMarcada: false,
+      motivoHoraMarcada: 'Limite normal ou km adicional ausente para hora marcada.',
+      slotAvailMin,
+      serviceMin,
+      horaMarcadaHorasAMais,
+      limiteMinimoHoraMarcadaMin,
+      horaMarcadaCalculadaPorTempo: false,
+    }
+  }
+
+  if (kmAdicionalNaRotaM > limiteBaseM) {
+    return {
+      elegivelHoraMarcada: false,
+      motivoHoraMarcada: 'Km adicional fora do limite normal para hora marcada.',
+      slotAvailMin,
+      serviceMin,
+      horaMarcadaHorasAMais,
+      limiteMinimoHoraMarcadaMin,
+      horaMarcadaCalculadaPorTempo: false,
+    }
+  }
+
+  if (slotAvailMin < limiteMinimoHoraMarcadaMin) {
+    return {
+      elegivelHoraMarcada: false,
+      motivoHoraMarcada: 'Tempo disponivel insuficiente para hora marcada.',
+      slotAvailMin,
+      serviceMin,
+      horaMarcadaHorasAMais,
+      limiteMinimoHoraMarcadaMin,
+      horaMarcadaCalculadaPorTempo: false,
+    }
+  }
+
+  // Cálculo bruto de tempo indica janela suficiente
+  const horaMarcadaCalculadaPorTempo = true
+
+  // Bloquear hora marcada se candidato for indisponível
+  if (tipo === 'indisponivel' || !elegivel) {
+    return {
+      elegivelHoraMarcada: false,
+      motivoHoraMarcada: 'Candidato indisponivel; hora marcada final bloqueada.',
+      slotAvailMin,
+      serviceMin,
+      horaMarcadaHorasAMais,
+      limiteMinimoHoraMarcadaMin,
+      horaMarcadaCalculadaPorTempo,
+    }
+  }
+
+  return {
+    elegivelHoraMarcada: true,
+    motivoHoraMarcada: null,
+    slotAvailMin,
+    serviceMin,
+    horaMarcadaHorasAMais,
+    limiteMinimoHoraMarcadaMin,
+    horaMarcadaCalculadaPorTempo,
+  }
+}
+
+function calcularLimitesDiagnosticos(input: ClassificarCandidatoOperacionalV2Input): {
+  limiteBaseM: number | null
+  limiteEspecialM: number | null
+  limitePremiumM: number | null
+} {
+  const baseRotaM = input.config.kmAdicionalMaxNaRotaM
+  const maxSemanaM = input.config.kmMaximoNaSemanaM
+  const maxSabadoM = input.config.kmMaximoNoSabadoM
+
+  if (
+    baseRotaM === null || !Number.isFinite(baseRotaM) || baseRotaM < 0 ||
+    maxSemanaM === null || !Number.isFinite(maxSemanaM) || maxSemanaM < 0 ||
+    maxSabadoM === null || !Number.isFinite(maxSabadoM) || maxSabadoM < 0
+  ) {
+    return { limiteBaseM: null, limiteEspecialM: null, limitePremiumM: null }
+  }
+
+  const slotTemPontos = input.slotTemPontos ?? true
+  const limiteBaseM = slotTemPontos
+    ? baseRotaM
+    : input.ehSabado
+      ? maxSabadoM
+      : maxSemanaM
+
+  return {
+    limiteBaseM,
+    limiteEspecialM: limiteBaseM + 5000,
+    limitePremiumM: limiteBaseM + 10000,
   }
 }

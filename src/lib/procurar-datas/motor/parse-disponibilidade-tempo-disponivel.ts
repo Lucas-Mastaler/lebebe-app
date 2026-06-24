@@ -33,6 +33,8 @@ export type LinhaTempoDisponivelV2 = {
 
 export type ParsearDisponibilidadeTempoDisponivelV2Input = {
   linhas: LinhaTempoDisponivelV2[]
+  /** Data de referência no formato YYYY-MM-DD. Usada para inferir o ano quando a planilha retorna datas sem ano (DD/MM ou DD/MM (texto)). Se omitida e uma linha vier sem ano, a linha será ignorada com erro. */
+  dataInicialISO?: string
 }
 
 // ─── Tipos de saída ───────────────────────────────────────────────────────────
@@ -57,33 +59,84 @@ export type ParsearDisponibilidadeTempoDisponivelV2Output = {
 // ─── Helpers internos ─────────────────────────────────────────────────────────
 
 /**
- * Converte data no formato DD/MM/YYYY para YYYY-MM-DD.
- * Aceita também Date objects (fonte secundária).
- * Não usa new Date("DD/MM/YYYY") para evitar inversão de mês/dia entre ambientes.
- * Retorna null se o formato for inválido.
+ * Valida se uma data YYYY-MM-DD é real (inclui bissexto).
+ * Usa construção manual sem ambiguidade de timezone.
  */
-function parsearDataDDMMYYYY(input: unknown): string | null {
-  if (typeof input === 'string') {
-    const m = input.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
-    if (m) {
-      const dd = m[1]
-      const mm = m[2]
-      const yyyy = m[3]
-      const d = Number(dd)
-      const mo = Number(mm)
-      const y = Number(yyyy)
-      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31 && y >= 1000 && y <= 9999) {
-        return `${yyyy}-${mm}-${dd}`
-      }
+function isDataValida(yyyy: number, mm: number, dd: number): boolean {
+  if (mm < 1 || mm > 12) return false
+  if (dd < 1 || dd > 31) return false
+  const diasPorMes = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  const ehBissexto = (yyyy % 4 === 0 && yyyy % 100 !== 0) || (yyyy % 400 === 0)
+  const maxDias = mm === 2 && ehBissexto ? 29 : diasPorMes[mm - 1]
+  return dd <= maxDias
+}
+
+/**
+ * Converte data para YYYY-MM-DD. Suporta:
+ *   - DD/MM/YYYY → retorna direto (ano informado)
+ *   - DD/MM ou DD/MM (texto) → extrai DD/MM, usa dataInicialISO para inferir ano
+ *   - Date object → fonte secundária
+ *
+ * Regras de inferência de ano (quando DD/MM sem ano):
+ *   1. Usa o ano de dataInicialISO.
+ *   2. Monta candidata YYYY-MM-DD.
+ *   3. Se candidata < dataInicialISO, usa ano seguinte.
+ *   4. Se dataInicialISO ausente → retorna null (erro controlado).
+ */
+function parsearDataCompleta(input: unknown, dataInicialISO: string | undefined): string | null {
+  if (typeof input !== 'string') {
+    if (input instanceof Date && !isNaN(input.getTime())) {
+      const y = input.getFullYear()
+      const m = String(input.getMonth() + 1).padStart(2, '0')
+      const d = String(input.getDate()).padStart(2, '0')
+      return `${y}-${m}-${d}`
     }
     return null
   }
 
-  if (input instanceof Date && !isNaN(input.getTime())) {
-    const y = input.getFullYear()
-    const m = String(input.getMonth() + 1).padStart(2, '0')
-    const d = String(input.getDate()).padStart(2, '0')
-    return `${y}-${m}-${d}`
+  const s = input.trim()
+
+  // ── Formato 1: DD/MM/YYYY (ano explícito) ──
+  const mFull = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (mFull) {
+    const dd = Number(mFull[1])
+    const mm = Number(mFull[2])
+    const yyyy = Number(mFull[3])
+    if (isDataValida(yyyy, mm, dd)) {
+      return `${mFull[3]}-${mFull[2]}-${mFull[1]}`
+    }
+    return null
+  }
+
+  // ── Formato 2: DD/MM ou DD/MM (texto) ──
+  const mSemAno = s.match(/^(\d{2})\/(\d{2})(?:\s*\(.*\))?$/)
+  if (mSemAno) {
+    if (!dataInicialISO) return null // sem referência, não dá para inferir
+
+    const dd = Number(mSemAno[1])
+    const mm = Number(mSemAno[2])
+    const refMatch = dataInicialISO.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    if (!refMatch) return null
+
+    const refYYYY = Number(refMatch[1])
+    const refMM = Number(refMatch[2])
+    const refDD = Number(refMatch[3])
+
+    // Validação básica de dataInicialISO
+    if (!isDataValida(refYYYY, refMM, refDD)) return null
+
+    // Candidata com o ano de referência
+    let yyyy = refYYYY
+    if (!isDataValida(yyyy, mm, dd)) return null
+
+    // Monta strings para comparação lexicográfica (YYYY-MM-DD)
+    const candidata = `${String(yyyy).padStart(4, '0')}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`
+    if (candidata < dataInicialISO) {
+      yyyy += 1
+      if (!isDataValida(yyyy, mm, dd)) return null
+      return `${String(yyyy).padStart(4, '0')}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`
+    }
+    return candidata
   }
 
   return null
@@ -231,9 +284,15 @@ export function parsearDisponibilidadeTempoDisponivelV2(
       continue
     }
 
-    const dataISO = parsearDataDDMMYYYY(linha.data)
+    const dataISO = parsearDataCompleta(linha.data, input.dataInicialISO)
     if (dataISO === null) {
-      erros.push(`Linha ${idx}: data inválida — "${String(linha.data ?? '')}"`)
+      const raw = String(linha.data ?? '')
+      const semAno = /^\d{2}\/\d{2}(?:\s*\(.*\))?$/.test(raw.trim())
+      if (semAno && !input.dataInicialISO) {
+        erros.push(`Linha ${idx}: data sem ano e dataInicialISO ausente — "${raw}"`)
+      } else {
+        erros.push(`Linha ${idx}: data inválida — "${raw}"`)
+      }
       linhasIgnoradas++
       continue
     }

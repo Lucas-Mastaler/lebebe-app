@@ -40,6 +40,11 @@ function criarCandidato(
     },
     motivos: overrides.motivos ?? [],
     avisos: overrides.avisos ?? [],
+    limites: overrides.limites ?? {
+      limiteBaseM: 5000,
+      limiteEspecialM: 10000,
+      limitePremiumM: 15000,
+    },
     diagnostico: {
       origem: 'v2-preliminar',
       classificacaoTipo: tipo,

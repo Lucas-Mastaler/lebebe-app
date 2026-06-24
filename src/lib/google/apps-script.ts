@@ -222,7 +222,11 @@ export async function executarAppsScript(
     // Corrige padrão "SÃ¡bado" → "Sábado" (UTF-8 bytes lidos como Latin-1)
     const resultado = repararDoubleEncodingUTF8(resultadoBruto);
 
-    console.log(`[APPS SCRIPT SERVICE] Resultado (pós-reparo UTF-8):`, JSON.stringify(resultado));
+    // Log resumido para evitar dump gigante (ex: tempoMap com milhares de combinações)
+    const tipoResultado = Array.isArray(resultado) ? 'array' : typeof resultado === 'object' && resultado !== null ? 'object' : typeof resultado;
+    const tamanhoInfo = tipoResultado === 'object' ? `${Object.keys(resultado as Record<string, unknown>).length} chaves` : tipoResultado === 'array' ? `${(resultado as unknown[]).length} itens` : 'valor primitivo';
+    const amostra = tipoResultado === 'object' ? Object.keys(resultado as Record<string, unknown>).slice(0, 3) : tipoResultado === 'array' ? (resultado as unknown[]).slice(0, 3) : resultado;
+    console.log(`[APPS SCRIPT SERVICE] Resultado (pós-reparo UTF-8): tipo=${tipoResultado} tamanho=${tamanhoInfo} amostra=`, amostra);
 
     return {
       sucesso: true,

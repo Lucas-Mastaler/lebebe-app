@@ -18,8 +18,9 @@
  *   - null/undefined/'' → 0
  *   - Date              → horas*60 + minutos
  *   - number            → Math.round(t * 24 * 60)  (fração de dia, estilo Excel)
- *   - string "HH:MM"    → h*60 + m
- *   - string inválida   → h*60 + m (coerção, NaN vira 0)
+ *   - string "H:MM"     → h*60 + m (hora sem zero à esquerda)
+ *   - string "HH:MM"    → h*60 + m (hora com zero à esquerda)
+ *   - string inválida   → 0 (NaN vira 0)
  */
 export function parseMinutos(input: unknown): number {
   if (!input) return 0
@@ -32,9 +33,21 @@ export function parseMinutos(input: unknown): number {
     return Math.round(input * 24 * 60)
   }
 
-  const p = String(input).split(':')
-  const h = Number(p[0]) || 0
-  const m = Number(p[1]) || 0
+  const str = String(input).trim()
+  const p = str.split(':')
+  if (p.length !== 2) return 0
+
+  const hStr = p[0]
+  const mStr = p[1]
+
+  if (hStr.length === 0 || mStr.length === 0) return 0
+
+  const h = Number(hStr)
+  const m = Number(mStr)
+
+  if (isNaN(h) || isNaN(m)) return 0
+  if (h < 0 || m < 0 || m > 59) return 0
+
   return h * 60 + m
 }
 

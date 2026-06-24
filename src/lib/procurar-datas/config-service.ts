@@ -62,6 +62,13 @@ const CHAVES_NORMALIZADAS: ReadonlySet<string> = new Set([
   'ENDEREÇO DO DEPÓSITO',
   'ENDEREÇO DA CASA EQP 1',
   'ENDEREÇO DA CASA EQP 2',
+  // Coordenadas de origem (para cálculo de distância OSRM/Haversine)
+  'LAT DEPOSITO',
+  'LNG DEPOSITO',
+  'LAT CASA E1',
+  'LNG CASA E1',
+  'LAT CASA E2',
+  'LNG CASA E2',
   // Frete
   'KILOMETRAGEM MÁXIMA DE VIAGEM',
   'KILOMETRAGEM MÁXIMA DE VALOR FIXO',
@@ -124,6 +131,13 @@ export interface ConfigNormalizada {
   enderecoDeposito: string
   enderecoCasaEqp1: string
   enderecoCasaEqp2: string
+  // Coordenadas de origem (para cálculo de distância)
+  latDeposito: number
+  lngDeposito: number
+  latCasaE1: number
+  lngCasaE1: number
+  latCasaE2: number
+  lngCasaE2: number
 
   // Frete — km
   kmMaxViagem: number
@@ -343,6 +357,13 @@ function montarObjeto(
     enderecoDeposito: s('ENDEREÇO DO DEPÓSITO'),
     enderecoCasaEqp1: s('ENDEREÇO DA CASA EQP 1'),
     enderecoCasaEqp2: s('ENDEREÇO DA CASA EQP 2'),
+    // Coordenadas de origem
+    latDeposito: n('LAT DEPOSITO'),
+    lngDeposito: n('LNG DEPOSITO'),
+    latCasaE1: n('LAT CASA E1'),
+    lngCasaE1: n('LNG CASA E1'),
+    latCasaE2: n('LAT CASA E2'),
+    lngCasaE2: n('LNG CASA E2'),
     // Frete — km
     kmMaxViagem: n('KILOMETRAGEM MÁXIMA DE VIAGEM'),
     kmMaxValorFixo: n('KILOMETRAGEM MÁXIMA DE VALOR FIXO'),

@@ -116,10 +116,11 @@ const ORDEM_SECOES: (keyof ConfigSecoesComparadas)[] = [
 ]
 
 // ─────────────────────────────────────────────────────────
-// Renderização de valor por tipo (exibe valor da planilha)
+// Renderização de valor por tipo (exibe valor ativo/banco comparado à planilha)
 // ─────────────────────────────────────────────────────────
-function ValorItem({ item }: { item: ConfigItem }) {
-  const { valor, tipo } = item
+function ValorItem({ item, valorAtivo }: { item: ConfigItem; valorAtivo?: string }) {
+  const tipo = item.tipo
+  const valor = valorAtivo ?? item.valor
 
   if (!valor) {
     return <span className="text-slate-400 italic text-sm">—</span>
@@ -223,7 +224,7 @@ function BadgeComparacao({
 
   const cfg: Record<Exclude<StatusComparacao, 'igual' | 'secret'>, { label: string; classes: string }> = {
     diferente: {
-      label: editavel ? 'editado no app' : 'diferente',
+      label: editavel ? 'editado no banco' : 'diferente',
       classes: editavel
         ? 'bg-violet-50 text-violet-700 border-violet-200'
         : 'bg-amber-50 text-amber-700 border-amber-200',
@@ -348,6 +349,11 @@ function LinhaConfig({
     item.tipo !== 'secret' &&
     !bancovazio
 
+  // Valor ativo: banco quando disponivel, senao planilha
+  const valorAtivo = item.valor_supabase ?? item.valor
+  const valorAtivoDisplay = valorAtivo ?? item.valor
+  const divergente = item.status_comparacao === 'diferente' && item.valor !== item.valor_supabase
+
   const [editando, setEditando] = useState(false)
   const [inputValor, setInputValor] = useState('')
   const [salvando, setSalvando] = useState(false)
@@ -356,10 +362,10 @@ function LinhaConfig({
 
   function iniciarEdicao() {
     // Preencher input com valor atual do banco (em km se for distance_m)
-    const valorInicial = valorDbParaInput(item.valor_supabase ?? item.valor, item.tipo)
+    const valorInicial = valorDbParaInput(valorAtivo, item.tipo)
     // Para boolean: normalizar para SIM/NÃO
     if (item.tipo === 'boolean') {
-      const raw = (item.valor_supabase ?? item.valor ?? '').toUpperCase()
+      const raw = (valorAtivo ?? '').toUpperCase()
       const isSim = ['SIM', 'S', 'YES', 'Y', 'TRUE', '1', 'ATIVO', 'ATIVA'].includes(raw)
       setInputValor(isSim ? 'SIM' : 'NÃO')
     } else {
@@ -417,10 +423,10 @@ function LinhaConfig({
         {/* Chave + subtexto */}
         <div className="min-w-0 flex-1 flex flex-col gap-0.5 pt-0.5">
           <span className="text-sm text-slate-500 font-medium break-words">{item.chave}</span>
-          {/* Subtexto: valor do banco (para itens diferentes) */}
-          {!editando && item.status_comparacao === 'diferente' && item.valor_supabase !== null && (
+          {/* Subtexto: valor da planilha como referencia (quando diverge do banco) */}
+          {!editando && divergente && item.valor !== null && (
             <span className="text-xs text-slate-400 font-mono">
-              banco: {formatarValorDb(item.valor_supabase, item.tipo)}
+              Planilha: {formatarValorDb(item.valor, item.tipo)}
             </span>
           )}
           {/* Hint de distance_m durante edição */}
@@ -431,9 +437,9 @@ function LinhaConfig({
           )}
         </div>
 
-        {/* Valor planilha + badge + botão */}
+        {/* Valor ativo + badge + botão */}
         <div className="flex-shrink-0 flex flex-col items-end gap-1">
-          {!editando && <ValorItem item={item} />}
+          {!editando && <ValorItem item={item} valorAtivo={valorAtivoDisplay} />}
           <div className="flex items-center gap-2">
             <BadgeComparacao
               status={item.status_comparacao}
@@ -655,7 +661,7 @@ export default function ConfiguracoesProcurarDatasPage() {
   }
 
   // Atualiza o valor_supabase localmente após edição bem-sucedida,
-  // sem precisar recarregar toda a planilha
+  // sem precisar recarregar a lista
   const handleSalvo = useCallback((chaveUpper: string, valorNovo: string) => {
     setDados((prev) => {
       if (!prev) return prev
@@ -669,7 +675,7 @@ export default function ConfiguracoesProcurarDatasPage() {
 
         const itemAtual = itens[idx]
         const statusAnterior = itemAtual.status_comparacao
-        // Novo status: compara valor da planilha com novo valor do banco
+        // Novo status: compara valor ativo do banco com valor da planilha de referência
         const valorPlanilha = itemAtual.valor ?? ''
         const novoStatus: StatusComparacao =
           valorPlanilha === valorNovo ? 'igual' : 'diferente'
@@ -713,8 +719,8 @@ export default function ConfiguracoesProcurarDatasPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-800">Configurações — Procurar Datas</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Leitura da planilha (fonte oficial) com comparação ao banco interno.
-            Campos operacionais podem ser editados no banco. O motor continua usando o fluxo atual.
+            Banco de dados (fonte oficial) com planilha como referência.
+            Valores editados no banco são usados pelo motor. Importe da planilha quando quiser sincronizar.
           </p>
         </div>
         <button
@@ -731,7 +737,7 @@ export default function ConfiguracoesProcurarDatasPage() {
       {dados && (
         <div className="flex items-center gap-2 text-xs text-slate-400 bg-slate-50 border border-slate-100 rounded-lg px-4 py-2">
           <Globe className="w-3.5 h-3.5" />
-          <span>Origem: <strong className="text-slate-600">planilha Google Sheets</strong></span>
+          <span>Origem: <strong className="text-slate-600">banco de dados interno</strong> (fonte oficial)</span>
           <span className="text-slate-300">·</span>
           <span>
             Lido em:{' '}
@@ -745,10 +751,10 @@ export default function ConfiguracoesProcurarDatasPage() {
         </div>
       )}
 
-      {/* Resumo de comparação planilha vs Supabase */}
+      {/* Resumo de comparação banco vs planilha */}
       {dados && !dados.comparacao.banco_vazio && (
         <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
-          <span className="text-slate-500 font-medium">Planilha vs banco:</span>
+          <span className="text-slate-500 font-medium">Banco vs planilha:</span>
           <span className="inline-flex items-center gap-1.5 text-green-700 font-semibold">
             <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
             {dados.comparacao.iguais} iguais
@@ -756,7 +762,7 @@ export default function ConfiguracoesProcurarDatasPage() {
           {dados.comparacao.diferentes > 0 && (
             <span className="inline-flex items-center gap-1.5 text-violet-700 font-semibold">
               <span className="w-2 h-2 rounded-full bg-violet-400 inline-block" />
-              {dados.comparacao.diferentes} editados no app
+              {dados.comparacao.diferentes} editados no banco
             </span>
           )}
           {dados.comparacao.ausentes_no_banco > 0 && (
@@ -774,7 +780,7 @@ export default function ConfiguracoesProcurarDatasPage() {
           {dados.comparacao.diferentes === 0 &&
            dados.comparacao.ausentes_no_banco === 0 &&
            dados.comparacao.ausentes_na_planilha === 0 && (
-            <span className="text-slate-400 text-xs">banco sincronizado com a planilha</span>
+            <span className="text-slate-400 text-xs">sincronizado com a planilha</span>
           )}
         </div>
       )}
@@ -796,7 +802,7 @@ export default function ConfiguracoesProcurarDatasPage() {
           {/* Último snapshot */}
           {bancoVazio === true && (
             <p className="text-sm text-slate-500">
-              Nenhuma importação registrada ainda. Use o botão abaixo para salvar um snapshot das configurações atuais da planilha.
+              Nenhuma importação registrada ainda. Use o botão abaixo para importar as configurações da planilha para o banco.
             </p>
           )}
           {snapshot && (
@@ -829,7 +835,7 @@ export default function ConfiguracoesProcurarDatasPage() {
             <div className="flex items-start gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-800">
               <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
               <span>
-                Importação concluída:{' '}
+                Importação para o banco concluída:{' '}
                 <strong>{importacaoResultado.criados}</strong> criadas,{' '}
                 <strong>{importacaoResultado.alterados}</strong> alteradas,{' '}
                 <strong>{importacaoResultado.inalterados}</strong> inalteradas.
@@ -865,7 +871,7 @@ export default function ConfiguracoesProcurarDatasPage() {
       {loading && (
         <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
           <div className="w-8 h-8 border-2 border-[#00A5E6] border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm">Lendo configurações da planilha...</span>
+          <span className="text-sm">Lendo configurações...</span>
         </div>
       )}
 

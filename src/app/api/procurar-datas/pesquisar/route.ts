@@ -7,7 +7,7 @@ export const runtime = 'nodejs'
 export const maxDuration = 60
 
 const ERRO_TEMPO_NECESSARIO_INVALIDO = 'Tempo necessario ausente ou invalido.'
-const TEMPO_NECESSARIO_RE = /^(\d{2}):([0-5]\d)(?::([0-5]\d))?$/
+const TEMPO_NECESSARIO_RE = /^(\d{1,2}):([0-5]\d)(?::([0-5]\d))?$/
 
 export function isTempoNecessarioValido(tempoNecessario: unknown): tempoNecessario is string {
   if (typeof tempoNecessario !== 'string') return false

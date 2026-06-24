@@ -14,6 +14,71 @@ export interface ResultadoChamadoIA {
   modelo_ia: string
 }
 
+export type TipoFechamento =
+  | 'Presencial — visitou a loja e comprou na loja'
+  | 'Digital — não visitou a loja e comprou online'
+  | 'Misto — visitou a loja e comprou depois online'
+  | 'Misto — conversou online e comprou depois presencialmente'
+  | 'Indefinido — não há evidência suficiente'
+
+export type ConfiancaTipoFechamento = 'Alta' | 'Média' | 'Baixa'
+
+export type ConfiancaNegociacao = 'Alta' | 'Média' | 'Baixa'
+
+export interface NegociacaoPrazo {
+  tipo: 'prazo'
+  resumo: string
+  data_prometida: string | null
+  evidencia: string
+  chamado_numero: number | null
+  protocolo: string | null
+  confianca: ConfiancaNegociacao
+}
+
+export interface NegociacaoFrete {
+  tipo: 'frete'
+  valor_original: string | null
+  valor_negociado: string | null
+  resumo: string
+  evidencia: string
+  chamado_numero: number | null
+  protocolo: string | null
+  confianca: ConfiancaNegociacao
+}
+
+export interface NegociacaoDesconto {
+  tipo: 'desconto'
+  valor_original: string | null
+  valor_final: string | null
+  percentual: string | null
+  resumo: string
+  evidencia: string
+  chamado_numero: number | null
+  protocolo: string | null
+  confianca: ConfiancaNegociacao
+}
+
+export interface NegociacaoPagamento {
+  tipo: 'pagamento'
+  forma: string | null
+  houve_link_pagamento: boolean
+  link_usado_confirmado: boolean
+  resumo: string
+  evidencia: string
+  chamado_numero: number | null
+  protocolo: string | null
+  confianca: ConfiancaNegociacao
+}
+
+export interface ValorCitado {
+  valor: string
+  contexto: string
+  tipo_valor: 'produto' | 'frete' | 'desconto' | 'pagamento' | 'outro'
+  chamado_numero: number | null
+  protocolo: string | null
+  confianca: ConfiancaNegociacao
+}
+
 export interface ResultadoConsolidadoIA {
   resumo_geral: string
   chamados_que_influenciaram: { ticket_id: string; protocolo: string | null; resumo: string }[]
@@ -25,6 +90,16 @@ export interface ResultadoConsolidadoIA {
   conclusao_comercial: string
   nome_bebe: string | null
   previsao_nascimento_bebe: string | null
+  produtos_fechados: string[]
+  produtos_interesse_nao_fechados: string[]
+  tipo_fechamento: TipoFechamento
+  confianca_tipo_fechamento: ConfiancaTipoFechamento
+  evidencias_tipo_fechamento: string[]
+  negociacoes_prazo: NegociacaoPrazo[]
+  negociacoes_frete: NegociacaoFrete[]
+  negociacoes_desconto: NegociacaoDesconto[]
+  negociacoes_pagamento: NegociacaoPagamento[]
+  valores_citados: ValorCitado[]
   modelo_ia: string
 }
 
@@ -268,6 +343,132 @@ Baseie-se apenas nos dados fornecidos, não invente informações.`
     return null
   }
 
+  const VALID_TIPO_FECHAMENTO: TipoFechamento[] = [
+    'Presencial — visitou a loja e comprou na loja',
+    'Digital — não visitou a loja e comprou online',
+    'Misto — visitou a loja e comprou depois online',
+    'Misto — conversou online e comprou depois presencialmente',
+    'Indefinido — não há evidência suficiente',
+  ]
+  const VALID_CONFIANCA_FECHAMENTO: ConfiancaTipoFechamento[] = ['Alta', 'Média', 'Baixa']
+
+  const parseTipoFechamento = (raw: unknown): TipoFechamento => {
+    if (typeof raw === 'string' && VALID_TIPO_FECHAMENTO.includes(raw as TipoFechamento)) {
+      return raw as TipoFechamento
+    }
+    return 'Indefinido — não há evidência suficiente'
+  }
+
+  const parseConfiancaFechamento = (raw: unknown): ConfiancaTipoFechamento => {
+    if (typeof raw === 'string' && VALID_CONFIANCA_FECHAMENTO.includes(raw as ConfiancaTipoFechamento)) {
+      return raw as ConfiancaTipoFechamento
+    }
+    return 'Baixa'
+  }
+
+  const VALID_CONFIANCA_NEG: ConfiancaNegociacao[] = ['Alta', 'Média', 'Baixa']
+  const VALID_TIPO_VALOR = ['produto', 'frete', 'desconto', 'pagamento', 'outro'] as const
+
+  const toConfiancaNeg = (v: unknown): ConfiancaNegociacao =>
+    typeof v === 'string' && VALID_CONFIANCA_NEG.includes(v as ConfiancaNegociacao)
+      ? (v as ConfiancaNegociacao)
+      : 'Baixa'
+
+  const toNullableString = (v: unknown): string | null =>
+    v != null && v !== '' && typeof v === 'string' ? v : null
+
+  const toNullableNumber = (v: unknown): number | null =>
+    typeof v === 'number' ? v : v != null && !isNaN(Number(v)) ? Number(v) : null
+
+  const toBoolean = (v: unknown): boolean => v === true || v === 'true'
+
+  const parseNegociacoesPrazo = (): NegociacaoPrazo[] => {
+    if (!Array.isArray(obj.negociacoes_prazo)) return []
+    return (obj.negociacoes_prazo as unknown[]).map((raw) => {
+      const it = (raw ?? {}) as Record<string, unknown>
+      return {
+        tipo: 'prazo' as const,
+        resumo: String(it.resumo ?? ''),
+        data_prometida: toNullableString(it.data_prometida),
+        evidencia: String(it.evidencia ?? ''),
+        chamado_numero: toNullableNumber(it.chamado_numero),
+        protocolo: toNullableString(it.protocolo),
+        confianca: toConfiancaNeg(it.confianca),
+      }
+    })
+  }
+
+  const parseNegociacoesFrete = (): NegociacaoFrete[] => {
+    if (!Array.isArray(obj.negociacoes_frete)) return []
+    return (obj.negociacoes_frete as unknown[]).map((raw) => {
+      const it = (raw ?? {}) as Record<string, unknown>
+      return {
+        tipo: 'frete' as const,
+        valor_original: toNullableString(it.valor_original),
+        valor_negociado: toNullableString(it.valor_negociado),
+        resumo: String(it.resumo ?? ''),
+        evidencia: String(it.evidencia ?? ''),
+        chamado_numero: toNullableNumber(it.chamado_numero),
+        protocolo: toNullableString(it.protocolo),
+        confianca: toConfiancaNeg(it.confianca),
+      }
+    })
+  }
+
+  const parseNegociacoesDesconto = (): NegociacaoDesconto[] => {
+    if (!Array.isArray(obj.negociacoes_desconto)) return []
+    return (obj.negociacoes_desconto as unknown[]).map((raw) => {
+      const it = (raw ?? {}) as Record<string, unknown>
+      return {
+        tipo: 'desconto' as const,
+        valor_original: toNullableString(it.valor_original),
+        valor_final: toNullableString(it.valor_final),
+        percentual: toNullableString(it.percentual),
+        resumo: String(it.resumo ?? ''),
+        evidencia: String(it.evidencia ?? ''),
+        chamado_numero: toNullableNumber(it.chamado_numero),
+        protocolo: toNullableString(it.protocolo),
+        confianca: toConfiancaNeg(it.confianca),
+      }
+    })
+  }
+
+  const parseNegociacoesPagamento = (): NegociacaoPagamento[] => {
+    if (!Array.isArray(obj.negociacoes_pagamento)) return []
+    return (obj.negociacoes_pagamento as unknown[]).map((raw) => {
+      const it = (raw ?? {}) as Record<string, unknown>
+      return {
+        tipo: 'pagamento' as const,
+        forma: toNullableString(it.forma),
+        houve_link_pagamento: toBoolean(it.houve_link_pagamento),
+        link_usado_confirmado: toBoolean(it.link_usado_confirmado),
+        resumo: String(it.resumo ?? ''),
+        evidencia: String(it.evidencia ?? ''),
+        chamado_numero: toNullableNumber(it.chamado_numero),
+        protocolo: toNullableString(it.protocolo),
+        confianca: toConfiancaNeg(it.confianca),
+      }
+    })
+  }
+
+  const parseValoresCitados = (): ValorCitado[] => {
+    if (!Array.isArray(obj.valores_citados)) return []
+    return (obj.valores_citados as unknown[]).map((raw) => {
+      const it = (raw ?? {}) as Record<string, unknown>
+      const tipoValor = typeof it.tipo_valor === 'string' && VALID_TIPO_VALOR.includes(it.tipo_valor as ValorCitado['tipo_valor'])
+        ? (it.tipo_valor as ValorCitado['tipo_valor'])
+        : 'outro'
+      return {
+        valor: String(it.valor ?? ''),
+        contexto: String(it.contexto ?? ''),
+        tipo_valor: tipoValor,
+        chamado_numero: toNullableNumber(it.chamado_numero),
+        protocolo: toNullableString(it.protocolo),
+        confianca: toConfiancaNeg(it.confianca),
+      }
+    })
+  }
+
   return {
     resumo_geral: String(obj.resumo_geral ?? ''),
     chamados_que_influenciaram: toObjArray('chamados_que_influenciaram'),
@@ -279,6 +480,16 @@ Baseie-se apenas nos dados fornecidos, não invente informações.`
     conclusao_comercial: String(obj.conclusao_comercial ?? ''),
     nome_bebe: toOptionalString('nome_bebe'),
     previsao_nascimento_bebe: toOptionalString('previsao_nascimento_bebe'),
+    produtos_fechados: toStringArray('produtos_fechados'),
+    produtos_interesse_nao_fechados: toStringArray('produtos_interesse_nao_fechados'),
+    tipo_fechamento: parseTipoFechamento(obj.tipo_fechamento),
+    confianca_tipo_fechamento: parseConfiancaFechamento(obj.confianca_tipo_fechamento),
+    evidencias_tipo_fechamento: toStringArray('evidencias_tipo_fechamento'),
+    negociacoes_prazo: parseNegociacoesPrazo(),
+    negociacoes_frete: parseNegociacoesFrete(),
+    negociacoes_desconto: parseNegociacoesDesconto(),
+    negociacoes_pagamento: parseNegociacoesPagamento(),
+    valores_citados: parseValoresCitados(),
     modelo_ia: model,
   }
 }

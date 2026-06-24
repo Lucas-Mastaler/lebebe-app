@@ -42,7 +42,7 @@ import { pesquisarDatasV2 } from '@/lib/procurar-datas/motor/pesquisar-datas-v2'
 import type { PesquisarDatasRequest } from '@/lib/procurar-datas/contratos'
 
 export const runtime = 'nodejs'
-export const maxDuration = 310
+export const maxDuration = 300
 
 const FIXTURES_DISPONIVEIS = [
   'caso-normal-simples-2026-06-12',

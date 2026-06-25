@@ -9,6 +9,7 @@ const TIPO_BERCO = [
   'FORMARE',
   'MAXX',
   'CAMA',
+  'CAMA + C. AUXILIAR',
   '2 CAMAS',
   'DIVERSOS E CAMA',
   'NIDO E CAMA',

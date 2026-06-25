@@ -12,7 +12,8 @@ const BASE = {
   BERCO_NIDO: 40,
   BERCO_FORMARE: 90,
   BERCO_MAXX: 75,
-  BERCO_CAMA: 60,
+  BERCO_CAMA: 40,
+  BERCO_CAMA_C_AUXILIAR: 60,
   BERCO_DIVERSOS_CAMA: 75,
   BERCO_NIDO_CAMA: 75,
   BERCO_FORMARE_CAMA: 105,
@@ -81,6 +82,7 @@ function bercoMinutos(berco: string, inCombo: boolean): number {
   if (berco === 'FORMARE') return BASE.BERCO_FORMARE
   if (berco === 'MAXX') return BASE.BERCO_MAXX
   if (berco === 'CAMA') return BASE.BERCO_CAMA
+  if (berco === 'CAMA + C. AUXILIAR') return BASE.BERCO_CAMA_C_AUXILIAR
   if (berco === 'DIVERSOS E CAMA') return inCombo ? 75 : BASE.BERCO_DIVERSOS_CAMA
   if (berco === 'NIDO E CAMA') return inCombo ? 75 : BASE.BERCO_NIDO_CAMA
   if (berco === 'FORMARE E CAMA') return inCombo ? 120 : BASE.BERCO_FORMARE_CAMA

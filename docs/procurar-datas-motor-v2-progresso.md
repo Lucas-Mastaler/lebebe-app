@@ -1,3 +1,36 @@
+## 2026-06-25 - Codex - Migracao inicial das rotas auxiliares da tela principal
+
+Status: parcial implementado. Nao altera motor v2, ranking, classificacao, recorte, OSRM/Haversine do motor de datas, frete final, pre-agendamento, schema, migrations, Apps Script ou UI.
+
+### O que mudou
+- `/api/procurar-datas/opcoes` deixou de chamar `GetFrontOptionLists` e `GetTempoMap`.
+- Criado `src/lib/procurar-datas/opcoes-locais.ts` com listas locais equivalentes as opcoes usadas por `tempo-servico.ts`.
+- `tempoMap` continua no contrato, mas retorna `{}` porque a tela principal calcula `tempoNecessario` localmente.
+- `/api/procurar-datas/validar-endereco` agora consulta `public.geo_cache` antes do Apps Script.
+- Cache hit retorna no contrato existente com `provider: "supabase"` e nao chama `LookupCompletoPorEndereco`.
+- Cache miss preserva fallback temporario para `LookupCompletoPorEndereco`.
+- `/api/procurar-datas/valor-inicial` agora calcula localmente quando ja recebe `lat/lng` ou `destLat/destLng`, usando config Supabase, OSRM route e helper puro `frete.ts`.
+- Sem coordenadas ou falha local, a rota preserva fallback temporario para `calcularValorInicialModal`.
+
+### Logs adicionados
+- `/opcoes`: `origem=local` e `duracaoMs`.
+- `/validar-endereco`: `cache_hit`, `cache_miss`, `provider`, `fallback` e `duracaoMs`.
+- `/valor-inicial`: `origem`, `fallback` e `duracaoMs`.
+
+### Validacoes
+- MCP Supabase confirmou estrutura real de `public.geo_cache`.
+- MCP Supabase confirmou hit para Marechal Floriano Peixoto/Hauer/Curitiba/PR.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint` nas rotas/helpers/testes alterados: passou.
+- `npx vitest run src/lib/procurar-datas/endereco-cache.test.ts src/lib/procurar-datas/opcoes-locais.test.ts --silent`: passou fora do sandbox apos `spawn EPERM` no sandbox.
+
+### Pendencias
+- Validacao manual autenticada em `/procurar-datas`.
+- Implementar fallback Next.js direto para provider externo de geocoding somente apos confirmar helper/env/payload local; por enquanto nao confirmado no codigo.
+- Avaliar em tarefa separada RLS desabilitado em `public.geo_cache` e outras tabelas apontadas pelo MCP.
+
+---
+
 ## 2026-06-25 - Cascade - Frente 3/direita: mascaras, validacao visual e ajustes finos de UI/UX
 
 Status: implementado no frontend. Nao altera motor, regra de negocio, schema, migrations, Apps Script, OSRM, Haversine, frete, classificacao, ranking, recorte, banco ou `/procurar-datas/dev-v2`.

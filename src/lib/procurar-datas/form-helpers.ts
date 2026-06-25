@@ -21,21 +21,21 @@ export function normalizarLogradouro(valor: string): string {
   return valor
     .replace(/[^A-Za-z0-9\s.,\-/%ªº'áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]/g, '')
     .replace(/\s+/g, ' ')
-    .trim()
+    .toUpperCase()
 }
 
 export function normalizarBairro(valor: string): string {
   return valor
     .replace(/[^A-Za-z0-9\s.,\-/%ªº'áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]/g, '')
     .replace(/\s+/g, ' ')
-    .trim()
+    .toUpperCase()
 }
 
 export function normalizarCidade(valor: string): string {
   return valor
     .replace(/[^A-Za-z\s.\-áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]/g, '')
     .replace(/\s+/g, ' ')
-    .trim()
+    .toUpperCase()
 }
 
 export function normalizarNumero(valor: string): string {

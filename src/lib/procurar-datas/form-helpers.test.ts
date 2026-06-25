@@ -22,19 +22,27 @@ describe('form-helpers', () => {
     expect(normalizarUF('Rio')).toBe('RI')
   })
 
-  it('normaliza cidade removendo numeros e caracteres invalidos', () => {
-    expect(normalizarCidade('Curitiba 123')).toBe('Curitiba')
-    expect(normalizarCidade('São  Paulo--')).toBe('São Paulo--')
+  it('normaliza cidade removendo numeros e caracteres invalidos e convertendo para maiusculo', () => {
+    expect(normalizarCidade('Curitiba 123')).toBe('CURITIBA ')
+    expect(normalizarCidade('São  Paulo--')).toBe('SÃO PAULO--')
+    expect(normalizarCidade('São Paulo')).toBe('SÃO PAULO')
   })
 
-  it('normaliza logradouro permitindo numeros e pontuacao comum', () => {
-    expect(normalizarLogradouro('Rua  Major  Francisco, 70')).toBe('Rua Major Francisco, 70')
-    expect(normalizarLogradouro('Av. Brasil 123@')).toBe('Av. Brasil 123')
+  it('normaliza logradouro permitindo numeros e pontuacao comum e convertendo para maiusculo', () => {
+    expect(normalizarLogradouro('Rua  Major  Francisco, 70')).toBe('RUA MAJOR FRANCISCO, 70')
+    expect(normalizarLogradouro('Av. Brasil 123@')).toBe('AV. BRASIL 123')
   })
 
-  it('normaliza bairro permitindo numeros', () => {
-    expect(normalizarBairro('Centro 123')).toBe('Centro 123')
-    expect(normalizarBairro('Bairro  @')).toBe('Bairro')
+  it('normaliza bairro permitindo numeros e convertendo para maiusculo', () => {
+    expect(normalizarBairro('Centro 123')).toBe('CENTRO 123')
+    expect(normalizarBairro('Bairro  @')).toBe('BAIRRO ')
+    expect(normalizarBairro('Bairro')).toBe('BAIRRO')
+  })
+
+  it('permite espaco no final durante digitacao', () => {
+    expect(normalizarLogradouro('RUA ')).toBe('RUA ')
+    expect(normalizarBairro('CENTRO ')).toBe('CENTRO ')
+    expect(normalizarCidade('CURITIBA ')).toBe('CURITIBA ')
   })
 
   it('valida campos de endereco obrigatorios', () => {

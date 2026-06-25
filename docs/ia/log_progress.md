@@ -1,3 +1,19 @@
+## 2026-06-25 - Cascade - Ajuste fino: espaco e maiusculo nos campos de endereco
+
+**Resumo:** Ajustado helper `src/lib/procurar-datas/form-helpers.ts` para permitir espaco no final durante digitacao nos campos `logradouro`, `bairro` e `cidade` (removido `.trim()` da normalizacao) e converter automaticamente esses campos para maiusculo. Atualizados testes unitarios. Sem alteracoes em backend, motor, banco, Apps Script ou outras telas.
+
+**Arquivos alterados:**
+- `src/lib/procurar-datas/form-helpers.ts`
+- `src/lib/procurar-datas/form-helpers.test.ts`
+- `docs/ia/log_progress.md` (esta entrada)
+
+**Validacoes:**
+- `npx vitest run src/lib/procurar-datas/form-helpers.test.ts --silent`: passou, 8 testes.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/app/procurar-datas/page.tsx src/lib/procurar-datas/form-helpers.ts src/lib/procurar-datas/form-helpers.test.ts --quiet`: passou.
+
+---
+
 ## 2026-06-25 - Cascade - Frente 3/direita: mascaras, validacao visual e ajustes finos de UI/UX em `/procurar-datas`
 
 **Resumo:** Completados os comportamentos de UI/UX prioritarios do modal legado na tela principal `/procurar-datas`. Foi criado helper `src/lib/procurar-datas/form-helpers.ts` com normalizacoes de logradouro, bairro, cidade, numero e UF, alem de validacao de campos de endereco. Foram adicionados erros visuais (borda vermelha e mensagens) para campos obrigatorios/invalidos. O botao `Validar endereco` agora permite clique e mostra erros em vez de depender apenas do disabled. O botao `Pesquisar datas` mantem validacao interna e exibe erros visuais quando faltar endereco confirmado, data inicial ou tempo valido. Nao foram alterados backend, motor, Apps Script, banco, ranking, classificacao, OSRM, Haversine, frete, limites, recorte ou `/procurar-datas/dev-v2`.

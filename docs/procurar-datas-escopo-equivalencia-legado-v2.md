@@ -1,5 +1,43 @@
 # Escopo e equivalência — motor `/procurar-datas` legado x v2
 
+## 2026-06-25 - Frente 1/esquerda - LocationIQ urbano com CEP: numero vira sinal de confianca
+
+Status: implementado em `src/lib/procurar-datas/locationiq.ts` e validado por testes unitarios. Esta secao atualiza a decisao anterior que tratava ausencia de numero como bloqueio absoluto no LocationIQ.
+
+### Regra nova
+- Para endereco urbano comum com CEP, `house_number` ausente no LocationIQ nao bloqueia sozinho.
+- O candidato sem numero confirmado pode ser aceito como `aproximado_confiavel` quando todos os sinais abaixo forem verdadeiros:
+  1. CEP do candidato e do formulario batem nos 5 primeiros digitos.
+  2. Logradouro e compativel por tokens fortes no `display_name` ou `address.road`.
+  3. Cidade e compativel.
+  4. UF e compativel.
+  5. O resultado parece rua/trecho de rua, nao apenas cidade/UF/bairro generico.
+- `numeroOk=false` permanece registrado no resultado/log.
+- `numeroObrigatorio=false` indica que a ausencia do numero foi tratada como alerta, nao bloqueio.
+- `bairro_mismatch` e `importance_baixa` continuam em motivos diagnosticos, mas nao bloqueiam quando CEP/logradouro/cidade/UF ancoram o resultado.
+
+### O que continua rejeitado
+- Numero explicitamente confirmado pelo provider e divergente do numero informado.
+- Logradouro divergente.
+- Cidade divergente.
+- UF divergente.
+- CEP divergente quando os dois lados possuem CEP.
+- Resultado sem evidencia objetiva de rua compativel.
+- Resultado generico de cidade, bairro, UF ou pais.
+
+### Fallbacks
+- Endereco urbano comum aceito pelo LocationIQ nessa regra nao cai para Apps Script.
+- Google Geocoding continua restrito a BR/Rodovia/KM/Zona Rural e aos casos definidos para endereco dificil.
+
+### Cache
+- Resultado aceito como `aproximado_confiavel` segue o caminho atual de `salvarEnderecoNoGeoCache`, com `provider=locationiq`.
+- `geo_cache` nao recebeu coluna nova; a tabela possui `provider` e `confidence`, mas nao possui campo de status/match.
+- Candidato rejeitado continua nao sendo salvo.
+
+### Validacoes
+- `npm run test -- src/lib/procurar-datas/locationiq.test.ts --silent`: 15/15 passou.
+- Novos testes cobrem: aceite sem numero com CEP/logradouro/cidade/UF; rejeicao por logradouro divergente; rejeicao por cidade divergente; bairro divergente nao bloqueante; `importance` baixa nao bloqueante.
+
 > **Data de criação:** 2026-06-17  
 > **Frente:** Frente 0 / Controle  
 > **Status:** Ativo — documento vivo  

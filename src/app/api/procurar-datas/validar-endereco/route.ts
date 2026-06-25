@@ -73,9 +73,16 @@ export async function POST(request: NextRequest) {
       const lngStr = r.lng !== undefined ? r.lng.toFixed(5) : '-'
       const addr = r.address as Record<string, unknown> | undefined
       const addressTrunc = String(r.enderecoCompleto ?? r.display ?? r.display_name ?? '').slice(0, 80)
+      const match = String((r as Record<string, unknown>).match ?? 'exato')
+      const numeroOk = (r as Record<string, unknown>).numeroOk
+      const numeroObrigatorio = (r as Record<string, unknown>).numeroObrigatorio
+      const classificacao = String((r as Record<string, unknown>).classificacaoDiagnostica ?? match)
+      const motivo = String((r as Record<string, unknown>).motivo ?? 'aceito')
       console.log(
         `[PROCURAR_DATAS][validar-endereco] sucesso provider=locationiq fallback=none` +
-        ` match=exato numeroOk=true bairroOk=true` +
+        ` match=${match} motivo=${motivo}` +
+        ` numeroOk=${numeroOk ?? '-'} numeroObrigatorio=${numeroObrigatorio ?? '-'} bairroOk=-` +
+        ` classificacaoDiagnostica=${classificacao}` +
         ` lat=${latStr} lng=${lngStr}` +
         ` confidence=${r.confidence ?? '-'}` +
         ` cep=${r.cep ?? '-'}` +

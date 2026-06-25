@@ -17,6 +17,15 @@ const FORM_FORTALEZA = {
   uf: 'PR',
 }
 
+const FORM_CATARINA = {
+  logradouro: 'Rua Catarina Goossen',
+  numero: '200',
+  bairro: 'Xaxim',
+  cidade: 'Curitiba',
+  uf: 'PR',
+  cep: '81830-020',
+}
+
 describe('buscarEnderecoLocationIq', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
@@ -121,6 +130,175 @@ describe('buscarEnderecoLocationIq', () => {
     const result = await buscarEnderecoLocationIq(FORM_FORTALEZA, { fetchFn })
 
     expect(result).toEqual({ status: 'failed', motivo: 'sem_resultado_valido' })
+  })
+
+  it('aceita rua urbana sem house_number quando CEP, logradouro, cidade e UF batem', async () => {
+    vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
+
+    const eventos: string[] = []
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          lat: '-25.51261',
+          lon: '-49.27019',
+          display_name: 'Rua Catarina Goosen, Casa, Xaxim, Curitiba, Parana, Brasil',
+          importance: 0.25,
+          address: {
+            road: 'Rua Catarina Goosen',
+            suburb: 'Xaxim',
+            city: 'Curitiba',
+            state: 'Parana',
+            state_code: 'BR-PR',
+            postcode: '81830-020',
+          },
+        },
+      ],
+    })) as unknown as typeof fetch
+
+    const result = await buscarEnderecoLocationIq(FORM_CATARINA, {
+      fetchFn,
+      onEvent: (event) => eventos.push(event.tipo),
+    })
+
+    expect(result.status).toBe('success')
+    expect(eventos).not.toContain('locationiq_rejected_no_house_number')
+    if (result.status === 'success') {
+      expect(result.resultado.match).toBe('aproximado_confiavel')
+      expect(result.resultado.numeroOk).toBe(false)
+      expect(result.resultado.numeroObrigatorio).toBe(false)
+      expect(result.resultado.motivo).toBe('aceito_sem_numero_confirmado')
+      const addr = result.resultado.address as { house_number?: string } | undefined
+      expect(addr?.house_number).toBe('')
+    }
+  })
+
+  it('rejeita candidato sem house_number quando o logradouro diverge mesmo com CEP', async () => {
+    vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
+
+    const eventos: string[] = []
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          lat: '-25.51261',
+          lon: '-49.27019',
+          display_name: 'Rua das Flores, Xaxim, Curitiba, Parana, Brasil',
+          importance: 0.25,
+          address: {
+            road: 'Rua das Flores',
+            suburb: 'Xaxim',
+            city: 'Curitiba',
+            state: 'Parana',
+            state_code: 'BR-PR',
+            postcode: '81830-020',
+          },
+        },
+      ],
+    })) as unknown as typeof fetch
+
+    const result = await buscarEnderecoLocationIq(FORM_CATARINA, {
+      fetchFn,
+      onEvent: (event) => eventos.push(event.tipo),
+    })
+
+    expect(result.status).toBe('failed')
+    expect(eventos).toContain('locationiq_rejected_logradouro_mismatch')
+  })
+
+  it('rejeita candidato sem house_number quando a cidade diverge mesmo com CEP e logradouro', async () => {
+    vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
+
+    const eventos: string[] = []
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          lat: '-25.51261',
+          lon: '-49.27019',
+          display_name: 'Rua Catarina Goosen, Xaxim, Pinhais, Parana, Brasil',
+          importance: 0.25,
+          address: {
+            road: 'Rua Catarina Goosen',
+            suburb: 'Xaxim',
+            city: 'Pinhais',
+            state: 'Parana',
+            state_code: 'BR-PR',
+            postcode: '81830-020',
+          },
+        },
+      ],
+    })) as unknown as typeof fetch
+
+    const result = await buscarEnderecoLocationIq(FORM_CATARINA, {
+      fetchFn,
+      onEvent: (event) => eventos.push(event.tipo),
+    })
+
+    expect(result.status).toBe('failed')
+    expect(eventos).toContain('locationiq_rejected_city_or_uf_mismatch')
+  })
+
+  it('nao bloqueia bairro divergente quando CEP, logradouro, cidade e UF batem', async () => {
+    vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
+
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          lat: '-25.51261',
+          lon: '-49.27019',
+          display_name: 'Rua Catarina Goosen, Casa, Xaxim, Curitiba, Parana, Brasil',
+          importance: 0.25,
+          address: {
+            road: 'Rua Catarina Goosen',
+            suburb: 'Casa',
+            city: 'Curitiba',
+            state: 'Parana',
+            state_code: 'BR-PR',
+            postcode: '81830-020',
+          },
+        },
+      ],
+    })) as unknown as typeof fetch
+
+    const result = await buscarEnderecoLocationIq(FORM_CATARINA, { fetchFn })
+
+    expect(result.status).toBe('success')
+    if (result.status === 'success') {
+      expect(result.resultado.match).toBe('aproximado_confiavel')
+    }
+  })
+
+  it('nao bloqueia importance baixa quando CEP, logradouro, cidade e UF batem', async () => {
+    vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
+
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          lat: '-25.51261',
+          lon: '-49.27019',
+          display_name: 'Rua Catarina Goosen, Xaxim, Curitiba, Parana, Brasil',
+          importance: 0.053,
+          address: {
+            road: 'Rua Catarina Goosen',
+            suburb: 'Xaxim',
+            city: 'Curitiba',
+            state: 'Parana',
+            state_code: 'BR-PR',
+            postcode: '81830-020',
+          },
+        },
+      ],
+    })) as unknown as typeof fetch
+
+    const result = await buscarEnderecoLocationIq(FORM_CATARINA, { fetchFn })
+
+    expect(result.status).toBe('success')
+    if (result.status === 'success') {
+      expect(result.resultado.match).toBe('aproximado_confiavel')
+    }
   })
 
   // ── Caso 1: centróide sem house_number (caso real Rua Nicola Pelanda) ────

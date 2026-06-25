@@ -161,22 +161,24 @@ type FlagsDiagnosticas = {
   ufOk: boolean
   logradouroOk: boolean
   numeroOk: boolean
+  numeroObrigatorio: boolean
   cepOk: boolean | 'na'
   bairroOk: boolean | 'na'
+  ancoragemUrbanaForte: boolean
 }
 
 /**
  * Valida um candidato LocationIQ.
- * Mais rígida que o legado (ValidarRetornoGeocode_) porque numero é obrigatório na v2.
+ * Mantem o numero obrigatorio no payload, mas permite aceite aproximado quando
+ * o provider nao confirma numero e ha ancoragem urbana forte por CEP/logradouro/cidade/UF.
  *
  * Regras aplicadas:
  * 1. Coordenadas válidas.
  * 2. Cidade e UF compatíveis (equivalente ao legado).
  * 3. Logradouro: ao menos 1 token forte do form deve aparecer no display_name ou address.road
  *    (equivalente a LOGRADOURO_MISS=-0.30 do legado, que derrubava score abaixo de 0.65).
- * 4. Número: address.house_number deve ser igual ao número do form, OU o display_name deve
- *    conter o número E o logradouro. Centróides sem número são rejeitados.
- *    Mais rígido que o legado: na v2 numero é obrigatório no payload.
+ * 4. Numero: quando confirmado pelo provider, deve bater com o form. Quando ausente,
+ *    deixa de bloquear se CEP/logradouro/cidade/UF ancoram o candidato como rua.
  * 5. CEP: se ambos (form e candidato) têm CEP, os 5 primeiros dígitos devem bater.
  *    (equivalente à penalidade CEP_REGION_DIFF=-0.25 do legado).
  */
@@ -190,7 +192,16 @@ function validarCandidato(
     return {
       valido: false,
       motivo: 'city_or_uf_mismatch',
-      flags: { cidadeOk: false, ufOk: false, logradouroOk: false, numeroOk: false, cepOk: 'na', bairroOk: 'na' },
+      flags: {
+        cidadeOk: false,
+        ufOk: false,
+        logradouroOk: false,
+        numeroOk: false,
+        numeroObrigatorio: true,
+        cepOk: 'na',
+        bairroOk: 'na',
+        ancoragemUrbanaForte: false,
+      },
     }
   }
 
@@ -208,6 +219,7 @@ function validarCandidato(
 
   const numeroForm = normalizarNumeroEndereco(String(form.numero ?? ''))
   const houseNumber = normalizarNumeroEndereco(candidate.address?.house_number ?? '')
+  const providerConfirmouNumeroDivergente = !!houseNumber && houseNumber !== numeroForm
   let numeroOk: boolean
   if (houseNumber) {
     numeroOk = houseNumber === numeroForm
@@ -227,15 +239,38 @@ function validarCandidato(
   const bairroOk: boolean | 'na' =
     !bairroForm || !bairroCandidate ? 'na' : bairroForm === bairroCandidate
 
-  const flags: FlagsDiagnosticas = { cidadeOk, ufOk, logradouroOk, numeroOk, cepOk, bairroOk }
+  const roadNorm = normalizarTexto(road)
+  const displayNorm = normalizarTexto(display)
+  const resultadoPareceRua =
+    !!roadNorm ||
+    /\b(RUA|AVENIDA|ALAMEDA|TRAVESSA|RODOVIA|ESTRADA|PRACA|LARGO|VIA)\b/.test(displayNorm)
+  const ancoragemUrbanaForte =
+    !providerConfirmouNumeroDivergente &&
+    !numeroOk &&
+    cepOk === true &&
+    cidadeOk &&
+    ufOk &&
+    logradouroOk &&
+    resultadoPareceRua
+  const numeroObrigatorio = !ancoragemUrbanaForte
 
-  // Rejeições em ordem (mesma lógica — não alterada)
-  // bairroOk não é usado para rejeição, apenas diagnóstico
+  const flags: FlagsDiagnosticas = {
+    cidadeOk,
+    ufOk,
+    logradouroOk,
+    numeroOk,
+    numeroObrigatorio,
+    cepOk,
+    bairroOk,
+    ancoragemUrbanaForte,
+  }
+
+  // Rejeicoes em ordem. Bairro e importance seguem apenas como diagnostico.
   const motivos: MotivoRejeicao[] = []
   if (!cidadeForm || !ufForm) motivos.push('city_or_uf_mismatch')
   if (!cidadeOk || !ufOk) motivos.push('city_or_uf_mismatch')
   if (!logradouroOk) motivos.push('logradouro_mismatch')
-  if (!numeroOk) motivos.push('no_house_number')
+  if (!numeroOk && numeroObrigatorio) motivos.push('no_house_number')
   if (cepOk === false) motivos.push('cep_mismatch')
   if (motivos.length > 0) {
     return { valido: false, motivo: motivos[0], flags }
@@ -255,6 +290,11 @@ function validarCandidato(
       display_name: enderecoCompleto,
       cep: normalizarCep(address.postcode),
       provider: 'locationiq',
+      match: numeroOk ? 'exato' : 'aproximado_confiavel',
+      numeroOk,
+      numeroObrigatorio,
+      classificacaoDiagnostica: numeroOk ? 'exato' : 'aproximado_confiavel',
+      motivo: numeroOk ? 'aceito_numero_confirmado' : 'aceito_sem_numero_confirmado',
       confidence: typeof candidate.importance === 'number' ? candidate.importance : null,
       address: {
         road: address.road || String(form.logradouro ?? ''),
@@ -291,19 +331,15 @@ function motivosDiagnosticos(
 function classificacaoDiagnostica(
   flags: FlagsDiagnosticas,
   importance: number | undefined
-): 'aproximado_sem_numero' | 'generico_rejeitado' {
-  // Se falta número, mas cidade/UF/logradouro batem, bairro não diverge e importance não é muito baixa
+): 'aproximado_confiavel' | 'generico_rejeitado' {
+  void importance
+  // Se falta numero, mas CEP/logradouro/cidade/UF ancoram bem, o candidato e aproximado confiavel.
   if (
-    !flags.numeroOk &&
-    flags.cidadeOk &&
-    flags.ufOk &&
-    flags.logradouroOk &&
-    (flags.bairroOk === true || flags.bairroOk === 'na') &&
-    (importance === undefined || importance >= 0.1)
+    flags.ancoragemUrbanaForte
   ) {
-    return 'aproximado_sem_numero'
+    return 'aproximado_confiavel'
   }
-  // Caso contrário, genérico rejeitado
+  // Caso contrario, generico rejeitado.
   return 'generico_rejeitado'
 }
 
@@ -364,7 +400,8 @@ export async function buscarEnderecoLocationIq(
         if (validacao.valido) {
           console.log(
             `[PROCURAR_DATAS][validar-endereco][locationiq_candidate]` +
-            ` idx=${idx} reserva=${reserva} motivo=aceito` +
+            ` idx=${idx} reserva=${reserva} motivo=${validacao.resultado.motivo ?? 'aceito'}` +
+            ` motivos=${motivosStr || 'nenhum'}` +
             ` lat=${latStr} lng=${lngStr}` +
             ` importance=${candidate.importance ?? '-'}` +
             ` house_number="${addr.house_number ?? '-'}"` +
@@ -374,8 +411,8 @@ export async function buscarEnderecoLocationIq(
             ` state="${addr.state ?? '-'}"` +
             ` postcode="${addr.postcode ?? '-'}"` +
             ` cidadeOk=${flags.cidadeOk} ufOk=${flags.ufOk}` +
-            ` logradouroOk=${flags.logradouroOk} numeroOk=${flags.numeroOk} cepOk=${flags.cepOk}` +
-            ` classificacaoDiagnostica=aceito` +
+            ` logradouroOk=${flags.logradouroOk} numeroOk=${flags.numeroOk} numeroObrigatorio=${flags.numeroObrigatorio} cepOk=${flags.cepOk}` +
+            ` classificacaoDiagnostica=${validacao.resultado.classificacaoDiagnostica ?? 'aceito'}` +
             ` display="${displayTrunc}"`
           )
           aceitos++
@@ -401,7 +438,7 @@ export async function buscarEnderecoLocationIq(
           ` state="${addr.state ?? '-'}"` +
           ` postcode="${addr.postcode ?? '-'}"` +
           ` cidadeOk=${flags.cidadeOk} ufOk=${flags.ufOk}` +
-          ` logradouroOk=${flags.logradouroOk} numeroOk=${flags.numeroOk} cepOk=${flags.cepOk}` +
+          ` logradouroOk=${flags.logradouroOk} numeroOk=${flags.numeroOk} numeroObrigatorio=${flags.numeroObrigatorio} cepOk=${flags.cepOk}` +
           ` classificacaoDiagnostica=${classDiag}` +
           ` display="${displayTrunc}"`
         )

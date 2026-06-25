@@ -1,3 +1,80 @@
+## 2026-06-26 - Cascade - Auditoria: caminho da coordenada validada ate o motor v2
+
+**Resumo:** Auditoria sem alteracao de codigo. Confirmado que a coordenada validada em `/api/procurar-datas/validar-endereco` (seja via geo_cache, LocationIQ, Google ou Apps Script) chega integralmente ao motor v2 atraves do fluxo: validar-endereco -> addressResult (estado da tela) -> valor-inicial -> pesquisar-compat-async -> orquestrador -> pesquisar-datas-v2.
+
+**Caminho confirmado:**
+1. `validar-endereco` retorna `EnderecoValidado` com `lat/lng`.
+2. Tela salva em `addressResult` (state).
+3. `useEffect` envia `lat/lng/destLat/destLng` para `valor-inicial` (calcula frete local via OSRM).
+4. `pesquisarDatas()` monta `PesquisarDatasRequest` com `lat=confirmed.lat`, `lng=confirmed.lng`, `destLat=confirmed.lat`, `destLng=confirmed.lng`.
+5. POST para `/api/procurar-datas/v2/pesquisar-compat-async`.
+6. Rota chama `orquestrarPesquisaV2ComPayloadLegado(body)`.
+7. Orquestrador chama `normalizarEntradaPesquisaV2(body)` que extrai `coordenadasDestino` de `destLat/destLng` (fallback `lat/lng`).
+8. `pesquisarDatasV2` usa `entrada.coordenadasDestino` para OSRM e frete.
+9. Orquestrador tambem usa `entrada.coordenadasDestino` para `calcularDistKmDepositoDestino`.
+
+**Conclusao:** Sim, a coordenada validada e usada pelo motor v2. Nenhum risco de coordenada sobrescrita ou origem divergente.
+
+**Arquivos lidos:** ver lista na resposta da auditoria.
+
+**Pendencias:** nenhuma.
+
+---
+
+## 2026-06-25 - Codex - Frente 1/esquerda: LocationIQ urbano com CEP aceita sem numero confirmado
+
+**Resumo:** Ajustada a regra de aceite de candidatos LocationIQ na rota `POST /api/procurar-datas/validar-endereco`. A ausencia de `house_number` deixou de ser bloqueio absoluto quando o candidato urbano esta fortemente ancorado por CEP, logradouro, cidade e UF. O aceite passa a ser registrado como `aproximado_confiavel`, com `numeroOk=false`, `numeroObrigatorio=false` e `motivo=aceito_sem_numero_confirmado`. Bairro divergente e `importance_baixa` continuam como motivos diagnosticos, mas nao bloqueiam quando CEP/logradouro/cidade/UF batem. Google permanece restrito a enderecos dificeis; Apps Script deixa de ser acionado para esse tipo de candidato aceito pelo LocationIQ.
+
+**Arquivos lidos:**
+- `C:\Users\lebeb\.codex\attachments\18c26962-a61e-43aa-bd27-b6f016dddc39\pasted-text.txt`
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `src/lib/procurar-datas/locationiq.ts`
+- `src/lib/procurar-datas/google-geocoding.ts`
+- `src/lib/procurar-datas/endereco-cache.ts`
+- `src/lib/procurar-datas/types.ts`
+- `src/lib/procurar-datas/contratos.ts`
+- `src/lib/procurar-datas/locationiq.test.ts`
+- `src/lib/procurar-datas/endereco-cache.test.ts`
+- `package.json`
+
+**Arquivos alterados/criados:**
+- `src/lib/procurar-datas/locationiq.ts`
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `src/lib/procurar-datas/locationiq.test.ts`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+
+**Validacoes realizadas:**
+- MCP Supabase `list_tables` confirmou `public.geo_cache` com 14 colunas: `id`, `chave_endereco`, `endereco_completo`, `logradouro`, `numero`, `bairro`, `cidade`, `uf`, `cep`, `lat`, `lng`, `provider`, `confidence`, `updated_at`; nao ha coluna de status/match.
+- `npm run test -- src/lib/procurar-datas/locationiq.test.ts --silent`: passou, 15/15 testes.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/lib/procurar-datas/locationiq.ts src/lib/procurar-datas/locationiq.test.ts src/app/api/procurar-datas/validar-endereco/route.ts --quiet`: passou.
+- `npm run test -- src/lib/procurar-datas/locationiq.test.ts src/lib/procurar-datas/endereco-cache.test.ts src/lib/procurar-datas/validar-endereco-payload.test.ts --silent`: passou, 24/24 testes.
+
+**Comandos rodados e resultados:**
+- `rg` e `Get-Content` para auditar fluxo, docs, rota, helpers, tipos e testes.
+- `npm run test -- src/lib/procurar-datas/locationiq.test.ts --silent` -> exit 0.
+- `npx tsc --noEmit --pretty false` -> exit 0.
+- `npx eslint src/lib/procurar-datas/locationiq.ts src/lib/procurar-datas/locationiq.test.ts src/app/api/procurar-datas/validar-endereco/route.ts --quiet` -> exit 0.
+- `npm run test -- src/lib/procurar-datas/locationiq.test.ts src/lib/procurar-datas/endereco-cache.test.ts src/lib/procurar-datas/validar-endereco-payload.test.ts --silent` -> exit 0.
+
+**Pendencias:**
+- Testar manualmente autenticado em `/procurar-datas` com `RUA CATARINA GOOSSEN`, numero `200`, bairro `XAXIM`, cidade `CURITIBA`, UF `PR`, CEP `81830-020`.
+
+**Riscos conhecidos:**
+- `public.geo_cache` esta com RLS desabilitado conforme advisory do MCP Supabase; nao foi alterado por estar fora do escopo.
+- Aceites sem numero ficam salvos com `provider=locationiq` e `confidence` existente; `geo_cache` nao tem coluna propria para registrar `aproximado_confiavel`.
+- Validacao manual real ainda nao confirmada nesta entrada.
+
+**Proximo passo recomendado:**
+- Validar manualmente o caso Catarina Goossen com sessao autenticada.
+
+---
+
 ## 2026-06-26 - Cascade - Frente 1/esquerda: corrigir validacao do fallback Google Geocoding para BR/Rodovia
 
 **Resumo:** Corrigida a validacao de candidatos do Google Geocoding para enderecos dificeis (BR/Rodovia). Antes, a validacao rejeitava um resultado forte (`ROOVIA BR-116, 15480, Curitiba/PR, 81690-200`) por `cidade_incompativel` porque extraira `Fanny` (sublocality/bairro) como cidade. Agora a cidade e extraida corretamente de `administrative_area_level_2`, `locality` ou `formatted_address`. O numero, CEP, logradouro e bairro tambem foram ajustados para enderecos dificeis.

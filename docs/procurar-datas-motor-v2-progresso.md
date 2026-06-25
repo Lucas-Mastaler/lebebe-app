@@ -1,3 +1,31 @@
+## 2026-06-25 - Codex - Frente 1/esquerda: LocationIQ urbano com CEP sem numero confirmado
+
+Status: implementado em `src/lib/procurar-datas/locationiq.ts`. Nao altera UI, buscar-cep, motor v2, OSRM, Haversine, ranking, classificacao de datas, frete, banco, migrations, RLS ou Apps Script.
+
+### O que mudou
+- A ausencia de `house_number` no LocationIQ deixou de ser bloqueio absoluto para endereco urbano com CEP.
+- O candidato passa a ser aceito como `aproximado_confiavel` quando CEP, logradouro, cidade e UF batem e o resultado tem evidencia de rua/trecho de rua.
+- `numeroOk=false` continua exposto no objeto/log.
+- `numeroObrigatorio=false` indica aceite sem numero confirmado.
+- Bairro divergente e `importance_baixa` continuam como motivos diagnosticos, mas nao derrubam o candidato quando ha ancoragem forte por CEP/logradouro/cidade/UF.
+
+### O que permanece rejeitado
+- Numero explicitamente retornado pelo provider e divergente do formulario.
+- Rua, cidade, UF ou CEP divergentes.
+- Resultado sem rua compativel ou generico de cidade/bairro/UF.
+- Candidato rejeitado nao e salvo no `geo_cache`.
+
+### Fallbacks e cache
+- Endereco urbano aceito pelo LocationIQ nessa regra nao cai para Apps Script.
+- Google continua restrito a BR/Rodovia/KM/Zona Rural e casos definidos de endereco dificil.
+- Resultado aceito segue o cache atual (`salvarEnderecoNoGeoCache`) com `provider=locationiq`; `geo_cache` nao possui coluna de status/match e nao recebeu schema novo.
+
+### Validacoes
+- MCP Supabase confirmou `public.geo_cache` com 14 colunas e sem campo de status/match; nenhuma alteracao de banco foi feita.
+- `npm run test -- src/lib/procurar-datas/locationiq.test.ts --silent`: 15/15 passou.
+
+---
+
 ## 2026-06-26 - Cascade - Frente 1/esquerda: fallback Google Geocoding restrito para enderecos dificeis
 
 Status: implementado em `src/lib/procurar-datas/google-geocoding.ts` e `src/app/api/procurar-datas/validar-endereco/route.ts`. Nao altera motor v2, OSRM, Haversine, ranking, classificacao, frete, UI, banco, migrations, RLS, Apps Script, MAPS.CO, Nominatim, buscar-cep, valor-inicial.

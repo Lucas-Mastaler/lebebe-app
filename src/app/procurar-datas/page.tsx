@@ -693,7 +693,7 @@ export default function ProcurarDatasPage() {
               <Input disabled={searching} maxLength={2} value={form.uf} onChange={(e) => updateForm('uf', e.target.value.toUpperCase())} />
             </label>
             <div className="md:col-span-2 flex items-end">
-              <Button type="button" variant="outline" onClick={validarEndereco} disabled={validatingAddress || loadingOptions || searching} className="w-full">
+              <Button type="button" variant="outline" onClick={validarEndereco} disabled={validatingAddress || searching} className="w-full">
                 {validatingAddress ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
                 Validar endereco
               </Button>

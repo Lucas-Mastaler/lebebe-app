@@ -1,3 +1,98 @@
+## 2026-06-25 - Cascade - Frente 3/direita + Frente 0/Controle: loading inicial e auditoria UI/UX modal legado
+
+**Resumo:** Investigado e corrigido o loading inicial da tela `/procurar-datas`. A causa principal era que o botao `Validar endereco` ficava desabilitado por `loadingOptions` enquanto a rota `/api/procurar-datas/opcoes` carregava listas de servico e tempoMap via Apps Script (`GetFrontOptionLists` e `GetTempoMap`). A rota de opcoes ainda e lenta, mas validar endereco nao depende dela. Foi aplicado patch minimo em `src/app/procurar-datas/page.tsx` removendo `loadingOptions` da condicao de desabilitacao do botao. Tambem foi auditado o modal legado `appscript/procurar_modal.html` e levantadas diferencas de UI/UX para futuras tarefas priorizadas.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `src/app/procurar-datas/page.tsx`
+- `src/app/api/procurar-datas/opcoes/route.ts`
+- `appscript/procurar_modal.html`
+- `appscript/CEP-APIBACK.gs` (trechos de modal/resultados)
+- `appscript/CEP-CONFIG.gs` (trechos de backend modal)
+
+**Arquivos alterados/criados:**
+- **ALTERADO** `src/app/procurar-datas/page.tsx` (remocao de `loadingOptions` do disabled do botao `Validar endereco`).
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/app/procurar-datas/page.tsx --quiet`: passou.
+- Grep confirmou que a tela nao possui outro bloqueio de `loadingOptions` sobre campos de endereco.
+- Leitura do modal legado confirmada em `appscript/procurar_modal.html`.
+
+**Comandos rodados e resultados:**
+- `git status --short`: apontou alteracao em `src/app/procurar-datas/page.tsx`.
+- `npx tsc --noEmit --pretty false`: exit code 0.
+- `npx eslint src/app/procurar-datas/page.tsx --quiet`: exit code 0.
+
+**Causa do loading inicial:**
+- O `useEffect` inicial chama `/api/procurar-datas/opcoes` (que chama Apps Script `GetFrontOptionLists` e `GetTempoMap` em paralelo). Isso pode levar 3-5s.
+- Durante esse carregamento, `loadingOptions` e `true`.
+- O botao `Validar endereco` estava desabilitado por `disabled={validatingAddress || loadingOptions || searching}`, bloqueando o uso operacional mesmo com endereco ja preenchivel.
+- Os campos de endereco ja estavam liberados (`disabled={searching}`), entao a unica trava era o botao.
+
+**Correcao aplicada:**
+- `src/app/procurar-datas/page.tsx`: alterada condicao do botao `Validar endereco` para `disabled={validatingAddress || searching}`.
+- Com isso, o usuario pode preencher endereco e validar imediatamente, enquanto opcoes de servico continuam carregando em segundo plano (spinner localizado no cabecalho).
+
+**Comportamentos do modal legado encontrados (appscript/procurar_modal.html):**
+1. Mascaras/normalizacao: inputs text sem mascara rigida; data com min/max dinamico; comparacao de bairro/cidade normalizada sem acentos; valor inicial arredondado para multiplos de 5.
+2. Campos obrigatorios: logradouro, bairro, cidade, UF, data inicial.
+3. Gate visual: parte inferior do form bloqueada por overlay "PREENCHER CEP ACIMA ANTES" ate confirmar endereco.
+4. Botao "Confirmar este local" libera o resto do form.
+5. Botao "Pesquisar datas" so habilita apos endereco confirmado, tempo calculado, tempo > 00:00 e nao exceder 06:30.
+6. Limpeza ao editar endereco: reseta confirmacao, fecha gate, limpa resultados.
+7. Foco automatico: apos confirmar, foco vai para data inicial; ao editar, foco vai para logradouro.
+8. Avisos fixos: encomenda D+42 e showroom pos-venda.
+9. Aviso dinamico de bairro diferente do encontrado, com link para comparar no Google Maps.
+10. Botao "Selecionar no Mapa" quando endereco nao e localizado.
+11. Resultados progressivos: polling dentro do modal, com delay inicial de 30s, contador, timer e destaque no primeiro resultado.
+12. Valor inicial calculado pelo backend com distancia real, com fallback local (base semana + rural + condominio + 20%).
+13. Cache local de valor inicial por coordenadas.
+
+**Diferencas principais entre legado e tela nova:**
+- Tela nova nao tem gate bloqueando a parte inferior.
+- Tela nova nao tem botao "Confirmar este local" nem "Editar".
+- Tela nova nao tem pre-visualizacao progressiva de resultados.
+- Tela nova nao exibe avisos fixos de encomenda/showroom.
+- Tela nova nao tem aviso de bairro diferente nem link Google Maps.
+- Tela nova nao tem campo CEP.
+- Tela nova nao tem botao "Selecionar no Mapa".
+- Tela nova mostra resultados em secao separada, nao dentro do form.
+- Tela nova nao destaca primeiro resultado.
+- Valor inicial na tela nova usa fallback sem distancia (conforme escopo de tarefas anteriores).
+
+**Melhorias recomendadas (priorizadas):**
+- **Alta:**
+  - Adicionar aviso/obrigacao de confirmar endereco antes de liberar pesquisa (evita busca com endereco nao confirmado).
+  - Validar que endereco foi confirmado antes de habilitar "Pesquisar datas" (a tela nova parece ja requerer `addressResult.ok`, mas nao ha gate visual claro).
+- **Media:**
+  - Adicionar avisos fixos de encomenda D+42 e showroom pos-venda.
+  - Exibir link para comparar endereco no Google Maps apos validacao.
+  - Aviso de divergencia de bairro/cidade entre digitado e encontrado.
+  - Cache local de valor inicial por coordenadas.
+- **Baixa:**
+  - Destacar visualmente o primeiro resultado.
+  - Pre-visualizacao progressiva de candidatos (escopo maior, depende de polling visivel).
+  - Botao "Selecionar no Mapa".
+
+**Pendencias:**
+- Validar manualmente autenticado em `/procurar-datas` que o botao `Validar endereco` fique disponivel imediatamente apos o carregamento da pagina.
+- Confirmar que a busca v2 continua funcionando apos a alteracao.
+- Implementar melhorias de UI/UX prioritarias em tarefas futuras.
+
+**Riscos conhecidos:**
+- A rota `/api/procurar-datas/opcoes` continua lenta por chamar Apps Script. Nao foi alterada nesta tarefa.
+- A remocao de `loadingOptions` do botao `Validar endereco` nao afeta autenticacao, validacao de endereco ou motor v2.
+- Se o usuario validar endereco antes das opcoes carregarem, o calculo de tempo so sera atualizado quando `tempoMapLoaded` (useEffect) for true. O botao de pesquisar ja depende de `tempoNecessario` preenchido, entao o fluxo permanece seguro.
+
+**Proximo passo recomendado:**
+- Testar manualmente a tela em producao apos deploy para confirmar que o loading inicial nao bloqueia mais `Validar endereco`.
+- Abrir tarefa separada para implementar as melhorias de UI/UX de alta prioridade.
+
+---
+
 ## 2026-06-25 - Cascade - Frente 1/esquerda: auditoria do ultimo commit de tempo de servico
 
 **Resumo:** Auditoria do ultimo commit (5125498) confirmou que a migracao do calculo de tempo de servico para helper TypeScript puro ja foi aplicada corretamente na tela principal. A tela `src/app/procurar-datas/page.tsx` nao chama mais `/api/procurar-datas/calcular-tempo` nem `GetTempoNecessario` ao alterar berço/cama, cômoda, roupeiro, poltrona ou painel. O calculo eh feito localmente via `calcularTempoServicoMinutos` e `formatarMinutosParaHHMM`. A rota legada `src/app/api/procurar-datas/calcular-tempo/route.ts` ainda existe e ainda chama Apps Script, mas nao possui mais consumidor na tela principal. O log `[APPS SCRIPT SERVICE] Funcao: GetTempoNecessario` provavelmente vem de deployment desatualizado, cache de edge/CDN ou outro cliente chamando a rota diretamente.

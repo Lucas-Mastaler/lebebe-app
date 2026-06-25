@@ -1,3 +1,63 @@
+## 2026-06-25 - Cascade - Frente 3/direita + Frente 0/Controle: auditoria UI/UX do modal legado
+
+Status: auditoria concluida. Nao altera motor, regra de negocio, schema, migrations, Apps Script, OSRM, Haversine, frete, classificacao, ranking, recorte ou banco.
+
+### O que foi auditado
+- Modal legado de entrada `appscript/procurar_modal.html` (formulario de "Procurar Datas").
+- Comportamentos de mascaras, campos obrigatorios, bloqueio/desbloqueio, limpeza, foco, mensagens, botoes, valor inicial, resultados progressivos e selecao no mapa.
+
+### Fontes consultadas
+- `appscript/procurar_modal.html`
+- `appscript/CEP-APIBACK.gs` (funcoes de modal/resultados)
+- `appscript/CEP-CONFIG.gs` (constantes de backend modal)
+- `src/app/procurar-datas/page.tsx` (tela nova)
+
+### Comportamentos do legado encontrados
+1. **Gate visual**: parte inferior do form bloqueada por overlay "PREENCHER CEP ACIMA ANTES" ate confirmar endereco.
+2. **Confirmacao explicita**: apos validar, usuario deve clicar "Confirmar este local" para liberar o resto do form.
+3. **Campos obrigatorios**: logradouro, bairro, cidade, UF, data inicial.
+4. **Avisos fixos**: encomenda D+42 e showroom pos-venda.
+5. **Aviso de divergencia**: compara bairro/cidade digitado com encontrado (ignorando acentos) e alerta se diferente.
+6. **Link Google Maps**: oferece comparar endereco validado no Google Maps.
+7. **Selecao no mapa**: botao "Selecionar no Mapa" aparece quando endereco nao e localizado.
+8. **Limpeza ao editar endereco**: reseta confirmacao, fecha gate, limpa resultados.
+9. **Foco automatico**: apos confirmar, foco vai para data inicial; ao editar, foco vai para logradouro.
+10. **Valor inicial**: calculado pelo backend com distancia real; fallback local (base semana + rural + condominio + 20%, arredondado para multiplos de 5); cache por coordenadas.
+11. **Resultados progressivos**: polling dentro do modal, delay de 30s, contador, timer, destaque no primeiro resultado, badge Normal/Extra, frete, equipe, delta km, dias faltantes.
+12. **Bloqueio do submit**: so habilita "Pesquisar datas" quando endereco confirmado, tempo calculado, tempo > 00:00 e <= 06:30.
+
+### Diferencas para a tela nova
+- Tela nova nao tem gate visual nem confirmacao explicita de endereco.
+- Tela nova nao exibe avisos fixos de encomenda/showroom.
+- Tela nova nao tem aviso de divergencia de bairro/cidade nem link Google Maps.
+- Tela nova nao tem botao "Selecionar no Mapa".
+- Tela nova nao tem pre-visualizacao progressiva de resultados.
+- Tela nova mostra resultados em secao separada, sem destaque no primeiro resultado.
+- Tela nova nao arredonda valor inicial para multiplos de 5 (escopo de tarefas anteriores).
+
+### Melhorias recomendadas
+- **Alta:**
+  - Adicionar confirmacao explicita de endereco (gate/confirmar) antes de liberar pesquisa.
+  - Bloquear/desabilitar "Pesquisar datas" ate endereco confirmado e tempo valido.
+- **Media:**
+  - Adicionar avisos fixos de encomenda D+42 e showroom pos-venda.
+  - Aviso de divergencia de bairro/cidade e link Google Maps.
+  - Cache local de valor inicial por coordenadas.
+- **Baixa:**
+  - Destacar primeiro resultado.
+  - Pre-visualizacao progressiva de candidatos.
+  - Botao "Selecionar no Mapa".
+
+### Pendencias
+- Implementar melhorias priorizadas em tarefas futuras.
+- Validar com usuario quais comportamentos do legado devem ser replicados na tela nova.
+
+### Riscos
+- Replicar todos os comportamentos de uma vez pode gerar refactor grande na tela. Recomendado fazer por partes.
+- Gate de confirmacao de endereco pode mudar perceptivelmente a UX; validar com operacao antes de implementar.
+
+---
+
 # Motor v2 da tela `/procurar-datas` — Progresso Técnico
 
 > **Data:** 12 de junho de 2026  

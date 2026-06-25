@@ -1,3 +1,54 @@
+## 2026-06-25 - Cascade - Frente 3/direita: gate de confirmacao de endereco, avisos fixos e mascaras em `/procurar-datas`
+
+**Resumo:** Implementados na tela principal `src/app/procurar-datas/page.tsx` os comportamentos prioritarios do modal legado: avisos fixos de encomenda D+42 e showroom pos-venda, confirmacao explicita de endereco antes de pesquisar, reset de confirmacao ao editar endereco, bloqueio correto do botao `Pesquisar datas` e mascaras simples nos campos numero e UF. Nao foram alterados backend, motor, ranking, classificacao, OSRM, Haversine, frete, banco, Apps Script, limites, recorte ou `/procurar-datas/dev-v2`.
+
+**Arquivos lidos:**
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+- `src/app/procurar-datas/page.tsx`
+- `appscript/procurar_modal.html` (comportamentos de referencia)
+
+**Arquivos alterados/criados:**
+- **ALTERADO** `src/app/procurar-datas/page.tsx` (avisos fixos, confirmacao de endereco, reset, bloqueio de pesquisa, mascaras de numero/UF, aviso de tempo > 06:30).
+- **ALTERADO** `docs/ia/log_progress.md` (esta entrada).
+- **ALTERADO** `docs/procurar-datas-motor-v2-progresso.md` (registro de progresso da frente 3/direita).
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/app/procurar-datas/page.tsx --quiet`: passou.
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit --pretty false`: exit code 0.
+- `npx eslint src/app/procurar-datas/page.tsx --quiet`: exit code 0.
+
+**Mudancas aplicadas:**
+1. **Avisos fixos:** caixa amarela/creme no topo do formulario com os textos exatos:
+   - `AVISO: SE FOR ENCOMENDA, UTILIZAR 42 DIAS OU MAIS (DD/MM/YYYY).` — data calculada dinamicamente como hoje + 42 dias.
+   - `AVISO: SE FOR VENDE SHOWROOM FALAR COM PÓS VENDA DATA PRA DESMONTAR E MONTAR.`
+2. **Confirmacao de endereco:** novo estado `addressConfirmed` e `addressConfirmedResult`. Botao `Confirmar este local` aparece apos validacao. Botao `Pesquisar datas` so habilita apos confirmacao.
+3. **Reset ao editar endereco:** `updateForm` para `logradouro`, `numero`, `bairro`, `cidade`, `uf` limpa `addressResult`, `addressConfirmed`, `addressConfirmedResult`, `searchPayload`, resultados, timer e polling.
+4. **Bloqueio de `Pesquisar datas`:** disabled exige `addressConfirmed`, `addressConfirmedResult.ok`, `form.dataInicial`, `tempoNecessario` valido e `tempoNecessario <= 06:30`.
+5. **Aviso de tempo > 06:30:** mensagem exibida abaixo do campo `Tempo necessario` quando `hhmmToMinutes(tempoNecessario) > 390`.
+6. **Mascaras:**
+   - `numero`: `replace(/\D/g, '')` (apenas digitos).
+   - `uf`: `replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2)` (apenas 2 letras maiusculas).
+7. **Foco:** apos confirmar endereco, foco vai para o campo `dataInicial`.
+
+**Pendencias:**
+- Validacao manual autenticada em `/procurar-datas` para confirmar fluxo completo: avisos, validacao, confirmacao, pesquisa, edicao/reset, mascaras e busca real.
+- Implementar melhorias de media/baixa prioridade em tarefas futuras (aviso de divergencia de bairro/cidade, link Google Maps, cache de valor inicial, destacar primeiro resultado, pre-visualizacao progressiva, botao Selecionar no Mapa).
+
+**Riscos conhecidos:**
+- A confirmacao de endereco adiciona um passo extra ao fluxo. Isso evita pesquisas com coordenadas nao confirmadas, mas pode exigir ajuste operacional se usuarios estiverem acostumados a pesquisar imediatamente apos validar.
+- A alteracao de `serviceLocked` para depender de `addressConfirmed` bloqueia os campos de data/opcoes de servico ate confirmacao. Isso equivale ao gate do legado.
+- O calculo de `tempoNecessario` continua local e nao foi alterado.
+
+**Proximo passo recomendado:**
+- Testar manualmente a tela em ambiente autenticado e, se tudo ok, considerar a frente 3/direita concluida para os itens de alta prioridade.
+
+---
+
 ## 2026-06-25 - Cascade - Frente 3/direita + Frente 0/Controle: loading inicial e auditoria UI/UX modal legado
 
 **Resumo:** Investigado e corrigido o loading inicial da tela `/procurar-datas`. A causa principal era que o botao `Validar endereco` ficava desabilitado por `loadingOptions` enquanto a rota `/api/procurar-datas/opcoes` carregava listas de servico e tempoMap via Apps Script (`GetFrontOptionLists` e `GetTempoMap`). A rota de opcoes ainda e lenta, mas validar endereco nao depende dela. Foi aplicado patch minimo em `src/app/procurar-datas/page.tsx` removendo `loadingOptions` da condicao de desabilitacao do botao. Tambem foi auditado o modal legado `appscript/procurar_modal.html` e levantadas diferencas de UI/UX para futuras tarefas priorizadas.

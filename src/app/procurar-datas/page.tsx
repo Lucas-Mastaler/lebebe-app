@@ -105,6 +105,19 @@ function isoDatePlus(days: number) {
   return d.toISOString().slice(0, 10)
 }
 
+function formatDatePlusDays(days: number) {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() + days)
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+function hhmmToMinutes(hhmm: string) {
+  const m = String(hhmm || '').trim().match(/^(\d{1,2}):(\d{2})$/)
+  if (!m) return 0
+  return Number(m[1]) * 60 + Number(m[2])
+}
+
 function createClientToken() {
   return `app-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
@@ -192,6 +205,8 @@ export default function ProcurarDatasPage() {
   const [tempoMapLoaded, setTempoMapLoaded] = useState(false)
   const [tempoNecessario, setTempoNecessario] = useState('')
   const [addressResult, setAddressResult] = useState<AddressResult | null>(null)
+  const [addressConfirmed, setAddressConfirmed] = useState(false)
+  const [addressConfirmedResult, setAddressConfirmedResult] = useState<AddressResult | null>(null)
   const [searchPayload, setSearchPayload] = useState<SearchPayload | null>(null)
   const [phase, setPhase] = useState('Carregando opcoes')
   const [progressSnapshot, setProgressSnapshot] = useState<SearchProgress | null>(null)
@@ -215,8 +230,10 @@ export default function ProcurarDatasPage() {
   const candidates = searchPayload?.candidates || []
   const normalCandidates = candidates.filter(isNormalCandidate).slice(0, 3)
   const extraCandidates = candidates.filter((candidate) => !isNormalCandidate(candidate))
-  const serviceLocked = !addressResult?.ok
+  const serviceLocked = !addressConfirmed || addressConfirmedResult?.ok !== true
   const formLocked = serviceLocked || searching
+  const tempoMinutes = hhmmToMinutes(tempoNecessario)
+  const tempoTooLong = tempoMinutes > 390
   const progressDone = progressStatus === 'done'
 
   useEffect(() => {
@@ -343,13 +360,23 @@ export default function ProcurarDatasPage() {
   function updateForm<K extends keyof FormState>(key: K, value: FormState[K]) {
     const nextValue = key === 'numero' && typeof value === 'string'
       ? value.replace(/\D/g, '')
-      : value
+      : key === 'uf' && typeof value === 'string'
+        ? value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2)
+        : value
     setForm((current) => ({ ...current, [key]: nextValue }))
     if (['logradouro', 'numero', 'bairro', 'cidade', 'uf'].includes(String(key))) {
       setAddressResult(null)
+      setAddressConfirmed(false)
+      setAddressConfirmedResult(null)
       setSearchPayload(null)
       setValorInicial('')
+      setProgressStatus('idle')
+      setProgressSnapshot(null)
+      setSearchError('')
+      setElapsedSeconds(0)
       setPhase('Endereco alterado')
+      stopPolling()
+      stopTimer()
     }
   }
 
@@ -362,6 +389,9 @@ export default function ProcurarDatasPage() {
     setValidatingAddress(true)
     setPhase('Validando endereco')
     setSearchPayload(null)
+    setAddressConfirmed(false)
+    setAddressConfirmedResult(null)
+    setValorInicial('')
 
     try {
       const body: ValidarEnderecoRequest = form
@@ -381,8 +411,10 @@ export default function ProcurarDatasPage() {
       }
 
       setAddressResult(resultado)
+      setAddressConfirmed(false)
+      setAddressConfirmedResult(null)
       setPhase('Endereco validado')
-      toast.success('Endereco validado.')
+      toast.success('Endereco validado. Confirme o local para continuar.')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao validar endereco.'
       toast.error(message)
@@ -478,13 +510,34 @@ export default function ProcurarDatasPage() {
     }
   }
 
+  function confirmarEndereco() {
+    if (!addressResult?.ok || !addressResult.lat || !addressResult.lng) {
+      toast.error('Valide o endereco antes de confirmar.')
+      return
+    }
+    setAddressConfirmed(true)
+    setAddressConfirmedResult(addressResult)
+    setPhase('Local confirmado')
+    toast.success('Local confirmado.')
+    const dataInput = document.getElementById('dataInicial') as HTMLInputElement | null
+    if (dataInput) dataInput.focus()
+  }
+
   async function pesquisarDatas() {
-    if (!addressResult?.lat || !addressResult.lng) {
-      toast.error('Valide o endereco antes de pesquisar.')
+    if (!addressConfirmed || !addressConfirmedResult?.ok || !addressConfirmedResult.lat || !addressConfirmedResult.lng) {
+      toast.error('Valide e confirme o endereco antes de pesquisar.')
+      return
+    }
+    if (!form.dataInicial) {
+      toast.error('Informe a data inicial da busca.')
       return
     }
     if (!tempoNecessario || tempoNecessario === '<--- PREENCHA') {
       toast.error('Selecione os itens para calcular o tempo necessario.')
+      return
+    }
+    if (tempoTooLong) {
+      toast.error('O tempo necessario excede o limite de 06:30. Serao necessarias 2 entregas separadas.')
       return
     }
 
@@ -507,14 +560,14 @@ export default function ProcurarDatasPage() {
         ...form,
         clientToken: token,
         tempoNecessario,
-        cep: addressResult.cep || '',
-        lat: addressResult.lat,
-        lng: addressResult.lng,
-        destLat: addressResult.lat,
-        destLng: addressResult.lng,
-        destDisplay: addressResult.enderecoCompleto || addressResult.display || addressResult.display_name || '',
-        destProvider: addressResult.provider || '',
-        enderecoCompleto: addressResult.enderecoCompleto || addressResult.display || addressResult.display_name || '',
+        cep: addressConfirmedResult.cep || '',
+        lat: addressConfirmedResult.lat,
+        lng: addressConfirmedResult.lng,
+        destLat: addressConfirmedResult.lat,
+        destLng: addressConfirmedResult.lng,
+        destDisplay: addressConfirmedResult.enderecoCompleto || addressConfirmedResult.display || addressConfirmedResult.display_name || '',
+        destProvider: addressConfirmedResult.provider || '',
+        enderecoCompleto: addressConfirmedResult.enderecoCompleto || addressConfirmedResult.display || addressConfirmedResult.display_name || '',
         monthYear: form.dataInicial,
       }
 
@@ -546,7 +599,7 @@ export default function ProcurarDatasPage() {
     setProgressSnapshot(null)
     setSearchError('')
     setElapsedSeconds(0)
-    setPhase(addressResult?.ok ? 'Pronto para buscar datas' : 'Pronto para validar endereco')
+    setPhase(addressConfirmedResult?.ok ? 'Pronto para buscar datas' : 'Pronto para validar endereco')
     stopPolling()
     stopTimer()
   }
@@ -671,6 +724,11 @@ export default function ProcurarDatasPage() {
             {loadingOptions && <Loader2 className="h-5 w-5 animate-spin text-[#00A5E6]" />}
           </div>
 
+          <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-900">
+            <p>AVISO: SE FOR ENCOMENDA, UTILIZAR 42 DIAS OU MAIS ({formatDatePlusDays(42)}).</p>
+            <p className="mt-1">AVISO: SE FOR VENDE SHOWROOM FALAR COM PÓS VENDA DATA PRA DESMONTAR E MONTAR.</p>
+          </div>
+
           <div className="grid gap-3 md:grid-cols-6">
             <label className="md:col-span-3">
               <span className="mb-1 block text-xs font-medium text-slate-600">Logradouro</span>
@@ -690,7 +748,7 @@ export default function ProcurarDatasPage() {
             </label>
             <label>
               <span className="mb-1 block text-xs font-medium text-slate-600">UF</span>
-              <Input disabled={searching} maxLength={2} value={form.uf} onChange={(e) => updateForm('uf', e.target.value.toUpperCase())} />
+              <Input disabled={searching} maxLength={2} value={form.uf} onChange={(e) => updateForm('uf', e.target.value)} />
             </label>
             <div className="md:col-span-2 flex items-end">
               <Button type="button" variant="outline" onClick={validarEndereco} disabled={validatingAddress || searching} className="w-full">
@@ -702,17 +760,32 @@ export default function ProcurarDatasPage() {
 
           {addressResult?.ok && (
             <div className="mt-4 rounded-lg border border-sky-100 bg-sky-50 p-4 text-sm text-slate-700">
-              <div className="font-medium text-slate-900">{addressResult.enderecoCompleto || addressResult.display || 'Endereco validado'}</div>
-              <div className="mt-1 text-xs text-slate-500">
-                Lat {Number(addressResult.lat).toFixed(5)}, Lng {Number(addressResult.lng).toFixed(5)}
-                {addressResult.provider ? ` | ${addressResult.provider}` : ''}
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="font-medium text-slate-900">{addressResult.enderecoCompleto || addressResult.display || 'Endereco validado'}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    Lat {Number(addressResult.lat).toFixed(5)}, Lng {Number(addressResult.lng).toFixed(5)}
+                    {addressResult.provider ? ` | ${addressResult.provider}` : ''}
+                  </div>
+                  {addressConfirmed && addressConfirmedResult?.ok && (
+                    <div className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                      <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                      Local confirmado
+                    </div>
+                  )}
+                </div>
+                {!addressConfirmed && (
+                  <Button type="button" size="sm" onClick={confirmarEndereco} disabled={validatingAddress || searching}>
+                    Confirmar este local
+                  </Button>
+                )}
               </div>
             </div>
           )}
 
           {serviceLocked && (
             <div className="mt-4 rounded-lg border border-dashed border-sky-200 bg-sky-50/70 p-4 text-sm text-sky-800">
-              Valide o endereco para liberar data inicial, valor inicial, opcoes de servico e pesquisa de datas.
+              Valide e confirme o endereco para liberar data inicial, valor inicial, opcoes de servico e pesquisa de datas.
             </div>
           )}
 
@@ -725,6 +798,7 @@ export default function ProcurarDatasPage() {
             <label className="md:col-span-2">
               <span className="mb-1 block text-xs font-medium text-slate-600">Data inicial</span>
               <Input
+                id="dataInicial"
                 type="date"
                 min={minDate}
                 max={maxDate}
@@ -776,6 +850,11 @@ export default function ProcurarDatasPage() {
                   <TimerReset className="h-4 w-4 text-[#00A5E6]" />
                   <strong className="text-slate-900">{calculatingTime ? 'calculando...' : tempoNecessario || '-'}</strong>
                 </div>
+                {tempoTooLong && (
+                  <div className="mt-2 text-xs font-semibold text-red-700">
+                    O tempo excede 06:30. Serão necessárias 2 entregas separadas.
+                  </div>
+                )}
               </div>
               <div>
                 <span className="mb-1 block text-xs font-medium text-slate-600">Valor inicial (minimo)</span>
@@ -793,7 +872,7 @@ export default function ProcurarDatasPage() {
             <Button
               type="button"
               onClick={pesquisarDatas}
-              disabled={searching || validatingAddress || calculatingTime || !addressResult?.ok || !tempoNecessario || tempoNecessario === '<--- PREENCHA'}
+              disabled={searching || validatingAddress || calculatingTime || !addressConfirmed || !addressConfirmedResult?.ok || !form.dataInicial || !tempoNecessario || tempoNecessario === '<--- PREENCHA' || tempoTooLong}
             >
               {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
               {searching ? 'Pesquisando...' : 'Pesquisar datas'}

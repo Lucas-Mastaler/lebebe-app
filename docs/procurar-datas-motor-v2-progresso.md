@@ -1,3 +1,37 @@
+## 2026-06-25 - Cascade - Frente 3/direita: gate de confirmacao, avisos fixos e mascaras na tela principal
+
+Status: implementado no frontend. Nao altera motor, regra de negocio, schema, migrations, Apps Script, OSRM, Haversine, frete, classificacao, ranking, recorte, banco ou `/procurar-datas/dev-v2`.
+
+### O que foi implementado
+- `src/app/procurar-datas/page.tsx`:
+  - Avisos fixos no topo do formulario (encomenda D+42 e showroom pos-venda).
+  - Estado `addressConfirmed` / `addressConfirmedResult` para confirmacao explicita de endereco.
+  - Botao `Confirmar este local` apos validacao.
+  - Reset de confirmacao e resultados ao editar `logradouro`, `numero`, `bairro`, `cidade` ou `uf`.
+  - `serviceLocked` agora depende de `addressConfirmed` (gate equivalente ao legado).
+  - Botao `Pesquisar datas` so habilita com endereco confirmado, data inicial preenchida, tempo necessario > 00:00 e <= 06:30.
+  - Aviso visual quando tempo > 06:30.
+  - Mascaras: numero apenas digitos; UF apenas 2 letras maiusculas.
+  - Foco automatico no campo `dataInicial` apos confirmacao.
+
+### O que nao foi alterado
+- Backend, rotas API, Apps Script, banco, motor v2, ranking, classificacao, frete, OSRM, Haversine, limites, recorte.
+- `/procurar-datas/dev-v2`.
+- Pré-visualizacao progressiva, botao Selecionar no Mapa, cache de valor inicial, aviso de divergencia de bairro/cidade.
+
+### Validacoes
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/app/procurar-datas/page.tsx --quiet`: passou.
+
+### Pendencias
+- Validacao manual autenticada do fluxo completo.
+- Tarefas futuras para melhorias de media/baixa prioridade.
+
+### Riscos
+- Gate de confirmacao muda a UX operacional. Validar com usuarios reais antes de considerar definitivo.
+
+---
+
 ## 2026-06-25 - Cascade - Frente 3/direita + Frente 0/Controle: auditoria UI/UX do modal legado
 
 Status: auditoria concluida. Nao altera motor, regra de negocio, schema, migrations, Apps Script, OSRM, Haversine, frete, classificacao, ranking, recorte ou banco.

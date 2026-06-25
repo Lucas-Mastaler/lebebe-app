@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarCheck, Loader2, MapPin, Search, Send, TimerReset } from 'lucide-react'
+import { CalendarCheck, CheckCircle2, Edit, Loader2, Search, Send, TimerReset, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -62,6 +62,8 @@ type SearchPayload = {
   candidates?: Candidate[]
   searchTime?: string
 }
+
+type EstadoCep = 'aguardando_input' | 'consultando' | 'encontrado' | 'nao_encontrado' | 'confirmado'
 
 type ProgressStatus = 'idle' | 'queued' | 'running' | 'done' | 'error'
 
@@ -236,6 +238,9 @@ export default function ProcurarDatasPage() {
   const [valorInicial, setValorInicial] = useState('')
   const [formErrors, setFormErrors] = useState<FormErrors>({})
   const [loadingOptions, setLoadingOptions] = useState(true)
+  const [cepInput, setCepInput] = useState('')
+  const [estadoCep, setEstadoCep] = useState<EstadoCep>('aguardando_input')
+  const [loadingCep, setLoadingCep] = useState(false)
   const [validatingAddress, setValidatingAddress] = useState(false)
   const [calculatingTime, setCalculatingTime] = useState(false)
   const [calculatingValorInicial, setCalculatingValorInicial] = useState(false)
@@ -396,31 +401,137 @@ export default function ProcurarDatasPage() {
     }
   }
 
+  function resetEstadoCepEEndereco() {
+    setEstadoCep('aguardando_input')
+    setAddressResult(null)
+    setAddressConfirmed(false)
+    setAddressConfirmedResult(null)
+    setSearchPayload(null)
+    setValorInicial('')
+    setProgressStatus('idle')
+    setProgressSnapshot(null)
+    setSearchError('')
+    setElapsedSeconds(0)
+    stopPolling()
+    stopTimer()
+  }
+
+  const camposEndereco = ['logradouro', 'numero', 'bairro', 'cidade', 'uf']
+
+  function limparResultadoValidacao() {
+    setAddressResult(null)
+    setAddressConfirmed(false)
+    setAddressConfirmedResult(null)
+    setSearchPayload(null)
+    setValorInicial('')
+    setProgressStatus('idle')
+    setProgressSnapshot(null)
+    setSearchError('')
+    setElapsedSeconds(0)
+    stopPolling()
+    stopTimer()
+  }
+
   function updateForm<K extends keyof FormState>(key: K, value: FormState[K]) {
     const nextValue = normalizeValue(key, value)
     setForm((current) => ({ ...current, [key]: nextValue }))
     setFormErrors((current) => {
       const next = { ...current }
       delete next[key as keyof FormErrors]
-      if (['logradouro', 'numero', 'bairro', 'cidade', 'uf'].includes(String(key))) {
+      if (camposEndereco.includes(String(key))) {
         delete next.endereco
       }
       return next
     })
-    if (['logradouro', 'numero', 'bairro', 'cidade', 'uf'].includes(String(key))) {
-      setAddressResult(null)
-      setAddressConfirmed(false)
-      setAddressConfirmedResult(null)
-      setSearchPayload(null)
-      setValorInicial('')
-      setProgressStatus('idle')
-      setProgressSnapshot(null)
-      setSearchError('')
-      setElapsedSeconds(0)
+    if (camposEndereco.includes(String(key))) {
+      limparResultadoValidacao()
       setPhase('Endereco alterado')
-      stopPolling()
-      stopTimer()
+      if (estadoCep === 'confirmado') {
+        setEstadoCep('encontrado')
+      }
     }
+  }
+
+  async function buscarCepHandler() {
+    const digitos = cepInput.replace(/\D/g, '')
+    if (digitos.length !== 8) {
+      toast.error('CEP invalido. Informe 8 digitos numericos.')
+      return
+    }
+    if (!form.numero.trim()) {
+      toast.error('Informe o numero antes de pesquisar o CEP.')
+      return
+    }
+    setLoadingCep(true)
+    setEstadoCep('consultando')
+    setFormErrors((current) => { const next = { ...current }; delete next.endereco; return next })
+    try {
+      const response = await fetch('/api/procurar-datas/buscar-cep', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cep: cepInput }),
+      })
+      const data = await response.json() as { ok: boolean; resultado?: { cep: string; logradouro: string; bairro: string; cidade: string; uf: string }; error?: string }
+      if (!data.ok || !data.resultado) {
+        setEstadoCep('nao_encontrado')
+        setPhase('CEP nao encontrado')
+        return
+      }
+      const r = data.resultado
+      setForm((current) => ({
+        ...current,
+        logradouro: normalizarLogradouro(r.logradouro || ''),
+        bairro: normalizarBairro(r.bairro || ''),
+        cidade: normalizarCidade(r.cidade || ''),
+        uf: normalizarUF(r.uf || ''),
+      }))
+      setEstadoCep('encontrado')
+      setPhase('CEP encontrado')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao consultar CEP.'
+      toast.error(message)
+      setEstadoCep('aguardando_input')
+      setPhase('Erro ao consultar CEP')
+    } finally {
+      setLoadingCep(false)
+    }
+  }
+
+  async function confirmarEnderecoCep() {
+    setEstadoCep('confirmado')
+    setPhase('Validando localizacao')
+    await validarEndereco()
+  }
+
+  function rejeitarEnderecoCep() {
+    setCepInput('')
+    setForm((current) => ({ ...current, logradouro: '', bairro: '', cidade: '', uf: 'PR' }))
+    resetEstadoCepEEndereco()
+    setPhase('Pronto para validar endereco')
+  }
+
+  function ajustarEndereco() {
+    setCepInput('')
+    setForm((current) => ({ ...current, logradouro: '', bairro: '', cidade: '', uf: 'PR', numero: '' }))
+    resetEstadoCepEEndereco()
+    setEstadoCep('aguardando_input')
+    setPhase('Pronto para validar endereco')
+    toast.success('Endereco reiniciado. Preencha CEP e numero novamente.')
+  }
+
+  function montarEnderecoFormatadoParaMaps(form: FormState, cep?: string): string {
+    const partes: string[] = []
+    if (form.logradouro) partes.push(form.logradouro)
+    if (form.numero) partes.push(form.numero)
+    if (form.bairro) partes.push(form.bairro)
+    if (form.cidade) partes.push(form.cidade)
+    if (form.uf) partes.push(form.uf)
+    if (cep) partes.push(cep)
+    return partes.join(' - ')
+  }
+
+  function montarLinkComparacaoGoogleMaps(lat: number, lng: number, enderecoFormatado: string): string {
+    return `https://www.google.com/maps/dir/${lat},${lng}/${encodeURIComponent(enderecoFormatado)}`
   }
 
   async function validarEndereco() {
@@ -787,68 +898,153 @@ export default function ProcurarDatasPage() {
 
           <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-900">
             <p>AVISO: SE FOR ENCOMENDA, UTILIZAR 42 DIAS OU MAIS ({formatDatePlusDays(42)}).</p>
-            <p className="mt-1">AVISO: SE FOR VENDE SHOWROOM FALAR COM PÓS VENDA DATA PRA DESMONTAR E MONTAR.</p>
+            <p className="mt-1">AVISO: SE FOR VENDA SHOWROOM FALAR COM PÓS VENDA SOBRE DATA PRA DESMONTAR E MONTAR.</p>
           </div>
 
           <div className="grid gap-3 md:grid-cols-6">
-            <label className="md:col-span-3">
-              <span className="mb-1 block text-xs font-medium text-slate-600">Logradouro</span>
+            <label className="md:col-span-2">
+              <span className="mb-1 block text-xs font-medium text-slate-600">CEP</span>
               <Input
-                disabled={searching}
-                value={form.logradouro}
-                onChange={(e) => updateForm('logradouro', e.target.value)}
-                className={formErrors.logradouro ? 'border-red-500 focus:border-red-500' : ''}
+                disabled={searching || loadingCep || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
+                value={cepInput}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/\D/g, '').slice(0, 8)
+                  const fmt = raw.length > 5 ? raw.slice(0, 5) + '-' + raw.slice(5) : raw
+                  setCepInput(fmt)
+                  if (estadoCep !== 'aguardando_input') {
+                    rejeitarEnderecoCep()
+                  }
+                }}
+                placeholder="00000-000"
+                maxLength={9}
               />
-              {formErrors.logradouro && <span className="mt-1 block text-xs text-red-600">{formErrors.logradouro}</span>}
             </label>
             <label>
               <span className="mb-1 block text-xs font-medium text-slate-600">Numero</span>
               <Input
-                disabled={searching}
+                disabled={searching || loadingCep || estadoCep === 'confirmado'}
                 value={form.numero}
                 onChange={(e) => updateForm('numero', e.target.value)}
                 placeholder="Apenas numeros"
               />
               {formErrors.numero && <span className="mt-1 block text-xs text-red-600">{formErrors.numero}</span>}
             </label>
+            <div className="md:col-span-2 flex items-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={buscarCepHandler}
+                disabled={loadingCep || searching || estadoCep === 'encontrado' || estadoCep === 'confirmado' || cepInput.replace(/\D/g, '').length !== 8 || !form.numero.trim()}
+                className="w-full"
+              >
+                {loadingCep ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                Pesquisar CEP
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-6">
+            <label className="md:col-span-3">
+              <span className="mb-1 block text-xs font-medium text-slate-600">Logradouro</span>
+              <Input
+                disabled={searching || estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
+                readOnly={estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
+                value={form.logradouro}
+                onChange={(e) => updateForm('logradouro', e.target.value)}
+                className={`${formErrors.logradouro ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50 text-slate-500/70' : ''}`}
+              />
+              {formErrors.logradouro && <span className="mt-1 block text-xs text-red-600">{formErrors.logradouro}</span>}
+            </label>
             <label className="md:col-span-2">
               <span className="mb-1 block text-xs font-medium text-slate-600">Bairro</span>
               <Input
-                disabled={searching}
+                disabled={searching || estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
+                readOnly={estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
                 value={form.bairro}
                 onChange={(e) => updateForm('bairro', e.target.value)}
-                className={formErrors.bairro ? 'border-red-500 focus:border-red-500' : ''}
+                className={`${formErrors.bairro ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50 text-slate-500/70' : ''}`}
               />
               {formErrors.bairro && <span className="mt-1 block text-xs text-red-600">{formErrors.bairro}</span>}
             </label>
             <label className="md:col-span-3">
               <span className="mb-1 block text-xs font-medium text-slate-600">Cidade</span>
               <Input
-                disabled={searching}
+                disabled={searching || estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
+                readOnly={estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
                 value={form.cidade}
                 onChange={(e) => updateForm('cidade', e.target.value)}
-                className={formErrors.cidade ? 'border-red-500 focus:border-red-500' : ''}
+                className={`${formErrors.cidade ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50 text-slate-500/70' : ''}`}
               />
               {formErrors.cidade && <span className="mt-1 block text-xs text-red-600">{formErrors.cidade}</span>}
             </label>
             <label>
               <span className="mb-1 block text-xs font-medium text-slate-600">UF</span>
               <Input
-                disabled={searching}
+                disabled={searching || estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
+                readOnly={estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
                 maxLength={2}
                 value={form.uf}
                 onChange={(e) => updateForm('uf', e.target.value)}
-                className={formErrors.uf ? 'border-red-500 focus:border-red-500' : ''}
+                className={`${formErrors.uf ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50 text-slate-500/70' : ''}`}
               />
               {formErrors.uf && <span className="mt-1 block text-xs text-red-600">{formErrors.uf}</span>}
             </label>
             <div className="md:col-span-2 flex items-end">
-              <Button type="button" variant="outline" onClick={validarEndereco} disabled={validatingAddress || searching} className="w-full">
-                {validatingAddress ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
-                Validar endereco
-              </Button>
+              {addressResult?.ok ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={ajustarEndereco}
+                  disabled={searching}
+                  className="w-full"
+                >
+                  <Edit className="h-4 w-4" />
+                  Ajustar endereco
+                </Button>
+              ) : null}
             </div>
           </div>
+
+          {estadoCep === 'nao_encontrado' && (
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              CEP nao encontrado. Confira o CEP digitado ou tente outro CEP.
+            </div>
+          )}
+
+          {estadoCep === 'encontrado' && (
+            <div className="mt-3 rounded-md border border-sky-200 bg-sky-50 p-3">
+              <p className="text-sm font-medium text-slate-800">O CEP é desse endereço?</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">
+                {form.logradouro && form.numero ? `${form.logradouro}, ${form.numero}` : form.logradouro || form.numero || ''}
+              </p>
+              <p className="text-xs text-slate-600">
+                {[form.bairro, `${form.cidade}/${form.uf}`].filter(Boolean).join(' — ')}
+              </p>
+              <div className="mt-3 flex gap-2">
+                <Button type="button" size="sm" onClick={confirmarEnderecoCep} disabled={validatingAddress || searching}>
+                  {validatingAddress ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  Endereço correto
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={rejeitarEnderecoCep} disabled={validatingAddress || searching}>
+                  <XCircle className="h-4 w-4" />
+                  Não é esse endereço
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {estadoCep === 'confirmado' && !addressResult?.ok && (
+            <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+              {validatingAddress ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Validando localização...
+                </span>
+              ) : (
+                <span className="font-medium">Endereco textual confirmado.</span>
+              )}
+            </div>
+          )}
 
           {formErrors.endereco && !addressResult?.ok && (
             <div className="mt-3 text-xs font-semibold text-red-600">{formErrors.endereco}</div>
@@ -857,12 +1053,15 @@ export default function ProcurarDatasPage() {
           {addressResult?.ok && (
             <div className="mt-4 rounded-lg border border-sky-100 bg-sky-50 p-4 text-sm text-slate-700">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <div className="font-medium text-slate-900">{addressResult.enderecoCompleto || addressResult.display || 'Endereco validado'}</div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    Lat {Number(addressResult.lat).toFixed(5)}, Lng {Number(addressResult.lng).toFixed(5)}
-                    {addressResult.provider ? ` | ${addressResult.provider}` : ''}
+                <div className="flex-1">
+                  <div className="text-xs font-semibold text-slate-500 uppercase">Endereco localizado</div>
+                  <div className="mt-1 font-medium text-slate-900">
+                    {form.logradouro && form.numero ? `${form.logradouro}, ${form.numero}` : form.logradouro || form.numero || ''}
                   </div>
+                  <div className="mt-1 text-xs text-slate-600">
+                    {form.bairro} — {form.cidade}/{form.uf}
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500">Coordenada validada com sucesso.</div>
                   {addressConfirmed && addressConfirmedResult?.ok && (
                     <div className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
                       <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
@@ -870,11 +1069,23 @@ export default function ProcurarDatasPage() {
                     </div>
                   )}
                 </div>
-                {!addressConfirmed && (
-                  <Button type="button" size="sm" onClick={confirmarEndereco} disabled={validatingAddress || searching}>
-                    Confirmar este local
-                  </Button>
-                )}
+                <div className="flex flex-col gap-2">
+                  {addressResult.lat && addressResult.lng && (
+                    <a
+                      href={montarLinkComparacaoGoogleMaps(addressResult.lat, addressResult.lng, montarEnderecoFormatadoParaMaps(form, addressResult.cep))}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-medium text-sky-700 hover:text-sky-900 hover:underline"
+                    >
+                      Comparar no Google Maps
+                    </a>
+                  )}
+                  {!addressConfirmed && (
+                    <Button type="button" size="sm" onClick={confirmarEndereco} disabled={validatingAddress || searching}>
+                      Confirmar este local
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           )}

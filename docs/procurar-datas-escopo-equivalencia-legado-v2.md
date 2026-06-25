@@ -8,6 +8,54 @@
 
 ---
 
+## 2026-06-26 - Frente 1/esquerda - Fallback Google Geocoding restrito para endereços difíceis
+
+Status: implementado em `src/lib/procurar-datas/google-geocoding.ts` e `src/app/api/procurar-datas/validar-endereco/route.ts`. Nao altera motor v2, OSRM, Haversine, ranking, classificacao, frete, UI, banco, migrations, RLS, Apps Script, MAPS.CO, Nominatim, buscar-cep, valor-inicial, OSRM.
+
+### Regra nova
+- Google Geocoding e usado somente como fallback excepcional na rota `POST /api/procurar-datas/validar-endereco`.
+- Ativado apenas quando todas as condicoes abaixo sao verdadeiras:
+  1. `geo_cache` seguro nao encontrou resultado.
+  2. LocationIQ principal falhou ou rejeitou todos os candidatos.
+  3. LocationIQ reserva (se existir) falhou ou rejeitou todos os candidatos.
+  4. O endereco parece ser "dificil": contem `BR`, `Rodovia`, `Estrada`, `KM`, `Zona Rural`, `quilometro` ou padroes rurais claros.
+- Para enderecos urbanos comuns (Rua, Avenida, Alameda, Travessa, etc.), o fluxo continua igual: cache -> LocationIQ -> Apps Script.
+- Google e o ultimo fallback direto antes de devolver erro para enderecos dificeis; Apps Script continua como fallback geral para enderecos nao dificeis.
+
+### Deteccao
+- Funcao `ehEnderecoDificilRodoviaOuRural(form)` analisa campos estruturados: `logradouro`, `numero`, `bairro`, `cidade`, `uf`, `cep`.
+- Padroes que ativam: `BR-116`, `BR 116`, `BR116`, `Rodovia`, `Estrada`, `KM 102`, `Zona Rural`, `quilometro`.
+- Padroes que NAO ativam: `Rua`, `Avenida`, `Alameda`, `Travessa`, `Praca`, `Largo`.
+
+### Aceite/rejeicao do Google
+- Rejeita coordenadas invalidas, pais diferente do Brasil, resultado generico (estado/pais/cidade pura), UF incompativel, cidade incompativel, logradouro incompativel.
+- Aceita resultados aproximados para enderecos rurais/rodovia sem numero exato quando houver indicacao de KM ou compatibilidade textual.
+- Provider registrado como `google_geocoding`.
+- Resultados rejeitados nao sao salvos no cache.
+
+### Cache
+- Se aceito, o resultado e salvo no `geo_cache` via `salvarEnderecoNoGeoCache` com `provider=google_geocoding`.
+- Nao foi criada coluna nova, migration, trigger ou schema.
+
+### Logs
+- `google_fallback_start`, `google_fallback_success`, `google_fallback_rejected`, `google_fallback_error`, `google_fallback_missing_key`, `google_fallback_skip_not_difficult`, `google_fallback_failed`.
+- Nenhum log expoe chave, token ou URL com secret.
+
+### Variavel de ambiente
+- `GOOGLE_GEOCODING_API_KEY` (backend only).
+- Se ausente, o fallback e ignorado e o fluxo continua para o proximo fallback disponivel.
+
+### Validacoes
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint google-geocoding.ts google-geocoding.test.ts route.ts --quiet`: passou.
+- `npm run test -- google-geocoding.test.ts`: 9/9 passou.
+
+### Pendencias
+- Validacao manual autenticada em `/procurar-datas` com endereco BR/Rodovia/KM.
+- Configurar `GOOGLE_GEOCODING_API_KEY` no ambiente backend quando desejar usar o fallback.
+
+---
+
 ## 2026-06-24 - Codex - Frente 1/esquerda: tempo de servico migrado para helper TS
 
 Status: calculo de `tempoNecessario` da tela principal migrado para helper puro TypeScript, sem alterar motor de datas.
@@ -3142,6 +3190,30 @@ Resultado desejado para K14 apos implementar a regra:
 - K14 e K15: comparacao legado x v2 ainda nao concluida por timeout do legado (~170s no K18.5).
 - Timeout do comparador ajustado para 300s (K18.5, Frente 3). Nova execucao e validacao manual opcional.
 - Caso legado continue estourando em 300s, pode indicar necessidade de otimizacao do Apps Script — fora do escopo desta migracao.
+
+---
+
+## 27. Decisao — Geocoding LocationIQ v2: numero obrigatorio e rejeicao de centroide (2026-06-26)
+
+### Decisao tomada
+A v2 e intencionalmente mais rigida que o legado na aceitacao de resultados de geocoding direto (LocationIQ):
+
+1. **`numero` e obrigatorio no payload** — ja implementado em `validar-endereco-payload.ts`.
+2. **LocationIQ sem comprovacao de numero nao e aceito** — centroide sem `house_number` no `address` e sem o numero no `display_name` e rejeitado.
+3. **Logradouro deve ser comprovado** — ao menos 1 token forte do logradouro (4+ chars, sem prefixo de tipo) deve aparecer no `display_name` ou `address.road`.
+4. **`house_number` nunca e preenchido com `form.numero`** — o campo reflete apenas o que o provider retornou.
+5. **Candidato rejeitado nao e salvo no `geo_cache`**.
+6. **Quando LocationIQ rejeita todos os candidatos, o fluxo cai para fallback Apps Script** (ja existente em `route.ts`).
+
+### Base da decisao
+- Auditoria confirmou que legado (`ValidarRetornoGeocode_`) rejeitaria o caso real "Rua Nicola Pelanda, 100, Umbara, Curitiba, PR" com score ~0.50 (abaixo do threshold 0.65) por `LOGRADOURO_MISS=-0.30`.
+- v2 anterior aceitava o centroide porque validava apenas cidade e UF.
+- v2 agora cobre as mesmas protecoes do legado com regras booleanas mais diretas, sendo mais rigida no ponto do numero porque o payload ja exige numero.
+
+### Equivalencia com legado
+- `LOGRADOURO_MISS=-0.30` → rejeicao booleana por logradouro ausente no display.
+- `CEP_REGION_DIFF=-0.25` → rejeicao por CEP divergente nos primeiros 5 digitos.
+- Threshold 0.65 → coberto pelas regras booleanas combinadas.
 
 ---
 

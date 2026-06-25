@@ -1,3 +1,112 @@
+## 2026-06-26 - Cascade - Frente 1/esquerda: fallback Google Geocoding restrito para enderecos dificeis
+
+Status: implementado em `src/lib/procurar-datas/google-geocoding.ts` e `src/app/api/procurar-datas/validar-endereco/route.ts`. Nao altera motor v2, OSRM, Haversine, ranking, classificacao, frete, UI, banco, migrations, RLS, Apps Script, MAPS.CO, Nominatim, buscar-cep, valor-inicial.
+
+### O que mudou
+- Criado helper `src/lib/procurar-datas/google-geocoding.ts` com:
+  - `ehEnderecoDificilRodoviaOuRural(form)` para detectar enderecos BR/Rodovia/Estrada/KM/Zona Rural;
+  - `consultarGoogleGeocodingEnderecoDificil(form, options)` para consultar a API do Google Geocoding;
+  - Validacao rigorosa do resultado: pais Brasil, nao-generico, UF e cidade compativeis, logradouro compativel, numero ou KM compativel.
+- Modificada rota `POST /api/procurar-datas/validar-endereco` para, apos falha do LocationIQ, tentar Google Geocoding antes de Apps Script quando o endereco for classificado como dificil.
+- Resultado aceito do Google e salvo em `public.geo_cache` via `salvarEnderecoNoGeoCache` com `provider=google_geocoding`.
+- Resultados rejeitados ou nao-dificeis nao sao salvos no cache.
+
+### Ordem de fallback para enderecos dificeis
+1. `geo_cache` seguro.
+2. LocationIQ principal.
+3. LocationIQ reserva.
+4. Google Geocoding (restrito).
+5. Apps Script (fallback geral).
+
+### Ordem para enderecos urbanos comuns
+1. `geo_cache` seguro.
+2. LocationIQ principal.
+3. LocationIQ reserva.
+4. Apps Script (fallback geral).
+
+### Logs
+- `google_fallback_start`, `google_fallback_success`, `google_fallback_rejected`, `google_fallback_error`, `google_fallback_missing_key`, `google_fallback_skip_not_difficult`, `google_fallback_failed`.
+- Nenhum log expoe chave, token ou URL com secret.
+
+### Variavel de ambiente
+- `GOOGLE_GEOCODING_API_KEY` (backend only).
+- Se ausente, o fallback e ignorado e o fluxo continua para o proximo fallback.
+
+### Testes
+- Criado `src/lib/procurar-datas/google-geocoding.test.ts` com 9 testes para `ehEnderecoDificilRodoviaOuRural`: cobre BR, Rodovia, Estrada, KM, Zona Rural, e enderecos urbanos comuns (Rua, Avenida, etc.).
+
+### Validacoes
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint google-geocoding.ts google-geocoding.test.ts route.ts --quiet`: passou.
+- `npm run test -- google-geocoding.test.ts`: 9/9 passou.
+- MCP Supabase confirmou `public.geo_cache` com 14 colunas (id, chave_endereco, endereco_completo, logradouro, numero, bairro, cidade, uf, cep, lat, lng, provider, confidence, updated_at). Nao houve alteracao de schema.
+
+### Pendencias
+- Validacao manual autenticada em `/procurar-datas` com endereco BR/Rodovia/KM.
+- Configurar `GOOGLE_GEOCODING_API_KEY` no ambiente backend quando desejar ativar o fallback.
+
+---
+
+## 2026-06-26 - Cascade - Patch validacao LocationIQ: rejeitar centroide, exigir logradouro e numero comprovados
+
+Status: implementado em `src/lib/procurar-datas/locationiq.ts`. Nao altera motor v2, ranking, classificacao, OSRM/Haversine, frete, pre-agendamento, schema, migrations, Apps Script, UI ou cache.
+
+### O que mudou
+- `candidatoValido` substituido por `validarCandidato` com validacao booleana em 5 etapas: coordenadas, cidade/UF, logradouro (token forte no display_name ou road), numero (house_number do provider ou numero no display), CEP (5 primeiros digitos quando ambos existem).
+- `house_number` nao e mais preenchido artificialmente com `form.numero` quando o provider nao retornou. Mascaramento de centroide removido.
+- 5 novos eventos de rejeicao adicionados ao tipo `LocationIqEvent`.
+- v2 e intencionalmente mais rigida que o legado porque `numero` e obrigatorio no payload.
+
+### Equivalencia com legado
+- Validacao de logradouro equivale a `LOGRADOURO_MISS=-0.30` do legado (`ValidarRetornoGeocode_`).
+- Validacao de CEP equivale a `CEP_REGION_DIFF=-0.25` do legado.
+- Threshold 0.65 do legado e coberto pelas regras booleanas (centroide sem numero ja reprovaria mesmo com score minimo).
+- Apps Script permanece fallback quando LocationIQ rejeita todos os candidatos.
+
+### Logs adicionados
+- `locationiq_rejected_no_house_number`, `locationiq_rejected_logradouro_mismatch`, `locationiq_rejected_cep_mismatch`, `locationiq_rejected_city_or_uf_mismatch`, `locationiq_no_valid_candidate`.
+
+### Validacoes
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint locationiq.ts locationiq.test.ts route.ts --quiet`: passou.
+- `npm run test -- locationiq.test.ts endereco-cache.test.ts validar-endereco-payload.test.ts`: 19/19 passou.
+
+### Pendencias
+- Validacao manual autenticada em `/procurar-datas` para o caso "Rua Nicola Pelanda, 100, Umbara, Curitiba, PR".
+- Confirmar que `LOCATIONIQ_API_KEY` esta configurada no ambiente backend.
+
+---
+
+## 2026-06-25 - Codex - Validar endereco com cache seguro e LocationIQ direto
+
+Status: implementado na rota auxiliar `/api/procurar-datas/validar-endereco`. Nao altera motor v2, ranking, classificacao, recorte, OSRM/Haversine do motor de datas, frete final, pre-agendamento, schema, migrations, Apps Script ou UI.
+
+### O que mudou
+- Backend agora exige payload completo de endereco, incluindo `numero`, antes de consultar cache, LocationIQ ou Apps Script.
+- `geo_cache` deixou de retornar hit por hash legado sem validar campos; hit seguro exige mesmo numero normalizado, logradouro equivalente, bairro, cidade, UF e CEP compativel quando ambos existem.
+- Linha de cache sem numero nao atende payload com numero.
+- Cache ambiguo vira miss.
+- Cache miss tenta LocationIQ direto no Next.js usando env vars backend `LOCATIONIQ_API_KEY` e `LOCATIONIQ_API_KEY_RESERVA`.
+- Resultado LocationIQ valido para cidade/UF e coordenadas finitas e salvo em `public.geo_cache` com hash incluindo numero.
+- Apps Script permanece fallback quando LocationIQ falha ou nao ha key configurada no ambiente.
+
+### Logs adicionados
+- `/validar-endereco`: `cache_hit`, `cache_miss`, `locationiq_start`, `locationiq_success`, `locationiq_reserve_key_used`, `locationiq_failed`, `fallback_appsscript`, `duracaoMs`.
+- Logs nao imprimem key nem URL completa do LocationIQ.
+
+### Validacoes
+- MCP Supabase confirmou `public.geo_cache` e confirmou que `LOCATIONIQ API KEY`/reserva existem em `procurar_datas_config` apenas como secrets (`valor=null`).
+- `npm run test -- src/lib/procurar-datas/endereco-cache.test.ts src/lib/procurar-datas/locationiq.test.ts src/lib/procurar-datas/validar-endereco-payload.test.ts src/lib/procurar-datas/form-helpers.test.ts src/lib/procurar-datas/opcoes-locais.test.ts`: passou.
+- `npx eslint` nos arquivos relevantes: passou.
+- `npx tsc --noEmit --pretty false`: passou.
+
+### Pendencias
+- Validacao manual autenticada em `/procurar-datas`.
+- Configurar `LOCATIONIQ_API_KEY` e opcionalmente `LOCATIONIQ_API_KEY_RESERVA` no ambiente backend quando desejar usar LocationIQ direto.
+- Avaliar em tarefa separada RLS desabilitado em `public.geo_cache` e outras tabelas apontadas pelo MCP.
+
+---
+
 ## 2026-06-25 - Codex - Migracao inicial das rotas auxiliares da tela principal
 
 Status: parcial implementado. Nao altera motor v2, ranking, classificacao, recorte, OSRM/Haversine do motor de datas, frete final, pre-agendamento, schema, migrations, Apps Script ou UI.

@@ -1,3 +1,630 @@
+## 2026-06-26 - Cascade - Frente 1/esquerda: corrigir validacao do fallback Google Geocoding para BR/Rodovia
+
+**Resumo:** Corrigida a validacao de candidatos do Google Geocoding para enderecos dificeis (BR/Rodovia). Antes, a validacao rejeitava um resultado forte (`ROOVIA BR-116, 15480, Curitiba/PR, 81690-200`) por `cidade_incompativel` porque extraira `Fanny` (sublocality/bairro) como cidade. Agora a cidade e extraida corretamente de `administrative_area_level_2`, `locality` ou `formatted_address`. O numero, CEP, logradouro e bairro tambem foram ajustados para enderecos dificeis.
+
+**Arquivos alterados:**
+- `src/lib/procurar-datas/google-geocoding.ts`:
+  - Adicionado `location_type` e `place_id` ao tipo interno `GoogleGeocodingResult`.
+  - `extrairCidadeDoFormatted` extrai cidade de padroes `"Cidade - UF"` e `"Cidade, UF"`.
+  - `cidadeRecebidaGoogle` prioriza `administrative_area_level_2`, depois `locality`, depois `formatted_address`.
+  - `cidadeCompativelGoogle` nao usa mais `sublocality` como cidade.
+  - `validarResultadoGoogle` retorna `cidadeSource`, `formattedCityMatch`, `locationType`, `partialMatch` no diagnostico.
+  - Numero: usa `street_number` do Google comparado diretamente ao numero informado.
+  - CEP: compara CEP completo normalizado (`81690-200` === `81690200`), alem do prefixo de 5 digitos.
+  - Bairro: em endereco dificil, bairro divergente nao e bloqueio absoluto quando rota+número+CEP+UF+cidade sao fortes.
+  - Regra de aceite forte: `ROOFTOP` + `partialMatch=false` + rota/número/CEP/UF/cidade compativeis aceita o resultado.
+  - `placeId` no log usa `resultado.place_id` em vez de buscar em `address_components`.
+  - `validarResultadoGoogle` exportada para testes.
+- `src/lib/procurar-datas/google-geocoding.test.ts`:
+  - 3 novos testes para `validarResultadoGoogle`: aceite BR-116 com cidade no formatted_address, aceite quando sublocality e bairro, rejeicao quando cidade realmente incompativel.
+- `src/app/api/procurar-datas/validar-endereco/route.ts`:
+  - Log `google_candidate` atualizado com `citySource` e `formattedCityMatch`.
+
+**Arquivos criados:** nenhum.
+
+**Validacoes:**
+- `npx tsc --noEmit --pretty false`: exit 0.
+- `npx eslint src/lib/procurar-datas/google-geocoding.ts src/lib/procurar-datas/google-geocoding.test.ts src/app/api/procurar-datas/validar-endereco/route.ts --quiet`: exit 0.
+- `npm run test -- google-geocoding.test.ts`: 12/12 passaram.
+
+**Resultado esperado para `RODOVIA BR-116, 15480, XAXIM, CURITIBA, PR, 81690-200`:**
+- `cidadeOk=true` (Curitiba encontrada em admin2/formatted)
+- `ufOk=true` (Parana/PR compativel)
+- `logradouroOk=true` (BR-116 compativel com RODOVIA BR-116)
+- `numeroOk=true` (street_number=15480)
+- `cepOk=true` (81690-200 normalizado == 81690200)
+- `bairroOk=true` (endereco dificil, nao bloqueia por bairro divergente)
+- `motivo=aceito`
+- `provider=google_geocoding`
+- Registro salvo em `geo_cache` com `provider=google_geocoding`.
+
+**Pendencias:**
+- Validacao manual autenticada em `/procurar-datas` com o endereco acima.
+
+**Riscos conhecidos:**
+- A regra de aceite forte para enderecos dificeis pode aceitar resultados com bairro divergente. Isso e intencional para rodovias/BR/KM onde o bairro pode variar conforme o trecho.
+- `formatted_address` e usado como fallback para cidade; regex pode nao cobrir todos os formatos internacionais, mas cobre os brasileiros comuns.
+
+---
+
+## 2026-06-26 - Cascade - Frente 1/esquerda: logs diagnósticos detalhados para fallback Google Geocoding
+
+**Resumo:** Adicionados logs diagnósticos detalhados e seguros no fallback Google Geocoding para debug de rejeicoes, especialmente `cidade_incompativel`. Nenhuma chamada extra ao Google foi adicionada; apenas logar melhor a resposta que ja vem.
+
+**Arquivos alterados:**
+- `src/lib/procurar-datas/google-geocoding.ts`:
+  - Novos tipos de evento: `google_fallback_query`, `google_fallback_response`, `google_candidate`, `google_summary`, `google_reject_detail`.
+  - `validarResultadoGoogle` retornou `DiagnosticoValidacaoGoogle` com flags de validacao (cidadeOk, ufOk, logradouroOk, numeroOk, bairroOk, cepOk) e valores recebidos (cidadeRecebida, ufRecebida, logradouroRecebido, bairroRecebido, cepRecebido).
+  - Log de query enviada (sem API key) antes da chamada.
+  - Log de resposta bruta (status, total, errorMessage truncado em 120 caracteres).
+  - Log por candidato avaliado (idx, motivos, lat, lng, formatted truncado em 180, placeId, locationType, partialMatch, route, streetNumber, bairroCandidate, cityCandidate, stateCandidate, postcode, flags de validacao).
+  - Log de resumo (total, aceitos, rejeitados, motivos).
+  - Log detalhado para `cidade_incompativel` (esperadoCidade, recebidoCidade, formatted, componentsResumo).
+- `src/app/api/procurar-datas/validar-endereco/route.ts`:
+  - Handlers de log para os novos eventos de diagnóstico do Google.
+
+**Arquivos criados:** nenhum.
+
+**Validacoes:**
+- `npx tsc --noEmit --pretty false`: exit 0.
+- `npx eslint google-geocoding.ts route.ts --quiet`: exit 0.
+
+**Logs novos:**
+- `[PROCURAR_DATAS][validar-endereco][google_fallback_query] query="..." cidade="..." uf="..." cep="..." enderecoDificil=true`
+- `[PROCURAR_DATAS][validar-endereco][google_fallback_response] status="..." total=... errorMessage="..."`
+- `[PROCURAR_DATAS][validar-endereco][google_candidate] idx=... motivos=... lat=... lng=... formatted="..." placeId="..." locationType="..." partialMatch=... route="..." streetNumber="..." bairroCandidate="..." cityCandidate="..." stateCandidate="..." postcode="..." cidadeOk=... ufOk=... logradouroOk=... numeroOk=... bairroOk=... cepOk=...`
+- `[PROCURAR_DATAS][validar-endereco][google_summary] total=... aceitos=... rejeitados=... motivos=...`
+- `[PROCURAR_DATAS][validar-endereco][google_reject_detail] motivo=cidade_incompativel esperadoCidade="..." recebidoCidade="..." formatted="..." componentsResumo="..."`
+
+**Segurança:**
+- Nenhum log expoe API key.
+- `formatted_address` truncado em 180 caracteres.
+- `error_message` truncado em 120 caracteres.
+
+**Pendencias:**
+- Repetir teste manual com endereco `RODOVIA BR-116, 15480, XAXIM, CURITIBA, PR, 81690-200` para conferir logs detalhados e diagnosticar rejeicao `cidade_incompativel`.
+
+---
+
+## 2026-06-26 - Cascade - Frente 1: fallback Google Geocoding restrito para enderecos dificeis
+
+**Resumo:** Implementado fallback excepcional usando Google Geocoding somente para enderecos dificeis (BR, Rodovia, Estrada, KM, Zona Rural) na rota `POST /api/procurar-datas/validar-endereco`. O Google e chamado apenas apos falha/rejeicao do cache seguro e do LocationIQ (principal e reserva). Para enderecos urbanos comuns, o fluxo continua cache -> LocationIQ -> Apps Script. Resultado aceito do Google e salvo em `geo_cache` com `provider=google_geocoding`; resultados rejeitados nao sao salvos.
+
+**Arquivos criados:**
+- `src/lib/procurar-datas/google-geocoding.ts` — helper `ehEnderecoDificilRodoviaOuRural`, `consultarGoogleGeocodingEnderecoDificil`, validacao de resposta e logs.
+- `src/lib/procurar-datas/google-geocoding.test.ts` — 9 testes para deteccao de endereco dificil.
+
+**Arquivos alterados:**
+- `src/app/api/procurar-datas/validar-endereco/route.ts` — inserido Google Geocoding entre LocationIQ e Apps Script, apenas para enderecos dificeis.
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md` — secao registrando regra, deteccao, aceite, cache, logs, variavel de ambiente e validacoes.
+- `docs/procurar-datas-motor-v2-progresso.md` — secao registrando o que mudou, ordem de fallback, testes e pendencias.
+
+**Validacoes:**
+- `npx tsc --noEmit --pretty false`: exit 0.
+- `npx eslint google-geocoding.ts google-geocoding.test.ts route.ts --quiet`: exit 0.
+- `npm run test -- google-geocoding.test.ts`: 9/9 passaram.
+- MCP Supabase confirmou `public.geo_cache` com 14 colunas (sem alteracao de schema).
+
+**Variavel de ambiente:** `GOOGLE_GEOCODING_API_KEY` (backend only). Se ausente, fallback e ignorado sem quebrar a rota.
+
+**Pendencias:**
+- Validacao manual autenticada em `/procurar-datas` com endereco BR/Rodovia/KM.
+- Configurar `GOOGLE_GEOCODING_API_KEY` no ambiente backend quando desejar ativar.
+
+---
+
+## 2026-06-26 - Cascade - Frente 3/direita: simplificar fluxo CEP-first com "Endereco correto" + validacao automatica
+
+**Resumo:** Simplificado o fluxo visual de confirmacao de endereco apos busca de CEP. O botao antigo "Confirmar endereco" + aviso "Clique em Validar endereco" foram unificados em um unico botao "Endereco correto". Ao clicar, o sistema confirma o endereco textual e chama automaticamente a funcao existente `validarEndereco()` para geocodificacao. Itens/servicos continuam bloqueados ate o usuario clicar em "Confirmar este local" no card de coordenada validada.
+
+**Arquivos alterados:**
+- `src/app/procurar-datas/page.tsx`:
+  - `confirmarEnderecoCep` tornada `async` e agora chama `validarEndereco()` automaticamente;
+  - Bloco CEP encontrado passou a perguntar `O CEP é desse endereço?` e mostrar endereco formatado como `LOGRADOURO, NUMERO` e `BAIRRO — CIDADE/UF`;
+  - Botao `Confirmar endereco` renomeado para `Endereco correto`;
+  - Botao separado `Validar endereco` removido do fluxo CEP-first (nao aparece mais como etapa visivel);
+  - Bloco `estadoCep === 'confirmado'` mostra `Validando localizacao...` com spinner durante a geocodificacao;
+  - Mascara dos campos bloqueados reduzida de `bg-slate-50/70 text-slate-500` para `bg-slate-50/50 text-slate-500/70`;
+  - Import `MapPin` removido por nao ser mais usado.
+
+**Arquivos criados:** nenhum.
+
+**Validacoes:**
+- `npx tsc --noEmit --pretty false`: exit 0.
+- `npx eslint page.tsx --quiet`: exit 0.
+
+**Comportamento implementado:**
+- Fluxo: CEP + numero -> Pesquisar CEP -> endereco encontrado -> `Endereco correto` -> validacao automatica -> card "Endereco localizado" -> `Confirmar este local` -> libera itens/servicos.
+- `Nao e esse endereco` reseta o fluxo para nova pesquisa de CEP.
+- Campos logradouro/bairro/cidade/UF permanecem bloqueados apos retorno do CEP.
+
+**Pendencias:**
+- Validacao manual autenticada em `/procurar-datas` seguindo os 11 passos do escopo.
+
+---
+
+## 2026-06-26 - Cascade - Ajuste do botao Validar endereco/Ajustar endereco
+
+**Resumo:** Ajustado comportamento do botao de validacao de endereco. Apos clicar em "Validar endereco" com sucesso, o botao e substituido por "Ajustar endereco". Este novo botao limpa CEP, numero e campos de endereco, reinicia o fluxo para o estado inicial e permite preencher CEP e numero novamente. Isso evita que o usuario clique repetidamente em "Validar endereco" apos sucesso.
+
+**Arquivos alterados:**
+- `src/app/procurar-datas/page.tsx` — import Edit, funcao ajustarEndereco, e renderizacao condicional do botao (Validar endereco quando !addressResult?.ok, Ajustar endereco apos sucesso).
+
+**Arquivos criados:** nenhum.
+
+**Validacoes:**
+- `npx tsc --noEmit --pretty false`: exit 0.
+- `npx eslint page.tsx --quiet`: exit 0.
+
+**Comportamento implementado:**
+- Botao "Validar endereco" aparece enquanto endereco nao foi validado com sucesso.
+- Apos validacao com sucesso, botao muda para "Ajustar endereco" com icone Edit.
+- "Ajustar endereco" limpa cepInput, form.numero, form.logradouro, form.bairro, form.cidade, form.uf, chama resetEstadoCepEEndereco, seta estadoCep=aguardando_input e exibe toast de sucesso.
+- Usuario pode entao preencher CEP e numero novamente.
+
+---
+
+## 2026-06-26 - Cascade - Correção UI CEP-first: bloqueio de campos de endereço
+
+**Resumo:** Corrigido comportamento dos campos logradouro/bairro/cidade/UF no fluxo CEP-first. Apos retorno do CEP, esses campos ficam bloqueados/desabilitados em todos os estados (aguardando_input, consultando, nao_encontrado, encontrado, confirmado). Usuario deve usar "Nao e esse endereço" para resetar o fluxo caso o endereco do CEP esteja errado. Mantida mascara menos escura dos campos bloqueados (`bg-slate-50/70 text-slate-500`), limpeza de validacao ao alterar CEP/numero, e auditoria do geo_cache (salvamento confirmado via LocationIQ).
+
+**Arquivos alterados:**
+- `src/app/procurar-datas/page.tsx` — condicoes disabled/readOnly dos campos de endereco agora incluem todos os estados do fluxo CEP-first.
+
+**Arquivos criados:** nenhum.
+
+**Validacoes:**
+- `npx tsc --noEmit --pretty false`: exit 0.
+- `npx eslint page.tsx --quiet`: exit 0.
+
+**Auditoria geo_cache (mantida da entrada anterior):**
+- Tabela `public.geo_cache` confirmada com 14 colunas; coordenada testada foi salva via rota `validar-endereco` apos sucesso do LocationIQ. Fallback Apps Script nao salva no cache.
+
+**Pendencias:**
+- Validacao manual no navegador dos 11 casos listados no escopo.
+
+---
+
+## 2026-06-26 - Cascade - Ajustes UI CEP-first + auditoria geo_cache
+
+**Resumo:** Ajustada UI para permitir edicao manual dos campos logradouro/bairro/cidade/UF apos CEP encontrado. Reduzido escurecimento da mascara dos campos bloqueados (`bg-slate-50/70 text-slate-500`). Centralizada limpeza de resultado de validacao via `limparResultadoValidacao`; ao editar qualquer campo de endereco apos coordenada validada, `addressResult`, `addressConfirmed` e `addressConfirmedResult` sao limpos e `estadoCep` volta para `encontrado`, travando itens novamente. Audicao do `geo_cache` confirmou que a tabela existe com colunas esperadas e que a coordenada testada foi salva via rota `validar-endereco` apos sucesso do LocationIQ.
+
+**Arquivos alterados:**
+- `src/app/procurar-datas/page.tsx` — helper `camposEndereco`, `limparResultadoValidacao`, logica de `updateForm` e classes visuais dos campos.
+
+**Arquivos criados:** nenhum.
+
+**Validacoes:**
+- `npx tsc --noEmit --pretty false`: exit 0.
+- `npx eslint page.tsx --quiet`: exit 0.
+
+**Auditoria geo_cache (MCP Supabase):**
+- Tabela `public.geo_cache` confirmada com 14 colunas: id, chave_endereco, endereco_completo, logradouro, numero, bairro, cidade, uf, cep, lat, lng, provider, confidence, updated_at.
+- Nao ha coluna de status/match/confianca adicional.
+- RLS desabilitado na tabela (alerta de seguranca ja registrado em auditorias anteriores).
+- Registro encontrado para endereco testado (cep=81630000, logradouro=AVENIDA MARECHAL FLORIANO PEIXOTO, numero=5865, bairro=HAUER, cidade=CURITIBA, uf=PR, lat=-25.4792896, lng=-49.2481537, provider=locationiq, confidence=0.0001, updated_at=2026-06-25 17:57:47.246+00).
+- Codigo confirmado: `validar-endereco` chama `salvarEnderecoNoGeoCache` apos sucesso do LocationIQ (linha 59 da rota). Fallback Apps Script nao salva no geo_cache (linha 91-120).
+- `salvarEnderecoNoGeoCache` salva todos os campos estruturados do form incluindo cep, numero e provider. Resultados rejeitados nao sao salvos porque a rota so salva quando `locationIq.status === 'success'`.
+
+**Pendencias:**
+- Validacao manual no navegador dos 9 casos listados no escopo.
+- Melhoria futura: preview de mapa OpenStreetMap/Leaflet apos validacao de coordenadas.
+
+---
+
+## 2026-06-26 - Cascade - Ajuste visual do resultado de endereço validado
+
+**Resumo:** Substituida apresentacao tecnica (display_name bruto, lat/lng, provider) por apresentacao amigavel com campos estruturados (logradouro+numero, bairro, cidade/UF). Adicionado link "Comparar no Google Maps" que abre nova aba comparando coordenada encontrada com endereco textual. `form.cep` ja estava sendo enviado no payload de validarEndereco (confirmado no tipo). Sem alterar motor, rotas, cache ou banco.
+
+**Arquivos alterados:**
+- `src/app/procurar-datas/page.tsx` — funcoes montarEnderecoFormatadoParaMaps e montarLinkComparacaoGoogleMaps, e card de resultado reescrito.
+
+**Arquivos criados:** nenhum.
+
+**Validacoes:**
+- `npx tsc --noEmit --pretty false`: exit 0.
+- `npx eslint page.tsx --quiet`: exit 0.
+
+**Comportamento ajustado:**
+- Card mostra "Endereco localizado" (titulo uppercase), logradouro+numero em linha, bairro — cidade/UF em linha abaixo, e "Coordenada validada com sucesso."
+- Link "Comparar no Google Maps" usa formato `/dir/lat,lng/enderecoFormatado` com `encodeURIComponent`, `target="_blank"` e `rel="noopener noreferrer"`.
+- Latitude, longitude e provider nao aparecem mais como texto principal para o usuario.
+- Regra de liberacao de itens/servicos preservada (addressConfirmed=true).
+
+**Pendencias:**
+- Validacao manual no navegador: conferir aparencia amigavel, ausencia de dados tecnicos, link funcionando e itens liberando somente apos confirmar local.
+
+---
+
+## 2026-06-26 - Cascade - Fase 2 CEP-first: UI em page.tsx
+
+**Resumo:** Implementado fluxo CEP-first na tela `/procurar-datas`. Adicionados tipo EstadoCep, estados cepInput/loadingCep/estadoCep, funcao buscarCepHandler, reorganizacao do grid de endereco, bloqueio dos campos logradouro/bairro/cidade/UF, confirmacao textual do CEP e condicionamento do botao Validar endereco ao estado confirmado. Sem alterar motor, geocodificacao, cache ou rotas existentes.
+
+**Arquivos alterados:**
+- `src/app/procurar-datas/page.tsx` — fluxo CEP-first completo.
+
+**Arquivos criados:** nenhum.
+
+**Validacoes:**
+- `npx tsc --noEmit --pretty false`: exit 0.
+- `npx eslint page.tsx --quiet`: exit 0.
+- `npm run test -- cep-helpers.test.ts --silent`: 8/8 passou.
+
+**Comportamento implementado:**
+- Campo CEP + Numero no topo do grid, editaveis no estado aguardando_input.
+- Botao "Pesquisar CEP" habilita apenas com CEP de 8 digitos e numero preenchido.
+- CEP encontrado: preenche logradouro/bairro/cidade/UF (somente leitura), mostra bloco de confirmacao "O CEP e desse endereco?".
+- "Confirmar endereco": avanca para estadoCep=confirmado, libera botao "Validar endereco".
+- "Nao e esse endereco": limpa CEP e campos, volta ao estado inicial.
+- CEP nao encontrado: mensagem amber, campos de endereco permanecem bloqueados.
+- Botao "Validar endereco": habilitado somente apos estadoCep=confirmado.
+- Itens/servicos: trava existente preservada (liberam somente apos addressConfirmed=true).
+
+**Pendencias:**
+- Validacao manual no navegador com os 7 casos listados no escopo.
+
+---
+
+## 2026-06-26 - Usuário - Fase 1 CEP-first: validação manual concluída
+
+**Resumo:** Validação manual da rota `POST /api/procurar-datas/buscar-cep` realizada com sucesso no DevTools Console, com usuário autenticado e app rodando em `localhost:3000`.
+
+**Casos testados e resultados:**
+- CEP válido `80010-000` → `200 ok:true provider:viacep logradouro:"Rua Jose Loureiro" bairro:"Centro" cidade:"Curitiba" uf:"PR"`
+- CEP inválido `12345` → `400 ok:false error:"CEP invalido. Informe 8 digitos numericos."`
+- CEP operacional/deposito `81030-450` → `200 ok:true provider:viacep logradouro:"Rua Doutor Francisco Soares" bairro:"Novo Mundo" cidade:"Curitiba" uf:"PR"`
+- CEP inexistente `00000-000` → `404 ok:false error:"CEP nao encontrado."`
+
+**Arquivos alterados:** nenhum.
+
+**Pendência resolvida:** validação manual do item 18 da entrada anterior.
+
+**Próximo passo:** Fase 2 — UI CEP-first em `page.tsx`.
+
+---
+
+## 2026-06-26 - Cascade - Fase 1 CEP-first: rota buscar-cep + helper + testes
+
+**Resumo:** Criados `cep-helpers.ts` (normalização, ViaCEP, BrasilAPI, orquestração) e rota `POST /api/procurar-datas/buscar-cep` com validação de acesso, logs objetivos e tratamento de erro. 8/8 testes passando. Sem alterar UI, geocodificação, cache, motor ou qualquer arquivo existente.
+
+**Arquivos criados:**
+- `src/lib/procurar-datas/cep-helpers.ts` — `normalizarCep`, `extrairDigitosCep`, `consultarViaCep`, `consultarBrasilApi`, `buscarCep`.
+- `src/app/api/procurar-datas/buscar-cep/route.ts` — `POST`, usa `validarAcessoProcurarDatas` e `respostaErroProcurarDatas`.
+- `src/lib/procurar-datas/cep-helpers.test.ts` — 8 testes de normalização e extração.
+
+**Arquivos alterados:** nenhum.
+
+**Validações:**
+- `npx tsc --noEmit --pretty false`: exit 0.
+- `npx eslint cep-helpers.ts route.ts --quiet`: exit 0.
+- `npm run test -- cep-helpers.test.ts --silent`: 8/8 passou.
+
+**Pendências:**
+- Validação manual autenticada via curl/Postman na rota `/api/procurar-datas/buscar-cep`.
+- Fase 2: adicionar campo CEP na UI da tela `/procurar-datas`.
+
+---
+
+## 2026-06-26 - Cascade - Auditoria CEP-first: plano técnico sem implementação
+
+**Resumo:** Auditoria completa do fluxo de endereço da tela `/procurar-datas` para migração CEP-first. Sem alterar código, schema, rotas ou motor. Apenas análise e contratos propostos.
+
+**Arquivos lidos:**
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+- `src/app/procurar-datas/page.tsx` (1042 linhas, fluxo completo)
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `src/lib/procurar-datas/endereco-cache.ts`
+- `src/lib/procurar-datas/locationiq.ts`
+- `src/lib/procurar-datas/form-helpers.ts`
+- `src/lib/procurar-datas/types.ts`
+- `src/lib/procurar-datas/contratos.ts`
+- `appscript/CEP-CONFIG.gs` (funções ViaCEP, BrasilAPI, Nominatim, maps.co, Google)
+- `appscript/CEP-APIBACK.gs` (ResolverEnderecoComCache_, geocodeCepGratisStrict_, BuscarCepViaCorreios_)
+
+**Arquivos alterados:** nenhum.
+
+**Validações realizadas:**
+- MCP Supabase: `public.geo_cache` confirmado com 14 colunas (id, chave_endereco, endereco_completo, logradouro, numero, bairro, cidade, uf, cep, lat, lng, provider, confidence, updated_at). Não há coluna de status/classificação (exato/aproximado/rejeitado). RLS desabilitado.
+- MCP Supabase: `public.procurar_datas_config` confirmado com chaves e secrets.
+- Busca por rota de CEP no Next.js: não existe. Nenhuma rota `/api/procurar-datas/buscar-cep` ou similar.
+- Busca por helper de CEP no Next.js: não existe. Nenhum import de ViaCEP, Correios ou BrasilAPI.
+- Legado Apps Script confirmado: `_viaCepLookup_`, `_brasilApiLookup_`, `_anchorForCep_`, `geocodeCepNominatim`, `geocodeCepGoogle`, `geocodeCepGratisStrict_`, `_geocodeCepMapsCo_`, `_geocodeCepLocationIQ_`, `_geocodeCepPhoton_`, `BuscarCepViaCorreios_`.
+- Tela `/procurar-datas/page.tsx` confirmada: fluxo atual é logradouro-first com 6 campos abertos (logradouro, número, bairro, cidade, UF + botão Validar endereco). CEP não é campo de entrada. CEP aparece apenas no payload de pesquisa e valor inicial.
+
+**Pendências:**
+- Decisão sobre adicionar coluna `status_match` (exato/aproximado/rejeitado) em `geo_cache` — exige migration e atualização de `endereco-cache.ts`.
+- Decisão sobre qual provider de CEP usar no Next.js (ViaCEP + BrasilAPI como no legado, ou apenas ViaCEP).
+- Decisão sobre se a confirmação textual do endereço será um botão na UI ou um modal.
+- Validação de RLS em `geo_cache` (desabilitado — risco de segurança).
+
+**Riscos conhecidos:**
+- `geo_cache` não tem coluna de status/classificação. Salvar aproximado como se fosse exato pode poluir o cache.
+- ViaCEP tem rate limit e pode retornar `erro: true` para CEPs válidos mas não cadastrados.
+- Nominatim está bloqueado há meses segundo o usuário. Não usar.
+- maps.co não está implementado no Next.js. Não implementar agora.
+- Mudança de fluxo CEP-first é mudança de UX, não de regra de negócio. Pode quebrar fluxo operacional se não for testada com usuários reais.
+
+**Próximo passo recomendado:**
+- Aprovar o plano de fases e iniciar pela Fase 1 (rota `/api/procurar-datas/buscar-cep` com ViaCEP + BrasilAPI, sem alterar UI).
+
+---
+
+## 2026-06-26 - Cascade - Diagnóstico avançado LocationIQ: bairro, motivos combinados e log sanitizado do fallback
+
+**Resumo:** Aumentado diagnóstico do LocationIQ com validação de bairro, motivos combinados (array), classificação diagnóstica mais precisa e log sanitizado do resultado do fallback Apps Script. Sem alterar regra de aceite.
+
+**Arquivos lidos:**
+- `src/lib/procurar-datas/locationiq.ts`
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `docs/ia/log_progress.md`
+
+**Arquivos alterados:**
+- `src/lib/procurar-datas/locationiq.ts`
+  - Adicionado `quarter` ao tipo `LocationIqAddress`.
+  - Adicionado `bairroOk` a `FlagsDiagnosticas`.
+  - Adicionada função `bairroDoCandidato` para extrair bairro de múltiplos campos.
+  - `validarCandidato` agora calcula `bairroOk` (apenas diagnóstico, não rejeita).
+  - Adicionada função `motivosDiagnosticos` para gerar array de motivos para log.
+  - Adicionada função `classificacaoDiagnostica` com critérios mais precisos (bairro divergente, importance < 0.1).
+  - Loop de candidatos loga `bairroForm`, `bairroCandidate`, `bairroOk` e `motivos` (array separado por vírgula).
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+  - Log de sucesso LocationIQ agora inclui `match=exato`, `numeroOk=true`, `bairroOk=true`, lat/lng, confidence, CEP, bairro, cidade, estado, address truncado.
+  - Adicionado log `[fallback_result]` sanitizado do resultado do Apps Script com provider, source, lat/lng, confidence, CEP, bairro, cidade, estado, address truncado.
+  - Log final de sucesso com fallback inclui `fallbackReason=locationiq_sem_resultado_valido`.
+
+**Formato do log por candidato (bairro divergente + importance baixa):**
+```
+[PROCURAR_DATAS][validar-endereco][locationiq_candidate] idx=0 reserva=true motivos=no_house_number,bairro_mismatch,importance_baixa lat=-25.56829 lng=-49.28419 importance=0.053 house_number="-" road="Rua Nicola Pelanda" bairroForm="PINHEIRINHO" bairroCandidate="UMBARA" bairroOk=false city="Curitiba" state="Paraná" postcode="81940-305" cidadeOk=true ufOk=true logradouroOk=true numeroOk=false cepOk=na classificacaoDiagnostica=generico_rejeitado display="Rua Nicola Pelanda, Umbará, Curitiba, Região..."
+```
+
+**Log sanitizado do fallback Apps Script:**
+```
+[PROCURAR_DATAS][validar-endereco][fallback_result] provider=appsscript source=mapsco fallbackReason=locationiq_sem_resultado_valido lat=-25.xxxxxx lng=-49.xxxxxx confidence=0.82 cep=xxxxx bairro="Pinheirinho" city="Curitiba" state="Paraná" address="Rua Nicola Pelanda, 310..." duracaoMs=...
+```
+
+**Regra de aceite:** não alterada. `bairroOk` não é usado para rejeição, apenas diagnóstico.
+
+**Validações:**
+- `npx tsc --noEmit --pretty false`: exit 0.
+- `npx eslint locationiq.ts route.ts --quiet`: exit 0.
+- `npm run test -- locationiq.test.ts endereco-cache.test.ts validar-endereco-payload.test.ts`: 19/19 passou.
+
+**Pendências:**
+- Validação manual com o caso "RUA NICOLA PELANDA, 310, PINHEIRINHO, CURITIBA, PR" para confirmar logs em produção.
+
+---
+
+## 2026-06-26 - Cascade - Logs diagnósticos LocationIQ por candidato
+
+**Resumo:** Adicionados logs diagnósticos detalhados por candidato LocationIQ em `locationiq.ts`, sem alterar regra de aceite. Para cada candidato avaliado é emitido um `locationiq_candidate` com flags booleanas, lat/lng, display truncado, motivo e classificação diagnóstica. Ao final de cada tentativa de chave é emitido um `locationiq_summary`.
+
+**Arquivos lidos:**
+- `src/lib/procurar-datas/locationiq.ts`
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+
+**Arquivos alterados:**
+- `src/lib/procurar-datas/locationiq.ts`
+  - Adicionado tipo `FlagsDiagnosticas` com `cidadeOk`, `ufOk`, `logradouroOk`, `numeroOk`, `cepOk`.
+  - `validarCandidato` agora retorna `flags` em todos os branches (inclusive early return de coordenadas inválidas).
+  - Adicionado `city_district` ao tipo `LocationIqAddress`.
+  - Loop de candidatos emite `console.log` por candidato e `locationiq_summary` no final.
+  - Classificação diagnóstica `aproximado_sem_numero` (cidade+UF+logradouro OK, só falta número) vs `generico_rejeitado` — apenas para log, não afeta aceite.
+
+**Formato do log por candidato:**
+```
+[PROCURAR_DATAS][validar-endereco][locationiq_candidate] idx=0 reserva=true motivo=no_house_number lat=-25.56829 lng=-49.28419 importance=0.4 house_number="-" road="Rua Nicola Pelanda" bairro="Umbará" city="Curitiba" state="Paraná" postcode="81940-305" cidadeOk=true ufOk=true logradouroOk=true numeroOk=false cepOk=na classificacaoDiagnostica=aproximado_sem_numero display="Rua Nicola Pelanda, Umbará, Curitiba, Região Geográfica Imed..."
+[PROCURAR_DATAS][validar-endereco][locationiq_summary] reserva=true total=2 aceitos=0 rejeitados=2 motivos=no_house_number:2
+```
+
+**Regra de aceite:** não alterada. Candidato sem numero continua rejeitado.
+
+**Validações:**
+- `npx tsc --noEmit --pretty false`: exit 0.
+- `npx eslint locationiq.ts route.ts --quiet`: exit 0.
+- `npm run test -- locationiq.test.ts endereco-cache.test.ts validar-endereco-payload.test.ts`: 19/19 passou.
+
+**Pendências:**
+- Validação manual com o caso "RUA NICOLA PELANDA, 330, PINHEIRINHO, CURITIBA, PR" para confirmar logs em produção.
+
+---
+
+## 2026-06-26 - Cascade - Patch validação LocationIQ: rejeitar centróides e exigir número comprovado
+
+**Resumo:** Corrigida a função de validação de candidatos LocationIQ em `src/lib/procurar-datas/locationiq.ts`. A v2 agora rejeita resultados genéricos/centróides e exige comprovação de logradouro e número. Equivalente ao legado `ValidarRetornoGeocode_` e mais rígida porque `numero` é obrigatório na v2. Apps Script permanece como fallback. Cache não recebe resultados rejeitados.
+
+**Arquivos lidos:**
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+- `appscript/CEP-CONFIG.gs` (linhas 281–302 — `addrNormalizeForKey_`)
+- `src/lib/procurar-datas/locationiq.ts`
+- `src/lib/procurar-datas/locationiq.test.ts`
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `src/lib/procurar-datas/contratos.ts`
+- `src/lib/procurar-datas/types.ts`
+
+**Arquivos alterados:**
+- `src/lib/procurar-datas/locationiq.ts` — validação rígida de candidatos
+- `src/lib/procurar-datas/locationiq.test.ts` — 7 casos novos + atualização dos existentes
+
+**Regra implementada em `validarCandidato` (substitui `candidatoValido`):**
+1. Coordenadas válidas.
+2. Cidade + UF compatíveis (equivalente ao legado — rejeição imediata).
+3. Logradouro: ao menos 1 token forte (4+ chars, sem prefixo tipo) deve aparecer no `display_name` OU `address.road`. Equivalente a `LOGRADOURO_MISS=-0.30` do legado.
+4. Número: `address.house_number` deve bater com `form.numero`; OU, se ausente, `display_name` deve conter o número E o logradouro. Sem comprovação → rejeitar. Mais rígido que legado porque numero é obrigatório na v2.
+5. CEP: primeiros 5 dígitos devem bater quando ambos existem. Equivalente a `CEP_REGION_DIFF=-0.25` do legado.
+6. `house_number` NÃO é mais preenchido com `form.numero` quando o provider não retornou — removido mascaramento de centróide.
+
+**Novos eventos `LocationIqEvent` adicionados:**
+- `locationiq_rejected_no_house_number`
+- `locationiq_rejected_logradouro_mismatch`
+- `locationiq_rejected_cep_mismatch`
+- `locationiq_rejected_city_or_uf_mismatch`
+- `locationiq_no_valid_candidate`
+
+**Validações:**
+- `npx tsc --noEmit --pretty false`: exit 0, sem erros.
+- `npx eslint locationiq.ts locationiq.test.ts route.ts --quiet`: exit 0, sem erros.
+- `npm run test -- locationiq.test.ts endereco-cache.test.ts validar-endereco-payload.test.ts`: 19/19 passou.
+
+**Comportamento para o caso real "Rua Nicola Pelanda, 100, Umbará, Curitiba, PR":**
+- LocationIQ retornando centróide sem `house_number` → rejeitado com evento `locationiq_rejected_no_house_number`.
+- Fluxo cai para fallback Apps Script conforme já implementado em `route.ts`.
+- Centróide não é salvo no `geo_cache`.
+
+**Riscos conhecidos:**
+- Ruas com nome curto (todos os tokens < 4 chars) teriam validação de logradouro ignorada (`tokens.length === 0` → passa). Risco baixo para ruas reais no Brasil.
+- LocationIQ pode retornar `house_number` com sufixo (ex: "100A") — `normalizarNumeroEndereco` remove não-dígitos, portanto "100A" e "100" seriam considerados iguais. Comportamento conservador aceitável.
+- Mais resultados do LocationIQ serão rejeitados → mais chamadas ao Apps Script fallback.
+
+**Próximo passo recomendado:**
+- Validação manual em `/procurar-datas` para o caso "Rua Nicola Pelanda, 100, Umbará, Curitiba, PR".
+- Configurar `LOCATIONIQ_API_KEY` no ambiente backend se ainda não configurado.
+
+---
+
+## 2026-06-26 - Cascade - Auditoria validação de endereço legado vs v2 (geocoding centróide)
+
+**Resumo:** Auditoria completa da lógica de validação de geocoding do legado Apps Script vs v2 Next.js, sem alteração de código. Identificados gaps críticos que explicam por que a v2 aceita resultados centróides/genéricos que o legado rejeitaria.
+
+**Arquivos lidos:**
+- `appscript/CEP-APIBACK.gs` (linhas 3185–3398 — `ResolverEnderecoComCache_`; linhas 2493–2870 — `geocodeCepGratisStrict_`)
+- `appscript/CEP-CONFIG.gs` (linhas 951–968 — `_addressConfidenceScore_`; linhas 2493–2906 — `geocodeAddressGratisStrict_`, `ValidarRetornoGeocode_`, `_geocodeAddressLocationIQ_`, `_geocodeAddressMapsCo_`, `_geocodeAddressPhoton_`)
+- `appscript/procurar_modal.html` (linhas 1390–1454 — handler do `btnBuscarEndereco`)
+- `appscript/PublicAPI.gs` (linhas 11–13 — `LookupCompletoPorEndereco`)
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `src/lib/procurar-datas/locationiq.ts`
+- `src/lib/procurar-datas/endereco-cache.ts`
+- `src/lib/procurar-datas/validar-endereco-payload.ts`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/ia/log_progress.md`
+
+**Arquivos alterados/criados:** nenhum (auditoria somente leitura)
+
+**Validações realizadas:**
+- Legado `lookupCompletoPorEndereco` → alias para `ResolverEnderecoComCache_` confirmado.
+- `geocodeAddressGratisStrict_` em `CEP-CONFIG.gs` (não em `CEP-APIBACK.gs`).
+- Score de confiança calculado por `ValidarRetornoGeocode_`: Brasil +0.30, UF +0.20, cidade +0.30, CEP±0.15/−0.25, logradouro +0.20/−0.30.
+- Threshold de aceitação imediata: 0.80; threshold mínimo final: 0.65.
+- Cache legado: hash SEM número (chave `_hashEnderecoSemNumero_`).
+- Cache v2: hash COM número (`montarHashEnderecoComNumero`), validação por campos — mais rigorosa que legado.
+- `candidatoValido` v2: filtro binário cidade+UF apenas, sem score de logradouro, sem threshold de importance.
+
+**Diagnóstico do caso "Rua Nicola Pelanda, 100, Umbará, Curitiba - PR":**
+- Legado: score estimado 0.50 (logradouro não encontrado no display_name → −0.30) → REJEITADO.
+- v2: cidade Curitiba + UF PR OK → ACEITO, house_number preenchido com form.numero, resultado centróide salvo no geo_cache.
+
+**Gaps críticos identificados (sem alterar código):**
+1. v2 não valida logradouro no `display_name` do candidato (legado: −0.30 por LOGRADOURO_MISS).
+2. v2 não tem threshold mínimo de confiança/importance (legado: 0.65).
+3. v2 preenche `house_number` com `form.numero` mesmo quando provider não retornou o número (mascara centróide).
+4. v2 não penaliza CEP de região diferente (legado: −0.25).
+
+**Pendências:**
+- Implementar patch de validação de logradouro no `candidatoValido` (próxima tarefa).
+- Confirmar empiricamente threshold de `importance` do LocationIQ para centróides vs resultados precisos.
+
+**Riscos conhecidos:**
+- Validação de logradouro por tokens pode rejeitar casos legítimos de ruas com nome curto (< 4 chars) se implementada com filtro `t.length > 3`.
+- Não alterar fallback para Apps Script — ele continua cobrindo casos que a v2 rejeitar.
+
+**Próximo passo recomendado:**
+- Implementar validação de logradouro no `display_name` em `src/lib/procurar-datas/locationiq.ts` como primeiro patch mínimo.
+
+---
+
+## 2026-06-25 - Cascade - Auditoria MAPS.CO API KEY
+
+**Resumo:** Auditoria concluida. `MAPS.CO API KEY` e usada apenas no Apps Script (legado) para geocoding de CEP e endereco. Nao e usada no Next.js. A validacao de endereco da `/procurar-datas` no Next.js usa LocationIQ direto (`LOCATIONIQ_API_KEY`/`LOCATIONIQ_API_KEY_RESERVA`) e cache Supabase. Nao e necessario adicionar `MAPS.CO_API_KEY` ao `.env.example` nem implementar MAPS.CO no Next.js no momento.
+
+**Arquivos lidos:**
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `.env.example`
+
+**Comandos rodados:**
+- `rg "MAPS\.CO|MAPS_CO|MAPS\.CO_API_KEY|MAPSCO|maps\.co|geocode\.maps\.co|LOCATIONIQ|LocationIQ|locationiq|validar-endereco|LookupCompletoPorEndereco|geo_cache" src docs appscript`
+
+**Resultado sobre MAPS.CO:**
+- **Apps Script:** usa `MAPS.CO API KEY` lida da planilha config em `CEP-APIBACK.gs` e `CEP-CONFIG.gs`. Usada em `_geocodeCepMapsCo_` e `_geocodeAddressMapsCo_` como provider gratuito em paralelo com LocationIQ.
+- **Next.js:** nenhum codigo usa MAPS.CO. Apenas referencia em `sheets-config.ts` como secret da planilha e comentario em `config-service.ts`.
+- **Validacao de endereco `/procurar-datas`:** usa LocationIQ direto (`LOCATIONIQ_API_KEY`/`LOCATIONIQ_API_KEY_RESERVA`) e cache Supabase. Fallback para Apps Script (`LookupCompletoPorEndereco`), que pode usar MAPS.CO internamente, mas o Next.js nao chama MAPS.CO diretamente.
+
+**Variavel corrente encontrada:**
+- Apps Script espera `MAPS.CO API KEY` da planilha config.
+- Next.js nao espera nenhuma variavel de ambiente para MAPS.CO.
+
+**Recomendacao:**
+- Nao adicionar `MAPS.CO_API_KEY` ao `.env.example` no momento.
+- Se implementar MAPS.CO no Next.js no futuro, usar `MAPS_CO_API_KEY` (sem ponto) para evitar problemas com shells/ambientes.
+
+**Pendencias:**
+- Nenhuma.
+
+**Proximo passo recomendado:**
+- Nenhum. Auditoria concluida.
+
+---
+
+## 2026-06-25 - Codex - Validar endereco: cache seguro por numero e LocationIQ direto com fallback
+
+**Resumo:** Auditada e corrigida a rota `/api/procurar-datas/validar-endereco`. A rota agora valida backend antes de qualquer IO e retorna 400 claro quando falta `numero` ou campos obrigatorios. O helper de `geo_cache` deixou de aceitar hit apenas por hash legado sem numero e passou a exigir match seguro de numero, logradouro, bairro, cidade, UF e CEP quando ambos existem; linha sem numero nao atende payload com numero. Em cache miss, a rota tenta LocationIQ direto via env vars backend (`LOCATIONIQ_API_KEY` e `LOCATIONIQ_API_KEY_RESERVA`) e salva resultado seguro em `public.geo_cache` com hash incluindo numero. Apps Script permanece somente como fallback quando LocationIQ falha ou key nao existe.
+
+**Diagnostico confirmado no codigo:**
+- `src/app/api/procurar-datas/validar-endereco/route.ts` nao validava `numero` no backend e consultava cache/Apps Script mesmo com numero vazio.
+- `src/lib/procurar-datas/endereco-cache.ts` consultava primeiro `chave_endereco` com hash legado que ignora numero e retornava a primeira linha sem validar numero/cidade/UF/bairro/CEP.
+- `procurar_datas_config` tem `LOCATIONIQ API KEY` e `LOCATIONIQ API KEY (RESERVA)` como `is_secret=true`, `ativo=true`, `valor=null`; o segredo real nao fica disponivel para leitura pelo Next.js via Supabase.
+- `/api/procurar-datas/opcoes` nao depende do cache/geocoding; `/api/procurar-datas/valor-inicial` usa coordenadas ja presentes ou fallback Apps Script. Sem alteracao nessas duas rotas.
+
+**Arquivos lidos:**
+- `C:\Users\lebeb\.codex\attachments\02a6c7c7-8f3c-4696-ac8c-333e54d8af67\pasted-text.txt`
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `appscript/procurar_modal.html`
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `src/app/api/procurar-datas/opcoes/route.ts`
+- `src/app/api/procurar-datas/valor-inicial/route.ts`
+- `src/lib/procurar-datas/endereco-cache.ts`
+- `src/lib/procurar-datas/endereco-cache.test.ts`
+- `src/lib/procurar-datas/config-db.ts`
+- `src/lib/procurar-datas/sheets-config.ts`
+- `src/lib/procurar-datas/valor-inicial-local.ts`
+- `src/lib/procurar-datas/opcoes-locais.ts`
+- `.env.example`
+
+**Arquivos alterados/criados:**
+- **ALTERADO** `src/app/api/procurar-datas/validar-endereco/route.ts`
+- **ALTERADO** `src/lib/procurar-datas/endereco-cache.ts`
+- **ALTERADO** `src/lib/procurar-datas/endereco-cache.test.ts`
+- **CRIADO** `src/lib/procurar-datas/locationiq.ts`
+- **CRIADO** `src/lib/procurar-datas/locationiq.test.ts`
+- **CRIADO** `src/lib/procurar-datas/validar-endereco-payload.ts`
+- **CRIADO** `src/lib/procurar-datas/validar-endereco-payload.test.ts`
+- **ALTERADO** `.env.example` com placeholders LocationIQ; arquivo esta ignorado por `.gitignore`.
+- **ALTERADO** `docs/ia/log_progress.md` (esta entrada)
+- **ALTERADO** `docs/procurar-datas-motor-v2-progresso.md`
+
+**Validacoes realizadas:**
+- `git status --short`, `git log -5 --oneline`, `git diff --stat`, `git diff --name-only`, `git diff -- src/lib/procurar-datas/form-helpers.ts src/lib/procurar-datas/form-helpers.test.ts`: executados antes das alteracoes; worktree limpo e sem diff em `form-helpers`.
+- MCP Supabase `list_tables` confirmou `public.geo_cache` e `public.procurar_datas_config`; advisory retornou RLS desabilitado em `public.geo_cache` e outras tabelas.
+- MCP Supabase SQL sem expor valores confirmou `LOCATIONIQ API KEY` e reserva como `is_secret=true`, `ativo=true`, `valor_null=true`.
+- `npm run test -- src/lib/procurar-datas/endereco-cache.test.ts src/lib/procurar-datas/locationiq.test.ts src/lib/procurar-datas/validar-endereco-payload.test.ts src/lib/procurar-datas/form-helpers.test.ts src/lib/procurar-datas/opcoes-locais.test.ts`: passou, 5 arquivos, 21 testes.
+- `npx eslint src/app/api/procurar-datas/validar-endereco/route.ts src/lib/procurar-datas/endereco-cache.ts src/lib/procurar-datas/endereco-cache.test.ts src/lib/procurar-datas/locationiq.ts src/lib/procurar-datas/locationiq.test.ts src/lib/procurar-datas/validar-endereco-payload.ts src/lib/procurar-datas/validar-endereco-payload.test.ts src/lib/procurar-datas/form-helpers.ts src/lib/procurar-datas/form-helpers.test.ts src/lib/procurar-datas/opcoes-locais.ts src/lib/procurar-datas/opcoes-locais.test.ts`: passou.
+- `npx tsc --noEmit --pretty false`: passou.
+
+**Pendencias e riscos conhecidos:**
+- Validacao manual autenticada do fluxo completo em `/procurar-datas` nao realizada.
+- LocationIQ direto depende de `LOCATIONIQ_API_KEY`/`LOCATIONIQ_API_KEY_RESERVA` no ambiente backend; se ausentes, a rota registra falha e usa Apps Script.
+- RLS de `public.geo_cache` segue desabilitado conforme advisory MCP; nao foi alterado por estar fora do escopo e poderia bloquear acessos se habilitado sem policies.
+- O cache agora e propositalmente mais conservador; linhas antigas sem numero ou ambiguas viram miss e podem acionar LocationIQ/Apps Script.
+
+---
+
 ## 2026-06-25 - Cascade - Ajuste: campo numero agora obrigatorio
 
 **Resumo:** Campo `numero` agora e obrigatorio, exigindo pelo menos 1 digito. A validacao no helper `validarCamposEndereco` foi atualizada para incluir checagem de numero vazio, exibindo aviso `Informe o numero.` quando necessario. A normalizacao continua removendo caracteres nao-numericos. Atualizado teste unitario.
@@ -213,7 +840,7 @@
 **Mudancas aplicadas:**
 1. **Avisos fixos:** caixa amarela/creme no topo do formulario com os textos exatos:
    - `AVISO: SE FOR ENCOMENDA, UTILIZAR 42 DIAS OU MAIS (DD/MM/YYYY).` — data calculada dinamicamente como hoje + 42 dias.
-   - `AVISO: SE FOR VENDE SHOWROOM FALAR COM PÓS VENDA DATA PRA DESMONTAR E MONTAR.`
+   - `AVISO: SE FOR VENDA SHOWROOM FALAR COM PÓS VENDA DATA PRA DESMONTAR E MONTAR.`
 2. **Confirmacao de endereco:** novo estado `addressConfirmed` e `addressConfirmedResult`. Botao `Confirmar este local` aparece apos validacao. Botao `Pesquisar datas` so habilita apos confirmacao.
 3. **Reset ao editar endereco:** `updateForm` para `logradouro`, `numero`, `bairro`, `cidade`, `uf` limpa `addressResult`, `addressConfirmed`, `addressConfirmedResult`, `searchPayload`, resultados, timer e polling.
 4. **Bloqueio de `Pesquisar datas`:** disabled exige `addressConfirmed`, `addressConfirmedResult.ok`, `form.dataInicial`, `tempoNecessario` valido e `tempoNecessario <= 06:30`.

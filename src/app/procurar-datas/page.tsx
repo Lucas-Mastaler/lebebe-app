@@ -951,7 +951,7 @@ export default function ProcurarDatasPage() {
                 readOnly={estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
                 value={form.logradouro}
                 onChange={(e) => updateForm('logradouro', e.target.value)}
-                className={`${formErrors.logradouro ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50 text-slate-500/70' : ''}`}
+                className={`${formErrors.logradouro ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50' : ''}`}
               />
               {formErrors.logradouro && <span className="mt-1 block text-xs text-red-600">{formErrors.logradouro}</span>}
             </label>
@@ -962,7 +962,7 @@ export default function ProcurarDatasPage() {
                 readOnly={estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
                 value={form.bairro}
                 onChange={(e) => updateForm('bairro', e.target.value)}
-                className={`${formErrors.bairro ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50 text-slate-500/70' : ''}`}
+                className={`${formErrors.bairro ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50' : ''}`}
               />
               {formErrors.bairro && <span className="mt-1 block text-xs text-red-600">{formErrors.bairro}</span>}
             </label>
@@ -973,7 +973,7 @@ export default function ProcurarDatasPage() {
                 readOnly={estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
                 value={form.cidade}
                 onChange={(e) => updateForm('cidade', e.target.value)}
-                className={`${formErrors.cidade ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50 text-slate-500/70' : ''}`}
+                className={`${formErrors.cidade ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50' : ''}`}
               />
               {formErrors.cidade && <span className="mt-1 block text-xs text-red-600">{formErrors.cidade}</span>}
             </label>
@@ -985,7 +985,7 @@ export default function ProcurarDatasPage() {
                 maxLength={2}
                 value={form.uf}
                 onChange={(e) => updateForm('uf', e.target.value)}
-                className={`${formErrors.uf ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50 text-slate-500/70' : ''}`}
+                className={`${formErrors.uf ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50' : ''}`}
               />
               {formErrors.uf && <span className="mt-1 block text-xs text-red-600">{formErrors.uf}</span>}
             </label>

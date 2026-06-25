@@ -1,3 +1,95 @@
+## 2026-06-25 - Cascade - Ajuste: campo numero agora obrigatorio
+
+**Resumo:** Campo `numero` agora e obrigatorio, exigindo pelo menos 1 digito. A validacao no helper `validarCamposEndereco` foi atualizada para incluir checagem de numero vazio, exibindo aviso `Informe o numero.` quando necessario. A normalizacao continua removendo caracteres nao-numericos. Atualizado teste unitario.
+
+**Arquivos alterados:**
+- `src/lib/procurar-datas/form-helpers.ts`
+- `src/lib/procurar-datas/form-helpers.test.ts`
+- `docs/ia/log_progress.md` (esta entrada)
+
+**Validacoes:**
+- `npx vitest run src/lib/procurar-datas/form-helpers.test.ts --silent`: passou, 8 testes.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/app/procurar-datas/page.tsx src/lib/procurar-datas/form-helpers.ts src/lib/procurar-datas/form-helpers.test.ts --quiet`: passou.
+
+---
+
+## 2026-06-25 - Codex - Frente 1/esquerda + Frente 3/direita: migracao inicial das rotas auxiliares de `/procurar-datas`
+
+**Resumo:** Auditadas e iniciadas as migracoes das rotas auxiliares `opcoes`, `validar-endereco` e `valor-inicial` para reduzir dependencias do Apps Script no fluxo principal de `/procurar-datas`. `/api/procurar-datas/opcoes` passou a retornar listas locais equivalentes ao helper `tempo-servico.ts`, sem `GetFrontOptionLists` nem `GetTempoMap`. `/api/procurar-datas/validar-endereco` agora consulta `public.geo_cache` no Supabase antes de chamar Apps Script; cache hit retorna imediatamente com provider `supabase`. `/api/procurar-datas/valor-inicial` agora calcula localmente quando ja recebe coordenadas, usando config Supabase, OSRM route e helper puro de frete; mantem fallback Apps Script quando nao ha coordenadas ou quando o caminho local falha.
+
+**Arquivos lidos:**
+- `C:\Users\lebeb\.codex\attachments\de2518f6-9328-4985-9625-97f841c93cdb\pasted-text.txt`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+- `src/app/procurar-datas/page.tsx`
+- `src/app/api/procurar-datas/opcoes/route.ts`
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `src/app/api/procurar-datas/valor-inicial/route.ts`
+- `src/lib/procurar-datas/contratos.ts`
+- `src/lib/procurar-datas/types.ts`
+- `src/lib/procurar-datas/tempo-servico.ts`
+- `src/lib/procurar-datas/config-db.ts`
+- `src/lib/procurar-datas/config-service.ts`
+- `src/lib/procurar-datas/motor/frete.ts`
+- `src/lib/procurar-datas/motor/osrm-route-client-diagnostico.ts`
+- `src/lib/supabase/service.ts`
+- `appscript/PublicAPI.gs`
+- `appscript/CEP-APIBACK.gs`
+- `appscript/CEP-CONFIG.gs`
+- `appscript/TEMPO SERVIÇOS.gs`
+
+**Arquivos alterados/criados:**
+- **ALTERADO** `src/app/api/procurar-datas/opcoes/route.ts`
+- **ALTERADO** `src/app/api/procurar-datas/validar-endereco/route.ts`
+- **ALTERADO** `src/app/api/procurar-datas/valor-inicial/route.ts`
+- **CRIADO** `src/lib/procurar-datas/opcoes-locais.ts`
+- **CRIADO** `src/lib/procurar-datas/opcoes-locais.test.ts`
+- **CRIADO** `src/lib/procurar-datas/endereco-cache.ts`
+- **CRIADO** `src/lib/procurar-datas/endereco-cache.test.ts`
+- **CRIADO** `src/lib/procurar-datas/valor-inicial-local.ts`
+- **ALTERADO** `docs/ia/log_progress.md` (esta entrada)
+- **ALTERADO** `docs/procurar-datas-motor-v2-progresso.md`
+
+**Validacoes realizadas:**
+- `rg "GetFrontOptionLists|GetTempoMap|LookupCompletoPorEndereco|calcularValorInicialModal|validar-endereco|valor-inicial|geo_cache|locationiq|opcoes|procurar_datas_config|calcularTempoServicoMinutos|tempo-servico" src docs appscript`: executado.
+- `git status --short`: worktree limpo antes da tarefa; ao final, somente arquivos desta tarefa alterados/criados.
+- `git log -3 --oneline`: executado.
+- `git show --stat --oneline HEAD`: executado.
+- MCP Supabase `list_tables` confirmou `public.geo_cache` com colunas `chave_endereco`, `endereco_completo`, `logradouro`, `numero`, `bairro`, `cidade`, `uf`, `cep`, `lat`, `lng`, `provider`, `confidence`.
+- MCP Supabase confirmou hit para `Marechal Floriano Peixoto` + `Hauer` + `Curitiba` + `PR` em `public.geo_cache`.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/app/api/procurar-datas/opcoes/route.ts src/app/api/procurar-datas/validar-endereco/route.ts src/app/api/procurar-datas/valor-inicial/route.ts src/lib/procurar-datas/opcoes-locais.ts src/lib/procurar-datas/opcoes-locais.test.ts src/lib/procurar-datas/endereco-cache.ts src/lib/procurar-datas/endereco-cache.test.ts src/lib/procurar-datas/valor-inicial-local.ts --quiet`: passou.
+- `npx vitest run src/lib/procurar-datas/endereco-cache.test.ts src/lib/procurar-datas/opcoes-locais.test.ts --silent`: primeira tentativa no sandbox falhou com `spawn EPERM`; repetido fora do sandbox com permissao elevada, passou: 2 arquivos, 3 testes.
+
+**Estado das rotas:**
+- `/api/procurar-datas/opcoes`: migrada para local. Nao chama Apps Script. `tempoMap` permanece no contrato como `{}`, porque a tela principal nao o usa mais para calcular tempo.
+- `/api/procurar-datas/validar-endereco`: migracao parcial. Cache hit em `geo_cache` nao chama Apps Script; cache miss ainda chama `LookupCompletoPorEndereco`.
+- `/api/procurar-datas/valor-inicial`: migracao parcial. Com coordenadas, calcula localmente por config Supabase + OSRM + helper de frete. Sem coordenadas ou erro local, ainda chama `calcularValorInicialModal`.
+
+**Chamadas Apps Script removidas:**
+- `GetFrontOptionLists`
+- `GetTempoMap`
+- `LookupCompletoPorEndereco` em cache hit Supabase
+- `calcularValorInicialModal` em cenario comum com lat/lng ja validados
+
+**Chamadas Apps Script ainda pendentes:**
+- `LookupCompletoPorEndereco` em cache miss ou erro de cache Supabase.
+- `calcularValorInicialModal` quando nao ha coordenadas no payload ou quando config/OSRM/local falha.
+
+**Riscos conhecidos:**
+- `geo_cache` ignora numero no hash legado e tambem pode retornar coordenada de outro numero na mesma rua/bairro/cidade, preservando o comportamento de cache legado, mas nao confirmando precisao por numero.
+- Nao foi implementado fallback LocationIQ direto no Next.js, porque nao ha helper/env local confirmado no codigo. Apps Script segue como fallback temporario.
+- `valor-inicial` local depende de OSRM e config Supabase; se OSRM falhar, usa fallback local minimo e nao Apps Script quando ja estava no caminho local.
+- MCP Supabase sinalizou RLS desabilitado em `public.geo_cache` e outras tabelas. Nao foi alterado nesta tarefa.
+- Validacao manual autenticada em `/procurar-datas` nao foi executada nesta sessao.
+
+**Proximo passo recomendado:**
+- Validar manualmente `/procurar-datas` autenticado: abrir tela, confirmar log `/opcoes` com `origem=local`, validar endereco cacheado e confirmar `cache_hit provider=supabase`, confirmar ausencia de logs `GetFrontOptionLists`, `GetTempoMap` e `LookupCompletoPorEndereco` no cache hit, confirmar valor inicial com `origem=local`, e executar busca v2 simples.
+
+---
+
 ## 2026-06-25 - Cascade - Ajuste fino: espaco e maiusculo nos campos de endereco
 
 **Resumo:** Ajustado helper `src/lib/procurar-datas/form-helpers.ts` para permitir espaco no final durante digitacao nos campos `logradouro`, `bairro` e `cidade` (removido `.trim()` da normalizacao) e converter automaticamente esses campos para maiusculo. Atualizados testes unitarios. Sem alteracoes em backend, motor, banco, Apps Script ou outras telas.

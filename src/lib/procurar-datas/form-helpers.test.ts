@@ -65,6 +65,7 @@ describe('form-helpers', () => {
     })
     expect(invalido.ok).toBe(false)
     expect(invalido.errors.logradouro).toBe('Informe o logradouro.')
+    expect(invalido.errors.numero).toBe('Informe o numero.')
     expect(invalido.errors.bairro).toBe('Informe o bairro.')
     expect(invalido.errors.cidade).toBe('Informe a cidade.')
     expect(invalido.errors.uf).toBe('Informe a UF com 2 letras.')

@@ -53,6 +53,10 @@ export function validarCamposEndereco(form: EnderecoForm): { ok: boolean; errors
     errors.logradouro = 'Informe o logradouro.'
   }
 
+  if (!form.numero || form.numero.length === 0) {
+    errors.numero = 'Informe o numero.'
+  }
+
   if (!form.bairro.trim() || form.bairro.trim().length < 2) {
     errors.bairro = 'Informe o bairro.'
   }

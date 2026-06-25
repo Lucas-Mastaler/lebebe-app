@@ -242,6 +242,8 @@ export default function ProcurarDatasPage() {
   const [estadoCep, setEstadoCep] = useState<EstadoCep>('aguardando_input')
   const [loadingCep, setLoadingCep] = useState(false)
   const [validatingAddress, setValidatingAddress] = useState(false)
+  const [cepSemLogradouro, setCepSemLogradouro] = useState(false)
+  const [cepSemBairro, setCepSemBairro] = useState(false)
   const [calculatingTime, setCalculatingTime] = useState(false)
   const [calculatingValorInicial, setCalculatingValorInicial] = useState(false)
   const [searching, setSearching] = useState(false)
@@ -412,6 +414,8 @@ export default function ProcurarDatasPage() {
     setProgressSnapshot(null)
     setSearchError('')
     setElapsedSeconds(0)
+    setCepSemLogradouro(false)
+    setCepSemBairro(false)
     stopPolling()
     stopTimer()
   }
@@ -485,6 +489,10 @@ export default function ProcurarDatasPage() {
         cidade: normalizarCidade(r.cidade || ''),
         uf: normalizarUF(r.uf || ''),
       }))
+      const logradouroVeio = !!(r.logradouro && r.logradouro.trim())
+      const bairroVeio = !!(r.bairro && r.bairro.trim())
+      setCepSemLogradouro(!logradouroVeio)
+      setCepSemBairro(!bairroVeio)
       setEstadoCep('encontrado')
       setPhase('CEP encontrado')
     } catch (error) {
@@ -947,22 +955,22 @@ export default function ProcurarDatasPage() {
             <label className="md:col-span-3">
               <span className="mb-1 block text-xs font-medium text-slate-600">Logradouro</span>
               <Input
-                disabled={searching || estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
-                readOnly={estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
+                disabled={searching || estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || (estadoCep === 'encontrado' && !cepSemLogradouro) || estadoCep === 'confirmado'}
+                readOnly={estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || (estadoCep === 'encontrado' && !cepSemLogradouro) || estadoCep === 'confirmado'}
                 value={form.logradouro}
                 onChange={(e) => updateForm('logradouro', e.target.value)}
-                className={`${formErrors.logradouro ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50' : ''}`}
+                className={`${formErrors.logradouro ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || (estadoCep === 'encontrado' && !cepSemLogradouro) || estadoCep === 'confirmado' ? 'bg-slate-50/50' : ''}`}
               />
               {formErrors.logradouro && <span className="mt-1 block text-xs text-red-600">{formErrors.logradouro}</span>}
             </label>
             <label className="md:col-span-2">
               <span className="mb-1 block text-xs font-medium text-slate-600">Bairro</span>
               <Input
-                disabled={searching || estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
-                readOnly={estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
+                disabled={searching || estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || (estadoCep === 'encontrado' && !cepSemBairro) || estadoCep === 'confirmado'}
+                readOnly={estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || (estadoCep === 'encontrado' && !cepSemBairro) || estadoCep === 'confirmado'}
                 value={form.bairro}
                 onChange={(e) => updateForm('bairro', e.target.value)}
-                className={`${formErrors.bairro ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50' : ''}`}
+                className={`${formErrors.bairro ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || (estadoCep === 'encontrado' && !cepSemBairro) || estadoCep === 'confirmado' ? 'bg-slate-50/50' : ''}`}
               />
               {formErrors.bairro && <span className="mt-1 block text-xs text-red-600">{formErrors.bairro}</span>}
             </label>
@@ -1004,6 +1012,16 @@ export default function ProcurarDatasPage() {
               ) : null}
             </div>
           </div>
+
+          {estadoCep === 'encontrado' && (cepSemLogradouro || cepSemBairro) && (
+            <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              {cepSemLogradouro && cepSemBairro
+                ? 'Este CEP é geral da cidade. Preencha logradouro e bairro para continuar.'
+                : cepSemLogradouro
+                  ? 'Este CEP não trouxe o logradouro. Preencha o logradouro para continuar.'
+                  : 'Este CEP não trouxe o bairro. Preencha o bairro para continuar.'}
+            </div>
+          )}
 
           {estadoCep === 'nao_encontrado' && (
             <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">

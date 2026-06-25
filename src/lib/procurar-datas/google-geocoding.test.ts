@@ -80,6 +80,128 @@ describe('ehEnderecoDificilRodoviaOuRural', () => {
   it('retorna false para endereco vazio', () => {
     expect(ehEnderecoDificilRodoviaOuRural(formBase())).toBe(false)
   })
+
+  it('retorna true para ROD. abreviado', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(
+        formBase({ logradouro: 'ROD. GUMERCINDO BOZA', numero: '20823', bairro: 'CENTRO', cidade: 'CAMPO MAGRO', uf: 'PR' })
+      )
+    ).toBe(true)
+  })
+
+  it('retorna true para Rod. com mixed case', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(
+        formBase({ logradouro: 'Rod. Gumercindo Boza', numero: '20823' })
+      )
+    ).toBe(true)
+  })
+
+  it('retorna true para ROD sem ponto', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(
+        formBase({ logradouro: 'ROD GUMERCINDO BOZA', numero: '20823' })
+      )
+    ).toBe(true)
+  })
+
+  it('retorna true para RODOV. abreviado', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(
+        formBase({ logradouro: 'RODOV. DOS MINERIOS', numero: '100' })
+      )
+    ).toBe(true)
+  })
+
+  it('retorna true para BR-116', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(formBase({ logradouro: 'BR-116' }))
+    ).toBe(true)
+  })
+
+  it('retorna true para BR 116', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(formBase({ logradouro: 'BR 116' }))
+    ).toBe(true)
+  })
+
+  it('retorna true para BR116', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(formBase({ logradouro: 'BR116' }))
+    ).toBe(true)
+  })
+
+  it('retorna true para PR-090', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(formBase({ logradouro: 'PR-090', numero: '100', cidade: 'CAMPO MAGRO', uf: 'PR' }))
+    ).toBe(true)
+  })
+
+  it('retorna true para PR 090', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(formBase({ logradouro: 'PR 090', numero: '100', cidade: 'CAMPO MAGRO', uf: 'PR' }))
+    ).toBe(true)
+  })
+
+  it('retorna true para KM 12', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(formBase({ logradouro: 'KM 12', numero: '1' }))
+    ).toBe(true)
+  })
+
+  it('retorna true para Estrada Rural', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(
+        formBase({ logradouro: 'Estrada Rural', numero: '123' })
+      )
+    ).toBe(true)
+  })
+
+  it('retorna true para Zona Rural', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(formBase({ bairro: 'Zona Rural' }))
+    ).toBe(true)
+  })
+
+  it('retorna false para Rua Rodrigues Alves', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(
+        formBase({ logradouro: 'Rua Rodrigues Alves', numero: '100', bairro: 'Centro' })
+      )
+    ).toBe(false)
+  })
+
+  it('retorna false para Rua Rodolfo Senff', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(
+        formBase({ logradouro: 'Rua Rodolfo Senff', numero: '100', bairro: 'Centro' })
+      )
+    ).toBe(false)
+  })
+
+  it('retorna false para Avenida Republica Argentina', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(
+        formBase({ logradouro: 'Avenida Republica Argentina', numero: '100', bairro: 'Centro' })
+      )
+    ).toBe(false)
+  })
+
+  it('retorna false para Rua Pedro Siemens', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(
+        formBase({ logradouro: 'Rua Pedro Siemens', numero: '100', bairro: 'Centro' })
+      )
+    ).toBe(false)
+  })
+
+  it('retorna false para endereco urbano com UF PR e numero de 3 digitos (nao confunde com rodovia estadual)', () => {
+    expect(
+      ehEnderecoDificilRodoviaOuRural(
+        formBase({ logradouro: 'Rua XV de Novembro', numero: '100', bairro: 'Centro', cidade: 'Curitiba', uf: 'PR' })
+      )
+    ).toBe(false)
+  })
 })
 
 describe('validarResultadoGoogle', () => {

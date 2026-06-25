@@ -53,7 +53,7 @@ Status: implementado em `src/lib/procurar-datas/google-geocoding.ts` e `src/app/
 4. Apps Script (fallback geral).
 
 ### Logs
-- `google_fallback_start`, `google_fallback_success`, `google_fallback_rejected`, `google_fallback_error`, `google_fallback_missing_key`, `google_fallback_skip_not_difficult`, `google_fallback_failed`.
+- `google_fallback_check`, `google_fallback_start`, `google_fallback_success`, `google_fallback_rejected`, `google_fallback_error`, `google_fallback_missing_key`, `google_fallback_skip_not_difficult`, `google_fallback_failed`.
 - Nenhum log expoe chave, token ou URL com secret.
 
 ### Variavel de ambiente
@@ -61,7 +61,8 @@ Status: implementado em `src/lib/procurar-datas/google-geocoding.ts` e `src/app/
 - Se ausente, o fallback e ignorado e o fluxo continua para o proximo fallback.
 
 ### Testes
-- Criado `src/lib/procurar-datas/google-geocoding.test.ts` com 9 testes para `ehEnderecoDificilRodoviaOuRural`: cobre BR, Rodovia, Estrada, KM, Zona Rural, e enderecos urbanos comuns (Rua, Avenida, etc.).
+- Criado `src/lib/procurar-datas/google-geocoding.test.ts` com testes para `ehEnderecoDificilRodoviaOuRural`: cobre BR, Rodovia, ROD., RODOV., EST., ESTR., rodovias estaduais (PR-090, PR 090), KM standalone, Estrada Rural, Zona Rural, e falsos positivos (Rodrigues, Rodolfo, Republica Argentina, Pedro Siemens, endereco urbano com UF+numero).
+- Total: 29 testes (13 existentes + 16 novos), todos passando.
 
 ### Validacoes
 - `npx tsc --noEmit --pretty false`: passou.

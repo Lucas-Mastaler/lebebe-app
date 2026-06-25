@@ -100,7 +100,11 @@ export async function POST(request: NextRequest) {
       `[PROCURAR_DATAS][validar-endereco] locationiq_failed motivo=${locationIq.motivo} duracaoMs=${Date.now() - inicio}`
     )
 
-    if (ehEnderecoDificilRodoviaOuRural(body)) {
+    const enderecoDificil = ehEnderecoDificilRodoviaOuRural(body)
+    if (enderecoDificil) {
+      console.log(
+        `[PROCURAR_DATAS][validar-endereco] google_fallback_check enderecoDificil=true logradouro="${String(body.logradouro ?? '').slice(0, 60)}" duracaoMs=${Date.now() - inicio}`
+      )
       const logGoogle = (event: GoogleGeocodingEvent) => {
         if (event.tipo === 'google_fallback_success') {
           console.log(`[PROCURAR_DATAS][validar-endereco] google_fallback_success duracaoMs=${Date.now() - inicio}`)

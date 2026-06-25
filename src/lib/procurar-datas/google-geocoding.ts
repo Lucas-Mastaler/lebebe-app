@@ -65,8 +65,7 @@ export function ehEnderecoDificilRodoviaOuRural(form: ValidarEnderecoRequest): b
 
   const padroesRurais = [
     /\bZONA\s+RURAL\b/,
-    /\b(ZONA\s+RURAL\s+DO\s+[A-Z]+)\b/,
-    /\b(AREA\s+RURAL|ÁREA\s+RURAL)\b/,
+    /\bAREA\s+RURAL\b/,
   ]
 
   if (padroesRurais.some((p) => p.test(texto))) return true
@@ -75,13 +74,24 @@ export function ehEnderecoDificilRodoviaOuRural(form: ValidarEnderecoRequest): b
     /\bBR\s*-?\s*\d{2,3}\b/,
     /\bBR\d{2,3}\b/,
     /\bRODOVIA\b/,
+    /\bRODOV\b/,
+    /\bROD\b/,
     /\bESTRADA\b/,
+    /\bESTR\b/,
+    /\bEST\b/,
     /\bKM\s*\d+/,
-    /\bQUILOMETRO\s*\d+/,
+    /\bKM\b/,
+    /\bQUILOMETRO\b/,
     /\bQUILOMETRO\s*\d+/,
   ]
 
-  return padroesRodovia.some((p) => p.test(texto))
+  if (padroesRodovia.some((p) => p.test(texto))) return true
+
+  // Rodovias estaduais (UF + numero) — apenas no logradouro para evitar falso positivo
+  const logradouroNorm = normalizarTexto(String(form.logradouro ?? ''))
+  const padraoRodoviaEstadual = /\b(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)[-\s]?\d{2,3}\b/
+
+  return padraoRodoviaEstadual.test(logradouroNorm)
 }
 
 type GoogleAddressComponent = {

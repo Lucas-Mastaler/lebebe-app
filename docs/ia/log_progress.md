@@ -1,3 +1,84 @@
+## 2026-06-27 - Cascade - Detector de endereco dificil: reconhecer abreviacoes de rodovia
+
+**Resumo:** Ajustado o detector `ehEnderecoDificilRodoviaOuRural` em `google-geocoding.ts` para reconhecer abreviacoes e variacoes comuns de rodovia/estrada que nao ativavam o fallback Google. Caso real: `ROD. GUMERCINDO BOZA` (CEP 83535-000, Campo Magro/PR) nao acionava Google, caindo direto para Apps Script apos LocationIQ rejeitar.
+
+**Arquivos alterados:**
+- `src/lib/procurar-datas/google-geocoding.ts` — expandir padroes do detector
+- `src/app/api/procurar-datas/validar-endereco/route.ts` — adicionar log `google_fallback_check`
+- `src/lib/procurar-datas/google-geocoding.test.ts` — adicionar 16 casos de teste novos
+
+**Arquivos lidos:**
+- `src/lib/procurar-datas/google-geocoding.ts`
+- `src/lib/procurar-datas/google-geocoding.test.ts`
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `src/lib/procurar-datas/endereco-cache.ts` (normalizarTexto)
+- `src/lib/procurar-datas/locationiq.ts`
+- `src/lib/procurar-datas/types.ts`
+- `src/lib/procurar-datas/contratos.ts`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+
+**Mudancas:**
+1. Padroes novos em `padroesRodovia`: `\bRODOV\b`, `\bROD\b`, `\bESTR\b`, `\bEST\b`, `\bKM\b` (standalone), `\bQUILOMETRO\b` (standalone).
+2. Rodovias estaduais: `\b(UF)[-\s]?\d{2,3}\b` aplicado apenas ao campo `logradouro` (nao ao texto completo) para evitar falso positivo com UF + numero.
+3. Removido duplicate de `\bQUILOMETRO\s*\d+/`.
+4. Simplificado `AREA RURAL` (acentos ja removidos por `normalizarTexto`).
+5. Adicionado log `google_fallback_check enderecoDificil=true logradouro="..."` em route.ts antes de chamar Google.
+
+**Termos reconhecidos agora:**
+- `ROD`, `ROD.`, `ROD `, `ROD-`, `ROD:` (borda de palavra `\bROD\b`)
+- `RODOV`, `RODOV.`, `RODOV ` (`\bRODOV\b`)
+- `EST`, `EST.`, `EST `, `EST-` (`\bEST\b`)
+- `ESTR`, `ESTR.`, `ESTR ` (`\bESTR\b`)
+- `RODOVIA`, `ESTRADA` (ja existiam)
+- `BR-116`, `BR 116`, `BR116` (ja existiam)
+- `PR-090`, `PR 090`, `PR090`, `SC-101`, `RS-287`, etc. (novo, apenas logradouro)
+- `KM`, `KM.`, `KM 12` (novo standalone + ja existia com numero)
+- `QUILOMETRO`, `QUILOMETRO 12` (novo standalone + ja existia com numero)
+- `ZONA RURAL`, `AREA RURAL` (ja existiam)
+
+**Falsos positivos evitados:**
+- `RODRIGUES`, `RODOLFO` — `\bROD\b` nao matcha (R apos D e word char, sem `\b`).
+- `ESTADOS`, `ESTACAO`, `ESTUDANTE` — `\bEST\b` nao matcha (word char apos EST).
+- Endereco urbano com UF=PR e numero=100 — rodovia estadual so checa logradouro, nao texto completo.
+
+**Validacoes:**
+- tsc: sem erros.
+- lint: sem erros novos (1 warning pre-existente em google-geocoding.ts:172).
+- vitest: 29/29 testes passaram (13 existentes + 16 novos).
+
+**Pendencias:** validacao manual com CEP 83535-000 e logradouro `ROD. GUMERCINDO BOZA`.
+
+---
+
+## 2026-06-27 - Cascade - Fluxo CEP-first: liberar logradouro/bairro para CEP geral
+
+**Resumo:** Ajustado o fluxo CEP-first na tela `/procurar-datas` para lidar com CEPs gerais que nao retornam logradouro e/ou bairro. Quando o CEP retorna apenas cidade/UF, os campos `logradouro` e/ou `bairro` sao liberados para edicao manual. Cidade e UF permanecem bloqueados. Mensagem de orientacao especifica exibida conforme quais campos faltam. Validacao existente em `validarCamposEndereco` ja exige os campos obrigatórios, entao o botao "Endereco correto" so procede apos preenchimento.
+
+**Arquivos alterados:**
+- `src/app/procurar-datas/page.tsx`
+
+**Arquivos lidos:**
+- `src/app/procurar-datas/page.tsx`
+- `src/lib/procurar-datas/form-helpers.ts`
+
+**Mudancas:**
+1. Adicionados estados `cepSemLogradouro` e `cepSemBairro`.
+2. Em `buscarCepHandler`, apos receber resultado do CEP, seta flags conforme logradouro/bairro vieram ou nao.
+3. Em `resetEstadoCepEEndereco`, reseta as flags.
+4. Campos `logradouro` e `bairro`: `disabled`/`readOnly`/`className` agora consideram `(estadoCep === 'encontrado' && !cepSemLogradouro)` — campo so fica bloqueado em `encontrado` se o CEP trouxe o valor.
+5. Adicionada mensagem de orientacao amber entre a grid de campos e o bloco `nao_encontrado`, com 3 variantes: ambos faltando, so logradouro faltando, so bairro faltando.
+
+**Validacoes:**
+- tsc: sem erros.
+- lint: sem erros novos (apenas warning pre-existente sobre `progressSnapshot`).
+- Nao altera API, banco, motor v2, LocationIQ, Google, geo_cache, OSRM, Haversine, Apps Script.
+- Fluxo de CEPs normais (que retornam logradouro e bairro) permanece identico.
+
+**Pendencias:** validacao manual com CEPs gerais reais.
+
+---
+
 ## 2026-06-26 - Cascade - Auditoria: caminho da coordenada validada ate o motor v2
 
 **Resumo:** Auditoria sem alteracao de codigo. Confirmado que a coordenada validada em `/api/procurar-datas/validar-endereco` (seja via geo_cache, LocationIQ, Google ou Apps Script) chega integralmente ao motor v2 atraves do fluxo: validar-endereco -> addressResult (estado da tela) -> valor-inicial -> pesquisar-compat-async -> orquestrador -> pesquisar-datas-v2.

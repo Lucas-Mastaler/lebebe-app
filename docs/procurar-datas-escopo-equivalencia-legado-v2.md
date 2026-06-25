@@ -62,8 +62,8 @@ Status: implementado em `src/lib/procurar-datas/google-geocoding.ts` e `src/app/
 
 ### Deteccao
 - Funcao `ehEnderecoDificilRodoviaOuRural(form)` analisa campos estruturados: `logradouro`, `numero`, `bairro`, `cidade`, `uf`, `cep`.
-- Padroes que ativam: `BR-116`, `BR 116`, `BR116`, `Rodovia`, `Estrada`, `KM 102`, `Zona Rural`, `quilometro`.
-- Padroes que NAO ativam: `Rua`, `Avenida`, `Alameda`, `Travessa`, `Praca`, `Largo`.
+- Padroes que ativam: `BR-116`, `BR 116`, `BR116`, `Rodovia`, `ROD`, `ROD.`, `RODOV`, `RODOV.`, `Estrada`, `EST`, `EST.`, `ESTR`, `ESTR.`, `KM`, `KM 102`, `Quilometro`, `Zona Rural`, `Area Rural`, rodovias estaduais (`PR-090`, `SC-101`, `RS-287`, etc. — apenas no logradouro).
+- Padroes que NAO ativam: `Rua`, `Avenida`, `Alameda`, `Travessa`, `Praca`, `Largo`, `Rodrigues`, `Rodolfo`, `Estados`, `Estacao`.
 
 ### Aceite/rejeicao do Google
 - Rejeita coordenadas invalidas, pais diferente do Brasil, resultado generico (estado/pais/cidade pura), UF incompativel, cidade incompativel, logradouro incompativel.

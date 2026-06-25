@@ -6,6 +6,15 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { calcularTempoServicoMinutos, formatarMinutosParaHHMM } from '@/lib/procurar-datas/tempo-servico'
+import {
+  normalizarLogradouro,
+  normalizarBairro,
+  normalizarCidade,
+  normalizarNumero,
+  normalizarUF,
+  validarCamposEndereco,
+  mensagemErroTempo,
+} from '@/lib/procurar-datas/form-helpers'
 import type { OpcoesProcurarDatasResponseSucesso, ValidarEnderecoRequest, ValidarEnderecoResponseSucesso, ValorInicialRequest, ValorInicialResponseSucesso, PesquisarDatasRequest, PesquisarDatasResponseSucesso, ProgressoPesquisaResponseSucesso, PreAgendarRequest, PreAgendarResponseSucesso } from '@/lib/procurar-datas/contratos'
 
 type OptionLists = {
@@ -62,6 +71,17 @@ type SearchProgress = {
   extras?: Candidate[]
   payload?: SearchPayload
   error?: string
+}
+
+type FormErrors = {
+  logradouro?: string
+  numero?: string
+  bairro?: string
+  cidade?: string
+  uf?: string
+  dataInicial?: string
+  endereco?: string
+  tempo?: string
 }
 
 type FormState = {
@@ -214,6 +234,7 @@ export default function ProcurarDatasPage() {
   const [searchError, setSearchError] = useState('')
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [valorInicial, setValorInicial] = useState('')
+  const [formErrors, setFormErrors] = useState<FormErrors>({})
   const [loadingOptions, setLoadingOptions] = useState(true)
   const [validatingAddress, setValidatingAddress] = useState(false)
   const [calculatingTime, setCalculatingTime] = useState(false)
@@ -357,13 +378,35 @@ export default function ProcurarDatasPage() {
     }
   }, [])
 
+  function normalizeValue<K extends keyof FormState>(key: K, value: FormState[K]): FormState[K] {
+    if (typeof value !== 'string') return value
+    switch (key) {
+      case 'logradouro':
+        return normalizarLogradouro(value) as FormState[K]
+      case 'bairro':
+        return normalizarBairro(value) as FormState[K]
+      case 'cidade':
+        return normalizarCidade(value) as FormState[K]
+      case 'numero':
+        return normalizarNumero(value) as FormState[K]
+      case 'uf':
+        return normalizarUF(value) as FormState[K]
+      default:
+        return value
+    }
+  }
+
   function updateForm<K extends keyof FormState>(key: K, value: FormState[K]) {
-    const nextValue = key === 'numero' && typeof value === 'string'
-      ? value.replace(/\D/g, '')
-      : key === 'uf' && typeof value === 'string'
-        ? value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2)
-        : value
+    const nextValue = normalizeValue(key, value)
     setForm((current) => ({ ...current, [key]: nextValue }))
+    setFormErrors((current) => {
+      const next = { ...current }
+      delete next[key as keyof FormErrors]
+      if (['logradouro', 'numero', 'bairro', 'cidade', 'uf'].includes(String(key))) {
+        delete next.endereco
+      }
+      return next
+    })
     if (['logradouro', 'numero', 'bairro', 'cidade', 'uf'].includes(String(key))) {
       setAddressResult(null)
       setAddressConfirmed(false)
@@ -381,8 +424,10 @@ export default function ProcurarDatasPage() {
   }
 
   async function validarEndereco() {
-    if (!form.logradouro.trim() || !form.bairro.trim() || !form.cidade.trim() || form.uf.trim().length !== 2) {
-      toast.error('Informe logradouro, bairro, cidade e UF.')
+    const { ok, errors } = validarCamposEndereco(form)
+    if (!ok) {
+      setFormErrors((current) => ({ ...current, ...errors }))
+      toast.error('Preencha os campos obrigatorios do endereco.')
       return
     }
 
@@ -392,6 +437,15 @@ export default function ProcurarDatasPage() {
     setAddressConfirmed(false)
     setAddressConfirmedResult(null)
     setValorInicial('')
+    setFormErrors((current) => {
+      const next = { ...current }
+      delete next.logradouro
+      delete next.numero
+      delete next.bairro
+      delete next.cidade
+      delete next.uf
+      return next
+    })
 
     try {
       const body: ValidarEnderecoRequest = form
@@ -524,20 +578,27 @@ export default function ProcurarDatasPage() {
   }
 
   async function pesquisarDatas() {
+    const nextErrors: FormErrors = {}
     if (!addressConfirmed || !addressConfirmedResult?.ok || !addressConfirmedResult.lat || !addressConfirmedResult.lng) {
-      toast.error('Valide e confirme o endereco antes de pesquisar.')
-      return
+      nextErrors.endereco = 'Valide e confirme o endereco antes de pesquisar.'
     }
     if (!form.dataInicial) {
-      toast.error('Informe a data inicial da busca.')
+      nextErrors.dataInicial = 'Informe a data inicial.'
+    }
+    const tempoError = mensagemErroTempo(tempoNecessario, tempoTooLong)
+    if (tempoError) {
+      nextErrors.tempo = tempoError
+    }
+    if (Object.keys(nextErrors).length > 0) {
+      setFormErrors((current) => ({ ...current, ...nextErrors }))
+      toast.error('Preencha os dados obrigatorios antes de pesquisar.')
       return
     }
-    if (!tempoNecessario || tempoNecessario === '<--- PREENCHA') {
-      toast.error('Selecione os itens para calcular o tempo necessario.')
-      return
-    }
-    if (tempoTooLong) {
-      toast.error('O tempo necessario excede o limite de 06:30. Serao necessarias 2 entregas separadas.')
+
+    const confirmed = addressConfirmedResult
+    if (!confirmed || !confirmed.lat || !confirmed.lng) {
+      setFormErrors((current) => ({ ...current, endereco: 'Valide e confirme o endereco antes de pesquisar.' }))
+      toast.error('Valide e confirme o endereco antes de pesquisar.')
       return
     }
 
@@ -560,14 +621,14 @@ export default function ProcurarDatasPage() {
         ...form,
         clientToken: token,
         tempoNecessario,
-        cep: addressConfirmedResult.cep || '',
-        lat: addressConfirmedResult.lat,
-        lng: addressConfirmedResult.lng,
-        destLat: addressConfirmedResult.lat,
-        destLng: addressConfirmedResult.lng,
-        destDisplay: addressConfirmedResult.enderecoCompleto || addressConfirmedResult.display || addressConfirmedResult.display_name || '',
-        destProvider: addressConfirmedResult.provider || '',
-        enderecoCompleto: addressConfirmedResult.enderecoCompleto || addressConfirmedResult.display || addressConfirmedResult.display_name || '',
+        cep: confirmed.cep || '',
+        lat: confirmed.lat,
+        lng: confirmed.lng,
+        destLat: confirmed.lat,
+        destLng: confirmed.lng,
+        destDisplay: confirmed.enderecoCompleto || confirmed.display || confirmed.display_name || '',
+        destProvider: confirmed.provider || '',
+        enderecoCompleto: confirmed.enderecoCompleto || confirmed.display || confirmed.display_name || '',
         monthYear: form.dataInicial,
       }
 
@@ -732,23 +793,54 @@ export default function ProcurarDatasPage() {
           <div className="grid gap-3 md:grid-cols-6">
             <label className="md:col-span-3">
               <span className="mb-1 block text-xs font-medium text-slate-600">Logradouro</span>
-              <Input disabled={searching} value={form.logradouro} onChange={(e) => updateForm('logradouro', e.target.value)} />
+              <Input
+                disabled={searching}
+                value={form.logradouro}
+                onChange={(e) => updateForm('logradouro', e.target.value)}
+                className={formErrors.logradouro ? 'border-red-500 focus:border-red-500' : ''}
+              />
+              {formErrors.logradouro && <span className="mt-1 block text-xs text-red-600">{formErrors.logradouro}</span>}
             </label>
             <label>
               <span className="mb-1 block text-xs font-medium text-slate-600">Numero</span>
-              <Input disabled={searching} value={form.numero} onChange={(e) => updateForm('numero', e.target.value)} />
+              <Input
+                disabled={searching}
+                value={form.numero}
+                onChange={(e) => updateForm('numero', e.target.value)}
+                placeholder="Apenas numeros"
+              />
+              {formErrors.numero && <span className="mt-1 block text-xs text-red-600">{formErrors.numero}</span>}
             </label>
             <label className="md:col-span-2">
               <span className="mb-1 block text-xs font-medium text-slate-600">Bairro</span>
-              <Input disabled={searching} value={form.bairro} onChange={(e) => updateForm('bairro', e.target.value)} />
+              <Input
+                disabled={searching}
+                value={form.bairro}
+                onChange={(e) => updateForm('bairro', e.target.value)}
+                className={formErrors.bairro ? 'border-red-500 focus:border-red-500' : ''}
+              />
+              {formErrors.bairro && <span className="mt-1 block text-xs text-red-600">{formErrors.bairro}</span>}
             </label>
             <label className="md:col-span-3">
               <span className="mb-1 block text-xs font-medium text-slate-600">Cidade</span>
-              <Input disabled={searching} value={form.cidade} onChange={(e) => updateForm('cidade', e.target.value)} />
+              <Input
+                disabled={searching}
+                value={form.cidade}
+                onChange={(e) => updateForm('cidade', e.target.value)}
+                className={formErrors.cidade ? 'border-red-500 focus:border-red-500' : ''}
+              />
+              {formErrors.cidade && <span className="mt-1 block text-xs text-red-600">{formErrors.cidade}</span>}
             </label>
             <label>
               <span className="mb-1 block text-xs font-medium text-slate-600">UF</span>
-              <Input disabled={searching} maxLength={2} value={form.uf} onChange={(e) => updateForm('uf', e.target.value)} />
+              <Input
+                disabled={searching}
+                maxLength={2}
+                value={form.uf}
+                onChange={(e) => updateForm('uf', e.target.value)}
+                className={formErrors.uf ? 'border-red-500 focus:border-red-500' : ''}
+              />
+              {formErrors.uf && <span className="mt-1 block text-xs text-red-600">{formErrors.uf}</span>}
             </label>
             <div className="md:col-span-2 flex items-end">
               <Button type="button" variant="outline" onClick={validarEndereco} disabled={validatingAddress || searching} className="w-full">
@@ -757,6 +849,10 @@ export default function ProcurarDatasPage() {
               </Button>
             </div>
           </div>
+
+          {formErrors.endereco && !addressResult?.ok && (
+            <div className="mt-3 text-xs font-semibold text-red-600">{formErrors.endereco}</div>
+          )}
 
           {addressResult?.ok && (
             <div className="mt-4 rounded-lg border border-sky-100 bg-sky-50 p-4 text-sm text-slate-700">
@@ -803,8 +899,17 @@ export default function ProcurarDatasPage() {
                 min={minDate}
                 max={maxDate}
                 value={form.dataInicial}
-                onChange={(e) => updateForm('dataInicial', e.target.value)}
+                onChange={(e) => {
+                  updateForm('dataInicial', e.target.value)
+                  setFormErrors((current) => {
+                    const next = { ...current }
+                    delete next.dataInicial
+                    return next
+                  })
+                }}
+                className={formErrors.dataInicial ? 'border-red-500 focus:border-red-500' : ''}
               />
+              {formErrors.dataInicial && <span className="mt-1 block text-xs text-red-600">{formErrors.dataInicial}</span>}
             </label>
             <label className="flex items-center gap-2 pt-6 text-sm text-slate-700">
               <input type="checkbox" checked={form.isEncomenda} onChange={(e) => updateForm('isEncomenda', e.target.checked)} />
@@ -850,10 +955,8 @@ export default function ProcurarDatasPage() {
                   <TimerReset className="h-4 w-4 text-[#00A5E6]" />
                   <strong className="text-slate-900">{calculatingTime ? 'calculando...' : tempoNecessario || '-'}</strong>
                 </div>
-                {tempoTooLong && (
-                  <div className="mt-2 text-xs font-semibold text-red-700">
-                    O tempo excede 06:30. Serão necessárias 2 entregas separadas.
-                  </div>
+                {formErrors.tempo && (
+                  <div className="mt-2 text-xs font-semibold text-red-700">{formErrors.tempo}</div>
                 )}
               </div>
               <div>
@@ -872,7 +975,7 @@ export default function ProcurarDatasPage() {
             <Button
               type="button"
               onClick={pesquisarDatas}
-              disabled={searching || validatingAddress || calculatingTime || !addressConfirmed || !addressConfirmedResult?.ok || !form.dataInicial || !tempoNecessario || tempoNecessario === '<--- PREENCHA' || tempoTooLong}
+              disabled={searching || validatingAddress || calculatingTime}
             >
               {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
               {searching ? 'Pesquisando...' : 'Pesquisar datas'}

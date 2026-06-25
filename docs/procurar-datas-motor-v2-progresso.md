@@ -1,3 +1,37 @@
+## 2026-06-25 - Cascade - Frente 3/direita: mascaras, validacao visual e ajustes finos de UI/UX
+
+Status: implementado no frontend. Nao altera motor, regra de negocio, schema, migrations, Apps Script, OSRM, Haversine, frete, classificacao, ranking, recorte, banco ou `/procurar-datas/dev-v2`.
+
+### O que foi implementado
+- Criado `src/lib/procurar-datas/form-helpers.ts` com normalizacao de logradouro, bairro, cidade, numero e UF, validacao de campos de endereco e mensagem de erro para tempo invalido.
+- Criado `src/lib/procurar-datas/form-helpers.test.ts` com 7 testes unitarios passando.
+- Atualizado `src/app/procurar-datas/page.tsx`:
+  - Normalizacao automatica nos campos de endereco.
+  - Feedback visual em vermelho para campos obrigatorios/invalidos.
+  - `Validar endereco` valida campos antes de chamar API e exibe erros.
+  - `Pesquisar datas` valida endereco confirmado, data inicial e tempo valido, exibindo erros visuais.
+  - Botao `Pesquisar datas` reduz disabled para estados de loading; validacao interna garante seguranca.
+
+### O que nao foi alterado
+- Backend, rotas API, Apps Script, banco, motor v2, ranking, classificacao, frete, OSRM, Haversine, limites, recorte.
+- `/procurar-datas/dev-v2`.
+- Pré-visualizacao progressiva, mapa, cache de valor inicial, aviso de divergencia de bairro/cidade.
+
+### Validacoes
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/app/procurar-datas/page.tsx src/lib/procurar-datas/form-helpers.ts src/lib/procurar-datas/form-helpers.test.ts --quiet`: passou.
+- `npx vitest run src/lib/procurar-datas/form-helpers.test.ts --silent`: passou, 7 testes.
+
+### Pendencias
+- Validacao manual autenticada do fluxo completo.
+- Tarefas futuras para melhorias de media/baixa prioridade.
+
+### Riscos
+- Normalizacao pode remover caracteres especiais raros de enderecos. Ajustar regex se necessario.
+- Botao `Pesquisar datas` habilitado visualmente com dados incompletos pode exigir adaptacao operacional.
+
+---
+
 ## 2026-06-25 - Cascade - Frente 3/direita: gate de confirmacao, avisos fixos e mascaras na tela principal
 
 Status: implementado no frontend. Nao altera motor, regra de negocio, schema, migrations, Apps Script, OSRM, Haversine, frete, classificacao, ranking, recorte, banco ou `/procurar-datas/dev-v2`.

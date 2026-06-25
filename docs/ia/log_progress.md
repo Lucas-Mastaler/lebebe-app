@@ -1,3 +1,83 @@
+## 2026-06-25 - Cascade - Frente 3/direita: mascaras, validacao visual e ajustes finos de UI/UX em `/procurar-datas`
+
+**Resumo:** Completados os comportamentos de UI/UX prioritarios do modal legado na tela principal `/procurar-datas`. Foi criado helper `src/lib/procurar-datas/form-helpers.ts` com normalizacoes de logradouro, bairro, cidade, numero e UF, alem de validacao de campos de endereco. Foram adicionados erros visuais (borda vermelha e mensagens) para campos obrigatorios/invalidos. O botao `Validar endereco` agora permite clique e mostra erros em vez de depender apenas do disabled. O botao `Pesquisar datas` mantem validacao interna e exibe erros visuais quando faltar endereco confirmado, data inicial ou tempo valido. Nao foram alterados backend, motor, Apps Script, banco, ranking, classificacao, OSRM, Haversine, frete, limites, recorte ou `/procurar-datas/dev-v2`.
+
+**Arquivos lidos:**
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+- `src/app/procurar-datas/page.tsx`
+- `appscript/procurar_modal.html`
+
+**Arquivos alterados/criados:**
+- **CRIADO** `src/lib/procurar-datas/form-helpers.ts` (normalizacoes e validacao de formulario).
+- **CRIADO** `src/lib/procurar-datas/form-helpers.test.ts` (testes unitarios do helper).
+- **ALTERADO** `src/app/procurar-datas/page.tsx` (usa helper, exibe erros visuais, ajusta validacao de pesquisa e validacao de endereco).
+- **ALTERADO** `docs/ia/log_progress.md` (esta entrada).
+- **ALTERADO** `docs/procurar-datas-motor-v2-progresso.md` (registro de progresso).
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/app/procurar-datas/page.tsx src/lib/procurar-datas/form-helpers.ts src/lib/procurar-datas/form-helpers.test.ts --quiet`: passou.
+- `npx vitest run src/lib/procurar-datas/form-helpers.test.ts --silent`: passou, 7 testes.
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit --pretty false`: exit code 0.
+- `npx eslint src/app/procurar-datas/page.tsx src/lib/procurar-datas/form-helpers.ts src/lib/procurar-datas/form-helpers.test.ts --quiet`: exit code 0.
+- `npx vitest run src/lib/procurar-datas/form-helpers.test.ts --silent`: exit code 0, 7 passaram.
+
+**Auditoria do legado (resumo por campo):**
+
+| Campo | Regra legado | Estado atual | Aplicado nesta tarefa | Pendente |
+|-------|-------------|--------------|------------------------|----------|
+| Logradouro | input text, obrigatorio, trim length > 2, limpa erro e reset no input | ja existia, sem normalizacao | normalizacao (letras, numeros, espacos, pontos, hifens, barras, virgulas, acentos), erro visual | — |
+| Numero | input text, nao obrigatorio, sem mascara no legado | ja existia mascara para digitos | placeholder "Apenas numeros", erro visual | — |
+| Bairro | input text, obrigatorio, trim length >= 2, limpa erro e reset no input | ja existia, sem normalizacao | normalizacao semelhante ao logradouro, erro visual | — |
+| Cidade | input text, obrigatorio, trim length > 2, valor default "Curitiba" | ja existia, sem normalizacao | normalizacao (remove numeros), erro visual | nao foi aplicado valor default Curitiba |
+| UF | select com opcoes (PR, SP, SC, RS, RJ, MG), obrigatorio, length === 2 | input text com uppercase | normalizacao para 2 letras, erro visual | nao usa select fixo (mantido input livre por flexibilidade) |
+| Data inicial | input date, obrigatorio, min/max dinamico | ja existia | erro visual se vazia ao pesquisar | — |
+| Encomenda | checkbox, altera data minima | ja existia | mantido | — |
+| Area rural | checkbox | ja existia | mantido | — |
+| Condominio | checkbox | ja existia | mantido | — |
+| Berço/cama, Comoda, Roupeiro, Poltrona, Painel | selects, "Selecione" como vazio | ja existia | mantido | — |
+| Tempo necessario | input readonly, calculado automaticamente, > 00:00, <= 06:30 | ja calculado localmente | erro visual e bloqueio de pesquisa se invalido | — |
+| Validar endereco | habilitado sempre, executa validacao e mostra erros | habilitado por validating/searching | agora valida campos antes de chamar API e mostra erros visuais | — |
+| Confirmar este local | aparece apos validacao, marca confirmacao | ja existia | mantido | — |
+| Pesquisar datas | habilitado por addrConfirmed, tempoOk, !tempoTooLong | habilitado por varias condicoes | disabled reduzido para searching/validating/calculating; validacao interna mostra erros visuais | — |
+
+**Mudancas aplicadas:**
+1. Criado helper `src/lib/procurar-datas/form-helpers.ts`:
+   - `normalizarLogradouro`: mantem letras, numeros, espacos, ponto, virgula, hifen, barra, percentual, acentos, apostrofo, º, ª.
+   - `normalizarBairro`: similar ao logradouro.
+   - `normalizarCidade`: remove numeros, mantem letras, espacos, hifen, acentos.
+   - `normalizarNumero`: apenas digitos.
+   - `normalizarUF`: 2 letras maiusculas.
+   - `validarCamposEndereco`: regras length > 2 para logradouro/cidade, >= 2 para bairro, === 2 para UF.
+   - `mensagemErroTempo`: retorna mensagem para tempo vazio/00:00 ou > 06:30.
+2. `updateForm` usa `normalizeValue` para aplicar normalizacao automaticamente e limpa erros do campo editado.
+3. `validarEndereco` agora valida campos via helper antes de chamar API; se invalido, exibe erros visuais e toast.
+4. `pesquisarDatas` agora acumula erros de endereco, data e tempo e os exibe visualmente; ainda faz guarda de tipo para `addressConfirmedResult`.
+5. UI: campos obrigatorios invalidos ganham borda vermelha e mensagem abaixo. Mensagem de erro de endereco aparece quando necessario. Botao `Pesquisar datas` mantem disabled para estados de loading, mas depende de validacao interna para feedback.
+6. Testes unitarios cobrem normalizacoes e validacao.
+
+**Pendencias:**
+- Validacao manual autenticada em `/procurar-datas` para confirmar:
+  1. clique em `Validar endereco` com campos vazios mostra erros vermelhos;
+  2. numero e UF aplicam mascaras;
+  3. endereco validado, confirmado, pesquisa habilitada;
+  4. edicao de endereco reseta confirmacao e resultados;
+  5. busca real continua funcionando.
+- Tarefas futuras: aviso de divergencia de bairro/cidade, link Google Maps, cache de valor inicial, pre-visualizacao progressiva, botao Selecionar no Mapa, destacar primeiro resultado.
+
+**Riscos conhecidos:**
+- A normalizacao remove caracteres nao previstos. Enderecos raros com caracteres especiais (ex: "&", "#") serao alterados. Se isso for problematico, ajustar a regex do helper.
+- O botao `Pesquisar datas` agora esta habilitado visualmente mesmo quando dados estao incompletos, mas exibe erros ao clicar. Isso pode confundir usuarios acostumados com botao desabilitado. A escolha foi feita para dar feedback visual melhor, conforme sugerido na tarefa.
+
+**Proximo passo recomendado:**
+- Testar manualmente o fluxo completo em `/procurar-datas` e, se estavel, considerar a frente 3/direita concluida para os itens de alta/media prioridade.
+
+---
+
 ## 2026-06-25 - Cascade - Frente 3/direita: gate de confirmacao de endereco, avisos fixos e mascaras em `/procurar-datas`
 
 **Resumo:** Implementados na tela principal `src/app/procurar-datas/page.tsx` os comportamentos prioritarios do modal legado: avisos fixos de encomenda D+42 e showroom pos-venda, confirmacao explicita de endereco antes de pesquisar, reset de confirmacao ao editar endereco, bloqueio correto do botao `Pesquisar datas` e mascaras simples nos campos numero e UF. Nao foram alterados backend, motor, ranking, classificacao, OSRM, Haversine, frete, banco, Apps Script, limites, recorte ou `/procurar-datas/dev-v2`.

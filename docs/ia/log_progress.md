@@ -1,4 +1,59 @@
+## 2026-06-24 - Codex - Frente 1/esquerda: migracao do tempo de servico para helper TS
 
+**Resumo:** Migrado o calculo automatico de `tempoNecessario` da tela principal `/procurar-datas` para helper puro TypeScript equivalente ao Apps Script `gerarTempoServiCalcula()`. A tela deixou de chamar `/api/procurar-datas/calcular-tempo` para esse calculo e calcula instantaneamente a partir de berco/cama, comoda, roupeiro, poltrona e painel. Preservado na tela o adicional de condominio `+10`, que existia no caminho antigo `GetTempoNecessario`, fora do helper da tabela. Regra real de quarto completo documentada: o comentario legado fala `+15`, mas o codigo real faz `rouMin += 30`; o helper replica `+30`.
+
+**Arquivos lidos:**
+- `C:\Users\lebeb\.codex\attachments\48e20d21-91a7-4703-b962-a5daa242307f\pasted-text.txt`
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `appscript/TEMPO SERVIÇOS.gs`
+- `appscript/PublicAPI.gs`
+- `appscript/CEP-APIBACK.gs`
+- `src/app/procurar-datas/page.tsx`
+- `package.json`
+- `C:\Users\lebeb\.codex\memories\MEMORY.md`
+- `C:\Users\lebeb\.codex\plugins\cache\openai-curated-remote\vercel\1.0.0\skills\nextjs\SKILL.md`
+
+**Arquivos alterados/criados:**
+- **CRIADO** `src/lib/procurar-datas/tempo-servico.ts`
+- **CRIADO** `src/lib/procurar-datas/tempo-servico.test.ts`
+- **ALTERADO** `src/app/procurar-datas/page.tsx`
+- **ALTERADO** `docs/procurar-datas-motor-v2-progresso.md`
+- **ALTERADO** `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- **ALTERADO** `docs/ia/log_progress.md`
+
+**Validacoes realizadas:**
+- Leitura do Apps Script confirmou a regra efetiva em `gerarTempoServiCalcula()`, incluindo `rouMin += 30`.
+- `rg` confirmou que `src/app/procurar-datas/page.tsx` nao referencia mais `/api/procurar-datas/calcular-tempo` nem tipos `CalcularTempo`.
+- HTTP local em `http://localhost:3000/procurar-datas` retornou 200, mas renderizou login; validacao manual autenticada da tela e busca real nao confirmada.
+
+**Comandos rodados e resultados:**
+- `npx vitest run src/lib/procurar-datas/tempo-servico.test.ts --silent` no sandbox: falhou ao carregar Vitest por `spawn EPERM`.
+- `npx vitest run src/lib/procurar-datas/tempo-servico.test.ts --silent` fora do sandbox apos aprovacao: passou inicialmente, 1 arquivo, 9 testes.
+- `npx vitest run src/lib/procurar-datas/tempo-servico.test.ts --silent` apos reforco da normalizacao: falhou 1 teste porque a variante mojibake `N\u00c3\u0192O` normalizava para `NA\u0191O`; helper ajustado.
+- `npx vitest run src/lib/procurar-datas/tempo-servico.test.ts --silent` final: passou, 1 arquivo, 9 testes.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/lib/procurar-datas/tempo-servico.ts src/lib/procurar-datas/tempo-servico.test.ts src/app/procurar-datas/page.tsx --quiet`: passou.
+- `Invoke-WebRequest http://localhost:3000/procurar-datas`: status 200, conteudo de login.
+
+**Pendencias:**
+- Validar manualmente autenticado em `/procurar-datas`:
+  1. `4 PTS (DIVERSOS)` sozinho deve exibir `02:00`;
+  2. `MAXX` + `SIM` em comoda + roupeiro deve calcular valor coerente;
+  3. limpar selecoes deve voltar a comportamento seguro;
+  4. busca real simples deve enviar o mesmo tempo exibido.
+- Auditoria UI/UX do legado permanece pendencia futura separada.
+
+**Riscos conhecidos:**
+- Validacao visual autenticada e busca real nao confirmadas nesta execucao.
+- A rota antiga `/api/procurar-datas/calcular-tempo` continua existindo para compatibilidade; apenas deixou de ser usada pela tela principal para o calculo automatico.
+- Worktree ja continha arquivos/alteracoes fora deste escopo; nada foi revertido.
+
+**Proximo passo recomendado:**
+- Com sessao autenticada, abrir `/procurar-datas` e executar os quatro testes manuais pendentes acima antes de considerar a validacao operacional completa.
+
+---
 
 ## 2026-06-24 - Cascade - Frente 0 / Controle: checkpoint de equivalência e divergência explicada nos testes v2
 

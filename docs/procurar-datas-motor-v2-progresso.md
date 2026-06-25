@@ -6,6 +6,38 @@
 
 ---
 
+## 2026-06-24 - Codex - Frente 1/esquerda: tempo de servico em helper TS puro
+
+Status: implementado no codigo e validado por teste unitario, typecheck e lint. Validacao manual autenticada da tela principal nao confirmada nesta execucao porque `GET /procurar-datas` local renderizou login.
+
+### O que mudou
+- Criado `src/lib/procurar-datas/tempo-servico.ts` com helper puro TypeScript para calcular `tempoNecessario` a partir de berco/cama, comoda, roupeiro, poltrona e painel.
+- O helper replica a regra efetiva do Apps Script `gerarTempoServiCalcula()` que materializava a aba `TEMPO SERVICOS`.
+- A divergencia do legado foi preservada como equivalencia: o comentario do Apps Script fala `+15`, mas o codigo real faz `rouMin += 30`; a v2 replica `+30` e documenta isso no helper/teste.
+- A tela principal `src/app/procurar-datas/page.tsx` deixou de chamar `POST /api/procurar-datas/calcular-tempo` para calcular o campo "Tempo necessario".
+- O adicional de condominio `+10` foi preservado na tela, fora do helper, porque ele existia no caminho antigo `GetTempoNecessario`.
+
+### O que nao mudou
+- Nenhuma regra de datas, ranking, classificacao, OSRM, Haversine, frete, banco, Apps Script, limites, recorte, pre-agendamento ou rotas v2 de pesquisa foi alterada.
+- A rota antiga `/api/procurar-datas/calcular-tempo` nao foi removida; apenas deixou de ser usada pela tela principal para esse calculo.
+- `/procurar-datas/dev-v2` nao foi alterada.
+
+### Validacoes
+- `npx vitest run src/lib/procurar-datas/tempo-servico.test.ts --silent`: passou, 1 arquivo, 9 testes.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/lib/procurar-datas/tempo-servico.ts src/lib/procurar-datas/tempo-servico.test.ts src/app/procurar-datas/page.tsx --quiet`: passou.
+- `GET http://localhost:3000/procurar-datas`: HTTP 200, mas conteudo local era login; validacao manual autenticada dos selects e busca real nao confirmada.
+
+### Pendencias
+- Validar manualmente autenticado em `/procurar-datas`:
+  1. selecionar apenas `4 PTS (DIVERSOS)` e confirmar `02:00`;
+  2. selecionar `MAXX`, `SIM` em comoda e um roupeiro e confirmar calculo coerente;
+  3. limpar selecoes e confirmar comportamento seguro;
+  4. executar busca real simples e confirmar que o tempo enviado e o exibido.
+- Auditoria UI/UX do legado permanece pendencia futura separada.
+
+---
+
 ## 2026-06-24 - Codex - Frente 3/direita + Frente 2/meio: v2 como padrao em `/procurar-datas`
 
 Status: implementado na tela principal. Nao altera motor, regra de negocio, schema, migrations, Apps Script, OSRM, Haversine, frete, classificacao, ranking ou recorte.

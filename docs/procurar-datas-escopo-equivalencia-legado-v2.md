@@ -8,6 +8,30 @@
 
 ---
 
+## 2026-06-24 - Codex - Frente 1/esquerda: tempo de servico migrado para helper TS
+
+Status: calculo de `tempoNecessario` da tela principal migrado para helper puro TypeScript, sem alterar motor de datas.
+
+### Escopo aplicado
+- Criado `src/lib/procurar-datas/tempo-servico.ts` como equivalente ao Apps Script `gerarTempoServiCalcula()`.
+- `src/app/procurar-datas/page.tsx` passou a calcular o campo "Tempo necessario" localmente e nao chama mais `/api/procurar-datas/calcular-tempo` para esse calculo.
+- A regra real de quarto completo preserva `rouMin += 30`, apesar do comentario legado mencionar `+15`.
+- O adicional de condominio `+10` foi mantido na tela, fora do helper da tabela, para preservar o comportamento do caminho antigo `GetTempoNecessario`.
+
+### Limites preservados
+- Nao altera ranking, classificacao, OSRM, Haversine, frete, banco, Apps Script, limites, recorte, disponibilidade, agenda, pre-agendamento ou rotas v2 de pesquisa.
+- Nao remove a rota legada `/api/procurar-datas/calcular-tempo`; apenas remove a dependencia da tela principal para o calculo automatico.
+
+### Validacao
+- Teste unitario do helper: 9 testes passando.
+- Typecheck e lint dos arquivos alterados passaram.
+- Validacao manual autenticada em `/procurar-datas` ficou pendente nesta execucao porque o HTML local renderizou login.
+
+### Pendencia futura
+- Auditoria UI/UX do legado continua fora deste escopo e deve ser tratada em tarefa separada.
+
+---
+
 ## 2026-06-24 - Codex - Virada controlada: v2 padrao na tela principal
 
 Status: v2 habilitada por padrao em `/procurar-datas`. Nao altera regra de negocio, ranking, classificacao, OSRM, Haversine, banco, Apps Script, frete, limites ou recorte.

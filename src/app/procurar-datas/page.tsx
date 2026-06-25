@@ -5,7 +5,8 @@ import { CalendarCheck, Loader2, MapPin, Search, Send, TimerReset } from 'lucide
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import type { CalcularTempoRequest, CalcularTempoResponseSucesso, OpcoesProcurarDatasResponseSucesso, ValidarEnderecoRequest, ValidarEnderecoResponseSucesso, ValorInicialRequest, ValorInicialResponseSucesso, PesquisarDatasRequest, PesquisarDatasResponseSucesso, ProgressoPesquisaResponseSucesso, PreAgendarRequest, PreAgendarResponseSucesso } from '@/lib/procurar-datas/contratos'
+import { calcularTempoServicoMinutos, formatarMinutosParaHHMM } from '@/lib/procurar-datas/tempo-servico'
+import type { OpcoesProcurarDatasResponseSucesso, ValidarEnderecoRequest, ValidarEnderecoResponseSucesso, ValorInicialRequest, ValorInicialResponseSucesso, PesquisarDatasRequest, PesquisarDatasResponseSucesso, ProgressoPesquisaResponseSucesso, PreAgendarRequest, PreAgendarResponseSucesso } from '@/lib/procurar-datas/contratos'
 
 type OptionLists = {
   tipoBerco?: string[]
@@ -238,7 +239,7 @@ export default function ProcurarDatasPage() {
         const data = (await readJson(response)) as OpcoesProcurarDatasResponseSucesso
         if (!active) return
         setOpcoes(data.opcoes || {})
-        setTempoMapLoaded(!!data.tempoMap)
+        setTempoMapLoaded(true)
         setPhase('Pronto para validar endereco')
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Erro ao carregar opcoes.'
@@ -262,35 +263,27 @@ export default function ProcurarDatasPage() {
       setTempoNecessario('')
       return
     }
-    const hasSelection = form.tipoBerco || form.comoda || form.roupeiro || form.poltrona || form.painel || form.isCondominio
+    const hasSelection = form.tipoBerco || form.comoda || form.roupeiro || form.poltrona || form.painel
     if (!hasSelection) {
       setTempoNecessario('')
       return
     }
 
-    const timeout = setTimeout(async () => {
-      setCalculatingTime(true)
-      setPhase('Calculando tempo')
-      try {
-        const body: CalcularTempoRequest = form
-        const response = await fetch('/api/procurar-datas/calcular-tempo', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        })
-        const data = (await readJson(response)) as CalcularTempoResponseSucesso
-        setTempoNecessario(data.tempoNecessario || '')
-        setPhase(addressResult ? 'Pronto para buscar datas' : 'Pronto para validar endereco')
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Erro ao calcular tempo.'
-        toast.error(message)
-        setPhase('Erro ao calcular tempo')
-      } finally {
-        setCalculatingTime(false)
-      }
-    }, 350)
-
-    return () => clearTimeout(timeout)
+    const minutosBase = calcularTempoServicoMinutos({
+      berco: form.tipoBerco,
+      comoda: form.comoda,
+      roupeiro: form.roupeiro,
+      poltrona: form.poltrona,
+      painel: form.painel,
+    })
+    if (minutosBase <= 0) {
+      setTempoNecessario('')
+      return
+    }
+    const minutos = minutosBase + (form.isCondominio ? 10 : 0)
+    setCalculatingTime(false)
+    setTempoNecessario(formatarMinutosParaHHMM(minutos))
+    setPhase('Pronto para buscar datas')
   }, [form, tempoMapLoaded, addressResult])
 
   useEffect(() => {

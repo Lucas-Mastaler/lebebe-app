@@ -173,6 +173,55 @@ describe('buscarEnderecoLocationIq', () => {
     }
   })
 
+  it('aceita rua urbana sem house_number quando o formulario nao tem CEP mas o provider retorna postcode', async () => {
+    vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
+
+    const eventos: string[] = []
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          lat: '-25.51142',
+          lon: '-49.26940',
+          display_name: 'Rua Georgino Poli Ribeiro, Xaxim, Curitiba, Parana, Brasil',
+          importance: 0.18,
+          address: {
+            road: 'Rua Georgino Poli Ribeiro',
+            suburb: 'Xaxim',
+            city: 'Curitiba',
+            state: 'Parana',
+            state_code: 'BR-PR',
+            postcode: '81830-020',
+          },
+        },
+      ],
+    })) as unknown as typeof fetch
+
+    const result = await buscarEnderecoLocationIq(
+      {
+        logradouro: 'Rua Georgino Pioli Ribeiro',
+        numero: '200',
+        bairro: 'Xaxim',
+        cidade: 'Curitiba',
+        uf: 'PR',
+      },
+      {
+        fetchFn,
+        onEvent: (event) => eventos.push(event.tipo),
+      }
+    )
+
+    expect(result.status).toBe('success')
+    expect(eventos).not.toContain('locationiq_rejected_no_house_number')
+    if (result.status === 'success') {
+      expect(result.resultado.match).toBe('aproximado_confiavel')
+      expect(result.resultado.numeroOk).toBe(false)
+      expect(result.resultado.numeroObrigatorio).toBe(false)
+      expect(result.resultado.motivo).toBe('aceito_sem_numero_confirmado')
+      expect(result.resultado.cep).toBe('81830020')
+    }
+  })
+
   it('rejeita candidato sem house_number quando o logradouro diverge mesmo com CEP', async () => {
     vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
 
@@ -224,6 +273,39 @@ describe('buscarEnderecoLocationIq', () => {
             city: 'Pinhais',
             state: 'Parana',
             state_code: 'BR-PR',
+            postcode: '81830-020',
+          },
+        },
+      ],
+    })) as unknown as typeof fetch
+
+    const result = await buscarEnderecoLocationIq(FORM_CATARINA, {
+      fetchFn,
+      onEvent: (event) => eventos.push(event.tipo),
+    })
+
+    expect(result.status).toBe('failed')
+    expect(eventos).toContain('locationiq_rejected_city_or_uf_mismatch')
+  })
+
+  it('rejeita candidato sem house_number quando a UF diverge mesmo com CEP e logradouro', async () => {
+    vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
+
+    const eventos: string[] = []
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          lat: '-25.51261',
+          lon: '-49.27019',
+          display_name: 'Rua Catarina Goosen, Xaxim, Curitiba, Santa Catarina, Brasil',
+          importance: 0.25,
+          address: {
+            road: 'Rua Catarina Goosen',
+            suburb: 'Xaxim',
+            city: 'Curitiba',
+            state: 'Santa Catarina',
+            state_code: 'BR-SC',
             postcode: '81830-020',
           },
         },
@@ -301,9 +383,83 @@ describe('buscarEnderecoLocationIq', () => {
     }
   })
 
-  // ── Caso 1: centróide sem house_number (caso real Rua Nicola Pelanda) ────
+  it('aceita como aproximado confiavel com bairro divergente, importance baixa e sem house_number', async () => {
+    vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
 
-  it('caso 1 — rejeita centroides sem house_number (Rua Nicola Pelanda, 100)', async () => {
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          lat: '-25.51126',
+          lon: '-49.26826',
+          display_name: 'Rua Doutora Cenira Ribeiro, Boqueirao, Curitiba, Parana, Brasil',
+          importance: 0.053,
+          address: {
+            road: 'Rua Doutora Cenira Ribeiro',
+            suburb: 'Boqueirao',
+            city: 'Curitiba',
+            state: 'Parana',
+            state_code: 'BR-PR',
+            postcode: '81830-020',
+          },
+        },
+      ],
+    })) as unknown as typeof fetch
+
+    const result = await buscarEnderecoLocationIq(
+      {
+        logradouro: 'Rua Doutora Cenira Ribeiro',
+        numero: '200',
+        bairro: 'Xaxim',
+        cidade: 'Curitiba',
+        uf: 'PR',
+        cep: '81830-020',
+      },
+      { fetchFn }
+    )
+
+    expect(result.status).toBe('success')
+    if (result.status === 'success') {
+      expect(result.resultado.match).toBe('aproximado_confiavel')
+      expect(result.resultado.numeroObrigatorio).toBe(false)
+    }
+  })
+
+  it('rejeita resultado sem road mesmo quando display_name contem o logradouro', async () => {
+    vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
+
+    const eventos: string[] = []
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          lat: '-25.51261',
+          lon: '-49.27019',
+          display_name: 'Rua Catarina Goosen, Xaxim, Curitiba, Parana, Brasil',
+          importance: 0.25,
+          address: {
+            suburb: 'Xaxim',
+            city: 'Curitiba',
+            state: 'Parana',
+            state_code: 'BR-PR',
+            postcode: '81830-020',
+          },
+        },
+      ],
+    })) as unknown as typeof fetch
+
+    const result = await buscarEnderecoLocationIq(FORM_CATARINA, {
+      fetchFn,
+      onEvent: (event) => eventos.push(event.tipo),
+    })
+
+    expect(result.status).toBe('failed')
+    expect(eventos).toContain('locationiq_rejected_logradouro_mismatch')
+  })
+
+  // ── Caso 1: centróide sem house_number e sem postcode ────────────────────
+
+  it('caso 1 — rejeita centroides sem house_number e sem postcode', async () => {
     vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
 
     const eventos: string[] = []
@@ -324,7 +480,6 @@ describe('buscarEnderecoLocationIq', () => {
             city: 'Curitiba',
             state: 'Paraná',
             state_code: 'BR-PR',
-            postcode: '81940-305',
           },
         },
       ],

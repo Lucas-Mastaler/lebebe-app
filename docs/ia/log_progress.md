@@ -1,3 +1,46 @@
+## 2026-06-25 - Codex - Regressao LocationIQ: postcode do provider libera aceite sem numero
+
+**Resumo:** Corrigida regressao na validacao LocationIQ de `POST /api/procurar-datas/validar-endereco`. O frontend agora envia o CEP pesquisado (`cepInput`) no payload de validacao, e o LocationIQ passa a tratar `postcode` presente no candidato como evidencia positiva parcial quando o formulario nao trouxer CEP. Com rua/cidade/UF fortes, `address.road` presente e `postcode` presente/compativel, ausencia de `house_number` vira alerta diagnostico, nao rejeicao; o resultado sai como `aproximado_confiavel`, `numeroObrigatorio=false`, `motivo=aceito_sem_numero_confirmado`.
+
+**Arquivos lidos:**
+- `C:\Users\lebeb\.codex\attachments\6d41eddf-fade-4583-aae9-b606e4b243ed\pasted-text.txt`
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `src/lib/procurar-datas/locationiq.ts`
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `src/app/procurar-datas/page.tsx`
+- `src/lib/procurar-datas/endereco-cache.ts`
+- `src/lib/procurar-datas/types.ts`
+- `src/lib/procurar-datas/contratos.ts`
+- `src/lib/procurar-datas/locationiq.test.ts`
+
+**Arquivos alterados:**
+- `src/app/procurar-datas/page.tsx`
+- `src/lib/procurar-datas/locationiq.ts`
+- `src/lib/procurar-datas/locationiq.test.ts`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+
+**Validacoes realizadas:**
+- `npm run test -- src/lib/procurar-datas/locationiq.test.ts --silent`: passou, 19/19 testes.
+- `npx eslint src/lib/procurar-datas/locationiq.ts src/lib/procurar-datas/locationiq.test.ts src/app/procurar-datas/page.tsx --quiet`: passou.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npm run test -- src/lib/procurar-datas/locationiq.test.ts src/lib/procurar-datas/endereco-cache.test.ts src/lib/procurar-datas/validar-endereco-payload.test.ts --silent`: passou, 28/28 testes.
+
+**Pendencias:**
+- Validacao manual autenticada em `/procurar-datas` com os casos Georgino Pioli Ribeiro e Doutora Cenira Ribeiro ainda nao confirmada nesta execucao.
+
+**Riscos conhecidos:**
+- A regra agora aceita rua urbana sem numero confirmado quando `postcode` do provider ancora o candidato mesmo sem CEP no payload; por isso `address.road`, logradouro, cidade, UF e CEP divergente continuam como travas.
+- Nao houve consulta MCP Supabase nesta execucao porque nao houve alteracao de banco, query, schema, policy, migration, view, trigger ou nome de coluna.
+
+**Proximo passo recomendado:**
+- Testar manualmente os dois enderecos reais autenticado e conferir nos logs `numeroObrigatorio=false`, `motivo=aceito_sem_numero_confirmado`, `provider=locationiq` e ausencia de fallback Apps Script.
+
+---
+
 ## 2026-06-27 - Cascade - Detector de endereco dificil: reconhecer abreviacoes de rodovia
 
 **Resumo:** Ajustado o detector `ehEnderecoDificilRodoviaOuRural` em `google-geocoding.ts` para reconhecer abreviacoes e variacoes comuns de rodovia/estrada que nao ativavam o fallback Google. Caso real: `ROD. GUMERCINDO BOZA` (CEP 83535-000, Campo Magro/PR) nao acionava Google, caindo direto para Apps Script apos LocationIQ rejeitar.

@@ -215,7 +215,8 @@ function validarCandidato(
   const tokens = tokensFortesLogradouro(String(form.logradouro ?? ''))
   const display = candidate.display_name ?? ''
   const road = candidate.address?.road ?? ''
-  const logradouroOk = textoContemLogradouro(display, tokens) || textoContemLogradouro(road, tokens)
+  const roadNorm = normalizarTexto(road)
+  const logradouroOk = !!roadNorm && (textoContemLogradouro(display, tokens) || textoContemLogradouro(road, tokens))
 
   const numeroForm = normalizarNumeroEndereco(String(form.numero ?? ''))
   const houseNumber = normalizarNumeroEndereco(candidate.address?.house_number ?? '')
@@ -232,6 +233,8 @@ function validarCandidato(
   const cepCandidato = normalizarNumeroEndereco(candidate.address?.postcode ?? '').substring(0, 5)
   const cepOk: boolean | 'na' =
     cepForm.length === 5 && cepCandidato.length === 5 ? cepForm === cepCandidato : 'na'
+  const postcodePresente = cepCandidato.length === 5
+  const cepAncoragemOk = cepForm.length === 5 ? cepOk === true : postcodePresente
 
   // Validação de bairro (apenas diagnóstico, não rejeita)
   const bairroForm = normalizarTexto(form.bairro)
@@ -239,7 +242,6 @@ function validarCandidato(
   const bairroOk: boolean | 'na' =
     !bairroForm || !bairroCandidate ? 'na' : bairroForm === bairroCandidate
 
-  const roadNorm = normalizarTexto(road)
   const displayNorm = normalizarTexto(display)
   const resultadoPareceRua =
     !!roadNorm ||
@@ -247,7 +249,7 @@ function validarCandidato(
   const ancoragemUrbanaForte =
     !providerConfirmouNumeroDivergente &&
     !numeroOk &&
-    cepOk === true &&
+    cepAncoragemOk &&
     cidadeOk &&
     ufOk &&
     logradouroOk &&

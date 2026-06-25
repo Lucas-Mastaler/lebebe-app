@@ -4,7 +4,8 @@ Status: implementado em `src/lib/procurar-datas/locationiq.ts`. Nao altera UI, b
 
 ### O que mudou
 - A ausencia de `house_number` no LocationIQ deixou de ser bloqueio absoluto para endereco urbano com CEP.
-- O candidato passa a ser aceito como `aproximado_confiavel` quando CEP, logradouro, cidade e UF batem e o resultado tem evidencia de rua/trecho de rua.
+- O candidato passa a ser aceito como `aproximado_confiavel` quando CEP/postcode, logradouro, cidade e UF batem e o resultado tem evidencia de rua/trecho de rua.
+- Quando o formulario nao envia CEP, `postcode` presente no candidato conta como evidencia positiva parcial; quando o formulario envia CEP, ele precisa ser compativel com o `postcode`.
 - `numeroOk=false` continua exposto no objeto/log.
 - `numeroObrigatorio=false` indica aceite sem numero confirmado.
 - Bairro divergente e `importance_baixa` continuam como motivos diagnosticos, mas nao derrubam o candidato quando ha ancoragem forte por CEP/logradouro/cidade/UF.
@@ -12,7 +13,7 @@ Status: implementado em `src/lib/procurar-datas/locationiq.ts`. Nao altera UI, b
 ### O que permanece rejeitado
 - Numero explicitamente retornado pelo provider e divergente do formulario.
 - Rua, cidade, UF ou CEP divergentes.
-- Resultado sem rua compativel ou generico de cidade/bairro/UF.
+- Resultado sem `address.road`, sem rua compativel ou generico de cidade/bairro/UF.
 - Candidato rejeitado nao e salvo no `geo_cache`.
 
 ### Fallbacks e cache
@@ -22,7 +23,7 @@ Status: implementado em `src/lib/procurar-datas/locationiq.ts`. Nao altera UI, b
 
 ### Validacoes
 - MCP Supabase confirmou `public.geo_cache` com 14 colunas e sem campo de status/match; nenhuma alteracao de banco foi feita.
-- `npm run test -- src/lib/procurar-datas/locationiq.test.ts --silent`: 15/15 passou.
+- `npm run test -- src/lib/procurar-datas/locationiq.test.ts --silent`: 19/19 passou.
 
 ---
 

@@ -567,7 +567,10 @@ export default function ProcurarDatasPage() {
     })
 
     try {
-      const body: ValidarEnderecoRequest = form
+      const body: ValidarEnderecoRequest = {
+        ...form,
+        cep: cepInput,
+      }
       const response = await fetch('/api/procurar-datas/validar-endereco', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

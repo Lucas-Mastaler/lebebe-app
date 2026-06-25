@@ -7,11 +7,12 @@ Status: implementado em `src/lib/procurar-datas/locationiq.ts` e validado por te
 ### Regra nova
 - Para endereco urbano comum com CEP, `house_number` ausente no LocationIQ nao bloqueia sozinho.
 - O candidato sem numero confirmado pode ser aceito como `aproximado_confiavel` quando todos os sinais abaixo forem verdadeiros:
-  1. CEP do candidato e do formulario batem nos 5 primeiros digitos.
-  2. Logradouro e compativel por tokens fortes no `display_name` ou `address.road`.
-  3. Cidade e compativel.
-  4. UF e compativel.
-  5. O resultado parece rua/trecho de rua, nao apenas cidade/UF/bairro generico.
+  1. Quando o formulario tem CEP, CEP do candidato e do formulario batem nos 5 primeiros digitos.
+  2. Quando o formulario nao tem CEP, `postcode` presente no candidato conta como evidencia positiva parcial.
+  3. Logradouro e compativel por tokens fortes e existe `address.road` no candidato.
+  4. Cidade e compativel.
+  5. UF e compativel.
+  6. O resultado parece rua/trecho de rua, nao apenas cidade/UF/bairro generico.
 - `numeroOk=false` permanece registrado no resultado/log.
 - `numeroObrigatorio=false` indica que a ausencia do numero foi tratada como alerta, nao bloqueio.
 - `bairro_mismatch` e `importance_baixa` continuam em motivos diagnosticos, mas nao bloqueiam quando CEP/logradouro/cidade/UF ancoram o resultado.
@@ -22,7 +23,7 @@ Status: implementado em `src/lib/procurar-datas/locationiq.ts` e validado por te
 - Cidade divergente.
 - UF divergente.
 - CEP divergente quando os dois lados possuem CEP.
-- Resultado sem evidencia objetiva de rua compativel.
+- Resultado sem `address.road` ou sem evidencia objetiva de rua compativel.
 - Resultado generico de cidade, bairro, UF ou pais.
 
 ### Fallbacks
@@ -35,8 +36,8 @@ Status: implementado em `src/lib/procurar-datas/locationiq.ts` e validado por te
 - Candidato rejeitado continua nao sendo salvo.
 
 ### Validacoes
-- `npm run test -- src/lib/procurar-datas/locationiq.test.ts --silent`: 15/15 passou.
-- Novos testes cobrem: aceite sem numero com CEP/logradouro/cidade/UF; rejeicao por logradouro divergente; rejeicao por cidade divergente; bairro divergente nao bloqueante; `importance` baixa nao bloqueante.
+- `npm run test -- src/lib/procurar-datas/locationiq.test.ts --silent`: 19/19 passou.
+- Novos testes cobrem: aceite sem numero com CEP/logradouro/cidade/UF; aceite sem CEP de formulario quando `postcode` do provider esta presente; rejeicao por logradouro divergente; rejeicao por cidade divergente; rejeicao por UF divergente; rejeicao de resultado sem `road`; bairro divergente e `importance` baixa nao bloqueantes.
 
 > **Data de criação:** 2026-06-17  
 > **Frente:** Frente 0 / Controle  
@@ -3232,6 +3233,8 @@ Resultado desejado para K14 apos implementar a regra:
 ---
 
 ## 27. Decisao — Geocoding LocationIQ v2: numero obrigatorio e rejeicao de centroide (2026-06-26)
+
+Atualizacao 2026-06-25: a decisao abaixo foi refinada para a rota `POST /api/procurar-datas/validar-endereco`. LocationIQ sem `house_number` pode ser aceito como `aproximado_confiavel` quando ha `address.road`, logradouro/cidade/UF compativeis e `postcode` do provider presente; se o formulario tiver CEP, ele precisa ser compativel com o `postcode`. Resultado sem `road`, cidade/UF/logradouro divergente ou CEP divergente continua rejeitado.
 
 ### Decisao tomada
 A v2 e intencionalmente mais rigida que o legado na aceitacao de resultados de geocoding direto (LocationIQ):

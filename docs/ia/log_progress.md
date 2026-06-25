@@ -1,3 +1,55 @@
+## 2026-06-25 - Cascade - Frente 1/esquerda: auditoria do ultimo commit de tempo de servico
+
+**Resumo:** Auditoria do ultimo commit (5125498) confirmou que a migracao do calculo de tempo de servico para helper TypeScript puro ja foi aplicada corretamente na tela principal. A tela `src/app/procurar-datas/page.tsx` nao chama mais `/api/procurar-datas/calcular-tempo` nem `GetTempoNecessario` ao alterar berço/cama, cômoda, roupeiro, poltrona ou painel. O calculo eh feito localmente via `calcularTempoServicoMinutos` e `formatarMinutosParaHHMM`. A rota legada `src/app/api/procurar-datas/calcular-tempo/route.ts` ainda existe e ainda chama Apps Script, mas nao possui mais consumidor na tela principal. O log `[APPS SCRIPT SERVICE] Funcao: GetTempoNecessario` provavelmente vem de deployment desatualizado, cache de edge/CDN ou outro cliente chamando a rota diretamente.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `src/app/procurar-datas/page.tsx`
+- `src/lib/procurar-datas/tempo-servico.ts`
+- `src/lib/procurar-datas/tempo-servico.test.ts`
+- `src/app/api/procurar-datas/calcular-tempo/route.ts`
+- `src/lib/procurar-datas/contratos.ts`
+- `src/lib/procurar-datas/types.ts`
+- `src/lib/google/apps-script.ts`
+
+**Arquivos alterados/criados:**
+- Nenhum (tarefa de auditoria; nao foi aplicada correcao de codigo).
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx vitest run src/lib/procurar-datas/tempo-servico.test.ts --silent`: passou, 9 testes.
+- `npx eslint src/app/procurar-datas/page.tsx src/lib/procurar-datas/tempo-servico.ts src/app/api/procurar-datas/calcular-tempo/route.ts --quiet`: passou.
+- Grep confirmou que `src/app/procurar-datas/page.tsx` nao referencia `calcular-tempo`, `GetTempoNecessario`, `CalcularTempoRequest` nem `CalcularTempoResponse`.
+
+**Comandos rodados e resultados:**
+- `git status --short`: worktree limpa (sem alteracoes pendentes).
+- `git log -1 --stat`: commit 5125498 - feat: migrar calculo de tempo de servico para helper TypeScript puro.
+- `git show --stat --oneline HEAD`: 7 arquivos alterados, incluindo criacao de `tempo-servico.ts` e `tempo-servico.test.ts`, alteracao de `page.tsx`.
+- `git log --oneline -5 HEAD -- src/app/procurar-datas/page.tsx src/lib/procurar-datas/tempo-servico.ts`: confirmado que 5125498 eh o ultimo commit nesses arquivos.
+- `Select-String` por `calcular-tempo`, `GetTempoNecessario`, `CalcularTempo` em `src/app/procurar-datas`: nenhuma referencia na tela, apenas import do helper local.
+
+**Causa encontrada:**
+- A tela principal ja foi migrada: `useEffect` que reage a `form` e `addressResult` chama `calcularTempoServicoMinutos` localmente e aplica +10 minutos de condominio fora do helper.
+- A rota `/api/procurar-datas/calcular-tempo` ainda existe e chama `GetTempoNecessario` no Apps Script, mas nao eh mais chamada pela tela principal.
+- Portanto, o log do usuario nao reflete o codigo atual do branch `main` local. Possiveis explicacoes: deployment desatualizado, cache de edge/Vercel, ou chamada externa a rota legada.
+
+**Pendencias:**
+- Confirmar no ambiente de producao se o deployment esta no commit 5125498 ou posterior.
+- Validar manualmente autenticado em `/procurar-datas` que a alteracao de opcoes nao dispara log de Apps Script.
+- Se confirmado que o deployment esta desatualizado, fazer novo deploy.
+
+**Riscos conhecidos:**
+- A rota legada `calcular-tempo` continua disponivel e pode ser chamada por scripts/integracoes antigas. Nao foi removida para preservar compatibilidade.
+- Se a producao estiver em commit anterior a 5125498, a tela ainda chamara Apps Script e o usuario vera a lentidao.
+
+**Proximo passo recomendado:**
+- Verificar o hash do commit em producao (Vercel/dashboard) e garantir que o deployment esteja no commit 5125498 ou posterior.
+- Se o deployment ja estiver atualizado e o log persistir, investigar cache de edge/CDN ou outro cliente chamando a rota legada.
+
+---
+
 ## 2026-06-24 - Codex - Frente 1/esquerda: migracao do tempo de servico para helper TS
 
 **Resumo:** Migrado o calculo automatico de `tempoNecessario` da tela principal `/procurar-datas` para helper puro TypeScript equivalente ao Apps Script `gerarTempoServiCalcula()`. A tela deixou de chamar `/api/procurar-datas/calcular-tempo` para esse calculo e calcula instantaneamente a partir de berco/cama, comoda, roupeiro, poltrona e painel. Preservado na tela o adicional de condominio `+10`, que existia no caminho antigo `GetTempoNecessario`, fora do helper da tabela. Regra real de quarto completo documentada: o comentario legado fala `+15`, mas o codigo real faz `rouMin += 30`; o helper replica `+30`.

@@ -4,7 +4,6 @@ import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { UsuarioPermitido, AuditoriaAcesso } from '@/types/supabase'
-import { registrarAuditoria } from '@/lib/auth/helpers'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { format } from 'date-fns'
@@ -27,8 +26,6 @@ function SuperAdminPageContent() {
   const [filtroEmail, setFiltroEmail] = useState('')
   const [filtroAcao, setFiltroAcao] = useState('')
 
-  const [currentUser, setCurrentUser] = useState<string | null>(null)
-
   useEffect(() => {
     const tab = searchParams.get('tab')
     if (tab === 'usuarios' || tab === 'auditoria') {
@@ -41,10 +38,6 @@ function SuperAdminPageContent() {
   }, [activeTab])
 
   async function loadData() {
-    const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    setCurrentUser(user?.email || null)
-
     if (activeTab === 'usuarios') {
       await loadUsuarios()
     } else {
@@ -146,36 +139,50 @@ function SuperAdminPageContent() {
     const confirm = window.confirm(`Deseja bloquear ${usuario.email}?`)
     if (!confirm) return
 
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('usuarios_permitidos')
-      .update({ ativo: false })
-      .eq('id', usuario.id)
-
-    if (!error) {
-      await registrarAuditoria('USUARIO_BLOQUEADO', currentUser || undefined, {
-        usuario_bloqueado: usuario.email,
+    try {
+      const response = await fetch(`/api/superadmin/usuarios/${usuario.id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ativo: false }),
       })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        alert(data.message || 'Erro ao bloquear usuário')
+        return
+      }
+
       await loadUsuarios()
-    } else {
-      alert('Erro ao bloquear usuário: ' + error.message)
+    } catch (error: unknown) {
+      const mensagem = error instanceof Error ? error.message : 'Erro desconhecido'
+      alert('Erro ao bloquear usuário: ' + mensagem)
     }
   }
 
   async function handleDesbloquearUsuario(usuario: UsuarioPermitido) {
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('usuarios_permitidos')
-      .update({ ativo: true })
-      .eq('id', usuario.id)
-
-    if (!error) {
-      await registrarAuditoria('USUARIO_DESBLOQUEADO', currentUser || undefined, {
-        usuario_desbloqueado: usuario.email,
+    try {
+      const response = await fetch(`/api/superadmin/usuarios/${usuario.id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ativo: true }),
       })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        alert(data.message || 'Erro ao desbloquear usuário')
+        return
+      }
+
       await loadUsuarios()
-    } else {
-      alert('Erro ao desbloquear usuário: ' + error.message)
+    } catch (error: unknown) {
+      const mensagem = error instanceof Error ? error.message : 'Erro desconhecido'
+      alert('Erro ao desbloquear usuário: ' + mensagem)
     }
   }
 
@@ -187,21 +194,26 @@ function SuperAdminPageContent() {
       }
     }
 
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('usuarios_permitidos')
-      .update({ role: novaRole })
-      .eq('id', usuario.id)
-
-    if (!error) {
-      await registrarAuditoria('ROLE_ALTERADA', currentUser || undefined, {
-        usuario: usuario.email,
-        role_anterior: usuario.role,
-        role_nova: novaRole,
+    try {
+      const response = await fetch(`/api/superadmin/usuarios/${usuario.id}/role`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ role: novaRole }),
       })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        alert(data.message || 'Erro ao alterar role')
+        return
+      }
+
       await loadUsuarios()
-    } else {
-      alert('Erro ao alterar role: ' + error.message)
+    } catch (error: unknown) {
+      const mensagem = error instanceof Error ? error.message : 'Erro desconhecido'
+      alert('Erro ao alterar role: ' + mensagem)
     }
   }
 

@@ -1,3 +1,158 @@
+## 2026-06-26 - Cascade - Fase 0.5C: protecao de mutacoes criticas da tela Superadmin
+
+**Resumo:** Criadas API Routes server-side para proteger as mutacoes criticas da tela Superadmin: `PATCH /api/superadmin/usuarios/[id]/status` (bloquear/desbloquear) e `PATCH /api/superadmin/usuarios/[id]/role` (alterar role). Ambas usam `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true, requiredRole: 'superadmin' })` e service role para atualizar `usuarios_permitidos`. Implementada protecao contra lockout: bloqueio ou rebaixamento do ultimo superadmin ativo retorna 409. A tela `src/app/superadmin/page.tsx` foi ajustada para chamar as novas APIs via `fetch` em vez de fazer update direto no browser client. A listagem de usuarios e auditoria continuam via browser client. Nenhuma alteracao de banco, migration, RLS, grant, policy ou middleware foi feita.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `docs/ia/plano-fase-0-5b-migracao-helper-auth-apis.md`
+- `src/lib/auth/api-auth.ts`
+- `src/lib/auth/helpers.ts`
+- `src/lib/supabase/server.ts`
+- `src/lib/supabase/service.ts`
+- `src/types/supabase.ts`
+- `src/app/superadmin/page.tsx`
+- `src/app/api/superadmin/adicionar-usuario/route.ts`
+- `src/app/api/superadmin/reenviar-convite/route.ts`
+
+**Arquivos criados:**
+- `src/app/api/superadmin/usuarios/[id]/status/route.ts` — bloquear/desbloquear usuario
+- `src/app/api/superadmin/usuarios/[id]/role/route.ts` — alterar role
+
+**Arquivos alterados:**
+- `src/app/superadmin/page.tsx` — substituidos updates diretos por chamadas fetch para as novas APIs; removido state `currentUser` e carregamento `getUser` em `loadData` que ficaram sem uso
+- `docs/ia/log_progress.md` — entrada nova
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit` -> EXIT:0, sem erros
+- Grep em `src/app/superadmin/page.tsx` por `from('usuarios_permitidos').update|delete|insert` retornou vazio (nenhuma mutacao direta restante)
+- Protecao contra lockout implementada em ambas as rotas (contagem de superadmins ativos)
+- Validacao de payload (ativo boolean, role 'user'|'superadmin')
+- Respostas genericas 400/401/403/404/409/500 sem exposicao de detalhes de banco
+
+**Comandos rodados:**
+- `npx tsc --noEmit` -> sem erros, EXIT:0
+
+**Pendencias:**
+- Commit da 0.5C
+- Testes manuais: bloquear/desbloquear usuario comum, alterar role, tentar bloquear ultimo superadmin, acesso sem sessao (401), acesso nao-superadmin (403)
+- Futura Fase 0.5D/0.6: migrar operacoes de listagem para API Routes ou manter client-side conforme decisao de produto; migrar outras rotas Grupo A
+
+**Riscos conhecidos:**
+- Listagem de usuarios e auditoria ainda sao feitas diretamente pelo browser client (apenas leitura)
+- Protecao contra lockout e server-side, mas ainda existe hardcode de emails lucas@lebebe.com.br e robyson@lebebe.com.br na UI (mantido para preservar comportamento)
+
+**Proximo passo recomendado:**
+- Commit da 0.5C
+- Testes manuais das novas rotas e da tela
+- Planejar Fase 0.5D: migrar rotas Grupo A (adicionar-usuario, configuracoes/procurar-datas, setup-token) ou avancar para protecao de rotas Grupo D
+
+---
+
+## 2026-06-26 - Cascade - Fase 0.5B: mapeamento e classificacao de APIs para migracao do helper auth
+
+**Resumo:** Mapeadas e classificadas todas as API Routes do projeto para identificar candidatas a migrar para o helper `requireAuthenticatedUser`. Criado plano detalhado em `docs/ia/plano-fase-0-5b-migracao-helper-auth-apis.md` com 4 grupos (A: baixo risco, B: migrar com cuidado, C: nao migrar, D: decisao necessaria). Mapeada tambem a tela Superadmin identificando componentes, APIs usadas, operacoes client-side diretas e oportunidades para futura gestao de permissoes por tela e horario. Nenhum codigo foi alterado nesta etapa.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `src/lib/auth/api-auth.ts`
+- `src/lib/auth/sgi-auth.ts`
+- `src/lib/auth/matic-auth.ts`
+- `src/lib/auth/bearer-auth.ts`
+- `src/lib/auth/helpers.ts`
+- `src/lib/supabase/server.ts`
+- `src/lib/supabase/service.ts`
+- `src/middleware.ts`
+- `src/app/superadmin/page.tsx`
+- `src/app/api/superadmin/adicionar-usuario/route.ts`
+- `src/app/api/superadmin/reenviar-convite/route.ts`
+- `src/app/api/auditoria/registrar/route.ts`
+- `src/app/api/auth/logout/route.ts`
+- `src/app/api/auth/convite/[token]/route.ts`
+- `src/app/api/auth/convite/[token]/confirm/route.ts`
+- `src/app/api/auth/recuperar-senha/route.ts`
+- `src/app/api/usuarios-info/route.ts`
+- `src/app/api/users/route.ts`
+- `src/app/api/dashboard/pesquisar/route.ts`
+- `src/app/api/agendamentos/pesquisar/route.ts`
+- `src/app/api/autocomplete/departments/route.ts`
+- `src/app/api/autocomplete/users/route.ts`
+- `src/app/api/chamados-finalizados/pesquisar/route.ts`
+- `src/app/api/chamados-finalizados/agendamentos/route.ts`
+- `src/app/api/departments/route.ts`
+- `src/app/api/nfe/importar/route.ts`
+- `src/app/api/digisac/webhook/route.ts`
+- `src/app/api/digisac/schedule/route.ts`
+- `src/app/api/cron/auto-logout/route.ts`
+- `src/app/api/google/apps-script/executar/route.ts`
+- `src/app/api/google/calendar/reagendar-cliente/route.ts`
+- `src/app/api/google/setup-token/route.ts`
+- `src/app/api/sgi/vendas/route.ts`
+- `src/app/api/sgi/vendas/[numero_lancamento]/route.ts`
+- `src/app/api/sgi/observacoes/route.ts`
+- `src/app/api/sgi/observacoes/[id]/route.ts`
+- `src/app/api/sgi/observacoes/cliente/route.ts`
+- `src/app/api/sgi/ia/processar-proximo/route.ts`
+- `src/app/api/sgi/ia/iniciar-analise/route.ts`
+- `src/app/api/sgi/ia/analise-status/route.ts`
+- `src/app/api/sgi/filtros/route.ts`
+- `src/app/api/sgi/digisac/sync-status/route.ts`
+- `src/app/api/sgi/digisac/processar-fila/route.ts`
+- `src/app/api/sgi/digisac/sincronizar-venda/route.ts`
+- `src/app/api/sgi/digisac/mensagens/route.ts`
+- `src/app/api/sgi/digisac/chamados-ciclo/route.ts`
+- `src/app/api/sgi/classificar-vendas/route.ts`
+- `src/app/api/sgi/classificar-pendentes/route.ts`
+- `src/app/api/sgi/classificacao-referencia/importar/route.ts`
+- `src/app/api/sgi/agendamentos-futuros/route.ts`
+- `src/app/api/configuracoes/procurar-datas/route.ts`
+- `src/app/api/configuracoes/procurar-datas/[chave]/route.ts`
+- `src/app/api/configuracoes/procurar-datas/auditoria/route.ts`
+- `src/app/api/configuracoes/procurar-datas/snapshot/route.ts`
+- `src/app/api/configuracoes/procurar-datas/config-normalizada/route.ts`
+- `src/app/api/configuracoes/procurar-datas/importar/route.ts`
+- Todas as rotas em `src/app/api/procurar-datas/` (grep)
+- Todas as rotas em `src/app/api/recebimento/` (grep)
+- Todas as rotas em `src/app/api/matic/` (grep)
+
+**Arquivos criados:**
+- `docs/ia/plano-fase-0-5b-migracao-helper-auth-apis.md` — plano completo de migracao
+
+**Arquivos alterados:**
+- `docs/ia/log_progress.md` — entrada nova
+
+**Validacoes realizadas:**
+- Nenhum codigo alterado. Nenhum `tsc` necessario.
+- Mapeamento completo via grep de todas as rotas em `src/app/api/`
+- Leitura individual de cada rota nao coberta pela sessao anterior
+
+**Resumo do mapeamento:**
+- **Grupo A (baixo risco, 8 rotas):** superadmin/adicionar-usuario, google/setup-token, 6 rotas de configuracoes/procurar-datas
+- **Grupo B (migrar com cuidado, 18 rotas):** auditoria/registrar (3 caminhos de auth), 17 rotas SGI com validateComercialUser
+- **Grupo C (nao migrar, ~56 rotas):** auth publicas, Bearer token, webhooks, cron, procurar-datas, recebimento, matic
+- **Grupo D (decisao necessaria, 12 rotas):** rotas sem auth que precisam de decisao de produto
+
+**Pendencias:**
+- Commit da 0.5B (este plano + log)
+- Executar Lote 1: migrar `adicionar-usuario`, `setup-token`, `configuracoes/procurar-datas` GET
+- Decisao de produto: quais rotas Grupo D devem exigir sessao?
+- Migrar operacoes client-side da tela Superadmin para API Routes com validacao server-side
+
+**Riscos conhecidos:**
+- 12 rotas sem auth continuam expostas (Grupo D)
+- Tela Superadmin faz block/unblock/role-change direto no browser client (sem API Route)
+- Migracao de SGI routes tem volume alto (17 rotas) e baixa prioridade
+
+**Proximo passo recomendado:**
+- Commit da 0.5B
+- Executar Lote 1 de migracao (3 rotas Grupo A)
+- Decisao de produto sobre rotas Grupo D
+
+---
+
 ## 2026-06-26 - Cascade - Fase 0.5 início: helper central requireAuthenticatedUser
 
 **Resumo:** Criado helper central `requireAuthenticatedUser` em `src/lib/auth/api-auth.ts` para padronizar validacao de sessao em API Routes do Next.js. O helper utiliza `createClient()` para sessao e `createServiceClient()` para consulta confiavel em `usuarios_permitidos`, evitando interferencia de RLS. Suporta opcoes para exigir registro em `usuarios_permitidos`, usuario ativo e role especifica. Retorna 401 para nao autenticado, 403 para acesso negado e nao expoe detalhes internos. Como prova de uso, a rota `POST /api/superadmin/reenviar-convite` foi migrada para usar o helper. Nenhuma regra de negocio, payload, middleware, RLS, migration ou banco foi alterada.

@@ -1,3 +1,130 @@
+## 2026-06-26 - Cascade - Fase 0.5 início: helper central requireAuthenticatedUser
+
+**Resumo:** Criado helper central `requireAuthenticatedUser` em `src/lib/auth/api-auth.ts` para padronizar validacao de sessao em API Routes do Next.js. O helper utiliza `createClient()` para sessao e `createServiceClient()` para consulta confiavel em `usuarios_permitidos`, evitando interferencia de RLS. Suporta opcoes para exigir registro em `usuarios_permitidos`, usuario ativo e role especifica. Retorna 401 para nao autenticado, 403 para acesso negado e nao expoe detalhes internos. Como prova de uso, a rota `POST /api/superadmin/reenviar-convite` foi migrada para usar o helper. Nenhuma regra de negocio, payload, middleware, RLS, migration ou banco foi alterada.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `src/lib/auth/helpers.ts`
+- `src/lib/auth/sgi-auth.ts`
+- `src/lib/auth/matic-auth.ts`
+- `src/lib/auth/bearer-auth.ts`
+- `src/lib/supabase/server.ts`
+- `src/lib/supabase/service.ts`
+- `src/middleware.ts`
+- `src/app/api/superadmin/adicionar-usuario/route.ts`
+- `src/app/api/superadmin/reenviar-convite/route.ts`
+- `src/app/api/auditoria/registrar/route.ts`
+- `src/types/supabase.ts`
+
+**Arquivos criados:**
+- `src/lib/auth/api-auth.ts` — helper central `requireAuthenticatedUser` com tipos
+
+**Arquivos alterados:**
+- `src/app/api/superadmin/reenviar-convite/route.ts` — substituida validacao manual por `requireAuthenticatedUser`
+- `docs/ia/log_progress.md` — entrada nova
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit` -> EXIT:0, sem erros
+
+**Comandos rodados:**
+- `npx tsc --noEmit` -> sem erros
+
+**Pendencias:**
+- Commitar alteracoes locais
+- Testar `/api/superadmin/reenviar-convite` apos commit/deploy
+- Aplicar helper em outras APIs protegidas de forma gradual (priorizar APIs criticas: `/api/auditoria/registrar`, APIs sem validacao listadas no plano)
+- Fase 0.6 sugerida: aplicar helper nas APIs sem validacao e/ou proteger `/api/auditoria/registrar`
+
+**Riscos conhecidos:**
+- Helper ainda nao aplicado em todas as APIs. APIs sem validacao continuam expostas ate migracao.
+- `requireAuthenticatedUser` consulta `usuarios_permitidos` via service role, o que e correto para evitar RLS, mas mantem dependencia de service role key.
+
+**Proximo passo recomendado:**
+- Commit da 0.5
+- Teste manual de `/api/superadmin/reenviar-convite`
+- Planejar aplicacao do helper em mais rotas de forma controlada
+
+---
+
+## 2026-06-26 - Cascade - Etapa 0.4 registro: migration de revokes das 15 views dependentes
+
+**Resumo:** Criada migration `20260626180000_hardening_revoke_audit_views_fase_0_4.sql` para registrar no repositório os revokes das 15 views dependentes que já foram aplicados manualmente no Supabase. Os revokes foram validados (query de grants retornou []). Esta migration não altera definição de view, não altera tabela base, não cria policies e não concede novos grants. É idempotente (REVOKE sem grant existente não causa erro). O objetivo é manter o histórico de migrations alinhado com o estado atual do banco.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/diagnostico-fase-0-4-geocoding-search-audit.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `supabase/migrations/20260626170000_hardening_rls_grants_fase_0_4_audit_tables.sql`
+
+**Arquivos alterados:**
+- `supabase/migrations/20260626180000_hardening_revoke_audit_views_fase_0_4.sql` — migration nova (registro de revokes das 15 views)
+- `docs/ia/log_progress.md` — entrada nova
+
+**Validações conhecidas:**
+- `geocoding_audit`: RLS ON
+- `search_execution_audit`: RLS ON
+- Grants das tabelas base para anon, authenticated, PUBLIC: nenhum
+- Grants das 15 views para anon, authenticated, PUBLIC: nenhum
+- Query de validação das views retornou []
+- `npx tsc --noEmit` -> sem erros
+
+**Pendências:**
+- Commitar alterações locais (appscript/CEP-APIBACK.gs, migrations, log_progress.md)
+- Testar rapidamente `/procurar-datas` v2 após commit/deploy
+- Configurar `LE_BEBE_APP_URL` e `LE_BEBE_API_TOKEN` na planilha backend (sheet id 718532388) para que o Apps Script use a rota segura
+- Próxima etapa sugerida: Fase 0.5 (helper central requireAuthenticatedUser), somente após commit/teste da 0.4
+
+**Riscos conhecidos:**
+- Se algum painel interno depender dessas views via anon/authenticated, precisará migrar para server-side/service role ou receber regra de acesso específica.
+
+**Proximo passo recomendado:**
+- Commit da 0.4
+- Teste manual de `/procurar-datas` v2
+- Depois planejar Fase 0.5
+
+---
+
+## 2026-06-26 - Cascade - Etapa 0.4 fechada: hardening tabelas base + 15 views dependentes
+
+**Resumo:** Migration da Etapa 0.4 aplicada e validada no Supabase. `geocoding_audit` e `search_execution_audit` agora estao com RLS ON e grants revogados de anon, authenticated e PUBLIC. As 15 views dependentes tiveram grants revogados para anon, authenticated e PUBLIC. Nenhuma policy publica foi criada. O Apps Script legado nao escreve mais via anon key (fallback removido). A rota segura POST /api/procurar-datas/auditoria-legado grava via service role.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+
+**Arquivos alterados:**
+- `docs/ia/log_progress.md` — entrada nova registrando fechamento da 0.4
+
+**Validacoes realizadas:**
+- `geocoding_audit`: RLS ON
+- `search_execution_audit`: RLS ON
+- Grants de anon, authenticated e PUBLIC removidos das duas tabelas
+- Nenhuma policy publica criada
+- 15 views dependentes com grants removidos para anon, authenticated e PUBLIC:
+  - vw_cache_speedup, vw_economia_mensal, vw_economia_por_provider, vw_economia_real_diaria,
+    vw_economia_ultimos_30_dias, vw_enderecos_lentos, vw_performance_30_dias,
+    vw_performance_diaria, vw_performance_por_provider, vw_search_capacidade_resultado,
+    vw_search_execucoes_lentas, vw_search_performance_30_dias, vw_search_performance_diaria,
+    vw_search_performance_origem, vw_top_enderecos_cacheados
+- Query de grants das views retornou [] (zero grants)
+- `npx tsc --noEmit` -> sem erros
+
+**Pendencias:**
+- Commitar alteracoes locais (appscript/CEP-APIBACK.gs, migration, log_progress.md)
+- Testar rapidamente `/procurar-datas` v2 apos commit/deploy
+- Configurar `LE_BEBE_APP_URL` e `LE_BEBE_API_TOKEN` na planilha backend (sheet id 718532388) para que o Apps Script use a rota segura
+
+**Riscos conhecidos:**
+- Se algum painel interno depender diretamente dessas views via anon/authenticated, precisara migrar para acesso server-side/service role ou criar policy/grant especifico controlado.
+
+**Proximo passo recomendado:**
+- Commit da 0.4
+- Teste manual de `/procurar-datas` v2
+- Depois planejar Fase 0.5 (helper central requireAuthenticatedUser)
+
+---
+
 ## 2026-06-26 - Cascade - Etapa 0.4 final: remocao fallback inseguro + migration RLS/revoke audit tables
 
 **Resumo:** Removido fallback Supabase REST direto (com `SUPABASE_ANON_KEY`) das funcoes `RegistrarGeocodingAudit_` e `RegistrarExecucaoPesquisaAudit_` em `appscript/CEP-APIBACK.gs`. Se `LE_BEBE_APP_URL` ou `LE_BEBE_API_TOKEN` estiverem ausentes na planilha backend, a auditoria e silenciada (log + return) sem quebrar a busca. Nao ha mais escrita direta via anon key nestas tabelas. Criada migration `20260626170000_hardening_rls_grants_fase_0_4_audit_tables.sql` para habilitar RLS e revogar todos os privilegios de anon, authenticated e PUBLIC em `geocoding_audit` e `search_execution_audit`. Nenhuma policy foi criada (service_role bypassa RLS). Nenhuma view dependente foi alterada.

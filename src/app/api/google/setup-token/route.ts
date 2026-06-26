@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { requireAuthenticatedUser } from "@/lib/auth/api-auth";
 
 export const runtime = "nodejs";
 
@@ -10,48 +11,26 @@ export const runtime = "nodejs";
 // Acesso restrito apenas para superadmin
 // ─────────────────────────────────────────────────────────
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const supabase = await createClient();
-
     // ─────────────────────────────────────────────────────────
     // 1.0 – Verificar autenticação
     // ─────────────────────────────────────────────────────────
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    const auth = await requireAuthenticatedUser({
+      requireAllowedUser: true,
+      requireActive: true,
+      requiredRole: 'superadmin',
+    });
 
-    if (authError || !user || !user.email) {
-      return NextResponse.json(
-        { 
-          error: "Não autenticado",
-          message: "Faça login como superadmin para acessar esta rota."
-        },
-        { status: 401 }
-      );
+    if (!auth.ok) {
+      return auth.response;
     }
 
-    // ─────────────────────────────────────────────────────────
-    // 2.0 – Verificar se é superadmin
-    // ─────────────────────────────────────────────────────────
-    const { data: usuarioPermitido, error: dbError } = await supabase
-      .from('usuarios_permitidos')
-      .select('role')
-      .eq('email', user.email.toLowerCase())
-      .single();
-
-    if (dbError || !usuarioPermitido || usuarioPermitido.role !== 'superadmin') {
-      return NextResponse.json(
-        { 
-          error: "Acesso negado",
-          message: "Esta rota é restrita apenas para superadmin."
-        },
-        { status: 403 }
-      );
-    }
-
-    console.log(`[SETUP TOKEN] Acesso autorizado para: ${user.email}`);
+    console.log(`[SETUP TOKEN] Acesso autorizado para: ${auth.email}`);
+    const supabase = await createClient();
 
     // ─────────────────────────────────────────────────────────
-    // 3.0 – Buscar tokens capturados
+    // 2.0 – Buscar tokens capturados
     // ─────────────────────────────────────────────────────────
     const { data: tokens, error: tokenError } = await supabase
       .from('google_oauth_setup')
@@ -87,7 +66,7 @@ export async function GET(request: NextRequest) {
     }
 
     // ─────────────────────────────────────────────────────────
-    // 4.0 – Processar tokens encontrados
+    // 3.0 – Processar tokens encontrados
     // ─────────────────────────────────────────────────────────
     const tokensProcessados = tokens.map(token => {
       const temRefreshToken = !!token.provider_refresh_token;
@@ -108,7 +87,7 @@ export async function GET(request: NextRequest) {
     const tokenValido = tokensProcessados.find(t => t.has_refresh_token);
 
     // ─────────────────────────────────────────────────────────
-    // 5.0 – Retornar resultado
+    // 4.0 – Retornar resultado
     // ─────────────────────────────────────────────────────────
     return NextResponse.json(
       {

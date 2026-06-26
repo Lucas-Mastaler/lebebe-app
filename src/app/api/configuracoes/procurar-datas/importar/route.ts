@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
 import { executarImportacao } from '@/lib/procurar-datas/config-db'
 
 export const runtime = 'nodejs'
@@ -21,35 +21,20 @@ export const runtime = 'nodejs'
 
 export async function POST() {
   try {
-    const supabase = await createClient()
+    const auth = await requireAuthenticatedUser({
+      requireAllowedUser: true,
+      requireActive: true,
+      requiredRole: 'superadmin',
+    })
 
-    // 1. Verificar autenticação
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user || !user.email) {
-      return NextResponse.json(
-        { error: 'Não autenticado' },
-        { status: 401 }
-      )
+    if (!auth.ok) {
+      return auth.response
     }
 
-    // 2. Verificar superadmin
-    const { data: usuario, error: dbError } = await supabase
-      .from('usuarios_permitidos')
-      .select('role')
-      .eq('email', user.email.toLowerCase())
-      .single()
+    console.log(`[IMPORTAR CONFIG] Importação iniciada por: ${auth.email}`)
 
-    if (dbError || !usuario || usuario.role !== 'superadmin') {
-      return NextResponse.json(
-        { error: 'Acesso negado', message: 'Esta ação é restrita a superadmin.' },
-        { status: 403 }
-      )
-    }
-
-    console.log(`[IMPORTAR CONFIG] Importação iniciada por: ${user.email}`)
-
-    // 3. Executar importação
-    const resultado = await executarImportacao(user.email)
+    // 1. Executar importação
+    const resultado = await executarImportacao(auth.email)
 
     if (!resultado.ok) {
       console.error('[IMPORTAR CONFIG] Erro na importação:', resultado.erro)

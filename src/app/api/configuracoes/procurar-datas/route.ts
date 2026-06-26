@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
 import { lerConfiguracoesProcurarDatas, ConfigSecoes, ConfigItem } from '@/lib/procurar-datas/sheets-config'
 import { buscarConfigsDb } from '@/lib/procurar-datas/config-db'
 
@@ -53,35 +53,19 @@ export interface ResumoComparacao {
 
 export async function GET() {
   try {
-    const supabase = await createClient()
+    const auth = await requireAuthenticatedUser({
+      requireAllowedUser: true,
+      requireActive: true,
+      requiredRole: 'superadmin',
+    })
 
-    // 1. Verificar autenticação
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    if (authError || !user || !user.email) {
-      return NextResponse.json(
-        { error: 'Não autenticado', message: 'Faça login como superadmin para acessar esta rota.' },
-        { status: 401 }
-      )
+    if (!auth.ok) {
+      return auth.response
     }
 
-    // 2. Verificar se é superadmin
-    const { data: usuarioPermitido, error: dbError } = await supabase
-      .from('usuarios_permitidos')
-      .select('role')
-      .eq('email', user.email.toLowerCase())
-      .single()
+    console.log(`[CONFIG PROCURAR-DATAS] Acesso autorizado para: ${auth.email}`)
 
-    if (dbError || !usuarioPermitido || usuarioPermitido.role !== 'superadmin') {
-      return NextResponse.json(
-        { error: 'Acesso negado', message: 'Esta rota é restrita apenas para superadmin.' },
-        { status: 403 }
-      )
-    }
-
-    console.log(`[CONFIG PROCURAR-DATAS] Acesso autorizado para: ${user.email}`)
-
-    // 3. Ler planilha e banco em paralelo (Fase 2.5)
+    // 1. Ler planilha e banco em paralelo (Fase 2.5)
     const [planilha, configsDb] = await Promise.all([
       lerConfiguracoesProcurarDatas(),
       buscarConfigsDb(),
@@ -97,7 +81,7 @@ export async function GET() {
 
     const banco_vazio = configsDb.size === 0
 
-    // 4. Enriquecer cada item com status_comparacao
+    // 2. Enriquecer cada item com status_comparacao
     const resumo: ResumoComparacao = {
       iguais: 0,
       diferentes: 0,
@@ -144,7 +128,7 @@ export async function GET() {
       outros:             enriquecerSecao(secoes.outros),
     }
 
-    // 5. Chaves presentes no banco mas ausentes na planilha
+    // 3. Chaves presentes no banco mas ausentes na planilha
     const chavesNaPlanilha = new Set(
       Object.values(secoes).flat().map((i) => i.chave.toUpperCase())
     )

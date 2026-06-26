@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
 import { editarConfigDb } from '@/lib/procurar-datas/config-db'
 import { validarValorConfig } from '@/lib/procurar-datas/validar-config'
 import { CHAVES_EDITAVEIS_FASE3 } from '@/lib/procurar-datas/chaves-editaveis'
@@ -32,30 +32,21 @@ export async function PATCH(
   { params }: { params: Promise<{ chave: string }> }
 ) {
   try {
-    const supabase = await createClient()
+    const auth = await requireAuthenticatedUser({
+      requireAllowedUser: true,
+      requireActive: true,
+      requiredRole: 'superadmin',
+    })
 
-    // 1. Autenticação
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user?.email) {
-      return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+    if (!auth.ok) {
+      return auth.response
     }
 
-    // 2. Verificar superadmin
-    const { data: usuario } = await supabase
-      .from('usuarios_permitidos')
-      .select('role')
-      .eq('email', user.email.toLowerCase())
-      .single()
-
-    if (usuario?.role !== 'superadmin') {
-      return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
-    }
-
-    // 3. Decodificar chave da URL
+    // 1. Decodificar chave da URL
     const { chave: chaveParam } = await params
     const chaveUpper = decodeURIComponent(chaveParam).toUpperCase().trim()
 
-    // 4. Verificar whitelist
+    // 2. Verificar whitelist
     if (!CHAVES_EDITAVEIS_FASE3.has(chaveUpper)) {
       return NextResponse.json(
         { error: 'Chave não editável', message: `"${chaveUpper}" não faz parte das configurações editáveis nesta fase.` },
@@ -63,7 +54,7 @@ export async function PATCH(
       )
     }
 
-    // 5. Ler body
+    // 3. Ler body
     let body: PatchBody
     try {
       body = await request.json()
@@ -75,7 +66,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Campo obrigatório', message: 'Campo "valor" é obrigatório.' }, { status: 400 })
     }
 
-    // 6. Buscar valor_tipo do banco para validação
+    // 4. Buscar valor_tipo do banco para validação
     const { createServiceClient } = await import('@/lib/supabase/service')
     const db = createServiceClient()
     const { data: linhaDb, error: errBusca } = await db
@@ -103,7 +94,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Proibido', message: 'Secrets não podem ser editados.' }, { status: 403 })
     }
 
-    // 7. Validar e normalizar valor
+    // 5. Validar e normalizar valor
     const validacao = validarValorConfig(chaveUpper, linhaDb.valor_tipo as string, body.valor)
     if (!validacao.ok) {
       return NextResponse.json(
@@ -112,8 +103,8 @@ export async function PATCH(
       )
     }
 
-    // 8. Salvar no banco + auditoria
-    const resultado = await editarConfigDb(chaveUpper, validacao.valorNormalizado, user.email)
+    // 6. Salvar no banco + auditoria
+    const resultado = await editarConfigDb(chaveUpper, validacao.valorNormalizado, auth.email)
 
     if (!resultado.ok) {
       const httpStatus = resultado.status === 404 ? 404 : resultado.status === 400 ? 400 : 500

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
 import { buscarConfiguracoesProcurarDatas } from '@/lib/procurar-datas/config-service'
 
 export const runtime = 'nodejs'
@@ -21,26 +21,17 @@ export const runtime = 'nodejs'
 
 export async function GET() {
   try {
-    const supabase = await createClient()
+    const auth = await requireAuthenticatedUser({
+      requireAllowedUser: true,
+      requireActive: true,
+      requiredRole: 'superadmin',
+    })
 
-    // 1. Autenticação
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user?.email) {
-      return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+    if (!auth.ok) {
+      return auth.response
     }
 
-    // 2. Verificar superadmin
-    const { data: usuario } = await supabase
-      .from('usuarios_permitidos')
-      .select('role')
-      .eq('email', user.email.toLowerCase())
-      .single()
-
-    if (usuario?.role !== 'superadmin') {
-      return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
-    }
-
-    // 3. Buscar e normalizar configurações
+    // 1. Buscar e normalizar configurações
     const resultado = await buscarConfiguracoesProcurarDatas()
 
     if (!resultado.ok) {

@@ -1,3 +1,68 @@
+## 2026-06-26 - Codex - Fase 0.5E: migracao do restante das rotas Grupo A para requireAuthenticatedUser
+
+**Resumo:** Migrado o restante das rotas Grupo A para usar o helper central `requireAuthenticatedUser`, substituindo validacao manual de sessao/role superadmin. Rotas migradas: `GET /api/configuracoes/procurar-datas`, `PATCH /api/configuracoes/procurar-datas/[chave]`, `GET /api/configuracoes/procurar-datas/config-normalizada`, `POST /api/configuracoes/procurar-datas/importar` e `GET /api/google/setup-token`. Todas agora usam `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true, requiredRole: 'superadmin' })`. Nenhuma regra de negocio, payload de sucesso, banco, migration, RLS, grant, policy ou middleware foi alterado. A mudanca funcional controlada e que as rotas agora tambem exigem `ativo = true`, alinhado ao padrao adotado na Fase 0.5D.
+
+**Rotas avaliadas:**
+- `GET /api/configuracoes/procurar-datas` - antes validava `createClient()` + `getUser()` + `usuarios_permitidos.role`; migrada para helper.
+- `PATCH /api/configuracoes/procurar-datas/[chave]` - antes validava `createClient()` + `getUser()` + `usuarios_permitidos.role`; migrada para helper mantendo whitelist de chaves e validacao de valor.
+- `GET /api/configuracoes/procurar-datas/config-normalizada` - antes validava `createClient()` + `getUser()` + `usuarios_permitidos.role`; migrada para helper.
+- `POST /api/configuracoes/procurar-datas/importar` - antes validava `createClient()` + `getUser()` + `usuarios_permitidos.role`; migrada para helper mantendo importacao manual.
+- `GET /api/google/setup-token` - antes validava `createClient()` + `getUser()` + `usuarios_permitidos.role`; migrada para helper mantendo leitura de `google_oauth_setup` pelo server client.
+
+**Rotas nao migradas:** Nenhuma dentro do escopo da Fase 0.5E.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `docs/ia/plano-fase-0-5b-migracao-helper-auth-apis.md`
+- `src/lib/auth/api-auth.ts`
+- `src/app/api/superadmin/adicionar-usuario/route.ts`
+- `src/app/api/configuracoes/procurar-datas/snapshot/route.ts`
+- `src/app/api/configuracoes/procurar-datas/auditoria/route.ts`
+- `src/app/api/configuracoes/procurar-datas/route.ts`
+- `src/app/api/configuracoes/procurar-datas/[chave]/route.ts`
+- `src/app/api/configuracoes/procurar-datas/config-normalizada/route.ts`
+- `src/app/api/configuracoes/procurar-datas/importar/route.ts`
+- `src/app/api/google/setup-token/route.ts`
+- `.agents/skills/supabase/SKILL.md`
+
+**Arquivos alterados:**
+- `src/app/api/configuracoes/procurar-datas/route.ts`
+- `src/app/api/configuracoes/procurar-datas/[chave]/route.ts`
+- `src/app/api/configuracoes/procurar-datas/config-normalizada/route.ts`
+- `src/app/api/configuracoes/procurar-datas/importar/route.ts`
+- `src/app/api/google/setup-token/route.ts`
+- `docs/ia/log_progress.md`
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit` -> exit 0, sem erros.
+- `git diff --stat` -> 5 arquivos alterados antes do log, `66 insertions(+)`, `136 deletions(-)`.
+- `git diff -- src/app/api/configuracoes/procurar-datas` -> revisado; alteracoes restritas a auth helper e uso de `auth.email` onde antes usava `user.email`.
+- `git diff -- src/app/api/google/setup-token/route.ts` -> revisado; alteracao restrita a auth helper e remocao de parametro/import sem uso.
+
+**Validacoes realizadas:**
+- Confirmado no codigo que as 5 rotas ja exigiam sessao e `role === 'superadmin'` antes da migracao.
+- Confirmado no codigo que nenhuma das 5 rotas exigia `ativo` antes; o helper adiciona `ativo === true` como endurecimento intencional.
+- Confirmado por `rg` que nao restou `auth.getUser`, consulta manual a `usuarios_permitidos` ou variavel `user` nas rotas de configuracao migradas.
+- Confirmado que `setup-token` ainda mantem `createClient()` porque a rota usa o client para ler `google_oauth_setup`.
+- `npx tsc --noEmit` passou.
+
+**Pendencias:**
+- Testes manuais autenticados como superadmin nas 5 rotas migradas.
+- Testes manuais sem sessao e com usuario nao-superadmin para confirmar 401/403.
+- Rotas Grupo D sem auth continuam pendentes de decisao de produto.
+
+**Riscos conhecidos:**
+- As respostas de erro de auth passam a ser as respostas padronizadas do helper (`{ ok: false, message: ... }`) nas 5 rotas, como ja adotado na 0.5D.
+- Superadmins com `ativo !== true` agora sao bloqueados nessas rotas; mudanca desejada e controlada.
+- Nao houve consulta MCP Supabase nesta etapa porque nao houve alteracao de banco, schema, RLS, grants, policies, migrations ou nomes de colunas.
+
+**Proximo passo recomendado:**
+- Validar manualmente as 5 rotas em ambiente autenticado e depois decidir o tratamento das rotas Grupo D.
+
+---
+
 ## 2026-06-26 - Cascade - Fase 0.5D: migracao do primeiro lote Grupo A para requireAuthenticatedUser
 
 **Resumo:** Migrado o primeiro lote de rotas Grupo A para usar o helper central `requireAuthenticatedUser`, substituindo validacao manual de sessao/role superadmin. Rotas migradas: `POST /api/superadmin/adicionar-usuario`, `GET /api/configuracoes/procurar-datas/snapshot` e `GET /api/configuracoes/procurar-datas/auditoria`. Todas agora usam `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true, requiredRole: 'superadmin' })`. Nenhuma regra de negocio, payload, resposta, banco, migration, RLS, grant, policy ou middleware foi alterado. As rotas de `/procurar-datas` propriamente ditas (motor de pesquisa) permanecem intactas; apenas as rotas de configuracao foram migradas.

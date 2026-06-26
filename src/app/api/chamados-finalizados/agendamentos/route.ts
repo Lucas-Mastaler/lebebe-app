@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
 import { formatarDataPtBr, formatarHoraPtBr } from '@/lib/digisac/formatadores';
 
@@ -16,6 +17,12 @@ export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireAuthenticatedUser({
+      requireAllowedUser: true,
+      requireActive: true,
+    });
+    if (!auth.ok) return auth.response;
+
     const { searchParams } = new URL(request.url);
     const contactId = searchParams.get('contactId');
     if (!contactId) {

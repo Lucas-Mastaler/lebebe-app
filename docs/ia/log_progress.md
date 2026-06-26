@@ -1,3 +1,83 @@
+## 2026-06-26 - Codex - Fase 0.5H: protecao de rotas Grupo D privadas internas
+
+**Resumo:** Migrado lote curto de 3 rotas Grupo D privadas usadas por telas internas para `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true })`. Rotas migradas: `POST /api/chamados-finalizados/pesquisar`, `GET /api/chamados-finalizados/agendamentos` e `POST /api/dashboard/pesquisar`. Nenhum webhook, cron, rota Bearer token, middleware, tela, banco, migration, RLS, grant, policy, payload de sucesso ou regra de negocio foi alterado.
+
+**Diagnostico antes da alteracao:**
+- `POST /api/chamados-finalizados/pesquisar`: chamada por `src/app/chamados-finalizados/page.tsx`, sem validacao server-side, nao usa service role, le dados Digisac via `pesquisarChamadosFinalizados()`, nao escreve dados, chamada por browser autenticado da tela interna. Decisao: migrar agora.
+- `GET /api/chamados-finalizados/agendamentos`: chamada por `src/components/chamados/ModalAgendamentosCliente.tsx`, sem validacao server-side, nao usa service role, le agenda Digisac por `contactId`, nao escreve dados, chamada por browser autenticado da tela interna. Decisao: migrar agora.
+- `POST /api/dashboard/pesquisar`: chamada por `src/app/dashboard/page.tsx`, sem validacao server-side, nao usa service role, le tickets/agendamentos/metricas Digisac via `pesquisarDashboard()`, nao escreve dados, chamada por browser autenticado da tela interna. Decisao: migrar agora.
+- `POST /api/agendamentos/pesquisar`: avaliada por documento 0.5F e codigo, mas nao migrada nesta fase para manter lote maximo de 3 rotas e evitar ampliar o escopo para a tela Agendamentos.
+- `GET /api/users`: avaliada como rota de filtro usada por Dashboard/Chamados Finalizados, mas nao migrada nesta fase para manter lote maximo de 3 rotas; fica para lote seguinte com `/api/departments`.
+- `GET /api/departments`: avaliada como rota de filtro/consulta de departamentos, mas nao migrada nesta fase para manter lote maximo de 3 rotas.
+- `GET /api/digisac/schedule`: nao migrada porque atende fluxo publico `/horarios-agendamentos` e depende de decisao de produto.
+
+**Rotas alteradas:**
+- `POST /api/chamados-finalizados/pesquisar`
+- `GET /api/chamados-finalizados/agendamentos`
+- `POST /api/dashboard/pesquisar`
+
+**Equivalencia de auth:**
+- As paginas consumidoras `/chamados-finalizados` e `/dashboard` ja sao protegidas pelo middleware como usuario autenticado e ativo.
+- As rotas agora aplicam a mesma regra no server-side de API: usuario autenticado, presente em `usuarios_permitidos` e `ativo = true`.
+- Nao foi usado `requiredRole: 'superadmin'`, porque as telas consumidoras nao sao administrativas/superadmin.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `docs/ia/plano-fase-0-5b-migracao-helper-auth-apis.md`
+- `docs/ia/diagnostico-fase-0-5f-rotas-grupo-d-sem-auth.md`
+- `src/lib/auth/api-auth.ts`
+- `src/app/api/usuarios-info/route.ts`
+- `src/app/api/chamados-finalizados/pesquisar/route.ts`
+- `src/app/api/chamados-finalizados/agendamentos/route.ts`
+- `src/app/api/dashboard/pesquisar/route.ts`
+- `src/app/chamados-finalizados/page.tsx`
+- `src/components/chamados/FiltrosChamadosFinalizados.tsx`
+- `src/components/chamados/ModalAgendamentosCliente.tsx`
+- `src/app/dashboard/page.tsx`
+- `src/components/dashboard/FiltrosDashboard.tsx`
+- `src/lib/digisac/chamadosFinalizados.ts`
+- `src/lib/digisac/dashboard.ts`
+- `src/app/api/agendamentos/pesquisar/route.ts`
+- `src/app/api/users/route.ts`
+- `src/app/api/departments/route.ts`
+- `.agents/skills/supabase/SKILL.md`
+
+**Arquivos alterados:**
+- `src/app/api/chamados-finalizados/pesquisar/route.ts`
+- `src/app/api/chamados-finalizados/agendamentos/route.ts`
+- `src/app/api/dashboard/pesquisar/route.ts`
+- `docs/ia/log_progress.md`
+
+**Comandos rodados e resultados:**
+- `rg` para localizar consumidores das rotas Grupo D internas -> confirmou chamadas por telas/componentes internos.
+- `git diff -- src/app/api/chamados-finalizados/pesquisar/route.ts` -> alteracao restrita a import e gate de auth no inicio do handler.
+- `git diff -- src/app/api/chamados-finalizados/agendamentos/route.ts` -> alteracao restrita a import e gate de auth no inicio do handler.
+- `git diff -- src/app/api/dashboard/pesquisar/route.ts` -> alteracao restrita a import e gate de auth no inicio do handler.
+- `git diff --stat` -> antes do log, 3 arquivos alterados, 21 insercoes.
+- `npx tsc --noEmit` -> exit 0, sem erros.
+
+**Validacoes realizadas:**
+- Confirmado no diff que as 3 rotas chamam `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true })` antes de ler body/query e antes de chamar servicos Digisac.
+- Confirmado que payloads de sucesso foram preservados.
+- Confirmado que nao houve mudanca de regra de negocio, filtros, consultas Digisac, formatacao de resposta ou tratamento de erros nao-auth.
+- Nao foi feita consulta MCP Supabase porque nao houve alteracao de banco/schema/tabelas/queries Supabase; as rotas migradas nao usam service role.
+
+**Pendencias:**
+- Testes manuais com sessao real nao foram executados nesta etapa.
+- Validar manualmente as tres rotas sem sessao, com usuario permitido ativo e com usuario bloqueado.
+- Migrar em lote futuro `POST /api/agendamentos/pesquisar`, `GET /api/users` e `GET /api/departments`, se confirmado o mesmo criterio.
+
+**Riscos conhecidos:**
+- As respostas de erro de auth passam a ser padronizadas pelo helper (`401/403` com `{ ok: false, message: ... }`) antes dos erros de validacao de body/query.
+- Rotas Grupo D fora deste lote continuam sem auth server-side ate fases futuras.
+
+**Proximo passo recomendado:**
+- Executar testes manuais autenticados em `/chamados-finalizados` e `/dashboard`, depois seguir para lote curto com `agendamentos/pesquisar`, `users` e `departments`.
+
+---
+
 ## 2026-06-26 - Codex - Fase 0.5G: protecao de rotas criticas Grupo D
 
 **Resumo:** Adicionada validacao server-side em lote curto para `POST /api/nfe/importar` e para `GET`/`POST /api/usuarios-info`. A rota NFe agora valida usuario Matic/Recebimento com `validateMaticUser()` antes de ler body, criar Gmail/JWT, baixar XML, parsear NFe ou escrever no Supabase. As rotas `usuarios-info` agora exigem usuario autenticado, permitido e ativo via `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true })` antes de usar service role. Nao houve alteracao de payload de sucesso, regra de negocio, banco, migrations, RLS, grants, policies, middleware ou telas.

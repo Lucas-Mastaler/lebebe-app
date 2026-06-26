@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
 import { pesquisarChamadosFinalizados } from '@/lib/digisac/chamadosFinalizados';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAuthenticatedUser({
+      requireAllowedUser: true,
+      requireActive: true,
+    });
+    if (!auth.ok) return auth.response;
+
     const body = await request.json();
     const {
       dataUltimoChamadoFechadoInicio,

@@ -1,3 +1,162 @@
+## 2026-06-26 - Codex - Fase 0.5J: checkpoint de rotas restantes auth
+
+**Resumo:** Criado checkpoint somente leitura das rotas restantes de autenticacao apos 0.5G, 0.5H e 0.5I. Nenhum codigo funcional, rota, middleware, banco, migration, RLS, grant, policy, tela, payload de sucesso ou regra de negocio foi alterado.
+
+**Diagnostico confirmado:**
+- As rotas Grupo D privadas migradas em 0.5G, 0.5H e 0.5I estao protegidas por `validateMaticUser()` ou `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true })`, conforme o caso.
+- `GET /api/digisac/schedule` continua sem sessao, mas foi classificada como `PUBLICA_INTENCIONAL` porque atende `/horarios-agendamentos`, pagina publica por decisao do usuario.
+- `GET /api/autocomplete/users` e `GET /api/autocomplete/departments` continuam sem auth e sem consumidor confirmado no codigo; foram classificadas como `REMOVER_OU_DESATIVAR`.
+- Nenhuma rota privada interna Grupo D restante foi confirmada no codigo como `PRECISA_PROTEGER_REQUIRE_AUTH`.
+- Rotas webhook, cron, Bearer token e token interno foram mantidas fora de `requireAuthenticatedUser`.
+
+**Documento criado:**
+- `docs/ia/checkpoint-fase-0-5j-rotas-restantes-auth.md`
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `docs/ia/plano-fase-0-5b-migracao-helper-auth-apis.md`
+- `docs/ia/diagnostico-fase-0-5f-rotas-grupo-d-sem-auth.md`
+- `src/lib/auth/api-auth.ts`
+- `src/middleware.ts`
+- `src/app/horarios-agendamentos/page.tsx`
+- `src/components/HorariosAgendamentosPage.tsx`
+- `src/components/LayoutWrapper.tsx`
+- `src/components/Navigation.tsx`
+- `src/components/Sidebar.tsx`
+- `src/app/api/digisac/schedule/route.ts`
+- `src/app/api/autocomplete/users/route.ts`
+- `src/app/api/autocomplete/departments/route.ts`
+- `src/app/api/auth/logout/route.ts`
+- `src/app/api/auth/convite/[token]/route.ts`
+- `src/app/api/auth/convite/[token]/confirm/route.ts`
+- `src/app/api/auth/recuperar-senha/route.ts`
+- `src/app/api/cron/auto-logout/route.ts`
+- `src/app/api/digisac/webhook/route.ts`
+- `src/app/api/google/apps-script/executar/route.ts`
+- `src/app/api/google/calendar/reagendar-cliente/route.ts`
+- `src/app/api/procurar-datas/auditoria-legado/route.ts`
+- `src/app/api/sgi/classificar-pendentes/route.ts`
+- `src/app/api/auditoria/registrar/route.ts`
+- `src/app/api/superadmin/reenviar-convite/route.ts`
+- `src/app/api/superadmin/adicionar-usuario/route.ts`
+- `src/app/api/superadmin/usuarios/[id]/status/route.ts`
+- `src/app/api/superadmin/usuarios/[id]/role/route.ts`
+- `src/app/api/google/setup-token/route.ts`
+- `.agents/skills/supabase/SKILL.md`
+
+**Arquivos alterados/criados:**
+- Criado: `docs/ia/checkpoint-fase-0-5j-rotas-restantes-auth.md`
+- Alterado: `docs/ia/log_progress.md`
+
+**Comandos rodados e resultados:**
+- `git status --short` -> confirmou worktree ja sujo com alteracoes da Fase 0.5I antes do checkpoint.
+- `rg --files src/app/api` -> listou API routes para revisao.
+- `rg -n -S "/api/autocomplete/users|/api/autocomplete/departments|/api/digisac/schedule|horarios-agendamentos" src docs --glob '!docs/ia/log_progress.md'` -> confirmou consumidor de `/api/digisac/schedule` e ausencia de consumidor em codigo para autocomplete.
+- `rg -n -S "requireAuthenticatedUser|validateMaticUser|validateComercialUser|validarAcessoProcurarDatas|validarBearerToken|auth\\.getUser\\(|x-internal-token|CRON_SECRET|DIGISAC_WEBHOOK_SECRET|AUDITORIA_INTERNAL_SECRET" src/app/api --glob 'route.ts'` -> confirmou mecanismos de auth atuais.
+- `git diff --stat` -> executado antes da criacao do checkpoint, mostrando alteracoes pendentes da 0.5I; novo stat final deve incluir este documento e esta entrada de log.
+
+**Validacoes realizadas:**
+- Confirmado que `/horarios-agendamentos` e publico no middleware e consome `GET /api/digisac/schedule`.
+- Confirmado que `GET /api/digisac/schedule` usa rate limit e parametros obrigatorios, mas nao sessao; por decisao do usuario, fica publica e deve receber hardening futuro sem login.
+- Confirmado que `GET /api/autocomplete/users` e `GET /api/autocomplete/departments` consultam Digisac sem auth e sem consumidor confirmado no codigo.
+- Confirmado que rotas webhook/cron/Bearer/token interno possuem mecanismo proprio e nao devem migrar para sessao.
+- `npx tsc --noEmit` nao foi executado porque a etapa foi somente diagnostico/documentacao, sem alteracao de codigo funcional.
+
+**Pendencias:**
+- Hardening de `GET /api/digisac/schedule` mantendo a pagina publica.
+- Decidir remocao/desativacao de `GET /api/autocomplete/users` e `GET /api/autocomplete/departments`.
+- Confirmar em ambiente de producao se `DIGISAC_WEBHOOK_SECRET` esta configurado; nao confirmado nesta etapa.
+
+**Riscos conhecidos:**
+- `GET /api/digisac/schedule` permanece publico e aceita `serviceId`, datas e `perPage` por query string; precisa limitar contrato server-side.
+- Rotas autocomplete continuam sem auth ate remocao/desativacao ou protecao futura.
+- O worktree ja continha alteracoes da 0.5I antes desta etapa.
+
+**Proximo passo recomendado:**
+- Executar uma Fase 0.5K de hardening da rota publica `GET /api/digisac/schedule`, sem exigir login, e decidir o destino das rotas autocomplete legadas.
+
+---
+
+## 2026-06-26 - Codex - Fase 0.5I: protecao de rotas Grupo D internas de agendamentos/filtros
+
+**Resumo:** Migrado lote curto de 3 rotas Grupo D internas para `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true })`: `POST /api/agendamentos/pesquisar`, `GET /api/users` e `GET /api/departments`. Nenhum webhook, cron, rota Bearer token, integracao externa publica, middleware, tela, banco, migration, RLS, grant, policy, payload de sucesso ou regra de negocio foi alterado.
+
+**Diagnostico antes da alteracao:**
+- `POST /api/agendamentos/pesquisar`: chamada por `src/components/AgendamentosPage.tsx`, pagina consumidora `/agendamentos` protegida pelo middleware, sem validacao server-side previa, nao usa service role, le agenda/contatos/tickets Digisac via `buscarAgendamentosFormatados()`, nao escreve dados, chamada por browser autenticado da tela interna. Decisao: migrar agora.
+- `GET /api/users`: chamada por `src/components/FiltrosAgendamentos.tsx`, `src/components/dashboard/FiltrosDashboard.tsx` e `src/components/chamados/FiltrosChamadosFinalizados.tsx`; paginas consumidoras `/agendamentos`, `/dashboard` e `/chamados-finalizados` protegidas pelo middleware, sem validacao server-side previa, nao usa service role, le usuarios ativos Digisac via `fetchDigisac('/users?perPage=200')`, nao escreve dados, chamada por browser autenticado de telas internas. Decisao: migrar agora.
+- `GET /api/departments`: chamada por `src/components/AgendamentosPage.tsx`, pagina consumidora `/agendamentos` protegida pelo middleware, sem validacao server-side previa, nao usa service role, le departamentos Digisac via `fetchDigisac('/departments?perPage=100')`, nao escreve dados, chamada por browser autenticado da tela interna. Decisao: migrar agora.
+- Nenhum consumidor externo, webhook, cron ou Bearer token dessas 3 rotas foi confirmado no codigo.
+
+**Rotas alteradas:**
+- `POST /api/agendamentos/pesquisar`
+- `GET /api/users`
+- `GET /api/departments`
+
+**Equivalencia de auth:**
+- As paginas consumidoras `/agendamentos`, `/dashboard` e `/chamados-finalizados` ja exigem usuario autenticado e ativo no middleware.
+- As rotas agora aplicam a mesma regra no server-side de API: usuario autenticado, presente em `usuarios_permitidos` e `ativo = true`.
+- Nao foi usado `requiredRole: 'superadmin'`, porque as telas consumidoras nao sao administrativas/superadmin.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `docs/ia/plano-fase-0-5b-migracao-helper-auth-apis.md`
+- `docs/ia/diagnostico-fase-0-5f-rotas-grupo-d-sem-auth.md`
+- `src/lib/auth/api-auth.ts`
+- `src/app/api/agendamentos/pesquisar/route.ts`
+- `src/app/api/users/route.ts`
+- `src/app/api/departments/route.ts`
+- `src/components/AgendamentosPage.tsx`
+- `src/components/FiltrosAgendamentos.tsx`
+- `src/components/dashboard/FiltrosDashboard.tsx`
+- `src/components/chamados/FiltrosChamadosFinalizados.tsx`
+- `src/app/agendamentos/page.tsx`
+- `src/app/dashboard/page.tsx`
+- `src/app/chamados-finalizados/page.tsx`
+- `src/lib/digisac/agendamentos.ts`
+- `src/lib/digisac/clienteDigisac.ts`
+- `src/middleware.ts`
+- `.agents/skills/supabase/SKILL.md`
+
+**Arquivos alterados:**
+- `src/app/api/agendamentos/pesquisar/route.ts`
+- `src/app/api/users/route.ts`
+- `src/app/api/departments/route.ts`
+- `docs/ia/log_progress.md`
+
+**Comandos rodados e resultados:**
+- `rg -n -S "/api/agendamentos/pesquisar|/api/users|/api/departments" src/app src/components src/lib` -> confirmou consumidores internos das rotas.
+- `git status --short` -> antes da alteracao da 0.5I, sem alteracoes pendentes no worktree.
+- `git diff -- src/app/api/agendamentos/pesquisar/route.ts` -> alteracao restrita a import e gate de auth no inicio do handler.
+- `git diff -- src/app/api/users/route.ts` -> alteracao restrita a import e gate de auth no inicio do handler.
+- `git diff -- src/app/api/departments/route.ts` -> alteracao restrita a import e gate de auth no inicio do handler.
+- `git diff --stat` -> antes do log, 3 arquivos alterados, 24 insercoes.
+- `npx tsc --noEmit` -> exit 0, sem erros.
+
+**Validacoes realizadas:**
+- Confirmado no diff que as 3 rotas chamam `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true })` antes de ler body/query e antes de chamar servicos Digisac.
+- Confirmado que payloads de sucesso foram preservados.
+- Confirmado que nao houve mudanca de regra de negocio, filtros, consultas Digisac, formatacao de resposta ou tratamento de erros nao-auth.
+- Nao foi feita consulta MCP Supabase porque nao houve alteracao de banco/schema/tabelas/queries Supabase; as rotas migradas nao usam service role.
+
+**Pendencias:**
+- Testes manuais com sessao real nao foram executados nesta etapa.
+- Validar manualmente as tres rotas sem sessao, com usuario permitido ativo e com usuario bloqueado.
+- Decidir o tratamento de `GET /api/digisac/schedule`, que atende pagina publica `/horarios-agendamentos`.
+- Decidir remocao/desativacao ou protecao das rotas legadas `GET /api/autocomplete/users` e `GET /api/autocomplete/departments`, cujo uso nao foi confirmado no codigo na Fase 0.5F.
+
+**Riscos conhecidos:**
+- As respostas de erro de auth passam a ser padronizadas pelo helper (`401/403` com `{ ok: false, message: ... }`) antes dos erros de validacao de body/query.
+- Rotas Grupo D fora deste lote continuam sem auth server-side ate fases futuras.
+
+**Proximo passo recomendado:**
+- Executar testes manuais autenticados em `/agendamentos`, `/dashboard` e `/chamados-finalizados`, depois decidir a abordagem para `/api/digisac/schedule` e rotas autocomplete legadas.
+
+---
+
 ## 2026-06-26 - Codex - Fase 0.5H: protecao de rotas Grupo D privadas internas
 
 **Resumo:** Migrado lote curto de 3 rotas Grupo D privadas usadas por telas internas para `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true })`. Rotas migradas: `POST /api/chamados-finalizados/pesquisar`, `GET /api/chamados-finalizados/agendamentos` e `POST /api/dashboard/pesquisar`. Nenhum webhook, cron, rota Bearer token, middleware, tela, banco, migration, RLS, grant, policy, payload de sucesso ou regra de negocio foi alterado.

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
+import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
 
 type User = {
   id: string;
@@ -9,6 +10,13 @@ type User = {
 
 export async function GET(request: NextRequest) {
     try {
+        const auth = await requireAuthenticatedUser({
+            requireAllowedUser: true,
+            requireActive: true,
+        });
+
+        if (!auth.ok) return auth.response;
+
         console.log('[DIGISAC][USERS] GET /users?perPage=200 (somente ativos)');
         const response = await fetchDigisac('/users?perPage=200');
         const users = Array.isArray(response) ? response : (response.data || []);

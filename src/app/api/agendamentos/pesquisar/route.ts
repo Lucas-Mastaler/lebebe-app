@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buscarAgendamentosFormatados } from '@/lib/digisac/agendamentos';
+import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
 
 export async function POST(request: NextRequest) {
     try {
+        const auth = await requireAuthenticatedUser({
+            requireAllowedUser: true,
+            requireActive: true,
+        });
+
+        if (!auth.ok) return auth.response;
+
         const body = await request.json();
         const {
             dataAgendamentoInicio,

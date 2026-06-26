@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
+import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
 
 type Department = {
   id: string;
@@ -8,6 +9,13 @@ type Department = {
 
 export async function GET(request: NextRequest) {
     try {
+        const auth = await requireAuthenticatedUser({
+            requireAllowedUser: true,
+            requireActive: true,
+        });
+
+        if (!auth.ok) return auth.response;
+
         // Listar todos departamentos.
         // Se houver muitos, o Digisac pagina. Vamos pegar a primeira pagina generosa.
         const url = `/departments?perPage=100`;

@@ -1,3 +1,47 @@
+## 2026-06-26 - Cascade - Etapa 0.4 final: remocao fallback inseguro + migration RLS/revoke audit tables
+
+**Resumo:** Removido fallback Supabase REST direto (com `SUPABASE_ANON_KEY`) das funcoes `RegistrarGeocodingAudit_` e `RegistrarExecucaoPesquisaAudit_` em `appscript/CEP-APIBACK.gs`. Se `LE_BEBE_APP_URL` ou `LE_BEBE_API_TOKEN` estiverem ausentes na planilha backend, a auditoria e silenciada (log + return) sem quebrar a busca. Nao ha mais escrita direta via anon key nestas tabelas. Criada migration `20260626170000_hardening_rls_grants_fase_0_4_audit_tables.sql` para habilitar RLS e revogar todos os privilegios de anon, authenticated e PUBLIC em `geocoding_audit` e `search_execution_audit`. Nenhuma policy foi criada (service_role bypassa RLS). Nenhuma view dependente foi alterada.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/diagnostico-fase-0-4-geocoding-search-audit.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `src/app/api/procurar-datas/auditoria-legado/route.ts`
+- `src/lib/auth/bearer-auth.ts`
+- `appscript/CEP-APIBACK.gs` (funcoes RegistrarGeocodingAudit_, RegistrarExecucaoPesquisaAudit_, _getAppAuditConfig_)
+- `appscript/CEP-CONFIG.gs`
+
+**Arquivos alterados:**
+- `appscript/CEP-APIBACK.gs` — removido fallback Supabase REST direto das 2 funcoes de auditoria; se config ausente, log + return sem quebrar busca
+- `supabase/migrations/20260626170000_hardening_rls_grants_fase_0_4_audit_tables.sql` — migration nova (ENABLE RLS + REVOKE ALL de anon/authenticated/PUBLIC)
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit` -> exit 0
+- `git diff --stat` -> `appscript/CEP-APIBACK.gs` 27 ins, 95 del (diff concentrado nas funcoes alvo)
+- Busca por escritas diretas restantes: zero ocorrencias de escrita via anon key em geocoding_audit ou search_execution_audit no codigo funcional (.gs e src/)
+- Validacao banco (via usuario): RLS OFF, grants ALL para anon/authenticated, sem policies, 15 views dependentes
+
+**Estado da migration:**
+- Migration criada mas NAO aplicada no banco. Aguarda autorizacao do usuario para aplicar.
+
+**Pendencias:**
+- Aplicar migration no banco (autorizacao pendente)
+- Validar no banco apos aplicar: RLS ON, anon/authenticated sem privilegios
+- Configurar `LE_BEBE_APP_URL` e `LE_BEBE_API_TOKEN` na planilha backend (sheet id 718532388) para que o Apps Script use a rota segura
+- Auditar e decidir grants/security das 15 views dependentes (etapa futura)
+- Testar rota segura com dev server ativo (testes anteriores passaram: 401 sem token, 200 com token para ambos tipos)
+
+**Riscos conhecidos:**
+- As 15 views dependentes ainda tem grants para anon/authenticated. Leitura indireta via views permanece possivel ate etapa futura.
+- Se `LE_BEBE_APP_URL`/`LE_BEBE_API_TOKEN` nao estiverem na planilha, auditoria fica silenciada (nao quebra busca, mas nao grava)
+
+**Proximo passo recomendado:** Aplicar migration no banco. Configurar chaves na planilha backend. Planejar etapa de hardening das views dependentes.
+
+---
+
 ## 2026-06-26 - Cascade - Etapa 0.4 prep: rota segura + patch Apps Script para auditoria legado
 
 **Resumo:** Restaurado `appscript/CEP-APIBACK.gs` do Git (problema de encoding do agente anterior resolvido). Criada rota Next.js `POST /api/procurar-datas/auditoria-legado` que recebe inserts de auditoria do Apps Script via Bearer token (`APPS_SCRIPT_API_TOKEN`) e grava via service role. Aplicado patch minimo nas funcoes `RegistrarGeocodingAudit_` e `RegistrarExecucaoPesquisaAudit_` para tentar a rota segura primeiro, com fallback automatico para Supabase REST direto (legado) se as configs `LE_BEBE_APP_URL` e `LE_BEBE_API_TOKEN` nao estiverem na planilha backend. Adicionada funcao `_getAppAuditConfig_()` para ler essas configs. Nenhuma migration, RLS, grant ou policy foi alterada.

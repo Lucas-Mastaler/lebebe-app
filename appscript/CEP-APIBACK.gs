@@ -3568,63 +3568,29 @@ function RegistrarGeocodingAudit_(hashKey, addrDisplay, cacheHit, provider, conf
       duration_ms: durationMs ? Math.round(durationMs) : null
     };
 
-    // Tentar rota Next.js segura primeiro
     var appCfg = _getAppAuditConfig_();
-    if (appCfg) {
-      var url = appCfg.url + '/api/procurar-datas/auditoria-legado';
-      var options = {
-        method: 'post',
-        contentType: 'application/json',
-        headers: { 'Authorization': 'Bearer ' + appCfg.token },
-        payload: JSON.stringify({ tipo: 'geocoding', payload: auditPayload }),
-        muteHttpExceptions: true,
-        timeout: 500
-      };
-      var t0 = Date.now();
-      var response = UrlFetchApp.fetch(url, options);
-      var dt = Date.now() - t0;
-      var code = response.getResponseCode();
-      if (code >= 200 && code < 300) {
-        Logger.log('[AUDIT] Registrado via app em ' + dt + 'ms: cache_hit=' + cacheHit + ' provider=' + provider);
-      } else {
-        Logger.log('[AUDIT] Erro HTTP ' + code + ' via app (' + dt + 'ms): ' + response.getContentText().substring(0, 200));
-      }
+    if (!appCfg) {
+      Logger.log('[AUDIT] Config LE_BEBE_APP_URL/LE_BEBE_API_TOKEN ausente, pulando registro');
       return;
     }
 
-    // Fallback: Supabase REST direto (legado, enquanto config nao estiver pronta)
-    var SUPABASE_URL = getSupabaseUrl_();
-    var SUPABASE_ANON_KEY = getSupabaseKey_();
-    
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      Logger.log('[AUDIT] Supabase nao configurado, pulando registro');
-      return;
-    }
-    
-    var url2 = SUPABASE_URL + '/rest/v1/geocoding_audit';
-    
-    var options2 = {
+    var url = appCfg.url + '/api/procurar-datas/auditoria-legado';
+    var options = {
       method: 'post',
       contentType: 'application/json',
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-        'Prefer': 'return=minimal'
-      },
-      payload: JSON.stringify(auditPayload),
+      headers: { 'Authorization': 'Bearer ' + appCfg.token },
+      payload: JSON.stringify({ tipo: 'geocoding', payload: auditPayload }),
       muteHttpExceptions: true,
       timeout: 500
     };
-    
-    var t02 = Date.now();
-    var response2 = UrlFetchApp.fetch(url2, options2);
-    var dt2 = Date.now() - t02;
-    var code2 = response2.getResponseCode();
-    
-    if (code2 >= 200 && code2 < 300) {
-      Logger.log('[AUDIT] Registrado (legado) em ' + dt2 + 'ms: cache_hit=' + cacheHit + ' provider=' + provider);
+    var t0 = Date.now();
+    var response = UrlFetchApp.fetch(url, options);
+    var dt = Date.now() - t0;
+    var code = response.getResponseCode();
+    if (code >= 200 && code < 300) {
+      Logger.log('[AUDIT] Registrado via app em ' + dt + 'ms: cache_hit=' + cacheHit + ' provider=' + provider);
     } else {
-      Logger.log('[AUDIT] Erro HTTP ' + code2 + ' (legado, ' + dt2 + 'ms): ' + response2.getContentText().substring(0, 200));
+      Logger.log('[AUDIT] Erro HTTP ' + code + ' via app (' + dt + 'ms): ' + response.getContentText().substring(0, 200));
     }
     
   } catch(e) {
@@ -3639,63 +3605,29 @@ function RegistrarGeocodingAudit_(hashKey, addrDisplay, cacheHit, provider, conf
 
 function RegistrarExecucaoPesquisaAudit_(payload) {
   try {
-    // Tentar rota Next.js segura primeiro
     var appCfg = _getAppAuditConfig_();
-    if (appCfg) {
-      var url = appCfg.url + '/api/procurar-datas/auditoria-legado';
-      var options = {
-        method: 'post',
-        contentType: 'application/json',
-        headers: { 'Authorization': 'Bearer ' + appCfg.token },
-        payload: JSON.stringify({ tipo: 'search_execution', payload: payload || {} }),
-        muteHttpExceptions: true,
-        timeout: 500
-      };
-      var t0 = Date.now();
-      var response = UrlFetchApp.fetch(url, options);
-      var dt = Date.now() - t0;
-      var code = response.getResponseCode();
-      if (code >= 200 && code < 300) {
-        Logger.log('[SEARCH-AUDIT] Registrado via app em ' + dt + 'ms: status=' + (payload && payload.status) + ' duration_ms=' + (payload && payload.total_duration_ms));
-      } else {
-        Logger.log('[SEARCH-AUDIT] Erro HTTP ' + code + ' via app (' + dt + 'ms): ' + response.getContentText().substring(0, 200));
-      }
+    if (!appCfg) {
+      Logger.log('[SEARCH-AUDIT] Config LE_BEBE_APP_URL/LE_BEBE_API_TOKEN ausente, pulando registro');
       return;
     }
 
-    // Fallback: Supabase REST direto (legado, enquanto config nao estiver pronta)
-    var SUPABASE_URL = getSupabaseUrl_();
-    var SUPABASE_ANON_KEY = getSupabaseKey_();
-
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      Logger.log('[SEARCH-AUDIT] Supabase nao configurado, pulando registro');
-      return;
-    }
-
-    var url2 = SUPABASE_URL + '/rest/v1/search_execution_audit';
-
-    var options2 = {
+    var url = appCfg.url + '/api/procurar-datas/auditoria-legado';
+    var options = {
       method: 'post',
       contentType: 'application/json',
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
-        'Prefer': 'return=minimal'
-      },
-      payload: JSON.stringify(payload || {}),
+      headers: { 'Authorization': 'Bearer ' + appCfg.token },
+      payload: JSON.stringify({ tipo: 'search_execution', payload: payload || {} }),
       muteHttpExceptions: true,
       timeout: 500
     };
-
-    var t02 = Date.now();
-    var response2 = UrlFetchApp.fetch(url2, options2);
-    var dt2 = Date.now() - t02;
-    var code2 = response2.getResponseCode();
-
-    if (code2 >= 200 && code2 < 300) {
-      Logger.log('[SEARCH-AUDIT] Registrado (legado) em ' + dt2 + 'ms: status=' + (payload && payload.status) + ' duration_ms=' + (payload && payload.total_duration_ms));
+    var t0 = Date.now();
+    var response = UrlFetchApp.fetch(url, options);
+    var dt = Date.now() - t0;
+    var code = response.getResponseCode();
+    if (code >= 200 && code < 300) {
+      Logger.log('[SEARCH-AUDIT] Registrado via app em ' + dt + 'ms: status=' + (payload && payload.status) + ' duration_ms=' + (payload && payload.total_duration_ms));
     } else {
-      Logger.log('[SEARCH-AUDIT] Erro HTTP ' + code2 + ' (legado, ' + dt2 + 'ms): ' + response2.getContentText().substring(0, 200));
+      Logger.log('[SEARCH-AUDIT] Erro HTTP ' + code + ' via app (' + dt + 'ms): ' + response.getContentText().substring(0, 200));
     }
   } catch(e) {
     // Timeout ou erro de rede não deve derrubar o fluxo
@@ -3709,7 +3641,7 @@ function RegistrarExecucaoPesquisaAudit_(payload) {
 
 /**
  * Le config da planilha backend para rota de auditoria segura.
- * Retorna { url, token } se ambas as chaves estiverem configuradas, ou null para fallback legado.
+ * Retorna { url, token } se ambas as chaves estiverem configuradas, ou null se ausentes.
  */
 function _getAppAuditConfig_() {
   try {

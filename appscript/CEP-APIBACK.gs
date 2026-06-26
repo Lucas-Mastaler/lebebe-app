@@ -3557,7 +3557,7 @@ function RegistrarGeocodingAudit_(hashKey, addrDisplay, cacheHit, provider, conf
     var userEmail = '';
     try { userEmail = Session.getActiveUser().getEmail(); } catch(e) {}
     
-    var payload = {
+    var auditPayload = {
       chave_endereco: hashKey,
       endereco_completo: addrDisplay,
       cache_hit: cacheHit,
@@ -3567,19 +3567,43 @@ function RegistrarGeocodingAudit_(hashKey, addrDisplay, cacheHit, provider, conf
       origin: origin || 'MODAL',
       duration_ms: durationMs ? Math.round(durationMs) : null
     };
-    
-    // Enviar para Supabase REST API
+
+    // Tentar rota Next.js segura primeiro
+    var appCfg = _getAppAuditConfig_();
+    if (appCfg) {
+      var url = appCfg.url + '/api/procurar-datas/auditoria-legado';
+      var options = {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { 'Authorization': 'Bearer ' + appCfg.token },
+        payload: JSON.stringify({ tipo: 'geocoding', payload: auditPayload }),
+        muteHttpExceptions: true,
+        timeout: 500
+      };
+      var t0 = Date.now();
+      var response = UrlFetchApp.fetch(url, options);
+      var dt = Date.now() - t0;
+      var code = response.getResponseCode();
+      if (code >= 200 && code < 300) {
+        Logger.log('[AUDIT] Registrado via app em ' + dt + 'ms: cache_hit=' + cacheHit + ' provider=' + provider);
+      } else {
+        Logger.log('[AUDIT] Erro HTTP ' + code + ' via app (' + dt + 'ms): ' + response.getContentText().substring(0, 200));
+      }
+      return;
+    }
+
+    // Fallback: Supabase REST direto (legado, enquanto config nao estiver pronta)
     var SUPABASE_URL = getSupabaseUrl_();
     var SUPABASE_ANON_KEY = getSupabaseKey_();
     
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      Logger.log('[AUDIT] ⚠️ Supabase não configurado, pulando registro');
+      Logger.log('[AUDIT] Supabase nao configurado, pulando registro');
       return;
     }
     
-    var url = SUPABASE_URL + '/rest/v1/geocoding_audit';
+    var url2 = SUPABASE_URL + '/rest/v1/geocoding_audit';
     
-    var options = {
+    var options2 = {
       method: 'post',
       contentType: 'application/json',
       headers: {
@@ -3587,45 +3611,70 @@ function RegistrarGeocodingAudit_(hashKey, addrDisplay, cacheHit, provider, conf
         'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
         'Prefer': 'return=minimal'
       },
-      payload: JSON.stringify(payload),
+      payload: JSON.stringify(auditPayload),
       muteHttpExceptions: true,
-      timeout: 500  // ✅ OTIMIZAÇÃO: timeout de 500ms (não bloqueia por mais tempo)
+      timeout: 500
     };
     
-    var t0 = Date.now();
-    var response = UrlFetchApp.fetch(url, options);
-    var dt = Date.now() - t0;
-    var code = response.getResponseCode();
+    var t02 = Date.now();
+    var response2 = UrlFetchApp.fetch(url2, options2);
+    var dt2 = Date.now() - t02;
+    var code2 = response2.getResponseCode();
     
-    if (code >= 200 && code < 300) {
-      Logger.log('[AUDIT] ✅ Registrado em ' + dt + 'ms: cache_hit=' + cacheHit + ' provider=' + provider);
+    if (code2 >= 200 && code2 < 300) {
+      Logger.log('[AUDIT] Registrado (legado) em ' + dt2 + 'ms: cache_hit=' + cacheHit + ' provider=' + provider);
     } else {
-      Logger.log('[AUDIT] ⚠️ Erro HTTP ' + code + ' (' + dt + 'ms): ' + response.getContentText().substring(0, 200));
+      Logger.log('[AUDIT] Erro HTTP ' + code2 + ' (legado, ' + dt2 + 'ms): ' + response2.getContentText().substring(0, 200));
     }
     
   } catch(e) {
     // Timeout ou erro de rede não deve derrubar o fluxo
     if (e && e.message && e.message.indexOf('Timeout') >= 0) {
-      Logger.log('[AUDIT] ⏱️ Timeout (>500ms), mas operação continua');
+      Logger.log('[AUDIT] Timeout (>500ms), mas operacao continua');
     } else {
-      Logger.log('[AUDIT] ❌ Erro ao registrar: ' + (e && e.message));
+      Logger.log('[AUDIT] Erro ao registrar: ' + (e && e.message));
     }
   }
 }
 
 function RegistrarExecucaoPesquisaAudit_(payload) {
   try {
+    // Tentar rota Next.js segura primeiro
+    var appCfg = _getAppAuditConfig_();
+    if (appCfg) {
+      var url = appCfg.url + '/api/procurar-datas/auditoria-legado';
+      var options = {
+        method: 'post',
+        contentType: 'application/json',
+        headers: { 'Authorization': 'Bearer ' + appCfg.token },
+        payload: JSON.stringify({ tipo: 'search_execution', payload: payload || {} }),
+        muteHttpExceptions: true,
+        timeout: 500
+      };
+      var t0 = Date.now();
+      var response = UrlFetchApp.fetch(url, options);
+      var dt = Date.now() - t0;
+      var code = response.getResponseCode();
+      if (code >= 200 && code < 300) {
+        Logger.log('[SEARCH-AUDIT] Registrado via app em ' + dt + 'ms: status=' + (payload && payload.status) + ' duration_ms=' + (payload && payload.total_duration_ms));
+      } else {
+        Logger.log('[SEARCH-AUDIT] Erro HTTP ' + code + ' via app (' + dt + 'ms): ' + response.getContentText().substring(0, 200));
+      }
+      return;
+    }
+
+    // Fallback: Supabase REST direto (legado, enquanto config nao estiver pronta)
     var SUPABASE_URL = getSupabaseUrl_();
     var SUPABASE_ANON_KEY = getSupabaseKey_();
 
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      Logger.log('[SEARCH-AUDIT] ⚠️ Supabase não configurado, pulando registro');
+      Logger.log('[SEARCH-AUDIT] Supabase nao configurado, pulando registro');
       return;
     }
 
-    var url = SUPABASE_URL + '/rest/v1/search_execution_audit';
+    var url2 = SUPABASE_URL + '/rest/v1/search_execution_audit';
 
-    var options = {
+    var options2 = {
       method: 'post',
       contentType: 'application/json',
       headers: {
@@ -3635,26 +3684,46 @@ function RegistrarExecucaoPesquisaAudit_(payload) {
       },
       payload: JSON.stringify(payload || {}),
       muteHttpExceptions: true,
-      timeout: 500  // ✅ OTIMIZAÇÃO: timeout de 500ms (não bloqueia por mais tempo)
+      timeout: 500
     };
 
-    var t0 = Date.now();
-    var response = UrlFetchApp.fetch(url, options);
-    var dt = Date.now() - t0;
-    var code = response.getResponseCode();
+    var t02 = Date.now();
+    var response2 = UrlFetchApp.fetch(url2, options2);
+    var dt2 = Date.now() - t02;
+    var code2 = response2.getResponseCode();
 
-    if (code >= 200 && code < 300) {
-      Logger.log('[SEARCH-AUDIT] ✅ Registrado em ' + dt + 'ms: status=' + (payload && payload.status) + ' duration_ms=' + (payload && payload.total_duration_ms));
+    if (code2 >= 200 && code2 < 300) {
+      Logger.log('[SEARCH-AUDIT] Registrado (legado) em ' + dt2 + 'ms: status=' + (payload && payload.status) + ' duration_ms=' + (payload && payload.total_duration_ms));
     } else {
-      Logger.log('[SEARCH-AUDIT] ⚠️ Erro HTTP ' + code + ' (' + dt + 'ms): ' + response.getContentText().substring(0, 200));
+      Logger.log('[SEARCH-AUDIT] Erro HTTP ' + code2 + ' (legado, ' + dt2 + 'ms): ' + response2.getContentText().substring(0, 200));
     }
   } catch(e) {
     // Timeout ou erro de rede não deve derrubar o fluxo
     if (e && e.message && e.message.indexOf('Timeout') >= 0) {
-      Logger.log('[SEARCH-AUDIT] ⏱️ Timeout (>500ms), mas operação continua');
+      Logger.log('[SEARCH-AUDIT] Timeout (>500ms), mas operacao continua');
     } else {
-      Logger.log('[SEARCH-AUDIT] ❌ Erro ao registrar: ' + (e && e.message));
+      Logger.log('[SEARCH-AUDIT] Erro ao registrar: ' + (e && e.message));
     }
+  }
+}
+
+/**
+ * Le config da planilha backend para rota de auditoria segura.
+ * Retorna { url, token } se ambas as chaves estiverem configuradas, ou null para fallback legado.
+ */
+function _getAppAuditConfig_() {
+  try {
+    var ssSrc = abrirPlanilhaFonte_();
+    var cfgSheet = ssSrc.getSheets().find(function(s){ return s.getSheetId() === 718532388; });
+    if (!cfgSheet) return null;
+    var url = '';
+    var token = '';
+    try { url = getConfig('LE_BEBE_APP_URL', cfgSheet); } catch(e) {}
+    try { token = getConfig('LE_BEBE_API_TOKEN', cfgSheet); } catch(e) {}
+    if (!url || !token) return null;
+    return { url: url.replace(/\/+$/, ''), token: token };
+  } catch(e) {
+    return null;
   }
 }
 

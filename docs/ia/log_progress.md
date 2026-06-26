@@ -1,3 +1,135 @@
+## 2026-06-26 - Cascade - Etapa 0.4 prep: rota segura + patch Apps Script para auditoria legado
+
+**Resumo:** Restaurado `appscript/CEP-APIBACK.gs` do Git (problema de encoding do agente anterior resolvido). Criada rota Next.js `POST /api/procurar-datas/auditoria-legado` que recebe inserts de auditoria do Apps Script via Bearer token (`APPS_SCRIPT_API_TOKEN`) e grava via service role. Aplicado patch minimo nas funcoes `RegistrarGeocodingAudit_` e `RegistrarExecucaoPesquisaAudit_` para tentar a rota segura primeiro, com fallback automatico para Supabase REST direto (legado) se as configs `LE_BEBE_APP_URL` e `LE_BEBE_API_TOKEN` nao estiverem na planilha backend. Adicionada funcao `_getAppAuditConfig_()` para ler essas configs. Nenhuma migration, RLS, grant ou policy foi alterada.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/diagnostico-fase-0-4-geocoding-search-audit.md`
+- `appscript/CEP-APIBACK.gs` (funcoes RegistrarGeocodingAudit_, RegistrarExecucaoPesquisaAudit_, getSupabaseUrl_, getSupabaseKey_)
+- `appscript/CEP-CONFIG.gs` (getConfig, planilha de config)
+- `src/app/api/procurar-datas/auditoria-legado/route.ts`
+- `src/lib/auth/bearer-auth.ts` (validarBearerToken)
+- `src/lib/supabase/service.ts`
+
+**Arquivos alterados:**
+- `appscript/CEP-APIBACK.gs` — patch em RegistrarGeocodingAudit_, RegistrarExecucaoPesquisaAudit_, nova funcao _getAppAuditConfig_
+- `src/app/api/procurar-datas/auditoria-legado/route.ts` — refatorado para usar validarBearerToken do helper compartilhado
+
+**Arquivos criados anteriormente (mantidos):**
+- `src/app/api/procurar-datas/auditoria-legado/route.ts` — rota POST com validacao Bearer, validacao de payload, insercao via service role
+
+**Git:**
+- `git restore appscript/CEP-APIBACK.gs` executado com sucesso (sem index.lock)
+- `git diff --stat` mostra apenas `appscript/CEP-APIBACK.gs` (129 +/-) e `docs/ia/log_progress.md` (82 +)
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit` -> exit 0
+- `git diff -- appscript/CEP-APIBACK.gs` mostra apenas alteracoes nas 3 funcoes alvo
+
+**Comportamento do patch Apps Script:**
+1. `_getAppAuditConfig_()` le `LE_BEBE_APP_URL` e `LE_BEBE_API_TOKEN` da planilha backend (sheet id 718532388)
+2. Se ambas existirem: chama `POST /api/procurar-datas/auditoria-legado` com Bearer token
+3. Se nao existirem (config ausente): fallback transparente para Supabase REST direto com anon key (comportamento atual)
+4. Falha na auditoria nunca derruba o fluxo de busca (mesmo comportamento anterior)
+
+**Pendencias operacionais:**
+- Adicionar na planilha backend (sheet id 718532388) as chaves:
+  - `LE_BEBE_APP_URL` = URL do app Next.js (ex: `https://le-bebe.vercel.app`)
+  - `LE_BEBE_API_TOKEN` = mesmo valor de `APPS_SCRIPT_API_TOKEN` configurado no `.env.local`/Vercel
+- Ate que essas chaves estejam configuradas, o Apps Script continua usando o fallback legado (Supabase REST com anon key)
+- Depois de configurar e validar, os grants de anon/authenticated podem ser revogados (Etapa 0.4 final)
+
+**Riscos conhecidos:**
+- Se `LE_BEBE_API_TOKEN` na planilha nao coincidir com `APPS_SCRIPT_API_TOKEN` no servidor, a rota retorna 401 e o Apps Script cai no fallback legado (sem quebra)
+- Se a URL estiver errada, timeout de 500ms e fallback legado (sem quebra)
+- O fallback legado continua usando anon key ate ser desativado manualmente
+
+**Proximo passo recomendado:** Configurar `LE_BEBE_APP_URL` e `LE_BEBE_API_TOKEN` na planilha backend. Testar uma pesquisa pelo Apps Script e confirmar nos logs que usa "via app". Depois, preparar migration da Etapa 0.4 final (RLS + revoke nas duas tabelas).
+
+---
+
+## 2026-06-26 - Codex - Etapa 0.4: diagnostico geocoding_audit e search_execution_audit (somente plano)
+
+**Resumo:** Executado diagnostico da Etapa 0.4 da Fase 0 de seguranca para `geocoding_audit` e `search_execution_audit`. Nenhum SQL, migration, RLS, grant, policy, codigo TypeScript, middleware, API, Apps Script ou logica de `/procurar-datas` foi alterado. Criado documento de entrega com validacao MCP, uso real no codigo, classificacao de risco e proposta tecnica. Conclusao: as duas tabelas nao estao seguras para RLS + revoke imediato porque o Apps Script legado insere nelas via Supabase REST usando `SUPABASE_ANON_KEY`.
+
+**Arquivos lidos:**
+- `C:\Users\lebeb\.codex\attachments\3883d0f6-93b5-45d1-ae67-8e87978bf467\pasted-text.txt`
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `appscript/CEP-APIBACK.gs`
+- `appscript/CEP-CONFIG.gs`
+- `src/lib/procurar-datas/v2/auditoria-search.ts`
+- `src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts`
+- `src/lib/procurar-datas/api.ts`
+- `src/lib/auth/sgi-auth.ts`
+- `src/lib/supabase/service.ts`
+
+**Arquivo criado:**
+- `docs/ia/diagnostico-fase-0-4-geocoding-search-audit.md`
+
+**Arquivos alterados:**
+- `docs/ia/log_progress.md`
+
+**Validacoes MCP Supabase:**
+- `geocoding_audit`: existe, RLS OFF, owner `postgres`, ~35.604 linhas, sem policies, sem triggers, PK em `id`, 8 indices, grants ALL para `anon`, `authenticated` e `service_role`, sem grant direto para `PUBLIC`.
+- `search_execution_audit`: existe, RLS OFF, owner `postgres`, ~1.010 linhas, sem policies, sem triggers, PK em `id`, 6 indices, grants ALL para `anon`, `authenticated` e `service_role`, sem grant direto para `PUBLIC`.
+- Constraints: PKs e constraints de not-null; nenhuma FK confirmada.
+- Funcoes relacionadas por corpo SQL: nenhuma confirmada.
+- Views relacionadas: 10 views dependem de `geocoding_audit` e 5 dependem de `search_execution_audit`; todas as 15 tem `SELECT` para `anon` e `authenticated`.
+- Advisors: `rls_disabled_in_public` para `geocoding_audit` e `search_execution_audit`; tambem ha advisors de `security_definer_view` em views de performance/cache relacionadas.
+
+**Uso real confirmado no codigo:**
+- `appscript/CEP-APIBACK.gs`: `RegistrarGeocodingAudit_` insere em `/rest/v1/geocoding_audit` com `SUPABASE_ANON_KEY`.
+- `appscript/CEP-APIBACK.gs`: `RegistrarExecucaoPesquisaAudit_` insere em `/rest/v1/search_execution_audit` com `SUPABASE_ANON_KEY`.
+- `appscript/CEP-APIBACK.gs`: chamadas de `RegistrarGeocodingAudit_` nos caminhos de hit L1, hit Supabase e chamada provider.
+- `appscript/CEP-APIBACK.gs`: chamadas de `RegistrarExecucaoPesquisaAudit_` nos caminhos de sucesso/cache/erro de pesquisa.
+- `src/lib/procurar-datas/v2/auditoria-search.ts`: `registrarAuditoriaSearchV2` insere em `search_execution_audit` via `createServiceClient()` / `SUPABASE_SERVICE_ROLE_KEY`.
+- `src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts`: chama `registrarAuditoriaSearchV2` em sucesso e erro, depois de `validarAcessoProcurarDatas()`.
+- `src/`: nenhuma referencia direta a `geocoding_audit` confirmada.
+
+**Classificacao de risco:**
+- `geocoding_audit`: 3. Nao segura para alterar ainda. Ha insert confirmado pelo Apps Script legado via anon key.
+- `search_execution_audit`: 3. Nao segura para alterar ainda. A v2 usa service role, mas o legado Apps Script insere via anon key.
+
+**Proposta tecnica registrada:**
+- Opcao D para as duas tabelas: criar/substituir caminho server-side seguro para as escritas do Apps Script antes de fechar grants.
+- SQL de RLS/revoke foi documentado apenas como proposta futura, nao aplicado.
+- Views dependentes devem ser avaliadas junto da implementacao futura, porque podem manter leitura indireta via grants publicos/security definer.
+
+**Comandos rodados e resultados:**
+- `rg -n --hidden -S "Etapa 0\\.4|0\\.4|hardening|RLS|grants|fase_0_3|fase 0" .` -> encontrou docs/migrations/logs relacionados.
+- `rg -n --hidden -S "geocoding_audit" src appscript supabase docs` -> confirmou uso em Apps Script/docs; zero uso funcional direto em `src`.
+- `rg -n --hidden -S "search_execution_audit" src appscript supabase docs` -> confirmou uso em Apps Script e `src/lib/procurar-datas/v2/auditoria-search.ts`.
+- `rg -n --hidden -S "createServiceClient" src appscript` -> confirmou helper service role em `auditoria-search.ts` e outros pontos nao relacionados.
+- `rg -n --hidden -S "SUPABASE_SERVICE_ROLE_KEY|SUPABASE_URL|SUPABASE_ANON|anon key|service role|Bearer|apikey" src appscript` -> confirmou Apps Script usando `SUPABASE_ANON_KEY` em headers REST.
+- `rg -n --hidden -F "geocoding_audit" src` -> sem ocorrencias.
+- `rg -n --hidden -F "search_execution_audit" src` -> uma ocorrencia funcional no helper v2.
+- Uma busca com regex complexa no PowerShell falhou por parsing de aspas/parênteses; foi reexecutada em buscas menores com `rg -F`.
+- Uma consulta MCP em `information_schema.role_table_grants` usou nomes de colunas invalidos; foi substituida por consulta em `information_schema.table_privileges`, que confirmou nenhum grant direto para `PUBLIC`.
+
+**Validacoes nao realizadas:**
+- `npx tsc --noEmit` nao foi rodado porque nao houve alteracao de codigo.
+- Nenhum teste automatizado foi rodado porque a tarefa foi somente diagnostico/documentacao.
+- Nenhuma chamada real de `/procurar-datas`, Apps Script ou browser foi executada.
+
+**Pendencias:**
+- Confirmar decisao de produto/operacao sobre manter telemetria legada via Apps Script.
+- Definir rota/helper server-side ou outro mecanismo para o Apps Script parar de usar `SUPABASE_ANON_KEY` nessas escritas.
+- Auditar uso real das 15 views dependentes antes de revogar grants nelas.
+- Confirmar se docs antigos que citavam uso Next.js de `geocoding_audit` estao desatualizados; nesta leitura, isso nao foi confirmado no codigo.
+
+**Riscos conhecidos:**
+- Se aplicar RLS + revoke agora, inserts do Apps Script legado em `geocoding_audit` e `search_execution_audit` tendem a falhar.
+- Se fechar apenas as tabelas e ignorar views dependentes, pode restar leitura indireta por views com grants publicos/security definer.
+- Manter estado atual preserva funcionamento, mas mantem risco critico de leitura/escrita por `anon` e `authenticated`.
+
+**Proximo passo recomendado:** Criar tarefa especifica para substituir as escritas do Apps Script nessas duas tabelas por caminho server-side seguro. Depois disso, preparar migration da Etapa 0.4 incluindo RLS/revoke das tabelas e decisao explicita sobre views dependentes.
+
+---
+
 ## 2026-06-26 - Cascade - Etapa 0.3: RLS + revoke grants em 4 tabelas service-role-only (APLICADA)
 
 **Resumo:** Migration criada, revisada e aplicada via MCP no banco de producao do Le Bebe App. RLS habilitado e grants de anon/authenticated revogados em 4 tabelas acessadas exclusivamente via service role: sessoes_logout_automatico, geo_cache, provider_costs, forex_config. Nenhuma policy permissiva criada. Nenhum codigo TypeScript, API ou middleware alterado.

@@ -1,3 +1,143 @@
+## 2026-06-26 - Codex - Fase 0.5L: desativacao de rotas autocomplete legadas
+
+**Resumo:** Confirmado por busca no codigo que `GET /api/autocomplete/users` e `GET /api/autocomplete/departments` nao possuem consumidor real em `src/app`, `src/components` ou `src/lib`. As rotas ativas usadas pelas telas internas sao `GET /api/users` e `GET /api/departments`, ja protegidas por `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true })`. As rotas autocomplete legadas foram desativadas com resposta `410 Gone` e deixaram de chamar Digisac.
+
+**Diagnostico antes da alteracao:**
+- `src/app/api/autocomplete/users/route.ts` aceitava `q`, montava query Digisac `/users?query=...` e retornava `{ id, name }[]` sem auth.
+- `src/app/api/autocomplete/departments/route.ts` aceitava `q`, montava query Digisac `/departments?query=...` e retornava `{ id, name }[]` sem auth.
+- `src/app/api/users/route.ts` e `src/app/api/departments/route.ts` sao as rotas ativas para filtros internos e ja exigem usuario autenticado permitido e ativo.
+- `src/components/AgendamentosPage.tsx` chama `/api/departments`.
+- `src/components/FiltrosAgendamentos.tsx`, `src/components/dashboard/FiltrosDashboard.tsx` e `src/components/chamados/FiltrosChamadosFinalizados.tsx` chamam `/api/users`.
+- Nenhuma chamada a `/api/autocomplete/users` ou `/api/autocomplete/departments` foi confirmada em codigo funcional.
+
+**Decisao tomada:**
+- A preferencia inicial era remover os arquivos, mas a exclusao fisica foi bloqueada pelo filesystem/OneDrive (`Access denied`, arquivos com atributo `SparsePoint`).
+- Para manter seguranca sem alterar telas, as rotas foram desativadas com `410 Gone`.
+- A desativacao remove o proxy aberto para Digisac e preserva uma resposta controlada caso exista algum consumidor externo nao confirmado.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/checkpoint-fase-0-5j-rotas-restantes-auth.md`
+- `src/app/api/autocomplete/users/route.ts`
+- `src/app/api/autocomplete/departments/route.ts`
+- `src/app/api/users/route.ts`
+- `src/app/api/departments/route.ts`
+- `src/components/AgendamentosPage.tsx`
+- `src/app/dashboard/page.tsx`
+- `src/app/chamados-finalizados/page.tsx`
+- `src/components/FiltrosAgendamentos.tsx`
+- `src/components/dashboard/FiltrosDashboard.tsx`
+- `src/components/chamados/FiltrosChamadosFinalizados.tsx`
+
+**Arquivos alterados:**
+- `src/app/api/autocomplete/users/route.ts`
+- `src/app/api/autocomplete/departments/route.ts`
+- `docs/ia/log_progress.md`
+
+**Comandos rodados e resultados:**
+- `rg -n -S "/api/autocomplete/users|/api/autocomplete/departments|autocomplete/users|autocomplete/departments|api/autocomplete|autocomplete" . --glob '!node_modules/**' --glob '!.next/**' --glob '!docs/ia/log_progress.md'` -> encontrou apenas referencias documentais, arquivos temporarios de lint e as proprias rotas.
+- `rg -n -S "/api/users|/api/departments|api/users|api/departments" src/app src/components src/lib` -> confirmou consumidores das rotas ativas protegidas.
+- `rg -n -S "fetch\\(|axios|URLSearchParams|departments|users" src/app src/components src/lib --glob '!src/app/api/autocomplete/users/route.ts' --glob '!src/app/api/autocomplete/departments/route.ts'` -> confirmou que os componentes funcionais usam `/api/users` e `/api/departments`, nao `/api/autocomplete/*`.
+- `Remove-Item` nos dois arquivos de rota -> falhou com acesso negado pelo filesystem.
+- `npx tsc --noEmit` -> exit 0, sem erros.
+- `git diff -- src/app/api/autocomplete/users/route.ts src/app/api/autocomplete/departments/route.ts` -> confirmou substituicao por respostas `410 Gone`.
+- `git diff --stat` -> incluiu alteracoes desta fase e alteracoes pendentes da 0.5K.
+- `git status --short` -> confirmou alteracoes em `docs/ia/log_progress.md`, nas duas rotas autocomplete e em `src/app/api/digisac/schedule/route.ts` da fase anterior.
+
+**Validacoes realizadas:**
+- Confirmado que as rotas autocomplete nao importam mais `fetchDigisac` e nao acessam mais Digisac.
+- Confirmado que as telas internas continuam apontando para `/api/users` e `/api/departments`.
+- Confirmado que nao houve alteracao de banco, migrations, RLS, grants, policies, middleware, telas, `/horarios-agendamentos`, `/api/digisac/schedule` ou `/procurar-datas` nesta fase.
+
+**Pendencias:**
+- Se o bloqueio do OneDrive/filesystem for resolvido, remover fisicamente `src/app/api/autocomplete/users/route.ts` e `src/app/api/autocomplete/departments/route.ts` em tarefa futura.
+- Testar manualmente que `GET /api/autocomplete/users` e `GET /api/autocomplete/departments` retornam 410.
+- Testar manualmente filtros de `/agendamentos`, `/dashboard` e `/chamados-finalizados` para confirmar que seguem usando `/api/users` e `/api/departments`.
+
+**Riscos conhecidos:**
+- Consumidor externo nao confirmado recebera 410 em vez do array anterior.
+- As rotas seguem existindo fisicamente por bloqueio de remocao, mas nao expõem mais dados Digisac.
+
+**Proximo passo recomendado:**
+- Commitar as fases 0.5K/0.5L apos validacao manual basica, ou remover fisicamente as rotas autocomplete quando o filesystem permitir.
+
+---
+
+## 2026-06-26 - Codex - Fase 0.5K: hardening da rota publica de horarios
+
+**Resumo:** Aplicado hardening em `GET /api/digisac/schedule` mantendo a rota publica e sem exigir login. A pagina `/horarios-agendamentos` continua aberta. Nao foi usado `requireAuthenticatedUser`. Nenhum middleware, banco, migration, RLS, grant, policy, tela, webhook, cron, Bearer token ou outra rota Digisac foi alterado.
+
+**Diagnostico antes da alteracao:**
+- `src/middleware.ts` libera `/horarios-agendamentos` como rota publica.
+- `src/app/horarios-agendamentos/page.tsx` renderiza `HorariosAgendamentosPage`.
+- `src/components/HorariosAgendamentosPage.tsx` chama `GET /api/digisac/schedule` com `where[serviceId]`, `where[scheduledAt][$between][0]`, `where[scheduledAt][$between][1]`, `page=1` e `perPage=200`.
+- O `serviceId` usado pela pagina e fixo no codigo: `4af28025-c210-4336-a560-785d2fb8a778`.
+- A tela usa `scheduledAt` para calcular conflitos; `id` e `serviceId` permanecem no tipo. `message` e `status` nao foram confirmados como usados pela tela publica.
+- A rota ja usava `checkRateLimit(request)`, mas aceitava qualquer `serviceId`, datas parseaveis pelo Digisac, `page` e `perPage`.
+- A rota logava `serviceId`, range completo e paginacao. Nao logava token Digisac.
+- `fetchDigisac` loga path/query da chamada sem token; nao foi alterado nesta etapa.
+
+**Alteracoes feitas:**
+- Adicionada allowlist de `serviceId` com o ID publico usado pela tela.
+- Adicionada validacao de formato UUID para `serviceId`.
+- Adicionada validacao estrita de datas ISO UTC com milissegundos.
+- Adicionada rejeicao para range invertido ou vazio.
+- Adicionado limite maximo de range de 31 dias.
+- Adicionada validacao de paginacao como inteiro positivo.
+- Limitado `page` a `1`, compativel com a pagina atual.
+- Limitado `perPage` server-side a no maximo `200`, compativel com a chamada atual da tela.
+- Sanitizada a resposta para retornar apenas `id`, `scheduledAt` e `serviceId`.
+- Adicionado header `Cache-Control: no-store`.
+- Logs da rota deixaram de registrar `serviceId` e datas completas; registram apenas horas aproximadas de range, `page`, `perPage` e total retornado.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `docs/ia/plano-fase-0-5b-migracao-helper-auth-apis.md`
+- `docs/ia/diagnostico-fase-0-5f-rotas-grupo-d-sem-auth.md`
+- `docs/ia/checkpoint-fase-0-5j-rotas-restantes-auth.md`
+- `src/app/horarios-agendamentos/page.tsx`
+- `src/components/HorariosAgendamentosPage.tsx`
+- `src/components/FiltrosHorariosAgendamentos.tsx`
+- `src/components/ListaHorariosDisponiveis.tsx`
+- `src/app/api/digisac/schedule/route.ts`
+- `src/lib/digisac/clienteDigisac.ts`
+- `src/lib/ratelimit.ts`
+
+**Arquivos alterados:**
+- `src/app/api/digisac/schedule/route.ts`
+- `docs/ia/log_progress.md`
+
+**Comandos rodados e resultados:**
+- `rg -n -S "SERVICE_ID|where\\[serviceId\\]|digisac/schedule|HorariosAgendamentosPage|scheduledAt|message|status" src/app src/components src/lib` -> confirmou chamada da tela publica e campos usados.
+- `git diff -- src/app/api/digisac/schedule/route.ts` -> confirmou patch restrito a validacao, sanitizacao de resposta, logs e cache header da rota.
+- `npx tsc --noEmit` -> primeira execucao falhou por `implicit any` na sanitizacao; segunda falhou por residuo sintatico do patch; execucao final passou com exit 0.
+- `git diff --stat` -> para a rota, `src/app/api/digisac/schedule/route.ts | 120 ++++++++++++++++++++++++++++++----`.
+
+**Validacoes realizadas:**
+- Confirmado que a rota continua publica, sem sessao e sem `requireAuthenticatedUser`.
+- Confirmado que o `serviceId` possui allowlist baseada no ID fixo usado pela pagina publica.
+- Confirmado que a chamada atual da tela (`page=1`, `perPage=200`, datas ISO via `toISOString()`) continua compativel.
+- Confirmado que o payload de sucesso preserva `items` e `meta`, mas os itens agora sao reduzidos a `id`, `scheduledAt` e `serviceId`.
+- Confirmado que nao houve alteracao de UI, middleware, banco, migrations, RLS, grants, policies, webhooks, cron, Bearer token ou outras rotas Digisac.
+
+**Pendencias:**
+- Teste manual sem login em `/horarios-agendamentos` nao foi executado nesta etapa.
+- Validar manualmente chamadas com parametros ausentes, data invalida, range excessivo, `serviceId` fora da allowlist, `page` diferente de `1` e `perPage` alto.
+- Avaliar se `fetchDigisac` deve reduzir logs de query para endpoints publicos em tarefa futura.
+- Decidir remocao/desativacao das rotas legadas `GET /api/autocomplete/users` e `GET /api/autocomplete/departments`.
+
+**Riscos conhecidos:**
+- A rota segue publica por decisao de produto.
+- `perPage=200` foi preservado como teto para compatibilidade com a tela atual; um teto menor exigiria validar volume real de agendamentos do dia.
+- A resposta deixou de expor `message` e `status`; a tela publica atual nao usa esses campos, mas consumidor externo nao confirmado poderia depender deles.
+
+**Proximo passo recomendado:**
+- Testar manualmente `/horarios-agendamentos` sem login e, em seguida, executar uma etapa separada para remover/desativar ou proteger as rotas autocomplete legadas.
+
+---
+
 ## 2026-06-26 - Codex - Fase 0.5J: checkpoint de rotas restantes auth
 
 **Resumo:** Criado checkpoint somente leitura das rotas restantes de autenticacao apos 0.5G, 0.5H e 0.5I. Nenhum codigo funcional, rota, middleware, banco, migration, RLS, grant, policy, tela, payload de sucesso ou regra de negocio foi alterado.

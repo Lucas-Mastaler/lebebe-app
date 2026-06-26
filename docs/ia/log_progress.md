@@ -1,3 +1,67 @@
+## 2026-06-26 - Cascade - Etapa 0.3: RLS + revoke grants em 4 tabelas service-role-only (APLICADA)
+
+**Resumo:** Migration criada, revisada e aplicada via MCP no banco de producao do Le Bebe App. RLS habilitado e grants de anon/authenticated revogados em 4 tabelas acessadas exclusivamente via service role: sessoes_logout_automatico, geo_cache, provider_costs, forex_config. Nenhuma policy permissiva criada. Nenhum codigo TypeScript, API ou middleware alterado.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `supabase/migrations/20260626160000_hardening_rls_grants_fase_0_3.sql`
+- `src/app/api/cron/auto-logout/route.ts` (usa sessoes_logout_automatico via service role)
+- `src/lib/procurar-datas/endereco-cache.ts` (usa geo_cache via createServiceClient)
+- `src/app/api/procurar-datas/validar-endereco/route.ts` (usa geo_cache via helper)
+
+**Validacao MCP Supabase — grants antes da aplicacao:**
+- sessoes_logout_automatico: rls_enabled=false, grants ALL para anon e authenticated, sem grants PUBLIC
+- geo_cache: rls_enabled=false, grants ALL para anon e authenticated, sem grants PUBLIC
+- provider_costs: rls_enabled=false, grants ALL para anon e authenticated, sem grants PUBLIC
+- forex_config: rls_enabled=false, grants ALL para anon e authenticated, sem grants PUBLIC
+- Nenhuma policy existente em nenhuma das 4 tabelas
+- Nenhum grant para PUBLIC encontrado → migration nao precisou de REVOKE FROM PUBLIC
+
+**Arquivo criado:**
+- `supabase/migrations/20260626160000_hardening_rls_grants_fase_0_3.sql`
+
+**SQL da migration (resumo):**
+Para cada uma das 4 tabelas:
+- ALTER TABLE public.<tabela> ENABLE ROW LEVEL SECURITY;
+- REVOKE ALL ON TABLE public.<tabela> FROM anon;
+- REVOKE ALL ON TABLE public.<tabela> FROM authenticated;
+
+**Migration aplicada:** Sim, via MCP apply_migration no banco de producao, com autorizacao explicita do usuario.
+
+**Verificacao pos-aplicacao (MCP):**
+- sessoes_logout_automatico: rowsecurity=true, grants anon=[], grants authenticated=[]
+- geo_cache: rowsecurity=true, grants anon=[], grants authenticated=[]
+- provider_costs: rowsecurity=true, grants anon=[], grants authenticated=[]
+- forex_config: rowsecurity=true, grants anon=[], grants authenticated=[]
+- Nenhuma policy publica criada
+
+**Testes realizados (via dev server em execucao):**
+- Login com Google: OK (lucas@lebebe.com.br, role superadmin)
+- Logout: OK (POST /api/auth/logout 200)
+- Fluxo /procurar-datas com endereco (CEP 81830090): OK - geo_cache consultado via service role sem erro, validar-endereco retornou 200
+- Pesquisa completa retornou 4 candidatos sem erro
+
+**Validacoes realizadas:**
+- Typecheck: `npx tsc --noEmit` → exit 0 (apos remover cache .next/types gerado pelo dev server)
+- Erros iniciais do tsc eram exclusivamente de .next/dev/types/validator.ts (cache de tipos do Next.js dev server, nao do codigo fonte)
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit` → exit 0
+
+**Pendencias:**
+- geocoding_audit e search_execution_audit tambem estao sem RLS (advisory do MCP), mas estao fora do escopo desta etapa.
+- Cron auto-logout nao foi testado diretamente (roda apenas as 19h BRT); acesso via service role confirmado no codigo.
+- provider_costs e forex_config nao tem uso funcional ativo no app (apenas testes/configuracao). Sem risco identificado.
+
+**Riscos conhecidos:**
+- Se alguma funcionalidade nao mapeada usar essas tabelas via client normal (sem service role), ela quebrara. Revisao completa indica que isso nao acontece.
+
+**Proximo passo recomendado:** Avaliar geocoding_audit e search_execution_audit como candidatas para a mesma protecao (tambem acessadas via service role).
+
+---
+
 ## 2026-06-26 - Codex - Frente 3/direita + Frente 0: autoria real no pre-agendamento de /procurar-datas
 
 **Resumo:** Auditado e ajustado o fluxo de pre-agendamento para que a autoria operacional venha da sessao autenticada do Le Bebe App. A rota `POST /api/procurar-datas/pre-agendar` continua usando Apps Script por compatibilidade, mas agora monta `meta.autoria` no backend com `userId`, `email`, nome derivado do email e `origemAutoria='sessao_app'`, sem confiar em campos de usuario enviados pelo frontend. O Apps Script passa a preferir `meta.autoria.email` ao montar o solicitante do titulo e ao registrar `logAuditRow`; chamadas legadas sem `meta.autoria` continuam usando `Session.getActiveUser()`.
@@ -52,6 +116,66 @@
 - `payload_pre_agendamento_json` passa a guardar `meta.autoria` com id/email do usuario autenticado; nao contem token, cookie ou secret.
 
 **Proximo passo recomendado:** Implantar o Apps Script atualizado e testar manualmente Usuario A e Usuario B em `/procurar-datas`, confirmando que nao aparece sempre Lucas no titulo/log/auditoria.
+
+---
+
+## 2026-06-26 - Cascade - Limpeza de logs sensivos no OAuth Callback
+
+**Resumo:** Removidos logs que mostravam tokens OAuth (completos ou parciais) e mensagens operacionais ruidosas do fluxo /auth/callback. Mantidos apenas logs uteis sem dados sensiveis: usuario autenticado, login bem-sucedido com role, erros sem valores de token. Nenhuma logica funcional de OAuth/login foi alterada. Nenhuma migration, SQL, RLS ou middleware alterado.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `src/app/auth/callback/route.ts`
+
+**Arquivos alterados:**
+- `src/app/auth/callback/route.ts` (remocao de logs sensivos)
+
+**Logs removidos/reduzidos:**
+- "Detalhes da sessão OAuth" com provider_token presente, provider_refresh_token presente, refresh_token (primeiros 10 chars)
+- "NOVO refresh_token capturado com sucesso!" e mensagem sobre escopos
+- "Token salvo na tabela google_oauth_setup" e "AÇÃO NECESSÁRIA: Copie o refresh_token..."
+- Lista detalhada de possíveis causas para ausência de refresh_token (4 linhas)
+- "Crie a tabela google_oauth_setup ou salve manualmente o refresh_token"
+
+**Logs mantidos (sem dados sensiveis):**
+- "[OAuth Callback] ✓ Usuário autenticado: <email>"
+- "[OAuth Callback] Login bem-sucedido: <email> role: <role>"
+- "[OAuth Callback] provider_refresh_token não retornado pelo Google" (aviso sem valor)
+- "[OAuth Callback] Erro ao salvar token OAuth (tabela pode não existir): <error>" (sem valor de token)
+- "[OAuth Callback] Erro ao registrar ausência de token: <error>" (sem valor de token)
+- "[OAuth Callback] Sessão não retornada pelo Supabase"
+- "[OAuth Callback] Usuário não encontrado em usuarios_permitidos: <email>"
+- "[OAuth Callback] Usuário bloqueado: <email>"
+
+**Confirmacao de que nenhum token completo/parcial e mais logado:**
+- Nenhum log mostra valor de token completo
+- Nenhum log mostra valor parcial de token (substring)
+- Nenhum log mostra primeiros caracteres de token
+- Mensagem operacional de copiar token foi removida
+
+**Validacoes realizadas:**
+- Typecheck: `npx tsc --noEmit` → exit 0
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit` → exit 0
+
+**Confirmacao de que nenhuma logica funcional foi alterada:**
+- Fluxo de troca de code por sessão mantido
+- Captura de provider_refresh_token mantida
+- Salvamento em google_oauth_setup mantido
+- Auditoria LOGIN_SUCESSO/LOGIN_FALHA mantida
+- Redirect para /dashboard mantido
+- Validacao de usuarios_permitidos mantida
+
+**Confirmacao de que nenhuma migration/SQL/RLS/middleware foi alterado:**
+- Nenhuma migration criada
+- Nenhum SQL aplicado
+- Nenhuma RLS alterada
+- Nenhum middleware alterado
+
+**Proximo passo recomendado:** Etapa 0.3 — habilitar RLS nas 4 tabelas sem protecao (sessoes_logout_automatico, geo_cache, provider_costs, forex_config).
 
 ---
 

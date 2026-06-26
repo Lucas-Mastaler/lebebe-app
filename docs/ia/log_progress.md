@@ -1,3 +1,102 @@
+## 2026-06-26 - Cascade - Fase 0.5D: migracao do primeiro lote Grupo A para requireAuthenticatedUser
+
+**Resumo:** Migrado o primeiro lote de rotas Grupo A para usar o helper central `requireAuthenticatedUser`, substituindo validacao manual de sessao/role superadmin. Rotas migradas: `POST /api/superadmin/adicionar-usuario`, `GET /api/configuracoes/procurar-datas/snapshot` e `GET /api/configuracoes/procurar-datas/auditoria`. Todas agora usam `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true, requiredRole: 'superadmin' })`. Nenhuma regra de negocio, payload, resposta, banco, migration, RLS, grant, policy ou middleware foi alterado. As rotas de `/procurar-datas` propriamente ditas (motor de pesquisa) permanecem intactas; apenas as rotas de configuracao foram migradas.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `docs/ia/plano-fase-0-5b-migracao-helper-auth-apis.md`
+- `src/lib/auth/api-auth.ts`
+- `src/app/api/superadmin/reenviar-convite/route.ts`
+- `src/app/api/superadmin/usuarios/[id]/status/route.ts`
+- `src/app/api/superadmin/usuarios/[id]/role/route.ts`
+- `src/app/api/superadmin/adicionar-usuario/route.ts`
+- `src/app/api/configuracoes/procurar-datas/route.ts`
+- `src/app/api/configuracoes/procurar-datas/[chave]/route.ts`
+- `src/app/api/configuracoes/procurar-datas/auditoria/route.ts`
+- `src/app/api/configuracoes/procurar-datas/snapshot/route.ts`
+- `src/app/api/configuracoes/procurar-datas/config-normalizada/route.ts`
+- `src/app/api/configuracoes/procurar-datas/importar/route.ts`
+- `src/app/api/google/setup-token/route.ts`
+
+**Arquivos alterados:**
+- `src/app/api/superadmin/adicionar-usuario/route.ts` — validacao manual substituida por `requireAuthenticatedUser`; removido import `createClient` do server
+- `src/app/api/configuracoes/procurar-datas/snapshot/route.ts` — validacao manual substituida por `requireAuthenticatedUser`; removido import `createClient` do server
+- `src/app/api/configuracoes/procurar-datas/auditoria/route.ts` — validacao manual substituida por `requireAuthenticatedUser`; removido import `createClient` do server
+- `docs/ia/log_progress.md` — entrada nova
+
+**Rotas avaliadas mas nao migradas:**
+- `GET /api/configuracoes/procurar-datas` (rota principal) — avaliada, mas preferido migrar as leituras auxiliares `snapshot` e `auditoria` primeiro por serem mais simples
+- `PATCH /api/configuracoes/procurar-datas/[chave]` — avaliada, mas e rota de escrita com whitelist de chaves; deixada para lote seguinte por cautela
+- `GET /api/configuracoes/procurar-datas/config-normalizada` — avaliada, mas nao migrada para manter lote em 3 rotas
+- `POST /api/configuracoes/procurar-datas/importar` — avaliada, mas e rota de escrita; deixada para lote seguinte
+- `GET /api/google/setup-token` — avaliada, mas e rota temporaria; preferido migrar rotas de configuracao de `/procurar-datas` que estao em uso regular
+
+**Comandos rodados:**
+- `npx tsc --noEmit` -> EXIT:0, sem erros
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit` passando
+- Equivalencia de validacao: todas as rotas migradas ja exigiam sessao + superadmin; helper adiciona verificacao de `ativo` (comportamento compativel, mas mais restritivo)
+- Nenhuma alteracao de payload ou formato de resposta
+- Nenhuma referencia a `user` indefinido restante nas rotas migradas
+
+**Pendencias:**
+- Commit da 0.5D
+- Testes manuais: adicionar usuario, consultar snapshot e auditoria de configuracoes como superadmin; tentar acesso sem sessao (401) e como nao-superadmin (403)
+- Futuros lotes: migrar `GET /api/configuracoes/procurar-datas`, `PATCH /api/configuracoes/procurar-datas/[chave]`, `GET /api/configuracoes/procurar-datas/config-normalizada`, `POST /api/configuracoes/procurar-datas/importar`, `GET /api/google/setup-token`
+- Avancar para Fase 0.6 ou protecao de rotas Grupo D conforme decisao de produto
+
+**Riscos conhecidos:**
+- Helper adiciona validacao `ativo === true` onde antes algumas rotas nao verificavam explicitamente. Isso e mais seguro, mas pode bloquear superadmin inativo (comportamento desejado)
+- Listagem de usuarios e auditoria na tela Superadmin continuam via browser client (apenas leitura)
+- Rotas Grupo D continuam sem auth ate decisao de produto
+
+**Proximo passo recomendado:**
+- Testar rotas migradas manualmente
+- Commit da 0.5D
+- Planejar Fase 0.6: migrar rotas Grupo A restantes ou proteger rotas Grupo D simples
+
+---
+
+## 2026-06-26 - Cascade - Validacao manual em producao da Fase 0.5C
+
+**Resumo:** Validados manualmente em producao os endpoints criados na Fase 0.5C para protecao de mutacoes criticas da tela Superadmin. Testados bloqueio, desbloqueio e alteracao de role de usuarios comuns. Confirmado que login respeita status bloqueado e que acesso visual/funcional respeita role. Nenhum codigo, banco, migration, RLS, grant, policy ou middleware foi alterado nesta validacao.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+
+**Arquivos alterados:**
+- `docs/ia/log_progress.md` — entrada nova
+
+**Endpoints testados:**
+- `PATCH /api/superadmin/usuarios/[id]/status` (bloquear usuario) — 200 OK; apos bloqueio, login exibiu "Usuario bloqueado. Entre em contato com o administrador."
+- `PATCH /api/superadmin/usuarios/[id]/status` (desbloquear usuario) — 200 OK; apos desbloqueio, usuario conseguiu entrar normalmente
+- `PATCH /api/superadmin/usuarios/[id]/role` (alterar role) — 200 OK; ao alterar para superadmin, opcoes apareceram; ao remover superadmin, opcoes sumiram
+
+**Teste nao realizado:**
+- Bloquear/rebaixar o ultimo superadmin ativo — nao realizado para evitar risco operacional desnecessario; validacao existe no codigo como protecao
+
+**Conclusao:**
+- Tela Superadmin esta usando API Routes para mutacoes criticas
+- Bloqueio/desbloqueio funcionam corretamente
+- Alteracao de role funciona corretamente
+- Login respeita status bloqueado
+- Acesso visual/funcional respeita role
+- Fase 0.5C pode ser considerada validada manualmente em producao
+
+**Pendencias:**
+- Testar usuario nao-superadmin tentando chamar endpoints (validacao extra opcional)
+- Testar sem sessao/401 (validacao extra opcional)
+- Definir proxima etapa: Fase 0.5D (migrar rotas Grupo A) ou Fase 0.6
+
+**Proximo passo recomendado:**
+- Definir escopo da Fase 0.5D ou 0.6 com o usuario
+- Planejar migracao de rotas Grupo A (adicionar-usuario, configuracoes/procurar-datas, setup-token) ou protecao de rotas Grupo D
+
+---
+
 ## 2026-06-26 - Cascade - Fase 0.5C: protecao de mutacoes criticas da tela Superadmin
 
 **Resumo:** Criadas API Routes server-side para proteger as mutacoes criticas da tela Superadmin: `PATCH /api/superadmin/usuarios/[id]/status` (bloquear/desbloquear) e `PATCH /api/superadmin/usuarios/[id]/role` (alterar role). Ambas usam `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true, requiredRole: 'superadmin' })` e service role para atualizar `usuarios_permitidos`. Implementada protecao contra lockout: bloqueio ou rebaixamento do ultimo superadmin ativo retorna 409. A tela `src/app/superadmin/page.tsx` foi ajustada para chamar as novas APIs via `fetch` em vez de fazer update direto no browser client. A listagem de usuarios e auditoria continuam via browser client. Nenhuma alteracao de banco, migration, RLS, grant, policy ou middleware foi feita.

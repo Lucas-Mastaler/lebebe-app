@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
 import { buscarUltimoSnapshot } from '@/lib/procurar-datas/config-db'
 
 export const runtime = 'nodejs'
@@ -15,32 +15,17 @@ export const runtime = 'nodejs'
 
 export async function GET() {
   try {
-    const supabase = await createClient()
+    const auth = await requireAuthenticatedUser({
+      requireAllowedUser: true,
+      requireActive: true,
+      requiredRole: 'superadmin',
+    })
 
-    // 1. Verificar autenticação
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user || !user.email) {
-      return NextResponse.json(
-        { error: 'Não autenticado' },
-        { status: 401 }
-      )
+    if (!auth.ok) {
+      return auth.response
     }
 
-    // 2. Verificar superadmin
-    const { data: usuario, error: dbError } = await supabase
-      .from('usuarios_permitidos')
-      .select('role')
-      .eq('email', user.email.toLowerCase())
-      .single()
-
-    if (dbError || !usuario || usuario.role !== 'superadmin') {
-      return NextResponse.json(
-        { error: 'Acesso negado' },
-        { status: 403 }
-      )
-    }
-
-    // 3. Buscar último snapshot
+    // 1. Buscar último snapshot
     const snapshot = await buscarUltimoSnapshot()
 
     if (!snapshot) {

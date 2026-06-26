@@ -1,36 +1,23 @@
 import { createServiceClient } from '@/lib/supabase/service'
-import { createClient } from '@/lib/supabase/server'
 import { registrarAuditoria } from '@/lib/auth/helpers'
+import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
 import { enviarEmail, gerarHtmlConvite } from '@/lib/email/resend'
 import { gerarTokenConvite } from '@/lib/crypto/tokens'
 import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
+    const auth = await requireAuthenticatedUser({
+      requireAllowedUser: true,
+      requireActive: true,
+      requiredRole: 'superadmin',
+    })
+
+    if (!auth.ok) {
+      return auth.response
+    }
+
     const supabaseAdmin = createServiceClient()
-
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user?.email) {
-      return NextResponse.json(
-        { ok: false, message: 'Não autenticado' },
-        { status: 401 }
-      )
-    }
-
-    const { data: usuarioLogado } = await supabaseAdmin
-      .from('usuarios_permitidos')
-      .select('role')
-      .eq('email', user.email.toLowerCase())
-      .single()
-
-    if (usuarioLogado?.role !== 'superadmin') {
-      return NextResponse.json(
-        { ok: false, message: 'Acesso negado' },
-        { status: 403 }
-      )
-    }
 
     const { email, role } = await request.json()
 
@@ -127,7 +114,7 @@ export async function POST(request: Request) {
         )
       }
 
-      await registrarAuditoria('USUARIO_PERMITIDO_CRIADO', user.email, {
+      await registrarAuditoria('USUARIO_PERMITIDO_CRIADO', auth.user.email, {
         novo_usuario: emailNormalizado,
         role: role,
         action: 'reactivated_and_sent',
@@ -151,7 +138,7 @@ export async function POST(request: Request) {
 
         console.log(`[RESEND] Email enviado com sucesso para ${emailNormalizado}`)
 
-        await registrarAuditoria('INVITE_EMAIL_SENT', user.email, {
+        await registrarAuditoria('INVITE_EMAIL_SENT', auth.user.email, {
           target_email: emailNormalizado,
           role: role,
         }, {
@@ -166,7 +153,7 @@ export async function POST(request: Request) {
           .update({ invite_status: 'failed' })
           .eq('email', emailNormalizado)
 
-        await registrarAuditoria('INVITE_EMAIL_FAILED', user.email, {
+        await registrarAuditoria('INVITE_EMAIL_FAILED', auth.user.email, {
           target_email: emailNormalizado,
           error: errorMessage,
         }, {
@@ -236,7 +223,7 @@ export async function POST(request: Request) {
 
       console.log(`[RESEND] Email enviado com sucesso para ${emailNormalizado}`)
 
-      await registrarAuditoria('INVITE_EMAIL_SENT', user.email, {
+      await registrarAuditoria('INVITE_EMAIL_SENT', auth.user.email, {
         target_email: emailNormalizado,
         role: role,
       }, {
@@ -251,7 +238,7 @@ export async function POST(request: Request) {
         .update({ invite_status: 'failed' })
         .eq('email', emailNormalizado)
 
-      await registrarAuditoria('INVITE_EMAIL_FAILED', user.email, {
+      await registrarAuditoria('INVITE_EMAIL_FAILED', auth.user.email, {
         target_email: emailNormalizado,
         error: errorMessage,
       }, {
@@ -264,7 +251,7 @@ export async function POST(request: Request) {
       )
     }
 
-    await registrarAuditoria('USUARIO_PERMITIDO_CRIADO', user.email, {
+    await registrarAuditoria('USUARIO_PERMITIDO_CRIADO', auth.user.email, {
       novo_usuario: emailNormalizado,
       role: role,
     }, {

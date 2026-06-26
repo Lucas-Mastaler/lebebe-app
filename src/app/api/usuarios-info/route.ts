@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export const runtime = 'nodejs';
@@ -6,6 +7,12 @@ export const runtime = 'nodejs';
 // GET /api/usuarios-info?contactIds=id1,id2,id3
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireAuthenticatedUser({
+      requireAllowedUser: true,
+      requireActive: true,
+    });
+    if (!auth.ok) return auth.response;
+
     const contactIdsParam = request.nextUrl.searchParams.get('contactIds');
     if (!contactIdsParam) {
       return NextResponse.json({ error: 'contactIds é obrigatório' }, { status: 400 });
@@ -43,6 +50,12 @@ export async function GET(request: NextRequest) {
 // POST /api/usuarios-info  body: { contactId, observacao }
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireAuthenticatedUser({
+      requireAllowedUser: true,
+      requireActive: true,
+    });
+    if (!auth.ok) return auth.response;
+
     const body = await request.json();
     const { contactId, observacao } = body || {};
 

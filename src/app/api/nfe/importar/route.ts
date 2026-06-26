@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
 import { JWT } from "google-auth-library";
 import { parseStringPromise } from "xml2js";
+import { validateMaticUser } from "@/lib/auth/matic-auth";
 import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 
@@ -365,6 +366,11 @@ export async function POST(request: NextRequest) {
   console.log("[NFE][GMAIL] Início da rota POST /api/nfe/importar");
 
   try {
+    const auth = await validateMaticUser();
+    if (!auth.authorized) {
+      return NextResponse.json({ ok: false, erro: "Acesso negado" }, { status: 403 });
+    }
+
     // 1.0 – Validação
     const body = await request.json();
     const erroValidacao = validarEntrada(body);

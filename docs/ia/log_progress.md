@@ -1,3 +1,180 @@
+## 2026-06-26 - Codex - Fase 0.5G: protecao de rotas criticas Grupo D
+
+**Resumo:** Adicionada validacao server-side em lote curto para `POST /api/nfe/importar` e para `GET`/`POST /api/usuarios-info`. A rota NFe agora valida usuario Matic/Recebimento com `validateMaticUser()` antes de ler body, criar Gmail/JWT, baixar XML, parsear NFe ou escrever no Supabase. As rotas `usuarios-info` agora exigem usuario autenticado, permitido e ativo via `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true })` antes de usar service role. Nao houve alteracao de payload de sucesso, regra de negocio, banco, migrations, RLS, grants, policies, middleware ou telas.
+
+**Diagnostico antes da alteracao:**
+- `POST /api/nfe/importar` era chamado por `src/app/recebimento/page.tsx` e `src/app/pos-venda/importar-nfe/page.tsx`.
+- As telas consumidoras de NFe permitiam uso aparente apenas para emails Matic via `isMaticEmail`, mas a API nao validava isso server-side.
+- `validateMaticUser()` existe em `src/lib/auth/matic-auth.ts` e valida sessao Supabase mais whitelist `MATIC_ALLOWED_EMAILS`.
+- O ponto correto de insercao na NFe era o inicio do handler `POST`, antes de `request.json()` e antes de `criarClienteGmail()`.
+- Sem sessao ou usuario fora da whitelist Matic, a rota NFe agora retorna 403 com `{ ok: false, erro: 'Acesso negado' }`.
+- `GET /api/usuarios-info` validava `contactIds`, usava `createServiceClient()` e retornava `{ data: map }`.
+- `POST /api/usuarios-info` validava `contactId`, `observacao` string e limite de 100 caracteres, usava `createServiceClient()` e retornava `{ success: true }`.
+- Nao havia auditoria ou identificacao de usuario atual em `usuarios-info`; nao foi criada auditoria nova nesta etapa.
+
+**Rotas alteradas:**
+- `POST /api/nfe/importar`
+- `GET /api/usuarios-info`
+- `POST /api/usuarios-info`
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `docs/ia/plano-fase-0-5b-migracao-helper-auth-apis.md`
+- `docs/ia/diagnostico-fase-0-5f-rotas-grupo-d-sem-auth.md`
+- `src/lib/auth/api-auth.ts`
+- `src/lib/auth/matic-auth.ts`
+- `src/lib/auth/matic-emails.ts`
+- `src/app/recebimento/page.tsx`
+- `src/app/pos-venda/importar-nfe/page.tsx`
+- `src/app/chamados-finalizados/page.tsx`
+- `src/app/api/nfe/importar/route.ts`
+- `src/app/api/usuarios-info/route.ts`
+- `src/lib/supabase/server.ts`
+- `src/lib/supabase/service.ts`
+- `src/app/api/recebimento/route.ts`
+- `src/app/api/matic/importar-nfe/route.ts`
+- `.agents/skills/supabase/SKILL.md`
+
+**Arquivos alterados:**
+- `src/app/api/nfe/importar/route.ts`
+- `src/app/api/usuarios-info/route.ts`
+- `docs/ia/log_progress.md`
+
+**Comandos rodados e resultados:**
+- `rg -n "usuarios-info|/api/nfe/importar|isMaticEmail|validateMaticUser|MATIC_ALLOWED_EMAILS" src/app src/components src/lib` -> confirmou consumidores e helpers relevantes.
+- `rg -n -C 8 "/api/nfe/importar|isMaticEmail|authorized|handleImport" ...` -> confirmou chamadas das telas NFe e gate client-side por Matic.
+- `rg -n -C 6 "usuarios-info|observacao|observacoes" src/app/chamados-finalizados/page.tsx` -> confirmou GET/POST de observacoes.
+- `rg -n -C 4 "validateMaticUser\\(\\)|Acesso negado" src/app/api/recebimento src/app/api/matic` -> confirmou padrao de bloqueio Matic.
+- `git diff -- src/app/api/nfe/importar/route.ts` -> confirmou gate antes de body/Gmail/JWT.
+- `git diff -- src/app/api/usuarios-info/route.ts` -> confirmou gate antes de query/body/service role.
+- `git diff --stat` -> mostrou alteracoes em `docs/ia/log_progress.md`, `src/app/api/nfe/importar/route.ts` e `src/app/api/usuarios-info/route.ts`.
+- `npx tsc --noEmit` -> exit 0, sem erros.
+
+**Validacoes realizadas:**
+- Confirmado no diff que `validateMaticUser()` roda no inicio de `POST /api/nfe/importar`, antes de `request.json()` e antes de `criarClienteGmail()`.
+- Confirmado no diff que `GET /api/usuarios-info` e `POST /api/usuarios-info` chamam `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true })` antes de usar `createServiceClient()`.
+- Confirmado que as validacoes de `contactIds`, `contactId`, `observacao` string e limite de 100 caracteres foram preservadas.
+- Confirmado que payloads de sucesso `{ ok: true, ... }`, `{ data: map }` e `{ success: true }` nao foram alterados.
+- Nao foi feita consulta MCP Supabase porque nao houve alteracao de schema, tabela, migration, policy, RLS, grant ou shape das queries existentes.
+
+**Pendencias:**
+- Testes manuais com sessao real nao foram executados nesta etapa.
+- Validar manualmente NFe sem sessao, usuario nao Matic e usuario Matic autorizado.
+- Validar manualmente `usuarios-info` sem sessao, usuario permitido ativo e usuario bloqueado.
+
+**Riscos conhecidos:**
+- `validateMaticUser()` retorna apenas `authorized`, sem diferenciar 401/403; a rota segue o padrao atual de rotas Recebimento/Matic e retorna 403 para nao autorizado.
+- Rotas Grupo D fora deste lote continuam sem auth server-side ate fases futuras.
+- O worktree ja continha alteracoes de documentacao da Fase 0.5F antes desta implementacao.
+
+**Proximo passo recomendado:**
+- Executar testes manuais das tres rotas com perfis reais e seguir para o Lote 2 das rotas Grupo D privadas (`chamados-finalizados`, `dashboard` e demais APIs Digisac).
+
+---
+
+## 2026-06-26 - Codex - Fase 0.5F: diagnostico das rotas Grupo D sem auth clara
+
+**Resumo:** Criado diagnostico/plano para as 12 rotas Grupo D sem autenticacao clara. Nenhum codigo, rota, middleware, banco, migration, RLS, grant ou policy foi alterado. Todas as 12 rotas continuam sem validacao formal de sessao no codigo. O documento classifica risco, cliente provavel, uso de Supabase/service role/Digisac/Gmail, decisao recomendada e ordem de implementacao.
+
+**Documento criado:**
+- `docs/ia/diagnostico-fase-0-5f-rotas-grupo-d-sem-auth.md`
+
+**Rotas analisadas:**
+- `GET /api/digisac/schedule`
+- `GET /api/users`
+- `GET /api/usuarios-info`
+- `POST /api/usuarios-info`
+- `POST /api/dashboard/pesquisar`
+- `POST /api/agendamentos/pesquisar`
+- `GET /api/autocomplete/departments`
+- `GET /api/autocomplete/users`
+- `POST /api/chamados-finalizados/pesquisar`
+- `GET /api/chamados-finalizados/agendamentos`
+- `GET /api/departments`
+- `POST /api/nfe/importar`
+
+**Classificacao por decisao:**
+- `MIGRAR_REQUIRE_AUTHENTICATED_USER`: 8 rotas (`/api/users`, `/api/usuarios-info` GET/POST, `/api/dashboard/pesquisar`, `/api/agendamentos/pesquisar`, `/api/chamados-finalizados/pesquisar`, `/api/chamados-finalizados/agendamentos`, `/api/departments`)
+- `MIGRAR_BEARER_TOKEN`: 0 rotas confirmadas
+- `MANTER_PUBLICA`: 0 rotas confirmadas como publicas seguras
+- `DESATIVAR_OU_REMOVER`: 2 rotas (`/api/autocomplete/departments`, `/api/autocomplete/users`) por uso nao confirmado no codigo
+- `DECISAO_PRODUTO`: 2 rotas (`/api/digisac/schedule`, `/api/nfe/importar`)
+
+**Rotas P0/P1:**
+- P0: `POST /api/nfe/importar` - le Gmail por service account e escreve dados NFe sem auth server-side; precisa decidir se deve usar `validateMaticUser`, `requireAuthenticatedUser` ou regra superadmin.
+- P1: `GET /api/digisac/schedule` - atende pagina publica `/horarios-agendamentos`, mas aceita parametros amplos para agenda Digisac; precisa decisao sobre manter publico e endurecer parametros ou exigir sessao.
+- P1: rotas privadas Digisac e `usuarios-info` (`/api/users`, `/api/usuarios-info` GET/POST, dashboard, agendamentos, chamados-finalizados).
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `docs/ia/plano-fase-0-5b-migracao-helper-auth-apis.md`
+- `src/lib/auth/api-auth.ts`
+- `.agents/skills/supabase/SKILL.md`
+- `src/middleware.ts`
+- `src/app/api/digisac/schedule/route.ts`
+- `src/app/api/users/route.ts`
+- `src/app/api/usuarios-info/route.ts`
+- `src/app/api/dashboard/pesquisar/route.ts`
+- `src/app/api/agendamentos/pesquisar/route.ts`
+- `src/app/api/autocomplete/departments/route.ts`
+- `src/app/api/autocomplete/users/route.ts`
+- `src/app/api/chamados-finalizados/pesquisar/route.ts`
+- `src/app/api/chamados-finalizados/agendamentos/route.ts`
+- `src/app/api/departments/route.ts`
+- `src/app/api/nfe/importar/route.ts`
+- `src/lib/digisac/clienteDigisac.ts`
+- `src/lib/digisac/dashboard.ts`
+- `src/lib/digisac/agendamentos.ts`
+- `src/lib/digisac/chamadosFinalizados.ts`
+- `src/components/HorariosAgendamentosPage.tsx`
+- `src/components/AgendamentosPage.tsx`
+- `src/components/FiltrosAgendamentos.tsx`
+- `src/components/dashboard/FiltrosDashboard.tsx`
+- `src/components/chamados/FiltrosChamadosFinalizados.tsx`
+- `src/components/chamados/ModalAgendamentosCliente.tsx`
+- `src/app/pos-venda/importar-nfe/page.tsx`
+- `src/app/recebimento/page.tsx`
+- `src/app/chamados-finalizados/page.tsx`
+- `src/app/dashboard/page.tsx`
+
+**Arquivos alterados/criados:**
+- Criado `docs/ia/diagnostico-fase-0-5f-rotas-grupo-d-sem-auth.md`
+- Alterado `docs/ia/log_progress.md`
+
+**Comandos rodados e resultados:**
+- `rg --files src/app/api` -> listagem de rotas para confirmar contexto de `src/app/api`.
+- `rg -n -S "/api/(...)" src docs` -> confirmou clientes provaveis e usos das rotas Grupo D.
+- `rg -n -S "export async function|createClient|createServiceClient|fetchDigisac|..."` nas 12 rotas -> confirmou ausencia de auth formal e uso de Supabase/Digisac.
+- `git status --short` -> antes do log, apenas documento novo da 0.5F aparecia como untracked.
+- `git diff --stat` -> antes do log, vazio porque havia somente arquivo untracked.
+
+**Validacoes realizadas:**
+- Confirmado que nenhuma das 12 rotas tem `requireAuthenticatedUser`, `validateComercialUser`, `validateMaticUser`, `validarBearerToken` ou `auth.getUser()`.
+- Confirmado que `/api/digisac/schedule` e chamado pela pagina publica `/horarios-agendamentos`.
+- Confirmado que `/api/nfe/importar` cria cliente Gmail por service account antes de qualquer validacao de usuario.
+- Confirmado que `/api/usuarios-info` usa `createServiceClient()` para GET e POST.
+- Nao foi rodado `npx tsc --noEmit`, pois nao houve alteracao de codigo.
+- Nao houve consulta MCP Supabase nesta etapa porque nao houve alteracao de banco/schema; o documento registra que implementacao futura que tocar tabelas deve validar no MCP antes.
+
+**Pendencias:**
+- Decidir permissao de `POST /api/nfe/importar`: Matic/Recebimento, usuario ativo comum ou superadmin.
+- Decidir se `/horarios-agendamentos` e `/api/digisac/schedule` continuam publicos.
+- Confirmar se `/api/autocomplete/users` e `/api/autocomplete/departments` tem consumidor externo; se nao tiverem, remover/desativar.
+
+**Riscos conhecidos:**
+- Rotas Grupo D continuam sem auth server-side ate implementacao futura.
+- Proteger apenas paginas nao protege chamada direta para `/api/*`.
+- `POST /api/nfe/importar` e `POST /api/usuarios-info` sao os pontos de maior impacto por leitura/escrita sem identidade validada.
+
+**Proximo passo recomendado:**
+- Executar Fase 0.5G em lote curto: decidir/proteger `POST /api/nfe/importar`, `GET /api/usuarios-info` e `POST /api/usuarios-info`.
+
+---
+
 ## 2026-06-26 - Codex - Fase 0.5E: migracao do restante das rotas Grupo A para requireAuthenticatedUser
 
 **Resumo:** Migrado o restante das rotas Grupo A para usar o helper central `requireAuthenticatedUser`, substituindo validacao manual de sessao/role superadmin. Rotas migradas: `GET /api/configuracoes/procurar-datas`, `PATCH /api/configuracoes/procurar-datas/[chave]`, `GET /api/configuracoes/procurar-datas/config-normalizada`, `POST /api/configuracoes/procurar-datas/importar` e `GET /api/google/setup-token`. Todas agora usam `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true, requiredRole: 'superadmin' })`. Nenhuma regra de negocio, payload de sucesso, banco, migration, RLS, grant, policy ou middleware foi alterado. A mudanca funcional controlada e que as rotas agora tambem exigem `ativo = true`, alinhado ao padrao adotado na Fase 0.5D.

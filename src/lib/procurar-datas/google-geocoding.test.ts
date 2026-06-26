@@ -1,6 +1,14 @@
-import { describe, it, expect } from 'vitest'
-import { ehEnderecoDificilRodoviaOuRural, validarResultadoGoogle } from './google-geocoding'
+import { afterEach, describe, it, expect } from 'vitest'
+import {
+  consultarGoogleGeocodingEnderecoDificil,
+  ehEnderecoDificilRodoviaOuRural,
+  validarResultadoGoogle,
+} from './google-geocoding'
 import type { ValidarEnderecoRequest } from './contratos'
+
+afterEach(() => {
+  delete process.env.GOOGLE_GEOCODING_API_KEY
+})
 
 function formBase(overrides: Partial<ValidarEnderecoRequest> = {}): ValidarEnderecoRequest {
   return {
@@ -318,5 +326,131 @@ describe('validarResultadoGoogle', () => {
 
     expect(diag.valido).toBe(false)
     expect(diag.motivo).toBe('cidade_incompativel')
+  })
+
+  it('aceita endereco urbano sem street_number quando CEP, logradouro, cidade e UF sao fortes', () => {
+    const form = formBase({
+      logradouro: 'Rua Tenente Francisco Ferreira de Souza',
+      numero: '20',
+      bairro: 'Hauer',
+      cidade: 'Curitiba',
+      uf: 'PR',
+      cep: '81630-010',
+    })
+
+    const result: Parameters<typeof validarResultadoGoogle>[0] = {
+      geometry: {
+        location: { lat: -25.475, lng: -49.255 },
+        location_type: 'ROOFTOP',
+      },
+      formatted_address: 'Rua Tenente Francisco Ferreira de Souza - Hauer, Curitiba - PR, 81630-010, Brasil',
+      address_components: [
+        { long_name: 'Rua Tenente Francisco Ferreira de Souza', short_name: 'R. Ten. Francisco Ferreira de Souza', types: ['route'] },
+        { long_name: 'Hauer', short_name: 'Hauer', types: ['sublocality', 'political'] },
+        { long_name: 'Curitiba', short_name: 'Curitiba', types: ['administrative_area_level_2', 'political'] },
+        { long_name: 'Parana', short_name: 'PR', types: ['administrative_area_level_1', 'political'] },
+        { long_name: 'Brasil', short_name: 'BR', types: ['country'] },
+        { long_name: '81630-010', short_name: '81630-010', types: ['postal_code'] },
+      ],
+      types: ['street_address'],
+      partial_match: false,
+    }
+
+    const diag = validarResultadoGoogle(result, form)
+
+    expect(diag.valido).toBe(true)
+    expect(diag.numeroObrigatorio).toBe(false)
+    expect(diag.resultado?.match).toBe('aproximado_confiavel')
+    expect(diag.resultado?.numeroOk).toBe(false)
+  })
+
+  it('prioriza cep_mismatch sobre numero ausente no Google', () => {
+    const form = formBase({
+      logradouro: 'Rua Tenente Francisco Ferreira de Souza',
+      numero: '20',
+      bairro: 'Hauer',
+      cidade: 'Curitiba',
+      uf: 'PR',
+      cep: '81630-010',
+    })
+
+    const result: Parameters<typeof validarResultadoGoogle>[0] = {
+      geometry: {
+        location: { lat: -25.475, lng: -49.255 },
+        location_type: 'ROOFTOP',
+      },
+      formatted_address: 'Rua Tenente Francisco Ferreira de Souza - Hauer, Curitiba - PR, 81670-000, Brasil',
+      address_components: [
+        { long_name: 'Rua Tenente Francisco Ferreira de Souza', short_name: 'R. Ten. Francisco Ferreira de Souza', types: ['route'] },
+        { long_name: 'Hauer', short_name: 'Hauer', types: ['sublocality', 'political'] },
+        { long_name: 'Curitiba', short_name: 'Curitiba', types: ['administrative_area_level_2', 'political'] },
+        { long_name: 'Parana', short_name: 'PR', types: ['administrative_area_level_1', 'political'] },
+        { long_name: 'Brasil', short_name: 'BR', types: ['country'] },
+        { long_name: '81670-000', short_name: '81670-000', types: ['postal_code'] },
+      ],
+      types: ['street_address'],
+      partial_match: false,
+    }
+
+    const diag = validarResultadoGoogle(result, form)
+
+    expect(diag.valido).toBe(false)
+    expect(diag.motivo).toBe('cep_mismatch')
+  })
+})
+
+describe('consultarGoogleGeocodingEnderecoDificil', () => {
+  it('mantem skip para endereco comum por padrao', async () => {
+    const result = await consultarGoogleGeocodingEnderecoDificil(
+      formBase({ logradouro: 'Rua XV de Novembro', numero: '100', cidade: 'Curitiba', uf: 'PR' }),
+      { fetchFn: (() => { throw new Error('nao deveria chamar') }) as unknown as typeof fetch }
+    )
+
+    expect(result).toEqual({ status: 'skipped', motivo: 'endereco_nao_e_dificil' })
+  })
+
+  it('permite Google como fallback geral para endereco comum quando a rota habilita', async () => {
+    process.env.GOOGLE_GEOCODING_API_KEY = 'test-key'
+
+    const fetchFn = (async () => ({
+      ok: true,
+      json: async () => ({
+        status: 'OK',
+        results: [
+          {
+            geometry: {
+              location: { lat: -25.475, lng: -49.255 },
+              location_type: 'ROOFTOP',
+            },
+            formatted_address: 'Rua XV de Novembro, 100 - Centro, Curitiba - PR, 80020-310, Brasil',
+            address_components: [
+              { long_name: '100', short_name: '100', types: ['street_number'] },
+              { long_name: 'Rua XV de Novembro', short_name: 'R. XV de Novembro', types: ['route'] },
+              { long_name: 'Centro', short_name: 'Centro', types: ['sublocality', 'political'] },
+              { long_name: 'Curitiba', short_name: 'Curitiba', types: ['administrative_area_level_2', 'political'] },
+              { long_name: 'Parana', short_name: 'PR', types: ['administrative_area_level_1', 'political'] },
+              { long_name: 'Brasil', short_name: 'BR', types: ['country'] },
+              { long_name: '80020-310', short_name: '80020-310', types: ['postal_code'] },
+            ],
+            types: ['street_address'],
+            partial_match: false,
+          },
+        ],
+      }),
+    })) as unknown as typeof fetch
+
+    const result = await consultarGoogleGeocodingEnderecoDificil(
+      formBase({
+        logradouro: 'Rua XV de Novembro',
+        numero: '100',
+        bairro: 'Centro',
+        cidade: 'Curitiba',
+        uf: 'PR',
+        cep: '80020-310',
+      }),
+      { fetchFn, permitirEnderecoComum: true }
+    )
+
+    expect(result.status).toBe('success')
   })
 })

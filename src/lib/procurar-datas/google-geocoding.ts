@@ -212,6 +212,11 @@ function enderecoTemIndicacaoKM(result: GoogleGeocodingResult): boolean {
   return /\bKM\s*\d+/i.test(formatted)
 }
 
+function textoContemNumeroIsolado(texto: string, numero: string): boolean {
+  if (!numero) return false
+  return new RegExp(`(^|\\D)${numero}(\\D|$)`).test(texto)
+}
+
 function naoResultadoGenerico(result: GoogleGeocodingResult): boolean {
   const types = result.types ?? []
   const formatted = normalizarTexto(result.formatted_address ?? '')
@@ -258,6 +263,7 @@ type DiagnosticoValidacaoGoogle = {
   ufOk: boolean
   logradouroOk: boolean
   numeroOk: boolean
+  numeroObrigatorio: boolean
   bairroOk: boolean
   cepOk: boolean
   cidadeRecebida: string
@@ -293,6 +299,7 @@ export function validarResultadoGoogle(
   const baseDiag = {
     locationType,
     partialMatch,
+    numeroObrigatorio: true,
   }
 
   if (lat === undefined || lng === undefined || !Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -330,23 +337,6 @@ export function validarResultadoGoogle(
     return { valido: false, motivo: 'logradouro_incompativel', cidadeOk, ufOk, logradouroOk, numeroOk: false, bairroOk: false, cepOk: false, cidadeRecebida, cidadeSource, formattedCityMatch, ufRecebida, logradouroRecebido, bairroRecebido: '', cepRecebido: '', ...baseDiag }
   }
 
-  const numeroForm = normalizarNumeroEndereco(String(form.numero ?? ''))
-  const streetNumber = normalizarNumeroEndereco(componenteTexto(result, 'street_number'))
-  const formatted = normalizarTexto(result.formatted_address ?? '')
-  const routeNorm = normalizarTexto(logradouroRecebido)
-
-  const temNumero =
-    !!numeroForm &&
-    (streetNumber === numeroForm ||
-      formatted.includes(numeroForm) ||
-      routeNorm.includes(numeroForm) ||
-      enderecoTemIndicacaoKM(result))
-  const numeroOk = !numeroForm || temNumero || enderecoDificil
-
-  if (!numeroOk) {
-    return { valido: false, motivo: 'numero_nao_encontrado', cidadeOk, ufOk, logradouroOk, numeroOk, bairroOk: false, cepOk: false, cidadeRecebida, cidadeSource, formattedCityMatch, ufRecebida, logradouroRecebido, bairroRecebido: '', cepRecebido: '', ...baseDiag }
-  }
-
   const bairroRecebido = componenteTexto(result, 'sublocality', 'political') || componenteTexto(result, 'neighborhood') || ''
   const bairroForm = normalizarTexto(String(form.bairro ?? ''))
   // Para enderecos dificeis, bairro divergente nao e bloqueio absoluto; e apenas aviso
@@ -355,7 +345,40 @@ export function validarResultadoGoogle(
   const cepRecebido = componenteTexto(result, 'postal_code') || ''
   const cepForm = normalizarCep(String(form.cep ?? ''))
   const cepRecebidoNorm = normalizarCep(cepRecebido)
-  const cepOk = !cepForm || cepRecebidoNorm === cepForm || cepRecebidoNorm.startsWith(cepForm.slice(0, 5))
+  const cepOk = !cepForm || !cepRecebidoNorm || cepRecebidoNorm === cepForm || cepRecebidoNorm.startsWith(cepForm.slice(0, 5))
+
+  if (!cepOk) {
+    return { valido: false, motivo: 'cep_mismatch', ...baseDiag, cidadeOk, ufOk, logradouroOk, numeroOk: false, numeroObrigatorio: true, bairroOk, cepOk, cidadeRecebida, cidadeSource, formattedCityMatch, ufRecebida, logradouroRecebido, bairroRecebido, cepRecebido }
+  }
+
+  const numeroForm = normalizarNumeroEndereco(String(form.numero ?? ''))
+  const streetNumber = normalizarNumeroEndereco(componenteTexto(result, 'street_number'))
+  const formatted = normalizarTexto(result.formatted_address ?? '')
+  const routeNorm = normalizarTexto(logradouroRecebido)
+
+  const temNumero =
+    !!numeroForm &&
+    (streetNumber === numeroForm ||
+      textoContemNumeroIsolado(formatted, numeroForm) ||
+      textoContemNumeroIsolado(routeNorm, numeroForm) ||
+      enderecoTemIndicacaoKM(result))
+  const ancoragemUrbanaForteSemNumero =
+    !enderecoDificil &&
+    !!numeroForm &&
+    !temNumero &&
+    !!cepForm &&
+    !!cepRecebidoNorm &&
+    cepOk &&
+    cidadeOk &&
+    ufOk &&
+    logradouroOk &&
+    !partialMatch
+  const numeroOk = !numeroForm || temNumero || enderecoDificil || ancoragemUrbanaForteSemNumero
+  const numeroObrigatorio = !ancoragemUrbanaForteSemNumero
+
+  if (!numeroOk) {
+    return { valido: false, motivo: 'numero_nao_encontrado', ...baseDiag, cidadeOk, ufOk, logradouroOk, numeroOk, numeroObrigatorio, bairroOk, cepOk, cidadeRecebida, cidadeSource, formattedCityMatch, ufRecebida, logradouroRecebido, bairroRecebido, cepRecebido }
+  }
 
   const enderecoCompleto = montarEnderecoDisplayGoogle(result, form)
   const postalCode = componenteTexto(result, 'postal_code')
@@ -385,6 +408,10 @@ export function validarResultadoGoogle(
       display_name: enderecoCompleto,
       cep,
       provider: 'google_geocoding',
+      match: ancoragemUrbanaForteSemNumero ? 'aproximado_confiavel' : 'exato',
+      numeroOk: !ancoragemUrbanaForteSemNumero,
+      numeroObrigatorio,
+      motivo: ancoragemUrbanaForteSemNumero ? 'aceito_sem_numero_confirmado' : 'aceito',
       confidence: null,
       address: {
         road: componenteTexto(result, 'route') || String(form.logradouro ?? ''),
@@ -395,10 +422,12 @@ export function validarResultadoGoogle(
         postcode: postalCode || '',
       },
     },
+    ...baseDiag,
     cidadeOk,
     ufOk,
     logradouroOk,
     numeroOk,
+    numeroObrigatorio,
     bairroOk: bairroOkFinal,
     cepOk,
     cidadeRecebida,
@@ -408,7 +437,6 @@ export function validarResultadoGoogle(
     logradouroRecebido,
     bairroRecebido,
     cepRecebido,
-    ...baseDiag,
   }
 }
 
@@ -417,11 +445,12 @@ export async function consultarGoogleGeocodingEnderecoDificil(
   options: {
     fetchFn?: typeof fetch
     onEvent?: (event: GoogleGeocodingEvent) => void
+    permitirEnderecoComum?: boolean
   } = {}
 ): Promise<ResultadoGoogleGeocoding> {
   const fetchFn = options.fetchFn ?? fetch
 
-  if (!ehEnderecoDificilRodoviaOuRural(form)) {
+  if (!ehEnderecoDificilRodoviaOuRural(form) && !options.permitirEnderecoComum) {
     options.onEvent?.({ tipo: 'google_fallback_skip_not_difficult' })
     return { status: 'skipped', motivo: 'endereco_nao_e_dificil' }
   }

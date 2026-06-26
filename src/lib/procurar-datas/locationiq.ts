@@ -272,8 +272,8 @@ function validarCandidato(
   if (!cidadeForm || !ufForm) motivos.push('city_or_uf_mismatch')
   if (!cidadeOk || !ufOk) motivos.push('city_or_uf_mismatch')
   if (!logradouroOk) motivos.push('logradouro_mismatch')
-  if (!numeroOk && numeroObrigatorio) motivos.push('no_house_number')
   if (cepOk === false) motivos.push('cep_mismatch')
+  if (!numeroOk && numeroObrigatorio) motivos.push('no_house_number')
   if (motivos.length > 0) {
     return { valido: false, motivo: motivos[0], flags }
   }

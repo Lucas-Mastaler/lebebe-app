@@ -2609,7 +2609,8 @@ function preAgendarDireto(cand, meta){
   const cal = CalendarApp.getCalendarById(PRE_CALENDAR_ID);
   if (!cal) throw new Error('Calendário não encontrado. Verifique PRE_CALENDAR_ID.');
 
-  const userEmail = Session.getActiveUser().getEmail() || 'usuario@dominio.com';
+  const autoria = meta.autoria || {};
+  const userEmail = autoria.email || Session.getActiveUser().getEmail() || 'usuario@dominio.com';
   const solicit   = userEmail.replace('@lebebe.com.br','').toUpperCase();
 
   const d = new Date(cand.dateISO);

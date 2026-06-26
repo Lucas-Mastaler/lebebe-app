@@ -1,3 +1,782 @@
+## 2026-06-26 - Codex - Frente 3/direita + Frente 0: autoria real no pre-agendamento de /procurar-datas
+
+**Resumo:** Auditado e ajustado o fluxo de pre-agendamento para que a autoria operacional venha da sessao autenticada do Le Bebe App. A rota `POST /api/procurar-datas/pre-agendar` continua usando Apps Script por compatibilidade, mas agora monta `meta.autoria` no backend com `userId`, `email`, nome derivado do email e `origemAutoria='sessao_app'`, sem confiar em campos de usuario enviados pelo frontend. O Apps Script passa a preferir `meta.autoria.email` ao montar o solicitante do titulo e ao registrar `logAuditRow`; chamadas legadas sem `meta.autoria` continuam usando `Session.getActiveUser()`.
+
+**Arquivos lidos:**
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+- `src/app/api/procurar-datas/pre-agendar/route.ts`
+- `src/app/procurar-datas/page.tsx`
+- `src/lib/procurar-datas/contratos.ts`
+- `src/lib/procurar-datas/types.ts`
+- `src/lib/procurar-datas/api.ts`
+- `src/lib/auth/sgi-auth.ts`
+- `src/lib/google/apps-script.ts`
+- `src/lib/procurar-datas/apps-script.ts`
+- `src/lib/procurar-datas/v2/auditoria-pre-agendamento.ts`
+- `src/lib/procurar-datas/v2/auditoria-pesquisa.ts`
+- `src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts`
+- `appscript/PublicAPI.gs`
+- `appscript/CEP-APIBACK.gs`
+
+**Diagnostico confirmado:**
+- A rota `pre-agendar` chama Apps Script: `ApiPreAgendarDireto`.
+- O executor Google usa OAuth server-side com `GOOGLE_OAUTH_REFRESH_TOKEN`, ou seja, credencial tecnica fixa.
+- O Apps Script montava o responsavel pelo titulo com `Session.getActiveUser().getEmail()`, que pode refletir a conta executora/deployment e nao o usuario autenticado no app.
+- O frontend nao envia usuario/responsavel no pre-agendamento.
+- A rota ja valida acesso com `validarAcessoProcurarDatas()`, baseado em Supabase Auth + `usuarios_permitidos.ativo`.
+- MCP Supabase confirmou que `usuarios_permitidos` nao possui coluna de nome; a fonte persistida disponivel e `usuario_id`/`usuario_email`.
+
+**Arquivos alterados:**
+- `src/app/api/procurar-datas/pre-agendar/route.ts`
+- `appscript/PublicAPI.gs`
+- `appscript/CEP-APIBACK.gs`
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+
+**Validacoes realizadas:**
+- `npx eslint src/app/api/procurar-datas/pre-agendar/route.ts --quiet`: passou.
+- `npx tsc --noEmit --pretty false`: passou.
+- Teste especifico de pre-agendamento/auditoria: nao encontrado no projeto.
+- Validacao manual com dois usuarios diferentes: pendente, requer sessao real.
+
+**Pendencias:**
+- Publicar/sincronizar o Apps Script alterado no deployment usado por `GOOGLE_APPS_SCRIPT_DEPLOYMENT_ID_CEP`; sem isso, a producao pode continuar usando `Session.getActiveUser()`.
+- Validar manualmente com dois usuarios diferentes que o titulo/evento e a auditoria registram usuarios distintos.
+- Confirmar em producao que o responsavel operacional vem de `origemAutoria='sessao_app'`.
+
+**Riscos conhecidos:**
+- O executor tecnico do Apps Script pode continuar sendo a conta dona do refresh token/deployment; isso e diferente do responsavel operacional agora enviado no payload.
+- `payload_pre_agendamento_json` passa a guardar `meta.autoria` com id/email do usuario autenticado; nao contem token, cookie ou secret.
+
+**Proximo passo recomendado:** Implantar o Apps Script atualizado e testar manualmente Usuario A e Usuario B em `/procurar-datas`, confirmando que nao aparece sempre Lucas no titulo/log/auditoria.
+
+---
+
+## 2026-06-26 - Cascade - Etapa 0.2B: remocao do modo degradado publico da API auditoria/registrar
+
+**Resumo:** Removido o bloco "modo degradado" que aceitava chamadas publicas quando AUDITORIA_INTERNAL_SECRET nao estava configurada. A rota agora tem exatamente dois caminhos: (1) token interno valido via X-Internal-Token — aceita email do body; (2) sessao browser via cookie same-origin — usa email da sessao. Sem nenhum dos dois, retorna 401. Nenhuma migration, SQL, RLS ou middleware alterado.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `src/app/api/auditoria/registrar/route.ts`
+- `src/lib/auth/helpers.ts`
+
+**Arquivos alterados:**
+- `src/app/api/auditoria/registrar/route.ts` (removido modo degradado)
+
+**O que foi removido:**
+Bloco if (!internalSecret) que aceitava chamadas com validacao de payload apenas quando a variavel nao estava configurada. Esse bloco mantinha a brecha original.
+
+**Como ficou a validacao final:**
+- Caminho 1: internalSecret configurada E header X-Internal-Token == internalSecret → aceita, email do body validado
+- Caminho 2: qualquer outro caso → tenta sessao browser via createClient().getUser(); usa email da sessao
+- Sem sessao no caminho 2 → 401
+
+**Confirmacoes:**
+1. Acao privada sem sessao → 401
+2. Acao server-side sem AUDITORIA_INTERNAL_SECRET → cai no caminho 2 (sessao browser), sem sessao → 401
+3. Acao server-side com token correto → funciona (caminho 1)
+4. Browser autenticado → funciona via cookie same-origin (caminho 2)
+5. Nao existe mais modo degradado publico
+
+**Pendencia operacional critica:**
+AUDITORIA_INTERNAL_SECRET deve ser configurada em .env.local e em producao (Vercel) antes do proximo deploy.
+- Valor gerado pelo usuario: ver .env.local
+- Sem essa variavel, chamadas server-side (callback, logout, recuperar-senha, adicionar-usuario, reenviar-convite) vao cair no caminho 2 sem sessao e retornar 401, silenciosamente ignoradas pelo helper (try/catch)
+- Isso NAO quebra o app (helper ignora erro), mas auditoria de eventos server-side deixa de ser gravada ate a variavel ser configurada
+
+**Validacoes realizadas:**
+- Typecheck: `npx tsc --noEmit` → exit 0
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit` → exit 0
+
+**Proximo passo recomendado:** Configurar AUDITORIA_INTERNAL_SECRET em .env.local e Vercel. Depois executar Etapa 0.3 — RLS nas 4 tabelas sem protecao.
+
+---
+
+## 2026-06-26 - Cascade - Etapa 0.2 revisao: correcao da protecao da API auditoria/registrar
+
+**Resumo:** Corrigida a implementacao anterior que assumia incorretamente que cookies nao chegam em chamadas browser same-origin. Implementada logica de tres caminhos: (1) token interno AUDITORIA_INTERNAL_SECRET via header X-Internal-Token para chamadas server-side; (2) sessao Supabase via cookie same-origin para chamadas browser autenticadas; (3) 401 sem nenhum dos dois. Modo degradado preserva compatibilidade enquanto a variavel nao estiver configurada. Nenhuma migration, SQL, RLS ou middleware alterado.
+
+**Erro identificado na implementacao anterior:**
+O helper registrarAuditoria faz fetch('/api/auditoria/registrar') sem credentials, mas em chamadas browser same-origin o browser envia cookies por padrao sem precisar de credentials:include. Isso e diferente de cross-origin. Portanto a rota consegue sim obter sessao via createClient() quando chamada do browser. A afirmacao anterior de que "nunca recebe cookie" estava errada para o contexto browser.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `src/app/api/auditoria/registrar/route.ts`
+- `src/lib/auth/helpers.ts`
+- `src/app/auth/callback/route.ts`
+- `src/app/api/auth/logout/route.ts`
+- `src/app/api/auth/recuperar-senha/route.ts`
+- `src/app/(auth)/definir-senha/page.tsx`
+- `src/app/(auth)/resetar-senha/page.tsx`
+- `src/app/superadmin/page.tsx`
+- `src/app/api/superadmin/adicionar-usuario/route.ts`
+- `src/app/api/superadmin/reenviar-convite/route.ts`
+- `src/lib/supabase/server.ts`
+- `src/lib/supabase/client.ts`
+
+**Arquivos alterados:**
+- `src/app/api/auditoria/registrar/route.ts` (logica de tres caminhos)
+- `src/lib/auth/helpers.ts` (header X-Internal-Token nas chamadas server-side)
+
+**Classificacao final das acoes:**
+
+Server-side internas (sem cookie de sessao na rota, email vem da rota chamadora):
+- LOGIN_FALHA — callback/route.ts, apos signOut(), email do OAuth
+- LOGIN_SUCESSO — callback/route.ts, email do OAuth
+- LOGOUT — logout/route.ts, email de getUser() antes do signOut
+- RESET_SOLICITADO, RESET_EMAIL_SENT, RESET_EMAIL_FAILED — recuperar-senha/route.ts
+- INVITE_EMAIL_SENT, INVITE_EMAIL_FAILED, USUARIO_PERMITIDO_CRIADO — adicionar-usuario, reenviar-convite (ja protegidas)
+
+Browser autenticadas (cookie same-origin chega na rota, sessao valida):
+- RESET_CONCLUIDO — resetar-senha/page.tsx, email de updateUser()
+- SENHA_DEFINIDA — definir-senha/page.tsx, email de getUser()
+- USUARIO_BLOQUEADO, USUARIO_DESBLOQUEADO, ROLE_ALTERADA — superadmin/page.tsx
+
+Nao usa essa rota:
+- AUTO_LOGOUT_19H — cron/auto-logout grava direto na tabela auditoria_acessos
+
+**O que foi alterado na rota:**
+- Caminho 1 (token interno): se AUDITORIA_INTERNAL_SECRET configurada e header X-Internal-Token confere, aceita email do body com validacao de formato
+- Caminho 2 (browser): sem token interno ou token errado, tenta sessao via createClient() + getUser(); usa email da sessao, ignora email do body
+- Caminho 3 (401): sem token interno valido e sem sessao, retorna 401
+- Modo degradado: se AUDITORIA_INTERNAL_SECRET nao esta configurada, aceita chamadas com validacao de payload apenas (compatibilidade temporaria)
+
+**O que foi alterado no helper:**
+- Detecta contexto server (typeof window === 'undefined')
+- Se server e AUDITORIA_INTERNAL_SECRET configurada, adiciona header X-Internal-Token
+- Chamadas browser nao enviam o header (usam cookie same-origin)
+
+**Pendencia critica — acao necessaria:**
+Adicionar AUDITORIA_INTERNAL_SECRET ao .env.local (desenvolvimento) e variaveis de ambiente de producao (Vercel):
+- Formato: AUDITORIA_INTERNAL_SECRET=<uuid ou string aleatoria longa>
+- Exemplo de geracao: `node -e "console.log(require('crypto').randomUUID())"`
+- Sem essa variavel, o sistema opera em modo degradado (apenas validacao de payload, sem sessao exigida)
+- Com essa variavel, a protecao completa e ativada
+
+**Validacoes realizadas:**
+- Typecheck: `npx tsc --noEmit` → exit 0 (dois runs, ambos sem erros)
+
+**Testes manuais recomendados:**
+1. LOGIN_FALHA sem sessao (callback): fluxo de login com email nao autorizado → deve gravar auditoria
+2. Acao privada sem sessao (sem AUDITORIA_INTERNAL_SECRET configurada): modo degradado → aceita
+3. Acao privada sem sessao (com AUDITORIA_INTERNAL_SECRET configurada): curl sem token e sem cookie → deve retornar 401
+4. Acao privada com sessao browser (com AUDITORIA_INTERNAL_SECRET): abrir superadmin, bloquear usuario → deve gravar auditoria com email da sessao
+5. Acao superadmin com usuario comum: nao testavel diretamente nessa rota (superadmin/page.tsx ja protege no frontend)
+6. Payload invalido: curl com acao='ACAO_INVENTADA' → 400
+7. Fluxo de login/callback: login com Google → LOGIN_SUCESSO gravado
+8. Fluxo de logout: clicar logout → LOGOUT gravado
+9. Fluxo de reenviar convite: superadmin reenviar → INVITE_EMAIL_SENT gravado
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit` → exit 0
+
+**Riscos residuais:**
+- Sem AUDITORIA_INTERNAL_SECRET configurada, a protecao completa nao esta ativa (modo degradado)
+- Qualquer pessoa com URL ainda pode gravar acoes validas com email valido no modo degradado
+- Ao configurar a variavel, chamadas server-side do helper passam a enviar o token e a protecao completa e ativada
+
+**Proximo passo recomendado:** Adicionar AUDITORIA_INTERNAL_SECRET ao .env.local e variaveis de producao. Depois executar Etapa 0.3 — habilitar RLS nas 4 tabelas seguras.
+
+---
+
+## 2026-06-26 - Cascade - Etapa 0.2 de seguranca: protecao da API auditoria/registrar
+
+**Resumo:** Implementada validacao de payload na API POST /api/auditoria/registrar. Acao deve ser um dos valores do enum AcaoAuditoria existente, email validado em formato e tamanho, metadata limitado a objeto simples de no maximo 2KB. Exigir sessao nao foi possivel pois o helper registrarAuditoria faz fetch sem credentials/cookie, quebraria todos os fluxos existentes. Nenhuma migration, SQL, RLS ou middleware foi alterado.
+
+**Decisao tecnica registrada:**
+O helper src/lib/auth/helpers.ts faz fetch sem cookies (sem credentials: 'include'). Isso significa que a rota nao recebe cookie de sessao em nenhum dos contextos (server-side nem browser). Exigir sessao quebraria: LOGIN_FALHA, LOGIN_SUCESSO, LOGOUT, RESET_*, SENHA_DEFINIDA, RESET_CONCLUIDO, USUARIO_BLOQUEADO/DESBLOQUEADO/ROLE_ALTERADA, INVITE_EMAIL_SENT/FAILED, USUARIO_PERMITIDO_CRIADO. A protecao viavel e validar que acao pertence ao enum AcaoAuditoria + validar email e metadata.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `src/app/api/auditoria/registrar/route.ts`
+- `src/lib/auth/helpers.ts`
+- `src/app/auth/callback/route.ts`
+- `src/app/api/auth/logout/route.ts`
+- `src/app/api/auth/recuperar-senha/route.ts`
+- `src/app/api/superadmin/adicionar-usuario/route.ts`
+- `src/app/api/superadmin/reenviar-convite/route.ts`
+- `src/app/(auth)/definir-senha/page.tsx`
+- `src/app/(auth)/resetar-senha/page.tsx`
+- `src/app/superadmin/page.tsx`
+- `src/app/api/cron/auto-logout/route.ts`
+- `src/types/supabase.ts`
+
+**Arquivos alterados:**
+- `src/app/api/auditoria/registrar/route.ts` (validacao de payload completa)
+
+**Classificacao das chamadas encontradas:**
+- LOGIN_FALHA (callback): chamada apos signOut(), sem sessao — publico
+- LOGIN_SUCESSO (callback): server-side sem cookie — publico
+- LOGOUT (logout/route.ts): server-side sem cookie — publico
+- RESET_* (recuperar-senha/route.ts): server-side sem cookie — publico
+- SENHA_DEFINIDA (definir-senha/page.tsx): browser, email de getUser() — browser autenticado
+- RESET_CONCLUIDO (resetar-senha/page.tsx): browser, email de updateUser() — browser autenticado
+- USUARIO_BLOQUEADO/DESBLOQUEADO/ROLE_ALTERADA (superadmin/page.tsx): browser, email de getUser() guardado em state — browser autenticado
+- INVITE_EMAIL_SENT/FAILED/USUARIO_PERMITIDO_CRIADO (adicionar-usuario, reenviar-convite): server-side sem cookie — server autenticado internamente
+- AUTO_LOGOUT_19H (cron/auto-logout): grava direto na tabela, nao usa essa rota
+
+**O que foi implementado:**
+1. Array ACOES_PERMITIDAS com todos os valores de AcaoAuditoria
+2. Validacao de tipo de body (deve ser objeto simples, nao null, nao array)
+3. Validacao de acao: obrigatoria, string, deve estar em ACOES_PERMITIDAS
+4. Validacao de email: se presente, deve ser string, max 255 chars, formato basico (regex)
+5. Validacao de metadata: se presente, deve ser objeto simples (nao array), max 2048 bytes serializado
+6. Comportamento de insert mantido exatamente igual
+
+**Validacoes realizadas:**
+- Typecheck: `npx tsc --noEmit` → exit 0 (sem erros)
+
+**Testes manuais recomendados:**
+1. curl POST sem acao → deve retornar 400 "Acao e obrigatoria"
+2. curl POST com acao='ACAO_INVENTADA' → deve retornar 400 "Acao nao permitida"
+3. curl POST com acao='LOGIN_SUCESSO' e email invalido → deve retornar 400 "Email invalido"
+4. curl POST com metadata array → deve retornar 400 "Metadata invalido"
+5. curl POST com metadata > 2KB → deve retornar 400 "Metadata excede tamanho"
+6. Fluxo real de login/logout → auditoria deve continuar gravando
+7. Tela superadmin bloquear/desbloquear usuario → deve continuar gravando
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit` → exit 0
+
+**Pendencias:**
+- O helper registrarAuditoria em src/lib/auth/helpers.ts nao envia cookies. Se no futuro quiser exigir sessao, e necessario: (a) alterar o helper para enviar credentials:include em contexto browser, e (b) tratar chamadas server-side passando token de sessao. Isso e escopo futuro.
+- Nenhum codigo alterado fora da rota alvo
+
+**Riscos conhecidos:**
+- Qualquer pessoa com a URL ainda pode gravar eventos de auditoria com acoes validas e emails validos. O risco foi reduzido de arbitrario para limitado ao enum. Eliminacao completa exige refatorar o helper.
+
+**Proximo passo recomendado:** Etapa 0.3 — habilitar RLS e revogar grants de anon/authenticated nas 4 tabelas seguras (sessoes_logout_automatico, geo_cache, provider_costs, forex_config).
+
+---
+
+## 2026-06-26 - Cascade - Etapa 0.1 de seguranca: protecao da API reenviar-convite
+
+**Resumo:** Implementada protecao de sessao + role superadmin + ativo=true na API POST /api/superadmin/reenviar-convite, seguindo o padrao de adicionar-usuario/route.ts. Request sem sessao retorna 401, usuario nao-superadmin retorna 403. Comportamento de reenvio de convite mantido. Nenhuma migration, SQL, RLS ou middleware foi alterado.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `src/app/api/superadmin/reenviar-convite/route.ts`
+- `src/app/api/superadmin/adicionar-usuario/route.ts`
+
+**Arquivos alterados:**
+- `src/app/api/superadmin/reenviar-convite/route.ts` (adicionado validacao de sessao + role + ativo)
+
+**Validacoes realizadas:**
+- Typecheck: `npx tsc --noEmit` → exit 0 (sem erros)
+- Padrao de validacao seguido exatamente de adicionar-usuario/route.ts
+
+**O que foi implementado:**
+1. Import de createClient de @/lib/supabase/server
+2. Criacao de client Supabase com cookies do request
+3. Chamada de getUser() para obter usuario autenticado
+4. Retorno 401 se nao autenticado
+5. Consulta de usuarios_permitidos pelo email do usuario autenticado
+6. Validacao de role = 'superadmin' e ativo = true
+7. Retorno 403 se nao for superadmin ou estiver inativo
+8. Fluxo de reenvio de convite mantido inalterado apos validacao
+
+**Como ficou a validacao:**
+- Sem sessao → 401 "Não autenticado"
+- Sessao mas nao-superadmin → 403 "Acesso negado"
+- Superadmin inativo → 403 "Acesso negado"
+- Superadmin ativo → fluxo normal de reenvio
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit` → exit 0
+
+**Pendencias:**
+- Teste manual necessario: curl sem sessao → deve retornar 401
+- Teste manual necessario: curl com usuario comum → deve retornar 403
+- Teste manual necessario: tela de superadmin → deve continuar funcionando
+
+**Riscos conhecidos:**
+- Nenhum — alteracao e simples e segue padrao ja existente
+
+**Proximo passo recomendado:** Etapa 0.2 — proteger API /api/auditoria/registrar separando acoes publicas/privadas + validacao de payload.
+
+---
+
+## 2026-06-26 - Cascade - Plano Fase 0 de seguranca: autenticacao, autorizacao, APIs criticas e tabelas sem RLS
+
+**Resumo:** Plano tecnico completo para correcoes criticas de seguranca antes da tela administrativa de usuarios. Nenhum codigo funcional, migration ou SQL foi alterado/aplicado. Apenas leitura, mapeamento, validacao no MCP Supabase e documentacao.
+
+**Arquivos lidos:**
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/log_progress.md`
+- `src/app/api/auditoria/registrar/route.ts`
+- `src/app/api/superadmin/reenviar-convite/route.ts`
+- `src/lib/auth/helpers.ts`
+- `src/app/api/nfe/importar/route.ts`
+- `src/app/api/auth/convite/[token]/route.ts`
+- `src/app/api/usuarios-info/route.ts`
+- 39 API routes mapeadas em `src/app/api/` (imports e validacoes)
+
+**Arquivos criados:**
+- `docs/ia/plano-fase-0-seguranca-auth.md` (plano completo, 13 secoes)
+
+**Validacoes realizadas no MCP Supabase:**
+- 6 tabelas sem RLS: colunas, linhas aprox., indices, grants confirmados
+- `sessoes_logout_automatico`: 6 cols, ~7 rows, 4 indices, RLS OFF, ALL grants anon+authenticated
+- `geo_cache`: 13 cols, ~815 rows, 4 indices, RLS OFF, ALL grants
+- `provider_costs`: 6 cols, ~1 row, 1 indice, RLS OFF, ALL grants
+- `forex_config`: 3 cols, ~1 row, 1 indice, RLS OFF, ALL grants
+- `geocoding_audit`: 10 cols, ~33428 rows, 8 indices, RLS OFF, ALL grants
+- `search_execution_audit`: 29 cols, ~1006 rows, 6 indices, RLS OFF, ALL grants
+- Todas as 6 tabelas sao acessadas exclusivamente via createServiceClient() (service role) no codigo
+
+**Principais conclusoes:**
+- API reenviar-convite: CRITICAL, sem validacao de sessao/role, correcao simples (1 arquivo)
+- API auditoria/registrar: MEDIUM-HIGH, precisa separar acoes publicas/privadas
+- 6 tabelas sem RLS: 4 seguras para ENABLE RLS imediato, 2 precisam validar key do legado Apps Script
+- 39 APIs classificadas: ~30 OK, 2 sem validacao critica, ~8 servico-interno sem validacao formal
+- Superadmin lockout: sem protecao server-side, proposta de trigger SQL
+- Helper central requireAuthenticatedUser recomendado para APIs P2/P3
+
+**Etapas propostas:**
+- 0.1: Proteger reenviar-convite (P0, 1 arquivo)
+- 0.2: Proteger auditoria/registrar (P1, 2 arquivos)
+- 0.3: RLS + REVOKE em 4 tabelas seguras (P1, migration)
+- 0.4: RLS + REVOKE em 2 tabelas auditoria (P2, pendencia legado)
+- 0.5: Helper central requireAuthenticatedUser (P2, novo arquivo + aplicar)
+- 0.6: Trigger lockout superadmin (P2, migration)
+
+**Pendencias:**
+- Validar qual key o legado Apps Script usa para insert em search_execution_audit
+- Confirmar se provider_costs e forex_config sao usados em producao com client normal
+- Nenhum codigo alterado
+- Nenhuma migration criada
+- Nenhum SQL aplicado
+
+**Proximo passo recomendado:** Executar Etapa 0.1 — proteger API /api/superadmin/reenviar-convite com sessao + role superadmin.
+
+---
+
+## 2026-06-26 - Cascade - Frente 0/Controle: correção da auditoria operacional da tela /procurar-datas v2
+
+**Resumo:** Corrigidos problemas críticos na implementação da auditoria operacional. Migration corretiva removeu campo `search_execution_audit_id` (tipo incorreto) e adicionou campos `started_at` e `finished_at` que faltavam. Backend agora retorna `runId` para o frontend usar o valor correto. Frontend guarda `runId` retornado pelo backend em vez de usar `clientToken`. Nenhuma regra de negócio foi alterada.
+
+**Arquivos lidos:**
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+- `src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts`
+- `src/app/api/procurar-datas/pre-agendar/route.ts`
+- `src/app/procurar-datas/page.tsx`
+- `src/lib/procurar-datas/v2/auditoria-pesquisa.ts`
+
+**Arquivos alterados/criados:**
+- `supabase/migrations/20260626150000_fix_procurar_datas_auditoria_operacional.sql` (criado)
+- `src/lib/procurar-datas/v2/auditoria-pesquisa.ts` (modificado)
+- `src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts` (modificado)
+- `src/app/procurar-datas/page.tsx` (modificado)
+- `docs/ia/log_progress.md` (esta entrada)
+
+**Validações realizadas:**
+- MCP Supabase: migration corretiva aplicada com sucesso
+- MCP Supabase: estrutura das tabelas validada
+- Typecheck: `npx tsc --noEmit` passou sem erros
+- Lint: warnings existentes mas não críticos nos arquivos modificados
+
+**Problemas corrigidos:**
+1. Campo `search_execution_audit_id` era `uuid` mas `search_execution_audit.id` é `bigint` → removido (vínculo por `run_id` é suficiente)
+2. Campos `started_at` e `finished_at` faltavam na tabela → adicionados via migration
+3. Helper tentava inserir `search_execution_audit_id` → removido da interface e do insert
+4. Frontend usava `clientToken` como `runId` → backend agora retorna `runId` real
+5. Frontend não guardava `runId` retornado → adicionado `currentRunIdRef` para guardar
+6. `runId` no pré-agendamento estava igual ao `clientToken` → agora usa valor correto do `searchPayload`
+
+**Como o fluxo ficou:**
+- Pesquisa → backend gera `runId` → grava auditoria operacional → retorna `runId` e `pesquisaAuditoriaId`
+- Frontend guarda `runId` e `pesquisaAuditoriaId` → exibe resultados
+- Pré-agendamento → envia `pesquisaAuditoriaId`, `clientToken` e `runId` corretos → grava auditoria vinculada
+- `procurar_datas_pre_agendamentos_auditoria.pesquisa_auditoria_id` agora deve ser preenchido
+
+**Comandos rodados e resultados:**
+- `mcp1_apply_migration`: sucesso ao aplicar migration corretiva
+- `npx tsc --noEmit`: sucesso (0 erros)
+- `npm run lint`: warnings mas sem erros críticos
+
+**Riscos e pendências:**
+- Teste manual necessário para confirmar que auditoria da pesquisa agora grava
+- Teste manual necessário para confirmar vínculo pesquisa → pré-agendamento
+- RLS desabilitado em 6 tabelas existentes (risco critical preexistente, tarefa separada)
+- Tela de consulta da auditoria aguarda nova gestão de usuários
+
+**Próximo passo recomendado:** Teste manual de pesquisa e pré-agendamento seguido de consulta no Supabase para validar que:
+1. `procurar_datas_pesquisas_auditoria` tem registro com `runId` correto
+2. `procurar_datas_pre_agendamentos_auditoria` tem registro com `pesquisa_auditoria_id` preenchido
+3. Vínculo entre as duas tabelas está funcionando
+
+---
+
+## 2026-06-26 - Cascade - Frente 0/Controle: implementação da auditoria operacional da tela /procurar-datas v2
+
+**Resumo:** Implementada gravação da auditoria operacional completa para pesquisas e pré-agendamentos da v2. Criadas tabelas separadas (procurar_datas_pesquisas_auditoria e procurar_datas_pre_agendamentos_auditoria) com RLS habilitado e policies SELECT para superadmin. Backend grava auditoria não-bloqueante em pesquisa e pré-agendamento, frontend guarda e envia pesquisaAuditoriaId para vinculo. Nenhuma regra de negócio foi alterada.
+
+**Arquivos lidos:**
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+- `src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts`
+- `src/app/api/procurar-datas/pre-agendar/route.ts`
+- `src/app/procurar-datas/page.tsx`
+- `src/lib/procurar-datas/contratos.ts`
+- `src/lib/procurar-datas/types.ts`
+
+**Arquivos alterados/criados:**
+- `supabase/migrations/20260626140000_create_procurar_datas_auditoria_operacional.sql` (criado)
+- `src/lib/procurar-datas/v2/auditoria-pesquisa.ts` (criado)
+- `src/lib/procurar-datas/v2/auditoria-pre-agendamento.ts` (criado)
+- `src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts` (modificado)
+- `src/app/api/procurar-datas/pre-agendar/route.ts` (modificado)
+- `src/app/procurar-datas/page.tsx` (modificado)
+- `docs/ia/log_progress.md` (esta entrada)
+
+**Validações realizadas:**
+- MCP Supabase: migration aplicada com sucesso, tabelas criadas com RLS habilitado
+- MCP Supabase: policies SELECT para is_superadmin() criadas
+- Typecheck: `npx tsc --noEmit` passou sem erros
+- Lint: warnings existentes mas não críticos nos arquivos modificados
+- Estrutura das tabelas validada conforme padrão do projeto
+
+**O que foi implementado:**
+1. Migration com duas tabelas de auditoria operacional
+2. Helper de auditoria de pesquisa (insert não-bloqueante)
+3. Helper de auditoria de pré-agendamento (insert não-bloqueante)
+4. Rota de pesquisa grava auditoria e retorna pesquisaAuditoriaId
+5. Frontend guarda pesquisaAuditoriaId e envia no pré-agendamento
+6. Rota de pré-agendamento grava auditoria vinculada à pesquisa
+7. Logs controlados em caso de falha na auditoria
+
+**Como o fluxo ficou:**
+- Pesquisa → grava auditoria operacional + telemetria → retorna pesquisaAuditoriaId
+- Frontend guarda ID enquanto exibe resultados
+- Pré-agendamento → envia pesquisaAuditoriaId + clientToken + runId → grava auditoria vinculada
+- Falhas na auditoria são logadas mas não bloqueiam o fluxo principal
+
+**Comandos rodados e resultados:**
+- `mcp1_apply_migration`: sucesso ao criar tabelas
+- `npx tsc --noEmit`: sucesso (0 erros)
+- `npm run lint`: warnings mas sem erros críticos
+
+**Riscos e pendências:**
+- RLS desabilitado em 6 tabelas existentes (risco critical preexistente, tarefa separada)
+- Tela de consulta da auditoria aguarda nova gestão de usuários
+- runId no frontend usando mesmo valor de clientToken (pode ser ajustado depois)
+
+**Próximo passo recomendado:** Implementar tela de consulta da auditoria quando nova gestão de usuários estiver estabilizada.
+
+---
+
+## 2026-06-26 - Codex - Frente 1/esquerda: cep_mismatch antes de no_house_number e Google antes do Apps Script
+
+**Resumo:** Ajustada a rota `POST /api/procurar-datas/validar-endereco` e validadores relacionados para tratar CEP divergente como bloqueio principal antes de ausencia de numero. Google Geocoding agora e chamado como fallback final validado tambem para endereco urbano comum apos cache/LocationIQ falharem, antes do Apps Script. Apps Script deixou de ser aceito automaticamente: retorno com coordenadas invalidas, CEP divergente, cidade/UF divergente ou logradouro divergente quando comparavel e rejeitado com erro controlado. Nao altera UI, `buscar-cep`, motor v2, OSRM, Haversine, ranking, classificacao, frete, banco, migrations, RLS ou Apps Script.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `src/lib/procurar-datas/locationiq.ts`
+- `src/lib/procurar-datas/google-geocoding.ts`
+- `src/lib/procurar-datas/endereco-cache.ts`
+- `src/lib/procurar-datas/contratos.ts`
+- `src/app/procurar-datas/page.tsx` (referencia localizada via chamada da rota; sem alteracao)
+- `C:\Users\lebeb\.codex\attachments\4701e191-13bc-4e4b-99b7-e2311bd17e88\pasted-text.txt`
+
+**Arquivos alterados/criados:**
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `src/lib/procurar-datas/locationiq.ts`
+- `src/lib/procurar-datas/locationiq.test.ts`
+- `src/lib/procurar-datas/google-geocoding.ts`
+- `src/lib/procurar-datas/google-geocoding.test.ts`
+- `src/lib/procurar-datas/validar-endereco-resultado.ts` (criado)
+- `src/lib/procurar-datas/validar-endereco-resultado.test.ts` (criado)
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+
+**Validacoes realizadas:**
+- `npm run test -- src/lib/procurar-datas/locationiq.test.ts src/lib/procurar-datas/google-geocoding.test.ts src/lib/procurar-datas/validar-endereco-resultado.test.ts --silent`: passou, 56 testes.
+- `npx tsc --noEmit --pretty false`: passou em execucao anterior; na reexecucao final falhou em arquivos fora do escopo desta tarefa (`pre-agendar`, `pesquisar-compat-async`, `page.tsx`) que ja estavam em alteracao no worktree.
+- `npx eslint src/app/api/procurar-datas/validar-endereco/route.ts src/lib/procurar-datas/locationiq.ts src/lib/procurar-datas/locationiq.test.ts src/lib/procurar-datas/google-geocoding.ts src/lib/procurar-datas/google-geocoding.test.ts src/lib/procurar-datas/validar-endereco-resultado.ts src/lib/procurar-datas/validar-endereco-resultado.test.ts --quiet`: passou.
+
+**Comandos rodados e resultados:**
+- `rg`/`Get-Content` para auditar fluxo e helpers reais -> confirmou fluxo cache -> LocationIQ -> Google restrito -> Apps Script.
+- `npm run test -- ... --silent` -> exit 0, 56/56.
+- `npx tsc --noEmit --pretty false` -> exit 0 em execucao anterior; reexecucao final falhou fora do escopo desta tarefa.
+- `npx eslint ... --quiet` -> exit 0.
+
+**Pendencias:**
+- Validacao manual autenticada em `/procurar-datas` para:
+  1. endereco urbano resolvido por LocationIQ, confirmando que Google e Apps Script nao sao chamados;
+  2. `RUA TENENTE FRANCISCO FERREIRA DE SOUZA`, CEP `81630-010`, confirmando Google antes de Apps Script e rejeicao de CEP divergente;
+  3. `ROD. GUMERCINDO BOZA`, confirmando preservacao do caminho de endereco dificil.
+- Validacao com Google sem key em ambiente real nao executada nesta tarefa.
+
+**Riscos conhecidos:**
+- Google depende de `GOOGLE_GEOCODING_API_KEY`; sem key, Apps Script ainda pode ser chamado como contingencia, mas agora passa por validacao minima antes de sucesso.
+- O helper de validacao do Apps Script compara logradouro somente quando o retorno traz campo comparavel; quando nao traz, valida coordenadas, CEP, cidade e UF.
+- Worktree ja continha mudancas alheias antes desta tarefa; nao foram revertidas.
+
+**Proximo passo recomendado:** Executar teste manual autenticado do caso `RUA TENENTE FRANCISCO FERREIRA DE SOUZA` e verificar logs `locationiq_rejected_cep_mismatch`, `google_fallback_check`, `google_fallback_*` e eventual `appsscript_rejected`.
+
+---
+
+## 2026-06-26 - Cascade - Frente 0/Controle: auditoria de pesquisas da tela /procurar-datas v2
+
+**Resumo:** Auditoria tecnica e plano concreto para implementar a auditoria de pesquisas da v2 (quem pesquisou, quando, endereco, parametros, resultados, pre-agendamento). Nenhum codigo, migration ou rota foi alterado. Apenas leitura, mapeamento e documentacao. Confirmado que o legado gravava auditoria em planilha (AUDITORIA) via logAuditRow e telemetria em search_execution_audit via RegistrarExecucaoPesquisaAudit_. A v2 ja grava telemetria em search_execution_audit (motor='v2') mas nao grava auditoria operacional completa (endereco estruturado, coordenadas, parametros JSON, resultados completos, pre-agendamento). Proposta: criar tabelas pesquisas_auditoria e pre_agendamentos_auditoria com RLS, insert nao-bloqueante no backend, vinculo via clientToken/runId.
+
+**Arquivos lidos:**
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+- `appscript/CEP-APIBACK.gs` (funcoes pesquisarRotaToTargetWithParams, RegistrarExecucaoPesquisaAudit_, preAgendarDireto)
+- `appscript/CEP-CONFIG.gs` (funcao logAuditRow)
+- `appscript/PublicAPI.gs` (funcao ApiPreAgendarDireto)
+- `src/app/procurar-datas/page.tsx` (tela principal, payload, pre-agendar)
+- `src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts`
+- `src/app/api/procurar-datas/pre-agendar/route.ts`
+- `src/lib/procurar-datas/v2/auditoria-search.ts`
+- `src/lib/procurar-datas/contratos.ts`
+- `src/lib/procurar-datas/types.ts`
+- `src/lib/procurar-datas/api.ts`
+- `src/lib/auth/sgi-auth.ts`
+
+**Arquivos alterados:**
+- `docs/ia/log_progress.md` (esta entrada)
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md` (nova pendencia de auditoria de pesquisas)
+
+**Validacoes realizadas:**
+- MCP Supabase: estrutura completa de `search_execution_audit` (29 colunas, RLS desabilitada, 6 indices, sem policies)
+- MCP Supabase: estrutura de `geocoding_audit` (10 colunas, RLS desabilitada)
+- MCP Supabase: estrutura de `usuarios_permitidos` (12 colunas, RLS habilitada, role check user/superadmin)
+- MCP Supabase: estrutura de `auditoria_acessos` (7 colunas, RLS habilitada, policy SELECT para is_superadmin())
+- MCP Supabase: funcao is_superadmin() existe como SECURITY DEFINER
+- MCP Supabase: 10 migrations aplicadas (ultima: add_motor_fields_search_execution_audit)
+- Legado: logAuditRow grava 9 colunas posicionais em planilha AUDITORIA
+- Legado: RegistrarExecucaoPesquisaAudit_ grava telemetria em search_execution_audit via REST
+- Legado: preAgendarDireto chama logAuditRow com scheduledDate e eventLink
+- v2: registrarAuditoriaSearchV2 grava em search_execution_audit com motor='v2'
+- v2: pre-agendar/route.ts NAO grava auditoria em banco
+- v2: validarAcessoProcurarDatas retorna userId e email do Supabase Auth
+
+**Pendencias:**
+- Implementar migration com tabelas pesquisas_auditoria e pre_agendamentos_auditoria
+- Implementar helper de auditoria de pesquisa (insert em pesquisas_auditoria)
+- Implementar helper de auditoria de pre-agendamento (insert em pre_agendamentos_auditoria)
+- Tela deve enviar clientToken no payload de pre-agendamento para vinculo
+- Tela futura de auditoria aguarda nova gestao de usuarios
+- Decidir se valorInicialMinimo deve ser enviado pela tela ou capturado no backend
+- RLS desabilitada em 6 tabelas (risco critical preexistente, tarefa separada)
+
+**Riscos conhecidos:**
+- Dependencia da nova gestao de usuarios para tela de auditoria
+- Risco de salvar retorno bruto diferente do exibido (mitigar gravando progressoDone.payload.candidates)
+- Risco de nao vincular pre-agendamento a pesquisa se clientToken nao for enviado
+- Risco de RLS mal configurada (seguir padrao auditoria_acessos)
+- Risco de dados sensiveis em JSON (nao incluir tokens/senhas em parametros)
+- Risco de auditoria falhar silenciosamente (fire-and-forget com log no console)
+
+**Proximo passo recomendado:** Implementar Etapa 1 (migration) + Etapa 2 (backend pesquisa) + Etapa 3 (backend pre-agendamento) + Etapa 4 (tela envia clientToken no pre-agendamento) como uma unica tarefa. Tela de auditoria fica como tarefa separada aguardando nova gestao de usuarios.
+
+---
+
+## 2026-06-26 - Cascade - Auditoria de autenticacao, usuarios, roles e permissoes
+
+**Resumo:** Auditoria investigativa completa do sistema de login, roles, permissoes e restricoes de acesso. Nenhum codigo funcional, migration ou tabela foi alterado. Apenas leitura, mapeamento e documentacao.
+
+**Arquivos lidos:**
+- `src/middleware.ts`
+- `src/lib/auth/*` (6 arquivos)
+- `src/lib/supabase/*` (3 arquivos)
+- `src/app/auth/callback/route.ts`
+- `src/app/(auth)/login/page.tsx`
+- `src/app/superadmin/page.tsx`
+- `src/app/api/superadmin/*` (2 rotas)
+- `src/app/api/configuracoes/procurar-datas/route.ts`
+- `src/app/api/cron/auto-logout/route.ts`
+- `src/app/api/auth/*` (3 rotas)
+- `src/app/api/auditoria/registrar/route.ts`
+- `src/app/api/google/setup-token/route.ts`
+- `src/components/Sidebar.tsx`, `Navigation.tsx`, `AuthenticatedLayout.tsx`, `LayoutWrapper.tsx`
+- `src/app/recebimento/page.tsx`
+- `src/app/procurar-datas/dev-v2/page.tsx`
+- `src/types/supabase.ts`
+
+**Arquivos criados:**
+- `docs/ia/auditoria-usuarios-login-roles.md` (relatorio completo)
+- `docs/ia/log_progress.md` (esta entrada)
+
+**Validacao realizada no MCP Supabase:**
+- Tabela `usuarios_permitidos`: 12 colunas, 11 rows, RLS ON, 4 policies, 10 indices
+- Tabela `auditoria_acessos`: 7 colunas, 855 rows, RLS ON, 1 policy (SELECT)
+- Funcoes SQL: `is_superadmin()` e `is_own_record()` confirmadas
+- 6 tabelas sem RLS: grants ALL para anon e authenticated confirmados via information_schema.table_privileges
+- `relforcerowsecurity = false` em usuarios_permitidos e auditoria_acessos
+- 11 usuarios confirmados: 2 superadmins, 9 users
+
+**Riscos criticos encontrados:**
+- API `/api/auditoria/registrar` sem autenticacao
+- API `/api/superadmin/reenviar-convite` sem validar sessao
+- 6 tabelas sem RLS com grants completos para anon e authenticated
+- Middleware nao cobre rotas `/api/*`
+
+**Pendencias:**
+- Fase 0: classificar APIs por tipo de autenticacao antes de qualquer mudanca
+- Fase 0: planejar policies RLS para as 6 tabelas (nao aplicar ainda)
+- Fase 0: planejar correcao das 2 APIs criticas
+- Nenhum codigo funcional alterado nesta tarefa
+- Nenhuma migration criada nesta tarefa
+
+---
+
+## 2026-06-26 - Cascade - Frente 0/Controle: validacao manual autenticada da telemetria v2
+
+**Resumo:** Validacao manual autenticada da telemetria v2 em `public.search_execution_audit`. Execucao real da rota `pesquisar-compat-async` gerou registro com `motor='v2'`, `rota='pesquisar-compat-async'`, `tipo_execucao='producao'`, `status='success'`. Confirmado: tempo total 10186 ms, tempo interno de busca 9.1 s, 5 candidatos (3 normal, 1 especial, 1 premium, 0 hora marcada). Fase 1 (migration) + Fase 2 (insert v2) implementadas e validadas. Nenhuma alteracao de codigo, migration ou banco foi feita nesta tarefa.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+
+**Arquivos alterados:**
+- `docs/ia/log_progress.md` (esta entrada)
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md` (pendencia atualizada para validada)
+
+**Validacao realizada:**
+- Tabela consultada: `public.search_execution_audit`
+- Registro encontrado: id=1007, created_at=2026-06-26 13:16:24 UTC
+- Campos confirmados: motor='v2', rota='pesquisar-compat-async', tipo_execucao='producao', run_id=846409da-5a3a-44c4-a8fe-99985efc5cfa
+- Status: success
+- Tempo total: 10186 ms
+- Tempo interno de busca: 9.1 s
+- Candidatos: 5 total (3 normal, 1 especial, 1 premium, 0 hora marcada)
+- error_message: null
+
+**Conclusao:**
+- Fase 1 (migration + colunas + indice) implementada e validada
+- Fase 2 (insert v2 em search_execution_audit) implementada e validada
+- Comparacao basica legado x v2 por tempo total/candidatos/status agora e possivel para search_execution_audit
+
+**Pendencias restantes:**
+- `geocoding_audit` sem telemetria v2 — escopo futuro separado
+- RLS das 6 tabelas — risco separado
+- `/v2/diagnostico` e `/v2/comparar` NAO gravam auditoria — preparado para uso futuro via tipo_execucao
+
+**Riscos conhecidos:**
+- search_execution_audit sem RLS — risco preexistente, nao alterado
+
+---
+
+## 2026-06-26 - Cascade - Frente 0/Controle: telemetria v2 em search_execution_audit
+
+**Resumo:** Implementada telemetria minima da v2 em `public.search_execution_audit`. Migration adicionou 4 colunas (`motor`, `rota`, `tipo_execucao`, `run_id`) com defaults seguros (`motor='legado'`, `tipo_execucao='producao'`). 1.006 registros antigos automaticamente marcados como legado. Criado helper `auditoria-search.ts` para insert nao-bloqueante. Rota `pesquisar-compat-async` agora grava `motor='v2'` em sucesso e erro. Insert falho nao derruba o fluxo. tsc: 0 erros. Nao altera geocoding_audit, RLS, regra de negocio, ranking, classificacao, OSRM, Haversine, agenda ou filtros.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts`
+- `src/lib/procurar-datas/api.ts`
+- `src/lib/auth/sgi-auth.ts`
+- `src/lib/supabase/service.ts`
+- `src/lib/procurar-datas/contratos.ts`
+- `src/lib/procurar-datas/v2/progresso-compat-store.ts`
+
+**Arquivos alterados/criados:**
+- `src/lib/procurar-datas/v2/auditoria-search.ts` (criado)
+- `src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts` (import + 3 calls registrarAuditoriaSearchV2)
+- `docs/ia/log_progress.md` (esta entrada + correcao de data da entrada anterior para 2026-06-26)
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md` (pendencia atualizada para implementada)
+
+**Validacoes realizadas:**
+- MCP `apply_migration`: migration aplicada com sucesso
+- MCP `information_schema.columns`: 4 novas colunas confirmadas (motor, rota, tipo_execucao, run_id)
+- MCP `GROUP BY motor`: 1.006 registros antigos = todos motor='legado'
+- MCP `pg_indexes`: indice idx_search_execution_audit_motor_created_at confirmado
+- tsc --noEmit --pretty false: exit 0, sem output
+
+**Pendencias:**
+- Validacao manual de execucao real (gera registro motor='v2') pendente — requer execucao autenticada na tela
+- geocoding_audit sem telemetria v2 — escopo futuro
+- RLS das 6 tabelas — risco separado
+
+**Riscos conhecidos:**
+- Insert da auditoria e fire-and-forget (.catch(() => {})) — falha nao bloqueia o fluxo, mas erro aparece no console/Vercel
+- search_execution_audit sem RLS — risco preexistente, nao alterado nesta tarefa
+
+**Proximo passo recomendado:** Executar uma busca autenticada e validar registro motor='v2' via MCP.
+
+---
+
+## 2026-06-26 - Cascade - Auditoria de telemetria/performance: legado x v2
+
+**Resumo:** Auditoria completa do fluxo de telemetria/performance do motor `/procurar-datas`. Confirmado que o legado Apps Script grava telemetria em duas tabelas Supabase (`geocoding_audit` e `search_execution_audit`) via REST API. A v2 Next.js mede performance in-memory (`MedidorPerformanceV2`) e logs de console/Vercel, mas NAO persiste telemetria no banco. Nao existe campo para distinguir motor legado vs v2. Hoje nao e possivel comparar performance legado x v2 de forma confiavel. RLS desabilitada em 6 tabelas (risco separado). Nenhuma alteracao de codigo, migration ou rota foi feita.
+
+**Arquivos lidos:**
+- `appscript/CEP-APIBACK.gs` (funcoes `RegistrarGeocodingAudit_`, `RegistrarExecucaoPesquisaAudit_`, `ResolverEnderecoComCache_`)
+- `appscript/GUIA-PERFORMANCE-TRACKING.md`
+- `appscript/supabase-cache-analytics-real.sql`
+- `appscript/supabase-add-duration-tracking.sql`
+- `src/lib/procurar-datas/motor/performance-diagnostico-v2.ts`
+- `src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts`
+- `src/app/api/procurar-datas/v2/diagnostico/route.ts`
+- `src/app/api/procurar-datas/v2/comparar/route.ts`
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `src/app/api/auditoria/registrar/route.ts`
+- `src/lib/supabase/service.ts`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+
+**Arquivos alterados:**
+- `docs/ia/log_progress.md` (esta entrada)
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md` (nova secao de pendencia confirmada)
+
+**Validacoes realizadas:**
+- MCP Supabase: estrutura de `geocoding_audit` (10 colunas) e `search_execution_audit` (24 colunas) confirmadas via `information_schema.columns`
+- MCP Supabase: 35.598 registros em `geocoding_audit` (06/03 a 25/06); 1.006 em `search_execution_audit` (09/03 a 25/06)
+- MCP Supabase: origins confirmadas — geocoding: MODAL+AGENDA; search: apenas MODAL
+- MCP Supabase: providers confirmados — l1 (29.025), supabase (5.680), locationiq (744), photon (137), maps.co (12)
+- MCP Supabase: 22 views de analise confirmadas via `pg_views`
+- MCP Supabase: indices confirmados (8 em geocoding_audit, 5 em search_execution_audit)
+- MCP Supabase: RLS desabilitada em 6 tabelas (critical) — `geocoding_audit`, `search_execution_audit`, `geo_cache`, `provider_costs`, `forex_config`, `sessoes_logout_automatico`
+- grep em `src/`: zero referencias a `geocoding_audit` ou `search_execution_audit`
+- grep em `src/`: zero chamadas a `RegistrarGeocodingAudit` ou `RegistrarExecucaoPesquisaAudit`
+- grep em `src/**/procurar-datas/**`: zero inserts em tabelas de telemetria (apenas config-db.ts)
+- code_search: `MedidorPerformanceV2` confirmado como in-memory apenas
+- grep em `validar-endereco/route.ts`: 27 pontos de console.log com duracaoMs (nao persistidos)
+
+**Pendencias:**
+- v2 precisa de implementacao futura para gravar telemetria em `search_execution_audit` e `geocoding_audit` com campos de distincao (`motor`, `rota`, `ambiente`)
+- Confirmar se Apps Script legado ainda grava registros apos virada v2 (24/06)
+- Confirmar se rota `/v2/comparar` gera auditoria legado misturada com producao
+- RLS das 6 tabelas — risco separado, nao corrigir nesta tarefa
+
+**Riscos conhecidos:**
+- v2 nao persiste telemetria no banco — dados perdidos apos expiracao Redis/rotacao Vercel
+- Nenhum campo distingue motor legado vs v2 nas tabelas existentes
+- RLS desabilitada em 6 tabelas (critical security)
+
+**Proximo passo recomendado:** Avaliar implementacao das fases do plano minimo (migration + inserts v2 + RLS) em tarefa separada.
+
+---
+
 ## 2026-06-25 - Codex - Regressao LocationIQ: postcode do provider libera aceite sem numero
 
 **Resumo:** Corrigida regressao na validacao LocationIQ de `POST /api/procurar-datas/validar-endereco`. O frontend agora envia o CEP pesquisado (`cepInput`) no payload de validacao, e o LocationIQ passa a tratar `postcode` presente no candidato como evidencia positiva parcial quando o formulario nao trouxer CEP. Com rua/cidade/UF fortes, `address.road` presente e `postcode` presente/compativel, ausencia de `house_number` vira alerta diagnostico, nao rejeicao; o resultado sai como `aproximado_confiavel`, `numeroObrigatorio=false`, `motivo=aceito_sem_numero_confirmado`.
@@ -12236,5 +13015,48 @@ Tempo total da v2: 00:09
 
 **Proximo passo recomendado:**
 - Fazer a validacao manual autenticada com um cenario real e, em tarefa futura separada, auditar a UI/UX do legado com escopo proprio.
+
+---
+## 2026-06-26 - Codex - Frente 3/direita: UX recuperavel para erro 422 na validacao de endereco
+
+**Resumo:** Ajustado somente o frontend de `/procurar-datas` para transformar erro HTTP 422 de `validar-endereco` em estado persistente e recuperavel na area do endereco. O toast continua existindo, mas deixou de ser o unico feedback. O card fixo permite revisar CEP/endereco sem recarregar a pagina ou pesquisar outro CEP. Nao altera backend, `validar-endereco`, `buscar-cep`, LocationIQ, Google fallback, Apps Script, `geo_cache`, motor v2, OSRM, Haversine, ranking, candidatos, classificacao, frete, banco, migrations ou RLS.
+
+**Arquivos lidos:**
+- `C:\Users\lebeb\.codex\attachments\2ed1cda4-f096-4e37-8c0b-a66aa09278cf\pasted-text.txt`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+- `src/app/procurar-datas/page.tsx`
+- `src/lib/procurar-datas/types.ts`
+- `src/lib/procurar-datas/contratos.ts`
+
+**Arquivos alterados:**
+- `src/app/procurar-datas/page.tsx`
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+
+**Validacoes realizadas:**
+- `npx eslint src/app/procurar-datas/page.tsx --quiet`: passou.
+- `npx tsc --noEmit --pretty false`: passou.
+- Validacao manual autenticada: nao executada nesta tarefa.
+
+**Comandos rodados e resultados:**
+- `rg`/`Get-Content` para auditar `validarEndereco`, estados de endereco/CEP e renderizacao da tela.
+- `npx eslint src/app/procurar-datas/page.tsx --quiet` -> exit 0.
+- `npx tsc --noEmit --pretty false` -> exit 0.
+
+**Pendencias:**
+- Testar manualmente autenticado:
+  1. erro 422 com `RUA TENENTE FRANCISCO FERREIRA DE SOUZA`, CEP `81630-010`, numero `20`;
+  2. revisar e tentar novamente com numero valido;
+  3. CEP geral `83535-000`;
+  4. CEP normal valido sem card de erro.
+
+**Riscos conhecidos:**
+- O foco no campo CEP ao usar `Pesquisar outro CEP` depende do navegador executar `requestAnimationFrame`; se nao ocorrer, o fluxo ainda fica liberado para edicao.
+- O modo de revisao preserva logradouro/bairro bloqueados quando vieram automaticamente do CEP, conforme regra existente.
+
+**Proximo passo recomendado:** Fazer validacao manual autenticada do cenario 422 e confirmar que `valor-inicial` e pesquisa de datas nao sao disparados enquanto o endereco nao for validado e confirmado.
 
 ---

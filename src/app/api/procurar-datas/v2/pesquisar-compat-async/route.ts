@@ -35,6 +35,11 @@ import {
   montarProgressoError,
   criarProgressoInicial,
 } from '@/lib/procurar-datas/v2/progresso-compat-store'
+import {
+  gerarRunId,
+  registrarAuditoriaSearchV2,
+} from '@/lib/procurar-datas/v2/auditoria-search'
+import { registrarAuditoriaPesquisa } from '@/lib/procurar-datas/v2/auditoria-pesquisa'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -121,6 +126,7 @@ export async function POST(request: NextRequest) {
         : gerarClientToken()
 
     const startedAt = new Date(inicioMs).toISOString()
+    const runId = gerarRunId()
 
     const progressoQueued = criarProgressoInicial(clientToken)
     await salvarProgressoCompat(clientToken, progressoQueued)
@@ -183,6 +189,57 @@ export async function POST(request: NextRequest) {
       )
       const progressoError = montarProgressoError(clientToken, mensagem, startedAt, inicioMs)
       await salvarProgressoCompat(clientToken, progressoError)
+      registrarAuditoriaSearchV2({
+        runId,
+        clientToken,
+        userEmail: acesso.auth.email || '',
+        cep: body.cep ?? null,
+        enderecoCompleto: body.enderecoCompleto ?? null,
+        tempoNecessario: body.tempoNecessario ?? null,
+        isRural: !!body.isRural,
+        isCondominio: !!body.isCondominio,
+        startedAt,
+        finishedAtMs: Date.now(),
+        inicioMs,
+        status: 'error',
+        errorMessage: mensagem,
+      }).catch(() => {})
+
+      // Auditoria operacional
+      registrarAuditoriaPesquisa({
+        runId,
+        clientToken,
+        userId: acesso.auth.userId || null,
+        userEmail: acesso.auth.email || '',
+        cep: body.cep || null,
+        numero: body.numero || null,
+        logradouro: body.logradouro || null,
+        bairro: body.bairro || null,
+        cidade: body.cidade || null,
+        uf: body.uf || null,
+        enderecoCompleto: body.enderecoCompleto || null,
+        latitude: body.lat || null,
+        longitude: body.lng || null,
+        parametros: {
+          dataInicial: body.dataInicial,
+          encomenda: body.isEncomenda,
+          areaRural: body.isRural,
+          condominio: body.isCondominio,
+          bercoCama: body.tipoBerco,
+          comoda: body.comoda,
+          roupeiro: body.roupeiro,
+          poltrona: body.poltrona,
+          painel: body.painel,
+          tempoNecessario: body.tempoNecessario,
+        },
+        status: 'error',
+        errorMessage: mensagem,
+        duracaoMs: Date.now() - inicioMs,
+        startedAt,
+        finishedAt: new Date(Date.now()).toISOString(),
+      }).catch((err) => {
+        console.error('[PROCURAR_DATAS][v2/pesquisar-compat-async] erro ao gravar auditoria operacional', err)
+      })
       return NextResponse.json(
         {
           ok: false,
@@ -205,6 +262,57 @@ export async function POST(request: NextRequest) {
       )
       const progressoError = montarProgressoError(clientToken, mensagemResultado, startedAt, inicioMs)
       await salvarProgressoCompat(clientToken, progressoError)
+      registrarAuditoriaSearchV2({
+        runId,
+        clientToken,
+        userEmail: acesso.auth.email || '',
+        cep: body.cep ?? null,
+        enderecoCompleto: body.enderecoCompleto ?? null,
+        tempoNecessario: body.tempoNecessario ?? null,
+        isRural: !!body.isRural,
+        isCondominio: !!body.isCondominio,
+        startedAt,
+        finishedAtMs: Date.now(),
+        inicioMs,
+        status: 'error',
+        errorMessage: mensagemResultado,
+      }).catch(() => {})
+
+      // Auditoria operacional
+      registrarAuditoriaPesquisa({
+        runId,
+        clientToken,
+        userId: acesso.auth.userId || null,
+        userEmail: acesso.auth.email || '',
+        cep: body.cep || null,
+        numero: body.numero || null,
+        logradouro: body.logradouro || null,
+        bairro: body.bairro || null,
+        cidade: body.cidade || null,
+        uf: body.uf || null,
+        enderecoCompleto: body.enderecoCompleto || null,
+        latitude: body.lat || null,
+        longitude: body.lng || null,
+        parametros: {
+          dataInicial: body.dataInicial,
+          encomenda: body.isEncomenda,
+          areaRural: body.isRural,
+          condominio: body.isCondominio,
+          bercoCama: body.tipoBerco,
+          comoda: body.comoda,
+          roupeiro: body.roupeiro,
+          poltrona: body.poltrona,
+          painel: body.painel,
+          tempoNecessario: body.tempoNecessario,
+        },
+        status: 'error',
+        errorMessage: mensagemResultado,
+        duracaoMs: Date.now() - inicioMs,
+        startedAt,
+        finishedAt: new Date(Date.now()).toISOString(),
+      }).catch((err) => {
+        console.error('[PROCURAR_DATAS][v2/pesquisar-compat-async] erro ao gravar auditoria operacional', err)
+      })
       return NextResponse.json(
         {
           ok: false,
@@ -237,16 +345,73 @@ export async function POST(request: NextRequest) {
 
     await salvarProgressoCompat(clientToken, progressoDone)
 
+    const finishedAtMs = Date.now()
     console.log(
-      `[PROCURAR_DATAS][v2/pesquisar-compat-async] fim ok=${resultado.ok} candidates=${resultado.payload.candidates.length} duracaoMs=${Date.now() - inicioMs}`
+      `[PROCURAR_DATAS][v2/pesquisar-compat-async] fim ok=${resultado.ok} candidates=${resultado.payload.candidates.length} duracaoMs=${finishedAtMs - inicioMs}`
     )
+
+    registrarAuditoriaSearchV2({
+      runId,
+      clientToken,
+      userEmail: acesso.auth.email || '',
+      cep: body.cep ?? null,
+      enderecoCompleto: body.enderecoCompleto ?? null,
+      tempoNecessario: body.tempoNecessario ?? null,
+      isRural: !!body.isRural,
+      isCondominio: !!body.isCondominio,
+      startedAt,
+      finishedAtMs,
+      inicioMs,
+      status: 'success',
+      candidates: resultado.payload.candidates,
+      searchTimeSeconds: resultado.payload.searchTime,
+    }).catch(() => {})
+
+    // Auditoria operacional
+    const auditoriaPesquisaResultado = await registrarAuditoriaPesquisa({
+      runId,
+      clientToken,
+      userId: acesso.auth.userId || null,
+      userEmail: acesso.auth.email || '',
+      cep: body.cep || null,
+      numero: body.numero,
+      logradouro: body.logradouro,
+      bairro: body.bairro,
+      cidade: body.cidade,
+      uf: body.uf,
+      enderecoCompleto: body.enderecoCompleto,
+      latitude: body.lat,
+      longitude: body.lng,
+      parametros: {
+        dataInicial: body.dataInicial,
+        encomenda: body.isEncomenda,
+        areaRural: body.isRural,
+        condominio: body.isCondominio,
+        bercoCama: body.tipoBerco,
+        comoda: body.comoda,
+        roupeiro: body.roupeiro,
+        poltrona: body.poltrona,
+        painel: body.painel,
+        tempoNecessario: body.tempoNecessario,
+      },
+      resultados: resultado.payload.candidates,
+      status: 'success',
+      duracaoMs: finishedAtMs - inicioMs,
+      startedAt,
+      finishedAt: new Date(finishedAtMs).toISOString(),
+    }).catch((err) => {
+      console.error('[PROCURAR_DATAS][v2/pesquisar-compat-async] erro ao gravar auditoria operacional', err)
+      return { id: '', sucesso: false, erro: err instanceof Error ? err.message : 'Erro desconhecido' }
+    })
 
     return NextResponse.json(
       {
         ok: true,
         clientToken,
+        runId,
         status: 'done' as const,
         modo: 'v2-pesquisar-compat-async',
+        ...(auditoriaPesquisaResultado.sucesso ? { pesquisaAuditoriaId: auditoriaPesquisaResultado.id } : {}),
         ...(diagnosticoPerformanceV2 ? { diagnosticoPerformanceV2 } : {}),
         ...(diagnosticoResultadoTelaV2SantoAmaro
           ? { diagnosticoResultadoTelaV2SantoAmaro }

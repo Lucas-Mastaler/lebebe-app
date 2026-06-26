@@ -8,6 +8,7 @@ import {
   ehEnderecoDificilRodoviaOuRural,
   type GoogleGeocodingEvent,
 } from '@/lib/procurar-datas/google-geocoding'
+import { validarEnderecoProviderDireto } from '@/lib/procurar-datas/validar-endereco-resultado'
 import { validarPayloadEndereco } from '@/lib/procurar-datas/validar-endereco-payload'
 import type { ValidarEnderecoRequest, ValidarEnderecoResponseSucesso, EnderecoValidado } from '@/lib/procurar-datas/contratos'
 
@@ -101,89 +102,94 @@ export async function POST(request: NextRequest) {
     )
 
     const enderecoDificil = ehEnderecoDificilRodoviaOuRural(body)
-    if (enderecoDificil) {
-      console.log(
-        `[PROCURAR_DATAS][validar-endereco] google_fallback_check enderecoDificil=true logradouro="${String(body.logradouro ?? '').slice(0, 60)}" duracaoMs=${Date.now() - inicio}`
-      )
-      const logGoogle = (event: GoogleGeocodingEvent) => {
-        if (event.tipo === 'google_fallback_success') {
-          console.log(`[PROCURAR_DATAS][validar-endereco] google_fallback_success duracaoMs=${Date.now() - inicio}`)
-          return
-        }
-        if (event.tipo === 'google_fallback_rejected') {
-          console.log(`[PROCURAR_DATAS][validar-endereco] google_fallback_rejected motivo=${event.motivo} duracaoMs=${Date.now() - inicio}`)
-          return
-        }
-        if (event.tipo === 'google_fallback_error') {
-          console.log(`[PROCURAR_DATAS][validar-endereco] google_fallback_error motivo=${event.motivo} duracaoMs=${Date.now() - inicio}`)
-          return
-        }
-        if (event.tipo === 'google_fallback_missing_key') {
-          console.log(`[PROCURAR_DATAS][validar-endereco] google_fallback_missing_key duracaoMs=${Date.now() - inicio}`)
-          return
-        }
-        if (event.tipo === 'google_fallback_skip_not_difficult') {
-          console.log(`[PROCURAR_DATAS][validar-endereco] google_fallback_skip_not_difficult duracaoMs=${Date.now() - inicio}`)
-          return
-        }
-        if (event.tipo === 'google_fallback_query') {
-          console.log(`[PROCURAR_DATAS][validar-endereco][google_fallback_query] query="${event.query}" cidade="${event.cidade}" uf="${event.uf}" cep="${event.cep}" enderecoDificil=true duracaoMs=${Date.now() - inicio}`)
-          return
-        }
-        if (event.tipo === 'google_fallback_response') {
-          console.log(`[PROCURAR_DATAS][validar-endereco][google_fallback_response] status="${event.status}" total=${event.total} errorMessage="${event.errorMessage ?? ''}" duracaoMs=${Date.now() - inicio}`)
-          return
-        }
-        if (event.tipo === 'google_candidate') {
-          console.log(
-            `[PROCURAR_DATAS][validar-endereco][google_candidate] idx=${event.idx} motivos=${event.motivos} lat=${event.lat} lng=${event.lng} formatted="${event.formatted}" placeId="${event.placeId}" locationType="${event.locationType}" partialMatch=${event.partialMatch} route="${event.route}" streetNumber="${event.streetNumber}" bairroCandidate="${event.bairroCandidate}" cityCandidate="${event.cityCandidate}" citySource="${event.citySource}" formattedCityMatch=${event.formattedCityMatch} stateCandidate="${event.stateCandidate}" postcode="${event.postcode}" cidadeOk=${event.cidadeOk} ufOk=${event.ufOk} logradouroOk=${event.logradouroOk} numeroOk=${event.numeroOk} bairroOk=${event.bairroOk} cepOk=${event.cepOk} duracaoMs=${Date.now() - inicio}`
-          )
-          return
-        }
-        if (event.tipo === 'google_summary') {
-          console.log(`[PROCURAR_DATAS][validar-endereco][google_summary] total=${event.total} aceitos=${event.aceitos} rejeitados=${event.rejeitados} motivos=${event.motivos} duracaoMs=${Date.now() - inicio}`)
-          return
-        }
-        if (event.tipo === 'google_reject_detail') {
-          console.log(`[PROCURAR_DATAS][validar-endereco][google_reject_detail] motivo=${event.motivo} esperadoCidade="${event.esperadoCidade}" recebidoCidade="${event.recebidoCidade}" formatted="${event.formatted}" componentsResumo="${event.componentsResumo}" duracaoMs=${Date.now() - inicio}`)
-          return
-        }
-        console.log(`[PROCURAR_DATAS][validar-endereco] ${event.tipo} duracaoMs=${Date.now() - inicio}`)
+    const modoGoogle = enderecoDificil ? 'rodovia_ou_rural' : 'fallback_final_geral'
+    console.log(
+      `[PROCURAR_DATAS][validar-endereco] google_fallback_check enderecoDificil=${enderecoDificil}` +
+      ` motivo="${enderecoDificil ? 'rodovia_ou_rural' : 'fallback_final_antes_appscript'}"` +
+      ` locationiqStatus="sem_resultado_valido" duracaoMs=${Date.now() - inicio}`
+    )
+    const logGoogle = (event: GoogleGeocodingEvent) => {
+      if (event.tipo === 'google_fallback_success') {
+        console.log(`[PROCURAR_DATAS][validar-endereco] google_fallback_success modo="${modoGoogle}" duracaoMs=${Date.now() - inicio}`)
+        return
       }
-
-      const google = await consultarGoogleGeocodingEnderecoDificil(body, { onEvent: logGoogle })
-      if (google.status === 'success') {
-        const cacheSave = await salvarEnderecoNoGeoCache(body, google.resultado)
-        if (!cacheSave.ok) {
-          console.warn(
-            `[PROCURAR_DATAS][validar-endereco] geo_cache_save_failed provider=google_geocoding motivo=${cacheSave.erro} duracaoMs=${Date.now() - inicio}`
-          )
-        }
-
-        const r = google.resultado
-        const latStr = r.lat !== undefined ? r.lat.toFixed(5) : '-'
-        const lngStr = r.lng !== undefined ? r.lng.toFixed(5) : '-'
-        const addressTrunc = String(r.enderecoCompleto ?? r.display ?? r.display_name ?? '').slice(0, 80)
+      if (event.tipo === 'google_fallback_rejected') {
+        console.log(`[PROCURAR_DATAS][validar-endereco] google_fallback_rejected modo="${modoGoogle}" motivo=${event.motivo} duracaoMs=${Date.now() - inicio}`)
+        return
+      }
+      if (event.tipo === 'google_fallback_error') {
+        console.log(`[PROCURAR_DATAS][validar-endereco] google_fallback_error modo="${modoGoogle}" motivo=${event.motivo} duracaoMs=${Date.now() - inicio}`)
+        return
+      }
+      if (event.tipo === 'google_fallback_missing_key') {
+        console.log(`[PROCURAR_DATAS][validar-endereco] google_fallback_missing_key modo="${modoGoogle}" duracaoMs=${Date.now() - inicio}`)
+        return
+      }
+      if (event.tipo === 'google_fallback_skip_not_difficult') {
+        console.log(`[PROCURAR_DATAS][validar-endereco] google_fallback_skip_not_difficult modo="${modoGoogle}" duracaoMs=${Date.now() - inicio}`)
+        return
+      }
+      if (event.tipo === 'google_fallback_query') {
+        console.log(`[PROCURAR_DATAS][validar-endereco][google_fallback_query] query="${event.query}" cidade="${event.cidade}" uf="${event.uf}" cep="${event.cep}" enderecoDificil=${enderecoDificil} modo="${modoGoogle}" duracaoMs=${Date.now() - inicio}`)
+        return
+      }
+      if (event.tipo === 'google_fallback_response') {
+        console.log(`[PROCURAR_DATAS][validar-endereco][google_fallback_response] status="${event.status}" total=${event.total} errorMessage="${event.errorMessage ?? ''}" duracaoMs=${Date.now() - inicio}`)
+        return
+      }
+      if (event.tipo === 'google_candidate') {
         console.log(
-          `[PROCURAR_DATAS][validar-endereco] sucesso provider=google_geocoding fallback=google_geocoding` +
-          ` lat=${latStr} lng=${lngStr}` +
-          ` cep=${r.cep ?? '-'}` +
-          ` address="${addressTrunc}"` +
-          ` duracaoMs=${Date.now() - inicio}`
+          `[PROCURAR_DATAS][validar-endereco][google_candidate] idx=${event.idx} motivos=${event.motivos} lat=${event.lat} lng=${event.lng} formatted="${event.formatted}" placeId="${event.placeId}" locationType="${event.locationType}" partialMatch=${event.partialMatch} route="${event.route}" streetNumber="${event.streetNumber}" bairroCandidate="${event.bairroCandidate}" cityCandidate="${event.cityCandidate}" citySource="${event.citySource}" formattedCityMatch=${event.formattedCityMatch} stateCandidate="${event.stateCandidate}" postcode="${event.postcode}" cidadeOk=${event.cidadeOk} ufOk=${event.ufOk} logradouroOk=${event.logradouroOk} numeroOk=${event.numeroOk} bairroOk=${event.bairroOk} cepOk=${event.cepOk} duracaoMs=${Date.now() - inicio}`
         )
-        const resposta: ValidarEnderecoResponseSucesso = { ok: true, resultado: google.resultado }
-        return NextResponse.json(resposta)
+        return
       }
-
-      console.log(
-        `[PROCURAR_DATAS][validar-endereco] google_fallback_failed motivo=${google.motivo} duracaoMs=${Date.now() - inicio}`
-      )
+      if (event.tipo === 'google_summary') {
+        console.log(`[PROCURAR_DATAS][validar-endereco][google_summary] total=${event.total} aceitos=${event.aceitos} rejeitados=${event.rejeitados} motivos=${event.motivos} duracaoMs=${Date.now() - inicio}`)
+        return
+      }
+      if (event.tipo === 'google_reject_detail') {
+        console.log(`[PROCURAR_DATAS][validar-endereco][google_reject_detail] motivo=${event.motivo} esperadoCidade="${event.esperadoCidade}" recebidoCidade="${event.recebidoCidade}" formatted="${event.formatted}" componentsResumo="${event.componentsResumo}" duracaoMs=${Date.now() - inicio}`)
+        return
+      }
+      console.log(`[PROCURAR_DATAS][validar-endereco] ${event.tipo} duracaoMs=${Date.now() - inicio}`)
     }
 
-    console.log(`[PROCURAR_DATAS][validar-endereco] fallback_appsscript duracaoMs=${Date.now() - inicio}`)
+    const google = await consultarGoogleGeocodingEnderecoDificil(body, {
+      onEvent: logGoogle,
+      permitirEnderecoComum: true,
+    })
+    if (google.status === 'success') {
+      const cacheSave = await salvarEnderecoNoGeoCache(body, google.resultado)
+      if (!cacheSave.ok) {
+        console.warn(
+          `[PROCURAR_DATAS][validar-endereco] geo_cache_save_failed provider=google_geocoding motivo=${cacheSave.erro} duracaoMs=${Date.now() - inicio}`
+        )
+      }
+
+      const r = google.resultado
+      const latStr = r.lat !== undefined ? r.lat.toFixed(5) : '-'
+      const lngStr = r.lng !== undefined ? r.lng.toFixed(5) : '-'
+      const addressTrunc = String(r.enderecoCompleto ?? r.display ?? r.display_name ?? '').slice(0, 80)
+      console.log(
+        `[PROCURAR_DATAS][validar-endereco] sucesso provider=google_geocoding fallback=google_geocoding` +
+        ` lat=${latStr} lng=${lngStr}` +
+        ` cep=${r.cep ?? '-'}` +
+        ` address="${addressTrunc}"` +
+        ` duracaoMs=${Date.now() - inicio}`
+      )
+      const resposta: ValidarEnderecoResponseSucesso = { ok: true, resultado: google.resultado }
+      return NextResponse.json(resposta)
+    }
+
+    console.log(
+      `[PROCURAR_DATAS][validar-endereco] google_fallback_failed modo="${modoGoogle}" motivo=${google.motivo} duracaoMs=${Date.now() - inicio}`
+    )
+
+    console.log(`[PROCURAR_DATAS][validar-endereco] fallback_appsscript motivo="google_sem_resultado_valido" duracaoMs=${Date.now() - inicio}`)
     const resultado = await chamarAppsScriptProcurarDatas('LookupCompletoPorEndereco', [body], {
       rota: 'validar-endereco',
     }) as EnderecoValidado
+    const validacaoAppsScript = validarEnderecoProviderDireto(resultado, body)
 
     // Log sanitizado do resultado do fallback Apps Script
     const r = resultado
@@ -205,9 +211,22 @@ export async function POST(request: NextRequest) {
       ` duracaoMs=${Date.now() - inicio}`
     )
 
+    if (!validacaoAppsScript.ok) {
+      console.warn(
+        `[PROCURAR_DATAS][validar-endereco] appsscript_rejected motivo=${validacaoAppsScript.motivo} duracaoMs=${Date.now() - inicio}`
+      )
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'Nao conseguimos validar esse endereco com seguranca. Confira se o CEP corresponde ao logradouro e bairro informados.',
+        },
+        { status: 422 }
+      )
+    }
+
     console.log(
       `[PROCURAR_DATAS][validar-endereco] sucesso provider=appsscript fallback=appsscript` +
-      ` fallbackReason=locationiq_sem_resultado_valido` +
+      ` fallbackReason=google_sem_resultado_valido` +
       ` duracaoMs=${Date.now() - inicio}`
     )
     const resposta: ValidarEnderecoResponseSucesso = { ok: true, resultado }

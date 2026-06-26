@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/service'
+import { createClient } from '@/lib/supabase/server'
 import { registrarAuditoria } from '@/lib/auth/helpers'
 import { enviarEmail, gerarHtmlConvite } from '@/lib/email/resend'
 import { gerarTokenConvite } from '@/lib/crypto/tokens'
@@ -6,6 +7,31 @@ import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
   try {
+    const supabase = await createClient()
+    const supabaseAdmin = createServiceClient()
+
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user?.email) {
+      return NextResponse.json(
+        { ok: false, message: 'Não autenticado' },
+        { status: 401 }
+      )
+    }
+
+    const { data: usuarioLogado } = await supabaseAdmin
+      .from('usuarios_permitidos')
+      .select('role, ativo')
+      .eq('email', user.email.toLowerCase())
+      .single()
+
+    if (usuarioLogado?.role !== 'superadmin' || usuarioLogado?.ativo !== true) {
+      return NextResponse.json(
+        { ok: false, message: 'Acesso negado' },
+        { status: 403 }
+      )
+    }
+
     const { email } = await request.json()
 
     if (!email) {
@@ -23,8 +49,6 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
-
-    const supabaseAdmin = createServiceClient()
     
     const { data: usuarioExistente } = await supabaseAdmin
       .from('usuarios_permitidos')

@@ -1,3 +1,75 @@
+## 2026-06-26 - Codex - Frente 3/direita + Frente 0: autoria do pre-agendamento
+
+Status: implementado em `src/app/api/procurar-datas/pre-agendar/route.ts` e nos pontos Apps Script `appscript/PublicAPI.gs` / `appscript/CEP-APIBACK.gs`. Nao altera busca de datas, geocodificacao, CEP-first, Google fallback de endereco, OSRM, Haversine, ranking, candidatos, classificacao, frete, banco, migrations ou RLS.
+
+### Regra de autoria
+- A fonte oficial da autoria operacional do pre-agendamento e a sessao autenticada do Le Bebe App, via `validarAcessoProcurarDatas()`.
+- O frontend nao informa responsavel como fonte de verdade.
+- A rota monta `meta.autoria` no backend com `id`, `email`, nome derivado do email e `origemAutoria='sessao_app'`.
+- A auditoria operacional de pre-agendamento grava `usuario_id`, `usuario_email` e `payload_pre_agendamento_json.meta.autoria`.
+
+### Apps Script
+- Apps Script ainda e usado para criar o evento via `ApiPreAgendarDireto`.
+- `ApiPreAgendarDireto` e `preAgendarDireto` passam a preferir `meta.autoria.email` para montar o solicitante do titulo e `logAuditRow`.
+- Chamadas legadas sem `meta.autoria` continuam usando `Session.getActiveUser()`.
+- Limitacao conhecida: o executor tecnico do Apps Script pode continuar sendo a conta dona do deployment/refresh token, mas o responsavel operacional deve vir de `meta.autoria`.
+
+### Validacoes
+- `npx eslint src/app/api/procurar-datas/pre-agendar/route.ts --quiet`: passou.
+- `npx tsc --noEmit --pretty false`: passou.
+- Teste especifico de pre-agendamento/auditoria: nao encontrado.
+- Validacao manual com dois usuarios: pendente.
+
+### Como validar manualmente
+1. Usuario A autenticado em `/procurar-datas` faz pre-agendamento e confirma titulo/auditoria com email de A.
+2. Usuario B autenticado faz outro pre-agendamento e confirma titulo/auditoria com email de B.
+3. Confirmar que nao aparece sempre Lucas e que `payload_pre_agendamento_json.meta.autoria.origemAutoria` e `sessao_app`.
+
+---
+
+## 2026-06-26 - Codex - Frente 3/direita: erro 422 de endereco como estado recuperavel
+
+Status: implementado somente no frontend `src/app/procurar-datas/page.tsx`. Nao altera backend, `validar-endereco`, `buscar-cep`, LocationIQ, Google fallback, Apps Script, `geo_cache`, motor v2, OSRM, Haversine, ranking, candidatos, classificacao, frete, banco, migrations ou RLS.
+
+### Regra de UX
+- Erro HTTP 422 de validacao de endereco deixa de depender apenas de toast.
+- A tela mostra card persistente na area de endereco com acao `Revisar CEP e endereco`.
+- `Revisar CEP e endereco` limpa coordenada/resultado/confirmacao/pesquisa/valor inicial e preserva os dados digitados para correcao.
+- `Pesquisar outro CEP` reinicia o fluxo de CEP e limpa logradouro, bairro, cidade e UF.
+- Itens, valor inicial e pesquisa de datas seguem bloqueados ate novo endereco validado e confirmado.
+
+### Validacoes
+- `npx eslint src/app/procurar-datas/page.tsx --quiet`: passou.
+- `npx tsc --noEmit --pretty false`: passou.
+- Validacao manual autenticada: pendente.
+
+---
+
+## 2026-06-26 - Codex - Frente 1/esquerda: fallback final Google e bloqueio por CEP divergente
+
+Status: implementado em `src/app/api/procurar-datas/validar-endereco/route.ts` e validadores de geocoding. Nao altera UI, `buscar-cep`, motor v2 de datas, OSRM, Haversine, ranking, classificacao, frete, banco, migrations, RLS ou Apps Script.
+
+### O que mudou
+- `cep_mismatch` passou a ter prioridade sobre `no_house_number` no LocationIQ.
+- Google Geocoding deixou de ser fallback apenas para rodovia/rural e agora tambem e chamado como fallback final geral antes do Apps Script, somente depois de cache e LocationIQ falharem/rejeitarem.
+- Google continua sendo chamado no maximo uma vez por validacao de endereco.
+- Resultado urbano sem `street_number` pode ser aceito como `aproximado_confiavel` quando CEP, logradouro, cidade e UF forem fortes.
+- Resultado com CEP divergente claro e rejeitado antes da ausencia de numero.
+- Apps Script passou por validacao minima antes de sucesso: coordenadas, CEP, cidade, UF e logradouro quando comparavel.
+
+### Caso real coberto
+- `RUA TENENTE FRANCISCO FERREIRA DE SOUZA`, CEP `81630-010`: candidatos LocationIQ/Apps Script com `81670-000`, `81650-040` ou `81030-030` sao rejeitados por `cep_mismatch`.
+
+### Validacoes
+- `npm run test -- src/lib/procurar-datas/locationiq.test.ts src/lib/procurar-datas/google-geocoding.test.ts src/lib/procurar-datas/validar-endereco-resultado.test.ts --silent`: 56/56 passou.
+- `npx tsc --noEmit --pretty false`: passou em execucao anterior; na reexecucao final falhou em arquivos fora do escopo desta tarefa (`pre-agendar`, `pesquisar-compat-async`, `page.tsx`) que ja estavam em alteracao no worktree.
+- `npx eslint` nos arquivos alterados: passou.
+
+### Pendente
+- Validacao manual autenticada do caso Tenente Francisco, de um endereco urbano resolvido por LocationIQ e de rodovia.
+
+---
+
 ## 2026-06-25 - Codex - Frente 1/esquerda: LocationIQ urbano com CEP sem numero confirmado
 
 Status: implementado em `src/lib/procurar-datas/locationiq.ts`. Nao altera UI, buscar-cep, motor v2, OSRM, Haversine, ranking, classificacao de datas, frete, banco, migrations, RLS ou Apps Script.

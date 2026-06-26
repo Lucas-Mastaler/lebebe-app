@@ -61,6 +61,8 @@ type SearchPayload = {
   params?: string
   candidates?: Candidate[]
   searchTime?: string
+  clientToken?: string
+  runId?: string
 }
 
 type EstadoCep = 'aguardando_input' | 'consultando' | 'encontrado' | 'nao_encontrado' | 'confirmado'
@@ -84,6 +86,18 @@ type FormErrors = {
   dataInicial?: string
   endereco?: string
   tempo?: string
+}
+
+type AddressValidationError = {
+  status?: number
+  title: string
+  description: string
+  message: string
+}
+
+type ProcurarDatasHttpError = Error & {
+  status?: number
+  payload?: unknown
 }
 
 type FormState = {
@@ -216,7 +230,10 @@ function isNormalCandidate(candidate: Candidate) {
 async function readJson(response: Response) {
   const data = await response.json().catch(() => null)
   if (!response.ok || data?.ok === false) {
-    throw new Error(data?.error || 'Erro ao processar solicitacao.')
+    const error = new Error(data?.error || 'Erro ao processar solicitacao.') as ProcurarDatasHttpError
+    error.status = response.status
+    error.payload = data
+    throw error
   }
   return data
 }
@@ -236,6 +253,8 @@ export default function ProcurarDatasPage() {
   const [searchError, setSearchError] = useState('')
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [valorInicial, setValorInicial] = useState('')
+  const [addressValidationError, setAddressValidationError] = useState<AddressValidationError | null>(null)
+  const [addressValidationReviewMode, setAddressValidationReviewMode] = useState(false)
   const [formErrors, setFormErrors] = useState<FormErrors>({})
   const [loadingOptions, setLoadingOptions] = useState(true)
   const [cepInput, setCepInput] = useState('')
@@ -248,10 +267,13 @@ export default function ProcurarDatasPage() {
   const [calculatingValorInicial, setCalculatingValorInicial] = useState(false)
   const [searching, setSearching] = useState(false)
   const [schedulingIndex, setSchedulingIndex] = useState<number | null>(null)
+  const [pesquisaAuditoriaId, setPesquisaAuditoriaId] = useState<string | null>(null)
+  const cepInputRef = useRef<HTMLInputElement | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const activeSearchTokenRef = useRef('')
   const searchStartedAtRef = useRef(0)
+  const currentRunIdRef = useRef<string | null>(null)
 
   const minDate = useMemo(() => isoDatePlus(form.isEncomenda ? 42 : 2), [form.isEncomenda])
   const maxDate = useMemo(() => isoDatePlus(90), [])
@@ -263,6 +285,36 @@ export default function ProcurarDatasPage() {
   const tempoMinutes = hhmmToMinutes(tempoNecessario)
   const tempoTooLong = tempoMinutes > 390
   const progressDone = progressStatus === 'done'
+  const addressRevisionUnlocked = !!addressValidationError || addressValidationReviewMode
+
+  const cepBloqueado =
+    searching ||
+    loadingCep ||
+    (!addressRevisionUnlocked && (estadoCep === 'encontrado' || estadoCep === 'confirmado'))
+  const numeroBloqueado = searching || loadingCep || (!addressRevisionUnlocked && estadoCep === 'confirmado')
+  const logradouroBloqueado =
+    searching ||
+    estadoCep === 'aguardando_input' ||
+    estadoCep === 'consultando' ||
+    estadoCep === 'nao_encontrado' ||
+    (estadoCep === 'encontrado' && !cepSemLogradouro) ||
+    (estadoCep === 'confirmado' && !addressRevisionUnlocked) ||
+    (estadoCep === 'confirmado' && addressRevisionUnlocked && !cepSemLogradouro)
+  const bairroBloqueado =
+    searching ||
+    estadoCep === 'aguardando_input' ||
+    estadoCep === 'consultando' ||
+    estadoCep === 'nao_encontrado' ||
+    (estadoCep === 'encontrado' && !cepSemBairro) ||
+    (estadoCep === 'confirmado' && !addressRevisionUnlocked) ||
+    (estadoCep === 'confirmado' && addressRevisionUnlocked && !cepSemBairro)
+  const cidadeUfBloqueado =
+    searching ||
+    estadoCep === 'aguardando_input' ||
+    estadoCep === 'consultando' ||
+    estadoCep === 'nao_encontrado' ||
+    estadoCep === 'encontrado' ||
+    estadoCep === 'confirmado'
 
   useEffect(() => {
     setForm((current) => {
@@ -405,6 +457,8 @@ export default function ProcurarDatasPage() {
 
   function resetEstadoCepEEndereco() {
     setEstadoCep('aguardando_input')
+    setAddressValidationError(null)
+    setAddressValidationReviewMode(false)
     setAddressResult(null)
     setAddressConfirmed(false)
     setAddressConfirmedResult(null)
@@ -422,7 +476,9 @@ export default function ProcurarDatasPage() {
 
   const camposEndereco = ['logradouro', 'numero', 'bairro', 'cidade', 'uf']
 
-  function limparResultadoValidacao() {
+  function limparResultadoValidacao(options: { preservarRevisaoEndereco?: boolean } = {}) {
+    setAddressValidationError(null)
+    if (!options.preservarRevisaoEndereco) setAddressValidationReviewMode(false)
     setAddressResult(null)
     setAddressConfirmed(false)
     setAddressConfirmedResult(null)
@@ -448,7 +504,7 @@ export default function ProcurarDatasPage() {
       return next
     })
     if (camposEndereco.includes(String(key))) {
-      limparResultadoValidacao()
+      limparResultadoValidacao({ preservarRevisaoEndereco: addressValidationReviewMode })
       setPhase('Endereco alterado')
       if (estadoCep === 'confirmado') {
         setEstadoCep('encontrado')
@@ -467,6 +523,8 @@ export default function ProcurarDatasPage() {
       return
     }
     setLoadingCep(true)
+    setAddressValidationError(null)
+    setAddressValidationReviewMode(false)
     setEstadoCep('consultando')
     setFormErrors((current) => { const next = { ...current }; delete next.endereco; return next })
     try {
@@ -527,6 +585,43 @@ export default function ProcurarDatasPage() {
     toast.success('Endereco reiniciado. Preencha CEP e numero novamente.')
   }
 
+  function limparEstadosDependentesDeCoordenada() {
+    setAddressResult(null)
+    setAddressConfirmed(false)
+    setAddressConfirmedResult(null)
+    setSearchPayload(null)
+    setValorInicial('')
+    setProgressStatus('idle')
+    setProgressSnapshot(null)
+    setSearchError('')
+    setElapsedSeconds(0)
+    setPesquisaAuditoriaId(null)
+    currentRunIdRef.current = null
+    stopPolling()
+    stopTimer()
+  }
+
+  function revisarEnderecoAposErro() {
+    setAddressValidationError(null)
+    setAddressValidationReviewMode(true)
+    limparEstadosDependentesDeCoordenada()
+    setEstadoCep('encontrado')
+    setPhase('Revise CEP e endereco')
+  }
+
+  function pesquisarOutroCepAposErro() {
+    setAddressValidationError(null)
+    setAddressValidationReviewMode(false)
+    setCepInput('')
+    setForm((current) => ({ ...current, logradouro: '', bairro: '', cidade: '', uf: 'PR' }))
+    limparEstadosDependentesDeCoordenada()
+    setEstadoCep('aguardando_input')
+    setCepSemLogradouro(false)
+    setCepSemBairro(false)
+    setPhase('Pronto para validar endereco')
+    requestAnimationFrame(() => cepInputRef.current?.focus())
+  }
+
   function montarEnderecoFormatadoParaMaps(form: FormState, cep?: string): string {
     const partes: string[] = []
     if (form.logradouro) partes.push(form.logradouro)
@@ -551,6 +646,8 @@ export default function ProcurarDatasPage() {
     }
 
     setValidatingAddress(true)
+    setAddressValidationError(null)
+    setAddressValidationReviewMode(false)
     setPhase('Validando endereco')
     setSearchPayload(null)
     setAddressConfirmed(false)
@@ -593,6 +690,19 @@ export default function ProcurarDatasPage() {
       toast.success('Endereco validado. Confirme o local para continuar.')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao validar endereco.'
+      const status = (error as ProcurarDatasHttpError).status
+      if (status === 422) {
+        limparEstadosDependentesDeCoordenada()
+        setAddressValidationError({
+          status,
+          title: 'Nao conseguimos validar esse endereco com seguranca',
+          description: 'Confira se o CEP corresponde ao logradouro, bairro e numero informados.',
+          message,
+        })
+        setPhase('Revise CEP e endereco')
+        toast.error(message)
+        return
+      }
       toast.error(message)
       setPhase('Erro ao validar endereco')
     } finally {
@@ -656,7 +766,11 @@ export default function ProcurarDatasPage() {
             finalizarBuscaComErro('A busca terminou, mas nao retornou resultados validos. Verifique logs pelo token.')
             return
           }
-          setSearchPayload(payload)
+          setSearchPayload({
+            ...payload,
+            clientToken: activeSearchTokenRef.current,
+            runId: currentRunIdRef.current || activeSearchTokenRef.current,
+          })
           setPhase('Resultados finalizados')
           setSearching(false)
           stopPolling()
@@ -759,10 +873,19 @@ export default function ProcurarDatasPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      const data = (await readJson(response)) as PesquisarDatasResponseSucesso
+      const data = (await readJson(response)) as PesquisarDatasResponseSucesso & { pesquisaAuditoriaId?: string; runId?: string }
       if (activeSearchTokenRef.current !== token) return
       const startedToken = data.clientToken || token
       activeSearchTokenRef.current = startedToken
+      
+      // Guardar ID da auditoria operacional e runId se retornados
+      if (data.pesquisaAuditoriaId) {
+        setPesquisaAuditoriaId(data.pesquisaAuditoriaId)
+      }
+      if (data.runId) {
+        currentRunIdRef.current = data.runId
+      }
+      
       setProgressStatus('queued')
       setPhase('Buscando datas')
       startPolling(startedToken, endpoints.progresso)
@@ -777,6 +900,7 @@ export default function ProcurarDatasPage() {
   function editarFiltros() {
     activeSearchTokenRef.current = ''
     searchStartedAtRef.current = 0
+    currentRunIdRef.current = null
     setSearching(false)
     setProgressStatus('idle')
     setProgressSnapshot(null)
@@ -798,7 +922,7 @@ export default function ProcurarDatasPage() {
     setPhase('Pre-agendando')
 
     try {
-      const body: PreAgendarRequest = {
+      const body: PreAgendarRequest & { pesquisaAuditoriaId?: string; clientToken?: string; runId?: string } = {
         cand: {
           dateISO: candidate.dateISO,
           team: candidate.team,
@@ -812,6 +936,10 @@ export default function ProcurarDatasPage() {
           cep: searchPayload.cep || '',
           params: searchPayload.params || '',
         },
+        // Incluir dados para vincular com auditoria da pesquisa
+        ...(pesquisaAuditoriaId && { pesquisaAuditoriaId }),
+        ...(searchPayload.clientToken && { clientToken: searchPayload.clientToken }),
+        ...(searchPayload.runId && { runId: searchPayload.runId }),
       }
       const response = await fetch('/api/procurar-datas/pre-agendar', {
         method: 'POST',
@@ -916,12 +1044,20 @@ export default function ProcurarDatasPage() {
             <label className="md:col-span-2">
               <span className="mb-1 block text-xs font-medium text-slate-600">CEP</span>
               <Input
-                disabled={searching || loadingCep || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
+                ref={cepInputRef}
+                disabled={cepBloqueado}
                 value={cepInput}
                 onChange={(e) => {
                   const raw = e.target.value.replace(/\D/g, '').slice(0, 8)
                   const fmt = raw.length > 5 ? raw.slice(0, 5) + '-' + raw.slice(5) : raw
                   setCepInput(fmt)
+                  if (addressValidationReviewMode) {
+                    setAddressValidationError(null)
+                    limparEstadosDependentesDeCoordenada()
+                    setEstadoCep('aguardando_input')
+                    setPhase('CEP alterado')
+                    return
+                  }
                   if (estadoCep !== 'aguardando_input') {
                     rejeitarEnderecoCep()
                   }
@@ -933,7 +1069,7 @@ export default function ProcurarDatasPage() {
             <label>
               <span className="mb-1 block text-xs font-medium text-slate-600">Numero</span>
               <Input
-                disabled={searching || loadingCep || estadoCep === 'confirmado'}
+                disabled={numeroBloqueado}
                 value={form.numero}
                 onChange={(e) => updateForm('numero', e.target.value)}
                 placeholder="Apenas numeros"
@@ -945,7 +1081,7 @@ export default function ProcurarDatasPage() {
                 type="button"
                 variant="outline"
                 onClick={buscarCepHandler}
-                disabled={loadingCep || searching || estadoCep === 'encontrado' || estadoCep === 'confirmado' || cepInput.replace(/\D/g, '').length !== 8 || !form.numero.trim()}
+                disabled={loadingCep || searching || (!addressRevisionUnlocked && (estadoCep === 'encontrado' || estadoCep === 'confirmado')) || cepInput.replace(/\D/g, '').length !== 8 || !form.numero.trim()}
                 className="w-full"
               >
                 {loadingCep ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
@@ -958,45 +1094,45 @@ export default function ProcurarDatasPage() {
             <label className="md:col-span-3">
               <span className="mb-1 block text-xs font-medium text-slate-600">Logradouro</span>
               <Input
-                disabled={searching || estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || (estadoCep === 'encontrado' && !cepSemLogradouro) || estadoCep === 'confirmado'}
-                readOnly={estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || (estadoCep === 'encontrado' && !cepSemLogradouro) || estadoCep === 'confirmado'}
+                disabled={logradouroBloqueado}
+                readOnly={logradouroBloqueado}
                 value={form.logradouro}
                 onChange={(e) => updateForm('logradouro', e.target.value)}
-                className={`${formErrors.logradouro ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || (estadoCep === 'encontrado' && !cepSemLogradouro) || estadoCep === 'confirmado' ? 'bg-slate-50/50' : ''}`}
+                className={`${formErrors.logradouro ? 'border-red-500 focus:border-red-500' : ''} ${logradouroBloqueado ? 'bg-slate-50/50' : ''}`}
               />
               {formErrors.logradouro && <span className="mt-1 block text-xs text-red-600">{formErrors.logradouro}</span>}
             </label>
             <label className="md:col-span-2">
               <span className="mb-1 block text-xs font-medium text-slate-600">Bairro</span>
               <Input
-                disabled={searching || estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || (estadoCep === 'encontrado' && !cepSemBairro) || estadoCep === 'confirmado'}
-                readOnly={estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || (estadoCep === 'encontrado' && !cepSemBairro) || estadoCep === 'confirmado'}
+                disabled={bairroBloqueado}
+                readOnly={bairroBloqueado}
                 value={form.bairro}
                 onChange={(e) => updateForm('bairro', e.target.value)}
-                className={`${formErrors.bairro ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || (estadoCep === 'encontrado' && !cepSemBairro) || estadoCep === 'confirmado' ? 'bg-slate-50/50' : ''}`}
+                className={`${formErrors.bairro ? 'border-red-500 focus:border-red-500' : ''} ${bairroBloqueado ? 'bg-slate-50/50' : ''}`}
               />
               {formErrors.bairro && <span className="mt-1 block text-xs text-red-600">{formErrors.bairro}</span>}
             </label>
             <label className="md:col-span-3">
               <span className="mb-1 block text-xs font-medium text-slate-600">Cidade</span>
               <Input
-                disabled={searching || estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
-                readOnly={estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
+                disabled={cidadeUfBloqueado}
+                readOnly={cidadeUfBloqueado}
                 value={form.cidade}
                 onChange={(e) => updateForm('cidade', e.target.value)}
-                className={`${formErrors.cidade ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50' : ''}`}
+                className={`${formErrors.cidade ? 'border-red-500 focus:border-red-500' : ''} ${cidadeUfBloqueado ? 'bg-slate-50/50' : ''}`}
               />
               {formErrors.cidade && <span className="mt-1 block text-xs text-red-600">{formErrors.cidade}</span>}
             </label>
             <label>
               <span className="mb-1 block text-xs font-medium text-slate-600">UF</span>
               <Input
-                disabled={searching || estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
-                readOnly={estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado'}
+                disabled={cidadeUfBloqueado}
+                readOnly={cidadeUfBloqueado}
                 maxLength={2}
                 value={form.uf}
                 onChange={(e) => updateForm('uf', e.target.value)}
-                className={`${formErrors.uf ? 'border-red-500 focus:border-red-500' : ''} ${estadoCep === 'aguardando_input' || estadoCep === 'consultando' || estadoCep === 'nao_encontrado' || estadoCep === 'encontrado' || estadoCep === 'confirmado' ? 'bg-slate-50/50' : ''}`}
+                className={`${formErrors.uf ? 'border-red-500 focus:border-red-500' : ''} ${cidadeUfBloqueado ? 'bg-slate-50/50' : ''}`}
               />
               {formErrors.uf && <span className="mt-1 block text-xs text-red-600">{formErrors.uf}</span>}
             </label>
@@ -1054,7 +1190,37 @@ export default function ProcurarDatasPage() {
             </div>
           )}
 
-          {estadoCep === 'confirmado' && !addressResult?.ok && (
+          {addressValidationError && (
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+              <div className="font-semibold">{addressValidationError.title}</div>
+              <p className="mt-1 text-red-800">{addressValidationError.description}</p>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={revisarEnderecoAposErro}
+                  disabled={searching || validatingAddress}
+                  className="bg-red-700 text-white hover:bg-red-800"
+                >
+                  <Edit className="h-4 w-4" />
+                  Revisar CEP e endereco
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={pesquisarOutroCepAposErro}
+                  disabled={searching || validatingAddress}
+                  className="border-red-200 bg-white text-red-800 hover:bg-red-50"
+                >
+                  <Search className="h-4 w-4" />
+                  Pesquisar outro CEP
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {estadoCep === 'confirmado' && !addressResult?.ok && !addressValidationError && !addressValidationReviewMode && (
             <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
               {validatingAddress ? (
                 <span className="flex items-center gap-2">

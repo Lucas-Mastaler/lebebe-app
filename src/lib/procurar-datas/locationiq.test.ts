@@ -671,6 +671,49 @@ describe('buscarEnderecoLocationIq', () => {
     expect(eventos).toContain('locationiq_rejected_cep_mismatch')
   })
 
+  it('prioriza cep_mismatch quando candidato sem house_number tambem tem CEP divergente', async () => {
+    vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
+
+    const eventos: string[] = []
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          lat: '-25.478',
+          lon: '-49.252',
+          display_name: 'Rua Tenente Francisco Ferreira de Souza, Hauer, Curitiba, Parana, Brasil',
+          address: {
+            road: 'Rua Tenente Francisco Ferreira de Souza',
+            suburb: 'Hauer',
+            city: 'Curitiba',
+            state: 'Parana',
+            state_code: 'BR-PR',
+            postcode: '81670-000',
+          },
+        },
+      ],
+    })) as unknown as typeof fetch
+
+    const result = await buscarEnderecoLocationIq(
+      {
+        logradouro: 'Rua Tenente Francisco Ferreira de Souza',
+        numero: '20',
+        bairro: 'Hauer',
+        cidade: 'Curitiba',
+        uf: 'PR',
+        cep: '81630-010',
+      },
+      {
+        fetchFn,
+        onEvent: (event) => eventos.push(event.tipo),
+      }
+    )
+
+    expect(result.status).toBe('failed')
+    expect(eventos).toContain('locationiq_rejected_cep_mismatch')
+    expect(eventos).not.toContain('locationiq_rejected_no_house_number')
+  })
+
   // ── Caso 7: resultado rejeitado não chega como EnderecoValidado ──────────
 
   it('caso 7 — resultado generico rejeitado retorna failed e nunca produz EnderecoValidado', async () => {

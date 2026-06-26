@@ -1,5 +1,154 @@
 # Escopo e equivalência — motor `/procurar-datas` legado x v2
 
+## 2026-06-26 - Codex - Frente 3/direita + Frente 0: autoria real no pre-agendamento
+
+Status: implementado no fluxo de pre-agendamento. Nao altera motor v2, equivalencia legado/v2 de busca, geocodificacao, CEP-first, OSRM, Haversine, ranking, candidatos, classificacao, frete, banco, migrations ou RLS.
+
+### Decisao
+- A autoria operacional do pre-agendamento deve vir da sessao autenticada do Le Bebe App.
+- A rota `POST /api/procurar-datas/pre-agendar` valida acesso com `validarAcessoProcurarDatas()` e monta `meta.autoria` no backend.
+- O frontend nao e fonte confiavel para `usuario`, `responsavel`, `createdBy` ou equivalentes.
+- Como `usuarios_permitidos` nao possui coluna de nome, o responsavel persistido oficialmente e `usuario_id` + `usuario_email`; o nome operacional enviado ao Apps Script e derivado do email.
+
+### Apps Script
+- Apps Script continua sendo usado para criar o evento de pre-agendamento via `ApiPreAgendarDireto`.
+- O Apps Script passa a preferir `meta.autoria.email` ao montar o solicitante do titulo e ao chamar `logAuditRow`.
+- Sem `meta.autoria`, chamadas legadas continuam usando `Session.getActiveUser()`.
+- Limitacao conhecida: a conta executora/deployment do Apps Script pode continuar aparecendo como executor tecnico, mas nao deve definir o responsavel operacional.
+
+### Validacao esperada
+- Usuario A e Usuario B devem gerar pre-agendamentos com responsaveis distintos.
+- O titulo/evento nao deve aparecer sempre como Lucas.
+- A auditoria em `procurar_datas_pre_agendamentos_auditoria` deve registrar `usuario_id`, `usuario_email` e `payload_pre_agendamento_json.meta.autoria.origemAutoria = 'sessao_app'`.
+
+---
+
+## 2026-06-26 - Codex - Frente 1/esquerda: Google fallback geral validado e CEP divergente bloqueante
+
+Status: implementado em `src/app/api/procurar-datas/validar-endereco/route.ts`, `src/lib/procurar-datas/locationiq.ts`, `src/lib/procurar-datas/google-geocoding.ts` e `src/lib/procurar-datas/validar-endereco-resultado.ts`. Nao altera UI, `buscar-cep`, motor v2, OSRM, Haversine, ranking, classificacao, frete, banco, migrations, RLS ou Apps Script.
+
+### Regra consolidada
+- `cep_mismatch` tem prioridade sobre `no_house_number` como motivo principal de rejeicao.
+- Ausencia de `house_number` continua nao bloqueando sozinha quando CEP/logradouro/cidade/UF ancoram o candidato.
+- Se houver CEP divergente claro, o candidato e rejeitado mesmo sem numero confirmado.
+- Google Geocoding virou fallback final validado antes do Apps Script tambem para endereco urbano comum, mas somente apos cache e LocationIQ falharem/rejeitarem.
+- Google continua nao sendo chamado quando `geo_cache` ou LocationIQ aceitam um resultado.
+- Apps Script passou a ser contingencia final e seu retorno e validado antes de sucesso.
+
+### Ordem atual de fallback
+1. `geo_cache` seguro.
+2. LocationIQ principal.
+3. LocationIQ reserva.
+4. Google Geocoding validado (`rodovia_ou_rural` ou `fallback_final_geral`).
+5. Apps Script como contingencia final, tambem validado.
+
+### Caso real coberto
+- Entrada: `RUA TENENTE FRANCISCO FERREIRA DE SOUZA`, CEP `81630-010`, Curitiba/PR.
+- Candidatos com `postcode` `81670-000`, `81650-040`, `81030-030` devem ser tratados como `cep_mismatch`, nao como `no_house_number`.
+- Apps Script com CEP `81670-000` contra entrada `81630-010` deve ser rejeitado e nao salvo em cache.
+
+### Validacoes
+- `npm run test -- src/lib/procurar-datas/locationiq.test.ts src/lib/procurar-datas/google-geocoding.test.ts src/lib/procurar-datas/validar-endereco-resultado.test.ts --silent`: 56/56 passou.
+- `npx tsc --noEmit --pretty false`: passou em execucao anterior; na reexecucao final falhou em arquivos fora do escopo desta tarefa (`pre-agendar`, `pesquisar-compat-async`, `page.tsx`) que ja estavam em alteracao no worktree.
+- `npx eslint` nos arquivos alterados: passou.
+
+### Pendente
+- Validacao manual autenticada dos cenarios urbano comum, caso Tenente Francisco e rodovia.
+
+---
+
+## 2026-06-26 - Cascade - Frente 0/Controle: auditoria de pesquisas da v2 - plano e lacunas
+
+Status: auditoria tecnica concluida. Nenhum codigo, migration ou rota alterado. Apenas leitura, mapeamento e documentacao.
+
+### O que o legado fazia
+- Planilha AUDITORIA via `logAuditRow` em `CEP-CONFIG.gs`: 9 colunas posicionais (timestamp, userEmail, cep/endereco, params multiline, frete, tempo, scheduledDate, eventLink, resultsSummary/eventTitle).
+- Telemetria em `search_execution_audit` via `RegistrarExecucaoPesquisaAudit_` em `CEP-APIBACK.gs`: client_token, origin, user_email, cep, endereco_pesquisado, tempo_necessario, is_rural, is_condominio, duracao, contagens por tipo, status, error_message, timestamps.
+- Pre-agendamento: `logAuditRow` chamado com scheduledDate e eventLink, atualizando a mesma linha da pesquisa via PropertiesService.
+- Vinculo pesquisa -> pre-agendamento: via `LAST_AUDIT_ROW_<userEmail>` em PropertiesService.
+
+### O que a v2 ja tem
+- `registrarAuditoriaSearchV2` em `src/lib/procurar-datas/v2/auditoria-search.ts` grava telemetria em `search_execution_audit` com `motor='v2'`, `run_id`, `client_token`, `user_email`, `cep`, `endereco_pesquisado`, `tempo_necessario`, `is_rural`, `is_condominio`, contagens por tipo, status, error_message, timestamps.
+- `validarAcessoProcurarDatas` retorna `userId` (UUID Supabase Auth) e `email`.
+- `clientToken` e `runId` (UUID) ja existem e sao gravados em `search_execution_audit`.
+
+### Lacunas confirmadas na v2
+1. Faltam campos estruturados de endereco (logradouro, numero, bairro, cidade, uf separados).
+2. Faltam coordenadas (lat, lng) usadas na pesquisa.
+3. Faltam parametros estruturados (JSON: dataInicial, tipoBerco, comoda, roupeiro, poltrona, painel, isEncomenda, valorInicialMinimo).
+4. Faltam resultados completos (array de CandidatoFinal exibido).
+5. Falta user_id (UUID do Supabase Auth).
+6. Nao existe auditoria de pre-agendamento em banco.
+7. Nao existe vinculo pesquisa -> pre-agendamento em banco.
+8. RLS desabilitada em search_execution_audit e geocoding_audit (risco critical preexistente).
+
+### Implementado - 2026-06-26
+- ✅ Migration `20260626140000_create_procurar_datas_auditoria_operacional`: tabelas `procurar_datas_pesquisas_auditoria` e `procurar_datas_pre_agendamentos_auditoria` com RLS habilitado.
+- ✅ Helper `registrarAuditoriaPesquisa` em `src/lib/procurar-datas/v2/auditoria-pesquisa.ts` (insert não-bloqueante).
+- ✅ Helper `registrarAuditoriaPreAgendamento` em `src/lib/procurar-datas/v2/auditoria-pre-agendamento.ts` (insert não-bloqueante).
+- ✅ Rota `pesquisar-compat-async` grava auditoria e retorna `pesquisaAuditoriaId`.
+- ✅ Frontend guarda `pesquisaAuditoriaId` e envia no pré-agendamento.
+- ✅ Rota `pre-agendar` grava auditoria vinculada à pesquisa original.
+- ✅ Policies SELECT para `is_superadmin()` em ambas as tabelas.
+
+### Proposta de desenho (implementado)
+- Tabela `procurar_datas_pesquisas_auditoria`: id, usuario_id, usuario_email, client_token, run_id, endereco estruturado, lat, lng, parametros (JSONB), resultados (JSONB), status, error_message, duracao_ms, motor_versao, timestamps.
+- Tabela `procurar_datas_pre_agendamentos_auditoria`: id, pesquisa_auditoria_id, usuario_id, usuario_email, client_token, run_id, data_pre_agendada, tipo_resultado, resultado_escolhido_json, payload_pre_agendamento_json, status, error_message.
+- RLS habilitado com policy SELECT para is_superadmin(). INSERT via service_role.
+- Insert não-bloqueante no backend da pesquisa e do pré-agendamento.
+- Frontend envia `pesquisaAuditoriaId`, `clientToken` e `runId` no payload de pré-agendamento.
+
+### Pendência resolvida
+- ✅ Auditoria de pesquisas e pré-agendamentos implementada.
+- ⏳ Tela de consulta da auditoria aguarda nova gestão de usuários.
+
+### O que nao deve ser alterado
+- Calculo de rota, OSRM, Haversine, ranking, classificacao, regra de sabado, adicionais, janela, candidatos, resultado mostrado, regra de pre-agendamento no Apps Script, telemetria existente, configuracoes do motor.
+
+### Riscos
+- Dependencia da nova gestao de usuarios para tela de auditoria.
+- Risco de salvar retorno bruto diferente do exibido.
+- Risco de nao vincular pre-agendamento a pesquisa.
+- Risco de RLS mal configurada.
+- Risco de dados sensiveis em JSON.
+- Risco de auditoria falhar silenciosamente.
+
+### Pendencia
+- Decidir se valorInicialMinimo deve ser enviado pela tela ou capturado no backend.
+- RLS em 6 tabelas existentes (risco critical, tarefa separada).
+
+---
+
+## 2026-06-26 - Cascade - Frente 0/Controle: telemetria v2 implementada e validada em search_execution_audit
+
+Status: implementado e validado. Migration aplicada. Rota `pesquisar-compat-async` grava telemetria com `motor='v2'`. Validacao manual autenticada confirmou registro real com dados corretos. Registros legado ficam como `motor='legado'`. Nao altera motor, regra de negocio, ranking, classificacao, OSRM, Haversine, frete, agenda ou filtros.
+
+### Implementado e validado
+- Migration `add_motor_fields_search_execution_audit`: adicionadas colunas `motor` (VARCHAR 20, default 'legado'), `rota` (VARCHAR 100, nullable), `tipo_execucao` (VARCHAR 30, default 'producao'), `run_id` (UUID, nullable).
+- Indice `idx_search_execution_audit_motor_created_at` criado para comparacao legado x v2 por periodo.
+- Criado `src/lib/procurar-datas/v2/auditoria-search.ts` — helper `registrarAuditoriaSearchV2` com insert nao-bloqueante (falha nao derruba o fluxo).
+- Rota `pesquisar-compat-async` grava `motor='v2'`, `rota='pesquisar-compat-async'`, `tipo_execucao='producao'` em sucesso e erro.
+- 1.006 registros antigos marcados como `motor='legado'` automaticamente pelo DEFAULT.
+- tsc: 0 erros.
+
+### Validacao manual autenticada
+- Registro encontrado: id=1007, created_at=2026-06-26 13:16:24 UTC
+- Campos confirmados: motor='v2', rota='pesquisar-compat-async', tipo_execucao='producao', run_id=846409da-5a3a-44c4-a8fe-99985efc5cfa
+- Status: success
+- Tempo total: 10186 ms
+- Tempo interno de busca: 9.1 s
+- Candidatos: 5 total (3 normal, 1 especial, 1 premium, 0 hora marcada)
+- Conclusao: comparacao basica legado x v2 por tempo total/candidatos/status agora e possivel para search_execution_audit
+
+### Pendencias restantes
+- `geocoding_audit` sem telemetria v2 — escopo futuro separado.
+- `/v2/diagnostico` e `/v2/comparar` NAO gravam auditoria — preparado para uso futuro via `tipo_execucao`.
+
+### Risco separado (nao corrigido nesta tarefa)
+- RLS desabilitada em 6 tabelas: `geocoding_audit`, `search_execution_audit`, `geo_cache`, `provider_costs`, `forex_config`, `sessoes_logout_automatico`. Risco de seguranca critical, tratar em tarefa separada.
+
+---
+
 ## 2026-06-25 - Frente 1/esquerda - LocationIQ urbano com CEP: numero vira sinal de confianca
 
 Status: implementado em `src/lib/procurar-datas/locationiq.ts` e validado por testes unitarios. Esta secao atualiza a decisao anterior que tratava ausencia de numero como bloqueio absoluto no LocationIQ.
@@ -3284,5 +3433,22 @@ O filtro early Haversine da v2 descartava 25/07 incorretamente (10.99km > 10.5km
 - Executar diagnostico Santo Amaro para validar 02/07, 25/07, 16/07, 24/07
 - 16/07 (premium) pode ter outra causa de divergencia
 - Verificar se outras chaves do banco divergem da planilha
+
+---
+## 2026-06-26 - Codex - Frente 3/direita: erro 422 de validacao de endereco recuperavel na UI
+
+Status: implementado somente em `src/app/procurar-datas/page.tsx`. Nao altera backend, `validar-endereco`, `buscar-cep`, LocationIQ, Google fallback, Apps Script, `geo_cache`, motor v2, OSRM, Haversine, ranking, candidatos, classificacao, frete, banco, migrations ou RLS.
+
+### Decisao de fluxo
+- Quando `POST /api/procurar-datas/validar-endereco` retorna 422, a tela deve manter um card fixo de erro na area de endereco.
+- O erro fica visivel ate o usuario revisar ou pesquisar outro CEP.
+- Revisar preserva CEP, numero e dados digitados, mas limpa coordenada, resultado validado, confirmacao, pesquisa e valor inicial.
+- Pesquisar outro CEP reinicia o fluxo de CEP e limpa campos de endereco vindos do CEP anterior.
+- O fluxo de servico e pesquisa continua bloqueado ate novo endereco validado e confirmado.
+
+### Validacoes
+- `npx eslint src/app/procurar-datas/page.tsx --quiet`: passou.
+- `npx tsc --noEmit --pretty false`: passou.
+- Validacao manual autenticada: pendente.
 
 ---

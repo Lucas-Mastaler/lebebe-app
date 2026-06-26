@@ -7,19 +7,26 @@ export async function registrarAuditoria(
   options?: { baseUrl?: string }
 ) {
   try {
-    const url =
-      typeof window !== 'undefined'
-        ? '/api/auditoria/registrar'
-        : new URL(
-            '/api/auditoria/registrar',
-            options?.baseUrl || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-          ).toString()
+    const isServer = typeof window === 'undefined'
+
+    const url = isServer
+      ? new URL(
+          '/api/auditoria/registrar',
+          options?.baseUrl || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        ).toString()
+      : '/api/auditoria/registrar'
+
+    const requestHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+
+    if (isServer && process.env.AUDITORIA_INTERNAL_SECRET) {
+      requestHeaders['X-Internal-Token'] = process.env.AUDITORIA_INTERNAL_SECRET
+    }
 
     await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: requestHeaders,
       body: JSON.stringify({ acao, email, metadata }),
     })
   } catch (error) {

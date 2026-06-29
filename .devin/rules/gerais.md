@@ -126,3 +126,8 @@ Se houver dúvida sobre:
 - Toda alteração relevante deve atualizar `docs/ia/log_progress.md`.
 - Quando uma regra da migração for validada ou uma pendência for resolvida, atualizar também `docs/procurar-datas-escopo-equivalencia-legado-v2.md`.
 - Preservar encoding e não reformatar o documento inteiro.
+
+## 13. Novas telas e permissões
+- Antes de criar ou alterar qualquer tela interna, ler obrigatoriamente `docs/ia/padrao-novas-telas-permissoes.md`.
+- Toda nova tela interna deve seguir o checklist de permissões: cadastrar módulo em `app_modulos`, proteger com `checkModuleAndWindowAccess(moduleKey)`, adicionar item no Sidebar com `moduleKey` e garantir redirects corretos (`/acesso-negado`, `/fora-do-horario`, fallback neutro `/inicio`).
+- Páginas públicas intencionais, webhooks, callbacks OAuth e crons seguem seu próprio padrão de segurança e devem ser classificados explicitamente.

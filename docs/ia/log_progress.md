@@ -1,3 +1,42 @@
+## 2026-06-29 - Cascade - Documento de governanca: padrao-novas-telas-permissoes.md
+
+**Resumo:** Criado documento de governanca padrao-novas-telas-permissoes.md com checklist obrigatorio para novas telas internas, cobrindo cadastro de modulo, Sidebar, wrapper, APIs, testes e regras para agentes de IA.
+
+**Arquivo criado:**
+- docs/ia/padrao-novas-telas-permissoes.md
+
+**Arquivos lidos para contexto:**
+- src/lib/auth/module-access.ts, src/lib/auth/access-window.ts
+- src/app/api/me/permissoes/route.ts, src/lib/hooks/usePermissoes.ts
+- src/components/Sidebar.tsx, src/app/superadmin/page.tsx
+- src/app/superadmin/_components/PerfilEditor.tsx
+- src/app/dashboard/page.tsx, src/app/procurar-datas/page.tsx, src/app/recebimento/page.tsx, src/app/pos-venda/page.tsx
+
+**Conteudo do documento:**
+1. Objetivo: toda nova tela interna deve nascer integrada ao sistema de permissoes.
+2. Quando aplicar (paginas internas) e quando nao aplicar (paginas publicas, webhooks, cron).
+3. Checklist obrigatorio: cadastro em app_modulos, Sidebar com moduleKey, wrapper com checkModuleAndWindowAccess, protecao de APIs, testes.
+4. Padrao de wrapper com exemplo de codigo.
+5. Padrao de Sidebar com moduleKey e regras de visibilidade.
+6. Padrao de Superadmin: modulo deve aparecer na gestao de perfis.
+7. Padrao de API: esconder menu nao basta, proteger backend.
+8. Padrao para /procurar-datas: Frente 0 / Controle, nao alterar motor.
+9. Matriz de testes minimos.
+10. Pendencia: app_janelas_acesso_usuario sem semantica definida.
+11. Regra para agentes de IA: consultar documento antes de implementar.
+
+**Rules do projeto:**
+- Nenhum arquivo de rules fisico encontrado no repositorio (.windsurfrules, .cascade, .devin).
+- As rules estao nas memories do sistema Cascade (user_rules).
+- Recomendacao: adicionar referencia a este documento nas memories/rules do projeto para que todo agente consulte automaticamente.
+
+**Confirmacoes:**
+- Nenhum codigo de producao alterado.
+- Nenhum banco, migration, RLS, Sidebar, middleware, helper, API ou motor alterado.
+- npx tsc --noEmit nao rodado (apenas .md alterado).
+
+---
+
 ## 2026-06-29 - Cascade - Fase 5C: auditoria final permissoes por modulo + janela de horario
 
 **Resumo:** Auditoria completa da implantacao de permissoes por modulo e janela de horario. Sistema consistente. Dois redirects espurios para /dashboard corrigidos.

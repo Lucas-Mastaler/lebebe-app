@@ -1,3 +1,58 @@
+## 2026-06-29 - Cascade - Fase 4D: bloqueio server-side em agendamentos, pos-venda e recebimento
+
+**Resumo:** Aplicado checkModuleAccess nas paginas /agendamentos, /recebimento e /pos-venda (raiz + 2 sub-rotas). Nenhum middleware, API, sidebar, /procurar-datas, /superadmin, /configuracoes, OAuth ou logica de negocio alterada. Recebimento/Matic intacto.
+
+**Diagnostico das paginas antes:**
+- /agendamentos/page.tsx: Server Component (6 linhas), sem 'use client' — insercao direta
+- /recebimento/page.tsx: 'use client', 1794 linhas — renomeado para PageClient.tsx, wrapper criado
+- /pos-venda: sem page.tsx na raiz; sub-rotas importar-nfe e importar-nfe-matic com 'use client'
+
+**Decisao sobre /pos-venda:**
+- Criado /pos-venda/page.tsx como landing guard: valida pos_venda, se ok redireciona para /pos-venda/importar-nfe
+- Sub-rotas importar-nfe e importar-nfe-matic renomeadas para PageClient.tsx, wrappers criados
+- Todas as sub-rotas usam moduleKey: pos_venda
+- APIs internas de Recebimento/Matic: nao alteradas
+
+**Arquivos alterados (wrapper substituiu page.tsx):**
+- src/app/agendamentos/page.tsx (insercao direta, era Server Component)
+- src/app/recebimento/page.tsx (substituida por wrapper Server Component)
+- src/app/pos-venda/importar-nfe/page.tsx (substituida por wrapper Server Component)
+- src/app/pos-venda/importar-nfe-matic/page.tsx (substituida por wrapper Server Component)
+
+**Arquivos criados:**
+- src/app/recebimento/PageClient.tsx (conteudo original de page.tsx)
+- src/app/pos-venda/page.tsx (landing guard nova)
+- src/app/pos-venda/importar-nfe/PageClient.tsx (conteudo original)
+- src/app/pos-venda/importar-nfe-matic/PageClient.tsx (conteudo original)
+
+**Chaves usadas:**
+- agendamentos -> 'agendamentos'
+- recebimento -> 'recebimento'
+- pos-venda (raiz + sub-rotas) -> 'pos_venda'
+
+**Confirmacao de escopo:**
+- Middleware: nao alterado
+- /procurar-datas, /superadmin, /configuracoes, /inicio: nao alterados
+- APIs de negocio, Recebimento/Matic, OAuth: nao alterados
+- Sidebar: nao alterada
+- Banco/migrations/RLS: nao alterados
+- Janelas de horario: nao aplicadas
+- Redirects: todos para /acesso-negado (sem /dashboard como fallback)
+
+**Validacoes:**
+- node_modules/.bin/tsc --noEmit | Select-String "error TS" -> EXIT 0, zero erros
+- git diff --stat: 4 modificados, 4 criados untracked
+
+**Pendencias:**
+- /procurar-datas: ainda sem bloqueio (proxima fase)
+- /recebimento/[id] e /recebimento/produtos: sub-rotas sem wrapper ainda (pendencia)
+- Fase 5: funcao auxiliar de janela de horario + bloqueio por janela
+
+**Proximo passo recomendado:**
+- Aplicar checkModuleAccess em /procurar-datas e sub-rotas de /recebimento ([id], /produtos)
+
+---
+
 ## 2026-06-29 - Cascade - Fase 4C: bloqueio server-side em dashboard, chamados-finalizados, inteligencia-comercial
 
 **Resumo:** Aplicado bloqueio real por permissao de modulo em 3 paginas internas. Criada funcao checkModuleAccess (objeto puro, sem NextResponse) para uso em Server Components. requireModuleAccess agora delega para checkModuleAccess internamente. Criada pagina /acesso-negado. Nenhum middleware, API, sidebar, /procurar-datas, /agendamentos, /recebimento, Recebimento/Matic ou OAuth alterado.

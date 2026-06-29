@@ -1,10 +1,9 @@
 import { redirect } from 'next/navigation'
 import { checkModuleAccess } from '@/lib/auth/module-access'
-import ImportarNfeMaticPageClient from './PageClient'
 
-export default async function ImportarNfeMaticPage() {
+export default async function PosVendaPage() {
   const access = await checkModuleAccess('pos_venda')
   if (!access.ok) redirect('/acesso-negado')
 
-  return <ImportarNfeMaticPageClient />
+  redirect('/pos-venda/importar-nfe')
 }

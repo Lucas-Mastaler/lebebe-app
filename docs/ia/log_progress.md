@@ -1,3 +1,255 @@
+## 2026-06-29 - Cascade - Fase 4B: helper server-side requireModuleAccess
+
+**Resumo:** Helper requireModuleAccess criado em src/lib/auth/module-access.ts. Funcao diagnosticoModuleAccess criada para uso em rota de diagnostico. Rota GET /api/superadmin/diagnostico/module-access criada (somente superadmin). Nenhuma pagina, API de negocio, middleware, sidebar, Recebimento/Matic, OAuth ou /procurar-datas alterado. Bloqueio real nas paginas NAO aplicado nesta fase.
+
+**Helper criado: src/lib/auth/module-access.ts**
+
+Funcao principal: `requireModuleAccess(moduleKey: ModuleKey)`
+
+Cadeia de precedencia implementada (identica a GET /api/me/permissoes):
+1. requireAuthenticatedUser (requireAllowedUser=true, requireActive=true) -> 401/403
+2. role=superadmin -> libera, acessoTotal=true, origem='superadmin'
+3. Busca modulo por chave em app_modulos -> 403 se nao encontrado
+4. modulo.ativo=false -> 403
+5. modulo.somente_superadmin=true -> 403 para usuario comum
+6. modulo.publico=true -> libera (nota: paginas publicas nao devem chamar este helper)
+7. Busca excecao individual (app_permissoes_usuario) + perfil (app_usuarios_perfis) em paralelo
+8. Se excecao individual existe: usa ela (permitido ou bloqueado), origem='usuario'
+9. Se nao ha excecao: busca app_permissoes_perfil para o perfil ativo
+10. Se perfil.permitido=true: libera, origem='perfil'
+11. Sem perfil ativo, sem linha no perfil, ou bloqueado: 403
+
+Tipos exportados:
+- ModuleKey: union type com 9 chaves validas
+- OrigemPermissao: 'superadmin' | 'usuario' | 'perfil'
+- RequireModuleAccessSuccess: { ok, user, email, allowedUser, acessoTotal, moduleKey, origem }
+- RequireModuleAccessError: { ok: false, response: NextResponse }
+- ModuleAccessDiagnostico: estrutura completa para rota diagnostica
+
+Funcao auxiliar: `diagnosticoModuleAccess(usuarioId, usuarioRole, moduleKey)`
+- Mesma logica mas retorna diagnostico em vez de NextResponse
+- Expoe: moduloEncontrado, moduloAtivo, acessoTotal, perfilAtual, origem, permitido, motivo
+
+**NOTA sobre horario:**
+- Bloqueio por janela de horario NAO implementado nesta fase.
+- Sera adicionado na Fase 5 como funcao auxiliar separada.
+
+**Rota diagnostica criada:**
+- GET /api/superadmin/diagnostico/module-access?moduleKey=...
+- Somente superadmin (requiredRole='superadmin')
+- Parametro: moduleKey (obrigatorio, validado contra lista de chaves validas)
+- Retorna: { ok, diagnostico: ModuleAccessDiagnostico }
+- Nao expoe dados sensiveis (sem email do usuario consultado, sem tokens)
+
+**Decisoes:**
+- Paginas publicas (horarios-agendamentos): nao devem chamar requireModuleAccess; modulo.publico=true libera se chamado por engano
+- Rota diagnostica: criada pois e simples, segura (superadmin-only) e permite teste manual sem bloqueio real
+- Sem duplicacao da query completa de /api/me/permissoes: helper foca num unico modulo, nao retorna lista completa
+
+**Chaves ModuleKey suportadas:**
+dashboard, agendamentos, procurar_datas, chamados_finalizados, inteligencia_comercial, pos_venda, recebimento, superadmin, configuracoes
+
+**Confirmacao de escopo:**
+- Middleware: nao alterado
+- Paginas: nao alteradas
+- APIs de negocio: nao alteradas
+- Sidebar/frontend: nao alterados
+- Recebimento/Matic, OAuth, /procurar-datas: nao alterados
+- Banco/migrations/RLS: nao alterados
+
+**Arquivos criados:**
+- `src/lib/auth/module-access.ts`
+- `src/app/api/superadmin/diagnostico/module-access/route.ts`
+
+**Validacoes:**
+- `node_modules/.bin/tsc --noEmit | Select-String "error TS"` -> EXIT 0, zero erros
+- `git status --short`: ?? module-access.ts; ?? diagnostico/
+
+**Testes manuais recomendados:**
+- GET /api/superadmin/diagnostico/module-access?moduleKey=procurar_datas como superadmin
+  -> { ok: true, diagnostico: { permitido: true, acessoTotal: true, motivo: 'Superadmin...' } }
+- GET /api/superadmin/diagnostico/module-access sem moduleKey -> 400
+- GET /api/superadmin/diagnostico/module-access como user comum -> 403
+- GET /api/superadmin/diagnostico/module-access?moduleKey=invalido -> 400
+
+**Pendencias:**
+- Fase 5: aplicar requireModuleAccess nas paginas/APIs relevantes + bloqueio real de rota
+- Fase 5: funcao auxiliar de janela de horario
+- Navigation.tsx: componente legado nao usado (limpeza futura, nao urgente)
+
+**Proximo passo recomendado:**
+- Iniciar Fase 5: aplicar requireModuleAccess nas paginas e APIs de negocio
+
+---
+
+## 2026-06-29 - Cascade - Fase 4A: sidebar dinamica via usePermissoes
+
+**Resumo:** Sidebar reescrita para consumir GET /api/me/permissoes via hook usePermissoes. Remocao de logica hardcoded de role/isMaticUser/isSuperadmin. Adicao de Pos-venda no menu. Nenhum middleware, bloqueio de rota, API, Recebimento/Matic, OAuth ou /procurar-datas alterado.
+
+**Diagnostico da sidebar antes:**
+- useEffect com query Supabase client direto para role do usuario
+- isMaticUser: lista hardcoded de emails para mostrar Recebimento
+- isSuperadmin: estado derivado da query para mostrar secao superadmin
+- Pos-venda: NAO estava no menu
+- Sem loading state durante resolucao de permissoes
+
+**Hook criado:**
+- `src/lib/hooks/usePermissoes.ts`
+  - fetch('/api/me/permissoes') no mount
+  - expoe: loading, error, acessoTotal, chavesPermitidas
+  - fallback seguro em erro: acessoTotal=false, chavesPermitidas=[]
+  - cleanup (cancelled) para evitar setState em componente desmontado
+
+**Alteracoes em Sidebar.tsx:**
+- Removido: useEffect com createClient/query usuarios_permitidos
+- Removido: estado isSuperadmin, isMaticUser
+- Removido: import createClient
+- Adicionado: import usePermissoes
+- Adicionado: type NavItem com campo moduleKey opcional
+- Adicionado: Pos-venda (moduleKey: pos_venda) no navItems
+- Adicionado: Recebimento (moduleKey: recebimento) no navItems (antes era condicional a isMaticUser)
+- Loading state: exibe "Carregando..." enquanto permLoading=true (nao mostra itens antecipadamente)
+- Regra de exibicao por item:
+  - sem moduleKey (ex: horarios-agendamentos): sempre visivel
+  - com moduleKey: visivel se acessoTotal=true OU chavesPermitidas.includes(moduleKey)
+- Secao superadmin (Usuarios, Auditoria, Config Busca): visivel apenas se acessoTotal=true
+- Fallback de erro: acessoTotal=false + chavesPermitidas=[] = usuario ve apenas horarios-agendamentos
+
+**Mapeamento menu → modulo (confirmado no codigo):**
+- Dashboard -> moduleKey: dashboard
+- Agendamentos -> moduleKey: agendamentos
+- Horarios Agendamentos -> sem moduleKey (publico)
+- Procurar Datas -> moduleKey: procurar_datas
+- Chamados Finalizados -> moduleKey: chamados_finalizados
+- Inteligencia Comercial -> moduleKey: inteligencia_comercial
+- Pos-venda -> moduleKey: pos_venda (adicionado)
+- Recebimento -> moduleKey: recebimento (antes: hardcoded)
+- Usuarios/Auditoria/Config -> apenas acessoTotal (sem moduleKey individual)
+
+**Confirmacao de escopo:**
+- Middleware: nao alterado
+- Bloqueio de rotas por URL: nao implementado (fase 5)
+- APIs de backend: nao alteradas
+- Recebimento/Matic, OAuth, /procurar-datas: nao alterados
+- LayoutWrapper.tsx: nao alterado
+- Navigation.tsx: nao alterado (componente legado, nao usado no layout principal)
+
+**Arquivos criados:**
+- `src/lib/hooks/usePermissoes.ts`
+
+**Arquivos alterados:**
+- `src/components/Sidebar.tsx` (+lado novo, -logica hardcoded)
+
+**Validacoes:**
+- `npx tsc --noEmit` -> EXIT 0, zero erros
+- `git diff --stat`: Sidebar.tsx +67/-143; ?? hooks/
+
+**Testes manuais recomendados:**
+- Superadmin: ve todos os menus + secao Usuarios/Auditoria/Config
+- Consultora: ve apenas Procurar Datas (+ Horarios Agendamentos)
+- Pos-venda: ve Procurar Datas + Pos-venda + Recebimento
+- Gestao: ve todos os modulos comuns (sem secao superadmin)
+- Usuario sem perfil: ve apenas Horarios Agendamentos (chavesPermitidas=[])
+- Erro na API /me/permissoes: fallback seguro, apenas Horarios Agendamentos
+- /horarios-agendamentos: continua publica e visivel para todos
+- URL direta ainda nao bloqueada (fase 5)
+- Login/logout: continua funcionando
+
+**Pendencias:**
+- Fase 5: middleware com bloqueio real de rota por modulo e janela de horario
+- Navigation.tsx: componente legado com logica antiga, nao usado no layout atual (pendencia de limpeza futura, nao urgente)
+
+**Proximo passo recomendado:**
+- Iniciar Fase 5: middleware com bloqueio de rota por permissao e janela de horario
+
+---
+
+## 2026-06-29 - Cascade - Fase 3B: editor de permissoes e janelas por perfil na tela Superadmin
+
+**Resumo:** Nova aba "Perfis" adicionada na tela Superadmin com editor de permissoes por modulo e editor de janelas de horario por perfil. Componente separado em _components/PerfilEditor.tsx. Nenhum middleware, sidebar, permissoes reais, Recebimento/Matic, OAuth ou /procurar-datas alterado.
+
+**Componente criado:**
+- `src/app/superadmin/_components/PerfilEditor.tsx`
+
+**Estrutura do PerfilEditor:**
+- Seletor de perfil (GET /api/superadmin/perfis — apenas ativos)
+- Ao selecionar perfil: carrega permissoes + janelas em paralelo
+- Bloco de permissoes:
+  - Lista modulos controlaveis (GET /api/superadmin/perfis/[id]/permissoes)
+  - Switch por modulo (toggle local)
+  - Indicador visual "Alteracoes nao salvas"
+  - PUT /api/superadmin/perfis/[id]/permissoes ao clicar Salvar
+  - Recarrega do servidor apos salvar
+- Bloco de janelas:
+  - 3 tipos: seg_sex, sabado, domingo
+  - Switch ativo/inativo por tipo
+  - Inputs hora inicio + hora fim (visíveis apenas quando ativo=true)
+  - Validacao frontend antes de salvar
+  - PUT /api/superadmin/perfis/[id]/janelas ao clicar Salvar
+  - Recarrega do servidor apos salvar
+
+**Validacoes frontend em janelas:**
+- ativo=true sem horaInicio -> erro por linha, bloqueia submit
+- ativo=true sem horaFim -> erro por linha, bloqueia submit
+- horaFim <= horaInicio -> erro por linha, bloqueia submit
+- timezone fixo como America/Sao_Paulo
+
+**Estados visuais implementados:**
+- loadingPerm / loadingJanelas -> "Carregando..."
+- salvandoPerm / salvandoJanelas -> spinner + texto "Salvando..."
+- msgPerm / msgJanelas -> banner verde (ok) ou vermelho (erro)
+- errosJanelas -> mensagem por linha de janela
+- permissoesAlteradas -> badge "Alteracoes nao salvas"
+
+**Alteracoes em page.tsx:**
+- Import do PerfilEditor
+- Tab "perfis" adicionada entre Usuarios e Auditoria
+- TabsContent value="perfis" renderiza <PerfilEditor />
+- useEffect de tab aceita 'perfis' como valor valido
+
+**APIs consumidas (todas server-side, sem client direto):**
+- GET /api/superadmin/perfis
+- GET /api/superadmin/perfis/[id]/permissoes
+- PUT /api/superadmin/perfis/[id]/permissoes
+- GET /api/superadmin/perfis/[id]/janelas
+- PUT /api/superadmin/perfis/[id]/janelas
+
+**Confirmacao de escopo:**
+- Middleware, sidebar, permissoes reais, requireAuthenticatedUser: nao alterados
+- Recebimento/Matic, OAuth, /procurar-datas: nao alterados
+- APIs de backend: nao alteradas
+- Aba Usuarios e Auditoria: funcionamento intacto
+
+**Arquivos criados:**
+- `src/app/superadmin/_components/PerfilEditor.tsx`
+
+**Arquivos alterados:**
+- `src/app/superadmin/page.tsx` (+7 -1)
+
+**Validacoes:**
+- `npx tsc --noEmit` -> EXIT 0, zero erros
+- `git diff --stat`: page.tsx +7/-1; ?? _components/
+
+**Testes manuais recomendados:**
+- Abrir /superadmin -> nova aba "Perfis" visivel
+- Selecionar Consultora -> apenas "Procurar Datas" com switch ativo
+- Selecionar Pos-venda -> Procurar Datas, Pos-venda, Recebimento ativos
+- Alterar permissao, clicar Salvar -> mensagem verde + recarrega
+- Alterar horario de sabado (ativo=true, horario valido) -> salvar -> mensagem verde
+- Tentar salvar horario ativo sem hora fim -> erro por linha, nao submete
+- Tentar salvar horaFim <= horaInicio -> erro por linha, nao submete
+- Confirmar que perfil 'recebimento' NAO aparece no seletor
+- Confirmar que aba Usuarios e suas acoes continuam funcionando
+
+**Pendencias:**
+- Fase 4: sidebar dinamica via GET /api/me/permissoes
+- Fase 5: middleware com bloqueio por modulo e janela de horario
+
+**Proximo passo recomendado:**
+- Iniciar Fase 4: sidebar dinamica baseada em chavesPermitidas do GET /api/me/permissoes
+
+---
+
 ## 2026-06-29 - Cascade - Fase 3A: integracao de perfis na tela Superadmin
 
 **Resumo:** Tela Superadmin atualizada para exibir e gerenciar perfil de cada usuario. Nova API de listagem de usuarios com perfil. Nenhum middleware, sidebar, permissoes reais do app, Recebimento/Matic, OAuth ou /procurar-datas alterado.

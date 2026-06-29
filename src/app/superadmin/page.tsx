@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import PerfilEditor from './_components/PerfilEditor'
 
 type PerfilResumido = {
   id: string
@@ -49,7 +50,7 @@ function SuperAdminPageContent() {
 
   useEffect(() => {
     const tab = searchParams.get('tab')
-    if (tab === 'usuarios' || tab === 'auditoria') {
+    if (tab === 'usuarios' || tab === 'auditoria' || tab === 'perfis') {
       setActiveTab(tab)
     }
   }, [searchParams])
@@ -301,6 +302,7 @@ function SuperAdminPageContent() {
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="mb-6">
             <TabsTrigger value="usuarios">Usuários</TabsTrigger>
+            <TabsTrigger value="perfis">Perfis</TabsTrigger>
             <TabsTrigger value="auditoria">Auditoria</TabsTrigger>
           </TabsList>
 
@@ -508,6 +510,10 @@ function SuperAdminPageContent() {
                 )}
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent value="perfis">
+            <PerfilEditor />
           </TabsContent>
 
           <TabsContent value="auditoria">

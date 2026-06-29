@@ -110,21 +110,21 @@ export async function middleware(request: NextRequest) {
     // Verificar acesso a área superadmin
     if (request.nextUrl.pathname.startsWith('/superadmin')) {
       if (usuarioPermitido.role !== 'superadmin') {
-        return NextResponse.redirect(new URL('/dashboard', request.url))
+        return NextResponse.redirect(new URL('/inicio', request.url))
       }
     }
 
     // Verificar acesso a área de configurações (superadmin only)
     if (request.nextUrl.pathname.startsWith('/configuracoes')) {
       if (usuarioPermitido.role !== 'superadmin') {
-        return NextResponse.redirect(new URL('/dashboard', request.url))
+        return NextResponse.redirect(new URL('/inicio', request.url))
       }
     }
   }
 
   // Usuário autenticado tentando acessar página de login
   if (user && isPublicRoute) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+    return NextResponse.redirect(new URL('/inicio', request.url))
   }
 
   return response
@@ -141,6 +141,7 @@ export const config = {
     '/recebimento/:path*',
     '/inteligencia-comercial/:path*',
     '/pos-venda/:path*',
+    '/inicio',
     '/login',
     '/recuperar-senha',
     '/resetar-senha',

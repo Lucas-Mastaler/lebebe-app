@@ -24,7 +24,7 @@ export default function AcessoNegadoPage() {
           Você não tem permissão para acessar esta página.
         </p>
         <Link
-          href="/dashboard"
+          href="/inicio"
           className="inline-flex items-center gap-2 bg-[#00A5E6] hover:bg-[#0090cc] text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
         >
           Voltar ao início

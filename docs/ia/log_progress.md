@@ -1,3 +1,78 @@
+## 2026-06-29 - Cascade - Fase 2B: APIs administrativas de gestao de perfis
+
+**Resumo:** 7 APIs criadas para gestao de perfis, permissoes e janelas de acesso. Auditoria implementada em todas as rotas de escrita. Nenhum frontend, sidebar, middleware, helper, Recebimento/Matic, OAuth ou /procurar-datas alterado.
+
+**APIs criadas:**
+
+| Rota | Metodo | Descricao |
+|---|---|---|
+| `/api/superadmin/perfis` | GET | Lista perfis (ativo=true por padrao; ?includeInactive=true para todos) |
+| `/api/superadmin/usuarios/[id]/perfil` | PUT | Atribui/troca perfil de um usuario (upsert por usuario_id) |
+| `/api/superadmin/usuarios/[id]/perfil` | DELETE | Remove perfil de um usuario |
+| `/api/superadmin/perfis/[id]/permissoes` | GET | Retorna matriz de permissoes do perfil (todos os modulos controlaveis, default false) |
+| `/api/superadmin/perfis/[id]/permissoes` | PUT | Salva permissoes do perfil (upsert por perfil_id,modulo_id) |
+| `/api/superadmin/perfis/[id]/janelas` | GET | Retorna 3 janelas (seg_sex, sabado, domingo); ausentes retornam default sem gravar |
+| `/api/superadmin/perfis/[id]/janelas` | PUT | Salva janelas do perfil (upsert por perfil_id,tipo) |
+
+**Auth em todas as rotas:** requireAllowedUser + requireActive + requiredRole='superadmin'
+
+**Auditoria implementada:**
+- PUT /usuarios/[id]/perfil: acao='atribuir_perfil', entidade='app_usuarios_perfis'
+- DELETE /usuarios/[id]/perfil: acao='remover_perfil', entidade='app_usuarios_perfis'
+- PUT /perfis/[id]/permissoes: acao='atualizar_permissoes_perfil', entidade='app_permissoes_perfil'
+- PUT /perfis/[id]/janelas: acao='atualizar_janelas_perfil', entidade='app_janelas_acesso_perfil'
+- Antes/depois registrados sem dados sensiveis
+- Falha na auditoria NAO bloqueia a operacao principal (insert separado, sem try/catch obrigatorio)
+
+**Validacoes de payload notaveis:**
+- PUT perfil em usuario: perfilId obrigatorio, perfil deve existir e estar ativo
+- PUT permissoes: array de {moduloId, permitido}; moduloId validado contra modulos controlaveis (ativo, nao publico, nao somente_superadmin); rejeita invalidos com 400
+- PUT janelas: ativo=true exige horaInicio e horaFim; horaFim > horaInicio; tipos duplicados rejeitados; timezone default America/Sao_Paulo
+- GET janelas: tipos ausentes retornam como default logico (ativo=false, horas null, id=null) sem gravar
+
+**Arquivos criados:**
+- `src/app/api/superadmin/perfis/route.ts`
+- `src/app/api/superadmin/usuarios/[id]/perfil/route.ts`
+- `src/app/api/superadmin/perfis/[id]/permissoes/route.ts`
+- `src/app/api/superadmin/perfis/[id]/janelas/route.ts`
+
+**Schema de auditoria confirmado via MCP (colunas):**
+- id, ator_usuario_id, alvo_usuario_id, acao, entidade, entidade_id, antes, depois, metadata, created_at
+
+**Confirmacao de escopo:**
+- Frontend, sidebar, middleware, requireAuthenticatedUser, Recebimento/Matic, OAuth, /procurar-datas: nao alterados
+- Nenhuma migration criada
+- Nenhum RLS, grant ou policy alterado
+
+**Validacoes:**
+- `npx tsc --noEmit` -> EXIT 0, zero erros
+- `git diff --stat` -> apenas ?? (novos arquivos nao rastreados)
+
+**Testes manuais recomendados:**
+- GET /api/superadmin/perfis como superadmin -> 200, perfis ativos
+- GET /api/superadmin/perfis?includeInactive=true -> inclui recebimento (ativo=false)
+- GET /api/superadmin/perfis como user comum -> 403
+- GET /api/superadmin/perfis/[id]/permissoes -> matriz com 7 modulos, default false para ausentes
+- PUT /api/superadmin/perfis/[id]/permissoes -> altera e reflete em GET /api/me/permissoes
+- PUT /api/superadmin/usuarios/[id]/perfil -> atribui, conferir app_usuarios_perfis
+- DELETE /api/superadmin/usuarios/[id]/perfil -> remove, user fica sem perfil
+- GET/PUT /api/superadmin/perfis/[id]/janelas -> le e salva horarios
+- PUT janela com ativo=true sem horaInicio -> 400
+- PUT janela com horaFim <= horaInicio -> 400
+- Payload invalido em qualquer PUT -> 400
+- Sem sessao -> 401; nao-superadmin -> 403
+
+**Pendencias:**
+- Fase 3: frontend da tela Superadmin consumindo estas APIs
+- Fase 4: sidebar dinamica via GET /api/me/permissoes
+- Fase 5: middleware com bloqueio por modulo e janela de horario
+- Janelas de usuario (app_janelas_acesso_usuario) ainda sem APIs de gestao individual
+
+**Proximo passo recomendado:**
+- Iniciar Fase 3: tela Superadmin com gestao de perfis e atribuicao de perfis a usuarios
+
+---
+
 ## 2026-06-29 - Cascade - Fase 2A.1: seed de permissoes por perfil e ajuste de GET /api/me/permissoes
 
 **Resumo:** Migration com seed de permissoes por perfil (28 linhas em app_permissoes_perfil), desativacao do perfil recebimento, e reescrita de GET /api/me/permissoes para usar perfil + excecao individual. Nenhum frontend, sidebar, middleware, helper, Recebimento/Matic, OAuth ou /procurar-datas alterado.

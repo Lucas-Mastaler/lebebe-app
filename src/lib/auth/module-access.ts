@@ -3,6 +3,8 @@ import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
 import { NextResponse } from 'next/server'
 import type { User } from '@supabase/supabase-js'
 import type { AllowedUser } from '@/lib/auth/api-auth'
+import { checkAccessWindowForUser } from '@/lib/auth/access-window'
+import type { AccessWindowCheckResult } from '@/lib/auth/access-window'
 
 // ---------------------------------------------------------------------------
 // Types públicos
@@ -409,4 +411,49 @@ export async function diagnosticoModuleAccess(
       ? `Perfil ${perfilAtivo.nome} não tem linha para este módulo`
       : `Bloqueado pelo perfil: ${perfilAtivo.nome}`,
   }
+}
+
+// ---------------------------------------------------------------------------
+// checkModuleAndWindowAccess — helper combinado para Server Components
+// ---------------------------------------------------------------------------
+
+export type CheckPageAccessResult =
+  | {
+      ok: true
+      moduleAccess: RequireModuleAccessSuccess & { ok: true }
+      windowAccess: AccessWindowCheckResult & { ok: true }
+    }
+  | {
+      ok: false
+      reason: 'module' | 'window'
+      redirectTo: '/acesso-negado' | '/fora-do-horario'
+    }
+
+/**
+ * Helper combinado: valida módulo e janela de horário em sequência.
+ * Use em Server Components (page.tsx).
+ *
+ * - Falha de módulo → redirectTo: '/acesso-negado'
+ * - Falha de janela → redirectTo: '/fora-do-horario'
+ * - Superadmin ignora janela de horário (delegado a checkAccessWindowForUser).
+ */
+export async function checkModuleAndWindowAccess(
+  moduleKey: ModuleKey
+): Promise<CheckPageAccessResult> {
+  const moduleAccess = await checkModuleAccess(moduleKey)
+
+  if (!moduleAccess.ok) {
+    return { ok: false, reason: 'module', redirectTo: '/acesso-negado' }
+  }
+
+  const windowAccess = await checkAccessWindowForUser({
+    usuarioId: moduleAccess.allowedUser.id,
+    role: moduleAccess.allowedUser.role as 'user' | 'superadmin',
+  })
+
+  if (!windowAccess.ok) {
+    return { ok: false, reason: 'window', redirectTo: '/fora-do-horario' }
+  }
+
+  return { ok: true, moduleAccess, windowAccess }
 }

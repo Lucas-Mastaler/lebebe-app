@@ -1,12 +1,10 @@
 import { redirect } from 'next/navigation'
-import { checkModuleAccess } from '@/lib/auth/module-access'
+import { checkModuleAndWindowAccess } from '@/lib/auth/module-access'
 import DashboardPageClient from './PageClient'
 
 export default async function DashboardPage() {
-  const access = await checkModuleAccess('dashboard')
-  if (!access.ok) {
-    redirect('/acesso-negado')
-  }
+  const access = await checkModuleAndWindowAccess('dashboard')
+  if (!access.ok) redirect(access.redirectTo)
 
   return <DashboardPageClient />
 }

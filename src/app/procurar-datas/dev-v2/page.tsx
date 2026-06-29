@@ -27,7 +27,7 @@ export default async function DevV2PesquisarCompatPage() {
     .single()
 
   if (usuarioPermitido?.role !== 'superadmin') {
-    redirect('/dashboard')
+    redirect('/inicio')
   }
 
   return (

@@ -1,3 +1,98 @@
+## 2026-06-29 - Cascade - Fase 5C: auditoria final permissoes por modulo + janela de horario
+
+**Resumo:** Auditoria completa da implantacao de permissoes por modulo e janela de horario. Sistema consistente. Dois redirects espurios para /dashboard corrigidos.
+
+**Auditoria wrappers (11 paginas): PASSOU**
+- Todas usam checkModuleAndWindowAccess com chave correta.
+- Todas usam redirect(access.redirectTo) dinamico.
+- Nenhum wrapper redireciona para /dashboard.
+
+**Auditoria rotas neutras: PASSOU**
+- /inicio: sem checkModuleAccess, sem checkModuleAndWindowAccess, sem checkAccessWindowForUser. OK.
+- /acesso-negado: volta para /inicio. OK.
+- /fora-do-horario: volta para /inicio. OK.
+
+**Auditoria helper combinado (module-access.ts): PASSOU**
+- Falha de modulo -> redirectTo: '/acesso-negado'. Confirmado.
+- Falha de janela -> redirectTo: '/fora-do-horario'. Confirmado.
+- Superadmin: checkAccessWindowForUser retorna motivo 'superadmin' (ok: true) -> nunca bloqueado por horario. Confirmado.
+- allowedUser.id e allowedUser.role usados corretamente. Confirmado via api-auth.ts.
+
+**Auditoria /procurar-datas (Frente 0 / Controle): PASSOU**
+- Wrapper usa checkModuleAndWindowAccess('procurar_datas'). OK.
+- PageClient.tsx preserva logica original. OK.
+- Nenhuma API /api/procurar-datas/* alterada. OK.
+- Motor, OSRM, Haversine, candidatos, ranking, Apps Script: nao alterados. OK.
+
+**Correcoes feitas (2 arquivos):**
+- src/app/page.tsx: redirect('/dashboard') -> redirect('/inicio'). Pagina raiz / agora manda para /inicio.
+- src/app/procurar-datas/dev-v2/page.tsx: redirect('/dashboard') -> redirect('/inicio') para nao-superadmin. Pagina interna de dev.
+
+**app_janelas_acesso_usuario:** continua pendente. Tabela vazia. Sem regra de precedencia definida. Nao implementada.
+
+**Confirmacoes:**
+- Middleware: nao alterado.
+- Sidebar: nao alterada.
+- Banco, migrations, RLS, OAuth: nao alterados.
+- APIs de negocio: nao alteradas.
+- Motor /procurar-datas: nao alterado.
+- npx tsc --noEmit: EXIT 0.
+
+**git diff --stat:** 15 arquivos modificados (Fase 5B + 5C acumulados), 1 arquivo criado (fora-do-horario). Nenhum novo arquivo alem dos das fases anteriores.
+
+**Pendencias:**
+- Criar docs/ia/padrao-novas-telas-permissoes.md (governanca de novas telas).
+- Definir semantica de app_janelas_acesso_usuario (complementa, restringe ou substitui perfil).
+- Avaliar exibir janela ativa na tela /inicio para orientar o usuario (opcional).
+
+**Proximo passo recomendado:**
+- Testes manuais por perfil (consultora, pos-venda, sem perfil, superadmin) dentro e fora da janela.
+- Criar documento de governanca padrao-novas-telas-permissoes.md e incluir nas rules do projeto.
+
+---
+
+## 2026-06-29 - Cascade - Fase 5B: bloqueio real por janela de horario nas paginas protegidas
+
+**Resumo:** Aplicado bloqueio por janela de horario em todas as 11 paginas protegidas por modulo. Criado helper combinado checkModuleAndWindowAccess e pagina /fora-do-horario. Superadmin ignora janela. /inicio sem bloqueio. app_janelas_acesso_usuario continua pendente.
+
+**Arquivos alterados:**
+- src/lib/auth/module-access.ts: adicionados imports de access-window e helper checkModuleAndWindowAccess (com tipo CheckPageAccessResult).
+- src/app/fora-do-horario/page.tsx: CRIADO. Pagina simples com mensagem "Fora do horario de acesso" e botao para /inicio. Sem dados sensíveis.
+- 11 wrappers de pagina: substituido checkModuleAccess por checkModuleAndWindowAccess. Redirect agora usa access.redirectTo dinamico ('/acesso-negado' para modulo ou '/fora-do-horario' para janela).
+
+**Paginas atualizadas (todas com Frente 0 / Controle para /procurar-datas):**
+- /dashboard, /agendamentos, /procurar-datas, /chamados-finalizados, /inteligencia-comercial
+- /recebimento, /recebimento/[id], /recebimento/produtos
+- /pos-venda (raiz), /pos-venda/importar-nfe, /pos-venda/importar-nfe-matic
+
+**Fluxo de bloqueio:**
+1. checkModuleAndWindowAccess(moduleKey) chama checkModuleAccess e, se ok, checkAccessWindowForUser.
+2. Falha de modulo -> redirectTo: '/acesso-negado'.
+3. Falha de janela -> redirectTo: '/fora-do-horario'.
+4. Superadmin: checkAccessWindowForUser retorna motivo 'superadmin' (ok: true) -> nunca bloqueado por horario.
+5. /inicio nao usa checkModuleAndWindowAccess -> sem bloqueio por horario.
+
+**Confirmacoes:**
+- Middleware, Sidebar, banco, RLS, OAuth: nao alterados.
+- APIs /api/procurar-datas/*: nao alteradas.
+- Motor /procurar-datas (OSRM, Haversine, candidatos, ranking, Apps Script): nao alterado.
+- app_janelas_acesso_usuario: continua pendente (tabela vazia, sem regra de precedencia).
+- npx tsc --noEmit: EXIT 0.
+
+**git diff --stat:** 12 arquivos alterados (11 wrappers + module-access.ts), 1 arquivo criado (fora-do-horario/page.tsx).
+
+**Pendencias:**
+- Definir semantica de app_janelas_acesso_usuario (complementa, restringe ou substitui perfil).
+- Criar docs/ia/padrao-novas-telas-permissoes.md (governanca de novas telas).
+- Avaliar exibir janela ativa na tela /inicio para orientar o usuario (opcional, fase futura).
+
+**Proximo passo recomendado:**
+- Testes manuais por perfil (consultora, pos-venda, sem perfil, superadmin) dentro e fora da janela.
+- Definir semantica de janela individual de usuario e implementar se necessario.
+- Criar documento de governanca de novas telas.
+
+---
+
 ## 2026-06-29 - Cascade - Fase 5A: helper server-side de janela de horario (sem bloqueio real)
 
 **Resumo:** Criado helper puro checkAccessWindowForUser + rota diagnostica superadmin. Nenhuma pagina foi bloqueada por horario. Nenhum wrapper, Sidebar, middleware, banco ou /procurar-datas alterado.

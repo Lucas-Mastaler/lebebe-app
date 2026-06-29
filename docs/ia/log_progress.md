@@ -1,3 +1,88 @@
+## 2026-06-29 - Cascade - Fase 4C: bloqueio server-side em dashboard, chamados-finalizados, inteligencia-comercial
+
+**Resumo:** Aplicado bloqueio real por permissao de modulo em 3 paginas internas. Criada funcao checkModuleAccess (objeto puro, sem NextResponse) para uso em Server Components. requireModuleAccess agora delega para checkModuleAccess internamente. Criada pagina /acesso-negado. Nenhum middleware, API, sidebar, /procurar-datas, /agendamentos, /recebimento, Recebimento/Matic ou OAuth alterado.
+
+**Diagnostico das paginas antes:**
+- Todas 3 eram 'use client' com export default function Page()
+- Nenhuma validacao de permissao server-side
+- Bloqueio apenas visual via sidebar (Fase 4A)
+
+**Estrategia de implementacao:**
+- Renomear page.tsx -> PageClient.tsx (conteudo intacto, sem alterar logica)
+- Criar nova page.tsx como Server Component async
+- Server Component chama checkModuleAccess -> se !ok, redirect('/acesso-negado')
+- Se ok, renderiza <PageClient />
+
+**Funcao adicionada ao helper (module-access.ts):**
+- checkModuleAccess(moduleKey): Promise<CheckModuleAccessResult>
+  - Mesma cadeia de precedencia de requireModuleAccess
+  - Retorna objeto puro: { ok: true, ... } | { ok: false, reason: 'unauthenticated' | 'forbidden' | 'error' }
+  - Sem NextResponse (compativel com Server Components)
+- requireModuleAccess agora e wrapper: chama checkModuleAccess e converte para NextResponse
+- Tipo exportado: CheckModuleAccessResult
+
+**Paginas alteradas (estrutura):**
+- src/app/dashboard/page.tsx -> Server Component wrapper (12 linhas)
+- src/app/dashboard/PageClient.tsx -> conteudo original intacto (714 linhas)
+- src/app/chamados-finalizados/page.tsx -> Server Component wrapper (12 linhas)
+- src/app/chamados-finalizados/PageClient.tsx -> conteudo original intacto (131 linhas)
+- src/app/inteligencia-comercial/page.tsx -> Server Component wrapper (12 linhas)
+- src/app/inteligencia-comercial/PageClient.tsx -> conteudo original intacto (167 linhas)
+
+**Pagina criada:**
+- src/app/acesso-negado/page.tsx
+  - Server Component simples
+  - Texto: "Acesso negado" + "Voce nao tem permissao para acessar esta pagina."
+  - Botao "Voltar ao inicio" -> /dashboard
+  - Sem informacoes sensiveis
+
+**Confirmacao de escopo:**
+- Middleware: nao alterado
+- Paginas fora do escopo (/procurar-datas, /agendamentos, /recebimento): nao alteradas
+- APIs de negocio: nao alteradas
+- Sidebar: nao alterada
+- Recebimento/Matic, OAuth: nao alterados
+- Banco/migrations/RLS: nao alterados
+- Janelas de horario: nao aplicadas (fase posterior)
+
+**Arquivos alterados:**
+- src/lib/auth/module-access.ts (checkModuleAccess adicionada, requireModuleAccess refatorada)
+- src/app/dashboard/page.tsx (substituida por wrapper Server Component)
+- src/app/chamados-finalizados/page.tsx (substituida por wrapper Server Component)
+- src/app/inteligencia-comercial/page.tsx (substituida por wrapper Server Component)
+
+**Arquivos criados:**
+- src/app/dashboard/PageClient.tsx (conteudo original de page.tsx)
+- src/app/chamados-finalizados/PageClient.tsx (conteudo original de page.tsx)
+- src/app/inteligencia-comercial/PageClient.tsx (conteudo original de page.tsx)
+- src/app/acesso-negado/page.tsx
+
+**Validacoes:**
+- node_modules/.bin/tsc --noEmit | Select-String "error TS" -> EXIT 0, zero erros
+- git diff --stat: 4 arquivos modificados, 4 criados untracked
+
+**Testes manuais recomendados:**
+- Superadmin acessa /dashboard, /chamados-finalizados, /inteligencia-comercial -> funciona normalmente
+- Perfil Consultora acessa /dashboard direto pela URL -> redireciona para /acesso-negado
+- Perfil Consultora acessa /chamados-finalizados -> redireciona para /acesso-negado
+- Perfil Consultora acessa /inteligencia-comercial -> redireciona para /acesso-negado
+- Perfil Gestao acessa as 3 paginas -> funciona normalmente
+- /procurar-datas: sem alteracao, sem bloqueio
+- /agendamentos: sem alteracao, sem bloqueio
+- /horarios-agendamentos: continua publica
+- Sidebar continua igual (nao alterada)
+- /acesso-negado: exibe pagina simples com botao voltar
+
+**Pendencias:**
+- Fase 4D (ou 5): aplicar checkModuleAccess em /agendamentos, /procurar-datas, /pos-venda, /recebimento
+- Fase 5: funcao auxiliar de janela de horario + bloqueio por janela
+- Navigation.tsx: componente legado nao usado (limpeza futura)
+
+**Proximo passo recomendado:**
+- Aplicar checkModuleAccess nas demais paginas internas (agendamentos, pos-venda, recebimento, configuracoes, superadmin)
+
+---
+
 ## 2026-06-29 - Cascade - Fase 4B: helper server-side requireModuleAccess
 
 **Resumo:** Helper requireModuleAccess criado em src/lib/auth/module-access.ts. Funcao diagnosticoModuleAccess criada para uso em rota de diagnostico. Rota GET /api/superadmin/diagnostico/module-access criada (somente superadmin). Nenhuma pagina, API de negocio, middleware, sidebar, Recebimento/Matic, OAuth ou /procurar-datas alterado. Bloqueio real nas paginas NAO aplicado nesta fase.

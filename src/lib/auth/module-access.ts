@@ -38,6 +38,11 @@ export type RequireModuleAccessError = {
 
 export type RequireModuleAccessResult = RequireModuleAccessSuccess | RequireModuleAccessError
 
+// Resultado puro para uso em Server Components (sem NextResponse)
+export type CheckModuleAccessResult =
+  | (RequireModuleAccessSuccess & { ok: true })
+  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'error' }
+
 // ---------------------------------------------------------------------------
 // Tipo interno de diagnóstico (usado pela rota diagnóstica)
 // ---------------------------------------------------------------------------
@@ -54,29 +59,18 @@ export type ModuleAccessDiagnostico = {
 }
 
 // ---------------------------------------------------------------------------
-// Helper principal
+// checkModuleAccess — versão para Server Components (sem NextResponse)
 // ---------------------------------------------------------------------------
 
 /**
- * Valida se o usuário autenticado tem acesso ao módulo informado.
- *
- * Cadeia de precedência:
- * 1. requireAuthenticatedUser (401/403 se não autenticado ou inativo)
- * 2. role=superadmin → acesso total, libera imediatamente
- * 3. Busca módulo por chave em app_modulos
- * 4. Módulo não encontrado ou inativo → 403
- * 5. somente_superadmin=true → 403 para usuário comum
- * 6. publico=true → libera (páginas públicas não devem chamar este helper)
- * 7. Exceção individual em app_permissoes_usuario → prevalece
- * 8. Permissão do perfil ativo em app_permissoes_perfil → fallback
- * 9. Sem perfil/sem linha → 403
+ * Valida acesso ao módulo retornando objeto puro.
+ * Use em Server Components (page.tsx). Para API handlers, use requireModuleAccess.
  *
  * NOTA: Bloqueio por janela de horário NÃO está implementado nesta fase.
- * Será adicionado na Fase 5 com função auxiliar separada.
  */
-export async function requireModuleAccess(
+export async function checkModuleAccess(
   moduleKey: ModuleKey
-): Promise<RequireModuleAccessResult> {
+): Promise<CheckModuleAccessResult> {
   // --- 1. Autenticação base ---
   const auth = await requireAuthenticatedUser({
     requireAllowedUser: true,
@@ -84,7 +78,7 @@ export async function requireModuleAccess(
   })
 
   if (!auth.ok) {
-    return { ok: false, response: auth.response }
+    return { ok: false, reason: 'unauthenticated' }
   }
 
   const allowedUser = auth.allowedUser!
@@ -112,35 +106,17 @@ export async function requireModuleAccess(
 
   if (moduloError || !moduloRow) {
     console.error(`[MODULE ACCESS] Módulo não encontrado: ${moduleKey}`, moduloError)
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { ok: false, message: 'Acesso negado' },
-        { status: 403 }
-      ),
-    }
+    return { ok: false, reason: 'forbidden' }
   }
 
   // --- 4. Módulo inativo ---
   if (!moduloRow.ativo) {
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { ok: false, message: 'Acesso negado' },
-        { status: 403 }
-      ),
-    }
+    return { ok: false, reason: 'forbidden' }
   }
 
   // --- 5. Somente superadmin ---
   if (moduloRow.somente_superadmin) {
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { ok: false, message: 'Acesso negado' },
-        { status: 403 }
-      ),
-    }
+    return { ok: false, reason: 'forbidden' }
   }
 
   // --- 6. Módulo público ---
@@ -186,13 +162,7 @@ export async function requireModuleAccess(
         origem: 'usuario',
       }
     }
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { ok: false, message: 'Acesso negado' },
-        { status: 403 }
-      ),
-    }
+    return { ok: false, reason: 'forbidden' }
   }
 
   // Sem perfil ativo → bloqueia
@@ -202,13 +172,7 @@ export async function requireModuleAccess(
   const perfilAtivo = perfilInfo?.ativo === true ? perfilInfo : null
 
   if (!perfilAtivo) {
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { ok: false, message: 'Acesso negado' },
-        { status: 403 }
-      ),
-    }
+    return { ok: false, reason: 'forbidden' }
   }
 
   // Busca permissão do perfil para este módulo
@@ -221,13 +185,7 @@ export async function requireModuleAccess(
 
   if (permPerfilError) {
     console.error(`[MODULE ACCESS] Erro ao buscar permissão do perfil:`, permPerfilError)
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { ok: false, message: 'Erro ao processar requisição' },
-        { status: 500 }
-      ),
-    }
+    return { ok: false, reason: 'error' }
   }
 
   if (permPerfil?.permitido === true) {
@@ -242,13 +200,39 @@ export async function requireModuleAccess(
     }
   }
 
-  // Sem linha ou explicitamente bloqueado
+  return { ok: false, reason: 'forbidden' }
+}
+
+// ---------------------------------------------------------------------------
+// requireModuleAccess — versão para API handlers (retorna NextResponse)
+// ---------------------------------------------------------------------------
+
+/**
+ * Wrapper de checkModuleAccess para API Route handlers.
+ * Converte o resultado puro em NextResponse quando necessário.
+ *
+ * NOTA: Bloqueio por janela de horário NÃO está implementado nesta fase.
+ */
+export async function requireModuleAccess(
+  moduleKey: ModuleKey
+): Promise<RequireModuleAccessResult> {
+  const result = await checkModuleAccess(moduleKey)
+
+  if (result.ok) {
+    return result
+  }
+
+  const status = result.reason === 'unauthenticated' ? 401 : result.reason === 'error' ? 500 : 403
+  const message =
+    result.reason === 'unauthenticated'
+      ? 'Não autenticado'
+      : result.reason === 'error'
+      ? 'Erro ao processar requisição'
+      : 'Acesso negado'
+
   return {
     ok: false,
-    response: NextResponse.json(
-      { ok: false, message: 'Acesso negado' },
-      { status: 403 }
-    ),
+    response: NextResponse.json({ ok: false, message }, { status }),
   }
 }
 

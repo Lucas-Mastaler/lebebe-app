@@ -1,3 +1,255 @@
+## 2026-06-29 - Cascade - Fase 1: criacao do schema de permissoes no banco
+
+**Resumo:** Criacao e aplicacao da migration com as 4 tabelas de gestao granular de permissoes. Nenhum codigo funcional, frontend, middleware, helper, rota de API, Recebimento/Matic, OAuth ou /procurar-datas foi alterado.
+
+**Diagnostico do schema real de usuarios_permitidos (confirmado via MCP):**
+- PK: `id uuid` com `gen_random_uuid()`
+- `role text CHECK IN ('user','superadmin')` NOT NULL default 'user'
+- `ativo boolean NOT NULL default true`
+- `updated_at timestamptz nullable default now()`
+- Funcao `update_updated_at_column()` ja existe (migration 001) — reutilizada nos triggers
+- Padrao de grants das Fases 0.3/0.4: `REVOKE ALL FROM anon; REVOKE ALL FROM authenticated` — seguido identicamente
+
+**Migration criada:**
+- `supabase/migrations/20260629120000_create_app_permissions_schema.sql`
+
+**Tabelas criadas e confirmadas via MCP:**
+
+| Tabela | Colunas | RLS | Grants anon/auth |
+|---|---|---|---|
+| `app_modulos` | 12 | ON | REVOGADOS |
+| `app_permissoes_usuario` | 8 | ON | REVOGADOS |
+| `app_janelas_acesso_usuario` | 9 | ON | REVOGADOS |
+| `app_auditoria_permissoes` | 10 | ON | REVOGADOS |
+
+**Constraints e indices confirmados via MCP:**
+- `app_modulos`: PK, UNIQUE(chave), 4 indices (chave, ativo, publico, ordem)
+- `app_permissoes_usuario`: PK, UNIQUE(usuario_id, modulo_id), 3 indices, FK -> usuarios_permitidos, FK -> app_modulos com ON DELETE CASCADE
+- `app_janelas_acesso_usuario`: PK, 2 indices, FK -> usuarios_permitidos ON DELETE CASCADE, CHECK hora_fim > hora_inicio, CHECK dias_semana em [0..6]
+- `app_auditoria_permissoes`: PK, 4 indices, FK -> usuarios_permitidos (ator e alvo nullable)
+- Triggers `update_updated_at_column` em app_modulos, app_permissoes_usuario, app_janelas_acesso_usuario
+
+**Seed de app_modulos confirmado via MCP (10 modulos):**
+- Internos (user+superadmin): dashboard(10), agendamentos(20), procurar_datas(30), chamados_finalizados(40), inteligencia_comercial(50), pos_venda(60), recebimento(70)
+- Somente superadmin: superadmin(90), configuracoes(91)
+- Publico: horarios_agendamentos(100)
+
+**Padrao de dias_semana:** 0=domingo, 1=segunda, ..., 6=sabado. Documentado nos comments da tabela.
+
+**Janela nao cruza meia-noite:** hora_fim > hora_inicio (CHECK constraint). Funcionalidade futura pendente de decisao.
+
+**RLS sem policies (intencional):** Acesso exclusivamente via service role nas API routes futuras. Advisors reportam INFO rls_enabled_no_policy — esperado e correto.
+
+**Advisors analisados:**
+- 4x INFO rls_enabled_no_policy nas novas tabelas: INTENCIONAL — sem policies permissivas por design.
+- Alerts de views SECURITY DEFINER e funcoes SECURITY DEFINER: pre-existentes, fora do escopo desta fase.
+- Nenhum novo alerta ERROR introduzido por esta migration.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`, `docs/ia/plano-fase-0-7-modelagem-permissoes-usuarios.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`, `docs/ia/plano-fase-0-seguranca-auth.md`
+- `docs/ia/checkpoint-fase-0-5j-rotas-restantes-auth.md`, `src/types/supabase.ts`
+- `supabase/migrations/001_initial_schema.sql`
+- `supabase/migrations/20260626160000_hardening_rls_grants_fase_0_3.sql`
+
+**Arquivos criados:**
+- `supabase/migrations/20260629120000_create_app_permissions_schema.sql`
+- `docs/ia/log_progress.md` — entrada nova
+
+**Validacoes realizadas via MCP Supabase:**
+- 4 tabelas existem com numero correto de colunas
+- RLS ON em todas as 4
+- Grants de anon e authenticated: REVOGADOS (resultado vazio na consulta information_schema.role_table_grants)
+- 19 indices criados corretamente
+- Seed: 10 registros em app_modulos com atributos corretos
+- Advisors de seguranca: nenhum novo ERROR introduzido
+
+**Comandos rodados:**
+- `git diff --stat` -> docs/ia/log_progress.md (171 ins, 0 del), migration e plano 0.7 untracked
+- `git status --short` -> M log_progress.md, ?? plano-fase-0-7, ?? migration
+- `npx tsc --noEmit` -> NAO RODADO (nenhum arquivo TypeScript alterado)
+
+**Pendencias:**
+- Tipos TypeScript (`src/types/supabase.ts`) nao atualizado — `UsuarioPermitido` e os tipos das novas tabelas nao refletem o schema novo ainda. Atualizar quando as APIs futuras forem implementadas.
+- APIs futuras (Fase 2): GET /api/superadmin/modulos, GET|PATCH|DELETE /api/superadmin/usuarios/[id]/permissoes/[moduloId], PUT /api/superadmin/usuarios/[id]/janela, GET /api/me/permissoes.
+- Janela de horario que cruza meia-noite: nao implementada. Pendente decisao de produto.
+
+**Proximo passo recomendado:**
+- Iniciar Fase 2: implementar as APIs de gestao de permissoes (server-side only, sem alterar frontend/middleware).
+
+---
+
+## 2026-06-29 - Cascade - Fase 0.7: modelagem de gestao de permissoes por tela, horarios e usuarios
+
+**Resumo:** Tarefa de analise e documentacao. Nenhum codigo funcional, migration, banco, RLS, grant, policy, middleware ou tela foi alterado. Criado documento de planejamento tecnico completo para a futura tela de gestao de usuarios e permissoes.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `docs/ia/plano-fase-0-5b-migracao-helper-auth-apis.md`
+- `docs/ia/checkpoint-fase-0-5j-rotas-restantes-auth.md`
+- `src/lib/auth/api-auth.ts`
+- `src/middleware.ts`
+- `src/app/superadmin/page.tsx`
+- `src/app/api/superadmin/adicionar-usuario/route.ts`
+- `src/app/api/superadmin/reenviar-convite/route.ts`
+- `src/app/api/superadmin/usuarios/[id]/status/route.ts`
+- `src/app/api/superadmin/usuarios/[id]/role/route.ts`
+- `src/types/supabase.ts`
+- `src/components/Sidebar.tsx`, `Navigation.tsx`, `AuthenticatedLayout.tsx`, `LayoutWrapper.tsx`
+- Estrutura de `src/app/` (inventario de paginas)
+
+**Arquivos criados:**
+- `docs/ia/plano-fase-0-7-modelagem-permissoes-usuarios.md`
+- `docs/ia/log_progress.md` — entrada nova
+
+**Inventario de modulos confirmado no codigo:**
+- Modulos controlados por permissao granular (7): dashboard, agendamentos, procurar_datas, chamados_finalizados, inteligencia_comercial, pos_venda, recebimento.
+- Modulos controlados por role (nao entram em permissao granular): superadmin, configuracoes.
+- Pagina publica intencional (fora do modelo): /horarios-agendamentos.
+
+**Decisao tecnica documentada:**
+- Opcao B (modelo normalizado com 4 tabelas novas) recomendada: `app_modulos`, `app_permissoes_usuario`, `app_janelas_acesso_usuario`, `app_auditoria_permissoes`.
+- Opcao A (JSONB em usuarios_permitidos) descartada por falta de integridade e auditoria.
+
+**APIs futuras propostas (secao 13 do documento):**
+- `GET /api/superadmin/modulos`
+- `GET /api/superadmin/usuarios/[id]/permissoes`
+- `PATCH /api/superadmin/usuarios/[id]/permissoes/[moduloId]`
+- `DELETE /api/superadmin/usuarios/[id]/permissoes/[moduloId]`
+- `PUT /api/superadmin/usuarios/[id]/janela`
+- `GET /api/superadmin/usuarios/[id]/auditoria-permissoes`
+- `GET /api/me/permissoes`
+
+**Impactos mapeados:**
+- `requireAuthenticatedUser`: adicionar opcao `requiredModulo` futura.
+- Middleware: adicionar consulta lazy a `app_permissoes_usuario` e `app_janelas_acesso_usuario` por rota.
+- Sidebar: substituir `navItems` fixo e `isMaticUser` hardcoded por dados de `GET /api/me/permissoes`.
+- Whitelist Matic: migrar de hardcode para `app_permissoes_usuario` na Fase 4 do rollout.
+
+**Estrategia de rollout definida:** 5 fases — migration+seed, APIs, frontend, middleware+sidebar+matic, horario customizado.
+
+**Criterios de aceite para comecar frontend:** 10 itens documentados na secao 20 do plano.
+
+**Validacoes realizadas:** Nenhuma — tarefa somente leitura e documentacao.
+
+**Comandos rodados:**
+- `git diff --stat` -> pendente (rodar abaixo).
+- `git status --short` -> pendente.
+
+**Pendencias:**
+- Aprovar o modelo proposto.
+- Decidir sobre Fase 1 (migration das 4 tabelas).
+
+**Proximo passo recomendado:**
+- Revisar o documento `docs/ia/plano-fase-0-7-modelagem-permissoes-usuarios.md`.
+- Se aprovado, iniciar Fase 1: criar migration com as 4 tabelas, seed de app_modulos, RLS e grants.
+
+---
+
+## 2026-06-26 - Cascade - Fase 0.6: diagnostico de protecao anti-lockout de superadmin
+
+**Resumo:** Tarefa de diagnostico e validacao da protecao definitiva contra lockout do ultimo superadmin ativo. Resultado: a protecao ja existe em camada dupla (API + trigger de banco) e esta funcionando corretamente. Nenhum codigo funcional, migration, banco, RLS, grant, policy, middleware ou tela foi alterado nesta etapa. A migracao nao foi necessaria porque o trigger ja existe e esta aplicado no banco de producao desde a migration 001.
+
+**Diagnostico das protecoes nas APIs (confirmado no codigo):**
+
+- `PATCH /api/superadmin/usuarios/[id]/status/route.ts`:
+  - Antes de desativar (`ativo: false`), verifica se o usuario alvo e superadmin.
+  - Se for, conta superadmins ativos via service role.
+  - Se `ativos <= 1`, retorna 409 com mensagem clara.
+  - Funcao `requireAuthenticatedUser` garante que so superadmin ativo pode chamar.
+  - Protecao API CONFIRMADA para desativacao do ultimo superadmin.
+
+- `PATCH /api/superadmin/usuarios/[id]/role/route.ts`:
+  - Antes de rebaixar (`role: 'user'`), verifica se o usuario alvo e superadmin.
+  - Se for, conta superadmins ativos via service role.
+  - Se `ativos <= 1`, retorna 409 com mensagem clara.
+  - Protecao API CONFIRMADA para rebaixamento do ultimo superadmin.
+
+- `POST /api/superadmin/adicionar-usuario/route.ts`:
+  - Nao altera role de usuario existente. Se usuario ja existe, reativa (`ativo: true`) e reencaminha convite, mas nao altera role. Sem risco de lockout indireto.
+
+- `POST /api/superadmin/reenviar-convite/route.ts`:
+  - Apenas atualiza token de convite e reenvia email. Nao altera `role` nem `ativo`. Sem risco de lockout.
+
+- Rota de DELETE de usuario: NAO EXISTE nenhum endpoint DELETE de usuario nas rotas superadmin. Confirmado por busca no codigo e estrutura de diretorio.
+
+**Diagnostico Supabase (confirmado via MCP):**
+
+- Tabela `usuarios_permitidos`: RLS habilitada, 11 linhas, 12 colunas confirmadas.
+- Colunas de lockout relevantes: `role text CHECK (role IN ('user', 'superadmin'))` e `ativo boolean NOT NULL default true`.
+- Superadmins ativos: 2 (lucas@ e robyson@), ambos com `ativo = true`.
+- Trigger existente: `trigger_validar_superadmin_ativo`, BEFORE UPDATE OR DELETE, FOR EACH ROW.
+- Funcao existente: `validar_superadmin_ativo()` em `public`.
+
+**Analise do trigger existente (codigo da funcao lido via MCP):**
+
+A funcao `validar_superadmin_ativo()` cobre:
+1. DELETE: conta superadmins ativos excluindo o registro sendo removido. Se zero, raise exception.
+2. UPDATE desativar (`ativo = false`): idem, conta superadmins restantes. Se zero, raise exception.
+3. UPDATE rebaixar (`role != 'superadmin'`): idem, conta superadmins restantes. Se zero, raise exception.
+4. UPDATE superadmins iniciais: impede desativar lucas@ e robyson@ independente da contagem.
+
+**Pontos de atencao no trigger:**
+- A funcao esta em `public`, o que por padrao deixa EXECUTE disponivel para todas as roles (PUBLIC grant). No entanto, como e um trigger e nao uma funcao chamada diretamente, isso nao abre brecha - triggers sao executados pelo sistema, nao por chamada de usuario.
+- O trigger foi declarado com `EXECUTE FUNCTION` (sintaxe correta no Postgres 11+).
+- O trigger foi confirmado no banco como `tgenabled = 'O'` (ativo/enabled).
+
+**Migration existente:** O trigger e a funcao estao definidos em `supabase/migrations/001_initial_schema.sql` (linhas 175-225). Nao e necessario criar nova migration.
+
+**Conclusao tecnica:**
+
+- Camada API: PROTEGIDA (rotas status e role com contagem antes de agir).
+- Camada banco: PROTEGIDA (trigger BEFORE UPDATE OR DELETE impede operacao direta no banco).
+- Rota de DELETE: NAO EXISTE via API.
+- Mutacao direta na tela: NAO EXISTE (todas as mutacoes passam pelas APIs com auth).
+- Superadmins iniciais: protegidos tambem por hardcode na tela (`superadmin/page.tsx` L134, L190) e pelo trigger no banco.
+- A migration nao foi necessaria: protecao ja existe desde 001_initial_schema.sql.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `src/lib/auth/api-auth.ts`
+- `src/app/superadmin/page.tsx`
+- `src/app/api/superadmin/usuarios/[id]/status/route.ts`
+- `src/app/api/superadmin/usuarios/[id]/role/route.ts`
+- `src/app/api/superadmin/adicionar-usuario/route.ts`
+- `src/app/api/superadmin/reenviar-convite/route.ts`
+- `supabase/migrations/001_initial_schema.sql` (secao do trigger)
+
+**Arquivos alterados/criados:**
+- `docs/ia/log_progress.md` — entrada nova
+
+**Validacoes realizadas via MCP Supabase:**
+- Tabela `usuarios_permitidos`: colunas, tipos, constraints confirmados.
+- Trigger `trigger_validar_superadmin_ativo`: existente, BEFORE UPDATE OR DELETE, tgenabled=O (ativo).
+- Funcao `validar_superadmin_ativo`: codigo lido e analisado via pg_get_functiondef.
+- Superadmins ativos: 2 (lucas@, robyson@), ambos ativo=true.
+
+**Comandos rodados:**
+- `npx tsc --noEmit` -> exit 0, sem erros.
+- `git diff --stat` -> vazio (working tree limpo; nenhuma alteracao de codigo).
+- Queries MCP: triggers, funcao, superadmins ativos, schema da tabela.
+
+**Pendencias:**
+- Teste controlado do trigger: tentar UPDATE direto no banco tentando desativar o ultimo superadmin. Nao executado porque ha apenas 2 superadmins e seria operacao de risco em producao.
+- Considerar adicionar `SECURITY DEFINER` com `REVOKE EXECUTE FROM PUBLIC` na funcao `validar_superadmin_ativo()` para evitar chamada direta da funcao (embora sendo trigger, o risco seja baixo).
+- O hardcode de emails na tela (`superadmin/page.tsx`) pode ser removido em fase futura, agora que o banco protege.
+
+**Riscos conhecidos:**
+- O trigger bloqueia UPDATE/DELETE que zeraria superadmins ativos. Ele NAO bloqueia INSERT de novo registro com role invalido (mas existe CHECK constraint em `role`).
+- `relforcerowsecurity = false`: service role bypassa RLS (mas nao bypassa triggers, que sao do sistema).
+- A funcao `validar_superadmin_ativo` esta em schema public com EXECUTE grant para PUBLIC. Como e usada apenas por trigger, o risco pratico e baixo, mas pode ser endurecida futuramente.
+
+**Proximo passo recomendado:**
+- Confirmar com teste controlado (SQL direto com usuario nao-service-role) que o trigger rejeita tentativa de desativar o ultimo superadmin.
+- Avaliar se hardcode de emails na tela pode ser removido em fase seguinte, confiando na protecao do banco.
+- Planejar protecao das 6 tabelas sem RLS (sessoes_logout_automatico, geo_cache, provider_costs, forex_config, geocoding_audit, search_execution_audit) como proxima fase de seguranca.
+
+---
+
 ## 2026-06-26 - Codex - Fase 0.5L: desativacao de rotas autocomplete legadas
 
 **Resumo:** Confirmado por busca no codigo que `GET /api/autocomplete/users` e `GET /api/autocomplete/departments` nao possuem consumidor real em `src/app`, `src/components` ou `src/lib`. As rotas ativas usadas pelas telas internas sao `GET /api/users` e `GET /api/departments`, ja protegidas por `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true })`. As rotas autocomplete legadas foram desativadas com resposta `410 Gone` e deixaram de chamar Digisac.

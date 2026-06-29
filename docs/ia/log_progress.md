@@ -1,3 +1,50 @@
+## 2026-06-29 - Cascade - Fase 5A: helper server-side de janela de horario (sem bloqueio real)
+
+**Resumo:** Criado helper puro checkAccessWindowForUser + rota diagnostica superadmin. Nenhuma pagina foi bloqueada por horario. Nenhum wrapper, Sidebar, middleware, banco ou /procurar-datas alterado.
+
+**Diagnostico do schema (validado no MCP):**
+- app_janelas_acesso_perfil: 15 linhas em uso. Colunas confirmadas: perfil_id, tipo (seg_sex|sabado|domingo), ativo, hora_inicio (time), hora_fim (time), timezone. Constraint de upsert: perfil_id+tipo.
+- app_janelas_acesso_usuario: 0 linhas. Modelada mas nunca usada. Estrutura diferente do perfil: usa dias_semana (array de smallint) e permite multiplas linhas por usuario. Sem regra de precedencia definida.
+- app_usuarios_perfis: 4 linhas. Um usuario tem no maximo um perfil (unique em usuario_id).
+- app_perfis_acesso: 5 linhas.
+
+**Decisao sobre janelas individuais:**
+- NÃO implementadas nesta fase. Tabela vazia, sem regra de precedencia documentada.
+- PENDENCIA: definir se janela individual complementa, restringe ou substitui a janela do perfil.
+
+**Decisao de timezone:**
+- America/Sao_Paulo fixo. Uso de Intl.DateTimeFormat com timeZone explicito para nao depender do timezone do servidor.
+- Comparacao de horario via strings HH:MM:SS (banco usa time without time zone, formato compativel).
+
+**Regra de intervalo:**
+- horaAtual >= horaInicio AND horaAtual < horaFim (inclusivo no inicio, exclusivo no fim).
+
+**Arquivos criados:**
+- src/lib/auth/access-window.ts
+  - getTipoJanelaAtual(now?) -> 'seg_sex' | 'sabado' | 'domingo'
+  - getHoraLocalString(now?) -> 'HH:MM:SS' em BRT
+  - getAgoraLocalString(now?) -> string legivel 'DD/MM/YYYY, HH:MM:SS BRT'
+  - checkAccessWindowForUser({ usuarioId, role, now? }) -> AccessWindowCheckResult
+- src/app/api/superadmin/diagnostico/access-window/route.ts
+  - GET /api/superadmin/diagnostico/access-window?usuarioId=...&now=...
+  - Somente superadmin. Retorna: ignoradoPorSuperadmin, tipoJanelaAtual, agoraLocal, resultado completo.
+
+**Confirmacoes:**
+- Nenhuma pagina protegida foi alterada (sem bloqueio por horario nesta fase).
+- Nenhum wrapper de pagina alterado.
+- Sidebar, middleware, banco, RLS, /procurar-datas, motor, APIs: nao alterados.
+- npx tsc --noEmit: EXIT 0.
+
+**Pendencias:**
+- Fase 5B: aplicar bloqueio real por janela nas paginas (integrar checkAccessWindowForUser nos wrappers page.tsx).
+- Definir semantica de janela individual de usuario (complementa, restringe ou substitui perfil).
+- Criar docs/ia/padrao-novas-telas-permissoes.md (governanca de novas telas).
+
+**Proximo passo recomendado:**
+- Fase 5B: integrar checkAccessWindowForUser nos wrappers Server Component das paginas protegidas.
+
+---
+
 ## 2026-06-29 - Cascade - Fase 4G: revisao geral de rotas, redirects e integracao de permissoes
 
 **Resultado:** auditoria completa. Nenhuma correcao necessaria. Sistema de permissoes por modulo consistente em todos os pontos verificados.

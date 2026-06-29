@@ -1,3 +1,49 @@
+## 2026-06-29 - Cascade - Fase 4G: revisao geral de rotas, redirects e integracao de permissoes
+
+**Resultado:** auditoria completa. Nenhuma correcao necessaria. Sistema de permissoes por modulo consistente em todos os pontos verificados.
+
+**Rotas protegidas auditadas (11 paginas):**
+Todas com checkModuleAccess e chave correta:
+dashboard, agendamentos, procurar_datas, chamados_finalizados, inteligencia_comercial,
+recebimento, recebimento/[id], recebimento/produtos, pos_venda (raiz + 2 sub-rotas).
+
+**Sidebar auditada:**
+Chaves em navItems alinham 100% com as chaves usadas nas paginas e retornadas por /api/me/permissoes.
+- horarios-agendamentos: sem moduleKey (publico), correto.
+- superadminNavItems: sem moduleKey, controlado por acessoTotal, correto.
+
+**Rotas neutras/especiais:**
+- /inicio: requireAuthenticatedUser sem checkModuleAccess. Correto.
+- /acesso-negado: botao aponta para /inicio. Correto.
+- /horarios-agendamentos: middleware libera explicitamente. Correto.
+- /superadmin e /configuracoes/procurar-datas: controle por role no middleware. Correto.
+- /configuracoes: sem page.tsx na raiz, middleware bloqueia toda a rota por role. Correto.
+
+**Redirects:**
+- Login -> /inicio (middleware)
+- /superadmin sem superadmin -> /inicio (middleware)
+- /configuracoes sem superadmin -> /inicio (middleware)
+- Modulo bloqueado -> /acesso-negado (wrappers)
+- /acesso-negado botao -> /inicio
+- Nenhum fallback para /dashboard confirmado.
+
+**/procurar-datas (Frente 0 / Controle):**
+- Wrapper correto, PageClient.tsx intacto, APIs e motor nao alterados.
+
+**Alteracoes nesta fase:** nenhuma.
+
+**Pendencias registradas:**
+- Criar docs/ia/padrao-novas-telas-permissoes.md como documento de governanca (toda nova tela deve ter modulo cadastrado, aparecer na tela de usuarios/perfis e passar pelo padrao de permissoes antes de ser considerada pronta).
+- Incluir esse documento nas rules do projeto/Cascade apos criacao.
+- Fase 5: funcao auxiliar de janela de horario + bloqueio por janela de acesso.
+- /superadmin e /configuracoes: hoje controlados pelo middleware; poderia receber checkModuleAccess em fase futura se necessario.
+
+**Proximo passo recomendado:**
+- Fase 5: implementar bloqueio por janela de horario de acesso.
+- Ou: criar documento de governanca padrao-novas-telas-permissoes.md.
+
+---
+
 ## 2026-06-29 - Cascade - Fase 4F: bloqueio server-side em /procurar-datas (Frente 0 / Controle)
 
 **Resumo:** Aplicado checkModuleAccess('procurar_datas') na pagina principal /procurar-datas. Mesmo padrao das fases anteriores. Motor v2, APIs /api/procurar-datas/*, Apps Script, OSRM, Haversine, candidatos, ranking, classificacao, pre-agendamento, auditoria, diagnostico e dev-v2: nada alterado.

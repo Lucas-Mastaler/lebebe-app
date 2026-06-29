@@ -1,3 +1,55 @@
+## 2026-06-29 - Cascade - Fase 4F: bloqueio server-side em /procurar-datas (Frente 0 / Controle)
+
+**Resumo:** Aplicado checkModuleAccess('procurar_datas') na pagina principal /procurar-datas. Mesmo padrao das fases anteriores. Motor v2, APIs /api/procurar-datas/*, Apps Script, OSRM, Haversine, candidatos, ranking, classificacao, pre-agendamento, auditoria, diagnostico e dev-v2: nada alterado.
+
+**Diagnostico:**
+- /procurar-datas/page.tsx: 'use client', 1440 linhas -> renomeado para PageClient.tsx, wrapper criado
+- /procurar-datas/dev-v2/page.tsx: Server Component de diagnostico/dev -> fora do escopo, nao alterado
+
+**Arquivos alterados:**
+- src/app/procurar-datas/page.tsx (substituida por wrapper Server Component, 10 linhas)
+
+**Arquivos criados:**
+- src/app/procurar-datas/PageClient.tsx (conteudo original de page.tsx, intacto)
+
+**ModuleKey usada:** 'procurar_datas'.
+
+**Confirmacao de escopo:**
+- Motor v2, APIs /api/procurar-datas/*, Apps Script: nao alterados
+- OSRM, Haversine, candidatos, ranking, classificacao, pre-agendamento: nao alterados
+- Auditoria operacional, diagnostico, dev-v2: nao alterados
+- Middleware: nao alterado
+- /inicio, /superadmin, /configuracoes, OAuth: nao alterados
+- Sidebar, banco, RLS, janelas de horario: nao alterados
+- Nenhum redirect para /dashboard introduzido
+
+**Validacoes:**
+- node_modules/.bin/tsc --noEmit | Select-String "error TS" -> EXIT 0, zero erros
+- git diff --stat: 1 modificado, 1 criado untracked
+
+**Status do bloqueio server-side por modulo:**
+Todas as paginas internas agora cobertas:
+- /dashboard (dashboard)
+- /chamados-finalizados (chamados_finalizados)
+- /inteligencia-comercial (inteligencia_comercial)
+- /agendamentos (agendamentos)
+- /recebimento (recebimento)
+- /recebimento/[id] (recebimento)
+- /recebimento/produtos (recebimento)
+- /pos-venda (pos_venda)
+- /pos-venda/importar-nfe (pos_venda)
+- /pos-venda/importar-nfe-matic (pos_venda)
+- /procurar-datas (procurar_datas)
+
+Pendente (fases futuras):
+- /superadmin (superadmin) — controlado hoje pelo middleware
+- /configuracoes (configuracoes) — controlado hoje pelo middleware
+
+**Proximo passo recomendado:**
+- Fase 5: funcao auxiliar de janela de horario + bloqueio por janela de acesso
+
+---
+
 ## 2026-06-29 - Cascade - Fase 4E: bloqueio server-side nas sub-rotas de recebimento
 
 **Resumo:** Aplicado checkModuleAccess('recebimento') em /recebimento/[id] e /recebimento/produtos. Mesmo padrao das fases 4C/4D. Nenhum middleware, API, logica de negocio de Recebimento/Matic, /procurar-datas, /inicio, /superadmin, /configuracoes ou OAuth alterado.

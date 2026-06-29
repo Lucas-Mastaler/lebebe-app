@@ -1,3 +1,258 @@
+## 2026-06-29 - Cascade - Fase 2A.1: seed de permissoes por perfil e ajuste de GET /api/me/permissoes
+
+**Resumo:** Migration com seed de permissoes por perfil (28 linhas em app_permissoes_perfil), desativacao do perfil recebimento, e reescrita de GET /api/me/permissoes para usar perfil + excecao individual. Nenhum frontend, sidebar, middleware, helper, Recebimento/Matic, OAuth ou /procurar-datas alterado.
+
+**Diagnostico confirmado via MCP antes de implementar:**
+- app_permissoes_perfil: vazia (0 linhas) -> seed limpo, sem conflitos
+- Perfil recebimento: 0 usuarios vinculados -> seguro desativar
+
+**Migration criada e aplicada:**
+- `supabase/migrations/20260629140000_seed_access_profile_permissions.sql`
+
+**Acoes da migration:**
+- `UPDATE app_perfis_acesso SET ativo=false WHERE chave='recebimento'`
+- INSERT 28 linhas em app_permissoes_perfil (4 perfis x 7 modulos) via JOIN por chave (sem UUID hardcoded)
+- ON CONFLICT (perfil_id, modulo_id) DO UPDATE -> idempotente
+
+**Validacao da matriz (confirmada via MCP):**
+
+| Perfil | Total | Permitidos |
+|---|---|---|
+| consultora | 7 | 1 (procurar_datas) |
+| supervisora_loja | 7 | 5 (dashboard, agendamentos, procurar_datas, chamados_finalizados, inteligencia_comercial) |
+| pos_venda | 7 | 3 (procurar_datas, pos_venda, recebimento) |
+| gestao | 7 | 7 (todos) |
+| recebimento | — | ativo=false |
+
+**Reescrita de GET /api/me/permissoes:**
+- Removido MODULOS_DEFAULT_USER hardcoded
+- Logica de precedencia implementada:
+  1. superadmin -> acessoTotal=true, todos os modulos, origem='superadmin'
+  2. excecao individual (app_permissoes_usuario) -> prevalece, origem='usuario'
+  3. permissao do perfil ativo (app_permissoes_perfil) -> origem='perfil'
+  4. sem perfil ou sem linha no perfil -> bloqueia
+- Busca paralela com Promise.all: perfil + excecoes + janelas usuario
+- Segunda busca paralela (apenas se perfil ativo): permissoes do perfil + janelas do perfil
+- Perfil inativo tratado como sem perfil (perfilAtual=null)
+
+**Novo contrato de resposta (quebra de compatibilidade intencional — frontend ainda nao usa):**
+```
+{
+  ok: true,
+  usuario: { id, email, role, ativo },
+  perfilAtual: { id, chave, nome } | null,
+  modulosPermitidos: Array<{ id, chave, nome, rotaBase, categoria, publico, somenteSuperadmin, origem }>,
+  chavesPermitidas: string[],
+  janelasAcesso: {
+    perfil: Array<{ id, tipo, ativo, horaInicio, horaFim, timezone }>,
+    usuario: Array<{ id, diasSemana, horaInicio, horaFim, timezone, ativo }>
+  },
+  acessoTotal: boolean
+}
+```
+
+**Comportamento de modulos publicos:**
+- Nao entram na logica de permissao de perfil
+- Continuam acessiveis sem login por natureza
+- Nao aparecem em modulosPermitidos de user comum (exceto se tiver excecao individual explicita)
+- Superadmin os ve em modulosPermitidos com origem='superadmin'
+
+**Janelas de acesso:**
+- Retornadas no campo janelasAcesso.perfil (do perfil ativo) e janelasAcesso.usuario (do usuario)
+- Nao aplicam bloqueio nesta fase
+
+**Confirmacao de escopo:**
+- Frontend, sidebar, middleware, requireAuthenticatedUser, Recebimento/Matic, OAuth, /procurar-datas: nao alterados
+
+**Validacoes:**
+- Matrix de permissoes confirmada via MCP (contadores batem com especificacao)
+- `npx tsc --noEmit` -> EXIT 0, zero erros
+
+**Comandos rodados:**
+- `npx tsc --noEmit` -> EXIT 0
+- `git diff --stat` -> log_progress.md (+149), src/types/supabase.ts (+95), ?? migration Fase 2A.1
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`, `docs/ia/plano-fase-0-7-modelagem-permissoes-usuarios.md`
+- `supabase/migrations/20260629120000_create_app_permissions_schema.sql`
+- `supabase/migrations/20260629130000_create_access_profiles_schema.sql`
+- `src/types/supabase.ts`, `src/app/api/me/permissoes/route.ts`
+- `src/app/api/superadmin/modulos/route.ts`, `src/lib/auth/api-auth.ts`, `src/lib/supabase/service.ts`
+
+**Arquivos criados/alterados:**
+- `supabase/migrations/20260629140000_seed_access_profile_permissions.sql` (novo)
+- `src/app/api/me/permissoes/route.ts` (reescrito — logica de perfil)
+- `docs/ia/log_progress.md` (entrada nova)
+
+**Testes manuais recomendados:**
+- GET /api/me/permissoes como superadmin -> acessoTotal=true, perfilAtual=null, todos modulos, origem='superadmin'
+- GET /api/me/permissoes como user sem perfil -> modulosPermitidos vazio, perfilAtual=null
+- Atribuir manualmente perfil 'gestao' a usuario e chamar endpoint -> 7 modulos, origem='perfil'
+- Atribuir perfil 'consultora' -> apenas procurar_datas permitido
+- Inserir excecao individual (app_permissoes_usuario) para modulo dashboard com permitido=true em usuario com perfil 'consultora' -> dashboard aparece com origem='usuario'
+- Atribuir perfil inativo -> trata como sem perfil
+
+**Pendencias:**
+- Janelas de acesso nao bloqueiam ainda (intencional)
+- Fase 2B: APIs de gestao de perfis (listar perfis, atribuir perfil a usuario, editar permissoes do perfil)
+- Fase 3: frontend da tela Superadmin consumindo APIs de perfil
+- Fase 4: sidebar dinamica via GET /api/me/permissoes
+- Fase 5: middleware com bloqueio por modulo e janela de horario
+
+**Proximo passo recomendado:**
+- Iniciar Fase 2B: APIs de gestao (GET /api/superadmin/perfis, PUT /api/superadmin/usuarios/[id]/perfil, etc.)
+
+---
+
+## 2026-06-29 - Cascade - Fase 1B: perfis de acesso no banco
+
+**Resumo:** Criacao e aplicacao da migration com as 4 tabelas de perfis de acesso. Seed de 5 perfis e 15 janelas (3 por perfil). Tipos TypeScript adicionados. Nenhum frontend, sidebar, middleware, helper, rota de API existente, Recebimento/Matic, OAuth ou /procurar-datas foi alterado.
+
+**Diagnostico confirmado via MCP:**
+- 4 tabelas da Fase 1 existem com RLS ON e sem policies (intencional)
+- `update_updated_at_column()` existe — reutilizada nos 4 triggers
+- Tabelas de perfil NAO existiam antes desta fase
+- IDs dos modulos em app_modulos confirmados — seed de janelas usa JOIN por chave para evitar hardcode de UUID
+
+**Migration criada e aplicada:**
+- `supabase/migrations/20260629130000_create_access_profiles_schema.sql`
+
+**Tabelas criadas e confirmadas via MCP:**
+
+| Tabela | RLS | Grants anon/auth |
+|---|---|---|
+| `app_perfis_acesso` | ON | REVOGADOS |
+| `app_usuarios_perfis` | ON | REVOGADOS |
+| `app_permissoes_perfil` | ON | REVOGADOS |
+| `app_janelas_acesso_perfil` | ON | REVOGADOS |
+
+**Constraints notaveis:**
+- `app_usuarios_perfis`: UNIQUE(usuario_id) — um usuario tem no maximo um perfil
+- `app_usuarios_perfis.perfil_id`: ON DELETE RESTRICT — impede remover perfil com usuarios
+- `app_janelas_acesso_perfil`: UNIQUE(perfil_id, tipo), CHECK hora_fim > hora_inicio quando ativo=true
+- `app_janelas_acesso_perfil.hora_inicio/hora_fim`: nullable — permitido apenas quando ativo=false
+
+**Seed confirmado via MCP:**
+- 5 perfis: consultora(10), supervisora_loja(20), pos_venda(30), recebimento(40), gestao(50)
+- 15 janelas (3 por perfil): seg_sex 08:00-18:00, sabado 09:00-13:00, domingo off
+
+**Seed NAO inserido (pendencia):**
+- `app_permissoes_perfil`: permissoes por perfil nao foram populadas. Requer decisao do usuario sobre quais modulos cada perfil pode acessar.
+
+**Tipos adicionados em src/types/supabase.ts:**
+- `AppPerfilAcesso`, `AppUsuarioPerfil`, `AppPermissaoPerfil`, `AppJanelaAcessoPerfil`, `TipoJanelaPerfil`
+- Tipos da Fase 2A preservados intactos
+
+**Impacto em GET /api/me/permissoes (nao alterado nesta fase):**
+- A rota atual usa fallback hardcoded `MODULOS_DEFAULT_USER`. Com perfis, a logica correta sera:
+  1. superadmin -> acesso total
+  2. excecao individual (app_permissoes_usuario) -> prevalece
+  3. sem excecao -> usa app_permissoes_perfil do perfil atribuido
+  4. sem perfil ou sem permissao no perfil -> bloqueia
+- A atualizacao desta rota fica para a Fase 2B.
+
+**Validacoes realizadas:**
+- 4 novas tabelas com RLS ON confirmadas via MCP
+- Grants anon/authenticated: REVOGADOS (resultado vazio)
+- 5 perfis seed confirmados
+- 15 janelas seed confirmadas (3 por perfil, com horarios corretos)
+- `npx tsc --noEmit` -> EXIT 0, zero erros
+
+**Comandos rodados:**
+- `npx tsc --noEmit` -> EXIT 0
+- `git diff --stat` -> docs/ia/log_progress.md (+67), src/types/supabase.ts (+95), ?? migration Fase 1B
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`, `docs/ia/plano-fase-0-7-modelagem-permissoes-usuarios.md`
+- `supabase/migrations/20260629120000_create_app_permissions_schema.sql`
+- `src/types/supabase.ts`, `src/app/api/me/permissoes/route.ts`
+- `src/app/api/superadmin/modulos/route.ts`, `src/lib/auth/api-auth.ts`
+
+**Arquivos criados/alterados:**
+- `supabase/migrations/20260629130000_create_access_profiles_schema.sql` (novo)
+- `src/types/supabase.ts` (4 interfaces + 1 type adicionados)
+- `docs/ia/log_progress.md` (entrada nova)
+
+**Pendencias:**
+- Decidir permissoes por perfil (app_permissoes_perfil): quais modulos cada perfil acessa?
+- Fase 2B: atualizar GET /api/me/permissoes para usar perfil como fonte de permissao
+- Fase 2B: criar APIs de gestao de perfis (listar, atribuir perfil a usuario, definir permissoes do perfil)
+- Fase 3: frontend da tela Superadmin
+
+**Proximo passo recomendado:**
+- Definir com o usuario as permissoes de cada perfil (quais modulos cada um acessa)
+- Em seguida, popular app_permissoes_perfil via migration ou via tela de gestao
+- Iniciar Fase 2B: atualizar GET /api/me/permissoes + APIs de gestao de perfis
+
+---
+
+## 2026-06-29 - Cascade - Fase 2A: tipos Supabase e APIs de leitura de permissoes
+
+**Resumo:** Atualizacao dos tipos TypeScript e criacao das duas APIs de leitura de permissoes. Nenhum frontend, middleware, sidebar, helper, RLS, grant, policy, Recebimento/Matic, OAuth ou /procurar-datas foi alterado.
+
+**Diagnostico confirmado:**
+- `src/types/supabase.ts` e manual (sem geracao automatica de tipos). Interfaces adicionadas diretamente.
+- `createServiceClient()` e o padrao para todas as queries nas novas tabelas (RLS sem policies = apenas service role acessa).
+- `requireAuthenticatedUser` retorna `allowedUser.id` que e o `usuarios_permitidos.id` (uuid) — usado como FK em app_permissoes_usuario e app_janelas_acesso_usuario.
+- `export const runtime = 'nodejs'` presente em todas as rotas superadmin existentes — mantido.
+
+**Arquivos alterados:**
+- `src/types/supabase.ts` — 4 interfaces adicionadas: `AppModulo`, `AppPermissaoUsuario`, `AppJanelaAcessoUsuario`, `AppAuditoriaPermissao`
+
+**Arquivos criados:**
+- `src/app/api/superadmin/modulos/route.ts` — GET /api/superadmin/modulos
+- `src/app/api/me/permissoes/route.ts` — GET /api/me/permissoes
+
+**Contrato GET /api/superadmin/modulos:**
+- Auth: requireAllowedUser + requireActive + requiredRole superadmin
+- 200: `{ ok: true, modulos: AppModulo[] }` (campos: id, chave, nome, descricao, rota_base, categoria, publico, somente_superadmin, ativo, ordem)
+- 401: sem sessao / 403: nao superadmin ou inativo / 500: erro interno
+
+**Contrato GET /api/me/permissoes:**
+- Auth: requireAllowedUser + requireActive (qualquer role ativo)
+- 200: `{ ok: true, usuario, modulosPermitidos, chavesPermitidas, janelasAcesso, acessoTotal }`
+- superadmin: acessoTotal=true, todos os modulos ativos
+- user comum: acessoTotal=false, modulos por MODULOS_DEFAULT_USER + overrides de app_permissoes_usuario (sem modulos somente_superadmin)
+- MODULOS_DEFAULT_USER (constante no codigo): dashboard, agendamentos, chamados_finalizados, inteligencia_comercial, procurar_datas, pos_venda
+- Janelas de acesso ativas incluidas no retorno, mas nao aplicadas como bloqueio ainda
+- 401: sem sessao / 403: inativo / 500: erro interno
+
+**Logica de permissao user comum (confirmada no codigo):**
+1. Se modulo somente_superadmin: ignorado
+2. Se existe linha em app_permissoes_usuario para (usuario, modulo): usa valor de `permitido`
+3. Se nao existe linha: usa MODULOS_DEFAULT_USER ou publico=true como default
+
+**Validacoes:**
+- `npx tsc --noEmit` -> EXIT 0, zero erros
+- `git diff --stat` -> src/types/supabase.ts (51 ins), ?? src/app/api/me/, ?? src/app/api/superadmin/modulos/
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`, `docs/ia/plano-fase-0-7-modelagem-permissoes-usuarios.md`
+- `supabase/migrations/20260629120000_create_app_permissions_schema.sql`
+- `src/types/supabase.ts`, `src/lib/auth/api-auth.ts`, `src/lib/supabase/server.ts`, `src/lib/supabase/service.ts`
+- `src/app/api/superadmin/adicionar-usuario/route.ts`
+- `src/app/api/superadmin/usuarios/[id]/status/route.ts`
+- `docs/ia/checkpoint-fase-0-5j-rotas-restantes-auth.md`
+
+**Testes manuais recomendados:**
+- GET /api/superadmin/modulos como superadmin ativo -> 200 com 10 modulos
+- GET /api/superadmin/modulos como user comum -> 403
+- GET /api/superadmin/modulos sem sessao -> 401
+- GET /api/me/permissoes como superadmin -> acessoTotal=true, todos os modulos
+- GET /api/me/permissoes como user comum ativo -> acessoTotal=false, modulos default
+- GET /api/me/permissoes usuario bloqueado -> 403
+
+**Pendencias:**
+- Fase 2B: APIs de edicao (PATCH /api/superadmin/usuarios/[id]/permissoes/[moduloId], DELETE, PUT janela, GET auditoria-permissoes)
+- Fase 3: frontend da tela Superadmin consumindo essas APIs
+- Fase 4: sidebar dinamica via GET /api/me/permissoes, substituindo navItems fixo e isMaticUser hardcoded
+- Fase 5: middleware consumindo permissoes para bloquear rotas por modulo e janela de horario customizada
+
+**Proximo passo recomendado:**
+- Iniciar Fase 2B: APIs de escrita de permissoes e janelas de acesso.
+
+---
+
 ## 2026-06-29 - Cascade - Fase 1: criacao do schema de permissoes no banco
 
 **Resumo:** Criacao e aplicacao da migration com as 4 tabelas de gestao granular de permissoes. Nenhum codigo funcional, frontend, middleware, helper, rota de API, Recebimento/Matic, OAuth ou /procurar-datas foi alterado.

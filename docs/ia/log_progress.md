@@ -1,3 +1,45 @@
+## 2026-06-29 - Cascade - Fase 4E: bloqueio server-side nas sub-rotas de recebimento
+
+**Resumo:** Aplicado checkModuleAccess('recebimento') em /recebimento/[id] e /recebimento/produtos. Mesmo padrao das fases 4C/4D. Nenhum middleware, API, logica de negocio de Recebimento/Matic, /procurar-datas, /inicio, /superadmin, /configuracoes ou OAuth alterado.
+
+**Diagnostico:**
+- /recebimento/[id]/page.tsx: 'use client', 1846 linhas, usa useParams() internamente -> renomeado para PageClient.tsx, wrapper criado (useParams continua no client, sem necessidade de repasse)
+- /recebimento/produtos/page.tsx: 'use client', 594 linhas -> renomeado para PageClient.tsx, wrapper criado
+
+**Obs sobre rename de [id]:** PowerShell falha com brackets no path; usado node -e com fs.renameSync.
+
+**Arquivos alterados:**
+- src/app/recebimento/[id]/page.tsx (substituida por wrapper Server Component, 10 linhas)
+- src/app/recebimento/produtos/page.tsx (substituida por wrapper Server Component, 10 linhas)
+
+**Arquivos criados:**
+- src/app/recebimento/[id]/PageClient.tsx (conteudo original de page.tsx)
+- src/app/recebimento/produtos/PageClient.tsx (conteudo original de page.tsx)
+
+**ModuleKey usada:** 'recebimento' em ambas as sub-rotas.
+
+**Confirmacao de escopo:**
+- Middleware: nao alterado
+- APIs de negocio, Recebimento/Matic: nao alterados
+- /procurar-datas, /inicio, /superadmin, /configuracoes, OAuth: nao alterados
+- Sidebar: nao alterada
+- Banco/migrations/RLS: nao alterados
+- Janelas de horario: nao aplicadas
+- Redirects: todos para /acesso-negado
+
+**Validacoes:**
+- node_modules/.bin/tsc --noEmit | Select-String "error TS" -> EXIT 0, zero erros
+- git diff --stat: 2 modificados, 2 criados untracked
+
+**Pendencias:**
+- /procurar-datas: ainda sem bloqueio (proxima fase, fora do escopo ate aqui)
+- Fase 5: funcao auxiliar de janela de horario + bloqueio por janela
+
+**Proximo passo recomendado:**
+- Aplicar checkModuleAccess em /procurar-datas
+
+---
+
 ## 2026-06-29 - Cascade - Fase 4D: bloqueio server-side em agendamentos, pos-venda e recebimento
 
 **Resumo:** Aplicado checkModuleAccess nas paginas /agendamentos, /recebimento e /pos-venda (raiz + 2 sub-rotas). Nenhum middleware, API, sidebar, /procurar-datas, /superadmin, /configuracoes, OAuth ou logica de negocio alterada. Recebimento/Matic intacto.

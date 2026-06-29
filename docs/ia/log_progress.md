@@ -1,3 +1,76 @@
+## 2026-06-29 - Cascade - Fase 3A: integracao de perfis na tela Superadmin
+
+**Resumo:** Tela Superadmin atualizada para exibir e gerenciar perfil de cada usuario. Nova API de listagem de usuarios com perfil. Nenhum middleware, sidebar, permissoes reais do app, Recebimento/Matic, OAuth ou /procurar-datas alterado.
+
+**Diagnostico da tela antes:**
+- loadUsuarios() consultava `usuarios_permitidos` diretamente via supabase client (`createClient()`)
+- Sem coluna de perfil, sem estado de perfil, sem chamadas para APIs de perfil
+- auditoria_acessos: ainda usa client direto (fora do escopo, mantido intacto)
+
+**Nova API criada:**
+- `GET /api/superadmin/usuarios` — retorna usuarios_permitidos (id, email, role, ativo, created_at) com JOIN em app_usuarios_perfis + app_perfis_acesso, montando campo `perfil: { id, chave, nome, ativo } | null`
+- Auth: requireAllowedUser + requireActive + requiredRole='superadmin'
+- Nenhuma mutacao direta client-side em tabelas de perfil/permissao
+
+**Alteracoes em src/app/superadmin/page.tsx:**
+- loadUsuarios(): substituiu query client direta por `fetch('/api/superadmin/usuarios')`
+- loadPerfis(): nova funcao — `fetch('/api/superadmin/perfis')`, carregada em paralelo na aba usuarios
+- UsuarioComPerfil: tipo local substituindo UsuarioPermitido, com campo `perfil: PerfilResumido | null`
+- Nova coluna "Perfil" na tabela de usuarios
+  - superadmin: exibe badge "Acesso total" (nao precisa de perfil)
+  - user: select com perfis ativos disponíveis + botao X para remover
+  - spinner individual por linha durante operacao de perfil (perfilLoadingId)
+- handleAtribuirPerfil(): PUT /api/superadmin/usuarios/[id]/perfil + reload
+- handleRemoverPerfil(): DELETE /api/superadmin/usuarios/[id]/perfil + confirm + reload
+- EMAILS_PROTEGIDOS: extraido como constante para evitar repeticao
+- Perfil 'recebimento' (ativo=false) NAO aparece na lista (GET /api/superadmin/perfis retorna apenas ativos)
+
+**Comportamento de UI:**
+- Alterar select de perfil dispara PUT automaticamente (sem botao Salvar separado)
+- Remover perfil requer confirmacao (window.confirm)
+- Spinner por linha impede acao dupla
+- select volta ao valor atual se operacao falhar (reload do estado)
+- Todas as acoes existentes preservadas: adicionar, bloquear, desbloquear, alterar role
+
+**Confirmacao de escopo:**
+- Nenhuma mutacao direta client-side em tabelas app_* de perfil/permissao
+- Middleware, sidebar, permissoes reais, requireAuthenticatedUser: nao alterados
+- Recebimento/Matic, OAuth, /procurar-datas: nao alterados
+- Editor de permissoes por perfil: nao implementado (Fase 3B)
+- Editor de janelas de horario: nao implementado (Fase 3B)
+
+**Arquivos criados:**
+- `src/app/api/superadmin/usuarios/route.ts` (novo)
+
+**Arquivos alterados:**
+- `src/app/superadmin/page.tsx` (+205 -82)
+
+**Validacoes:**
+- `npx tsc --noEmit` -> EXIT 0, zero erros
+- `git diff --stat`: page.tsx +205/-82; ?? route.ts usuarios
+
+**Testes manuais recomendados:**
+- Abrir /superadmin como superadmin -> perfis ativos aparecem no select
+- Confirmar que 'recebimento' NAO aparece no select
+- Superadmin: badge "Acesso total", sem select de perfil
+- Atribuir perfil 'consultora' a user -> coluna Perfil atualiza
+- Remover perfil -> volta para "Sem perfil"
+- Trocar de 'consultora' para 'gestao' -> funciona sem remover antes
+- Bloquear/desbloquear usuario -> ainda funciona
+- Alterar role -> ainda funciona
+- Adicionar usuario -> ainda funciona
+
+**Pendencias:**
+- Fase 3B: editor de matriz de permissoes por perfil na tela Superadmin
+- Fase 3B: editor de janelas de horario por perfil
+- Fase 4: sidebar dinamica via GET /api/me/permissoes
+- Fase 5: middleware com bloqueio por modulo e janela de horario
+
+**Proximo passo recomendado:**
+- Iniciar Fase 3B: editor de permissoes e janelas por perfil na tela Superadmin
+
+---
+
 ## 2026-06-29 - Cascade - Fase 2B: APIs administrativas de gestao de perfis
 
 **Resumo:** 7 APIs criadas para gestao de perfis, permissoes e janelas de acesso. Auditoria implementada em todas as rotas de escrita. Nenhum frontend, sidebar, middleware, helper, Recebimento/Matic, OAuth ou /procurar-datas alterado.

@@ -3,15 +3,34 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { UsuarioPermitido, AuditoriaAcesso } from '@/types/supabase'
+import { AuditoriaAcesso } from '@/types/supabase'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
+type PerfilResumido = {
+  id: string
+  chave: string
+  nome: string
+  ativo: boolean
+}
+
+type UsuarioComPerfil = {
+  id: string
+  email: string
+  role: 'user' | 'superadmin'
+  ativo: boolean
+  created_at: string
+  perfil: PerfilResumido | null
+}
+
+const EMAILS_PROTEGIDOS = ['lucas@lebebe.com.br', 'robyson@lebebe.com.br']
+
 function SuperAdminPageContent() {
   const searchParams = useSearchParams()
-  const [usuarios, setUsuarios] = useState<UsuarioPermitido[]>([])
+  const [usuarios, setUsuarios] = useState<UsuarioComPerfil[]>([])
+  const [perfisDisponiveis, setPerfisDisponiveis] = useState<PerfilResumido[]>([])
   const [auditoria, setAuditoria] = useState<AuditoriaAcesso[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('usuarios')
@@ -22,6 +41,8 @@ function SuperAdminPageContent() {
   const [addingUser, setAddingUser] = useState(false)
   const [addUserError, setAddUserError] = useState('')
   const [addUserSuccess, setAddUserSuccess] = useState('')
+
+  const [perfilLoadingId, setPerfilLoadingId] = useState<string | null>(null)
 
   const [filtroEmail, setFiltroEmail] = useState('')
   const [filtroAcao, setFiltroAcao] = useState('')
@@ -39,7 +60,7 @@ function SuperAdminPageContent() {
 
   async function loadData() {
     if (activeTab === 'usuarios') {
-      await loadUsuarios()
+      await Promise.all([loadUsuarios(), loadPerfis()])
     } else {
       await loadAuditoria()
     }
@@ -47,16 +68,27 @@ function SuperAdminPageContent() {
 
   async function loadUsuarios() {
     setLoading(true)
-    const supabase = createClient()
-    const { data, error } = await supabase
-      .from('usuarios_permitidos')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (!error && data) {
-      setUsuarios(data)
+    try {
+      const res = await fetch('/api/superadmin/usuarios')
+      const data = await res.json()
+      if (data.ok) {
+        setUsuarios(data.usuarios)
+      }
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
+  }
+
+  async function loadPerfis() {
+    try {
+      const res = await fetch('/api/superadmin/perfis')
+      const data = await res.json()
+      if (data.ok) {
+        setPerfisDisponiveis(data.perfis)
+      }
+    } catch {
+      // perfis ficam vazios; UI degrada graciosamente
+    }
   }
 
   async function loadAuditoria() {
@@ -94,9 +126,7 @@ function SuperAdminPageContent() {
     try {
       const response = await fetch('/api/superadmin/adicionar-usuario', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: novoEmail.toLowerCase().trim(),
           role: novaRole,
@@ -114,9 +144,9 @@ function SuperAdminPageContent() {
       setAddUserSuccess(data.message || 'Convite enviado com sucesso!')
       setNovoEmail('')
       setNovaRole('user')
-      
+
       await loadUsuarios()
-      
+
       setTimeout(() => {
         setDialogOpen(false)
         setAddUserSuccess('')
@@ -130,8 +160,8 @@ function SuperAdminPageContent() {
     }
   }
 
-  async function handleBloquearUsuario(usuario: UsuarioPermitido) {
-    if (usuario.email === 'lucas@lebebe.com.br' || usuario.email === 'robyson@lebebe.com.br') {
+  async function handleBloquearUsuario(usuario: UsuarioComPerfil) {
+    if (EMAILS_PROTEGIDOS.includes(usuario.email)) {
       alert('Não é permitido bloquear os superadmins iniciais')
       return
     }
@@ -142,9 +172,7 @@ function SuperAdminPageContent() {
     try {
       const response = await fetch(`/api/superadmin/usuarios/${usuario.id}/status`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ativo: false }),
       })
 
@@ -162,13 +190,11 @@ function SuperAdminPageContent() {
     }
   }
 
-  async function handleDesbloquearUsuario(usuario: UsuarioPermitido) {
+  async function handleDesbloquearUsuario(usuario: UsuarioComPerfil) {
     try {
       const response = await fetch(`/api/superadmin/usuarios/${usuario.id}/status`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ativo: true }),
       })
 
@@ -186,21 +212,17 @@ function SuperAdminPageContent() {
     }
   }
 
-  async function handleAlterarRole(usuario: UsuarioPermitido, novaRole: 'user' | 'superadmin') {
-    if (usuario.email === 'lucas@lebebe.com.br' || usuario.email === 'robyson@lebebe.com.br') {
-      if (novaRole !== 'superadmin') {
-        alert('Não é permitido alterar a role dos superadmins iniciais')
-        return
-      }
+  async function handleAlterarRole(usuario: UsuarioComPerfil, role: 'user' | 'superadmin') {
+    if (EMAILS_PROTEGIDOS.includes(usuario.email) && role !== 'superadmin') {
+      alert('Não é permitido alterar a role dos superadmins iniciais')
+      return
     }
 
     try {
       const response = await fetch(`/api/superadmin/usuarios/${usuario.id}/role`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ role: novaRole }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
       })
 
       const data = await response.json()
@@ -214,6 +236,57 @@ function SuperAdminPageContent() {
     } catch (error: unknown) {
       const mensagem = error instanceof Error ? error.message : 'Erro desconhecido'
       alert('Erro ao alterar role: ' + mensagem)
+    }
+  }
+
+  async function handleAtribuirPerfil(usuario: UsuarioComPerfil, perfilId: string) {
+    setPerfilLoadingId(usuario.id)
+    try {
+      const response = await fetch(`/api/superadmin/usuarios/${usuario.id}/perfil`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ perfilId }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        alert(data.message || 'Erro ao atribuir perfil')
+        return
+      }
+
+      await loadUsuarios()
+    } catch (error: unknown) {
+      const mensagem = error instanceof Error ? error.message : 'Erro desconhecido'
+      alert('Erro ao atribuir perfil: ' + mensagem)
+    } finally {
+      setPerfilLoadingId(null)
+    }
+  }
+
+  async function handleRemoverPerfil(usuario: UsuarioComPerfil) {
+    const confirm = window.confirm(`Remover perfil de ${usuario.email}?`)
+    if (!confirm) return
+
+    setPerfilLoadingId(usuario.id)
+    try {
+      const response = await fetch(`/api/superadmin/usuarios/${usuario.id}/perfil`, {
+        method: 'DELETE',
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        alert(data.message || 'Erro ao remover perfil')
+        return
+      }
+
+      await loadUsuarios()
+    } catch (error: unknown) {
+      const mensagem = error instanceof Error ? error.message : 'Erro desconhecido'
+      alert('Erro ao remover perfil: ' + mensagem)
+    } finally {
+      setPerfilLoadingId(null)
     }
   }
 
@@ -321,6 +394,9 @@ function SuperAdminPageContent() {
                           Role
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Perfil
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           Status
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -332,54 +408,101 @@ function SuperAdminPageContent() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {usuarios.map((usuario) => (
-                        <tr key={usuario.id}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {usuario.email}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <select
-                              value={usuario.role}
-                              onChange={(e) => handleAlterarRole(usuario, e.target.value as 'user' | 'superadmin')}
-                              className="px-3 py-1 border border-gray-300 rounded-md text-sm"
-                              disabled={usuario.email === 'lucas@lebebe.com.br' || usuario.email === 'robyson@lebebe.com.br'}
-                            >
-                              <option value="user">User</option>
-                              <option value="superadmin">Superadmin</option>
-                            </select>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              usuario.ativo 
-                                ? 'bg-green-100 text-green-800' 
-                                : 'bg-red-100 text-red-800'
-                            }`}>
-                              {usuario.ativo ? 'Ativo' : 'Bloqueado'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {format(new Date(usuario.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                            {usuario.ativo ? (
-                              <button
-                                onClick={() => handleBloquearUsuario(usuario)}
-                                disabled={usuario.email === 'lucas@lebebe.com.br' || usuario.email === 'robyson@lebebe.com.br'}
-                                className="text-red-600 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                      {usuarios.map((usuario) => {
+                        const isProtegido = EMAILS_PROTEGIDOS.includes(usuario.email)
+                        const isPerfilLoading = perfilLoadingId === usuario.id
+                        return (
+                          <tr key={usuario.id}>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {usuario.email}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                              <select
+                                value={usuario.role}
+                                onChange={(e) => handleAlterarRole(usuario, e.target.value as 'user' | 'superadmin')}
+                                className="px-3 py-1 border border-gray-300 rounded-md text-sm"
+                                disabled={isProtegido}
                               >
-                                Bloquear
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleDesbloquearUsuario(usuario)}
-                                className="text-green-600 hover:text-green-900"
-                              >
-                                Desbloquear
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                                <option value="user">User</option>
+                                <option value="superadmin">Superadmin</option>
+                              </select>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                              {usuario.role === 'superadmin' ? (
+                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                                  Acesso total
+                                </span>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    value={usuario.perfil?.id ?? ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value
+                                      if (val === '') return
+                                      handleAtribuirPerfil(usuario, val)
+                                    }}
+                                    disabled={isPerfilLoading}
+                                    className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed min-w-[140px]"
+                                  >
+                                    <option value="">Sem perfil</option>
+                                    {perfisDisponiveis.map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.nome}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {usuario.perfil && (
+                                    <button
+                                      onClick={() => handleRemoverPerfil(usuario)}
+                                      disabled={isPerfilLoading}
+                                      title="Remover perfil"
+                                      className="text-gray-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                                    >
+                                      ✕
+                                    </button>
+                                  )}
+                                  {isPerfilLoading && (
+                                    <svg className="animate-spin h-4 w-4 text-indigo-500" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                                    </svg>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                usuario.ativo
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-red-100 text-red-800'
+                              }`}>
+                                {usuario.ativo ? 'Ativo' : 'Bloqueado'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {format(new Date(usuario.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
+                              {usuario.ativo ? (
+                                <button
+                                  onClick={() => handleBloquearUsuario(usuario)}
+                                  disabled={isProtegido}
+                                  className="text-red-600 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  Bloquear
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleDesbloquearUsuario(usuario)}
+                                  className="text-green-600 hover:text-green-900"
+                                >
+                                  Desbloquear
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 )}

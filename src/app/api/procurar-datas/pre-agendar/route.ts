@@ -23,6 +23,12 @@ export async function POST(request: NextRequest) {
       runId?: string
     }
 
+    console.log('[PROCURAR_DATAS][pre-agendar] body recebido', {
+      pesquisaAuditoriaId: body.pesquisaAuditoriaId,
+      clientToken: body.clientToken,
+      runId: body.runId,
+    })
+
     if (!body.cand || !body.meta) {
       return NextResponse.json({ ok: false, error: 'cand e meta sao obrigatorios' }, { status: 400 })
     }
@@ -59,7 +65,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Registrar auditoria operacional do pré-agendamento
-    registrarAuditoriaPreAgendamento({
+    const auditoriaResultado = await registrarAuditoriaPreAgendamento({
       pesquisaAuditoriaId: body.pesquisaAuditoriaId || null,
       userId: acesso.auth.userId || null,
       userEmail: acesso.auth.email || '',
@@ -76,9 +82,16 @@ export async function POST(request: NextRequest) {
       errorMessage: auditoriaErro,
       titulo: resultado.ok ? resultado.titulo : null,
       eventLink: resultado.ok ? resultado.eventLink : null,
-    }).catch((err) => {
-      console.error('[PROCURAR_DATAS][pre-agendar] erro ao gravar auditoria operacional', err)
     })
+
+    if (!auditoriaResultado.sucesso) {
+      console.error('[PROCURAR_DATAS][pre-agendar] auditoria operacional falhou', {
+        erro: auditoriaResultado.erro,
+        pesquisaAuditoriaId: body.pesquisaAuditoriaId,
+        clientToken: body.clientToken,
+        runId: body.runId,
+      })
+    }
 
     console.log('[PROCURAR_DATAS][pre-agendar] sucesso', {
       duracaoMs: Date.now() - inicio,

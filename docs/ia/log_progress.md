@@ -1,3 +1,94 @@
+## 2026-06-30 - Cascade - Frente 0/Controle: correção de gravação de auditoria de pré-agendamento
+
+**Resumo:** Corrigida a rota `/api/procurar-datas/pre-agendar` para garantir que a auditoria operacional de pré-agendamento seja gravada corretamente e que erros não fiquem silenciosos. A chamada de `registrarAuditoriaPreAgendamento` foi alterada de `.catch()` (silencioso) para `await` com log explícito de erro. Adicionado log no início da rota para confirmar recebimento de `pesquisaAuditoriaId`, `clientToken` e `runId`. Não altera motor v2, OSRM, Haversine, ranking, classificação, Apps Script, regras de negócio, permissões ou estrutura das tabelas.
+
+**Arquivos lidos:**
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+- `docs/ia/padrao-novas-telas-permissoes.md`
+- `src/app/api/procurar-datas/pre-agendar/route.ts`
+- `src/lib/procurar-datas/v2/auditoria-pre-agendamento.ts`
+- `src/app/procurar-datas/PageClient.tsx`
+- `src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts`
+- `src/lib/procurar-datas/v2/auditoria-pesquisa.ts`
+
+**Arquivos alterados:**
+- `src/app/api/procurar-datas/pre-agendar/route.ts`
+- `docs/ia/log_progress.md`
+
+**Validações realizadas:**
+- MCP Supabase confirmou pesquisa `00dfe4cd-4018-4ee2-adaa-bf88a58a4137` com status `success`, CEP `81630000`, usuário `posvenda@lebebe.com.br`, `client_token` `app-1782822846508-e5867d2e1c394`, `run_id` `1b3d78b1-e298-4af8-abe7-f9d0e40eafd5`
+- MCP Supabase confirmou que NÃO existe pré-agendamento correspondente na tabela `procurar_datas_pre_agendamentos_auditoria` para essa pesquisa
+- MCP Supabase confirmou 7 pré-agendamentos recentes funcionando (último de 2026-06-29)
+- Logs do Supabase não mostraram inserts na tabela de pré-agendamentos no período do teste
+- `npx tsc --noEmit --pretty false`: passou
+- `npx eslint src/app/api/procurar-datas/pre-agendar/route.ts --quiet`: passou
+
+**Comandos rodados e resultados:**
+- Consultas SQL no MCP Supabase para validar pesquisa e ausência de pré-agendamento
+- `npx tsc --noEmit --pretty false` -> exit 0
+- `npx eslint src/app/api/procurar-datas/pre-agendar/route.ts --quiet` -> exit 0
+
+**Pendências:**
+- Teste manual autenticado de uma pesquisa completa
+- Teste manual de um pré-agendamento real
+- Validação de logs do servidor para confirmar que `pesquisaAuditoriaId`, `clientToken` e `runId` estão chegando
+- Validação de logs do servidor para confirmar que `registrarAuditoriaPreAgendamento` está sendo chamada
+- Consulta Supabase após teste real para confirmar novo registro em `procurar_datas_pre_agendamentos_auditoria`
+- Teste da tela `/procurar-datas/auditoria` abrindo o detalhe da pesquisa
+
+**Riscos conhecidos:**
+- Se `pesquisaAuditoriaId` não estiver chegando do frontend, a auditoria será gravada sem vínculo (comportamento preservado pelo fallback implementado anteriormente)
+- Se o insert continuar falhando, o log agora será explícito e não silencioso
+
+**Próximo passo recomendado:**
+- Fazer um teste real de pesquisa + pré-agendamento autenticado, verificar logs do servidor e confirmar novo registro em `procurar_datas_pre_agendamentos_auditoria`.
+
+---
+
+## 2026-06-30 - Cascade - Frente 0/Controle: correção de exibição de pré-agendamento na tela de auditoria
+
+**Resumo:** Corrigida a API da tela de auditoria `/procurar-datas/auditoria` para exibir pré-agendamentos que não têm vínculo direto (`pesquisa_auditoria_id`) mas correspondem por `client_token`/`run_id` com uma pesquisa. A função `buscarIdsComPreAgendamento` foi alterada para buscar todos os pré-agendamentos (removido filtro `.not('pesquisa_auditoria_id', 'is', null)`) e adicionar lógica de fallback por `client_token`/`run_id`. A listagem agora busca pré-agendamentos sem vínculo e os vincula às pesquisas correspondentes para exibição. Não altera motor v2, OSRM, Haversine, ranking, classificação, Apps Script, regras de negócio, gravação da auditoria, permissões ou estrutura das tabelas.
+
+**Arquivos lidos:**
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+- `docs/ia/padrao-novas-telas-permissoes.md`
+- `src/app/api/procurar-datas/auditoria/route.ts`
+- `src/app/procurar-datas/auditoria/PageClient.tsx`
+
+**Arquivos alterados:**
+- `src/app/api/procurar-datas/auditoria/route.ts`
+- `docs/ia/log_progress.md`
+
+**Validações realizadas:**
+- MCP Supabase confirmou 7 pré-agendamentos recentes, sendo 1 com `pesquisa_auditoria_id = null` (id: 52374716-1707-4fd7-9361-1bf885f50ada)
+- MCP Supabase confirmou que o pré-agendamento sem vínculo não tem pesquisa correspondente por `client_token`/`run_id`
+- MCP Supabase confirmou 6 pré-agendamentos com vínculo correto
+- `npx tsc --noEmit --pretty false`: passou
+- `npx eslint src/app/api/procurar-datas/auditoria/route.ts --quiet`: passou
+
+**Comandos rodados e resultados:**
+- Consultas SQL no MCP Supabase para validar tabelas e dados
+- `npx tsc --noEmit --pretty false` -> exit 0
+- `npx eslint src/app/api/procurar-datas/auditoria/route.ts --quiet` -> exit 0
+
+**Pendências:**
+- Teste manual autenticado da tela `/procurar-datas/auditoria` com filtros
+- Teste manual do filtro "teve pré-agendamento = sim" para validar que pré-agendamentos com fallback aparecem
+- Validação visual por browser autenticado não foi executada
+
+**Riscos conhecidos:**
+- Pré-agendamentos sem vínculo e sem pesquisa correspondente continuam invisíveis (comportamento preservado)
+- Se o volume de pré-agendamentos sem vínculo crescer muito, a query de fallback pode impactar performance
+
+**Próximo passo recomendado:**
+- Abrir `/procurar-datas/auditoria` autenticado, testar filtros principais e validar que pré-agendamentos com vínculo direto continuam aparecendo corretamente.
+
+---
+
 ## 2026-06-29 - Codex - Frente 0/Controle: tela de auditoria operacional do Procurar Datas
 
 **Resumo:** Criada a tela read-only `/procurar-datas/auditoria` para consultar a auditoria operacional da `/procurar-datas` v2. A tela segue o padrão atual de novas telas/permissões: módulo `procurar_datas_auditoria`, wrapper com `checkModuleAndWindowAccess`, item de Sidebar com `moduleKey` e API protegida por `requireModuleAccess`. A consulta lista pesquisas auditadas, aplica filtros básicos, paginação, mostra pré-agendamento vinculado quando existe e abre detalhe com dados gerais, endereço, parâmetros, resultados exibidos e resumo do pré-agendamento. Não altera gravação da auditoria, motor v2, OSRM, Haversine, ranking, classificação, Apps Script ou regras de negócio.

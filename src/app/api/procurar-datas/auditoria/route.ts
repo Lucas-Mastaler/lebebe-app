@@ -116,8 +116,7 @@ async function buscarIdsComPreAgendamento(params: URLSearchParams) {
 
   let query = supabase
     .from('procurar_datas_pre_agendamentos_auditoria')
-    .select('pesquisa_auditoria_id')
-    .not('pesquisa_auditoria_id', 'is', null)
+    .select('pesquisa_auditoria_id, client_token, run_id')
     .limit(5000)
 
   if (dataPreAgendada) query = query.eq('data_pre_agendada', dataPreAgendada)
@@ -125,7 +124,39 @@ async function buscarIdsComPreAgendamento(params: URLSearchParams) {
   const { data, error } = await query
   if (error) throw error
 
-  return Array.from(new Set((data ?? []).map((row) => row.pesquisa_auditoria_id).filter(Boolean))) as string[]
+  const preRows = data ?? []
+  const idsComVinculoDireto = preRows
+    .map((row) => row.pesquisa_auditoria_id)
+    .filter(Boolean) as string[]
+
+  // Buscar pesquisas correspondentes para pré-agendamentos sem vínculo direto
+  const preSemVinculo = preRows.filter((row) => !row.pesquisa_auditoria_id)
+  const idsPorFallback: string[] = []
+
+  if (preSemVinculo.length > 0) {
+    const clientTokens = preSemVinculo.map((row) => row.client_token).filter(Boolean)
+    const runIds = preSemVinculo.map((row) => row.run_id).filter(Boolean)
+
+    if (clientTokens.length > 0 || runIds.length > 0) {
+      let pesquisaQuery = supabase
+        .from('procurar_datas_pesquisas_auditoria')
+        .select('id')
+
+      if (clientTokens.length > 0) {
+        pesquisaQuery = pesquisaQuery.in('client_token', clientTokens)
+      }
+      if (runIds.length > 0) {
+        pesquisaQuery = pesquisaQuery.or(runIds.map((id) => `run_id.eq.${id}`).join(','))
+      }
+
+      const { data: pesquisas, error: pesquisaError } = await pesquisaQuery.limit(5000)
+      if (!pesquisaError && pesquisas) {
+        idsPorFallback.push(...pesquisas.map((p) => p.id))
+      }
+    }
+  }
+
+  return Array.from(new Set([...idsComVinculoDireto, ...idsPorFallback]))
 }
 
 export async function GET(request: NextRequest) {
@@ -220,19 +251,67 @@ async function buscarListagem(params: URLSearchParams) {
 
   const prePorPesquisa = new Map<string, PreAgendamentoRow[]>()
   if (ids.length > 0) {
-    const { data: preRows, error: preError } = await supabase
+    // Buscar pré-agendamentos com vínculo direto
+    const { data: preRowsVinculo, error: preErrorVinculo } = await supabase
       .from('procurar_datas_pre_agendamentos_auditoria')
       .select('id, created_at, pesquisa_auditoria_id, usuario_id, usuario_email, client_token, run_id, data_pre_agendada, tipo_resultado, status, erro_mensagem')
       .in('pesquisa_auditoria_id', ids)
       .order('created_at', { ascending: false })
 
-    if (preError) throw preError
+    if (preErrorVinculo) throw preErrorVinculo
 
-    for (const pre of (preRows ?? []) as PreAgendamentoRow[]) {
+    for (const pre of (preRowsVinculo ?? []) as PreAgendamentoRow[]) {
       if (!pre.pesquisa_auditoria_id) continue
       const atual = prePorPesquisa.get(pre.pesquisa_auditoria_id) ?? []
       atual.push(pre)
       prePorPesquisa.set(pre.pesquisa_auditoria_id, atual)
+    }
+
+    // Buscar pré-agendamentos sem vínculo que correspondam por client_token/run_id
+    const { data: pesquisasParaFallback, error: pesquisasError } = await supabase
+      .from('procurar_datas_pesquisas_auditoria')
+      .select('id, client_token, run_id')
+      .in('id', ids)
+
+    if (!pesquisasError && pesquisasParaFallback) {
+      const clientTokensMap = new Map<string, string>()
+      const runIdsMap = new Map<string, string>()
+
+      for (const p of pesquisasParaFallback) {
+        if (p.client_token) clientTokensMap.set(p.client_token, p.id)
+        if (p.run_id) runIdsMap.set(p.run_id, p.id)
+      }
+
+      const clientTokens = Array.from(clientTokensMap.keys())
+      const runIds = Array.from(runIdsMap.keys())
+
+      if (clientTokens.length > 0 || runIds.length > 0) {
+        let preQuery = supabase
+          .from('procurar_datas_pre_agendamentos_auditoria')
+          .select('id, created_at, pesquisa_auditoria_id, usuario_id, usuario_email, client_token, run_id, data_pre_agendada, tipo_resultado, status, erro_mensagem')
+          .is('pesquisa_auditoria_id', null)
+          .order('created_at', { ascending: false })
+
+        if (clientTokens.length > 0) {
+          preQuery = preQuery.in('client_token', clientTokens)
+        }
+        if (runIds.length > 0) {
+          preQuery = preQuery.or(runIds.map((id) => `run_id.eq.${id}`).join(','))
+        }
+
+        const { data: preRowsFallback, error: preErrorFallback } = await preQuery.limit(5000)
+
+        if (!preErrorFallback && preRowsFallback) {
+          for (const pre of (preRowsFallback ?? []) as PreAgendamentoRow[]) {
+            const pesquisaId = pre.client_token ? clientTokensMap.get(pre.client_token) : pre.run_id ? runIdsMap.get(pre.run_id) : null
+            if (pesquisaId) {
+              const atual = prePorPesquisa.get(pesquisaId) ?? []
+              atual.push(pre)
+              prePorPesquisa.set(pesquisaId, atual)
+            }
+          }
+        }
+      }
     }
   }
 

@@ -455,7 +455,7 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
           <Campo label="Client token" value={pesquisa.client_token} />
           <Campo label="Run ID" value={pesquisa.run_id} />
           <Campo label="Status" value={pesquisa.status} />
-          <Campo label="Duração" value={pesquisa.duracao_ms ? `${pesquisa.duracao_ms} ms` : null} />
+          <Campo label="Duração" value={pesquisa.duracao_ms ? `${(pesquisa.duracao_ms / 1000).toFixed(1)} s` : null} />
           <Campo label="Motor" value={pesquisa.motor_versao} />
           <Campo label="Origem" value={pesquisa.origem} />
         </dl>

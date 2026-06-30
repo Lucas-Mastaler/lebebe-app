@@ -1,3 +1,35 @@
+## 2026-06-30 - Cascade - Frente 0/Controle: melhoria visual do modal "Detalhe da pesquisa" na tela de auditoria
+
+**Resumo:** Melhoria puramente visual (UI/UX) do modal "Detalhe da pesquisa" em `/procurar-datas/auditoria`. Alterações: badges de status/motor/duracao no header do modal; secoes com borda, fundo suave e icones lucide-react; cores distintas por secao (slate=Dados gerais, sky=Endereco, violet=Parametros, emerald=Resultados, amber=Pre-agendamento); campos individuais como cards sutis (borda + fundo branco); tabela de resultados com header destacado, rows zebra, badge de tipo e rank circular; pre-agendamento com badge de status colorido, sombra suave e sub-secoes com fundo; DialogContent com max-w-4xl em vez de max-w-none; estado "sem pre-agendamento" como card positivo verde. Nao altera dados exibidos, nomes de campos, API, query, filtros, tipos, regra de negocio, motor, RLS, migrations, Apps Script ou qualquer outro arquivo.
+
+**Arquivos lidos:**
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- docs/ia/log_progress.md
+- src/app/procurar-datas/performance/PageClient.tsx
+- src/types/procurar-datas-performance.ts
+- src/app/procurar-datas/auditoria/PageClient.tsx
+
+**Arquivos alterados:**
+- src/app/procurar-datas/auditoria/PageClient.tsx (apenas CSS/JSX do modal DetalhePesquisa e componentes Secao/Campo)
+
+**Validacoes realizadas:**
+- Typecheck: npx tsc --noEmit passou com 0 erros
+- Codigo: confirmado que nenhum dado, tipo, variavel ou logica foi alterada
+
+**Comandos rodados:**
+- npx tsc --noEmit --pretty false (0 erros)
+
+**Pendencias:**
+- Nenhuma (validado visualmente pelo usuario)
+
+**Riscos conhecidos:**
+- Nenhum risco funcional
+
+**Proximo passo recomendado:** Nenhum.
+
+---
+
 ## 2026-06-30 - Cascade - Frente 0/Controle: validação e correção da normalização de bairros da tela de performance
 
 **Resumo:** Validada a normalização de bairros da tela `/procurar-datas/performance`. Consultado MCP Supabase e encontrados 59 grupos de bairros com variações de capitalização/acentuação no `geo_cache`. O agrupamento já funcionava corretamente (lowercase + remove acentos garante merge), mas foram encontrados dois problemas de exibição: (1) bairros com acento não listados no mapa de correções manuais perdiam o acento no display (ex: São Miguel → Sao Miguel); (2) palavras de ligação (da, de, do, das, dos) eram capitalizadas incorretamente no title case (ex: Jardim das Américas → Jardim Das Americas). Correções: expandido o mapa de correções manuais com ~40 bairros adicionais encontrados nos dados reais; adicionado conjunto PALAVRAS_LIGACAO para manter palavras de ligação em minúsculo no title case fallback; removidas chaves acentuadas do mapa que eram dead code (o lookup sempre usa versão sem acento). Não altera layout, gráficos, filtros, motor, regra de negócio, migration, RLS, views, geocoding v2 ou outras telas.

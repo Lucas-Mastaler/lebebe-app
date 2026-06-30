@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Eye, RefreshCcw, Search } from 'lucide-react'
+import { Eye, RefreshCcw, Search, Clock, MapPin, Settings, ListChecks, CalendarCheck, CheckCircle2, AlertCircle, Cpu, Hash } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -174,17 +174,28 @@ function texto(value: unknown) {
 
 function Campo({ label, value }: { label: string; value: unknown }) {
   return (
-    <div>
+    <div className="rounded-lg border border-slate-100 bg-white px-3 py-2">
       <dt className="text-xs font-medium uppercase text-slate-500">{label}</dt>
       <dd className="mt-1 break-words text-sm text-slate-900">{texto(value)}</dd>
     </div>
   )
 }
 
-function Secao({ title, children }: { title: string; children: ReactNode }) {
+function Secao({ title, icon, children, accent = 'slate' }: { title: string; icon?: ReactNode; children: ReactNode; accent?: 'slate' | 'sky' | 'emerald' | 'amber' | 'violet' }) {
+  const accents: Record<string, { border: string; bg: string; text: string }> = {
+    slate: { border: 'border-slate-200', bg: 'bg-slate-50/40', text: 'text-slate-700' },
+    sky: { border: 'border-sky-200', bg: 'bg-sky-50/40', text: 'text-sky-700' },
+    emerald: { border: 'border-emerald-200', bg: 'bg-emerald-50/40', text: 'text-emerald-700' },
+    amber: { border: 'border-amber-200', bg: 'bg-amber-50/40', text: 'text-amber-700' },
+    violet: { border: 'border-violet-200', bg: 'bg-violet-50/40', text: 'text-violet-700' },
+  }
+  const a = accents[accent] ?? accents.slate
   return (
-    <section className="space-y-3">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-700">{title}</h3>
+    <section className={`space-y-3 rounded-xl border ${a.border} ${a.bg} p-4`}>
+      <h3 className={`flex items-center gap-2 text-sm font-semibold uppercase tracking-wide ${a.text}`}>
+        {icon}
+        {title}
+      </h3>
       {children}
     </section>
   )
@@ -421,10 +432,10 @@ export default function PageClient() {
       </div>
 
       <Dialog open={detalheOpen} onOpenChange={setDetalheOpen}>
-        <DialogContent className="!w-[94vw] !max-w-none max-h-[90vh] overflow-y-auto">
+        <DialogContent className="!w-[94vw] !max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detalhe da pesquisa</DialogTitle>
-            <DialogDescription>Dados operacionais salvos na auditoria da busca.</DialogDescription>
+            <DialogDescription>Resumo visual dos dados operacionais salvos na auditoria da busca.</DialogDescription>
           </DialogHeader>
 
           {detalheLoading ? (
@@ -446,8 +457,24 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
   const resultados = asResultados(pesquisa.resultados_json)
 
   return (
-    <div className="space-y-6">
-      <Secao title="Dados gerais">
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${pesquisa.status === 'success' ? 'bg-green-50 text-green-700 border-green-200' : pesquisa.status === 'error' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-slate-50 text-slate-700 border-slate-200'}`}>
+          {pesquisa.status === 'success' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+          {pesquisa.status === 'success' ? 'Sucesso' : pesquisa.status === 'error' ? 'Erro' : pesquisa.status}
+        </span>
+        <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${pesquisa.motor_versao === 'v2' ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+          <Cpu className="w-3.5 h-3.5" />
+          Motor {pesquisa.motor_versao}
+        </span>
+        {pesquisa.duracao_ms !== null && (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+            <Clock className="w-3.5 h-3.5" />
+            {(pesquisa.duracao_ms / 1000).toFixed(1)}s
+          </span>
+        )}
+      </div>
+      <Secao title="Dados gerais" icon={<Hash className="w-4 h-4 text-slate-400" />} accent="slate">
         <dl className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <Campo label="ID da pesquisa" value={pesquisa.id} />
           <Campo label="Timestamp" value={formatDateTime(pesquisa.created_at)} />
@@ -461,7 +488,7 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
         </dl>
       </Secao>
 
-      <Secao title="Endereço">
+      <Secao title="Endereço" icon={<MapPin className="w-4 h-4 text-sky-400" />} accent="sky">
         <dl className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <Campo label="CEP" value={pesquisa.cep} />
           <Campo label="Número" value={pesquisa.numero_residencia} />
@@ -475,7 +502,7 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
         </dl>
       </Secao>
 
-      <Secao title="Parâmetros usados">
+      <Secao title="Parâmetros usados" icon={<Settings className="w-4 h-4 text-violet-400" />} accent="violet">
         <dl className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <Campo label="Data inicial" value={parametros.dataInicial} />
           <Campo label="Encomenda" value={parametros.encomenda} />
@@ -491,35 +518,43 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
         </dl>
       </Secao>
 
-      <Secao title="Resultados exibidos">
+      <Secao title="Resultados exibidos" icon={<ListChecks className="w-4 h-4 text-emerald-400" />} accent="emerald">
         {resultados.length === 0 ? (
           <p className="text-sm text-slate-500">Nenhum resultado salvo.</p>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-slate-200">
             <table className="min-w-[820px] w-full text-sm">
               <thead>
-                <tr className="bg-slate-50">
-                  <th className="px-3 py-2 text-left">Data</th>
-                  <th className="px-3 py-2 text-left">Dia</th>
-                  <th className="px-3 py-2 text-left">Equipe</th>
-                  <th className="px-3 py-2 text-left">Tipo</th>
-                  <th className="px-3 py-2 text-left">Frete/valor</th>
-                  <th className="px-3 py-2 text-left">Faltam</th>
-                  <th className="px-3 py-2 text-left">Encomenda</th>
-                  <th className="px-3 py-2 text-left">Rank</th>
+                <tr className="bg-slate-100 border-b border-slate-200">
+                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Data</th>
+                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Dia</th>
+                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Equipe</th>
+                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Tipo</th>
+                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Frete/valor</th>
+                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Faltam</th>
+                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Encomenda</th>
+                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Rank</th>
                 </tr>
               </thead>
               <tbody>
                 {resultados.map((resultado, index) => (
-                  <tr key={`${texto(resultado.date)}-${index}`} className="border-t border-slate-200">
-                    <td className="px-3 py-2">{texto(resultado.date ?? resultado.dateDM ?? resultado.dateISO)}</td>
-                    <td className="px-3 py-2">{texto(resultado.weekday)}</td>
-                    <td className="px-3 py-2">{texto(resultado.team)}</td>
-                    <td className="px-3 py-2">{texto(resultado.tipo)}</td>
-                    <td className="px-3 py-2">{texto(resultado.frete ?? resultado.valor)}</td>
-                    <td className="px-3 py-2">{texto(resultado.daysLeftTxt)}</td>
-                    <td className="px-3 py-2">{texto(resultado.encomenda)}</td>
-                    <td className="px-3 py-2">{texto(resultado.rank)}</td>
+                  <tr key={`${texto(resultado.date)}-${index}`} className={`border-t border-slate-100 ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}`}>
+                    <td className="px-3 py-2 text-slate-900">{texto(resultado.date ?? resultado.dateDM ?? resultado.dateISO)}</td>
+                    <td className="px-3 py-2 text-slate-700">{texto(resultado.weekday)}</td>
+                    <td className="px-3 py-2 text-slate-700">{texto(resultado.team)}</td>
+                    <td className="px-3 py-2">
+                      <span className="inline-flex items-center rounded-md bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">
+                        {texto(resultado.tipo)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 font-medium text-slate-900">{texto(resultado.frete ?? resultado.valor)}</td>
+                    <td className="px-3 py-2 text-slate-700">{texto(resultado.daysLeftTxt)}</td>
+                    <td className="px-3 py-2 text-slate-700">{texto(resultado.encomenda)}</td>
+                    <td className="px-3 py-2 text-center">
+                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">
+                        {texto(resultado.rank)}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -528,13 +563,22 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
         )}
       </Secao>
 
-      <Secao title="Pré-agendamento vinculado">
+      <Secao title="Pré-agendamento vinculado" icon={<CalendarCheck className="w-4 h-4 text-amber-400" />} accent="amber">
         {detalhe.preAgendamentos.length === 0 ? (
-          <p className="text-sm text-slate-500">Sem pré-agendamento vinculado.</p>
+          <div className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-100 px-4 py-3">
+            <CheckCircle2 className="w-4 h-4 text-green-500" />
+            <p className="text-sm text-green-700">Sem pré-agendamento vinculado.</p>
+          </div>
         ) : (
           <div className="space-y-4">
             {detalhe.preAgendamentos.map((pre) => (
-              <div key={pre.id} className="rounded-lg border border-slate-200 p-4">
+              <div key={pre.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${pre.status === 'done' || pre.status === 'success' ? 'bg-green-50 text-green-700 border-green-200' : pre.status === 'error' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                    {pre.status}
+                  </span>
+                  <span className="text-xs text-slate-400">{formatDateTime(pre.created_at)}</span>
+                </div>
                 <dl className="grid grid-cols-1 gap-3 md:grid-cols-4">
                   <Campo label="Data escolhida" value={formatDate(pre.data_pre_agendada)} />
                   <Campo label="Tipo" value={pre.tipo_resultado} />
@@ -542,12 +586,12 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
                   <Campo label="Criado em" value={formatDateTime(pre.created_at)} />
                 </dl>
                 <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <div>
-                    <h4 className="mb-2 text-sm font-semibold text-slate-700">Resultado escolhido</h4>
+                  <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                    <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Resultado escolhido</h4>
                     <JsonResumo value={pre.resultado_escolhido_json} />
                   </div>
-                  <div>
-                    <h4 className="mb-2 text-sm font-semibold text-slate-700">Payload resumido</h4>
+                  <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                    <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Payload resumido</h4>
                     <JsonResumo value={pre.payload_pre_agendamento_json} />
                   </div>
                 </div>

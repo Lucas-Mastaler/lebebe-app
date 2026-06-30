@@ -14,6 +14,7 @@ export type ModuleKey =
   | 'dashboard'
   | 'agendamentos'
   | 'procurar_datas'
+  | 'procurar_datas_auditoria'
   | 'chamados_finalizados'
   | 'inteligencia_comercial'
   | 'pos_venda'

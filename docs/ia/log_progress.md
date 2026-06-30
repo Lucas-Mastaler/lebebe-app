@@ -1,3 +1,75 @@
+## 2026-06-29 - Codex - Frente 0/Controle: tela de auditoria operacional do Procurar Datas
+
+**Resumo:** Criada a tela read-only `/procurar-datas/auditoria` para consultar a auditoria operacional da `/procurar-datas` v2. A tela segue o padrão atual de novas telas/permissões: módulo `procurar_datas_auditoria`, wrapper com `checkModuleAndWindowAccess`, item de Sidebar com `moduleKey` e API protegida por `requireModuleAccess`. A consulta lista pesquisas auditadas, aplica filtros básicos, paginação, mostra pré-agendamento vinculado quando existe e abre detalhe com dados gerais, endereço, parâmetros, resultados exibidos e resumo do pré-agendamento. Não altera gravação da auditoria, motor v2, OSRM, Haversine, ranking, classificação, Apps Script ou regras de negócio.
+
+**Arquivos lidos:**
+- `C:\Users\lebeb\.codex\attachments\89b67717-36a0-4722-9961-0f90f98fe3b4\pasted-text.txt`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+- `docs/ia/padrao-novas-telas-permissoes.md`
+- `.devin/rules/gerais.md`
+- `.devin/rules/resumo.md`
+- `.devin/rules/supabase.md`
+- `.devin/rules/continuidade-agente.md`
+- `src/lib/auth/module-access.ts`
+- `src/lib/auth/api-auth.ts`
+- `src/components/Sidebar.tsx`
+- `src/lib/hooks/usePermissoes.ts`
+- `src/app/api/me/permissoes/route.ts`
+- `src/lib/supabase/server.ts`
+- `src/lib/supabase/service.ts`
+- `src/lib/procurar-datas/v2/auditoria-pesquisa.ts`
+- `src/lib/procurar-datas/v2/auditoria-pre-agendamento.ts`
+- migrations de auditoria e permissões em `supabase/migrations`
+
+**Arquivos alterados/criados:**
+- `src/lib/auth/module-access.ts`
+- `src/components/Sidebar.tsx`
+- `src/app/procurar-datas/auditoria/page.tsx`
+- `src/app/procurar-datas/auditoria/PageClient.tsx`
+- `src/app/api/procurar-datas/auditoria/route.ts`
+- `supabase/migrations/20260629150000_seed_procurar_datas_auditoria_module.sql`
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+
+**Validações realizadas:**
+- MCP Supabase confirmou tabelas reais `procurar_datas_pesquisas_auditoria` e `procurar_datas_pre_agendamentos_auditoria`, colunas esperadas, RLS habilitado e policies SELECT atuais `is_superadmin()`.
+- MCP Supabase confirmou dados reais de pesquisa e pré-agendamento vinculados por `pesquisa_auditoria_id`.
+- MCP Supabase confirmou módulo aplicado: `procurar_datas_auditoria`, rota `/procurar-datas/auditoria`, ativo, não público, não somente superadmin; perfil `gestao=true`, `consultora=false`, `supervisora_loja=false`, `pos_venda=false`.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/app/api/procurar-datas/auditoria/route.ts src/app/procurar-datas/auditoria/page.tsx src/app/procurar-datas/auditoria/PageClient.tsx src/lib/auth/module-access.ts src/components/Sidebar.tsx --quiet`: passou.
+- Dev server local iniciou em `http://localhost:3000`.
+- `GET /procurar-datas/auditoria` sem sessão retornou 307 para `/login`.
+- `GET /api/procurar-datas/auditoria` sem sessão retornou 401 `Não autenticado`.
+
+**Comandos rodados e resultados:**
+- `rg`/`Get-Content` para auditar fluxo de permissões, Sidebar, API de permissões, helpers Supabase e helpers de gravação da auditoria.
+- MCP `_list_tables` e `_execute_sql` para schema, policies, módulos, permissões e amostras de dados reais.
+- MCP `_apply_migration seed_procurar_datas_auditoria_module` -> sucesso.
+- `npx tsc --noEmit --pretty false` -> exit 0.
+- `npx eslint ... --quiet` nos arquivos alterados -> exit 0.
+- `npm run dev -- --port 3000` no sandbox -> falhou com `spawn EPERM`; reexecutado fora do sandbox -> servidor pronto em `http://localhost:3000`.
+- `Invoke-WebRequest http://localhost:3000/procurar-datas/auditoria` sem sessão -> 307 `/login`.
+- `Invoke-WebRequest http://localhost:3000/api/procurar-datas/auditoria` sem sessão -> 401.
+- `npm run test -- --silent` -> exit 1 por falhas preexistentes fora do escopo: `agenda-real-helper.test.ts` falhou com `Falha ao autenticar com Google Sheets: invalid_client`; `pesquisar-compat/route.test.ts` falhou por expectativa de mock desatualizada sobre segundo argumento de `pesquisarDatasV2`.
+
+**Pendências:**
+- Teste manual autenticado como superadmin e como perfil `gestao`.
+- Teste manual autenticado com perfil sem permissão para confirmar bloqueio por URL direta e ausência no menu.
+- Teste manual dos filtros e do modal em navegador autenticado.
+- Verificação visual por browser autenticado não foi executada; a ferramenta `agent-browser` não estava disponível nesta sessão.
+
+**Riscos conhecidos:**
+- A API usa service role apenas server-side depois de `requireModuleAccess`, porque as policies atuais das tabelas de auditoria permitem SELECT apenas por `is_superadmin()`. Isso preserva o controle no app para o novo módulo, mas a proteção real depende do helper de autorização da API.
+- Filtro `teve pré-agendamento = não` usa lista de IDs com pré-agendamento para exclusão; se o volume crescer muito, pode exigir uma view/RPC paginada em tarefa futura.
+- Validação visual autenticada não foi executada nesta sessão.
+
+**Próximo passo recomendado:**
+- Abrir `/procurar-datas/auditoria` autenticado, testar filtros principais, abrir detalhe de uma pesquisa com pré-agendamento e validar os dados contra as consultas Supabase usadas nesta tarefa.
+
+---
+
 ## 2026-06-29 - Cascade - Documento de governanca: padrao-novas-telas-permissoes.md
 
 **Resumo:** Criado documento de governanca padrao-novas-telas-permissoes.md com checklist obrigatorio para novas telas internas, cobrindo cadastro de modulo, Sidebar, wrapper, APIs, testes e regras para agentes de IA.

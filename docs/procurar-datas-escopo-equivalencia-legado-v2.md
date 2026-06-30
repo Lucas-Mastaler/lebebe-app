@@ -23,6 +23,29 @@ Status: implementado no fluxo de pre-agendamento. Nao altera motor v2, equivalen
 
 ---
 
+## 2026-06-29 - Codex - Frente 0/Controle: tela de consulta da auditoria operacional
+
+Status: implementado como tela administrativa read-only. Nao altera motor v2, equivalencia legado/v2, geocodificacao, OSRM, Haversine, ranking, candidatos, classificacao, frete, Apps Script, gravacao da auditoria ou regras de negocio.
+
+### Regra validada
+- A consulta da auditoria operacional fica fora do motor e segue o novo padrao de permissoes por modulo.
+- Modulo criado/usado: `procurar_datas_auditoria`.
+- Rota criada: `/procurar-datas/auditoria`.
+- API criada: `GET /api/procurar-datas/auditoria`, protegida por `requireModuleAccess('procurar_datas_auditoria')`.
+- A pagina usa `checkModuleAndWindowAccess('procurar_datas_auditoria')`.
+- A listagem e o detalhe sao read-only e consultam `procurar_datas_pesquisas_auditoria` e `procurar_datas_pre_agendamentos_auditoria`.
+
+### Permissao inicial
+- `gestao`: permitido.
+- `consultora`, `supervisora_loja`, `pos_venda`: bloqueados.
+- `superadmin`: acesso total pelo padrao existente.
+
+### Pendencias
+- Validar manualmente em navegador autenticado com superadmin, perfil `gestao` e perfil sem permissao.
+- Se o volume de auditoria crescer, avaliar view/RPC paginada para filtros por pre-agendamento em vez de exclusao por lista de IDs.
+
+---
+
 ## 2026-06-26 - Codex - Frente 1/esquerda: Google fallback geral validado e CEP divergente bloqueante
 
 Status: implementado em `src/app/api/procurar-datas/validar-endereco/route.ts`, `src/lib/procurar-datas/locationiq.ts`, `src/lib/procurar-datas/google-geocoding.ts` e `src/lib/procurar-datas/validar-endereco-resultado.ts`. Nao altera UI, `buscar-cep`, motor v2, OSRM, Haversine, ranking, classificacao, frete, banco, migrations, RLS ou Apps Script.

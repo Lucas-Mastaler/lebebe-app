@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Calendar, ChevronLeft, ChevronRight, CheckCircle, BarChart3, LogOut, Users, ClipboardList, Clock, Package, TrendingUp, Search, Settings, ShoppingBag, ShieldCheck } from 'lucide-react';
+import { Activity, Calendar, ChevronLeft, ChevronRight, CheckCircle, BarChart3, LogOut, Users, ClipboardList, Clock, Package, TrendingUp, Search, Settings, ShoppingBag, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePermissoes } from '@/lib/hooks/usePermissoes';
 
@@ -26,6 +26,7 @@ const navItems: NavItem[] = [
     { label: 'HORÁRIOS AGENDAMENTOS',    href: '/horarios-agendamentos',   icon: Clock },
     { label: 'PROCURAR DATAS',           href: '/procurar-datas',          icon: Search,     moduleKey: 'procurar_datas' },
     { label: 'AUDITORIA DATAS',          href: '/procurar-datas/auditoria', icon: ShieldCheck, moduleKey: 'procurar_datas_auditoria' },
+    { label: 'PERFORMANCE DATAS',        href: '/procurar-datas/performance', icon: Activity,  moduleKey: 'procurar_datas_performance' },
     { label: 'CHAMADOS FINALIZADOS',     href: '/chamados-finalizados',    icon: CheckCircle, moduleKey: 'chamados_finalizados' },
     { label: 'INTELIGÊNCIA COMERCIAL',   href: '/inteligencia-comercial',  icon: TrendingUp, moduleKey: 'inteligencia_comercial' },
     { label: 'PÓS-VENDA',               href: '/pos-venda',               icon: ShoppingBag, moduleKey: 'pos_venda' },

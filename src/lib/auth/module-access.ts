@@ -15,6 +15,7 @@ export type ModuleKey =
   | 'agendamentos'
   | 'procurar_datas'
   | 'procurar_datas_auditoria'
+  | 'procurar_datas_performance'
   | 'chamados_finalizados'
   | 'inteligencia_comercial'
   | 'pos_venda'

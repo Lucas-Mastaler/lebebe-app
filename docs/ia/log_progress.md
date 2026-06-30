@@ -1,3 +1,67 @@
+## 2026-06-30 - Cascade - Frente 0/Controle: implementação da tela de performance/observabilidade do /procurar-datas
+
+**Resumo:** Implementada tela interna de performance/observabilidade do motor /procurar-datas em `/procurar-datas/performance`. A tela compara legado x v2 em velocidade e estabilidade, mostra provedores/cache, bairros normalizados, CEPs mais pesquisados e pontos de atenção. Criados: helper de normalização de bairros, tipos TypeScript, API route agregada protegida, página (page.tsx + PageClient.tsx). Módulo `procurar_datas_performance` cadastrado em `app_modulos` (ordem 32, categoria interno, ativo). Item adicionado no Sidebar. moduleKey adicionado ao tipo ModuleKey em module-access.ts. API protegida com requireAuthenticatedUser + requireModuleAccess. Não altera motor v2, OSRM, Haversine, ranking, classificação, candidatos, frete, agenda, Apps Script, regras de negócio, RLS, views existentes, migrations ou tabelas. Não retorna dados sensíveis (endereço completo, email, client_token, run_id, coordenadas).
+
+**Arquivos lidos:**
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- docs/ia/log_progress.md
+- docs/ia/padrao-novas-telas-permissoes.md
+- src/lib/auth/module-access.ts
+- src/lib/auth/api-auth.ts
+- src/lib/supabase/service.ts
+- src/components/Sidebar.tsx
+- src/app/procurar-datas/auditoria/page.tsx
+- src/app/dashboard/page.tsx
+- src/app/dashboard/PageClient.tsx
+- src/app/api/dashboard/pesquisar/route.ts
+- src/components/dashboard/FiltrosDashboard.tsx
+- src/types/index.ts
+
+**Arquivos criados:**
+- src/lib/procurar-datas/normalizar-bairro.ts (helper de normalização com trim, lowercase, remove acentos, mapa de correções manuais, title case, (sem bairro))
+- src/types/procurar-datas-performance.ts (tipos TypeScript para resposta da API e filtros)
+- src/app/api/procurar-datas/performance/route.ts (API route agregada protegida)
+- src/app/procurar-datas/performance/page.tsx (Server Component wrapper com checkModuleAndWindowAccess)
+- src/app/procurar-datas/performance/PageClient.tsx (Client Component com 6 blocos, recharts, filtros)
+
+**Arquivos alterados:**
+- src/lib/auth/module-access.ts (adicionado 'procurar_datas_performance' ao tipo ModuleKey)
+- src/components/Sidebar.tsx (adicionado item PERFORMANCE DATAS com moduleKey e icone Activity)
+
+**Validações realizadas:**
+- MCP Supabase: confirmadas colunas reais de search_execution_audit, geocoding_audit, geo_cache
+- MCP Supabase: confirmadas 8 views existentes (nenhuma separa por motor)
+- MCP Supabase: confirmado problema de normalização de bairros (agua verde x Agua Verde)
+- MCP Supabase: confirmados dados agregados legado x v2 (1011 vs 38 registros)
+- MCP Supabase: cadastrado módulo procurar_datas_performance em app_modulos (id: bab2858d-1692-49e8-abd3-bceb67a8b3ca)
+- MCP Supabase: confirmado padrão de app_modulos (chave, nome, rota_base, categoria, ordem, publico, somente_superadmin, ativo)
+- Código: confirmado padrão de tela (page.tsx + PageClient.tsx) e API route
+- Código: confirmado padrão de Sidebar com moduleKey
+- Typecheck: npx tsc --noEmit passou com 0 erros
+
+**Comandos rodados:**
+- npx tsc --noEmit --pretty (0 erros)
+- MCP Supabase: INSERT em app_modulos (sucesso)
+
+**Pendências:**
+- Testar com superadmin, perfil autorizado, perfil não autorizado e fora da janela
+- Decidir quais perfis terão acesso ao módulo (atualmente apenas superadmin tem acesso automático)
+- Validar dados da API com queries manuais no MCP para amostras principais
+- Testar filtros (período, motor, status, provider, cache)
+- Validar normalização de bairros com dados reais em produção
+
+**Riscos conhecidos:**
+- RLS desabilitada em search_execution_audit, geocoding_audit e geo_cache (pré-existente, não alterado)
+- geocoding_audit não tem coluna motor (dados de provedores são gerais, não separados por v2) — aviso visível na UI
+- Volume de dados v2 ainda baixo (38 registros) — métricas podem mudar conforme volume cresce
+- CEPs em search_execution_audit não estão normalizados (alguns com hífen, outros sem)
+- Módulo cadastrado mas sem permissões configuradas para perfis (apenas superadmin acessa por padrão)
+
+**Próximo passo recomendado:** Testar a tela com superadmin em ambiente de desenvolvimento e validar os dados retornados pela API. Configurar permissões do módulo para perfis específicos após decisão do usuário.
+
+---
+
 ## 2026-06-30 - Cascade - Frente 0/Controle: correção de gravação de auditoria de pré-agendamento
 
 **Resumo:** Corrigida a rota `/api/procurar-datas/pre-agendar` para garantir que a auditoria operacional de pré-agendamento seja gravada corretamente e que erros não fiquem silenciosos. A chamada de `registrarAuditoriaPreAgendamento` foi alterada de `.catch()` (silencioso) para `await` com log explícito de erro. Adicionado log no início da rota para confirmar recebimento de `pesquisaAuditoriaId`, `clientToken` e `runId`. Não altera motor v2, OSRM, Haversine, ranking, classificação, Apps Script, regras de negócio, permissões ou estrutura das tabelas.

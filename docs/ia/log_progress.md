@@ -1,3 +1,42 @@
+## 2026-06-30 - Cascade - Frente 0/Controle: validação e correção da normalização de bairros da tela de performance
+
+**Resumo:** Validada a normalização de bairros da tela `/procurar-datas/performance`. Consultado MCP Supabase e encontrados 59 grupos de bairros com variações de capitalização/acentuação no `geo_cache`. O agrupamento já funcionava corretamente (lowercase + remove acentos garante merge), mas foram encontrados dois problemas de exibição: (1) bairros com acento não listados no mapa de correções manuais perdiam o acento no display (ex: São Miguel → Sao Miguel); (2) palavras de ligação (da, de, do, das, dos) eram capitalizadas incorretamente no title case (ex: Jardim das Américas → Jardim Das Americas). Correções: expandido o mapa de correções manuais com ~40 bairros adicionais encontrados nos dados reais; adicionado conjunto PALAVRAS_LIGACAO para manter palavras de ligação em minúsculo no title case fallback; removidas chaves acentuadas do mapa que eram dead code (o lookup sempre usa versão sem acento). Não altera layout, gráficos, filtros, motor, regra de negócio, migration, RLS, views, geocoding v2 ou outras telas.
+
+**Arquivos lidos:**
+- src/lib/procurar-datas/normalizar-bairro.ts
+- src/app/api/procurar-datas/performance/route.ts
+- src/app/procurar-datas/performance/PageClient.tsx
+- src/types/procurar-datas-performance.ts
+- docs/ia/log_progress.md
+
+**Arquivos alterados:**
+- src/lib/procurar-datas/normalizar-bairro.ts (expandido mapa de correções manuais, adicionado PALAVRAS_LIGACAO, removidas chaves acentuadas dead code, fix Map init)
+
+**Validações realizadas:**
+- MCP Supabase: query em geo_cache encontrou 59 grupos de bairros com múltiplas variantes
+- MCP Supabase: confirmado que agua verde (13) + Água Verde (21) + Aguá Verde (3) = 37 total, todos normalizam para Água Verde
+- MCP Supabase: confirmado que Cidade Industrial (10) + Cidade industrial (8) + CIDADE INDUSTRIAL (3) = 21 total, todos normalizam para Cidade Industrial
+- MCP Supabase: confirmado 95 endereços com bairro vazio → (sem bairro)
+- Código: confirmado que normalizarListaBairros soma totais de bairros equivalentes após normalização
+- Código: confirmado que API não retorna endereço completo, email, client_token, run_id ou coordenadas
+- Typecheck: npx tsc --noEmit passou com 0 erros
+
+**Comandos rodados:**
+- npx tsc --noEmit --pretty (0 erros)
+- MCP Supabase: 3 queries em geo_cache para validar duplicatas e variantes
+
+**Pendências:**
+- Testar visualmente a tela com superadmin para confirmar que bairros aparecem agrupados e com acentos corretos
+- Se surgirem novos bairros no cache não cobertos pelo mapa manual, adicionar entradas conforme necessário
+
+**Riscos conhecidos:**
+- RLS desabilitada em geo_cache (pré-existente, não alterado)
+- Mapa de correções manuais é estático — novos bairros não cobertos usarão title case fallback (que agora preserva palavras de ligação mas não restaura acentos)
+
+**Próximo passo recomendado:** Testar a tela com superadmin e validar visualmente o ranking de bairros.
+
+---
+
 ## 2026-06-30 - Cascade - Frente 0/Controle: implementação da tela de performance/observabilidade do /procurar-datas
 
 **Resumo:** Implementada tela interna de performance/observabilidade do motor /procurar-datas em `/procurar-datas/performance`. A tela compara legado x v2 em velocidade e estabilidade, mostra provedores/cache, bairros normalizados, CEPs mais pesquisados e pontos de atenção. Criados: helper de normalização de bairros, tipos TypeScript, API route agregada protegida, página (page.tsx + PageClient.tsx). Módulo `procurar_datas_performance` cadastrado em `app_modulos` (ordem 32, categoria interno, ativo). Item adicionado no Sidebar. moduleKey adicionado ao tipo ModuleKey em module-access.ts. API protegida com requireAuthenticatedUser + requireModuleAccess. Não altera motor v2, OSRM, Haversine, ranking, classificação, candidatos, frete, agenda, Apps Script, regras de negócio, RLS, views existentes, migrations ou tabelas. Não retorna dados sensíveis (endereço completo, email, client_token, run_id, coordenadas).

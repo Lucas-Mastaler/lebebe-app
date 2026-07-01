@@ -2,7 +2,7 @@
 
 import { Cell } from 'recharts';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { DashboardClienteDetalhe, DashboardLinha, DashboardLinhaConsultora, DashboardResponse, EstatisticasDigisacResponse } from '@/types';
+import { DashboardLinha, DashboardLinhaConsultora, DashboardResponse, EstatisticasDigisacResponse } from '@/types';
 import { FiltrosDashboard } from '@/components/dashboard/FiltrosDashboard';
 import { CardsEstatisticasDigisac } from '@/components/dashboard/CardsEstatisticasDigisac';
 import { GraficoMensagensDigisac } from '@/components/dashboard/GraficoMensagensDigisac';
@@ -190,14 +190,6 @@ export default function Page() {
     };
   }, [data]);
 
-  const totaisClientesHistoricoTop = useMemo(() => {
-    const arr = data?.clientesHistoricoTop ?? [];
-    const chamadosNoPeriodo = arr.reduce((acc, c) => acc + (Number(c.chamadosNoPeriodo) || 0), 0);
-    const totalChamadosHistorico = arr.reduce((acc, c) => acc + (Number(c.totalChamadosHistorico) || 0), 0);
-    return { chamadosNoPeriodo, totalChamadosHistorico };
-  }, [data]);
-
-
   const chartDataAtivoReceptivo = useMemo(() => {
     const linhas = data?.linhas || [];
     return linhas.map((l: DashboardLinha) => ({
@@ -214,10 +206,6 @@ export default function Page() {
       unicosAtivo: l.totalClientesUnicosAtivo,
       unicosReceptivo: l.totalClientesUnicosReceptivo,
     }));
-  }, [data]);
-
-  const clientesHistoricoTop = useMemo(() => {
-    return data?.clientesHistoricoTop ?? [];
   }, [data]);
 
   return (
@@ -720,38 +708,6 @@ export default function Page() {
         </TabsContent>
       </Tabs>
 
-      {clientesHistoricoTop && clientesHistoricoTop.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 card-shadow">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-slate-900">Clientes únicos e seus chamados (histórico) – Top 50</h3>
-            <span className="px-3 py-1 bg-slate-100 text-slate-600 text-sm rounded-full">
-              {clientesHistoricoTop.length}
-            </span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-[720px] w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="text-left px-4 py-2">Cliente</th>
-                  <th className="text-left px-4 py-2">Filial</th>
-                  <th className="text-center px-4 py-2">Chamados no período</th>
-                  <th className="text-center px-4 py-2">Chamados no histórico</th>
-                </tr>
-              </thead>
-              <tbody>
-                {clientesHistoricoTop.map((c: DashboardClienteDetalhe, i: number) => (
-                  <tr key={`${c.contactId}-${i}`} className={`border-b last:border-0 ${i % 2 === 0 ? 'bg-white' : 'bg-sky-50'}`}>
-                    <td className="px-4 py-2">{c.nome || '-'}</td>
-                    <td className="px-4 py-2">{c.filial || '-'}</td>
-                    <td className="px-4 py-2 text-center">{c.chamadosNoPeriodo ?? '-'}</td>
-                    <td className="px-4 py-2 text-center font-semibold">{c.totalChamadosHistorico}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

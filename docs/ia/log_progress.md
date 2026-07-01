@@ -16316,3 +16316,60 @@ Tempo total da v2: 00:09
 **Proximo passo recomendado:** Validar manualmente autenticado na tela do dashboard: selecionar uma conexao especifica, pesquisar, e comparar tabelas/graficos antigos com e sem filtro de conexao.
 
 ---
+
+## 2026-07-01 - Cascade - Remocao: bloco Top 50 historico do dashboard
+
+**Resumo:** Removido permanentemente da tela de dashboard o bloco "Clientes unicos e seus chamados (historico) - Top 50". O bloco visual, dois useMemos mortos (totaisClientesHistoricoTop e clientesHistoricoTop) e o import de DashboardClienteDetalhe foram removidos do PageClient.tsx. Codigo de backend (buscarTotalHistoricoPorContato, clientesHistoricoTop no retorno da API, clientesDetalhe) nao foi removido pois ainda alimenta colunas "Chamados historicos (soma)" nas tabelas por filial e consultora.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md (continuidade)
+- docs/ia/plano-dashboard-digisac-metricas.md
+- src/app/dashboard/PageClient.tsx
+- src/lib/digisac/dashboard.ts
+- src/types/index.ts
+
+**Arquivos alterados:**
+- src/app/dashboard/PageClient.tsx — removido bloco visual Top 50 (linhas 723-754), useMemos totaisClientesHistoricoTop e clientesHistoricoTop, import de DashboardClienteDetalhe
+- docs/ia/log_progress.md (esta entrada)
+
+**O que foi removido (confirmado seguro):**
+- Bloco visual "Clientes unicos e seus chamados (historico) - Top 50" com tabela, header e contador
+- useMemo totaisClientesHistoricoTop (dead code, nunca referenciado)
+- useMemo clientesHistoricoTop (so alimentava o bloco removido)
+- Import de DashboardClienteDetalhe no PageClient (so usado no bloco removido)
+
+**O que foi preservado (confirmado em uso):**
+- Cards novos de Estatisticas Digisac
+- Grafico novo Digisac
+- Filtro Conexao/Numero
+- Tabelas por filial e consultora (incluindo coluna "Chamados historicos (soma)")
+- Graficos principais do dashboard
+- buscarTotalHistoricoPorContato no backend (ainda alimenta colunas de historico nas tabelas)
+- DashboardClienteDetalhe type (ainda usado em DashboardLinha.clientesDetalhe e DashboardResponse.clientesHistoricoTop)
+- clientesHistoricoTop no retorno da API (ainda retornado, mas nao consumido pelo frontend)
+- clientesDetalhe no retorno da API (ainda retornado, mas nao consumido pelo frontend)
+
+**Validacoes realizadas:**
+- Confirmado no codigo: totaisClientesHistoricoTop era dead code (nunca referenciado alem da definicao)
+- Confirmado no codigo: clientesHistoricoTop useMemo so era usado no bloco visual removido
+- Confirmado no codigo: DashboardClienteDetalhe so era usado no bloco visual removido no PageClient
+- Confirmado no codigo: buscarTotalHistoricoPorContato ainda e usado para totalChamadosHistoricoSomadoFilial e totalChamadosHistoricoSomadoConsultora
+- Confirmado no codigo: colunas "Chamados historicos (soma)" nas tabelas de filiais e consultoras continuam intactas
+- Confirmado no codigo: cards, graficos, filtros e tabs nao alterados
+- Confirmado no codigo: nenhuma migration/banco criada
+- Banco: nao aplicavel
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit --pretty false` -> exit 0 (sem erros)
+- `npx eslint src/app/dashboard/PageClient.tsx --quiet` -> exit 0 (sem erros)
+
+**Pendencias:**
+- Backend ainda calcula e retorna clientesHistoricoTop e clientesDetalhe na API, mas o frontend nao consume mais. Remocao do calculo no backend fica como pendencia para avaliacao futura (pode gerar economia de chamadas API se removido).
+- Validacao manual autenticada na tela: nao executada
+
+**Riscos conhecidos:**
+- Nenhum risco funcional. O backend continua retornando dados nao consumidos, com leve desperdicio de processamento.
+
+**Proximo passo recomendado:** Validar manualmente que o bloco Top 50 nao aparece mais na tela. Avaliar futuramente se a remocao do calculo de clientesHistoricoTop e clientesDetalhe no backend vale a economia de processamento.
+
+---

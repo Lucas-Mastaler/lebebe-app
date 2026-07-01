@@ -16072,3 +16072,130 @@ Tempo total da v2: 00:09
 **Proximo passo recomendado:** Fazer validacao manual autenticada do cenario 422 e confirmar que `valor-inicial` e pesquisa de datas nao sao disparados enquanto o endereco nao for validado e confirmado.
 
 ---
+
+## 2026-07-01 - Cascade - Auditoria: metricas Digisac no dashboard (planejamento apenas)
+
+**Resumo:** Auditoria completa da tela de dashboard, integracao Digisac e estrutura do projeto para planejar a primeira versao de metricas Digisac no dashboard. Criado documento de plano em `docs/ia/plano-dashboard-digisac-metricas.md`. Nenhuma alteracao de codigo funcional foi feita. A Taxa de vacuo ativo foi registrada como etapa futura.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md (primeiras 50 linhas e ultimas linhas)
+- src/app/dashboard/page.tsx
+- src/app/dashboard/PageClient.tsx
+- src/components/dashboard/FiltrosDashboard.tsx
+- src/app/api/dashboard/pesquisar/route.ts
+- src/lib/digisac/clienteDigisac.ts
+- src/lib/digisac/dashboard.ts
+- src/lib/digisac/utilsDatas.ts
+- src/lib/digisac/departamentosFixos.ts
+- src/lib/digisac/sgi-sync.ts (parcial)
+- src/lib/digisac/triagem.ts
+- src/lib/digisac/limiteConcorrencia.ts
+- src/lib/digisac/chamadosFinalizados.ts (parcial)
+- src/lib/auth/api-auth.ts
+- src/lib/auth/module-access.ts (grep)
+- src/lib/ratelimit.ts
+- src/lib/fetch-with-retry.ts
+- src/types/index.ts
+- digisac_docs.md
+
+**Arquivos criados:**
+- docs/ia/plano-dashboard-digisac-metricas.md
+
+**Arquivos alterados:**
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- Confirmado no codigo: projeto nao tem chamada para `/dashboard/by-period` nem `/services` do Digisac
+- Confirmado no codigo: `fetchDigisac()` usa `DIGISAC_BASE_URL` (com `/api/v1`) + `DIGISAC_TOKEN` (Bearer), 30s timeout
+- Confirmado no codigo: dashboard atual busca tickets via `/tickets` com paginacao e calcula metricas em codigo
+- Confirmado no codigo: filtros atuais sao dataInicio, dataFim, departmentIds, userIds (sem serviceId)
+- Confirmado no codigo: auth da API usa `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true })`
+- Confirmado no codigo: rate limit disponivel via Upstash Redis (60 req/min)
+- Confirmado no codigo: cache em memoria ja usado (6h em dashboard.ts, 10min em agendamentos.ts)
+- Confirmado no codigo: recharts ja usado para graficos no dashboard
+- Confirmado no codigo: `sgi-sync.ts` tem tipos e funcoes relevantes para vacuo ativo (`firstMessage.isFromMe`, `startedAt`, `calcularInicioChamado()`, `buscarMensagensTicketPaginado()`)
+- Hipotese: formato do endpoint `/services` desconhecido (marcado como pendencia)
+- Hipotese: comportamento do `/dashboard/by-period` sem `serviceId` nao confirmado
+- Banco: nao aplicavel nesta etapa (primeira versao consultara Digisac em tempo real)
+
+**Comandos rodados e resultados:**
+- Nenhum comando de build/test executado (tarefa de documentacao apenas)
+
+**Pendencias:**
+- Validar formato do endpoint `/services` do Digisac antes de implementar filtro de conexao
+- Validar comportamento do `/dashboard/by-period` sem `serviceId`
+- Validar campo `grouping` do endpoint
+- Definir padrao de cache final antes de implementar
+- Taxa de vacuo ativo: mapear endpoint de chamados ativos e verificar viabilidade
+
+**Riscos conhecidos:**
+- Performance: chamar Digisac direto pode ser lento sem cache
+- Filtro de conexao nao garantido ate validar `/services`
+- Vacuo ativo pode ser pesado se muitos tickets
+
+**Proximo passo recomendado:** Validar endpoint `/services` e `/dashboard/by-period` do Digisac, depois iniciar implementacao pela Etapa 1 (helper `estatisticas.ts`).
+
+---
+
+## 2026-07-01 - Cascade - Implementacao: primeira versao metricas Digisac no dashboard
+
+**Resumo:** Implementada a primeira versao das metricas agregadas do Digisac na tela de dashboard, usando o endpoint `/dashboard/by-period`. Criados helper, API interna protegida, componentes de cards com tooltips e grafico diario. Taxa de vacuo ativo nao implementada (etapa futura). Filtro de conexao nao implementado (pendencia: endpoint `/services` nao validado).
+
+**Arquivos lidos:**
+- docs/ia/plano-dashboard-digisac-metricas.md
+- docs/ia/log_progress.md (continuidade)
+- src/app/dashboard/PageClient.tsx
+- src/app/api/dashboard/pesquisar/route.ts
+- src/lib/digisac/clienteDigisac.ts
+- src/lib/digisac/utilsDatas.ts
+- src/lib/auth/api-auth.ts
+- src/types/index.ts
+- src/components/ui/tooltip.tsx
+- src/app/dashboard/PageClient.tsx (final, linhas 653-714)
+
+**Arquivos criados:**
+- src/lib/digisac/estatisticas.ts — helper para `/dashboard/by-period` com cache em memoria de 5 min
+- src/app/api/dashboard/estatisticas/route.ts — API interna POST protegida com requireAuthenticatedUser
+- src/components/dashboard/CardsEstatisticasDigisac.tsx — 7 cards com tooltips, formatacao de tempo e relacao com cor
+- src/components/dashboard/GraficoMensagensDigisac.tsx — grafico recharts de enviadas x recebidas por dia
+
+**Arquivos alterados:**
+- src/types/index.ts — adicionados tipos EstatisticasDigisacTotais, EstatisticasDigisacDiario, EstatisticasDigisacResponse
+- src/app/dashboard/PageClient.tsx — adicionados imports, estado, useEffect para fetch de estatisticas, e renderizacao de cards + grafico acima das tabs existentes
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- Confirmado no codigo: `fetchDigisac()` reutilizado, sem duplicar token/base URL
+- Confirmado no codigo: API interna usa `requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true })`
+- Confirmado no codigo: datas convertidas com `montarRangeUtcSaoPaulo()` existente
+- Confirmado no codigo: cache em memoria de 5 min por combinacao de filtros (dataInicio + dataFim + serviceId)
+- Confirmado no codigo: relacao envio x recebimento exibida como decimal com virgula e 2 casas
+- Confirmado no codigo: regra de cor baseada no valor arredondado (<=1,50 verde, 1,51-1,74 laranja, >=1,75 vermelho)
+- Confirmado no codigo: divisao por zero tratada (exibe `—`)
+- Confirmado no codigo: tooltips em todos os 7 cards
+- Confirmado no codigo: grafico usa recharts (mesmo padrao do dashboard)
+- Confirmado no codigo: tabs/tabelas/graficos existentes nao alterados
+- Confirmado no codigo: nenhum token exposto ao frontend
+- Confirmado no codigo: Taxa de vacuo ativo nao implementada
+- Confirmado no codigo: nenhuma migration/banco criada
+- Banco: nao aplicavel (sem alteracoes no Supabase)
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit --pretty false` -> exit 0 (sem erros)
+- `npx eslint src/lib/digisac/estatisticas.ts src/app/api/dashboard/estatisticas/route.ts src/components/dashboard/CardsEstatisticasDigisac.tsx src/components/dashboard/GraficoMensagensDigisac.tsx src/app/dashboard/PageClient.tsx src/types/index.ts --quiet` -> exit 0 (sem erros)
+
+**Pendencias:**
+- Filtro de conexao/nNumero: endpoint `/services` do Digisac nao validado. Filtro nao implementado. Registrar como pendencia explicita.
+- Comportamento do `/dashboard/by-period` sem `serviceId`: nao confirmado (implementacao envia sem serviceId e assume retorno de todos os servicos).
+- Campo `grouping`: enviado como vazio, valores alternativos nao confirmados.
+- Taxa de vacuo ativo: nao implementada (etapa futura conforme plano).
+- Validacao manual autenticada na tela: nao executada.
+
+**Riscos conhecidos:**
+- Performance: chamada ao Digisac a cada pesquisa de filtros. Cache de 5 min ajuda, mas periodos longos podem ser lentos.
+- Filtro de conexao ausente: metricas sao agregadas de todas as conexoes se `serviceId` nao for enviado.
+- Erro de autenticacao Digisac (401/403) retorna erro generico ao frontend.
+
+**Proximo passo recomendado:** Validar manualmente autenticado na tela do dashboard. Validar endpoint `/services` para implementar filtro de conexao na segunda versao.
+
+---

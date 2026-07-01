@@ -1,9 +1,11 @@
 'use client';
 
 import { Cell } from 'recharts';
-import { useCallback, useMemo, useState } from 'react';
-import { DashboardClienteDetalhe, DashboardLinha, DashboardLinhaConsultora, DashboardResponse } from '@/types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { DashboardClienteDetalhe, DashboardLinha, DashboardLinhaConsultora, DashboardResponse, EstatisticasDigisacResponse } from '@/types';
 import { FiltrosDashboard } from '@/components/dashboard/FiltrosDashboard';
+import { CardsEstatisticasDigisac } from '@/components/dashboard/CardsEstatisticasDigisac';
+import { GraficoMensagensDigisac } from '@/components/dashboard/GraficoMensagensDigisac';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -25,6 +27,9 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [currentFiltros, setCurrentFiltros] = useState<FiltrosDashboardType | null>(null);
   const [activeTab, setActiveTab] = useState('filiais');
+  const [estatisticasDigisac, setEstatisticasDigisac] = useState<EstatisticasDigisacResponse | null>(null);
+  const [isLoadingEstatisticas, setIsLoadingEstatisticas] = useState(false);
+  const [errorEstatisticas, setErrorEstatisticas] = useState<string | null>(null);
 
   const handlePesquisar = useCallback(async (filtros: FiltrosDashboardType) => {
     setIsLoading(true);
@@ -48,6 +53,41 @@ export default function Page() {
       setIsLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!currentFiltros?.dataInicio || !currentFiltros?.dataFim) return;
+
+    const controller = new AbortController();
+
+    (async () => {
+      setIsLoadingEstatisticas(true);
+      setErrorEstatisticas(null);
+
+      try {
+        const response = await fetch('/api/dashboard/estatisticas', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dataInicio: currentFiltros.dataInicio,
+            dataFim: currentFiltros.dataFim,
+          }),
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`Erro na requisição: ${response.status}`);
+        const result: EstatisticasDigisacResponse = await response.json();
+        setEstatisticasDigisac(result);
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        const errorMessage = err instanceof Error ? err.message : 'Erro ao buscar estatísticas Digisac';
+        setErrorEstatisticas(errorMessage);
+        console.error('[UI][DASHBOARD][ESTATISTICAS] erro:', errorMessage);
+      } finally {
+        setIsLoadingEstatisticas(false);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [currentFiltros?.dataInicio, currentFiltros?.dataFim]);
 
   const chartDataFiliais = useMemo(() => {
     const linhas = data?.linhas || [];
@@ -187,6 +227,24 @@ export default function Page() {
       </div>
 
       <FiltrosDashboard onPesquisar={handlePesquisar} isLoading={isLoading} />
+
+      {/* Estatísticas Digisac */}
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Estatísticas Digisac</h2>
+          <p className="text-sm text-slate-500">Métricas agregadas de mensagens e tempos de atendimento</p>
+        </div>
+        <CardsEstatisticasDigisac
+          totais={estatisticasDigisac?.totais ?? null}
+          isLoading={isLoadingEstatisticas}
+          error={errorEstatisticas}
+        />
+        <GraficoMensagensDigisac
+          diario={estatisticasDigisac?.diario ?? []}
+          isLoading={isLoadingEstatisticas}
+          error={errorEstatisticas}
+        />
+      </div>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>

@@ -175,3 +175,31 @@ export interface AppsScriptExecuteResponse {
   resultado?: unknown;
   error?: string;
 }
+
+// Estatisticas Digisac (dashboard/by-period)
+export interface EstatisticasDigisacTotais {
+  mensagensEnviadas: number;
+  mensagensRecebidas: number;
+  totalMensagens: number;
+  relacaoEnvioRecebimento: number | null;
+  tempoMedioChamadoSegundos: number;
+  mediaPrimeiroTempoEsperaSegundos: number;
+  mediaPrimeiroTempoEsperaAposBotSegundos: number;
+  tempoMedioEsperaSegundos: number;
+  contatosAtendidos: number;
+  chamadosAbertos: number;
+  chamadosFechados: number;
+  totalChamados: number;
+}
+
+export interface EstatisticasDigisacDiario {
+  data: string;
+  mensagensEnviadas: number;
+  mensagensRecebidas: number;
+  totalMensagens: number;
+}
+
+export interface EstatisticasDigisacResponse {
+  totais: EstatisticasDigisacTotais;
+  diario: EstatisticasDigisacDiario[];
+}

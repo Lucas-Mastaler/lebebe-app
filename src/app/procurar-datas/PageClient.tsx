@@ -253,6 +253,7 @@ export default function ProcurarDatasPage() {
   const [searchError, setSearchError] = useState('')
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [valorInicial, setValorInicial] = useState('')
+  const [valorInicialNumerico, setValorInicialNumerico] = useState<number | null>(null)
   const [addressValidationError, setAddressValidationError] = useState<AddressValidationError | null>(null)
   const [addressValidationReviewMode, setAddressValidationReviewMode] = useState(false)
   const [formErrors, setFormErrors] = useState<FormErrors>({})
@@ -386,6 +387,7 @@ export default function ProcurarDatasPage() {
   useEffect(() => {
     if (!addressResult?.ok || !addressResult.lat || !addressResult.lng) {
       setValorInicial('')
+      setValorInicialNumerico(null)
       return
     }
 
@@ -412,11 +414,15 @@ export default function ProcurarDatasPage() {
         })
         const data = (await readJson(response)) as ValorInicialResponseSucesso
         const resultado = data.resultado || {}
-        if (active) setValorInicial(resultado.valorFormatado || resultado.valorFmt || '')
+        if (active) {
+          setValorInicial(resultado.valorFormatado || resultado.valorFmt || '')
+          setValorInicialNumerico(typeof resultado.valor === 'number' ? resultado.valor : null)
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Erro ao calcular valor inicial.'
         if (active) {
           setValorInicial('')
+          setValorInicialNumerico(null)
           toast.error(message)
         }
       } finally {
@@ -464,6 +470,7 @@ export default function ProcurarDatasPage() {
     setAddressConfirmedResult(null)
     setSearchPayload(null)
     setValorInicial('')
+    setValorInicialNumerico(null)
     setProgressStatus('idle')
     setProgressSnapshot(null)
     setSearchError('')
@@ -484,6 +491,7 @@ export default function ProcurarDatasPage() {
     setAddressConfirmedResult(null)
     setSearchPayload(null)
     setValorInicial('')
+    setValorInicialNumerico(null)
     setProgressStatus('idle')
     setProgressSnapshot(null)
     setSearchError('')
@@ -591,6 +599,7 @@ export default function ProcurarDatasPage() {
     setAddressConfirmedResult(null)
     setSearchPayload(null)
     setValorInicial('')
+    setValorInicialNumerico(null)
     setProgressStatus('idle')
     setProgressSnapshot(null)
     setSearchError('')
@@ -653,6 +662,7 @@ export default function ProcurarDatasPage() {
     setAddressConfirmed(false)
     setAddressConfirmedResult(null)
     setValorInicial('')
+    setValorInicialNumerico(null)
     setFormErrors((current) => {
       const next = { ...current }
       delete next.logradouro
@@ -866,6 +876,7 @@ export default function ProcurarDatasPage() {
         destProvider: confirmed.provider || '',
         enderecoCompleto: confirmed.enderecoCompleto || confirmed.display || confirmed.display_name || '',
         monthYear: form.dataInicial,
+        valorInicialMinimo: valorInicialNumerico ?? undefined,
       }
 
       const response = await fetch(endpoints.pesquisar, {

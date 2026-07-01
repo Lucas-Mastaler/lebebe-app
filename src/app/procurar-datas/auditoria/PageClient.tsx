@@ -172,6 +172,21 @@ function texto(value: unknown) {
   return String(value)
 }
 
+function formatValorInicialMinimo(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '-'
+  if (typeof value === 'number') {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
+  }
+  if (typeof value === 'string') {
+    const num = Number(value)
+    if (!Number.isNaN(num)) {
+      return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num)
+    }
+    return value
+  }
+  return '-'
+}
+
 function Campo({ label, value }: { label: string; value: unknown }) {
   return (
     <div className="rounded-lg border border-slate-100 bg-white px-3 py-2">
@@ -514,7 +529,7 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
           <Campo label="Poltrona" value={parametros.poltrona} />
           <Campo label="Painel" value={parametros.painel} />
           <Campo label="Tempo necessário" value={parametros.tempoNecessario} />
-          <Campo label="Valor inicial mínimo" value={parametros.valorInicialMinimo} />
+          <Campo label="Valor inicial mínimo" value={formatValorInicialMinimo(parametros.valorInicialMinimo)} />
         </dl>
       </Secao>
 

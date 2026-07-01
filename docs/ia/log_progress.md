@@ -1,3 +1,47 @@
+## 2026-06-30 - Cascade - Frente 0/Controle: campo "Valor inicial mínimo" no modal "Detalhe da pesquisa"
+
+**Resumo:** Correcao do campo "Valor inicial mínimo" que aparecia como `-` no bloco "Parametros usados" do modal "Detalhe da pesquisa" em `/procurar-datas/auditoria`. A interface `AuditoriaPesquisaParams` ja tinha `valorInicialMinimo` e o modal ja lia o campo, mas o valor nunca era enviado pelo frontend nem passado pelo backend para `registrarAuditoriaPesquisa`. Corrigido: (1) frontend armazena valor numerico da resposta de `/api/procurar-datas/valor-inicial` e envia no body da busca; (2) backend `pesquisar-compat-async` repassa `body.valorInicialMinimo` nas 3 chamadas de auditoria; (3) modal formata como moeda BRL. Nao altera regra de negocio, calculo de frete, motor v2, ranking, OSRM, Haversine, agenda, Apps Script, RLS, migrations ou views.
+
+**Arquivos lidos:**
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- docs/ia/log_progress.md
+- src/app/procurar-datas/performance/PageClient.tsx
+- src/app/api/procurar-datas/performance/route.ts
+- src/types/procurar-datas-performance.ts
+- src/app/procurar-datas/auditoria/PageClient.tsx
+- src/app/api/procurar-datas/auditoria/route.ts
+- src/lib/procurar-datas/v2/auditoria-pesquisa.ts
+- src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts
+- src/app/procurar-datas/PageClient.tsx
+- src/lib/procurar-datas/types.ts
+- src/lib/procurar-datas/contratos.ts
+- src/lib/procurar-datas/valor-inicial-local.ts
+- src/app/api/procurar-datas/valor-inicial/route.ts
+
+**Arquivos alterados:**
+- src/lib/procurar-datas/types.ts (adicionado `valorInicialMinimo?: number` em `ProcurarDatasServicoForm`)
+- src/app/procurar-datas/PageClient.tsx (novo estado `valorInicialNumerico`, enviado no body da busca, limpo em todos os resets)
+- src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts (3 chamadas de `registrarAuditoriaPesquisa` agora incluem `valorInicialMinimo`)
+- src/app/procurar-datas/auditoria/PageClient.tsx (nova funcao `formatValorInicialMinimo`, Campo usa formatter)
+
+**Validacoes realizadas:**
+- Typecheck: npx tsc --noEmit passou com 0 erros
+- Codigo: confirmado que o campo ja existia na interface e no modal, apenas nao era populado
+- Registros antigos sem o campo continuam mostrando `-` (tratado por `formatValorInicialMinimo`)
+
+**Comandos rodados:**
+- npx tsc --noEmit --pretty false (0 erros)
+
+**Pendencias:**
+- Validacao manual autenticada: fazer uma busca real em `/procurar-datas`, depois abrir `/procurar-datas/auditoria`, clicar em "Ver" e confirmar "Valor inicial mínimo" aparece formatado em reais
+
+**Riscos conhecidos:**
+- Registros antigos (anteriores a esta alteracao) nao terao o campo — continuam mostrando `-` (comportamento esperado)
+- Se o frontend nao tiver coordenadas validas antes da busca, `valorInicialMinimo` sera `undefined` e nao sera persistido
+
+**Proximo passo recomendado:** Validacao manual autenticada do fluxo completo.
+
 ## 2026-06-30 - Cascade - Frente 0/Controle: melhoria visual do modal "Detalhe da pesquisa" na tela de auditoria
 
 **Resumo:** Melhoria puramente visual (UI/UX) do modal "Detalhe da pesquisa" em `/procurar-datas/auditoria`. Alterações: badges de status/motor/duracao no header do modal; secoes com borda, fundo suave e icones lucide-react; cores distintas por secao (slate=Dados gerais, sky=Endereco, violet=Parametros, emerald=Resultados, amber=Pre-agendamento); campos individuais como cards sutis (borda + fundo branco); tabela de resultados com header destacado, rows zebra, badge de tipo e rank circular; pre-agendamento com badge de status colorido, sombra suave e sub-secoes com fundo; DialogContent com max-w-4xl em vez de max-w-none; estado "sem pre-agendamento" como card positivo verde. Nao altera dados exibidos, nomes de campos, API, query, filtros, tipos, regra de negocio, motor, RLS, migrations, Apps Script ou qualquer outro arquivo.

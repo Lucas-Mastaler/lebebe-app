@@ -38,6 +38,7 @@ export interface ProcurarDatasServicoForm extends ProcurarDatasEnderecoForm {
   poltrona?: string
   painel?: string
   tempoNecessario?: string
+  valorInicialMinimo?: number
 }
 
 export type ProcurarDatasCandidateTipo = 'normal' | 'especial' | 'premium' | 'hora-marcada'

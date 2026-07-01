@@ -70,6 +70,7 @@ export default function Page() {
           body: JSON.stringify({
             dataInicio: currentFiltros.dataInicio,
             dataFim: currentFiltros.dataFim,
+            serviceId: currentFiltros.serviceId || undefined,
           }),
           signal: controller.signal,
         });
@@ -87,7 +88,7 @@ export default function Page() {
     })();
 
     return () => controller.abort();
-  }, [currentFiltros?.dataInicio, currentFiltros?.dataFim]);
+  }, [currentFiltros?.dataInicio, currentFiltros?.dataFim, currentFiltros?.serviceId]);
 
   const chartDataFiliais = useMemo(() => {
     const linhas = data?.linhas || [];

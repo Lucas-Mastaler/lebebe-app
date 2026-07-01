@@ -16199,3 +16199,66 @@ Tempo total da v2: 00:09
 **Proximo passo recomendado:** Validar manualmente autenticado na tela do dashboard. Validar endpoint `/services` para implementar filtro de conexao na segunda versao.
 
 ---
+
+## 2026-07-01 - Cascade - Implementacao: filtro de conexao/numero no dashboard Digisac
+
+**Resumo:** Implementado filtro de conexao/numero no dashboard para as metricas Digisac, usando o endpoint real `/services` do Digisac. Criados helper `listarServicosDigisac()`, API interna protegida GET, filtro Select no FiltrosDashboard, e integracao do serviceId no PageClient. Retorno sanitizado sem token. Filtro prioriza conexoes WhatsApp ativas. Taxa de vacuo ativo nao implementada.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md (continuidade)
+- docs/ia/plano-dashboard-digisac-metricas.md
+- src/lib/digisac/estatisticas.ts
+- src/app/api/dashboard/estatisticas/route.ts
+- src/components/dashboard/FiltrosDashboard.tsx
+- src/app/dashboard/PageClient.tsx
+- src/components/ui/select.tsx
+- src/types/index.ts
+
+**Arquivos criados:**
+- src/app/api/dashboard/estatisticas/servicos/route.ts — API GET protegida com requireAuthenticatedUser, chama listarServicosDigisac(), retorna servicos sanitizados
+
+**Arquivos alterados:**
+- src/types/index.ts — adicionados tipos ServicoDigisacDashboard e ServicosDigisacResponse
+- src/lib/digisac/estatisticas.ts — adicionada funcao listarServicosDigisac() com cache 10min, sanitizacao, paginacao, filtro deletedAt/archivedAt/whatsapp
+- src/components/dashboard/FiltrosDashboard.tsx — adicionado filtro Select "Conexao/Numero", carregamento via API interna, estado selectedServiceId, envio de serviceId no onPesquisar
+- src/app/dashboard/PageClient.tsx — adicionado serviceId no body do fetch de estatisticas e nas dependencias do useEffect
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- Confirmado no codigo: `listarServicosDigisac()` reutiliza `fetchDigisac()` existente
+- Confirmado no codigo: endpoint `/services` chamado com query paginada compativel com formato observado
+- Confirmado no codigo: sanitizacao remove token, data.status, settings, internalData e payload bruto
+- Confirmado no codigo: filtro remove deletedAt !== null, archivedAt !== null e type !== whatsapp
+- Confirmado no codigo: cache em memoria de 10 min para lista de servicos
+- Confirmado no codigo: paginacao preparada para lastPage > 1 (busca paginas adicionais com try/catch)
+- Confirmado no codigo: API interna GET usa requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true })
+- Confirmado no codigo: frontend chama API interna, nunca Digisac diretamente
+- Confirmado no codigo: erro ao carregar servicos nao quebra dashboard (mantem "Todas as conexoes")
+- Confirmado no codigo: serviceId enviado para /api/dashboard/estatisticas e repassado ao Digisac
+- Confirmado no codigo: serviceId incluido na chave de cache de buscarEstatisticasDigisac (ja existente)
+- Confirmado no codigo: "Todas as conexoes" envia serviceId undefined (comportamento anterior mantido)
+- Confirmado no codigo: filtros existentes (data, loja, consultora) nao alterados
+- Confirmado no codigo: tabs/tabelas/graficos existentes nao alterados
+- Confirmado no codigo: nenhum token exposto em logs, frontend ou documentacao
+- Confirmado no codigo: Taxa de vacuo ativo nao implementada
+- Confirmado no codigo: nenhuma migration/banco criada
+- Banco: nao aplicavel (sem alteracoes no Supabase)
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit --pretty false` -> exit 0 (sem erros)
+- `npx eslint [arquivos alterados] --quiet` -> exit 0 (sem erros)
+
+**Pendencias:**
+- Validacao manual autenticada na tela: nao executada
+- Comportamento do `/dashboard/by-period` com serviceId especifico: nao validado com dados reais
+- Facebook/Instagram excluidos do filtro por decisao de escopo (apenas WhatsApp)
+- Taxa de vacuo ativo: continua como etapa futura
+
+**Riscos conhecidos:**
+- Se endpoint `/services` retornar erro, filtro mostra apenas "Todas as conexoes" (graceful degradation)
+- Cache de servicos de 10 min pode listar conexao recem-criada com atraso
+- Filtro de conexao aplica-se apenas as metricas Digisac novas (cards + grafico), nao afeta metricas antigas do dashboard
+
+**Proximo passo recomendado:** Validar manualmente autenticado na tela do dashboard com diferentes conexoes selecionadas.
+
+---

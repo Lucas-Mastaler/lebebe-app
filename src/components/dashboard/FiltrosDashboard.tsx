@@ -12,8 +12,15 @@ import {
 } from '@/components/ui/collapsible';
 import { Button as UIButton } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Usuario } from '@/types';
+import { Usuario, ServicoDigisacDashboard } from '@/types';
 import { DEPARTAMENTOS_FIXOS } from '@/lib/digisac/departamentosFixos';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface FiltrosProps {
   onPesquisar: (filtros: {
@@ -21,6 +28,7 @@ interface FiltrosProps {
     dataFim: string;
     departmentIds: string[];
     userIds: string[];
+    serviceId?: string;
   }) => void;
   isLoading: boolean;
 }
@@ -56,6 +64,9 @@ export function FiltrosDashboard({ onPesquisar, isLoading }: FiltrosProps) {
   const [usersList, setUsersList] = useState<Usuario[]>([]);
   const [lojaQuery, setLojaQuery] = useState('');
   const [userQuery, setUserQuery] = useState('');
+  const [servicosList, setServicosList] = useState<ServicoDigisacDashboard[]>([]);
+  const [selectedServiceId, setSelectedServiceId] = useState<string>('');
+  const [isLoadingServicos, setIsLoadingServicos] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -65,6 +76,20 @@ export function FiltrosDashboard({ onPesquisar, isLoading }: FiltrosProps) {
         if (Array.isArray(data)) setUsersList(data.map((u: { id?: string; name?: string; nome?: string }) => ({ id: u.id || '', nome: u.name || u.nome || '' })));
       } catch (e) {
         console.error('[DASHBOARD] Erro ao carregar usuários', e);
+      }
+    })();
+
+    (async () => {
+      setIsLoadingServicos(true);
+      try {
+        const res = await fetch('/api/dashboard/estatisticas/servicos');
+        if (!res.ok) throw new Error(`Erro ${res.status}`);
+        const data = await res.json();
+        if (Array.isArray(data.servicos)) setServicosList(data.servicos);
+      } catch (e) {
+        console.error('[DASHBOARD] Erro ao carregar conexões Digisac', e);
+      } finally {
+        setIsLoadingServicos(false);
       }
     })();
   }, []);
@@ -80,6 +105,7 @@ export function FiltrosDashboard({ onPesquisar, isLoading }: FiltrosProps) {
       dataFim,
       departmentIds: selectedDepartmentIds,
       userIds: selectedUserIds,
+      serviceId: selectedServiceId || undefined,
     };
     onPesquisar(filtros);
   };
@@ -265,6 +291,26 @@ export function FiltrosDashboard({ onPesquisar, isLoading }: FiltrosProps) {
                   </PopoverContent>
                 </Popover>
               </div>
+            </div>
+
+            {/* Conexão/Número */}
+            <div>
+              <label className="block text-sm text-slate-600 mb-1">Conexão/Número</label>
+              <Select
+                value={selectedServiceId || 'all'}
+                onValueChange={(v) => setSelectedServiceId(v === 'all' ? '' : v)}
+                disabled={isLoadingServicos}
+              >
+                <SelectTrigger className="w-full rounded-xl">
+                  <SelectValue placeholder={isLoadingServicos ? 'Carregando...' : 'Todas as conexões'} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as conexões</SelectItem>
+                  {servicosList.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <Button onClick={handlePesquisar} disabled={!isRangeValid || isLoading} className="w-full rounded-xl">

@@ -1,6 +1,6 @@
 import { fetchDigisac } from './clienteDigisac';
 import { montarRangeUtcSaoPaulo } from './utilsDatas';
-import type { EstatisticasDigisacResponse } from '@/types';
+import type { EstatisticasDigisacResponse, ServicoDigisacDashboard } from '@/types';
 
 interface BuscarEstatisticasParams {
   dataInicio: string;
@@ -124,4 +124,78 @@ export async function buscarEstatisticasDigisac(
   console.log(`[DIGISAC][ESTATISTICAS] Resposta normalizada. diarioItems=${normalizado.diario.length}`);
 
   return normalizado;
+}
+
+// --- Servicos/conexoes ---
+
+interface DigisacServiceItem {
+  id?: string;
+  name?: string;
+  type?: string;
+  archivedAt?: string | null;
+  deletedAt?: string | null;
+}
+
+interface DigisacServicesResponse {
+  data?: DigisacServiceItem[];
+  lastPage?: number;
+}
+
+const CACHE_SERVICOS_TTL = 10 * 60 * 1000;
+let cacheServicos: { data: ServicoDigisacDashboard[]; timestamp: number } | null = null;
+
+function sanitizarServicos(items: DigisacServiceItem[]): ServicoDigisacDashboard[] {
+  return items
+    .filter((s) => s.id && s.name && !s.deletedAt)
+    .filter((s) => s.type === 'whatsapp')
+    .filter((s) => !s.archivedAt)
+    .map((s) => ({
+      id: s.id!,
+      name: s.name!,
+      type: s.type!,
+      archivedAt: s.archivedAt ?? null,
+    }));
+}
+
+export async function listarServicosDigisac(): Promise<ServicoDigisacDashboard[]> {
+  const agora = Date.now();
+
+  if (cacheServicos && agora - cacheServicos.timestamp < CACHE_SERVICOS_TTL) {
+    console.log('[DIGISAC][SERVICOS] Cache hit');
+    return cacheServicos.data;
+  }
+
+  const query = JSON.stringify({ where: {}, page: 1 });
+  const endpoint = `/services?query=${encodeURIComponent(query)}`;
+
+  console.log('[DIGISAC][SERVICOS] Buscando servicos');
+
+  const resp: DigisacServicesResponse = await fetchDigisac(endpoint);
+
+  let todosItems: DigisacServiceItem[] = Array.isArray(resp.data) ? resp.data : [];
+  const lastPage = Number(resp.lastPage) || 1;
+
+  if (lastPage > 1) {
+    for (let p = 2; p <= lastPage; p++) {
+      try {
+        const queryPage = JSON.stringify({ where: {}, page: p });
+        const endpointPage = `/services?query=${encodeURIComponent(queryPage)}`;
+        const respPage: DigisacServicesResponse = await fetchDigisac(endpointPage);
+        if (Array.isArray(respPage.data)) {
+          todosItems = [...todosItems, ...respPage.data];
+        }
+      } catch {
+        console.error(`[DIGISAC][SERVICOS] Erro ao buscar pagina ${p}, parando paginacao`);
+        break;
+      }
+    }
+  }
+
+  const sanitizados = sanitizarServicos(todosItems);
+
+  cacheServicos = { data: sanitizados, timestamp: agora };
+
+  console.log(`[DIGISAC][SERVICOS] Servicos sanitizados: ${sanitizados.length}`);
+
+  return sanitizados;
 }

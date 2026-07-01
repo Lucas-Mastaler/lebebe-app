@@ -203,3 +203,14 @@ export interface EstatisticasDigisacResponse {
   totais: EstatisticasDigisacTotais;
   diario: EstatisticasDigisacDiario[];
 }
+
+export interface ServicoDigisacDashboard {
+  id: string;
+  name: string;
+  type: string;
+  archivedAt?: string | null;
+}
+
+export interface ServicosDigisacResponse {
+  servicos: ServicoDigisacDashboard[];
+}

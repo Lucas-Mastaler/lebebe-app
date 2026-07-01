@@ -8,6 +8,7 @@ interface FiltrosDashboardService {
   dataFim: string;
   departmentIds?: string[];
   userIds?: string[];
+  serviceId?: string;
 }
 
 interface Ticket {
@@ -136,6 +137,11 @@ async function buscarTicketsPeriodo(filtros: FiltrosDashboardService): Promise<T
   params.append('where[createdAt][$between][0]', inicioUtc);
   params.append('where[createdAt][$between][1]', fimUtc);
   params.append('include[0][model]', 'contact');
+  params.append('include[0][required]', 'true');
+  params.append('include[0][where][visible]', 'true');
+  if (filtros.serviceId) {
+    params.append('include[0][where][serviceId]', filtros.serviceId);
+  }
   params.append('include[1][model]', 'department');
   params.append('include[2][model]', 'user');
   params.append('include[3][model]', 'firstMessage');
@@ -199,6 +205,7 @@ async function buscarTicketsPeriodo(filtros: FiltrosDashboardService): Promise<T
     fimUtc,
     departmentsCount: Array.isArray(filtros.departmentIds) ? filtros.departmentIds.length : 0,
     usersCount: Array.isArray(filtros.userIds) ? filtros.userIds.length : 0,
+    hasServiceId: !!filtros.serviceId,
   });
   console.log('[DASHBOARD] ticketsTotal=', filtrados.length, 'exemplo=', filtrados[0] ? {
     id: filtrados[0].id,

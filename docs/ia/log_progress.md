@@ -16262,3 +16262,57 @@ Tempo total da v2: 00:09
 **Proximo passo recomendado:** Validar manualmente autenticado na tela do dashboard com diferentes conexoes selecionadas.
 
 ---
+
+## 2026-07-01 - Cascade - Implementacao: filtro de conexao afetando dados antigos do dashboard
+
+**Resumo:** Estendido o filtro de conexao/numero para afetar tambem os dados antigos do dashboard (tickets, tabelas por filial, tabelas por consultora, top clientes, graficos antigos). O serviceId agora e enviado na query de /tickets dentro do include de contact (contact.where.serviceId), conforme formato validado pelo usuario. A API /api/dashboard/pesquisar passou a extrair e repassar serviceId. O PageClient ja enviava serviceId no body da pesquisa antiga via JSON.stringify(filtros). Taxa de vacuo ativo nao implementada.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md (continuidade)
+- docs/ia/plano-dashboard-digisac-metricas.md
+- src/lib/digisac/dashboard.ts
+- src/app/api/dashboard/pesquisar/route.ts
+- src/app/dashboard/PageClient.tsx
+- src/components/dashboard/FiltrosDashboard.tsx
+- src/types/index.ts
+
+**Arquivos alterados:**
+- src/lib/digisac/dashboard.ts — adicionado serviceId em FiltrosDashboardService, filtro contact.where.serviceId na query de /tickets, include[0][required]=true, include[0][where][visible]=true, hasServiceId no log
+- src/app/api/dashboard/pesquisar/route.ts — extrai serviceId do body e repassa para pesquisarDashboard, adicionado hasServiceId no log
+- docs/ia/log_progress.md (esta entrada)
+
+**Arquivos nao alterados (confirmado):**
+- src/app/dashboard/PageClient.tsx — nao precisou alteracao: ja envia JSON.stringify(filtros) que inclui serviceId desde a tarefa anterior
+- src/components/dashboard/FiltrosDashboard.tsx — nao precisou alteracao: ja inclui serviceId no onPesquisar desde a tarefa anterior
+
+**Validacoes realizadas:**
+- Confirmado no codigo: FiltrosDashboard envia serviceId no objeto onPesquisar (linha 108)
+- Confirmado no codigo: PageClient envia JSON.stringify(filtros) para /api/dashboard/pesquisar, incluindo serviceId
+- Confirmado no codigo: API /api/dashboard/pesquisar extrai serviceId e repassa para pesquisarDashboard
+- Confirmado no codigo: buscarTicketsPeriodo adiciona include[0][where][serviceId] quando serviceId esta presente
+- Confirmado no codigo: include[0][required]=true e include[0][where][visible]=true adicionados (compativel com formato validado pelo usuario)
+- Confirmado no codigo: quando serviceId ausente, query nao inclui filtro de serviceId (comportamento anterior preservado)
+- Confirmado no codigo: filtros de departmentIds e userIds nao alterados
+- Confirmado no codigo: calculos de ativo/receptivo, agrupamentos, top clientes e historico nao alterados
+- Confirmado no codigo: nenhum token/payload sensivel exposto em logs
+- Confirmado no codigo: Taxa de vacuo ativo nao implementada
+- Confirmado no codigo: nenhuma migration/banco criada
+- Banco: nao aplicavel (sem alteracoes no Supabase)
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit --pretty false` -> exit 0 (sem erros)
+- `npx eslint src/lib/digisac/dashboard.ts src/app/api/dashboard/pesquisar/route.ts src/app/dashboard/PageClient.tsx src/components/dashboard/FiltrosDashboard.tsx --quiet` -> exit 0 (sem erros)
+
+**Pendencias:**
+- Validacao manual autenticada na tela: nao executada
+- Comportamento da query de /tickets com contact.where.serviceId: nao validado com dados reais no Digisac
+- Taxa de vacuo ativo: continua como etapa futura
+
+**Riscos conhecidos:**
+- Filtro contact.where.serviceId pode reduzir drasticamente o numero de tickets retornados se a conexao selecionada tiver pouco volume
+- include[0][required]=true pode afetar tickets sem contact (se houver) — porem ja era o padrao informado pelo usuario
+- Busca de historico por contato (buscarTotalHistoricoPorContato) nao usa serviceId, pois conta todos os tickets do contato independente de conexao
+
+**Proximo passo recomendado:** Validar manualmente autenticado na tela do dashboard: selecionar uma conexao especifica, pesquisar, e comparar tabelas/graficos antigos com e sem filtro de conexao.
+
+---

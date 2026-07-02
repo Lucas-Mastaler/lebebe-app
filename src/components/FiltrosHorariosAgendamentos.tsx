@@ -215,8 +215,8 @@ export function FiltrosHorariosAgendamentos({
     const [dataPesquisar, setDataPesquisar] = useState('');
     const [dataPopoverOpen, setDataPopoverOpen] = useState(false);
     
-    const [horaInicio, setHoraInicio] = useState('07:00');
-    const [horaFim, setHoraFim] = useState('20:59');
+    const [horaInicio, setHoraInicio] = useState('09:00');
+    const [horaFim, setHoraFim] = useState('19:00');
     const [diaTodo, setDiaTodo] = useState(true);
 
     const hoje = obterHojeBR();
@@ -252,8 +252,8 @@ export function FiltrosHorariosAgendamentos({
         if (!dateObj) return;
 
         const dataIso = formatDateToISO(dateObj);
-        let horaInicioFinal = diaTodo ? '07:00' : horaInicio;
-        const horaFimFinal = diaTodo ? '20:59' : horaFim;
+        let horaInicioFinal = diaTodo ? '09:00' : horaInicio;
+        const horaFimFinal = diaTodo ? '19:00' : horaFim;
 
         // Se for hoje, ajustar horaInicio para horário atual + 1 minuto
         if (isHoje(dataPesquisar)) {
@@ -276,8 +276,8 @@ export function FiltrosHorariosAgendamentos({
     const handleDiaTodoChange = (checked: boolean) => {
         setDiaTodo(checked);
         if (checked) {
-            setHoraInicio('07:00');
-            setHoraFim('20:59');
+            setHoraInicio('09:00');
+            setHoraFim('19:00');
         }
     };
 
@@ -364,7 +364,7 @@ export function FiltrosHorariosAgendamentos({
                                     htmlFor="diaTodo"
                                     className="text-sm font-medium text-slate-700 cursor-pointer"
                                 >
-                                    Dia todo (07:00 - 20:59)
+                                    Dia todo (09:00 - 19:00)
                                 </label>
                             </div>
 

@@ -3,6 +3,12 @@ import { montarRangeUtcSaoPaulo } from './utilsDatas';
 import { buscarMensagensTicketPaginado, type DigisacMensagem } from './sgi-sync';
 import type { VacuoAtivoResponse, ChamadoAvaliadoVacuo } from '@/types';
 
+const DIGISAC_WEB_BASE_URL = 'https://lebebe.digisac.me';
+
+function montarUrlHistoricoTicket(ticketId: string): string {
+  return `${DIGISAC_WEB_BASE_URL}/ticket-history/${ticketId}`;
+}
+
 function extrairTimestampMs(m: DigisacMensagem): number | null {
   const ts = m.timestamp;
   if (ts != null) {
@@ -337,6 +343,7 @@ export async function calcularVacuoAtivoDashboard(filtros: FiltrosVacuoAtivo): P
     chamadosAvaliados.push({
       protocol: t.protocol != null ? String(t.protocol) : null,
       ticketId: t.id.slice(0, 8),
+      ticketHistoryUrl: montarUrlHistoricoTicket(t.id),
       statusVacuo: respondido ? 'respondido_em_24h' : 'vacuo',
       temRespostaClienteEm24h: respondido,
       totalMensagens: detalhes?.totalMensagens ?? 0,

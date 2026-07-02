@@ -218,6 +218,7 @@ export interface ServicosDigisacResponse {
 export interface ChamadoAvaliadoVacuo {
   protocol: string | null;
   ticketId: string;
+  ticketHistoryUrl: string | null;
   statusVacuo: 'vacuo' | 'respondido_em_24h';
   temRespostaClienteEm24h: boolean;
   totalMensagens: number;

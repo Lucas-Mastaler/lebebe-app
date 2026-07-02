@@ -16814,3 +16814,52 @@ Tempo total da v2: 00:09
 **Proximo passo recomendado:** Repetir o teste manual (06/05/2026, Bigorrilho, todas as conexoes). Verificar: (1) log [VACUO_ATIVO][AVALIADOS] mostra protocolos; (2) botao "Ver chamados avaliados" funciona no card; (3) comTimestamp > 0; (4) taxa diferente de 100%.
 
 ---
+
+## 2026-07-02 - Cascade - Link clicavel para historico do ticket no Digisac
+
+**Resumo:** Adicionado `ticketHistoryUrl` nos chamados avaliados da Taxa de vacuo ativo. O protocolo agora e renderizado como link clicavel no card, abrindo `https://lebebe.digisac.me/ticket-history/{ticketId}` em nova aba. URL montada com ID completo do ticket (UUID), nao o abreviado.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md (continuidade)
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md
+- src/types/index.ts (ChamadoAvaliadoVacuo)
+- src/lib/digisac/vacuoAtivo.ts (construcao de chamadosAvaliados)
+- src/components/dashboard/CardVacuoAtivo.tsx (renderizacao da lista)
+- src/lib/digisac/clienteDigisac.ts (verificacao de env DIGISAC_BASE_URL — e API base, nao web base)
+
+**Arquivos alterados:**
+- src/types/index.ts — adicionado `ticketHistoryUrl: string | null` em ChamadoAvaliadoVacuo
+- src/lib/digisac/vacuoAtivo.ts — constante `DIGISAC_WEB_BASE_URL = 'https://lebebe.digisac.me'`, helper `montarUrlHistoricoTicket(ticketId)`, campo `ticketHistoryUrl` no push de chamadosAvaliados usando `t.id` (completo)
+- src/components/dashboard/CardVacuoAtivo.tsx — protocolo renderizado como `<a href={c.ticketHistoryUrl} target="_blank" rel="noopener noreferrer">` quando ticketHistoryUrl existe; texto normal caso contrario
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md — secao 22
+- docs/ia/log_progress.md (esta entrada)
+
+**Confirmado no codigo:**
+- TicketVacuo.id e o UUID completo do ticket Digisac
+- chamadosAvaliados usava ticketId: t.id.slice(0, 8) (abreviado) — mantido para key/display
+- ticketHistoryUrl montado com t.id (completo) via montarUrlHistoricoTicket
+- DIGISAC_BASE_URL env e API base (https://lebebe.digisac.me/api/v1), nao web base — por isso usada constante hardcoded
+- CardVacuoAtivo usa target="_blank" e rel="noopener noreferrer"
+
+**Nao confirmado:**
+- Nada pendente
+
+**Validacoes realizadas:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint src/lib/digisac/vacuoAtivo.ts src/components/dashboard/CardVacuoAtivo.tsx src/types/index.ts --quiet -> exit 0
+- Banco: nao aplicavel
+
+**Comandos rodados e resultados:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint src/lib/digisac/vacuoAtivo.ts src/components/dashboard/CardVacuoAtivo.tsx src/types/index.ts --quiet -> exit 0
+
+**Pendencias:**
+- Validar manualmente (06/05/2026, Bigorrilho) que o link abre corretamente o historico no Digisac
+
+**Riscos conhecidos:**
+- A URL base `https://lebebe.digisac.me` esta hardcoded — se o dominio mudar, precisa atualizar a constante
+- O link abre o historico no Digisac web, que pode exigir login ativo no navegador
+
+**Proximo passo recomendado:** Validar manualmente: abrir dashboard, filtrar 06/05/2026 Bigorrilho, clicar em "Ver chamados avaliados", clicar no protocolo, confirmar que abre `https://lebebe.digisac.me/ticket-history/{ticketId}` em nova aba.
+
+---

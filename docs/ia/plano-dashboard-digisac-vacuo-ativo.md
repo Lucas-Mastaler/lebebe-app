@@ -808,3 +808,37 @@ Agora: percorre todas as mensagens, conta todas do cliente em 24h, mas ainda ret
 
 - `npx tsc --noEmit --pretty false` -> exit 0
 - `npx eslint src/lib/digisac/vacuoAtivo.ts src/components/dashboard/CardVacuoAtivo.tsx src/types/index.ts --quiet` -> exit 0
+
+---
+
+## 22. Link clicavel para historico do ticket no Digisac (2026-07-02)
+
+### Objetivo
+
+Transformar o protocolo dos chamados avaliados em link clicavel para o historico no Digisac.
+
+### Formato da URL
+
+`https://lebebe.digisac.me/ticket-history/{ticketId}`
+
+O `ticketId` usado na URL e o ID completo (UUID), nao o abreviado de 8 chars.
+
+### Implementacao
+
+- Adicionada constante `DIGISAC_WEB_BASE_URL = 'https://lebebe.digisac.me'` em `vacuoAtivo.ts:6`
+- Adicionado helper `montarUrlHistoricoTicket(ticketId: string): string` em `vacuoAtivo.ts:8`
+- Adicionado campo `ticketHistoryUrl: string | null` em `ChamadoAvaliadoVacuo` (`src/types/index.ts`)
+- `chamadosAvaliados` agora inclui `ticketHistoryUrl: montarUrlHistoricoTicket(t.id)` com o ID completo
+- `ticketId` abreviado (8 chars) mantido para key/display
+- `CardVacuoAtivo.tsx`: protocolo renderizado como `<a target="_blank" rel="noopener noreferrer">` quando `ticketHistoryUrl` existe; texto normal caso contrario
+
+### Arquivos alterados
+
+- `src/types/index.ts` — adicionado `ticketHistoryUrl: string | null` em `ChamadoAvaliadoVacuo`
+- `src/lib/digisac/vacuoAtivo.ts` — constante `DIGISAC_WEB_BASE_URL`, helper `montarUrlHistoricoTicket`, campo `ticketHistoryUrl` no push de `chamadosAvaliados`
+- `src/components/dashboard/CardVacuoAtivo.tsx` — protocolo como link `<a>` com `target="_blank"` e `rel="noopener noreferrer"`
+
+### Validacoes
+
+- `npx tsc --noEmit --pretty false` -> exit 0
+- `npx eslint src/lib/digisac/vacuoAtivo.ts src/components/dashboard/CardVacuoAtivo.tsx src/types/index.ts --quiet` -> exit 0

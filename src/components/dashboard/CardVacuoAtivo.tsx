@@ -107,7 +107,18 @@ export function CardVacuoAtivo({ data, isLoading, error }: CardVacuoAtivoProps) 
               <div className="mt-1 max-h-40 overflow-y-auto space-y-0.5">
                 {avaliados.map((c) => (
                   <div key={c.ticketId} className="flex items-center gap-2 text-[10px] leading-tight">
-                    <span className="font-mono text-slate-600">{c.protocol ?? '—'}</span>
+                    {c.ticketHistoryUrl ? (
+                      <a
+                        href={c.ticketHistoryUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-mono text-indigo-500 hover:text-indigo-700 hover:underline"
+                      >
+                        {c.protocol ?? '—'}
+                      </a>
+                    ) : (
+                      <span className="font-mono text-slate-600">{c.protocol ?? '—'}</span>
+                    )}
                     <span className={c.statusVacuo === 'respondido_em_24h' ? 'text-green-600' : 'text-red-500'}>
                       {c.statusVacuo === 'respondido_em_24h' ? 'Respondido em 24h' : 'Vácuo'}
                     </span>

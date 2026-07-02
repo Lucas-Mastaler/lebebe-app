@@ -16373,3 +16373,444 @@ Tempo total da v2: 00:09
 **Proximo passo recomendado:** Validar manualmente que o bloco Top 50 nao aparece mais na tela. Avaliar futuramente se a remocao do calculo de clientesHistoricoTop e clientesDetalhe no backend vale a economia de processamento.
 
 ---
+
+## 2026-07-01 - Cascade - Auditoria tecnica: Taxa de vacuo ativo
+
+**Resumo:** Auditoria tecnica de viabilidade da metrica Taxa de vacuo ativo no dashboard. Mapeados endpoints, funcoes existentes, regras de negocio, riscos de performance e plano de implementacao por etapas. Nenhum codigo funcional foi alterado. Documento detalhado criado em `docs/ia/plano-dashboard-digisac-vacuo-ativo.md`.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md (continuidade)
+- docs/ia/plano-dashboard-digisac-metricas.md
+- src/lib/digisac/dashboard.ts
+- src/lib/digisac/sgi-sync.ts
+- src/lib/digisac/chamadosFinalizados.ts
+- src/lib/digisac/clienteDigisac.ts
+- src/lib/digisac/estatisticas.ts
+- src/app/api/dashboard/pesquisar/route.ts
+- src/app/api/dashboard/estatisticas/route.ts
+- src/app/dashboard/PageClient.tsx
+- src/components/dashboard/FiltrosDashboard.tsx
+- src/types/index.ts
+
+**Arquivos criados:**
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md — documento detalhado com definicao, regras, auditoria, estrategia, riscos, proposta de API/UI, plano por etapas, criterios de aceite e pendencias
+
+**Arquivos alterados:**
+- docs/ia/log_progress.md (esta entrada)
+
+**Confirmado no codigo:**
+- Regra ativo/receptivo: `firstMessage.isFromMe === true` e padrao consolidado em dashboard.ts e sgi-sync.ts
+- `buscarMensagensTicketPaginado()` em sgi-sync.ts busca mensagens via `/messages?where[ticketId]=...` com paginacao
+- Mensagens tem campos: `isFromMe`, `type`, `visible`, `isComment`, `timestamp` — suficientes para identificar resposta do cliente
+- `buscarTicketsPeriodo()` em dashboard.ts ja busca tickets com include de firstMessage, contact, department, user e filtro serviceId
+- `processarEmLotes()` em dashboard.ts permite concorrencia controlada (12 simultaneas)
+- `montarRangeUtcSaoPaulo()` converte datas dd/mm/aaaa para UTC
+- `requireAuthenticatedUser()` protege APIs internas
+- Filtros do dashboard (periodo, departamento, consultora, conexao) ja propagam serviceId para ambas as APIs
+
+**Nao confirmado (hipoteses):**
+- Se endpoint /tickets retorna `startedAt` de forma confiavel para todos os tickets (interface Ticket em dashboard.ts nao tem startedAt, mas DigisacTicket em sgi-sync.ts tem)
+- Se endpoint /messages suporta ordenacao por timestamp ASC (para otimizar busca da primeira resposta)
+- Proporcao de tickets sem firstMessage no periodo do dashboard
+- Limite de rate limit do Digisac para chamadas concorrentes a /messages
+
+**Validacoes realizadas:**
+- Confirmado no codigo: pipeline de calculo e viavel (buscar tickets -> filtrar ativos -> filtrar elegiveis 24h -> buscar mensagens -> calcular taxa)
+- Confirmado no codigo: funcoes reutilizaveis identificadas (fetchDigisac, montarRangeUtcSaoPaulo, processarEmLotes, buscarMensagensTicketPaginado)
+- Confirmado no codigo: riscos de performance mapeados por periodo (1d viavel, 7d viavel, 30d arriscado, 6m inviavel em tempo real)
+- Banco: nao aplicavel (sem alteracoes no Supabase)
+
+**Comandos rodados e resultados:**
+- Nenhum comando rodado (tarefa documental/auditoria, sem alteracao de codigo TypeScript)
+
+**Pendencias:**
+- Validar se /tickets retorna startedAt de forma confiavel
+- Validar se /messages suporta ordenacao por timestamp ASC
+- Validar proporcao de tickets sem firstMessage
+- Validar rate limit do Digisac para chamadas concorrentes a /messages
+- Definir estrategia para periodos > 30 dias
+- Testar calculo com dados reais do Digisac
+- Implementar Etapa 1 (helper vacuoAtivo.ts) quando decidir prosseguir
+
+**Riscos conhecidos:**
+- Performance para periodos longos (30+ dias) pode estourar timeout ou rate limit
+- Tickets sem firstMessage podem exigir busca de mensagens adicional
+- Mensagens paginadas podem exigir varias paginas se ticket tiver muitas mensagens da loja antes da resposta do cliente
+- Limite de 200 candidatos pode gerar dados parciais para periodos longos
+
+**Proximo passo recomendado:** Decidir se prossegue com a implementacao da Etapa 1 (helper `vacuoAtivo.ts`) ou se valida primeiro as hipoteses pendentes com dados reais do Digisac.
+
+---
+
+## 2026-07-01 - Cascade - Implementacao: Taxa de vacuo ativo (primeira versao)
+
+**Resumo:** Implementada primeira versao controlada da metrica Taxa de vacuo ativo no dashboard. Criados helper, API interna protegida, card no frontend e tipos. Busca em lote com fallback individual. Limite de 200 elegiveis. Cache 5min. Sem Supabase, cron, modal ou IA.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md (continuidade)
+- docs/ia/plano-dashboard-digisac-metricas.md
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md
+- src/lib/digisac/dashboard.ts
+- src/lib/digisac/sgi-sync.ts
+- src/lib/digisac/chamadosFinalizados.ts
+- src/lib/digisac/clienteDigisac.ts
+- src/lib/digisac/estatisticas.ts
+- src/app/api/dashboard/estatisticas/route.ts
+- src/app/dashboard/PageClient.tsx
+- src/components/dashboard/CardsEstatisticasDigisac.tsx
+- src/types/index.ts
+
+**Arquivos criados:**
+- src/lib/digisac/vacuoAtivo.ts — helper com calcularVacuoAtivoDashboard(), buscarMensagensClienteLote(), buscarPrimeiraMensagemClienteDoTicket(), cache 5min, limite 200 elegiveis
+- src/app/api/dashboard/vacuo-ativo/route.ts — API POST protegida com requireAuthenticatedUser
+- src/components/dashboard/CardVacuoAtivo.tsx — card com tooltip, estados loading/erro/sem elegiveis/limite excedido/sucesso
+
+**Arquivos alterados:**
+- src/types/index.ts — adicionado tipo VacuoAtivoResponse
+- src/app/dashboard/PageClient.tsx — adicionado import, estado, useEffect e renderizacao do CardVacuoAtivo
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md — secao 15 com detalhes da implementacao
+- docs/ia/log_progress.md (esta entrada)
+
+**Confirmado no codigo:**
+- buscarTicketsPeriodo em dashboard.ts e privada e usa createdAt (nao startedAt) — criada funcao propria buscarTicketsPeriodoVacuo em vacuoAtivo.ts que inclui startedAt
+- firstMessage.isFromMe === true e a regra consolidada para chamado ativo — reutilizada
+- processarEmLotes em dashboard.ts e privada — criada copia local em vacuoAtivo.ts
+- montarRangeUtcSaoPaulo e fetchDigisac sao exportadas e reutilizadas
+- Padrao de API: requireAuthenticatedUser({ requireAllowedUser: true, requireActive: true }) — reutilizado
+- Padrao de card: Tooltip + Skeleton + estados de erro — seguido em CardVacuoAtivo
+
+**Nao confirmado (hipoteses):**
+- Se endpoint /messages aceita ticketId IN — implementado defensivamente (lote com fallback)
+- Se startedAt e retornado de forma confiavel para todos os tickets — fallback para createdAt
+- Se ordenacao ASC em /messages funciona — implementado com fallback se nao trouxer resultados
+
+**Validacoes realizadas:**
+- npx tsc --noEmit --pretty false -> exit 0 (sem erros de tipo)
+- npx eslint nos 5 arquivos alterados -> exit 0 (sem erros de lint)
+- Banco: nao aplicavel (sem alteracoes no Supabase)
+
+**Comandos rodados e resultados:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint src/lib/digisac/vacuoAtivo.ts src/app/api/dashboard/vacuo-ativo/route.ts src/components/dashboard/CardVacuoAtivo.tsx src/app/dashboard/PageClient.tsx src/types/index.ts --quiet -> exit 0
+
+**Pendencias:**
+- Validar com dados reais do Digisac se busca em lote ticketId IN funciona
+- Validar se startedAt e retornado de forma confiavel
+- Validar tempo de resposta para periodo de 7 dias
+- Validar comportamento do card em diferentes cenarios (sem elegiveis, limite excedido, erro)
+- Avaliar futuramente modal/tabela de detalhe auditavel
+
+**Riscos conhecidos:**
+- Performance para periodos longos (30+ dias) — mitigado com limite de 200 + cache 5min
+- Busca em lote pode falhar se Digisac nao suportar ticketId IN — mitigado com fallback individual
+- startedAt pode ser ausente em alguns tickets — mitigado com fallback para createdAt
+- Digisac rate limit em chamadas concorrentes — mitigado com concorrencia de 12
+
+**Proximo passo recomendado:** Testar com dados reais no dashboard (fazer uma pesquisa com periodo de 1-7 dias) e verificar logs do servidor para confirmar se busca em lote funcionou ou se fallback foi usado.
+
+---
+
+## 2026-07-01 - Cascade - Correcao: vacuo ativo retornando 100% artificial
+
+**Resumo:** Corrigido bug onde a Taxa de vacuo ativo retornava 100% indevidamente porque os filtros `where[isFromMe]=false`, `where[visible]=true` e `where[type][$ne]=reaction` na URL do Digisac nao funcionam, zerando todos os resultados. Removidos filtros da URL, filtragem passa a ser 100% no TypeScript. Logs seguros adicionados.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md (continuidade)
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md
+- src/lib/digisac/vacuoAtivo.ts
+
+**Arquivos alterados:**
+- src/lib/digisac/vacuoAtivo.ts — removidos where[isFromMe], where[visible], where[type][$ne] das URLs de /messages em buscarMensagensClienteLote() e buscarPrimeiraMensagemClienteDoTicket(); adicionados logs seguros (mensagensBrutas, mensagensClienteAposFiltro, exemploSeguro sem dados sensíveis); alterado retorno de buscarPrimeiraMensagemClienteDoTicket para incluir totalBrutas
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md — secao 16 com detalhes da correcao
+- docs/ia/log_progress.md (esta entrada)
+
+**Confirmado no codigo:**
+- Filtros where[isFromMe]=false, where[visible]=true, where[type][$ne]=reaction na URL do Digisac retornam 0 mensagens — confirmado por teste real (05/05/2026, Bigorrilho)
+- Funcao ehMensagemRespostaCliente() ja filtra isFromMe === false, visible === true, isComment !== true, type !== 'reaction' no TypeScript — reutilizada
+- Busca em lote e fallback individual ambas afetadas — ambas corrigidas
+
+**Nao confirmado:**
+- Se where[visible]=true isoladamente tambem zera — nao confirmado, removido por seguranca
+- Se where[type][$ne]=reaction isoladamente tambem zera — nao confirmado, removido por seguranca
+
+**Validacoes realizadas:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint src/lib/digisac/vacuoAtivo.ts --quiet -> exit 0
+- Banco: nao aplicavel
+
+**Comandos rodados e resultados:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint src/lib/digisac/vacuoAtivo.ts --quiet -> exit 0
+
+**Pendencias:**
+- Validar manualmente com periodo 05/05/2026, Bigorrilho, todas as conexoes
+- Verificar logs do servidor para confirmar mensagens brutas retornadas e mensagens de cliente apos filtro local
+- Confirmar se a taxa deixa de ser 100% artificial
+
+**Riscos conhecidos:**
+- Volume maior de dados por chamada (mensagens da loja + do cliente), mas perPage=10 no individual e perPage=500 no lote limitam impacto
+- Se mesmo sem filtros na URL o Digisac retornar 0 mensagens, pode haver outro problema no endpoint
+
+**Proximo passo recomendado:** Repetir o teste manual (05/05/2026, Bigorrilho, todas as conexoes) e verificar os logs `[VACUO_ATIVO][LOTE]` e `[VACUO_ATIVO][FALLBACK]` para confirmar que mensagens brutas estao sendo retornadas e filtradas localmente.
+
+---
+
+## 2026-07-01 - Cascade - Correcao: vacuo ativo - busca por contactId
+
+**Resumo:** Corrigido bug onde a busca por `where[ticketId]` retornava registros `type: "ticket"` sem timestamp, nao mensagens reais. Estrategia trocada para buscar por `where[contactId]` com `includeTicketTransfer=true`, filtrando por ticketId e janela 24h no TypeScript. Funcoes antigas removidas, nova funcao buscarMensagensContatoNaJanela criada.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md (continuidade)
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md
+- src/lib/digisac/vacuoAtivo.ts
+
+**Arquivos alterados:**
+- src/lib/digisac/vacuoAtivo.ts — adicionado contactId em MensagemCliente; adicionado type !== 'ticket' em ehMensagemRespostaCliente; removidas buscarMensagensClienteLote e buscarPrimeiraMensagemClienteDoTicket; criada buscarMensagensContatoNaJanela (busca por contactId com includeTicketTransfer=true, perPage=50, ordenacao ASC); substituido bloco de lote+fallback por processarEmLotes com buscarMensagensContatoNaJanela; logs seguros no formato [VACUO_ATIVO][CONTATO] ticket=... contact=... brutas=... comTimestamp=... chat=... cliente=... respondeu=...
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md — secao 17 com detalhes da mudanca de estrategia
+- docs/ia/log_progress.md (esta entrada)
+
+**Confirmado no codigo:**
+- Endpoint /messages com where[ticketId] retorna registros type: "ticket" sem timestamp — confirmado por teste real (122 brutas, 0 com timestamp, 0 chat)
+- Tela real do Digisac usa where[contactId] com includeTicketTransfer=true — confirmado pelo usuario
+- Mensagens reais tem campos ticketId, contactId, timestamp, isFromMe, visible, type, isComment — confirmado pelo usuario
+- type !== 'ticket' adicionado ao filtro local — necessario para excluir registros administrativos
+
+**Nao confirmado:**
+- Se where[visible]=true e where[type][$ne]=reaction funcionam na busca por contactId — nao testado, filtros removidos da URL por seguranca
+- Se range de timestamp na query funciona — nao testado, filtragem feita localmente
+
+**Validacoes realizadas:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint src/lib/digisac/vacuoAtivo.ts --quiet -> exit 0
+- Banco: nao aplicavel
+
+**Comandos rodados e resultados:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint src/lib/digisac/vacuoAtivo.ts --quiet -> exit 0
+
+**Pendencias:**
+- Validar manualmente com periodo 05/05/2026, Bigorrilho, todas as conexoes
+- Verificar se brutas > 0, comTimestamp > 0, chat > 0 nos logs
+- Confirmar se taxa deixa de ser 100% artificial
+- Avaliar se perPage=50 e suficiente ou se algumas conversas precisam mais mensagens
+
+**Riscos conhecidos:**
+- perPage=50 pode nao ser suficiente se o contato tiver muitas mensagens da loja antes da resposta do cliente — se confirmado, aumentar para 100 ou paginar
+- Busca por contactId pode retornar mensagens de outros tickets do mesmo contato — filtrado localmente por ticketId
+- Se contato tiver muitos tickets, a busca pode ser mais lenta — mitigado por concorrencia de 12
+
+**Proximo passo recomendado:** Repetir o teste manual (05/05/2026, Bigorrilho, todas as conexoes) e verificar os logs `[VACUO_ATIVO][CONTATO]` para confirmar que mensagens reais estao sendo retornadas (brutas > 0, comTimestamp > 0, chat > 0) e filtradas localmente.
+
+---
+
+## 2026-07-01 - Cascade - Correcao: vacuo ativo - reutilizacao sgi-sync + timestamp
+
+**Resumo:** Corrigido bug onde a Taxa de vacuo ativo retornava 100% indevidamente. Descoberto que a Inteligencia Comercial ja busca mensagens reais via `buscarMensagensTicketPaginado` de `sgi-sync.ts`. Reutilizada essa funcao. Descoberto tambem que o timestamp do Digisac vem em segundos, nao milissegundos — conversao `* 1000` era necessaria e estava faltando.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md (continuidade)
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md
+- src/lib/digisac/vacuoAtivo.ts
+- src/lib/digisac/sgi-sync.ts (buscarMensagensTicketPaginado, DigisacMensagem)
+- src/lib/ia/transcript.ts (montarTranscriptChamado, formatarTimestamp)
+- src/app/api/sgi/ia/processar-proximo/route.ts (uso do transcript)
+- src/lib/digisac/clienteDigisac.ts (fetchDigisac)
+
+**Arquivos alterados:**
+- src/lib/digisac/vacuoAtivo.ts — import de buscarMensagensTicketPaginado de sgi-sync; removidas buscarMensagensContatoNaJanela, ehMensagemRespostaCliente e interface MensagemCliente; criada buscarRespostaClienteTicket que reutiliza sgi-sync com conversao timestamp*1000; logs seguros [VACUO_ATIVO][SGI-SYNC]
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md — secao 18
+- docs/ia/log_progress.md (esta entrada)
+
+**Confirmado no codigo:**
+- buscarMensagensTicketPaginado em sgi-sync.ts (linha 284) usa where[ticketId] e acessa resp.data — funciona na Inteligencia Comercial
+- buscarMensagensTicketPaginado filtra type === 'chat' && visible !== false && isComment !== true — exclui type: "ticket"
+- transcript.ts linha 14: new Date(timestamp * 1000) — confirma que timestamp vem em segundos
+- O codigo anterior do vacuo ativo comparava m.timestamp (segundos) com aberturaMs (milissegundos) — sempre falso, causando 100% vacuo
+
+**Nao confirmado:**
+- Se perPage=100 default do buscarMensagensTicketPaginado e suficiente para todos os tickets — se ticket tiver mais de 100 mensagens, pode paginar (ate 50 paginas)
+
+**Validacoes realizadas:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint src/lib/digisac/vacuoAtivo.ts --quiet -> exit 0
+- Banco: nao aplicavel
+
+**Comandos rodados e resultados:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint src/lib/digisac/vacuoAtivo.ts --quiet -> exit 0
+
+**Pendencias:**
+- Validar manualmente com periodo 05/05/2026, Bigorrilho, todas as conexoes
+- Verificar se totalMensagens > 0 e comTimestamp > 0 nos logs
+- Confirmar se taxa deixa de ser 100% artificial
+- Avaliar se paginacao automatica do buscarMensagensTicketPaginado causa lentidao para muitos tickets
+
+**Riscos conhecidos:**
+- buscarMensagensTicketPaginado pagina ate 50 paginas de 100 mensagens — pode ser lento para tickets com muitas mensagens
+- Concorrencia de 12 chamadas simultaneas a /messages — pode acionar rate limit do Digisac
+- Se timestamp vier em formato diferente para alguns tickets, pode haver falsos negativos
+
+**Proximo passo recomendado:** Repetir o teste manual (05/05/2026, Bigorrilho, todas as conexoes) e verificar os logs `[VACUO_ATIVO][SGI-SYNC]` para confirmar que totalMensagens > 0, comTimestamp > 0 e respondeuEm24h=true em pelo menos alguns tickets.
+
+---
+
+## 2026-07-01 - Cascade - Auditoria: fluxo Historico do atendimento (Inteligencia Comercial)
+
+**Resumo:** Rastreado o fluxo completo do bloco "Historico do atendimento" na tela de Inteligencia Comercial. Confirmado que o vacuoAtivo.ts ja usa exatamente o mesmo helper (buscarMensagensTicketPaginado de sgi-sync.ts), mesma conversao de timestamp (* 1000) e mesmo campo de direcao (isFromMe === false). Nenhuma correcao adicional necessaria.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md (continuidade)
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md
+- src/components/inteligencia-comercial/ModalDetalheVenda.tsx (linhas 1644-2004: conversaExpandida, conversaCache, formatarTimestampMensagem, fetch /api/sgi/digisac/mensagens)
+- src/app/api/sgi/digisac/mensagens/route.ts (buscarMensagensTicketPaginado, mapeamento mensagensSimplificadas)
+- src/lib/digisac/sgi-sync.ts (buscarMensagensTicketPaginado linha 284, DigisacMensagem interface linha 41)
+- src/lib/ia/transcript.ts (formatarTimestamp linha 14: timestamp * 1000)
+- src/lib/digisac/vacuoAtivo.ts (codigo atual)
+
+**Arquivos alterados:**
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md — secao 19 com auditoria completa
+- docs/ia/log_progress.md (esta entrada)
+
+**Confirmado no codigo:**
+- Componente que renderiza "Historico do atendimento": ModalDetalheVenda.tsx linha 1928
+- API chamada: /api/sgi/digisac/mensagens?ticketId=... (linha 1949)
+- API route: src/app/api/sgi/digisac/mensagens/route.ts — chama buscarMensagensTicketPaginado
+- Helper: buscarMensagensTicketPaginado em sgi-sync.ts linha 284
+- Campo de data: timestamp (segundos, epoch Unix)
+- Campo de direcao: isFromMe (true=loja, false=cliente)
+- Campo de identificacao: ticketId (digisac_ticket_id na tela)
+- buscarMensagensTicketPaginado filtra type === 'chat' && visible !== false && isComment !== true
+- vacuoAtivo.ts linha 3: importa buscarMensagensTicketPaginado de sgi-sync
+- vacuoAtivo.ts linha 149: chama buscarMensagensTicketPaginado(ticket.id)
+- vacuoAtivo.ts linha 161: converte m.timestamp * 1000
+- vacuoAtivo.ts linha 158: filtra m.isFromMe === false
+
+**Nao confirmado:**
+- Se o codigo ja corrigido funciona com dados reais — pendente validacao manual
+
+**Validacoes realizadas:**
+- Auditoria de codigo: confirmado que vacuoAtivo.ts usa o mesmo helper da Inteligencia Comercial
+- Banco: nao aplicavel
+
+**Comandos rodados e resultados:**
+- Nenhum comando TypeScript/lint rodado nesta etapa (sem alteracao de codigo)
+
+**Pendencias:**
+- Validar manualmente com periodo 05/05/2026, Bigorrilho, todas as conexoes
+- Verificar logs [VACUO_ATIVO][SGI-SYNC] para confirmar totalMensagens > 0, comTimestamp > 0, respondeuEm24h=true
+- Confirmar se taxa deixa de ser 100% artificial
+
+**Riscos conhecidos:**
+- Se o teste anterior (com buscarMensagensContatoNaJanela) retornou comTimestamp=0, pode ter sido problema do endpoint por contactId, nao por ticketId — o codigo atual voltou para ticketId via sgi-sync
+- Se mesmo com sgi-sync o timestamp vier null para algumas mensagens, pode haver falsos negativos
+
+**Proximo passo recomendado:** Repetir o teste manual (05/05/2026, Bigorrilho, todas as conexoes) e verificar os logs `[VACUO_ATIVO][SGI-SYNC]`. Se totalMensagens > 0 e comTimestamp > 0, o codigo esta correto. Se totalMensagens = 0, investigar se buscarMensagensTicketPaginado esta retornando dados para esses tickets especificos.
+
+---
+
+## 2026-07-01 - Cascade - Causa real: timestamp string + correcao extrairTimestampMs
+
+**Resumo:** Descoberta a causa real do bug comTimestamp=0. O Digisac retorna `timestamp` como string (ex: "1714900000"), nao number. A interface TypeScript `DigisacMensagem` declara `timestamp?: number` mas TypeScript nao valida tipos em runtime de JSON. O frontend da Inteligencia Comercial funciona porque `new Date(ts * 1000)` faz coercao implicita string->number na multiplicacao. O vacuoAtivo.ts falhava porque `typeof m.timestamp === 'number'` e falso para strings. Corrigido com `extrairTimestampMs` que usa `Number()` para coercao + fallback para `createdAt`.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md (continuidade)
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md
+- src/lib/digisac/vacuoAtivo.ts
+- src/app/api/sgi/digisac/mensagens/route.ts
+- src/lib/digisac/sgi-sync.ts (buscarMensagensTicketPaginado, DigisacMensagem)
+- src/components/inteligencia-comercial/ModalDetalheVenda.tsx (formatarTimestampMensagem linha 1649-1662)
+- src/lib/ia/transcript.ts (formatarTimestamp linha 12-21)
+
+**Arquivos alterados:**
+- src/lib/digisac/vacuoAtivo.ts — adicionada extrairTimestampMs (linha 6-29) com Number() para coercao string->number, tentativa segundos e milissegundos, fallback createdAt; adicionado log diagnostico [VACUO_ATIVO][COMPARE][VACUO] com Object.keys e tipos JS; substituido typeof m.timestamp === 'number' por extrairTimestampMs(m) !== null
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md — secao 20
+- docs/ia/log_progress.md (esta entrada)
+
+**Confirmado no codigo:**
+- API route mensagens/route.ts:27 passa timestamp bruto sem conversao
+- Frontend ModalDetalheVenda.tsx:1652 usa new Date(ts * 1000) — coercao implicita string->number funciona
+- transcript.ts:14 usa new Date(timestamp * 1000) — mesma coercao implicita
+- vacuoAtivo.ts anterior usava typeof m.timestamp === 'number' — falha para string
+- DigisacMensagem interface declara timestamp?: number mas runtime pode retornar string
+
+**Nao confirmado:**
+- Se todas as mensagens do Digisac retornam timestamp como string ou se algumas retornam number — o log diagnostico [VACUO_ATIVO][COMPARE][VACUO] vai confirmar no proximo teste
+- Se o fallback para createdAt sera necessario — so se timestamp nao existir em algumas mensagens
+
+**Validacoes realizadas:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint src/lib/digisac/vacuoAtivo.ts --quiet -> exit 0
+- Banco: nao aplicavel
+
+**Comandos rodados e resultados:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint src/lib/digisac/vacuoAtivo.ts --quiet -> exit 0
+
+**Pendencias:**
+- Validar manualmente com periodo 06/05/2026, Bigorrilho, todas as conexoes
+- Verificar log [VACUO_ATIVO][COMPARE][VACUO] para confirmar tipos reais dos campos
+- Confirmar que comTimestamp > 0 apos correcao
+- Confirmar se taxa deixa de ser 100% artificial
+
+**Riscos conhecidos:**
+- Se timestamp vier como string com casas decimais ou formato nao numerico, Number() pode retornar NaN — porem improvavel para epoch Unix
+- Se o Digisac mudar o formato do timestamp no futuro, extrairTimestampMs pode precisar de ajuste
+- Log diagnostico [VACUO_ATIVO][COMPARE][VACUO] aparece uma vez por ticket — pode gerar muito output se muitos tickets
+
+**Proximo passo recomendado:** Repetir o teste manual (06/05/2026, Bigorrilho, todas as conexoes). Verificar: (1) log [VACUO_ATIVO][COMPARE][VACUO] mostra tipos reais; (2) comTimestamp > 0; (3) cliente > 0 em tickets com resposta; (4) taxa diferente de 100%.
+
+---
+
+## 2026-07-02 - Cascade - Visibilidade dos chamados avaliados (chamadosAvaliados)
+
+**Resumo:** Adicionado campo `chamadosAvaliados` no retorno da API `/api/dashboard/vacuo-ativo` com protocolo, ticketId abreviado, statusVacuo, totalMensagens e mensagensClienteEm24h. Adicionado log seguro `[VACUO_ATIVO][AVALIADOS]`. Adicionado botao expansivel "Ver chamados avaliados" no CardVacuoAtivo. Modificado `buscarRespostaClienteTicket` para contar todas as mensagens do cliente em 24h (antes fazia early return na primeira).
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md (continuidade)
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md
+- src/lib/digisac/vacuoAtivo.ts
+- src/app/api/dashboard/vacuo-ativo/route.ts
+- src/components/dashboard/CardVacuoAtivo.tsx
+- src/app/dashboard/PageClient.tsx (grep CardVacuoAtivo)
+- src/types/index.ts (VacuoAtivoResponse)
+
+**Arquivos alterados:**
+- src/types/index.ts — adicionada interface ChamadoAvaliadoVacuo e campo chamadosAvaliados? em VacuoAtivoResponse
+- src/lib/digisac/vacuoAtivo.ts — buscarRespostaClienteTicket conta todas as mensagens do cliente em 24h; calcularVacuoAtivoDashboard constroi chamadosAvaliados e loga [VACUO_ATIVO][AVALIADOS]; import de ChamadoAvaliadoVacuo
+- src/components/dashboard/CardVacuoAtivo.tsx — adicionado useState mostrarAvaliados, botao expansivel e lista de chamados
+- docs/ia/plano-dashboard-digisac-vacuo-ativo.md — secao 21
+- docs/ia/log_progress.md (esta entrada)
+
+**Confirmado no codigo:**
+- TicketVacuo tem campo protocol?: string | number (linha 46)
+- Protocol convertido para String() no retorno
+- buscarRespostaClienteTicket agora percorre todas as mensagens (sem early return)
+- Log [VACUO_ATIVO][AVALIADOS] loga apenas dados sanitizados
+- CardVacuoAtivo mostra lista expansivel com protocolo, status e mensagens do cliente
+
+**Nao confirmado:**
+- Se o protocolo vem populado do Digisac para todos os tickets — so com teste real
+
+**Validacoes realizadas:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint src/lib/digisac/vacuoAtivo.ts src/components/dashboard/CardVacuoAtivo.tsx src/types/index.ts --quiet -> exit 0
+- Banco: nao aplicavel
+
+**Comandos rodados e resultados:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint src/lib/digisac/vacuoAtivo.ts src/components/dashboard/CardVacuoAtivo.tsx src/types/index.ts --quiet -> exit 0
+
+**Pendencias:**
+- Validar manualmente com periodo 06/05/2026, Bigorrilho, todas as conexoes
+- Verificar log [VACUO_ATIVO][AVALIADOS] mostra protocolos corretos
+- Validar que protocolo do chamado aparece na lista e bate com Digisac
+- Confirmar que comTimestamp > 0 apos correcao extrairTimestampMs
+
+**Riscos conhecidos:**
+- Se protocol vier null para alguns tickets, a lista mostrara "—" — nao e bug, apenas falta de dado
+- buscarRespostaClienteTicket agora percorre todas as mensagens em vez de parar na primeira — impacto minimo em performance pois ja percorria a maioria
+- Log [VACUO_ATIVO][AVALIADOS] pode gerar output longo se muitos tickets — aceitavel para validacao
+
+**Proximo passo recomendado:** Repetir o teste manual (06/05/2026, Bigorrilho, todas as conexoes). Verificar: (1) log [VACUO_ATIVO][AVALIADOS] mostra protocolos; (2) botao "Ver chamados avaliados" funciona no card; (3) comTimestamp > 0; (4) taxa diferente de 100%.
+
+---

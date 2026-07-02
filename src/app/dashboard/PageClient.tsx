@@ -2,10 +2,11 @@
 
 import { Cell } from 'recharts';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { DashboardLinha, DashboardLinhaConsultora, DashboardResponse, EstatisticasDigisacResponse } from '@/types';
+import { DashboardLinha, DashboardLinhaConsultora, DashboardResponse, EstatisticasDigisacResponse, VacuoAtivoResponse } from '@/types';
 import { FiltrosDashboard } from '@/components/dashboard/FiltrosDashboard';
 import { CardsEstatisticasDigisac } from '@/components/dashboard/CardsEstatisticasDigisac';
 import { GraficoMensagensDigisac } from '@/components/dashboard/GraficoMensagensDigisac';
+import { CardVacuoAtivo } from '@/components/dashboard/CardVacuoAtivo';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -30,6 +31,9 @@ export default function Page() {
   const [estatisticasDigisac, setEstatisticasDigisac] = useState<EstatisticasDigisacResponse | null>(null);
   const [isLoadingEstatisticas, setIsLoadingEstatisticas] = useState(false);
   const [errorEstatisticas, setErrorEstatisticas] = useState<string | null>(null);
+  const [vacuoAtivo, setVacuoAtivo] = useState<VacuoAtivoResponse | null>(null);
+  const [isLoadingVacuoAtivo, setIsLoadingVacuoAtivo] = useState(false);
+  const [errorVacuoAtivo, setErrorVacuoAtivo] = useState<string | null>(null);
 
   const handlePesquisar = useCallback(async (filtros: FiltrosDashboardType) => {
     setIsLoading(true);
@@ -89,6 +93,44 @@ export default function Page() {
 
     return () => controller.abort();
   }, [currentFiltros?.dataInicio, currentFiltros?.dataFim, currentFiltros?.serviceId]);
+
+  useEffect(() => {
+    if (!currentFiltros?.dataInicio || !currentFiltros?.dataFim) return;
+
+    const controller = new AbortController();
+
+    (async () => {
+      setIsLoadingVacuoAtivo(true);
+      setErrorVacuoAtivo(null);
+
+      try {
+        const response = await fetch('/api/dashboard/vacuo-ativo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dataInicio: currentFiltros.dataInicio,
+            dataFim: currentFiltros.dataFim,
+            departmentIds: currentFiltros.departmentIds || undefined,
+            userIds: currentFiltros.userIds || undefined,
+            serviceId: currentFiltros.serviceId || undefined,
+          }),
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`Erro na requisição: ${response.status}`);
+        const result: VacuoAtivoResponse = await response.json();
+        setVacuoAtivo(result);
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        const errorMessage = err instanceof Error ? err.message : 'Erro ao buscar taxa de vácuo ativo';
+        setErrorVacuoAtivo(errorMessage);
+        console.error('[UI][DASHBOARD][VACUO_ATIVO] erro:', errorMessage);
+      } finally {
+        setIsLoadingVacuoAtivo(false);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [currentFiltros?.dataInicio, currentFiltros?.dataFim, currentFiltros?.departmentIds, currentFiltros?.userIds, currentFiltros?.serviceId]);
 
   const chartDataFiliais = useMemo(() => {
     const linhas = data?.linhas || [];
@@ -232,6 +274,11 @@ export default function Page() {
           diario={estatisticasDigisac?.diario ?? []}
           isLoading={isLoadingEstatisticas}
           error={errorEstatisticas}
+        />
+        <CardVacuoAtivo
+          data={vacuoAtivo}
+          isLoading={isLoadingVacuoAtivo}
+          error={errorVacuoAtivo}
         />
       </div>
 

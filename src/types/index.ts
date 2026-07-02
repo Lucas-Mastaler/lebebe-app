@@ -214,3 +214,24 @@ export interface ServicoDigisacDashboard {
 export interface ServicosDigisacResponse {
   servicos: ServicoDigisacDashboard[];
 }
+
+export interface ChamadoAvaliadoVacuo {
+  protocol: string | null;
+  ticketId: string;
+  statusVacuo: 'vacuo' | 'respondido_em_24h';
+  temRespostaClienteEm24h: boolean;
+  totalMensagens: number;
+  mensagensClienteEm24h: number;
+}
+
+export interface VacuoAtivoResponse {
+  taxaVacuoAtivo: number | null;
+  chamadosAtivosTotal: number;
+  chamadosAtivosElegiveis: number;
+  chamadosEmVacuo: number | null;
+  chamadosRespondidosEm24h: number | null;
+  calculado: boolean;
+  limiteExcedido: boolean;
+  mensagem: string | null;
+  chamadosAvaliados?: ChamadoAvaliadoVacuo[];
+}

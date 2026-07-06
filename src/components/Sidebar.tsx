@@ -74,10 +74,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     const router = useRouter();
     const [loggingOut, setLoggingOut] = useState(false);
     const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-        'VENDAS': true,
-        'PROCURAR DATAS': true,
-        'OPERAÇÃO': true,
-        'CONFIGURAÇÕES': true,
+        'VENDAS': false,
+        'PROCURAR DATAS': false,
+        'OPERAÇÃO': false,
+        'CONFIGURAÇÕES': false,
     });
 
     const { loading: permLoading, acessoTotal, chavesPermitidas } = usePermissoes();

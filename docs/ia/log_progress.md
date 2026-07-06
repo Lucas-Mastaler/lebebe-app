@@ -1,3 +1,85 @@
+## 2026-07-06 - Cascade - Reorganizacao menu lateral em submenus expansiveis
+
+**Resumo:** Menu lateral do Sidebar reorganizado de lista plana (14 itens) para 4 grupos expansiveis: VENDAS, PROCURAR DATAS, OPERACAO, CONFIGURACOES. Item "AUDITORIA" renomeado para "AUDITORIA ACESSOS" (rota preservada). Permissoes, rotas, moduleKey e superadminOnly preservados. Adicionado estado de expand/collapse por grupo com auto-expansao do grupo ativo. Modo colapsado (icones) mantem lista plana como antes.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md
+- src/components/Sidebar.tsx
+- src/lib/hooks/usePermissoes.ts
+- src/lib/auth/module-access.ts
+- src/app/api/me/permissoes/route.ts
+- package.json
+
+**Arquivos alterados:**
+- src/components/Sidebar.tsx (reestruturacao do menu lateral)
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- npx eslint src/components/Sidebar.tsx — passou sem erros
+- npx tsc --noEmit — passou sem erros
+
+**Comandos rodados e resultados:**
+- `npx eslint src/components/Sidebar.tsx` → exit 0, sem output (sem erros)
+- `npx tsc --noEmit --pretty` → exit 0, sem output (sem erros)
+
+**Pendencias:**
+- Nao foi rodado `npm run build` (pode ser demorado no ambiente).
+- Teste manual em mobile e desktop recomendado para validar UX dos grupos expansiveis.
+
+**Riscos conhecidos:**
+- Adicionado `overflow-y-auto` ao nav para evitar overflow com mais itens visiveis (4 headers de grupo + 14 itens quando tudo expandido). Mudanca minima de estilo, nao altera layout existente.
+- Auto-expansao do grupo ativo pode impedir usuario de recolher manualmente o grupo que contem a pagina atual. Comportamento padrao de UX para menus expansiveis.
+- CONFIG BUSCA movido de superadminNavItems para grupo PROCURAR DATAS, mantendo flag `superadminOnly: true`. Visibilidade preservada.
+
+**Proximo passo recomendado:**
+- Rodar `npm run build` se desejar validacao completa.
+- Testar manualmente: expandir/recolher grupos, navegar entre paginas, validar indicacao de pagina ativa dentro de submenus, testar em mobile.
+
+## 2026-07-06 - Cascade - Frente 0/Controle: validacao manual do caso Sao Jose dos Pinhais
+
+**Resumo:** Validacao manual autenticada da correcao de producao da Frente 1 (resolucao/cache de coordenadas de pontos reais da agenda) usando um segundo caso real: Sao Jose dos Pinhais (CEP 83025140, Rua Barao do Cerro Azul, 293, Bom Jesus). O run anterior `f2b88752-11fe-485c-b2e8-b2ba6dea6f32` tinha divergencia: retornou 20/08, 21/08 e 22/08 como normais, mas a auditoria recalculou esses slots como indisponiveis por filtro early. Apos hard refresh e nova execucao, esses slots nao apareceram mais. O novo run `e8ce2665-1b59-4e0c-8c81-d662d7a593ee` confirmou resultados corretos sem divergencias. Status: correcao validada em segundo caso.
+
+**Arquivos lidos:**
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- docs/ia/log_progress.md
+
+**Arquivos alterados:**
+- docs/ia/log_progress.md (esta entrada)
+- docs/procurar-datas-motor-v2-progresso.md (nova entrada de validacao)
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md (entrada breve de segunda validacao)
+
+**Validacoes realizadas:**
+- Nova pesquisa real equivalente ao caso Sao Jose dos Pinhais executada em producao v2
+- Novo runId: `e8ce2665-1b59-4e0c-8c81-d662d7a593ee`
+- Novo pesquisaAuditoriaId: `7a95fee3-dac9-424d-8b27-fd4e0ce37873`
+- Entrada: CEP 83025140, numero 293, Rua Barao do Cerro Azul, Bom Jesus, Sao Jose dos Pinhais/PR, data inicial 2026-08-20, tempo 00:40, item DIVERSOS/CAMA, valor minimo R$ 120
+- Resultados da nova pesquisa:
+  1. `24/08/2026 / EQUIPE 1 / normal / R$ 120`
+  2. `25/08/2026 / EQUIPE 1 / normal / R$ 120`
+  3. `26/08/2026 / EQUIPE 1 / especial / R$ 220`
+  4. `27/08/2026 / EQUIPE 1 / normal / R$ 120`
+- Auditoria do novo run:
+  - diagnostico real disponivel: true
+  - agenda real lida: true
+  - disponibilidade real lida: true
+  - candidatos reais: 122
+  - insercao real completa: true
+  - comparacao sem divergencias
+  - 26/08 passou pelo filtro early com Haversine 5.9 km <= limite 12 km, OSRM/delta calculado, tipo atual especial
+- Run anterior `f2b88752-11fe-485c-b2e8-b2ba6dea6f32` retornou 20/08, 21/08, 22/08 como normais; auditoria recalculou como indisponiveis por filtro early; apos hard refresh e nova execucao esses slots nao apareceram mais
+- Validacao final deve considerar o novo run `e8ce2665-1b59-4e0c-8c81-d662d7a593ee`
+
+**Pendencias:**
+- Mesma pendencia do caso Capivari/Araucaria: ainda nao ha snapshot historico completo de agenda/cache/candidatos por execucao.
+- A auditoria por Run ID continua util para validar casos futuros.
+
+**Riscos conhecidos:**
+- O run anterior `f2b88752` mostrou que dados de cache/coordenadas podem estar desatualizados entre execucoes. Apos hard refresh os resultados convergiram. Isso reforca a pendencia de snapshot historico.
+
+**Proximo passo recomendado:**
+- Seguir para a proxima pendencia da migracao, mantendo a auditoria por Run ID para validar casos futuros.
+
 ## 2026-07-08 - Cascade - Digisac: Limite fechamento 20 -> 100
 
 **Resumo:** Aumentado o limite de registros processados simultaneamente de 20 para 100, tanto no cron quanto no fechamento em lote via tela. Nenhuma outra alteracao.

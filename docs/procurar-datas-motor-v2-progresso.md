@@ -1,3 +1,32 @@
+## 2026-07-06 - Cascade - Frente 0/Controle: validacao manual do caso Sao Jose dos Pinhais
+
+Status: correcao validada em producao v2 em segundo caso real. Nenhuma alteracao de codigo, motor, banco ou Apps Script.
+
+### Validacao manual autenticada
+- Nova pesquisa real equivalente ao caso Sao Jose dos Pinhais executada em producao v2.
+- Novo runId: `e8ce2665-1b59-4e0c-8c81-d662d7a593ee`.
+- Novo pesquisaAuditoriaId: `7a95fee3-dac9-424d-8b27-fd4e0ce37873`.
+- Entrada: CEP 83025140, numero 293, Rua Barao do Cerro Azul, Bom Jesus, Sao Jose dos Pinhais/PR, data inicial 2026-08-20, tempo 00:40, item DIVERSOS/CAMA, valor minimo R$ 120.
+- Resultados:
+  1. `24/08/2026 / EQUIPE 1 / normal / R$ 120`
+  2. `25/08/2026 / EQUIPE 1 / normal / R$ 120`
+  3. `26/08/2026 / EQUIPE 1 / especial / R$ 220`
+  4. `27/08/2026 / EQUIPE 1 / normal / R$ 120`
+- Auditoria do novo run: diagnostico real disponivel, agenda real lida, disponibilidade real lida, 122 candidatos reais, insercao real completa true, comparacao sem divergencias.
+- 26/08 passou pelo filtro early com Haversine 5.9 km <= limite 12 km, OSRM/delta calculado, tipo atual especial.
+
+### Run anterior divergente
+- Run `f2b88752-11fe-485c-b2e8-b2ba6dea6f32` retornou 20/08, 21/08 e 22/08 como normais.
+- Auditoria recalculou esses slots como indisponiveis por filtro early.
+- Apos hard refresh e nova execucao, esses slots nao apareceram mais.
+- Validacao final deve considerar o novo run `e8ce2665-1b59-4e0c-8c81-d662d7a593ee`.
+
+### Pendencia ainda existente
+- Mesma pendencia do caso Capivari/Araucaria: ainda nao ha snapshot historico completo de agenda/cache/candidatos por execucao.
+- O run anterior `f2b88752` mostrou que dados de cache/coordenadas podem estar desatualizados entre execucoes. Apos hard refresh os resultados convergiram. Isso reforca a pendencia de snapshot historico.
+
+---
+
 ## 2026-07-07 - Cascade - Bugfix: encomenda no adaptador v2->legado validado
 
 Status: implementado e validado manualmente. Correcao de equivalencia legado x v2.

@@ -56,6 +56,22 @@ Status: correcao validada em producao v2. Nenhuma alteracao de codigo, motor, ba
 
 ---
 
+## 2026-07-06 - Cascade - Frente 0/Controle: segunda validacao do caso Sao Jose dos Pinhais
+
+Status: correcao validada em segundo caso real. Nenhuma alteracao de codigo, motor, banco ou Apps Script.
+
+### Validacao manual autenticada
+- Segunda validacao da mesma regra do caso Capivari/Araucaria: ponto real de agenda sem coordenada nao pode virar rota simples silenciosa.
+- Caso: Sao Jose dos Pinhais (CEP 83025140, Rua Barao do Cerro Azul, 293, Bom Jesus).
+- Novo runId: `e8ce2665-1b59-4e0c-8c81-d662d7a593ee`.
+- Resultados corretos: 24/08 normal, 25/08 normal, 26/08 especial, 27/08 normal.
+- Auditoria: 122 candidatos reais, insercao real completa, sem divergencias.
+- 26/08 passou pelo filtro early com Haversine 5.9 km <= limite 12 km; OSRM/delta calculado; tipo especial confirmado.
+- Run anterior `f2b88752-11fe-485c-b2e8-b2ba6dea6f32` tinha divergencia (20/08, 21/08, 22/08 como normais); apos hard refresh e nova execucao os slots divergentes nao apareceram mais.
+- Validacao final deve considerar o novo run `e8ce2665-1b59-4e0c-8c81-d662d7a593ee`.
+
+---
+
 ## 2026-07-06 - Codex - Frente 1: coordenadas reais da agenda antes da rota simples
 
 Status: implementado em producao v2, sem alterar ranking/classificacao/limites/OSRM/Apps Script/banco.

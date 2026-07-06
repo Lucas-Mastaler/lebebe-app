@@ -1,3 +1,178 @@
+## 2026-07-08 - Cascade - Digisac: Limite fechamento 20 -> 100
+
+**Resumo:** Aumentado o limite de registros processados simultaneamente de 20 para 100, tanto no cron quanto no fechamento em lote via tela. Nenhuma outra alteracao.
+
+**Arquivos alterados:**
+- src/app/api/cron/digisac-finalizacoes-automaticas/route.ts: `LIMITE_FECHAMENTO` de 20 para 100
+- src/app/api/digisac/finalizacoes-automaticas/fechar-selecionados/route.ts: `LIMITE_MAX_IDS` de 20 para 100
+
+**Validacoes:**
+- `npx tsc --noEmit` — passou sem erros
+
+## 2026-07-06 - Cascade/GLM-5.2 - Frente 0/Controle: validacao manual do caso Capivari/Araucaria
+
+**Resumo:** Validacao manual autenticada da correcao de producao da Frente 1 (resolucao/cache de coordenadas de pontos reais da agenda antes de permitir rota simples). O caso Capivari/Araucaria foi reexecutado em producao v2 apos a correcao. O resultado problematico `17/08/2026 / EQUIPE 1 / normal` nao apareceu mais. A auditoria por Run ID confirmou que nao houve divergencia nos campos recalculados disponiveis. Status: correcao validada.
+
+**Arquivos lidos:**
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- docs/ia/log_progress.md
+
+**Arquivos alterados:**
+- docs/ia/log_progress.md (esta entrada)
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md (nova entrada de decisao validada)
+- docs/procurar-datas-motor-v2-progresso.md (nova entrada de validacao manual)
+
+**Validacoes realizadas:**
+- Nova pesquisa real equivalente ao caso Capivari/Araucaria executada em producao v2
+- Novo runId: `ac4c1eb0-c9fa-49ae-9c68-6e8a61955f36`
+- Novo pesquisaAuditoriaId: `853d719d-2c4f-443e-a530-7fa217e1142b`
+- Resultados da nova pesquisa:
+  1. `15/08/2026 / Sabado / EQUIPE 1 / R$ 210 / Normal / Nao`
+  2. `24/08/2026 / Segunda / EQUIPE 1 / R$ 150 / Normal / Nao`
+  3. `25/08/2026 / Terca / EQUIPE 1 / R$ 150 / Normal / Nao`
+- O resultado `17/08/2026 / EQUIPE 1 / normal` nao apareceu mais
+- Auditoria do novo run:
+  - diagnostico real disponivel: true
+  - agenda real lida: true (google-sheets, 506 linhas)
+  - disponibilidade real lida: true (google-sheets, 200 linhas)
+  - candidatos reais: 130
+  - comparacao salvo x recalculado: nenhuma divergencia detectada nos campos recalculados disponiveis
+  - blocos sinteticos nao usados como conclusao
+- Validacoes tecnicas anteriores (ja registradas): tsc passou, 30 testes de coordenadas/km passaram, 14 testes de pesquisar-datas-v2/pesquisar-compat-async passaram, ESLint passou, GET /procurar-datas/dev-v2 HTTP 200, POST /auditar-run sem sessao 401 esperado
+
+**Pendencias:**
+- Ainda nao ha snapshot historico completo de agenda/cache/candidatos por execucao. Auditorias antigas podem depender do estado atual da planilha/cache.
+- Avaliar futuramente persistencia detalhada de execucao (agenda lida, disponibilidade, cache/coordenadas, candidatos brutos, candidatos classificados, km por slot, decisoes de filtro). Nao bloqueia a validacao atual.
+- A auditoria por Run ID continua util para validacoes futuras.
+
+**Riscos conhecidos:**
+- A causa historica exata do run antigo `f7a85e40` nao e 100% confirmada porque o snapshot do momento da busca nao foi persistido. A hipotese mais provavel e que a v2 nao tinha coordenadas dos pontos da agenda naquele momento.
+
+**Proximo passo recomendado:**
+- Seguir para a proxima pendencia da migracao, mantendo a auditoria por Run ID para validar casos futuros.
+
+## 2026-07-08 - Cascade - Digisac Multi-Conexao: UI Conexoes + POST Toggle
+
+**Resumo:** Adicionada secao "Conexoes Digisac" na tela de finalizacoes automaticas, listando todas as conexoes disponiveis com status Ativa/Inativa e botoes Ativar/Desativar. Criado POST handler na rota `/api/digisac/finalizacoes-automaticas/conexoes` para toggle de `ativo` na tabela `digisac_conexoes_automacao`. Botao "Registrar pendentes" renomeado para "Atualizar chamados" com texto explicativo. Filtro de conexao renomeado para "Todas habilitadas". Nao altera cron, fechamento, payload Digisac ou vercel.json. Typecheck passou sem erros.
+
+**Arquivos lidos:**
+- src/app/api/digisac/finalizacoes-automaticas/conexoes/route.ts (leitura completa)
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx (leitura completa)
+
+**Arquivos alterados:**
+- src/app/api/digisac/finalizacoes-automaticas/conexoes/route.ts:
+  - Adicionado POST handler: recebe `{ serviceId, ativo }`, valida, atualiza ou insere na tabela `digisac_conexoes_automacao`
+  - Se ativar e registro existe: update ativo=true
+  - Se ativar e registro nao existe: insert com service_id e ativo=true
+  - Se desativar: update ativo=false
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx:
+  - Adicionado estado: `toggleConexaoId`, `erroConexao`, `sucessoConexao`
+  - Adicionado `carregarConexoes()` como funcao reutilizavel (substitui fetch inline)
+  - Adicionado `handleToggleConexao(serviceId, serviceName, ativoAtual)` — chama POST, recarrega conexoes, reseta filtro se necessario
+  - Renomeado botao "Registrar pendentes" para "Atualizar chamados" com icone RefreshCw
+  - Adicionado texto explicativo: "Busca no Digisac novos chamados elegiveis e registra como pendentes. Nao finaliza chamados."
+  - Adicionada secao "Conexoes Digisac" com grid de cards mostrando nome, status (badge Ativa/Inativa) e botao toggle
+  - Filtro renomeado de "Todas as conexoes" para "Todas habilitadas"
+  - Imports: adicionado Wifi, WifiOff do lucide-react
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit` — passou sem erros
+- API GET /conexoes — validada pelo usuario: 5 disponiveis, 1 habilitada (BIGORRILHO)
+- Migration aplicada manualmente pelo usuario (MCP indisponivel)
+
+**Pendencias:**
+- Testar toggle Ativar/Desativar na tela
+- Testar "Atualizar chamados" com conexao especifica selecionada
+- Validar RLS da tabela via MCP quando disponivel
+
+## 2026-07-08 - Cascade - Digisac Multi-Conexao: Finalizacoes Automaticas
+
+**Resumo:** Adaptacao do modulo de finalizacoes automaticas Digisac para suportar multiplas conexoes dinamicas. Antes funcionava apenas com Bigorrilho hardcoded. Agora busca conexoes habilitadas da tabela `digisac_conexoes_automacao` (a criar via migration). Diagnostico, registro, fechamento (unitario + lote + verificar-status) e cron todos adaptados para serviceId dinamico. Frontend atualizado com filtro de conexao e coluna "Conexao" na tabela. Cron mantem limite global de 20 pendentes e schedule `0 21 * * *` (18h SP). Typecheck passou sem erros.
+
+**Arquivos lidos:**
+- src/lib/digisac/finalizacoesAutomaticas.ts (leitura completa)
+- src/lib/digisac/estatisticas.ts (leitura parcial - listarServicosDigisac)
+- src/lib/digisac/clienteDigisac.ts (leitura completa)
+- src/app/api/digisac/finalizacoes-automaticas/route.ts (leitura completa)
+- src/app/api/digisac/finalizacoes-automaticas/diagnostico/route.ts (leitura completa)
+- src/app/api/digisac/finalizacoes-automaticas/registrar-pendentes/route.ts (leitura completa)
+- src/app/api/digisac/finalizacoes-automaticas/fechar-selecionados/route.ts (leitura completa)
+- src/app/api/digisac/finalizacoes-automaticas/[id]/fechar/route.ts (leitura completa)
+- src/app/api/digisac/finalizacoes-automaticas/[id]/verificar-status/route.ts (leitura completa)
+- src/app/api/cron/digisac-finalizacoes-automaticas/route.ts (leitura completa)
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx (leitura completa)
+- src/app/api/dashboard/estatisticas/servicos/route.ts (leitura completa)
+- src/components/dashboard/FiltrosDashboard.tsx (leitura completa)
+- src/app/dashboard/PageClient.tsx (leitura parcial)
+- src/types/index.ts (leitura parcial - ServicoDigisacDashboard)
+- vercel.json (leitura completa)
+
+**Arquivos criados:**
+- supabase-migration-digisac-conexoes-automacao.sql: Migration SQL para criar tabela `digisac_conexoes_automacao` com RLS (superadmin only) e seed inicial do Bigorrilho
+- src/app/api/digisac/finalizacoes-automaticas/conexoes/route.ts: Rota GET que lista conexoes disponiveis no Digisac cruzando com habilitadas na tabela
+
+**Arquivos alterados:**
+- src/lib/digisac/finalizacoesAutomaticas.ts:
+  - Adicionado interface `ConexaoAutomacao`
+  - Adicionado `buscarConexoesHabilitadas(supabase)` — busca conexoes ativas na tabela
+  - Adicionado `isConexaoHabilitada(supabase, serviceId)` — verifica se serviceId esta habilitado
+  - Adicionado campo `serviceId` em `FiltrosListagemFechamentos`
+- src/app/api/digisac/finalizacoes-automaticas/diagnostico/route.ts:
+  - Removido hardcoded `BIGORRILHO_SERVICE_ID`
+  - Aceita query param `serviceId` (default: primeira conexao habilitada)
+  - Valida serviceId contra conexoes habilitadas
+  - Renomeado campos `conexaoConfirmadaBigorrilho` → `conexaoConfirmada`
+  - Funcao `buscarTicketsAbertosBigorrilho` → `buscarTicketsAbertos(serviceIdAlvo)`
+  - `extrairDadosConexao` agora recebe `serviceIdAlvo` como parametro
+- src/app/api/digisac/finalizacoes-automaticas/registrar-pendentes/route.ts:
+  - Rewrite completo para multi-conexao
+  - Aceita body `{ serviceId?: string }` — se vazio, processa todas habilitadas
+  - Para cada conexao: chama diagnostico com serviceId, filtra confirmados, insere pendentes
+  - Retorna `resultadosPorConexao` com detalhes por conexao
+- src/app/api/digisac/finalizacoes-automaticas/fechar-selecionados/route.ts:
+  - Substituido `BIGORRILHO_SERVICE_ID` check por `isConexaoHabilitada(supabase, reg.service_id)`
+- src/app/api/digisac/finalizacoes-automaticas/[id]/fechar/route.ts:
+  - Substituido `BIGORRILHO_SERVICE_ID` check por `isConexaoHabilitada(supabase, reg.service_id)`
+- src/app/api/digisac/finalizacoes-automaticas/[id]/verificar-status/route.ts:
+  - Substituido `BIGORRILHO_SERVICE_ID` check por `isConexaoHabilitada(supabase, reg.service_id)`
+- src/app/api/digisac/finalizacoes-automaticas/route.ts (listagem):
+  - Adicionado filtro `serviceId` nos query params e na query Supabase
+- src/app/api/cron/digisac-finalizacoes-automaticas/route.ts:
+  - Removido import `BIGORRILHO_SERVICE_ID`
+  - Adicionado `buscarConexoesHabilitadas` para iterar sobre todas conexoes
+  - Para cada conexao: chama diagnostico com serviceId, registra pendentes
+  - Busca pendentes com `.in('service_id', serviceIdsHabilitados)` mantendo limite global 20
+  - Renomeado `conexaoConfirmadaBigorrilho` → `conexaoConfirmada` nos tipos
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx:
+  - Adicionado estado `filtroConexao` e `conexoes`
+  - Fetch de conexoes ao montar componente
+  - Filtro de conexao no dropdown (apenas habilitadas)
+  - Passa `serviceId` na listagem e no registrar-pendentes
+  - Adicionada coluna "Conexao" na tabela
+  - Grid de filtros expandido para 5 colunas
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit` — passou sem erros
+- MCP Supabase: NAO VALIDADO (MCP indisponivel por erro de transporte)
+
+**Pendencias:**
+- **CRITICO:** Aplicar migration `supabase-migration-digisac-conexoes-automacao.sql` no Supabase via MCP quando disponivel
+- Validar RLS policies da tabela `digisac_conexoes_automacao` (assumido padrao `usuarios_permitidos` — confirmar quando MCP disponivel)
+- Validar se tabela `usuarios_permitidos` existe e tem colunas `email`, `ativo`, `role` (assumido baseado em padrao do projeto — nao confirmado)
+- Testar fluxo completo com multiplas conexoes apos migration aplicada
+- Considerar criar rota POST/PUT para toggle de conexao habilitada (atualmente apenas GET)
+
+**Riscos conhecidos:**
+- Se a tabela `digisac_conexoes_automacao` nao existir, todas as rotas retornarao erro 500
+- Se `usuarios_permitidos` nao tiver a estrutura assumida, RLS pode falhar
+- O seed inicial da migration assume department_id `4de92f03-ff0a-49c3-b167-07603ae01569` — confirmar se correto
+
+**Proximo passo recomendado:**
+- Aplicar migration via MCP Supabase quando disponivel
+- Validar estrutura da tabela e RLS
+- Testar com segunda conexao habilitada
+
 ## 2026-07-07 - Cascade - Bugfix: encomenda no adaptador v2->legado + diagnostico fonte sintetica
 
 **Resumo:** (1) Correcao de bug inequivoco no adaptador `adaptar-saida-v2-para-legado.ts`: campo `encomenda` era hardcoded como 'Nao' para todos os candidatos. Agora replica a regra do legado Apps Script (CEP-APIBACK.gs linha 1510): `tipoBerco === 'NIDO' ? diasAte > 90 : diasAte > 60` → 'Sim' : 'Nao'. (2) Correcao de base temporal: `diasAte` agora calculado contra a data atual (hoje), nao contra `dataInicial` da busca — conforme legado (CEP-APIBACK.gs linha 1473: `diasAte = Math.ceil((v.date - hoje) / 86400000)`). Adicionada funcao `obterHojeISO()` que retorna a data atual em UTC. (3) Melhoria no diagnostico: bloco `diagnosticoReclassificacaoComKmMapaSlot` agora expoe `fonteCandidatos: 'sintetica'` e `fonteDisponibilidade: 'sintetica'` para evitar confusao entre dados sinteticos hardcoded e producao real. Nao altera producao (logica), classificacao, recorte, limites, disponibilidade sintetica, frontend, banco, migrations, RLS, queries, OSRM, Haversine, ranking, pre-agendamento ou Apps Script.
@@ -17777,3 +17952,126 @@ Reabrir `/procurar-datas/dev-v2` em sessao superadmin, auditar `f7a85e40-56db-4e
 
 **Proximo passo recomendado:**
 Rodar a auditoria pelo botao em `/procurar-datas/dev-v2` com sessao superadmin e copiar o JSON para confirmar o km por insercao real do caso 17/08.
+
+---
+
+## 2026-07-06 - Codex - Procurar datas v2: auditoria de filtro early legado por Run ID
+
+**Resumo:** Auditoria do run `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488` e ajuste incremental em `/api/procurar-datas/v2/auditar-run` e `/procurar-datas/dev-v2`. Foi confirmada no Apps Script a regra legacy que descarta slots com pontos quando a menor distancia Haversine ponto da agenda -> novo destino excede `MAX_POINT_KM * 1.5`, antes de OSRM de ancora e antes do delta de insercao. A auditoria agora expoe detalhes do filtro early e nao marca insercao real como completa quando o delta foi interrompido por esse filtro. Nao altera producao, ranking, classificacao, limites, OSRM, Apps Script, banco, migrations ou policies.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md
+- .devin/rules/gerais.md
+- .devin/rules/continuidade-agente.md
+- .devin/rules/supabase.md
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- appscript/CEP-APIBACK.gs
+- appscript/CEP-CONFIG.gs
+- src/app/api/procurar-datas/v2/auditar-run/route.ts
+- src/app/procurar-datas/dev-v2/DevV2PesquisarCompatClient.tsx
+- src/lib/procurar-datas/motor/calcular-km-adicional-real-controlado.ts
+- src/lib/procurar-datas/motor/calcular-mapa-km-adicional-por-slot.ts
+- src/lib/procurar-datas/motor/pesquisar-datas-v2.ts
+- src/lib/procurar-datas/motor/gerar-candidatos-disponibilidade-real.ts
+- src/lib/procurar-datas/motor/classificacao-candidato.ts
+- src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts
+- package.json
+
+**Arquivos alterados:**
+- src/app/api/procurar-datas/v2/auditar-run/route.ts
+- src/app/procurar-datas/dev-v2/DevV2PesquisarCompatClient.tsx
+- src/lib/procurar-datas/motor/calcular-mapa-km-adicional-por-slot.ts
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- docs/ia/log_progress.md
+
+**Validacoes realizadas:**
+- MCP Supabase confirmou configuracoes atuais: `KM MAX ENTRE PONTOS=8`, `KM ADICIONAL MAX NA ROTA=5000`, especial `5000`, premium `10000`, OSRM `https://osrm.lebebe.cloud`.
+- MCP Supabase confirmou o registro de auditoria `3160c888-8389-440c-a53d-25cd74940a83` / run `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488` e os resultados salvos informados.
+- Calculo local Haversine confirmou Orleans -> Araucaria `20.306 km` e Santa Felicidade -> Araucaria `26.066 km`; limite legacy atual `8 * 1.5 = 12 km`.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npm run test -- src/lib/procurar-datas/motor/calcular-km-adicional-real-controlado.test.ts src/lib/procurar-datas/motor/calcular-mapa-km-adicional-por-slot.test.ts --silent`: 2 arquivos, 27 testes passaram.
+- `npx eslint src/app/api/procurar-datas/v2/auditar-run/route.ts src/app/procurar-datas/dev-v2/DevV2PesquisarCompatClient.tsx src/lib/procurar-datas/motor/calcular-mapa-km-adicional-por-slot.ts --quiet`: passou.
+- `npm run test -- src/app/api/procurar-datas/v2/pesquisar-compat-async/route.test.ts src/lib/procurar-datas/motor/pesquisar-datas-v2.test.ts --silent`: 2 arquivos, 13 testes passaram.
+- `GET http://localhost:3000/procurar-datas/dev-v2`: HTTP 200.
+- `POST http://localhost:3000/api/procurar-datas/v2/auditar-run` via CLI com runId retornou `401 Nao autenticado`; validacao autenticada do botao na tela nao confirmada.
+
+**Pendencias:**
+- Rodar a auditoria em navegador autenticado/superadmin para confirmar visualmente o slot `2026-08-17::EQUIPE 1` com `validacaoInsercaoReal = interrompida_por_filtro_early`, tipo `haversine-reta`, distancia acima de `12 km` e delta nao calculado.
+- Se for necessario explicar por que o resultado salvo foi `normal`, investigar com snapshot historico de cache/agenda; esse snapshot completo nao esta persistido hoje.
+
+**Riscos conhecidos:**
+- A auditoria retrospectiva usa agenda/cache atuais; divergencias podem refletir dados posteriores ao run salvo.
+- A v2 de producao continua cache-only para coordenadas da agenda neste ponto do fluxo; isso nao foi alterado por esta tarefa.
+
+**Proximo passo recomendado:**
+Validar pelo botao `Auditar pesquisa por Run ID` em `/procurar-datas/dev-v2` com o run `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488` e guardar o JSON gerado como evidencia.
+
+---
+
+## 2026-07-06 - Codex - Procurar datas v2: correcao producao Frente 1 para coordenadas da agenda
+
+**Resumo:** Aplicada correcao de producao na Frente 1 da migracao `/procurar-datas` v2. A v2 agora tenta resolver coordenadas faltantes de pontos reais da agenda antes de montar os slots de km adicional. A cadeia usa cache legado por hash, `geo_cache` seguro por campos e fallback externo controlado com helpers existentes, salvando no `geo_cache` quando resolve. Se ainda houver ponto real da agenda sem coordenada, o slot nao valida rota simples origem -> destino e retorna `kmAdicionalNaRotaM=null` com origem `agenda-sem-coordenadas-producao`. Nao altera ranking, classificacao, limites, OSRM, Apps Script, banco, migrations ou policies.
+
+**Arquivos lidos:**
+- C:\Users\lebeb\.codex\attachments\739585df-9678-4628-9f1e-cf03fef14d03\pasted-text.txt
+- docs/ia/log_progress.md
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- .devin/rules/gerais.md
+- .devin/rules/continuidade-agente.md
+- .devin/rules/supabase.md
+- C:\Users\lebeb\.agents\skills\supabase\SKILL.md
+- appscript/CEP-CONFIG.gs
+- appscript/CEP-APIBACK.gs
+- src/lib/procurar-datas/motor/pesquisar-datas-v2.ts
+- src/lib/procurar-datas/motor/cache-coordenadas-agenda-diagnostico.ts
+- src/lib/procurar-datas/motor/parse-agenda-shag.ts
+- src/lib/procurar-datas/motor/calcular-km-adicional-real-controlado.ts
+- src/lib/procurar-datas/motor/calcular-mapa-km-adicional-por-slot.ts
+- src/lib/procurar-datas/endereco-cache.ts
+- src/lib/procurar-datas/locationiq.ts
+- src/lib/procurar-datas/google-geocoding.ts
+- src/app/api/procurar-datas/validar-endereco/route.ts
+- src/app/api/procurar-datas/v2/auditar-run/route.ts
+- src/app/procurar-datas/dev-v2/DevV2PesquisarCompatClient.tsx
+- src/lib/procurar-datas/motor/pesquisar-datas-v2.test.ts
+- src/lib/procurar-datas/motor/calcular-km-adicional-real-controlado.test.ts
+- src/lib/procurar-datas/motor/calcular-mapa-km-adicional-por-slot.test.ts
+
+**Arquivos alterados/criados:**
+- src/lib/procurar-datas/motor/resolver-coordenadas-agenda-producao.ts
+- src/lib/procurar-datas/motor/resolver-coordenadas-agenda-producao.test.ts
+- src/lib/procurar-datas/motor/cache-coordenadas-agenda-diagnostico.ts
+- src/lib/procurar-datas/motor/pesquisar-datas-v2.ts
+- src/lib/procurar-datas/motor/pesquisar-datas-v2.test.ts
+- src/lib/procurar-datas/motor/calcular-km-adicional-real-controlado.ts
+- src/lib/procurar-datas/motor/calcular-km-adicional-real-controlado.test.ts
+- src/app/api/procurar-datas/v2/auditar-run/route.ts
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- docs/ia/log_progress.md
+
+**Validacoes realizadas:**
+- MCP Supabase `_list_tables` confirmou estrutura real de `geo_cache` com `chave_endereco`, `endereco_completo`, `logradouro`, `numero`, `bairro`, `cidade`, `uf`, `cep`, `lat`, `lng`, `provider`, `confidence`, `updated_at`.
+- Consulta MCP especifica aos registros Orleans/Santa Felicidade foi bloqueada por limite de uso da ferramenta; confirmacao especifica nesta rodada: nao confirmada.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npm run test -- src/lib/procurar-datas/motor/resolver-coordenadas-agenda-producao.test.ts src/lib/procurar-datas/motor/calcular-km-adicional-real-controlado.test.ts src/lib/procurar-datas/motor/calcular-mapa-km-adicional-por-slot.test.ts --silent`: 3 arquivos, 30 testes passaram.
+- `npm run test -- src/lib/procurar-datas/motor/pesquisar-datas-v2.test.ts src/app/api/procurar-datas/v2/pesquisar-compat-async/route.test.ts --silent`: 2 arquivos, 14 testes passaram.
+- `npx eslint src/lib/procurar-datas/motor/resolver-coordenadas-agenda-producao.ts src/lib/procurar-datas/motor/resolver-coordenadas-agenda-producao.test.ts src/lib/procurar-datas/motor/cache-coordenadas-agenda-diagnostico.ts src/lib/procurar-datas/motor/calcular-km-adicional-real-controlado.ts src/lib/procurar-datas/motor/calcular-km-adicional-real-controlado.test.ts src/lib/procurar-datas/motor/pesquisar-datas-v2.ts src/lib/procurar-datas/motor/pesquisar-datas-v2.test.ts src/app/api/procurar-datas/v2/auditar-run/route.ts --quiet`: passou.
+- `GET http://localhost:3000/procurar-datas/dev-v2`: HTTP 200.
+- `POST http://localhost:3000/api/procurar-datas/v2/auditar-run` via CLI com runId `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488`: `401 Nao autenticado`, esperado sem cookies/sessao.
+
+**Pendencias:**
+- Validar pelo navegador autenticado/superadmin o run `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488` e uma nova pesquisa equivalente Capivari/Araucaria.
+- Confirmar em ambiente autenticado que `2026-08-17::EQUIPE 1` fica indisponivel quando Orleans e resolvido e o filtro early `haversine-reta` descarta.
+- Reexecutar consulta MCP especifica de `geo_cache` quando houver quota disponivel, se for necessario registrar evidencia atual do banco.
+
+**Riscos conhecidos:**
+- O fallback externo em producao v2 e limitado a 5 enderecos por busca para evitar chamada em massa; enderecos alem do limite permanecem sem coordenada e bloqueiam validacao por rota simples.
+- A validacao manual autenticada nao foi realizada nesta rodada.
+- Existem alteracoes locais nao relacionadas em arquivos de Digisac; nao foram tocadas por esta tarefa.
+
+**Proximo passo recomendado:**
+Abrir `/procurar-datas/dev-v2` com sessao superadmin, auditar o run informado e executar uma busca nova equivalente ao caso Capivari/Araucaria para confirmar que o slot de 17/08 nao volta como normal.

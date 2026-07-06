@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
-  BIGORRILHO_SERVICE_ID,
+  buscarConexoesHabilitadas,
   fecharRegistroAutomaticoDigisac,
   montarRegistroFechamentoAutomatico,
   type RegistroParaFechar,
@@ -12,7 +12,7 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const LIMITE_FECHAMENTO = 20;
+const LIMITE_FECHAMENTO = 100;
 
 interface TicketElegivelDiagnostico {
   ticketId: string;
@@ -23,7 +23,7 @@ interface TicketElegivelDiagnostico {
   telefoneContato: string | null;
   serviceIdContato: string | null;
   serviceNameContato: string | null;
-  conexaoConfirmadaBigorrilho: boolean;
+  conexaoConfirmada: boolean;
   tipoChamado: TipoChamadoFechamento;
   ultimaMensagemEm: string | null;
   ultimaMensagemPor: UltimaMensagemPor;
@@ -68,102 +68,113 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServiceClient();
 
-    // 2. Registrar pendentes — chamar diagnostico via internal fetch com x-cron-secret
-    console.log('[CRON-DIGISAC] Etapa 1: registrando pendentes via diagnostico...');
-
-    const diagUrl = new URL(
-      '/api/digisac/finalizacoes-automaticas/diagnostico',
-      request.nextUrl.origin
-    );
-
-    const diagRes = await fetch(diagUrl.toString(), {
-      headers: {
-        'x-cron-secret': process.env.CRON_SECRET,
-      },
-    });
-
-    if (!diagRes.ok) {
-      console.error('[CRON-DIGISAC] Erro ao chamar diagnostico: status=' + diagRes.status);
+    // 2. Buscar conexoes habilitadas
+    const conexoesHabilitadas = await buscarConexoesHabilitadas(supabase);
+    if (conexoesHabilitadas.length === 0) {
+      console.error('[CRON-DIGISAC] Nenhuma conexao habilitada para automacao');
       return NextResponse.json({
         ok: false,
-        error: `Erro ao executar diagnostico (status ${diagRes.status})`,
+        error: 'Nenhuma conexao habilitada para automacao',
       });
     }
 
-    const diagData: DiagnosticoResponse = await diagRes.json();
-    const elegiveis = diagData.ticketsElegiveis ?? [];
-    const elegiveisBigorrilho = elegiveis.filter(t => t.conexaoConfirmadaBigorrilho === true);
+    console.log('[CRON-DIGISAC] Conexoes habilitadas:', conexoesHabilitadas.length);
 
-    console.log(
-      '[CRON-DIGISAC] Diagnostico concluido.' +
-      ' totalElegiveis=' + elegiveis.length +
-      ' bigorrilhoConfirmado=' + elegiveisBigorrilho.length
-    );
-
-    // 3. Inserir novos pendentes (idempotente)
+    // 3. Para cada conexao: rodar diagnostico + registrar pendentes
     let totalInseridos = 0;
     let totalJaExistentes = 0;
     let totalIgnoradosDiag = 0;
     let totalErrosRegistro = 0;
+    let totalElegiveisGlobal = 0;
 
-    if (elegiveisBigorrilho.length > 0) {
-      const ticketIds = elegiveisBigorrilho.map(t => t.ticketId);
-      const { data: existentes, error: errExist } = await supabase
-        .from('digisac_fechamentos_automaticos')
-        .select('digisac_ticket_id')
-        .in('digisac_ticket_id', ticketIds);
+    for (const conexao of conexoesHabilitadas) {
+      console.log('[CRON-DIGISAC] Processando conexao=' + conexao.service_id.slice(0, 8));
 
-      if (errExist) {
-        console.error('[CRON-DIGISAC] Erro ao buscar existentes:', errExist.message);
-        totalErrosRegistro = elegiveisBigorrilho.length;
-      } else {
-        const existentesIds = new Set((existentes ?? []).map(r => r.digisac_ticket_id));
+      const diagUrl = new URL(
+        '/api/digisac/finalizacoes-automaticas/diagnostico',
+        request.nextUrl.origin
+      );
+      diagUrl.searchParams.set('serviceId', conexao.service_id);
 
-        for (const ticket of elegiveisBigorrilho) {
-          if (existentesIds.has(ticket.ticketId)) {
-            totalJaExistentes++;
-            continue;
-          }
+      const diagRes = await fetch(diagUrl.toString(), {
+        headers: {
+          'x-cron-secret': process.env.CRON_SECRET,
+        },
+      });
 
-          const registro = montarRegistroFechamentoAutomatico({
-            ticketId: ticket.ticketId,
-            protocolo: ticket.protocolo,
-            ticketHistoryUrl: ticket.ticketHistoryUrl,
-            contactId: ticket.contactId,
-            nomeContato: ticket.nomeContato,
-            telefoneContato: ticket.telefoneContato,
-            serviceIdContato: ticket.serviceIdContato,
-            serviceNameContato: ticket.serviceNameContato,
-            tipoChamado: ticket.tipoChamado,
-            ultimaMensagemEm: ticket.ultimaMensagemEm,
-            ultimaMensagemPor: ticket.ultimaMensagemPor,
-            horasSemInteracao: ticket.horasSemInteracao,
-            previewUltimaMensagem: ticket.previewUltimaMensagem,
-            endpointFechamentoPrevisto: ticket.endpointFechamentoPrevisto,
-          });
+      if (!diagRes.ok) {
+        console.error('[CRON-DIGISAC] Erro diagnostico conexao=' + conexao.service_id.slice(0, 8) + ' status=' + diagRes.status);
+        totalErrosRegistro++;
+        continue;
+      }
 
-          const { error: insertError } = await supabase
-            .from('digisac_fechamentos_automaticos')
-            .insert(registro);
+      const diagData: DiagnosticoResponse = await diagRes.json();
+      const elegiveis = diagData.ticketsElegiveis ?? [];
+      const elegiveisConfirmados = elegiveis.filter(t => t.conexaoConfirmada === true);
+      totalElegiveisGlobal += elegiveis.length;
 
-          if (insertError) {
-            if (insertError.code === '23505') {
+      console.log(
+        '[CRON-DIGISAC] Diagnostico conexao=' + conexao.service_id.slice(0, 8) +
+        ' totalElegiveis=' + elegiveis.length +
+        ' confirmados=' + elegiveisConfirmados.length
+      );
+
+      if (elegiveisConfirmados.length > 0) {
+        const ticketIds = elegiveisConfirmados.map(t => t.ticketId);
+        const { data: existentes, error: errExist } = await supabase
+          .from('digisac_fechamentos_automaticos')
+          .select('digisac_ticket_id')
+          .in('digisac_ticket_id', ticketIds);
+
+        if (errExist) {
+          console.error('[CRON-DIGISAC] Erro ao buscar existentes:', errExist.message);
+          totalErrosRegistro += elegiveisConfirmados.length;
+        } else {
+          const existentesIds = new Set((existentes ?? []).map(r => r.digisac_ticket_id));
+
+          for (const ticket of elegiveisConfirmados) {
+            if (existentesIds.has(ticket.ticketId)) {
               totalJaExistentes++;
-            } else {
-              console.error(
-                '[CRON-DIGISAC] Erro ao inserir ticket=' + ticket.ticketId.slice(0, 8),
-                insertError.message
-              );
-              totalErrosRegistro++;
+              continue;
             }
-          } else {
-            totalInseridos++;
+
+            const registro = montarRegistroFechamentoAutomatico({
+              ticketId: ticket.ticketId,
+              protocolo: ticket.protocolo,
+              ticketHistoryUrl: ticket.ticketHistoryUrl,
+              contactId: ticket.contactId,
+              nomeContato: ticket.nomeContato,
+              telefoneContato: ticket.telefoneContato,
+              serviceIdContato: ticket.serviceIdContato,
+              serviceNameContato: ticket.serviceNameContato,
+              tipoChamado: ticket.tipoChamado,
+              ultimaMensagemEm: ticket.ultimaMensagemEm,
+              ultimaMensagemPor: ticket.ultimaMensagemPor,
+              horasSemInteracao: ticket.horasSemInteracao,
+              previewUltimaMensagem: ticket.previewUltimaMensagem,
+              endpointFechamentoPrevisto: ticket.endpointFechamentoPrevisto,
+            });
+
+            const { error: insertError } = await supabase
+              .from('digisac_fechamentos_automaticos')
+              .insert(registro);
+
+            if (insertError) {
+              if (insertError.code === '23505') {
+                totalJaExistentes++;
+              } else {
+                console.error('[CRON-DIGISAC] Erro ao inserir ticket=' + ticket.ticketId.slice(0, 8), insertError.message);
+                totalErrosRegistro++;
+              }
+            } else {
+              totalInseridos++;
+            }
           }
         }
       }
-    }
 
-    totalIgnoradosDiag = elegiveis.length - elegiveisBigorrilho.length;
+      totalIgnoradosDiag += elegiveis.length - elegiveisConfirmados.length;
+    }
 
     console.log(
       '[CRON-DIGISAC] Registro de pendentes concluido.' +
@@ -173,14 +184,16 @@ export async function POST(request: NextRequest) {
       ' erros=' + totalErrosRegistro
     );
 
-    // 4. Buscar pendentes para fechamento (somente status=pendente, nao erro)
+    // 4. Buscar pendentes para fechamento (status=pendente, conexoes habilitadas, limite global 100)
     console.log('[CRON-DIGISAC] Etapa 2: buscando pendentes para fechamento...');
+
+    const serviceIdsHabilitados = conexoesHabilitadas.map(c => c.service_id);
 
     const { data: pendentes, error: errPendentes } = await supabase
       .from('digisac_fechamentos_automaticos')
       .select('id, digisac_ticket_id, digisac_contact_id, service_id, status, protocolo, nome_contato, ticket_history_url')
       .eq('status', 'pendente')
-      .eq('service_id', BIGORRILHO_SERVICE_ID)
+      .in('service_id', serviceIdsHabilitados)
       .order('created_at', { ascending: true })
       .limit(LIMITE_FECHAMENTO);
 
@@ -190,7 +203,7 @@ export async function POST(request: NextRequest) {
         ok: true,
         modo: 'cron-finalizacoes-automaticas',
         registrarPendentes: {
-          totalElegiveisDiagnostico: elegiveis.length,
+          totalElegiveisDiagnostico: totalElegiveisGlobal,
           totalInseridos,
           totalJaExistentes,
           totalIgnorados: totalIgnoradosDiag,
@@ -271,7 +284,7 @@ export async function POST(request: NextRequest) {
       horarioInicioUTC,
       horarioFimBRT,
       registrarPendentes: {
-        totalElegiveisDiagnostico: elegiveis.length,
+        totalElegiveisDiagnostico: totalElegiveisGlobal,
         totalInseridos,
         totalJaExistentes,
         totalIgnorados: totalIgnoradosDiag,

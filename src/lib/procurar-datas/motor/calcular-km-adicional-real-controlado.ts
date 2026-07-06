@@ -41,6 +41,7 @@ export type CalcularKmAdicionalRealControladoOutput = {
     | 'osrm-table-diagnostico'
     | 'haversine-fallback-legado-diagnostico'
     | 'filtrado-early-legado-diagnostico'
+    | 'agenda-sem-coordenadas-producao'
     | null
   origemOperacional: ReturnType<typeof resolverOrigemOperacionalV2>
   parseAgenda: ReturnType<typeof parsearPontosAgendaDoDiaV2> | null
@@ -255,6 +256,27 @@ export async function calcularKmAdicionalRealControladoV2(
     team: p.equipe,
     id: `agenda_${p.indiceLinhaOriginal}`,
   }))
+
+  if (parseAgenda.resumo.semCoordenadas > 0) {
+    avisos.push(
+      `Slot contem ${parseAgenda.resumo.semCoordenadas} ponto(s) real(is) da agenda sem coordenada apos tentativas de resolucao; rota simples origem -> destino nao foi validada.`
+    )
+    return {
+      ok: true,
+      modo: 'km-adicional-real-controlado-diagnostico',
+      kmAdicionalNaRotaM: null,
+      origemKmAdicionalNaRotaM: 'agenda-sem-coordenadas-producao',
+      origemOperacional,
+      parseAgenda,
+      matrizOSRM: null,
+      deltaInsercao: null,
+      ordenacaoRotaBase: null,
+      filtroEarlyLegado: null,
+      avisos: [...avisos, ...parseAgenda.avisos],
+      erros,
+      descartados: [...parseAgenda.descartados],
+    }
+  }
 
   const origem = {
     ...origemOperacional.origem,

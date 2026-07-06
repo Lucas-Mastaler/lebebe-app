@@ -25,6 +25,8 @@ export type DetalheSlotMapaKmAdicional = {
   descartados: unknown[]
   /** Resultado do parse dos pontos da agenda para diagnosticar aceites/descartes do slot. */
   parseAgenda?: CalcularKmAdicionalRealControladoOutput['parseAgenda']
+  /** Matriz OSRM preparada para o slot, quando executada. */
+  matrizOSRM?: CalcularKmAdicionalRealControladoOutput['matrizOSRM']
   /** Detalhes do delta de insercao (inclui candidatosInsercao e pontosRotaBase quando incluirDetalhesInsercao=true). */
   deltaInsercao?: CalcularKmAdicionalRealControladoOutput['deltaInsercao']
   /** Origem operacional usada (deposito ou casa da equipe). */
@@ -158,6 +160,7 @@ export async function calcularMapaKmAdicionalPorSlotControladoV2(
       erros: resultado.erros,
       descartados: resultado.descartados,
       parseAgenda: resultado.parseAgenda,
+      matrizOSRM: resultado.matrizOSRM,
       deltaInsercao: resultado.deltaInsercao,
       origemOperacional: resultado.origemOperacional,
       ordenacaoRotaBase: resultado.ordenacaoRotaBase,

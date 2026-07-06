@@ -31,6 +31,33 @@ type EnderecoSemCoordenadasAuditoria = {
   descricao: string | null
 }
 
+type FiltroEarlyAuditoria = {
+  aplicado: boolean
+  descartado: boolean
+  tipoFiltroEarly: string
+  distanciaHaversineKm: number | null
+  limiteHaversineKm: number | null
+  distanciaAncoraKm: number | null
+  limiteAncoraPremiumKm: number | null
+  origemUsada: {
+    tipo: string
+    endereco: string | null
+    titulo: string | null
+    cep: string | null
+    lat: number | null
+    lng: number | null
+  }
+  destinoUsado: {
+    lat: number
+    lng: number
+    descricao: string | null
+  } | null
+  osrmPuladoPeloFiltroLegado: boolean
+  osrmMatrizExecutadaNaAuditoria: boolean
+  deltaInsercaoCalculado: boolean
+  motivoTextual: string
+}
+
 type AuditarRunResponse =
   | {
       ok: true
@@ -106,6 +133,8 @@ type AuditarRunResponse =
           insercaoRealCompleta?: boolean
           validacaoInsercaoReal?: string
           motivoInsercaoRealIncompleta?: string | null
+          filtroEarlyAplicado?: boolean
+          filtroEarly?: FiltroEarlyAuditoria | null
           enderecosSemCoordenadas?: EnderecoSemCoordenadasAuditoria[]
           entrouNoRecorteAtual: boolean
           fonteDados: string
@@ -465,6 +494,7 @@ type CandidatoDevV2 = CandidatoFinal & {
                         <th className="text-left px-3 py-2">Ativa</th>
                         <th className="text-left px-3 py-2">Tem pontos</th>
                         <th className="text-left px-3 py-2">Inserção real</th>
+                        <th className="text-left px-3 py-2">Filtro early</th>
                         <th className="text-left px-3 py-2">Tipo atual</th>
                         <th className="text-left px-3 py-2">Elegível</th>
                         <th className="text-left px-3 py-2">Limite base</th>
@@ -490,6 +520,11 @@ type CandidatoDevV2 = CandidatoFinal & {
                               ? ` (${slot.enderecosSemCoordenadas.length} sem coordenadas)`
                               : ''}
                           </td>
+                          <td className="px-3 py-2 min-w-[160px]">
+                            {slot.filtroEarly
+                              ? `${slot.filtroEarly.tipoFiltroEarly}${slot.filtroEarly.descartado ? ' / descartado' : ''}`
+                              : '-'}
+                          </td>
                           <td className="px-3 py-2">{slot.tipoRecalculado ?? '-'}</td>
                           <td className="px-3 py-2">{String(slot.elegivelRecalculado)}</td>
                           <td className="px-3 py-2">{slot.limiteBaseM ?? '-'}</td>
@@ -508,6 +543,47 @@ type CandidatoDevV2 = CandidatoFinal & {
 
             <div className="rounded-md border border-slate-200 p-3 space-y-2">
               <h4 className="text-sm font-medium text-slate-700">Comparação</h4>
+              {auditoriaResultado.diagnosticoReal.slots?.some((slot) => slot.filtroEarly?.aplicado) && (
+                <div className="rounded-md border border-orange-200 overflow-hidden">
+                  <div className="p-3 border-b border-orange-200 bg-orange-50">
+                    <h5 className="text-sm font-medium text-orange-900">Filtro early</h5>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-orange-50 border-b border-orange-200">
+                        <tr>
+                          <th className="text-left px-3 py-2">Slot</th>
+                          <th className="text-left px-3 py-2">Tipo</th>
+                          <th className="text-left px-3 py-2">Haversine km</th>
+                          <th className="text-left px-3 py-2">Limite km</th>
+                          <th className="text-left px-3 py-2">Origem usada</th>
+                          <th className="text-left px-3 py-2">Destino usado</th>
+                          <th className="text-left px-3 py-2">OSRM pulado no legado</th>
+                          <th className="text-left px-3 py-2">Delta calculado</th>
+                          <th className="text-left px-3 py-2">Motivo</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-orange-100">
+                        {auditoriaResultado.diagnosticoReal.slots
+                          ?.filter((slot) => slot.filtroEarly?.aplicado)
+                          .map((slot, idx) => (
+                            <tr key={idx}>
+                              <td className="px-3 py-2 min-w-[180px]">{slot.slotKey ?? '-'}</td>
+                              <td className="px-3 py-2">{slot.filtroEarly?.tipoFiltroEarly ?? '-'}</td>
+                              <td className="px-3 py-2">{slot.filtroEarly?.distanciaHaversineKm ?? '-'}</td>
+                              <td className="px-3 py-2">{slot.filtroEarly?.limiteHaversineKm ?? '-'}</td>
+                              <td className="px-3 py-2 min-w-[280px]">{slot.filtroEarly?.origemUsada.endereco ?? '-'}</td>
+                              <td className="px-3 py-2 min-w-[220px]">{slot.filtroEarly?.destinoUsado?.descricao ?? '-'}</td>
+                              <td className="px-3 py-2">{String(slot.filtroEarly?.osrmPuladoPeloFiltroLegado ?? false)}</td>
+                              <td className="px-3 py-2">{String(slot.filtroEarly?.deltaInsercaoCalculado ?? false)}</td>
+                              <td className="px-3 py-2 min-w-[320px]">{slot.filtroEarly?.motivoTextual ?? '-'}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
               {auditoriaResultado.diagnosticoReal.enderecosSemCoordenadas && auditoriaResultado.diagnosticoReal.enderecosSemCoordenadas.length > 0 && (
                 <div className="rounded-md border border-yellow-200 overflow-hidden">
                   <div className="p-3 border-b border-yellow-200 bg-yellow-50">

@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
     status: (searchParams.get('status') ?? undefined) as FiltrosListagemFechamentos['status'],
     tipoChamado: (searchParams.get('tipoChamado') ?? undefined) as FiltrosListagemFechamentos['tipoChamado'],
     ultimaMensagemPor: (searchParams.get('ultimaMensagemPor') ?? undefined) as FiltrosListagemFechamentos['ultimaMensagemPor'],
+    serviceId: searchParams.get('serviceId') ?? undefined,
     dataInicio: searchParams.get('dataInicio') ?? undefined,
     dataFim: searchParams.get('dataFim') ?? undefined,
     busca: searchParams.get('busca') ?? undefined,
@@ -36,6 +37,7 @@ export async function GET(request: NextRequest) {
     status: filtros.status,
     tipoChamado: filtros.tipoChamado,
     ultimaMensagemPor: filtros.ultimaMensagemPor,
+    serviceId: filtros.serviceId,
     dataInicio: filtros.dataInicio,
     dataFim: filtros.dataFim,
     busca: filtros.busca ? '[presente]' : '[ausente]',
@@ -61,6 +63,9 @@ export async function GET(request: NextRequest) {
     }
     if (filtros.ultimaMensagemPor) {
       query = query.eq('ultima_mensagem_por', filtros.ultimaMensagemPor);
+    }
+    if (filtros.serviceId) {
+      query = query.eq('service_id', filtros.serviceId);
     }
     if (filtros.dataInicio) {
       query = query.gte('created_at', filtros.dataInicio);

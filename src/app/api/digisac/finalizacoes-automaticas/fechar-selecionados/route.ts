@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
-  BIGORRILHO_SERVICE_ID,
+  isConexaoHabilitada,
   fecharRegistroAutomaticoDigisac,
   type RegistroParaFechar,
 } from '@/lib/digisac/finalizacoesAutomaticas';
@@ -10,7 +10,7 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const LIMITE_MAX_IDS = 20;
+const LIMITE_MAX_IDS = 100;
 
 interface ItemFinalizado {
   id: string;
@@ -106,8 +106,8 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      if (reg.service_id !== BIGORRILHO_SERVICE_ID) {
-        ignorados.push({ id: reg.id, protocolo: reg.protocolo, motivo: 'Nao pertence a conexao Bigorrilho' });
+      if (!(await isConexaoHabilitada(supabase, reg.service_id))) {
+        ignorados.push({ id: reg.id, protocolo: reg.protocolo, motivo: 'Conexao nao habilitada para automacao' });
         continue;
       }
 

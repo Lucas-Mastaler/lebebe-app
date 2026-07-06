@@ -19,6 +19,94 @@ Status: implementado e validado manualmente. Correcao de equivalencia legado x v
 
 ---
 
+## 2026-07-06 - Cascade - Frente 0/Controle: validacao manual do caso Capivari/Araucaria
+
+Status: correcao validada em producao v2. Nenhuma alteracao de codigo, motor, banco ou Apps Script.
+
+### Validacao manual autenticada
+- Nova pesquisa real equivalente ao caso Capivari/Araucaria executada em producao v2.
+- Novo runId: `ac4c1eb0-c9fa-49ae-9c68-6e8a61955f36`.
+- Novo pesquisaAuditoriaId: `853d719d-2c4f-443e-a530-7fa217e1142b`.
+- Resultados:
+  1. `15/08/2026 / Sabado / EQUIPE 1 / R$ 210 / Normal / Nao`
+  2. `24/08/2026 / Segunda / EQUIPE 1 / R$ 150 / Normal / Nao`
+  3. `25/08/2026 / Terca / EQUIPE 1 / R$ 150 / Normal / Nao`
+- O resultado problematico `17/08/2026 / EQUIPE 1 / normal` nao apareceu mais.
+- Auditoria do novo run: diagnostico real disponivel, agenda real lida (google-sheets, 506 linhas), disponibilidade real lida (google-sheets, 200 linhas), 130 candidatos reais, nenhuma divergencia detectada nos campos recalculados disponiveis, blocos sinteticos nao usados como conclusao.
+
+### Itens validados
+- Auditoria por Run ID disponivel em `/procurar-datas/dev-v2`.
+- Rota `POST /api/procurar-datas/v2/auditar-run` funcional com sessao autenticada.
+- Diagnostico com filtro early, limites, origem/destino usados e comparacao salvo x recalculado.
+- Correcao de resolucao/cache de coordenadas da agenda em producao validada no caso real.
+- Filtro early legado por Haversine descarta `2026-08-17::EQUIPE 1` antes de OSRM/delta quando Orleans esta resolvido (Haversine ~20.3 km > limite 12 km).
+
+### Pendencia ainda existente
+- Ainda nao ha snapshot historico completo de: agenda lida, disponibilidade, cache/coordenadas, candidatos brutos, candidatos classificados, km por slot, decisoes de filtro.
+- Auditorias antigas ainda podem depender do estado atual da planilha/cache.
+- Recomendacao futura: avaliar persistencia detalhada de execucao. Nao bloqueia a validacao atual.
+
+---
+
+## 2026-07-06 - Codex - Frente 1: resolucao/cache de coordenadas da agenda em producao v2
+
+Status: implementado em `pesquisarDatasV2`, sem alteracao de Frente 2.
+
+### Problema corrigido
+- A producao v2 lia a agenda real, consultava o cache por hash legado e montava slots com esse cache.
+- Quando um ponto real tinha endereco mas nao tinha coordenada no cache injetado, o parser descartava o ponto como `sem_coordenadas_cache`.
+- Se todos os pontos do slot fossem descartados, o slot podia ser tratado como sem pontos e seguir rota simples origem -> destino.
+
+### Implementacao
+- Criado `resolverCoordenadasAgendaProducao`.
+- O helper processa apenas datas/equipes da janela ativa, deduplica enderecos e tenta resolver faltantes nesta ordem:
+  1. `geo_cache` por hash/campos seguros via `buscarEnderecoNoGeoCache`;
+  2. `LocationIQ` ja existente;
+  3. `Google Geocoding` ja existente com `permitirEnderecoComum`;
+  4. `salvarEnderecoNoGeoCache` quando um provider resolve.
+- O fallback externo tem limite de 5 tentativas por busca.
+- `diagnosticoMinimo.resolucaoCoordenadasAgenda` expõe contadores de enderecos faltantes, resolvidos por cache, resolvidos por fallback, ainda sem coordenada e tentativas externas.
+- `calcularKmAdicionalRealControladoV2` bloqueia validacao por rota simples quando ainda houver `semCoordenadas > 0`, retornando origem `agenda-sem-coordenadas-producao`.
+
+### Nao alterado
+- Ranking, classificacao normal/especial/premium/hora marcada, limites de km, OSRM base/fallback, Apps Script, schema, migrations e policies.
+
+### Validacao pendente
+- Validacao autenticada pelo botao `/procurar-datas/dev-v2` com run `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488`; chamada CLI segue retornando `401 Nao autenticado`.
+
+---
+
+## 2026-07-06 - Codex - Auditoria Run ID: explicabilidade do filtro early legado
+
+Status: implementado somente em rota/tela diagnostica.
+
+### Diagnostico
+- O slot `2026-08-17::EQUIPE 1` do run `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488` apareceu como salvo `normal`, mas o diagnostico atual ficou `indisponivel` com `kmAdicionalNaRotaM = null` e origem `filtrado-early-legado-diagnostico`.
+- No legado Apps Script, o filtro Haversine early descarta slots com pontos quando a menor distancia ponto da agenda -> destino excede `MAX_POINT_KM * 1.5`; isso ocorre antes de OSRM de ancora e antes do delta de insercao.
+- Com `KM MAX ENTRE PONTOS = 8`, o limite e `12 km`; os pontos atuais Orleans/Santa Felicidade ficam acima desse limite para o destino Araucaria.
+
+### Mudanca diagnostica
+- `POST /api/procurar-datas/v2/auditar-run` agora inclui detalhes de `filtroEarly` por slot quando disponivel:
+  - `filtroEarlyAplicado`;
+  - tipo/motivo do filtro;
+  - distancia Haversine usada e limite;
+  - distancia/limite da ancora premium quando houver;
+  - origem e destino usados;
+  - se o legado pularia OSRM;
+  - se o delta de insercao foi calculado;
+  - motivo textual.
+- Quando o filtro early descarta antes do delta, a auditoria nao marca mais insercao real como completa: usa `validacaoInsercaoReal = "interrompida_por_filtro_early"`.
+- A tela `/procurar-datas/dev-v2` ganhou coluna resumida e bloco detalhado `Filtro early` dentro da comparacao.
+
+### Nao alterado
+- Motor de producao, ranking, classificacao, limites, OSRM, Apps Script, Apps Script fallback, banco, migrations e policies.
+
+### Pendencia
+- Validar pelo navegador autenticado/superadmin o run informado, porque chamada CLI sem cookies retorna `401 Nao autenticado`.
+- A auditoria historica ainda depende dos dados atuais de agenda/cache; snapshot completo da execucao salva segue como melhoria futura.
+
+---
+
 ## 2026-06-26 - Codex - Frente 3/direita + Frente 0: autoria do pre-agendamento
 
 Status: implementado em `src/app/api/procurar-datas/pre-agendar/route.ts` e nos pontos Apps Script `appscript/PublicAPI.gs` / `appscript/CEP-APIBACK.gs`. Nao altera busca de datas, geocodificacao, CEP-first, Google fallback de endereco, OSRM, Haversine, ranking, candidatos, classificacao, frete, banco, migrations ou RLS.

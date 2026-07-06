@@ -257,7 +257,7 @@ describe('calcularKmAdicionalRealControladoV2', () => {
     expect(sabado.origemOperacional.ok && sabado.origemOperacional.tipo).toBe('casa-e2')
   })
 
-  it('descarta ponto sem coordenada e nao indisponibiliza o candidato por isso', async () => {
+  it('nao valida rota simples quando ha ponto real da agenda sem coordenada', async () => {
     const resultado = await calcularKmAdicionalRealControladoV2({
       dataISO: '2026-06-15',
       equipe: 'EQUIPE 1',
@@ -270,7 +270,10 @@ describe('calcularKmAdicionalRealControladoV2', () => {
 
     expect(resultado.ok).toBe(true)
     expect(resultado.parseAgenda?.resumo.semCoordenadas).toBe(1)
-    expect(resultado.kmAdicionalNaRotaM).toBe(4321)
+    expect(resultado.kmAdicionalNaRotaM).toBeNull()
+    expect(resultado.origemKmAdicionalNaRotaM).toBe('agenda-sem-coordenadas-producao')
+    expect(resultado.deltaInsercao).toBeNull()
+    expect(resultado.avisos.join(' ')).toContain('rota simples origem -> destino nao foi validada')
   })
 
   it('falha de OSRM usa fallback Haversine e nao retorna null', async () => {

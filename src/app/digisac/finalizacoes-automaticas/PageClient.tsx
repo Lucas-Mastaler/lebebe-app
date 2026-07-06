@@ -1,8 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { ExternalLink, AlertCircle, Bot, CheckCircle2, Clock, XCircle, Loader2, FilePlus2, Lock, RefreshCw, Search } from 'lucide-react';
+import { ExternalLink, AlertCircle, Bot, CheckCircle2, Clock, XCircle, Loader2, FilePlus2, Lock, RefreshCw, Search, Wifi, WifiOff, ChevronDown, ChevronRight } from 'lucide-react';
 import type { RegistroFechamentoAutomatico, StatusFechamento, TipoChamadoFechamento, UltimaMensagemPor } from '@/lib/digisac/finalizacoesAutomaticas';
+
+interface ConexaoDisponivel {
+  serviceId: string;
+  serviceName: string;
+  type: string;
+  habilitada: boolean;
+}
 
 interface ListagemResponse {
   items: RegistroFechamentoAutomatico[];
@@ -83,6 +90,12 @@ export default function FinalizacoesAutomaticasPageClient() {
   const [filtroStatus, setFiltroStatus] = useState<StatusFechamento | ''>('');
   const [filtroTipo, setFiltroTipo] = useState<TipoChamadoFechamento | ''>('');
   const [filtroMensagemPor, setFiltroMensagemPor] = useState<UltimaMensagemPor | ''>('');
+  const [filtroConexao, setFiltroConexao] = useState<string>('');
+  const [conexoes, setConexoes] = useState<ConexaoDisponivel[]>([]);
+  const [toggleConexaoId, setToggleConexaoId] = useState<string | null>(null);
+  const [erroConexao, setErroConexao] = useState<string | null>(null);
+  const [sucessoConexao, setSucessoConexao] = useState<string | null>(null);
+  const [conexoesExpandido, setConexoesExpandido] = useState(false);
 
   const [isRegistrando, setIsRegistrando] = useState(false);
   const [resultadoRegistro, setResultadoRegistro] = useState<{
@@ -227,22 +240,69 @@ export default function FinalizacoesAutomaticasPageClient() {
     try {
       const res = await fetch('/api/digisac/finalizacoes-automaticas/registrar-pendentes', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(filtroConexao ? { serviceId: filtroConexao } : {}),
       });
       if (!res.ok) throw new Error(`Erro ${res.status}`);
       const json = await res.json();
-      if (!json.ok) throw new Error(json.error ?? 'Erro desconhecido');
-      setResultadoRegistro({
-        totalInseridos: json.totalInseridos ?? 0,
-        totalJaExistentes: json.totalJaExistentes ?? 0,
-        totalErros: json.totalErros ?? 0,
-        totalIgnorados: json.totalIgnorados ?? 0,
-      });
+      if (json.ok) {
+        setResultadoRegistro({
+          totalInseridos: json.totalInseridos ?? 0,
+          totalJaExistentes: json.totalJaExistentes ?? 0,
+          totalErros: json.totalErros ?? 0,
+          totalIgnorados: json.totalIgnorados ?? 0,
+        });
+      } else {
+        throw new Error(json.error ?? 'Erro desconhecido');
+      }
       buscarDados(1);
       setPage(1);
     } catch (err) {
       setErroRegistro(err instanceof Error ? err.message : 'Erro ao registrar pendentes');
     } finally {
       setIsRegistrando(false);
+    }
+  };
+
+  const carregarConexoes = useCallback(async () => {
+    try {
+      const res = await fetch('/api/digisac/finalizacoes-automaticas/conexoes');
+      const json = await res.json();
+      if (json.ok && Array.isArray(json.conexoes)) {
+        setConexoes(json.conexoes);
+      }
+    } catch {
+      // silencioso
+    }
+  }, []);
+
+  useEffect(() => {
+    carregarConexoes();
+  }, [carregarConexoes]);
+
+  const handleToggleConexao = async (serviceId: string, serviceName: string, ativoAtual: boolean) => {
+    setToggleConexaoId(serviceId);
+    setErroConexao(null);
+    setSucessoConexao(null);
+    try {
+      const res = await fetch('/api/digisac/finalizacoes-automaticas/conexoes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serviceId, ativo: !ativoAtual }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error ?? `Erro ${res.status}`);
+      }
+      setSucessoConexao(`${serviceName} ${!ativoAtual ? 'ativada' : 'desativada'} com sucesso.`);
+      await carregarConexoes();
+      if (filtroConexao === serviceId && ativoAtual) {
+        setFiltroConexao('');
+      }
+    } catch (err) {
+      setErroConexao(err instanceof Error ? err.message : 'Erro ao alterar conexao');
+    } finally {
+      setToggleConexaoId(null);
     }
   };
 
@@ -257,13 +317,14 @@ export default function FinalizacoesAutomaticasPageClient() {
       if (filtroStatus) params.set('status', filtroStatus);
       if (filtroTipo) params.set('tipoChamado', filtroTipo);
       if (filtroMensagemPor) params.set('ultimaMensagemPor', filtroMensagemPor);
+      if (filtroConexao) params.set('serviceId', filtroConexao);
 
       const res = await fetch(`/api/digisac/finalizacoes-automaticas?${params.toString()}`);
       if (!res.ok) throw new Error(`Erro ${res.status}`);
       const json: ListagemResponse = await res.json();
       setData(json);
 
-      if (p === 1 && !filtroStatus && !filtroTipo && !filtroMensagemPor && !busca.trim()) {
+      if (p === 1 && !filtroStatus && !filtroTipo && !filtroMensagemPor && !busca.trim() && !filtroConexao) {
         const items = json.items;
         const pendentes = items.filter(i => i.status === 'pendente').length;
         const finalizados = items.filter(i => i.status === 'finalizado').length;
@@ -276,7 +337,7 @@ export default function FinalizacoesAutomaticasPageClient() {
     } finally {
       setIsLoading(false);
     }
-  }, [busca, filtroStatus, filtroTipo, filtroMensagemPor]);
+  }, [busca, filtroStatus, filtroTipo, filtroMensagemPor, filtroConexao]);
 
   useEffect(() => {
     buscarDados(1);
@@ -314,12 +375,12 @@ export default function FinalizacoesAutomaticasPageClient() {
                 disabled={isRegistrando}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-md text-sm font-medium hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {isRegistrando ? <Loader2 className="w-4 h-4 animate-spin" /> : <FilePlus2 className="w-4 h-4" />}
-                Registrar pendentes
+                {isRegistrando ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                Atualizar chamados
               </button>
             </div>
             <p className="text-xs text-slate-400 max-w-xs text-right">
-              Selecione pendentes ou erros na tabela para fechar em lote. Fechamento manual e controlado.
+              Busca no Digisac novos chamados elegiveis e registra como pendentes. Nao finaliza chamados.
             </p>
           </div>
         </div>
@@ -395,6 +456,69 @@ export default function FinalizacoesAutomaticasPageClient() {
           </div>
         )}
 
+        {/* Resultado toggle conexao */}
+        {erroConexao && (
+          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{erroConexao}</span>
+            <button onClick={() => setErroConexao(null)} className="ml-auto text-red-400 hover:text-red-600 text-xs">Fechar</button>
+          </div>
+        )}
+        {sucessoConexao && (
+          <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-lg p-4 text-sm">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>{sucessoConexao}</span>
+            <button onClick={() => setSucessoConexao(null)} className="ml-auto text-green-400 hover:text-green-600 text-xs">Fechar</button>
+          </div>
+        )}
+
+        {/* Conexoes Digisac */}
+        <div className="bg-white rounded-lg border border-slate-200 p-4">
+          <button
+            onClick={() => setConexoesExpandido(v => !v)}
+            className="flex items-center gap-2 w-full text-left"
+          >
+            {conexoesExpandido ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+            <h2 className="text-sm font-semibold text-slate-700">Conexoes Digisac</h2>
+            <span className="text-xs text-slate-400">({conexoes.filter(c => c.habilitada).length} ativas de {conexoes.length})</span>
+          </button>
+          {conexoesExpandido && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
+              {conexoes.map(c => (
+                <div
+                  key={c.serviceId}
+                  className="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2.5"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-800 truncate">{c.serviceName}</p>
+                    <p className="text-xs text-slate-400">{c.habilitada ? 'Ativa' : 'Inativa'}</p>
+                  </div>
+                  {c.habilitada ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 mr-2">
+                      <Wifi className="w-3 h-3" /> Ativa
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500 mr-2">
+                      <WifiOff className="w-3 h-3" /> Inativa
+                    </span>
+                  )}
+                  <button
+                    onClick={() => handleToggleConexao(c.serviceId, c.serviceName, c.habilitada)}
+                    disabled={toggleConexaoId === c.serviceId}
+                    className={
+                      c.habilitada
+                        ? 'inline-flex items-center gap-1 px-2.5 py-1 bg-slate-200 text-slate-700 rounded text-xs font-medium hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+                        : 'inline-flex items-center gap-1 px-2.5 py-1 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors'
+                    }
+                  >
+                    {toggleConexaoId === c.serviceId ? <Loader2 className="w-3 h-3 animate-spin" /> : c.habilitada ? 'Desativar' : 'Ativar'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Cards resumo */}
         {resumo && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -419,7 +543,7 @@ export default function FinalizacoesAutomaticasPageClient() {
 
         {/* Filtros */}
         <div className="bg-white rounded-lg border border-slate-200 p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <input
               type="text"
               placeholder="Buscar por contato, telefone ou protocolo..."
@@ -457,6 +581,16 @@ export default function FinalizacoesAutomaticasPageClient() {
               <option value="cliente">Cliente</option>
               <option value="nos">Nós</option>
               <option value="desconhecido">Desconhecido</option>
+            </select>
+            <select
+              value={filtroConexao}
+              onChange={e => setFiltroConexao(e.target.value)}
+              className="px-3 py-2 border border-slate-200 rounded-md text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              <option value="">Todas habilitadas</option>
+              {conexoes.filter(c => c.habilitada).map(c => (
+                <option key={c.serviceId} value={c.serviceId}>{c.serviceName}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -515,6 +649,7 @@ export default function FinalizacoesAutomaticasPageClient() {
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Data</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Contato</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Conexão</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Protocolo</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Tipo</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Última msg por</th>
@@ -548,6 +683,9 @@ export default function FinalizacoesAutomaticasPageClient() {
                           {item.telefone_contato && (
                             <div className="text-xs text-slate-400">{item.telefone_contato}</div>
                           )}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
+                          {item.service_name ?? conexoes.find(c => c.serviceId === item.service_id)?.serviceName ?? item.service_id?.slice(0, 8) ?? '—'}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           {item.protocolo && item.ticket_history_url ? (

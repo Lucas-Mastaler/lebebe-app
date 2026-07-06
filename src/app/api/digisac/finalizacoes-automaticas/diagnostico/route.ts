@@ -3,13 +3,14 @@ import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
 import { buscarMensagensTicketPaginado } from '@/lib/digisac/sgi-sync';
 import type { DigisacMensagem } from '@/lib/digisac/sgi-sync';
+import { createServiceClient } from '@/lib/supabase/service';
+import { buscarConexoesHabilitadas } from '@/lib/digisac/finalizacoesAutomaticas';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
-const BIGORRILHO_SERVICE_ID = '0973f84b-8294-4615-9657-ba95b6346246';
 const DIGISAC_WEB_BASE_URL = 'https://lebebe.digisac.me';
 const JANELA_HORAS = 24;
 const JANELA_MS = JANELA_HORAS * 60 * 60 * 1000;
@@ -56,7 +57,7 @@ interface TicketElegivel {
   telefoneContato: string | null;
   serviceIdContato: string | null;
   serviceNameContato: string | null;
-  conexaoConfirmadaBigorrilho: boolean;
+  conexaoConfirmada: boolean;
   tipoChamado: 'ativo' | 'receptivo' | 'indefinido';
   ultimaMensagemEm: string | null;
   ultimaMensagemPor: 'cliente' | 'nos' | 'desconhecido';
@@ -73,7 +74,7 @@ interface TicketIgnoradoRecente {
   horasSemInteracao: number;
   serviceIdContato: string | null;
   serviceNameContato: string | null;
-  conexaoConfirmadaBigorrilho: boolean;
+  conexaoConfirmada: boolean;
 }
 
 interface TicketIgnoradoOutraConexao {
@@ -101,7 +102,7 @@ type ResultadoAnalise =
 interface DadosConexao {
   serviceIdContato: string | null;
   serviceNameContato: string | null;
-  conexaoConfirmadaBigorrilho: boolean;
+  conexaoConfirmada: boolean;
   campoUsado: string;
 }
 
@@ -109,8 +110,9 @@ interface DadosConexao {
  * Extrai dados da conexão do payload do ticket.
  * Tenta: contact.service.id → contact.serviceId → null.
  * Nunca inventa campo — registra qual campo foi usado.
+ * serviceIdAlvo é o serviceId que estamos buscando nesta execução.
  */
-function extrairDadosConexao(ticket: TicketAberto): DadosConexao {
+function extrairDadosConexao(ticket: TicketAberto, serviceIdAlvo: string): DadosConexao {
   const serviceIdViaServiceObj = ticket.contact?.service?.id ?? null;
   const serviceIdViaDireto = ticket.contact?.serviceId ?? null;
   const serviceId = serviceIdViaServiceObj ?? serviceIdViaDireto;
@@ -123,7 +125,7 @@ function extrairDadosConexao(ticket: TicketAberto): DadosConexao {
   return {
     serviceIdContato: serviceId,
     serviceNameContato: serviceName,
-    conexaoConfirmadaBigorrilho: serviceId === BIGORRILHO_SERVICE_ID,
+    conexaoConfirmada: serviceId === serviceIdAlvo,
     campoUsado,
   };
 }
@@ -189,7 +191,7 @@ async function processarEmLotes<T, R>(
 
 // ─── Busca de tickets abertos do Bigorrilho ──────────────────────────────────
 
-async function buscarTicketsAbertosBigorrilho(): Promise<{
+async function buscarTicketsAbertos(serviceIdAlvo: string): Promise<{
   tickets: TicketAberto[];
   paginacaoIncompleta: boolean;
 }> {
@@ -198,7 +200,7 @@ async function buscarTicketsAbertosBigorrilho(): Promise<{
   baseParams.append('include[0][model]', 'contact');
   baseParams.append('include[0][required]', 'true');
   baseParams.append('include[0][where][visible]', 'true');
-  baseParams.append('include[0][where][serviceId]', BIGORRILHO_SERVICE_ID);
+  baseParams.append('include[0][where][serviceId]', serviceIdAlvo);
   baseParams.append('include[1][model]', 'department');
   baseParams.append('include[2][model]', 'user');
   baseParams.append('include[3][model]', 'firstMessage');
@@ -313,7 +315,7 @@ async function analisarTicket(
           horasSemInteracao,
           serviceIdContato: dadosConexao.serviceIdContato,
           serviceNameContato: dadosConexao.serviceNameContato,
-          conexaoConfirmadaBigorrilho: dadosConexao.conexaoConfirmadaBigorrilho,
+          conexaoConfirmada: dadosConexao.conexaoConfirmada,
         },
       };
     }
@@ -363,7 +365,7 @@ async function analisarTicket(
         telefoneContato: ticket.contact?.data?.number ?? null,
         serviceIdContato: dadosConexao.serviceIdContato,
         serviceNameContato: dadosConexao.serviceNameContato,
-        conexaoConfirmadaBigorrilho: dadosConexao.conexaoConfirmadaBigorrilho,
+        conexaoConfirmada: dadosConexao.conexaoConfirmada,
         tipoChamado,
         ultimaMensagemEm: ultimaTsReal != null ? new Date(ultimaTsReal).toISOString() : null,
         ultimaMensagemPor,
@@ -396,19 +398,42 @@ export async function GET(request: NextRequest) {
     if (!auth.ok) return auth.response;
   }
 
-  void request;
+  const { searchParams } = new URL(request.url);
+  const serviceIdParam = searchParams.get('serviceId');
+
+  const supabase = createServiceClient();
+
+  const conexoesHabilitadas = await buscarConexoesHabilitadas(supabase);
+  if (conexoesHabilitadas.length === 0) {
+    return NextResponse.json(
+      { ok: false, error: 'Nenhuma conexao habilitada para automacao. Configure a tabela digisac_conexoes_automacao.' },
+      { status: 500 }
+    );
+  }
+
+  const serviceIdAlvo = serviceIdParam ?? conexoesHabilitadas[0].service_id;
+
+  const habilitada = conexoesHabilitadas.some(c => c.service_id === serviceIdAlvo);
+  if (!habilitada) {
+    return NextResponse.json(
+      { ok: false, error: `serviceId ${serviceIdAlvo} nao esta habilitado para automacao` },
+      { status: 403 }
+    );
+  }
+
+  const serviceNameAlvo = conexoesHabilitadas.find(c => c.service_id === serviceIdAlvo)?.service_name ?? null;
 
   const inicio = Date.now();
   const avisos: string[] = [];
 
   console.log(
     '[DIAGNOSTICO-FINALIZACAO] Iniciando diagnostico dry-run.' +
-    ' serviceId=' + BIGORRILHO_SERVICE_ID +
+    ' serviceId=' + serviceIdAlvo +
     ' janelaHoras=' + JANELA_HORAS
   );
 
   try {
-    const { tickets, paginacaoIncompleta } = await buscarTicketsAbertosBigorrilho();
+    const { tickets, paginacaoIncompleta } = await buscarTicketsAbertos(serviceIdAlvo);
 
     console.log('[DIAGNOSTICO-FINALIZACAO] Tickets abertos encontrados:', tickets.length);
 
@@ -423,33 +448,31 @@ export async function GET(request: NextRequest) {
     // ── Filtro defensivo pós-query ──────────────────────────────────────────
     // Não confia apenas no filtro da API. Valida campo de conexão no payload.
     const ticketsIgnoradosOutraConexao: TicketIgnoradoOutraConexao[] = [];
-    const ticketsBigorrilho: Array<{ ticket: TicketAberto; dadosConexao: DadosConexao }> = [];
+    const ticketsAlvo: Array<{ ticket: TicketAberto; dadosConexao: DadosConexao }> = [];
     let campoNaoEncontradoCount = 0;
 
     for (const ticket of tickets) {
-      const dadosConexao = extrairDadosConexao(ticket);
+      const dadosConexao = extrairDadosConexao(ticket, serviceIdAlvo);
 
       if (dadosConexao.campoUsado === 'nao_encontrado') {
         campoNaoEncontradoCount++;
-        // Campo de serviceId não encontrado no payload: mantém o ticket na análise
-        // (query já filtrou por serviceId) mas registra aviso
-        ticketsBigorrilho.push({ ticket, dadosConexao });
+        ticketsAlvo.push({ ticket, dadosConexao });
         continue;
       }
 
-      if (!dadosConexao.conexaoConfirmadaBigorrilho) {
+      if (!dadosConexao.conexaoConfirmada) {
         ticketsIgnoradosOutraConexao.push({
           ticketId: ticket.id,
           protocolo: ticket.protocol != null ? String(ticket.protocol) : null,
           contactId: ticket.contact?.id ?? ticket.contactId ?? null,
           serviceIdContato: dadosConexao.serviceIdContato,
           serviceNameContato: dadosConexao.serviceNameContato,
-          motivo: `serviceId do contato (${dadosConexao.serviceIdContato}) difere do Bigorrilho (${BIGORRILHO_SERVICE_ID})`,
+          motivo: `serviceId do contato (${dadosConexao.serviceIdContato}) difere do alvo (${serviceIdAlvo})`,
         });
         continue;
       }
 
-      ticketsBigorrilho.push({ ticket, dadosConexao });
+      ticketsAlvo.push({ ticket, dadosConexao });
     }
 
     if (campoNaoEncontradoCount > 0) {
@@ -461,21 +484,21 @@ export async function GET(request: NextRequest) {
 
     if (ticketsIgnoradosOutraConexao.length > 0) {
       avisos.push(
-        `${ticketsIgnoradosOutraConexao.length} ticket(s) ignorados por serviceId diferente do Bigorrilho (filtro defensivo pos-query).`
+        `${ticketsIgnoradosOutraConexao.length} ticket(s) ignorados por serviceId diferente do alvo (filtro defensivo pos-query).`
       );
     }
 
     console.log(
       '[DIAGNOSTICO-FINALIZACAO] Filtro defensivo:' +
       ' total=' + tickets.length +
-      ' bigorrilho=' + ticketsBigorrilho.length +
+      ' alvo=' + ticketsAlvo.length +
       ' outraConexao=' + ticketsIgnoradosOutraConexao.length +
       ' semCampoServiceId=' + campoNaoEncontradoCount
     );
     // ────────────────────────────────────────────────────────────────────────
 
     const resultados = await processarEmLotes(
-      ticketsBigorrilho,
+      ticketsAlvo,
       ({ ticket, dadosConexao }) => analisarTicket(ticket, agora, avisos, dadosConexao),
       CONCORRENCIA_LOTES
     );
@@ -499,7 +522,7 @@ export async function GET(request: NextRequest) {
     console.log(
       '[DIAGNOSTICO-FINALIZACAO] Fim.' +
       ' totalBruto=' + tickets.length +
-      ' bigorrilhoAnalisados=' + ticketsBigorrilho.length +
+      ' alvoAnalisados=' + ticketsAlvo.length +
       ' outraConexao=' + ticketsIgnoradosOutraConexao.length +
       ' elegiveis=' + ticketsElegiveis.length +
       ' recentes=' + ticketsIgnoradosRecentes.length +
@@ -515,11 +538,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       modo: 'dry-run',
-      serviceId: BIGORRILHO_SERVICE_ID,
+      serviceId: serviceIdAlvo,
+      serviceName: serviceNameAlvo,
       janelaHoras: JANELA_HORAS,
       totalTicketsBrutosRecebidos: tickets.length,
       totalIgnoradosOutraConexao: ticketsIgnoradosOutraConexao.length,
-      totalTicketsAbertosAnalisados: ticketsBigorrilho.length,
+      totalTicketsAbertosAnalisados: ticketsAlvo.length,
       totalElegiveisParaFinalizacao: ticketsElegiveis.length,
       totalIgnoradosRecentes: ticketsIgnoradosRecentes.length,
       totalSemMensagensValidas,

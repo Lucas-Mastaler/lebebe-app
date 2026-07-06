@@ -33,6 +33,87 @@ Status: implementado e validado manualmente. Correcao de bug inequivoco de equiv
 
 ---
 
+## 2026-07-06 - Cascade - Frente 0/Controle: validacao do caso Capivari/Araucaria
+
+Status: correcao validada em producao v2. Nenhuma alteracao de codigo, motor, banco ou Apps Script.
+
+### Decisao validada
+- Na v2, ponto real de agenda com endereco mas sem coordenada nao pode ser tratado silenciosamente como ausencia de ponto ou rota simples. O motor deve tentar resolver/cachear coordenadas antes do calculo de insercao. Se nao conseguir, deve registrar aviso/diagnostico explicito e seguir comportamento equivalente ao legado.
+- O caso Capivari/Araucaria validou essa regra: o resultado `17/08/2026 / EQUIPE 1 / normal`, que aparecia antes, deixou de aparecer apos a correcao. Com ponto Orleans resolvido, o filtro early legado por Haversine descarta o slot antes de OSRM/delta.
+
+### Validacao manual autenticada
+- Novo runId: `ac4c1eb0-c9fa-49ae-9c68-6e8a61955f36`
+- Novo pesquisaAuditoriaId: `853d719d-2c4f-443e-a530-7fa217e1142b`
+- Resultados da nova pesquisa:
+  1. `15/08/2026 / Sabado / EQUIPE 1 / R$ 210 / Normal / Nao`
+  2. `24/08/2026 / Segunda / EQUIPE 1 / R$ 150 / Normal / Nao`
+  3. `25/08/2026 / Terca / EQUIPE 1 / R$ 150 / Normal / Nao`
+- O resultado `17/08/2026 / EQUIPE 1 / normal` nao apareceu mais.
+- Auditoria do novo run: diagnostico real disponivel, agenda real lida (506 linhas), disponibilidade real lida (200 linhas), 130 candidatos reais, nenhuma divergencia detectada nos campos recalculados disponiveis.
+
+### Pendencia restante
+- Ainda nao ha snapshot historico completo de agenda/cache/candidatos por execucao. Auditorias antigas podem depender do estado atual da planilha/cache.
+
+---
+
+## 2026-07-06 - Codex - Frente 1: coordenadas reais da agenda antes da rota simples
+
+Status: implementado em producao v2, sem alterar ranking/classificacao/limites/OSRM/Apps Script/banco.
+
+### Decisao validada
+- Ponto real da agenda com endereco nao pode virar silenciosamente `sem ponto`, `slotTemPontos=false` ou rota simples origem -> destino apenas por falta de coordenada no cache inicial.
+- A v2 deve tentar resolver coordenadas antes de montar os slots finais de km adicional.
+- Se, apos as tentativas, ainda houver ponto real da agenda sem coordenada, o slot fica com km por insercao nao validado e nao pode ser aceito como normal por rota simples.
+
+### Base legado
+- `coletarPontosDoDia` no Apps Script pre-carrega cache Supabase por hash de endereco e depois chama `ResolverEnderecoComCache_` para cada endereco da agenda.
+- `ResolverEnderecoComCache_` tenta L1, Supabase L2 e providers externos, salvando resultado em cache quando resolve.
+- Portanto, a equivalencia minima da v2 precisa resolver/cachear antes de tratar o slot como sem pontos.
+
+### Ajuste v2
+- `pesquisarDatasV2` agora executa enriquecimento de coordenadas da agenda para datas/equipes da janela antes de `montarSlotsAgendaReal`.
+- A ordem e: cache legado por hash -> `geo_cache` seguro por campos -> fallback externo controlado com providers ja existentes -> salvar em `geo_cache` quando resolver.
+- O limite atual e de 5 geocodificacoes externas por busca para evitar chamadas em massa.
+- Se um ponto real permanecer sem coordenada, `calcularKmAdicionalRealControladoV2` retorna `kmAdicionalNaRotaM=null`, origem `agenda-sem-coordenadas-producao` e aviso explicito de que rota simples nao foi validada.
+- `slotTemPontos` passa a considerar tambem `semCoordenadas > 0`, evitando que linha real da agenda seja reportada como slot sem pontos.
+
+### Impacto esperado no caso Capivari/Araucaria
+- Com Orleans resolvido, o slot `2026-08-17::EQUIPE 1` entra como slot com ponto real.
+- O filtro early legado (`haversine-reta`) deve descartar o slot antes do delta, porque a Haversine ate Araucaria fica acima de 12 km.
+
+---
+
+## 2026-07-06 - Codex - Auditoria Run ID: filtro early legado antes do delta
+
+Status: regra legacy validada; ajuste aplicado somente em diagnostico/auditoria.
+
+### Regra confirmada no legado
+- Em slots com pontos reais (`slot.pontos.length > 0`), o Apps Script calcula a menor distancia Haversine entre cada ponto da agenda e o novo destino.
+- Se essa distancia for maior que `MAX_POINT_KM * 1.5`, o slot e descartado com log `[FILTER-EARLY]` antes de calcular ancora OSRM e antes do delta de insercao.
+- Depois desse filtro, o legado ainda calcula a ancora via OSRM ponto -> destino; se a ancora tiver CEP diferente do deposito e a distancia exceder `MAX_POINT_KM + MAX_EXTRA_PREMIUM/1000`, tambem descarta antes do delta.
+- A origem operacional (deposito/casa) segue sendo usada para rota base e delta, mas nao e a origem do filtro Haversine early; o filtro usa ponto da agenda -> novo destino.
+
+### Caso auditado
+- Run ID: `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488`.
+- Slot critico: `2026-08-17::EQUIPE 1`.
+- Destino: Araucaria (`-25.6058742,-49.384131`).
+- Com os pontos atuais resolvidos, as distancias Haversine aproximadas sao:
+  - Orleans -> destino: `20.306 km`.
+  - Santa Felicidade -> destino: `26.066 km`.
+- Com `KM MAX ENTRE PONTOS = 8`, o limite legacy e `12 km`; portanto, se esses pontos estiverem resolvidos no slot, o legado descarta antes do delta.
+
+### Comparacao producao x auditoria
+- A v2 de producao usa o mesmo helper de filtro early quando os pontos da agenda estao resolvidos.
+- O run salvo marcou `17/08` como `normal`; a causa mais provavel no codigo atual e que, na execucao salva, a v2 nao tinha coordenadas desses pontos e avaliou o slot como rota simples/sem pontos.
+- A causa historica exata nao e totalmente confirmada porque o snapshot completo de agenda/cache/candidatos do momento da busca nao foi persistido.
+
+### Ajuste aplicado
+- A auditoria agora expoe `filtroEarly` quando avaliado: tipo, distancia Haversine, limite, origem/destino usados, se o legado pularia OSRM, se delta foi calculado e motivo textual.
+- Quando o filtro early descarta antes do delta, o slot passa a ter `validacaoInsercaoReal = "interrompida_por_filtro_early"` e `insercaoRealCompleta = false`.
+- Nenhuma regra de negocio, ranking, classificacao, OSRM de producao, banco ou Apps Script foi alterado.
+
+---
+
 ## 2026-06-26 - Codex - Frente 3/direita + Frente 0: autoria real no pre-agendamento
 
 Status: implementado no fluxo de pre-agendamento. Nao altera motor v2, equivalencia legado/v2 de busca, geocodificacao, CEP-first, OSRM, Haversine, ranking, candidatos, classificacao, frete, banco, migrations ou RLS.

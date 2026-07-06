@@ -5,6 +5,7 @@ import { gerarJanelaDatasPesquisaV2 } from './janela-datas'
 import { buscarDisponibilidadeRealDiagnosticaComDados } from './disponibilidade-real-helper'
 import { buscarAgendaRealDiagnosticaComDados } from './agenda-real-helper'
 import { resolverCacheCoordenadasAgendaDiagnostico } from './cache-coordenadas-agenda-diagnostico'
+import { resolverCoordenadasAgendaProducao } from './resolver-coordenadas-agenda-producao'
 import {
   calcularMapaKmAdicionalPorSlotControladoV2,
   type DetalheSlotMapaKmAdicional,
@@ -85,6 +86,13 @@ export type PesquisarDatasV2Output = {
       hashesConsultados: number
       hitsSupabase: number
       enderecosSemHash: number
+    }
+    resolucaoCoordenadasAgenda?: {
+      enderecosComEnderecoSemCoordenada: number
+      resolvidosPorCache: number
+      resolvidosPorFallback: number
+      aindaSemCoordenada: number
+      geocodificacoesExternasTentadas: number
     }
     avisos: string[]
   }
@@ -201,8 +209,9 @@ function derivarSlotTemPontos(
   const out: Record<string, boolean> = {}
   for (const detalhe of detalhesPorSlot) {
     const pontosValidos = detalhe.parseAgenda?.resumo.pontosValidos
+    const semCoordenadas = detalhe.parseAgenda?.resumo.semCoordenadas
     if (typeof pontosValidos === 'number' && Number.isFinite(pontosValidos)) {
-      out[detalhe.chave] = pontosValidos > 0
+      out[detalhe.chave] = pontosValidos > 0 || Boolean(semCoordenadas && semCoordenadas > 0)
     }
   }
   return out
@@ -523,6 +532,27 @@ export async function pesquisarDatasV2(
   })
   avisos.push(...cacheAgenda.avisos)
 
+  const equipesAtivas: string[] = []
+  if (configResult.config.equipe1Ativa) equipesAtivas.push('EQUIPE 1')
+  if (configResult.config.equipe2Ativa) equipesAtivas.push('EQUIPE 2')
+
+  const resolucaoCoordenadasAgenda = await (perf?.medirAsync('geocodificacao-agenda-producao', () =>
+    resolverCoordenadasAgendaProducao({
+      linhasAgenda: agendaReal.linhasAgenda,
+      datasAlvoISO: janela.datas.map((d) => d.dataISO),
+      equipesAlvo: equipesAtivas,
+      cacheCoordenadasPorEndereco: cacheAgenda.cacheCoordenadasPorEndereco,
+      maxGeocodificacoesExternas: 5,
+    })
+  ) ?? resolverCoordenadasAgendaProducao({
+    linhasAgenda: agendaReal.linhasAgenda,
+    datasAlvoISO: janela.datas.map((d) => d.dataISO),
+    equipesAlvo: equipesAtivas,
+    cacheCoordenadasPorEndereco: cacheAgenda.cacheCoordenadasPorEndereco,
+    maxGeocodificacoesExternas: 5,
+  }))
+  avisos.push(...resolucaoCoordenadasAgenda.avisos)
+
   const osrmResolvido = resolverOsrmBaseUrlV2(configResult.config.osrmBaseUrl)
   const buscarMatrizOSRMBase = criarBuscarMatrizOSRMTableDiagnosticoV2({
     baseUrl: osrmResolvido.url,
@@ -536,7 +566,7 @@ export async function pesquisarDatasV2(
   const slots = montarSlotsAgendaReal({
     janelaDatas: janela.datas,
     linhasAgenda: agendaReal.linhasAgenda,
-    cacheCoordenadasPorEndereco: cacheAgenda.cacheCoordenadasPorEndereco,
+    cacheCoordenadasPorEndereco: resolucaoCoordenadasAgenda.cacheCoordenadasPorEndereco,
     equipe1Ativa: configResult.config.equipe1Ativa,
     equipe2Ativa: configResult.config.equipe2Ativa,
   })
@@ -748,6 +778,13 @@ export async function pesquisarDatasV2(
         hashesConsultados: cacheAgenda.hashesConsultados,
         hitsSupabase: cacheAgenda.hitsSupabase,
         enderecosSemHash: cacheAgenda.enderecosSemHash,
+      },
+      resolucaoCoordenadasAgenda: {
+        enderecosComEnderecoSemCoordenada: resolucaoCoordenadasAgenda.enderecosComEnderecoSemCoordenada,
+        resolvidosPorCache: resolucaoCoordenadasAgenda.resolvidosPorCache,
+        resolvidosPorFallback: resolucaoCoordenadasAgenda.resolvidosPorFallback,
+        aindaSemCoordenada: resolucaoCoordenadasAgenda.aindaSemCoordenada,
+        geocodificacoesExternasTentadas: resolucaoCoordenadasAgenda.geocodificacoesExternasTentadas,
       },
       avisos: avisosFiltrados,
     },

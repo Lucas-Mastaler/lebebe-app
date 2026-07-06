@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
-  BIGORRILHO_SERVICE_ID,
+  isConexaoHabilitada,
   verificarChamadoFechadoNoDigisac,
 } from '@/lib/digisac/finalizacoesAutomaticas';
 
@@ -51,9 +51,9 @@ export async function POST(
       ticket_history_url: string | null;
     };
 
-    if (reg.service_id !== BIGORRILHO_SERVICE_ID) {
+    if (!(await isConexaoHabilitada(supabase, reg.service_id))) {
       return NextResponse.json(
-        { ok: false, error: 'Registro nao pertence a conexao Bigorrilho' },
+        { ok: false, error: 'Conexao nao habilitada para automacao' },
         { status: 403 }
       );
     }

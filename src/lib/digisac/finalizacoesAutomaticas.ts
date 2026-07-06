@@ -35,6 +35,7 @@ export interface FiltrosListagemFechamentos {
   status?: StatusFechamento;
   tipoChamado?: TipoChamadoFechamento;
   ultimaMensagemPor?: UltimaMensagemPor;
+  serviceId?: string;
   dataInicio?: string;
   dataFim?: string;
   busca?: string;
@@ -59,6 +60,53 @@ export const DIGISAC_TICKET_TOPIC_NOME_FECHAMENTO_AUTOMATICO = 'FECHAMENTO AUTOM
 
 /** serviceId da conexão Bigorrilho no Digisac. */
 export const BIGORRILHO_SERVICE_ID = '0973f84b-8294-4615-9657-ba95b6346246';
+
+// ─── Conexoes habilitadas para automacao ──────────────────────────────────────
+
+export interface ConexaoAutomacao {
+  id: string;
+  service_id: string;
+  service_name: string | null;
+  my_number: string | null;
+  default_department_id: string | null;
+  ativo: boolean;
+}
+
+/**
+ * Busca todas as conexoes habilitadas (ativo=true) na tabela digisac_conexoes_automacao.
+ */
+export async function buscarConexoesHabilitadas(
+  supabase: ReturnType<typeof import('@/lib/supabase/service').createServiceClient>
+): Promise<ConexaoAutomacao[]> {
+  const { data, error } = await supabase
+    .from('digisac_conexoes_automacao')
+    .select('id, service_id, service_name, my_number, default_department_id, ativo')
+    .eq('ativo', true);
+
+  if (error) {
+    console.error('[CONEXOES-AUTOMACAO] Erro ao buscar conexoes habilitadas:', error.message);
+    return [];
+  }
+
+  return (data ?? []) as ConexaoAutomacao[];
+}
+
+/**
+ * Verifica se um serviceId esta habilitado para automacao.
+ */
+export async function isConexaoHabilitada(
+  supabase: ReturnType<typeof import('@/lib/supabase/service').createServiceClient>,
+  serviceId: string
+): Promise<boolean> {
+  const { data } = await supabase
+    .from('digisac_conexoes_automacao')
+    .select('id')
+    .eq('service_id', serviceId)
+    .eq('ativo', true)
+    .maybeSingle();
+
+  return !!data;
+}
 
 // ─── Fechamento reutilizavel ──────────────────────────────────────────────────
 

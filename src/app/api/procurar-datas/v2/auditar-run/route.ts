@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/auth/module-access'
 import { createServiceClient } from '@/lib/supabase/service'
-import type { PesquisarDatasRequest, ValidarEnderecoRequest } from '@/lib/procurar-datas/contratos'
+import type { PesquisarDatasRequest } from '@/lib/procurar-datas/contratos'
 import { buscarConfiguracoesProcurarDatas } from '@/lib/procurar-datas/config-service'
 import { buscarEnderecoNoGeoCache } from '@/lib/procurar-datas/endereco-cache'
 import { normalizarEntradaPesquisaV2 } from '@/lib/procurar-datas/motor/entrada'
+import { haversineKm, type Coordenada } from '@/lib/procurar-datas/motor/distancia'
 import { gerarJanelaDatasPesquisaV2 } from '@/lib/procurar-datas/motor/janela-datas'
 import { buscarAgendaRealDiagnosticaComDados } from '@/lib/procurar-datas/motor/agenda-real-helper'
 import { buscarDisponibilidadeRealDiagnosticaComDados } from '@/lib/procurar-datas/motor/disponibilidade-real-helper'
-import { resolverCacheCoordenadasAgendaDiagnostico } from '@/lib/procurar-datas/motor/cache-coordenadas-agenda-diagnostico'
+import {
+  montarFormGeoCachePorEnderecoAgenda,
+  resolverCacheCoordenadasAgendaDiagnostico,
+} from '@/lib/procurar-datas/motor/cache-coordenadas-agenda-diagnostico'
 import {
   extrairEnderecoAgendaShAgV2,
   normalizarChaveEnderecoAgendaV2,
@@ -78,6 +82,33 @@ type EnderecoSemCoordenadasAuditoria = {
   chaveNormalizada: string | null
   indiceLinhaOriginal: number | null
   descricao: string | null
+}
+
+type FiltroEarlyAuditoria = {
+  aplicado: boolean
+  descartado: boolean
+  tipoFiltroEarly: string
+  distanciaHaversineKm: number | null
+  limiteHaversineKm: number | null
+  distanciaAncoraKm: number | null
+  limiteAncoraPremiumKm: number | null
+  origemUsada: {
+    tipo: 'ponto-agenda' | 'indisponivel'
+    endereco: string | null
+    titulo: string | null
+    cep: string | null
+    lat: number | null
+    lng: number | null
+  }
+  destinoUsado: {
+    lat: number
+    lng: number
+    descricao: string | null
+  } | null
+  osrmPuladoPeloFiltroLegado: boolean
+  osrmMatrizExecutadaNaAuditoria: boolean
+  deltaInsercaoCalculado: boolean
+  motivoTextual: string
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -153,46 +184,6 @@ function dataISODeAgendaRaw(value: unknown): string | null {
   const br = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
   if (!br) return null
   return `${br[3]}-${br[2].padStart(2, '0')}-${br[1].padStart(2, '0')}`
-}
-
-function montarFormGeoCachePorEnderecoAgenda(endereco: string): ValidarEnderecoRequest | null {
-  let texto = endereco.replace(/\n/g, ', ').replace(/\s+/g, ' ').replace(/,+/g, ',').trim()
-  if (texto.toUpperCase().startsWith('ENDERECO:')) texto = texto.substring(9).trim()
-
-  const cepMatch = texto.match(/\b(\d{5})-?(\d{3})\b/)
-  const cep = cepMatch ? `${cepMatch[1]}${cepMatch[2]}` : ''
-  if (cepMatch) texto = texto.replace(cepMatch[0], '').replace(/[,\-\s]+$/, '').trim()
-
-  let cidade = ''
-  let uf = ''
-  const cidadeUfMatch = texto.match(/,\s*([^,]+?)\s*-\s*([A-Za-z]{2})\s*$/)
-  if (cidadeUfMatch) {
-    cidade = cidadeUfMatch[1].trim()
-    uf = cidadeUfMatch[2].trim().toUpperCase()
-    texto = texto.substring(0, texto.length - cidadeUfMatch[0].length).replace(/[,\-\s]+$/, '').trim()
-  }
-
-  const partes = texto.split(/\s*,\s*/).map((parte) => parte.trim()).filter(Boolean)
-  if (!cidade && partes.length >= 4) {
-    const possivelCidade = partes.pop()
-    cidade = possivelCidade ?? ''
-  }
-  if (!uf) uf = 'PR'
-
-  const logradouro = partes[0] ?? ''
-  const numero = partes[1] ?? ''
-  const bairro = partes[2] ?? ''
-
-  if (!logradouro || !numero || !bairro || !cidade || uf.length !== 2) return null
-
-  return {
-    logradouro,
-    numero,
-    bairro,
-    cidade,
-    uf,
-    cep,
-  }
 }
 
 async function enriquecerCacheAgendaComGeoCacheSeguro(input: {
@@ -337,6 +328,81 @@ function resumirDetalheSlot(detalhe: DetalheSlotMapaKmAdicional | undefined) {
     avisos: detalhe.avisos,
     erros: detalhe.erros,
     descartados: detalhe.descartados,
+    filtroEarlyLegado: detalhe.filtroEarlyLegado ?? null,
+  }
+}
+
+function arredondarKm(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? Number(value.toFixed(3)) : null
+}
+
+function montarFiltroEarlyAuditoria(input: {
+  detalhe: DetalheSlotMapaKmAdicional | undefined
+  destino: (Coordenada & { descricao?: string }) | null
+}): FiltroEarlyAuditoria | null {
+  const filtro = input.detalhe?.filtroEarlyLegado
+  if (!filtro) return null
+
+  const pontos = input.detalhe?.parseAgenda?.pontos ?? []
+  let pontoMaisProximo: (typeof pontos)[number] | null = null
+  let menorDistanciaKm = Infinity
+  if (input.destino) {
+    for (const ponto of pontos) {
+      const dist = haversineKm(ponto.coordenadas, input.destino)
+      if (dist < menorDistanciaKm) {
+        menorDistanciaKm = dist
+        pontoMaisProximo = ponto
+      }
+    }
+  }
+
+  const origemEndereco = pontoMaisProximo?.endereco ?? filtro.ancoraEndereco ?? null
+  const origemTitulo = pontoMaisProximo?.tituloEvento ?? filtro.ancoraTitulo ?? null
+  const distanciaHaversineKm = arredondarKm(filtro.nearestStraightKm)
+  const limiteHaversineKm = arredondarKm(filtro.limiteHaversineKm)
+  const distanciaAncoraKm = arredondarKm(filtro.ancoraDistanciaKm)
+  const limiteAncoraPremiumKm = arredondarKm(filtro.limiteAncoraPremiumKm)
+
+  let motivoTextual = `Filtro early legado avaliado: ${filtro.motivo}.`
+  if (filtro.descartado && filtro.motivo === 'haversine-reta') {
+    motivoTextual =
+      `Menor distancia Haversine ponto da agenda -> destino (${distanciaHaversineKm ?? '?'} km) ` +
+      `excedeu o limite (${limiteHaversineKm ?? '?'} km). No legado, este filtro descarta o slot antes do delta de insercao.`
+  } else if (filtro.descartado && filtro.motivo === 'ancora-osrm-premium') {
+    motivoTextual =
+      `Distancia OSRM da ancora -> destino (${distanciaAncoraKm ?? '?'} km) excedeu o limite premium ` +
+      `(${limiteAncoraPremiumKm ?? '?'} km). No legado, este filtro descarta o slot antes do delta de insercao.`
+  } else if (filtro.motivo === 'passou') {
+    motivoTextual = 'Filtro early legado avaliado e aprovado; delta de insercao pode ser calculado.'
+  }
+
+  return {
+    aplicado: filtro.aplicado,
+    descartado: filtro.descartado,
+    tipoFiltroEarly: filtro.motivo,
+    distanciaHaversineKm,
+    limiteHaversineKm,
+    distanciaAncoraKm,
+    limiteAncoraPremiumKm,
+    origemUsada: {
+      tipo: origemEndereco ? 'ponto-agenda' : 'indisponivel',
+      endereco: origemEndereco,
+      titulo: origemTitulo,
+      cep: pontoMaisProximo?.cep ?? filtro.ancoraCep ?? null,
+      lat: pontoMaisProximo?.coordenadas.lat ?? null,
+      lng: pontoMaisProximo?.coordenadas.lng ?? null,
+    },
+    destinoUsado: input.destino
+      ? {
+          lat: input.destino.lat,
+          lng: input.destino.lng,
+          descricao: input.destino.descricao ?? null,
+        }
+      : null,
+    osrmPuladoPeloFiltroLegado: filtro.descartado && filtro.motivo === 'haversine-reta',
+    osrmMatrizExecutadaNaAuditoria: Boolean(input.detalhe?.matrizOSRM),
+    deltaInsercaoCalculado: Boolean(input.detalhe?.deltaInsercao),
+    motivoTextual,
   }
 }
 
@@ -556,7 +622,28 @@ async function montarDiagnosticoReal(input: {
       equipe: resultado.equipe,
       detalhe,
     })
-    const insercaoRealCompleta = enderecosSemCoordenadas.length === 0
+    const filtroEarly = montarFiltroEarlyAuditoria({
+      detalhe,
+      destino: entradaNormalizada.coordenadasDestino
+        ? {
+            lat: entradaNormalizada.coordenadasDestino.lat,
+            lng: entradaNormalizada.coordenadasDestino.lng,
+            descricao: entradaNormalizada.enderecoCompleto ?? input.payload.destDisplay,
+          }
+        : null,
+    })
+    const insercaoInterrompidaPorFiltroEarly = filtroEarly?.descartado === true
+    const insercaoRealCompleta = enderecosSemCoordenadas.length === 0 && !insercaoInterrompidaPorFiltroEarly
+    const validacaoInsercaoReal = insercaoInterrompidaPorFiltroEarly
+      ? 'interrompida_por_filtro_early'
+      : insercaoRealCompleta
+        ? 'completa'
+        : 'incompleta_sem_coordenadas'
+    const motivoInsercaoRealIncompleta = insercaoInterrompidaPorFiltroEarly
+      ? 'Filtro early legado descartou o slot antes do delta de insercao; km por insercao real nao foi calculado.'
+      : insercaoRealCompleta
+        ? null
+        : 'Pontos reais da agenda foram descartados por falta de coordenadas; km por insercao nao deve ser tratado como validado.'
     return {
       slotKey: key,
       dataISO: resultado.dataISO,
@@ -578,10 +665,10 @@ async function montarDiagnosticoReal(input: {
       origemKmAdicionalNaRotaM: detalhe?.origemKmAdicionalNaRotaM ?? null,
       slotTemPontos: candidato?.slotTemPontos ?? (key ? slotTemPontosPorDataEquipe[key] ?? null : null),
       insercaoRealCompleta,
-      validacaoInsercaoReal: insercaoRealCompleta ? 'completa' : 'incompleta_sem_coordenadas',
-      motivoInsercaoRealIncompleta: insercaoRealCompleta
-        ? null
-        : 'Pontos reais da agenda foram descartados por falta de coordenadas; km por insercao nao deve ser tratado como validado.',
+      validacaoInsercaoReal,
+      motivoInsercaoRealIncompleta,
+      filtroEarlyAplicado: filtroEarly?.aplicado ?? false,
+      filtroEarly,
       enderecosSemCoordenadas,
       entrouNoRecorteAtual: key ? recorteChaves.has(key) : false,
       motivos: candidato?.motivos ?? [],
@@ -591,6 +678,7 @@ async function montarDiagnosticoReal(input: {
     }
   })
   const enderecosSemCoordenadas = slots.flatMap((slot) => slot.enderecosSemCoordenadas)
+  const slotsInterrompidosPorFiltroEarly = slots.filter((slot) => slot.filtroEarly?.descartado)
 
   return {
     disponivel: true,
@@ -627,7 +715,12 @@ async function montarDiagnosticoReal(input: {
     },
     slots,
     enderecosSemCoordenadas,
-    insercaoRealCompleta: enderecosSemCoordenadas.length === 0,
+    insercaoRealCompleta: enderecosSemCoordenadas.length === 0 && slotsInterrompidosPorFiltroEarly.length === 0,
+    slotsInterrompidosPorFiltroEarly: slotsInterrompidosPorFiltroEarly.map((slot) => ({
+      slotKey: slot.slotKey,
+      tipoFiltroEarly: slot.filtroEarly?.tipoFiltroEarly ?? null,
+      motivoTextual: slot.filtroEarly?.motivoTextual ?? null,
+    })),
     avisos,
     limitacoesHistoricas,
   }
@@ -651,10 +744,15 @@ function montarDivergencias(
   for (const slot of slots) {
     const salvo = slot.resultadoSalvo
     if (slot.insercaoRealCompleta === false) {
+      const detalhe = slot.filtroEarly?.descartado
+        ? `Km por insercao nao validado: filtro early legado (${slot.filtroEarly.tipoFiltroEarly}) interrompeu o calculo do delta.`
+        : `Km por insercao nao validado: ${slot.enderecosSemCoordenadas.length} ponto(s) real(is) da agenda sem coordenadas.`
       divergencias.push({
         slotKey: slot.slotKey,
-        tipo: 'insercao-real-incompleta-sem-coordenadas',
-        detalhe: `Km por insercao nao validado: ${slot.enderecosSemCoordenadas.length} ponto(s) real(is) da agenda sem coordenadas.`,
+        tipo: slot.filtroEarly?.descartado
+          ? 'insercao-real-interrompida-por-filtro-early'
+          : 'insercao-real-incompleta-sem-coordenadas',
+        detalhe,
       })
     }
     if (salvo?.tipo && slot.tipoRecalculado && salvo.tipo !== slot.tipoRecalculado) {

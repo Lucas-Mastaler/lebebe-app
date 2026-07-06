@@ -5,6 +5,7 @@ import {
   normalizarChaveEnderecoAgendaV2,
   type LinhaAgendaShAgV2,
 } from './parse-agenda-shag'
+import type { ValidarEnderecoRequest } from '../contratos'
 
 type Coordenada = { lat: number; lng: number }
 
@@ -32,6 +33,46 @@ type EnderecoParaCache = {
   endereco: string
   chaveParser: string
   hashLegado: string
+}
+
+export function montarFormGeoCachePorEnderecoAgenda(endereco: string): ValidarEnderecoRequest | null {
+  let texto = endereco.replace(/\n/g, ', ').replace(/\s+/g, ' ').replace(/,+/g, ',').trim()
+  if (texto.toUpperCase().startsWith('ENDERECO:')) texto = texto.substring(9).trim()
+
+  const cepMatch = texto.match(/\b(\d{5})-?(\d{3})\b/)
+  const cep = cepMatch ? `${cepMatch[1]}${cepMatch[2]}` : ''
+  if (cepMatch) texto = texto.replace(cepMatch[0], '').replace(/[,\-\s]+$/, '').trim()
+
+  let cidade = ''
+  let uf = ''
+  const cidadeUfMatch = texto.match(/,\s*([^,]+?)\s*-\s*([A-Za-z]{2})\s*$/)
+  if (cidadeUfMatch) {
+    cidade = cidadeUfMatch[1].trim()
+    uf = cidadeUfMatch[2].trim().toUpperCase()
+    texto = texto.substring(0, texto.length - cidadeUfMatch[0].length).replace(/[,\-\s]+$/, '').trim()
+  }
+
+  const partes = texto.split(/\s*,\s*/).map((parte) => parte.trim()).filter(Boolean)
+  if (!cidade && partes.length >= 4) {
+    const possivelCidade = partes.pop()
+    cidade = possivelCidade ?? ''
+  }
+  if (!uf) uf = 'PR'
+
+  const logradouro = partes[0] ?? ''
+  const numero = partes[1] ?? ''
+  const bairro = partes[2] ?? ''
+
+  if (!logradouro || !numero || !bairro || !cidade || uf.length !== 2) return null
+
+  return {
+    logradouro,
+    numero,
+    bairro,
+    cidade,
+    uf,
+    cep,
+  }
 }
 
 function coordenadaValida(input: unknown): input is Coordenada {

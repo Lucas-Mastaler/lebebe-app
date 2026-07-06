@@ -5,6 +5,7 @@ const buscarConfigMock = vi.hoisted(() => vi.fn())
 const buscarDisponibilidadeMock = vi.hoisted(() => vi.fn())
 const buscarAgendaMock = vi.hoisted(() => vi.fn())
 const resolverCacheMock = vi.hoisted(() => vi.fn())
+const resolverCoordenadasAgendaProducaoMock = vi.hoisted(() => vi.fn())
 const calcularMapaMock = vi.hoisted(() => vi.fn())
 const criarBuscarMatrizMock = vi.hoisted(() => vi.fn(() => vi.fn()))
 const buscarRotaMock = vi.hoisted(() => vi.fn())
@@ -24,6 +25,10 @@ vi.mock('./agenda-real-helper', () => ({
 
 vi.mock('./cache-coordenadas-agenda-diagnostico', () => ({
   resolverCacheCoordenadasAgendaDiagnostico: resolverCacheMock,
+}))
+
+vi.mock('./resolver-coordenadas-agenda-producao', () => ({
+  resolverCoordenadasAgendaProducao: resolverCoordenadasAgendaProducaoMock,
 }))
 
 vi.mock('./calcular-mapa-km-adicional-por-slot', async (importOriginal) => {
@@ -103,6 +108,16 @@ describe('pesquisarDatasV2', () => {
       enderecosSemHash: 0,
       avisos: ['Cache Supabase de coordenadas da agenda: 2/2 hit(s).'],
     })
+    resolverCoordenadasAgendaProducaoMock.mockImplementation(async (input) => ({
+      cacheCoordenadasPorEndereco: input.cacheCoordenadasPorEndereco,
+      enderecosComEnderecoSemCoordenada: 0,
+      resolvidosPorCache: 0,
+      resolvidosPorFallback: 0,
+      aindaSemCoordenada: 0,
+      semPayloadEstruturado: 0,
+      geocodificacoesExternasTentadas: 0,
+      avisos: [],
+    }))
     calcularMapaMock.mockResolvedValue({
       ok: true,
       modo: 'mapa-km-adicional-por-slot-diagnostico',
@@ -173,6 +188,64 @@ describe('pesquisarDatasV2', () => {
         incluirDetalhesInsercao: false,
       })
     )
+  })
+
+  it('enriquece coordenadas da agenda antes do mapa para evitar rota simples sem ponto real', async () => {
+    resolverCacheMock.mockResolvedValueOnce({
+      cacheCoordenadasPorEndereco: {},
+      hashesConsultados: 1,
+      hitsSupabase: 0,
+      enderecosSemHash: 0,
+      avisos: ['Cache Supabase de coordenadas da agenda: 1 endereco(s) sem hit.'],
+    })
+    const cacheEnriquecido = {
+      'rua maria zanao machado, 219, gralha azul, fazenda rio grande - pr, 83824-543': {
+        lat: -25.6841821,
+        lng: -49.3046792,
+      },
+    }
+    resolverCoordenadasAgendaProducaoMock.mockResolvedValueOnce({
+      cacheCoordenadasPorEndereco: cacheEnriquecido,
+      enderecosComEnderecoSemCoordenada: 1,
+      resolvidosPorCache: 1,
+      resolvidosPorFallback: 0,
+      aindaSemCoordenada: 0,
+      semPayloadEstruturado: 0,
+      geocodificacoesExternasTentadas: 0,
+      avisos: ['Agenda producao: 1 endereco(s) real(is) da agenda estavam sem coordenada no cache inicial; 1 resolvido(s) por geo_cache seguro, 0 por fallback e 0 permaneceram sem coordenada.'],
+    })
+
+    const result = await pesquisarDatasV2({
+      cep: '83800-000',
+      dataInicial: '2026-07-10',
+      tempoNecessario: '00:40',
+      destLat: -25.769705,
+      destLng: -49.325586,
+      destDisplay: 'R. Jose Schueda Sobrinho, Mandirituba - PR',
+    } as never)
+
+    expect(result.ok).toBe(true)
+    expect(resolverCoordenadasAgendaProducaoMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        datasAlvoISO: expect.arrayContaining(['2026-07-10']),
+        equipesAlvo: ['EQUIPE 1'],
+        maxGeocodificacoesExternas: 5,
+      })
+    )
+    expect(calcularMapaMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        slots: expect.arrayContaining([
+          expect.objectContaining({
+            cacheCoordenadasPorEndereco: cacheEnriquecido,
+          }),
+        ]),
+      })
+    )
+    expect(result.diagnosticoMinimo.resolucaoCoordenadasAgenda).toMatchObject({
+      enderecosComEnderecoSemCoordenada: 1,
+      resolvidosPorCache: 1,
+      aindaSemCoordenada: 0,
+    })
   })
 
   it('nao mantem 27/06 como normal quando Sao Lourenco entra no mapa por slot', async () => {

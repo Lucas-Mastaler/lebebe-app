@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { calcularTempoServicoMinutos, formatarMinutosParaHHMM } from '@/lib/procurar-datas/tempo-servico'
+import { formatarDataBrasileira } from '@/lib/procurar-datas/formatar-apresentacao'
 import {
   normalizarLogradouro,
   normalizarBairro,
@@ -990,7 +991,7 @@ export default function ProcurarDatasPage() {
               const actionIndex = indexOffset + index
               return (
                 <tr key={`${candidate.dateISO}-${candidate.team}-${candidate.tipo || 'normal'}-${index}`} className="border-b border-slate-100">
-                  <td className="px-3 py-3 font-medium text-slate-900">{candidate.dateDM || candidate.date || candidate.dateISO}</td>
+                  <td className="px-3 py-3 font-medium text-slate-900">{formatarDataBrasileira(candidate.date || candidate.dateISO)}</td>
                   <td className="px-3 py-3 text-slate-600">{candidate.weekday || '-'}</td>
                   <td className="px-3 py-3 text-slate-600">{formatDaysLeftFromToday(candidate)}</td>
                   <td className="px-3 py-3 text-slate-600">{candidate.team}</td>

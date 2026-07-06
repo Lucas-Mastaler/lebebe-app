@@ -221,6 +221,11 @@ function resolverFrete(
   )
 }
 
+function obterHojeISO(): string {
+  const agora = new Date()
+  return `${agora.getUTCFullYear()}-${String(agora.getUTCMonth() + 1).padStart(2, '0')}-${String(agora.getUTCDate()).padStart(2, '0')}`
+}
+
 function adaptarCandidato(input: {
   candidato: CandidatoFinalPesquisarDatasV2
   rankFallback: number
@@ -228,8 +233,9 @@ function adaptarCandidato(input: {
   formatoDateISO: FormatoDateISOContratoLegado
   mapaFretes: Map<string, string>
   avisos: string[]
+  tipoBerco?: string
 }): CandidatoFinalCompatLegado {
-  const { candidato, rankFallback, dataReferenciaISO, formatoDateISO, mapaFretes, avisos } = input
+  const { candidato, rankFallback, dataReferenciaISO, formatoDateISO, mapaFretes, avisos, tipoBerco } = input
   const dataBase = extrairDataBase(candidato.dataISO)
   const diaSemana = obterDiaSemana(dataBase)
   const frete = resolverFrete(candidato, mapaFretes)
@@ -248,6 +254,10 @@ function adaptarCandidato(input: {
     avisos.push(`daysLeftTxt nao calculado para data ${dataBase}.`)
   }
 
+  // Regra legado (CEP-APIBACK.gs linha 1473): diasAte = ceil((dataEntrega - hoje) / 86400000)
+  // encomenda usa diasAte contra hoje, nao contra dataInicial da busca
+  const diasAteHoje = diffDiasISO(obterHojeISO(), dataBase)
+
   const tipo = candidato.tipo || 'normal'
 
   return {
@@ -257,7 +267,9 @@ function adaptarCandidato(input: {
     dateDM: formatarDM(dataBase),
     weekday: diaSemana === null ? '' : NOMES_DIAS_SEMANA_PT[diaSemana] ?? '',
     daysLeftTxt: diff === null ? '' : `${diff} d`,
-    encomenda: 'Não',
+    encomenda: diasAteHoje === null
+      ? 'Não'
+      : (tipoBerco === 'NIDO' ? diasAteHoje > 90 : diasAteHoje > 60) ? 'Sim' : 'Não',
     frete,
     team: candidato.equipe,
     tipo,
@@ -289,6 +301,7 @@ export function adaptarSaidaV2ParaPayloadLegado(
       formatoDateISO,
       mapaFretes,
       avisos,
+      tipoBerco: request.tipoBerco,
     })
   )
 

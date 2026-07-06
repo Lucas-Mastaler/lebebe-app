@@ -1,3 +1,152 @@
+## 2026-07-07 - Cascade - Bugfix: encomenda no adaptador v2->legado + diagnostico fonte sintetica
+
+**Resumo:** (1) Correcao de bug inequivoco no adaptador `adaptar-saida-v2-para-legado.ts`: campo `encomenda` era hardcoded como 'Nao' para todos os candidatos. Agora replica a regra do legado Apps Script (CEP-APIBACK.gs linha 1510): `tipoBerco === 'NIDO' ? diasAte > 90 : diasAte > 60` → 'Sim' : 'Nao'. (2) Correcao de base temporal: `diasAte` agora calculado contra a data atual (hoje), nao contra `dataInicial` da busca — conforme legado (CEP-APIBACK.gs linha 1473: `diasAte = Math.ceil((v.date - hoje) / 86400000)`). Adicionada funcao `obterHojeISO()` que retorna a data atual em UTC. (3) Melhoria no diagnostico: bloco `diagnosticoReclassificacaoComKmMapaSlot` agora expoe `fonteCandidatos: 'sintetica'` e `fonteDisponibilidade: 'sintetica'` para evitar confusao entre dados sinteticos hardcoded e producao real. Nao altera producao (logica), classificacao, recorte, limites, disponibilidade sintetica, frontend, banco, migrations, RLS, queries, OSRM, Haversine, ranking, pre-agendamento ou Apps Script.
+
+**Arquivos lidos:**
+- src/lib/procurar-datas/motor/adaptar-saida-v2-para-legado.ts (leitura completa)
+- src/lib/procurar-datas/motor/adaptar-saida-v2-para-legado.test.ts (leitura completa)
+- src/app/api/procurar-datas/v2/diagnostico/route.ts (blocos 610-690, 726-845, 2280-2440)
+- src/lib/procurar-datas/motor/disponibilidade.ts
+- src/lib/procurar-datas/motor/classificacao-candidato.ts (via grep)
+- src/lib/procurar-datas/motor/gerar-candidatos-disponibilidade-real.ts
+- src/lib/procurar-datas/motor/recortar-candidatos-legado-equivalente.ts
+- src/lib/procurar-datas/motor/reclassificar-candidatos-com-km-mapa-slot.ts
+- src/lib/procurar-datas/contratos.ts
+- src/lib/procurar-datas/types.ts
+- src/lib/procurar-datas/v2/auditoria-pesquisa.ts
+- appscript/CEP-APIBACK.gs (grep encomenda linha 1510, diasAte linha 1473)
+- src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts
+- src/lib/procurar-datas/motor/orquestrar-pesquisa-v2-com-payload-legado.ts
+- src/lib/procurar-datas/motor/pesquisar-datas-v2.ts
+
+**Arquivos alterados:**
+- src/lib/procurar-datas/motor/adaptar-saida-v2-para-legado.ts:
+  - Adicionada funcao `obterHojeISO()` que retorna data atual em formato ISO UTC
+  - `adaptarCandidato`: adicionado parametro `tipoBerco?: string`
+  - `adaptarCandidato`: `encomenda` agora calculado com `diasAteHoje` (diff contra hoje) em vez de `diff` (contra dataReferenciaISO/dataInicial)
+  - `adaptarSaidaV2ParaPayloadLegado`: passa `request.tipoBerco` para `adaptarCandidato`
+- src/app/api/procurar-datas/v2/diagnostico/route.ts:
+  - Bloco `diagnosticoReclassificacaoComKmMapaSlot`: adicionados campos `fonteCandidatos: 'sintetica'` e `fonteDisponibilidade: 'sintetica'`
+
+**Validacoes realizadas:**
+- Typecheck: npx tsc --noEmit passou com 0 erros
+- Testes: npx vitest run adaptar-saida-v2-para-legado.test.ts → 11/11 passaram
+- Codigo legado: confirmado CEP-APIBACK.gs linha 1473: `diasAte = Math.ceil((v.date - hoje) / 86400000)` — usa hoje, nao dataInicial
+- Codigo legado: confirmado CEP-APIBACK.gs linha 1510: `encomenda: (tipoBerco==='NIDO'?diasAte>90:diasAte>60) ? 'Sim' : 'Nao'`
+- Validacao manual do usuario (1a tentativa): dataInicial 2026-10-01, tipoBerco DIVERSOS, encomenda true → resultados com encomenda: 'Nao' e daysLeftTxt: '0 d' — confirmou que diff estava usando dataInicial como base
+- Validacao manual do usuario (2a tentativa): CONFIRMADA — dataInicial 2026-10-01, tipoBerco DIVERSOS, encomenda true → resultados com encomenda: 'Sim' (87d, 88d, 91d). pesquisaAuditoriaId: 47050006-c482-42a9-bd73-d153ca257d56.
+
+**Comandos rodados:**
+- npx tsc --noEmit --pretty (0 erros)
+- npx vitest run src/lib/procurar-datas/motor/adaptar-saida-v2-para-legado.test.ts (11/11 passed)
+
+**Pendencias:**
+- Validar com tipoBerco = 'NIDO' e dataInicial > 90 dias no futuro → confirmar encomenda: 'Sim' (nao validado ainda)
+- PENDENCIA: `daysLeftTxt` no payload raw (`resultados_json`) ainda usa `diff` contra `dataInicial`, divergente do legado que usa `hoje`. A UI da auditoria ja recalcula "Faltam" com `formatarDiasAteData(resultado.date, pesquisa.created_at)` — display correto ao usuario. Pendencia de baixa prioridade: corrigir daysLeftTxt no payload raw para usar hoje como base.
+- Confirmar payload real do frontend: se envia isEncomenda/isRural/isCondominio/tipoBerco (campos do ProcurarDatasServicoForm) vs encomenda/areaRural/condominio/bercoCama (nomes alternativos) — nao corrigir ate confirmar
+- Divergencia "Equipe inativa" entre producao e diagnostico: confirmada como diferenca de fonte de dados (producao usa disponibilidade real, diagnostico usa sintetica hardcoded) — nao e bug
+
+**Riscos conhecidos:**
+- `obterHojeISO()` usa UTC; o legado usa `new Date()` (timezone local). Diferenca de ate 1 dia possivel em horarios proximos a meia-noite — risco baixo
+- Se `tipoBerco` for undefined/null no request, a regra trata como nao-NIDO (diasAte > 60) — consistente com legado
+- `daysLeftTxt` continua divergente do legado (usa dataInicial como base em vez de hoje)
+
+**Proximo passo recomendado:** Validar encomenda com tipoBerco = 'NIDO' e data > 90 dias. Avaliar se daysLeftTxt no payload raw deve ser corrigido para usar hoje como base (baixa prioridade — UI ja compensa).
+
+## 2026-07-07 - Cascade - Diagnostico: correcao da rota /api/procurar-datas/v2/diagnostico
+
+**Resumo:** Correcao da rota de diagnostico para auditoria v2. (1) `montarSlotsKmAdicionalDiagnostico` agora gera slots para EQUIPE 1 e EQUIPE 2 quando `equipeAgendaDiagnostica` e ausente, em vez de retornar lista vazia — causa raiz de `slotsRecebidos: 0`. (2) Bloco `diagnosticoMapaKmAdicionalPorSlot` agora usa `montarSlotsKmAdicionalDiagnostico` quando `slotsAgendaDiagnostica` nao e fornecido no body, permitindo auto-geracao from agenda real. (3) Null-guards adicionados para `diagnosticoAgendaReal`, `diagnosticoDisponibilidadeReal`, `diagnosticoCandidatosDisponibilidadeReal`, `diagnosticoCandidatosReaisAdaptados` e `diagnosticoFluxoRealV2` — retornam `{ executado: false, motivo }` em vez de null. (4) Novo bloco `diagnosticoRecorteAlvo` que consolida pontos da agenda real, insercao por slot e reclassificacao para datas/equipes/termos alvo. Aceita filtros `datasAlvo`, `equipesAlvo`, `termosEnderecoAlvo` no body. Nao altera producao, motor v2, ranking, classificacao, OSRM, Haversine, frete, busca de candidatos, pre-agendamento, Apps Script, banco, migrations, RLS, queries, tela principal ou tela de auditoria.
+
+**Arquivos lidos:**
+- src/app/api/procurar-datas/v2/diagnostico/route.ts (3674 linhas, leitura estrategica em blocos)
+- src/lib/procurar-datas/motor/reclassificar-candidatos-com-km-mapa-slot.ts
+- src/lib/procurar-datas/motor/parse-agenda-shag.ts
+- src/lib/procurar-datas/motor/agenda-real-helper.ts
+
+**Arquivos alterados:**
+- src/app/api/procurar-datas/v2/diagnostico/route.ts:
+  - `montarSlotsKmAdicionalDiagnostico`: removido early-return quando equipeRaw e null; agora gera slots para EQUIPE 1 e EQUIPE 2
+  - Bloco `diagnosticoMapaKmAdicionalPorSlot`: substituido parse manual por chamada a `montarSlotsKmAdicionalDiagnostico` quando rawSlots e undefined
+  - Adicionados campos `datasAlvo`, `equipesAlvo`, `termosEnderecoAlvo` ao bodyDiagnostico type
+  - Adicionada variavel `diagnosticoRecorteAlvo`
+  - Adicionados null-guards antes da resposta para 5 blocos diagnosticos
+  - Adicionado bloco `diagnosticoRecorteAlvo` que consolida pontos, km e reclassificacao
+  - Adicionado `diagnosticoRecorteAlvo` ao objeto de resposta JSON
+
+**Validacoes realizadas:**
+- Typecheck: npx tsc --noEmit passou com 0 erros
+- Lint: npx eslint no arquivo alterado passou sem erros
+- Codigo: confirmado que `parsearPontosAgendaDoDiaV2` usa `dataAlvoISO`/`equipeAlvo` (nao `dataISO`/`equipe`)
+- Codigo: confirmado que `PontoAgendaV2` tem `tituloEvento` (nao `titulo`) e `coordenadas.lat/lng` (nao `lat/lng` flat)
+- Codigo: confirmado que `AgendaRealResult` tipo union exige `{ ok: true, executado: false, motivo }` para o null-guard
+- Codigo: confirmado que `montarSlotsKmAdicionalDiagnostico` ja aceita `slotTemPontosPorSlotKey` opcional
+
+**Comandos rodados:**
+- npx tsc --noEmit --pretty (0 erros)
+- npx eslint src/app/api/procurar-datas/v2/diagnostico/route.ts --quiet (0 erros)
+
+**Pendencias:**
+- Validacao manual: enviar POST para /api/procurar-datas/v2/diagnostico com `usarAgendaRealDiagnostica: true`, `usarMapaKmAdicionalPorSlotDiagnostico: true`, `usarInsercaoPorSlotDiagnostico: true`, `usarReclassificacaoComKmMapaSlotDiagnostico: true` e confirmar slotsRecebidos > 0
+- Validar `diagnosticoRecorteAlvo` com `datasAlvo`, `equipesAlvo` e `termosEnderecoAlvo` (ex: `termosEnderecoAlvo: ['ORLEANS']`)
+- Confirmar que blocos antes null agora retornam `{ executado: false, motivo }` em vez de null
+- Confirmar que Google OAuth env vars estao configuradas para leitura da agenda real
+
+**Riscos conhecidos:**
+- Se `usarAgendaRealDiagnostica` nao for enviado como true no payload, todos os blocos dependentes continuarao vazios (com motivo claro)
+- Se as env vars do Google OAuth nao estiverem configuradas, a leitura da agenda real falhara com erro claro
+- O GID padrao (1324794210) pode nao corresponder a aba correta se a planilha foi reorganizada
+
+**Proximo passo recomendado:** Validacao manual autenticada enviando payload de diagnostico com todas as flags ativadas e filtros alvo.
+
+## 2026-07-06 - Cascade - Frente 0/Controle: ajustes visuais no modal de auditoria e formatacao de datas
+
+**Resumo:** Ajustes puramente visuais em `/procurar-datas/auditoria` e `/procurar-datas`. (1) "Payload resumido" do pre-agendamento vinculado no modal de detalhe deixou de exibir JSON bruto e passou a mostrar campos legiveis (Equipe, Tipo, Frete, Data escolhida, CEP, Regiao/label, Tempo necessario, Endereco, Autoria) com fallback seguro para JSON bruto se o formato for inesperado. (2) Coluna "Data" na tabela de resultados do modal e na tela principal passou a exibir `dd/mm/aaaa` em vez de `aaaa-mm-dd` ou `dd/mm` sem ano. (3) Coluna "Faltam" no modal de auditoria passou a recalcular usando `created_at` da pesquisa como referencia em vez do `daysLeftTxt` salvo que podia estar defasado. Criado helper compartilhado `formatar-apresentacao.ts` com `formatarDataBrasileira`, `calcularDiasAteData`, `formatarDiasAteData` e `extrairResumoPreAgendamento`. Nao altera motor v2, ranking, classificacao, OSRM, Haversine, frete, busca de candidatos, pre-agendamento (logica), Apps Script, banco, migrations, RLS, queries ou API routes.
+
+**Arquivos lidos:**
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- docs/ia/log_progress.md
+- src/app/procurar-datas/auditoria/PageClient.tsx
+- src/app/procurar-datas/PageClient.tsx
+- src/app/api/procurar-datas/auditoria/route.ts
+- src/app/api/procurar-datas/pre-agendar/route.ts
+- src/lib/procurar-datas/types.ts
+- src/lib/procurar-datas/v2/auditoria-pre-agendamento.ts
+- src/lib/procurar-datas/motor/adaptar-saida-v2-para-legado.ts
+
+**Arquivos criados:**
+- src/lib/procurar-datas/formatar-apresentacao.ts (helpers de formatacao visual: formatarDataBrasileira, calcularDiasAteData, formatarDiasAteData, extrairResumoPreAgendamento)
+
+**Arquivos alterados:**
+- src/app/procurar-datas/auditoria/PageClient.tsx (import dos helpers, novo componente PreAgendamentoResumo substituindo JsonResumo no payload resumido, coluna Data usando formatarDataBrasileira, coluna Faltam usando formatarDiasAteData com pesquisa.created_at)
+- src/app/procurar-datas/PageClient.tsx (import de formatarDataBrasileira, coluna Data usando formatarDataBrasileira em vez de dateDM/date/dateISO)
+
+**Validacoes realizadas:**
+- Typecheck: npx tsc --noEmit passou com 0 erros
+- Lint: npx eslint nos 3 arquivos alterados/criados passou sem erros
+- Codigo: confirmado que payload_pre_agendamento_json tem estrutura {cand, meta} com meta.autoria
+- Codigo: confirmado que date vem como YYYY-MM-DD do adaptador
+- Codigo: confirmado que dateDM vem como DD/MM sem ano do adaptador
+- Codigo: confirmado que daysLeftTxt e calculado com dataReferenciaISO no momento da pesquisa
+- Helper formatarDataBrasileira trata YYYY-MM-DD, ISO string com timezone, Date e nulo sem erro de dia anterior
+
+**Comandos rodados:**
+- npx tsc --noEmit --pretty false (0 erros)
+- npx eslint src/lib/procurar-datas/formatar-apresentacao.ts src/app/procurar-datas/auditoria/PageClient.tsx src/app/procurar-datas/PageClient.tsx --quiet (0 erros)
+
+**Pendencias:**
+- Validacao manual autenticada no navegador: abrir /procurar-datas/auditoria, clicar em "Ver" em uma pesquisa com pre-agendamento, confirmar payload em campos legiveis, datas em dd/mm/aaaa, "Faltam" coerente com created_at
+- Validar modal sem pre-agendamento (nao deve quebrar)
+- Validar modal com payload incompleto (deve mostrar JSON bruto como fallback)
+- Validar tela principal /procurar-datas com datas em dd/mm/aaaa
+
+**Riscos conhecidos:**
+- Registros antigos sem meta.autoria mostraram "-" no campo Autoria (comportamento esperado)
+- Registros com payload em formato inesperado mostraram JSON bruto como fallback
+- "Faltam" no modal agora usa created_at da pesquisa como referencia, pode diferir do daysLeftTxt salvo se a pesquisa foi feita em dia diferente do created_at
+
+**Proximo passo recomendado:** Validacao manual autenticada no navegador dos cenarios listados nas pendencias.
+
 ## 2026-06-30 - Cascade - Frente 0/Controle: campo "Valor inicial mínimo" no modal "Detalhe da pesquisa"
 
 **Resumo:** Correcao do campo "Valor inicial mínimo" que aparecia como `-` no bloco "Parametros usados" do modal "Detalhe da pesquisa" em `/procurar-datas/auditoria`. A interface `AuditoriaPesquisaParams` ja tinha `valorInicialMinimo` e o modal ja lia o campo, mas o valor nunca era enviado pelo frontend nem passado pelo backend para `registrarAuditoriaPesquisa`. Corrigido: (1) frontend armazena valor numerico da resposta de `/api/procurar-datas/valor-inicial` e envia no body da busca; (2) backend `pesquisar-compat-async` repassa `body.valorInicialMinimo` nas 3 chamadas de auditoria; (3) modal formata como moeda BRL. Nao altera regra de negocio, calculo de frete, motor v2, ranking, OSRM, Haversine, agenda, Apps Script, RLS, migrations ou views.
@@ -16863,3 +17012,768 @@ Tempo total da v2: 00:09
 **Proximo passo recomendado:** Validar manualmente: abrir dashboard, filtrar 06/05/2026 Bigorrilho, clicar em "Ver chamados avaliados", clicar no protocolo, confirmar que abre `https://lebebe.digisac.me/ticket-history/{ticketId}` em nova aba.
 
 ---
+
+---
+
+## 2026-07-03 - Cascade - Auditoria Digisac: finalizacao automatica de chamados inativos
+
+**Resumo:** Auditoria interna para mapear tudo relacionado a Digisac no projeto, preparando implementacao de cron que finaliza chamados da conexao Bigorrilho apos 24h sem interacao. Nenhum arquivo alterado nesta etapa.
+
+**Arquivos lidos:**
+- src/lib/digisac/clienteDigisac.ts
+- src/lib/digisac/vacuoAtivo.ts
+- src/lib/digisac/sgi-sync.ts
+- src/lib/digisac/chamadosFinalizados.ts
+- src/lib/digisac/transferencia.ts
+- src/lib/digisac/contatos.ts
+- src/lib/digisac/estatisticas.ts
+- src/lib/digisac/triagem.ts
+- src/lib/digisac/departamentosFixos.ts
+- src/app/api/cron/auto-logout/route.ts
+- src/app/api/digisac/webhook/route.ts
+- src/app/api/chamados-finalizados/pesquisar/route.ts
+- src/app/api/chamados-finalizados/agendamentos/route.ts
+- src/app/api/digisac/schedule/route.ts
+- vercel.json
+- src/types/index.ts
+- docs/ia/log_progress.md (parcial)
+
+**Arquivos criados/alterados:** nenhum
+
+**Validacoes realizadas:**
+- MCP Supabase: listagem completa de tabelas com colunas
+- MCP Supabase: colunas de digisac_conversas_resumo, digisac_chamados_analise_ia, digisac_sync_fila, digisac_triagem_loja confirmadas
+- MCP Supabase: service_ids ativos em digisac_conversas_resumo (VENDAS 647, MARKETING 15, Bigorrilho 0 - esperado)
+- Codigo: montarUrlHistoricoTicket confirmada em vacuoAtivo.ts
+- Codigo: calcularInicioChamado confirmada em sgi-sync.ts
+- Codigo: padrao de cron confirmado em vercel.json e auto-logout/route.ts
+- Codigo: padrao de acao em ticket confirmado em transferencia.ts
+- Codigo: departamento Bigorrilho id confirmado em departamentosFixos.ts
+
+**Comandos rodados e resultados:**
+- MCP list_tables (verbose): todas as tabelas com colunas
+- MCP execute_sql: colunas das 4 tabelas digisac
+- MCP execute_sql: service_ids em digisac_conversas_resumo
+- grep_search: ticket close/end/finaliz (sem resultado no codigo)
+- grep_search: serviceId/bigorrilho nos libs digisac
+
+**Pendencias:**
+- Endpoint da API Digisac para fechar ticket (nao confirmado no codigo - critico)
+- Comportamento de updatedAt do ticket (reflete mensagens?)
+- Volume de tickets abertos na conexao Bigorrilho
+
+**Riscos conhecidos:**
+- Endpoint de fechamento desconhecido: risco alto
+- updatedAt como proxy: risco medio
+- Volume + timeout do cron Vercel: risco medio se N alto
+- Rate limit Digisac em lote
+
+**Proximo passo recomendado:** Implementar Fase 1 (diagnostico dry-run) para descobrir endpoint de fechamento e confirmar comportamento de updatedAt. Nenhuma alteracao de banco ou codigo de producao nesta etapa.
+
+---
+
+## 2026-07-03 - Cascade - Fase 1: Diagnostico dry-run finalizacoes automaticas Digisac
+
+**Resumo:** Implementada rota GET /api/digisac/finalizacoes-automaticas/diagnostico. Busca tickets abertos da conexao Bigorrilho, analisa ultima mensagem real valida por ticket (type=chat, visible, !isComment), determina elegibilidade por 24h sem interacao, classifica ativo/receptivo via firstMessage.isFromMe (reutilizando logica existente), identifica quem enviou ultima mensagem, monta link de protocolo e endpoint futuro de fechamento. Nenhum chamado finalizado. Nenhuma migration. Nenhuma alteracao em vercel.json.
+
+**Arquivos lidos:**
+- src/lib/digisac/vacuoAtivo.ts (extrairTimestampMs, processarEmLotes, montarUrlHistoricoTicket, buscarTicketsPeriodoVacuo)
+- src/lib/digisac/sgi-sync.ts (buscarMensagensTicketPaginado, DigisacMensagem, DigisacTicket, calcularInicioChamado)
+- src/app/api/chamados-finalizados/pesquisar/route.ts (padrao de auth)
+- src/lib/auth/module-access.ts (ModuleKey, requireAuthenticatedUser)
+- src/lib/auth/api-auth.ts (requireAuthenticatedUser)
+- digisac_docs.md (ids de departamentos)
+
+**Arquivos criados/alterados:**
+- CRIADO: src/app/api/digisac/finalizacoes-automaticas/diagnostico/route.ts
+
+**Validacoes realizadas:**
+- npx tsc --noEmit: exit 0, zero erros
+- Confirmado: nenhuma chamada ao endpoint /ticket/close na rota
+- Confirmado: filtro por serviceId=0973f84b-... aplicado na query de tickets
+- Confirmado: decisao de 24h usa ultima mensagem real (extrairTimestampMs), nao updatedAt
+- Confirmado: tipo ativo/receptivo usa firstMessage.isFromMe (mesma logica de sgi-sync e vacuoAtivo)
+- Confirmado: link de protocolo usa https://lebebe.digisac.me/ticket-history/{ticketId}
+- Confirmado: contactId disponivel para montar endpoint futuro de fechamento
+- Confirmado: rota protegida por requireAuthenticatedUser requiredRole=superadmin
+
+**Comandos rodados e resultados:**
+- npx tsc --noEmit: exit 0, sem erros
+
+**Pendencias:**
+- Validar em producao se filtro include[0][where][serviceId] retorna somente tickets Bigorrilho
+- Validar se updatedAt do ticket Digisac reflete mensagens (nao usado como decisao, mas util para pre-filtro futuro)
+- Validar se ticketTopicId 422e6abf-66ad-45fd-a0ee-217648398d3e e aceito na API de fechamento
+- Validar byUserId correto para fechamento (nao implementado ainda)
+- Testar rota localmente com servidor dev
+
+**Riscos conhecidos:**
+- Volume de tickets abertos desconhecido — se alto, concorrencia=5 pode causar timeout
+- Mensagens sem timestamp valido sao tratadas como elegivel por precaucao (marcado no motivoElegibilidade)
+- Paginacao de tickets limitada a 20 paginas (4000 tickets) — aviso retornado no JSON se atingido
+
+**Proximo passo recomendado:** Testar a rota localmente (GET /api/digisac/finalizacoes-automaticas/diagnostico) com usuario superadmin e validar resultado. Se OK, avancar para Fase 2 (migration da tabela digisac_fechamentos_automaticos).
+
+---
+
+## 2026-07-03 - Cascade - Fase 1.1: Filtro defensivo pos-query e auditoria de conexao
+
+**Resumo:** Adicionado filtro defensivo pos-query no route.ts de diagnostico. Apos receber tickets da API Digisac, o codigo extrai serviceId do payload (contact.service.id ou contact.serviceId) e rejeita tickets de outra conexao antes de analisar. Campos de auditoria de conexao (serviceIdContato, serviceNameContato, conexaoConfirmadaBigorrilho) adicionados em todos os arrays de resultado. Nova constante DIGISAC_TICKET_TOPIC_ID_FECHAMENTO_AUTOMATICO renomeada de forma definitiva. Nenhum chamado finalizado. Nenhuma migration. Nenhuma tela.
+
+**Arquivos lidos:**
+- src/app/api/digisac/finalizacoes-automaticas/diagnostico/route.ts (versao anterior completa)
+
+**Arquivos alterados:**
+- src/app/api/digisac/finalizacoes-automaticas/diagnostico/route.ts
+  - Renomeado: TICKET_TOPIC_ID_FECHAMENTO -> DIGISAC_TICKET_TOPIC_ID_FECHAMENTO_AUTOMATICO
+  - Adicionado: campo serviceId em TicketAberto.contact
+  - Adicionado: campos serviceIdContato, serviceNameContato, conexaoConfirmadaBigorrilho em TicketElegivel e TicketIgnoradoRecente
+  - Adicionado: interface TicketIgnoradoOutraConexao
+  - Adicionado: interface DadosConexao e funcao extrairDadosConexao
+  - Adicionado: filtro defensivo pos-query no handler GET
+  - Atualizado: resposta JSON com totalTicketsBrutosRecebidos, totalIgnoradosOutraConexao, ticketsIgnoradosOutraConexao
+  - Mantido: byUserId como pendencia explicitada em comentario no codigo
+
+**Validacoes realizadas:**
+- npx tsc --noEmit: exit 0, zero erros
+- Confirmado: nenhuma chamada ao endpoint /ticket/close
+- Confirmado: rota continua dry-run
+- Confirmado: constante DIGISAC_TICKET_TOPIC_ID_FECHAMENTO_AUTOMATICO com id correto
+
+**Pendencias:**
+- Validar em producao qual campo real o payload Digisac retorna: contact.service.id ou contact.serviceId
+- Validar byUserId correto para fechamento (DIGISAC_BOT_USER_ID ou outro) antes da Fase 2
+- Testar rota localmente com usuario superadmin
+- Se campoNaoEncontradoCount > 0 no resultado, mapear o payload real para ajustar extrairDadosConexao
+
+**Riscos conhecidos:**
+- Se API Digisac nao retornar serviceId no payload de contact, o filtro defensivo nao consegue confirmar dupla — ticket e mantido (com aviso)
+- Resolucao: testar e observar campo campoUsado nos avisos do JSON
+
+**Proximo passo recomendado:** Testar GET /api/digisac/finalizacoes-automaticas/diagnostico e verificar: (1) campo campoUsado no log do servidor, (2) se totalIgnoradosOutraConexao=0, (3) se conexaoConfirmadaBigorrilho=true em todos os itens elegiveis. Apos validacao, avancar para Fase 2 (migration da tabela digisac_fechamentos_automaticos).
+
+---
+
+## 2026-07-03 - Cascade - Fase 2: Base de auditoria, API de listagem e tela de acompanhamento
+
+**Resumo:** Criada a infraestrutura completa da Fase 2. Migration aplicada no Supabase criando a tabela digisac_fechamentos_automaticos com 22 colunas, constraints, 8 indices e 4 policies RLS (is_superadmin). Modulo digisac_finalizacoes_automaticas cadastrado em app_modulos (somente_superadmin=true). ModuleKey atualizado. Helper, API de listagem, tela e item no Sidebar criados. Nenhum chamado finalizado. Nenhum endpoint /ticket/close chamado. vercel.json nao alterado.
+
+**Arquivos lidos:**
+- docs/ia/padrao-novas-telas-permissoes.md
+- src/lib/auth/module-access.ts (ModuleKey)
+- src/components/Sidebar.tsx (navItems)
+- src/app/dashboard/page.tsx (padrao wrapper)
+- src/app/chamados-finalizados/page.tsx e PageClient.tsx (padrao visual)
+- src/lib/supabase/service.ts (createServiceClient)
+- src/app/api/digisac/finalizacoes-automaticas/diagnostico/route.ts
+
+**Validacoes Supabase (MCP):**
+- Confirmado: tabela digisac_fechamentos_automaticos nao existia
+- Confirmado apos migration: 22 colunas, constraints check (status, tipo_chamado, ultima_mensagem_por), unique (digisac_ticket_id), 8 indices, RLS habilitado
+- Confirmado: 4 policies dfa_select/insert/update/delete_superadmin usando is_superadmin()
+- Confirmado: modulo digisac_finalizacoes_automaticas inserido em app_modulos
+- Tabelas Digisac existentes consultadas: digisac_conversas_resumo, digisac_cliente_historico_resumo, digisac_sync_fila, digisac_chamados_analise_ia, digisac_triagem_loja
+
+**Arquivos criados:**
+- src/lib/digisac/finalizacoesAutomaticas.ts (tipos, constantes, montarRegistroFechamentoAutomatico, normalizarStatusFechamento, montarUrlHistoricoTicket)
+- src/app/api/digisac/finalizacoes-automaticas/route.ts (GET, superadmin, filtros, paginacao)
+- src/app/digisac/finalizacoes-automaticas/page.tsx (Server Component wrapper, checkModuleAndWindowAccess)
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx (tela de auditoria com cards, filtros, tabela, paginacao, estados vazio/erro/loading)
+
+**Arquivos alterados:**
+- src/lib/auth/module-access.ts: adicionado digisac_finalizacoes_automaticas ao tipo ModuleKey
+- src/components/Sidebar.tsx: adicionado import Bot e item FINALIZACOES DIGISAC com moduleKey digisac_finalizacoes_automaticas
+
+**Validacoes de codigo:**
+- npx tsc --noEmit: exit 0, zero erros
+- Confirmado: nenhuma chamada ao endpoint /ticket/close
+- Confirmado: vercel.json nao alterado
+- Confirmado: rota de diagnostico nao alterada
+
+**Pendencias:**
+- Testar tela localmente com usuario superadmin
+- Confirmar que a API de listagem responde com tabela vazia (esperado nesta fase)
+- Confirmar que o item aparece no Sidebar apenas para superadmin
+- Validar byUserId correto para fechamento antes da Fase 3
+
+**Riscos conhecidos:**
+- Tabela vazia nesta fase -- esperado e documentado na tela com estado vazio explicativo
+- RLS usa is_superadmin() -- mesmo padrao das tabelas digisac existentes; API usa service_role (bypassa RLS)
+
+**Proximo passo recomendado:** Testar tela em /digisac/finalizacoes-automaticas com usuario superadmin. Confirmar cards e filtros carregam sem erro (tabela vazia). Apos validar, avancar para Fase 3: implementar a escrita na tabela (inserir registros elegíveis) e posteriormente o fechamento real dos chamados.
+
+---
+
+## 2026-07-06 - Cascade - Fase 3A: rota registrar-pendentes e botao na tela
+
+**Resumo:** Criada a rota POST /api/digisac/finalizacoes-automaticas/registrar-pendentes que reutiliza o diagnostico dry-run via chamada interna, filtra apenas tickets com conexaoConfirmadaBigorrilho===true, e insere registros na tabela digisac_fechamentos_automaticos com status=pendente. Idempotencia garantida por pre-check (SELECT dos ticket_ids existentes) + unique constraint (digisac_ticket_id) + tratamento do erro 23505 como jaExistente. Botao adicionado na tela com texto explicativo de que nao finaliza chamados. Nenhum chamado foi finalizado. Nenhum endpoint /ticket/close foi chamado. vercel.json nao alterado. Nenhum cron criado.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md
+- src/app/api/digisac/finalizacoes-automaticas/diagnostico/route.ts (537 linhas, logica completa)
+- src/app/api/digisac/finalizacoes-automaticas/route.ts (GET listagem)
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx
+- src/lib/digisac/finalizacoesAutomaticas.ts
+
+**Validacoes Supabase (MCP):**
+- Confirmado: tabela digisac_fechamentos_automaticos com 22 colunas, unique(digisac_ticket_id), RLS habilitado
+- Confirmado: tabela vazia (0 registros) antes do teste
+- Confirmado: constraints check (status, tipo_chamado, ultima_mensagem_por)
+
+**Arquivos criados:**
+- src/app/api/digisac/finalizacoes-automaticas/registrar-pendentes/route.ts (POST, superadmin, reutiliza diagnostico via fetch interno, upsert idempotente)
+
+**Arquivos alterados:**
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx (adicionado botao Registrar pendentes do diagnostico, estados isRegistrando/resultadoRegistro/erroRegistro, banner de resultado, recarrega listagem apos registro)
+
+**Como a rota reaproveita o diagnostico:**
+A rota POST faz um fetch interno para GET /api/digisac/finalizacoes-automaticas/diagnostico passando os cookies de autenticacao. O diagnostico executa toda a logica de busca de tickets abertos, filtro defensivo Bigorrilho, analise de mensagens e classificacao. A rota POST apenas consome o array ticketsElegiveis retornado e grava no Supabase. Zero mudancas na rota de diagnostico.
+
+**Como garante idempotencia:**
+1. Pre-check: SELECT dos ticket_ids existentes na tabela antes de inserir
+2. Unique constraint: digisac_ticket_id tem constraint UNIQUE
+3. Erro 23505 (unique_violation) tratado como jaExistente (race condition)
+4. Segunda execucao: todos os tickets cairao em jaExistentes
+
+**Validacoes de codigo:**
+- npx tsc --noEmit: exit 0, zero erros
+- Confirmado: nenhuma chamada ao endpoint /ticket/close
+- Confirmado: vercel.json nao alterado (nao esta no git diff)
+- Confirmado: rota limitada ao Bigorrilho (filtro conexaoConfirmadaBigorrilho===true)
+- Confirmado: tabela vazia antes do teste
+
+**Pendencias:**
+- Testar rota POST com servidor local autenticado como superadmin
+- Confirmar registros criados como status=pendente
+- Rodar a rota uma segunda vez e confirmar que nao duplica (todos em jaExistentes)
+- Confirmar que a tela mostra os registros apos o registro
+- Testar o botao na tela com loading e resultado
+
+**Riscos conhecidos:**
+- A chamada interna via fetch adiciona latencia (diagnostico + insercao). Para acao admin manual, aceitavel.
+- Se o diagnostico retornar erro, a rota POST retorna erro sem gravar nada.
+- Race condition entre pre-check e insert e tratada pelo unique constraint + codigo 23505.
+
+**Proximo passo recomendado:**
+Testar a rota POST com servidor local. Rodar uma vez, confirmar registros criados. Rodar segunda vez, confirmar idempotencia. Avancar para Fase 3B: implementar o fechamento real dos chamados pendentes (chamar POST /api/v1/contacts/{contactId}/ticket/close com byUserId e ticketTopicIds validados).
+
+---
+
+## 2026-07-06 - Cascade - Fase 3B: fechamento manual unitario de chamado pendente
+
+**Resumo:** Criada a rota POST /api/digisac/finalizacoes-automaticas/[id]/fechar que busca o registro no Supabase pelo id interno, valida status=pendente e service_id=Bigorrilho, chama o endpoint real do Digisac POST /api/v1/contacts/{contactId}/ticket/close com byUserId, comments e ticketTopicIds, e atualiza o registro para status=finalizado ou status=erro. Botao Fechar chamado adicionado por linha na tela apenas para registros pendentes, com confirmacao via window.confirm. Nenhum cron criado. Nenhum fechamento em lote. vercel.json nao alterado.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md
+- src/app/api/digisac/finalizacoes-automaticas/diagnostico/route.ts
+- src/app/api/digisac/finalizacoes-automaticas/route.ts
+- src/app/api/digisac/finalizacoes-automaticas/registrar-pendentes/route.ts
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx
+- src/lib/digisac/finalizacoesAutomaticas.ts
+- src/lib/digisac/clienteDigisac.ts (fetchDigisacRaw, fetchDigisac, buildDigisacRequest)
+
+**Validacoes Supabase (MCP):**
+- Confirmado: tabela digisac_fechamentos_automaticos com colunas id (uuid), digisac_ticket_id (text, not null), digisac_contact_id (text, not null), service_id (text, not null), status (text, not null, default pendente), erro (text, nullable), finalizado_em (timestamptz, nullable), updated_at (timestamptz, not null, default now())
+- Confirmado: 32 registros pendentes criados pela Fase 3A
+
+**Arquivos criados:**
+- src/app/api/digisac/finalizacoes-automaticas/[id]/fechar/route.ts (POST, superadmin, validacao completa, chamada Digisac real, atualizacao banco)
+
+**Arquivos alterados:**
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx (adicionado botao Fechar chamado por linha para pendentes, confirmacao, estados fechandoId/erroFechar/sucessoFechar, banners de resultado, coluna Acao na tabela)
+
+**Como a rota valida o registro antes de fechar:**
+1. Busca registro pelo id (uuid) no Supabase
+2. Se nao encontrado -> 404
+3. Se status=finalizado -> 409 (ja finalizado)
+4. Se status!=pendente -> 409 (apenas pendentes)
+5. Se service_id!=Bigorrilho -> 403 (outra conexao)
+6. Se digisac_contact_id vazio -> 400
+7. Se digisac_ticket_id vazio -> 400
+
+**Como chama o endpoint Digisac:**
+Usa fetchDigisacRaw (de clienteDigisac.ts) que adiciona Authorization Bearer + DIGISAC_BASE_URL automaticamente. Endpoint: /api/v1/contacts/{contactId}/ticket/close. Payload: { byUserId: 2674db7a-..., comments: , ticketTopicIds: [422e6abf-...] }. Token nunca exposto no frontend. Token nunca logado.
+
+**Como atualiza sucesso/erro no banco:**
+- Sucesso: UPDATE status=finalizado, finalizado_em=now(), erro=null, updated_at=now()
+- Erro Digisac (nao ok): UPDATE status=erro, erro=mensagem segura (status + body truncado 200 chars), updated_at=now()
+- Erro de fetch/excecao: UPDATE status=erro, erro=mensagem truncada 300 chars, updated_at=now()
+- Registro nunca apagado
+
+**Como a tela foi alterada:**
+- Nova coluna Acao na tabela
+- Botao vermelho Fechar chamado com icone Lock apenas para status=pendente
+- Outros status mostram traco
+- Click abre window.confirm: Confirmar fechamento deste chamado no Digisac? Essa acao fecha o chamado real.
+- Loading por linha (fechandoId)
+- Banner verde de sucesso ou vermelho de erro
+- Recarrega listagem apos fechar
+
+**Validacoes de codigo:**
+- npx tsc --noEmit: exit 0, zero erros
+- Confirmado: vercel.json nao alterado (nao esta no git diff)
+- Confirmado: nenhum cron ou schedule na nova rota
+- Confirmado: rota restringe a superadmin
+- Confirmado: rota valida service_id=Bigorrilho antes de fechar
+- Confirmado: rota nao fecha se status!=pendente
+- Confirmado: token Digisac nao exposto no frontend
+- Confirmado: token nunca logado nos logs
+
+**Pendencias:**
+- Testar com servidor local: clicar Fechar chamado em um pendente
+- Confirmar no Digisac que o chamado realmente fechou
+- Confirmar no banco: status=finalizado, finalizado_em preenchido, erro=null
+- Testar caso de erro (ex: contactId invalido) e confirmar status=erro
+- Confirmar que botao nao aparece para finalizados/erros
+
+**Riscos conhecidos:**
+- byUserId 2674db7a-... e fixo (validado pelo usuario). Se mudar, precisa atualizar a rota.
+- O fechamento e real e irreversivel no Digisac.
+- Se o Digisac retornar sucesso mas o update do banco falhar, o chamado fica fechado no Digisac mas pendente no banco (aviso retornado).
+
+**Proximo passo recomendado:**
+Testar com um unico pendente. Confirmar fechamento no Digisac e no banco. Apos validar, avancar para Fase 3C: fechamento em lote controlado ou cron automatico.
+
+---
+
+## 2026-07-06 - Cascade - Correcao params Promise na rota [id]/fechar
+
+**Resumo:** Corrigido erro de acesso a params.id na rota POST /api/digisac/finalizacoes-automaticas/[id]/fechar. No Next.js atual, params em Route Handlers dinamicos e uma Promise e deve ser aguardada com await antes de acessar propriedades. Alterado tipo de params de { id: string } para Promise<{ id: string }> e acesso de params.id para const { id: registroId } = await params.
+
+**Arquivo alterado:**
+- src/app/api/digisac/finalizacoes-automaticas/[id]/fechar/route.ts (somente linha 28 e 37)
+
+**O que nao foi alterado:**
+- Logica de fechamento, payload Digisac, banco, tela, vercel.json, cron, regra de vacuo
+
+**Validacoes:**
+- npx tsc --noEmit: exit 0, zero erros
+- vercel.json nao alterado (nao esta no git diff)
+- Nenhum cron criado
+
+**Pendencias:**
+- Testar novamente POST /api/digisac/finalizacoes-automaticas/{id}/fechar com servidor local
+
+---
+
+## 2026-07-06 - Cascade - Correcao endpoint duplicado /api/v1 na rota [id]/fechar
+
+**Resumo:** Corrigido caminho duplicado na chamada Digisac. O helper fetchDigisacRaw usa DIGISAC_BASE_URL que ja inclui /api/v1, portanto o endpoint passado deve ser /contacts/{contactId}/ticket/close e nao /api/v1/contacts/{contactId}/ticket/close. O log anterior mostrava /api/v1/api/v1/contacts/.../ticket/close gerando 404.
+
+**Arquivo alterado:**
+- src/app/api/digisac/finalizacoes-automaticas/[id]/fechar/route.ts (somente linha 99)
+
+**Padrao confirmado do helper:**
+- DIGISAC_BASE_URL (env) ja contem /api/v1
+- fetchDigisac e fetchDigisacRaw em clienteDigisac.ts montam: BASE_URL + endpoint
+- Outros usos confirmam: /tickets?query=... (sgi-sync.ts), /services?query=... (estatisticas.ts), /dashboard/by-period (estatisticas.ts)
+
+**O que nao foi alterado:**
+- Payload, byUserId, ticketTopicIds, banco, tela, vercel.json, cron, regra de vacuo
+
+**Validacoes:**
+- npx tsc --noEmit: exit 0, zero erros
+- vercel.json nao alterado
+- Nenhum cron criado
+
+**Pendencias:**
+- Testar novamente POST /api/digisac/finalizacoes-automaticas/{id}/fechar
+- Confirmar que o log agora mostra POST /api/v1/contacts/{contactId}/ticket/close (sem duplicacao)
+
+---
+
+## 2026-07-06 - Cascade - Ajuste payload comments para FECHAMENTO AUTOMATICO
+
+**Resumo:** Alterado o campo comments do payload de fechamento de string vazia para FECHAMENTO AUTOMATICO. Endpoint, byUserId e ticketTopicIds nao foram alterados.
+
+**Arquivo alterado:**
+- src/app/api/digisac/finalizacoes-automaticas/[id]/fechar/route.ts (somente linha 102)
+
+**O que nao foi alterado:**
+- Endpoint (/contacts/{contactId}/ticket/close), byUserId, ticketTopicIds, banco, tela, vercel.json, cron, regra de vacuo
+
+**Validacoes:**
+- npx tsc --noEmit: exit 0, zero erros
+- vercel.json nao alterado
+- Nenhum cron criado
+- Endpoint continua sem duplicacao /api/v1
+
+**Pendencias:**
+- Testar fechamento de um pendente e confirmar no Digisac que o comentario FECHAMENTO AUTOMATICO aparece
+
+---
+
+## 2026-07-06 - Cascade - Fase 3C: tentar novamente para erros, selecao e fechamento em lote
+
+**Resumo:** Implementadas tres melhorias na funcionalidade de finalizacoes automaticas Digisac: (1) botao Tentar novamente para registros com status=erro, (2) selecao multipla de registros pendentes/erro na tela, (3) rota e botao de fechamento dos selecionados em lote (max 20). Logica de chamada Digisac centralizada em fecharRegistroAutomaticoDigisac extraida em finalizacoesAutomaticas.ts para evitar duplicacao.
+
+**Arquivos lidos:**
+- src/app/api/digisac/finalizacoes-automaticas/[id]/fechar/route.ts
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx
+- src/lib/digisac/finalizacoesAutomaticas.ts
+- docs/ia/log_progress.md
+
+**Validacoes Supabase (MCP):**
+- Confirmadas todas as 22 colunas: id, digisac_ticket_id, digisac_contact_id, service_id, status, erro, finalizado_em, updated_at (e demais)
+
+**Arquivos criados:**
+- src/app/api/digisac/finalizacoes-automaticas/fechar-selecionados/route.ts (POST, superadmin, max 20 ids, sequencial, valida status/service_id/contact_id/ticket_id, usa fecharRegistroAutomaticoDigisac, retorna resumo)
+
+**Arquivos alterados:**
+- src/lib/digisac/finalizacoesAutomaticas.ts (adicionados: import fetchDigisacRaw no topo, interfaces RegistroParaFechar e ResultadoFechamento, funcao fecharRegistroAutomaticoDigisac)
+- src/app/api/digisac/finalizacoes-automaticas/[id]/fechar/route.ts (refatorado para usar fecharRegistroAutomaticoDigisac, aceita agora status=pendente OU status=erro)
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx (adicionados: estados selecionados/isFechandoLote/resultadoLote/erroLote, toggleSelecionado, toggleTodos, handleFecharSelecionados, checkbox por linha para pendentes/erros, checkbox no header, contador de selecionados, botao Fechar selecionados no header, botao Tentar novamente laranja para erros, banners resultado lote)
+
+**Reaproveitamento de logica:**
+Funcao fecharRegistroAutomaticoDigisac centraliza: chamada fetchDigisacRaw, payload BY_USER_ID/comments/ticketTopicIds, UPDATE sucesso/erro no banco. Rota unitaria e rota em lote usam a mesma funcao. Zero duplicacao de logica sensivel.
+
+**Seguranca validada:**
+- Rota em lote: superadmin, limite 20 ids, valida service_id=Bigorrilho, valida status, valida contact_id/ticket_id
+- Token nunca exposto no frontend
+- Token nunca logado
+- Resposta bruta Digisac truncada a 200 chars no banco
+- Endpoint sem duplicacao /api/v1
+
+**Validacoes de codigo:**
+- npx tsc --noEmit: exit 0, zero erros
+- vercel.json nao alterado (grep vercel|cron no git diff: sem resultado)
+- Nenhum cron criado
+
+**Pendencias:**
+- Testar botao Tentar novamente no registro Felipe/2026070471082 com status=erro
+- Testar selecao multipla + Fechar selecionados
+- Confirmar no Digisac e no banco
+
+**Riscos conhecidos:**
+- Processamento sequencial da rota em lote pode demorar para muitos registros (aceitavel para uso manual)
+- O limite de 20 ids por execucao previne abuso involuntario
+
+**Proximo passo recomendado:**
+Testar os novos fluxos. Apos validar, avaliar se e necessario cron automatico ou se o fechamento manual selecionado e suficiente para a operacao.
+
+---
+
+## 2026-07-06 - Cascade - Reconciliacao pos-erro: verificar status no Digisac + botao Verificar status
+
+**Resumo:** Implementada verificacao de status apos erro no fechamento Digisac. Se o Digisac retornar erro (ex: 500) mas o chamado estiver fechado, o banco e atualizado para finalizado. Criada rota manual POST [id]/verificar-status para reconciliar registros com falso erro. Adicionado botao Verificar status na tela para registros com erro.
+
+**Arquivos lidos:**
+- src/lib/digisac/finalizacoesAutomaticas.ts
+- src/app/api/digisac/finalizacoes-automaticas/[id]/fechar/route.ts
+- src/app/api/digisac/finalizacoes-automaticas/fechar-selecionados/route.ts
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx
+- src/lib/digisac/clienteDigisac.ts
+- src/lib/digisac/chamadosFinalizados.ts (padrao de consulta isOpen)
+- src/lib/digisac/sgi-sync.ts (interface DigisacTicket com isOpen)
+- src/lib/digisac/agendamentos.ts (padrao de busca de tickets por contactId)
+
+**Validacoes Supabase (MCP):**
+- Tabela digisac_fechamentos_automaticos confirmada com 22 colunas (validacao anterior ainda vigente)
+
+**Arquivos criados:**
+- src/app/api/digisac/finalizacoes-automaticas/[id]/verificar-status/route.ts (POST, superadmin, valida service_id/status/contact_id/ticket_id, consulta Digisac, atualiza banco se fechado)
+
+**Arquivos alterados:**
+- src/lib/digisac/finalizacoesAutomaticas.ts:
+  - Adicionado import fetchDigisac (junto com fetchDigisacRaw)
+  - Adicionada interface ResultadoVerificacao { confirmado, fechado, motivo? }
+  - Adicionada funcao verificarChamadoFechadoNoDigisac(ticketId, contactId) que consulta GET /tickets/{ticketId} e verifica isOpen, com fallback para GET /tickets?where[contactId]=...&where[isOpen]=true
+  - Atualizada fecharRegistroAutomaticoDigisac: apos erro non-ok OU excecao, chama verificarChamadoFechadoNoDigisac. Se confirmado fechado, atualiza status=finalizado com aviso. Se nao, mantem status=erro.
+  - Adicionado campo aviso?: string em ResultadoFechamento
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx:
+  - Adicionado icone Search do lucide-react
+  - Adicionados estados verificandoId/erroVerificar/sucessoVerificar
+  - Adicionado handler handleVerificarStatus que chama POST [id]/verificar-status
+  - Adicionados banners de resultado de verificacao (laranja para segue aberto, verde para confirmado fechado)
+  - Adicionado botao Verificar status (cinza, icone Search) abaixo do botao Tentar novamente para status=erro
+
+**Como a verificacao pos-erro funciona:**
+1. fecharRegistroAutomaticoDigisac chama POST /contacts/{contactId}/ticket/close
+2. Se Digisac retornar non-ok (ex: 500) OU lancar excecao:
+   - Chama verificarChamadoFechadoNoDigisac(ticketId, contactId)
+   - Tentativa 1: GET /tickets/{ticketId} -> verifica campo isOpen
+   - Fallback: GET /tickets?where[contactId]=...&where[isOpen]=true -> se 0 tickets abertos, confirmado fechado
+   - Se confirmado fechado: UPDATE status=finalizado, finalizado_em=now(), erro=null, retorna ok=true com aviso
+   - Se nao confirmado ou segue aberto: UPDATE status=erro, mantem comportamento anterior
+3. A rota em lote tambem se beneficia automaticamente pois usa fecharRegistroAutomaticoDigisac
+
+**Como a rota verificar-status funciona:**
+- POST /api/digisac/finalizacoes-automaticas/[id]/verificar-status
+- Superadmin obrigatorio
+- Valida: registro existe, service_id=Bigorrilho, status=erro ou pendente, ticket_id e contact_id existem
+- Chama verificarChamadoFechadoNoDigisac
+- Se fechado: atualiza status=finalizado, finalizado_em=now(), erro=null
+- Se aberto: retorna mensagem sem alterar banco
+- Se nao confirmado: retorna erro seguro sem alterar banco
+
+**Como a tela foi alterada:**
+- Para status=erro: agora mostra dois botoes em coluna (Tentar novamente + Verificar status)
+- Verificar status chama a rota, mostra loading, banner de resultado, recarrega listagem
+- Se confirmado fechado, registro muda de erro para finalizado na listagem
+
+**Como o lote foi afetado:**
+- A rota fechar-selecionados usa fecharRegistroAutomaticoDigisac que agora faz verificacao pos-erro
+- Se um fechamento retornar 500 mas o ticket estiver fechado, conta como finalizado com aviso
+- Se nao confirmar fechado, conta como erro
+
+**Validacoes de codigo:**
+- npx tsc --noEmit: exit 0, zero erros
+- vercel.json nao alterado (grep no git diff: sem resultado)
+- Nenhum cron criado
+- Endpoint sem duplicacao /api/v1 (verificarChamadoFechadoNoDigisac usa /tickets/{id} e /tickets?... sem /api/v1)
+- Token nunca exposto no frontend
+- Token nunca logado
+
+**Pendencias:**
+- Testar Verificar status no registro e3901071-e624-459e-882f-eaccda505d25 (contactId 4036cc89-...)
+- Confirmar que o registro muda de erro para finalizado apos verificacao
+- Testar Tentar novamente em outro erro real
+- Testar fechamento selecionado com poucos registros e confirmar que verificacao pos-erro funciona no lote
+
+**Riscos conhecidos:**
+- A verificacao pos-erro adiciona uma chamada extra ao Digisac apos cada falha (aceitavel para uso manual)
+- Se o endpoint GET /tickets/{ticketId} nao existir ou retornar formato diferente, o fallback por contactId e usado
+- O fallback verifica se ha qualquer ticket aberto para o contato, nao especificamente o ticket do registro (pode haver multiplos tickets)
+
+**Proximo passo recomendado:**
+Testar Verificar status no registro real que ficou com falso erro. Confirmar reconciliacao. Avaliar se a verificacao pos-erro automatica e suficiente ou se precisa de ajustes.
+
+---
+
+## 2026-07-06 - Cascade - Fase 4: Cron automatico para registrar e fechar chamados pendentes
+
+**Resumo:** Criada rota de cron POST /api/cron/digisac-finalizacoes-automaticas que executa automaticamente: (1) diagnostico dry-run, (2) registro de novos pendentes, (3) fechamento de ate 20 pendentes sequencialmente. Cron protegido por CRON_SECRET. Schedule diario configurado no vercel.json (limitacao do plano Hobby). Decisao: cron fecha somente pendente, nao erro.
+
+**Arquivos lidos:**
+- vercel.json (cron existente: auto-logout 0 22 * * *)
+- src/app/api/cron/auto-logout/route.ts (padrao CRON_SECRET: Authorization: Bearer )
+- src/app/api/digisac/finalizacoes-automaticas/diagnostico/route.ts
+- src/app/api/digisac/finalizacoes-automaticas/registrar-pendentes/route.ts
+- src/app/api/digisac/finalizacoes-automaticas/fechar-selecionados/route.ts
+- src/lib/digisac/finalizacoesAutomaticas.ts
+- src/lib/digisac/clienteDigisac.ts
+- AUTO_LOGOUT_SETUP.md (confirmou padrao CRON_SECRET)
+
+**Validacao Vercel Hobby:**
+- Documentacao Vercel confirma: plano Hobby limita cron a uma execucao por dia
+- Expressoes como 0 * * * * (horario) falham no deploy do Hobby
+- Schedule escolhido: 0 17 * * * (17:00 UTC = 14:00 Sao Paulo)
+- Para frequencia maior, documentar uso de agendador externo (cron-job.org, EasyCron)
+
+**Arquivos criados:**
+- src/app/api/cron/digisac-finalizacoes-automaticas/route.ts: POST, protegido por CRON_SECRET, executa diagnostico -> registra pendentes -> fecha ate 20 pendentes sequencialmente, retorna resumo completo
+
+**Arquivos alterados:**
+- vercel.json: adicionado cron digisac-finalizacoes-automaticas com schedule 0 17 * * *, preservando cron auto-logout existente
+- src/app/api/digisac/finalizacoes-automaticas/diagnostico/route.ts: adicionado bypass para chamadas internas do cron via header x-cron-secret (nao altera fluxo manual superadmin)
+
+**Como a rota cron funciona:**
+1. Valida Authorization: Bearer 
+2. Chama diagnostico via internal fetch com header x-cron-secret (bypass auth superadmin)
+3. Filtra elegiveis Bigorrilho, insere novos pendentes (idempotente via pre-check + unique constraint)
+4. Busca pendentes (status=pendente, service_id=Bigorrilho) ordenados por created_at, limite 20
+5. Fecha sequencialmente usando fecharRegistroAutomaticoDigisac (inclui verificacao pos-erro)
+6. Retorna resumo JSON com registrarPendentes e fechamento
+
+**Decisao sobre erro:**
+- Cron fecha somente status=pendente (nao erro)
+- Erro permanece para acao manual (Tentar novamente / Verificar status)
+- Reduz risco de looping em erro permanente
+
+**Schedule configurado:**
+- 0 17 * * * (diario as 17:00 UTC = 14:00 horario Sao Paulo)
+- Limitacao do plano Vercel Hobby: uma execucao por dia
+- Para horario ou 4x ao dia: usar agendador externo chamando a mesma rota com Authorization: Bearer 
+
+**Protecao da rota:**
+- CRON_SECRET obrigatorio no header Authorization
+- Se CRON_SECRET ausente no ambiente: retorna 500 sem executar
+- Se header nao confere: retorna 401
+- Token Digisac nunca exposto no frontend
+- Token Digisac nunca logado
+- Resposta bruta Digisac truncada
+
+**Validacoes de codigo:**
+- npx tsc --noEmit: exit 0, zero erros
+- vercel.json preserva cron auto-logout existente
+- Nenhum cron automatico adicional criado alem do configurado
+- Endpoint sem duplicacao /api/v1 (fecharRegistroAutomaticoDigisac usa /contacts/{contactId}/ticket/close)
+- Rota usa createServiceClient (service role, sem RLS)
+- Fluxo manual nao foi alterado
+
+**Pendencias:**
+- Configurar CRON_SECRET na Vercel (env var)
+- Testar chamada sem secret: deve retornar 401
+- Testar chamada com secret em ambiente local
+- Confirmar deploy na Vercel nao falha com schedule 0 17 * * *
+- Se precisar de frequencia maior que 1x/dia: configurar agendador externo (cron-job.org, EasyCron) chamando POST /api/cron/digisac-finalizacoes-automaticas com Authorization: Bearer 
+- Avaliar se 14:00 Sao Paulo e o melhor horario para a execucao diaria
+
+**Riscos conhecidos:**
+- Plano Hobby Vercel: cron diario somente, horario nao garantido (pode variar ate 1h)
+- Se o diagnostico demorar muito + 20 fechamentos sequenciais, pode estourar timeout da Vercel (10s Hobby, 60s Pro)
+- Se CRON_SECRET nao configurado na Vercel, o cron vai falhar silenciosamente (401)
+- O bypass x-cron-secret no diagnostico permite chamadas internas sem auth superadmin, mas requer CRON_SECRET valido
+
+**Proximo passo recomendado:**
+Configurar CRON_SECRET na Vercel. Testar deploy. Se precisar de frequencia maior, configurar agendador externo. Monitorar primeira execucao automatica.
+
+---
+
+## 2026-07-06 - Cascade - Ajuste de horario do cron digisac-finalizacoes-automaticas
+
+**Resumo:** Alterado o schedule do cron digisac-finalizacoes-automaticas de 0 17 * * * para 0 21 * * * (18h horario Sao Paulo, UTC-3).
+
+**Arquivo alterado:**
+- vercel.json: schedule de 0 17 * * * para 0 21 * * *
+
+**Preservado:**
+- Cron auto-logout permanece com schedule 0 22 * * * (19h Sao Paulo)
+- Nenhuma rota alterada
+- Nenhuma logica de fechamento alterada
+- Limite de 20 registros mantido
+
+**Schedule antes:** 0 17 * * * (17:00 UTC = 14:00 Sao Paulo)
+**Schedule depois:** 0 21 * * * (21:00 UTC = 18:00 Sao Paulo)
+
+---
+
+## 2026-07-06 - Codex - Procurar datas v2: auditoria por Run ID em dev-v2
+
+**Resumo:** Implementada melhoria de auditoria retrospectiva para `/procurar-datas` v2. Criada rota `POST /api/procurar-datas/v2/auditar-run`, protegida por `requireModuleAccess('procurar_datas_auditoria')`, que busca `procurar_datas_pesquisas_auditoria` por `id`, `run_id` ou `client_token`, reconstrói entrada a partir dos campos salvos e `parametros_json`, lê agenda/disponibilidade reais quando possível e monta diagnóstico copiável dos slots salvos. A tela `/procurar-datas/dev-v2` ganhou bloco `Auditar pesquisa por Run ID` com input, loading, erro, resultado legível e botão `Copiar diagnóstico`. Não altera regra de negócio, ranking, classificação, recorte, limites, OSRM, produção, Apps Script, migrations, RLS ou policies.
+
+**Arquivos lidos:**
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- docs/ia/log_progress.md
+- .devin/rules/gerais.md
+- .devin/rules/continuidade-agente.md
+- src/app/procurar-datas/dev-v2/page.tsx
+- src/app/procurar-datas/dev-v2/DevV2PesquisarCompatClient.tsx
+- src/app/api/procurar-datas/v2/diagnostico/route.ts
+- src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts
+- src/lib/procurar-datas/v2/auditoria-pesquisa.ts
+- src/lib/procurar-datas/motor/pesquisar-datas-v2.ts
+- src/lib/procurar-datas/motor/orquestrar-pesquisa-v2-com-payload-legado.ts
+- src/lib/procurar-datas/motor/agenda-real-helper.ts
+- src/lib/procurar-datas/motor/disponibilidade-real-helper.ts
+- src/lib/procurar-datas/motor/gerar-candidatos-disponibilidade-real.ts
+- src/lib/procurar-datas/motor/calcular-mapa-km-adicional-por-slot.ts
+- src/lib/procurar-datas/motor/candidato.ts
+- src/lib/procurar-datas/motor/disponibilidade.ts
+- src/lib/procurar-datas/motor/classificacao-candidato.ts
+- src/lib/procurar-datas/contratos.ts
+- src/lib/procurar-datas/types.ts
+- src/lib/auth/module-access.ts
+- src/lib/supabase/service.ts
+- supabase/migrations/20260626140000_create_procurar_datas_auditoria_operacional.sql
+
+**Arquivos criados/alterados:**
+- Criado: src/app/api/procurar-datas/v2/auditar-run/route.ts
+- Alterado: src/app/procurar-datas/dev-v2/DevV2PesquisarCompatClient.tsx
+- Alterado: docs/procurar-datas-motor-v2-progresso.md
+- Alterado: docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- Alterado: docs/ia/log_progress.md
+
+**Validações realizadas:**
+- MCP Supabase confirmou estrutura real de `procurar_datas_pesquisas_auditoria` e `procurar_datas_pre_agendamentos_auditoria`.
+- MCP Supabase confirmou os registros `47050006-c482-42a9-bd73-d153ca257d56` / `6091c901-9c57-46cb-a1af-1832d5dac865` e `3160c888-8389-440c-a53d-25cd74940a83` / `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488`.
+- Observação dos dados reais: no snapshot consultado, `6091c901-9c57-46cb-a1af-1832d5dac865` estava associado a resultados de 01/10, 02/10 e 05/10; o resultado 17/08 apareceu no registro `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488`. Isso pode estar desatualizado se houve nova execução depois da consulta.
+- `GET http://localhost:3000/procurar-datas/dev-v2` respondeu HTTP 200 no servidor local.
+- `POST http://localhost:3000/api/procurar-datas/v2/auditar-run` via CLI sem cookies retornou `401 Nao autenticado`, confirmando proteção de acesso. Validação autenticada do botão no browser: pendente.
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit --pretty false`: passou.
+- `npm run test -- src/app/api/procurar-datas/v2/pesquisar-compat-async/route.test.ts src/lib/procurar-datas/motor/pesquisar-datas-v2.test.ts --silent`: 2 arquivos, 13 testes passaram.
+- `npx eslint src/app/api/procurar-datas/v2/auditar-run/route.ts src/app/procurar-datas/dev-v2/DevV2PesquisarCompatClient.tsx --quiet`: passou.
+- `npm run dev` no sandbox falhou com `spawn EPERM`; fora do sandbox ficou ativo até timeout e a página respondeu HTTP 200.
+
+**Persistência:**
+- Nenhuma tabela, migration, policy ou RLS nova foi criada.
+- Decisão: manter esta etapa sem schema novo porque a rota/tela já entregam auditoria copiável usando a tabela existente. Persistência de snapshot detalhado fica como proposta futura.
+
+**Pendências:**
+- Validar manualmente em navegador autenticado/superadmin o botão `Auditar execução` e `Copiar diagnóstico`.
+- Rodar a auditoria autenticada para `6091c901-9c57-46cb-a1af-1832d5dac865`, `47050006-c482-42a9-bd73-d153ca257d56`, `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488` e `3160c888-8389-440c-a53d-25cd74940a83`.
+- Avaliar em tarefa futura persistência passiva de snapshot diagnostico, por exemplo `procurar_datas_execucoes_diagnostico`, sem secrets.
+
+**Riscos conhecidos:**
+- Auditoria retrospectiva recalcula com planilhas atuais; se agenda/disponibilidade mudaram depois da busca, o diagnóstico pode divergir do momento original.
+- A rota calcula diagnóstico dos slots salvos e compara com recorte atual, mas não substitui snapshot histórico completo.
+- A leitura Google Sheets/OSRM pode falhar por ambiente, credenciais, rede ou timeout; nesses casos a resposta marca `diagnosticoReal.disponivel=false`.
+
+**Próximo passo recomendado:**
+Validar em `/procurar-datas/dev-v2` com sessão superadmin e copiar o diagnóstico do caso 17/08 para confirmar se os dados reais atuais explicam o resultado salvo ou se a limitação histórica bloqueia a conclusão.
+
+---
+
+## 2026-07-06 - Codex - Procurar datas v2: limites nos slots recalculados da auditoria por Run ID
+
+**Resumo:** Ajuste incremental na auditoria por Run ID. A resposta de `POST /api/procurar-datas/v2/auditar-run` agora inclui, por slot recalculado, `limiteBaseM`, `limiteEspecialM`, `limitePremiumM`, `motivosAceiteRecusa`, `origemKmAdicionalNaRotaM` e `slotTemPontos` quando disponiveis. A tabela `Slots recalculados` em `/procurar-datas/dev-v2` passou a exibir esses campos para explicar por qual limite um slot normal/elegivel foi aceito. Nao altera regra de negocio, ranking, classificacao, limites, OSRM, producao, banco, migrations, RLS ou policies.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md
+- src/app/api/procurar-datas/v2/auditar-run/route.ts
+- src/app/procurar-datas/dev-v2/DevV2PesquisarCompatClient.tsx
+
+**Arquivos alterados:**
+- src/app/api/procurar-datas/v2/auditar-run/route.ts
+- src/app/procurar-datas/dev-v2/DevV2PesquisarCompatClient.tsx
+- docs/ia/log_progress.md
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/app/api/procurar-datas/v2/auditar-run/route.ts src/app/procurar-datas/dev-v2/DevV2PesquisarCompatClient.tsx --quiet`: passou.
+- `npm run test -- src/app/api/procurar-datas/v2/pesquisar-compat-async/route.test.ts src/lib/procurar-datas/motor/pesquisar-datas-v2.test.ts --silent`: 2 arquivos, 13 testes passaram.
+- `GET http://localhost:3000/procurar-datas/dev-v2`: HTTP 200.
+- Tentativa de `POST http://localhost:3000/api/procurar-datas/v2/auditar-run` com runId `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488` via CLI retornou `401 Nao autenticado`, porque a chamada de terminal nao carrega sessao/cookies do navegador. Validacao autenticada do novo resultado visual: nao confirmada no codigo por CLI.
+
+**Pendencias:**
+- Validar em navegador autenticado/superadmin que o runId `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488` mostra os novos campos em `Slots recalculados`.
+
+**Riscos conhecidos:**
+- Sem risco funcional esperado: os campos novos sao apenas leitura de dados diagnosticos ja calculados (`candidato.limites`, `candidato.motivos`, `candidato.slotTemPontos` e `detalhe.origemKmAdicionalNaRotaM`).
+
+**Proximo passo recomendado:**
+Reabrir `/procurar-datas/dev-v2` em sessao superadmin, auditar `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488` e confirmar que o slot normal mostra `kmAdicionalKm` junto com `limiteBaseM`, `limiteEspecialM`, `limitePremiumM` e `origemKmAdicionalNaRotaM`.
+
+---
+
+## 2026-07-06 - Codex - Procurar datas v2: auditoria de insercao real com coordenadas da agenda
+
+**Resumo:** Ajuste incremental na rota `POST /api/procurar-datas/v2/auditar-run` e na tela `/procurar-datas/dev-v2`. A auditoria agora tenta enriquecer, somente no diagnostico, os pontos da agenda dos slots salvos usando lookup seguro e cache-only em `geo_cache` via `buscarEnderecoNoGeoCache`. Quando ainda houver descarte por `sem_coordenadas_cache`, a resposta marca a insercao real como incompleta, adiciona divergencia `insercao-real-incompleta-sem-coordenadas` e expoe `enderecosSemCoordenadas` com endereco, data, equipe, titulo, motivo e chave normalizada. Nao altera ranking, classificacao, limites, OSRM de producao, Apps Script, schema, RLS ou persistencia.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md
+- src/app/api/procurar-datas/v2/auditar-run/route.ts
+- src/app/procurar-datas/dev-v2/DevV2PesquisarCompatClient.tsx
+- src/lib/procurar-datas/motor/cache-coordenadas-agenda-diagnostico.ts
+- src/lib/procurar-datas/motor/parse-agenda-shag.ts
+- src/lib/procurar-datas/endereco-cache.ts
+- src/app/api/procurar-datas/validar-endereco/route.ts
+- src/lib/procurar-datas/google-geocoding.ts
+- src/lib/procurar-datas/types.ts
+
+**Arquivos alterados:**
+- src/app/api/procurar-datas/v2/auditar-run/route.ts
+- src/app/procurar-datas/dev-v2/DevV2PesquisarCompatClient.tsx
+- docs/ia/log_progress.md
+
+**Validacoes realizadas:**
+- MCP Supabase consultou `geo_cache` e confirmou registros atuais para `Rua Joao Baptista Groff, 605, Orleans` e `Rua Felisberto Fiore d'Orazio, 50, Santa Felicidade`.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/app/api/procurar-datas/v2/auditar-run/route.ts src/app/procurar-datas/dev-v2/DevV2PesquisarCompatClient.tsx --quiet`: passou.
+- `npm run test -- src/app/api/procurar-datas/v2/pesquisar-compat-async/route.test.ts src/lib/procurar-datas/motor/pesquisar-datas-v2.test.ts --silent`: 2 arquivos, 13 testes passaram.
+- `GET http://localhost:3000/procurar-datas/dev-v2`: HTTP 200.
+- `POST http://localhost:3000/api/procurar-datas/v2/auditar-run` com runId `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488` via CLI retornou `401 Nao autenticado`, porque a chamada de terminal nao carrega sessao/cookies do navegador. Validacao autenticada do resultado recalculado: nao confirmada.
+- `git diff --check` nos arquivos tocados apontou trailing whitespace antigo em `docs/ia/log_progress.md` nas linhas de Digisac, fora do trecho desta tarefa; nao alterado.
+
+**Pendencias:**
+- Validar em navegador autenticado/superadmin o runId `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488` e confirmar se o slot `2026-08-17::EQUIPE 1` fica com `insercaoRealCompleta=true` apos hits cache-only, ou se lista `Enderecos sem coordenadas` e divergencia de insercao incompleta.
+
+**Riscos conhecidos:**
+- A nova tentativa e cache-only; nao chama LocationIQ, Google Geocoding ou Apps Script. Se o endereco da agenda nao puder ser estruturado com numero/logradouro/bairro/cidade/UF ou nao tiver match seguro no `geo_cache`, a auditoria continuara incompleta por desenho.
+- A auditoria retrospectiva ainda usa agenda/disponibilidade atuais; divergencias podem refletir mudancas posteriores na planilha.
+
+**Proximo passo recomendado:**
+Rodar a auditoria pelo botao em `/procurar-datas/dev-v2` com sessao superadmin e copiar o JSON para confirmar o km por insercao real do caso 17/08.

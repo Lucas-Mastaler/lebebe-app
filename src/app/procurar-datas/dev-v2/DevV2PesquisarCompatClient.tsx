@@ -19,6 +19,109 @@ type GetResponse =
   | { ok: true; progress: ProgressoPesquisa }
   | { ok: false; error: string }
 
+type EnderecoSemCoordenadasAuditoria = {
+  slotKey: string | null
+  dataISO: string | null
+  equipe: string | null
+  titulo: string | null
+  endereco: string | null
+  motivo: string
+  chaveNormalizada: string | null
+  indiceLinhaOriginal: number | null
+  descricao: string | null
+}
+
+type AuditarRunResponse =
+  | {
+      ok: true
+      pesquisa: {
+        id: string
+        runId: string | null
+        clientToken: string | null
+        createdAt: string | null
+        usuarioEmail: string | null
+        status: string | null
+        motor: string | null
+        duracaoMs: number | null
+      }
+      entrada: {
+        cep: string | null
+        endereco: {
+          completo: string | null
+          logradouro: string | null
+          numero: string | null
+          bairro: string | null
+          cidade: string | null
+          uf: string | null
+        }
+        coordenadas: { lat: number | null; lng: number | null }
+        dataInicial: string | null
+        tempoNecessario: string | null
+        itens: Record<string, string | null>
+        condominio: boolean | null
+        rural: boolean | null
+        encomenda: boolean | null
+        valorInicialMinimo: number | null
+      }
+      resultadosSalvos: Array<{
+        dataISO: string | null
+        equipe: string | null
+        tipo: string | null
+        frete: string | null
+        faltam: string | null
+        encomenda: string | null
+        rank: number | null
+      }>
+      diagnosticoReal: {
+        disponivel: boolean
+        motivoFalhaDiagnosticoReal: string | null
+        agendaReal?: { ok?: boolean; leitura?: { linhasLidas?: number; linhasConvertidas?: number }; erro?: string }
+        disponibilidadeReal?: { ok?: boolean; leitura?: { linhasLidas?: number; linhasConvertidas?: number }; erro?: string }
+        totalLinhasAgendaLidas?: number
+        totalDisponibilidadesLidas?: number
+        totalCandidatosReais?: number
+        fonteAgenda?: string
+        fonteDisponibilidade?: string
+        insercaoRealCompleta?: boolean
+        enderecosSemCoordenadas?: EnderecoSemCoordenadasAuditoria[]
+        slots?: Array<{
+          slotKey: string | null
+          dataISO: string | null
+          equipe: string | null
+          resultadoSalvo?: unknown
+          kmAdicionalNaRotaM: number | null
+          kmAdicionalKm: number | null
+          slotAvailMin: number | null
+          serviceMin: number | null
+          equipeAtiva: boolean | null
+          motivoIndisponibilidade: string | null
+          tipoRecalculado: string | null
+          elegivelRecalculado: boolean | null
+          limiteBaseM: number | null
+          limiteEspecialM: number | null
+          limitePremiumM: number | null
+          motivosAceiteRecusa: string[]
+          origemKmAdicionalNaRotaM: string | null
+          slotTemPontos: boolean | null
+          insercaoRealCompleta?: boolean
+          validacaoInsercaoReal?: string
+          motivoInsercaoRealIncompleta?: string | null
+          enderecosSemCoordenadas?: EnderecoSemCoordenadasAuditoria[]
+          entrouNoRecorteAtual: boolean
+          fonteDados: string
+        }>
+      }
+      comparacao: {
+        divergencias: Array<{ slotKey: string | null; tipo: string; detalhe: string }>
+        avisos: string[]
+        limitacoesHistoricas: string[]
+        fonteCandidatos: string
+        fonteDisponibilidade: string
+      }
+      textoCopiavel: string
+    }
+  | { ok: false; error?: string; message?: string }
+
 type Execucao = {
   cenarioId: string
   postHttp: number
@@ -66,6 +169,11 @@ export default function DevV2PesquisarCompatClient() {
   const [loading, setLoading] = useState(false)
   const [customPayload, setCustomPayload] = useState('')
   const [customError, setCustomError] = useState('')
+  const [auditoriaInput, setAuditoriaInput] = useState('')
+  const [auditoriaLoading, setAuditoriaLoading] = useState(false)
+  const [auditoriaErro, setAuditoriaErro] = useState('')
+  const [auditoriaResultado, setAuditoriaResultado] = useState<AuditarRunResponse | null>(null)
+  const [auditoriaCopiado, setAuditoriaCopiado] = useState(false)
 
   async function executar(cenarioId: string, payload: PesquisarDatasRequest) {
     if (loading) return
@@ -140,6 +248,43 @@ export default function DevV2PesquisarCompatClient() {
     }
   }
 
+  async function handleAuditarRun() {
+    setAuditoriaErro('')
+    setAuditoriaResultado(null)
+    setAuditoriaCopiado(false)
+
+    const runIdOuPesquisaId = auditoriaInput.trim()
+    if (!runIdOuPesquisaId) {
+      setAuditoriaErro('Informe um Run ID ou ID da pesquisa.')
+      return
+    }
+
+    setAuditoriaLoading(true)
+    try {
+      const res = await fetch('/api/procurar-datas/v2/auditar-run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ runIdOuPesquisaId }),
+      })
+      const json = (await res.json()) as AuditarRunResponse
+      setAuditoriaResultado(json)
+      if (!res.ok || !json.ok) {
+        setAuditoriaErro((json.ok ? '' : json.error || json.message) || `Erro HTTP ${res.status}`)
+      }
+    } catch (err) {
+      setAuditoriaErro(err instanceof Error ? err.message : 'Erro inesperado ao auditar execução.')
+    } finally {
+      setAuditoriaLoading(false)
+    }
+  }
+
+  async function copiarDiagnostico() {
+    if (!auditoriaResultado?.ok) return
+    await navigator.clipboard.writeText(auditoriaResultado.textoCopiavel)
+    setAuditoriaCopiado(true)
+    window.setTimeout(() => setAuditoriaCopiado(false), 2000)
+  }
+
 type CandidatoDevV2 = CandidatoFinal & {
   date?: string
   dateISO?: string
@@ -197,6 +342,232 @@ type CandidatoDevV2 = CandidatoFinal & {
             Preencher com K13
           </Button>
         </div>
+      </div>
+
+      <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-4">
+        <div>
+          <h3 className="font-semibold text-slate-900">Auditar pesquisa por Run ID</h3>
+        </div>
+
+        <div className="flex flex-col md:flex-row gap-2">
+          <input
+            value={auditoriaInput}
+            onChange={(e) => setAuditoriaInput(e.target.value)}
+            placeholder="Run ID ou ID da pesquisa"
+            className="flex-1 px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+          />
+          <Button onClick={handleAuditarRun} disabled={auditoriaLoading} variant="outline">
+            {auditoriaLoading ? 'Auditando...' : 'Auditar execução'}
+          </Button>
+        </div>
+
+        {auditoriaErro && (
+          <div className="rounded-md bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+            {auditoriaErro}
+          </div>
+        )}
+
+        {auditoriaResultado?.ok && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="rounded-md border border-slate-200 p-3 space-y-1">
+                <h4 className="text-sm font-medium text-slate-700">Dados gerais da pesquisa</h4>
+                <p className="text-sm"><strong>pesquisaAuditoriaId:</strong> {auditoriaResultado.pesquisa.id}</p>
+                <p className="text-sm"><strong>runId:</strong> {auditoriaResultado.pesquisa.runId ?? '-'}</p>
+                <p className="text-sm"><strong>clientToken:</strong> {auditoriaResultado.pesquisa.clientToken ?? '-'}</p>
+                <p className="text-sm"><strong>usuário:</strong> {auditoriaResultado.pesquisa.usuarioEmail ?? '-'}</p>
+                <p className="text-sm"><strong>timestamp:</strong> {formatarData(auditoriaResultado.pesquisa.createdAt ?? undefined)}</p>
+                <p className="text-sm"><strong>status:</strong> {auditoriaResultado.pesquisa.status ?? '-'}</p>
+                <p className="text-sm"><strong>duração:</strong> {formatarDuracao(auditoriaResultado.pesquisa.duracaoMs ?? undefined)}</p>
+                <p className="text-sm"><strong>motor:</strong> {auditoriaResultado.pesquisa.motor ?? '-'}</p>
+              </div>
+
+              <div className="rounded-md border border-slate-200 p-3 space-y-1">
+                <h4 className="text-sm font-medium text-slate-700">Entrada usada</h4>
+                <p className="text-sm"><strong>CEP:</strong> {auditoriaResultado.entrada.cep ?? '-'}</p>
+                <p className="text-sm"><strong>endereço:</strong> {auditoriaResultado.entrada.endereco.completo ?? '-'}</p>
+                <p className="text-sm"><strong>coordenadas:</strong> {auditoriaResultado.entrada.coordenadas.lat ?? '-'}, {auditoriaResultado.entrada.coordenadas.lng ?? '-'}</p>
+                <p className="text-sm"><strong>data inicial:</strong> {auditoriaResultado.entrada.dataInicial ?? '-'}</p>
+                <p className="text-sm"><strong>tempo necessário:</strong> {auditoriaResultado.entrada.tempoNecessario ?? '-'}</p>
+                <p className="text-sm"><strong>itens:</strong> {Object.values(auditoriaResultado.entrada.itens).filter(Boolean).join(' / ') || '-'}</p>
+                <p className="text-sm"><strong>condomínio/rural/encomenda:</strong> {String(auditoriaResultado.entrada.condominio)} / {String(auditoriaResultado.entrada.rural)} / {String(auditoriaResultado.entrada.encomenda)}</p>
+                <p className="text-sm"><strong>valor inicial mínimo:</strong> {auditoriaResultado.entrada.valorInicialMinimo ?? '-'}</p>
+              </div>
+            </div>
+
+            <div className="rounded-md border border-slate-200 overflow-hidden">
+              <div className="p-3 border-b border-slate-200">
+                <h4 className="text-sm font-medium text-slate-700">Resultados salvos</h4>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th className="text-left px-3 py-2">Data</th>
+                      <th className="text-left px-3 py-2">Equipe</th>
+                      <th className="text-left px-3 py-2">Tipo</th>
+                      <th className="text-left px-3 py-2">Frete</th>
+                      <th className="text-left px-3 py-2">Faltam</th>
+                      <th className="text-left px-3 py-2">Encomenda</th>
+                      <th className="text-left px-3 py-2">Rank</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {auditoriaResultado.resultadosSalvos.map((r, idx) => (
+                      <tr key={idx}>
+                        <td className="px-3 py-2">{r.dataISO ?? '-'}</td>
+                        <td className="px-3 py-2">{r.equipe ?? '-'}</td>
+                        <td className="px-3 py-2">{r.tipo ?? '-'}</td>
+                        <td className="px-3 py-2">{r.frete ?? '-'}</td>
+                        <td className="px-3 py-2">{r.faltam ?? '-'}</td>
+                        <td className="px-3 py-2">{r.encomenda ?? '-'}</td>
+                        <td className="px-3 py-2">{r.rank ?? '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="rounded-md border border-slate-200 p-3 space-y-2">
+              <h4 className="text-sm font-medium text-slate-700">Diagnóstico real</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                <p><strong>diagnóstico real disponível:</strong> {String(auditoriaResultado.diagnosticoReal.disponivel)}</p>
+                <p><strong>agenda real lida:</strong> {String(auditoriaResultado.diagnosticoReal.agendaReal?.ok ?? false)}</p>
+                <p><strong>disponibilidade real lida:</strong> {String(auditoriaResultado.diagnosticoReal.disponibilidadeReal?.ok ?? false)}</p>
+                <p><strong>fonte agenda:</strong> {auditoriaResultado.diagnosticoReal.fonteAgenda ?? '-'}</p>
+                <p><strong>fonte disponibilidade:</strong> {auditoriaResultado.diagnosticoReal.fonteDisponibilidade ?? auditoriaResultado.comparacao.fonteDisponibilidade}</p>
+                <p><strong>linhas agenda:</strong> {auditoriaResultado.diagnosticoReal.totalLinhasAgendaLidas ?? auditoriaResultado.diagnosticoReal.agendaReal?.leitura?.linhasConvertidas ?? '-'}</p>
+                <p><strong>linhas disponibilidade:</strong> {auditoriaResultado.diagnosticoReal.totalDisponibilidadesLidas ?? auditoriaResultado.diagnosticoReal.disponibilidadeReal?.leitura?.linhasConvertidas ?? '-'}</p>
+                <p><strong>candidatos reais:</strong> {auditoriaResultado.diagnosticoReal.totalCandidatosReais ?? '-'}</p>
+                <p><strong>inserção real completa:</strong> {auditoriaResultado.diagnosticoReal.insercaoRealCompleta === undefined ? '-' : String(auditoriaResultado.diagnosticoReal.insercaoRealCompleta)}</p>
+              </div>
+              {!auditoriaResultado.diagnosticoReal.disponivel && (
+                <div className="rounded-md bg-yellow-50 border border-yellow-200 p-3 text-sm text-yellow-800">
+                  {auditoriaResultado.diagnosticoReal.motivoFalhaDiagnosticoReal ?? 'Diagnóstico real indisponível.'}
+                </div>
+              )}
+            </div>
+
+            {auditoriaResultado.diagnosticoReal.slots && auditoriaResultado.diagnosticoReal.slots.length > 0 && (
+              <div className="rounded-md border border-slate-200 overflow-hidden">
+                <div className="p-3 border-b border-slate-200">
+                  <h4 className="text-sm font-medium text-slate-700">Slots recalculados</h4>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-50 border-b border-slate-200">
+                      <tr>
+                        <th className="text-left px-3 py-2">Slot</th>
+                        <th className="text-left px-3 py-2">Km rota</th>
+                        <th className="text-left px-3 py-2">Tempo disp.</th>
+                        <th className="text-left px-3 py-2">Serviço</th>
+                        <th className="text-left px-3 py-2">Ativa</th>
+                        <th className="text-left px-3 py-2">Tem pontos</th>
+                        <th className="text-left px-3 py-2">Inserção real</th>
+                        <th className="text-left px-3 py-2">Tipo atual</th>
+                        <th className="text-left px-3 py-2">Elegível</th>
+                        <th className="text-left px-3 py-2">Limite base</th>
+                        <th className="text-left px-3 py-2">Limite especial</th>
+                        <th className="text-left px-3 py-2">Limite premium</th>
+                        <th className="text-left px-3 py-2">Origem km</th>
+                        <th className="text-left px-3 py-2">Motivos</th>
+                        <th className="text-left px-3 py-2">Fonte</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {auditoriaResultado.diagnosticoReal.slots.map((slot, idx) => (
+                        <tr key={idx}>
+                          <td className="px-3 py-2">{slot.slotKey ?? '-'}</td>
+                          <td className="px-3 py-2">{slot.kmAdicionalKm ?? '-'}</td>
+                          <td className="px-3 py-2">{slot.slotAvailMin ?? '-'}</td>
+                          <td className="px-3 py-2">{slot.serviceMin ?? '-'}</td>
+                          <td className="px-3 py-2">{String(slot.equipeAtiva)}</td>
+                          <td className="px-3 py-2">{String(slot.slotTemPontos)}</td>
+                          <td className="px-3 py-2 min-w-[180px]">
+                            {slot.validacaoInsercaoReal ?? '-'}
+                            {slot.enderecosSemCoordenadas && slot.enderecosSemCoordenadas.length > 0
+                              ? ` (${slot.enderecosSemCoordenadas.length} sem coordenadas)`
+                              : ''}
+                          </td>
+                          <td className="px-3 py-2">{slot.tipoRecalculado ?? '-'}</td>
+                          <td className="px-3 py-2">{String(slot.elegivelRecalculado)}</td>
+                          <td className="px-3 py-2">{slot.limiteBaseM ?? '-'}</td>
+                          <td className="px-3 py-2">{slot.limiteEspecialM ?? '-'}</td>
+                          <td className="px-3 py-2">{slot.limitePremiumM ?? '-'}</td>
+                          <td className="px-3 py-2">{slot.origemKmAdicionalNaRotaM ?? '-'}</td>
+                          <td className="px-3 py-2 min-w-[220px]">{slot.motivosAceiteRecusa.length > 0 ? slot.motivosAceiteRecusa.join('; ') : '-'}</td>
+                          <td className="px-3 py-2">{slot.fonteDados}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-md border border-slate-200 p-3 space-y-2">
+              <h4 className="text-sm font-medium text-slate-700">Comparação</h4>
+              {auditoriaResultado.diagnosticoReal.enderecosSemCoordenadas && auditoriaResultado.diagnosticoReal.enderecosSemCoordenadas.length > 0 && (
+                <div className="rounded-md border border-yellow-200 overflow-hidden">
+                  <div className="p-3 border-b border-yellow-200 bg-yellow-50">
+                    <h5 className="text-sm font-medium text-yellow-900">Endereços sem coordenadas</h5>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-yellow-50 border-b border-yellow-200">
+                        <tr>
+                          <th className="text-left px-3 py-2">Data</th>
+                          <th className="text-left px-3 py-2">Equipe</th>
+                          <th className="text-left px-3 py-2">Título</th>
+                          <th className="text-left px-3 py-2">Endereço</th>
+                          <th className="text-left px-3 py-2">Motivo</th>
+                          <th className="text-left px-3 py-2">Chave normalizada</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-yellow-100">
+                        {auditoriaResultado.diagnosticoReal.enderecosSemCoordenadas.map((item, idx) => (
+                          <tr key={idx}>
+                            <td className="px-3 py-2">{item.dataISO ?? '-'}</td>
+                            <td className="px-3 py-2">{item.equipe ?? '-'}</td>
+                            <td className="px-3 py-2">{item.titulo ?? '-'}</td>
+                            <td className="px-3 py-2 min-w-[280px]">{item.endereco ?? '-'}</td>
+                            <td className="px-3 py-2">{item.motivo}</td>
+                            <td className="px-3 py-2 min-w-[260px] font-mono text-xs">{item.chaveNormalizada ?? '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {auditoriaResultado.comparacao.divergencias.length > 0 ? (
+                <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
+                  {auditoriaResultado.comparacao.divergencias.map((d, idx) => (
+                    <li key={idx}>{d.slotKey ? `${d.slotKey}: ` : ''}{d.detalhe}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-slate-700">Nenhuma divergência detectada nos campos recalculados disponíveis.</p>
+              )}
+              <div className="rounded-md bg-yellow-50 border border-yellow-200 p-3 text-sm text-yellow-800">
+                Blocos sintéticos não são usados como conclusão nesta auditoria.
+              </div>
+            </div>
+
+            <div className="rounded-md border border-slate-200 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <h4 className="text-sm font-medium text-slate-700">Texto para copiar</h4>
+                <Button onClick={copiarDiagnostico} variant="outline" size="sm">
+                  {auditoriaCopiado ? 'Copiado' : 'Copiar diagnóstico'}
+                </Button>
+              </div>
+              <pre className="max-h-[360px] overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">
+                {auditoriaResultado.textoCopiavel}
+              </pre>
+            </div>
+          </div>
+        )}
       </div>
 
       {loading && !execucao && (

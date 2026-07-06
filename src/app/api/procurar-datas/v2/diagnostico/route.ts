@@ -261,16 +261,6 @@ function montarSlotsKmAdicionalDiagnostico(input: {
         ? input.equipeAgendaDiagnostica.trim()
         : null
 
-    if (!equipeRaw) {
-      return {
-        slots,
-        slotsInvalidos: false,
-        fonteSlots: 'agenda-real-janela',
-        erros,
-        avisos: ['equipeAgendaDiagnostica ausente; nao foi possivel montar slots reais da agenda.'],
-      }
-    }
-
     if (!input.janelaDatas || input.janelaDatas.length === 0) {
       return {
         slots,
@@ -281,16 +271,24 @@ function montarSlotsKmAdicionalDiagnostico(input: {
       }
     }
 
+    const equipesParaGerar = equipeRaw ? [equipeRaw] : ['EQUIPE 1', 'EQUIPE 2']
+
     for (const dataDia of input.janelaDatas) {
-      slots.push({
-        dataISO: dataDia.dataISO,
-        equipe: equipeRaw,
-        linhasAgenda: input.agendaRealComDados.linhasAgenda,
-        cacheCoordenadasPorEndereco: input.cacheCoordenadasAgendaDiagnostico ?? {},
-      })
+      for (const equipeSlot of equipesParaGerar) {
+        slots.push({
+          dataISO: dataDia.dataISO,
+          equipe: equipeSlot,
+          linhasAgenda: input.agendaRealComDados.linhasAgenda,
+          cacheCoordenadasPorEndereco: input.cacheCoordenadasAgendaDiagnostico ?? {},
+        })
+      }
     }
 
-    avisos.push('slotsAgendaDiagnostica ausente; usando slots reais montados da agenda real e janela de datas.')
+    if (equipeRaw) {
+      avisos.push('slotsAgendaDiagnostica ausente; usando slots reais montados da agenda real e janela de datas.')
+    } else {
+      avisos.push('slotsAgendaDiagnostica ausente e equipeAgendaDiagnostica ausente; gerando slots para EQUIPE 1 e EQUIPE 2 a partir da agenda real e janela de datas.')
+    }
     if (Object.keys(input.cacheCoordenadasAgendaDiagnostico ?? {}).length === 0) {
       avisos.push(
         'cacheCoordenadasAgendaDiagnostico ausente ou vazio; pontos da agenda real sem coordenada serao descartados como sem_coordenadas_cache.'
@@ -1197,6 +1195,12 @@ export async function POST(request: NextRequest) {
         novo?: { lat: number; lng: number; descricao?: string }
         next?: { lat: number; lng: number; descricao?: string }
       }
+      /** Datas alvo para o recorte de auditoria (formato YYYY-MM-DD) */
+      datasAlvo?: unknown
+      /** Equipes alvo para o recorte de auditoria (ex: ['EQUIPE 1']) */
+      equipesAlvo?: unknown
+      /** Termos de endereço para buscar nos pontos da agenda (ex: ['ORLEANS', 'ARAUCÁRIA']) */
+      termosEnderecoAlvo?: unknown
     }
     const usarDisponibilidadeReal = bodyDiagnostico.usarDisponibilidadeRealDiagnostica === true
     const usarAgendaRealDiagnostica = bodyDiagnostico.usarAgendaRealDiagnostica === true
@@ -1239,6 +1243,7 @@ export async function POST(request: NextRequest) {
     let diagnosticoInsercaoPorSlot: Record<string, unknown> | null = null
     let diagnosticoSantoAmaroV2: Record<string, unknown> | null = null
     let diagnosticoFluxoRealV2: Record<string, unknown> | null = null
+    let diagnosticoRecorteAlvo: Record<string, unknown> | null = null
     let candidatosFinaisDiagnosticoDirigidoSantoAmaro: Array<{
       dataISO: string
       equipe: string
@@ -1898,14 +1903,16 @@ export async function POST(request: NextRequest) {
           : 5000
 
       const rawSlots = bodyDiagnostico.slotsAgendaDiagnostica
-      const slots: SlotInputMapaKmAdicional[] = []
+      let slots: SlotInputMapaKmAdicional[] = []
       let slotsInvalidos = false
+      let fonteSlotsMapa = 'vazio'
 
       if (rawSlots !== undefined) {
         if (!Array.isArray(rawSlots)) {
           slotsInvalidos = true
           errosMapaSlot.push('slotsAgendaDiagnostica invalido: esperado array de slots.')
         } else {
+          const slotsManual: SlotInputMapaKmAdicional[] = []
           for (const s of rawSlots) {
             if (
               s &&
@@ -1931,7 +1938,7 @@ export async function POST(request: NextRequest) {
                       }
                     : {}
                   : cacheCoordenadasAgendaDiagnosticoResolvido
-              slots.push({
+              slotsManual.push({
                 dataISO: raw.dataISO as string,
                 equipe: raw.equipe as string,
                 linhasAgenda: linhasAgenda as SlotInputMapaKmAdicional['linhasAgenda'],
@@ -1942,9 +1949,24 @@ export async function POST(request: NextRequest) {
               errosMapaSlot.push('Slot invalido ignorado: esperado { dataISO, equipe }.')
             }
           }
+          slots = slotsManual
+          fonteSlotsMapa = 'body-slotsAgendaDiagnostica'
         }
       } else {
-        avisosMapaSlot.push('slotsAgendaDiagnostica ausente; usando lista vazia controlada.')
+        const slotsAutoResolvidos = montarSlotsKmAdicionalDiagnostico({
+          rawSlotsAgendaDiagnostica: undefined,
+          usarAgendaRealDiagnostica,
+          agendaRealComDados,
+          janelaDatas: janelaResult?.ok ? janelaResult.datas : null,
+          equipeAgendaDiagnostica: bodyDiagnostico.equipeAgendaDiagnostica,
+          cacheCoordenadasAgendaDiagnostico: cacheCoordenadasAgendaDiagnosticoResolvido,
+          slotTemPontosPorSlotKey,
+        })
+        slots = slotsAutoResolvidos.slots
+        slotsInvalidos = slotsAutoResolvidos.slotsInvalidos
+        fonteSlotsMapa = slotsAutoResolvidos.fonteSlots
+        errosMapaSlot.push(...slotsAutoResolvidos.erros)
+        avisosMapaSlot.push(...slotsAutoResolvidos.avisos)
       }
 
       if (!destino) errosMapaSlot.push('destLat/destLng ausentes ou invalidos.')
@@ -1959,7 +1981,8 @@ export async function POST(request: NextRequest) {
           avisoDiagnostico:
             'Bloco exclusivamente diagnostico. Nao altera producao, frontend ou ranking final.',
           parametros: {
-            slotsRecebidos: Array.isArray(rawSlots) ? rawSlots.length : 0,
+            slotsRecebidos: slots.length,
+            fonteSlots: fonteSlotsMapa,
             destinoInformado: destino !== null,
             osrmBaseUrlUsada: osrmBaseUrl ?? undefined,
             osrmTimeoutMs,
@@ -2003,6 +2026,7 @@ export async function POST(request: NextRequest) {
               'Bloco exclusivamente diagnostico. Nao altera producao, frontend ou ranking final.',
             parametros: {
               slotsRecebidos: resultadoMapa.contadores.slotsRecebidos,
+              fonteSlots: fonteSlotsMapa,
               destinoInformado: true,
               osrmBaseUrlUsada: osrmBaseUrl,
               osrmTimeoutMs,
@@ -2023,6 +2047,7 @@ export async function POST(request: NextRequest) {
               'Bloco exclusivamente diagnostico. Nao altera producao, frontend ou ranking final.',
             parametros: {
               slotsRecebidos: slots.length,
+              fonteSlots: fonteSlotsMapa,
               destinoInformado: true,
               osrmBaseUrlUsada: osrmBaseUrl,
               osrmTimeoutMs,
@@ -2404,6 +2429,8 @@ export async function POST(request: NextRequest) {
           executado: true,
           ok: resultadoReclass.ok,
           modo: resultadoReclass.modo,
+          fonteCandidatos: 'sintetica',
+          fonteDisponibilidade: 'sintetica',
           contadores: resultadoReclass.contadores,
           amostraComparativa: resultadoReclass.candidatos.slice(0, 10),
           avisos: [...avisosReclass, ...resultadoReclass.avisos],
@@ -3550,6 +3577,222 @@ export async function POST(request: NextRequest) {
       },
     }
 
+    // 9.8. Null-guards para blocos diagnosticos opcionais
+    //    Garante que blocos nao executados retornem { executado: false, motivo } em vez de null
+    if (diagnosticoAgendaReal === null) {
+      diagnosticoAgendaReal = {
+        ok: true,
+        executado: false,
+        motivo: 'usarAgendaRealDiagnostica nao ativado no payload.',
+      }
+    }
+    if (diagnosticoDisponibilidadeReal === null) {
+      diagnosticoDisponibilidadeReal = {
+        executado: false,
+        motivo: 'usarDisponibilidadeRealDiagnostica nao ativado no payload.',
+      } as Record<string, unknown> as Awaited<
+        ReturnType<typeof buscarDisponibilidadeRealDiagnosticaComDados>
+      >['diagnostico']
+    }
+    if (diagnosticoCandidatosDisponibilidadeReal === null) {
+      diagnosticoCandidatosDisponibilidadeReal = {
+        executado: false,
+        motivo: 'usarDisponibilidadeRealDiagnostica nao ativado ou sem dados de disponibilidade real.',
+      }
+    }
+    if (diagnosticoCandidatosReaisAdaptados === null) {
+      diagnosticoCandidatosReaisAdaptados = {
+        executado: false,
+        motivo: 'usarDisponibilidadeRealDiagnostica nao ativado ou candidatos reais nao gerados.',
+      }
+    }
+    if (diagnosticoFluxoRealV2 === null) {
+      diagnosticoFluxoRealV2 = {
+        executado: false,
+        motivo: 'usarDiagnosticoSantoAmaroV2 nao ativado no payload.',
+      }
+    }
+
+    // 9.9. DiagnosticoRecorteAlvo — consolida pontos da agenda, insercao e reclassificacao para datas/equipes/termos alvo
+    {
+      const datasAlvoRaw = bodyDiagnostico.datasAlvo
+      const equipesAlvoRaw = bodyDiagnostico.equipesAlvo
+      const termosEnderecoAlvoRaw = bodyDiagnostico.termosEnderecoAlvo
+
+      const datasAlvo: string[] =
+        Array.isArray(datasAlvoRaw)
+          ? datasAlvoRaw.filter((d): d is string => typeof d === 'string' && d.trim().length > 0)
+          : []
+      const equipesAlvo: string[] =
+        Array.isArray(equipesAlvoRaw)
+          ? equipesAlvoRaw.filter((e): e is string => typeof e === 'string' && e.trim().length > 0)
+          : []
+      const termosEnderecoAlvo: string[] =
+        Array.isArray(termosEnderecoAlvoRaw)
+          ? termosEnderecoAlvoRaw.filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+          : []
+
+      const avisosRecorte: string[] = [
+        'Recorte alvo para auditoria. Consolida dados da agenda real, insercao por slot e reclassificacao.',
+        'Nao altera producao, frontend ou ranking final.',
+      ]
+      const errosRecorte: string[] = []
+
+      if (datasAlvo.length === 0 && equipesAlvo.length === 0 && termosEnderecoAlvo.length === 0) {
+        diagnosticoRecorteAlvo = {
+          executado: false,
+          motivo: 'Nenhum filtro alvo fornecido (datasAlvo, equipesAlvo, termosEnderecoAlvo).',
+        }
+      } else if (!usarAgendaRealDiagnostica || !agendaRealComDados || agendaRealComDados.linhasAgenda.length === 0) {
+        diagnosticoRecorteAlvo = {
+          executado: false,
+          motivo: 'usarAgendaRealDiagnostica nao ativado ou agenda real sem linhas.',
+          filtros: { datasAlvo, equipesAlvo, termosEnderecoAlvo },
+        }
+      } else {
+        try {
+          const slotsRecorte = montarSlotsKmAdicionalDiagnostico({
+            rawSlotsAgendaDiagnostica: undefined,
+            usarAgendaRealDiagnostica,
+            agendaRealComDados,
+            janelaDatas: janelaResult?.ok ? janelaResult.datas : null,
+            equipeAgendaDiagnostica: undefined,
+            cacheCoordenadasAgendaDiagnostico: cacheCoordenadasAgendaDiagnosticoResolvido,
+          })
+
+          const slotsFiltrados = slotsRecorte.slots.filter((s) => {
+            const dataMatch = datasAlvo.length === 0 || datasAlvo.includes(s.dataISO)
+            const equipeMatch = equipesAlvo.length === 0 || equipesAlvo.some((e) => normalizarEquipe(s.equipe) === normalizarEquipe(e))
+            return dataMatch && equipeMatch
+          })
+
+          const slotsDetalhados = slotsFiltrados.map((s) => {
+            const slotKey = `${s.dataISO}::${normalizarEquipe(s.equipe) ?? s.equipe}`
+            const equipeNormalizadaSlot = normalizarEquipe(s.equipe) ?? 'EQUIPE 1'
+            const parseResult = parsearPontosAgendaDoDiaV2({
+              linhasAgenda: s.linhasAgenda,
+              dataAlvoISO: s.dataISO,
+              equipeAlvo: equipeNormalizadaSlot as 'EQUIPE 1' | 'EQUIPE 2',
+              cacheCoordenadasPorEndereco: s.cacheCoordenadasPorEndereco ?? {},
+            })
+
+            const pontosComTermo = termosEnderecoAlvo.length > 0
+              ? parseResult.pontos.filter((p) =>
+                  termosEnderecoAlvo.some((termo) =>
+                    (p.endereco ?? '').toUpperCase().includes(termo.toUpperCase()) ||
+                    (p.tituloEvento ?? '').toUpperCase().includes(termo.toUpperCase())
+                  )
+                )
+              : []
+
+            return {
+              slotKey,
+              dataISO: s.dataISO,
+              equipe: s.equipe,
+              pontosValidos: parseResult.pontos.length,
+              pontosDescartados: parseResult.descartados.length,
+              pontos: parseResult.pontos.map((p) => ({
+                endereco: p.endereco,
+                titulo: p.tituloEvento,
+                cep: p.cep,
+                lat: p.coordenadas?.lat,
+                lng: p.coordenadas?.lng,
+              })),
+              descartados: parseResult.descartados.map((d) => ({
+                motivo: d.motivo,
+                descricao: d.descricao,
+              })),
+              termosEnderecoEncontrados: pontosComTermo.map((p) => ({
+                endereco: p.endereco,
+                titulo: p.tituloEvento,
+              })),
+              temTermoAlvo: pontosComTermo.length > 0,
+            }
+          })
+
+          const slotsComTermo = slotsDetalhados.filter((s) => s.temTermoAlvo)
+          const slotsComPontos = slotsDetalhados.filter((s) => s.pontosValidos > 0)
+
+          const mapaKmRecorte =
+            diagnosticoMapaKmAdicionalPorSlot &&
+            (diagnosticoMapaKmAdicionalPorSlot as Record<string, unknown>).executado === true &&
+            (diagnosticoMapaKmAdicionalPorSlot as Record<string, unknown>).mapa
+              ? (diagnosticoMapaKmAdicionalPorSlot as Record<string, unknown>).mapa as Record<string, number>
+              : null
+
+          const insercaoRecorte =
+            diagnosticoInsercaoPorSlot &&
+            (diagnosticoInsercaoPorSlot as Record<string, unknown>).executado === true &&
+            (diagnosticoInsercaoPorSlot as Record<string, unknown>).slots
+              ? (diagnosticoInsercaoPorSlot as Record<string, unknown>).slots as Record<string, unknown>
+              : null
+
+          const reclassificacaoRecorte =
+            diagnosticoReclassificacaoComKmMapaSlot &&
+            (diagnosticoReclassificacaoComKmMapaSlot as Record<string, unknown>).executado === true
+              ? (diagnosticoReclassificacaoComKmMapaSlot as Record<string, unknown>)
+              : null
+
+          const slotsComKm = slotsDetalhados.map((s) => {
+            const kmDoMapa = mapaKmRecorte ? mapaKmRecorte[s.slotKey] : undefined
+            const insercaoDoSlot = insercaoRecorte ? insercaoRecorte[s.slotKey] : undefined
+            const kmAdicionalM = typeof kmDoMapa === 'number' ? kmDoMapa : null
+            const deltaInsercaoKmM =
+              insercaoDoSlot && typeof insercaoDoSlot === 'object'
+                ? ((insercaoDoSlot as Record<string, unknown>).kmAdicionalNaRotaMFinal as number | undefined) ?? null
+                : null
+            return {
+              ...s,
+              kmAdicionalNaRotaMDoMapa: kmAdicionalM,
+              deltaInsercaoKmM,
+              insercaoDetalhes: insercaoDoSlot ?? null,
+            }
+          })
+
+          let candidatosReclassificados: Array<Record<string, unknown>> = []
+          if (
+            reclassificacaoRecorte &&
+            Array.isArray((reclassificacaoRecorte as Record<string, unknown>).candidatos)
+          ) {
+            const todosCandidatos = (reclassificacaoRecorte as Record<string, unknown>).candidatos as Array<Record<string, unknown>>
+            candidatosReclassificados = todosCandidatos.filter((c) => {
+              const dataMatch = datasAlvo.length === 0 || datasAlvo.includes(String(c.dataISO ?? ''))
+              const equipeMatch = equipesAlvo.length === 0 || equipesAlvo.some((e) => normalizarEquipe(String(c.equipe ?? '')) === normalizarEquipe(e))
+              return dataMatch && equipeMatch
+            })
+          }
+
+          diagnosticoRecorteAlvo = {
+            executado: true,
+            filtros: { datasAlvo, equipesAlvo, termosEnderecoAlvo },
+            contadores: {
+              slotsTotais: slotsRecorte.slots.length,
+              slotsFiltrados: slotsFiltrados.length,
+              slotsComPontos: slotsComPontos.length,
+              slotsComTermoAlvo: slotsComTermo.length,
+              candidatosReclassificadosNoRecorte: candidatosReclassificados.length,
+            },
+            slots: slotsComKm,
+            candidatosReclassificados,
+            mapaKmDisponivel: mapaKmRecorte !== null,
+            insercaoDisponivel: insercaoRecorte !== null,
+            reclassificacaoDisponivel: reclassificacaoRecorte !== null,
+            avisos: avisosRecorte,
+            erros: errosRecorte,
+          }
+        } catch (error: unknown) {
+          diagnosticoRecorteAlvo = {
+            executado: true,
+            ok: false,
+            filtros: { datasAlvo, equipesAlvo, termosEnderecoAlvo },
+            erro: `Erro ao montar recorte alvo: ${error instanceof Error ? error.message : String(error)}`,
+            avisos: avisosRecorte,
+            erros: errosRecorte,
+          }
+        }
+      }
+    }
+
     // 9. Montar resposta diagnóstica
     const duracaoMs = Date.now() - inicio
 
@@ -3597,6 +3840,7 @@ export async function POST(request: NextRequest) {
         diagnosticoInsercaoPorSlot,
         diagnosticoSantoAmaroV2,
         diagnosticoFluxoRealV2,
+        diagnosticoRecorteAlvo,
         diagnosticoMajorHardy31Jul,
         diagnosticoHenriqueCorreia31Jul,
         diagnosticoOsrm: (() => {

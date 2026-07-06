@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Eye, RefreshCcw, Search, Clock, MapPin, Settings, ListChecks, CalendarCheck, CheckCircle2, AlertCircle, Cpu, Hash } from 'lucide-react'
+import { formatarDataBrasileira, formatarDiasAteData, extrairResumoPreAgendamento } from '@/lib/procurar-datas/formatar-apresentacao'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -229,6 +230,33 @@ function JsonResumo({ value }: { value: unknown }) {
       {entries.map(([key, val]) => (
         <Campo key={key} label={key} value={val} />
       ))}
+    </dl>
+  )
+}
+
+function PreAgendamentoResumo({ payload }: { payload: unknown }) {
+  const resumo = extrairResumoPreAgendamento(payload)
+
+  if (!resumo) {
+    return (
+      <div className="rounded-lg border border-slate-100 bg-white p-3">
+        <p className="mb-2 text-xs text-slate-400">Formato inesperado — exibindo JSON bruto:</p>
+        <pre className="overflow-x-auto rounded-md bg-slate-50 p-2 text-xs text-slate-600">{JSON.stringify(payload, null, 2)}</pre>
+      </div>
+    )
+  }
+
+  return (
+    <dl className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <Campo label="Equipe" value={resumo.equipe} />
+      <Campo label="Tipo" value={resumo.tipo} />
+      <Campo label="Frete" value={resumo.frete} />
+      <Campo label="Data escolhida" value={resumo.dataEscolhida} />
+      <Campo label="CEP" value={resumo.cep} />
+      <Campo label="Região/label" value={resumo.regiaoLabel} />
+      <Campo label="Tempo necessário" value={resumo.tempoNecessario} />
+      <Campo label="Endereço" value={resumo.endereco} />
+      <Campo label="Autoria" value={resumo.autoriaEmail !== '-' ? resumo.autoriaEmail : '-'} />
     </dl>
   )
 }
@@ -554,7 +582,7 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
               <tbody>
                 {resultados.map((resultado, index) => (
                   <tr key={`${texto(resultado.date)}-${index}`} className={`border-t border-slate-100 ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}`}>
-                    <td className="px-3 py-2 text-slate-900">{texto(resultado.date ?? resultado.dateDM ?? resultado.dateISO)}</td>
+                    <td className="px-3 py-2 text-slate-900">{formatarDataBrasileira(resultado.date ?? resultado.dateISO ?? resultado.dateDM)}</td>
                     <td className="px-3 py-2 text-slate-700">{texto(resultado.weekday)}</td>
                     <td className="px-3 py-2 text-slate-700">{texto(resultado.team)}</td>
                     <td className="px-3 py-2">
@@ -563,7 +591,7 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
                       </span>
                     </td>
                     <td className="px-3 py-2 font-medium text-slate-900">{texto(resultado.frete ?? resultado.valor)}</td>
-                    <td className="px-3 py-2 text-slate-700">{texto(resultado.daysLeftTxt)}</td>
+                    <td className="px-3 py-2 text-slate-700">{formatarDiasAteData(resultado.date ?? resultado.dateISO, pesquisa.created_at)}</td>
                     <td className="px-3 py-2 text-slate-700">{texto(resultado.encomenda)}</td>
                     <td className="px-3 py-2 text-center">
                       <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">
@@ -607,7 +635,7 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
                   </div>
                   <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
                     <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Payload resumido</h4>
-                    <JsonResumo value={pre.payload_pre_agendamento_json} />
+                    <PreAgendamentoResumo payload={pre.payload_pre_agendamento_json} />
                   </div>
                 </div>
               </div>

@@ -22,6 +22,7 @@ export type ModuleKey =
   | 'recebimento'
   | 'superadmin'
   | 'configuracoes'
+  | 'digisac_finalizacoes_automaticas'
 
 export type OrigemPermissao = 'superadmin' | 'usuario' | 'perfil'
 

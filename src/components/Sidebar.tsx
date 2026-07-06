@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Activity, Calendar, ChevronLeft, ChevronRight, CheckCircle, BarChart3, LogOut, Users, ClipboardList, Clock, Package, TrendingUp, Search, Settings, ShoppingBag, ShieldCheck } from 'lucide-react';
+import { Activity, Bot, Calendar, ChevronLeft, ChevronRight, CheckCircle, BarChart3, LogOut, Users, ClipboardList, Clock, Package, TrendingUp, Search, Settings, ShoppingBag, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePermissoes } from '@/lib/hooks/usePermissoes';
 
@@ -31,6 +31,7 @@ const navItems: NavItem[] = [
     { label: 'INTELIGÊNCIA COMERCIAL',   href: '/inteligencia-comercial',  icon: TrendingUp, moduleKey: 'inteligencia_comercial' },
     { label: 'PÓS-VENDA',               href: '/pos-venda',               icon: ShoppingBag, moduleKey: 'pos_venda' },
     { label: 'RECEBIMENTO',             href: '/recebimento',             icon: Package,    moduleKey: 'recebimento' },
+    { label: 'FINALIZAÇÕES DIGISAC',    href: '/digisac/finalizacoes-automaticas', icon: Bot, moduleKey: 'digisac_finalizacoes_automaticas' },
 ];
 
 const superadminNavItems: NavItem[] = [

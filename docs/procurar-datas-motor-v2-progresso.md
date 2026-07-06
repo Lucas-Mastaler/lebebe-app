@@ -1,3 +1,24 @@
+## 2026-07-07 - Cascade - Bugfix: encomenda no adaptador v2->legado validado
+
+Status: implementado e validado manualmente. Correcao de equivalencia legado x v2.
+
+### Bug corrigido
+- `adaptar-saida-v2-para-legado.ts` hardcodeava `encomenda: 'Nao'` para todos os candidatos.
+- Agora replica a regra do legado (CEP-APIBACK.gs:1510): `tipoBerco === 'NIDO' ? diasAte > 90 : diasAte > 60`.
+- `diasAte` calculado contra a data atual (hoje), nao contra `dataInicial` da busca — conforme legado (CEP-APIBACK.gs:1473).
+
+### Validacao manual
+- Pesquisa com dataInicial: 2026-10-01, tipoBerco: DIVERSOS, encomenda: true.
+- Resultados: 01/10 (87d → Sim), 02/10 (88d → Sim), 05/10 (91d → Sim).
+- pesquisaAuditoriaId: 47050006-c482-42a9-bd73-d153ca257d56.
+
+### daysLeftTxt
+- O campo raw no payload (`resultados_json`) ainda usa `diff` contra `dataInicial` (divergente do legado).
+- A UI da auditoria ja recalcula "Faltam" usando `formatarDiasAteData(resultado.date, pesquisa.created_at)` — display correto.
+- Pendencia de baixa prioridade: corrigir daysLeftTxt no payload raw para usar hoje como base.
+
+---
+
 ## 2026-06-26 - Codex - Frente 3/direita + Frente 0: autoria do pre-agendamento
 
 Status: implementado em `src/app/api/procurar-datas/pre-agendar/route.ts` e nos pontos Apps Script `appscript/PublicAPI.gs` / `appscript/CEP-APIBACK.gs`. Nao altera busca de datas, geocodificacao, CEP-first, Google fallback de endereco, OSRM, Haversine, ranking, candidatos, classificacao, frete, banco, migrations ou RLS.
@@ -4500,5 +4521,38 @@ Edicao manual no banco alterou `KM MAX ENTRE PONTOS` de `"8"` para `"7"` apos im
 - Executar diagnostico Santo Amaro com payload real para validar 02/07, 25/07, 16/07, 24/07
 - 16/07 (premium) pode ter outra causa de divergencia
 - Verificar se outras chaves do banco divergem da planilha
+
+---
+
+## 2026-07-06 - Codex - Frente 3/direita + Frente 0: auditoria por Run ID em dev-v2
+
+Status: implementado como ferramenta diagnostica interna. Nao altera producao, fluxo principal `/procurar-datas`, Apps Script, ranking, classificacao, recorte, limites, OSRM, Haversine, regras de negocio, migrations ou policies.
+
+### O que mudou
+- Criada rota `POST /api/procurar-datas/v2/auditar-run`.
+- A rota busca `procurar_datas_pesquisas_auditoria` por `id`, `run_id` ou `client_token`.
+- A rota reconstroi a entrada a partir dos campos salvos e de `parametros_json`.
+- A rota usa `resultados_json` para montar `datasAlvo`/`equipesAlvo` dos resultados salvos.
+- A rota tenta ler agenda real e disponibilidade real via helpers existentes e recalcula apenas diagnostico atual dos slots salvos.
+- A rota explicita quando `diagnosticoReal.disponivel=false` e nao usa bloco sintetico como conclusao.
+- A tela `/procurar-datas/dev-v2` ganhou bloco `Auditar pesquisa por Run ID` com input, loading, erro, resultado legivel e botao `Copiar diagnostico`.
+
+### Persistencia
+- Nenhuma tabela ou migration nova foi criada nesta etapa.
+- Motivo: a melhoria principal foi entregue usando a auditoria existente; snapshot historico completo de agenda/disponibilidade/candidatos segue como proposta futura.
+
+### Validacoes
+- MCP Supabase confirmou colunas reais de `procurar_datas_pesquisas_auditoria` e `procurar_datas_pre_agendamentos_auditoria`.
+- MCP Supabase confirmou os registros `47050006-c482-42a9-bd73-d153ca257d56` / `6091c901-9c57-46cb-a1af-1832d5dac865` e `3160c888-8389-440c-a53d-25cd74940a83` / `f7a85e40-56db-4ee1-ab05-d7a9d6bfb488`.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/app/api/procurar-datas/v2/auditar-run/route.ts src/app/procurar-datas/dev-v2/DevV2PesquisarCompatClient.tsx --quiet`: passou.
+- `npm run test -- src/app/api/procurar-datas/v2/pesquisar-compat-async/route.test.ts src/lib/procurar-datas/motor/pesquisar-datas-v2.test.ts --silent`: 2 arquivos, 13 testes passaram.
+- Dev server local respondeu `GET /procurar-datas/dev-v2` com HTTP 200.
+- Chamada CLI sem cookies para `POST /api/procurar-datas/v2/auditar-run` retornou `401 Nao autenticado`, confirmando protecao de acesso; validacao autenticada do botao em navegador permanece pendente.
+
+### Pendencias e riscos
+- Validar manualmente em navegador autenticado com superadmin usando os runIds informados.
+- A auditoria retrospectiva recalcula com planilhas atuais; se a agenda/disponibilidade mudou depois da busca, divergencias podem refletir mudanca historica dos dados.
+- Avaliar em etapa futura persistencia passiva de snapshot diagnostico, por exemplo `procurar_datas_execucoes_diagnostico`, sem secrets.
 
 ---

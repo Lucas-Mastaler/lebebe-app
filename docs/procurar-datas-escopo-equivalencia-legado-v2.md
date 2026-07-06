@@ -1,5 +1,38 @@
 # Escopo e equivalência — motor `/procurar-datas` legado x v2
 
+## 2026-07-07 - Cascade - Bugfix: equivalencia do campo encomenda no adaptador v2->legado
+
+Status: implementado e validado manualmente. Correcao de bug inequivoco de equivalencia legado x v2.
+
+### Bug
+- O adaptador `adaptar-saida-v2-para-legado.ts` hardcodeava `encomenda: 'Nao'` para todos os candidatos.
+- O legado Apps Script (CEP-APIBACK.gs linha 1510) calcula dinamicamente: `encomenda: (tipoBerco==='NIDO'?diasAte>90:diasAte>60) ? 'Sim' : 'Nao'`.
+
+### Correcao
+- `adaptarCandidato` agora recebe `tipoBerco` do `request` e calcula `encomenda` com a mesma regra do legado.
+- `diasAte` calculado contra a data atual (hoje), nao contra `dataInicial` da busca — conforme legado (CEP-APIBACK.gs linha 1473).
+- Quando `diasAteHoje` e null (data invalida), fallback para 'Nao'.
+
+### Pendencia conhecida
+- `daysLeftTxt` no payload raw (`resultados_json`) ainda usa `diff` contra `dataInicial`, divergente do legado que usa `hoje`.
+- A UI da auditoria ja recalcula "Faltam" com `formatarDiasAteData(resultado.date, pesquisa.created_at)` — display correto ao usuario.
+- Pendencia de baixa prioridade: corrigir daysLeftTxt no payload raw para usar hoje como base.
+
+### Validacao manual
+- dataInicial: 2026-10-01, tipoBerco: DIVERSOS, encomenda: true.
+- Resultados: 01/10 (87d → Sim), 02/10 (88d → Sim), 05/10 (91d → Sim).
+- pesquisaAuditoriaId: 47050006-c482-42a9-bd73-d153ca257d56.
+
+### Diagnostico
+- Bloco `diagnosticoReclassificacaoComKmMapaSlot` agora expoe `fonteCandidatos: 'sintetica'` e `fonteDisponibilidade: 'sintetica'` para evitar confusao entre dados sinteticos e producao real.
+
+### Divergencia "Equipe inativa" (nao corrigida — nao e bug)
+- Producao usa disponibilidade real do Google Sheets.
+- Diagnostico usa disponibilidade sintetica hardcoded (3a data da janela com EQUIPE 1 inativa).
+- A divergencia e esperada e nao representa bug de equivalencia.
+
+---
+
 ## 2026-06-26 - Codex - Frente 3/direita + Frente 0: autoria real no pre-agendamento
 
 Status: implementado no fluxo de pre-agendamento. Nao altera motor v2, equivalencia legado/v2 de busca, geocodificacao, CEP-first, OSRM, Haversine, ranking, candidatos, classificacao, frete, banco, migrations ou RLS.
@@ -3473,5 +3506,24 @@ Status: implementado somente em `src/app/procurar-datas/page.tsx`. Nao altera ba
 - `npx eslint src/app/procurar-datas/page.tsx --quiet`: passou.
 - `npx tsc --noEmit --pretty false`: passou.
 - Validacao manual autenticada: pendente.
+
+---
+
+## 2026-07-06 - Codex - Observabilidade: auditoria retrospectiva por Run ID em dev-v2
+
+Status: implementado como ferramenta de auditoria interna, sem mudanca de regra de negocio.
+
+### Escopo
+- Nova rota diagnostica `POST /api/procurar-datas/v2/auditar-run`.
+- Novo bloco em `/procurar-datas/dev-v2`: `Auditar pesquisa por Run ID`.
+- A ferramenta consulta `procurar_datas_pesquisas_auditoria` por `id`, `run_id` ou `client_token`, mostra parametros/resultados salvos e tenta recalcular diagnostico atual dos slots salvos com agenda/disponibilidade reais.
+
+### Limite importante
+- A auditoria historica atual nao salva snapshot completo da agenda/disponibilidade/candidatos do momento da busca.
+- Portanto, o diagnostico retrospectivo pode explicar o estado atual com dados reais disponiveis, mas nao garante reproducao exata do passado se as planilhas mudaram.
+- Blocos sinteticos nao sao usados como conclusao nesta auditoria.
+
+### Nao alterado
+- Nao altera motor v2, legado Apps Script, ranking, classificacao, recorte, limites, OSRM, Haversine, frete, regras de equivalencia, producao, migrations, RLS ou policies.
 
 ---

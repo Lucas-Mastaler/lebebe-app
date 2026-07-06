@@ -39,7 +39,7 @@ interface FiltrosVacuoAtivo {
   dataFim: string;
   departmentIds?: string[];
   userIds?: string[];
-  serviceId?: string;
+  serviceIds?: string[];
 }
 
 interface TicketVacuo {
@@ -67,7 +67,7 @@ function chaveCache(f: FiltrosVacuoAtivo): string {
     f: f.dataFim,
     deps: f.departmentIds?.slice().sort() ?? [],
     users: f.userIds?.slice().sort() ?? [],
-    svc: f.serviceId ?? '',
+    svc: f.serviceIds?.slice().sort() ?? [],
   });
 }
 
@@ -111,8 +111,8 @@ async function buscarTicketsPeriodoVacuo(filtros: FiltrosVacuoAtivo): Promise<Ti
   params.append('include[0][model]', 'contact');
   params.append('include[0][required]', 'true');
   params.append('include[0][where][visible]', 'true');
-  if (filtros.serviceId) {
-    params.append('include[0][where][serviceId]', filtros.serviceId);
+  if (Array.isArray(filtros.serviceIds) && filtros.serviceIds.length === 1) {
+    params.append('include[0][where][serviceId]', filtros.serviceIds[0]);
   }
   params.append('include[1][model]', 'department');
   params.append('include[2][model]', 'user');
@@ -164,11 +164,13 @@ async function buscarTicketsPeriodoVacuo(filtros: FiltrosVacuoAtivo): Promise<Ti
 
   const filtrarDep = Array.isArray(filtros.departmentIds) && filtros.departmentIds.length > 0;
   const filtrarUser = Array.isArray(filtros.userIds) && filtros.userIds.length > 0;
+  const filtrarService = Array.isArray(filtros.serviceIds) && filtros.serviceIds.length > 1;
 
   return todos.filter((t) => {
     const depOk = filtrarDep ? filtros.departmentIds!.includes(t.departmentId) : true;
     const userOk = filtrarUser ? filtros.userIds!.includes(t.userId) : true;
-    return depOk && userOk;
+    const svcOk = filtrarService ? filtros.serviceIds!.includes((t as TicketVacuo & { contact?: { serviceId?: string } }).contact?.serviceId || '') : true;
+    return depOk && userOk && svcOk;
   });
 }
 

@@ -74,7 +74,7 @@ export default function Page() {
           body: JSON.stringify({
             dataInicio: currentFiltros.dataInicio,
             dataFim: currentFiltros.dataFim,
-            serviceId: currentFiltros.serviceId || undefined,
+            serviceIds: currentFiltros.serviceIds || undefined,
           }),
           signal: controller.signal,
         });
@@ -92,7 +92,7 @@ export default function Page() {
     })();
 
     return () => controller.abort();
-  }, [currentFiltros?.dataInicio, currentFiltros?.dataFim, currentFiltros?.serviceId]);
+  }, [currentFiltros?.dataInicio, currentFiltros?.dataFim, currentFiltros?.serviceIds]);
 
   useEffect(() => {
     if (!currentFiltros?.dataInicio || !currentFiltros?.dataFim) return;
@@ -112,7 +112,7 @@ export default function Page() {
             dataFim: currentFiltros.dataFim,
             departmentIds: currentFiltros.departmentIds || undefined,
             userIds: currentFiltros.userIds || undefined,
-            serviceId: currentFiltros.serviceId || undefined,
+            serviceIds: currentFiltros.serviceIds || undefined,
           }),
           signal: controller.signal,
         });
@@ -130,7 +130,7 @@ export default function Page() {
     })();
 
     return () => controller.abort();
-  }, [currentFiltros?.dataInicio, currentFiltros?.dataFim, currentFiltros?.departmentIds, currentFiltros?.userIds, currentFiltros?.serviceId]);
+  }, [currentFiltros?.dataInicio, currentFiltros?.dataFim, currentFiltros?.departmentIds, currentFiltros?.userIds, currentFiltros?.serviceIds]);
 
   const chartDataFiliais = useMemo(() => {
     const linhas = data?.linhas || [];

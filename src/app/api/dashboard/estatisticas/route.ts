@@ -13,13 +13,13 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response;
 
     const body = await request.json();
-    const { dataInicio, dataFim, serviceId } = body || {};
+    const { dataInicio, dataFim, serviceIds } = body || {};
 
     console.log('[API][DASHBOARD][ESTATISTICAS] POST bodySummary=', {
       hasBody: !!body,
       dataInicio,
       dataFim,
-      hasServiceId: !!serviceId,
+      servicesCount: Array.isArray(serviceIds) ? serviceIds.length : 0,
     });
 
     if (!dataInicio || !dataFim) {
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     const resultado = await buscarEstatisticasDigisac({
       dataInicio,
       dataFim,
-      serviceId: serviceId || undefined,
+      serviceIds: Array.isArray(serviceIds) ? serviceIds : undefined,
     });
 
     console.log('[API][DASHBOARD][ESTATISTICAS] diarioItems=', resultado.diario.length);

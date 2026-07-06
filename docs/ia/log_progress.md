@@ -1,3 +1,51 @@
+## 2026-07-06 - Cascade - Filtro Conexao multi-selecao no Dashboard
+
+**Resumo:** Filtro "Conexao/Numero" da tela de Dashboard alterado de selecao unica (Select) para multi-selecao (Popover + checkboxes), seguindo o mesmo padrao dos filtros "Loja" e "Consultora". Estado alterado de `string` para `string[]` em toda a cadeia: UI -> PageClient -> 3 API routes -> 3 backend services. No backend, `dashboard.ts` e `vacuoAtivo.ts` seguem o padrao existente de departmentIds/userIds (filtro API para 1, filtro local para >1). Em `estatisticas.ts`, multiplos serviceIds resultam em chamadas paralelas a API Digisac com merge dos resultados (soma de totals, merge de diario por data).
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md
+- src/components/dashboard/FiltrosDashboard.tsx
+- src/app/dashboard/PageClient.tsx
+- src/lib/digisac/dashboard.ts
+- src/lib/digisac/vacuoAtivo.ts
+- src/lib/digisac/estatisticas.ts
+- src/app/api/dashboard/pesquisar/route.ts
+- src/app/api/dashboard/estatisticas/route.ts
+- src/app/api/dashboard/vacuo-ativo/route.ts
+- src/components/ui/multi-select.tsx
+
+**Arquivos alterados:**
+- src/components/dashboard/FiltrosDashboard.tsx (Select single -> Popover+checkboxes multi-selecao, state string -> string[])
+- src/app/dashboard/PageClient.tsx (enviar serviceIds nos 3 fetches, atualizar deps useEffect)
+- src/app/api/dashboard/pesquisar/route.ts (serviceId -> serviceIds)
+- src/app/api/dashboard/estatisticas/route.ts (serviceId -> serviceIds)
+- src/app/api/dashboard/vacuo-ativo/route.ts (serviceId -> serviceIds)
+- src/lib/digisac/dashboard.ts (FiltrosDashboardService.serviceId -> serviceIds, filtro local para >1)
+- src/lib/digisac/vacuoAtivo.ts (FiltrosVacuoAtivo.serviceId -> serviceIds, filtro local para >1, cache key)
+- src/lib/digisac/estatisticas.ts (BuscarEstatisticasParams.serviceId -> serviceIds, multiplas chamadas + merge, cache key)
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- npx tsc --noEmit --pretty -> exit 0, sem erros
+- npx eslint nos 8 arquivos alterados -> 0 erros, 4 warnings (3 pre-existentes em PageClient.tsx, 0 novos)
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit --pretty` -> exit 0
+- `npx eslint [8 arquivos]` -> 0 errors, 4 warnings (pre-existentes)
+
+**Pendencias:**
+- Teste manual nao realizado (selecionar 1, 2+ conexoes, limpar, combinar com Loja/Consultora).
+- `npm run build` nao rodado (pode ser demorado).
+
+**Riscos conhecidos:**
+- Em `estatisticas.ts`, quando multiplos serviceIds selecionados, sao feitas N chamadas paralelas a API Digisac `/dashboard/by-period`. Isso pode aumentar latencia proporcionalmente ao numero de conexoes selecionadas. Resultados sao agregados (soma de totals, merge de diario por data).
+- O filtro local de serviceIds em `dashboard.ts` e `vacuoAtivo.ts` acessa `contact.serviceId` via type assertion, pois o campo existe na resposta da API Digisac mas nao esta tipado na interface `Ticket`. Se a API Digisac nao retornar `serviceId` no objeto contact, o filtro local nao funcionara para >1 conexao. O campo e retornado quando o include de contact e usado (confirmado pelo uso existente de `include[0][where][serviceId]`).
+- Caches de estatisticas e vacuo ativo terao chaves diferentes (array ordenado vs string unica), invalidando caches antigos na primeira carga apos deploy.
+
+**Proximo passo recomendado:**
+- Teste manual: selecionar 1 conexao, 2+ conexoes, limpar selecao, combinar com Loja, combinar com Consultora, confirmar que cards/tabelas/estatisticas respeitam o filtro combinado.
+- Rodar `npm run build` se desejar validacao completa.
+
 ## 2026-07-06 - Cascade - Reorganizacao menu lateral em submenus expansiveis
 
 **Resumo:** Menu lateral do Sidebar reorganizado de lista plana (14 itens) para 4 grupos expansiveis: VENDAS, PROCURAR DATAS, OPERACAO, CONFIGURACOES. Item "AUDITORIA" renomeado para "AUDITORIA ACESSOS" (rota preservada). Permissoes, rotas, moduleKey e superadminOnly preservados. Adicionado estado de expand/collapse por grupo com auto-expansao do grupo ativo. Modo colapsado (icones) mantem lista plana como antes.

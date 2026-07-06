@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     if (!auth.ok) return auth.response;
 
     const body = await request.json();
-    const { dataInicio, dataFim, departmentIds, userIds, serviceId } = body || {};
+    const { dataInicio, dataFim, departmentIds, userIds, serviceIds } = body || {};
 
     console.log('[API][DASHBOARD][VACUO_ATIVO] POST bodySummary=', {
       hasBody: !!body,
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       dataFim,
       departmentsCount: Array.isArray(departmentIds) ? departmentIds.length : 0,
       usersCount: Array.isArray(userIds) ? userIds.length : 0,
-      hasServiceId: !!serviceId,
+      servicesCount: Array.isArray(serviceIds) ? serviceIds.length : 0,
     });
 
     if (!dataInicio || !dataFim) {
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       dataFim,
       departmentIds: Array.isArray(departmentIds) ? departmentIds : undefined,
       userIds: Array.isArray(userIds) ? userIds : undefined,
-      serviceId: serviceId || undefined,
+      serviceIds: Array.isArray(serviceIds) ? serviceIds : undefined,
     });
 
     return NextResponse.json(resultado);

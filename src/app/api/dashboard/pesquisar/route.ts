@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       dataFim,
       departmentIds = [],
       userIds = [],
-      serviceId,
+      serviceIds = [],
     } = body || {};
 
     console.log('[API][DASHBOARD] POST /api/dashboard/pesquisar bodySummary=', {
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
       dataFim,
       departmentsCount: Array.isArray(departmentIds) ? departmentIds.length : 0,
       usersCount: Array.isArray(userIds) ? userIds.length : 0,
-      hasServiceId: !!serviceId,
+      servicesCount: Array.isArray(serviceIds) ? serviceIds.length : 0,
     });
 
     if (!dataInicio || !dataFim) {
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       dataFim,
       departmentIds,
       userIds,
-      serviceId: serviceId || undefined,
+      serviceIds: Array.isArray(serviceIds) ? serviceIds : undefined,
     });
 
     console.log('[API][DASHBOARD] linhasRetornadas=', resultado.linhas.length);

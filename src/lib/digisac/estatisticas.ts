@@ -5,7 +5,7 @@ import type { EstatisticasDigisacResponse, ServicoDigisacDashboard } from '@/typ
 interface BuscarEstatisticasParams {
   dataInicio: string;
   dataFim: string;
-  serviceId?: string;
+  serviceIds?: string[];
 }
 
 interface DigisacByPeriodTotals {
@@ -39,7 +39,7 @@ const CACHE_TTL = 5 * 60 * 1000;
 const cache = new Map<string, { data: EstatisticasDigisacResponse; timestamp: number }>();
 
 function montarChaveCache(params: BuscarEstatisticasParams): string {
-  return `${params.dataInicio}|${params.dataFim}|${params.serviceId ?? 'all'}`;
+  return `${params.dataInicio}|${params.dataFim}|${(params.serviceIds ?? []).slice().sort().join(',') || 'all'}`;
 }
 
 function normalizarRespostaDigisac(resp: DigisacByPeriodResponse): EstatisticasDigisacResponse {
@@ -81,8 +81,39 @@ function normalizarRespostaDigisac(resp: DigisacByPeriodResponse): EstatisticasD
 export async function buscarEstatisticasDigisac(
   params: BuscarEstatisticasParams
 ): Promise<EstatisticasDigisacResponse> {
-  const { dataInicio, dataFim, serviceId } = params;
+  const { dataInicio, dataFim, serviceIds } = params;
 
+  const chave = montarChaveCache(params);
+  const cached = cache.get(chave);
+  const agora = Date.now();
+
+  if (cached && agora - cached.timestamp < CACHE_TTL) {
+    console.log(`[DIGISAC][ESTATISTICAS] Cache hit para chave=${chave}`);
+    return cached.data;
+  }
+
+  const serviceIdsList = Array.isArray(serviceIds) && serviceIds.length > 0 ? serviceIds : [undefined];
+
+  const resultados = await Promise.all(
+    serviceIdsList.map((sid) => buscarEstatisticasDigisacSingle(dataInicio, dataFim, sid))
+  );
+
+  const normalizado = resultados.length === 1
+    ? resultados[0]
+    : mergeEstatisticas(resultados);
+
+  cache.set(chave, { data: normalizado, timestamp: agora });
+
+  console.log(`[DIGISAC][ESTATISTICAS] Resposta normalizada. diarioItems=${normalizado.diario.length}`);
+
+  return normalizado;
+}
+
+async function buscarEstatisticasDigisacSingle(
+  dataInicio: string,
+  dataFim: string,
+  serviceId?: string
+): Promise<EstatisticasDigisacResponse> {
   const { inicioUtc, fimUtc } = montarRangeUtcSaoPaulo(dataInicio, dataFim);
 
   const searchParams = new URLSearchParams();
@@ -104,26 +135,65 @@ export async function buscarEstatisticasDigisac(
 
   const endpoint = `/dashboard/by-period?${searchParams.toString()}`;
 
-  const chave = montarChaveCache(params);
-  const cached = cache.get(chave);
-  const agora = Date.now();
-
-  if (cached && agora - cached.timestamp < CACHE_TTL) {
-    console.log(`[DIGISAC][ESTATISTICAS] Cache hit para chave=${chave}`);
-    return cached.data;
-  }
-
   console.log(`[DIGISAC][ESTATISTICAS] Buscando endpoint=${endpoint}`);
 
   const resp: DigisacByPeriodResponse = await fetchDigisac(endpoint);
 
-  const normalizado = normalizarRespostaDigisac(resp);
+  return normalizarRespostaDigisac(resp);
+}
 
-  cache.set(chave, { data: normalizado, timestamp: agora });
+function mergeEstatisticas(resultados: EstatisticasDigisacResponse[]): EstatisticasDigisacResponse {
+  const totais = resultados.reduce((acc, r) => {
+    const t = r.totais;
+    return {
+      mensagensEnviadas: acc.mensagensEnviadas + (t?.mensagensEnviadas ?? 0),
+      mensagensRecebidas: acc.mensagensRecebidas + (t?.mensagensRecebidas ?? 0),
+      totalMensagens: acc.totalMensagens + (t?.totalMensagens ?? 0),
+      relacaoEnvioRecebimento: null,
+      tempoMedioChamadoSegundos: acc.tempoMedioChamadoSegundos + (t?.tempoMedioChamadoSegundos ?? 0),
+      mediaPrimeiroTempoEsperaSegundos: acc.mediaPrimeiroTempoEsperaSegundos + (t?.mediaPrimeiroTempoEsperaSegundos ?? 0),
+      mediaPrimeiroTempoEsperaAposBotSegundos: acc.mediaPrimeiroTempoEsperaAposBotSegundos + (t?.mediaPrimeiroTempoEsperaAposBotSegundos ?? 0),
+      tempoMedioEsperaSegundos: acc.tempoMedioEsperaSegundos + (t?.tempoMedioEsperaSegundos ?? 0),
+      contatosAtendidos: acc.contatosAtendidos + (t?.contatosAtendidos ?? 0),
+      chamadosAbertos: acc.chamadosAbertos + (t?.chamadosAbertos ?? 0),
+      chamadosFechados: acc.chamadosFechados + (t?.chamadosFechados ?? 0),
+      totalChamados: acc.totalChamados + (t?.totalChamados ?? 0),
+    };
+  }, {
+    mensagensEnviadas: 0,
+    mensagensRecebidas: 0,
+    totalMensagens: 0,
+    relacaoEnvioRecebimento: null as number | null,
+    tempoMedioChamadoSegundos: 0,
+    mediaPrimeiroTempoEsperaSegundos: 0,
+    mediaPrimeiroTempoEsperaAposBotSegundos: 0,
+    tempoMedioEsperaSegundos: 0,
+    contatosAtendidos: 0,
+    chamadosAbertos: 0,
+    chamadosFechados: 0,
+    totalChamados: 0,
+  });
 
-  console.log(`[DIGISAC][ESTATISTICAS] Resposta normalizada. diarioItems=${normalizado.diario.length}`);
+  totais.relacaoEnvioRecebimento = totais.mensagensRecebidas > 0
+    ? totais.mensagensEnviadas / totais.mensagensRecebidas
+    : null;
 
-  return normalizado;
+  const diarioMap = new Map<string, { data: string; mensagensEnviadas: number; mensagensRecebidas: number; totalMensagens: number }>();
+  for (const r of resultados) {
+    for (const item of r.diario) {
+      const existing = diarioMap.get(item.data);
+      if (existing) {
+        existing.mensagensEnviadas += item.mensagensEnviadas;
+        existing.mensagensRecebidas += item.mensagensRecebidas;
+        existing.totalMensagens += item.totalMensagens;
+      } else {
+        diarioMap.set(item.data, { ...item });
+      }
+    }
+  }
+  const diario = Array.from(diarioMap.values()).sort((a, b) => a.data.localeCompare(b.data));
+
+  return { totais, diario };
 }
 
 // --- Servicos/conexoes ---

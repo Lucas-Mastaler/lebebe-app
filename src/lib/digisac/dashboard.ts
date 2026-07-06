@@ -8,7 +8,7 @@ interface FiltrosDashboardService {
   dataFim: string;
   departmentIds?: string[];
   userIds?: string[];
-  serviceId?: string;
+  serviceIds?: string[];
 }
 
 interface Ticket {
@@ -139,8 +139,8 @@ async function buscarTicketsPeriodo(filtros: FiltrosDashboardService): Promise<T
   params.append('include[0][model]', 'contact');
   params.append('include[0][required]', 'true');
   params.append('include[0][where][visible]', 'true');
-  if (filtros.serviceId) {
-    params.append('include[0][where][serviceId]', filtros.serviceId);
+  if (Array.isArray(filtros.serviceIds) && filtros.serviceIds.length === 1) {
+    params.append('include[0][where][serviceId]', filtros.serviceIds[0]);
   }
   params.append('include[1][model]', 'department');
   params.append('include[2][model]', 'user');
@@ -193,11 +193,13 @@ async function buscarTicketsPeriodo(filtros: FiltrosDashboardService): Promise<T
   // Filtros locais multi-seleção (quando >1 selecionado)
   const filtrarDep = Array.isArray(filtros.departmentIds) && filtros.departmentIds.length > 0;
   const filtrarUser = Array.isArray(filtros.userIds) && filtros.userIds.length > 0;
+  const filtrarService = Array.isArray(filtros.serviceIds) && filtros.serviceIds.length > 1;
 
   const filtrados = todos.filter((t) => {
     const depOk = filtrarDep ? filtros.departmentIds!.includes(t.departmentId) : true;
     const userOk = filtrarUser ? filtros.userIds!.includes(t.userId) : true;
-    return depOk && userOk;
+    const svcOk = filtrarService ? filtros.serviceIds!.includes((t as Ticket & { contact?: { serviceId?: string } }).contact?.serviceId || '') : true;
+    return depOk && userOk && svcOk;
   });
 
   console.log('[DASHBOARD] filtros=', {
@@ -205,7 +207,7 @@ async function buscarTicketsPeriodo(filtros: FiltrosDashboardService): Promise<T
     fimUtc,
     departmentsCount: Array.isArray(filtros.departmentIds) ? filtros.departmentIds.length : 0,
     usersCount: Array.isArray(filtros.userIds) ? filtros.userIds.length : 0,
-    hasServiceId: !!filtros.serviceId,
+    servicesCount: Array.isArray(filtros.serviceIds) ? filtros.serviceIds.length : 0,
   });
   console.log('[DASHBOARD] ticketsTotal=', filtrados.length, 'exemplo=', filtrados[0] ? {
     id: filtrados[0].id,

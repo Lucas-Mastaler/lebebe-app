@@ -14,13 +14,6 @@ import { Button as UIButton } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Usuario, ServicoDigisacDashboard } from '@/types';
 import { DEPARTAMENTOS_FIXOS } from '@/lib/digisac/departamentosFixos';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 
 interface FiltrosProps {
   onPesquisar: (filtros: {
@@ -28,7 +21,7 @@ interface FiltrosProps {
     dataFim: string;
     departmentIds: string[];
     userIds: string[];
-    serviceId?: string;
+    serviceIds: string[];
   }) => void;
   isLoading: boolean;
 }
@@ -65,7 +58,8 @@ export function FiltrosDashboard({ onPesquisar, isLoading }: FiltrosProps) {
   const [lojaQuery, setLojaQuery] = useState('');
   const [userQuery, setUserQuery] = useState('');
   const [servicosList, setServicosList] = useState<ServicoDigisacDashboard[]>([]);
-  const [selectedServiceId, setSelectedServiceId] = useState<string>('');
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [conexaoQuery, setConexaoQuery] = useState('');
   const [isLoadingServicos, setIsLoadingServicos] = useState(false);
 
   useEffect(() => {
@@ -105,7 +99,7 @@ export function FiltrosDashboard({ onPesquisar, isLoading }: FiltrosProps) {
       dataFim,
       departmentIds: selectedDepartmentIds,
       userIds: selectedUserIds,
-      serviceId: selectedServiceId || undefined,
+      serviceIds: selectedServiceIds,
     };
     onPesquisar(filtros);
   };
@@ -293,24 +287,63 @@ export function FiltrosDashboard({ onPesquisar, isLoading }: FiltrosProps) {
               </div>
             </div>
 
-            {/* Conexão/Número */}
+            {/* Conexão/Número (multi-seleção) */}
             <div>
               <label className="block text-sm text-slate-600 mb-1">Conexão/Número</label>
-              <Select
-                value={selectedServiceId || 'all'}
-                onValueChange={(v) => setSelectedServiceId(v === 'all' ? '' : v)}
-                disabled={isLoadingServicos}
-              >
-                <SelectTrigger className="w-full rounded-xl">
-                  <SelectValue placeholder={isLoadingServicos ? 'Carregando...' : 'Todas as conexões'} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas as conexões</SelectItem>
-                  {servicosList.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <UIButton variant="outline" className="w-full justify-between rounded-xl" disabled={isLoadingServicos}>
+                    <span>
+                      {selectedServiceIds.length === 0 ? 'Todas' : `${selectedServiceIds.length} selecionada(s)`}
+                    </span>
+                    <ChevronDown className="w-4 h-4 opacity-60" />
+                  </UIButton>
+                </PopoverTrigger>
+                <PopoverContent className="w-[320px] p-0">
+                  <div className="p-2 border-b border-slate-100 sticky top-0 bg-white">
+                    <Input
+                      value={conexaoQuery}
+                      onChange={(e) => setConexaoQuery(e.target.value)}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      onKeyUp={(e) => e.stopPropagation()}
+                      placeholder="Filtrar conexões..."
+                      className="rounded-xl border-slate-200 focus:ring-[#00A5E6] focus:ring-2"
+                    />
+                  </div>
+                  <div className="max-h-64 overflow-y-auto p-2 space-y-1">
+                    <label className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="accent-[#00A5E6]"
+                        checked={selectedServiceIds.length === 0}
+                        onChange={() => setSelectedServiceIds([])}
+                      />
+                      <span>Todas</span>
+                    </label>
+                    {servicosList
+                      .filter(s => s.name.toLowerCase().includes(conexaoQuery.toLowerCase()))
+                      .map((s) => {
+                        const checked = selectedServiceIds.includes(s.id);
+                        return (
+                          <label key={s.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="accent-[#00A5E6]"
+                              checked={checked}
+                              onChange={(e) => {
+                                setSelectedServiceIds((prev) => {
+                                  if (e.target.checked) return [...prev, s.id];
+                                  return prev.filter((id) => id !== s.id);
+                                });
+                              }}
+                            />
+                            <span>{s.name}</span>
+                          </label>
+                        );
+                      })}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <Button onClick={handlePesquisar} disabled={!isRangeValid || isLoading} className="w-full rounded-xl">

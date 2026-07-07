@@ -46,32 +46,28 @@ export async function PATCH(
   // Handle volumes_por_item change FIRST (before updating item)
   // CRITICAL: Only reset if volumes_por_item CHANGED, not just if it was sent
   if (newVolumesPorItem !== null) {
-    // Get current volumes_por_item to check if it changed
+    // Get current volumes_por_item and volumes_previstos_total to check if it changed
     const { data: currentItem } = await supabase
       .from('recebimento_itens')
-      .select('volumes_por_item')
+      .select('volumes_por_item, volumes_previstos_total')
       .eq('id', itemId)
       .single()
 
     const currentVolumesPorItem = currentItem?.volumes_por_item || 1
+    const currentVolumesPrevistosTotal = currentItem?.volumes_previstos_total || 0
 
     // Only proceed if value actually changed
     if (newVolumesPorItem !== currentVolumesPorItem) {
       console.log('[LOG] Atualizando volumes_por_item de', currentVolumesPorItem, 'para:', newVolumesPorItem)
 
-      // Get item to calculate new volumes_previstos_total
-      const { data: itemData } = await supabase
-        .from('recebimento_itens')
-        .select('nfe_item_id, nfe_item:nfe_item_id(quantidade)')
-        .eq('id', itemId)
-        .single()
-
-      console.log('[LOG] itemData raw:', JSON.stringify(itemData))
-
-      const nfeItem = itemData?.nfe_item as { quantidade: number } | undefined
-      const quantidade = nfeItem?.quantidade || 0
-      const newVolumesPrevistos = quantidade * newVolumesPorItem
-      console.log('[LOG] Quantidade NF:', quantidade, '| Volumes previstos total:', newVolumesPrevistos)
+      // Derivar quantidade total a partir do volumes_previstos_total atual e volumes_por_item atual.
+      // Isso garante que itens agrupados de múltiplas NFs usem a quantidade total real,
+      // não apenas a quantidade do primeiro nfe_item referenciado por nfe_item_id.
+      const quantidadeTotal = currentVolumesPorItem > 0
+        ? Math.round(currentVolumesPrevistosTotal / currentVolumesPorItem)
+        : 0
+      const newVolumesPrevistos = quantidadeTotal * newVolumesPorItem
+      console.log('[LOG] Quantidade total (derivada):', quantidadeTotal, '| Volumes previstos total:', newVolumesPrevistos)
 
       // Use service client for volume operations (bypass RLS)
       const serviceClient = createServiceClient()
@@ -95,7 +91,7 @@ export async function PATCH(
         newVolumes.push({
           recebimento_item_id: itemId,
           volume_numero: v,
-          qtd_prevista: quantidade,
+          qtd_prevista: quantidadeTotal,
           qtd_recebida: 0,
         })
       }

@@ -1,3 +1,143 @@
+## 2026-07-07 - Cascade - Implementacao Fase 1A: Atendimento Automatico Pos-Venda (Mere)
+
+**Resumo:** Implementacao completa da Fase 1A do atendimento automatico de pos-venda via WhatsApp/Digisac (bot Mere). Criado webhook separado em `/api/digisac/webhook/posvenda` que valida secret, filtra payload, detecta origem (cliente/bot/humano), salva mensagens e sessoes no Supabase, detecta opcoes 1 (confirmar_entrega) e 2 (alterar_entrega) por matching simples de texto, pausa sessao por 24h quando humano interno detectado, e verifica bloqueios ativos/permanentes. Criada migration com 4 tabelas (`atendimento_automatico_sessoes`, `atendimento_automatico_mensagens`, `atendimento_automatico_eventos`, `atendimento_automatico_bloqueios`) com RLS restrita a superadmin via `is_superadmin()`. Criado modulo `pos_venda_atendimento_automatico` em `app_modulos` (somente_superadmin=true). Criada tela administrativa em `/pos-venda/atendimento-automatico` com listagem, filtros (status, solicitacao, busca) e 4 acoes administrativas (parar, bloquear 24h, bloquear permanente, desbloquear). Criadas 5 APIs internas protegidas com `requireModuleAccess`. Item adicionado no Sidebar (grupo OPERACAO). Nao responde automaticamente ao cliente. Nao chama IA. Nao chama /procurar-datas. Nao altera webhook atual. Nao altera motor /procurar-datas.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md
+- docs/ia/padrao-novas-telas-permissoes.md
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- src/app/api/digisac/webhook/route.ts
+- src/lib/digisac/triagem.ts
+- src/lib/supabase/service.ts
+- src/lib/auth/module-access.ts
+- src/lib/auth/api-auth.ts
+- src/components/Sidebar.tsx
+- src/app/pos-venda/page.tsx
+
+**Arquivos criados:**
+- docs/atendimento-automatico-posvenda-mere-plano.md (plano vivo da feature)
+- src/app/api/digisac/webhook/posvenda/route.ts (webhook pos-venda)
+- src/lib/atendimento-automatico/webhook-processor.ts (processador do webhook)
+- src/app/pos-venda/atendimento-automatico/page.tsx (wrapper Server Component)
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx (tela administrativa)
+- src/app/api/pos-venda/atendimento-automatico/listar/route.ts (API listagem)
+- src/app/api/pos-venda/atendimento-automatico/[id]/parar/route.ts (API parar)
+- src/app/api/pos-venda/atendimento-automatico/[id]/bloquear-24h/route.ts (API bloquear 24h)
+- src/app/api/pos-venda/atendimento-automatico/[id]/bloquear-cliente/route.ts (API bloquear permanente)
+- src/app/api/pos-venda/atendimento-automatico/[id]/desbloquear-cliente/route.ts (API desbloquear)
+
+**Arquivos alterados:**
+- src/components/Sidebar.tsx (adicionado item ATENDIMENTO AUTOMATICO no grupo OPERACAO)
+- src/lib/auth/module-access.ts (adicionado pos_venda_atendimento_automatico no tipo ModuleKey)
+
+**Validacoes realizadas:**
+- Supabase MCP: listadas todas as tabelas public com colunas, PKs, FKs e RLS
+- Supabase MCP: validada funcao is_superadmin() (SECURITY DEFINER, verifica usuarios_permitidos com role=superadmin e ativo=true)
+- Supabase MCP: validado padrao de RLS de digisac_conexoes_automacao e digisac_fechamentos_automaticos (superadmin only)
+- Supabase MCP: validadas colunas de app_modulos (chave, nome, rota_base, publico, somente_superadmin, ativo, ordem)
+- Supabase MCP: validados modulos existentes (13 modulos, pos_venda com ordem=60)
+- Supabase MCP: aplicada migration com 4 tabelas + RLS + cadastro de modulo
+- Supabase MCP: get_advisors nao mostrou issues nas novas tabelas
+- Typecheck: npx tsc --noEmit passou com 0 erros
+- Lint: npx eslint nos 11 arquivos criados/alterados passou sem erros
+
+**Comandos rodados:**
+- npx tsc --noEmit --pretty (0 erros)
+- npx eslint [11 arquivos] (0 erros)
+
+**Pendencias:**
+- Configurar DIGISAC_POSVENDA_WEBHOOK_SECRET e DIGISAC_SERVICE_ID_POS_VENDA no .env
+- Configurar webhook no painel Digisac para apontar para /api/digisac/webhook/posvenda
+- Confirmar endpoint e payload do Digisac para envio de mensagens (POST /messages)
+- Confirmar se isFromBot e consistentemente false para mensagens de humano interno
+- Confirmar se DIGISAC_BOT_USER_ID e o user ID correto para a Mere
+- Testes manuais: superadmin acessando tela, filtros, botoes de acao
+- Testes manuais: enviar payload de teste para webhook e confirmar persistencia
+
+**Riscos conhecidos:**
+- Webhook nao tem helper de envio de mensagens Digisac (gap confirmado, propositado nesta fase)
+- Deteccao de humano depende de consistencia do campo isFromBot no payload
+- Multiplas instancias serverless podem criar sessoes duplicadas — mitigado com unique(digisac_ticket_id)
+- Modulo cadastrado com somente_superadmin=true — outros perfis nao terao acesso ate ser liberado
+
+**Proximo passo recomendado:** Configurar env vars e webhook no Digisac. Testar manualmente com payload de exemplo. Fase 1B (debounce com worker EasyPanel/Redis + resposta automatica) apos Fase 1A validada.
+
+## 2026-07-07 - Cascade - Verificacao de seguranca e correcao de drift: migration Atendimento Automatico Pos-Venda
+
+**Resumo:** Verificacao de seguranca da migration versionada. Encontrados 2 problemas: (1) version mismatch — arquivo nomeado `20260707170000` mas Supabase registrou `20260707201710`; (2) falta de idempotencia — `CREATE TABLE` sem `IF NOT EXISTS`, `CREATE INDEX` sem `IF NOT EXISTS`, `CREATE POLICY` sem `DROP IF EXISTS` antes, `CREATE TRIGGER` sem `DROP IF EXISTS`. Correcoes: arquivo renomeado para `20260707201710` (matching Supabase), SQL tornado idempotente (CREATE TABLE IF NOT EXISTS, CREATE INDEX IF NOT EXISTS, DROP POLICY IF EXISTS + CREATE POLICY para todas as 16 policies), triggers removidos do arquivo principal e movidos para arquivo separado `20260707203049` (matching segunda migration do Supabase) com DROP TRIGGER IF EXISTS + CREATE TRIGGER. INSERT INTO app_modulos ja tinha ON CONFLICT (manteve). Nao tocou no banco. Nao reexecutou migrations.
+
+**Arquivos lidos:**
+- supabase/migrations/20260707170000_create_atendimento_automatico_posvenda_tables.sql (antes do rename)
+- supabase/migrations/20260629130000_create_access_profiles_schema.sql (padrao de idempotencia)
+- supabase/migrations/016_digisac_triagem_loja.sql (padrao DROP TRIGGER IF EXISTS)
+- supabase/migrations/019_sgi_inteligencia_comercial.sql (padrao DROP TRIGGER IF EXISTS)
+
+**Arquivos criados:**
+- supabase/migrations/20260707203049_add_updated_at_triggers_atendimento_automatico.sql
+
+**Arquivos alterados:**
+- supabase/migrations/20260707170000_create_atendimento_automatico_posvenda_tables.sql -> renomeado para 20260707201710_create_atendimento_automatico_posvenda_tables.sql + tornado idempotente
+- docs/atendimento-automatico-posvenda-mere-plano.md (registro de correcao)
+
+**Validacoes realizadas:**
+- Supabase MCP list_migrations: confirmadas 2 migrations registradas (20260707201710 e 20260707203049)
+- Supabase MCP: colunas, indexes, triggers e policies do banco conferem com o arquivo
+- Supabase MCP: confirmada funcao update_updated_at_column() compartilhada existe
+- Padrao do projeto: confirmado uso de CREATE TABLE IF NOT EXISTS, CREATE INDEX IF NOT EXISTS, DROP TRIGGER IF EXISTS em migrations existentes
+
+**Comandos rodados:**
+- Rename-Item (PowerShell) para renomear o arquivo
+
+**Pendencias:**
+- Configurar DIGISAC_POSVENDA_WEBHOOK_SECRET e DIGISAC_SERVICE_ID_POS_VENDA no .env
+- Configurar webhook no painel Digisac para apontar para /api/digisac/webhook/posvenda
+- Testes manuais com payload de exemplo
+
+**Riscos conhecidos:**
+- Nenhum risco de drift apos correcao (versions match, SQL idempotente)
+
+**Proximo passo recomendado:** Configurar env vars e webhook no Digisac. Testar manualmente.
+
+## 2026-07-07 - Cascade - Validacao de autenticacao do webhook: analise do padrao atual e impacto na rota pos-venda
+
+**Resumo:** Analise do padrao de autenticacao do webhook atual (`/api/digisac/webhook`) para garantir compatibilidade com a nova rota (`/api/digisac/webhook/posvenda`). Findings: (1) O webhook atual le `DIGISAC_WEBHOOK_SECRET` do env mas so valida se o valor for nao-vazio — no .env.local esta vazio, entao na pratica nao valida secret. (2) A validacao suporta tanto header `x-digisac-secret` quanto query param `secret` (fallback). (3) O painel do Digisac nao suporta header customizado, apenas URL — se secret for usado, tem que ser via query param `?secret=...`. (4) O valor atual de `DIGISAC_POSVENDA_WEBHOOK_SECRET` no .env.local parece derivado do token pessoal (`DIGISAC_TOKEN`) — isso e incorreto e deve ser substituido por valor aleatorio proprio ou deixado vazio. (5) A rota nova ja tem o mesmo padrao do webhook atual (fallback header -> query param), compativel. (6) Nenhuma alteracao de codigo foi necessaria — a rota nova ja segue o padrao correto. (7) Confirmado: migration versionada sem drift (2 arquivos com versions matching Supabase, SQL idempotente).
+
+**Arquivos lidos:**
+- src/app/api/digisac/webhook/route.ts (webhook atual)
+- src/app/api/digisac/webhook/posvenda/route.ts (rota nova)
+- src/lib/digisac/triagem.ts (processador atual — filtros isFromMe, isFromBot, isComment, type, serviceId, ticket)
+- src/lib/atendimento-automatico/webhook-processor.ts (processador novo — mesmos filtros)
+- .env.local (env vars DIGISAC_*)
+- digisac_docs.md (departamentos)
+
+**Arquivos alterados:**
+- docs/atendimento-automatico-posvenda-mere-plano.md (secoes 9, 10, 11 atualizadas com findings)
+
+**Validacoes realizadas:**
+- Codigo: webhook atual le `DIGISAC_WEBHOOK_SECRET` e so valida se nao-vazio (linha 6-15 de route.ts)
+- Codigo: webhook atual suporta header `x-digisac-secret` com fallback para query param `secret` (linha 8-10)
+- Codigo: rota nova segue exatamente o mesmo padrao, com fallback para `DIGISAC_WEBHOOK_SECRET` (linha 6-18 de posvenda/route.ts)
+- .env.local: `DIGISAC_WEBHOOK_SECRET` esta vazio (linha 20) — webhook atual nao valida secret na pratica
+- .env.local: `DIGISAC_POSVENDA_WEBHOOK_SECRET` tem valor que parece derivado do `DIGISAC_TOKEN` (linha 104 vs linha 2) — incorreto
+- .env.local: `DIGISAC_SERVICE_ID_POS_VENDA` ja existe e esta correto (linha 6)
+- Codigo: ambos processadores filtram isFromMe, isFromBot, isComment, type, serviceId, ticket da mesma forma
+- Migration: 2 arquivos versionados (20260707201710 e 20260707203049) com versions matching Supabase, SQL idempotente
+
+**Comandos rodados:**
+- Nenhum (apenas leitura e analise)
+
+**Pendencias:**
+- Preencher `DIGISAC_POSVENDA_WEBHOOK_SECRET` no .env.local com valor aleatorio proprio (nao derivar do token pessoal)
+- Configurar webhook no painel Digisac: URL `/api/digisac/webhook/posvenda?secret=VALOR_DA_SECRET`
+- Testes manuais com payload de exemplo
+
+**Riscos conhecidos:**
+- Se `DIGISAC_POSVENDA_WEBHOOK_SECRET` mantiver valor derivado do token pessoal, qualquer pessoa que descobrir a URL do webhook tera acesso ao token pessoal — risco de seguranca
+- Token pessoal do Digisac (`DIGISAC_TOKEN`) pode precisar ser revogado/rotacionado se foi expposto em URL ou log
+
+**Proximo passo recomendado:** Ajustar `DIGISAC_POSVENDA_WEBHOOK_SECRET` no .env.local com valor aleatorio proprio e configurar webhook no painel Digisac.
+
 ## 2026-07-06 - Cascade - Filtro Conexao multi-selecao no Dashboard
 
 **Resumo:** Filtro "Conexao/Numero" da tela de Dashboard alterado de selecao unica (Select) para multi-selecao (Popover + checkboxes), seguindo o mesmo padrao dos filtros "Loja" e "Consultora". Estado alterado de `string` para `string[]` em toda a cadeia: UI -> PageClient -> 3 API routes -> 3 backend services. No backend, `dashboard.ts` e `vacuoAtivo.ts` seguem o padrao existente de departmentIds/userIds (filtro API para 1, filtro local para >1). Em `estatisticas.ts`, multiplos serviceIds resultam em chamadas paralelas a API Digisac com merge dos resultados (soma de totals, merge de diario por data).
@@ -357,6 +497,125 @@
 - `daysLeftTxt` continua divergente do legado (usa dataInicial como base em vez de hoje)
 
 **Proximo passo recomendado:** Validar encomenda com tipoBerco = 'NIDO' e data > 90 dias. Avaliar se daysLeftTxt no payload raw deve ser corrigido para usar hoje como base (baixa prioridade — UI ja compensa).
+
+## 2026-07-07 - Cascade - Auditoria: Atendimento Automatico Pos-Venda (Mere) Fase 0
+
+**Resumo:** Auditoria tecnica e mapeamento completo para implementar atendimento automatico de pos-venda via WhatsApp/Digisac (bot Mere). Mapeados webhooks existentes, helpers Digisac, integracao DeepSeek, tabelas Supabase, arquitetura de debounce, deteccao de humano interno, tela administrativa e plano minimo para Fase 1. Nenhum codigo foi implementado, alterado ou criado.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- docs/ia/padrao-novas-telas-permissoes.md
+- src/app/api/digisac/webhook/route.ts
+- src/lib/digisac/triagem.ts
+- src/lib/digisac/clienteDigisac.ts
+- src/lib/digisac/transferencia.ts
+- src/lib/digisac/sgi-sync.ts
+- src/lib/digisac/contatos.ts
+- src/lib/digisac/finalizacoesAutomaticas.ts
+- src/lib/digisac/agendamentos.ts
+- src/lib/ia/deepseek-client.ts
+- src/lib/ia/transcript.ts
+- src/app/api/sgi/ia/processar-proximo/route.ts
+- src/app/pos-venda/page.tsx
+- src/components/Sidebar.tsx
+- vercel.json
+
+**Arquivos alterados:** Nenhum.
+
+**Validacoes realizadas:**
+- MCP Supabase: listagem de todas as tabelas public (49 tabelas)
+- MCP Supabase: colunas validadas de digisac_triagem_loja, digisac_conversas_resumo, digisac_conexoes_automacao, digisac_chamados_analise_ia
+- MCP Supabase: app_modulos consultado (13 modulos, pos_venda ja existe)
+- Codigo: confirmado que NAO existe helper para enviar mensagens via Digisac
+- Codigo: confirmado serviceId do pos-venda (ece0fdac-962e-491c-b47f-fa912b17a878) em sgi-sync.ts:144
+- Codigo: confirmados campos do payload (isFromMe, isFromBot, isComment, type, text, ticketId, contactId, serviceId)
+- Codigo: confirmado padrao de DeepSeek com DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL, DEEPSEEK_MODEL
+
+**Comandos rodados e resultados:** Nenhum comando rodado (auditoria somente leitura).
+
+**Pendencias:**
+- Confirmar endpoint e payload do Digisac para envio de mensagens (POST /messages)
+- Confirmar se isFromBot e consistentemente false para mensagens de humano interno
+- Confirmar se rota /api/procurar-datas/v2/pesquisar-compat-async exige autenticacao
+- Decidir moduleKey: pos_venda existente vs novo pos_venda_atendimento_automatico
+- Avaliar solucao de debounce (worker EasyPanel/Redis vs alternativa serverless)
+- Validar se DIGISAC_BOT_USER_ID e o user ID correto para a Mere
+
+**Riscos conhecidos:**
+- Ausencia de helper para envio de mensagens — gap confirmado no codigo
+- Deteccao de humano depende de consistencia do campo isFromBot no payload
+- Multiplas instancias serverless podem criar sessoes duplicadas — necessario upsert com unique constraint
+- Tabelas novas nao existem — migration com RLS necessaria
+
+**Proximo passo recomendado:**
+- Fase 1A: criar webhook posvenda, salvar mensagens no Supabase, criar/atualizar sessao, detectar opcao 1/2, detectar humano e pausar, tela administrativa minima — sem resposta automatica, sem IA, sem /procurar-datas
+- Fase 1B: implementar mecanismo real de debounce (worker EasyPanel/Redis) antes de permitir resposta automatica
+
+## 2026-07-07 - Cascade - Adendo: Arquitetura Worker EasyPanel/Redis para Debounce
+
+**Resumo:** Adendo a auditoria de atendimento automatico pos-venda. Usuario validou manualmente no EasyPanel que Redis existe dentro do projeto n8n_lebebe, com porta publica nao exposta. EasyPanel permite criar novos servicos no projeto. Hipotese tecnica viavel: worker Node.js no EasyPanel usando Redis interno para controlar debounce de 8s. Worker chamaria endpoint seguro no Le Bébé App. Vercel Cron NAO e recomendado para debounce de 8s (intervalo minimo e em minutos, inadequado para janela curta).
+
+**Arquivos lidos:**
+- src/lib/integracoes/automacao-vps.ts (padrao VPS -> App com Bearer token)
+- src/lib/auth/bearer-auth.ts (validarBearerToken com APPS_SCRIPT_API_TOKEN)
+- src/app/api/cron/auto-logout/route.ts (padrao CRON_SECRET)
+- src/app/api/cron/digisac-finalizacoes-automaticas/route.ts (padrao CRON_SECRET)
+
+**Arquivos alterados:** Nenhum.
+
+**Validacoes realizadas:**
+- Codigo: confirmado 4 padroes de autenticacao para chamadas internas/externas:
+  1. CRON_SECRET (Bearer) — cron Vercel
+  2. APPS_SCRIPT_API_TOKEN (Bearer) — APIs internas (validarBearerToken)
+  3. DIGISAC_WEBHOOK_SECRET (header x-digisac-secret) — webhook Digisac
+  4. AUTOMACAO_VPS_URL + AUTOMACAO_VPS_TOKEN (Bearer) — VPS -> App
+- Codigo: confirmado que ja existe comunicacao VPS -> App com Bearer token (automacao-vps.ts)
+- EasyPanel: validado pelo usuario (nao pelo agente) que Redis existe no projeto n8n_lebebe
+
+**Arquitetura proposta (hipotese — nao implementar):**
+1. Digisac -> webhook Vercel -> salva mensagem no Supabase
+2. Worker EasyPanel (Node.js) faz poll no Supabase a cada 2-3s
+3. Worker usa Redis interno para controlar debounce de 8s por ticket_id
+4. Quando janela estabiliza, worker chama POST /api/pos-venda/atendimento-automatico/processar com Bearer WORKER_POS_VENDA_SECRET
+5. Vercel processa conversa (IA, maquina de estados, envio de resposta), atualiza Supabase
+
+**Variaveis de ambiente necessarias (documentar — nao alterar .env):**
+- DIGISAC_WEBHOOK_SECRET (ja existe)
+- DIGISAC_SERVICE_ID_POS_VENDA (nova)
+- DIGISAC_BOT_USER_ID (ja existe)
+- DEEPSEEK_ATENDIMENTO_POSVENDA_API_KEY (nova, Fase 3)
+- WORKER_POS_VENDA_SECRET (nova — worker -> App)
+- SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (worker precisa das suas proprias)
+
+**Tabelas Supabase necessarias (ja mapeadas na auditoria principal — nao existem ainda):**
+- atendimento_automatico_sessoes
+- atendimento_automatico_mensagens
+- atendimento_automatico_eventos
+- atendimento_automatico_bloqueios
+
+**Recomendacao ajustada (Vercel Cron removido como solucao de debounce):**
+- Fase 1A: webhook posvenda, salvar mensagens, sessao, eventos, detectar opcao 1/2, detectar humano e pausar, tela administrativa minima — SEM resposta automatica, SEM IA, SEM /procurar-datas
+- Fase 1B: implementar debounce real (worker EasyPanel/Redis prioritario) antes de permitir resposta automatica
+- Vercel Cron NAO e adequado para debounce de 8s (intervalo minimo em minutos)
+- Alternativa se worker EasyPanel/Redis for inviavel: solucao serverless propria para delay curto (nao Vercel Cron)
+
+**Riscos do worker:**
+- VPS indisponivel — mitigacao: cron Vercel de fallback a cada 5 min para pendentes antigos
+- Redis indisponivel — mitigacao: fallback para logica baseada em ultima_mensagem_em no Supabase
+- Race condition worker vs fallback — mitigacao: UPDATE ... SET status = 'processando' WHERE status = 'pendente' RETURNING * (row-level lock)
+- Service role key na VPS — mitigacao: env var no EasyPanel, nunca no codigo; considerar role especifica com permissoes limitadas
+
+**Pendencias:**
+- Confirmar endpoint e payload do Digisac para envio de mensagens
+- Confirmar se isFromBot e consistentemente false para humano interno
+- Confirmar se /api/procurar-datas/v2/pesquisar-compat-async exige autenticacao
+- Decidir moduleKey: pos_venda vs pos_venda_atendimento_automatico
+- Confirmar se DIGISAC_BOT_USER_ID e o user ID correto para a Mere
+- Avaliar viabilidade do worker EasyPanel/Redis vs alternativa serverless para delay curto
+
+**Proximo passo recomendado:** Fase 1A (webhook + Supabase + tela admin minima, sem resposta automatica). Fase 1B (debounce com worker EasyPanel/Redis) apos Fase 1A estavel.
 
 ## 2026-07-07 - Cascade - Diagnostico: correcao da rota /api/procurar-datas/v2/diagnostico
 

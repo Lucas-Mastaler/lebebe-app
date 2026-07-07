@@ -1,0 +1,272 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { Bot, Ban, Unlock, Square, RefreshCw, Search } from 'lucide-react'
+
+type Sessao = {
+  id: string
+  digisac_ticket_id: string
+  digisac_contact_id: string | null
+  telefone: string | null
+  cliente_nome: string | null
+  status: string
+  estado: string
+  tipo_solicitacao: string | null
+  pausa_ate: string | null
+  bloqueio_permanente: boolean
+  chamou_procurar_datas: boolean
+  alterou_agenda: boolean
+  motivo_falha: string | null
+  ultima_mensagem_cliente: string | null
+  ultima_mensagem_bot: string | null
+  ultima_mensagem_em: string | null
+  created_at: string
+  updated_at: string
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  ativa: 'bg-green-100 text-green-800',
+  pausado_humano: 'bg-yellow-100 text-yellow-800',
+  bloqueado_24h: 'bg-orange-100 text-orange-800',
+  bloqueado_permanente: 'bg-red-100 text-red-800',
+  finalizado: 'bg-slate-100 text-slate-600',
+}
+
+export function PageClient() {
+  const [sessoes, setSessoes] = useState<Sessao[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [filtroStatus, setFiltroStatus] = useState('')
+  const [filtroSolicitacao, setFiltroSolicitacao] = useState('')
+  const [busca, setBusca] = useState('')
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+
+  const carregar = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams()
+      if (filtroStatus) params.set('status', filtroStatus)
+      if (filtroSolicitacao) params.set('tipo_solicitacao', filtroSolicitacao)
+      if (busca) params.set('busca', busca)
+
+      const res = await fetch(`/api/pos-venda/atendimento-automatico/listar?${params.toString()}`)
+      if (!res.ok) throw new Error('Erro ao carregar sessoes')
+      const data = await res.json()
+      setSessoes(data.sessoes ?? [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro desconhecido')
+    } finally {
+      setLoading(false)
+    }
+  }, [filtroStatus, filtroSolicitacao, busca])
+
+  useEffect(() => {
+    carregar()
+  }, [carregar])
+
+  async function executarAcao(sessaoId: string, acao: string) {
+    setActionLoading(`${sessaoId}-${acao}`)
+    try {
+      const res = await fetch(`/api/pos-venda/atendimento-automatico/${sessaoId}/${acao}`, {
+        method: 'POST',
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.message ?? 'Erro ao executar acao')
+      }
+      await carregar()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro desconhecido')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  function formatarData(data: string | null): string {
+    if (!data) return '-'
+    return new Date(data).toLocaleString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <Bot className="w-7 h-7 text-[#00A5E6]" />
+            <div>
+              <h1 className="text-xl font-bold text-slate-800">Atendimento Automatico Pos-Venda</h1>
+              <p className="text-sm text-slate-500">Bot Mere - Fase 1A (sem resposta automatica)</p>
+            </div>
+          </div>
+          <button
+            onClick={carregar}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors text-sm font-medium disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Atualizar
+          </button>
+        </div>
+
+        {/* Filtros */}
+        <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6">
+          <div className="flex flex-wrap gap-3 items-end">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-slate-500">Status</label>
+              <select
+                value={filtroStatus}
+                onChange={(e) => setFiltroStatus(e.target.value)}
+                className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white"
+              >
+                <option value="">Todos</option>
+                <option value="ativa">Ativa</option>
+                <option value="pausado_humano">Pausado (Humano)</option>
+                <option value="bloqueado_24h">Bloqueado 24h</option>
+                <option value="bloqueado_permanente">Bloqueado Permanente</option>
+                <option value="finalizado">Finalizado</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-slate-500">Solicitacao</label>
+              <select
+                value={filtroSolicitacao}
+                onChange={(e) => setFiltroSolicitacao(e.target.value)}
+                className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white"
+              >
+                <option value="">Todas</option>
+                <option value="confirmar_entrega">Confirmar Entrega</option>
+                <option value="alterar_entrega">Alterar Entrega</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
+              <label className="text-xs font-medium text-slate-500">Busca (telefone/ticket)</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  placeholder="Buscar por telefone ou ticket..."
+                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {/* Tabela */}
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          {loading ? (
+            <div className="p-8 text-center text-slate-400 text-sm">Carregando...</div>
+          ) : sessoes.length === 0 ? (
+            <div className="p-8 text-center text-slate-400 text-sm">Nenhuma sessao encontrada</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50">
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Status</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Estado</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Solicitacao</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Telefone</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Ticket</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Ult. Msg Cliente</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Pausa Ate</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Criado</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Acoes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessoes.map((s) => (
+                    <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="px-4 py-3">
+                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[s.status] ?? 'bg-slate-100 text-slate-600'}`}>
+                          {s.status}
+                        </span>
+                        {s.bloqueio_permanente && (
+                          <span className="ml-1 inline-block px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                            bloqueado
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{s.estado}</td>
+                      <td className="px-4 py-3 text-slate-600">{s.tipo_solicitacao ?? '-'}</td>
+                      <td className="px-4 py-3 text-slate-600">{s.telefone ?? '-'}</td>
+                      <td className="px-4 py-3 text-slate-400 text-xs font-mono">{s.digisac_ticket_id?.substring(0, 12) ?? '-'}</td>
+                      <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate" title={s.ultima_mensagem_cliente ?? ''}>
+                        {s.ultima_mensagem_cliente ?? '-'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{formatarData(s.pausa_ate)}</td>
+                      <td className="px-4 py-3 text-slate-600">{formatarData(s.created_at)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          {s.status !== 'finalizado' && (
+                            <button
+                              onClick={() => executarAcao(s.id, 'parar')}
+                              disabled={actionLoading === `${s.id}-parar`}
+                              title="Parar atendimento"
+                              className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-500 disabled:opacity-50"
+                            >
+                              <Square className="w-4 h-4" />
+                            </button>
+                          )}
+                          {s.status !== 'bloqueado_24h' && s.status !== 'bloqueado_permanente' && s.status !== 'finalizado' && (
+                            <button
+                              onClick={() => executarAcao(s.id, 'bloquear-24h')}
+                              disabled={actionLoading === `${s.id}-bloquear-24h`}
+                              title="Bloquear 24h"
+                              className="p-1.5 rounded-lg hover:bg-orange-100 text-orange-600 disabled:opacity-50"
+                            >
+                              <Ban className="w-4 h-4" />
+                            </button>
+                          )}
+                          {!s.bloqueio_permanente && s.status !== 'finalizado' && (
+                            <button
+                              onClick={() => executarAcao(s.id, 'bloquear-cliente')}
+                              disabled={actionLoading === `${s.id}-bloquear-cliente`}
+                              title="Bloquear cliente permanentemente"
+                              className="p-1.5 rounded-lg hover:bg-red-100 text-red-600 disabled:opacity-50"
+                            >
+                              <Ban className="w-4 h-4" />
+                            </button>
+                          )}
+                          {(s.bloqueio_permanente || s.status === 'bloqueado_24h') && (
+                            <button
+                              onClick={() => executarAcao(s.id, 'desbloquear-cliente')}
+                              disabled={actionLoading === `${s.id}-desbloquear-cliente`}
+                              title="Desbloquear cliente"
+                              className="p-1.5 rounded-lg hover:bg-green-100 text-green-600 disabled:opacity-50"
+                            >
+                              <Unlock className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default PageClient

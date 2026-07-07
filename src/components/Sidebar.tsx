@@ -56,6 +56,7 @@ const navGroups: NavGroup[] = [
         items: [
             { label: 'RECEBIMENTO',             href: '/recebimento',             icon: Package,    moduleKey: 'recebimento' },
             { label: 'PÓS-VENDA',               href: '/pos-venda',               icon: ShoppingBag, moduleKey: 'pos_venda' },
+            { label: 'ATENDIMENTO AUTOMÁTICO',  href: '/pos-venda/atendimento-automatico', icon: Bot, moduleKey: 'pos_venda_atendimento_automatico' },
         ],
     },
     {

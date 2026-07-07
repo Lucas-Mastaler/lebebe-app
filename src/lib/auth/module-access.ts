@@ -19,6 +19,7 @@ export type ModuleKey =
   | 'chamados_finalizados'
   | 'inteligencia_comercial'
   | 'pos_venda'
+  | 'pos_venda_atendimento_automatico'
   | 'recebimento'
   | 'superadmin'
   | 'configuracoes'

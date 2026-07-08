@@ -21,13 +21,70 @@ function detectarOrigem(msg: Record<string, unknown>): OrigemMensagem {
 }
 
 function detectarSolicitacao(textoNormalizado: string): string | null {
-  const opcoesConfirmar = ['1', 'confirmar data de entrega', 'confirmar data entrega', 'confirmar entrega'];
-  const opcoesAlterar = ['2', 'alterar data de entrega', 'alterar data entrega', 'alterar entrega'];
+  const ambíguas = [
+    'sim',
+    'nao',
+    'ok',
+    'esta correto',
+    'sim esta correto',
+    'isso',
+    'pode ser',
+    'obrigada',
+    'obrigado',
+    'bom dia',
+    'boa tarde',
+    'boa noite',
+    'teste',
+  ];
 
-  if (opcoesConfirmar.includes(textoNormalizado)) return 'confirmar_entrega';
-  if (opcoesAlterar.includes(textoNormalizado)) return 'alterar_entrega';
+  if (ambíguas.includes(textoNormalizado)) return null;
+
+  if (textoNormalizado === '1') return 'confirmar_entrega';
+  if (textoNormalizado === '2') return 'alterar_entrega';
+
+  const frasesConfirmar = [
+    'confirmar data de entrega',
+    'confirmar data entrega',
+    'confirmar entrega',
+    'data da entrega',
+    'quando vai entregar',
+    'quando sera a entrega',
+    'qual a data da entrega',
+    'consultar data de entrega',
+  ];
+
+  const frasesAlterar = [
+    'alterar data de entrega',
+    'alterar data entrega',
+    'alterar entrega',
+    'mudar data da entrega',
+    'mudar a data da entrega',
+    'trocar data da entrega',
+    'trocar a data da entrega',
+    'remarcar entrega',
+    'antecipar entrega',
+    'adiantar entrega',
+    'postergar entrega',
+    'mudar minha entrega',
+  ];
+
+  for (const frase of frasesConfirmar) {
+    if (textoNormalizado.includes(frase)) return 'confirmar_entrega';
+  }
+
+  for (const frase of frasesAlterar) {
+    if (textoNormalizado.includes(frase)) return 'alterar_entrega';
+  }
 
   return null;
+}
+
+function extrairTelefone(msg: Record<string, unknown>): string | null {
+  const contact = msg.contact as Record<string, unknown> | undefined;
+  if (!contact) return null;
+  const contactData = contact.data as Record<string, unknown> | undefined;
+  const number = (contactData?.number as string | undefined) ?? (contact.number as string | undefined);
+  return number ?? null;
 }
 
 export async function processarWebhookPosVenda(rawPayload: unknown): Promise<ResultadoWebhook> {
@@ -298,6 +355,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
     // Criar ou atualizar sessao
     const textoNormalizado = normalizarTextoDigisac(text);
     const solicitacao = detectarSolicitacao(textoNormalizado);
+    const telefone = extrairTelefone(msg);
 
     if (sessaoExistente) {
       sessaoId = sessaoExistente.id;
@@ -310,6 +368,11 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
 
       if (solicitacao && !sessaoExistente.tipo_solicitacao) {
         updateData.tipo_solicitacao = solicitacao;
+      }
+
+      // Preencher telefone se vazio na sessao e disponivel no payload
+      if (!sessaoExistente.telefone && telefone) {
+        updateData.telefone = telefone;
       }
 
       // Se estava pausado_humano e pausa ja expirou, reativar
@@ -326,37 +389,71 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         .from('atendimento_automatico_sessoes')
         .update(updateData)
         .eq('id', sessaoId);
-    } else {
-      const { data: novaSessao, error: errSessao } = await supabase
-        .from('atendimento_automatico_sessoes')
-        .insert({
-          digisac_ticket_id: ticketId,
-          digisac_contact_id: contactId ?? null,
-          digisac_service_id: serviceId ?? null,
-          digisac_department_id: departmentId,
-          status: 'ativa',
-          estado: 'inicio',
-          tipo_solicitacao: solicitacao,
-          ultima_mensagem_cliente: text.substring(0, 200),
-          ultima_mensagem_em: new Date().toISOString(),
-        })
-        .select('id')
-        .single();
 
-      if (errSessao || !novaSessao) {
-        console.error('[posvenda-webhook] erro ao criar sessao', errSessao);
-        return { ok: false, error: 'erro_criar_sessao' };
+      // Salvar mensagem do cliente na sessao existente
+      await supabase.from('atendimento_automatico_mensagens').insert({
+        sessao_id: sessaoId,
+        digisac_message_id: messageId,
+        digisac_ticket_id: ticketId,
+        digisac_contact_id: contactId ?? null,
+        origem: 'cliente',
+        texto: text,
+        tipo_mensagem: msg.type as string | undefined,
+        timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+        status: 'processada',
+        metadata: { serviceId, departmentId, solicitacao },
+      });
+
+      // Registrar evento se solicitacao detectada
+      if (solicitacao) {
+        await supabase.from('atendimento_automatico_eventos').insert({
+          sessao_id: sessaoId,
+          tipo: 'solicitacao_detectada',
+          descricao: `Solicitacao detectada: ${solicitacao}`,
+          metadata: { texto_normalizado: textoNormalizado },
+        });
       }
 
-      sessaoId = novaSessao.id;
-
-      await supabase.from('atendimento_automatico_eventos').insert({
-        sessao_id: sessaoId,
-        tipo: 'inicio',
-        descricao: 'Sessao criada via webhook pos-venda',
-        metadata: { solicitacao },
-      });
+      console.log(`[posvenda-webhook] mensagem cliente salva sessaoId=${sessaoId} solicitacao=${solicitacao ?? 'nenhuma'}`);
+      return { ok: true, saved: true, origem: 'cliente' };
     }
+
+    // Sem sessao existente: so criar se for gatilho inicial valido
+    if (!solicitacao) {
+      console.log(`[posvenda-webhook] sem sessao e sem gatilho valido, ignorando texto="${text.substring(0, 50)}"`);
+      return { ok: true, ignored: true, reason: 'sem_gatilho_inicial' };
+    }
+
+    const { data: novaSessao, error: errSessao } = await supabase
+      .from('atendimento_automatico_sessoes')
+      .insert({
+        digisac_ticket_id: ticketId,
+        digisac_contact_id: contactId ?? null,
+        digisac_service_id: serviceId ?? null,
+        digisac_department_id: departmentId,
+        telefone,
+        status: 'ativa',
+        estado: 'inicio',
+        tipo_solicitacao: solicitacao,
+        ultima_mensagem_cliente: text.substring(0, 200),
+        ultima_mensagem_em: new Date().toISOString(),
+      })
+      .select('id')
+      .single();
+
+    if (errSessao || !novaSessao) {
+      console.error('[posvenda-webhook] erro ao criar sessao', errSessao);
+      return { ok: false, error: 'erro_criar_sessao' };
+    }
+
+    sessaoId = novaSessao.id;
+
+    await supabase.from('atendimento_automatico_eventos').insert({
+      sessao_id: sessaoId,
+      tipo: 'inicio',
+      descricao: 'Sessao criada via webhook pos-venda',
+      metadata: { solicitacao },
+    });
 
     // Salvar mensagem do cliente
     await supabase.from('atendimento_automatico_mensagens').insert({
@@ -372,17 +469,15 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
       metadata: { serviceId, departmentId, solicitacao },
     });
 
-    // Registrar evento se solicitacao detectada
-    if (solicitacao) {
-      await supabase.from('atendimento_automatico_eventos').insert({
-        sessao_id: sessaoId,
-        tipo: 'solicitacao_detectada',
-        descricao: `Solicitacao detectada: ${solicitacao}`,
-        metadata: { texto_normalizado: textoNormalizado },
-      });
-    }
+    // Registrar evento de solicitacao detectada
+    await supabase.from('atendimento_automatico_eventos').insert({
+      sessao_id: sessaoId,
+      tipo: 'solicitacao_detectada',
+      descricao: `Solicitacao detectada: ${solicitacao}`,
+      metadata: { texto_normalizado: textoNormalizado },
+    });
 
-    console.log(`[posvenda-webhook] mensagem cliente salva sessaoId=${sessaoId} solicitacao=${solicitacao ?? 'nenhuma'}`);
+    console.log(`[posvenda-webhook] sessao criada sessaoId=${sessaoId} solicitacao=${solicitacao} telefone=${telefone ?? 'nao_encontrado'}`);
     return { ok: true, saved: true, origem: 'cliente' };
   } catch (err: unknown) {
     const errMessage = err instanceof Error ? err.message : String(err);

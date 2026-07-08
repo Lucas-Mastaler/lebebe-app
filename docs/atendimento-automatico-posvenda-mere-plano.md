@@ -302,3 +302,28 @@ Padrao validado no projeto: funcao `is_superadmin()` que verifica `usuarios_perm
 - Triggers versionados em `supabase/migrations/20260707203049_add_updated_at_triggers_atendimento_automatico.sql` (idempotente com DROP IF EXISTS)
 - Verificacao de seguranca: sem risco de drift, versions match, SQL idempotente
 - Pendencias: configurar env vars, configurar webhook no Digisac, testes manuais
+
+### 2026-07-07 — Cascade — Correcao de criacao de sessao indevida + telefone vazio
+
+- Problema: mensagens ambíguas ("Sim está correto") sem sessão ativa criavam sessão ativa indevidamente
+- Causa: `webhook-processor.ts` criava sessão incondicionalmente para qualquer mensagem de cliente sem sessão prévia, mesmo sem gatilho válido
+- Correção: sessão só é criada se `detectarSolicitacao` retornar gatilho válido (1, 2, ou variações de confirmar/alterar entrega)
+- Gatilhos iniciais válidos expandidos: adicionado `data da entrega`, `quando vai entregar`, `remarcar entrega`, `antecipar entrega`, `adiantar entrega`, `postergar entrega`
+- Mensagens sem gatilho válido e sem sessão existente retornam `ignored` com reason `sem_gatilho_inicial` — não criam sessão
+- Telefone vazio: adicionado `extrairTelefone` que busca `msg.contact.data.number` (padrão confirmado em `chamadosFinalizados.ts`)
+- Telefone é preenchido na criação da sessão e atualizado se vazio na sessão existente
+- Pendência: se o payload do Digisac não incluir `contact` embutido no evento `message.created`, telefone continuará vazio — buscar via API Digisac usando `contactId` fica para Fase 1B
+- Sessões indevidas já criadas não foram apagadas — podem ser finalizadas manualmente pela tela
+- Typecheck: 0 erros
+- Lint: 0 erros
+
+### 2026-07-08 — Cascade — Ajuste de matching parcial para frases naturais
+
+- Problema: matching exato não capturava frases naturais como "quero alterar data de entrega" ou "preciso mudar a data da entrega"
+- Correção: `detectarSolicitacao` agora usa `includes` para frases de 3+ palavras, mantendo matches exatos para "1" e "2"
+- Blocklist de mensagens ambíguas (match exato): sim, nao, ok, esta correto, sim esta correto, isso, pode ser, obrigada, obrigado, bom dia, boa tarde, boa noite, teste
+- Frases de confirmar (includes): confirmar data de entrega, confirmar data entrega, confirmar entrega, data da entrega, quando vai entregar, quando sera a entrega, qual a data da entrega, consultar data de entrega
+- Frases de alterar (includes): alterar data de entrega, alterar data entrega, alterar entrega, mudar data da entrega, mudar a data da entrega, trocar data da entrega, trocar a data da entrega, remarcar entrega, antecipar entrega, adiantar entrega, postergar entrega, mudar minha entrega
+- Cenários validados logicamente: "quero alterar data de entrega" → alterar_entrega; "preciso mudar a data da entrega" → alterar_entrega; "quando vai entregar?" → confirmar_entrega; "sim está correto" → não cria; "ok" → não cria; "teste" → não cria
+- Typecheck: 0 erros
+- Lint: 0 erros

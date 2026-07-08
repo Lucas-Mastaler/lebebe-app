@@ -1,3 +1,88 @@
+## 2026-07-08 - Cascade - Ajuste de matching parcial para frases naturais no webhook pos-venda
+
+**Resumo:** Ajuste da funcao `detectarSolicitacao` em `webhook-processor.ts` para usar matching parcial (`includes`) em frases naturais claras sobre confirmar/alterar entrega, mantendo blocklist de mensagens ambíguas que nunca criam sessao. Antes o matching era exato, o que impedia que frases como "quero alterar data de entrega" ou "preciso mudar a data da entrega" criassem sessao. Agora o fluxo e: 1) blocklist exato (sim, nao, ok, etc) retorna null; 2) "1" e "2" sao matches exatos; 3) frases de 3+ palavras usam `includes` para detectar confirmar_entrega ou alterar_entrega.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/webhook-processor.ts
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md
+
+**Arquivos alterados:**
+- src/lib/atendimento-automatico/webhook-processor.ts (detectarSolicitacao reescrita com blocklist + includes)
+- docs/atendimento-automatico-posvenda-mere-plano.md (registro de andamento)
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- Typecheck: `npx tsc --noEmit --pretty` — 0 erros
+- Lint: `npx eslint src/lib/atendimento-automatico/webhook-processor.ts --no-warn-ignored` — 0 erros
+
+**Cenarios testados (logica):**
+1. Sem sessao + "1" → cria confirmar_entrega ✓
+2. Sem sessao + "2" → cria alterar_entrega ✓
+3. Sem sessao + "quero alterar data de entrega" → normalizado = "quero alterar data de entrega", includes "alterar data de entrega" → cria alterar_entrega ✓
+4. Sem sessao + "preciso mudar a data da entrega" → normalizado = "preciso mudar a data da entrega", includes "mudar a data da entrega" → cria alterar_entrega ✓
+5. Sem sessao + "quando vai entregar?" → normalizado = "quando vai entregar", includes "quando vai entregar" → cria confirmar_entrega ✓
+6. Sem sessao + "sim está correto" → normalizado = "sim esta correto", blocklist exato → nao cria ✓
+7. Sem sessao + "ok" → blocklist exato → nao cria ✓
+8. Sem sessao + "teste" → blocklist exato → nao cria ✓
+
+**Pendencias:**
+- Confirmar com payload real do Digisac se `contact` vem embutido no evento `message.created` (pendencia anterior mantida)
+- Sessoes indevidas ja criadas em producao podem ser finalizadas manualmente pela tela
+
+**Riscos conhecidos:**
+- `includes` pode gerar falsos positivos em mensagens longas que casualmente contenham uma das frases — risco baixo, monitorar em producao
+
+**Proximo passo recomendado:** Testar com payload real do Digisac para validar matching e telefone.
+
+## 2026-07-07 - Cascade - Correcao de criacao de sessao indevida + telefone vazio no webhook pos-venda
+
+**Resumo:** Correcao de bug em producao onde mensagens ambíguas ("Sim está correto") sem sessao ativa criavam sessao ativa indevidamente no atendimento automatico pos-venda. Causa raiz: `webhook-processor.ts` criava sessao incondicionalmente para qualquer mensagem de cliente sem sessao previa, mesmo sem gatilho valido. Correcao: sessao so e criada se `detectarSolicitacao` retornar gatilho valido (1, 2, ou variacoes de confirmar/alterar entrega). Gatilhos expandidos com 6 novas variacoes. Mensagens sem gatilho e sem sessao retornam `ignored` (reason: `sem_gatilho_inicial`). Tambem adicionado `extrairTelefone` que busca `msg.contact.data.number` (padrao confirmado em `chamadosFinalizados.ts`). Telefone e preenchido na criacao e atualizado se vazio na sessao existente. Pendencia: se o payload do Digisac nao incluir `contact` embutido no evento `message.created`, telefone continuara vazio — buscar via API Digisac usando `contactId` fica para Fase 1B.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/app/api/digisac/webhook/posvenda/route.ts
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx
+- src/app/api/pos-venda/atendimento-automatico/listar/route.ts
+- src/lib/digisac/triagem.ts (normalizarTextoDigisac)
+- src/lib/digisac/chamadosFinalizados.ts (padrao de telefone em contact.data.number)
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md
+
+**Arquivos alterados:**
+- src/lib/atendimento-automatico/webhook-processor.ts (detectarSolicitacao expandida, extrairTelefone adicionada, regra de criacao de sessao corrigida)
+- docs/atendimento-automatico-posvenda-mere-plano.md (registro de andamento)
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- MCP Supabase: confirmadas 3 sessoes no banco, todas com telefone=null, metadata sem payload completo
+- MCP Supabase: confirmado que metadata das mensagens nao inclui telefone nem contact
+- Codigo: padrao de telefone confirmado em chamadosFinalizados.ts linha 224 (`contact.data.number`)
+- Codigo: webhook-processor.ts nao acessava `msg.contact` antes da correcao
+- Typecheck: `npx tsc --noEmit --pretty` — 0 erros
+- Lint: `npx eslint src/lib/atendimento-automatico/webhook-processor.ts --no-warn-ignored` — 0 erros
+
+**Cenarios testados (logica):**
+1. Sem sessao + mensagem "1" → cria sessao com confirmar_entrega ✓
+2. Sem sessao + mensagem "2" → cria sessao com alterar_entrega ✓
+3. Sem sessao + mensagem "Sim está correto" → nao cria sessao, retorna ignored ✓
+4. Sem sessao + mensagem "quero alterar data de entrega" → normalizado = "quero alterar data de entrega" — nao match exato, nao cria sessao (ver pendencia)
+5. Sessao existente + mensagem "Sim está correto" → salva mensagem na sessao existente ✓
+6. Mensagem humana interna → pausa sessao 24h ✓
+7. Telefone: se payload trouxer contact.data.number, preenche; se nao, fica null ✓
+
+**Pendencias:**
+- Confirmar se o payload do Digisac `message.created` inclui `contact` embutido — se nao, telefone continuara vazio ate Fase 1B
+- Gatilhos como "quero alterar data de entrega" nao fazem match exato apos normalizacao — considerar matching parcial (contains) na Fase 1B
+- Sessoes indevidas ja criadas em producao podem ser finalizadas manualmente pela tela
+- Configurar webhook no painel Digisac e testar com payload real
+
+**Riscos conhecidos:**
+- Se o payload nao incluir `contact`, telefone ficara vazio (mesmo comportamento anterior, sem regressao)
+- Matching exato de gatilhos pode nao capturar variacoes naturais de linguagem — Fase 1B com IA pode resolver
+
+**Proximo passo recomendado:** Testar com payload real do Digisac para confirmar se `contact` vem embutido e se telefone e preenchido. Se nao vier, planejar busca via API Digisac na Fase 1B.
+
 ## 2026-07-07 - Cascade - Implementacao Fase 1A: Atendimento Automatico Pos-Venda (Mere)
 
 **Resumo:** Implementacao completa da Fase 1A do atendimento automatico de pos-venda via WhatsApp/Digisac (bot Mere). Criado webhook separado em `/api/digisac/webhook/posvenda` que valida secret, filtra payload, detecta origem (cliente/bot/humano), salva mensagens e sessoes no Supabase, detecta opcoes 1 (confirmar_entrega) e 2 (alterar_entrega) por matching simples de texto, pausa sessao por 24h quando humano interno detectado, e verifica bloqueios ativos/permanentes. Criada migration com 4 tabelas (`atendimento_automatico_sessoes`, `atendimento_automatico_mensagens`, `atendimento_automatico_eventos`, `atendimento_automatico_bloqueios`) com RLS restrita a superadmin via `is_superadmin()`. Criado modulo `pos_venda_atendimento_automatico` em `app_modulos` (somente_superadmin=true). Criada tela administrativa em `/pos-venda/atendimento-automatico` com listagem, filtros (status, solicitacao, busca) e 4 acoes administrativas (parar, bloquear 24h, bloquear permanente, desbloquear). Criadas 5 APIs internas protegidas com `requireModuleAccess`. Item adicionado no Sidebar (grupo OPERACAO). Nao responde automaticamente ao cliente. Nao chama IA. Nao chama /procurar-datas. Nao altera webhook atual. Nao altera motor /procurar-datas.

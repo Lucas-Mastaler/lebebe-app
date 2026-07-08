@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/service';
 import { normalizarTextoDigisac } from '@/lib/digisac/triagem';
+import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
 
 type OrigemMensagem = 'cliente' | 'bot' | 'humano' | 'sistema';
 
@@ -85,6 +86,43 @@ function extrairTelefone(msg: Record<string, unknown>): string | null {
   const contactData = contact.data as Record<string, unknown> | undefined;
   const number = (contactData?.number as string | undefined) ?? (contact.number as string | undefined);
   return number ?? null;
+}
+
+function normalizarTelefone(tel: string): string {
+  return tel.replace(/\D/g, '');
+}
+
+async function buscarTelefonePorContactId(contactId: string): Promise<string | null> {
+  try {
+    const res = await fetchDigisac(`/contacts/${contactId}`) as Record<string, unknown>;
+    const data = res?.data as Record<string, unknown> | undefined;
+    const number = (data?.number as string | undefined) ?? null;
+    return number;
+  } catch {
+    console.log('[posvenda-webhook] erro ao buscar telefone por contactId');
+    return null;
+  }
+}
+
+function telefoneAutorizado(telefone: string | null): boolean {
+  const allowedEnv = process.env.ATENDIMENTO_POSVENDA_ALLOWED_PHONES;
+  if (!allowedEnv) {
+    console.log('[posvenda-webhook] allowlist vazia, fluxo automatico desativado por seguranca');
+    return false;
+  }
+  const allowed = allowedEnv.split(',').map((t) => normalizarTelefone(t.trim())).filter(Boolean);
+  if (allowed.length === 0) return false;
+  if (!telefone) return false;
+  const telNormalizado = normalizarTelefone(telefone);
+  return allowed.includes(telNormalizado);
+}
+
+function detectarDocumento(texto: string): string | null {
+  const digitos = texto.replace(/\D/g, '');
+  if (digitos.length === 11 || digitos.length === 14) {
+    return digitos;
+  }
+  return null;
 }
 
 export async function processarWebhookPosVenda(rawPayload: unknown): Promise<ResultadoWebhook> {
@@ -355,10 +393,96 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
     // Criar ou atualizar sessao
     const textoNormalizado = normalizarTextoDigisac(text);
     const solicitacao = detectarSolicitacao(textoNormalizado);
-    const telefone = extrairTelefone(msg);
+    let telefone = extrairTelefone(msg);
+
+    // Se telefone nao veio no payload, buscar via API Digisac
+    if (!telefone && contactId) {
+      telefone = await buscarTelefonePorContactId(contactId);
+      if (telefone) {
+        console.log(`[posvenda-webhook] telefone obtido via API contactId=${contactId}`);
+      } else {
+        console.log(`[posvenda-webhook] telefone nao encontrado via API contactId=${contactId}`);
+      }
+    }
+
+    // Verificar allowlist de teste
+    const allowedEnv = process.env.ATENDIMENTO_POSVENDA_ALLOWED_PHONES;
+    if (allowedEnv !== undefined) {
+      if (!telefoneAutorizado(telefone)) {
+        console.log('[posvenda-webhook] telefone nao autorizado na allowlist, ignorando');
+        return { ok: true, ignored: true, reason: 'telefone_nao_autorizado' };
+      }
+    }
 
     if (sessaoExistente) {
       sessaoId = sessaoExistente.id;
+
+      // Se estado = aguardando_documento, tentar detectar CPF/CNPJ
+      if (sessaoExistente.estado === 'aguardando_documento') {
+        const documento = detectarDocumento(text);
+
+        if (documento) {
+          await supabase
+            .from('atendimento_automatico_sessoes')
+            .update({
+              documento_informado: documento,
+              estado: 'documento_recebido',
+              ultima_mensagem_cliente: text.substring(0, 200),
+              ultima_mensagem_em: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, documento_detectado: true },
+          });
+
+          await supabase.from('atendimento_automatico_eventos').insert({
+            sessao_id: sessaoId,
+            tipo: 'documento_recebido',
+            descricao: 'Documento (CPF/CNPJ) recebido do cliente',
+            metadata: { tamanho_documento: documento.length },
+          });
+
+          console.log(`[posvenda-webhook] documento recebido sessaoId=${sessaoId} digitos=${documento.length}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
+
+        // Nao e documento: salvar mensagem, manter estado
+        await supabase
+          .from('atendimento_automatico_sessoes')
+          .update({
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', sessaoId);
+
+        await supabase.from('atendimento_automatico_mensagens').insert({
+          sessao_id: sessaoId,
+          digisac_message_id: messageId,
+          digisac_ticket_id: ticketId,
+          digisac_contact_id: contactId ?? null,
+          origem: 'cliente',
+          texto: text,
+          tipo_mensagem: msg.type as string | undefined,
+          timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+          status: 'processada',
+          metadata: { serviceId, departmentId },
+        });
+
+        console.log(`[posvenda-webhook] mensagem salva (aguardando documento) sessaoId=${sessaoId}`);
+        return { ok: true, saved: true, origem: 'cliente' };
+      }
 
       const updateData: Record<string, unknown> = {
         ultima_mensagem_cliente: text.substring(0, 200),
@@ -370,7 +494,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         updateData.tipo_solicitacao = solicitacao;
       }
 
-      // Preencher telefone se vazio na sessao e disponivel no payload
+      // Preencher telefone se vazio na sessao e disponivel agora
       if (!sessaoExistente.telefone && telefone) {
         updateData.telefone = telefone;
       }
@@ -433,7 +557,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         digisac_department_id: departmentId,
         telefone,
         status: 'ativa',
-        estado: 'inicio',
+        estado: 'aguardando_documento',
         tipo_solicitacao: solicitacao,
         ultima_mensagem_cliente: text.substring(0, 200),
         ultima_mensagem_em: new Date().toISOString(),

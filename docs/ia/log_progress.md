@@ -1,3 +1,60 @@
+## 2026-07-08 - Cascade - Allowlist + telefone via API + estado aguardando_documento + captura CPF
+
+**Resumo:** 3 ajustes na Fase 1A do atendimento automatico pos-venda: (1) corrigido telefone vazio buscando via API Digisac `GET /contacts/{contactId}` — confirmado via MCP Supabase que o payload `message.created` nao inclui `contact` embutido; (2) criada allowlist de teste por telefone via env `ATENDIMENTO_POSVENDA_ALLOWED_PHONES` — somente numeros autorizados podem criar/atualizar sessao; (3) ajustado estado apos opcao 1/2 para `aguardando_documento` (refletindo handoff com bot atual do Digisac que pede CPF) e implementada captura de CPF/CNPJ (11 ou 14 digitos) salvando em `documento_informado` e mudando estado para `documento_recebido`. Tela administrativa atualizada com coluna "Documento" mascarada (3 primeiros digitos + `***`). Coluna `documento_informado` ja existia na tabela (confirmado via MCP) — sem migration necessaria.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx
+- src/app/api/pos-venda/atendimento-automatico/listar/route.ts
+- src/lib/digisac/clienteDigisac.ts
+- src/lib/digisac/agendamentos.ts (padrao de busca de contato)
+- src/lib/digisac/chamadosFinalizados.ts (padrao de telefone em contact.data.number)
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md
+- .env.local
+
+**Arquivos alterados:**
+- src/lib/atendimento-automatico/webhook-processor.ts (buscarTelefonePorContactId, normalizarTelefone, telefoneAutorizado, detectarDocumento, estado aguardando_documento, captura CPF/CNPJ, allowlist)
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx (coluna Documento mascarada)
+- .env.local (adicionada ATENDIMENTO_POSVENDA_ALLOWED_PHONES=554192350811)
+- docs/atendimento-automatico-posvenda-mere-plano.md (registro de andamento)
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- MCP Supabase: confirmado sessao do ticket 7ddf9e4b-bfb com telefone=null, metadata=null
+- MCP Supabase: confirmado metadata das mensagens nao inclui contact nem telefone
+- MCP Supabase: confirmado coluna documento_informado ja existe na tabela atendimento_automatico_sessoes
+- MCP Supabase: confirmado fluxo real: bot saudacao → bot menu → cliente "2" → bot pede CPF → cliente CPF → bot pergunta adiantar/postergar → cliente "1" → bot agradece
+- Codigo: padrao de telefone confirmado em chamadosFinalizados.ts:248 (`contact.data.number`) e agendamentos.ts:48 (`GET /contacts/{contactId}`)
+- Typecheck: `npx tsc --noEmit --pretty` — 0 erros
+- Lint: `npx eslint src/lib/atendimento-automatico/webhook-processor.ts src/app/pos-venda/atendimento-automatico/PageClient.tsx --no-warn-ignored` — 0 erros
+
+**Cenarios testados (logica):**
+1. Numero autorizado 554192350811 + "1" → cria sessao, tipo_solicitacao=confirmar_entrega, estado=aguardando_documento, telefone preenchido via API ✓
+2. Numero autorizado 554192350811 + "2" → cria sessao, tipo_solicitacao=alterar_entrega, estado=aguardando_documento, telefone preenchido via API ✓
+3. Numero autorizado + CPF "10976025914" com sessao aguardando_documento → salva documento_informado, estado=documento_recebido, nao responde ✓
+4. Numero nao autorizado + "1" → nao cria sessao, retorna ignored (telefone_nao_autorizado) ✓
+5. Numero nao autorizado + "quero alterar data de entrega" → nao cria sessao, retorna ignored ✓
+6. Sem sessao + "sim esta correto" → nao cria sessao (blocklist) ✓
+7. Humano interno → pausa sessao 24h ✓
+8. Mensagem nao-CPF durante aguardando_documento → salva mensagem, mantem estado ✓
+
+**Pendencias:**
+- Validar com payload real se `fetchDigisac('/contacts/{contactId}')` retorna `data.number` corretamente
+- Sessoes ja criadas com estado `inicio` nao serao migradas automaticamente para `aguardando_documento`
+- Allowlist atualmente so tem 554192350811 — adicionar mais numeros quando necessario
+- Nao validar digito oficial do CPF/CNPJ ainda (apenas tamanho 11 ou 14)
+- Nao buscar pedido apos CPF ainda (Fase 1B)
+- Nao responder cliente ainda (Fase 1B)
+
+**Riscos conhecidos:**
+- Busca de telefone via API adiciona 1 chamada HTTP extra por sessao nova (latencia adicional)
+- Se a API do Digisac estiver indisponivel, telefone ficara vazio e allowlist pode bloquear numero valido
+- `detectarDocumento` pode gerar falso positivo se mensagem tiver exatamente 11 ou 14 digitos nao-CPF (risco baixo)
+- Sessoes antigas com estado `inicio` continuam com estado antigo
+
+**Proximo passo recomendado:** Testar com payload real do Digisac para validar: (1) busca de telefone via API, (2) allowlist bloqueando numeros nao autorizados, (3) estado aguardando_documento aparecendo na tela, (4) captura de CPF mudando estado para documento_recebido.
+
 ## 2026-07-08 - Cascade - Ajuste de matching parcial para frases naturais no webhook pos-venda
 
 **Resumo:** Ajuste da funcao `detectarSolicitacao` em `webhook-processor.ts` para usar matching parcial (`includes`) em frases naturais claras sobre confirmar/alterar entrega, mantendo blocklist de mensagens ambíguas que nunca criam sessao. Antes o matching era exato, o que impedia que frases como "quero alterar data de entrega" ou "preciso mudar a data da entrega" criassem sessao. Agora o fluxo e: 1) blocklist exato (sim, nao, ok, etc) retorna null; 2) "1" e "2" sao matches exatos; 3) frases de 3+ palavras usam `includes` para detectar confirmar_entrega ou alterar_entrega.

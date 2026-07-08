@@ -12,6 +12,7 @@ type Sessao = {
   status: string
   estado: string
   tipo_solicitacao: string | null
+  documento_informado: string | null
   pausa_ate: string | null
   bloqueio_permanente: boolean
   chamou_procurar_datas: boolean
@@ -186,6 +187,7 @@ export function PageClient() {
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Telefone</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Ticket</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Ult. Msg Cliente</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Documento</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Pausa Ate</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Criado</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Acoes</th>
@@ -210,6 +212,11 @@ export function PageClient() {
                       <td className="px-4 py-3 text-slate-400 text-xs font-mono">{s.digisac_ticket_id?.substring(0, 12) ?? '-'}</td>
                       <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate" title={s.ultima_mensagem_cliente ?? ''}>
                         {s.ultima_mensagem_cliente ?? '-'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {s.documento_informado
+                          ? `${s.documento_informado.substring(0, 3)}***`
+                          : '-'}
                       </td>
                       <td className="px-4 py-3 text-slate-600">{formatarData(s.pausa_ate)}</td>
                       <td className="px-4 py-3 text-slate-600">{formatarData(s.created_at)}</td>

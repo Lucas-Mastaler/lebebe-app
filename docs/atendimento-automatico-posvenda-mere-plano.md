@@ -327,3 +327,19 @@ Padrao validado no projeto: funcao `is_superadmin()` que verifica `usuarios_perm
 - Cenários validados logicamente: "quero alterar data de entrega" → alterar_entrega; "preciso mudar a data da entrega" → alterar_entrega; "quando vai entregar?" → confirmar_entrega; "sim está correto" → não cria; "ok" → não cria; "teste" → não cria
 - Typecheck: 0 erros
 - Lint: 0 erros
+
+### 2026-07-08 — Cascade — Allowlist + telefone via API + estado aguardando_documento + captura CPF
+
+- Decisão: bot atual do Digisac permanece ativo até pedir CPF; Le Bébé App assume após CPF em fase futura
+- Telefone vazio: confirmado via MCP Supabase que o payload `message.created` do Digisac **não inclui `contact` embutido** — metadata das mensagens só tem `{serviceId, departmentId, solicitacao}`
+- Solução telefone: adicionado `buscarTelefonePorContactId` que usa `fetchDigisac('/contacts/{contactId}')` para buscar `data.number` (padrão confirmado em `chamadosFinalizados.ts` e `agendamentos.ts`)
+- Allowlist de teste: nova env `ATENDIMENTO_POSVENDA_ALLOWED_PHONES` (lista separada por vírgula, ex: `554192350811`)
+- Regra da allowlist: se env preenchida, somente números nela podem criar/atualizar sessão; se env vazia, fluxo automático desativado por segurança; se telefone não identificado e allowlist ativa, não ativa fluxo
+- Estado após opção 1/2: mudou de `inicio` para `aguardando_documento` (reflete handoff — bot Digisac pede CPF)
+- Captura de CPF/CNPJ: quando `estado = aguardando_documento` e cliente envia 11 dígitos (CPF) ou 14 dígitos (CNPJ), salva em `documento_informado`, muda estado para `documento_recebido`, registra evento `documento_recebido`
+- Mensagens que não são CPF/CNPJ durante `aguardando_documento`: salvas na sessão, estado mantido
+- Tela: adicionada coluna "Documento" exibindo `documento_informado` mascarado (3 primeiros dígitos + `***`)
+- Coluna `documento_informado` já existia na tabela (confirmado via MCP) — não precisou migration
+- Variável de ambiente nova: `ATENDIMENTO_POSVENDA_ALLOWED_PHONES=554192350811` adicionada ao `.env.local`
+- Typecheck: 0 erros
+- Lint: 0 erros

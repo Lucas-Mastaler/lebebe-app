@@ -132,7 +132,7 @@ export function respostaConfirmarEnderecoAlteracao(acao: 'adiantar' | 'postergar
 
 export function respostaAguardandoDataDesejada(): RespostaSugerida {
   return {
-    texto: 'Perfeito!\n\nA partir de qual data gostaria de receber?',
+    texto: 'Perfeito!\n\nA partir de qual data gostaria de receber?\n\n(Responda com dia mes e ano "18-06-2026")',
     tipo: 'aguardando_data_desejada',
   };
 }

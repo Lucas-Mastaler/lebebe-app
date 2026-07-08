@@ -16,6 +16,7 @@ interface ListagemResponse {
   total: number;
   page: number;
   pageSize: number;
+  resumo?: Resumo;
 }
 
 interface Resumo {
@@ -324,13 +325,8 @@ export default function FinalizacoesAutomaticasPageClient() {
       const json: ListagemResponse = await res.json();
       setData(json);
 
-      if (p === 1 && !filtroStatus && !filtroTipo && !filtroMensagemPor && !busca.trim() && !filtroConexao) {
-        const items = json.items;
-        const pendentes = items.filter(i => i.status === 'pendente').length;
-        const finalizados = items.filter(i => i.status === 'finalizado').length;
-        const erros = items.filter(i => i.status === 'erro').length;
-        const ignorados = items.filter(i => i.status === 'ignorado').length;
-        setResumo({ total: json.total, pendentes, finalizados, erros, ignorados });
+      if (json.resumo) {
+        setResumo(json.resumo);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao carregar dados');

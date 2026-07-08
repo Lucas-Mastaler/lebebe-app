@@ -1,3 +1,32 @@
+## 2026-07-08 - Cascade - Correção dashboard Finalizações Automáticas
+
+**Resumo:** Dashboard de /digisac/finalizacoes-automaticas mostrava contadores incorretos para Pendentes, Finalizados e Erros. Causa: o resumo era calculado apenas a partir dos 30 itens da página 1 (PAGE_SIZE), não do total no banco. Correção: API passa a retornar `resumo` com contagens globais por status (query sem paginação, apenas coluna status) quando nenhum filtro está aplicado. Client usa `json.resumo` do backend em vez de calcular a partir dos itens da página.
+
+**Arquivos lidos:**
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx
+- src/app/api/digisac/finalizacoes-automaticas/route.ts
+- src/lib/digisac/finalizacoesAutomaticas.ts
+- docs/ia/log_progress.md
+
+**Arquivos alterados:**
+- src/app/api/digisac/finalizacoes-automaticas/route.ts (adicionado cálculo de resumo com contagens globais por status quando sem filtros)
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx (adicionado resumo? em ListagemResponse, usando json.resumo do backend)
+- docs/ia/log_progress.md (esta entrada)
+
+**Validações realizadas:**
+- MCP Supabase: tabela digisac_fechamentos_automaticos confirmada com coluna status (check: pendente, finalizado, erro, ignorado)
+- MCP Supabase: contagens reais — finalizado: 55, pendente: 98, erro: 0, ignorado: 0 (total: 153)
+- Dashboard anterior mostrava: Total 153 (correto), Finalizados 30, Pendentes 0 — bug confirmado
+
+**Pendências:**
+- Validar com deploy que os contadores agora mostram os valores reais
+
+**Riscos conhecidos:**
+- Nenhum risco funcional. Query extra de status (sem paginação) é leve para o volume atual (~153 rows)
+
+**Próximo passo recomendado:**
+- Deploy e validação visual
+
 ## 2026-07-08 - Cascade - Teste real validado + mascaramento na API listar
 
 **Resumo:** Teste real da maquina de estados validado com numero autorizado 554192350811: (1) cliente enviou `2` → aguardando_documento + alterar_entrega, (2) cliente enviou CPF puro 11 digitos → documento_recebido, (3) cliente enviou `2` → acao_alteracao_recebida (postergar). Maquina de estados confirmada funcionando. Pendencia corrigida: CPF completo aparecia em "Ult. Msg Cliente" na tela porque a API listar retornava dado cru do banco. Adicionada funcao `mascararDocumentoMensagem` na API listar que aplica mascaramento (11 ou 14 digitos → `[documento informado]`) antes de retornar. Defesa em profundidade: mascaramento aplicado tanto na API quanto na tela.

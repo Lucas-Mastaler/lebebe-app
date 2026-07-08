@@ -89,11 +89,35 @@ export async function GET(request: NextRequest) {
 
     console.log('[API][FINALIZACOES-AUTO] total=', count, 'items=', data?.length ?? 0);
 
+    const semFiltros = !filtros.status && !filtros.tipoChamado && !filtros.ultimaMensagemPor && !filtros.serviceId && !filtros.dataInicio && !filtros.dataFim && !filtros.busca;
+
+    let resumo: { total: number; pendentes: number; finalizados: number; erros: number; ignorados: number } | undefined;
+    if (semFiltros) {
+      const { data: statusRows } = await supabase
+        .from('digisac_fechamentos_automaticos')
+        .select('status');
+      if (statusRows) {
+        const counts = { pendente: 0, finalizado: 0, erro: 0, ignorado: 0 };
+        for (const row of statusRows) {
+          const s = row.status as keyof typeof counts;
+          if (s in counts) counts[s]++;
+        }
+        resumo = {
+          total: statusRows.length,
+          pendentes: counts.pendente,
+          finalizados: counts.finalizado,
+          erros: counts.erro,
+          ignorados: counts.ignorado,
+        };
+      }
+    }
+
     return NextResponse.json({
       items: (data ?? []) as RegistroFechamentoAutomatico[],
       total: count ?? 0,
       page,
       pageSize,
+      resumo,
     });
   } catch (err) {
     const mensagem = err instanceof Error ? err.message : String(err);

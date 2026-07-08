@@ -411,3 +411,25 @@ Padrao validado no projeto: funcao `is_superadmin()` que verifica `usuarios_perm
 - Nao chama IA, `/procurar-datas`, motor, agenda, worker, debounce
 - Typecheck: 0 erros
 - Lint: 0 erros
+
+### 2026-07-08 — Cascade — Agrupamento de entregas por data e endereco
+
+- Regra de negocio antiga n8n confirmada: agrupar pedidos/agendamentos por `Data na agenda GOOGLE + ENDERECO DO CLIENTE normalizado`
+- Helper atualizado: `src/lib/google/sheets-service-account.ts` ganha funcao `agruparAgendamentosPorEntrega` e tipos `GrupoAgendamento`/`EventoGrupo`
+- Normalizacao de chave: `trim`, `lowercase`, remove acentos, trata pontuacao simples (`,`, `.`, `;`, `:`, `!`, `?`, `-`, `/`) como espacos, reduz espacos multiplos
+- Nao usa geocoding, nao chama API externa
+- Para cada grupo sao salvos: `indice`, `nome_cliente`, `cpf_mascarado`, `data_entrega`, `endereco_completo`, `endereco_curto`, `pedidos_venda` (sem duplicar), `produtos` (concatenados de `produtos_lancamento` separados por `;`, sem duplicar), `tempo_para_entrega`, `tempo_servico`, `equipe_agenda`, `pendente_pagamento`, `status_estoque`, `produtos_pendentes`, `eventos` (array com `evento_id`, `calendar_id`, `pedido_venda`, etc.), `itens_originais`
+- Estados ajustados:
+  - `pedido_localizado`: 1 grupo encontrado; `grupo_agendamento_selecionado = 1`
+  - `aguardando_escolha_grupo`: 2 ou mais grupos encontrados; `grupo_agendamento_selecionado = null`
+  - `pedido_nao_localizado`: 0 registros; `total_grupos_agendamento = 0`
+- Webhook `src/lib/atendimento-automatico/webhook-processor.ts` atualizado para decidir estado pela contagem de grupos, nao apenas pela contagem de registros
+- Acoes `1`/`2` (adiantar/postergar) permanecem permitidas apenas para `documento_recebido`, `pedido_localizado` e `pedido_nao_localizado`; **nao** permitidas em `aguardando_escolha_grupo`, evitando seguir automaticamente sem escolha de grupo
+- Metadata expandida: `grupos_agendamento`, `total_grupos_agendamento`, `grupo_agendamento_selecionado` (além de `agendamentos_encontrados`, `total_agendamentos_encontrados`, `busca_agenda_status`)
+- Tela `PageClient.tsx` ajustada para exibir `N entregas` vs `M registros`, evitando confusao entre registros e grupos
+  - 1 grupo: `1 entrega • X pedido(s) • Pedidos: A, B • Cliente • Data`
+  - 2+ grupos: `N entregas encontradas • escolha necessária`
+- Testes unitarios criados: `src/lib/google/sheets-service-account.test.ts` (7 casos cobrindo mesma data/endereco, enderecos diferentes, datas diferentes, 1 registro, vazio, duplicados, normalizacao de endereco)
+- Typecheck: 0 erros
+- Lint: 0 erros
+- Testes: 7 passaram

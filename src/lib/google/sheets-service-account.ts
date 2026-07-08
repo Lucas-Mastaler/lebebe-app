@@ -23,8 +23,37 @@ export type AgendamentoEncontrado = {
   calendar_id: string;
 };
 
+export type EventoGrupo = {
+  pedido_venda: string;
+  evento_id: string;
+  calendar_id: string;
+  tempo_servico: string;
+  equipe_agenda: string;
+  data_agenda_google: string;
+  endereco_cliente: string;
+};
+
+export type GrupoAgendamento = {
+  indice: number;
+  nome_cliente: string;
+  cpf_mascarado: string;
+  data_entrega: string;
+  endereco_completo: string;
+  endereco_curto: string;
+  pedidos_venda: string[];
+  produtos: string[];
+  tempo_para_entrega: string;
+  tempo_servico: string;
+  equipe_agenda: string;
+  pendente_pagamento: string;
+  status_estoque: string;
+  produtos_pendentes: string;
+  eventos: EventoGrupo[];
+  itens_originais: AgendamentoEncontrado[];
+};
+
 export type BuscaAgendaResultado =
-  | { ok: true; agendamentos: AgendamentoEncontrado[]; total: number }
+  | { ok: true; agendamentos: AgendamentoEncontrado[]; total: number; grupos: GrupoAgendamento[]; total_grupos: number }
   | { ok: false; erro: string };
 
 // ─────────────────────────────────────────────────────────
@@ -107,7 +136,92 @@ function resolverRangeAba(): string {
 }
 
 // ─────────────────────────────────────────────────────────
-// 4.0 – Busca por documento na planilha de controle de agenda
+// 4.0 – Agrupamento por entrega (data + endereço normalizado)
+// ─────────────────────────────────────────────────────────
+
+function normalizarTextoChave(valor: string): string {
+  return valor
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[.,;:!?\-/]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extrairEnderecoCurto(endereco: string): string {
+  const partes = endereco.split(',').map((p) => p.trim()).filter(Boolean);
+  if (partes.length <= 2) return endereco.trim();
+  return `${partes.slice(0, 2).join(', ')}...`;
+}
+
+export function agruparAgendamentosPorEntrega(
+  agendamentos: AgendamentoEncontrado[]
+): GrupoAgendamento[] {
+  const mapa = new Map<string, GrupoAgendamento>();
+
+  for (const item of agendamentos) {
+    const chave = `${normalizarTextoChave(item.data_agenda_google)}|||${normalizarTextoChave(item.endereco_cliente)}`;
+
+    if (!mapa.has(chave)) {
+      const grupo: GrupoAgendamento = {
+        indice: mapa.size + 1,
+        nome_cliente: item.nome_cliente,
+        cpf_mascarado: item.cpf_mascarado,
+        data_entrega: item.data_agenda_google,
+        endereco_completo: item.endereco_cliente,
+        endereco_curto: extrairEnderecoCurto(item.endereco_cliente),
+        pedidos_venda: [],
+        produtos: [],
+        tempo_para_entrega: item.quanto_tempo_entrega,
+        tempo_servico: item.tempo_servico,
+        equipe_agenda: item.equipe_agenda,
+        pendente_pagamento: item.pendente_pagamento,
+        status_estoque: item.status_estoque,
+        produtos_pendentes: item.produtos_pendentes,
+        eventos: [],
+        itens_originais: [],
+      };
+      mapa.set(chave, grupo);
+    }
+
+    const grupo = mapa.get(chave)!;
+
+    const pedido = item.pedido_venda.trim();
+    if (pedido && !grupo.pedidos_venda.includes(pedido)) {
+      grupo.pedidos_venda.push(pedido);
+    }
+
+    const produtosItem = item.produtos_lancamento
+      .split(';')
+      .map((p) => p.trim())
+      .filter(Boolean);
+    for (const produto of produtosItem) {
+      if (!grupo.produtos.includes(produto)) {
+        grupo.produtos.push(produto);
+      }
+    }
+
+    grupo.eventos.push({
+      pedido_venda: item.pedido_venda,
+      evento_id: item.evento_id,
+      calendar_id: item.calendar_id,
+      tempo_servico: item.tempo_servico,
+      equipe_agenda: item.equipe_agenda,
+      data_agenda_google: item.data_agenda_google,
+      endereco_cliente: item.endereco_cliente,
+    });
+
+    grupo.itens_originais.push(item);
+  }
+
+  return Array.from(mapa.values());
+}
+
+// ─────────────────────────────────────────────────────────
+// 5.0 – Busca por documento na planilha de controle de agenda
 // ─────────────────────────────────────────────────────────
 
 export async function buscarAgendamentosPorDocumento(
@@ -132,7 +246,7 @@ export async function buscarAgendamentosPorDocumento(
 
     const valores = response.data.values as string[][] | null | undefined;
     if (!valores || valores.length === 0) {
-      return { ok: true, agendamentos: [], total: 0 };
+      return { ok: true, agendamentos: [], total: 0, grupos: [], total_grupos: 0 };
     }
 
     const headers = valores[0];
@@ -174,7 +288,8 @@ export async function buscarAgendamentosPorDocumento(
       });
     }
 
-    return { ok: true, agendamentos, total: agendamentos.length };
+    const grupos = agruparAgendamentosPorEntrega(agendamentos);
+    return { ok: true, agendamentos, total: agendamentos.length, grupos, total_grupos: grupos.length };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, erro: `Falha ao consultar planilha: ${msg}` };

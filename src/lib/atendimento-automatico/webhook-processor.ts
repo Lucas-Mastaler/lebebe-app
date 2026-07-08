@@ -384,22 +384,44 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           let metadataBusca: Record<string, unknown>;
 
           if (resultadoBusca.ok) {
-            if (resultadoBusca.total > 0) {
-              novoEstado = 'pedido_localizado';
-              metadataBusca = {
-                ...(metadataAtual ?? {}),
-                agendamentos_encontrados: resultadoBusca.agendamentos,
-                total_agendamentos_encontrados: resultadoBusca.total,
-                busca_agenda_status: 'encontrado',
-                busca_agenda_em: buscaAgendaEm,
-              };
-              console.log(`[posvenda-webhook] pedido localizado sessaoId=${sessaoId} total=${resultadoBusca.total}`);
+            const grupos = resultadoBusca.grupos;
+            if (resultadoBusca.total > 0 && grupos.length > 0) {
+              if (grupos.length === 1) {
+                novoEstado = 'pedido_localizado';
+                metadataBusca = {
+                  ...(metadataAtual ?? {}),
+                  agendamentos_encontrados: resultadoBusca.agendamentos,
+                  total_agendamentos_encontrados: resultadoBusca.total,
+                  grupos_agendamento: grupos,
+                  total_grupos_agendamento: grupos.length,
+                  grupo_agendamento_selecionado: 1,
+                  busca_agenda_status: 'encontrado',
+                  busca_agenda_em: buscaAgendaEm,
+                };
+                console.log(`[posvenda-webhook] pedido localizado sessaoId=${sessaoId} total=${resultadoBusca.total} grupos=${grupos.length}`);
+              } else {
+                novoEstado = 'aguardando_escolha_grupo';
+                metadataBusca = {
+                  ...(metadataAtual ?? {}),
+                  agendamentos_encontrados: resultadoBusca.agendamentos,
+                  total_agendamentos_encontrados: resultadoBusca.total,
+                  grupos_agendamento: grupos,
+                  total_grupos_agendamento: grupos.length,
+                  grupo_agendamento_selecionado: null,
+                  busca_agenda_status: 'encontrado',
+                  busca_agenda_em: buscaAgendaEm,
+                };
+                console.log(`[posvenda-webhook] multiplos grupos sessaoId=${sessaoId} total=${resultadoBusca.total} grupos=${grupos.length}`);
+              }
             } else {
               novoEstado = 'pedido_nao_localizado';
               metadataBusca = {
                 ...(metadataAtual ?? {}),
                 agendamentos_encontrados: [],
                 total_agendamentos_encontrados: 0,
+                grupos_agendamento: [],
+                total_grupos_agendamento: 0,
+                grupo_agendamento_selecionado: null,
                 busca_agenda_status: 'nao_encontrado',
                 busca_agenda_em: buscaAgendaEm,
               };
@@ -451,6 +473,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
               tamanho_documento: documento.length,
               busca_agenda_status: metadataBusca.busca_agenda_status,
               total_agendamentos_encontrados: metadataBusca.total_agendamentos_encontrados,
+              total_grupos_agendamento: metadataBusca.total_grupos_agendamento,
             },
           });
 

@@ -132,6 +132,44 @@
 
 **Proximo passo recomendado:** Compartilhar a planilha `N8N- CONTROLE AGENDA` com `gmail-nfe-lebebeapp@lebebe-app.iam.gserviceaccount.com` e testar o fluxo completo `2 → CPF → 1/2` validando estados e coluna Pedido na tela.
 
+## 2026-07-08 - Cascade - Agrupamento de entregas por data e endereco
+
+**Resumo:** Ajustada a consulta Google Sheets para agrupar pedidos/agendamentos por `data_agenda_google + endereco_cliente_normalizado`, seguindo a regra do fluxo antigo n8n. O webhook agora decide o estado baseado na quantidade de grupos de entrega, nao apenas na quantidade de registros: 1 grupo → `pedido_localizado` (`grupo_agendamento_selecionado = 1`); 2+ grupos → `aguardando_escolha_grupo` (`grupo_agendamento_selecionado = null`); 0 registros → `pedido_nao_localizado`. As acoes `1`/`2` de adiantar/postergar foram mantidas apenas para estados que nao exigem escolha de grupo (`documento_recebido`, `pedido_localizado`, `pedido_nao_localizado`). Tela ajustada para exibir `N entregas` e evitar confusao entre registros e grupos. Testes unitarios criados para o agrupamento.
+
+**Arquivos lidos:**
+- src/lib/google/sheets-service-account.ts
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md
+
+**Arquivos alterados/criados:**
+- src/lib/google/sheets-service-account.ts (funcao `agruparAgendamentosPorEntrega`, tipos `GrupoAgendamento`/`EventoGrupo`, retorno com grupos)
+- src/lib/atendimento-automatico/webhook-processor.ts (decisao por grupos, metadata expandida, estados novos)
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx (resumo e detalhes por grupos)
+- src/lib/google/sheets-service-account.test.ts (criado - 7 testes)
+- docs/atendimento-automatico-posvenda-mere-plano.md (registro de andamento)
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit --pretty` — 0 erros
+- `npx eslint src/lib/atendimento-automatico/webhook-processor.ts src/lib/google/sheets-service-account.ts src/lib/google/sheets-service-account.test.ts src/app/pos-venda/atendimento-automatico/PageClient.tsx src/app/api/digisac/webhook/posvenda/route.ts src/app/api/pos-venda/atendimento-automatico/listar/route.ts --no-warn-ignored` — 0 erros
+- `npx vitest run src/lib/google/sheets-service-account.test.ts` — 7 passaram
+- Logica revisada: grupo unico mantem `grupo_agendamento_selecionado = 1`; multiplos grupos bloqueiam acao automatica de adiantar/postergar
+
+**Pendencias:**
+- Testar com CPF real que retorne multiplos grupos (datas ou enderecos diferentes) para validar estado `aguardando_escolha_grupo`
+- Testar com CPF real que retorne dois registros na mesma entrega para validar exibicao `1 entrega • 2 pedidos`
+- Implementar escolha de grupo pelo cliente em fase futura (sem resposta automatica nesta tarefa)
+- Compartilhar a planilha com service account (se ainda nao feito)
+
+**Riscos conhecidos:**
+- Normalizacao de endereco pode agrupar enderecos ligeiramente diferentes se a diferenca for apenas pontuacao (comportamento desejado, mas pode esconder diferencas reais em casos extremos)
+- Estado `aguardando_escolha_grupo` ainda nao tem UI de escolha; cliente pode enviar `1`/`2` e a mensagem sera salva sem acao ate implementacao futura
+- `detectarDocumento` continua sem validacao de digitos oficiais
+
+**Proximo passo recomendado:** Testar na tela com CPF real que retorne multiplos registros na mesma entrega e, se possivel, com multiplas entregas, validando os estados e a coluna "Pedido".
+
 ## 2026-07-08 - Cascade - Correcao da ordem de processamento do webhook
 
 **Resumo:** Correcao da ordem de processamento do webhook de pos-venda para impedir que bot/humano criem sessoes e garantir que a allowlist seja aplicada antes de qualquer processamento. Problema observado em producao: tickets de outros numeros apareciam na tela apesar da allowlist. Causa: bot criava sessao ativa quando nao existia, humano criava sessao pausada sem sessao autorizada, allowlist era aplicada apenas no branch cliente depois de bot/humano ja processarem. Correcao segue o pre-filtro do fluxo antigo n8n: classificar origem primeiro, so processar mensagens de cliente, bot/humano so atuam sobre sessao autorizada existente. Telefone agora so e resolvido via API quando ha gatilho valido ou sessao existente. State machine expandida com `documento_recebido` + `acao_alteracao_recebida` (adiantar/postergar). Mascaramento de CPF/CNPJ na coluna "Ult. Msg Cliente" da tela.

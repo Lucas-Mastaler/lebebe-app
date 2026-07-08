@@ -53,16 +53,50 @@ type AgendamentoEncontrado = {
   calendar_id: string
 }
 
+type EventoGrupo = {
+  pedido_venda: string
+  evento_id: string
+  calendar_id: string
+  tempo_servico: string
+  equipe_agenda: string
+  data_agenda_google: string
+  endereco_cliente: string
+}
+
+type GrupoAgendamento = {
+  indice: number
+  nome_cliente: string
+  cpf_mascarado: string
+  data_entrega: string
+  endereco_completo: string
+  endereco_curto: string
+  pedidos_venda: string[]
+  produtos: string[]
+  tempo_para_entrega: string
+  tempo_servico: string
+  equipe_agenda: string
+  pendente_pagamento: string
+  status_estoque: string
+  produtos_pendentes: string
+  eventos: EventoGrupo[]
+  itens_originais: AgendamentoEncontrado[]
+}
+
 function resumoPedido(metadata: Record<string, unknown> | null): string {
   if (!metadata) return '-'
   const status = metadata.busca_agenda_status as string | undefined
   if (status === 'erro') return 'Erro na busca'
   if (status === 'nao_encontrado') return 'Não encontrado'
-  const total = metadata.total_agendamentos_encontrados as number | undefined
-  const agendamentos = metadata.agendamentos_encontrados as AgendamentoEncontrado[] | undefined
-  if (!total || !agendamentos || agendamentos.length === 0) return '-'
-  const primeiro = agendamentos[0]
-  return `${total} encontrado(s) • Pedido: ${primeiro.pedido_venda || '-'} • ${primeiro.nome_cliente || '-'} • ${primeiro.data_agenda_google || '-'}`
+  const totalRegistros = metadata.total_agendamentos_encontrados as number | undefined
+  const totalGrupos = metadata.total_grupos_agendamento as number | undefined
+  const grupos = metadata.grupos_agendamento as GrupoAgendamento[] | undefined
+  if (!totalRegistros || !grupos || grupos.length === 0) return '-'
+  if (totalGrupos === 1) {
+    const grupo = grupos[0]
+    const pedidos = grupo.pedidos_venda.join(', ') || '-'
+    return `1 entrega • ${totalRegistros} pedido(s) • Pedidos: ${pedidos} • ${grupo.nome_cliente || '-'} • ${grupo.data_entrega || '-'}`
+  }
+  return `${totalGrupos} entregas encontradas • escolha necessária`
 }
 
 function detalhesPedido(metadata: Record<string, unknown> | null): string {
@@ -72,12 +106,12 @@ function detalhesPedido(metadata: Record<string, unknown> | null): string {
     const erro = metadata.busca_agenda_erro as string | undefined
     return `Erro: ${erro || ''}`
   }
-  const agendamentos = metadata.agendamentos_encontrados as AgendamentoEncontrado[] | undefined
-  if (!agendamentos || agendamentos.length === 0) return ''
-  return agendamentos
+  const grupos = metadata.grupos_agendamento as GrupoAgendamento[] | undefined
+  if (!grupos || grupos.length === 0) return ''
+  return grupos
     .map(
-      (a, i) =>
-        `#${i + 1}: Pedido ${a.pedido_venda || '-'} | Cliente: ${a.nome_cliente || '-'} | Data: ${a.data_agenda_google || '-'} | Estoque: ${a.status_estoque || '-'} | Pagamento: ${a.pendente_pagamento || '-'} | Equipe: ${a.equipe_agenda || '-'}`
+      (g, i) =>
+        `#${i + 1}: Pedidos: ${g.pedidos_venda.join(', ') || '-'} | Data: ${g.data_entrega || '-'} | Endereco: ${g.endereco_curto || '-'} | Produtos: ${g.produtos.slice(0, 3).join('; ') || '-'} | Estoque: ${g.status_estoque || '-'} | Pagamento: ${g.pendente_pagamento || '-'} | Equipe: ${g.equipe_agenda || '-'}`
     )
     .join('\n')
 }

@@ -139,7 +139,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
     }
 
     const messageId = msg.id as string | undefined;
-    const contactId = msg.contactId as string | undefined;
+    const contactId = (msg.contactId as string | undefined) ?? (msg.fromId as string | undefined) ?? null;
     const serviceId = msg.serviceId as string | undefined;
 
     console.log(`[posvenda-webhook] evento recebido messageId=${messageId} contactId=${contactId} serviceId=${serviceId}`);
@@ -183,6 +183,11 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
       return { ok: true, ignored: true, reason: 'sem_ticket_id' };
     }
 
+    if (!contactId) {
+      console.log('[posvenda-webhook] ignorado por filtro técnico: sem contactId');
+      return { ok: true, ignored: true, reason: 'sem_contact_id' };
+    }
+
     const supabase = createServiceClient();
 
     // Idempotencia por digisac_message_id
@@ -213,62 +218,35 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
     let sessaoId: string;
 
     if (origem === 'humano') {
-      // Humano interno detectado: pausar sessao por 24h
-      if (sessaoExistente) {
-        sessaoId = sessaoExistente.id;
-
-        const pausaAte = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-        await supabase
-          .from('atendimento_automatico_sessoes')
-          .update({
-            status: 'pausado_humano',
-            estado: 'pausado_humano',
-            pausa_ate: pausaAte,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', sessaoId);
-
-        await supabase.from('atendimento_automatico_eventos').insert({
-          sessao_id: sessaoId,
-          tipo: 'pausa_humano',
-          descricao: 'Humano interno detectado, sessao pausada por 24h',
-        });
-
-        console.log(`[posvenda-webhook] humano detectado, sessao pausada sessaoId=${sessaoId}`);
-      } else {
-        // Criar sessao ja pausada
-        const { data: novaSessao, error: errSessao } = await supabase
-          .from('atendimento_automatico_sessoes')
-          .insert({
-            digisac_ticket_id: ticketId,
-            digisac_contact_id: contactId ?? null,
-            digisac_service_id: serviceId ?? null,
-            digisac_department_id: departmentId,
-            status: 'pausado_humano',
-            estado: 'pausado_humano',
-            pausa_ate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-          })
-          .select('id')
-          .single();
-
-        if (errSessao || !novaSessao) {
-          console.error('[posvenda-webhook] erro ao criar sessao pausada', errSessao);
-          return { ok: false, error: 'erro_criar_sessao' };
-        }
-
-        sessaoId = novaSessao.id;
-
-        await supabase.from('atendimento_automatico_eventos').insert({
-          sessao_id: sessaoId,
-          tipo: 'pausa_humano',
-          descricao: 'Humano interno detectado antes da criacao da sessao, sessao criada pausada por 24h',
-        });
-
-        console.log(`[posvenda-webhook] humano detectado, sessao criada pausada sessaoId=${sessaoId}`);
+      if (!sessaoExistente) {
+        console.log('[posvenda-webhook] humano sem sessao existente, ignorando');
+        return { ok: true, ignored: true, reason: 'humano_sem_sessao' };
       }
 
-      // Salvar mensagem do humano
+      if (!telefoneAutorizado(sessaoExistente.telefone)) {
+        console.log('[posvenda-webhook] humano com sessao nao autorizada, ignorando');
+        return { ok: true, ignored: true, reason: 'humano_sessao_nao_autorizada' };
+      }
+
+      sessaoId = sessaoExistente.id;
+      const pausaAte = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+      await supabase
+        .from('atendimento_automatico_sessoes')
+        .update({
+          status: 'pausado_humano',
+          estado: 'pausado_humano',
+          pausa_ate: pausaAte,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', sessaoId);
+
+      await supabase.from('atendimento_automatico_eventos').insert({
+        sessao_id: sessaoId,
+        tipo: 'pausa_humano',
+        descricao: 'Humano interno detectado, sessao pausada por 24h',
+      });
+
       await supabase.from('atendimento_automatico_mensagens').insert({
         sessao_id: sessaoId,
         digisac_message_id: messageId,
@@ -282,34 +260,22 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         metadata: { serviceId, departmentId },
       });
 
+      console.log(`[posvenda-webhook] humano detectado, sessao pausada sessaoId=${sessaoId}`);
       return { ok: true, saved: true, origem: 'humano' };
     }
 
     if (origem === 'bot') {
-      // Salvar mensagem do bot para historico, nao iniciar fluxo
       if (!sessaoExistente) {
-        const { data: novaSessao, error: errSessao } = await supabase
-          .from('atendimento_automatico_sessoes')
-          .insert({
-            digisac_ticket_id: ticketId,
-            digisac_contact_id: contactId ?? null,
-            digisac_service_id: serviceId ?? null,
-            digisac_department_id: departmentId,
-            status: 'ativa',
-            estado: 'inicio',
-          })
-          .select('id')
-          .single();
-
-        if (errSessao || !novaSessao) {
-          console.error('[posvenda-webhook] erro ao criar sessao para bot', errSessao);
-          return { ok: false, error: 'erro_criar_sessao' };
-        }
-
-        sessaoId = novaSessao.id;
-      } else {
-        sessaoId = sessaoExistente.id;
+        console.log('[posvenda-webhook] bot sem sessao existente, ignorando');
+        return { ok: true, ignored: true, reason: 'bot_sem_sessao' };
       }
+
+      if (!telefoneAutorizado(sessaoExistente.telefone)) {
+        console.log('[posvenda-webhook] bot com sessao nao autorizada, ignorando');
+        return { ok: true, ignored: true, reason: 'bot_sessao_nao_autorizada' };
+      }
+
+      sessaoId = sessaoExistente.id;
 
       await supabase.from('atendimento_automatico_mensagens').insert({
         sessao_id: sessaoId,
@@ -324,7 +290,6 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         metadata: { serviceId, departmentId },
       });
 
-      // Atualizar ultima mensagem do bot na sessao
       await supabase
         .from('atendimento_automatico_sessoes')
         .update({
@@ -338,39 +303,51 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
     }
 
     // origem === 'cliente'
-    // Verificar bloqueios ativos
-    if (contactId) {
-      const { data: bloqueioAtivo } = await supabase
-        .from('atendimento_automatico_bloqueios')
-        .select('id, tipo, bloqueado_ate')
-        .eq('digisac_contact_id', contactId)
-        .eq('ativo', true)
-        .or('bloqueado_ate.is.null,bloqueado_ate.gt.now()')
-        .maybeSingle();
 
-      if (bloqueioAtivo) {
-        // Cliente bloqueado: salvar mensagem mas nao iniciar fluxo
-        if (sessaoExistente) {
-          sessaoId = sessaoExistente.id;
-        } else {
-          const { data: novaSessao } = await supabase
+    if (sessaoExistente) {
+      sessaoId = sessaoExistente.id;
+
+      // Resolver telefone se sessao nao tiver
+      let telefoneSessao = sessaoExistente.telefone;
+      if (!telefoneSessao && contactId) {
+        telefoneSessao = await buscarTelefonePorContactId(contactId);
+        if (telefoneSessao) {
+          await supabase
             .from('atendimento_automatico_sessoes')
-            .insert({
-              digisac_ticket_id: ticketId,
-              digisac_contact_id: contactId ?? null,
-              digisac_service_id: serviceId ?? null,
-              digisac_department_id: departmentId,
+            .update({ telefone: telefoneSessao, updated_at: new Date().toISOString() })
+            .eq('id', sessaoId);
+        }
+      }
+
+      // Allowlist
+      if (!telefoneAutorizado(telefoneSessao)) {
+        console.log('[posvenda-webhook] cliente nao autorizado na allowlist, ignorando');
+        return { ok: true, ignored: true, reason: 'telefone_nao_autorizado' };
+      }
+
+      // Verificar bloqueios ativos
+      if (contactId) {
+        const { data: bloqueioAtivo } = await supabase
+          .from('atendimento_automatico_bloqueios')
+          .select('id, tipo, bloqueado_ate')
+          .eq('digisac_contact_id', contactId)
+          .eq('ativo', true)
+          .or('bloqueado_ate.is.null,bloqueado_ate.gt.now()')
+          .maybeSingle();
+
+        if (bloqueioAtivo) {
+          await supabase
+            .from('atendimento_automatico_sessoes')
+            .update({
               status: bloqueioAtivo.tipo === 'permanente' ? 'bloqueado_permanente' : 'bloqueado_24h',
               estado: bloqueioAtivo.tipo === 'permanente' ? 'bloqueado_permanente' : 'bloqueado_24h',
               bloqueio_permanente: bloqueioAtivo.tipo === 'permanente',
+              ultima_mensagem_cliente: text.substring(0, 200),
+              ultima_mensagem_em: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
             })
-            .select('id')
-            .single();
+            .eq('id', sessaoId);
 
-          sessaoId = novaSessao?.id ?? '';
-        }
-
-        if (sessaoId) {
           await supabase.from('atendimento_automatico_mensagens').insert({
             sessao_id: sessaoId,
             digisac_message_id: messageId,
@@ -383,41 +360,16 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
             status: 'processada',
             metadata: { serviceId, departmentId, bloqueado: bloqueioAtivo.tipo },
           });
+
+          console.log(`[posvenda-webhook] cliente bloqueado (${bloqueioAtivo.tipo}), mensagem salva`);
+          return { ok: true, saved: true, origem: 'cliente' };
         }
-
-        console.log(`[posvenda-webhook] cliente bloqueado (${bloqueioAtivo.tipo}), mensagem salva sem fluxo`);
-        return { ok: true, saved: true, origem: 'cliente' };
       }
-    }
 
-    // Criar ou atualizar sessao
-    const textoNormalizado = normalizarTextoDigisac(text);
-    const solicitacao = detectarSolicitacao(textoNormalizado);
-    let telefone = extrairTelefone(msg);
+      // Maquina de estados
+      const textoNormalizado = normalizarTextoDigisac(text);
 
-    // Se telefone nao veio no payload, buscar via API Digisac
-    if (!telefone && contactId) {
-      telefone = await buscarTelefonePorContactId(contactId);
-      if (telefone) {
-        console.log(`[posvenda-webhook] telefone obtido via API contactId=${contactId}`);
-      } else {
-        console.log(`[posvenda-webhook] telefone nao encontrado via API contactId=${contactId}`);
-      }
-    }
-
-    // Verificar allowlist de teste
-    const allowedEnv = process.env.ATENDIMENTO_POSVENDA_ALLOWED_PHONES;
-    if (allowedEnv !== undefined) {
-      if (!telefoneAutorizado(telefone)) {
-        console.log('[posvenda-webhook] telefone nao autorizado na allowlist, ignorando');
-        return { ok: true, ignored: true, reason: 'telefone_nao_autorizado' };
-      }
-    }
-
-    if (sessaoExistente) {
-      sessaoId = sessaoExistente.id;
-
-      // Se estado = aguardando_documento, tentar detectar CPF/CNPJ
+      // Estado: aguardando_documento
       if (sessaoExistente.estado === 'aguardando_documento') {
         const documento = detectarDocumento(text);
 
@@ -484,27 +436,153 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         return { ok: true, saved: true, origem: 'cliente' };
       }
 
+      // Estado: documento_recebido + alterar_entrega
+      if (sessaoExistente.estado === 'documento_recebido' && sessaoExistente.tipo_solicitacao === 'alterar_entrega') {
+        if (textoNormalizado === '1') {
+          const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
+          const novoMetadata = { ...(metadataAtual ?? {}), acao_alteracao: 'adiantar' };
+
+          await supabase
+            .from('atendimento_automatico_sessoes')
+            .update({
+              estado: 'acao_alteracao_recebida',
+              metadata: novoMetadata,
+              ultima_mensagem_cliente: text.substring(0, 200),
+              ultima_mensagem_em: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, acao_alteracao: 'adiantar' },
+          });
+
+          await supabase.from('atendimento_automatico_eventos').insert({
+            sessao_id: sessaoId,
+            tipo: 'acao_alteracao',
+            descricao: 'Cliente escolheu adiantar entrega',
+            metadata: { acao: 'adiantar' },
+          });
+
+          console.log(`[posvenda-webhook] acao alteracao adiantar sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
+
+        if (textoNormalizado === '2') {
+          const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
+          const novoMetadata = { ...(metadataAtual ?? {}), acao_alteracao: 'postergar' };
+
+          await supabase
+            .from('atendimento_automatico_sessoes')
+            .update({
+              estado: 'acao_alteracao_recebida',
+              metadata: novoMetadata,
+              ultima_mensagem_cliente: text.substring(0, 200),
+              ultima_mensagem_em: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, acao_alteracao: 'postergar' },
+          });
+
+          await supabase.from('atendimento_automatico_eventos').insert({
+            sessao_id: sessaoId,
+            tipo: 'acao_alteracao',
+            descricao: 'Cliente escolheu postergar entrega',
+            metadata: { acao: 'postergar' },
+          });
+
+          console.log(`[posvenda-webhook] acao alteracao postergar sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
+
+        if (textoNormalizado === '3') {
+          await supabase
+            .from('atendimento_automatico_sessoes')
+            .update({
+              ultima_mensagem_cliente: text.substring(0, 200),
+              ultima_mensagem_em: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, voltar_menu: true },
+          });
+
+          console.log(`[posvenda-webhook] voltar ao menu solicitado sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
+
+        // Outra mensagem: salvar, manter estado
+        await supabase
+          .from('atendimento_automatico_sessoes')
+          .update({
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', sessaoId);
+
+        await supabase.from('atendimento_automatico_mensagens').insert({
+          sessao_id: sessaoId,
+          digisac_message_id: messageId,
+          digisac_ticket_id: ticketId,
+          digisac_contact_id: contactId ?? null,
+          origem: 'cliente',
+          texto: text,
+          tipo_mensagem: msg.type as string | undefined,
+          timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+          status: 'processada',
+          metadata: { serviceId, departmentId },
+        });
+
+        console.log(`[posvenda-webhook] mensagem salva (documento_recebido) sessaoId=${sessaoId}`);
+        return { ok: true, saved: true, origem: 'cliente' };
+      }
+
+      // Outros estados: salvar mensagem, atualizar
       const updateData: Record<string, unknown> = {
         ultima_mensagem_cliente: text.substring(0, 200),
         ultima_mensagem_em: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
 
-      if (solicitacao && !sessaoExistente.tipo_solicitacao) {
-        updateData.tipo_solicitacao = solicitacao;
-      }
-
-      // Preencher telefone se vazio na sessao e disponivel agora
-      if (!sessaoExistente.telefone && telefone) {
-        updateData.telefone = telefone;
-      }
-
       // Se estava pausado_humano e pausa ja expirou, reativar
       if (sessaoExistente.status === 'pausado_humano') {
         const pausaAte = sessaoExistente.pausa_ate;
         if (!pausaAte || new Date(pausaAte) < new Date()) {
           updateData.status = 'ativa';
-          updateData.estado = 'inicio';
+          updateData.estado = 'aguardando_documento';
           updateData.pausa_ate = null;
         }
       }
@@ -514,7 +592,6 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         .update(updateData)
         .eq('id', sessaoId);
 
-      // Salvar mensagem do cliente na sessao existente
       await supabase.from('atendimento_automatico_mensagens').insert({
         sessao_id: sessaoId,
         digisac_message_id: messageId,
@@ -525,27 +602,53 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         tipo_mensagem: msg.type as string | undefined,
         timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
         status: 'processada',
-        metadata: { serviceId, departmentId, solicitacao },
+        metadata: { serviceId, departmentId },
       });
 
-      // Registrar evento se solicitacao detectada
-      if (solicitacao) {
-        await supabase.from('atendimento_automatico_eventos').insert({
-          sessao_id: sessaoId,
-          tipo: 'solicitacao_detectada',
-          descricao: `Solicitacao detectada: ${solicitacao}`,
-          metadata: { texto_normalizado: textoNormalizado },
-        });
-      }
-
-      console.log(`[posvenda-webhook] mensagem cliente salva sessaoId=${sessaoId} solicitacao=${solicitacao ?? 'nenhuma'}`);
+      console.log(`[posvenda-webhook] mensagem cliente salva sessaoId=${sessaoId}`);
       return { ok: true, saved: true, origem: 'cliente' };
     }
 
-    // Sem sessao existente: so criar se for gatilho inicial valido
+    // Sem sessao existente: verificar gatilho antes de qualquer chamada API
+    const textoNormalizado = normalizarTextoDigisac(text);
+    const solicitacao = detectarSolicitacao(textoNormalizado);
+
     if (!solicitacao) {
       console.log(`[posvenda-webhook] sem sessao e sem gatilho valido, ignorando texto="${text.substring(0, 50)}"`);
       return { ok: true, ignored: true, reason: 'sem_gatilho_inicial' };
+    }
+
+    // Gatilho valido: resolver telefone via API
+    let telefone = extrairTelefone(msg);
+    if (!telefone && contactId) {
+      telefone = await buscarTelefonePorContactId(contactId);
+      if (telefone) {
+        console.log(`[posvenda-webhook] telefone obtido via API contactId=${contactId}`);
+      } else {
+        console.log(`[posvenda-webhook] telefone nao encontrado via API contactId=${contactId}`);
+      }
+    }
+
+    // Allowlist
+    if (!telefoneAutorizado(telefone)) {
+      console.log('[posvenda-webhook] telefone nao autorizado na allowlist, ignorando');
+      return { ok: true, ignored: true, reason: 'telefone_nao_autorizado' };
+    }
+
+    // Verificar bloqueios ativos
+    if (contactId) {
+      const { data: bloqueioAtivo } = await supabase
+        .from('atendimento_automatico_bloqueios')
+        .select('id, tipo, bloqueado_ate')
+        .eq('digisac_contact_id', contactId)
+        .eq('ativo', true)
+        .or('bloqueado_ate.is.null,bloqueado_ate.gt.now()')
+        .maybeSingle();
+
+      if (bloqueioAtivo) {
+        console.log(`[posvenda-webhook] cliente bloqueado (${bloqueioAtivo.tipo}), nao criando sessao`);
+        return { ok: true, ignored: true, reason: 'cliente_bloqueado' };
+      }
     }
 
     const { data: novaSessao, error: errSessao } = await supabase
@@ -579,7 +682,6 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
       metadata: { solicitacao },
     });
 
-    // Salvar mensagem do cliente
     await supabase.from('atendimento_automatico_mensagens').insert({
       sessao_id: sessaoId,
       digisac_message_id: messageId,
@@ -593,7 +695,6 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
       metadata: { serviceId, departmentId, solicitacao },
     });
 
-    // Registrar evento de solicitacao detectada
     await supabase.from('atendimento_automatico_eventos').insert({
       sessao_id: sessaoId,
       tipo: 'solicitacao_detectada',

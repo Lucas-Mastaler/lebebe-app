@@ -343,3 +343,29 @@ Padrao validado no projeto: funcao `is_superadmin()` que verifica `usuarios_perm
 - Variável de ambiente nova: `ATENDIMENTO_POSVENDA_ALLOWED_PHONES=554192350811` adicionada ao `.env.local`
 - Typecheck: 0 erros
 - Lint: 0 erros
+
+### 2026-07-08 — Cascade — Correcao da ordem de processamento do webhook
+
+- Problema observado em producao: tickets de outros numeros apareciam na tela apesar da allowlist (`b40be95b-535`, `8544a825-31a`)
+- Causa encontrada: a logica anterior permitia que (1) bot criasse sessao ativa quando nao existia, (2) humano criasse sessao pausada mesmo sem sessao autorizada, (3) allowlist era aplicada apenas no branch cliente depois de bot/humano ja processarem, (4) telefone era resolvido via API mesmo para mensagens sem gatilho
+- Comparacao com pre-filtro do fluxo antigo n8n: o n8n classificava origem primeiro e so processava mensagens de cliente (`deveResponder = !isFromMe && !isFromBot`)
+- Correcao da ordem de processamento:
+  1. Filtro tecnico barato (event, type, isComment, ticketId, contactId, texto) — sem chamar API
+  2. Classificacao de origem (cliente/bot/humano)
+  3. Busca de sessao existente por ticketId
+  4. Bot: so salva mensagem se sessao autorizada existir; nao cria sessao
+  5. Humano: so pausa se sessao autorizada existir; nao cria sessao pausada
+  6. Cliente com sessao existente: resolve telefone se necessario, aplica allowlist, processa por estado
+  7. Cliente sem sessao: verifica gatilho antes de resolver telefone; se gatilho valido, resolve telefone, aplica allowlist, cria sessao
+- contactId agora usa fallback `fromId` se `contactId` ausente
+- Filtro de `sem_contact_id` adicionado
+- State machine expandida:
+  - `aguardando_documento` + CPF/CNPJ → `documento_recebido`
+  - `documento_recebido` + `alterar_entrega` + `1` → `acao_alteracao_recebida` (metadata: `acao_alteracao=adiantar`)
+  - `documento_recebido` + `alterar_entrega` + `2` → `acao_alteracao_recebida` (metadata: `acao_alteracao=postergar`)
+  - `documento_recebido` + `alterar_entrega` + `3` → salva mensagem (voltar_menu)
+  - Opcao 1/2 apos CPF nao e mais interpretada como nova solicitacao
+- Mascaramento de CPF/CNPJ na coluna "Ult. Msg Cliente": se mensagem for 11 ou 14 digitos, exibe `[documento informado]`
+- Tickets incorretos ja criados (`b40be95b-535`, `8544a825-31a`) podem ser finalizados manualmente pela tela
+- Typecheck: 0 erros
+- Lint: 0 erros

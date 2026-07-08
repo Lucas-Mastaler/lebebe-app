@@ -1,3 +1,56 @@
+## 2026-07-08 - Cascade - Correcao da ordem de processamento do webhook
+
+**Resumo:** Correcao da ordem de processamento do webhook de pos-venda para impedir que bot/humano criem sessoes e garantir que a allowlist seja aplicada antes de qualquer processamento. Problema observado em producao: tickets de outros numeros apareciam na tela apesar da allowlist. Causa: bot criava sessao ativa quando nao existia, humano criava sessao pausada sem sessao autorizada, allowlist era aplicada apenas no branch cliente depois de bot/humano ja processarem. Correcao segue o pre-filtro do fluxo antigo n8n: classificar origem primeiro, so processar mensagens de cliente, bot/humano so atuam sobre sessao autorizada existente. Telefone agora so e resolvido via API quando ha gatilho valido ou sessao existente. State machine expandida com `documento_recebido` + `acao_alteracao_recebida` (adiantar/postergar). Mascaramento de CPF/CNPJ na coluna "Ult. Msg Cliente" da tela.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx
+- .env.example
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md
+
+**Arquivos alterados:**
+- src/lib/atendimento-automatico/webhook-processor.ts (reestruturacao completa da ordem: filtro tecnico, classificacao, sessao existente, bot/humano sem criar sessao, cliente com allowlist antes de tudo, state machine com acao_alteracao, contactId com fallback fromId)
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx (mascaramento de CPF/CNPJ em Ult. Msg Cliente)
+- docs/atendimento-automatico-posvenda-mere-plano.md (registro de andamento)
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- Codigo: confirmado que bot criava sessao ativa (linhas 288-337 originais) e humano criava sessao pausada (linhas 239-268 originais)
+- Codigo: confirmado que allowlist era aplicada apenas no branch cliente (linhas 408-415 originais)
+- Codigo: confirmado que telefone era resolvido via API mesmo para mensagens sem gatilho (linhas 398-406 originais)
+- Typecheck: `npx tsc --noEmit --pretty` — 0 erros
+- Lint: `npx eslint src/lib/atendimento-automatico/webhook-processor.ts src/app/pos-venda/atendimento-automatico/PageClient.tsx --no-warn-ignored` — 0 erros
+
+**Cenarios testados (logica):**
+1. Evento diferente de message.created → ignora sem chamar API Digisac ✓
+2. Bot sem sessao existente → nao cria sessao, nao aparece na tela ✓
+3. Humano sem sessao existente → nao cria sessao pausada, nao aparece na tela ✓
+4. Humano com sessao autorizada existente → pausa por 24h ✓
+5. Cliente sem sessao + "Depois nao pode" → nao busca telefone, nao cria sessao ✓
+6. Cliente sem sessao + "1" com telefone nao autorizado → busca contato, resolve telefone, bloqueia allowlist, nao cria sessao ✓
+7. Cliente sem sessao + "2" com telefone autorizado 554192350811 → cria sessao, alterar_entrega, aguardando_documento ✓
+8. Cliente autorizado + 2 → CPF → 1 → estado acao_alteracao_recebida (adiantar), tela nao exibe CPF ✓
+9. Cliente autorizado + 2 → CPF → 2 → estado acao_alteracao_recebida (postergar) ✓
+10. Sem sessao + "sim esta correto" → nao cria sessao (blocklist) ✓
+
+**Pendencias:**
+- Validar com payload real do Digisac a nova ordem de processamento
+- Tickets incorretos ja criados (b40be95b-535, 8544a825-31a) podem ser finalizados manualmente pela tela
+- Sessoes antigas com estado `inicio` nao serao migradas automaticamente
+- Nao validar digito oficial do CPF/CNPJ ainda (apenas tamanho 11 ou 14)
+- Nao buscar pedido apos CPF ainda (Fase 1B)
+- Nao responder cliente ainda (Fase 1B)
+- Opcao 3 apos documento_recebido apenas salva mensagem (voltar_menu) — nao volta ao menu automaticamente ainda
+
+**Riscos conhecidos:**
+- Se a API do Digisac estiver indisponivel, telefone ficara vazio e allowlist bloqueara numero valido
+- `detectarDocumento` pode gerar falso positivo se mensagem tiver exatamente 11 ou 14 digitos nao-CPF (risco baixo)
+- Sessoes antigas com estado `inicio` continuam com estado antigo
+- Bot/humano nao terao mais historico de mensagens para tickets sem sessao autorizada (comportamento intencional)
+
+**Proximo passo recomendado:** Testar com payload real do Digisac para validar: (1) bot/humano nao criam sessao, (2) allowlist bloqueia numeros nao autorizados antes de qualquer processamento, (3) state machine completa: 2 → CPF → 1 (adiantar) / 2 (postergar), (4) mascaramento de CPF na tela.
+
 ## 2026-07-08 - Cascade - Allowlist + telefone via API + estado aguardando_documento + captura CPF
 
 **Resumo:** 3 ajustes na Fase 1A do atendimento automatico pos-venda: (1) corrigido telefone vazio buscando via API Digisac `GET /contacts/{contactId}` — confirmado via MCP Supabase que o payload `message.created` nao inclui `contact` embutido; (2) criada allowlist de teste por telefone via env `ATENDIMENTO_POSVENDA_ALLOWED_PHONES` — somente numeros autorizados podem criar/atualizar sessao; (3) ajustado estado apos opcao 1/2 para `aguardando_documento` (refletindo handoff com bot atual do Digisac que pede CPF) e implementada captura de CPF/CNPJ (11 ou 14 digitos) salvando em `documento_informado` e mudando estado para `documento_recebido`. Tela administrativa atualizada com coluna "Documento" mascarada (3 primeiros digitos + `***`). Coluna `documento_informado` ja existia na tabela (confirmado via MCP) — sem migration necessaria.

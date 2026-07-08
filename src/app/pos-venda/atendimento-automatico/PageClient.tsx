@@ -3,6 +3,15 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Bot, Ban, Unlock, Square, RefreshCw, Search } from 'lucide-react'
 
+function mascararMensagem(msg: string | null): string {
+  if (!msg) return '-'
+  const digitos = msg.replace(/\D/g, '')
+  if (digitos.length === 11 || digitos.length === 14) {
+    return '[documento informado]'
+  }
+  return msg
+}
+
 type Sessao = {
   id: string
   digisac_ticket_id: string
@@ -210,8 +219,8 @@ export function PageClient() {
                       <td className="px-4 py-3 text-slate-600">{s.tipo_solicitacao ?? '-'}</td>
                       <td className="px-4 py-3 text-slate-600">{s.telefone ?? '-'}</td>
                       <td className="px-4 py-3 text-slate-400 text-xs font-mono">{s.digisac_ticket_id?.substring(0, 12) ?? '-'}</td>
-                      <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate" title={s.ultima_mensagem_cliente ?? ''}>
-                        {s.ultima_mensagem_cliente ?? '-'}
+                      <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate" title={mascararMensagem(s.ultima_mensagem_cliente)}>
+                        {mascararMensagem(s.ultima_mensagem_cliente)}
                       </td>
                       <td className="px-4 py-3 text-slate-600">
                         {s.documento_informado

@@ -30,8 +30,56 @@ type Sessao = {
   ultima_mensagem_cliente: string | null
   ultima_mensagem_bot: string | null
   ultima_mensagem_em: string | null
+  metadata: Record<string, unknown> | null
   created_at: string
   updated_at: string
+}
+
+type AgendamentoEncontrado = {
+  filial_venda: string
+  nome_cliente: string
+  pedido_venda: string
+  data_agenda_google: string
+  status_estoque: string
+  quanto_tempo_entrega: string
+  produtos_pendentes: string
+  endereco_cliente: string
+  produtos_lancamento: string
+  equipe_agenda: string
+  pendente_pagamento: string
+  cpf_mascarado: string
+  tempo_servico: string
+  evento_id: string
+  calendar_id: string
+}
+
+function resumoPedido(metadata: Record<string, unknown> | null): string {
+  if (!metadata) return '-'
+  const status = metadata.busca_agenda_status as string | undefined
+  if (status === 'erro') return 'Erro na busca'
+  if (status === 'nao_encontrado') return 'Não encontrado'
+  const total = metadata.total_agendamentos_encontrados as number | undefined
+  const agendamentos = metadata.agendamentos_encontrados as AgendamentoEncontrado[] | undefined
+  if (!total || !agendamentos || agendamentos.length === 0) return '-'
+  const primeiro = agendamentos[0]
+  return `${total} encontrado(s) • Pedido: ${primeiro.pedido_venda || '-'} • ${primeiro.nome_cliente || '-'} • ${primeiro.data_agenda_google || '-'}`
+}
+
+function detalhesPedido(metadata: Record<string, unknown> | null): string {
+  if (!metadata) return ''
+  const status = metadata.busca_agenda_status as string | undefined
+  if (status === 'erro') {
+    const erro = metadata.busca_agenda_erro as string | undefined
+    return `Erro: ${erro || ''}`
+  }
+  const agendamentos = metadata.agendamentos_encontrados as AgendamentoEncontrado[] | undefined
+  if (!agendamentos || agendamentos.length === 0) return ''
+  return agendamentos
+    .map(
+      (a, i) =>
+        `#${i + 1}: Pedido ${a.pedido_venda || '-'} | Cliente: ${a.nome_cliente || '-'} | Data: ${a.data_agenda_google || '-'} | Estoque: ${a.status_estoque || '-'} | Pagamento: ${a.pendente_pagamento || '-'} | Equipe: ${a.equipe_agenda || '-'}`
+    )
+    .join('\n')
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -195,6 +243,7 @@ export function PageClient() {
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Solicitacao</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Telefone</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Ticket</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Pedido</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Ult. Msg Cliente</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Documento</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Pausa Ate</th>
@@ -219,6 +268,9 @@ export function PageClient() {
                       <td className="px-4 py-3 text-slate-600">{s.tipo_solicitacao ?? '-'}</td>
                       <td className="px-4 py-3 text-slate-600">{s.telefone ?? '-'}</td>
                       <td className="px-4 py-3 text-slate-400 text-xs font-mono">{s.digisac_ticket_id?.substring(0, 12) ?? '-'}</td>
+                      <td className="px-4 py-3 text-slate-600 max-w-[220px] truncate whitespace-pre-line" title={detalhesPedido(s.metadata)}>
+                        {resumoPedido(s.metadata)}
+                      </td>
                       <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate" title={mascararMensagem(s.ultima_mensagem_cliente)}>
                         {mascararMensagem(s.ultima_mensagem_cliente)}
                       </td>

@@ -60,6 +60,53 @@
 
 **Proximo passo recomendado:** Rebuild/deploy e validar na tela que o CPF nao aparece mais em "Ult. Msg Cliente".
 
+## 2026-07-08 - Cascade - Consulta Google Sheets de controle de agenda por CPF/CNPJ
+
+**Resumo:** Implementada consulta a planilha Google `N8N- CONTROLE AGENDA` apos captura de CPF/CNPJ no atendimento automatico pos-venda. Usa service account existente `gmail-nfe-lebebeapp@lebebe-app.iam.gserviceaccount.com` (credenciais `GMAIL_SERVICE_EMAIL` + `GMAIL_PRIVATE_KEY`) com escopo `spreadsheets.readonly`. Novo helper `src/lib/google/sheets-service-account.ts` le a aba pelo nome, busca na coluna `CPF` normalizada e retorna todas as linhas encontradas. Estados novos: `pedido_localizado`, `pedido_nao_localizado`, `erro_busca_agenda`. Resultado salvo em metadata (`agendamentos_encontrados`, `total_agendamentos_encontrados`, `busca_agenda_status`, `busca_agenda_em`). Tela atualizada com coluna "Pedido" exibindo resumo e tooltip com detalhes. Acoes `1`/`2` continuam funcionando a partir dos novos estados. Nao responde cliente; nao chama IA, motor, agenda, worker.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx
+- src/app/api/pos-venda/atendimento-automatico/listar/route.ts
+- src/app/api/digisac/webhook/posvenda/route.ts
+- src/lib/google/sheets-service.ts
+- src/app/api/nfe/importar/route.ts
+- .env.local
+- .env.example
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md
+
+**Arquivos alterados:**
+- src/lib/google/sheets-service-account.ts (criado - helper de leitura da planilha via service account)
+- src/lib/atendimento-automatico/webhook-processor.ts (apos CPF, consulta planilha e atualiza estado/metadata)
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx (coluna Pedido com resumo e tooltip)
+- src/app/api/digisac/webhook/posvenda/route.ts (runtime=nodejs)
+- .env.local (novas envs GOOGLE_AGENDA_CONTROLE_*)
+- .env.example (novas envs GOOGLE_AGENDA_CONTROLE_*)
+- docs/atendimento-automatico-posvenda-mere-plano.md (registro de andamento)
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- Typecheck: `npx tsc --noEmit --pretty` — 0 erros
+- Lint: `npx eslint src/lib/atendimento-automatico/webhook-processor.ts src/lib/google/sheets-service-account.ts src/app/pos-venda/atendimento-automatico/PageClient.tsx src/app/api/digisac/webhook/posvenda/route.ts src/app/api/pos-venda/atendimento-automatico/listar/route.ts --no-warn-ignored` — 0 erros
+- Helpers Google existentes revisados; service account `gmail-nfe-lebebeapp@lebebe-app.iam.gserviceaccount.com` identificada como credencial disponivel
+- Mapeamento de colunas revisado: CPF, NOME DO CLIENTE, Pedido de Venda, Data na agenda GOOGLE, ALGO NAO CHEGOU AINDA?, QUANTO TEMPO PRA ENTREGA?, Produtos Pendentes, ENDERECO DO CLIENTE, PRODUTOS DESSE LANCAMENTO, EQUIPE AGENDA, PENDENTE DE PAGAMENTO?, TEMPO DO SERVICO, EVENTO_ID, CALENDAR_ID
+
+**Pendencias:**
+- Conceder acesso na planilha Google para `gmail-nfe-lebebeapp@lebebe-app.iam.gserviceaccount.com` (viewer ou editor)
+- Testar com CPF real da planilha
+- Testar CPF inexistente → estado `pedido_nao_localizado`
+- Testar erro de acesso → estado `erro_busca_agenda`
+- Nao implementado ainda: resposta automatica ao cliente, busca de datas, alteracao de agenda
+
+**Riscos conhecidos:**
+- Service account pode nao ter permissao na planilha ate que seja compartilhada manualmente
+- Erro de API Google nao expoe credenciais, mas salva mensagem tecnica curta em metadata
+- Leitura sincrona no webhook pode aumentar tempo de resposta (sem resposta ao cliente, impacto baixo)
+- `detectarDocumento` continua aceitando apenas tamanho 11/14, sem validacao de digitos oficiais
+
+**Proximo passo recomendado:** Compartilhar a planilha `N8N- CONTROLE AGENDA` com `gmail-nfe-lebebeapp@lebebe-app.iam.gserviceaccount.com` e testar o fluxo completo `2 → CPF → 1/2` validando estados e coluna Pedido na tela.
+
 ## 2026-07-08 - Cascade - Correcao da ordem de processamento do webhook
 
 **Resumo:** Correcao da ordem de processamento do webhook de pos-venda para impedir que bot/humano criem sessoes e garantir que a allowlist seja aplicada antes de qualquer processamento. Problema observado em producao: tickets de outros numeros apareciam na tela apesar da allowlist. Causa: bot criava sessao ativa quando nao existia, humano criava sessao pausada sem sessao autorizada, allowlist era aplicada apenas no branch cliente depois de bot/humano ja processarem. Correcao segue o pre-filtro do fluxo antigo n8n: classificar origem primeiro, so processar mensagens de cliente, bot/humano so atuam sobre sessao autorizada existente. Telefone agora so e resolvido via API quando ha gatilho valido ou sessao existente. State machine expandida com `documento_recebido` + `acao_alteracao_recebida` (adiantar/postergar). Mascaramento de CPF/CNPJ na coluna "Ult. Msg Cliente" da tela.

@@ -384,3 +384,30 @@ Padrao validado no projeto: funcao `is_superadmin()` que verifica `usuarios_perm
 - Regras de mascaramento: 11 digitos = CPF, 14 digitos = CNPJ, exibe `[documento informado]`; mensagens comuns (`1`, `2`, `quero alterar data de entrega`) nao sao mascaradas
 - Typecheck: 0 erros
 - Lint: 0 erros
+
+### 2026-07-08 — Cascade — Consulta Google Sheets de controle de agenda por CPF/CNPJ
+
+- Nova Fase 1B: apos captura de CPF/CNPJ, consultar planilha `N8N- CONTROLE AGENDA` (spreadsheet ID `1H8mFLzEL8XcFh0UX_hOJF-ublRZcdbhwLc7ooNEeJ5U`, gid `1227722067`)
+- Service account identificada para acesso a planilha: `gmail-nfe-lebebeapp@lebebe-app.iam.gserviceaccount.com` (usando credenciais existentes `GMAIL_SERVICE_EMAIL` + `GMAIL_PRIVATE_KEY` com escopo `spreadsheets.readonly`)
+- Helper criado: `src/lib/google/sheets-service-account.ts` com funcao `buscarAgendamentosPorDocumento`
+- Leitura via Google Sheets API v4 com autenticacao JWT de service account (sem impersonation, sem domain-wide delegation)
+- Range lido: `'N8N- CONTROLE AGENDA'!A:AZ` (escapado automaticamente); busca na coluna `CPF` normalizada (remove nao-digitos)
+- Retorna todas as linhas encontradas; ignora linhas vazias e cabecalhos duplicados; nao escreve na planilha
+- Estados novos:
+  - `pedido_localizado`: encontrou 1 ou mais agendamentos
+  - `pedido_nao_localizado`: nao encontrou
+  - `erro_busca_agenda`: falha de API/acesso
+- Metadata salvo:
+  - `metadata.agendamentos_encontrados`: array estruturado com campos (filial_venda, nome_cliente, pedido_venda, data_agenda_google, status_estoque, quanto_tempo_entrega, produtos_pendentes, endereco_cliente, produtos_lancamento, equipe_agenda, pendente_pagamento, cpf_mascarado, tempo_servico, evento_id, calendar_id)
+  - `metadata.total_agendamentos_encontrados`
+  - `metadata.busca_agenda_status`
+  - `metadata.busca_agenda_em`
+  - `metadata.busca_agenda_erro` (somente em caso de erro, sem secrets/payload)
+- Acoes `1`/`2` (adiantar/postergar) continuam funcionando a partir de `pedido_localizado`, `pedido_nao_localizado` ou `documento_recebido` (compatibilidade com sessoes ja existentes)
+- Tela atualizada com coluna "Pedido" mostrando resumo (total + primeiro pedido + cliente + data); tooltip com detalhes de todos os agendamentos; CPF sempre mascarado
+- Variaveis de ambiente novas: `GOOGLE_AGENDA_CONTROLE_SPREADSHEET_ID`, `GOOGLE_AGENDA_CONTROLE_SHEET_NAME`, `GOOGLE_AGENDA_CONTROLE_SHEET_GID` adicionadas ao `.env.local` e `.env.example`
+- Runtime `nodejs` adicionado a `src/app/api/digisac/webhook/posvenda/route.ts` para permitir uso do `googleapis`
+- Nao responde cliente automaticamente
+- Nao chama IA, `/procurar-datas`, motor, agenda, worker, debounce
+- Typecheck: 0 erros
+- Lint: 0 erros

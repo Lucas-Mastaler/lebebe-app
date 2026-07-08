@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processarWebhookPosVenda } from '@/lib/atendimento-automatico/webhook-processor';
 
+export const runtime = 'nodejs';
+
 export async function POST(request: NextRequest) {
   try {
     const secret =

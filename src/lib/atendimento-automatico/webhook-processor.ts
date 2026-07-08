@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/service';
 import { normalizarTextoDigisac } from '@/lib/digisac/triagem';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
+import { buscarAgendamentosPorDocumento } from '@/lib/google/sheets-service-account';
 
 type OrigemMensagem = 'cliente' | 'bot' | 'humano' | 'sistema';
 
@@ -374,11 +375,55 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         const documento = detectarDocumento(text);
 
         if (documento) {
+          const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
+          const buscaAgendaEm = new Date().toISOString();
+
+          const resultadoBusca = await buscarAgendamentosPorDocumento(documento);
+
+          let novoEstado: string;
+          let metadataBusca: Record<string, unknown>;
+
+          if (resultadoBusca.ok) {
+            if (resultadoBusca.total > 0) {
+              novoEstado = 'pedido_localizado';
+              metadataBusca = {
+                ...(metadataAtual ?? {}),
+                agendamentos_encontrados: resultadoBusca.agendamentos,
+                total_agendamentos_encontrados: resultadoBusca.total,
+                busca_agenda_status: 'encontrado',
+                busca_agenda_em: buscaAgendaEm,
+              };
+              console.log(`[posvenda-webhook] pedido localizado sessaoId=${sessaoId} total=${resultadoBusca.total}`);
+            } else {
+              novoEstado = 'pedido_nao_localizado';
+              metadataBusca = {
+                ...(metadataAtual ?? {}),
+                agendamentos_encontrados: [],
+                total_agendamentos_encontrados: 0,
+                busca_agenda_status: 'nao_encontrado',
+                busca_agenda_em: buscaAgendaEm,
+              };
+              console.log(`[posvenda-webhook] pedido nao localizado sessaoId=${sessaoId}`);
+            }
+          } else {
+            novoEstado = 'erro_busca_agenda';
+            metadataBusca = {
+              ...(metadataAtual ?? {}),
+              agendamentos_encontrados: [],
+              total_agendamentos_encontrados: 0,
+              busca_agenda_status: 'erro',
+              busca_agenda_erro: resultadoBusca.erro.substring(0, 200),
+              busca_agenda_em: buscaAgendaEm,
+            };
+            console.log(`[posvenda-webhook] erro busca agenda sessaoId=${sessaoId} erro=${resultadoBusca.erro.substring(0, 100)}`);
+          }
+
           await supabase
             .from('atendimento_automatico_sessoes')
             .update({
               documento_informado: documento,
-              estado: 'documento_recebido',
+              estado: novoEstado,
+              metadata: metadataBusca,
               ultima_mensagem_cliente: text.substring(0, 200),
               ultima_mensagem_em: new Date().toISOString(),
               updated_at: new Date().toISOString(),
@@ -402,10 +447,14 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
             sessao_id: sessaoId,
             tipo: 'documento_recebido',
             descricao: 'Documento (CPF/CNPJ) recebido do cliente',
-            metadata: { tamanho_documento: documento.length },
+            metadata: {
+              tamanho_documento: documento.length,
+              busca_agenda_status: metadataBusca.busca_agenda_status,
+              total_agendamentos_encontrados: metadataBusca.total_agendamentos_encontrados,
+            },
           });
 
-          console.log(`[posvenda-webhook] documento recebido sessaoId=${sessaoId} digitos=${documento.length}`);
+          console.log(`[posvenda-webhook] documento recebido sessaoId=${sessaoId} digitos=${documento.length} estado=${novoEstado}`);
           return { ok: true, saved: true, origem: 'cliente' };
         }
 
@@ -436,8 +485,9 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         return { ok: true, saved: true, origem: 'cliente' };
       }
 
-      // Estado: documento_recebido + alterar_entrega
-      if (sessaoExistente.estado === 'documento_recebido' && sessaoExistente.tipo_solicitacao === 'alterar_entrega') {
+      // Estado: documento_recebido/pedido_localizado/pedido_nao_localizado + alterar_entrega
+      const estadosPermitemAcaoAlteracao = ['documento_recebido', 'pedido_localizado', 'pedido_nao_localizado'];
+      if (estadosPermitemAcaoAlteracao.includes(sessaoExistente.estado) && sessaoExistente.tipo_solicitacao === 'alterar_entrega') {
         if (textoNormalizado === '1') {
           const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
           const novoMetadata = { ...(metadataAtual ?? {}), acao_alteracao: 'adiantar' };

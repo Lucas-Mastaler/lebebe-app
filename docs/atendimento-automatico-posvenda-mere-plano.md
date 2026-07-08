@@ -467,3 +467,20 @@ Padrao validado no projeto: funcao `is_superadmin()` que verifica `usuarios_perm
 - Typecheck: 0 erros
 - Lint: 0 erros
 - Testes: 15 passaram (7 agrupamento + 8 respostas)
+
+### 2026-07-08 — Cascade — Correcao para aceitar 1/2 como acao em aguardando_confirmacao_pedido com 1 grupo
+
+- Problema observado em teste real: cliente em `aguardando_confirmacao_pedido` com `alterar_entrega` e 1 grupo enviou `2`, mas sistema manteve estado e resposta sugerida de confirmacao
+- Regra adicionada: em `aguardando_confirmacao_pedido` + `alterar_entrega` + `total_grupos_agendamento = 1` + `grupo_agendamento_selecionado = 1`, mensagens `1` e `2` sao interpretadas como acoes de alteracao:
+  - `1` → `metadata.acao_alteracao = "adiantar"`, `metadata.pedido_confirmado = true`, estado → `pedido_confirmado_acao_recebida`
+  - `2` → `metadata.acao_alteracao = "postergar"`, `metadata.pedido_confirmado = true`, estado → `pedido_confirmado_acao_recebida`
+- Prioridade de interpretacao mantida:
+  1. `aguardando_escolha_grupo`: numeros continuam sendo escolha de grupo
+  2. `aguardando_confirmacao_pedido` + `alterar_entrega` + 1 grupo: `1`/`2` sao acoes
+  3. `aguardando_confirmacao_pedido`: confirmacoes textuais (`sim`, `esta correto`, etc.)
+  4. Outros casos: comportamento atual
+- Nao chama `/procurar-datas`, nao altera agenda, nao chama IA
+- Testes atualizados: adicionados testes para `respostaPedidoConfirmadoAlterarAcaoJaEscolhida`, `respostaPedidoConfirmadoAlterarEscolherAcao`, `respostaPedidoNegado`
+- Typecheck: 0 erros
+- Lint: 0 erros
+- Testes: 11 passaram (respostas)

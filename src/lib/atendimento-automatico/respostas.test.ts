@@ -6,6 +6,9 @@ import {
   respostaGrupoSelecionado,
   respostaPedidoConfirmadoConfirmarEntrega,
   respostaPedidoNaoLocalizado,
+  respostaPedidoConfirmadoAlterarAcaoJaEscolhida,
+  respostaPedidoConfirmadoAlterarEscolherAcao,
+  respostaPedidoNegado,
 } from './respostas';
 import type { GrupoAgendamento } from '@/lib/google/sheets-service-account';
 
@@ -90,5 +93,24 @@ describe('respostas', () => {
     expect(normalizarConfirmacao('oi')).toBeNull();
     expect(normalizarConfirmacao('123')).toBeNull();
     expect(normalizarConfirmacao('qualquer coisa')).toBeNull();
+  });
+
+  it('gera resposta para pedido confirmado com acao ja escolhida', () => {
+    const resposta = respostaPedidoConfirmadoAlterarAcaoJaEscolhida();
+    expect(resposta.tipo).toBe('pedido_confirmado_alterar_acao_ja_escolhida');
+    expect(resposta.texto).toContain('entendi');
+  });
+
+  it('gera resposta para pedido confirmado escolher acao', () => {
+    const resposta = respostaPedidoConfirmadoAlterarEscolherAcao();
+    expect(resposta.tipo).toBe('pedido_confirmado_alterar_escolher_acao');
+    expect(resposta.texto).toContain('1 - Adiantar');
+    expect(resposta.texto).toContain('2 - Postergar');
+  });
+
+  it('gera resposta para pedido negado', () => {
+    const resposta = respostaPedidoNegado();
+    expect(resposta.tipo).toBe('pedido_negado');
+    expect(resposta.texto).toContain('CPF/CNPJ correto');
   });
 });

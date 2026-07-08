@@ -722,6 +722,62 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         const confirmacao = normalizarConfirmacao(text);
         const telefoneSessao = sessaoExistente.telefone;
         const telefoneAutorizadoFlag = telefoneAutorizado(telefoneSessao);
+        const totalGrupos = metadataAtual?.total_grupos_agendamento as number | undefined;
+        const grupoSelecionado = metadataAtual?.grupo_agendamento_selecionado as number | undefined;
+
+        // Se ha apenas 1 grupo e solicitacao de alterar_entrega, 1/2 sao acoes de alteracao
+        if (
+          sessaoExistente.tipo_solicitacao === 'alterar_entrega' &&
+          totalGrupos === 1 &&
+          grupoSelecionado === 1 &&
+          (textoNormalizado === '1' || textoNormalizado === '2')
+        ) {
+          const acao = textoNormalizado === '1' ? 'adiantar' : 'postergar';
+          const novoMetadata = await construirMetadataComResposta({
+            sessaoId,
+            metadataAtual: { ...(metadataAtual ?? {}), acao_alteracao: acao, pedido_confirmado: true },
+            resposta: respostaPedidoConfirmadoAlterarAcaoJaEscolhida(),
+            estado: 'pedido_confirmado_acao_recebida',
+            contactId,
+            ticketId,
+            digisacMessageId: messageId,
+            telefoneAutorizado: telefoneAutorizadoFlag,
+          });
+
+          await supabase
+            .from('atendimento_automatico_sessoes')
+            .update({
+              estado: 'pedido_confirmado_acao_recebida',
+              metadata: novoMetadata,
+              ultima_mensagem_cliente: text.substring(0, 200),
+              ultima_mensagem_em: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, acao_alteracao: acao, pedido_confirmado: true },
+          });
+
+          await supabase.from('atendimento_automatico_eventos').insert({
+            sessao_id: sessaoId,
+            tipo: 'pedido_confirmado_acao_recebida',
+            descricao: `Cliente confirmou pedido e escolheu ação: ${acao}`,
+            metadata: { acao, total_grupos: totalGrupos, grupo_selecionado: grupoSelecionado },
+          });
+
+          console.log(`[posvenda-webhook] pedido confirmado com acao sessaoId=${sessaoId} acao=${acao}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
 
         if (confirmacao === 'confirmar') {
           const grupo = obterGrupoSelecionado(metadataAtual);

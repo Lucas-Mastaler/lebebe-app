@@ -215,6 +215,35 @@
 
 **Proximo passo recomendado:** Validar respostas sugeridas na tela administrativa com dados reais e, quando seguro, habilitar `ATENDIMENTO_POSVENDA_AUTO_REPLY_ENABLED=true` para testar envio automatico pontualmente.
 
+## 2026-07-08 - Cascade - Correcao para aceitar 1/2 como acao em aguardando_confirmacao_pedido com 1 grupo
+
+**Resumo:** Correcao na maquina de estados do atendimento automatico pos-venda para aceitar `1`/`2` como acoes de alteracao (adiantar/postergar) quando o cliente esta em `aguardando_confirmacao_pedido` com `alterar_entrega` e apenas 1 grupo selecionado. Problema observado em teste real: cliente enviou `2` mas sistema manteve estado e resposta sugerida de confirmacao. Regra adicionada verifica `tipo_solicitacao === 'alterar_entrega'`, `total_grupos_agendamento === 1`, `grupo_agendamento_selecionado === 1` e texto `1` ou `2`. Prioridade mantida: escolha de grupo > acao > confirmacao textual. Nao chama `/procurar-datas`, nao altera agenda, nao chama IA.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/lib/atendimento-automatico/respostas.test.ts
+
+**Arquivos alterados/criados:**
+- src/lib/atendimento-automatico/webhook-processor.ts (logica para aceitar 1/2 como acao em aguardando_confirmacao_pedido)
+- src/lib/atendimento-automatico/respostas.test.ts (testes adicionais para novas respostas)
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit --pretty` — 0 erros
+- `npx eslint src/lib/atendimento-automatico/webhook-processor.ts src/lib/atendimento-automatico/respostas.ts src/lib/atendimento-automatico/respostas.test.ts --no-warn-ignored` — 0 erros
+- `npx vitest run src/lib/atendimento-automatico/respostas.test.ts` — 11 passaram
+
+**Pendencias:**
+- Testar fluxo real com `aguardando_confirmacao_pedido` + `alterar_entrega` + 1 grupo e cliente enviando `1` ou `2`
+- Validar que `aguardando_escolha_grupo` continua interpretando numeros como escolha de grupo
+
+**Riscos conhecidos:**
+- Regra especifica para `total_grupos_agendamento === 1` e `grupo_agendamento_selecionado === 1`; se metadata estiver inconsistente, pode nao disparar
+- Bot antigo do Digisac ainda ativo; cliente pode receber pergunta 1/2 dele e responder aqui
+
+**Proximo passo recomendado:** Testar com CPF real que retorne 1 grupo e solicitacao de alterar_entrega, validando que `1` e `2` sao interpretados como acoes e estado vai para `pedido_confirmado_acao_recebida`.
+
 ## 2026-07-08 - Cascade - Correcao da ordem de processamento do webhook
 
 **Resumo:** Correcao da ordem de processamento do webhook de pos-venda para impedir que bot/humano criem sessoes e garantir que a allowlist seja aplicada antes de qualquer processamento. Problema observado em producao: tickets de outros numeros apareciam na tela apesar da allowlist. Causa: bot criava sessao ativa quando nao existia, humano criava sessao pausada sem sessao autorizada, allowlist era aplicada apenas no branch cliente depois de bot/humano ja processarem. Correcao segue o pre-filtro do fluxo antigo n8n: classificar origem primeiro, so processar mensagens de cliente, bot/humano so atuam sobre sessao autorizada existente. Telefone agora so e resolvido via API quando ha gatilho valido ou sessao existente. State machine expandida com `documento_recebido` + `acao_alteracao_recebida` (adiantar/postergar). Mascaramento de CPF/CNPJ na coluna "Ult. Msg Cliente" da tela.

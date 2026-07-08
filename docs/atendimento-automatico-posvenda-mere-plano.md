@@ -518,3 +518,26 @@ Padrao validado no projeto: funcao `is_superadmin()` que verifica `usuarios_perm
 - Typecheck: 0 erros
 - Lint: 0 erros (0 warnings)
 - Testes: 19 passaram (respostas.test.ts)
+
+### 2026-07-08 — Cascade — Parser de data natural, correcao de status e estado data_desejada_recebida
+
+- Novo helper puro `interpretarDataDesejada(texto, hoje)` em `interpretar-data.ts`
+- Formatos aceitos: `13/07`, `13/07/2026`, `13-07-2026`, `dia 13`, `dia 13/07`, `amanha`, `depois de amanha`, `segunda`, `terca`, `quarta`, `quinta`, `sexta`, `sabado`, `domingo`, `[dia] que vem`
+- Regra dia da semana: proxima ocorrencia futura; "que vem" forca sempre para semana seguinte
+- Teste real validado: `segunda que vem` com hoje=08/07/2026 retorna `2026-07-13`
+- Novo helper `validarDataDesejadaParaAcao(params)`: valida D+2, D+90, anterior/posterior conforme acao
+- Bloco `aguardando_data_desejada` reescrito:
+  - data nao interpretada: manter estado, resposta pedindo nova data
+  - data invalida por regra (antes D+2, fora da janela de acao): manter estado, resposta especifica
+  - data fora de D+90: encaminhar para humano, `status = transferido_humano`
+  - data valida: avancar para `data_desejada_recebida`, salvar `data_desejada_iso`, `data_desejada_br`, `data_desejada_texto_original`, `data_desejada_interpretada_em`, `data_desejada_valida_para_acao`
+- Correcao de status: todos os 4 pontos de bloqueio por regra agora gravam `status = 'transferido_humano'`
+  - bloqueio de acao em `aguardando_escolha_acao`
+  - bloqueio de acao em bloco legado `documento_recebido`
+  - alteracao de endereco em `aguardando_confirmacao_endereco`
+  - data D+90 em `aguardando_data_desejada`
+- Tela: `STATUS_COLORS` incluiu `transferido_humano` (roxo), filtro de status incluiu opcao, `resumoSituacao` exibe acao, end. confirmado/pendente, data desejada, motivo de bloqueio
+- Nao chama `/procurar-datas`, nao altera agenda, nao chama IA
+- Typecheck: 0 erros
+- Lint: 0 erros, 0 warnings
+- Testes: 42 passaram (23 interpretar-data + 19 respostas)

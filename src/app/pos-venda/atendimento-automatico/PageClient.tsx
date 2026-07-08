@@ -128,12 +128,22 @@ function resumoSituacao(metadata: Record<string, unknown> | null): string {
   if (grupoSelecionado !== undefined && grupoSelecionado !== null) partes.push(`grupo ${grupoSelecionado}`)
   if (pedidoConfirmado === true) partes.push('confirmado')
   if (pedidoConfirmado === false) partes.push('não confirmado')
+  const acao = metadata.acao_alteracao as string | undefined
+  if (acao) partes.push(acao)
+  const enderecoConfirmado = metadata.endereco_confirmado as boolean | undefined
+  if (enderecoConfirmado === true) partes.push('end. confirmado')
+  if (enderecoConfirmado === false && acao) partes.push('end. pendente')
+  const dataDesejadaBr = metadata.data_desejada_br as string | undefined
+  if (dataDesejadaBr) partes.push(`data: ${dataDesejadaBr}`)
+  const motivoBloqueio = (metadata.motivo_bloqueio_acao ?? metadata.motivo_bloqueio_data ?? metadata.motivo_bloqueio_endereco) as string | undefined
+  if (motivoBloqueio) partes.push(`bloqueio: ${motivoBloqueio}`)
   return partes.join(' • ')
 }
 
 const STATUS_COLORS: Record<string, string> = {
   ativa: 'bg-green-100 text-green-800',
   pausado_humano: 'bg-yellow-100 text-yellow-800',
+  transferido_humano: 'bg-purple-100 text-purple-800',
   bloqueado_24h: 'bg-orange-100 text-orange-800',
   bloqueado_permanente: 'bg-red-100 text-red-800',
   finalizado: 'bg-slate-100 text-slate-600',
@@ -235,6 +245,7 @@ export function PageClient() {
                 <option value="">Todos</option>
                 <option value="ativa">Ativa</option>
                 <option value="pausado_humano">Pausado (Humano)</option>
+                <option value="transferido_humano">Transferido Humano</option>
                 <option value="bloqueado_24h">Bloqueado 24h</option>
                 <option value="bloqueado_permanente">Bloqueado Permanente</option>
                 <option value="finalizado">Finalizado</option>

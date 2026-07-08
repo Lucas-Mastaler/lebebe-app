@@ -17,7 +17,13 @@ export type TipoRespostaSugerida =
   | 'bloqueio_produto_pendente_antecipacao'
   | 'bloqueio_pagamento_pendente_antecipacao'
   | 'bloqueio_prazo_menor_7_antecipacao'
-  | 'bloqueio_prazo_critico_d2_postergacao';
+  | 'bloqueio_prazo_critico_d2_postergacao'
+  | 'data_nao_interpretada'
+  | 'data_invalida_adiantar'
+  | 'data_invalida_postergar'
+  | 'data_invalida_antes_d2'
+  | 'data_invalida_fora_janela_d90'
+  | 'data_desejada_recebida';
 
 export type RespostaSugerida = {
   texto: string;
@@ -163,6 +169,48 @@ export function respostaBloqueioPrazoCriticoD2Postergacao(): RespostaSugerida {
   return {
     texto: 'Sua entrega já está confirmada para os próximos dias e não conseguimos alterar automaticamente neste momento.\n\nVou encaminhar seu atendimento para nossa equipe verificar para você.',
     tipo: 'bloqueio_prazo_critico_d2_postergacao',
+  };
+}
+
+export function respostaDataNaoInterpretada(): RespostaSugerida {
+  return {
+    texto: 'Não consegui entender a data. Pode me enviar no formato dia/mês? Exemplo: 25/07.',
+    tipo: 'data_nao_interpretada',
+  };
+}
+
+export function respostaDataInvalidaAdiantar(): RespostaSugerida {
+  return {
+    texto: 'Para adiantar, preciso de uma data anterior à entrega atual. Pode me enviar outra data?',
+    tipo: 'data_invalida_adiantar',
+  };
+}
+
+export function respostaDataInvalidaPostergar(): RespostaSugerida {
+  return {
+    texto: 'Para postergar, preciso de uma data igual ou posterior à entrega atual. Pode me enviar outra data?',
+    tipo: 'data_invalida_postergar',
+  };
+}
+
+export function respostaDataInvalidaAntesD2(): RespostaSugerida {
+  return {
+    texto: 'Para conseguir verificar automaticamente, preciso de uma data com pelo menos 2 dias de antecedência. Pode me enviar outra data?',
+    tipo: 'data_invalida_antes_d2',
+  };
+}
+
+export function respostaDataInvalidaForaJanelaD90(): RespostaSugerida {
+  return {
+    texto: 'Essa data está muito distante da nossa janela de consulta automática. Vou encaminhar seu atendimento para nossa equipe verificar para você.',
+    tipo: 'data_invalida_fora_janela_d90',
+  };
+}
+
+export function respostaDataDesejadaRecebida(dataBr: string): RespostaSugerida {
+  return {
+    texto: `Perfeito! Vou verificar as possibilidades a partir de ${dataBr}.`,
+    tipo: 'data_desejada_recebida',
   };
 }
 

@@ -277,6 +277,42 @@
 
 **Proximo passo recomendado:** Confirmar que a API Digisac retorna `id` ao POST `/messages`; se nao retornar, implementar fallback de texto+timestamp. Testar novo fluxo completo: CPF → auto-reply → eco no webhook → sem pausa → cliente responde `sim` → estado avanca.
 
+## 2026-07-08 - Cascade - Parser de data natural, correcao de status e estado data_desejada_recebida
+
+**Resumo:** Implementacao do parser de data natural `interpretarDataDesejada`, correcao do `status` para `transferido_humano` em todos os pontos de bloqueio por regra, e reescrita do bloco `aguardando_data_desejada` com validacao completa e transicao para `data_desejada_recebida`. Tela administrativa atualizada com novos campos e filtro.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/webhook-processor.ts (linhas 975-1512)
+- src/lib/atendimento-automatico/auto-reply.ts
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx
+
+**Arquivos alterados/criados:**
+- src/lib/atendimento-automatico/interpretar-data.ts (novo - helper puro)
+- src/lib/atendimento-automatico/interpretar-data.test.ts (novo - 23 testes)
+- src/lib/atendimento-automatico/respostas.ts (7 novas funcoes: respostaDataNaoInterpretada, respostaDataInvalidaAdiantar, respostaDataInvalidaPostergar, respostaDataInvalidaAntesD2, respostaDataInvalidaForaJanelaD90, respostaDataDesejadaRecebida)
+- src/lib/atendimento-automatico/webhook-processor.ts (bloco aguardando_data_desejada reescrito; status=transferido_humano adicionado em 4 pontos; imports novos)
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx (STATUS_COLORS, filtro, resumoSituacao)
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit --pretty` - 0 erros
+- `npx eslint [arquivos alterados]` - 0 erros, 0 warnings
+- `npx vitest run` - 42 passaram (23 interpretar-data + 19 respostas)
+
+**Pendencias:**
+- Estado `data_desejada_recebida` salva a data mas nao chama `/procurar-datas` ainda
+- Tela nao tem coluna separada para `data_desejada_br`; exibe via `resumoSituacao`
+- `interpretarDataDesejada` nao aceita expressoes como `no dia 20`, `por volta do dia 15`, `semana que vem` sem dia especifico
+- Se `grupo?.data_entrega` estiver vazio (grupo null), validacao de adiantar/postergar e pulada (fallback: valida=true); data D+2 e D+90 ainda sao validadas
+
+**Riscos conhecidos:**
+- Dia da semana `quarta` com hoje=quarta retorna proxima quarta (+7 dias), nao hoje; comportamento deliberado para evitar data passada
+- `depois de amanha` so aceita exatamente essa frase normalizada; variantes como `depoisdeamanha` nao sao reconhecidas
+- O campo `tempo_para_entrega` do grupo nao e usado no parser de data (apenas em validarBloqueioAcao); a data de entrega real vem de `grupo.data_entrega`
+
+**Proximo passo recomendado:** Implementar chamada ao `/procurar-datas` quando estado=`data_desejada_recebida` e validar retorno. Confirmar em producao que `data_entrega` do grupo chega no formato `DD/MM/YYYY` esperado pelo parser ISO.
+
 ## 2026-07-08 - Cascade - Fluxo pos-acao: confirmacao de endereco e data desejada
 
 **Resumo:** Implementacao das regras antigas do legado para o fluxo apos o cliente escolher adiantar ou postergar. Antes de perguntar a data desejada, o sistema agora: (1) valida regras de bloqueio por prazo/produto/pagamento, encaminhando para humano se bloqueado; (2) pergunta se o endereco continua correto; (3) apos confirmacao de endereco, pergunta a data desejada. A mensagem ruim `A proxima etapa sera avaliar as datas disponiveis` foi substituida pelo fluxo correto. Estado `aguardando_data_desejada` salva o texto informado mas nao chama `/procurar-datas` ainda.

@@ -244,6 +244,39 @@
 
 **Proximo passo recomendado:** Testar com CPF real que retorne 1 grupo e solicitacao de alterar_entrega, validando que `1` e `2` sao interpretados como acoes e estado vai para `pedido_confirmado_acao_recebida`.
 
+## 2026-07-08 - Cascade - Correcao de pausa indevida por eco de auto-reply
+
+**Resumo:** Correcao de bug real: resposta automatica enviada pela Mere voltou como webhook `message.created` com `isFromMe=true`, `isFromBot=false`, foi classificada como agente humano e pausou a sessao por 24h. Causa: Digisac nao diferencia mensagem enviada via API de mensagem enviada por agente humano real nos campos `isFromMe`/`isFromBot`. Solucao: interceptar antes do bloco humano, comparar `messageId` do webhook com `metadata.resposta_automatica_digisac_message_id` e `metadata.respostas_automaticas_enviadas_ids`. Se bater, ignorar para pausa e salvar como `bot` com flag `auto_reply_eco: true`. Adicionado acumulo de ids em array `respostas_automaticas_enviadas_ids` para cobrir multiplas mensagens automaticas. Humano real continua pausando normalmente.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/lib/atendimento-automatico/auto-reply.ts
+- src/lib/atendimento-automatico/respostas.ts
+- src/lib/digisac/enviar-mensagem.ts
+- src/app/api/digisac/webhook/posvenda/route.ts
+
+**Arquivos alterados/criados:**
+- src/lib/atendimento-automatico/webhook-processor.ts (interceptar auto-reply antes de pausar como humano; acumular lista de ids enviados)
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit --pretty` — 0 erros
+- `npx eslint src/lib/atendimento-automatico/webhook-processor.ts src/lib/atendimento-automatico/auto-reply.ts src/lib/digisac/enviar-mensagem.ts --no-warn-ignored` — 0 erros
+- `npx vitest run src/lib/atendimento-automatico/respostas.test.ts src/lib/google/sheets-service-account.test.ts` — 18 passaram
+
+**Pendencias:**
+- Digisac pode nao retornar `id` da mensagem enviada em todos os casos; se `digisac_message_id` nao for retornado, o eco nao sera reconhecido pela lista (fallback nao implementado por texto/timestamp)
+- Sessao de teste real pausada nao foi alterada automaticamente; reativar manualmente na tela ou aguardar vencimento da pausa
+- Fallback por texto+timestamp+ticketId nao implementado ainda (risco residual baixo: dependeria de mensagem identica enviada por humano real no mesmo ticket)
+
+**Riscos conhecidos:**
+- Se Digisac nao retornar `id` da mensagem enviada, a lista `respostas_automaticas_enviadas_ids` ficara vazia e o eco sera tratado como humano
+- Fallback por texto/timestamp foi descartado nesta iteracao por ser menos seguro; pode ser adicionado se o risco se confirmar
+- Humano real que copiar exatamente o texto de uma auto-reply nao seria pausado; aceito como troca segura
+
+**Proximo passo recomendado:** Confirmar que a API Digisac retorna `id` ao POST `/messages`; se nao retornar, implementar fallback de texto+timestamp. Testar novo fluxo completo: CPF → auto-reply → eco no webhook → sem pausa → cliente responde `sim` → estado avanca.
+
 ## 2026-07-08 - Cascade - Correcao da ordem de processamento do webhook
 
 **Resumo:** Correcao da ordem de processamento do webhook de pos-venda para impedir que bot/humano criem sessoes e garantir que a allowlist seja aplicada antes de qualquer processamento. Problema observado em producao: tickets de outros numeros apareciam na tela apesar da allowlist. Causa: bot criava sessao ativa quando nao existia, humano criava sessao pausada sem sessao autorizada, allowlist era aplicada apenas no branch cliente depois de bot/humano ja processarem. Correcao segue o pre-filtro do fluxo antigo n8n: classificar origem primeiro, so processar mensagens de cliente, bot/humano so atuam sobre sessao autorizada existente. Telefone agora so e resolvido via API quando ha gatilho valido ou sessao existente. State machine expandida com `documento_recebido` + `acao_alteracao_recebida` (adiantar/postergar). Mascaramento de CPF/CNPJ na coluna "Ult. Msg Cliente" da tela.

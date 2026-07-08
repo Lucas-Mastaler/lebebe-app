@@ -484,3 +484,19 @@ Padrao validado no projeto: funcao `is_superadmin()` que verifica `usuarios_perm
 - Typecheck: 0 erros
 - Lint: 0 erros
 - Testes: 11 passaram (respostas)
+
+### 2026-07-08 — Cascade — Correcao de pausa indevida por eco de auto-reply
+
+- Problema observado em teste real: resposta automatica enviada pela Mere voltou como webhook `message.created` com `isFromMe=true`, `isFromBot=false`, foi classificada como `humano` e pausou a sessao por 24h
+- Causa: `detectarOrigem` classifica `isFromMe=true && isFromBot=false` como `humano`; mensagens enviadas via API pelo Le Bebe App nao tem marcador proprio no Digisac para diferenciar de agente humano real
+- Solucao: antes de tratar como humano, verificar se `messageId` do webhook bate com:
+  - `metadata.resposta_automatica_digisac_message_id` (ultimo id enviado)
+  - `metadata.respostas_automaticas_enviadas_ids` (lista acumulada de todos os ids enviados)
+  - Se bater: ignorar para pausa, salvar no historico como `bot` com flag `auto_reply_eco: true`, retornar `auto_reply_propria`
+- Humano real continua pausando: somente ignora se `messageId` constar na lista/campo da sessao
+- Acumulacao de ids: `construirMetadataComResposta` agora adiciona o id retornado pelo Digisac em `metadata.respostas_automaticas_enviadas_ids` (array), garantindo que mais de uma mensagem automatica seja reconhecida
+- Fluxo apos confirmacao: nao afetado; cliente responde `sim`, estado avanca normalmente por `aguardando_confirmacao_pedido`
+- Nao altera logica de pausa humana real, nao chama `/procurar-datas`, nao altera agenda, nao chama IA
+- Typecheck: 0 erros
+- Lint: 0 erros
+- Testes: 18 passaram (11 respostas + 7 agrupamento)

@@ -187,6 +187,13 @@ async function construirMetadataComResposta(
     metadata.resposta_automatica_enviada_em = new Date().toISOString();
     if (envio.digisac_message_id) {
       metadata.resposta_automatica_digisac_message_id = envio.digisac_message_id;
+      // Acumular lista de ids para reconhecer eco de multiplas mensagens automaticas
+      const idsExistentes = (params.metadataAtual?.respostas_automaticas_enviadas_ids as string[] | undefined) ?? [];
+      const novosIds = [...idsExistentes];
+      if (!novosIds.includes(envio.digisac_message_id)) {
+        novosIds.push(envio.digisac_message_id);
+      }
+      metadata.respostas_automaticas_enviadas_ids = novosIds;
     }
     metadata.ultima_resposta_automatica_chave = chaveRespostaAutomatica(
       params.sessaoId,
@@ -295,6 +302,34 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
       .maybeSingle();
 
     let sessaoId: string;
+
+    // Antes de tratar como humano: verificar se esta mensagem foi enviada automaticamente pela Mere
+    if (origem === 'humano' && sessaoExistente) {
+      const metaAutoReply = sessaoExistente.metadata as Record<string, unknown> | null;
+      const idUltimoEnvio = metaAutoReply?.resposta_automatica_digisac_message_id as string | undefined;
+      const idsEnviados = metaAutoReply?.respostas_automaticas_enviadas_ids as string[] | undefined;
+
+      const ehAutoReplyConhecida =
+        (idUltimoEnvio && idUltimoEnvio === messageId) ||
+        (Array.isArray(idsEnviados) && idsEnviados.includes(messageId ?? ''));
+
+      if (ehAutoReplyConhecida) {
+        await supabase.from('atendimento_automatico_mensagens').insert({
+          sessao_id: sessaoExistente.id,
+          digisac_message_id: messageId,
+          digisac_ticket_id: ticketId,
+          digisac_contact_id: contactId ?? null,
+          origem: 'bot',
+          texto: text,
+          tipo_mensagem: msg.type as string | undefined,
+          timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+          status: 'processada',
+          metadata: { serviceId, departmentId, auto_reply_eco: true },
+        });
+        console.log(`[posvenda-webhook] auto-reply propria detectada e ignorada messageId=${messageId} sessaoId=${sessaoExistente.id}`);
+        return { ok: true, ignored: true, reason: 'auto_reply_propria' };
+      }
+    }
 
     if (origem === 'humano') {
       if (!sessaoExistente) {

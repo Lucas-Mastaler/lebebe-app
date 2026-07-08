@@ -369,3 +369,18 @@ Padrao validado no projeto: funcao `is_superadmin()` que verifica `usuarios_perm
 - Tickets incorretos ja criados (`b40be95b-535`, `8544a825-31a`) podem ser finalizados manualmente pela tela
 - Typecheck: 0 erros
 - Lint: 0 erros
+
+### 2026-07-08 — Cascade — Teste real validado + mascaramento na API listar
+
+- Teste real da maquina de estados validado com numero autorizado 554192350811:
+  1. Cliente enviou `2` → status=ativa, estado=aguardando_documento, tipo_solicitacao=alterar_entrega ✓
+  2. Cliente enviou CPF puro (11 digitos) → status=ativa, estado=documento_recebido ✓
+  3. Cliente enviou `2` (postergar) → status=ativa, estado=acao_alteracao_recebida ✓
+- Maquina de estados confirmada funcionando corretamente
+- Pendencia corrigida: CPF completo aparecia em "Ult. Msg Cliente" na tela
+- Causa: a funcao `mascararMensagem` ja existia no PageClient mas a API listar retornava dado cru
+- Correcao: adicionada funcao `mascararDocumentoMensagem` na API listar (`src/app/api/pos-venda/atendimento-automatico/listar/route.ts`) que aplica o mesmo mascaramento antes de retornar
+- Defesa em profundidade: mascaramento aplicado tanto na API quanto na tela
+- Regras de mascaramento: 11 digitos = CPF, 14 digitos = CNPJ, exibe `[documento informado]`; mensagens comuns (`1`, `2`, `quero alterar data de entrega`) nao sao mascaradas
+- Typecheck: 0 erros
+- Lint: 0 erros

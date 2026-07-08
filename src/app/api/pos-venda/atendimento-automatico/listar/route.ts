@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/auth/module-access'
 import { createServiceClient } from '@/lib/supabase/service'
 
+function mascararDocumentoMensagem(msg: string | null): string | null {
+  if (!msg) return null
+  const digitos = msg.replace(/\D/g, '')
+  if (digitos.length === 11 || digitos.length === 14) {
+    return '[documento informado]'
+  }
+  return msg
+}
+
 export async function GET(request: NextRequest) {
   const access = await requireModuleAccess('pos_venda_atendimento_automatico')
   if (!access.ok) return access.response
@@ -32,7 +41,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: false, message: 'Erro ao listar sessoes' }, { status: 500 })
     }
 
-    return NextResponse.json({ ok: true, sessoes: data ?? [] })
+    const sessoesMascaradas = (data ?? []).map((s) => ({
+      ...s,
+      ultima_mensagem_cliente: mascararDocumentoMensagem(s.ultima_mensagem_cliente),
+    }))
+
+    return NextResponse.json({ ok: true, sessoes: sessoesMascaradas })
   } catch (err) {
     console.error('[posvenda-listar] erro inesperado:', err)
     return NextResponse.json({ ok: false, message: 'Erro interno' }, { status: 500 })

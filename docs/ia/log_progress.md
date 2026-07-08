@@ -1,3 +1,36 @@
+## 2026-07-08 - Cascade - Teste real validado + mascaramento na API listar
+
+**Resumo:** Teste real da maquina de estados validado com numero autorizado 554192350811: (1) cliente enviou `2` → aguardando_documento + alterar_entrega, (2) cliente enviou CPF puro 11 digitos → documento_recebido, (3) cliente enviou `2` → acao_alteracao_recebida (postergar). Maquina de estados confirmada funcionando. Pendencia corrigida: CPF completo aparecia em "Ult. Msg Cliente" na tela porque a API listar retornava dado cru do banco. Adicionada funcao `mascararDocumentoMensagem` na API listar que aplica mascaramento (11 ou 14 digitos → `[documento informado]`) antes de retornar. Defesa em profundidade: mascaramento aplicado tanto na API quanto na tela.
+
+**Arquivos lidos:**
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx
+- src/app/api/pos-venda/atendimento-automatico/listar/route.ts
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md
+
+**Arquivos alterados:**
+- src/app/api/pos-venda/atendimento-automatico/listar/route.ts (adicionada funcao mascararDocumentoMensagem, aplicada em ultima_mensagem_cliente antes de retornar)
+- docs/atendimento-automatico-posvenda-mere-plano.md (registro de andamento)
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- Teste real: maquina de estados 2 → CPF → 2 (postergar) confirmada
+- Typecheck: `npx tsc --noEmit --pretty` — 0 erros
+- Lint: `npx eslint src/app/api/pos-venda/atendimento-automatico/listar/route.ts src/app/pos-venda/atendimento-automatico/PageClient.tsx --no-warn-ignored` — 0 erros
+- Logica de mascaramento: 11 digitos → CPF, 14 digitos → CNPJ, mensagens comuns nao sao mascaradas
+
+**Pendencias:**
+- Validar com rebuild/deploy que o CPF nao aparece mais na tela
+- Opcao 3 apos documento_recebido apenas salva mensagem (voltar_menu) — nao volta ao menu automaticamente ainda
+- Nao buscar pedido apos CPF ainda (Fase 1B)
+- Nao responder cliente ainda (Fase 1B)
+
+**Riscos conhecidos:**
+- `detectarDocumento` pode gerar falso positivo se mensagem tiver exatamente 11 ou 14 digitos nao-CPF (risco baixo)
+- Sessoes antigas com estado `inicio` continuam com estado antigo
+
+**Proximo passo recomendado:** Rebuild/deploy e validar na tela que o CPF nao aparece mais em "Ult. Msg Cliente".
+
 ## 2026-07-08 - Cascade - Correcao da ordem de processamento do webhook
 
 **Resumo:** Correcao da ordem de processamento do webhook de pos-venda para impedir que bot/humano criem sessoes e garantir que a allowlist seja aplicada antes de qualquer processamento. Problema observado em producao: tickets de outros numeros apareciam na tela apesar da allowlist. Causa: bot criava sessao ativa quando nao existia, humano criava sessao pausada sem sessao autorizada, allowlist era aplicada apenas no branch cliente depois de bot/humano ja processarem. Correcao segue o pre-filtro do fluxo antigo n8n: classificar origem primeiro, so processar mensagens de cliente, bot/humano so atuam sobre sessao autorizada existente. Telefone agora so e resolvido via API quando ha gatilho valido ou sessao existente. State machine expandida com `documento_recebido` + `acao_alteracao_recebida` (adiantar/postergar). Mascaramento de CPF/CNPJ na coluna "Ult. Msg Cliente" da tela.

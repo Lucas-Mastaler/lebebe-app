@@ -170,6 +170,7 @@ export default function FinalizacoesAutomaticasPageClient() {
       setSucessoFechar(`Chamado ${json.protocolo ?? json.digisac_ticket_id?.slice(0, 8)} fechado com sucesso.`);
       setSelecionados(prev => { const next = new Set(prev); next.delete(id); return next; });
       buscarDados(page);
+      buscarResumoGlobal();
     } catch (err) {
       setErroFechar(err instanceof Error ? err.message : 'Erro ao fechar chamado');
     } finally {
@@ -227,6 +228,7 @@ export default function FinalizacoesAutomaticasPageClient() {
       });
       setSelecionados(new Set());
       buscarDados(page);
+      buscarResumoGlobal();
     } catch (err) {
       setErroLote(err instanceof Error ? err.message : 'Erro ao fechar selecionados');
     } finally {
@@ -258,6 +260,7 @@ export default function FinalizacoesAutomaticasPageClient() {
       }
       buscarDados(1);
       setPage(1);
+      buscarResumoGlobal();
     } catch (err) {
       setErroRegistro(err instanceof Error ? err.message : 'Erro ao registrar pendentes');
     } finally {
@@ -306,6 +309,19 @@ export default function FinalizacoesAutomaticasPageClient() {
       setToggleConexaoId(null);
     }
   };
+
+  const buscarResumoGlobal = useCallback(async () => {
+    try {
+      const res = await fetch('/api/digisac/finalizacoes-automaticas/resumo');
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.resumo) {
+        setResumo(json.resumo);
+      }
+    } catch {
+      // silencioso
+    }
+  }, []);
 
   const buscarDados = useCallback(async (p: number) => {
     setIsLoading(true);

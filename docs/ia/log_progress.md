@@ -1,3 +1,28 @@
+## 2026-07-08 - Cascade - Auto-refresh dashboard Finalizações Automáticas
+
+**Resumo:** Dashboard de /digisac/finalizacoes-automaticas agora atualiza automaticamente após fechar chamados (individual ou lote) ou apertar "Atualizar chamados", sem precisar recarregar a página. Criado endpoint dedicado `/api/digisac/finalizacoes-automaticas/resumo` que retorna contagens globais por status. Client chama `buscarResumoGlobal()` após cada ação de sucesso.
+
+**Arquivos lidos:**
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx
+- docs/ia/log_progress.md
+
+**Arquivos alterados:**
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx (adicionado buscarResumoGlobal, chamado após handleFecharChamado, handleFecharSelecionados, handleRegistrarPendentes)
+- src/app/api/digisac/finalizacoes-automaticas/resumo/route.ts (criado endpoint dedicado para resumo global)
+- docs/ia/log_progress.md (esta entrada)
+
+**Validações realizadas:**
+- Nenhuma validação adicional necessária — endpoint simples de leitura de status
+
+**Pendências:**
+- Validar com deploy que o dashboard atualiza automaticamente após ações
+
+**Riscos conhecidos:**
+- Nenhum risco funcional. Query extra de status (sem paginação) é leve para o volume atual (~153 rows)
+
+**Próximo passo recomendado:**
+- Deploy e validação visual
+
 ## 2026-07-08 - Cascade - Correção dashboard Finalizações Automáticas
 
 **Resumo:** Dashboard de /digisac/finalizacoes-automaticas mostrava contadores incorretos para Pendentes, Finalizados e Erros. Causa: o resumo era calculado apenas a partir dos 30 itens da página 1 (PAGE_SIZE), não do total no banco. Correção: API passa a retornar `resumo` com contagens globais por status (query sem paginação, apenas coluna status) quando nenhum filtro está aplicado. Client usa `json.resumo` do backend em vez de calcular a partir dos itens da página.

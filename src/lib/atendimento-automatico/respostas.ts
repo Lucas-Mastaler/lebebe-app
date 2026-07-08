@@ -23,7 +23,11 @@ export type TipoRespostaSugerida =
   | 'data_invalida_postergar'
   | 'data_invalida_antes_d2'
   | 'data_invalida_fora_janela_d90'
-  | 'data_desejada_recebida';
+  | 'data_desejada_recebida'
+  | 'fallback_confirmacao_pedido'
+  | 'fallback_escolha_acao'
+  | 'fallback_confirmacao_endereco'
+  | 'transferido_humano_muitas_tentativas';
 
 export type RespostaSugerida = {
   texto: string;
@@ -95,7 +99,7 @@ export function respostaPedidoConfirmadoConfirmarEntrega(dataEntrega: string): R
 
 export function respostaPedidoConfirmadoAlterarEscolherAcao(): RespostaSugerida {
   return {
-    texto: 'Você deseja adiantar ou postergar essa entrega?\n\n1 - Adiantar\n2 - Postergar',
+    texto: 'Agora me diga o que você gostaria de fazer:\n\nResponda com:\n1 - Adiantar a entrega\n2 - Postergar a entrega',
     tipo: 'pedido_confirmado_alterar_escolher_acao',
   };
 }
@@ -204,6 +208,37 @@ export function respostaDataInvalidaForaJanelaD90(): RespostaSugerida {
   return {
     texto: 'Essa data está muito distante da nossa janela de consulta automática. Vou encaminhar seu atendimento para nossa equipe verificar para você.',
     tipo: 'data_invalida_fora_janela_d90',
+  };
+}
+
+export function respostaFallbackConfirmacaoPedido(): RespostaSugerida {
+  return {
+    texto: 'Não consegui entender se esta é a entrega correta.\n\nPode responder com "sim" se estiver correto ou "não" se não for esta entrega?',
+    tipo: 'fallback_confirmacao_pedido',
+  };
+}
+
+export function respostaFallbackEscolhaAcao(): RespostaSugerida {
+  return {
+    texto: 'Não consegui entender se você deseja adiantar ou postergar.\n\nResponda com:\n1 - Adiantar\n2 - Postergar',
+    tipo: 'fallback_escolha_acao',
+  };
+}
+
+export function respostaFallbackConfirmacaoEndereco(): RespostaSugerida {
+  return {
+    texto: 'Não consegui entender se o endereço está correto.\n\nPode responder com "sim" se o endereço estiver correto ou "não" se precisar alterar?',
+    tipo: 'fallback_confirmacao_endereco',
+  };
+}
+
+export function respostaTransferidoHumanoMuitasTentativas(contexto: 'pedido' | 'acao'): RespostaSugerida {
+  const texto = contexto === 'pedido'
+    ? 'Ainda não consegui entender sua resposta. Vou encaminhar seu atendimento para nossa equipe continuar por aqui.'
+    : 'Ainda não consegui entender se você deseja adiantar ou postergar. Vou encaminhar seu atendimento para nossa equipe continuar por aqui.';
+  return {
+    texto,
+    tipo: 'transferido_humano_muitas_tentativas',
   };
 }
 

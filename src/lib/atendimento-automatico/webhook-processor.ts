@@ -4,7 +4,6 @@ import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
 import { buscarAgendamentosPorDocumento } from '@/lib/google/sheets-service-account';
 import type { GrupoAgendamento } from '@/lib/google/sheets-service-account';
 import {
-  normalizarConfirmacao,
   respostaAguardandoDataDesejada,
   respostaBloqueioPagamentoPendenteAntecipacao,
   respostaBloqueioPrazoCriticoD2Postergacao,
@@ -26,10 +25,15 @@ import {
   respostaPedidoConfirmadoConfirmarEntrega,
   respostaPedidoNaoLocalizado,
   respostaPedidoNegado,
+  respostaFallbackConfirmacaoEndereco,
+  respostaFallbackConfirmacaoPedido,
+  respostaFallbackEscolhaAcao,
   respostaTransferidoHumanoEndereco,
+  respostaTransferidoHumanoMuitasTentativas,
   type RespostaSugerida,
 } from './respostas';
 import { interpretarDataDesejada, validarDataDesejadaParaAcao } from './interpretar-data';
+import { calcularTentativasInvalidas, interpretarAcaoAlteracao, interpretarConfirmacao } from './interpretar-intencao';
 import { chaveRespostaAutomatica, processarEnvioAutomatico } from './auto-reply';
 
 type OrigemMensagem = 'cliente' | 'bot' | 'humano' | 'sistema';
@@ -813,7 +817,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
       // Estado: aguardando_confirmacao_pedido
       if (sessaoExistente.estado === 'aguardando_confirmacao_pedido') {
         const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
-        const confirmacao = normalizarConfirmacao(text);
+        const confirmacao = interpretarConfirmacao(text);
         const telefoneSessao = sessaoExistente.telefone;
         const telefoneAutorizadoFlag = telefoneAutorizado(telefoneSessao);
         const totalGrupos = metadataAtual?.total_grupos_agendamento as number | undefined;
@@ -976,6 +980,58 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           console.log(`[posvenda-webhook] pedido negado sessaoId=${sessaoId}`);
           return { ok: true, saved: true, origem: 'cliente' };
         }
+
+        // Resposta ambigua: fallback com contador de tentativas
+        {
+          const tentativas = calcularTentativasInvalidas(metadataAtual, 'aguardando_confirmacao_pedido');
+          const transferir = tentativas > 2;
+
+          const resposta = transferir
+            ? respostaTransferidoHumanoMuitasTentativas('pedido')
+            : respostaFallbackConfirmacaoPedido();
+
+          const novoMetadata = await construirMetadataComResposta({
+            sessaoId,
+            metadataAtual: {
+              ...(metadataAtual ?? {}),
+              tentativas_invalidas_estado: tentativas,
+              tentativas_invalidas_ultimo_estado: 'aguardando_confirmacao_pedido',
+              ultima_resposta_invalida_em: new Date().toISOString(),
+              resposta_sugerida_tipo: resposta.tipo,
+              ...(transferir ? { precisa_humano_por_regra: true, motivo_transferencia_humano: 'muitas_tentativas_invalidas' } : {}),
+            },
+            resposta,
+            estado: transferir ? 'transferido_humano' : sessaoExistente.estado,
+            contactId,
+            ticketId,
+            digisacMessageId: messageId,
+            telefoneAutorizado: telefoneAutorizadoFlag,
+          });
+
+          await supabase.from('atendimento_automatico_sessoes').update({
+            ...(transferir ? { estado: 'transferido_humano', status: 'transferido_humano' } : {}),
+            metadata: novoMetadata,
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, tentativas_invalidas: tentativas, transferir },
+          });
+
+          console.log(`[posvenda-webhook] confirmacao ambigua tentativas=${tentativas} transferir=${transferir} sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
       }
 
       // Estado: aguardando_escolha_acao
@@ -983,9 +1039,10 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
         const telefoneSessao = sessaoExistente.telefone;
         const telefoneAutorizadoFlag = telefoneAutorizado(telefoneSessao);
+        const acaoInterpretada = interpretarAcaoAlteracao(text);
 
-        if (textoNormalizado === '1' || textoNormalizado === '2') {
-          const acao = textoNormalizado === '1' ? 'adiantar' : 'postergar';
+        if (acaoInterpretada === 'adiantar' || acaoInterpretada === 'postergar') {
+          const acao = acaoInterpretada;
           const grupo = obterGrupoSelecionado(metadataAtual);
           const bloqueio = validarBloqueioAcao(acao, grupo);
 
@@ -1082,12 +1139,64 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           console.log(`[posvenda-webhook] acao alteracao ${acao} sessaoId=${sessaoId} => aguardando_confirmacao_endereco`);
           return { ok: true, saved: true, origem: 'cliente' };
         }
+
+        // Resposta ambigua: fallback com contador de tentativas
+        {
+          const tentativas = calcularTentativasInvalidas(metadataAtual, 'aguardando_escolha_acao');
+          const transferir = tentativas > 2;
+
+          const resposta = transferir
+            ? respostaTransferidoHumanoMuitasTentativas('acao')
+            : respostaFallbackEscolhaAcao();
+
+          const novoMetadata = await construirMetadataComResposta({
+            sessaoId,
+            metadataAtual: {
+              ...(metadataAtual ?? {}),
+              tentativas_invalidas_estado: tentativas,
+              tentativas_invalidas_ultimo_estado: 'aguardando_escolha_acao',
+              ultima_resposta_invalida_em: new Date().toISOString(),
+              resposta_sugerida_tipo: resposta.tipo,
+              ...(transferir ? { precisa_humano_por_regra: true, motivo_transferencia_humano: 'muitas_tentativas_invalidas' } : {}),
+            },
+            resposta,
+            estado: transferir ? 'transferido_humano' : sessaoExistente.estado,
+            contactId,
+            ticketId,
+            digisacMessageId: messageId,
+            telefoneAutorizado: telefoneAutorizadoFlag,
+          });
+
+          await supabase.from('atendimento_automatico_sessoes').update({
+            ...(transferir ? { estado: 'transferido_humano', status: 'transferido_humano' } : {}),
+            metadata: novoMetadata,
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, tentativas_invalidas: tentativas, transferir },
+          });
+
+          console.log(`[posvenda-webhook] acao ambigua tentativas=${tentativas} transferir=${transferir} sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
       }
 
       // Estado: aguardando_confirmacao_endereco
       if (sessaoExistente.estado === 'aguardando_confirmacao_endereco') {
         const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
-        const confirmacao = normalizarConfirmacao(text);
+        const confirmacao = interpretarConfirmacao(text);
         const telefoneSessao = sessaoExistente.telefone;
         const telefoneAutorizadoFlag = telefoneAutorizado(telefoneSessao);
         const acaoAlteracao = (metadataAtual?.acao_alteracao as 'adiantar' | 'postergar' | undefined) ?? 'postergar';
@@ -1188,28 +1297,48 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           return { ok: true, saved: true, origem: 'cliente' };
         }
 
-        // Mensagem ambigua: salvar, manter estado
-        await supabase.from('atendimento_automatico_sessoes').update({
-          ultima_mensagem_cliente: text.substring(0, 200),
-          ultima_mensagem_em: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }).eq('id', sessaoId);
+        // Mensagem ambigua: fallback com mensagem clara, manter estado
+        {
+          const novoMetadata = await construirMetadataComResposta({
+            sessaoId,
+            metadataAtual: {
+              ...(metadataAtual ?? {}),
+              tentativas_invalidas_estado: calcularTentativasInvalidas(metadataAtual, 'aguardando_confirmacao_endereco'),
+              tentativas_invalidas_ultimo_estado: 'aguardando_confirmacao_endereco',
+              ultima_resposta_invalida_em: new Date().toISOString(),
+              resposta_sugerida_tipo: 'fallback_confirmacao_endereco',
+            },
+            resposta: respostaFallbackConfirmacaoEndereco(),
+            estado: sessaoExistente.estado,
+            contactId,
+            ticketId,
+            digisacMessageId: messageId,
+            telefoneAutorizado: telefoneAutorizadoFlag,
+          });
 
-        await supabase.from('atendimento_automatico_mensagens').insert({
-          sessao_id: sessaoId,
-          digisac_message_id: messageId,
-          digisac_ticket_id: ticketId,
-          digisac_contact_id: contactId ?? null,
-          origem: 'cliente',
-          texto: text,
-          tipo_mensagem: msg.type as string | undefined,
-          timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
-          status: 'processada',
-          metadata: { serviceId, departmentId },
-        });
+          await supabase.from('atendimento_automatico_sessoes').update({
+            metadata: novoMetadata,
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', sessaoId);
 
-        console.log(`[posvenda-webhook] mensagem ambigua em aguardando_confirmacao_endereco sessaoId=${sessaoId}`);
-        return { ok: true, saved: true, origem: 'cliente' };
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, fallback_confirmacao_endereco: true },
+          });
+
+          console.log(`[posvenda-webhook] endereco ambiguo fallback sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
       }
 
       // Estado: aguardando_data_desejada
@@ -1444,8 +1573,9 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
       // Estado: documento_recebido/pedido_localizado/pedido_nao_localizado + alterar_entrega
       const estadosPermitemAcaoAlteracao = ['documento_recebido', 'pedido_localizado', 'pedido_nao_localizado'];
       if (estadosPermitemAcaoAlteracao.includes(sessaoExistente.estado) && sessaoExistente.tipo_solicitacao === 'alterar_entrega') {
-        if (textoNormalizado === '1' || textoNormalizado === '2') {
-          const acao = textoNormalizado === '1' ? 'adiantar' : 'postergar';
+        const acaoInterpretadaLegado = interpretarAcaoAlteracao(text);
+        if (acaoInterpretadaLegado === 'adiantar' || acaoInterpretadaLegado === 'postergar') {
+          const acao = acaoInterpretadaLegado;
           const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
           const telefoneSessao = sessaoExistente.telefone;
           const telefoneAutorizadoFlag = telefoneAutorizado(telefoneSessao);

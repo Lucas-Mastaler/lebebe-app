@@ -277,6 +277,45 @@
 
 **Proximo passo recomendado:** Confirmar que a API Digisac retorna `id` ao POST `/messages`; se nao retornar, implementar fallback de texto+timestamp. Testar novo fluxo completo: CPF → auto-reply → eco no webhook → sem pausa → cliente responde `sim` → estado avanca.
 
+## 2026-07-08 - Cascade - Helpers de intencao, fallbacks por estado e contador de tentativas invalidas
+
+**Resumo:** Criados helpers puros `interpretarConfirmacao` e `interpretarAcaoAlteracao` em `interpretar-intencao.ts`. Adicionados fallbacks com texto explicativo para respostas ambiguas nos estados `aguardando_confirmacao_pedido`, `aguardando_escolha_acao` e `aguardando_confirmacao_endereco`. Implementado contador de tentativas invalidas com transferencia para humano apos 2 falhas. Melhorado texto da pergunta de acao. Testes: 108/108.
+
+**Arquivos lidos:** webhook-processor.ts (linhas 760-1200), respostas.ts (completo)
+
+**Arquivos alterados/criados:**
+- src/lib/atendimento-automatico/interpretar-intencao.ts (novo - helpers puros)
+- src/lib/atendimento-automatico/interpretar-intencao.test.ts (novo - 66 testes)
+- src/lib/atendimento-automatico/respostas.ts (+4 tipos, +5 funcoes: fallbackConfirmacaoPedido, fallbackEscolhaAcao, fallbackConfirmacaoEndereco, TransferidoHumanoMuitasTentativas; texto escolha_acao melhorado)
+- src/lib/atendimento-automatico/webhook-processor.ts (3 blocos atualizados + import normalizarConfirmacao removido + acaoInterpretadaLegado adicionado)
+- docs/ia/log_progress.md
+
+**Variacoes aceitas - confirmacao:** sim, sim4, simm, sin, ss, isso, correto, certo, ta certo, ok, confirmo, confirmado, pode ser, e esse/essa, e isso
+**Variacoes negacao:** nao, n, errado, outro, outra, nao e esse/essa, endereco errado, nao esta correto
+**Variacoes adiantar:** 1, adiantar, adianta, antecipar, antecipa, mais cedo, antes, pra antes, quero adiantar
+**Variacoes postergar:** 2, postergar, postega, mais tarde, depois, mais pra frente, jogar pra frente, deixar para depois
+
+**Contador de tentativas invalidas:**
+- Salvo em metadata: tentativas_invalidas_estado, tentativas_invalidas_ultimo_estado, ultima_resposta_invalida_em
+- Estado muda: contador reinicia em 1
+- Apos tentativas > 2: status=transferido_humano, estado=transferido_humano, motivo=muitas_tentativas_invalidas
+- Aplicado em: aguardando_confirmacao_pedido e aguardando_escolha_acao
+- aguardando_confirmacao_endereco: fallback sem contador de transferencia (apenas mensagem explicativa)
+
+**Validacoes:**
+- npx tsc --noEmit - 0 erros
+- npx eslint - 0 erros, 0 warnings
+- npx vitest run - 108/108 passaram (66 intencao + 23 data + 19 respostas)
+
+**Nao alterado:** bloco 1/2 em aguardando_confirmacao_pedido quando totalGrupos=1 (intencional - contexto diferente), motor /procurar-datas, agenda, allowlist, mascaramento CPF, bot antigo Digisac
+
+**Pendencias:**
+- aguardando_confirmacao_endereco nao tem contador de transferencia por muitas tentativas (apenas fallback simples)
+- Bloco alterar_entrega legado (documento_recebido) agora usa interpretarAcaoAlteracao mas nao tem fallback explicativo ainda
+- Decisao de nao usar IA registrada: futura etapa pode adicionar IA apos tentativas invalidas
+
+**Proximo passo recomendado:** Implementar chamada ao /procurar-datas quando estado=data_desejada_recebida.
+
 ## 2026-07-08 - Cascade - Parser de data natural, correcao de status e estado data_desejada_recebida
 
 **Resumo:** Implementacao do parser de data natural `interpretarDataDesejada`, correcao do `status` para `transferido_humano` em todos os pontos de bloqueio por regra, e reescrita do bloco `aguardando_data_desejada` com validacao completa e transicao para `data_desejada_recebida`. Tela administrativa atualizada com novos campos e filtro.

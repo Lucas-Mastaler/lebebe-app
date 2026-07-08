@@ -433,3 +433,37 @@ Padrao validado no projeto: funcao `is_superadmin()` que verifica `usuarios_perm
 - Typecheck: 0 erros
 - Lint: 0 erros
 - Testes: 7 passaram
+
+### 2026-07-08 — Cascade — Escolha de grupo, confirmacao de pedido e resposta sugerida/automatica
+
+- Estados novos: `aguardando_confirmacao_pedido`, `aguardando_escolha_grupo`, `aguardando_escolha_acao`, `pedido_confirmado`, `pedido_confirmado_acao_recebida`
+- Fluxo ajustado apos recebimento do CPF:
+  - 0 registros → `pedido_nao_localizado` + resposta sugerida pedindo CPF novamente
+  - 1 grupo → `aguardando_confirmacao_pedido` + resposta sugerida confirmando entrega unica
+  - 2+ grupos → `aguardando_escolha_grupo` + resposta sugerida listando opcoes
+- Escolha de grupo:
+  - Cliente envia numero valido entre 1 e total de grupos → `grupo_agendamento_selecionado = numero`, estado → `aguardando_confirmacao_pedido`
+  - Cliente envia numero invalido → mantem `aguardando_escolha_grupo` + resposta sugerida pedindo opcao valida
+- Confirmacao de pedido:
+  - Respostas positivas (`sim`, `esta correto`, `e esse`, `pode ser`, etc.) → `pedido_confirmado = true`
+  - `tipo_solicitacao = confirmar_entrega` → `pedido_confirmado` + resposta final com data
+  - `tipo_solicitacao = alterar_entrega` + acao ja escolhida → `pedido_confirmado_acao_recebida`
+  - `tipo_solicitacao = alterar_entrega` + sem acao → `aguardando_escolha_acao` + pergunta 1/2
+  - Respostas negativas (`nao`, `errado`, `outro`, etc.) → `pedido_confirmado = false` + resposta pedindo esclarecimento
+- Acao de alteracao:
+  - Estado `aguardando_escolha_acao`: `1` = adiantar, `2` = postergar → `acao_alteracao_recebida`
+  - Bloco legado `documento_recebido/pedido_localizado/pedido_nao_localizado` preservado, agora tambem gera resposta sugerida
+- Resposta sugerida sempre salva em metadata: `resposta_sugerida`, `resposta_sugerida_tipo`, `resposta_sugerida_em`
+- Envio automatico protegido por `ATENDIMENTO_POSVENDA_AUTO_REPLY_ENABLED` (default `false`)
+  - Somente envia se variavel === `"true"`, telefone autorizado, contactId e ticketId presentes
+  - Idempotencia por `metadata.ultima_resposta_automatica_chave` composta por `sessaoId:estado:tipoResposta:messageId`
+  - Registra `resposta_automatica_enviada`, `resposta_automatica_enviada_em`, `resposta_automatica_digisac_message_id` ou `resposta_automatica_erro`
+- Helper de envio criado: `src/lib/digisac/enviar-mensagem.ts` (POST `/messages` com `text`, `type: 'chat'`, `contactId`, `ticketId`, `fromMe: true`)
+- Helpers de resposta criados: `src/lib/atendimento-automatico/respostas.ts` + testes em `src/lib/atendimento-automatico/respostas.test.ts`
+- Tela atualizada com colunas `Situação` (registros, entregas, grupo selecionado, confirmacao) e `Resposta Sugerida` (texto, tipo, badge auto/sugerida)
+- Variavel de ambiente adicionada: `ATENDIMENTO_POSVENDA_AUTO_REPLY_ENABLED=false` em `.env.local` e `.env.example`
+- Nao chama IA, nao chama `/procurar-datas`, nao altera motor, agenda ou Google Calendar
+- Nao responde automaticamente se env estiver desabilitada
+- Typecheck: 0 erros
+- Lint: 0 erros
+- Testes: 15 passaram (7 agrupamento + 8 respostas)

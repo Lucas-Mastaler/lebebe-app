@@ -116,6 +116,21 @@ function detalhesPedido(metadata: Record<string, unknown> | null): string {
     .join('\n')
 }
 
+function resumoSituacao(metadata: Record<string, unknown> | null): string {
+  if (!metadata) return ''
+  const totalRegistros = metadata.total_agendamentos_encontrados as number | undefined
+  const totalGrupos = metadata.total_grupos_agendamento as number | undefined
+  const grupoSelecionado = metadata.grupo_agendamento_selecionado as number | undefined
+  const pedidoConfirmado = metadata.pedido_confirmado as boolean | undefined
+  const partes: string[] = []
+  if (totalRegistros !== undefined) partes.push(`${totalRegistros} registro(s)`)
+  if (totalGrupos !== undefined) partes.push(`${totalGrupos} entrega(s)`)
+  if (grupoSelecionado !== undefined && grupoSelecionado !== null) partes.push(`grupo ${grupoSelecionado}`)
+  if (pedidoConfirmado === true) partes.push('confirmado')
+  if (pedidoConfirmado === false) partes.push('não confirmado')
+  return partes.join(' • ')
+}
+
 const STATUS_COLORS: Record<string, string> = {
   ativa: 'bg-green-100 text-green-800',
   pausado_humano: 'bg-yellow-100 text-yellow-800',
@@ -278,6 +293,8 @@ export function PageClient() {
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Telefone</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Ticket</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Pedido</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Situação</th>
+                    <th className="text-left px-4 py-3 font-medium text-slate-600">Resposta Sugerida</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Ult. Msg Cliente</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Documento</th>
                     <th className="text-left px-4 py-3 font-medium text-slate-600">Pausa Ate</th>
@@ -304,6 +321,29 @@ export function PageClient() {
                       <td className="px-4 py-3 text-slate-400 text-xs font-mono">{s.digisac_ticket_id?.substring(0, 12) ?? '-'}</td>
                       <td className="px-4 py-3 text-slate-600 max-w-[220px] truncate whitespace-pre-line" title={detalhesPedido(s.metadata)}>
                         {resumoPedido(s.metadata)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 max-w-[180px] truncate" title={resumoSituacao(s.metadata)}>
+                        {resumoSituacao(s.metadata) || '-'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 max-w-[220px]">
+                        <div className="truncate" title={String(s.metadata?.resposta_sugerida ?? '')}>
+                          {String(s.metadata?.resposta_sugerida ?? '-')}
+                        </div>
+                        <div className="flex items-center gap-1 mt-1">
+                          <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                            {String(s.metadata?.resposta_sugerida_tipo ?? '-')}
+                          </span>
+                          {s.metadata?.resposta_automatica_enviada === true && (
+                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700">
+                              auto
+                            </span>
+                          )}
+                          {s.metadata?.resposta_automatica_enviada === false && (
+                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500">
+                              sugerida
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate" title={mascararMensagem(s.ultima_mensagem_cliente)}>
                         {mascararMensagem(s.ultima_mensagem_cliente)}

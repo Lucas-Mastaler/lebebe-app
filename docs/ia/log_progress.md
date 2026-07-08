@@ -170,6 +170,51 @@
 
 **Proximo passo recomendado:** Testar na tela com CPF real que retorne multiplos registros na mesma entrega e, se possivel, com multiplas entregas, validando os estados e a coluna "Pedido".
 
+## 2026-07-08 - Cascade - Escolha de grupo, confirmacao e resposta sugerida/automatica
+
+**Resumo:** Implementada a fase de escolha de grupo e confirmacao de pedido no atendimento automatico pos-venda. Apos o CPF, o sistema agora vai para `aguardando_confirmacao_pedido` (1 grupo), `aguardando_escolha_grupo` (multiplos grupos) ou `pedido_nao_localizado` (0 registros), sempre gerando uma `resposta_sugerida`. O cliente pode confirmar a entrega, selecionar grupo por numero, negar ou escolher acao de adiantar/postergar. Respostas sugeridas sao salvas em metadata; envio automatico esta protegido por `ATENDIMENTO_POSVENDA_AUTO_REPLY_ENABLED=false` por padrao e usa idempotencia por chave composta. Tela administrativa ganhou colunas `Situação` e `Resposta Sugerida`.
+
+**Arquivos lidos:**
+- src/lib/google/sheets-service-account.ts
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx
+- src/app/api/pos-venda/atendimento-automatico/listar/route.ts
+- src/lib/digisac/clienteDigisac.ts
+- src/lib/digisac/transferencia.ts
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md
+
+**Arquivos alterados/criados:**
+- src/lib/atendimento-automatico/webhook-processor.ts (estados novos, escolha de grupo, confirmacao, respostas, auto-reply)
+- src/lib/atendimento-automatico/respostas.ts (criado)
+- src/lib/atendimento-automatico/respostas.test.ts (criado)
+- src/lib/atendimento-automatico/auto-reply.ts (criado)
+- src/lib/digisac/enviar-mensagem.ts (criado)
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx (colunas situacao e resposta sugerida)
+- .env.local (adicionado ATENDIMENTO_POSVENDA_AUTO_REPLY_ENABLED=false)
+- .env.example (adicionado ATENDIMENTO_POSVENDA_AUTO_REPLY_ENABLED=false)
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit --pretty` — 0 erros
+- `npx eslint` nos arquivos alterados — 0 erros
+- `npx vitest run src/lib/google/sheets-service-account.test.ts src/lib/atendimento-automatico/respostas.test.ts` — 15 passaram
+
+**Pendencias:**
+- Testar fluxo real com 1 grupo e confirmacao positiva/negativa
+- Testar fluxo real com multiplos grupos e escolha valida/invalida
+- Testar envio automatico com `ATENDIMENTO_POSVENDA_AUTO_REPLY_ENABLED=true` e validar payload exato da API Digisac
+- Validar helper `src/lib/digisac/enviar-mensagem.ts` com endpoint/payload real do Digisac
+
+**Riscos conhecidos:**
+- Payload do envio de mensagem Digisac nao foi validado em ambiente real; pode precisar ajuste conforme resposta da API
+- Estado `pedido_confirmado` e `pedido_confirmado_acao_recebida` sao terminais nesta fase; proxima etapa e buscar datas/mudar agenda
+- Normalizacao de confirmacao pode ter falsos positivos/negativos em mensagens muito curtas ou ambiguas
+- Bot antigo do Digisac ainda ativo; respostas automaticas deste fluxo so devem ser ligadas apos testes
+
+**Proximo passo recomendado:** Validar respostas sugeridas na tela administrativa com dados reais e, quando seguro, habilitar `ATENDIMENTO_POSVENDA_AUTO_REPLY_ENABLED=true` para testar envio automatico pontualmente.
+
 ## 2026-07-08 - Cascade - Correcao da ordem de processamento do webhook
 
 **Resumo:** Correcao da ordem de processamento do webhook de pos-venda para impedir que bot/humano criem sessoes e garantir que a allowlist seja aplicada antes de qualquer processamento. Problema observado em producao: tickets de outros numeros apareciam na tela apesar da allowlist. Causa: bot criava sessao ativa quando nao existia, humano criava sessao pausada sem sessao autorizada, allowlist era aplicada apenas no branch cliente depois de bot/humano ja processarem. Correcao segue o pre-filtro do fluxo antigo n8n: classificar origem primeiro, so processar mensagens de cliente, bot/humano so atuam sobre sessao autorizada existente. Telefone agora so e resolvido via API quando ha gatilho valido ou sessao existente. State machine expandida com `documento_recebido` + `acao_alteracao_recebida` (adiantar/postergar). Mascaramento de CPF/CNPJ na coluna "Ult. Msg Cliente" da tela.

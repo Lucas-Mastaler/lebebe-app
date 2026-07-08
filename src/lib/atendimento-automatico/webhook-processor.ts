@@ -5,7 +5,12 @@ import { buscarAgendamentosPorDocumento } from '@/lib/google/sheets-service-acco
 import type { GrupoAgendamento } from '@/lib/google/sheets-service-account';
 import {
   normalizarConfirmacao,
-  respostaAcaoAlteracaoRecebida,
+  respostaAguardandoDataDesejada,
+  respostaBloqueioPagamentoPendenteAntecipacao,
+  respostaBloqueioPrazoCriticoD2Postergacao,
+  respostaBloqueioPrazoMenor7Antecipacao,
+  respostaBloqueioProdutoPendenteAntecipacao,
+  respostaConfirmarEnderecoAlteracao,
   respostaConfirmarEntregaUnica,
   respostaEscolhaInvalida,
   respostaEscolherGrupo,
@@ -15,6 +20,7 @@ import {
   respostaPedidoConfirmadoConfirmarEntrega,
   respostaPedidoNaoLocalizado,
   respostaPedidoNegado,
+  respostaTransferidoHumanoEndereco,
   type RespostaSugerida,
 } from './respostas';
 import { chaveRespostaAutomatica, processarEnvioAutomatico } from './auto-reply';
@@ -140,6 +146,52 @@ function detectarDocumento(texto: string): string | null {
     return digitos;
   }
   return null;
+}
+
+function normalizarNumeroEntrega(raw: string): number | null {
+  const s = raw.replace(/[^\d,.-]/g, '').replace(',', '.').trim();
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+
+type ResultadoBloqueioAcao =
+  | { bloqueado: false }
+  | { bloqueado: true; motivo: string; resposta: RespostaSugerida };
+
+function validarBloqueioAcao(acao: 'adiantar' | 'postergar', grupo: GrupoAgendamento | null): ResultadoBloqueioAcao {
+  const tempoRaw = grupo?.tempo_para_entrega ?? '';
+  const tempoNum = normalizarNumeroEntrega(tempoRaw);
+  const tempoEntrega = tempoNum !== null ? tempoNum : 999;
+
+  const produtosPendentes = (grupo?.produtos_pendentes ?? '').trim();
+  const pendentePagamento = (grupo?.pendente_pagamento ?? '').trim().toLowerCase();
+  const temProdutoPendente = produtosPendentes !== '' && produtosPendentes !== '-' && produtosPendentes !== '0';
+  const temPendenciaPagamento =
+    pendentePagamento !== '' &&
+    pendentePagamento !== 'nao' &&
+    pendentePagamento !== 'não' &&
+    pendentePagamento !== '-' &&
+    pendentePagamento !== 'no';
+
+  if (acao === 'adiantar') {
+    if (temProdutoPendente) {
+      return { bloqueado: true, motivo: 'produto_pendente_antecipacao', resposta: respostaBloqueioProdutoPendenteAntecipacao() };
+    }
+    if (temPendenciaPagamento) {
+      return { bloqueado: true, motivo: 'pendencia_pagamento_antecipacao', resposta: respostaBloqueioPagamentoPendenteAntecipacao() };
+    }
+    if (tempoEntrega <= 7) {
+      return { bloqueado: true, motivo: 'prazo_menor_ou_igual_7_antecipacao', resposta: respostaBloqueioPrazoMenor7Antecipacao() };
+    }
+  }
+
+  if (acao === 'postergar') {
+    if (tempoEntrega <= 2) {
+      return { bloqueado: true, motivo: 'prazo_critico_d2_postergacao', resposta: respostaBloqueioPrazoCriticoD2Postergacao() };
+    }
+  }
+
+  return { bloqueado: false };
 }
 
 function obterGrupoSelecionado(metadata: Record<string, unknown> | null): GrupoAgendamento | null {
@@ -927,28 +979,77 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
 
         if (textoNormalizado === '1' || textoNormalizado === '2') {
           const acao = textoNormalizado === '1' ? 'adiantar' : 'postergar';
-          const resposta = respostaAcaoAlteracaoRecebida(acao);
+          const grupo = obterGrupoSelecionado(metadataAtual);
+          const bloqueio = validarBloqueioAcao(acao, grupo);
+
+          if (bloqueio.bloqueado) {
+            const novoMetadata = await construirMetadataComResposta({
+              sessaoId,
+              metadataAtual: {
+                ...(metadataAtual ?? {}),
+                acao_alteracao: acao,
+                precisa_humano_por_regra: true,
+                motivo_bloqueio_acao: bloqueio.motivo,
+              },
+              resposta: bloqueio.resposta,
+              estado: 'transferido_humano',
+              contactId,
+              ticketId,
+              digisacMessageId: messageId,
+              telefoneAutorizado: telefoneAutorizadoFlag,
+            });
+
+            await supabase.from('atendimento_automatico_sessoes').update({
+              estado: 'transferido_humano',
+              metadata: novoMetadata,
+              ultima_mensagem_cliente: text.substring(0, 200),
+              ultima_mensagem_em: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }).eq('id', sessaoId);
+
+            await supabase.from('atendimento_automatico_mensagens').insert({
+              sessao_id: sessaoId,
+              digisac_message_id: messageId,
+              digisac_ticket_id: ticketId,
+              digisac_contact_id: contactId ?? null,
+              origem: 'cliente',
+              texto: text,
+              tipo_mensagem: msg.type as string | undefined,
+              timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+              status: 'processada',
+              metadata: { serviceId, departmentId, acao_alteracao: acao, bloqueio: bloqueio.motivo },
+            });
+
+            await supabase.from('atendimento_automatico_eventos').insert({
+              sessao_id: sessaoId,
+              tipo: 'bloqueio_acao',
+              descricao: `Acao ${acao} bloqueada: ${bloqueio.motivo}`,
+              metadata: { acao, motivo: bloqueio.motivo },
+            });
+
+            console.log(`[posvenda-webhook] acao ${acao} bloqueada motivo=${bloqueio.motivo} sessaoId=${sessaoId}`);
+            return { ok: true, saved: true, origem: 'cliente' };
+          }
+
+          const enderecoCompleto = grupo?.endereco_completo ?? grupo?.endereco_curto ?? '';
           const novoMetadata = await construirMetadataComResposta({
             sessaoId,
-            metadataAtual: { ...(metadataAtual ?? {}), acao_alteracao: acao },
-            resposta,
-            estado: 'acao_alteracao_recebida',
+            metadataAtual: { ...(metadataAtual ?? {}), acao_alteracao: acao, endereco_confirmado: false },
+            resposta: respostaConfirmarEnderecoAlteracao(acao, enderecoCompleto),
+            estado: 'aguardando_confirmacao_endereco',
             contactId,
             ticketId,
             digisacMessageId: messageId,
             telefoneAutorizado: telefoneAutorizadoFlag,
           });
 
-          await supabase
-            .from('atendimento_automatico_sessoes')
-            .update({
-              estado: 'acao_alteracao_recebida',
-              metadata: novoMetadata,
-              ultima_mensagem_cliente: text.substring(0, 200),
-              ultima_mensagem_em: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', sessaoId);
+          await supabase.from('atendimento_automatico_sessoes').update({
+            estado: 'aguardando_confirmacao_endereco',
+            metadata: novoMetadata,
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', sessaoId);
 
           await supabase.from('atendimento_automatico_mensagens').insert({
             sessao_id: sessaoId,
@@ -970,39 +1071,259 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
             metadata: { acao },
           });
 
-          console.log(`[posvenda-webhook] acao alteracao ${acao} sessaoId=${sessaoId}`);
+          console.log(`[posvenda-webhook] acao alteracao ${acao} sessaoId=${sessaoId} => aguardando_confirmacao_endereco`);
           return { ok: true, saved: true, origem: 'cliente' };
         }
+      }
+
+      // Estado: aguardando_confirmacao_endereco
+      if (sessaoExistente.estado === 'aguardando_confirmacao_endereco') {
+        const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
+        const confirmacao = normalizarConfirmacao(text);
+        const telefoneSessao = sessaoExistente.telefone;
+        const telefoneAutorizadoFlag = telefoneAutorizado(telefoneSessao);
+        const acaoAlteracao = (metadataAtual?.acao_alteracao as 'adiantar' | 'postergar' | undefined) ?? 'postergar';
+
+        // Cliente confirma endereco
+        if (confirmacao === 'confirmar') {
+          const novoMetadata = await construirMetadataComResposta({
+            sessaoId,
+            metadataAtual: { ...(metadataAtual ?? {}), endereco_confirmado: true },
+            resposta: respostaAguardandoDataDesejada(),
+            estado: 'aguardando_data_desejada',
+            contactId,
+            ticketId,
+            digisacMessageId: messageId,
+            telefoneAutorizado: telefoneAutorizadoFlag,
+          });
+
+          await supabase.from('atendimento_automatico_sessoes').update({
+            estado: 'aguardando_data_desejada',
+            metadata: novoMetadata,
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, endereco_confirmado: true },
+          });
+
+          await supabase.from('atendimento_automatico_eventos').insert({
+            sessao_id: sessaoId,
+            tipo: 'endereco_confirmado',
+            descricao: 'Cliente confirmou endereco de entrega',
+            metadata: { acao_alteracao: acaoAlteracao },
+          });
+
+          console.log(`[posvenda-webhook] endereco confirmado sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
+
+        // Cliente indica que endereco mudou
+        if (confirmacao === 'negar') {
+          const novoMetadata = await construirMetadataComResposta({
+            sessaoId,
+            metadataAtual: {
+              ...(metadataAtual ?? {}),
+              endereco_confirmado: false,
+              precisa_humano_por_regra: true,
+              motivo_bloqueio_endereco: 'alteracao_endereco',
+            },
+            resposta: respostaTransferidoHumanoEndereco(),
+            estado: 'transferido_humano',
+            contactId,
+            ticketId,
+            digisacMessageId: messageId,
+            telefoneAutorizado: telefoneAutorizadoFlag,
+          });
+
+          await supabase.from('atendimento_automatico_sessoes').update({
+            estado: 'transferido_humano',
+            metadata: novoMetadata,
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, motivo: 'alteracao_endereco' },
+          });
+
+          await supabase.from('atendimento_automatico_eventos').insert({
+            sessao_id: sessaoId,
+            tipo: 'transferido_humano',
+            descricao: 'Endereco alterado, encaminhado para humano',
+            metadata: { motivo: 'alteracao_endereco' },
+          });
+
+          console.log(`[posvenda-webhook] endereco alterado, transferido humano sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
+
+        // Mensagem ambigua: salvar, manter estado
+        await supabase.from('atendimento_automatico_sessoes').update({
+          ultima_mensagem_cliente: text.substring(0, 200),
+          ultima_mensagem_em: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('id', sessaoId);
+
+        await supabase.from('atendimento_automatico_mensagens').insert({
+          sessao_id: sessaoId,
+          digisac_message_id: messageId,
+          digisac_ticket_id: ticketId,
+          digisac_contact_id: contactId ?? null,
+          origem: 'cliente',
+          texto: text,
+          tipo_mensagem: msg.type as string | undefined,
+          timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+          status: 'processada',
+          metadata: { serviceId, departmentId },
+        });
+
+        console.log(`[posvenda-webhook] mensagem ambigua em aguardando_confirmacao_endereco sessaoId=${sessaoId}`);
+        return { ok: true, saved: true, origem: 'cliente' };
+      }
+
+      // Estado: aguardando_data_desejada
+      if (sessaoExistente.estado === 'aguardando_data_desejada') {
+        const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
+
+        // Salvar mensagem com data informada; nao chamar /procurar-datas nesta tarefa
+        const novoMetadata: Record<string, unknown> = {
+          ...(metadataAtual ?? {}),
+          data_desejada_texto: text.substring(0, 100),
+          data_desejada_em: new Date().toISOString(),
+        };
+
+        await supabase.from('atendimento_automatico_sessoes').update({
+          metadata: novoMetadata,
+          ultima_mensagem_cliente: text.substring(0, 200),
+          ultima_mensagem_em: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('id', sessaoId);
+
+        await supabase.from('atendimento_automatico_mensagens').insert({
+          sessao_id: sessaoId,
+          digisac_message_id: messageId,
+          digisac_ticket_id: ticketId,
+          digisac_contact_id: contactId ?? null,
+          origem: 'cliente',
+          texto: text,
+          tipo_mensagem: msg.type as string | undefined,
+          timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+          status: 'processada',
+          metadata: { serviceId, departmentId, data_desejada: text.substring(0, 100) },
+        });
+
+        await supabase.from('atendimento_automatico_eventos').insert({
+          sessao_id: sessaoId,
+          tipo: 'data_desejada_recebida',
+          descricao: 'Cliente informou data desejada para alteracao',
+          metadata: { data_desejada_texto: text.substring(0, 100) },
+        });
+
+        console.log(`[posvenda-webhook] data desejada recebida sessaoId=${sessaoId}`);
+        return { ok: true, saved: true, origem: 'cliente' };
       }
 
       // Estado: documento_recebido/pedido_localizado/pedido_nao_localizado + alterar_entrega
       const estadosPermitemAcaoAlteracao = ['documento_recebido', 'pedido_localizado', 'pedido_nao_localizado'];
       if (estadosPermitemAcaoAlteracao.includes(sessaoExistente.estado) && sessaoExistente.tipo_solicitacao === 'alterar_entrega') {
-        if (textoNormalizado === '1') {
+        if (textoNormalizado === '1' || textoNormalizado === '2') {
+          const acao = textoNormalizado === '1' ? 'adiantar' : 'postergar';
           const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
           const telefoneSessao = sessaoExistente.telefone;
           const telefoneAutorizadoFlag = telefoneAutorizado(telefoneSessao);
+          const grupo = obterGrupoSelecionado(metadataAtual);
+          const bloqueio = validarBloqueioAcao(acao, grupo);
+
+          if (bloqueio.bloqueado) {
+            const novoMetadata = await construirMetadataComResposta({
+              sessaoId,
+              metadataAtual: {
+                ...(metadataAtual ?? {}),
+                acao_alteracao: acao,
+                precisa_humano_por_regra: true,
+                motivo_bloqueio_acao: bloqueio.motivo,
+              },
+              resposta: bloqueio.resposta,
+              estado: 'transferido_humano',
+              contactId,
+              ticketId,
+              digisacMessageId: messageId,
+              telefoneAutorizado: telefoneAutorizadoFlag,
+            });
+
+            await supabase.from('atendimento_automatico_sessoes').update({
+              estado: 'transferido_humano',
+              metadata: novoMetadata,
+              ultima_mensagem_cliente: text.substring(0, 200),
+              ultima_mensagem_em: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }).eq('id', sessaoId);
+
+            await supabase.from('atendimento_automatico_mensagens').insert({
+              sessao_id: sessaoId,
+              digisac_message_id: messageId,
+              digisac_ticket_id: ticketId,
+              digisac_contact_id: contactId ?? null,
+              origem: 'cliente',
+              texto: text,
+              tipo_mensagem: msg.type as string | undefined,
+              timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+              status: 'processada',
+              metadata: { serviceId, departmentId, acao_alteracao: acao, bloqueio: bloqueio.motivo },
+            });
+
+            await supabase.from('atendimento_automatico_eventos').insert({
+              sessao_id: sessaoId,
+              tipo: 'bloqueio_acao',
+              descricao: `Acao ${acao} bloqueada: ${bloqueio.motivo}`,
+              metadata: { acao, motivo: bloqueio.motivo },
+            });
+
+            console.log(`[posvenda-webhook] acao ${acao} bloqueada motivo=${bloqueio.motivo} sessaoId=${sessaoId}`);
+            return { ok: true, saved: true, origem: 'cliente' };
+          }
+
+          const enderecoCompleto = grupo?.endereco_completo ?? grupo?.endereco_curto ?? '';
           const novoMetadata = await construirMetadataComResposta({
             sessaoId,
-            metadataAtual: { ...(metadataAtual ?? {}), acao_alteracao: 'adiantar' },
-            resposta: respostaAcaoAlteracaoRecebida('adiantar'),
-            estado: 'acao_alteracao_recebida',
+            metadataAtual: { ...(metadataAtual ?? {}), acao_alteracao: acao, endereco_confirmado: false },
+            resposta: respostaConfirmarEnderecoAlteracao(acao, enderecoCompleto),
+            estado: 'aguardando_confirmacao_endereco',
             contactId,
             ticketId,
             digisacMessageId: messageId,
             telefoneAutorizado: telefoneAutorizadoFlag,
           });
 
-          await supabase
-            .from('atendimento_automatico_sessoes')
-            .update({
-              estado: 'acao_alteracao_recebida',
-              metadata: novoMetadata,
-              ultima_mensagem_cliente: text.substring(0, 200),
-              ultima_mensagem_em: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', sessaoId);
+          await supabase.from('atendimento_automatico_sessoes').update({
+            estado: 'aguardando_confirmacao_endereco',
+            metadata: novoMetadata,
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', sessaoId);
 
           await supabase.from('atendimento_automatico_mensagens').insert({
             sessao_id: sessaoId,
@@ -1014,67 +1335,17 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
             tipo_mensagem: msg.type as string | undefined,
             timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
             status: 'processada',
-            metadata: { serviceId, departmentId, acao_alteracao: 'adiantar' },
+            metadata: { serviceId, departmentId, acao_alteracao: acao },
           });
 
           await supabase.from('atendimento_automatico_eventos').insert({
             sessao_id: sessaoId,
             tipo: 'acao_alteracao',
-            descricao: 'Cliente escolheu adiantar entrega',
-            metadata: { acao: 'adiantar' },
+            descricao: `Cliente escolheu ${acao} entrega`,
+            metadata: { acao },
           });
 
-          console.log(`[posvenda-webhook] acao alteracao adiantar sessaoId=${sessaoId}`);
-          return { ok: true, saved: true, origem: 'cliente' };
-        }
-
-        if (textoNormalizado === '2') {
-          const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
-          const telefoneSessao = sessaoExistente.telefone;
-          const telefoneAutorizadoFlag = telefoneAutorizado(telefoneSessao);
-          const novoMetadata = await construirMetadataComResposta({
-            sessaoId,
-            metadataAtual: { ...(metadataAtual ?? {}), acao_alteracao: 'postergar' },
-            resposta: respostaAcaoAlteracaoRecebida('postergar'),
-            estado: 'acao_alteracao_recebida',
-            contactId,
-            ticketId,
-            digisacMessageId: messageId,
-            telefoneAutorizado: telefoneAutorizadoFlag,
-          });
-
-          await supabase
-            .from('atendimento_automatico_sessoes')
-            .update({
-              estado: 'acao_alteracao_recebida',
-              metadata: novoMetadata,
-              ultima_mensagem_cliente: text.substring(0, 200),
-              ultima_mensagem_em: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', sessaoId);
-
-          await supabase.from('atendimento_automatico_mensagens').insert({
-            sessao_id: sessaoId,
-            digisac_message_id: messageId,
-            digisac_ticket_id: ticketId,
-            digisac_contact_id: contactId ?? null,
-            origem: 'cliente',
-            texto: text,
-            tipo_mensagem: msg.type as string | undefined,
-            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
-            status: 'processada',
-            metadata: { serviceId, departmentId, acao_alteracao: 'postergar' },
-          });
-
-          await supabase.from('atendimento_automatico_eventos').insert({
-            sessao_id: sessaoId,
-            tipo: 'acao_alteracao',
-            descricao: 'Cliente escolheu postergar entrega',
-            metadata: { acao: 'postergar' },
-          });
-
-          console.log(`[posvenda-webhook] acao alteracao postergar sessaoId=${sessaoId}`);
+          console.log(`[posvenda-webhook] acao alteracao ${acao} sessaoId=${sessaoId} => aguardando_confirmacao_endereco`);
           return { ok: true, saved: true, origem: 'cliente' };
         }
 

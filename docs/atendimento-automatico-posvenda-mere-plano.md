@@ -500,3 +500,21 @@ Padrao validado no projeto: funcao `is_superadmin()` que verifica `usuarios_perm
 - Typecheck: 0 erros
 - Lint: 0 erros
 - Testes: 18 passaram (11 respostas + 7 agrupamento)
+
+### 2026-07-08 — Cascade — Fluxo pos-acao: confirmacao de endereco e data desejada
+
+- Regra antiga trazida do legado: apos escolher adiantar/postergar, confirmar endereco antes de perguntar data
+- Regras de bloqueio implementadas antes de perguntar endereco:
+  - Adiantar: produto pendente → transferido_humano; pendencia pagamento → transferido_humano; prazo <= 7 dias → transferido_humano
+  - Postergar: prazo <= 2 dias → transferido_humano; acima de 2 dias → segue para confirmacao de endereco
+- Novos estados adicionados: `aguardando_confirmacao_endereco`, `aguardando_data_desejada`, `transferido_humano`
+- Mensagem substituida: a resposta ruim `A proxima etapa sera avaliar as datas disponiveis` foi substituida por mensagem de confirmacao de endereco
+- Mensagem pos-endereco confirmado: `Perfeito! A partir de qual data gostaria de receber?`
+- Cliente diz que endereco mudou: estado `transferido_humano`, motivo `alteracao_endereco`
+- Estado `aguardando_data_desejada`: salva `metadata.data_desejada_texto`; nao chama `/procurar-datas` ainda
+- Bloqueios registram `metadata.precisa_humano_por_regra = true` e `metadata.motivo_bloqueio_acao`
+- Ambos os pontos de entrada de acao (aguardando_escolha_acao e bloco legado documento_recebido) atualizados
+- Nao chama `/procurar-datas`, nao altera agenda, nao chama IA
+- Typecheck: 0 erros
+- Lint: 0 erros (0 warnings)
+- Testes: 19 passaram (respostas.test.ts)

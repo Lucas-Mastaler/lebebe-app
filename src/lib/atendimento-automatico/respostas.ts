@@ -10,7 +10,14 @@ export type TipoRespostaSugerida =
   | 'pedido_confirmado_alterar_escolher_acao'
   | 'pedido_confirmado_alterar_acao_ja_escolhida'
   | 'pedido_negado'
-  | 'acao_alteracao_recebida';
+  | 'acao_alteracao_recebida'
+  | 'confirmar_endereco_alteracao'
+  | 'aguardando_data_desejada'
+  | 'transferido_humano_endereco'
+  | 'bloqueio_produto_pendente_antecipacao'
+  | 'bloqueio_pagamento_pendente_antecipacao'
+  | 'bloqueio_prazo_menor_7_antecipacao'
+  | 'bloqueio_prazo_critico_d2_postergacao';
 
 export type RespostaSugerida = {
   texto: string;
@@ -106,6 +113,56 @@ export function respostaAcaoAlteracaoRecebida(acao: 'adiantar' | 'postergar'): R
   return {
     texto: `Perfeito. Entendi que deseja ${acaoTexto} a entrega. A próxima etapa será avaliar as datas disponíveis.`,
     tipo: 'acao_alteracao_recebida',
+  };
+}
+
+export function respostaConfirmarEnderecoAlteracao(acao: 'adiantar' | 'postergar', enderecoCompleto: string): RespostaSugerida {
+  const acaoTexto = acao === 'adiantar' ? 'adiantar' : 'postergar';
+  return {
+    texto: `Perfeito! Entendi que deseja ${acaoTexto} a entrega.\n\nAntes de verificar as possibilidades, preciso confirmar uma informação.\n\nO endereço da entrega continua sendo:\n\n${enderecoCompleto}\n\nEstá correto?`,
+    tipo: 'confirmar_endereco_alteracao',
+  };
+}
+
+export function respostaAguardandoDataDesejada(): RespostaSugerida {
+  return {
+    texto: 'Perfeito!\n\nA partir de qual data gostaria de receber?',
+    tipo: 'aguardando_data_desejada',
+  };
+}
+
+export function respostaTransferidoHumanoEndereco(): RespostaSugerida {
+  return {
+    texto: 'Entendi. Como houve alteração de endereço, vou encaminhar seu atendimento para nossa equipe verificar certinho.',
+    tipo: 'transferido_humano_endereco',
+  };
+}
+
+export function respostaBloqueioProdutoPendenteAntecipacao(): RespostaSugerida {
+  return {
+    texto: 'Verifiquei aqui que ainda existe produto aguardando chegada da fábrica.\n\nPor isso não conseguimos antecipar a entrega neste momento.\n\nVou encaminhar seu atendimento para nossa equipe verificar para você.',
+    tipo: 'bloqueio_produto_pendente_antecipacao',
+  };
+}
+
+export function respostaBloqueioPagamentoPendenteAntecipacao(): RespostaSugerida {
+  return {
+    texto: 'Identifiquei que existe uma pendência de pagamento neste pedido.\n\nAssim que essa pendência for resolvida podemos verificar a possibilidade de antecipação da entrega.',
+    tipo: 'bloqueio_pagamento_pendente_antecipacao',
+  };
+}
+
+export function respostaBloqueioPrazoMenor7Antecipacao(): RespostaSugerida {
+  return {
+    texto: 'Como sua entrega já está próxima da data prevista, não conseguimos antecipar automaticamente neste momento.\n\nSe precisar, posso encaminhar para nossa equipe verificar para você.',
+    tipo: 'bloqueio_prazo_menor_7_antecipacao',
+  };
+}
+
+export function respostaBloqueioPrazoCriticoD2Postergacao(): RespostaSugerida {
+  return {
+    texto: 'Sua entrega já está confirmada para os próximos dias e não conseguimos alterar automaticamente neste momento.\n\nVou encaminhar seu atendimento para nossa equipe verificar para você.',
+    tipo: 'bloqueio_prazo_critico_d2_postergacao',
   };
 }
 

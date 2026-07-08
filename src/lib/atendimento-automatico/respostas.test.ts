@@ -9,6 +9,13 @@ import {
   respostaPedidoConfirmadoAlterarAcaoJaEscolhida,
   respostaPedidoConfirmadoAlterarEscolherAcao,
   respostaPedidoNegado,
+  respostaConfirmarEnderecoAlteracao,
+  respostaAguardandoDataDesejada,
+  respostaTransferidoHumanoEndereco,
+  respostaBloqueioProdutoPendenteAntecipacao,
+  respostaBloqueioPagamentoPendenteAntecipacao,
+  respostaBloqueioPrazoMenor7Antecipacao,
+  respostaBloqueioPrazoCriticoD2Postergacao,
 } from './respostas';
 import type { GrupoAgendamento } from '@/lib/google/sheets-service-account';
 
@@ -112,5 +119,56 @@ describe('respostas', () => {
     const resposta = respostaPedidoNegado();
     expect(resposta.tipo).toBe('pedido_negado');
     expect(resposta.texto).toContain('CPF/CNPJ correto');
+  });
+
+  it('gera confirmacao de endereco para adiantar', () => {
+    const r = respostaConfirmarEnderecoAlteracao('adiantar', 'Rua das Flores, 123, Curitiba, PR');
+    expect(r.tipo).toBe('confirmar_endereco_alteracao');
+    expect(r.texto).toContain('adiantar');
+    expect(r.texto).toContain('Rua das Flores, 123, Curitiba, PR');
+    expect(r.texto).toContain('correto?');
+  });
+
+  it('gera confirmacao de endereco para postergar', () => {
+    const r = respostaConfirmarEnderecoAlteracao('postergar', 'Av. Brasil, 500');
+    expect(r.tipo).toBe('confirmar_endereco_alteracao');
+    expect(r.texto).toContain('postergar');
+    expect(r.texto).toContain('Av. Brasil, 500');
+  });
+
+  it('gera resposta aguardando data desejada', () => {
+    const r = respostaAguardandoDataDesejada();
+    expect(r.tipo).toBe('aguardando_data_desejada');
+    expect(r.texto).toContain('A partir de qual data');
+  });
+
+  it('gera resposta transferido humano por endereco', () => {
+    const r = respostaTransferidoHumanoEndereco();
+    expect(r.tipo).toBe('transferido_humano_endereco');
+    expect(r.texto).toContain('equipe');
+  });
+
+  it('gera resposta bloqueio produto pendente antecipacao', () => {
+    const r = respostaBloqueioProdutoPendenteAntecipacao();
+    expect(r.tipo).toBe('bloqueio_produto_pendente_antecipacao');
+    expect(r.texto).toContain('produto aguardando chegada da fábrica');
+  });
+
+  it('gera resposta bloqueio pagamento pendente antecipacao', () => {
+    const r = respostaBloqueioPagamentoPendenteAntecipacao();
+    expect(r.tipo).toBe('bloqueio_pagamento_pendente_antecipacao');
+    expect(r.texto).toContain('pendência de pagamento');
+  });
+
+  it('gera resposta bloqueio prazo menor 7 antecipacao', () => {
+    const r = respostaBloqueioPrazoMenor7Antecipacao();
+    expect(r.tipo).toBe('bloqueio_prazo_menor_7_antecipacao');
+    expect(r.texto).toContain('próxima da data prevista');
+  });
+
+  it('gera resposta bloqueio prazo critico d2 postergacao', () => {
+    const r = respostaBloqueioPrazoCriticoD2Postergacao();
+    expect(r.tipo).toBe('bloqueio_prazo_critico_d2_postergacao');
+    expect(r.texto).toContain('próximos dias');
   });
 });

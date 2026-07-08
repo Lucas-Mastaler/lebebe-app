@@ -277,6 +277,48 @@
 
 **Proximo passo recomendado:** Confirmar que a API Digisac retorna `id` ao POST `/messages`; se nao retornar, implementar fallback de texto+timestamp. Testar novo fluxo completo: CPF → auto-reply → eco no webhook → sem pausa → cliente responde `sim` → estado avanca.
 
+## 2026-07-08 - Cascade - Fluxo pos-acao: confirmacao de endereco e data desejada
+
+**Resumo:** Implementacao das regras antigas do legado para o fluxo apos o cliente escolher adiantar ou postergar. Antes de perguntar a data desejada, o sistema agora: (1) valida regras de bloqueio por prazo/produto/pagamento, encaminhando para humano se bloqueado; (2) pergunta se o endereco continua correto; (3) apos confirmacao de endereco, pergunta a data desejada. A mensagem ruim `A proxima etapa sera avaliar as datas disponiveis` foi substituida pelo fluxo correto. Estado `aguardando_data_desejada` salva o texto informado mas nao chama `/procurar-datas` ainda.
+
+**Regras de bloqueio implementadas:**
+- Adiantar + produto pendente → `transferido_humano` motivo `produto_pendente_antecipacao`
+- Adiantar + pendencia pagamento → `transferido_humano` motivo `pendencia_pagamento_antecipacao`
+- Adiantar + prazo <= 7 dias → `transferido_humano` motivo `prazo_menor_ou_igual_7_antecipacao`
+- Postergar + prazo <= 2 dias → `transferido_humano` motivo `prazo_critico_d2_postergacao`
+- Postergar + prazo > 2 dias → `aguardando_confirmacao_endereco`
+
+**Novos estados:** `aguardando_confirmacao_endereco`, `aguardando_data_desejada`, `transferido_humano`
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/lib/atendimento-automatico/respostas.ts
+- src/lib/google/sheets-service-account.ts (tipo GrupoAgendamento e campos usados)
+
+**Arquivos alterados/criados:**
+- src/lib/atendimento-automatico/respostas.ts (novos tipos e funcoes)
+- src/lib/atendimento-automatico/respostas.test.ts (19 testes)
+- src/lib/atendimento-automatico/webhook-processor.ts (novos estados e validacoes)
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md (esta entrada)
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit --pretty` — 0 erros
+- `npx eslint src/lib/atendimento-automatico/webhook-processor.ts src/lib/atendimento-automatico/respostas.ts --no-warn-ignored` — 0 erros, 0 warnings
+- `npx vitest run src/lib/atendimento-automatico/respostas.test.ts` — 19 passaram
+
+**Pendencias:**
+- Campos `produtos_pendentes`, `pendente_pagamento`, `tempo_para_entrega` sao lidos do `GrupoAgendamento` que vem da planilha; se a planilha retornar formatos inesperados nesses campos, a validacao pode ter falso negativo (nao bloquear quando deveria)
+- Estado `aguardando_data_desejada` salva o texto mas nao processa data ainda; precisa tarefa especifica para parsing e chamada ao `/procurar-datas`
+- Tela administrativa nao foi atualizada nesta tarefa para exibir novos campos (endereco_confirmado, motivo_bloqueio_acao, data_desejada_texto)
+
+**Riscos conhecidos:**
+- `tempo_para_entrega` no GrupoAgendamento e uma string; se vier como `8 dias` em vez de `8`, o `parseFloat` retorna `NaN` e o fallback vai para 999 (sem bloqueio). Confirmado que `normalizarNumeroEntrega` remove letras, mas o ponto decimal pode variar
+- Se `grupo` for null em metadata (sessao sem grupo selecionado), `validarBloqueioAcao` recebe `null` e usa fallback de 999 dias (sem bloqueio por prazo). Produto pendente e pagamento tb ficam sem bloqueio nesse caso
+- Bloqueio `produto_pendente_antecipacao` nao informa o produto ao cliente, conforme regra
+
+**Proximo passo recomendado:** Validar campos reais de `produtos_pendentes`, `pendente_pagamento` e `tempo_para_entrega` que chegam da planilha em producao, para confirmar que a validacao de bloqueio dispara corretamente. Depois implementar parsing de data desejada e chamada ao `/procurar-datas`.
+
 ## 2026-07-08 - Cascade - Correcao da ordem de processamento do webhook
 
 **Resumo:** Correcao da ordem de processamento do webhook de pos-venda para impedir que bot/humano criem sessoes e garantir que a allowlist seja aplicada antes de qualquer processamento. Problema observado em producao: tickets de outros numeros apareciam na tela apesar da allowlist. Causa: bot criava sessao ativa quando nao existia, humano criava sessao pausada sem sessao autorizada, allowlist era aplicada apenas no branch cliente depois de bot/humano ja processarem. Correcao segue o pre-filtro do fluxo antigo n8n: classificar origem primeiro, so processar mensagens de cliente, bot/humano so atuam sobre sessao autorizada existente. Telefone agora so e resolvido via API quando ha gatilho valido ou sessao existente. State machine expandida com `documento_recebido` + `acao_alteracao_recebida` (adiantar/postergar). Mascaramento de CPF/CNPJ na coluna "Ult. Msg Cliente" da tela.

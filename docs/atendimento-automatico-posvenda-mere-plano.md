@@ -667,6 +667,53 @@ Padrao validado no projeto: funcao `is_superadmin()` que verifica `usuarios_perm
   - `GOOGLE_AGENDA_CONTROLE_ORIGINAL_SHEET_GID=190443561`
 - Nao alterado: motor `/procurar-datas`, OSRM/Haversine, ranking/classificacao, Google Calendar (logica de duplicacao/movimento), aba importada gid `1227722067`, colunas alem de `Data na agenda GOOGLE`, EVENTO_ID ou CALENDAR_ID na planilha, encerramento automatico do ticket Digisac
 - Validacoes: TypeScript 0 erros; ESLint 0 erros/warnings; 34 testes passaram (27 respostas + 7 sheets-write-original); 8 testes sheets-service-account existentes passaram
+
+---
+
+## Fase: IA Fallback Controlada (DeepSeek)
+
+### Objetivo
+Quando o fluxo deterministico nao consegue interpretar a mensagem do cliente (retorna "ambigua" ou falha), uma camada de IA controlada (DeepSeek) e chamada para interpretar a intencao do cliente e escolher uma acao permitida.
+
+### Principios
+- A IA so pode escolher acoes de um enum fechado definido por estado
+- A IA nunca inventa fluxos, promessas ou dados
+- Se confianca for baixa ou resposta invalida, cai para fallback deterministico existente
+- Toda chamada de IA registra metadata para auditoria
+- IA fallback e desabilitada por padrao (env: `ATENDIMENTO_POSVENDA_IA_FALLBACK_ENABLED=false`)
+
+### Arquivos criados
+- `src/lib/atendimento-automatico/ia-fallback.ts` — helper completo: prompt, chamada DeepSeek, validacao JSON, mapeamento de acoes, metadata
+- `src/lib/atendimento-automatico/ia-fallback.test.ts` — 13 testes unitarios com mocks
+
+### Arquivos alterados
+- `src/lib/atendimento-automatico/webhook-processor.ts` — integracao em 8 estados:
+  1. `aguardando_confirmacao_pedido`
+  2. `aguardando_escolha_acao`
+  3. `aguardando_confirmacao_endereco`
+  4. `aguardando_data_desejada`
+  5. `datas_encontradas`
+  6. `aguardando_confirmacao_reagendamento`
+  7. `pedido_nao_localizado`
+  8. `aguardando_novo_documento_ou_esclarecimento`
+- `src/app/pos-venda/atendimento-automatico/PageClient.tsx` — layout ajustado de `max-w-7xl` para `w-[95vw] max-w-none`
+- `.env.local` e `.env.example` — 4 envs adicionadas
+
+### Variaveis de ambiente
+- `ATENDIMENTO_POSVENDA_IA_FALLBACK_ENABLED` (default: false)
+- `ATENDIMENTO_POSVENDA_IA_FALLBACK_API_KEY` (vazio por padrao)
+- `ATENDIMENTO_POSVENDA_IA_FALLBACK_MODEL` (default: deepseek-chat)
+- `ATENDIMENTO_POSVENDA_IA_FALLBACK_PROVIDER` (default: deepseek)
+
+### Validacoes
+- TypeScript: 0 erros
+- ESLint: 0 erros
+- Testes: 13 passed (ia-fallback.test.ts)
+
+### Pendencias
+- Configurar API key real quando IA for ativada
+- Testar end-to-end com IA habilitada em staging
+- Monitorar logs para ajustar prompts se necessario
 - Pendencias: compartilhar planilha original com a service account como Editor; validar em ambiente real com `ATENDIMENTO_POSVENDA_CALENDAR_WRITE_ENABLED=true`
 - Riscos conhecidos: se a service account nao tiver permissao de Editor na planilha original, a escrita falhara com erro controlado `sheets_write_permission_denied` (Calendar ja foi alterado e nao sera desfeito)
 

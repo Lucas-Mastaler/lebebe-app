@@ -236,7 +236,7 @@ export function PageClient() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="max-w-7xl mx-auto px-4 py-8">
+      <div className="w-[95vw] max-w-none mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <Bot className="w-7 h-7 text-[#00A5E6]" />

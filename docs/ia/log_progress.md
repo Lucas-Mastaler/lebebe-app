@@ -1,3 +1,86 @@
+## 2026-07-10 - Cascade - Implementação: IA Fallback controlada para atendimento automático pós-venda
+
+**Resumo:** Implementada camada de IA fallback (DeepSeek) no webhook-processor do atendimento automático. Quando o fluxo determinístico retorna "ambíguo" ou falha, a IA é chamada com prompt restrito, ações permitidas por estado, e validação estrita de JSON. A IA só pode escolher ações do enum fechado definido por estado. Se confiança for baixa ou resposta inválida, cai para fallback determinístico existente. Também foi ajustado o layout da tela admin para usar ~95vw.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/webhook-processor.ts (estados: aguardando_confirmacao_pedido, aguardando_escolha_acao, aguardando_confirmacao_endereco, aguardando_data_desejada, datas_encontradas, aguardando_confirmacao_reagendamento, pedido_nao_localizado, aguardando_novo_documento_ou_esclarecimento)
+- src/lib/atendimento-automatico/interpretar-intencao.ts
+- src/lib/atendimento-automatico/reagendamento-opcoes.ts
+- src/lib/atendimento-automatico/respostas.ts
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx
+- src/lib/ia/deepseek-client.ts
+- .env.local, .env.example
+
+**Arquivos criados:**
+- src/lib/atendimento-automatico/ia-fallback.ts (helper IA: prompt, chamada DeepSeek, validação, mapeamento, metadata)
+- src/lib/atendimento-automatico/ia-fallback.test.ts (13 testes unitários com mocks)
+
+**Arquivos alterados:**
+- src/lib/atendimento-automatico/webhook-processor.ts (import + integração IA fallback em 8 estados)
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx (layout: max-w-7xl → w-[95vw] max-w-none)
+- .env.local (adicionadas 4 envs de IA fallback)
+- .env.example (adicionadas 4 envs de IA fallback)
+
+**Validações realizadas:**
+- TypeScript: `npx tsc --noEmit --pretty` — 0 erros
+- ESLint: 0 erros nos arquivos alterados
+- Testes: `npx vitest run ia-fallback.test.ts` — 13 passed
+- Não houve validação no MCP Supabase (não houve alteração de banco)
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit --pretty` → exit 0
+- `npx eslint` nos 4 arquivos alterados → exit 0
+- `npx vitest run src/lib/atendimento-automatico/ia-fallback.test.ts` → 13 passed
+
+**Pendências:**
+- Configurar API key real no .env.local quando IA for ativada (ATENDIMENTO_POSVENDA_IA_FALLBACK_API_KEY)
+- Ativar IA fallback em produção (ATENDIMENTO_POSVENDA_IA_FALLBACK_ENABLED=true)
+- Testar comportamento end-to-end com IA habilitada em ambiente de staging
+
+**Riscos conhecidos:**
+- IA fallback desabilitada por padrão (env=false). Só ativa quando explicitamente habilitada.
+- Se a API DeepSeek estiver indisponível, o erro é capturado e o fluxo cai para fallback determinístico existente.
+- Metadata de IA é registrada em todas as chamadas para auditoria.
+- A IA nunca inventa fluxos — só escolhe do enum fechado de ações permitidas por estado.
+
+**Próximo passo recomendado:**
+- Configurar API key e testar em staging com IA habilitada
+- Monitorar logs de IA fallback para ajustar prompts se necessário
+
+---
+
+## 2026-07-09 - Cascade - Correção: pedido_nao_localizado não fica mais silencioso
+
+**Resumo:** Bug corrigido no estado `pedido_nao_localizado` do webhook-processor. Mensagens do cliente nesse estado podiam ser salvas sem gerar resposta automática. Agora: se cliente envia CPF/CNPJ válido, re-pesquisa; se envia texto sem documento, responde pedindo CPF; após 2 tentativas sem documento, transfere para humano. Nenhuma mensagem em `pedido_nao_localizado` termina sem resposta ou transferência.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/webhook-processor.ts (linhas 2550-2710, 1042-1121, 394-400)
+- src/lib/atendimento-automatico/respostas.ts (funções de resposta existentes)
+- src/lib/atendimento-automatico/webhook-processor.test.ts
+
+**Arquivos alterados:**
+- src/lib/atendimento-automatico/webhook-processor.ts (adicionado handler específico para `pedido_nao_localizado` antes do bloco "Outra mensagem" silencioso, linhas 2683-2803)
+
+**Validações realizadas:**
+- TypeScript: `npx tsc --noEmit --pretty` — 0 erros
+- ESLint: 0 erros, 0 warnings
+- Testes: 5 testes do webhook-processor passaram
+- Não houve validação no MCP Supabase (não houve alteração de banco)
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit --pretty` → exit 0
+- `npx eslint src/lib/atendimento-automatico/webhook-processor.ts` → exit 0
+- `npx vitest run webhook-processor.test.ts` → 5 passed
+
+**Pendências:**
+- Nenhuma
+
+**Riscos conhecidos:**
+- Nenhum. O bloco só intercepta mensagens em `pedido_nao_localizado` que não sejam ação (adiantar/postergar) nem "3". Fluxos validados não são afetados.
+
+**Próximo passo recomendado:**
+- Testar em ambiente real: enviar CPF não localizado → enviar texto sem CPF → verificar resposta → enviar outro texto sem CPF → verificar transferência humana
+
 ## 2026-07-09 - Cascade - Escrita na planilha original após reagendamento Calendar + mensagem final ajustada
 
 **Resumo:** Após sucesso completo do reagendamento no Google Calendar, o sistema agora atualiza a coluna `Data na agenda GOOGLE` na aba original (gid `190443561`) da planilha de controle. Usa `EVENTO_ID + CALENDAR_ID` como critério de localização. Mensagem final ao cliente ajustada com informação sobre entrega/montagem no mesmo dia e horário comercial. Helper `atualizarDataAgendaGoogleOriginalMere` criado com cliente JWT scope de escrita. Se planilha falhar, Calendar não é desfeito; marca `aplicado_com_falha_planilha`.

@@ -25,16 +25,30 @@ import {
   respostaPedidoConfirmadoConfirmarEntrega,
   respostaPedidoNaoLocalizado,
   respostaPedidoNegado,
+  respostaDatasEncontradas,
+  respostaDataOpcaoInvalida,
+  respostaDataOpcaoSelecionada,
   respostaFallbackConfirmacaoEndereco,
   respostaFallbackConfirmacaoPedido,
   respostaFallbackEscolhaAcao,
+  respostaTransferidoHumanoCoordenadas,
   respostaTransferidoHumanoEndereco,
+  respostaTransferidoHumanoErroDatas,
   respostaTransferidoHumanoMuitasTentativas,
+  respostaTransferidoHumanoSemDados,
+  respostaTransferidoHumanoSemDatas,
   type RespostaSugerida,
 } from './respostas';
 import { interpretarDataDesejada, validarDataDesejadaParaAcao } from './interpretar-data';
 import { calcularTentativasInvalidas, interpretarAcaoAlteracao, interpretarConfirmacao } from './interpretar-intencao';
 import { chaveRespostaAutomatica, processarEnvioAutomatico } from './auto-reply';
+import {
+  consultarDatasMere,
+  formatarOpcoesDatasParaCliente,
+  geocodificarEnderecoMere,
+  validarCamposConsultaMere,
+  type DatasDisponiveisMere,
+} from './consulta-datas-mere';
 
 type OrigemMensagem = 'cliente' | 'bot' | 'humano' | 'sistema';
 
@@ -1568,6 +1582,392 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
 
         console.log(`[posvenda-webhook] data desejada valida ${interpretacao.iso} sessaoId=${sessaoId}`);
         return { ok: true, saved: true, origem: 'cliente' };
+      }
+
+      // Estado: data_desejada_recebida — consulta datas via motor v2
+      if (sessaoExistente.estado === 'data_desejada_recebida') {
+        const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
+        const telefoneSessao = sessaoExistente.telefone;
+        const telefoneAutorizadoFlag = telefoneAutorizado(telefoneSessao);
+
+        // Idempotência: se consulta já rodou com sucesso, não rodar de novo
+        const consultaStatus = metadataAtual?.consulta_datas_status as string | undefined;
+        if (consultaStatus === 'sucesso') {
+          console.log(`[posvenda-webhook] data_desejada_recebida consulta ja realizada sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
+
+        const grupo = obterGrupoSelecionado(metadataAtual);
+        const dataDesejadaISO = metadataAtual?.data_desejada_iso as string | undefined;
+        const enderecoCompleto = grupo?.endereco_completo ?? '';
+
+        // 1. Geocodificar endereço (cache-only, sem chamada externa)
+        const geocod = await geocodificarEnderecoMere(enderecoCompleto);
+
+        if (!geocod.ok) {
+          const resposta = respostaTransferidoHumanoCoordenadas();
+          const novoMetadata = await construirMetadataComResposta({
+            sessaoId,
+            metadataAtual: {
+              ...(metadataAtual ?? {}),
+              consulta_datas_status: 'erro_coordenadas',
+              consulta_datas_em: new Date().toISOString(),
+              consulta_datas_erro: geocod.motivo,
+              consulta_datas_origem: 'mere',
+              precisa_humano_por_regra: true,
+              motivo_transferencia_humano: 'coordenadas_nao_resolvidas',
+            },
+            resposta,
+            estado: 'transferido_humano',
+            contactId,
+            ticketId,
+            digisacMessageId: messageId,
+            telefoneAutorizado: telefoneAutorizadoFlag,
+          });
+
+          await supabase.from('atendimento_automatico_sessoes').update({
+            estado: 'transferido_humano',
+            status: 'transferido_humano',
+            metadata: novoMetadata,
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, motivo: 'coordenadas_nao_resolvidas', geocod_motivo: geocod.motivo },
+          });
+
+          console.log(`[posvenda-webhook] coordenadas nao resolvidas motivo=${geocod.motivo} sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
+
+        // 2. Validar campos obrigatórios
+        const validacao = validarCamposConsultaMere({
+          dataDesejadaISO,
+          grupo,
+          coordenadas: geocod.coordenadas,
+        });
+
+        if (!validacao.ok) {
+          const resposta = respostaTransferidoHumanoSemDados(validacao.motivo);
+          const novoMetadata = await construirMetadataComResposta({
+            sessaoId,
+            metadataAtual: {
+              ...(metadataAtual ?? {}),
+              consulta_datas_status: 'dados_insuficientes',
+              consulta_datas_em: new Date().toISOString(),
+              consulta_datas_erro: `campos_faltando: ${validacao.camposFaltando.join(', ')}`,
+              consulta_datas_origem: 'mere',
+              precisa_humano_por_regra: true,
+              motivo_transferencia_humano: 'dados_insuficientes_consulta_datas',
+            },
+            resposta,
+            estado: 'transferido_humano',
+            contactId,
+            ticketId,
+            digisacMessageId: messageId,
+            telefoneAutorizado: telefoneAutorizadoFlag,
+          });
+
+          await supabase.from('atendimento_automatico_sessoes').update({
+            estado: 'transferido_humano',
+            status: 'transferido_humano',
+            metadata: novoMetadata,
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, motivo: validacao.motivo, campos_faltando: validacao.camposFaltando },
+          });
+
+          console.log(`[posvenda-webhook] dados insuficientes consulta motivo=${validacao.motivo} sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
+
+        // 3. Executar consulta de datas
+        const resultadoConsulta = await consultarDatasMere(
+          grupo!,
+          dataDesejadaISO!,
+          geocod.coordenadas
+        );
+
+        if (!resultadoConsulta.ok) {
+          const resposta = respostaTransferidoHumanoErroDatas();
+          const novoMetadata = await construirMetadataComResposta({
+            sessaoId,
+            metadataAtual: {
+              ...(metadataAtual ?? {}),
+              consulta_datas_status: 'erro',
+              consulta_datas_em: new Date().toISOString(),
+              consulta_datas_erro: resultadoConsulta.motivo,
+              consulta_datas_erros: resultadoConsulta.erros ?? [],
+              consulta_datas_origem: 'mere',
+              precisa_humano_por_regra: true,
+              motivo_transferencia_humano: 'erro_consulta_datas',
+            },
+            resposta,
+            estado: 'transferido_humano',
+            contactId,
+            ticketId,
+            digisacMessageId: messageId,
+            telefoneAutorizado: telefoneAutorizadoFlag,
+          });
+
+          await supabase.from('atendimento_automatico_sessoes').update({
+            estado: 'transferido_humano',
+            status: 'transferido_humano',
+            metadata: novoMetadata,
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, motivo: resultadoConsulta.motivo },
+          });
+
+          console.log(`[posvenda-webhook] erro consulta datas motivo=${resultadoConsulta.motivo} sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
+
+        // 4a. Sem datas disponíveis
+        if (resultadoConsulta.datas.length === 0) {
+          const resposta = respostaTransferidoHumanoSemDatas();
+          const novoMetadata = await construirMetadataComResposta({
+            sessaoId,
+            metadataAtual: {
+              ...(metadataAtual ?? {}),
+              consulta_datas_status: 'sem_datas',
+              consulta_datas_em: new Date().toISOString(),
+              consulta_datas_run_id: resultadoConsulta.runId,
+              consulta_datas_origem: 'mere',
+              total_datas_disponiveis: 0,
+              datas_disponiveis: [],
+              precisa_humano_por_regra: true,
+              motivo_transferencia_humano: 'sem_datas_disponiveis',
+            },
+            resposta,
+            estado: 'transferido_humano',
+            contactId,
+            ticketId,
+            digisacMessageId: messageId,
+            telefoneAutorizado: telefoneAutorizadoFlag,
+          });
+
+          await supabase.from('atendimento_automatico_sessoes').update({
+            estado: 'transferido_humano',
+            status: 'transferido_humano',
+            metadata: novoMetadata,
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, motivo: 'sem_datas_disponiveis' },
+          });
+
+          console.log(`[posvenda-webhook] sem datas disponiveis sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
+
+        // 4b. Datas encontradas — apresentar ao cliente
+        const textoOpcoes = formatarOpcoesDatasParaCliente(resultadoConsulta.datas);
+        const resposta = respostaDatasEncontradas(textoOpcoes);
+        const novoMetadata = await construirMetadataComResposta({
+          sessaoId,
+          metadataAtual: {
+            ...(metadataAtual ?? {}),
+            consulta_datas_status: 'sucesso',
+            consulta_datas_em: new Date().toISOString(),
+            consulta_datas_run_id: resultadoConsulta.runId,
+            consulta_datas_origem: 'mere',
+            total_datas_disponiveis: resultadoConsulta.datas.length,
+            datas_disponiveis: resultadoConsulta.datas,
+          },
+          resposta,
+          estado: 'datas_encontradas',
+          contactId,
+          ticketId,
+          digisacMessageId: messageId,
+          telefoneAutorizado: telefoneAutorizadoFlag,
+        });
+
+        await supabase.from('atendimento_automatico_sessoes').update({
+          estado: 'datas_encontradas',
+          metadata: novoMetadata,
+          ultima_mensagem_cliente: text.substring(0, 200),
+          ultima_mensagem_em: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('id', sessaoId);
+
+        await supabase.from('atendimento_automatico_mensagens').insert({
+          sessao_id: sessaoId,
+          digisac_message_id: messageId,
+          digisac_ticket_id: ticketId,
+          digisac_contact_id: contactId ?? null,
+          origem: 'cliente',
+          texto: text,
+          tipo_mensagem: msg.type as string | undefined,
+          timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+          status: 'processada',
+          metadata: { serviceId, departmentId, total_datas: resultadoConsulta.datas.length, run_id: resultadoConsulta.runId },
+        });
+
+        await supabase.from('atendimento_automatico_eventos').insert({
+          sessao_id: sessaoId,
+          tipo: 'datas_encontradas',
+          descricao: `Consulta de datas retornou ${resultadoConsulta.datas.length} opção(ões)`,
+          metadata: { run_id: resultadoConsulta.runId, datas: resultadoConsulta.datas.map((d: DatasDisponiveisMere) => d.dataISO) },
+        });
+
+        console.log(`[posvenda-webhook] datas encontradas total=${resultadoConsulta.datas.length} sessaoId=${sessaoId}`);
+        return { ok: true, saved: true, origem: 'cliente' };
+      }
+
+      // Estado: datas_encontradas — cliente escolhe opção
+      if (sessaoExistente.estado === 'datas_encontradas') {
+        const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
+        const telefoneSessao = sessaoExistente.telefone;
+        const telefoneAutorizadoFlag = telefoneAutorizado(telefoneSessao);
+        const datasDisponiveis = (metadataAtual?.datas_disponiveis ?? []) as DatasDisponiveisMere[];
+        const totalOpcoes = datasDisponiveis.length;
+
+        const indiceEscolhido = parseInt(textoNormalizado, 10);
+        const opcaoValida =
+          !isNaN(indiceEscolhido) &&
+          indiceEscolhido >= 1 &&
+          indiceEscolhido <= totalOpcoes;
+
+        if (opcaoValida) {
+          const opcaoSelecionada = datasDisponiveis[indiceEscolhido - 1];
+          const resposta = respostaDataOpcaoSelecionada(opcaoSelecionada.dataBR);
+          const novoMetadata = await construirMetadataComResposta({
+            sessaoId,
+            metadataAtual: {
+              ...(metadataAtual ?? {}),
+              data_opcao_selecionada_indice: indiceEscolhido,
+              data_opcao_selecionada: opcaoSelecionada.dataISO,
+              data_opcao_selecionada_br: opcaoSelecionada.dataBR,
+              data_opcao_selecionada_payload_original: opcaoSelecionada,
+              data_opcao_selecionada_em: new Date().toISOString(),
+            },
+            resposta,
+            estado: 'data_opcao_selecionada',
+            contactId,
+            ticketId,
+            digisacMessageId: messageId,
+            telefoneAutorizado: telefoneAutorizadoFlag,
+          });
+
+          await supabase.from('atendimento_automatico_sessoes').update({
+            estado: 'data_opcao_selecionada',
+            metadata: novoMetadata,
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, opcao_selecionada: indiceEscolhido, data_iso: opcaoSelecionada.dataISO },
+          });
+
+          await supabase.from('atendimento_automatico_eventos').insert({
+            sessao_id: sessaoId,
+            tipo: 'data_opcao_selecionada',
+            descricao: `Cliente selecionou data ${opcaoSelecionada.dataBR}`,
+            metadata: { data_iso: opcaoSelecionada.dataISO, data_br: opcaoSelecionada.dataBR, equipe: opcaoSelecionada.equipe, indice: indiceEscolhido },
+          });
+
+          console.log(`[posvenda-webhook] opcao selecionada indice=${indiceEscolhido} data=${opcaoSelecionada.dataISO} sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
+
+        // Opção inválida: manter estado, pedir resposta numérica
+        {
+          const resposta = respostaDataOpcaoInvalida(totalOpcoes > 0 ? totalOpcoes : 3);
+          const novoMetadata = await construirMetadataComResposta({
+            sessaoId,
+            metadataAtual: { ...(metadataAtual ?? {}), ultima_opcao_invalida_em: new Date().toISOString() },
+            resposta,
+            estado: sessaoExistente.estado,
+            contactId,
+            ticketId,
+            digisacMessageId: messageId,
+            telefoneAutorizado: telefoneAutorizadoFlag,
+          });
+
+          await supabase.from('atendimento_automatico_sessoes').update({
+            metadata: novoMetadata,
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, opcao_invalida: true },
+          });
+
+          console.log(`[posvenda-webhook] opcao invalida em datas_encontradas sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
       }
 
       // Estado: documento_recebido/pedido_localizado/pedido_nao_localizado + alterar_entrega

@@ -277,6 +277,77 @@
 
 **Proximo passo recomendado:** Confirmar que a API Digisac retorna `id` ao POST `/messages`; se nao retornar, implementar fallback de texto+timestamp. Testar novo fluxo completo: CPF → auto-reply → eco no webhook → sem pausa → cliente responde `sim` → estado avanca.
 
+## 2026-07-09 - Cascade - Frente 3: consulta de datas via motor v2 integrada ao fluxo Mere
+
+**Resumo:** Implementada a Frente 3 do atendimento automatico pos-venda Mere. Quando sessao chega em `data_desejada_recebida`, o webhook agora geocodifica o endereco do grupo (cache-only), valida campos obrigatorios, chama `pesquisarDatasV2` direto (server-side, sem HTTP, sem auth), formata ate 3 opcoes de data e apresenta ao cliente. Cliente escolhe com 1/2/3. Estado final: `data_opcao_selecionada`. Sem alteracao de agenda, Calendar, planilha ou motor v2.
+
+**Arquivos lidos:**
+- src/app/api/procurar-datas/pesquisar/route.ts
+- src/app/api/procurar-datas/v2/pesquisar/route.ts
+- src/lib/procurar-datas/contratos.ts
+- src/lib/procurar-datas/motor/pesquisar-datas-v2.ts (linhas 1-550)
+- src/lib/procurar-datas/motor/entrada.ts
+- src/lib/procurar-datas/types.ts
+- src/lib/procurar-datas/api.ts
+- src/lib/procurar-datas/endereco-cache.ts
+- src/lib/procurar-datas/google-geocoding.ts
+- src/lib/procurar-datas/locationiq.ts
+- src/lib/google/sheets-service-account.ts
+- src/lib/atendimento-automatico/webhook-processor.ts (linhas 1345-1587)
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx (linhas 115-160)
+
+**Arquivos alterados/criados:**
+- src/lib/atendimento-automatico/consulta-datas-mere.ts (NOVO - geocodificar, validar, montar payload, consultar, formatar)
+- src/lib/atendimento-automatico/respostas.ts (+10 tipos, +8 funcoes: datas_encontradas, sem_datas, erro_consulta, sem_dados, coordenadas, opcao_invalida, opcao_selecionada)
+- src/lib/atendimento-automatico/webhook-processor.ts (+2 blocos: data_desejada_recebida e datas_encontradas)
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx (resumoSituacao com consulta_status, total_datas, opcao_selecionada_br, motivo_transferencia)
+- docs/ia/log_progress.md
+
+**Motor usado:** `pesquisarDatasV2` (src/lib/procurar-datas/motor/pesquisar-datas-v2.ts) — chamado direto, sem HTTP, sem validacao de usuario. Rota v2 NAO foi alterada.
+
+**Payload montado em montarPayloadConsultaDatasMere:**
+- dataInicial = data_desejada_iso (YYYY-MM-DD)
+- tempoNecessario = grupo.tempo_servico (HH:MM)
+- enderecoCompleto = grupo.endereco_completo
+- destLat / destLng = coordenadas do geo_cache (cache-only)
+- isRural = false, isCondominio = false (nao disponivel na sessao)
+
+**Geocodificacao:** cache-only via Supabase geo_cache (ilike em endereco_completo normalizado, limite 5, exige match unico com coords validas). Se cache miss ou ambiguo: transfere para humano com motivo `coordenadas_nao_resolvidas`.
+
+**Estados novos:**
+- `data_desejada_recebida` (processamento ativo - antes era estado terminal sem tratamento)
+- `datas_encontradas` (aguarda escolha 1/2/3)
+- `data_opcao_selecionada` (estado terminal desta etapa)
+
+**Idempotencia:** se `consulta_datas_status === 'sucesso'` ja existir no metadata, ignora nova mensagem no estado `data_desejada_recebida`.
+
+**Metadata salvo:**
+- consulta_datas_status: 'sucesso' | 'sem_datas' | 'dados_insuficientes' | 'erro_coordenadas' | 'erro'
+- consulta_datas_em, consulta_datas_run_id, consulta_datas_origem = 'mere'
+- total_datas_disponiveis, datas_disponiveis (array com dataISO, dataBR, equipe, tipo, rank)
+- data_opcao_selecionada_indice, data_opcao_selecionada, data_opcao_selecionada_br
+- data_opcao_selecionada_payload_original, data_opcao_selecionada_em
+
+**Validacoes:**
+- npx tsc --noEmit - 0 erros
+- npx eslint - 0 erros, 0 warnings
+- npx vitest run - 113/113 (108 atendimento + 5 motor v2)
+
+**Nao alterado:** motor pesquisar-datas-v2.ts, rotas /api/procurar-datas/*, agenda, Calendar, planilha, Apps Script, OSRM, ranking, bot Digisac antigo
+
+**Pendencias (confirmadas nesta tarefa):**
+- Geocodificacao via geo_cache e cache-only: se endereco nao estiver no cache, transfere para humano. Pendencia futura: populacao automatica do cache ou geocodificacao externa controlada para enderecos novos.
+- isRural e isCondominio nao disponivel na sessao Mere: passado como false. Se cliente tiver entrega rural, a consulta pode retornar resultados incorretos. Pendencia: enriquecer sessao com esses flags vindos do grupo da planilha.
+- Bot antigo Digisac envia "Obrigado, logo nossa equipe irá te atender!" antes da resposta da Mere no fluxo confirmar_entrega. Nao mexer nesta tarefa.
+- Estado `data_opcao_selecionada` e terminal nesta tarefa (sem alteracao de agenda). Proxima etapa: confirmar agendamento com equipe humana ou automatizar.
+
+**Riscos conhecidos:**
+- Chamada a pesquisarDatasV2 pode demorar (busca agenda + disponibilidade + OSRM). Timeout do webhook Digisac pode causar retry. Idempotencia por `consulta_datas_status` protege contra consulta dupla.
+- Motor v2 retorna `ok: false` se dataInicial ou tempoNecessario forem invalidos. Tratado via `validarCamposConsultaMere` antes da chamada.
+- Candidatos do motor v2 podem ser todos inelegíveis (elegivel=false): tratado como sem_datas_disponiveis.
+
+**Proximo passo recomendado:** Testar fluxo completo em ambiente de homologacao. Verificar se geo_cache ja contem o endereco do cliente de teste. Se nao contiver, popular manualmente ou implementar geocodificacao automatica de enderecos Mere.
+
 ## 2026-07-08 - Cascade - Helpers de intencao, fallbacks por estado e contador de tentativas invalidas
 
 **Resumo:** Criados helpers puros `interpretarConfirmacao` e `interpretarAcaoAlteracao` em `interpretar-intencao.ts`. Adicionados fallbacks com texto explicativo para respostas ambiguas nos estados `aguardando_confirmacao_pedido`, `aguardando_escolha_acao` e `aguardando_confirmacao_endereco`. Implementado contador de tentativas invalidas com transferencia para humano apos 2 falhas. Melhorado texto da pergunta de acao. Testes: 108/108.

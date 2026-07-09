@@ -27,7 +27,17 @@ export type TipoRespostaSugerida =
   | 'fallback_confirmacao_pedido'
   | 'fallback_escolha_acao'
   | 'fallback_confirmacao_endereco'
-  | 'transferido_humano_muitas_tentativas';
+  | 'transferido_humano_muitas_tentativas'
+  | 'consultando_datas'
+  | 'datas_encontradas'
+  | 'sem_datas_disponiveis'
+  | 'erro_consulta_datas'
+  | 'transferido_humano_dados_insuficientes'
+  | 'transferido_humano_sem_datas'
+  | 'transferido_humano_erro_consulta'
+  | 'transferido_humano_coordenadas_nao_resolvidas'
+  | 'data_opcao_invalida'
+  | 'data_opcao_selecionada';
 
 export type RespostaSugerida = {
   texto: string;
@@ -92,7 +102,7 @@ export function respostaEscolhaInvalida(): RespostaSugerida {
 
 export function respostaPedidoConfirmadoConfirmarEntrega(dataEntrega: string): RespostaSugerida {
   return {
-    texto: `Perfeito. Sua entrega está agendada para ${dataEntrega}. A entrega e montagem acontecem no mesmo dia, em horário comercial. Nossa equipe entra em contato próximo da data.`,
+    texto: `Perfeito. Sua entrega está agendada para ${dataEntrega}.\n\nA entrega e montagem acontecem no mesmo dia, em horário comercial. Nossa equipe entra em contato próximo da data.\n\nTe ajudo em algo mais?`,
     tipo: 'pedido_confirmado_confirmar',
   };
 }
@@ -129,14 +139,14 @@ export function respostaAcaoAlteracaoRecebida(acao: 'adiantar' | 'postergar'): R
 export function respostaConfirmarEnderecoAlteracao(acao: 'adiantar' | 'postergar', enderecoCompleto: string): RespostaSugerida {
   const acaoTexto = acao === 'adiantar' ? 'adiantar' : 'postergar';
   return {
-    texto: `Perfeito! Entendi que deseja ${acaoTexto} a entrega.\n\nAntes de verificar as possibilidades, preciso confirmar uma informação.\n\nO endereço da entrega continua sendo:\n\n${enderecoCompleto}\n\nEstá correto?`,
+    texto: `Perfeito! Entendi que deseja ${acaoTexto} a entrega.\n\nAntes de verificar as possibilidades, preciso confirmar uma informação.\n\nO endereço da entrega continua sendo:\n\n*${enderecoCompleto}*\n\nEstá correto?`,
     tipo: 'confirmar_endereco_alteracao',
   };
 }
 
 export function respostaAguardandoDataDesejada(): RespostaSugerida {
   return {
-    texto: 'Perfeito!\n\nA partir de qual data gostaria de receber?\n\n(Responda com dia mes e ano "18-06-2026")',
+    texto: 'Perfeito!\n\nA partir de qual data gostaria de receber?\n\nPode responder com uma data, por exemplo: 20/07 ou 20/07/2026.',
     tipo: 'aguardando_data_desejada',
   };
 }
@@ -246,6 +256,71 @@ export function respostaDataDesejadaRecebida(dataBr: string): RespostaSugerida {
   return {
     texto: `Perfeito! Vou verificar as possibilidades a partir de ${dataBr}.`,
     tipo: 'data_desejada_recebida',
+  };
+}
+
+export function respostaDatasEncontradas(opcoes: string): RespostaSugerida {
+  return {
+    texto: opcoes,
+    tipo: 'datas_encontradas',
+  };
+}
+
+export function respostaSemDatasDisponiveis(): RespostaSugerida {
+  return {
+    texto: 'Não encontrei uma opção automática dentro desse período. Vou encaminhar seu atendimento para nossa equipe verificar manualmente.',
+    tipo: 'sem_datas_disponiveis',
+  };
+}
+
+export function respostaErroConsultaDatas(): RespostaSugerida {
+  return {
+    texto: 'Encontrei um problema ao buscar as datas disponíveis. Vou encaminhar seu atendimento para nossa equipe verificar.',
+    tipo: 'erro_consulta_datas',
+  };
+}
+
+export function respostaTransferidoHumanoSemDados(motivo: string): RespostaSugerida {
+  void motivo;
+  return {
+    texto: 'Vou encaminhar seu atendimento para nossa equipe continuar por aqui.',
+    tipo: 'transferido_humano_dados_insuficientes',
+  };
+}
+
+export function respostaTransferidoHumanoSemDatas(): RespostaSugerida {
+  return {
+    texto: 'Não encontrei uma opção automática dentro desse período. Vou encaminhar seu atendimento para nossa equipe verificar manualmente.',
+    tipo: 'transferido_humano_sem_datas',
+  };
+}
+
+export function respostaTransferidoHumanoErroDatas(): RespostaSugerida {
+  return {
+    texto: 'Encontrei um problema ao buscar as datas disponíveis. Vou encaminhar seu atendimento para nossa equipe verificar.',
+    tipo: 'transferido_humano_erro_consulta',
+  };
+}
+
+export function respostaTransferidoHumanoCoordenadas(): RespostaSugerida {
+  return {
+    texto: 'Não consegui localizar o endereço de entrega automaticamente. Vou encaminhar seu atendimento para nossa equipe verificar manualmente.',
+    tipo: 'transferido_humano_coordenadas_nao_resolvidas',
+  };
+}
+
+export function respostaDataOpcaoInvalida(max: number): RespostaSugerida {
+  const opcoes = Array.from({ length: max }, (_, i) => String(i + 1)).join(', ');
+  return {
+    texto: `Não consegui entender a opção escolhida. Responda com o número da opção desejada, por exemplo: ${opcoes}.`,
+    tipo: 'data_opcao_invalida',
+  };
+}
+
+export function respostaDataOpcaoSelecionada(dataBR: string): RespostaSugerida {
+  return {
+    texto: `Perfeito! Selecionei a opção ${dataBR}. Vou encaminhar para nossa equipe confirmar a alteração na agenda.`,
+    tipo: 'data_opcao_selecionada',
   };
 }
 

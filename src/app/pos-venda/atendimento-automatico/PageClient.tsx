@@ -137,6 +137,14 @@ function resumoSituacao(metadata: Record<string, unknown> | null): string {
   if (dataDesejadaBr) partes.push(`data: ${dataDesejadaBr}`)
   const motivoBloqueio = (metadata.motivo_bloqueio_acao ?? metadata.motivo_bloqueio_data ?? metadata.motivo_bloqueio_endereco) as string | undefined
   if (motivoBloqueio) partes.push(`bloqueio: ${motivoBloqueio}`)
+  const consultaStatus = metadata.consulta_datas_status as string | undefined
+  if (consultaStatus) partes.push(`consulta: ${consultaStatus}`)
+  const totalDatas = metadata.total_datas_disponiveis as number | undefined
+  if (typeof totalDatas === 'number') partes.push(`${totalDatas} data(s)`)
+  const opcaoSelecionadaBr = metadata.data_opcao_selecionada_br as string | undefined
+  if (opcaoSelecionadaBr) partes.push(`selecionada: ${opcaoSelecionadaBr}`)
+  const motivoTransferencia = metadata.motivo_transferencia_humano as string | undefined
+  if (motivoTransferencia) partes.push(`motivo: ${motivoTransferencia}`)
   return partes.join(' • ')
 }
 

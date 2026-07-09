@@ -126,6 +126,10 @@ function resumoSituacao(metadata: Record<string, unknown> | null): string {
   if (totalRegistros !== undefined) partes.push(`${totalRegistros} registro(s)`)
   if (totalGrupos !== undefined) partes.push(`${totalGrupos} entrega(s)`)
   if (grupoSelecionado !== undefined && grupoSelecionado !== null) partes.push(`grupo ${grupoSelecionado}`)
+  const motivoPedidoNegado = metadata.motivo_pedido_negado as string | undefined
+  if (motivoPedidoNegado) partes.push('pedido negado')
+  const retentativaDocumento = metadata.documento_retentativa_mascarado as string | undefined
+  if (retentativaDocumento) partes.push(`novo doc: ${retentativaDocumento}`)
   if (pedidoConfirmado === true) partes.push('confirmado')
   if (pedidoConfirmado === false) partes.push('não confirmado')
   const acao = metadata.acao_alteracao as string | undefined
@@ -143,6 +147,17 @@ function resumoSituacao(metadata: Record<string, unknown> | null): string {
   if (typeof totalDatas === 'number') partes.push(`${totalDatas} data(s)`)
   const opcaoSelecionadaBr = metadata.data_opcao_selecionada_br as string | undefined
   if (opcaoSelecionadaBr) partes.push(`selecionada: ${opcaoSelecionadaBr}`)
+  const confirmacaoReagendamentoPendente = metadata.confirmacao_reagendamento_pendente as boolean | undefined
+  if (confirmacaoReagendamentoPendente === true) partes.push('conf. reagendamento pendente')
+  const dataOriginalBr = metadata.data_original_br as string | undefined
+  const dataNovaBr = metadata.data_nova_br as string | undefined
+  if (dataOriginalBr && dataNovaBr) partes.push(`${dataOriginalBr} -> ${dataNovaBr}`)
+  const calendarWriteStatus = metadata.calendar_write_status as string | undefined
+  if (calendarWriteStatus) partes.push(`calendar: ${calendarWriteStatus}`)
+  const calendarEventosTotal = metadata.calendar_eventos_total as number | undefined
+  if (typeof calendarEventosTotal === 'number') partes.push(`${calendarEventosTotal} evento(s)`)
+  const calendarErros = metadata.calendar_erros as unknown[] | undefined
+  if (calendarErros && calendarErros.length > 0) partes.push(`${calendarErros.length} erro(s) calendar`)
   const motivoTransferencia = metadata.motivo_transferencia_humano as string | undefined
   if (motivoTransferencia) partes.push(`motivo: ${motivoTransferencia}`)
   return partes.join(' • ')

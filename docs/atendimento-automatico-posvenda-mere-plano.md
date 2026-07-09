@@ -554,3 +554,59 @@ Padrao validado no projeto: funcao `is_superadmin()` que verifica `usuarios_perm
 - Nao alterado: motor `/procurar-datas`, OSRM/Haversine, Google Calendar, agenda, escrita em planilha, regra de negocio de ranking/classificacao.
 - Validacoes: lint dos arquivos alterados passou; `consulta-datas-mere.test.ts` + `sheets-service-account.test.ts` passaram (11 testes); `entrada.test.ts` + `tempo.test.ts` passaram (58 testes); `npx tsc --noEmit --pretty` passou.
 - Pendencia: deploy/rebuild e repetir fluxo real `2 -> CPF -> sim -> postergar -> sim endereco -> 30-07`.
+
+### 2026-07-09 - Codex - Confirmacao final e dry-run de reagendamento Google Calendar
+
+- Fluxo alterado apos `datas_encontradas`: a escolha de uma data nao encerra mais em `data_opcao_selecionada`.
+- Novo estado: `aguardando_confirmacao_reagendamento`.
+- Metadata salva ao selecionar a opcao:
+  - `data_original_br`
+  - `data_original_iso`
+  - `data_nova_br`
+  - `data_nova_iso`
+  - `data_opcao_selecionada_indice`
+  - `confirmacao_reagendamento_pendente=true`
+  - `resposta_sugerida_tipo="confirmar_reagendamento_final"`
+- Confirmacao positiva usa `interpretarConfirmacao` existente e chama helper de reagendamento.
+- Confirmacao negativa nao altera agenda e volta para `datas_encontradas` quando `datas_disponiveis` ainda existe; sem opcoes, transfere para humano.
+- Resposta ambigua mantem `aguardando_confirmacao_reagendamento` e pede "sim" ou "nao".
+- Escrita em Google Calendar protegida por `ATENDIMENTO_POSVENDA_CALENDAR_WRITE_ENABLED`.
+  - Qualquer valor diferente de `true` executa dry-run.
+  - Dry-run grava `calendar_write_status="dry_run"` e nao afirma ao cliente que a agenda foi alterada.
+- Calendario de duplicacao usa `GOOGLE_CALENDAR_REAGENDAMENTO_REM_CLIENTE_ID` ou fallback `c_5d423c9be1ad48fe2ec6f15e571fe0879b703d3c60d27245d024413c09e73bd8@group.calendar.google.com`.
+- Helper deduplica por `calendar_id + evento_id`, exige evento original all-day, duplica primeiro no calendario de "8.2- REAGENDAMENTO (REM. CLIENTE)" com prefixo `[REAG. AUTOMATICO]`, e so depois atualiza o original para a nova data.
+- Se a duplicacao falhar, o original nao e movido. Se mover falhar depois de duplicar, registra falha parcial critica e transfere para humano, sem apagar duplicata automaticamente.
+- Parser de escolha de data aceita numero da opcao e tambem datas como `dia 03`, `03`, `03/08`, `03/08/2026` e `3 de agosto`; quando a data for ambigua, pede escolha numerica.
+- Painel administrativo exibe resumo de confirmacao pendente, data original/nova, status de Calendar, quantidade de eventos e erros.
+- Nao alterado: motor `/procurar-datas`, OSRM, ranking/classificacao, consulta de datas, regras de frete, pre-agendamento Apps Script.
+- Validacoes: MCP Supabase confirmou `atendimento_automatico_sessoes.metadata` jsonb e colunas usadas; testes focados de respostas, parser e Calendar passaram; TypeScript e ESLint passaram.
+- Pendencias: validar em ambiente real com `ATENDIMENTO_POSVENDA_CALENDAR_WRITE_ENABLED=false` primeiro; depois, se o dry-run estiver correto, habilitar `true` em janela controlada e testar com evento all-day de baixo risco.
+
+### 2026-07-09 - Codex - Pedido negado e retentativa por novo CPF/CNPJ
+
+- Problema real observado: cliente negou a entrega localizada em `aguardando_confirmacao_pedido`, recebeu pedido de novo CPF/CNPJ, mas ao enviar outro documento o fluxo ainda estava em `aguardando_confirmacao_pedido` e tratou o CPF como confirmacao ambigua.
+- Causa confirmada no codigo: o branch de negacao gravava `metadata.pedido_confirmado=false`, mas nao alterava `estado`; a proxima mensagem seguia no fallback de confirmacao de pedido.
+- Novo estado: `aguardando_novo_documento_ou_esclarecimento`.
+- Quando o cliente nega a entrega localizada:
+  - salva `metadata.pedido_confirmado=false`;
+  - salva `metadata.pedido_negado_em`;
+  - salva `metadata.motivo_pedido_negado="cliente_informou_entrega_incorreta"`;
+  - muda `estado` para `aguardando_novo_documento_ou_esclarecimento`;
+  - mantem `status="ativa"`;
+  - responde solicitando conferencia do CPF/CNPJ ou breve explicacao.
+- Quando o cliente envia CPF/CNPJ valido nesse novo estado:
+  - normaliza documento;
+  - substitui `documento_informado`;
+  - salva `documento_anterior_mascarado`, `documento_retentativa_mascarado`, `retentativa_documento_em` e incrementa `tentativas_documento`;
+  - reusa a consulta atual da planilha (`buscarAgendamentosPorDocumento`);
+  - se encontrar 1 grupo, volta para `aguardando_confirmacao_pedido`;
+  - se encontrar multiplos grupos, vai para `aguardando_escolha_grupo`;
+  - se nao encontrar, transfere para humano com motivo `novo_documento_nao_localizado`.
+- Quando o cliente envia texto sem CPF/CNPJ nesse novo estado:
+  - primeira tentativa: mantem estado e responde pedindo CPF/CNPJ;
+  - segunda tentativa: transfere para humano com motivo `sem_documento_para_relocalizar_pedido`.
+- Preparacao futura para IA: este estado e o ponto correto para uma futura camada de classificacao quando a mensagem nao trouxer CPF/CNPJ. A IA devera classificar se o cliente informou outro dado util, pediu humano, esta confuso, nao tem CPF ou quer cancelar; transferencia deve ocorrer apenas quando a intencao exigir humano ou quando a confianca for insuficiente. IA nao foi implementada nesta tarefa.
+- Tela administrativa: resumo de situacao passa a exibir `pedido negado` e o novo documento mascarado quando houver retentativa.
+- Nao alterado: `/procurar-datas`, motor v2, Google Calendar, agenda, escrita em planilha, allowlist, eco de auto-reply, confirmacao positiva, escolha de acao, confirmacao de endereco, parser de data, consulta de datas e confirmacao final de reagendamento.
+- Validacoes: MCP Supabase confirmou colunas/tipos das tabelas de atendimento automatico; testes focados do processador e respostas passaram; TypeScript e ESLint passaram.
+- Observacao: `.devin` existe, mas a leitura direta retornou acesso negado nesta sessao; conteudo nao confirmado no codigo.

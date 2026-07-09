@@ -2,6 +2,10 @@ import type { GrupoAgendamento } from '@/lib/google/sheets-service-account';
 
 export type TipoRespostaSugerida =
   | 'pedido_nao_localizado'
+  | 'pedido_negado_solicitar_novo_documento'
+  | 'novo_documento_nao_localizado'
+  | 'fallback_novo_documento_ou_esclarecimento'
+  | 'transferido_humano_sem_documento_relocalizacao'
   | 'confirmar_entrega_unica'
   | 'escolher_grupo'
   | 'grupo_selecionado'
@@ -37,7 +41,13 @@ export type TipoRespostaSugerida =
   | 'transferido_humano_erro_consulta'
   | 'transferido_humano_coordenadas_nao_resolvidas'
   | 'data_opcao_invalida'
-  | 'data_opcao_selecionada';
+  | 'data_opcao_selecionada'
+  | 'confirmar_reagendamento_final'
+  | 'confirmacao_reagendamento_ambigua'
+  | 'reagendamento_cancelado'
+  | 'reagendamento_dry_run'
+  | 'reagendamento_confirmado'
+  | 'transferido_humano_erro_reagendamento';
 
 export type RespostaSugerida = {
   texto: string;
@@ -58,6 +68,34 @@ export function respostaPedidoNaoLocalizado(): RespostaSugerida {
   return {
     texto: 'Não encontrei pedido com esse CPF/CNPJ. Pode conferir se o documento do titular da compra está correto e me enviar novamente?',
     tipo: 'pedido_nao_localizado',
+  };
+}
+
+export function respostaPedidoNegadoSolicitarNovoDocumento(): RespostaSugerida {
+  return {
+    texto: 'Entendi. Pode conferir o CPF/CNPJ do titular da compra e me enviar novamente?\n\nSe preferir, envie uma breve explicaÃ§Ã£o que eu encaminho para nossa equipe verificar.',
+    tipo: 'pedido_negado_solicitar_novo_documento',
+  };
+}
+
+export function respostaNovoDocumentoNaoLocalizado(): RespostaSugerida {
+  return {
+    texto: 'NÃ£o consegui localizar uma entrega com esse CPF/CNPJ. Vou encaminhar seu atendimento para nossa equipe verificar manualmente.',
+    tipo: 'novo_documento_nao_localizado',
+  };
+}
+
+export function respostaFallbackNovoDocumentoOuEsclarecimento(): RespostaSugerida {
+  return {
+    texto: 'NÃ£o consegui localizar um CPF/CNPJ na sua mensagem.\n\nPode me enviar o CPF/CNPJ do titular da compra? Se nÃ£o tiver essa informaÃ§Ã£o, vou encaminhar para nossa equipe verificar manualmente.',
+    tipo: 'fallback_novo_documento_ou_esclarecimento',
+  };
+}
+
+export function respostaTransferidoHumanoSemDocumentoRelocalizacao(): RespostaSugerida {
+  return {
+    texto: 'Vou encaminhar seu atendimento para nossa equipe verificar manualmente.',
+    tipo: 'transferido_humano_sem_documento_relocalizacao',
   };
 }
 
@@ -321,6 +359,48 @@ export function respostaDataOpcaoSelecionada(dataBR: string): RespostaSugerida {
   return {
     texto: `Perfeito! Selecionei a opção ${dataBR}. Vou encaminhar para nossa equipe confirmar a alteração na agenda.`,
     tipo: 'data_opcao_selecionada',
+  };
+}
+
+export function respostaConfirmarReagendamentoFinal(dataOriginalBR: string, dataNovaBR: string): RespostaSugerida {
+  return {
+    texto: `Perfeito! Encontrei a opcao ${dataNovaBR}. Hoje sua entrega esta agendada para ${dataOriginalBR}. Confirma que deseja alterar para ${dataNovaBR}?`,
+    tipo: 'confirmar_reagendamento_final',
+  };
+}
+
+export function respostaConfirmacaoReagendamentoAmbigua(dataNovaBR: string): RespostaSugerida {
+  return {
+    texto: `Nao consegui entender se posso alterar para ${dataNovaBR}. Pode responder com "sim" para confirmar ou "nao" para cancelar?`,
+    tipo: 'confirmacao_reagendamento_ambigua',
+  };
+}
+
+export function respostaReagendamentoCancelado(): RespostaSugerida {
+  return {
+    texto: 'Tudo bem, nao vou alterar a data da entrega. Se quiser escolher outra opcao, me envie o numero ou a data desejada.',
+    tipo: 'reagendamento_cancelado',
+  };
+}
+
+export function respostaReagendamentoDryRun(dataNovaBR: string): RespostaSugerida {
+  return {
+    texto: `Recebi sua confirmacao para ${dataNovaBR}. O reagendamento automatico esta em modo de teste, entao nao alterei a agenda. Vou encaminhar para nossa equipe validar a alteracao.`,
+    tipo: 'reagendamento_dry_run',
+  };
+}
+
+export function respostaReagendamentoConfirmado(dataNovaBR: string): RespostaSugerida {
+  return {
+    texto: `Perfeito, sua entrega foi reagendada para ${dataNovaBR}. Nossa equipe continua acompanhando por aqui.`,
+    tipo: 'reagendamento_confirmado',
+  };
+}
+
+export function respostaTransferidoHumanoErroReagendamento(): RespostaSugerida {
+  return {
+    texto: 'Recebi sua confirmacao, mas nao consegui concluir a alteracao automatica com seguranca. Vou encaminhar seu atendimento para nossa equipe verificar.',
+    tipo: 'transferido_humano_erro_reagendamento',
   };
 }
 

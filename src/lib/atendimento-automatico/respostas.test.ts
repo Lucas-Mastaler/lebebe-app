@@ -9,6 +9,10 @@ import {
   respostaPedidoConfirmadoAlterarAcaoJaEscolhida,
   respostaPedidoConfirmadoAlterarEscolherAcao,
   respostaPedidoNegado,
+  respostaPedidoNegadoSolicitarNovoDocumento,
+  respostaNovoDocumentoNaoLocalizado,
+  respostaFallbackNovoDocumentoOuEsclarecimento,
+  respostaTransferidoHumanoSemDocumentoRelocalizacao,
   respostaConfirmarEnderecoAlteracao,
   respostaAguardandoDataDesejada,
   respostaTransferidoHumanoEndereco,
@@ -16,6 +20,10 @@ import {
   respostaBloqueioPagamentoPendenteAntecipacao,
   respostaBloqueioPrazoMenor7Antecipacao,
   respostaBloqueioPrazoCriticoD2Postergacao,
+  respostaConfirmarReagendamentoFinal,
+  respostaReagendamentoDryRun,
+  respostaReagendamentoConfirmado,
+  respostaTransferidoHumanoErroReagendamento,
 } from './respostas';
 import type { GrupoAgendamento } from '@/lib/google/sheets-service-account';
 
@@ -121,6 +129,31 @@ describe('respostas', () => {
     expect(resposta.texto).toContain('CPF/CNPJ correto');
   });
 
+  it('gera resposta para pedido negado solicitando novo documento', () => {
+    const resposta = respostaPedidoNegadoSolicitarNovoDocumento();
+    expect(resposta.tipo).toBe('pedido_negado_solicitar_novo_documento');
+    expect(resposta.texto).toContain('CPF/CNPJ');
+    expect(resposta.texto).toContain('breve explica');
+  });
+
+  it('gera resposta para novo documento nao localizado', () => {
+    const resposta = respostaNovoDocumentoNaoLocalizado();
+    expect(resposta.tipo).toBe('novo_documento_nao_localizado');
+    expect(resposta.texto).toContain('localizar uma entrega');
+  });
+
+  it('gera fallback para texto sem documento na relocalizacao', () => {
+    const resposta = respostaFallbackNovoDocumentoOuEsclarecimento();
+    expect(resposta.tipo).toBe('fallback_novo_documento_ou_esclarecimento');
+    expect(resposta.texto).toContain('CPF/CNPJ');
+  });
+
+  it('gera transferencia humana sem documento para relocalizacao', () => {
+    const resposta = respostaTransferidoHumanoSemDocumentoRelocalizacao();
+    expect(resposta.tipo).toBe('transferido_humano_sem_documento_relocalizacao');
+    expect(resposta.texto).toContain('equipe');
+  });
+
   it('gera confirmacao de endereco para adiantar', () => {
     const r = respostaConfirmarEnderecoAlteracao('adiantar', 'Rua das Flores, 123, Curitiba, PR');
     expect(r.tipo).toBe('confirmar_endereco_alteracao');
@@ -170,5 +203,34 @@ describe('respostas', () => {
     const r = respostaBloqueioPrazoCriticoD2Postergacao();
     expect(r.tipo).toBe('bloqueio_prazo_critico_d2_postergacao');
     expect(r.texto).toContain('próximos dias');
+  });
+});
+
+describe('respostas de reagendamento', () => {
+  it('gera confirmacao final de reagendamento', () => {
+    const r = respostaConfirmarReagendamentoFinal('17/07/2026', '03/08/2026');
+    expect(r.tipo).toBe('confirmar_reagendamento_final');
+    expect(r.texto).toContain('17/07/2026');
+    expect(r.texto).toContain('03/08/2026');
+    expect(r.texto).toContain('Confirma');
+  });
+
+  it('gera resposta dry-run sem afirmar alteracao na agenda', () => {
+    const r = respostaReagendamentoDryRun('03/08/2026');
+    expect(r.tipo).toBe('reagendamento_dry_run');
+    expect(r.texto).toContain('modo de teste');
+    expect(r.texto).toContain('nao alterei a agenda');
+  });
+
+  it('gera resposta de reagendamento confirmado', () => {
+    const r = respostaReagendamentoConfirmado('03/08/2026');
+    expect(r.tipo).toBe('reagendamento_confirmado');
+    expect(r.texto).toContain('03/08/2026');
+  });
+
+  it('gera resposta de erro seguro de reagendamento', () => {
+    const r = respostaTransferidoHumanoErroReagendamento();
+    expect(r.tipo).toBe('transferido_humano_erro_reagendamento');
+    expect(r.texto).toContain('equipe');
   });
 });

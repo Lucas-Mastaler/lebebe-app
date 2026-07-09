@@ -19276,3 +19276,112 @@ Abrir `/procurar-datas/dev-v2` com sessao superadmin, auditar o run informado e 
 
 **Proximo passo recomendado:**
 - Fazer deploy e repetir o caso real; esperado: payload com `tempoNecessario = "00:40"` quando houver item valido no grupo, ou transferencia com `tempo_servico_indisponivel` se nenhum tempo valido existir.
+
+## 2026-07-09 - Codex - Confirmacao final e dry-run de reagendamento da Mere no Google Calendar
+
+**Resumo:** Implementada confirmacao final antes de qualquer escrita em agenda no fluxo de pos-venda da Mere. Apos o cliente escolher uma data em `datas_encontradas`, o sistema salva data original/nova em metadata e muda para `aguardando_confirmacao_reagendamento`, perguntando se pode alterar. Confirmacao positiva chama helper de reagendamento protegido por `ATENDIMENTO_POSVENDA_CALENDAR_WRITE_ENABLED`; com flag diferente de `true`, executa dry-run, nao toca Calendar e transfere para humano com status seguro. Com flag `true`, o helper deduplica eventos por `calendar_id + evento_id`, exige evento all-day, duplica primeiro no calendario de reagendamento com prefixo `[REAG. AUTOMATICO]` e so entao move o original para a nova data.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- .devin/rules/gerais.md
+- .devin/rules/continuidade-agente.md
+- .devin/rules/supabase.md
+- skill Google Calendar (`google-calendar/SKILL.md`)
+- skill Supabase (`.agents/skills/supabase/SKILL.md`)
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/lib/atendimento-automatico/respostas.ts
+- src/lib/atendimento-automatico/interpretar-intencao.ts
+- src/lib/atendimento-automatico/consulta-datas-mere.ts
+- src/lib/google/calendar-service.ts
+- src/lib/google/sheets-service-account.ts
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx
+
+**Arquivos alterados/criados:**
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/lib/atendimento-automatico/respostas.ts
+- src/lib/atendimento-automatico/respostas.test.ts
+- src/lib/atendimento-automatico/reagendamento-opcoes.ts (novo)
+- src/lib/atendimento-automatico/reagendamento-opcoes.test.ts (novo)
+- src/lib/atendimento-automatico/reagendamento-calendar.ts (novo)
+- src/lib/atendimento-automatico/reagendamento-calendar.test.ts (novo)
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md
+- .env.local (variaveis locais nao sensiveis adicionadas; arquivo fora do indice Git neste checkout)
+- .env.example (variaveis locais nao sensiveis adicionadas; arquivo fora do indice Git neste checkout)
+
+**Validacoes realizadas:**
+- MCP Supabase `_list_tables`: confirmado que `atendimento_automatico_sessoes` possui `metadata jsonb`, `estado`, `status`, `data_escolhida`, `alterou_agenda`, `motivo_falha`; `atendimento_automatico_mensagens` e `atendimento_automatico_eventos` possuem `metadata jsonb` e FK para sessoes.
+- `npm run test -- src/lib/atendimento-automatico/reagendamento-opcoes.test.ts src/lib/atendimento-automatico/reagendamento-calendar.test.ts src/lib/atendimento-automatico/respostas.test.ts`: 3 arquivos, 34 testes passaram.
+- `npx tsc --noEmit`: passou.
+- `npx eslint src/lib/atendimento-automatico/webhook-processor.ts src/lib/atendimento-automatico/respostas.ts src/lib/atendimento-automatico/reagendamento-opcoes.ts src/lib/atendimento-automatico/reagendamento-calendar.ts src/app/pos-venda/atendimento-automatico/PageClient.tsx src/lib/atendimento-automatico/reagendamento-opcoes.test.ts src/lib/atendimento-automatico/reagendamento-calendar.test.ts src/lib/atendimento-automatico/respostas.test.ts`: passou.
+
+**Comandos rodados e resultados:**
+- `rg` para mapear estados `datas_encontradas`, `data_opcao_selecionada`, helpers de confirmacao e integracao Google Calendar.
+- `git diff` e `git status --short` para revisar escopo local.
+- Primeiro teste focado falhou porque `03` era tratado como indice `3`; corrigido para numero com zero a esquerda ser interpretado como dia, e rerun passou.
+
+**Pendencias:**
+- Validar em ambiente real com `ATENDIMENTO_POSVENDA_CALENDAR_WRITE_ENABLED=false` antes de habilitar escrita.
+- Depois do dry-run real, habilitar `ATENDIMENTO_POSVENDA_CALENDAR_WRITE_ENABLED=true` apenas em janela controlada e com evento all-day de baixo risco.
+- Confirmar permissao OAuth do usuario/token tecnico para ler, criar e atualizar nos calendarios envolvidos; nao confirmado no codigo/runtime.
+
+**Riscos conhecidos:**
+- Se o evento original tiver `dateTime` em vez de `date`, o fluxo bloqueia como `evento_nao_eh_dia_inteiro` e transfere para humano.
+- Se a duplicacao no calendario de reagendamento der certo mas a atualizacao do original falhar, o helper registra falha parcial critica e nao apaga a duplicata automaticamente.
+- `.env.local` e `.env.example` aparecem fora do indice Git neste checkout; os valores foram adicionados localmente, mas podem precisar de sincronizacao manual no ambiente/deploy.
+
+**Proximo passo recomendado:**
+- Rodar uma conversa real ate `aguardando_confirmacao_reagendamento`, confirmar com `sim` mantendo a flag false e validar metadata `calendar_write_status="dry_run"` e resposta sem promessa de agenda alterada.
+
+## 2026-07-09 - Codex - Correcao do fluxo de pedido negado e novo CPF/CNPJ da Mere
+
+**Resumo:** Corrigida a maquina de estados do atendimento automatico da Mere quando o cliente informa que a entrega localizada nao e a correta. Antes, a negacao em `aguardando_confirmacao_pedido` mantinha o mesmo estado; por isso um CPF/CNPJ enviado em seguida era interpretado como resposta ambigua de confirmacao. Agora a negacao muda para `aguardando_novo_documento_ou_esclarecimento`, mantem `status=ativa`, registra metadata de pedido negado e permite reconsultar a planilha com novo CPF/CNPJ. Texto sem documento recebe fallback seguro; na segunda tentativa sem documento, transfere para humano.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/lib/atendimento-automatico/respostas.ts
+- src/lib/atendimento-automatico/auto-reply.ts
+- src/lib/google/sheets-service-account.ts
+- src/lib/atendimento-automatico/respostas.test.ts
+- src/lib/atendimento-automatico/interpretar-intencao.ts
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx
+- Anexo do pedido em `C:\Users\lebeb\.codex\attachments\c63a58c0-9668-412c-8436-df269042ca9e\pasted-text.txt`
+
+**Arquivos alterados/criados:**
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/lib/atendimento-automatico/respostas.ts
+- src/lib/atendimento-automatico/respostas.test.ts
+- src/lib/atendimento-automatico/webhook-processor.test.ts (novo)
+- src/app/pos-venda/atendimento-automatico/PageClient.tsx
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md
+
+**Validacoes realizadas:**
+- MCP Supabase `_list_tables`: confirmado que `atendimento_automatico_sessoes` possui `estado`, `status`, `documento_informado`, `pedido_confirmado`, `motivo_falha` e `metadata jsonb`; `atendimento_automatico_mensagens` e `atendimento_automatico_eventos` possuem `metadata jsonb`.
+- `npx vitest run src/lib/atendimento-automatico/respostas.test.ts src/lib/atendimento-automatico/webhook-processor.test.ts` - 2 arquivos, 32 testes passaram.
+- `npx tsc --noEmit --pretty` - passou.
+- `npx eslint src/lib/atendimento-automatico/webhook-processor.ts src/lib/atendimento-automatico/webhook-processor.test.ts src/lib/atendimento-automatico/respostas.ts src/lib/atendimento-automatico/respostas.test.ts src/app/pos-venda/atendimento-automatico/PageClient.tsx --no-warn-ignored` - passou.
+
+**Comandos rodados e resultados:**
+- `rg` para mapear estados, respostas, consulta de planilha e tela administrativa.
+- `git diff` para revisar escopo local.
+- Primeira execucao do Vitest falhou no sandbox com `spawn EPERM` ao carregar Vite/Rolldown; reexecutado com permissao elevada e passou.
+
+**Pendencias:**
+- Validar em conversa real apos deploy/rebuild: `nao` em `aguardando_confirmacao_pedido` deve mudar para `aguardando_novo_documento_ou_esclarecimento`; novo CPF/CNPJ deve reconsultar a planilha.
+- `.devin` existe, mas a leitura direta retornou acesso negado nesta sessao; conteudo nao confirmado.
+- Nao foi implementada IA; apenas documentado o ponto futuro de classificacao no novo estado.
+
+**Riscos conhecidos:**
+- `documento_informado` continua armazenando o documento normalizado completo, como no contrato existente do fluxo; novos metadados de retentativa foram gravados mascarados.
+- Se a consulta da planilha falhar por credencial/permissao, o comportamento segue o erro existente `erro_busca_agenda`.
+- Working tree ja continha mudancas de reagendamento/Calendar nos mesmos arquivos; elas nao foram revertidas nem revalidadas alem dos comandos listados acima.
+
+**Proximo passo recomendado:**
+- Fazer deploy/rebuild e testar o caso real completo: cliente nega entrega, envia novo CPF/CNPJ localizado, recebe nova confirmacao; testar tambem novo CPF/CNPJ nao localizado e duas mensagens sem documento.

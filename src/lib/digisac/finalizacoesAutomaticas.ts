@@ -380,6 +380,394 @@ export async function fecharRegistroAutomaticoDigisac(
   }
 }
 
+// ─── Execucao central com persistencia ───────────────────────────────────────
+
+export type OrigemExecucao = 'cron' | 'manual';
+export type StatusExecucao = 'sucesso' | 'erro' | 'parcial' | 'sem_itens' | 'em_andamento';
+
+export interface RegistroExecucao {
+  id: string;
+  created_at: string;
+  origem: OrigemExecucao;
+  status: StatusExecucao;
+  iniciado_em: string;
+  finalizado_em: string | null;
+  duracao_ms: number | null;
+  total_encontrados: number;
+  total_elegiveis: number;
+  total_finalizados: number;
+  total_ignorados: number;
+  total_erros: number;
+  mensagem: string | null;
+  erro: string | null;
+  detalhes: unknown;
+  request_id: string | null;
+}
+
+export interface ResultadoExecucaoCentral {
+  ok: boolean;
+  execucaoId: string | null;
+  origem: OrigemExecucao;
+  status: StatusExecucao;
+  totalElegiveisDiagnostico: number;
+  totalInseridos: number;
+  totalJaExistentes: number;
+  totalIgnoradosDiag: number;
+  totalErrosRegistro: number;
+  totalEncontradosParaFechar: number;
+  totalFinalizados: number;
+  totalIgnorados: number;
+  totalErros: number;
+  mensagem: string;
+  erro?: string;
+  duracaoMs: number;
+  finalizados: Array<{ protocolo: string | null; ticketIdParcial: string }>;
+  ignorados: Array<{ protocolo: string | null; motivo: string }>;
+  erros: Array<{ protocolo: string | null; ticketIdParcial: string; erro: string }>;
+}
+
+const LIMITE_FECHAMENTO_CENTRAL = 100;
+
+/**
+ * Funcao central de execucao das finalizacoes automaticas.
+ * Usada pelo cron e pelo botao manual — mesma logica, origem diferente.
+ * Registra execucao no banco (digisac_finalizacoes_execucoes) com inicio/fim/status/detalhes.
+ * Nao registra secrets, tokens nem payloads sensiveis completos.
+ */
+export async function executarFinalizacoesAutomaticas(
+  supabase: ReturnType<typeof import('@/lib/supabase/service').createServiceClient>,
+  origem: OrigemExecucao,
+  requestId?: string
+): Promise<ResultadoExecucaoCentral> {
+  const iniciado_em = new Date().toISOString();
+  const tsInicio = Date.now();
+
+  console.log(`[EXEC-FINALIZACOES] ========================================`);
+  console.log(`[EXEC-FINALIZACOES] Inicio. origem=${origem} requestId=${requestId ?? 'n/a'}`);
+
+  // Inserir registro de execucao com status em_andamento
+  let execucaoId: string | null = null;
+  const { data: execInsert, error: execInsertErr } = await supabase
+    .from('digisac_finalizacoes_execucoes')
+    .insert({
+      origem,
+      status: 'em_andamento' as StatusExecucao,
+      iniciado_em,
+      request_id: requestId ?? null,
+      total_encontrados: 0,
+      total_elegiveis: 0,
+      total_finalizados: 0,
+      total_ignorados: 0,
+      total_erros: 0,
+    })
+    .select('id')
+    .single();
+
+  if (execInsertErr) {
+    console.error('[EXEC-FINALIZACOES] Erro ao criar registro de execucao:', execInsertErr.message);
+  } else {
+    execucaoId = execInsert?.id ?? null;
+    console.log(`[EXEC-FINALIZACOES] Registro de execucao criado. id=${execucaoId}`);
+  }
+
+  const finalizarExecucao = async (campos: {
+    status: StatusExecucao;
+    mensagem: string;
+    erro?: string;
+    total_encontrados: number;
+    total_elegiveis: number;
+    total_finalizados: number;
+    total_ignorados: number;
+    total_erros: number;
+    detalhes: unknown;
+  }) => {
+    const finalizado_em = new Date().toISOString();
+    const duracao_ms = Date.now() - tsInicio;
+    console.log(`[EXEC-FINALIZACOES] Finalizando. status=${campos.status} duracao=${duracao_ms}ms`);
+    if (!execucaoId) return;
+    const { error: updErr } = await supabase
+      .from('digisac_finalizacoes_execucoes')
+      .update({
+        status: campos.status,
+        finalizado_em,
+        duracao_ms,
+        total_encontrados: campos.total_encontrados,
+        total_elegiveis: campos.total_elegiveis,
+        total_finalizados: campos.total_finalizados,
+        total_ignorados: campos.total_ignorados,
+        total_erros: campos.total_erros,
+        mensagem: campos.mensagem,
+        erro: campos.erro ?? null,
+        detalhes: campos.detalhes,
+      })
+      .eq('id', execucaoId);
+    if (updErr) {
+      console.error('[EXEC-FINALIZACOES] Erro ao atualizar registro de execucao:', updErr.message);
+    }
+  };
+
+  try {
+    // 1. Buscar conexoes habilitadas
+    const conexoesHabilitadas = await buscarConexoesHabilitadas(supabase);
+    if (conexoesHabilitadas.length === 0) {
+      console.warn('[EXEC-FINALIZACOES] Nenhuma conexao habilitada.');
+      await finalizarExecucao({
+        status: 'sem_itens',
+        mensagem: 'Nenhuma conexao habilitada para automacao',
+        total_encontrados: 0,
+        total_elegiveis: 0,
+        total_finalizados: 0,
+        total_ignorados: 0,
+        total_erros: 0,
+        detalhes: null,
+      });
+      return {
+        ok: true,
+        execucaoId,
+        origem,
+        status: 'sem_itens',
+        totalElegiveisDiagnostico: 0,
+        totalInseridos: 0,
+        totalJaExistentes: 0,
+        totalIgnoradosDiag: 0,
+        totalErrosRegistro: 0,
+        totalEncontradosParaFechar: 0,
+        totalFinalizados: 0,
+        totalIgnorados: 0,
+        totalErros: 0,
+        mensagem: 'Nenhuma conexao habilitada para automacao',
+        duracaoMs: Date.now() - tsInicio,
+        finalizados: [],
+        ignorados: [],
+        erros: [],
+      };
+    }
+
+    console.log(`[EXEC-FINALIZACOES] Conexoes habilitadas: ${conexoesHabilitadas.length}`);
+
+    // 2. Registrar pendentes via diagnostico interno (chamada direta a funcao de diagnostico nao existe,
+    //    usamos a rota via sub-request se disponivel — mas aqui usamos a tabela diretamente via supabase)
+    let totalInseridos = 0;
+    let totalJaExistentes = 0;
+    let totalIgnoradosDiag = 0;
+    let totalErrosRegistro = 0;
+    let totalElegiveisGlobal = 0;
+
+    // Nota: o diagnostico e feito via fetch interno na rota do cron.
+    // Aqui registramos apenas os pendentes ja existentes no banco (etapa 2 do fluxo).
+    // A etapa de diagnostico (busca Digisac + insercao de novos pendentes) fica na rota do cron/executar,
+    // que chama esta funcao ja apos ter registrado os pendentes.
+    // Portanto totalInseridos/totalJaExistentes/totalIgnoradosDiag/totalErrosRegistro
+    // sao passados como parametro opcional — aqui sao 0 pois esta funcao so faz o fechamento.
+
+    // 3. Buscar pendentes para fechamento
+    const serviceIdsHabilitados = conexoesHabilitadas.map(c => c.service_id);
+
+    const { data: pendentes, error: errPendentes } = await supabase
+      .from('digisac_fechamentos_automaticos')
+      .select('id, digisac_ticket_id, digisac_contact_id, service_id, status, protocolo, nome_contato, ticket_history_url')
+      .eq('status', 'pendente')
+      .in('service_id', serviceIdsHabilitados)
+      .order('created_at', { ascending: true })
+      .limit(LIMITE_FECHAMENTO_CENTRAL);
+
+    if (errPendentes) {
+      console.error('[EXEC-FINALIZACOES] Erro ao buscar pendentes:', errPendentes.message);
+      await finalizarExecucao({
+        status: 'erro',
+        mensagem: 'Erro ao buscar pendentes no banco',
+        erro: errPendentes.message.substring(0, 500),
+        total_encontrados: 0,
+        total_elegiveis: totalElegiveisGlobal,
+        total_finalizados: 0,
+        total_ignorados: 0,
+        total_erros: 0,
+        detalhes: null,
+      });
+      return {
+        ok: false,
+        execucaoId,
+        origem,
+        status: 'erro',
+        totalElegiveisDiagnostico: totalElegiveisGlobal,
+        totalInseridos,
+        totalJaExistentes,
+        totalIgnoradosDiag,
+        totalErrosRegistro,
+        totalEncontradosParaFechar: 0,
+        totalFinalizados: 0,
+        totalIgnorados: 0,
+        totalErros: 0,
+        mensagem: 'Erro ao buscar pendentes no banco',
+        erro: errPendentes.message,
+        duracaoMs: Date.now() - tsInicio,
+        finalizados: [],
+        ignorados: [],
+        erros: [],
+      };
+    }
+
+    const pendentesLista = (pendentes ?? []) as RegistroParaFechar[];
+    console.log(`[EXEC-FINALIZACOES] Pendentes encontrados para fechar: ${pendentesLista.length}`);
+
+    if (pendentesLista.length === 0) {
+      await finalizarExecucao({
+        status: 'sem_itens',
+        mensagem: 'Nenhum chamado pendente para finalizar',
+        total_encontrados: 0,
+        total_elegiveis: totalElegiveisGlobal,
+        total_finalizados: 0,
+        total_ignorados: 0,
+        total_erros: 0,
+        detalhes: null,
+      });
+      return {
+        ok: true,
+        execucaoId,
+        origem,
+        status: 'sem_itens',
+        totalElegiveisDiagnostico: totalElegiveisGlobal,
+        totalInseridos,
+        totalJaExistentes,
+        totalIgnoradosDiag,
+        totalErrosRegistro,
+        totalEncontradosParaFechar: 0,
+        totalFinalizados: 0,
+        totalIgnorados: 0,
+        totalErros: 0,
+        mensagem: 'Nenhum chamado pendente para finalizar',
+        duracaoMs: Date.now() - tsInicio,
+        finalizados: [],
+        ignorados: [],
+        erros: [],
+      };
+    }
+
+    // 4. Fechar sequencialmente
+    const finalizados: Array<{ protocolo: string | null; ticketIdParcial: string }> = [];
+    const erros: Array<{ protocolo: string | null; ticketIdParcial: string; erro: string }> = [];
+    const ignorados: Array<{ protocolo: string | null; motivo: string }> = [];
+
+    for (const reg of pendentesLista) {
+      if (!reg.digisac_contact_id || reg.digisac_contact_id.trim() === '') {
+        ignorados.push({ protocolo: reg.protocolo, motivo: 'contactId ausente' });
+        continue;
+      }
+      if (!reg.digisac_ticket_id || reg.digisac_ticket_id.trim() === '') {
+        ignorados.push({ protocolo: reg.protocolo, motivo: 'ticketId ausente' });
+        continue;
+      }
+
+      const resultado = await fecharRegistroAutomaticoDigisac(reg, supabase);
+
+      if (resultado.ok) {
+        finalizados.push({
+          protocolo: resultado.protocolo,
+          ticketIdParcial: resultado.digisac_ticket_id.slice(0, 8),
+        });
+      } else {
+        erros.push({
+          protocolo: resultado.protocolo,
+          ticketIdParcial: resultado.digisac_ticket_id.slice(0, 8),
+          erro: (resultado.erro ?? 'Erro desconhecido').substring(0, 200),
+        });
+      }
+    }
+
+    const totalFinalizados = finalizados.length;
+    const totalErros = erros.length;
+    const totalIgnorados = ignorados.length;
+
+    let statusFinal: StatusExecucao;
+    let mensagemFinal: string;
+
+    if (totalErros > 0 && totalFinalizados === 0) {
+      statusFinal = 'erro';
+      mensagemFinal = `Todos os ${pendentesLista.length} chamados falharam`;
+    } else if (totalErros > 0) {
+      statusFinal = 'parcial';
+      mensagemFinal = `${totalFinalizados} finalizados, ${totalErros} com erro, ${totalIgnorados} ignorados`;
+    } else if (totalFinalizados > 0) {
+      statusFinal = 'sucesso';
+      mensagemFinal = `${totalFinalizados} chamados finalizados com sucesso`;
+    } else {
+      statusFinal = 'sem_itens';
+      mensagemFinal = `Nenhum chamado finalizado (${totalIgnorados} ignorados)`;
+    }
+
+    console.log(
+      `[EXEC-FINALIZACOES] Fim. status=${statusFinal} finalizados=${totalFinalizados} erros=${totalErros} ignorados=${totalIgnorados}`
+    );
+
+    await finalizarExecucao({
+      status: statusFinal,
+      mensagem: mensagemFinal,
+      total_encontrados: pendentesLista.length,
+      total_elegiveis: totalElegiveisGlobal,
+      total_finalizados: totalFinalizados,
+      total_ignorados: totalIgnorados,
+      total_erros: totalErros,
+      detalhes: { finalizados, ignorados, erros },
+    });
+
+    return {
+      ok: statusFinal !== 'erro',
+      execucaoId,
+      origem,
+      status: statusFinal,
+      totalElegiveisDiagnostico: totalElegiveisGlobal,
+      totalInseridos,
+      totalJaExistentes,
+      totalIgnoradosDiag,
+      totalErrosRegistro,
+      totalEncontradosParaFechar: pendentesLista.length,
+      totalFinalizados,
+      totalIgnorados,
+      totalErros,
+      mensagem: mensagemFinal,
+      duracaoMs: Date.now() - tsInicio,
+      finalizados,
+      ignorados,
+      erros,
+    };
+  } catch (err) {
+    const mensagem = err instanceof Error ? err.message : String(err);
+    console.error('[EXEC-FINALIZACOES] Erro geral:', mensagem);
+    await finalizarExecucao({
+      status: 'erro',
+      mensagem: 'Erro interno na execucao',
+      erro: mensagem.substring(0, 500),
+      total_encontrados: 0,
+      total_elegiveis: 0,
+      total_finalizados: 0,
+      total_ignorados: 0,
+      total_erros: 0,
+      detalhes: null,
+    });
+    return {
+      ok: false,
+      execucaoId,
+      origem,
+      status: 'erro',
+      totalElegiveisDiagnostico: 0,
+      totalInseridos: 0,
+      totalJaExistentes: 0,
+      totalIgnoradosDiag: 0,
+      totalErrosRegistro: 0,
+      totalEncontradosParaFechar: 0,
+      totalFinalizados: 0,
+      totalIgnorados: 0,
+      totalErros: 0,
+      mensagem: 'Erro interno na execucao',
+      erro: mensagem,
+      duracaoMs: Date.now() - tsInicio,
+      finalizados: [],
+      ignorados: [],
+      erros: [],
+    };
+  }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 export function montarUrlHistoricoTicket(ticketId: string): string {

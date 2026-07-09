@@ -947,6 +947,47 @@
 - Testar "Atualizar chamados" com conexao especifica selecionada
 - Validar RLS da tabela via MCP quando disponivel
 
+## 2026-07-08 - Cascade - Auditoria e Correcao: Finalizacoes Automaticas Digisac
+
+**Resumo:** Auditoria completa do fluxo de finalizacoes automaticas. Dois bugs criticos encontrados e corrigidos: (1) rota do cron era `POST`, mas Vercel Cron envia `GET` — rota corrigida para `GET`; (2) nao havia persistencia de execucoes, impossibilitando diagnostico. Implementado: tabela `digisac_finalizacoes_execucoes` para rastreabilidade, funcao central `executarFinalizacoesAutomaticas` usada por cron e manual, rota `POST /api/digisac/finalizacoes-automaticas/executar` para execucao manual, rota `GET /api/digisac/finalizacoes-automaticas/execucoes` para consulta de status, e bloco visual de status da automacao na tela com botao "Executar agora". Typecheck: 0 erros.
+
+**Arquivos lidos:**
+- vercel.json
+- src/app/api/cron/digisac-finalizacoes-automaticas/route.ts
+- src/lib/digisac/finalizacoesAutomaticas.ts
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx (leitura parcial)
+
+**Arquivos criados:**
+- supabase/migrations/20260708210000_create_digisac_finalizacoes_execucoes.sql
+- src/app/api/digisac/finalizacoes-automaticas/executar/route.ts
+- src/app/api/digisac/finalizacoes-automaticas/execucoes/route.ts
+
+**Arquivos alterados:**
+- src/app/api/cron/digisac-finalizacoes-automaticas/route.ts: POST → GET, chama executarFinalizacoesAutomaticas
+- src/lib/digisac/finalizacoesAutomaticas.ts: adicionados tipos OrigemExecucao, StatusExecucao, RegistroExecucao, ResultadoExecucaoCentral e funcao executarFinalizacoesAutomaticas
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx: bloco "Status da automacao" com ultima execucao cron e manual, botao "Executar agora", estados carregarExecucoes/handleExecutarManual
+
+**Validacoes realizadas:**
+- MCP Supabase: tabela `digisac_finalizacoes_execucoes` criada e confirmada
+- `npx tsc --noEmit` — 0 erros
+
+**Causas raiz confirmadas:**
+- POST vs GET: Vercel Cron envia GET. Rota aceitava apenas POST → 405 Method Not Allowed em toda execucao automatica
+- Sem persistencia: impossivel saber se cron rodou, quando rodou, quantos finalizou
+
+**Pendencias:**
+- Validar variavel de ambiente `CRON_SECRET` configurada na Vercel (nao acessivel pelo agente)
+- Testar execucao manual pela tela em producao
+- Confirmar que cron de 18h BRT registra execucao no banco apos deploy
+
+**Riscos conhecidos:**
+- Se `CRON_SECRET` nao estiver configurado na Vercel, cron continua falhando com 500 (log claro agora)
+
+**Proximo passo recomendado:**
+- Deploy e validar pela tela /digisac/finalizacoes-automaticas que bloco de status aparece
+- Clicar "Executar agora" e confirmar que registro aparece na tabela e na tela
+- Verificar no painel Vercel que a variavel CRON_SECRET esta configurada
+
 ## 2026-07-08 - Cascade - Digisac Multi-Conexao: Finalizacoes Automaticas
 
 **Resumo:** Adaptacao do modulo de finalizacoes automaticas Digisac para suportar multiplas conexoes dinamicas. Antes funcionava apenas com Bigorrilho hardcoded. Agora busca conexoes habilitadas da tabela `digisac_conexoes_automacao` (a criar via migration). Diagnostico, registro, fechamento (unitario + lote + verificar-status) e cron todos adaptados para serviceId dinamico. Frontend atualizado com filtro de conexao e coluna "Conexao" na tabela. Cron mantem limite global de 20 pendentes e schedule `0 21 * * *` (18h SP). Typecheck passou sem erros.

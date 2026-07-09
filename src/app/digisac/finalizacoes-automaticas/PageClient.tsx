@@ -1,8 +1,33 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { ExternalLink, AlertCircle, Bot, CheckCircle2, Clock, XCircle, Loader2, FilePlus2, Lock, RefreshCw, Search, Wifi, WifiOff, ChevronDown, ChevronRight } from 'lucide-react';
+import { ExternalLink, AlertCircle, Bot, CheckCircle2, Clock, XCircle, Loader2, FilePlus2, Lock, RefreshCw, Search, Wifi, WifiOff, ChevronDown, ChevronRight, Play, History } from 'lucide-react';
 import type { RegistroFechamentoAutomatico, StatusFechamento, TipoChamadoFechamento, UltimaMensagemPor } from '@/lib/digisac/finalizacoesAutomaticas';
+
+interface RegistroExecucaoResumo {
+  id: string;
+  created_at: string;
+  origem: 'cron' | 'manual';
+  status: 'sucesso' | 'erro' | 'parcial' | 'sem_itens' | 'em_andamento';
+  iniciado_em: string;
+  finalizado_em: string | null;
+  duracao_ms: number | null;
+  total_encontrados: number;
+  total_elegiveis: number;
+  total_finalizados: number;
+  total_ignorados: number;
+  total_erros: number;
+  mensagem: string | null;
+  erro: string | null;
+  request_id: string | null;
+}
+
+interface ExecucoesResponse {
+  ok: boolean;
+  ultimaCron: RegistroExecucaoResumo | null;
+  ultimaManual: RegistroExecucaoResumo | null;
+  execucoes: RegistroExecucaoResumo[];
+}
 
 interface ConexaoDisponivel {
   serviceId: string;
@@ -97,6 +122,12 @@ export default function FinalizacoesAutomaticasPageClient() {
   const [erroConexao, setErroConexao] = useState<string | null>(null);
   const [sucessoConexao, setSucessoConexao] = useState<string | null>(null);
   const [conexoesExpandido, setConexoesExpandido] = useState(false);
+
+  const [execucoes, setExecucoes] = useState<ExecucoesResponse | null>(null);
+  const [isCarregandoExecucoes, setIsCarregandoExecucoes] = useState(false);
+  const [isExecutandoManual, setIsExecutandoManual] = useState(false);
+  const [resultadoExecucaoManual, setResultadoExecucaoManual] = useState<{ status: string; mensagem: string; totalFinalizados: number; totalErros: number; totalIgnorados: number } | null>(null);
+  const [erroExecucaoManual, setErroExecucaoManual] = useState<string | null>(null);
 
   const [isRegistrando, setIsRegistrando] = useState(false);
   const [resultadoRegistro, setResultadoRegistro] = useState<{
@@ -268,6 +299,51 @@ export default function FinalizacoesAutomaticasPageClient() {
     }
   };
 
+  const carregarExecucoes = useCallback(async () => {
+    setIsCarregandoExecucoes(true);
+    try {
+      const res = await fetch('/api/digisac/finalizacoes-automaticas/execucoes');
+      if (!res.ok) return;
+      const json: ExecucoesResponse = await res.json();
+      setExecucoes(json);
+    } catch {
+      // silencioso
+    } finally {
+      setIsCarregandoExecucoes(false);
+    }
+  }, []);
+
+  const handleExecutarManual = async () => {
+    const confirmado = window.confirm(
+      'Executar finalizacoes automaticas agora? Isso vai buscar chamados elegiveis no Digisac e finalizar os pendentes.'
+    );
+    if (!confirmado) return;
+    setIsExecutandoManual(true);
+    setResultadoExecucaoManual(null);
+    setErroExecucaoManual(null);
+    try {
+      const res = await fetch('/api/digisac/finalizacoes-automaticas/executar', {
+        method: 'POST',
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error ?? `Erro ${res.status}`);
+      setResultadoExecucaoManual({
+        status: json.fechamento?.status ?? 'sucesso',
+        mensagem: json.fechamento?.mensagem ?? 'Execucao concluida',
+        totalFinalizados: json.fechamento?.totalFinalizados ?? 0,
+        totalErros: json.fechamento?.totalErros ?? 0,
+        totalIgnorados: json.fechamento?.totalIgnorados ?? 0,
+      });
+      carregarExecucoes();
+      buscarDados(page);
+      buscarResumoGlobal();
+    } catch (err) {
+      setErroExecucaoManual(err instanceof Error ? err.message : 'Erro ao executar');
+    } finally {
+      setIsExecutandoManual(false);
+    }
+  };
+
   const carregarConexoes = useCallback(async () => {
     try {
       const res = await fetch('/api/digisac/finalizacoes-automaticas/conexoes');
@@ -282,7 +358,8 @@ export default function FinalizacoesAutomaticasPageClient() {
 
   useEffect(() => {
     carregarConexoes();
-  }, [carregarConexoes]);
+    carregarExecucoes();
+  }, [carregarConexoes, carregarExecucoes]);
 
   const handleToggleConexao = async (serviceId: string, serviceName: string, ativoAtual: boolean) => {
     setToggleConexaoId(serviceId);
@@ -394,6 +471,105 @@ export default function FinalizacoesAutomaticasPageClient() {
             <p className="text-xs text-slate-400 max-w-xs text-right">
               Busca no Digisac novos chamados elegiveis e registra como pendentes. Nao finaliza chamados.
             </p>
+          </div>
+        </div>
+
+        {/* Bloco de status da automacao */}
+        <div className="bg-white rounded-lg border border-slate-200 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <History className="w-4 h-4 text-slate-500" />
+              <h2 className="text-sm font-semibold text-slate-700">Status da automacao</h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExecutarManual}
+                disabled={isExecutandoManual}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isExecutandoManual ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                Executar agora
+              </button>
+              <button
+                onClick={carregarExecucoes}
+                disabled={isCarregandoExecucoes}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 rounded text-xs font-medium hover:bg-slate-200 disabled:opacity-50 transition-colors"
+              >
+                {isCarregandoExecucoes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                Atualizar
+              </button>
+            </div>
+          </div>
+
+          {erroExecucaoManual && (
+            <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded p-3 text-xs mb-3">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{erroExecucaoManual}</span>
+              <button onClick={() => setErroExecucaoManual(null)} className="ml-auto">×</button>
+            </div>
+          )}
+          {resultadoExecucaoManual && (
+            <div className="flex items-center gap-3 bg-green-50 border border-green-200 text-green-800 rounded p-3 text-xs mb-3 flex-wrap">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-green-600" />
+              <span>Execucao manual concluida:</span>
+              <span><strong>{resultadoExecucaoManual.totalFinalizados}</strong> finalizados</span>
+              {resultadoExecucaoManual.totalErros > 0 && <span className="text-red-600"><strong>{resultadoExecucaoManual.totalErros}</strong> erros</span>}
+              {resultadoExecucaoManual.totalIgnorados > 0 && <span className="text-slate-500"><strong>{resultadoExecucaoManual.totalIgnorados}</strong> ignorados</span>}
+              <span className="text-slate-500 italic">{resultadoExecucaoManual.mensagem}</span>
+              <button onClick={() => setResultadoExecucaoManual(null)} className="ml-auto">×</button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Ultima execucao automatica (cron) */}
+            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+              <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Ultima execucao automatica (cron)</p>
+              {!execucoes ? (
+                <p className="text-xs text-slate-400">Carregando...</p>
+              ) : !execucoes.ultimaCron ? (
+                <p className="text-xs text-slate-400">Nenhuma execucao registrada ainda.</p>
+              ) : (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    {execucoes.ultimaCron.status === 'sucesso' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"><CheckCircle2 className="w-3 h-3" />Sucesso</span>}
+                    {execucoes.ultimaCron.status === 'erro' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"><XCircle className="w-3 h-3" />Erro</span>}
+                    {execucoes.ultimaCron.status === 'parcial' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700"><AlertCircle className="w-3 h-3" />Parcial</span>}
+                    {execucoes.ultimaCron.status === 'sem_itens' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600"><Clock className="w-3 h-3" />Sem itens</span>}
+                    {execucoes.ultimaCron.status === 'em_andamento' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700"><Loader2 className="w-3 h-3 animate-spin" />Em andamento</span>}
+                  </div>
+                  <p className="text-xs text-slate-600">{formatarData(execucoes.ultimaCron.iniciado_em)}</p>
+                  <p className="text-xs text-slate-700"><strong>{execucoes.ultimaCron.total_encontrados}</strong> encontrados · <strong>{execucoes.ultimaCron.total_finalizados}</strong> finalizados · <strong>{execucoes.ultimaCron.total_ignorados}</strong> ignorados · <strong>{execucoes.ultimaCron.total_erros}</strong> erros</p>
+                  {execucoes.ultimaCron.duracao_ms != null && <p className="text-xs text-slate-400">Duração: {(execucoes.ultimaCron.duracao_ms / 1000).toFixed(1)}s</p>}
+                  {execucoes.ultimaCron.mensagem && <p className="text-xs text-slate-500 italic">{execucoes.ultimaCron.mensagem}</p>}
+                  {execucoes.ultimaCron.erro && <p className="text-xs text-red-600 mt-1">Erro: {execucoes.ultimaCron.erro}</p>}
+                </div>
+              )}
+            </div>
+
+            {/* Ultima execucao manual */}
+            <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+              <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Ultima execucao manual</p>
+              {!execucoes ? (
+                <p className="text-xs text-slate-400">Carregando...</p>
+              ) : !execucoes.ultimaManual ? (
+                <p className="text-xs text-slate-400">Nenhuma execucao manual registrada.</p>
+              ) : (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    {execucoes.ultimaManual.status === 'sucesso' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700"><CheckCircle2 className="w-3 h-3" />Sucesso</span>}
+                    {execucoes.ultimaManual.status === 'erro' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700"><XCircle className="w-3 h-3" />Erro</span>}
+                    {execucoes.ultimaManual.status === 'parcial' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700"><AlertCircle className="w-3 h-3" />Parcial</span>}
+                    {execucoes.ultimaManual.status === 'sem_itens' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600"><Clock className="w-3 h-3" />Sem itens</span>}
+                    {execucoes.ultimaManual.status === 'em_andamento' && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700"><Loader2 className="w-3 h-3 animate-spin" />Em andamento</span>}
+                  </div>
+                  <p className="text-xs text-slate-600">{formatarData(execucoes.ultimaManual.iniciado_em)}</p>
+                  <p className="text-xs text-slate-700"><strong>{execucoes.ultimaManual.total_encontrados}</strong> encontrados · <strong>{execucoes.ultimaManual.total_finalizados}</strong> finalizados · <strong>{execucoes.ultimaManual.total_ignorados}</strong> ignorados · <strong>{execucoes.ultimaManual.total_erros}</strong> erros</p>
+                  {execucoes.ultimaManual.duracao_ms != null && <p className="text-xs text-slate-400">Duração: {(execucoes.ultimaManual.duracao_ms / 1000).toFixed(1)}s</p>}
+                  {execucoes.ultimaManual.mensagem && <p className="text-xs text-slate-500 italic">{execucoes.ultimaManual.mensagem}</p>}
+                  {execucoes.ultimaManual.erro && <p className="text-xs text-red-600 mt-1">Erro: {execucoes.ultimaManual.erro}</p>}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

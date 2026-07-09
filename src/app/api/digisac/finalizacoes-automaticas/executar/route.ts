@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
   buscarConexoesHabilitadas,
@@ -36,55 +37,41 @@ interface DiagnosticoResponse {
 }
 
 /**
- * Rota chamada pelo Vercel Cron (GET).
- * Vercel Cron envia GET + Authorization: Bearer <CRON_SECRET> automaticamente
- * quando CRON_SECRET esta configurado nas variaveis de ambiente da Vercel.
- * Horario: 0 21 * * * (UTC) = 18h BRT (Brasilia UTC-3).
+ * Execucao manual das finalizacoes automaticas.
+ * Mesma logica do cron, origem = 'manual'.
+ * Protegida por autenticacao de superadmin.
  */
-export async function GET(request: NextRequest) {
+export async function POST(request: NextRequest) {
+  const auth = await requireAuthenticatedUser({
+    requireAllowedUser: true,
+    requireActive: true,
+    requiredRole: 'superadmin',
+  });
+  if (!auth.ok) return auth.response;
+
   const horarioInicioUTC = new Date().toISOString();
   const horarioInicioBRT = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
-  console.log('[CRON-DIGISAC] ========================================');
-  console.log(`[CRON-DIGISAC] Inicio (GET). origem=cron horario_brt=${horarioInicioBRT} utc=${horarioInicioUTC}`);
-  console.log(`[CRON-DIGISAC] CRON_SECRET configurado: ${!!process.env.CRON_SECRET}`);
+  console.log('[EXECUTAR-MANUAL] ========================================');
+  console.log(`[EXECUTAR-MANUAL] Inicio. origem=manual horario_brt=${horarioInicioBRT}`);
 
   try {
-    // 1. Validar autorizacao (Vercel Cron envia Authorization: Bearer <CRON_SECRET>)
-    const authHeader = request.headers.get('authorization');
-
-    if (!process.env.CRON_SECRET) {
-      console.error('[CRON-DIGISAC] CRON_SECRET nao configurado no ambiente');
-      return NextResponse.json(
-        { ok: false, error: 'CRON_SECRET nao configurado' },
-        { status: 500 }
-      );
-    }
-
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      console.error('[CRON-DIGISAC] Unauthorized: header=' + (authHeader ? '[presente mas incorreto]' : '[ausente]'));
-      return NextResponse.json(
-        { ok: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     const supabase = createServiceClient();
 
-    // 2. Buscar conexoes habilitadas
+    // 1. Buscar conexoes habilitadas
     const conexoesHabilitadas = await buscarConexoesHabilitadas(supabase);
     if (conexoesHabilitadas.length === 0) {
-      console.warn('[CRON-DIGISAC] Nenhuma conexao habilitada para automacao');
+      console.warn('[EXECUTAR-MANUAL] Nenhuma conexao habilitada');
       return NextResponse.json({
         ok: true,
-        modo: 'cron-finalizacoes-automaticas',
-        mensagem: 'Nenhuma conexao habilitada',
+        modo: 'manual',
+        mensagem: 'Nenhuma conexao habilitada para automacao',
       });
     }
 
-    console.log('[CRON-DIGISAC] Conexoes habilitadas:', conexoesHabilitadas.length);
+    console.log('[EXECUTAR-MANUAL] Conexoes habilitadas:', conexoesHabilitadas.length);
 
-    // 3. Para cada conexao: rodar diagnostico + registrar novos pendentes
+    // 2. Para cada conexao: rodar diagnostico + registrar novos pendentes
     let totalInseridos = 0;
     let totalJaExistentes = 0;
     let totalIgnoradosDiag = 0;
@@ -92,7 +79,7 @@ export async function GET(request: NextRequest) {
     let totalElegiveisGlobal = 0;
 
     for (const conexao of conexoesHabilitadas) {
-      console.log('[CRON-DIGISAC] Diagnostico conexao=' + conexao.service_id.slice(0, 8));
+      console.log('[EXECUTAR-MANUAL] Diagnostico conexao=' + conexao.service_id.slice(0, 8));
 
       const diagUrl = new URL(
         '/api/digisac/finalizacoes-automaticas/diagnostico',
@@ -102,12 +89,12 @@ export async function GET(request: NextRequest) {
 
       const diagRes = await fetch(diagUrl.toString(), {
         headers: {
-          'x-cron-secret': process.env.CRON_SECRET,
+          cookie: request.headers.get('cookie') ?? '',
         },
       });
 
       if (!diagRes.ok) {
-        console.error('[CRON-DIGISAC] Erro diagnostico conexao=' + conexao.service_id.slice(0, 8) + ' status=' + diagRes.status);
+        console.error('[EXECUTAR-MANUAL] Erro diagnostico conexao=' + conexao.service_id.slice(0, 8) + ' status=' + diagRes.status);
         totalErrosRegistro++;
         continue;
       }
@@ -118,7 +105,7 @@ export async function GET(request: NextRequest) {
       totalElegiveisGlobal += elegiveis.length;
 
       console.log(
-        '[CRON-DIGISAC] Diagnostico conexao=' + conexao.service_id.slice(0, 8) +
+        '[EXECUTAR-MANUAL] Diagnostico conexao=' + conexao.service_id.slice(0, 8) +
         ' totalElegiveis=' + elegiveis.length +
         ' confirmados=' + elegiveisConfirmados.length
       );
@@ -131,7 +118,7 @@ export async function GET(request: NextRequest) {
           .in('digisac_ticket_id', ticketIds);
 
         if (errExist) {
-          console.error('[CRON-DIGISAC] Erro ao buscar existentes:', errExist.message);
+          console.error('[EXECUTAR-MANUAL] Erro ao buscar existentes:', errExist.message);
           totalErrosRegistro += elegiveisConfirmados.length;
         } else {
           const existentesIds = new Set((existentes ?? []).map(r => r.digisac_ticket_id));
@@ -167,7 +154,7 @@ export async function GET(request: NextRequest) {
               if (insertError.code === '23505') {
                 totalJaExistentes++;
               } else {
-                console.error('[CRON-DIGISAC] Erro ao inserir ticket=' + ticket.ticketId.slice(0, 8), insertError.message);
+                console.error('[EXECUTAR-MANUAL] Erro ao inserir ticket=' + ticket.ticketId.slice(0, 8), insertError.message);
                 totalErrosRegistro++;
               }
             } else {
@@ -181,44 +168,39 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(
-      '[CRON-DIGISAC] Registro de pendentes concluido.' +
+      '[EXECUTAR-MANUAL] Registro de pendentes concluido.' +
       ' inseridos=' + totalInseridos +
       ' jaExistentes=' + totalJaExistentes +
       ' ignorados=' + totalIgnoradosDiag +
       ' erros=' + totalErrosRegistro
     );
 
-    // 4. Executar fechamento central (registra execucao no banco)
-    console.log('[CRON-DIGISAC] Etapa 2: executando fechamentos...');
+    // 3. Executar fechamento central (registra execucao no banco com origem=manual)
+    const resultado = await executarFinalizacoesAutomaticas(supabase, 'manual', `manual-${horarioInicioUTC}`);
 
-    const resultado = await executarFinalizacoesAutomaticas(supabase, 'cron', `cron-${horarioInicioUTC}`);
-
-    // Atualizar totais de diagnostico no registro de execucao, se possivel
+    // Atualizar total de elegiveis no registro de execucao
     if (resultado.execucaoId) {
       await supabase
         .from('digisac_finalizacoes_execucoes')
-        .update({
-          total_elegiveis: totalElegiveisGlobal,
-        })
+        .update({ total_elegiveis: totalElegiveisGlobal })
         .eq('id', resultado.execucaoId);
     }
 
     const horarioFimBRT = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
     console.log(
-      '[CRON-DIGISAC] Fim.' +
+      '[EXECUTAR-MANUAL] Fim.' +
       ' execucaoId=' + (resultado.execucaoId ?? 'n/a') +
       ' status=' + resultado.status +
       ' finalizados=' + resultado.totalFinalizados +
       ' erros=' + resultado.totalErros +
       ' ignorados=' + resultado.totalIgnorados +
-      ' duracao=' + resultado.duracaoMs + 'ms' +
-      ' horarioFim=' + horarioFimBRT
+      ' duracao=' + resultado.duracaoMs + 'ms'
     );
 
     return NextResponse.json({
       ok: resultado.ok,
-      modo: 'cron-finalizacoes-automaticas',
+      modo: 'manual',
       execucaoId: resultado.execucaoId,
       horarioInicioUTC,
       horarioFimBRT,
@@ -241,7 +223,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     const mensagem = err instanceof Error ? err.message : String(err);
-    console.error('[CRON-DIGISAC] Erro geral:', mensagem);
+    console.error('[EXECUTAR-MANUAL] Erro geral:', mensagem);
     return NextResponse.json(
       { ok: false, error: 'Erro interno' },
       { status: 500 }

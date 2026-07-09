@@ -400,7 +400,7 @@ Vou encaminhar para nossa equipe validar a alteração.`,
 
 export function respostaReagendamentoConfirmado(dataNovaBR: string): RespostaSugerida {
   return {
-    texto: `Perfeito, sua entrega foi reagendada para ${dataNovaBR}. Nossa equipe continua acompanhando por aqui.`,
+    texto: `Perfeito, sua entrega foi reagendada para ${dataNovaBR}.\n\nA entrega e montagem acontecem no mesmo dia, em horário comercial. Nossa equipe entra em contato próximo da data.\n\nSe precisar de algo mais, é só chamar por aqui.`,
     tipo: 'reagendamento_confirmado',
   };
 }

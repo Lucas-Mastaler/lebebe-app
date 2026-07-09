@@ -1,3 +1,54 @@
+## 2026-07-09 - Cascade - Escrita na planilha original após reagendamento Calendar + mensagem final ajustada
+
+**Resumo:** Após sucesso completo do reagendamento no Google Calendar, o sistema agora atualiza a coluna `Data na agenda GOOGLE` na aba original (gid `190443561`) da planilha de controle. Usa `EVENTO_ID + CALENDAR_ID` como critério de localização. Mensagem final ao cliente ajustada com informação sobre entrega/montagem no mesmo dia e horário comercial. Helper `atualizarDataAgendaGoogleOriginalMere` criado com cliente JWT scope de escrita. Se planilha falhar, Calendar não é desfeito; marca `aplicado_com_falha_planilha`.
+
+**Arquivos lidos:**
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md
+- src/lib/atendimento-automatico/reagendamento-calendar.ts
+- src/lib/atendimento-automatico/respostas.ts
+- src/lib/atendimento-automatico/respostas.test.ts
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/lib/google/sheets-service-account.ts
+- src/lib/google/calendar-service.ts
+- .env.local / .env.example
+
+**Arquivos alterados/criados:**
+- src/lib/google/sheets-service-account.ts (adicionado `criarClienteSheetsServiceAccountEscrita` com scope `spreadsheets`, função `atualizarDataAgendaGoogleOriginalMere` e tipos)
+- src/lib/atendimento-automatico/webhook-processor.ts (integrada chamada de escrita na planilha após Calendar sucesso, metadata de auditoria)
+- src/lib/atendimento-automatico/respostas.ts (mensagem `respostaReagendamentoConfirmado` atualizada)
+- src/lib/atendimento-automatico/respostas.test.ts (teste atualizado para novo texto)
+- src/lib/google/sheets-write-original.test.ts (criado: 7 testes com mocks)
+- .env.local (adicionadas envs `GOOGLE_AGENDA_CONTROLE_ORIGINAL_SPREADSHEET_ID` e `GOOGLE_AGENDA_CONTROLE_ORIGINAL_SHEET_GID`)
+- .env.example (mesmas envs)
+- docs/atendimento-automatico-posvenda-mere-plano.md (registro de andamento)
+- docs/ia/log_progress.md (esta entrada)
+
+**Validações realizadas:**
+- TypeScript: `npx tsc --noEmit --pretty` — 0 erros
+- ESLint: 0 erros, 0 warnings
+- Testes: 34 passaram (27 respostas + 7 sheets-write-original)
+- Testes existentes: 8 passaram (sheets-service-account.test.ts)
+- Não houve validação no MCP Supabase (não houve alteração de banco)
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit --pretty` → exit 0
+- `npx eslint [arquivos]` → exit 0
+- `npx vitest run respostas.test.ts sheets-write-original.test.ts` → 34 passed
+- `npx vitest run sheets-service-account.test.ts` → 8 passed
+
+**Pendências:**
+- Compartilhar planilha original (spreadsheet ID `1H8mFLzEL8XcFh0UX_hOJF-ublRZcdbhwLc7ooNEeJ5U`, gid `190443561`) com a service account como Editor
+- Validar em ambiente real com `ATENDIMENTO_POSVENDA_CALENDAR_WRITE_ENABLED=true`
+- Confirmar que o nome real da aba gid `190443561` é resolvido corretamente via metadata do spreadsheet
+
+**Riscos conhecidos:**
+- Se a service account não tiver permissão de Editor na planilha original, a escrita falhará com erro controlado `sheets_write_permission_denied` — Calendar já foi alterado e não será desfeito
+- A aba original pode ter cabeçalho repetido; o helper detecta a primeira linha de cabeçalho válida e ignora duplicatas
+
+**Próximo passo recomendado:**
+- Compartilhar planilha original com a service account como Editor e testar fluxo real completo
+
 ## 2026-07-09 - Cascade - Correção de mojibake/encoding em mensagens da Mère e documentos
 
 **Resumo:** Corrigidos problemas de encoding/mojibake em mensagens do atendimento automático pos-venda (Mère) e documento de fixtures. Mensagens chegavam ao cliente com caracteres corrompidos (ex: `explicaÃ§Ã£o` em vez de `explicação`). Corrigidas strings em `respostas.ts` e título/árvore de arquivos em `README.md` de fixtures. Preservado encoding UTF-8.

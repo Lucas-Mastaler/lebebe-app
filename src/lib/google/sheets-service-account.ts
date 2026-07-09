@@ -79,6 +79,25 @@ function criarClienteSheetsServiceAccount() {
   return google.sheets({ version: 'v4', auth: jwtClient });
 }
 
+function criarClienteSheetsServiceAccountEscrita() {
+  const serviceEmail = process.env.GMAIL_SERVICE_EMAIL;
+  const privateKeyRaw = process.env.GMAIL_PRIVATE_KEY;
+
+  if (!serviceEmail || !privateKeyRaw) {
+    throw new Error('Variáveis GMAIL_SERVICE_EMAIL e GMAIL_PRIVATE_KEY são obrigatórias.');
+  }
+
+  const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
+
+  const jwtClient = new JWT({
+    email: serviceEmail,
+    key: privateKey,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  });
+
+  return google.sheets({ version: 'v4', auth: jwtClient });
+}
+
 // ─────────────────────────────────────────────────────────
 // 3.0 – Helpers de normalização e mascaramento
 // ─────────────────────────────────────────────────────────
@@ -303,5 +322,270 @@ export async function buscarAgendamentosPorDocumento(
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, erro: `Falha ao consultar planilha: ${msg}` };
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// 6.0 – Atualização da aba original (escrita) após reagendamento Calendar
+// ─────────────────────────────────────────────────────────
+
+export type EventoReagendamentoPlanilha = {
+  evento_id: string;
+  calendar_id: string;
+  pedido_venda?: string;
+};
+
+export type LinhaAtualizadaPlanilha = {
+  rowNumber: number;
+  pedido: string;
+  evento_id: string;
+  calendar_id: string;
+  data_anterior: string;
+  data_nova: string;
+  status: 'atualizada' | 'nao_encontrada' | 'erro';
+  erro?: string;
+};
+
+export type ResultadoAtualizacaoPlanilhaOriginal = {
+  ok: boolean;
+  status: 'sucesso' | 'sucesso_parcial' | 'erro' | 'skip_dry_run_calendar' | 'sheets_write_permission_denied' | 'coluna_ausente' | 'configuracao_ausente';
+  spreadsheetId: string;
+  sheetGid: string;
+  sheetTitle: string | null;
+  colunaDataAgenda: string;
+  criterioMatch: string;
+  totalLinhasAtualizadas: number;
+  linhas: LinhaAtualizadaPlanilha[];
+  erros: string[];
+  dryRun: boolean;
+};
+
+function colunaParaLetra(colIndex: number): string {
+  let letra = '';
+  let idx = colIndex;
+  while (idx >= 0) {
+    letra = String.fromCharCode(65 + (idx % 26)) + letra;
+    idx = Math.floor(idx / 26) - 1;
+  }
+  return letra;
+}
+
+export async function atualizarDataAgendaGoogleOriginalMere(
+  eventos: EventoReagendamentoPlanilha[],
+  dataNovaBR: string,
+  opcoes?: { dryRun?: boolean }
+): Promise<ResultadoAtualizacaoPlanilhaOriginal> {
+  const spreadsheetId = process.env.GOOGLE_AGENDA_CONTROLE_ORIGINAL_SPREADSHEET_ID;
+  const sheetGid = process.env.GOOGLE_AGENDA_CONTROLE_ORIGINAL_SHEET_GID;
+
+  const resultadoBase: ResultadoAtualizacaoPlanilhaOriginal = {
+    ok: false,
+    status: 'configuracao_ausente',
+    spreadsheetId: spreadsheetId ?? '',
+    sheetGid: sheetGid ?? '',
+    sheetTitle: null,
+    colunaDataAgenda: 'Data na agenda GOOGLE',
+    criterioMatch: 'evento_id_calendar_id',
+    totalLinhasAtualizadas: 0,
+    linhas: [],
+    erros: [],
+    dryRun: opcoes?.dryRun ?? false,
+  };
+
+  if (!spreadsheetId || !sheetGid) {
+    resultadoBase.erros.push('GOOGLE_AGENDA_CONTROLE_ORIGINAL_SPREADSHEET_ID ou GOOGLE_AGENDA_CONTROLE_ORIGINAL_SHEET_GID não configurado');
+    return resultadoBase;
+  }
+
+  if (opcoes?.dryRun) {
+    resultadoBase.status = 'skip_dry_run_calendar';
+    resultadoBase.ok = true;
+    return resultadoBase;
+  }
+
+  try {
+    const sheets = criarClienteSheetsServiceAccountEscrita();
+
+    // Resolver o título da aba pelo gid
+    const metaResp = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets(properties(title,sheetId))',
+    });
+
+    const sheetsList = metaResp.data.sheets ?? [];
+    const sheetInfo = sheetsList.find((s) => s.properties?.sheetId === Number(sheetGid));
+    const sheetTitle = sheetInfo?.properties?.title ?? null;
+
+    if (!sheetTitle) {
+      resultadoBase.status = 'erro';
+      resultadoBase.erros.push(`Aba com gid ${sheetGid} não encontrada no spreadsheet`);
+      return resultadoBase;
+    }
+
+    resultadoBase.sheetTitle = sheetTitle;
+
+    // Ler range suficiente da aba original
+    const rangeLeitura = `'${sheetTitle.replace(/'/g, "''")}'!A:AZ`;
+    const readResp = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: rangeLeitura,
+      valueRenderOption: 'FORMATTED_VALUE',
+      dateTimeRenderOption: 'FORMATTED_STRING',
+    });
+
+    const valores = readResp.data.values as string[][] | null | undefined;
+    if (!valores || valores.length === 0) {
+      resultadoBase.status = 'erro';
+      resultadoBase.erros.push('Planilha original vazia ou sem dados');
+      return resultadoBase;
+    }
+
+    // Detectar linha de cabeçalho (pode haver linhas repetidas no início)
+    let headerRowIndex = -1;
+    let headers: string[] = [];
+    let colunas: Map<string, number> = new Map();
+
+    for (let i = 0; i < Math.min(valores.length, 10); i++) {
+      const row = valores[i];
+      if (!row || row.length === 0) continue;
+      const candidato = row.map((c) => normalizarHeader(c));
+      if (
+        candidato.includes(normalizarHeader('Pedido de Venda')) &&
+        candidato.includes(normalizarHeader('EVENTO_ID')) &&
+        candidato.includes(normalizarHeader('CALENDAR_ID'))
+      ) {
+        headerRowIndex = i;
+        headers = row;
+        colunas = mapearCabecalhos(row);
+        break;
+      }
+    }
+
+    if (headerRowIndex === -1) {
+      resultadoBase.status = 'erro';
+      resultadoBase.erros.push('Cabeçalho com colunas esperadas não encontrado na aba original');
+      return resultadoBase;
+    }
+
+    const idxDataAgenda = colunas.get(normalizarHeader('Data na agenda GOOGLE'));
+    const idxEventoId = colunas.get(normalizarHeader('EVENTO_ID'));
+    const idxCalendarId = colunas.get(normalizarHeader('CALENDAR_ID'));
+    const idxPedido = colunas.get(normalizarHeader('Pedido de Venda'));
+
+    if (idxDataAgenda === undefined) {
+      resultadoBase.status = 'coluna_ausente';
+      resultadoBase.erros.push('Coluna "Data na agenda GOOGLE" não encontrada no cabeçalho');
+      return resultadoBase;
+    }
+    if (idxEventoId === undefined || idxCalendarId === undefined) {
+      resultadoBase.status = 'coluna_ausente';
+      resultadoBase.erros.push('Colunas EVENTO_ID ou CALENDAR_ID não encontradas no cabeçalho');
+      return resultadoBase;
+    }
+
+    const colunaLetra = colunaParaLetra(idxDataAgenda);
+    const linhasResultado: LinhaAtualizadaPlanilha[] = [];
+    let totalAtualizadas = 0;
+    const erros: string[] = [];
+
+    // Para cada evento do reagendamento, localizar linha(s) correspondente(s)
+    for (const evento of eventos) {
+      const eventoIdNorm = evento.evento_id.trim();
+      const calendarIdNorm = evento.calendar_id.trim();
+      let encontrou = false;
+
+      for (let i = headerRowIndex + 1; i < valores.length; i++) {
+        const row = valores[i];
+        if (!row || row.length === 0) continue;
+        if (isHeaderRowDuplicado(row, headers)) continue;
+
+        const rowEventoId = (row[idxEventoId] ?? '').trim();
+        const rowCalendarId = (row[idxCalendarId] ?? '').trim();
+
+        if (rowEventoId === eventoIdNorm && rowCalendarId === calendarIdNorm) {
+          const rowNumber = i + 1; // 1-indexed
+          const dataAnterior = (row[idxDataAgenda] ?? '').trim();
+          const pedido = idxPedido !== undefined ? (row[idxPedido] ?? '').trim() : (evento.pedido_venda ?? '');
+
+          try {
+            const cellRange = `'${sheetTitle.replace(/'/g, "''")}'!${colunaLetra}${rowNumber}`;
+            await sheets.spreadsheets.values.update({
+              spreadsheetId,
+              range: cellRange,
+              valueInputOption: 'USER_ENTERED',
+              requestBody: { values: [[dataNovaBR]] },
+            });
+
+            linhasResultado.push({
+              rowNumber,
+              pedido,
+              evento_id: eventoIdNorm,
+              calendar_id: calendarIdNorm,
+              data_anterior: dataAnterior,
+              data_nova: dataNovaBR,
+              status: 'atualizada',
+            });
+            totalAtualizadas++;
+            encontrou = true;
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            linhasResultado.push({
+              rowNumber,
+              pedido,
+              evento_id: eventoIdNorm,
+              calendar_id: calendarIdNorm,
+              data_anterior: dataAnterior,
+              data_nova: dataNovaBR,
+              status: 'erro',
+              erro: msg,
+            });
+            erros.push(`Erro ao atualizar linha ${rowNumber} (evento ${eventoIdNorm}): ${msg}`);
+            encontrou = true;
+          }
+        }
+      }
+
+      if (!encontrou) {
+        linhasResultado.push({
+          rowNumber: -1,
+          pedido: evento.pedido_venda ?? '',
+          evento_id: eventoIdNorm,
+          calendar_id: calendarIdNorm,
+          data_anterior: '',
+          data_nova: dataNovaBR,
+          status: 'nao_encontrada',
+        });
+        erros.push(`Linha não encontrada para evento_id=${eventoIdNorm} calendar_id=${calendarIdNorm}`);
+      }
+    }
+
+    const temErro = linhasResultado.some((l) => l.status === 'erro');
+    const todasAtualizadas = totalAtualizadas === eventos.length;
+
+    resultadoBase.linhas = linhasResultado;
+    resultadoBase.totalLinhasAtualizadas = totalAtualizadas;
+    resultadoBase.erros = erros;
+    resultadoBase.ok = totalAtualizadas > 0 && !temErro;
+    resultadoBase.status = todasAtualizadas
+      ? 'sucesso'
+      : totalAtualizadas > 0
+        ? 'sucesso_parcial'
+        : 'erro';
+
+    // Detectar erro de permissão
+    if (temErro && erros.some((e) => e.includes('403') || e.includes('permission') || e.includes('PERMISSION'))) {
+      resultadoBase.status = 'sheets_write_permission_denied';
+      resultadoBase.ok = false;
+    }
+
+    return resultadoBase;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    resultadoBase.status = msg.includes('403') || msg.includes('permission') || msg.includes('PERMISSION')
+      ? 'sheets_write_permission_denied'
+      : 'erro';
+    resultadoBase.ok = false;
+    resultadoBase.erros.push(`Falha ao atualizar planilha original: ${msg}`);
+    return resultadoBase;
   }
 }

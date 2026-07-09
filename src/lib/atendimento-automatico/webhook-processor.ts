@@ -1,8 +1,8 @@
 import { createServiceClient } from '@/lib/supabase/service';
 import { normalizarTextoDigisac } from '@/lib/digisac/triagem';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
-import { buscarAgendamentosPorDocumento } from '@/lib/google/sheets-service-account';
-import type { GrupoAgendamento } from '@/lib/google/sheets-service-account';
+import { buscarAgendamentosPorDocumento, atualizarDataAgendaGoogleOriginalMere } from '@/lib/google/sheets-service-account';
+import type { GrupoAgendamento, EventoReagendamentoPlanilha } from '@/lib/google/sheets-service-account';
 import {
   respostaAguardandoDataDesejada,
   respostaBloqueioPagamentoPendenteAntecipacao,
@@ -2128,6 +2128,57 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           const estadoFinal = agendaAlterada ? 'reagendamento_confirmado' : 'transferido_humano';
           const statusFinal = agendaAlterada ? sessaoExistente.status : 'transferido_humano';
 
+          // Após sucesso do Calendar, atualizar planilha original (aba gid 190443561)
+          let resultadoPlanilha: Awaited<ReturnType<typeof atualizarDataAgendaGoogleOriginalMere>> | null = null;
+          if (agendaAlterada) {
+            const eventosPlanilha: EventoReagendamentoPlanilha[] = resultadoCalendar.eventos
+              .filter((e) => e.status === 'movido')
+              .map((e) => ({
+                evento_id: e.evento_id,
+                calendar_id: e.calendar_id,
+                pedido_venda: grupo?.eventos.find((ev) => ev.evento_id === e.evento_id)?.pedido_venda,
+              }));
+
+            try {
+              resultadoPlanilha = await atualizarDataAgendaGoogleOriginalMere(
+                eventosPlanilha,
+                dataNovaBR || dataNovaISO,
+                { dryRun: false }
+              );
+              console.log(`[posvenda-webhook] planilha original status=${resultadoPlanilha.status} linhas=${resultadoPlanilha.totalLinhasAtualizadas} sessaoId=${sessaoId}`);
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.error(`[posvenda-webhook] erro ao atualizar planilha original: ${msg} sessaoId=${sessaoId}`);
+              resultadoPlanilha = {
+                ok: false,
+                status: 'erro',
+                spreadsheetId: process.env.GOOGLE_AGENDA_CONTROLE_ORIGINAL_SPREADSHEET_ID ?? '',
+                sheetGid: process.env.GOOGLE_AGENDA_CONTROLE_ORIGINAL_SHEET_GID ?? '',
+                sheetTitle: null,
+                colunaDataAgenda: 'Data na agenda GOOGLE',
+                criterioMatch: 'evento_id_calendar_id',
+                totalLinhasAtualizadas: 0,
+                linhas: [],
+                erros: [`Exceção ao atualizar planilha: ${msg}`],
+                dryRun: false,
+              };
+            }
+          } else {
+            // Calendar dry-run ou erro: não atualizar planilha
+            resultadoPlanilha = await atualizarDataAgendaGoogleOriginalMere(
+              [],
+              dataNovaBR || dataNovaISO,
+              { dryRun: true }
+            );
+          }
+
+          const planilhaOk = resultadoPlanilha?.ok ?? false;
+          const reagendamentoStatusFinal = !agendaAlterada
+            ? resultadoCalendar.status
+            : planilhaOk
+              ? 'aplicado'
+              : 'aplicado_com_falha_planilha';
+
           const novoMetadata = await construirMetadataComResposta({
             sessaoId,
             metadataAtual: {
@@ -2143,9 +2194,26 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
               calendar_eventos_processados: resultadoCalendar.eventos.length,
               calendar_eventos_resultado: resultadoCalendar.eventos,
               calendar_erros: resultadoCalendar.erros,
-              reagendamento_status: resultadoCalendar.status,
+              reagendamento_status: reagendamentoStatusFinal,
+              planilha_original_update_status: resultadoPlanilha?.status ?? 'skip_dry_run_calendar',
+              planilha_original_update_em: new Date().toISOString(),
+              planilha_original_spreadsheet_id: resultadoPlanilha?.spreadsheetId ?? '',
+              planilha_original_sheet_gid: resultadoPlanilha?.sheetGid ?? '',
+              planilha_original_sheet_title: resultadoPlanilha?.sheetTitle ?? null,
+              planilha_original_linhas_atualizadas: resultadoPlanilha?.linhas ?? [],
+              planilha_original_total_linhas_atualizadas: resultadoPlanilha?.totalLinhasAtualizadas ?? 0,
+              planilha_original_erros: resultadoPlanilha?.erros ?? [],
+              planilha_original_update_dry_run: resultadoPlanilha?.dryRun ?? false,
+              planilha_original_coluna_data_agenda: resultadoPlanilha?.colunaDataAgenda ?? 'Data na agenda GOOGLE',
+              planilha_original_criterio_match: resultadoPlanilha?.criterioMatch ?? 'evento_id_calendar_id',
               ...(agendaAlterada
-                ? { data_escolhida_confirmada: dataNovaISO, alterou_agenda_em: new Date().toISOString() }
+                ? {
+                    data_escolhida_confirmada: dataNovaISO,
+                    alterou_agenda_em: new Date().toISOString(),
+                    fluxo_concluido: planilhaOk,
+                    fluxo_concluido_em: planilhaOk ? new Date().toISOString() : undefined,
+                    motivo_conclusao: planilhaOk ? 'reagendamento_confirmado' : 'reagendamento_confirmado_falha_planilha',
+                  }
                 : { precisa_humano_por_regra: true, motivo_transferencia_humano: resultadoCalendar.dryRun ? 'calendar_write_dry_run' : 'erro_reagendamento_calendar' }),
             },
             resposta,

@@ -226,6 +226,9 @@ describe('respostas de reagendamento', () => {
     const r = respostaReagendamentoConfirmado('03/08/2026');
     expect(r.tipo).toBe('reagendamento_confirmado');
     expect(r.texto).toContain('03/08/2026');
+    expect(r.texto).toContain('entrega e montagem');
+    expect(r.texto).toContain('horário comercial');
+    expect(r.texto).toContain('é só chamar');
   });
 
   it('gera resposta de erro seguro de reagendamento', () => {

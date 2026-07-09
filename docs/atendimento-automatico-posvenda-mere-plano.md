@@ -610,3 +610,63 @@ Padrao validado no projeto: funcao `is_superadmin()` que verifica `usuarios_perm
 - Nao alterado: `/procurar-datas`, motor v2, Google Calendar, agenda, escrita em planilha, allowlist, eco de auto-reply, confirmacao positiva, escolha de acao, confirmacao de endereco, parser de data, consulta de datas e confirmacao final de reagendamento.
 - Validacoes: MCP Supabase confirmou colunas/tipos das tabelas de atendimento automatico; testes focados do processador e respostas passaram; TypeScript e ESLint passaram.
 - Observacao: `.devin` existe, mas a leitura direta retornou acesso negado nesta sessao; conteudo nao confirmado no codigo.
+
+### 2026-07-09 - Cascade - Escrita na planilha original + mensagem final ajustada
+
+- Teste real de reagendamento Google Calendar validado com sucesso:
+  - Cliente selecionou postergar entrega
+  - Mere consultou datas
+  - Cliente escolheu 03/08/2026
+  - Mere pediu confirmacao final
+  - Cliente confirmou
+  - Sistema duplicou 2 eventos originais na agenda `8.2- REAGENDAMENTO (REM. CLIENTE)` com prefixo `[REAG. AUTOMATICO]`
+  - Moveu os 2 eventos originais para 03/08/2026
+  - Manteve eventos como dia inteiro
+  - Painel ficou com `estado = reagendamento_confirmado`
+  - Metadata indicou `calendar: aplicado - 2 evento(s)`
+- Problema novo: a Mere le dados por aba importada (IMPORTRANGE) que demora ~10 min para refletir; a planilha original fica com data antiga
+- Solucao: apos sucesso completo do Calendar, atualizar a coluna `Data na agenda GOOGLE` na aba original (gid `190443561`) da planilha de controle
+- Helper criado: `atualizarDataAgendaGoogleOriginalMere(...)` em `src/lib/google/sheets-service-account.ts`
+  - Recebe eventos processados no reagendamento (evento_id, calendar_id, pedido_venda)
+  - Resolve o titulo da aba pelo gid via metadata do spreadsheet (sem depender de nome manual)
+  - Le range A:AZ da aba original
+  - Detecta linha de cabecalho que contem `Pedido de Venda`, `EVENTO_ID`, `CALENDAR_ID` (suporta cabecalho repetido)
+  - Mapeia colunas pelo texto do cabecalho
+  - Localiza linhas por criterio `EVENTO_ID + CALENDAR_ID`
+  - Atualiza somente a coluna `Data na agenda GOOGLE` via `spreadsheets.values.update`
+  - Escreve data no formato `dd/MM/yyyy` (ex: `03/08/2026`)
+  - Retorna metadata de auditoria: linhas atualizadas, erros, status, spreadsheetId, sheetGid, sheetTitle
+- Cliente JWT com scope de escrita (`spreadsheets`) adicionado em `criarClienteSheetsServiceAccountEscrita()`
+- Leitura continua usando scope `spreadsheets.readonly` (sem alteracao)
+- Ordem segura da operacao:
+  1. Cliente confirma reagendamento
+  2. Sistema executa Calendar (duplica + move)
+  3. Se Calendar teve sucesso completo: atualiza planilha original
+  4. Se planilha falhar: nao desfaz Calendar; marca `reagendamento_status = "aplicado_com_falha_planilha"`; mantem `estado = reagendamento_confirmado`; registra pendencia
+- Dry-run do Calendar: nao atualiza planilha; `planilha_original_update_status = "skip_dry_run_calendar"`
+- Nao atualiza planilha se: Calendar em dry-run, duplicacao falhou, movimento falhou, falha parcial, evento sem EVENTO_ID ou CALENDAR_ID
+- Metadata de auditoria salva na sessao:
+  - `planilha_original_update_status`
+  - `planilha_original_update_em`
+  - `planilha_original_spreadsheet_id`
+  - `planilha_original_sheet_gid`
+  - `planilha_original_sheet_title`
+  - `planilha_original_linhas_atualizadas` (array com rowNumber, pedido, evento_id, calendar_id, data_anterior, data_nova, status)
+  - `planilha_original_total_linhas_atualizadas`
+  - `planilha_original_erros`
+  - `planilha_original_update_dry_run`
+  - `planilha_original_coluna_data_agenda`
+  - `planilha_original_criterio_match = "evento_id_calendar_id"`
+  - `fluxo_concluido` (true se planilha Ok)
+  - `fluxo_concluido_em`
+  - `motivo_conclusao`
+- Mensagem final ao cliente ajustada para:
+  `Perfeito, sua entrega foi reagendada para {data_nova}.\n\nA entrega e montagem acontecem no mesmo dia, em horario comercial. Nossa equipe entra em contato proximo da data.\n\nSe precisar de algo mais, e so chamar por aqui.`
+- Variaveis de ambiente novas:
+  - `GOOGLE_AGENDA_CONTROLE_ORIGINAL_SPREADSHEET_ID=1H8mFLzEL8XcFh0UX_hOJF-ublRZcdbhwLc7ooNEeJ5U`
+  - `GOOGLE_AGENDA_CONTROLE_ORIGINAL_SHEET_GID=190443561`
+- Nao alterado: motor `/procurar-datas`, OSRM/Haversine, ranking/classificacao, Google Calendar (logica de duplicacao/movimento), aba importada gid `1227722067`, colunas alem de `Data na agenda GOOGLE`, EVENTO_ID ou CALENDAR_ID na planilha, encerramento automatico do ticket Digisac
+- Validacoes: TypeScript 0 erros; ESLint 0 erros/warnings; 34 testes passaram (27 respostas + 7 sheets-write-original); 8 testes sheets-service-account existentes passaram
+- Pendencias: compartilhar planilha original com a service account como Editor; validar em ambiente real com `ATENDIMENTO_POSVENDA_CALENDAR_WRITE_ENABLED=true`
+- Riscos conhecidos: se a service account nao tiver permissao de Editor na planilha original, a escrita falhara com erro controlado `sheets_write_permission_denied` (Calendar ja foi alterado e nao sera desfeito)
+

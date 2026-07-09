@@ -1,3 +1,34 @@
+## 2026-07-09 - Cascade - Correção de mojibake/encoding em mensagens da Mère e documentos
+
+**Resumo:** Corrigidos problemas de encoding/mojibake em mensagens do atendimento automático pos-venda (Mère) e documento de fixtures. Mensagens chegavam ao cliente com caracteres corrompidos (ex: `explicaÃ§Ã£o` em vez de `explicação`). Corrigidas strings em `respostas.ts` e título/árvore de arquivos em `README.md` de fixtures. Preservado encoding UTF-8.
+
+**Arquivos lidos:**
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md
+- src/lib/atendimento-automatico/respostas.ts
+- docs/fixtures/procurar-datas/legado/README.md
+
+**Arquivos alterados:**
+- src/lib/atendimento-automatico/respostas.ts (corrigidas 8 mensagens: explicação, Não, informação, opção, está, confirmação, automático, então, não, alteração, automática)
+- docs/fixtures/procurar-datas/legado/README.md (corrigido título, caracteres especiais, setas, árvore de arquivos box drawing → ASCII)
+- src/lib/atendimento-automatico/respostas.test.ts (atualizado teste para refletir correção: 'nao' → 'não')
+- docs/ia/log_progress.md (esta entrada)
+
+**Validações realizadas:**
+- Busca por padrões de mojibake (Ã, Â, â€, â") nos arquivos corrigidos: nenhuma ocorrência encontrada
+- Typecheck: `npx tsc --noEmit --pretty` — 0 erros
+- Lint: `npx eslint src/lib/atendimento-automatico/respostas.ts --no-warn-ignored` — 0 erros
+- Testes: `npx vitest run src/lib/atendimento-automatico/respostas.test.ts` — 27 passaram
+
+**Pendências:**
+- Nenhuma
+
+**Riscos conhecidos:**
+- Nenhum risco funcional. Apenas correção de strings, sem alteração de lógica.
+
+**Próximo passo recomendado:**
+- Deploy e validação visual das mensagens no WhatsApp
+
 ## 2026-07-08 - Cascade - Auto-refresh dashboard Finalizações Automáticas
 
 **Resumo:** Dashboard de /digisac/finalizacoes-automaticas agora atualiza automaticamente após fechar chamados (individual ou lote) ou apertar "Atualizar chamados", sem precisar recarregar a página. Criado endpoint dedicado `/api/digisac/finalizacoes-automaticas/resumo` que retorna contagens globais por status. Client chama `buscarResumoGlobal()` após cada ação de sucesso.

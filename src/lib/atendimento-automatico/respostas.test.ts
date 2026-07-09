@@ -219,7 +219,7 @@ describe('respostas de reagendamento', () => {
     const r = respostaReagendamentoDryRun('03/08/2026');
     expect(r.tipo).toBe('reagendamento_dry_run');
     expect(r.texto).toContain('modo de teste');
-    expect(r.texto).toContain('nao alterei a agenda');
+    expect(r.texto).toContain('não alterei a agenda');
   });
 
   it('gera resposta de reagendamento confirmado', () => {

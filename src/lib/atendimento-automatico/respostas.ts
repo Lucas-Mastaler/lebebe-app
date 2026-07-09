@@ -73,21 +73,21 @@ export function respostaPedidoNaoLocalizado(): RespostaSugerida {
 
 export function respostaPedidoNegadoSolicitarNovoDocumento(): RespostaSugerida {
   return {
-    texto: 'Entendi. Pode conferir o CPF/CNPJ do titular da compra e me enviar novamente?\n\nSe preferir, envie uma breve explicaÃ§Ã£o que eu encaminho para nossa equipe verificar.',
+    texto: 'Entendi. Pode conferir o CPF/CNPJ do titular da compra e me enviar novamente?\n\nSe preferir, envie uma breve explicação que eu encaminho para nossa equipe verificar.',
     tipo: 'pedido_negado_solicitar_novo_documento',
   };
 }
 
 export function respostaNovoDocumentoNaoLocalizado(): RespostaSugerida {
   return {
-    texto: 'NÃ£o consegui localizar uma entrega com esse CPF/CNPJ. Vou encaminhar seu atendimento para nossa equipe verificar manualmente.',
+    texto: 'Não consegui localizar uma entrega com esse CPF/CNPJ. Vou encaminhar seu atendimento para nossa equipe verificar manualmente.',
     tipo: 'novo_documento_nao_localizado',
   };
 }
 
 export function respostaFallbackNovoDocumentoOuEsclarecimento(): RespostaSugerida {
   return {
-    texto: 'NÃ£o consegui localizar um CPF/CNPJ na sua mensagem.\n\nPode me enviar o CPF/CNPJ do titular da compra? Se nÃ£o tiver essa informaÃ§Ã£o, vou encaminhar para nossa equipe verificar manualmente.',
+    texto: 'Não consegui localizar um CPF/CNPJ na sua mensagem.\n\nPode me enviar o CPF/CNPJ do titular da compra? Se não tiver essa informação, vou encaminhar para nossa equipe verificar manualmente.',
     tipo: 'fallback_novo_documento_ou_esclarecimento',
   };
 }
@@ -364,28 +364,36 @@ export function respostaDataOpcaoSelecionada(dataBR: string): RespostaSugerida {
 
 export function respostaConfirmarReagendamentoFinal(dataOriginalBR: string, dataNovaBR: string): RespostaSugerida {
   return {
-    texto: `Perfeito! Encontrei a opcao ${dataNovaBR}. Hoje sua entrega esta agendada para ${dataOriginalBR}. Confirma que deseja alterar para ${dataNovaBR}?`,
+    texto: `Perfeito! Encontrei a opção ${dataNovaBR}.
+
+Hoje sua entrega está agendada para ${dataOriginalBR}.
+
+Confirma que deseja alterar para ${dataNovaBR}?`,
     tipo: 'confirmar_reagendamento_final',
   };
 }
 
 export function respostaConfirmacaoReagendamentoAmbigua(dataNovaBR: string): RespostaSugerida {
   return {
-    texto: `Nao consegui entender se posso alterar para ${dataNovaBR}. Pode responder com "sim" para confirmar ou "nao" para cancelar?`,
+    texto: `Não consegui entender se posso alterar para ${dataNovaBR}. Pode responder com "sim" para confirmar ou "não" para cancelar?`,
     tipo: 'confirmacao_reagendamento_ambigua',
   };
 }
 
 export function respostaReagendamentoCancelado(): RespostaSugerida {
   return {
-    texto: 'Tudo bem, nao vou alterar a data da entrega. Se quiser escolher outra opcao, me envie o numero ou a data desejada.',
+    texto: 'Tudo bem, não vou alterar a data da entrega. Se quiser escolher outra opção, me envie o número ou a data desejada.',
     tipo: 'reagendamento_cancelado',
   };
 }
 
 export function respostaReagendamentoDryRun(dataNovaBR: string): RespostaSugerida {
   return {
-    texto: `Recebi sua confirmacao para ${dataNovaBR}. O reagendamento automatico esta em modo de teste, entao nao alterei a agenda. Vou encaminhar para nossa equipe validar a alteracao.`,
+    texto: `Recebi sua confirmação para ${dataNovaBR}.
+
+O reagendamento automático está em modo de teste, então não alterei a agenda.
+
+Vou encaminhar para nossa equipe validar a alteração.`,
     tipo: 'reagendamento_dry_run',
   };
 }
@@ -399,7 +407,7 @@ export function respostaReagendamentoConfirmado(dataNovaBR: string): RespostaSug
 
 export function respostaTransferidoHumanoErroReagendamento(): RespostaSugerida {
   return {
-    texto: 'Recebi sua confirmacao, mas nao consegui concluir a alteracao automatica com seguranca. Vou encaminhar seu atendimento para nossa equipe verificar.',
+    texto: 'Recebi sua confirmação, mas não consegui concluir a alteração automática com segurança. Vou encaminhar seu atendimento para nossa equipe verificar.',
     tipo: 'transferido_humano_erro_reagendamento',
   };
 }

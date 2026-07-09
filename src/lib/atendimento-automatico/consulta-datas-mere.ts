@@ -2,6 +2,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import type { GrupoAgendamento } from '@/lib/google/sheets-service-account';
 import { pesquisarDatasV2, type CandidatoFinalPesquisarDatasV2, type PesquisarDatasV2Output } from '@/lib/procurar-datas/motor/pesquisar-datas-v2';
 import type { PesquisarDatasRequest } from '@/lib/procurar-datas/contratos';
+import { formatarMinutos, parseMinutos } from '@/lib/procurar-datas/motor/tempo';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos públicos
@@ -31,8 +32,20 @@ export interface DatasDisponiveisMere {
 }
 
 export type ResultadoConsultaDatasMere =
-  | { ok: true; datas: DatasDisponiveisMere[]; runId: string; totalCandidatos: number }
-  | { ok: false; motivo: string; erros?: string[] };
+  | { ok: true; datas: DatasDisponiveisMere[]; runId: string; totalCandidatos: number; diagnostico: DiagnosticoConsultaDatasMere }
+  | { ok: false; motivo: string; erros?: string[]; diagnostico: DiagnosticoConsultaDatasMere };
+
+export interface DiagnosticoConsultaDatasMere {
+  erroCodigo?: string;
+  erroMensagem?: string;
+  erroStackResumido?: string;
+  payloadResumo: Record<string, unknown>;
+  payloadCamposPresentes: string[];
+  payloadCamposAusentes: string[];
+  retornoBrutoResumo?: Record<string, unknown>;
+  helperUsado: 'consultarDatasMere';
+  rotaOuMotorUsado: 'pesquisarDatasV2';
+}
 
 export interface ResultadoExecucaoConsulta {
   estado: 'datas_encontradas' | 'sem_datas' | 'erro_coordenadas' | 'erro_dados' | 'erro_consulta';
@@ -44,6 +57,7 @@ export interface ResultadoExecucaoConsulta {
   geoCacheStatus: 'hit' | 'miss' | 'erro';
   geoCacheMotivo?: string;
   erros?: string[];
+  diagnostico?: DiagnosticoConsultaDatasMere;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -256,6 +270,45 @@ export type ValidacaoCamposMere =
 
 const TEMPO_NECESSARIO_RE = /^(\d{1,2}):([0-5]\d)$/;
 
+function normalizarTempoServicoMere(valor: unknown): string | null {
+  const raw = String(valor ?? '').trim();
+  if (!raw) return null;
+
+  const minutosParseados = parseMinutos(raw);
+  if (minutosParseados > 0) {
+    return formatarMinutos(minutosParseados);
+  }
+
+  const minMatch = raw.match(/^(\d{1,4})\s*(?:min|mins|minuto|minutos)$/i);
+  if (minMatch) {
+    const minutos = Number(minMatch[1]);
+    return minutos > 0 ? formatarMinutos(minutos) : null;
+  }
+
+  const numeroMatch = raw.match(/^\d{1,4}$/);
+  if (numeroMatch) {
+    const minutos = Number(raw);
+    return minutos > 0 ? formatarMinutos(minutos) : null;
+  }
+
+  return null;
+}
+
+export function resolverTempoServicoGrupoMere(grupo: GrupoAgendamento): string | null {
+  const candidatos: unknown[] = [
+    grupo.tempo_servico,
+    ...grupo.eventos.map((evento) => evento.tempo_servico),
+    ...grupo.itens_originais.map((item) => item.tempo_servico),
+  ];
+
+  for (const candidato of candidatos) {
+    const normalizado = normalizarTempoServicoMere(candidato);
+    if (normalizado) return normalizado;
+  }
+
+  return null;
+}
+
 /**
  * Verifica se todos os campos obrigatórios para chamar pesquisarDatasV2 estão presentes.
  */
@@ -275,7 +328,7 @@ export function validarCamposConsultaMere(params: {
     if (!params.grupo.endereco_completo || params.grupo.endereco_completo.trim().length < 5) {
       faltando.push('endereco_completo');
     }
-    const tempo = params.grupo.tempo_servico?.trim() ?? '';
+    const tempo = resolverTempoServicoGrupoMere(params.grupo);
     if (!tempo || !TEMPO_NECESSARIO_RE.test(tempo)) {
       faltando.push('tempo_servico');
     }
@@ -285,9 +338,107 @@ export function validarCamposConsultaMere(params: {
   }
 
   if (faltando.length > 0) {
-    return { ok: false, motivo: 'dados_insuficientes_consulta_datas', camposFaltando: faltando };
+    const motivo = faltando.includes('tempo_servico')
+      ? 'tempo_servico_indisponivel'
+      : 'dados_insuficientes_consulta_datas';
+    return { ok: false, motivo, camposFaltando: faltando };
   }
   return { ok: true };
+}
+
+function arredondarCoordenada(valor: number): number {
+  return Math.round(valor * 1000000) / 1000000;
+}
+
+function camposPresentesPayload(payload: PesquisarDatasRequest): string[] {
+  const presentes: string[] = [];
+  if (payload.dataInicial) presentes.push('dataInicial');
+  if (payload.tempoNecessario) presentes.push('tempoNecessario');
+  if (payload.enderecoCompleto) presentes.push('enderecoCompleto');
+  if (typeof payload.destLat === 'number' && Number.isFinite(payload.destLat)) presentes.push('destLat');
+  if (typeof payload.destLng === 'number' && Number.isFinite(payload.destLng)) presentes.push('destLng');
+  if (typeof payload.isRural === 'boolean') presentes.push('isRural');
+  if (typeof payload.isCondominio === 'boolean') presentes.push('isCondominio');
+  return presentes;
+}
+
+function camposAusentesPayload(payload: PesquisarDatasRequest): string[] {
+  const obrigatorios = ['dataInicial', 'tempoNecessario', 'enderecoCompleto', 'destLat', 'destLng'];
+  const presentes = new Set(camposPresentesPayload(payload));
+  return obrigatorios.filter((campo) => !presentes.has(campo));
+}
+
+function resumirPayloadConsultaDatasMere(
+  payload: PesquisarDatasRequest,
+  grupo: GrupoAgendamento,
+  coordenadas: CoordenadasMere
+): Record<string, unknown> {
+  const endereco = decomporEnderecoCompleto(grupo.endereco_completo ?? '');
+  return {
+    dataInicialISO: payload.dataInicial,
+    tempoNecessario: payload.tempoNecessario,
+    enderecoCompletoPresente: Boolean(payload.enderecoCompleto),
+    cep: endereco.cep ?? coordenadas.cepResolvido,
+    numero: endereco.numero ?? coordenadas.numeroResolvido,
+    cidade: endereco.cidade,
+    uf: endereco.uf,
+    latitude_resolvida: arredondarCoordenada(coordenadas.lat),
+    longitude_resolvida: arredondarCoordenada(coordenadas.lng),
+    geo_cache_id: coordenadas.geoCacheId,
+    geo_cache_status: 'hit',
+    equipe: grupo.equipe_agenda || null,
+    isRural: payload.isRural,
+    isCondominio: payload.isCondominio,
+  };
+}
+
+function resumirRetornoMotor(resultado: PesquisarDatasV2Output): Record<string, unknown> {
+  return {
+    ok: resultado.ok,
+    erros: resultado.erros ?? [],
+    entradaNormalizada: resultado.entradaNormalizada
+      ? {
+          dataInicialISO: resultado.entradaNormalizada.dataInicialISO,
+          tempoNecessarioMin: resultado.entradaNormalizada.tempoNecessarioMin,
+          temCoordenadasDestino: resultado.entradaNormalizada.temCoordenadasDestino,
+          isRural: resultado.entradaNormalizada.isRural,
+          isCondominio: resultado.entradaNormalizada.isCondominio,
+          avisos: resultado.entradaNormalizada.avisos,
+        }
+      : null,
+    resumo: {
+      totalRecebidos: resultado.resultadoFinal.resumo.totalRecebidos,
+      totalElegiveis: resultado.resultadoFinal.resumo.totalElegiveis,
+      totalRecortados: resultado.resultadoFinal.resumo.totalRecortados,
+      totalCandidatosFinais: resultado.resultadoFinal.candidatosFinais.length,
+    },
+  };
+}
+
+function stackResumido(err: Error): string {
+  return (err.stack ?? err.message).split('\n').slice(0, 3).join(' | ').substring(0, 500);
+}
+
+function montarDiagnosticoConsultaDatasMere(params: {
+  payload: PesquisarDatasRequest;
+  grupo: GrupoAgendamento;
+  coordenadas: CoordenadasMere;
+  erroCodigo?: string;
+  erroMensagem?: string;
+  erroStackResumido?: string;
+  retornoBrutoResumo?: Record<string, unknown>;
+}): DiagnosticoConsultaDatasMere {
+  return {
+    erroCodigo: params.erroCodigo,
+    erroMensagem: params.erroMensagem,
+    erroStackResumido: params.erroStackResumido,
+    payloadResumo: resumirPayloadConsultaDatasMere(params.payload, params.grupo, params.coordenadas),
+    payloadCamposPresentes: camposPresentesPayload(params.payload),
+    payloadCamposAusentes: camposAusentesPayload(params.payload),
+    retornoBrutoResumo: params.retornoBrutoResumo,
+    helperUsado: 'consultarDatasMere',
+    rotaOuMotorUsado: 'pesquisarDatasV2',
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -303,9 +454,10 @@ export function montarPayloadConsultaDatasMere(
   dataDesejadaISO: string,
   coordenadas: CoordenadasMere
 ): PesquisarDatasRequest {
+  const tempoServico = resolverTempoServicoGrupoMere(grupo);
   return {
     dataInicial: dataDesejadaISO,
-    tempoNecessario: grupo.tempo_servico.trim(),
+    tempoNecessario: tempoServico ?? '',
     enderecoCompleto: grupo.endereco_completo,
     destLat: coordenadas.lat,
     destLng: coordenadas.lng,
@@ -398,14 +550,37 @@ export async function consultarDatasMere(
     resultado = await pesquisarDatasV2(payload);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false, motivo: `excecao_pesquisar_v2: ${msg}` };
+    const erro = err instanceof Error ? err : new Error(msg);
+    return {
+      ok: false,
+      motivo: 'excecao_pesquisar_v2',
+      erros: [msg],
+      diagnostico: montarDiagnosticoConsultaDatasMere({
+        payload,
+        grupo,
+        coordenadas,
+        erroCodigo: 'excecao_pesquisar_v2',
+        erroMensagem: msg,
+        erroStackResumido: stackResumido(erro),
+      }),
+    };
   }
 
   if (!resultado.ok) {
+    const retornoBrutoResumo = resumirRetornoMotor(resultado);
+    const erroMensagem = (resultado.erros ?? []).join('; ') || 'Motor v2 retornou ok=false.';
     return {
       ok: false,
       motivo: 'motor_v2_retornou_erro',
       erros: resultado.erros ?? [],
+      diagnostico: montarDiagnosticoConsultaDatasMere({
+        payload,
+        grupo,
+        coordenadas,
+        erroCodigo: 'motor_v2_retornou_erro',
+        erroMensagem,
+        retornoBrutoResumo,
+      }),
     };
   }
 
@@ -417,6 +592,12 @@ export async function consultarDatasMere(
     datas,
     runId,
     totalCandidatos: resultado.resultadoFinal.resumo.totalElegiveis,
+    diagnostico: montarDiagnosticoConsultaDatasMere({
+      payload,
+      grupo,
+      coordenadas,
+      retornoBrutoResumo: resumirRetornoMotor(resultado),
+    }),
   };
 }
 
@@ -470,6 +651,13 @@ export async function executarConsultaDatasMere(params: {
       coordenadas,
       geoCacheStatus: 'hit',
       erros: validacao.camposFaltando,
+      diagnostico: montarDiagnosticoConsultaDatasMere({
+        payload: montarPayloadConsultaDatasMere(grupo, dataDesejadaISO, coordenadas),
+        grupo,
+        coordenadas,
+        erroCodigo: validacao.motivo,
+        erroMensagem: `Campos ausentes ou invalidos: ${validacao.camposFaltando.join(', ')}`,
+      }),
     };
   }
 
@@ -485,6 +673,7 @@ export async function executarConsultaDatasMere(params: {
       coordenadas,
       geoCacheStatus: 'hit',
       erros: resultado.erros ?? [],
+      diagnostico: resultado.diagnostico,
     };
   }
 
@@ -497,6 +686,7 @@ export async function executarConsultaDatasMere(params: {
       totalCandidatos: resultado.totalCandidatos,
       coordenadas,
       geoCacheStatus: 'hit',
+      diagnostico: resultado.diagnostico,
     };
   }
 
@@ -507,5 +697,6 @@ export async function executarConsultaDatasMere(params: {
     totalCandidatos: resultado.totalCandidatos,
     coordenadas,
     geoCacheStatus: 'hit',
+    diagnostico: resultado.diagnostico,
   };
 }

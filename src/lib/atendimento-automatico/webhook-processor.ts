@@ -75,6 +75,17 @@ async function aplicarResultadoConsultaDatas(params: {
   } = params;
 
   const agora = new Date().toISOString();
+  const diagnosticoConsultaMetadata = execConsulta.diagnostico ? {
+    consulta_datas_erro_codigo: execConsulta.diagnostico.erroCodigo ?? null,
+    consulta_datas_erro_mensagem: execConsulta.diagnostico.erroMensagem ?? null,
+    consulta_datas_erro_stack_resumido: execConsulta.diagnostico.erroStackResumido ?? null,
+    consulta_datas_payload_resumo: execConsulta.diagnostico.payloadResumo,
+    consulta_datas_payload_campos_presentes: execConsulta.diagnostico.payloadCamposPresentes,
+    consulta_datas_payload_campos_ausentes: execConsulta.diagnostico.payloadCamposAusentes,
+    consulta_datas_retorno_bruto_resumo: execConsulta.diagnostico.retornoBrutoResumo ?? null,
+    consulta_datas_helper_usado: execConsulta.diagnostico.helperUsado,
+    consulta_datas_rota_ou_motor_usado: execConsulta.diagnostico.rotaOuMotorUsado,
+  } : {};
   const geoCacheMetadata = {
     geo_cache_status: execConsulta.geoCacheStatus,
     geo_cache_em: agora,
@@ -128,12 +139,17 @@ async function aplicarResultadoConsultaDatas(params: {
       metadataAtual: {
         ...metadataBase,
         ...geoCacheMetadata,
-        consulta_datas_status: 'dados_insuficientes',
+        ...diagnosticoConsultaMetadata,
+        consulta_datas_status: 'erro',
         consulta_datas_em: agora,
         consulta_datas_erro: execConsulta.motivo,
+        consulta_datas_erros: execConsulta.erros ?? [],
         consulta_datas_origem: 'mere',
         precisa_humano_por_regra: true,
-        motivo_transferencia_humano: 'dados_insuficientes_consulta_datas',
+        motivo_transferencia_humano:
+          execConsulta.motivo === 'tempo_servico_indisponivel'
+            ? 'tempo_servico_indisponivel'
+            : 'dados_insuficientes_consulta_datas',
       },
       resposta,
       estado: 'transferido_humano',
@@ -144,7 +160,9 @@ async function aplicarResultadoConsultaDatas(params: {
       metadata: novoMetadata, ultima_mensagem_cliente: text.substring(0, 200),
       ultima_mensagem_em: agora, updated_at: agora,
     }).eq('id', sessaoId);
-    console.log(`[posvenda-webhook] dados insuficientes consulta motivo=${execConsulta.motivo} sessaoId=${sessaoId}`);
+    console.log(
+      `[posvenda-webhook] consulta datas erro sessaoId=${sessaoId} codigo=${execConsulta.diagnostico?.erroCodigo ?? execConsulta.motivo} mensagem=${execConsulta.diagnostico?.erroMensagem ?? execConsulta.motivo} camposAusentes=${execConsulta.diagnostico?.payloadCamposAusentes.join(',') ?? '-'}`
+    );
     return { ok: true, saved: true, origem: 'cliente' };
   }
 
@@ -155,6 +173,7 @@ async function aplicarResultadoConsultaDatas(params: {
       metadataAtual: {
         ...metadataBase,
         ...geoCacheMetadata,
+        ...diagnosticoConsultaMetadata,
         consulta_datas_status: 'erro',
         consulta_datas_em: agora,
         consulta_datas_erro: execConsulta.motivo,
@@ -172,7 +191,9 @@ async function aplicarResultadoConsultaDatas(params: {
       metadata: novoMetadata, ultima_mensagem_cliente: text.substring(0, 200),
       ultima_mensagem_em: agora, updated_at: agora,
     }).eq('id', sessaoId);
-    console.log(`[posvenda-webhook] erro consulta datas motivo=${execConsulta.motivo} sessaoId=${sessaoId}`);
+    console.log(
+      `[posvenda-webhook] consulta datas erro sessaoId=${sessaoId} codigo=${execConsulta.diagnostico?.erroCodigo ?? execConsulta.motivo} mensagem=${execConsulta.diagnostico?.erroMensagem ?? execConsulta.motivo} camposAusentes=${execConsulta.diagnostico?.payloadCamposAusentes.join(',') ?? '-'}`
+    );
     return { ok: true, saved: true, origem: 'cliente' };
   }
 

@@ -541,3 +541,16 @@ Padrao validado no projeto: funcao `is_superadmin()` que verifica `usuarios_perm
 - Typecheck: 0 erros
 - Lint: 0 erros, 0 warnings
 - Testes: 42 passaram (23 interpretar-data + 19 respostas)
+
+### 2026-07-09 - Codex - Diagnostico e correcao do erro motor_v2_retornou_erro
+
+- Causa real confirmada no MCP Supabase para a sessao `fa6edeca-67e1-4cf4-b4eb-71d6c34a29f5`: o motor v2 retornou `ok=false` por `tempoNecessario ausente ou invalido.`
+- Payload da Mere estava usando `TEMPO DO SERVICO` do primeiro registro do grupo como `00:00`; outro item/evento da mesma entrega tinha `00:40`.
+- `QUANTO TEMPO PRA ENTREGA?` estava como `8` e nao foi usado como tempo de servico.
+- Correcao: helper da Mere agora resolve o primeiro tempo de servico valido dentro do grupo (`grupo.tempo_servico`, eventos e itens originais), normalizando `00:40`, `40 min` e `40` para `HH:MM`.
+- Se nenhum `TEMPO DO SERVICO` valido existir, a consulta nao chama o motor e transfere com motivo `tempo_servico_indisponivel`.
+- Agrupamento da planilha tambem passa a trocar `00:00` por outro tempo valido do mesmo grupo nas proximas sessoes.
+- Logs/metadata de erro da consulta agora incluem codigo, mensagem, stack resumido quando houver excecao, resumo seguro do payload, campos presentes/ausentes, retorno bruto resumido, helper usado e motor usado.
+- Nao alterado: motor `/procurar-datas`, OSRM/Haversine, Google Calendar, agenda, escrita em planilha, regra de negocio de ranking/classificacao.
+- Validacoes: lint dos arquivos alterados passou; `consulta-datas-mere.test.ts` + `sheets-service-account.test.ts` passaram (11 testes); `entrada.test.ts` + `tempo.test.ts` passaram (58 testes); `npx tsc --noEmit --pretty` passou.
+- Pendencia: deploy/rebuild e repetir fluxo real `2 -> CPF -> sim -> postergar -> sim endereco -> 30-07`.

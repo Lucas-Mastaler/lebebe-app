@@ -94,6 +94,18 @@ describe('agruparAgendamentosPorEntrega', () => {
     expect(grupos[0].produtos).toEqual(['Carrinho', 'Berço', 'Mesa']);
   });
 
+  it('mantem tempo de servico valido quando primeiro registro do grupo esta 00:00', () => {
+    const agendamentos = [
+      baseItem({ pedido_venda: '65469', tempo_servico: '00:00' }),
+      baseItem({ pedido_venda: '65470', tempo_servico: '00:40' }),
+    ];
+
+    const grupos = agruparAgendamentosPorEntrega(agendamentos);
+
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0].tempo_servico).toBe('00:40');
+  });
+
   it('normaliza enderecos equivalentes para mesma chave', () => {
     const agendamentos = [
       baseItem({ pedido_venda: '65469', endereco_cliente: 'Rua das Flores, 123 - CURITIBA/PR' }),

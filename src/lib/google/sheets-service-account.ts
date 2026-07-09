@@ -157,6 +157,13 @@ function extrairEnderecoCurto(endereco: string): string {
   return `${partes.slice(0, 2).join(', ')}...`;
 }
 
+function tempoServicoValido(valor: string): boolean {
+  const limpo = valor.trim();
+  if (!limpo || limpo === '00:00') return false;
+  if (/^\d{1,2}:[0-5]\d$/.test(limpo)) return true;
+  return /^\d{1,4}\s*(?:min|mins|minuto|minutos)?$/i.test(limpo);
+}
+
 export function agruparAgendamentosPorEntrega(
   agendamentos: AgendamentoEncontrado[]
 ): GrupoAgendamento[] {
@@ -188,6 +195,9 @@ export function agruparAgendamentosPorEntrega(
     }
 
     const grupo = mapa.get(chave)!;
+    if (!tempoServicoValido(grupo.tempo_servico) && tempoServicoValido(item.tempo_servico)) {
+      grupo.tempo_servico = item.tempo_servico;
+    }
 
     const pedido = item.pedido_venda.trim();
     if (pedido && !grupo.pedidos_venda.includes(pedido)) {

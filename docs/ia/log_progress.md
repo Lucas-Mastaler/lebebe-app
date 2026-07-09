@@ -19223,3 +19223,56 @@ Validar pelo botao `Auditar pesquisa por Run ID` em `/procurar-datas/dev-v2` com
 
 **Proximo passo recomendado:**
 Abrir `/procurar-datas/dev-v2` com sessao superadmin, auditar o run informado e executar uma busca nova equivalente ao caso Capivari/Araucaria para confirmar que o slot de 17/08 nao volta como normal.
+## 2026-07-09 - Codex - Diagnostico e correcao do erro motor_v2_retornou_erro na Mere
+
+**Resumo:** Diagnosticado e corrigido o erro generico `motor_v2_retornou_erro` na consulta de datas da Mere. Causa real confirmada no MCP Supabase para a sessao de teste: o grupo selecionado tinha `tempo_servico = "00:00"` no primeiro registro, enquanto outro item/evento do mesmo grupo tinha `00:40`. O motor v2 recebeu tempo invalido, normalizou `tempoNecessarioMin = null` e retornou `ok=false` com `tempoNecessario ausente ou invalido.`. A integracao agora resolve o primeiro `TEMPO DO SERVICO` valido dentro do grupo, normaliza formatos como `00:40`, `40 min` e `40`, bloqueia antes do motor quando nao houver tempo valido, e salva diagnostico seguro em metadata/log.
+
+**Arquivos lidos:**
+- docs/ia/log_progress.md
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- .devin/rules/gerais.md
+- .devin/rules/continuidade-agente.md
+- .devin/rules/supabase.md
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/lib/atendimento-automatico/consulta-datas-mere.ts
+- src/lib/google/sheets-service-account.ts
+- src/lib/procurar-datas/contratos.ts
+- src/lib/procurar-datas/motor/pesquisar-datas-v2.ts
+- src/lib/procurar-datas/motor/entrada.ts
+- src/lib/procurar-datas/motor/tempo.ts
+- src/app/api/procurar-datas/v2/diagnostico/route.ts
+
+**Arquivos alterados/criados:**
+- src/lib/atendimento-automatico/consulta-datas-mere.ts
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/lib/atendimento-automatico/consulta-datas-mere.test.ts (novo)
+- src/lib/google/sheets-service-account.ts
+- src/lib/google/sheets-service-account.test.ts
+- docs/atendimento-automatico-posvenda-mere-plano.md
+- docs/ia/log_progress.md
+
+**Validacoes realizadas:**
+- MCP Supabase: confirmadas colunas `geo_cache.lat/lng` numeric, `atendimento_automatico_sessoes.metadata` jsonb e dados seguros da sessao `fa6edeca-67e1-4cf4-b4eb-71d6c34a29f5`.
+- MCP Supabase: causa real confirmada sem CPF completo: `consulta_datas_erros = ["tempoNecessario ausente ou invalido."]`, `tempo_servico_grupo_1 = "00:00"`, outro item/evento do grupo com `tempo_servico = "00:40"`, `tempo_para_entrega = "8"` nao usado como tempo de servico.
+- `npx eslint src/lib/atendimento-automatico/consulta-datas-mere.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.ts src/lib/google/sheets-service-account.ts src/lib/google/sheets-service-account.test.ts --no-warn-ignored` - 0 erros.
+- `npx vitest run src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/google/sheets-service-account.test.ts` - 2 arquivos, 11 testes passaram.
+- `npx vitest run src/lib/procurar-datas/motor/entrada.test.ts src/lib/procurar-datas/motor/tempo.test.ts` - 2 arquivos, 58 testes passaram.
+- `npx tsc --noEmit --pretty` - 0 erros.
+
+**Comandos rodados e resultados:**
+- `rg` para mapear `motor_v2_retornou_erro`, Mere, posvenda e contratos.
+- `npx vitest ...` inicialmente falhou com `spawn EPERM` ao carregar Vite/Rolldown no sandbox; reexecutado com permissao elevada e passou.
+
+**Pendencias:**
+- Deploy/rebuild e teste real do fluxo `2 -> CPF -> sim -> postergar -> sim endereco -> 30-07`.
+- A sessao real ja transferida para humano nao foi reprocessada automaticamente; validar em nova sessao ou reativar manualmente se desejado.
+- `isRural` e `isCondominio` seguem como `false` por falta de dado na sessao Mere, pendencia preexistente nao alterada.
+
+**Riscos conhecidos:**
+- Se todos os registros do grupo tiverem `TEMPO DO SERVICO` vazio ou `00:00`, a consulta sera bloqueada antes do motor com motivo `tempo_servico_indisponivel`.
+- Nao foi feita validacao real no WhatsApp/Digisac apos deploy nesta tarefa.
+
+**Proximo passo recomendado:**
+- Fazer deploy e repetir o caso real; esperado: payload com `tempoNecessario = "00:40"` quando houver item valido no grupo, ou transferencia com `tempo_servico_indisponivel` se nenhum tempo valido existir.

@@ -43,11 +43,10 @@ import { interpretarDataDesejada, validarDataDesejadaParaAcao } from './interpre
 import { calcularTentativasInvalidas, interpretarAcaoAlteracao, interpretarConfirmacao } from './interpretar-intencao';
 import { chaveRespostaAutomatica, processarEnvioAutomatico } from './auto-reply';
 import {
-  consultarDatasMere,
+  executarConsultaDatasMere,
   formatarOpcoesDatasParaCliente,
-  geocodificarEnderecoMere,
-  validarCamposConsultaMere,
   type DatasDisponiveisMere,
+  type ResultadoExecucaoConsulta,
 } from './consulta-datas-mere';
 
 type OrigemMensagem = 'cliente' | 'bot' | 'humano' | 'sistema';
@@ -56,6 +55,194 @@ type ResultadoWebhook =
   | { ok: true; ignored: true; reason: string }
   | { ok: true; saved: true; origem: OrigemMensagem }
   | { ok: false; error: string };
+
+type SupabaseClient = ReturnType<typeof createServiceClient>;
+
+async function aplicarResultadoConsultaDatas(params: {
+  execConsulta: ResultadoExecucaoConsulta;
+  sessaoId: string;
+  metadataBase: Record<string, unknown>;
+  contactId: string | null;
+  ticketId: string;
+  messageId: string;
+  telefoneAutorizadoFlag: boolean;
+  supabase: SupabaseClient;
+  text: string;
+}): Promise<{ ok: true; saved: true; origem: 'cliente' }> {
+  const {
+    execConsulta, sessaoId, metadataBase, contactId, ticketId, messageId,
+    telefoneAutorizadoFlag, supabase, text,
+  } = params;
+
+  const agora = new Date().toISOString();
+  const geoCacheMetadata = {
+    geo_cache_status: execConsulta.geoCacheStatus,
+    geo_cache_em: agora,
+    geo_cache_motivo: execConsulta.geoCacheMotivo ?? null,
+    ...(execConsulta.coordenadas ? {
+      geo_cache_id: execConsulta.coordenadas.geoCacheId,
+      geo_cache_provider: execConsulta.coordenadas.provider,
+      geo_cache_confidence: execConsulta.coordenadas.confidence,
+      latitude: execConsulta.coordenadas.lat,
+      longitude: execConsulta.coordenadas.lng,
+      cep_resolvido: execConsulta.coordenadas.cepResolvido,
+      numero_resolvido: execConsulta.coordenadas.numeroResolvido,
+    } : {}),
+  };
+
+  if (execConsulta.estado === 'erro_coordenadas') {
+    const resposta = respostaTransferidoHumanoCoordenadas();
+    const novoMetadata = await construirMetadataComResposta({
+      sessaoId,
+      metadataAtual: {
+        ...metadataBase,
+        ...geoCacheMetadata,
+        consulta_datas_status: 'erro_coordenadas',
+        consulta_datas_em: agora,
+        consulta_datas_erro: execConsulta.motivo,
+        consulta_datas_origem: 'mere',
+        precisa_humano_por_regra: true,
+        motivo_transferencia_humano: 'coordenadas_nao_resolvidas',
+        motivo_falha_geo: execConsulta.motivo,
+      },
+      resposta,
+      estado: 'transferido_humano',
+      contactId,
+      ticketId,
+      digisacMessageId: messageId,
+      telefoneAutorizado: telefoneAutorizadoFlag,
+    });
+    await supabase.from('atendimento_automatico_sessoes').update({
+      estado: 'transferido_humano', status: 'transferido_humano',
+      metadata: novoMetadata, ultima_mensagem_cliente: text.substring(0, 200),
+      ultima_mensagem_em: agora, updated_at: agora,
+    }).eq('id', sessaoId);
+    console.log(`[posvenda-webhook] coordenadas nao resolvidas motivo=${execConsulta.motivo} sessaoId=${sessaoId}`);
+    return { ok: true, saved: true, origem: 'cliente' };
+  }
+
+  if (execConsulta.estado === 'erro_dados') {
+    const resposta = respostaTransferidoHumanoSemDados(execConsulta.motivo ?? 'dados_insuficientes');
+    const novoMetadata = await construirMetadataComResposta({
+      sessaoId,
+      metadataAtual: {
+        ...metadataBase,
+        ...geoCacheMetadata,
+        consulta_datas_status: 'dados_insuficientes',
+        consulta_datas_em: agora,
+        consulta_datas_erro: execConsulta.motivo,
+        consulta_datas_origem: 'mere',
+        precisa_humano_por_regra: true,
+        motivo_transferencia_humano: 'dados_insuficientes_consulta_datas',
+      },
+      resposta,
+      estado: 'transferido_humano',
+      contactId, ticketId, digisacMessageId: messageId, telefoneAutorizado: telefoneAutorizadoFlag,
+    });
+    await supabase.from('atendimento_automatico_sessoes').update({
+      estado: 'transferido_humano', status: 'transferido_humano',
+      metadata: novoMetadata, ultima_mensagem_cliente: text.substring(0, 200),
+      ultima_mensagem_em: agora, updated_at: agora,
+    }).eq('id', sessaoId);
+    console.log(`[posvenda-webhook] dados insuficientes consulta motivo=${execConsulta.motivo} sessaoId=${sessaoId}`);
+    return { ok: true, saved: true, origem: 'cliente' };
+  }
+
+  if (execConsulta.estado === 'erro_consulta') {
+    const resposta = respostaTransferidoHumanoErroDatas();
+    const novoMetadata = await construirMetadataComResposta({
+      sessaoId,
+      metadataAtual: {
+        ...metadataBase,
+        ...geoCacheMetadata,
+        consulta_datas_status: 'erro',
+        consulta_datas_em: agora,
+        consulta_datas_erro: execConsulta.motivo,
+        consulta_datas_erros: execConsulta.erros ?? [],
+        consulta_datas_origem: 'mere',
+        precisa_humano_por_regra: true,
+        motivo_transferencia_humano: 'erro_consulta_datas',
+      },
+      resposta,
+      estado: 'transferido_humano',
+      contactId, ticketId, digisacMessageId: messageId, telefoneAutorizado: telefoneAutorizadoFlag,
+    });
+    await supabase.from('atendimento_automatico_sessoes').update({
+      estado: 'transferido_humano', status: 'transferido_humano',
+      metadata: novoMetadata, ultima_mensagem_cliente: text.substring(0, 200),
+      ultima_mensagem_em: agora, updated_at: agora,
+    }).eq('id', sessaoId);
+    console.log(`[posvenda-webhook] erro consulta datas motivo=${execConsulta.motivo} sessaoId=${sessaoId}`);
+    return { ok: true, saved: true, origem: 'cliente' };
+  }
+
+  if (execConsulta.estado === 'sem_datas') {
+    const resposta = respostaTransferidoHumanoSemDatas();
+    const novoMetadata = await construirMetadataComResposta({
+      sessaoId,
+      metadataAtual: {
+        ...metadataBase,
+        ...geoCacheMetadata,
+        consulta_datas_status: 'sem_datas',
+        consulta_datas_em: agora,
+        consulta_datas_run_id: execConsulta.runId,
+        consulta_datas_origem: 'mere',
+        total_datas_disponiveis: 0,
+        datas_disponiveis: [],
+        precisa_humano_por_regra: true,
+        motivo_transferencia_humano: 'sem_datas_disponiveis',
+      },
+      resposta,
+      estado: 'transferido_humano',
+      contactId, ticketId, digisacMessageId: messageId, telefoneAutorizado: telefoneAutorizadoFlag,
+    });
+    await supabase.from('atendimento_automatico_sessoes').update({
+      estado: 'transferido_humano', status: 'transferido_humano',
+      metadata: novoMetadata, ultima_mensagem_cliente: text.substring(0, 200),
+      ultima_mensagem_em: agora, updated_at: agora,
+    }).eq('id', sessaoId);
+    await supabase.from('atendimento_automatico_eventos').insert({
+      sessao_id: sessaoId, tipo: 'sem_datas_disponiveis',
+      descricao: 'Consulta retornou zero datas elegíveis',
+      metadata: { run_id: execConsulta.runId, total_candidatos: execConsulta.totalCandidatos },
+    });
+    console.log(`[posvenda-webhook] sem datas disponiveis sessaoId=${sessaoId}`);
+    return { ok: true, saved: true, origem: 'cliente' };
+  }
+
+  // datas_encontradas
+  const datas = execConsulta.datas ?? [];
+  const textoOpcoes = formatarOpcoesDatasParaCliente(datas);
+  const resposta = respostaDatasEncontradas(textoOpcoes);
+  const novoMetadata = await construirMetadataComResposta({
+    sessaoId,
+    metadataAtual: {
+      ...metadataBase,
+      ...geoCacheMetadata,
+      consulta_datas_status: 'sucesso',
+      consulta_datas_em: agora,
+      consulta_datas_run_id: execConsulta.runId,
+      consulta_datas_origem: 'mere',
+      total_datas_disponiveis: datas.length,
+      datas_disponiveis: datas,
+    },
+    resposta,
+    estado: 'datas_encontradas',
+    contactId, ticketId, digisacMessageId: messageId, telefoneAutorizado: telefoneAutorizadoFlag,
+  });
+  await supabase.from('atendimento_automatico_sessoes').update({
+    estado: 'datas_encontradas',
+    metadata: novoMetadata, ultima_mensagem_cliente: text.substring(0, 200),
+    ultima_mensagem_em: agora, updated_at: agora,
+  }).eq('id', sessaoId);
+  await supabase.from('atendimento_automatico_eventos').insert({
+    sessao_id: sessaoId, tipo: 'datas_encontradas',
+    descricao: `Consulta retornou ${datas.length} opção(ões)`,
+    metadata: { run_id: execConsulta.runId, datas: datas.map((d: DatasDisponiveisMere) => d.dataISO) },
+  });
+  console.log(`[posvenda-webhook] datas encontradas total=${datas.length} sessaoId=${sessaoId}`);
+  return { ok: true, saved: true, origem: 'cliente' };
+}
 
 function detectarOrigem(msg: Record<string, unknown>): OrigemMensagem {
   const isFromMe = msg.isFromMe === true;
@@ -1532,34 +1719,10 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           return { ok: true, saved: true, origem: 'cliente' };
         }
 
-        // Data valida: salvar, avancar para data_desejada_recebida
-        const resposta = respostaDataDesejadaRecebida(interpretacao.br);
-        const novoMetadata = await construirMetadataComResposta({
-          sessaoId,
-          metadataAtual: {
-            ...(metadataAtual ?? {}),
-            data_desejada_texto_original: text.substring(0, 100),
-            data_desejada_iso: interpretacao.iso,
-            data_desejada_br: interpretacao.br,
-            data_desejada_interpretada_em: new Date().toISOString(),
-            data_desejada_valida_para_acao: true,
-          },
-          resposta,
-          estado: 'data_desejada_recebida',
-          contactId,
-          ticketId,
-          digisacMessageId: messageId,
-          telefoneAutorizado: telefoneAutorizadoFlag,
-        });
+        // Data valida: salvar mensagem/evento e disparar consulta no mesmo webhook
+        console.log(`[posvenda-webhook] data desejada valida ${interpretacao.iso} sessaoId=${sessaoId}`);
 
-        await supabase.from('atendimento_automatico_sessoes').update({
-          estado: 'data_desejada_recebida',
-          metadata: novoMetadata,
-          ultima_mensagem_cliente: text.substring(0, 200),
-          ultima_mensagem_em: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }).eq('id', sessaoId);
-
+        // Registrar mensagem e evento da data desejada
         await supabase.from('atendimento_automatico_mensagens').insert({
           sessao_id: sessaoId,
           digisac_message_id: messageId,
@@ -1580,252 +1743,22 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           metadata: { data_desejada_iso: interpretacao.iso, data_desejada_br: interpretacao.br, acao_alteracao: acaoAlteracao },
         });
 
-        console.log(`[posvenda-webhook] data desejada valida ${interpretacao.iso} sessaoId=${sessaoId}`);
-        return { ok: true, saved: true, origem: 'cliente' };
-      }
-
-      // Estado: data_desejada_recebida — consulta datas via motor v2
-      if (sessaoExistente.estado === 'data_desejada_recebida') {
-        const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
-        const telefoneSessao = sessaoExistente.telefone;
-        const telefoneAutorizadoFlag = telefoneAutorizado(telefoneSessao);
-
-        // Idempotência: se consulta já rodou com sucesso, não rodar de novo
-        const consultaStatus = metadataAtual?.consulta_datas_status as string | undefined;
-        if (consultaStatus === 'sucesso') {
-          console.log(`[posvenda-webhook] data_desejada_recebida consulta ja realizada sessaoId=${sessaoId}`);
-          return { ok: true, saved: true, origem: 'cliente' };
-        }
-
-        const grupo = obterGrupoSelecionado(metadataAtual);
-        const dataDesejadaISO = metadataAtual?.data_desejada_iso as string | undefined;
-        const enderecoCompleto = grupo?.endereco_completo ?? '';
-
-        // 1. Geocodificar endereço (cache-only, sem chamada externa)
-        const geocod = await geocodificarEnderecoMere(enderecoCompleto);
-
-        if (!geocod.ok) {
-          const resposta = respostaTransferidoHumanoCoordenadas();
-          const novoMetadata = await construirMetadataComResposta({
-            sessaoId,
-            metadataAtual: {
-              ...(metadataAtual ?? {}),
-              consulta_datas_status: 'erro_coordenadas',
-              consulta_datas_em: new Date().toISOString(),
-              consulta_datas_erro: geocod.motivo,
-              consulta_datas_origem: 'mere',
-              precisa_humano_por_regra: true,
-              motivo_transferencia_humano: 'coordenadas_nao_resolvidas',
-            },
-            resposta,
-            estado: 'transferido_humano',
-            contactId,
-            ticketId,
-            digisacMessageId: messageId,
-            telefoneAutorizado: telefoneAutorizadoFlag,
-          });
-
-          await supabase.from('atendimento_automatico_sessoes').update({
-            estado: 'transferido_humano',
-            status: 'transferido_humano',
-            metadata: novoMetadata,
-            ultima_mensagem_cliente: text.substring(0, 200),
-            ultima_mensagem_em: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }).eq('id', sessaoId);
-
-          await supabase.from('atendimento_automatico_mensagens').insert({
-            sessao_id: sessaoId,
-            digisac_message_id: messageId,
-            digisac_ticket_id: ticketId,
-            digisac_contact_id: contactId ?? null,
-            origem: 'cliente',
-            texto: text,
-            tipo_mensagem: msg.type as string | undefined,
-            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
-            status: 'processada',
-            metadata: { serviceId, departmentId, motivo: 'coordenadas_nao_resolvidas', geocod_motivo: geocod.motivo },
-          });
-
-          console.log(`[posvenda-webhook] coordenadas nao resolvidas motivo=${geocod.motivo} sessaoId=${sessaoId}`);
-          return { ok: true, saved: true, origem: 'cliente' };
-        }
-
-        // 2. Validar campos obrigatórios
-        const validacao = validarCamposConsultaMere({
-          dataDesejadaISO,
-          grupo,
-          coordenadas: geocod.coordenadas,
-        });
-
-        if (!validacao.ok) {
-          const resposta = respostaTransferidoHumanoSemDados(validacao.motivo);
-          const novoMetadata = await construirMetadataComResposta({
-            sessaoId,
-            metadataAtual: {
-              ...(metadataAtual ?? {}),
-              consulta_datas_status: 'dados_insuficientes',
-              consulta_datas_em: new Date().toISOString(),
-              consulta_datas_erro: `campos_faltando: ${validacao.camposFaltando.join(', ')}`,
-              consulta_datas_origem: 'mere',
-              precisa_humano_por_regra: true,
-              motivo_transferencia_humano: 'dados_insuficientes_consulta_datas',
-            },
-            resposta,
-            estado: 'transferido_humano',
-            contactId,
-            ticketId,
-            digisacMessageId: messageId,
-            telefoneAutorizado: telefoneAutorizadoFlag,
-          });
-
-          await supabase.from('atendimento_automatico_sessoes').update({
-            estado: 'transferido_humano',
-            status: 'transferido_humano',
-            metadata: novoMetadata,
-            ultima_mensagem_cliente: text.substring(0, 200),
-            ultima_mensagem_em: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }).eq('id', sessaoId);
-
-          await supabase.from('atendimento_automatico_mensagens').insert({
-            sessao_id: sessaoId,
-            digisac_message_id: messageId,
-            digisac_ticket_id: ticketId,
-            digisac_contact_id: contactId ?? null,
-            origem: 'cliente',
-            texto: text,
-            tipo_mensagem: msg.type as string | undefined,
-            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
-            status: 'processada',
-            metadata: { serviceId, departmentId, motivo: validacao.motivo, campos_faltando: validacao.camposFaltando },
-          });
-
-          console.log(`[posvenda-webhook] dados insuficientes consulta motivo=${validacao.motivo} sessaoId=${sessaoId}`);
-          return { ok: true, saved: true, origem: 'cliente' };
-        }
-
-        // 3. Executar consulta de datas
-        const resultadoConsulta = await consultarDatasMere(
-          grupo!,
-          dataDesejadaISO!,
-          geocod.coordenadas
-        );
-
-        if (!resultadoConsulta.ok) {
-          const resposta = respostaTransferidoHumanoErroDatas();
-          const novoMetadata = await construirMetadataComResposta({
-            sessaoId,
-            metadataAtual: {
-              ...(metadataAtual ?? {}),
-              consulta_datas_status: 'erro',
-              consulta_datas_em: new Date().toISOString(),
-              consulta_datas_erro: resultadoConsulta.motivo,
-              consulta_datas_erros: resultadoConsulta.erros ?? [],
-              consulta_datas_origem: 'mere',
-              precisa_humano_por_regra: true,
-              motivo_transferencia_humano: 'erro_consulta_datas',
-            },
-            resposta,
-            estado: 'transferido_humano',
-            contactId,
-            ticketId,
-            digisacMessageId: messageId,
-            telefoneAutorizado: telefoneAutorizadoFlag,
-          });
-
-          await supabase.from('atendimento_automatico_sessoes').update({
-            estado: 'transferido_humano',
-            status: 'transferido_humano',
-            metadata: novoMetadata,
-            ultima_mensagem_cliente: text.substring(0, 200),
-            ultima_mensagem_em: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }).eq('id', sessaoId);
-
-          await supabase.from('atendimento_automatico_mensagens').insert({
-            sessao_id: sessaoId,
-            digisac_message_id: messageId,
-            digisac_ticket_id: ticketId,
-            digisac_contact_id: contactId ?? null,
-            origem: 'cliente',
-            texto: text,
-            tipo_mensagem: msg.type as string | undefined,
-            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
-            status: 'processada',
-            metadata: { serviceId, departmentId, motivo: resultadoConsulta.motivo },
-          });
-
-          console.log(`[posvenda-webhook] erro consulta datas motivo=${resultadoConsulta.motivo} sessaoId=${sessaoId}`);
-          return { ok: true, saved: true, origem: 'cliente' };
-        }
-
-        // 4a. Sem datas disponíveis
-        if (resultadoConsulta.datas.length === 0) {
-          const resposta = respostaTransferidoHumanoSemDatas();
-          const novoMetadata = await construirMetadataComResposta({
-            sessaoId,
-            metadataAtual: {
-              ...(metadataAtual ?? {}),
-              consulta_datas_status: 'sem_datas',
-              consulta_datas_em: new Date().toISOString(),
-              consulta_datas_run_id: resultadoConsulta.runId,
-              consulta_datas_origem: 'mere',
-              total_datas_disponiveis: 0,
-              datas_disponiveis: [],
-              precisa_humano_por_regra: true,
-              motivo_transferencia_humano: 'sem_datas_disponiveis',
-            },
-            resposta,
-            estado: 'transferido_humano',
-            contactId,
-            ticketId,
-            digisacMessageId: messageId,
-            telefoneAutorizado: telefoneAutorizadoFlag,
-          });
-
-          await supabase.from('atendimento_automatico_sessoes').update({
-            estado: 'transferido_humano',
-            status: 'transferido_humano',
-            metadata: novoMetadata,
-            ultima_mensagem_cliente: text.substring(0, 200),
-            ultima_mensagem_em: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }).eq('id', sessaoId);
-
-          await supabase.from('atendimento_automatico_mensagens').insert({
-            sessao_id: sessaoId,
-            digisac_message_id: messageId,
-            digisac_ticket_id: ticketId,
-            digisac_contact_id: contactId ?? null,
-            origem: 'cliente',
-            texto: text,
-            tipo_mensagem: msg.type as string | undefined,
-            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
-            status: 'processada',
-            metadata: { serviceId, departmentId, motivo: 'sem_datas_disponiveis' },
-          });
-
-          console.log(`[posvenda-webhook] sem datas disponiveis sessaoId=${sessaoId}`);
-          return { ok: true, saved: true, origem: 'cliente' };
-        }
-
-        // 4b. Datas encontradas — apresentar ao cliente
-        const textoOpcoes = formatarOpcoesDatasParaCliente(resultadoConsulta.datas);
-        const resposta = respostaDatasEncontradas(textoOpcoes);
-        const novoMetadata = await construirMetadataComResposta({
+        // Salvar estado consultando_datas + resposta de confirmação ao cliente
+        const respostaConfirmacao = respostaDataDesejadaRecebida(interpretacao.br);
+        const metadataConsultando = await construirMetadataComResposta({
           sessaoId,
           metadataAtual: {
             ...(metadataAtual ?? {}),
-            consulta_datas_status: 'sucesso',
+            data_desejada_texto_original: text.substring(0, 100),
+            data_desejada_iso: interpretacao.iso,
+            data_desejada_br: interpretacao.br,
+            data_desejada_interpretada_em: new Date().toISOString(),
+            data_desejada_valida_para_acao: true,
+            consulta_datas_status: 'consultando',
             consulta_datas_em: new Date().toISOString(),
-            consulta_datas_run_id: resultadoConsulta.runId,
-            consulta_datas_origem: 'mere',
-            total_datas_disponiveis: resultadoConsulta.datas.length,
-            datas_disponiveis: resultadoConsulta.datas,
           },
-          resposta,
-          estado: 'datas_encontradas',
+          resposta: respostaConfirmacao,
+          estado: 'consultando_datas',
           contactId,
           ticketId,
           digisacMessageId: messageId,
@@ -1833,35 +1766,65 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         });
 
         await supabase.from('atendimento_automatico_sessoes').update({
-          estado: 'datas_encontradas',
-          metadata: novoMetadata,
+          estado: 'consultando_datas',
+          metadata: metadataConsultando,
           ultima_mensagem_cliente: text.substring(0, 200),
           ultima_mensagem_em: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }).eq('id', sessaoId);
 
-        await supabase.from('atendimento_automatico_mensagens').insert({
-          sessao_id: sessaoId,
-          digisac_message_id: messageId,
-          digisac_ticket_id: ticketId,
-          digisac_contact_id: contactId ?? null,
-          origem: 'cliente',
-          texto: text,
-          tipo_mensagem: msg.type as string | undefined,
-          timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
-          status: 'processada',
-          metadata: { serviceId, departmentId, total_datas: resultadoConsulta.datas.length, run_id: resultadoConsulta.runId },
+        // Disparar consulta de datas imediatamente no mesmo webhook
+        const execConsulta = await executarConsultaDatasMere({
+          grupo: obterGrupoSelecionado(metadataAtual),
+          dataDesejadaISO: interpretacao.iso,
+          sessaoId,
         });
 
-        await supabase.from('atendimento_automatico_eventos').insert({
-          sessao_id: sessaoId,
-          tipo: 'datas_encontradas',
-          descricao: `Consulta de datas retornou ${resultadoConsulta.datas.length} opção(ões)`,
-          metadata: { run_id: resultadoConsulta.runId, datas: resultadoConsulta.datas.map((d: DatasDisponiveisMere) => d.dataISO) },
+        return await aplicarResultadoConsultaDatas({
+          execConsulta,
+          sessaoId,
+          metadataBase: metadataConsultando as Record<string, unknown>,
+          contactId,
+          ticketId,
+          messageId,
+          telefoneAutorizadoFlag,
+          supabase,
+          text,
         });
+      }
 
-        console.log(`[posvenda-webhook] datas encontradas total=${resultadoConsulta.datas.length} sessaoId=${sessaoId}`);
-        return { ok: true, saved: true, origem: 'cliente' };
+      // Estado: data_desejada_recebida — fallback para sessões que ficaram presas antes da correção
+      // Também cobre retry se o webhook anterior falhou após salvar data_desejada_recebida
+      if (sessaoExistente.estado === 'data_desejada_recebida' || sessaoExistente.estado === 'consultando_datas') {
+        const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
+        const telefoneSessao = sessaoExistente.telefone;
+        const telefoneAutorizadoFlag = telefoneAutorizado(telefoneSessao);
+
+        // Idempotência: consulta já rodou com sucesso — sessão deve ter avançado, ignorar
+        const consultaStatus = metadataAtual?.consulta_datas_status as string | undefined;
+        if (consultaStatus === 'sucesso') {
+          console.log(`[posvenda-webhook] consulta ja realizada ignorando sessaoId=${sessaoId}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        }
+
+        const grupo = obterGrupoSelecionado(metadataAtual);
+        const dataDesejadaISO = metadataAtual?.data_desejada_iso as string | undefined;
+
+        console.log(`[posvenda-webhook] retry consulta estado=${sessaoExistente.estado} sessaoId=${sessaoId}`);
+
+        const execConsulta = await executarConsultaDatasMere({ grupo, dataDesejadaISO, sessaoId });
+
+        return await aplicarResultadoConsultaDatas({
+          execConsulta,
+          sessaoId,
+          metadataBase: metadataAtual ?? {},
+          contactId,
+          ticketId,
+          messageId,
+          telefoneAutorizadoFlag,
+          supabase,
+          text,
+        });
       }
 
       // Estado: datas_encontradas — cliente escolhe opção

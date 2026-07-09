@@ -277,6 +277,62 @@
 
 **Proximo passo recomendado:** Confirmar que a API Digisac retorna `id` ao POST `/messages`; se nao retornar, implementar fallback de texto+timestamp. Testar novo fluxo completo: CPF → auto-reply → eco no webhook → sem pausa → cliente responde `sim` → estado avanca.
 
+## 2026-07-09 (v2) - Cascade - Correcao bug disparo consulta: geocod robusta + disparo no mesmo webhook
+
+**Causa raiz:** No bloco `aguardando_data_desejada`, apos validar a data, o codigo fazia `return { ok: true }` imediatamente apos salvar `estado = data_desejada_recebida`. O bloco que chamava `geocodificarEnderecoMere` so rodava quando o webhook recebia uma **nova mensagem** com a sessao ja nesse estado — nunca acontecia porque o cliente nao enviava nova mensagem. A consulta ficava travada para sempre.
+
+**Correcao do disparo:** Removi o `return` prematuro e substitui por chamada direta a `executarConsultaDatasMere` no mesmo webhook, apos salvar o estado `consultando_datas`. Adicionado fallback de retry que re-executa a consulta para sessoes que ficaram presas no estado `data_desejada_recebida` ou `consultando_datas` (idempotencia por `consulta_datas_status === 'sucesso'`).
+
+**Correcao da geocodificacao:** A funcao original buscava por `ilike endereco_completo` que falhava porque o texto salvo no `geo_cache` divergia do texto do grupo. Confirmado no banco: o endereco do teste (`Rua Dr. Manoel Francisco Ferreira Correia, 201`) esta no `geo_cache` com CEP `81320260` e numero `201`, mas o endereco_completo salvo e diferente.
+
+**Nova estrategia de geocodificacao (cep+numero):**
+1. Extrair CEP e numero do `endereco_completo` via `decomporEnderecoCompleto` (regex, sem API externa)
+2. Buscar `geo_cache` por `cep` exato (sem hifen) com `.eq('cep', cepNorm)`
+3. Desambiguar por score: confidence + cidade/UF compativel + numero compativel
+4. Se nao encontrar por CEP+numero: tentar CEP sozinho
+5. Se nenhum hit: transferir para humano com motivo claro
+
+**Refatoracao da logica de aplicacao:** Extraida funcao auxiliar `aplicarResultadoConsultaDatas` que centraliza os 4 ramos de resultado (erro_coordenadas, erro_dados, erro_consulta, sem_datas, datas_encontradas) e e reutilizada no disparo imediato e no fallback de retry. Elimina duplicacao de ~250 linhas.
+
+**Novo tipo `CoordenadasMere`:** Adicionados campos `confidence`, `provider`, `geoCacheId`, `cepResolvido`, `numeroResolvido` salvos no metadata da sessao.
+
+**Novo tipo `ResultadoExecucaoConsulta`:** Interface publica que encapsula resultado completo de `executarConsultaDatasMere` incluindo geoCacheStatus/motivo.
+
+**Novo estado `consultando_datas`:** Sessao avanca para esse estado imediatamente ao receber data valida, antes de chamar o motor. Permite distinguir visualmente "aguardando data" de "consultando" de "datas prontas".
+
+**Metadata novo salvo no sucesso:**
+- `geo_cache_status`: 'hit' | 'miss' | 'erro'
+- `geo_cache_em`, `geo_cache_motivo`
+- `geo_cache_id`, `geo_cache_provider`, `geo_cache_confidence`
+- `latitude`, `longitude`, `cep_resolvido`, `numero_resolvido`
+- `motivo_falha_geo` (em caso de erro)
+
+**Logs adicionados:**
+- `[posvenda-webhook] geo_cache hit sessaoId=... cep=... confidence=...`
+- `[posvenda-webhook] geo_cache miss sessaoId=... motivo=...`
+- `[posvenda-webhook] iniciando consulta datas sessaoId=... data=...`
+- `[posvenda-webhook] consulta datas sucesso sessaoId=... total=N`
+- `[posvenda-webhook] consulta datas erro sessaoId=... motivo=...`
+- `[posvenda-webhook] retry consulta estado=... sessaoId=...`
+
+**Arquivos alterados:**
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts` — reescrita `geocodificarEnderecoMere` (CEP+numero), nova `decomporEnderecoCompleto`, nova `executarConsultaDatasMere`, novo tipo `ResultadoExecucaoConsulta`, campos extras em `CoordenadasMere`
+- `src/lib/atendimento-automatico/webhook-processor.ts` — removido `return` prematuro, adicionado disparo imediato, estado `consultando_datas`, funcao auxiliar `aplicarResultadoConsultaDatas`, fallback de retry para estados presos
+
+**Validacoes:**
+- `npx tsc --noEmit` - 0 erros
+- `npx eslint` - 0 erros, 0 warnings
+- `npx vitest run` - 113/113
+
+**Nao alterado:** motor pesquisar-datas-v2.ts, rotas /api/procurar-datas/*, agenda, Calendar, planilha, Apps Script, OSRM, ranking, bot Digisac antigo, tabela geo_cache (apenas leitura)
+
+**Pendencias:**
+- Enderecos sem CEP no `endereco_completo` (raro no cadastro Le Bebe) ainda transferem para humano — aceitavel como fallback seguro
+- isRural/isCondominio continuam como false — aceito pelo usuario
+- `data_opcao_selecionada` e terminal — proxima etapa: confirmacao com equipe
+
+**Proximo passo recomendado:** Testar fluxo completo com cliente real. Verificar no log da Vercel a sequencia: `data desejada valida` → `geo_cache hit` → `iniciando consulta datas` → `consulta datas sucesso` (ou motivo de fallback).
+
 ## 2026-07-09 - Cascade - Frente 3: consulta de datas via motor v2 integrada ao fluxo Mere
 
 **Resumo:** Implementada a Frente 3 do atendimento automatico pos-venda Mere. Quando sessao chega em `data_desejada_recebida`, o webhook agora geocodifica o endereco do grupo (cache-only), valida campos obrigatorios, chama `pesquisarDatasV2` direto (server-side, sem HTTP, sem auth), formata ate 3 opcoes de data e apresenta ao cliente. Cliente escolhe com 1/2/3. Estado final: `data_opcao_selecionada`. Sem alteracao de agenda, Calendar, planilha ou motor v2.

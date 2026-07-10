@@ -1,3 +1,99 @@
+## 2026-07-10 - Cascade - Corrigir URL do diagnostico no cron de finalizacoes automaticas
+
+**Resumo:** Corrigido erro que causava falha do cron ao chamar o diagnostico. A URL do diagnostico usava request.nextUrl.origin que na Vercel resolve para o dominio interno do deployment, retornando HTML em vez de JSON. Corrigido para usar APP_URL (env server-side) com fallback para https://lebebe.cloud. Adicionada validacao de content-type antes de chamar json() e extracao de body preview em caso de erro.
+
+**Arquivos lidos:**
+- src/app/api/cron/digisac-finalizacoes-automaticas/route.ts
+- src/app/api/digisac/finalizacoes-automaticas/executar/route.ts
+
+**Arquivos alterados:**
+- src/app/api/cron/digisac-finalizacoes-automaticas/route.ts (URL do diagnostico usa APP_URL + validacao content-type + body preview em erro)
+- src/app/api/digisac/finalizacoes-automaticas/executar/route.ts (mesma correcao para rota manual)
+
+**Validacoes realizadas:**
+- TypeScript: npx tsc --noEmit — 0 erros
+- Nao houve alteracao de banco
+
+**Comandos rodados e resultados:**
+- npx tsc --noEmit → exit 0
+
+**Pendencias:**
+- Configurar APP_URL=https://lebebe.cloud nas variaveis de ambiente da Vercel (se nao definida, fallback ja usa esse valor)
+- Reverter vercel.json para schedule correto apos testes
+
+**Riscos conhecidos:**
+- Se APP_URL estiver incorreta, o diagnostico falhara — mas o erro agora sera registrado com detalhes na execucao
+- A rota manual usa cookie de sessao para autenticar o diagnostico; se APP_URL apontar para um dominio diferente, o cookie pode nao ser valido
+
+**Proximo passo recomendado:**
+- Deploy e observar proxima execucao do cron
+
+---
+
+## 2026-07-10 - Codex - Filtrar opcoes de datas da Mere por acao
+
+**Resumo:** Ajustado o pos-processamento das opcoes de datas da Mere no fluxo de alteracao de entrega. A lista retornada pelo motor agora e filtrada antes de ser exibida ao cliente: mesma data da entrega atual nunca aparece; `adiantar` so mostra datas anteriores; `postergar` so mostra datas posteriores; a numeracao e recalculada antes de salvar em `datas_disponiveis`.
+
+**Problema real observado:**
+- Cliente pediu para adiantar entrega atual em `13/08/2026`.
+- A resposta exibiu `13/08/2026`, `21/08/2026` e `25/08/2026`.
+- Isso mostrava a mesma data ja marcada e datas posteriores como se fossem opcoes de adiantamento.
+
+**Arquivos lidos:**
+- Anexo do pedido em `C:\Users\lebeb\.codex\attachments\eeb387d9-dd50-441c-9371-8e2044c7e0e5\pasted-text.txt`
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts`
+- `src/lib/atendimento-automatico/webhook-processor.ts`
+- `src/lib/atendimento-automatico/respostas.ts`
+- `src/lib/atendimento-automatico/reagendamento-opcoes.ts`
+- `src/lib/atendimento-automatico/consulta-datas-mere.test.ts`
+- `src/lib/atendimento-automatico/webhook-processor.test.ts`
+- `docs/atendimento-automatico-posvenda-mere-plano.md`
+- `docs/ia/log_progress.md`
+
+**Arquivos alterados:**
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts`
+- `src/lib/atendimento-automatico/consulta-datas-mere.test.ts`
+- `src/lib/atendimento-automatico/webhook-processor.ts`
+- `src/lib/atendimento-automatico/webhook-processor.test.ts`
+- `src/lib/atendimento-automatico/respostas.ts`
+- `docs/atendimento-automatico-posvenda-mere-plano.md`
+- `docs/ia/log_progress.md`
+
+**O que mudou:**
+- Criado helper puro `filtrarDatasDisponiveisPorAcaoMere`.
+- `aplicarResultadoConsultaDatas` agora filtra a lista depois do motor e antes de `formatarOpcoesDatasParaCliente`.
+- Metadata passou a registrar total do motor, removidas por mesma data, removidas por acao contraria, total exibido e oferta de postergar.
+- Quando `adiantar` nao tem datas anteriores mas tem datas posteriores, a Mere pergunta se o cliente quer verificar postergacao.
+- Se o cliente responde sim/quer/postergar, reaproveita as datas posteriores salvas, altera `acao_alteracao` para `postergar` e exibe lista renumerada.
+- Se o cliente responde nao/deixa como esta/manter, encerra mantendo a data atual, sem Calendar e sem planilha.
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit --pretty false` -> passou.
+- `npx eslint src/lib/atendimento-automatico/consulta-datas-mere.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.ts src/lib/atendimento-automatico/webhook-processor.test.ts src/lib/atendimento-automatico/respostas.ts` -> passou.
+- `npx vitest run src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.test.ts` -> 2 arquivos passaram, 33 tests passed, 6 skipped legados.
+
+**Nao alterado:**
+- Motor `/procurar-datas`
+- Ranking/classificacao
+- OSRM/Haversine
+- Calendar
+- Sheets
+- Geocoding
+- Regras de negocio do motor
+
+**Pendencias:**
+- Validar em producao o caso real com entrega atual `13/08/2026` e pedido para adiantar.
+- Suite completa nao foi rodada nesta etapa; havia falhas conhecidas fora do escopo em testes de agenda/diagnostico v2.
+
+**Riscos conhecidos:**
+- A comparacao depende da data atual da entrega estar parseavel como `dd/MM/yyyy`; se a planilha vier em outro formato, o filtro de direcao nao e aplicado e a metadata permite diagnosticar.
+- O reaproveitamento das datas posteriores depende de `opcoes_datas_posteriores` salvo na mesma sessao.
+
+**Proximo passo recomendado:**
+- Retestar o fluxo real: cliente pede adiantar, recebe oferta de postergar, responde `sim`, escolhe uma das datas posteriores e confirma.
+
+---
+
 ## 2026-07-10 - Codex - Corrigir coordenadas da Mere com reuso de `/procurar-datas`
 
 **Resumo:** Corrigida a causa do novo teste real que parou em `geo_cache_nao_resolvido`. A Mere nao depende mais apenas do miss/hit do `geo_cache`: ela monta payload de endereco equivalente ao da tela `/procurar-datas`, tenta cache, chama providers existentes quando necessario, salva/atualiza `geo_cache` e so entao chama a consulta de datas com `destLat/destLng`.

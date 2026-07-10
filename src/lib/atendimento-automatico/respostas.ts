@@ -40,6 +40,9 @@ export type TipoRespostaSugerida =
   | 'transferido_humano_sem_datas'
   | 'transferido_humano_erro_consulta'
   | 'transferido_humano_coordenadas_nao_resolvidas'
+  | 'sem_opcoes_adiantar_oferecer_postergar'
+  | 'manter_data_atual'
+  | 'sem_opcoes_postergar'
   | 'data_opcao_invalida'
   | 'data_opcao_selecionada'
   | 'confirmar_reagendamento_final'
@@ -352,6 +355,27 @@ export function respostaTransferidoHumanoCoordenadas(): RespostaSugerida {
   return {
     texto: 'Não consegui localizar o endereço de entrega automaticamente. Vou encaminhar seu atendimento para nossa equipe verificar manualmente.',
     tipo: 'transferido_humano_coordenadas_nao_resolvidas',
+  };
+}
+
+export function respostaSemOpcoesAdiantarOferecerPostergar(dataAtualBR: string): RespostaSugerida {
+  return {
+    texto: `No momento, nÃ£o encontrei uma data disponÃ­vel para adiantar sua entrega antes da data que jÃ¡ estÃ¡ marcada, ${dataAtualBR}.\n\nEncontrei apenas datas apÃ³s a data atual. VocÃª quer que eu verifique opÃ§Ãµes para postergar a entrega?`,
+    tipo: 'sem_opcoes_adiantar_oferecer_postergar',
+  };
+}
+
+export function respostaManterDataAtual(dataAtualBR: string): RespostaSugerida {
+  return {
+    texto: `Tudo bem. Vamos manter sua entrega na data jÃ¡ marcada, ${dataAtualBR}.`,
+    tipo: 'manter_data_atual',
+  };
+}
+
+export function respostaSemOpcoesPostergar(dataAtualBR: string): RespostaSugerida {
+  return {
+    texto: `No momento, nÃ£o encontrei uma data disponÃ­vel para postergar sua entrega apÃ³s a data que jÃ¡ estÃ¡ marcada, ${dataAtualBR}. Vou encaminhar seu atendimento para nossa equipe verificar manualmente.`,
+    tipo: 'sem_opcoes_postergar',
   };
 }
 

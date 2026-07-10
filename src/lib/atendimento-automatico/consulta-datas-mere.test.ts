@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GrupoAgendamento } from '@/lib/google/sheets-service-account';
 import {
   executarConsultaDatasMere,
+  filtrarDatasDisponiveisPorAcaoMere,
   geocodificarEnderecoMere,
   montarPayloadConsultaDatasMere,
   montarPayloadEnderecoMere,
@@ -454,5 +455,79 @@ describe('consulta-datas-mere', () => {
     expect(salvarEnderecoNoGeoCacheMock).toHaveBeenCalled();
     expect(pesquisarDatasV2Mock).toHaveBeenCalled();
     expect(resultado.estado).toBe('datas_encontradas');
+  });
+
+  it('adiantar exibe apenas datas anteriores e remove a data atual', () => {
+    const filtro = filtrarDatasDisponiveisPorAcaoMere({
+      dataAtualISO: '2026-08-13',
+      acao: 'adiantar',
+      datas: [
+        { dataISO: '2026-08-05', dataBR: '05/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 1 },
+        { dataISO: '2026-08-08', dataBR: '08/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 2 },
+        { dataISO: '2026-08-13', dataBR: '13/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 3 },
+      ],
+    });
+
+    expect(filtro.datasExibidas.map((d) => `${d.rank}:${d.dataISO}`)).toEqual([
+      '1:2026-08-05',
+      '2:2026-08-08',
+    ]);
+    expect(filtro.removidasMesmaData).toBe(1);
+    expect(filtro.removidasContrariasAcao).toBe(0);
+  });
+
+  it('adiantar sem opcoes anteriores separa posteriores para oferta de postergar', () => {
+    const filtro = filtrarDatasDisponiveisPorAcaoMere({
+      dataAtualISO: '2026-08-13',
+      acao: 'adiantar',
+      datas: [
+        { dataISO: '2026-08-13', dataBR: '13/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 1 },
+        { dataISO: '2026-08-21', dataBR: '21/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 2 },
+        { dataISO: '2026-08-25', dataBR: '25/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 3 },
+      ],
+    });
+
+    expect(filtro.datasExibidas).toEqual([]);
+    expect(filtro.datasPosteriores.map((d) => `${d.rank}:${d.dataISO}`)).toEqual([
+      '1:2026-08-21',
+      '2:2026-08-25',
+    ]);
+    expect(filtro.removidasMesmaData).toBe(1);
+    expect(filtro.removidasContrariasAcao).toBe(2);
+    expect(filtro.semOpcoesParaAcao).toBe(true);
+  });
+
+  it('postergar exibe apenas datas posteriores e remove a data atual', () => {
+    const filtro = filtrarDatasDisponiveisPorAcaoMere({
+      dataAtualISO: '2026-08-13',
+      acao: 'postergar',
+      datas: [
+        { dataISO: '2026-08-13', dataBR: '13/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 1 },
+        { dataISO: '2026-08-21', dataBR: '21/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 2 },
+        { dataISO: '2026-08-25', dataBR: '25/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 3 },
+      ],
+    });
+
+    expect(filtro.datasExibidas.map((d) => `${d.rank}:${d.dataISO}`)).toEqual([
+      '1:2026-08-21',
+      '2:2026-08-25',
+    ]);
+    expect(filtro.removidasMesmaData).toBe(1);
+  });
+
+  it('postergar sem opcoes posteriores nao exibe datas anteriores', () => {
+    const filtro = filtrarDatasDisponiveisPorAcaoMere({
+      dataAtualISO: '2026-08-13',
+      acao: 'postergar',
+      datas: [
+        { dataISO: '2026-08-05', dataBR: '05/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 1 },
+        { dataISO: '2026-08-08', dataBR: '08/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 2 },
+        { dataISO: '2026-08-13', dataBR: '13/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 3 },
+      ],
+    });
+
+    expect(filtro.datasExibidas).toEqual([]);
+    expect(filtro.removidasMesmaData).toBe(1);
+    expect(filtro.removidasContrariasAcao).toBe(2);
   });
 });

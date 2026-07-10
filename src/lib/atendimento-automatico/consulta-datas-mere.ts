@@ -52,6 +52,17 @@ export interface DatasDisponiveisMere {
   rank: number;
 }
 
+export type AcaoAlteracaoEntregaMere = 'adiantar' | 'postergar';
+
+export interface ResultadoFiltroDatasMere {
+  datasExibidas: DatasDisponiveisMere[];
+  datasPosteriores: DatasDisponiveisMere[];
+  totalMotor: number;
+  removidasMesmaData: number;
+  removidasContrariasAcao: number;
+  semOpcoesParaAcao: boolean;
+}
+
 export type ResultadoConsultaDatasMere =
   | { ok: true; datas: DatasDisponiveisMere[]; runId: string; totalCandidatos: number; diagnostico: DiagnosticoConsultaDatasMere }
   | { ok: false; motivo: string; erros?: string[]; diagnostico: DiagnosticoConsultaDatasMere };
@@ -911,6 +922,69 @@ export function formatarOpcoesDatasParaCliente(datas: DatasDisponiveisMere[]): s
 // ─────────────────────────────────────────────────────────────────────────────
 // Execução da consulta completa
 // ─────────────────────────────────────────────────────────────────────────────
+
+function dataISOValidaLocal(dataISO: string | null | undefined): dataISO is string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(dataISO ?? ''));
+}
+
+function renumerarDatasMere(datas: DatasDisponiveisMere[]): DatasDisponiveisMere[] {
+  return datas.map((data, idx) => ({ ...data, rank: idx + 1 }));
+}
+
+export function filtrarDatasDisponiveisPorAcaoMere(params: {
+  datas: DatasDisponiveisMere[];
+  dataAtualISO: string | null | undefined;
+  acao: AcaoAlteracaoEntregaMere | null | undefined;
+}): ResultadoFiltroDatasMere {
+  const { datas, dataAtualISO, acao } = params;
+  const totalMotor = datas.length;
+  let removidasMesmaData = 0;
+  let removidasContrariasAcao = 0;
+
+  if (!dataISOValidaLocal(dataAtualISO)) {
+    return {
+      datasExibidas: renumerarDatasMere(datas),
+      datasPosteriores: [],
+      totalMotor,
+      removidasMesmaData,
+      removidasContrariasAcao,
+      semOpcoesParaAcao: datas.length === 0,
+    };
+  }
+
+  const semMesmaData = datas.filter((data) => {
+    if (data.dataISO === dataAtualISO) {
+      removidasMesmaData += 1;
+      return false;
+    }
+    return true;
+  });
+  const datasPosteriores = renumerarDatasMere(semMesmaData.filter((data) => data.dataISO > dataAtualISO));
+
+  const datasFiltradas = semMesmaData.filter((data) => {
+    if (acao === 'adiantar') {
+      const manter = data.dataISO < dataAtualISO;
+      if (!manter) removidasContrariasAcao += 1;
+      return manter;
+    }
+    if (acao === 'postergar') {
+      const manter = data.dataISO > dataAtualISO;
+      if (!manter) removidasContrariasAcao += 1;
+      return manter;
+    }
+    return true;
+  });
+
+  const datasExibidas = renumerarDatasMere(datasFiltradas);
+  return {
+    datasExibidas,
+    datasPosteriores,
+    totalMotor,
+    removidasMesmaData,
+    removidasContrariasAcao,
+    semOpcoesParaAcao: datasExibidas.length === 0,
+  };
+}
 
 let _runCounter = 0;
 

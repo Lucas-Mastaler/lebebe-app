@@ -141,9 +141,10 @@ export async function POST(request: NextRequest) {
     for (const conexao of conexoesHabilitadas) {
       console.log('[EXECUTAR-MANUAL] Diagnostico conexao=' + conexao.service_id.slice(0, 8));
 
+      const baseUrl = process.env.APP_URL ?? 'https://lebebe.cloud';
       const diagUrl = new URL(
         '/api/digisac/finalizacoes-automaticas/diagnostico',
-        request.nextUrl.origin
+        baseUrl
       );
       diagUrl.searchParams.set('serviceId', conexao.service_id);
 
@@ -154,9 +155,19 @@ export async function POST(request: NextRequest) {
       });
 
       if (!diagRes.ok) {
-        console.error('[EXECUTAR-MANUAL] Erro diagnostico conexao=' + conexao.service_id.slice(0, 8) + ' status=' + diagRes.status);
-        totalErrosRegistro++;
-        continue;
+        const contentType = diagRes.headers.get('content-type') ?? '';
+        const bodyPreview = await diagRes.text().catch(() => '').then(t => t.substring(0, 200));
+        const erroMsg = `Diagnostico falhou: status=${diagRes.status} content-type=${contentType} url=${diagUrl.pathname} body=${bodyPreview}`;
+        console.error('[EXECUTAR-MANUAL] ' + erroMsg);
+        throw new Error(erroMsg);
+      }
+
+      const contentType = diagRes.headers.get('content-type') ?? '';
+      if (!contentType.includes('application/json')) {
+        const bodyPreview = await diagRes.text().catch(() => '').then(t => t.substring(0, 200));
+        const erroMsg = `Diagnostico retornou nao-JSON: status=${diagRes.status} content-type=${contentType} url=${diagUrl.pathname} body=${bodyPreview}`;
+        console.error('[EXECUTAR-MANUAL] ' + erroMsg);
+        throw new Error(erroMsg);
       }
 
       const diagData: DiagnosticoResponse = await diagRes.json();

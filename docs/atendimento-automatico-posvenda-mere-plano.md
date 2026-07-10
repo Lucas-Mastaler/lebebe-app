@@ -944,3 +944,64 @@ Campos ja existentes de coordenadas foram preservados.
 ### Pendencias e riscos
 - Suite completa `npm run test` ainda falha em testes fora do escopo: autenticacao Google Sheets `invalid_client` em agenda real e expectativas antigas de diagnostico/assinatura de rota v2.
 - Validar em producao o caso real que antes retornou `geo_cache_nao_resolvido`.
+
+---
+
+## Fase: Filtro das opcoes de datas por acao na Mere
+
+### Problema real
+No teste real do pedido 17854, a cliente pediu para adiantar a entrega atual de `13/08/2026`, mas a Mere exibiu:
+- `13/08/2026`
+- `21/08/2026`
+- `25/08/2026`
+
+Problemas confirmados: a mesma data ja marcada apareceu como opcao e datas posteriores foram apresentadas como se servissem para adiantamento.
+
+### Correcao aplicada
+O filtro foi aplicado depois do retorno do motor e antes da montagem da mensagem ao cliente.
+
+Regras:
+- mesma data da entrega atual nunca e exibida;
+- `adiantar` exibe apenas datas menores que a data atual;
+- `postergar` exibe apenas datas maiores que a data atual;
+- comparacao feita por ISO `yyyy-MM-dd`;
+- lista exibida e renumerada antes de salvar em `datas_disponiveis`, preservando selecao por numero.
+
+### Caso sem opcoes para adiantar
+Se a acao original for `adiantar` e so houver datas posteriores:
+- a Mere nao exibe a lista como adiantamento;
+- informa que nao encontrou data antes da data atual;
+- pergunta se o cliente quer verificar opcoes para postergar;
+- salva as datas posteriores em metadata para reaproveitar se o cliente aceitar.
+
+Se o cliente aceitar, a acao passa para `postergar` e as opcoes posteriores ja filtradas sao exibidas. Se recusar, a data atual e mantida e nao ha escrita em Calendar ou planilha.
+
+### Metadata adicionada
+- `data_entrega_atual_iso`
+- `acao_alteracao_original`
+- `opcoes_datas_total_motor`
+- `opcoes_datas_motor`
+- `opcoes_datas_removidas_mesma_data`
+- `opcoes_datas_removidas_contrarias_acao`
+- `opcoes_datas_exibidas_total`
+- `sem_opcoes_para_acao`
+- `ofereceu_verificar_postergar`
+- `opcoes_datas_posteriores`
+- `aguardando_resposta_postergar_sem_opcoes`
+
+### Nao alterado
+- Motor `/procurar-datas`
+- Ranking/classificacao
+- OSRM/Haversine
+- Calendar
+- Sheets
+- Geocoding
+
+### Validacoes
+- `npx tsc --noEmit --pretty false` -> passou.
+- `npx eslint src/lib/atendimento-automatico/consulta-datas-mere.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.ts src/lib/atendimento-automatico/webhook-processor.test.ts src/lib/atendimento-automatico/respostas.ts` -> passou.
+- `npx vitest run src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.test.ts` -> 2 arquivos passaram, 33 testes passed, 6 skipped legados.
+
+### Pendencias e riscos
+- Validar em producao o caso real com entrega atual `13/08/2026` e pedido de adiantar.
+- Suite completa nao foi rodada nesta etapa; havia falhas conhecidas fora do escopo em testes de agenda/diagnostico v2.

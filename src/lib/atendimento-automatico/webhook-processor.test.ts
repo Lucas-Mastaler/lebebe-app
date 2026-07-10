@@ -481,3 +481,80 @@ describe('processarWebhookPosVenda - allowlist wildcard', () => {
     expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
   });
 });
+
+describe('processarWebhookPosVenda - oferta de postergar apos adiantar sem opcoes', () => {
+  function grupoComDataAtual(): GrupoAgendamento {
+    return {
+      ...grupoBase(),
+      data_entrega: '13/08/2026',
+    };
+  }
+
+  const opcoesPosteriores = [
+    { dataISO: '2026-08-21', dataBR: '21/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 1 },
+    { dataISO: '2026-08-25', dataBR: '25/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 2 },
+  ];
+
+  it('quando cliente aceita verificar postergar, reaproveita opcoes posteriores renumeradas', async () => {
+    sessaoAtual = sessaoBase({
+      estado: 'datas_encontradas',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoComDataAtual()],
+        acao_alteracao: 'adiantar',
+        acao_alteracao_original: 'adiantar',
+        aguardando_resposta_postergar_sem_opcoes: true,
+        opcoes_datas_posteriores: opcoesPosteriores,
+        datas_disponiveis: [],
+      },
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('sim', 'msg-aceita-postergar'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('datas_encontradas');
+    expect(updateSessao?.data.metadata).toMatchObject({
+      acao_alteracao: 'postergar',
+      aguardando_resposta_postergar_sem_opcoes: false,
+      total_datas_disponiveis: 2,
+      resposta_sugerida_tipo: 'datas_encontradas',
+    });
+    const metadata = updateSessao?.data.metadata as Record<string, unknown>;
+    expect(metadata.datas_disponiveis).toEqual(opcoesPosteriores);
+    expect(String(metadata.resposta_sugerida)).toContain('1 - 21/08/2026');
+    expect(String(metadata.resposta_sugerida)).toContain('2 - 25/08/2026');
+    expect(String(metadata.resposta_sugerida)).not.toContain('13/08/2026');
+  });
+
+  it('quando cliente recusa verificar postergar, mantem data atual e nao altera agenda', async () => {
+    sessaoAtual = sessaoBase({
+      estado: 'datas_encontradas',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoComDataAtual()],
+        acao_alteracao: 'adiantar',
+        aguardando_resposta_postergar_sem_opcoes: true,
+        opcoes_datas_posteriores: opcoesPosteriores,
+        datas_disponiveis: [],
+      },
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('nao', 'msg-recusa-postergar'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('reagendamento_cancelado');
+    expect(updateSessao?.data.alterou_agenda).toBeUndefined();
+    expect(updateSessao?.data.metadata).toMatchObject({
+      aguardando_resposta_postergar_sem_opcoes: false,
+      fluxo_concluido: true,
+      motivo_conclusao: 'mantida_data_atual',
+      resposta_sugerida_tipo: 'manter_data_atual',
+    });
+    const metadata = updateSessao?.data.metadata as Record<string, unknown>;
+    expect(String(metadata.resposta_sugerida)).toContain('13/08/2026');
+  });
+});

@@ -46,6 +46,9 @@ import {
   respostaTransferidoHumanoSemDocumentoRelocalizacao,
   respostaTransferidoHumanoSemDados,
   respostaTransferidoHumanoSemDatas,
+  respostaSemOpcoesAdiantarOferecerPostergar,
+  respostaManterDataAtual,
+  respostaSemOpcoesPostergar,
   type RespostaSugerida,
 } from './respostas';
 import { interpretarDataDesejada, validarDataDesejadaParaAcao } from './interpretar-data';
@@ -54,6 +57,7 @@ import { chaveRespostaAutomatica, processarEnvioAutomatico } from './auto-reply'
 import { tentarIAFallback } from './ia-fallback';
 import {
   executarConsultaDatasMere,
+  filtrarDatasDisponiveisPorAcaoMere,
   formatarOpcoesDatasParaCliente,
   type DatasDisponiveisMere,
   type ResultadoExecucaoConsulta,
@@ -69,6 +73,34 @@ type ResultadoWebhook =
   | { ok: false; error: string };
 
 type SupabaseClient = ReturnType<typeof createServiceClient>;
+
+type RespostaOfertaPostergar = 'aceitar' | 'recusar' | 'humano' | null;
+
+function interpretarRespostaOfertaPostergar(texto: string): RespostaOfertaPostergar {
+  const normalizado = texto
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!normalizado) return null;
+  if (/\b(atendente|humano|pessoa|equipe|falar com)\b/.test(normalizado)) return 'humano';
+  if (normalizado === 'nao' || normalizado.includes('deixa como esta') || normalizado.includes('manter') || normalizado.includes('mantem')) {
+    return 'recusar';
+  }
+  if (
+    normalizado === 'sim' ||
+    normalizado.includes('quero') ||
+    normalizado.includes('pode ser') ||
+    normalizado.includes('verificar') ||
+    normalizado.includes('postergar')
+  ) {
+    return 'aceitar';
+  }
+  return null;
+}
 
 async function aplicarResultadoConsultaDatas(params: {
   execConsulta: ResultadoExecucaoConsulta;
@@ -258,7 +290,89 @@ async function aplicarResultadoConsultaDatas(params: {
   }
 
   // datas_encontradas
-  const datas = execConsulta.datas ?? [];
+  const datasMotor = execConsulta.datas ?? [];
+  const grupoSelecionado = obterGrupoSelecionado(metadataBase);
+  const dataAtualBR = grupoSelecionado?.data_entrega ?? '';
+  const dataAtualISO = dataBRParaISO(dataAtualBR);
+  const acaoAlteracao = metadataBase.acao_alteracao === 'adiantar' || metadataBase.acao_alteracao === 'postergar'
+    ? metadataBase.acao_alteracao
+    : null;
+  const filtroDatas = filtrarDatasDisponiveisPorAcaoMere({
+    datas: datasMotor,
+    dataAtualISO,
+    acao: acaoAlteracao,
+  });
+  const datas = filtroDatas.datasExibidas;
+
+  console.log(
+    `[posvenda-webhook] opcoes datas filtradas sessaoId=${sessaoId} acao=${acaoAlteracao ?? '-'} dataAtual=${dataAtualISO ?? '-'} totalMotor=${filtroDatas.totalMotor} totalExibidas=${datas.length} removidasMesmaData=${filtroDatas.removidasMesmaData} removidasContrariasAcao=${filtroDatas.removidasContrariasAcao}`
+  );
+
+  if (datas.length === 0) {
+    const ofereceuPostergar = acaoAlteracao === 'adiantar' && filtroDatas.datasPosteriores.length > 0;
+    const resposta = ofereceuPostergar
+      ? respostaSemOpcoesAdiantarOferecerPostergar(dataAtualBR || dataAtualISO || 'a data atual')
+      : acaoAlteracao === 'postergar'
+        ? respostaSemOpcoesPostergar(dataAtualBR || dataAtualISO || 'a data atual')
+        : respostaTransferidoHumanoSemDatas();
+    const estadoFinal = ofereceuPostergar ? 'datas_encontradas' : 'transferido_humano';
+    const novoMetadata = await construirMetadataComResposta({
+      sessaoId,
+      metadataAtual: {
+        ...metadataBase,
+        ...geoCacheMetadata,
+        consulta_datas_status: ofereceuPostergar ? 'sem_opcoes_para_adiantar' : 'sem_datas',
+        consulta_datas_em: agora,
+        consulta_datas_run_id: execConsulta.runId,
+        consulta_datas_origem: 'mere',
+        data_entrega_atual_iso: dataAtualISO,
+        acao_alteracao_original: acaoAlteracao,
+        opcoes_datas_total_motor: filtroDatas.totalMotor,
+        opcoes_datas_motor: datasMotor,
+        opcoes_datas_removidas_mesma_data: filtroDatas.removidasMesmaData,
+        opcoes_datas_removidas_contrarias_acao: filtroDatas.removidasContrariasAcao,
+        opcoes_datas_exibidas_total: 0,
+        sem_opcoes_para_acao: true,
+        ofereceu_verificar_postergar: ofereceuPostergar,
+        opcoes_datas_posteriores: filtroDatas.datasPosteriores,
+        datas_disponiveis: [],
+        total_datas_disponiveis: 0,
+        ...(ofereceuPostergar
+          ? { aguardando_resposta_postergar_sem_opcoes: true }
+          : { precisa_humano_por_regra: true, motivo_transferencia_humano: acaoAlteracao === 'postergar' ? 'sem_opcoes_postergar' : 'sem_datas_disponiveis' }),
+      },
+      resposta,
+      estado: estadoFinal,
+      contactId, ticketId, digisacMessageId: messageId, telefoneAutorizado: telefoneAutorizadoFlag,
+    });
+    await supabase.from('atendimento_automatico_sessoes').update({
+      estado: estadoFinal,
+      ...(ofereceuPostergar ? {} : { status: 'transferido_humano' }),
+      metadata: novoMetadata, ultima_mensagem_cliente: text.substring(0, 200),
+      ultima_mensagem_em: agora, updated_at: agora,
+    }).eq('id', sessaoId);
+    await supabase.from('atendimento_automatico_eventos').insert({
+      sessao_id: sessaoId,
+      tipo: ofereceuPostergar ? 'sem_opcoes_adiantar_ofereceu_postergar' : 'sem_datas_disponiveis',
+      descricao: ofereceuPostergar
+        ? 'Sem opcoes anteriores para adiantar; ofereceu verificar postergacao'
+        : 'Consulta sem opcoes compativeis com a acao solicitada',
+      metadata: {
+        run_id: execConsulta.runId,
+        acao: acaoAlteracao,
+        data_atual_iso: dataAtualISO,
+        total_motor: filtroDatas.totalMotor,
+        total_exibidas: 0,
+        removidas_mesma_data: filtroDatas.removidasMesmaData,
+        removidas_contrarias_acao: filtroDatas.removidasContrariasAcao,
+      },
+    });
+    if (ofereceuPostergar) {
+      console.log(`[posvenda-webhook] sem opcoes para adiantar, oferecendo postergar sessaoId=${sessaoId}`);
+    }
+    return { ok: true, saved: true, origem: 'cliente' };
+  }
+
   const textoOpcoes = formatarOpcoesDatasParaCliente(datas);
   const resposta = respostaDatasEncontradas(textoOpcoes);
   const novoMetadata = await construirMetadataComResposta({
@@ -270,6 +384,16 @@ async function aplicarResultadoConsultaDatas(params: {
       consulta_datas_em: agora,
       consulta_datas_run_id: execConsulta.runId,
       consulta_datas_origem: 'mere',
+      data_entrega_atual_iso: dataAtualISO,
+      acao_alteracao_original: acaoAlteracao,
+      opcoes_datas_total_motor: filtroDatas.totalMotor,
+      opcoes_datas_motor: datasMotor,
+      opcoes_datas_removidas_mesma_data: filtroDatas.removidasMesmaData,
+      opcoes_datas_removidas_contrarias_acao: filtroDatas.removidasContrariasAcao,
+      opcoes_datas_exibidas_total: datas.length,
+      sem_opcoes_para_acao: false,
+      ofereceu_verificar_postergar: false,
+      aguardando_resposta_postergar_sem_opcoes: false,
       total_datas_disponiveis: datas.length,
       datas_disponiveis: datas,
     },
@@ -2686,6 +2810,138 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         const telefoneAutorizadoFlag = telefoneAutorizado(telefoneSessao);
         const datasDisponiveis = (metadataAtual?.datas_disponiveis ?? []) as DatasDisponiveisMere[];
         const totalOpcoes = datasDisponiveis.length;
+
+        if (metadataAtual?.aguardando_resposta_postergar_sem_opcoes === true) {
+          const respostaOferta = interpretarRespostaOfertaPostergar(text);
+          const grupo = obterGrupoSelecionado(metadataAtual);
+          const dataAtualBR = grupo?.data_entrega ?? '';
+          const opcoesPosteriores = (metadataAtual?.opcoes_datas_posteriores ?? []) as DatasDisponiveisMere[];
+
+          if (respostaOferta === 'aceitar' && opcoesPosteriores.length > 0) {
+            const resposta = respostaDatasEncontradas(formatarOpcoesDatasParaCliente(opcoesPosteriores));
+            const novoMetadata = await construirMetadataComResposta({
+              sessaoId,
+              metadataAtual: {
+                ...(metadataAtual ?? {}),
+                acao_alteracao: 'postergar',
+                acao_alteracao_original: metadataAtual?.acao_alteracao_original ?? 'adiantar',
+                aguardando_resposta_postergar_sem_opcoes: false,
+                aceitou_verificar_postergar_em: new Date().toISOString(),
+                datas_disponiveis: opcoesPosteriores,
+                total_datas_disponiveis: opcoesPosteriores.length,
+                opcoes_datas_exibidas_total: opcoesPosteriores.length,
+                sem_opcoes_para_acao: false,
+              },
+              resposta,
+              estado: 'datas_encontradas',
+              contactId,
+              ticketId,
+              digisacMessageId: messageId,
+              telefoneAutorizado: telefoneAutorizadoFlag,
+            });
+            await supabase.from('atendimento_automatico_sessoes').update({
+              estado: 'datas_encontradas',
+              metadata: novoMetadata,
+              ultima_mensagem_cliente: text.substring(0, 200),
+              ultima_mensagem_em: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }).eq('id', sessaoId);
+            await supabase.from('atendimento_automatico_mensagens').insert({
+              sessao_id: sessaoId,
+              digisac_message_id: messageId,
+              digisac_ticket_id: ticketId,
+              digisac_contact_id: contactId ?? null,
+              origem: 'cliente',
+              texto: text,
+              tipo_mensagem: msg.type as string | undefined,
+              timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+              status: 'processada',
+              metadata: { serviceId, departmentId, aceitou_verificar_postergar: true },
+            });
+            console.log(`[posvenda-webhook] cliente aceitou verificar postergar sessaoId=${sessaoId} total=${opcoesPosteriores.length}`);
+            return { ok: true, saved: true, origem: 'cliente' };
+          }
+
+          if (respostaOferta === 'recusar') {
+            const resposta = respostaManterDataAtual(dataAtualBR || String(metadataAtual?.data_entrega_atual_iso ?? 'a data atual'));
+            const novoMetadata = await construirMetadataComResposta({
+              sessaoId,
+              metadataAtual: {
+                ...(metadataAtual ?? {}),
+                aguardando_resposta_postergar_sem_opcoes: false,
+                recusou_verificar_postergar_em: new Date().toISOString(),
+                fluxo_concluido: true,
+                motivo_conclusao: 'mantida_data_atual',
+              },
+              resposta,
+              estado: 'reagendamento_cancelado',
+              contactId,
+              ticketId,
+              digisacMessageId: messageId,
+              telefoneAutorizado: telefoneAutorizadoFlag,
+            });
+            await supabase.from('atendimento_automatico_sessoes').update({
+              estado: 'reagendamento_cancelado',
+              metadata: novoMetadata,
+              ultima_mensagem_cliente: text.substring(0, 200),
+              ultima_mensagem_em: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }).eq('id', sessaoId);
+            await supabase.from('atendimento_automatico_mensagens').insert({
+              sessao_id: sessaoId,
+              digisac_message_id: messageId,
+              digisac_ticket_id: ticketId,
+              digisac_contact_id: contactId ?? null,
+              origem: 'cliente',
+              texto: text,
+              tipo_mensagem: msg.type as string | undefined,
+              timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+              status: 'processada',
+              metadata: { serviceId, departmentId, recusou_verificar_postergar: true },
+            });
+            return { ok: true, saved: true, origem: 'cliente' };
+          }
+
+          if (respostaOferta === 'humano') {
+            const resposta = respostaTransferidoHumanoMuitasTentativas('acao');
+            const novoMetadata = await construirMetadataComResposta({
+              sessaoId,
+              metadataAtual: {
+                ...(metadataAtual ?? {}),
+                aguardando_resposta_postergar_sem_opcoes: false,
+                precisa_humano_por_regra: true,
+                motivo_transferencia_humano: 'cliente_pediu_humano',
+              },
+              resposta,
+              estado: 'transferido_humano',
+              contactId,
+              ticketId,
+              digisacMessageId: messageId,
+              telefoneAutorizado: telefoneAutorizadoFlag,
+            });
+            await supabase.from('atendimento_automatico_sessoes').update({
+              estado: 'transferido_humano',
+              status: 'transferido_humano',
+              metadata: novoMetadata,
+              ultima_mensagem_cliente: text.substring(0, 200),
+              ultima_mensagem_em: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }).eq('id', sessaoId);
+            await supabase.from('atendimento_automatico_mensagens').insert({
+              sessao_id: sessaoId,
+              digisac_message_id: messageId,
+              digisac_ticket_id: ticketId,
+              digisac_contact_id: contactId ?? null,
+              origem: 'cliente',
+              texto: text,
+              tipo_mensagem: msg.type as string | undefined,
+              timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+              status: 'processada',
+              metadata: { serviceId, departmentId, pediu_humano_oferta_postergar: true },
+            });
+            return { ok: true, saved: true, origem: 'cliente' };
+          }
+        }
 
         const selecaoOpcao = selecionarOpcaoDataPorTexto(text, datasDisponiveis);
 

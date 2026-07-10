@@ -4673,3 +4673,24 @@ Status: implementado como ferramenta diagnostica interna. Nao altera producao, f
 - Avaliar em etapa futura persistencia passiva de snapshot diagnostico, por exemplo `procurar_datas_execucoes_diagnostico`, sem secrets.
 
 ---
+
+---
+
+## 2026-07-10 - Reuso dos helpers de endereco pela Mere
+
+Status: implementado na camada de entrada do atendimento automatico. Nao altera motor v2, ranking, classificacao, OSRM, Haversine, Calendar ou Sheets.
+
+### O que foi integrado
+- A Mere passou a montar `ValidarEnderecoRequest` a partir do endereco completo da planilha.
+- A resolucao de coordenadas passou a reutilizar `buscarEnderecoNoGeoCache`, `buscarEnderecoLocationIq`, `consultarGoogleGeocodingEnderecoDificil` e `salvarEnderecoNoGeoCache`.
+- O fallback existente `LookupCompletoPorEndereco` permanece como ultimo recurso, equivalente ao caminho da rota `/api/procurar-datas/validar-endereco`.
+
+### Contrato preservado
+- A consulta de datas continua recebendo `destLat` e `destLng` antes de chamar `pesquisarDatasV2`.
+- O motor v2 nao recebeu alteracao de regra, recorte, ranking ou calculo de distancia.
+
+### Validacoes
+- `npx tsc --noEmit --pretty false` passou.
+- `npx eslint` nos arquivos alterados passou.
+- `npx vitest run src/lib/atendimento-automatico/consulta-datas-mere.test.ts` passou com 10 testes e 6 testes legados skipados.
+- Suite completa `npm run test` segue com falhas fora desta frente, principalmente Google Sheets `invalid_client` em testes de agenda real e expectativas antigas em diagnosticos v2.

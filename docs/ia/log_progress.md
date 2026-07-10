@@ -1,3 +1,74 @@
+## 2026-07-10 - Codex - Corrigir coordenadas da Mere com reuso de `/procurar-datas`
+
+**Resumo:** Corrigida a causa do novo teste real que parou em `geo_cache_nao_resolvido`. A Mere nao depende mais apenas do miss/hit do `geo_cache`: ela monta payload de endereco equivalente ao da tela `/procurar-datas`, tenta cache, chama providers existentes quando necessario, salva/atualiza `geo_cache` e so entao chama a consulta de datas com `destLat/destLng`.
+
+**Arquivos lidos:**
+- Anexo do pedido em `C:\Users\lebeb\.codex\attachments\f0a2ae12-32b3-41b8-b47a-68c62eef0205\pasted-text.txt`
+- `.devin/rules/gerais.md`
+- `.devin/rules/supabase.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/atendimento-automatico-posvenda-mere-plano.md`
+- `docs/ia/log_progress.md`
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `src/app/api/procurar-datas/buscar-cep/route.ts`
+- `src/app/api/procurar-datas/pesquisar/route.ts`
+- `src/lib/procurar-datas/endereco-cache.ts`
+- `src/lib/procurar-datas/locationiq.ts`
+- `src/lib/procurar-datas/google-geocoding.ts`
+- `src/lib/procurar-datas/validar-endereco-payload.ts`
+- `src/lib/procurar-datas/validar-endereco-resultado.ts`
+- `src/lib/procurar-datas/apps-script.ts`
+- `src/lib/procurar-datas/contratos.ts`
+- `src/lib/procurar-datas/types.ts`
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts`
+- `src/lib/atendimento-automatico/consulta-datas-mere.test.ts`
+- `src/lib/atendimento-automatico/webhook-processor.ts`
+
+**Arquivos alterados:**
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts`
+- `src/lib/atendimento-automatico/consulta-datas-mere.test.ts`
+- `src/lib/atendimento-automatico/webhook-processor.ts`
+- `docs/atendimento-automatico-posvenda-mere-plano.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+
+**Validacoes realizadas:**
+- MCP Supabase: confirmada estrutura real de `public.geo_cache` com `chave_endereco`, `endereco_completo`, `logradouro`, `numero`, `bairro`, `cidade`, `uf`, `cep`, `lat`, `lng`, `provider`, `confidence`, `updated_at`.
+- TypeScript: `npx tsc --noEmit --pretty false` passou.
+- ESLint: `npx eslint src/lib/atendimento-automatico/consulta-datas-mere.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.ts` passou.
+- Teste focado Mere: `npx vitest run src/lib/atendimento-automatico/consulta-datas-mere.test.ts` passou com 10 passed e 6 skipped legados.
+- Teste focado webhook: `npx vitest run src/lib/atendimento-automatico/webhook-processor.test.ts` passou com 17 passed.
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit --pretty false` -> 0 erros.
+- `npx eslint src/lib/atendimento-automatico/consulta-datas-mere.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.ts` -> 0 erros.
+- `npx vitest run src/lib/atendimento-automatico/consulta-datas-mere.test.ts` -> 1 arquivo passou, 10 testes passed, 6 skipped legados.
+- `npx vitest run src/lib/atendimento-automatico/webhook-processor.test.ts` -> 1 arquivo passou, 17 testes passed.
+- `npm run test` -> falhou fora do escopo: 17 falhas em testes de agenda real/diagnostico v2, incluindo Google Sheets `invalid_client` e expectativas antigas de retornos nulos/assinatura de chamada.
+
+**Nao alterado:**
+- Motor v2
+- Ranking/classificacao
+- OSRM/Haversine
+- Calendar
+- Sheets
+- Regras de negocio
+- Providers novos
+
+**Pendencias:**
+- Validar em producao o caso real que antes parou em `geo_cache_nao_resolvido`.
+- Resolver separadamente as falhas pre-existentes/fora de escopo da suite completa antes de exigir `npm run test` verde.
+
+**Riscos conhecidos:**
+- O fallback Apps Script continua dependente da integracao externa ja existente.
+- O teste unitario cobre a continuidade ate o motor por mock; a confirmacao com provider real depende de ambiente com chaves configuradas.
+
+**Proximo passo recomendado:**
+- Fazer deploy e retestar a sessao real ou um pedido equivalente com cache miss, verificando metadata `geo_cache_hit=false`, `geocoding_provider_consultado=true`, `geocoding_provider`, `geo_cache_salvo=true` e chamada da consulta de datas.
+
+---
+
 ## 2026-07-10 - Cascade - Corrigir rastreabilidade do cron de finalizacoes automaticas Digisac
 
 **Resumo:** Corrigido problema de rastreabilidade onde o cron da Vercel chamava a rota, criava pendentes em digisac_fechamentos_automaticos, mas nao registrava execucao em digisac_finalizacoes_execucoes se falhasse antes de chamar executarFinalizacoesAutomaticas. Agora a rota cria o registro de execucao com status em_andamento logo apos validar CRON_SECRET (ou auth na rota manual), antes de qualquer outra etapa. Se falhar, o catch atualiza o registro para status=erro com etapa, mensagem, duracao e detalhes. Adicionado parametro execucaoIdExistente na funcao central para evitar duplicacao.

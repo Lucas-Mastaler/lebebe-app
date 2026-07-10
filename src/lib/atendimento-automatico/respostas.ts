@@ -360,21 +360,21 @@ export function respostaTransferidoHumanoCoordenadas(): RespostaSugerida {
 
 export function respostaSemOpcoesAdiantarOferecerPostergar(dataAtualBR: string): RespostaSugerida {
   return {
-    texto: `No momento, nÃ£o encontrei uma data disponÃ­vel para adiantar sua entrega antes da data que jÃ¡ estÃ¡ marcada, ${dataAtualBR}.\n\nEncontrei apenas datas apÃ³s a data atual. VocÃª quer que eu verifique opÃ§Ãµes para postergar a entrega?`,
+    texto: `No momento, não encontrei uma data disponível para adiantar sua entrega antes da data que já está marcada, ${dataAtualBR}.\n\nEncontrei apenas datas após a data atual. Você quer que eu verifique opções para postergar a entrega?`,
     tipo: 'sem_opcoes_adiantar_oferecer_postergar',
   };
 }
 
 export function respostaManterDataAtual(dataAtualBR: string): RespostaSugerida {
   return {
-    texto: `Tudo bem. Vamos manter sua entrega na data jÃ¡ marcada, ${dataAtualBR}.`,
+    texto: `Tudo bem. Vamos manter sua entrega na data já marcada, ${dataAtualBR}.`,
     tipo: 'manter_data_atual',
   };
 }
 
 export function respostaSemOpcoesPostergar(dataAtualBR: string): RespostaSugerida {
   return {
-    texto: `No momento, nÃ£o encontrei uma data disponÃ­vel para postergar sua entrega apÃ³s a data que jÃ¡ estÃ¡ marcada, ${dataAtualBR}. Vou encaminhar seu atendimento para nossa equipe verificar manualmente.`,
+    texto: `No momento, não encontrei uma data disponível para postergar sua entrega após a data que já está marcada, ${dataAtualBR}. Vou encaminhar seu atendimento para nossa equipe verificar manualmente.`,
     tipo: 'sem_opcoes_postergar',
   };
 }

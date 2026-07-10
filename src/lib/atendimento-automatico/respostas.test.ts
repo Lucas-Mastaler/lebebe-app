@@ -24,6 +24,9 @@ import {
   respostaReagendamentoDryRun,
   respostaReagendamentoConfirmado,
   respostaTransferidoHumanoErroReagendamento,
+  respostaSemOpcoesAdiantarOferecerPostergar,
+  respostaManterDataAtual,
+  respostaSemOpcoesPostergar,
 } from './respostas';
 import type { GrupoAgendamento } from '@/lib/google/sheets-service-account';
 
@@ -235,5 +238,42 @@ describe('respostas de reagendamento', () => {
     const r = respostaTransferidoHumanoErroReagendamento();
     expect(r.tipo).toBe('transferido_humano_erro_reagendamento');
     expect(r.texto).toContain('equipe');
+  });
+});
+
+describe('respostas de filtro de datas por acao', () => {
+  it('gera resposta sem opcoes para adiantar oferecendo postergar sem mojibake', () => {
+    const r = respostaSemOpcoesAdiantarOferecerPostergar('13/08/2026');
+    expect(r.tipo).toBe('sem_opcoes_adiantar_oferecer_postergar');
+    expect(r.texto).toContain('não');
+    expect(r.texto).toContain('disponível');
+    expect(r.texto).toContain('já');
+    expect(r.texto).toContain('após');
+    expect(r.texto).toContain('Você');
+    expect(r.texto).toContain('opções');
+    expect(r.texto).toContain('13/08/2026');
+    expect(r.texto).not.toContain('Ã');
+    expect(r.texto).not.toContain('Â');
+  });
+
+  it('gera resposta manter data atual sem mojibake', () => {
+    const r = respostaManterDataAtual('13/08/2026');
+    expect(r.tipo).toBe('manter_data_atual');
+    expect(r.texto).toContain('já');
+    expect(r.texto).toContain('13/08/2026');
+    expect(r.texto).not.toContain('Ã');
+    expect(r.texto).not.toContain('Â');
+  });
+
+  it('gera resposta sem opcoes para postergar sem mojibake', () => {
+    const r = respostaSemOpcoesPostergar('13/08/2026');
+    expect(r.tipo).toBe('sem_opcoes_postergar');
+    expect(r.texto).toContain('não');
+    expect(r.texto).toContain('disponível');
+    expect(r.texto).toContain('após');
+    expect(r.texto).toContain('já');
+    expect(r.texto).toContain('13/08/2026');
+    expect(r.texto).not.toContain('Ã');
+    expect(r.texto).not.toContain('Â');
   });
 });

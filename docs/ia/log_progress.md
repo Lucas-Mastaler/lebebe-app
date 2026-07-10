@@ -1,3 +1,36 @@
+## 2026-07-10 - Cascade - Corrigir mojibake em mensagens da Mere
+
+**Resumo:** Corrigido mojibake em tres funcoes de resposta da Mere: `respostaSemOpcoesAdiantarOferecerPostergar`, `respostaManterDataAtual` e `respostaSemOpcoesPostergar`. As strings estavam com acentos corrompidos (ex: `nÃ£o` em vez de `não`, `disponÃ­vel` em vez de `disponível`). Corrigido para UTF-8 correto e adicionados testes para validar ausencia de mojibake.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/respostas.ts
+- src/lib/atendimento-automatico/respostas.test.ts
+
+**Arquivos alterados:**
+- src/lib/atendimento-automatico/respostas.ts (corrigidas 3 strings: respostaSemOpcoesAdiantarOferecerPostergar, respostaManterDataAtual, respostaSemOpcoesPostergar)
+- src/lib/atendimento-automatico/respostas.test.ts (adicionados imports e 3 testes novos para validar sem mojibake)
+
+**Validacoes realizadas:**
+- TypeScript: npx tsc --noEmit --pretty false — 0 erros
+- ESLint: npx eslint src/lib/atendimento-automatico/respostas.ts src/lib/atendimento-automatico/respostas.test.ts --no-warn-ignored — 0 erros
+- Testes: npx vitest run src/lib/atendimento-automatico/respostas.test.ts — 30 passed (incluindo 3 novos testes de mojibake)
+
+**Comandos rodados e resultados:**
+- npx tsc --noEmit --pretty false → exit 0
+- npx eslint src/lib/atendimento-automatico/respostas.ts src/lib/atendimento-automatico/respostas.test.ts --no-warn-ignored → exit 0
+- npx vitest run src/lib/atendimento-automatico/respostas.test.ts → 30 passed
+
+**Pendencias:**
+- Nenhuma
+
+**Riscos conhecidos:**
+- Nenhum
+
+**Proximo passo recomendado:**
+- Deploy e validar que as mensagens da Mere agora sao exibidas corretamente com acentos
+
+---
+
 ## 2026-07-10 - Codex - Rejeitar geo_cache de baixa confidence na Mere
 
 **Resumo:** Auditado e corrigido o aceite de coordenadas da Mere antes da consulta de datas. O problema real nao estava no filtro de `adiantar`: a sessao usou um registro de `geo_cache` com `confidence=0.05339000762951091` como `geo_cache_match_seguro`, sem chamar provider. A correcao foi aplicada no helper compartilhado `buscarEnderecoNoGeoCache`, para manter paridade entre Mere e `/procurar-datas`.

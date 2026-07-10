@@ -36,7 +36,14 @@ export interface AuditoriaPesquisaParams {
   
   // Resultados exibidos
   resultados?: CandidatoFinal[]
-  
+
+  /**
+   * Snapshot tecnico dos candidatos finais ANTES do adapter legado + contadores.
+   * Gravado como chave adicional dentro de parametros_json (jsonb), sem alterar
+   * resultados_json. Serve para auditoria/prova do que a producao usou.
+   */
+  snapshotTecnico?: unknown
+
   // Status e performance
   status: 'success' | 'error'
   errorMessage?: string
@@ -71,6 +78,7 @@ export async function registrarAuditoriaPesquisa(params: AuditoriaPesquisaParams
     latitude,
     longitude,
     parametros,
+    snapshotTecnico,
     resultados,
     status,
     errorMessage,
@@ -105,7 +113,10 @@ export async function registrarAuditoriaPesquisa(params: AuditoriaPesquisaParams
       endereco_completo: enderecoCompleto || null,
       latitude: latitude || null,
       longitude: longitude || null,
-      parametros_json: parametros,
+      parametros_json:
+        snapshotTecnico !== undefined
+          ? { ...parametros, snapshotTecnico }
+          : parametros,
       resultados_json: resultados || null,
       status,
       erro_mensagem: errorMessage || null,

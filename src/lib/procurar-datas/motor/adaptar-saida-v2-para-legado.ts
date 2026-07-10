@@ -65,6 +65,7 @@ const NOMES_DIAS_SEMANA_PT: Record<number, string> = {
 }
 
 const TIPOS_EXTRA = new Set<string>(['especial', 'premium', 'hora-marcada'])
+const TIPOS_VALIDOS_LEGADO = new Set<string>(['normal', 'especial', 'premium', 'hora-marcada'])
 
 function extrairDataBase(dataISO: string): string {
   return dataISO.split('T')[0] ?? dataISO
@@ -234,9 +235,20 @@ function adaptarCandidato(input: {
   mapaFretes: Map<string, string>
   avisos: string[]
   tipoBerco?: string
-}): CandidatoFinalCompatLegado {
+}): CandidatoFinalCompatLegado | null {
   const { candidato, rankFallback, dataReferenciaISO, formatoDateISO, mapaFretes, avisos, tipoBerco } = input
   const dataBase = extrairDataBase(candidato.dataISO)
+
+  // P3: tipo invalido/ausente NAO pode virar 'normal'. Rejeita o candidato e loga.
+  const tipoBruto = candidato.tipo
+  if (typeof tipoBruto !== 'string' || !TIPOS_VALIDOS_LEGADO.has(tipoBruto)) {
+    avisos.push(
+      `candidato ${dataBase} / ${candidato.equipe} rejeitado no adapter: tipo invalido ou ausente (${JSON.stringify(tipoBruto)}). Nao convertido para 'normal'.`
+    )
+    return null
+  }
+  const tipo = tipoBruto
+
   const diaSemana = obterDiaSemana(dataBase)
   const frete = resolverFrete(candidato, mapaFretes)
   const rank = Number.isFinite(candidato.rank) && candidato.rank > 0
@@ -257,8 +269,6 @@ function adaptarCandidato(input: {
   // Regra legado (CEP-APIBACK.gs linha 1473): diasAte = ceil((dataEntrega - hoje) / 86400000)
   // encomenda usa diasAte contra hoje, nao contra dataInicial da busca
   const diasAteHoje = diffDiasISO(obterHojeISO(), dataBase)
-
-  const tipo = candidato.tipo || 'normal'
 
   return {
     rank,
@@ -293,17 +303,19 @@ export function adaptarSaidaV2ParaPayloadLegado(
   const mapaFretes = montarMapaFretes(input.fretes)
 
   const candidatosOrigem = input.saidaV2.resultadoFinal?.candidatosFinais ?? []
-  const candidates = candidatosOrigem.map((candidato, index) =>
-    adaptarCandidato({
-      candidato,
-      rankFallback: index + 1,
-      dataReferenciaISO: input.dataReferenciaISO ?? (startFromISO || null),
-      formatoDateISO,
-      mapaFretes,
-      avisos,
-      tipoBerco: request.tipoBerco,
-    })
-  )
+  const candidates = candidatosOrigem
+    .map((candidato, index) =>
+      adaptarCandidato({
+        candidato,
+        rankFallback: index + 1,
+        dataReferenciaISO: input.dataReferenciaISO ?? (startFromISO || null),
+        formatoDateISO,
+        mapaFretes,
+        avisos,
+        tipoBerco: request.tipoBerco,
+      })
+    )
+    .filter((candidato): candidato is CandidatoFinalCompatLegado => candidato !== null)
 
   const payload: PayloadCompactoCompatLegado = {
     ok: input.saidaV2.ok,

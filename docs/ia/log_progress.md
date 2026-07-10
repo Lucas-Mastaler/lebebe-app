@@ -1,3 +1,37 @@
+## 2026-07-09 - Cascade - /procurar-datas: instrumentação de auditoria (P1+P2) e P3 no adapter
+
+**Contexto:** Investigação do run onde a busca real salvou 3 slots (24/07, 25/07, 28/07) como `normal`, mas a auditoria recalculada (~1 min depois, planilha inalterada) reprovou os 3 por tempo/distância. Data drift foi descartado pelo usuário (controle operacional da planilha).
+
+**Causa raiz (provável forte, não 100% encerrada):** produção e auditoria calculam a rota base com conjuntos de pontos diferentes. Produção (`pesquisar-datas-v2.ts` → `resolverCoordenadasAgendaProducao`, `maxGeocodificacoesExternas: 5`) geocodifica endereços da agenda via LocationIQ/Google e grava no `geo_cache`; a auditoria (`auditar-run`) é cache-only. Isso muda o delta OSRM de inserção → `kmAdicionalNaRotaM` diverge → classificação diverge. Agravantes confirmados: produção não tem gate de inserção completa; `slotTemPontos` calculado diferente entre os dois fluxos; payload salvo é pós-adapter; fallback `tipo || 'normal'`; contadores hardcoded. Pendência: a falha por TEMPO de 24/07 (avail 75 < serviço 85) não é explicável só por código sem snapshot da produção.
+
+**Escopo aplicado (B = P1+P2+P3). NÃO aplicados P4 (gate inserção completa) e P5 (unificar slotTemPontos) por alterarem motor/Frente 2.**
+
+**Arquivos lidos (principais):** `pesquisar-datas-v2.ts`, `resolver-coordenadas-agenda-producao.ts`, `auditar-run/route.ts`, `gerar-candidatos-disponibilidade-real.ts`, `classificacao-candidato.ts`, `disponibilidade.ts`, `disponibilidade-real-helper.ts`, `google-sheets-tempo-disponivel.ts`, `entrada.ts`, `pesquisar-compat-async/route.ts`, `auditoria-search.ts`, `auditoria-pesquisa.ts`, `adaptar-saida-v2-para-legado.ts`, `candidato.ts`.
+
+**Arquivos alterados:**
+- `src/lib/procurar-datas/motor/pesquisar-datas-v2.ts` — tipos `SnapshotTecnicoCandidatoFinalV2`/`ContadoresMapaKmV2`; `diagnosticoMinimo` ganhou `contadoresMapaKm`, `fonteAgenda`, `fonteDisponibilidade`; novo `snapshotTecnicoCandidatosFinais` (aditivo, correlaciona `recorte.candidatosFinais` × `detalhesPorSlot`).
+- `src/lib/procurar-datas/v2/auditoria-search.ts` (P1) — parâmetros opcionais `totalSlotsProcessed`/`totalSlotsAvailable`/`earlyStop`; grava contadores reais em vez de `0/0/false` hardcoded.
+- `src/lib/procurar-datas/v2/auditoria-pesquisa.ts` (P2) — parâmetro opcional `snapshotTecnico`; mesclado em `parametros_json` (sem tocar `resultados_json`).
+- `src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts` — passa contadores (P1) e snapshot técnico (P2) nas auditorias do caminho de sucesso.
+- `src/lib/procurar-datas/motor/adaptar-saida-v2-para-legado.ts` (P3) — removido `tipo = candidato.tipo || 'normal'`; tipo inválido/ausente agora gera aviso e o candidato é rejeitado (retorna `null`, filtrado no chamador). Nunca vira `normal`.
+
+**Validação de banco (MCP Supabase):** `procurar_datas_pesquisas_auditoria`: `parametros_json jsonb NOT NULL default '{}'`, `resultados_json jsonb` (lido como array por `normalizarResultadosSalvos` — não alterado). `search_execution_audit`: colunas `total_slots_processed int`, `total_slots_available int`, `early_stop bool` já existem. **Nenhuma migration necessária** — snapshot vai como chave em `parametros_json`.
+
+**Validações realizadas:** `npx tsc --noEmit -p tsconfig.json` → exit 0. `npx vitest run` adapter + pesquisar-compat-async → 20 passed. Falha em `pesquisar-compat/route.test.ts` (1) é PRÉ-EXISTENTE (confirmado via `git stash`): teste não previa 2º argumento de options do orquestrador; fora do escopo.
+
+**Mapeamento de contadores (P1):** `total_slots_processed=contadores.slotsProcessados`, `total_slots_available=contadores.slotsComKm`, `early_stop=false` (v2 não tem early stop; não inventado).
+
+**Pendências:**
+- Rodar uma busca controlada nova e auditar o run para validar o snapshot técnico salvo em `parametros_json.snapshotTecnico` (requer app + auth; ação do usuário).
+- P4/P5 aguardam comparação com legado Apps Script e decisão documentada em `docs/procurar-datas-escopo-equivalencia-legado-v2.md`.
+- Explicar a divergência de TEMPO de 24/07 com o snapshot do próximo run.
+
+**Riscos conhecidos:** repositório estava em estado de rebase (pré-existente, não iniciado por mim; não interferi). P3 muda o comportamento do adapter apenas para tipo inválido (que hoje nunca ocorre no fluxo válido) — candidatos válidos inalterados.
+
+**Próximo passo recomendado:** usuário executar busca controlada + `auditar-run` e conferir `snapshotTecnico`.
+
+---
+
 ## 2026-07-10 - Cascade - Implementação: IA Fallback controlada para atendimento automático pós-venda
 
 **Resumo:** Implementada camada de IA fallback (DeepSeek) no webhook-processor do atendimento automático. Quando o fluxo determinístico retorna "ambíguo" ou falha, a IA é chamada com prompt restrito, ações permitidas por estado, e validação estrita de JSON. A IA só pode escolher ações do enum fechado definido por estado. Se confiança for baixa ou resposta inválida, cai para fallback determinístico existente. Também foi ajustado o layout da tela admin para usar ~95vw.

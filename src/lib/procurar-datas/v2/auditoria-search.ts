@@ -18,6 +18,9 @@ export interface AuditoriaSearchV2Params {
   errorMessage?: string
   candidates?: CandidatoFinal[]
   searchTimeSeconds?: string
+  totalSlotsProcessed?: number
+  totalSlotsAvailable?: number
+  earlyStop?: boolean
 }
 
 export function gerarRunId(): string {
@@ -56,6 +59,9 @@ export async function registrarAuditoriaSearchV2(params: AuditoriaSearchV2Params
     errorMessage,
     candidates = [],
     searchTimeSeconds,
+    totalSlotsProcessed,
+    totalSlotsAvailable,
+    earlyStop,
   } = params
 
   const totalDurationMs = finishedAtMs - inicioMs
@@ -87,9 +93,9 @@ export async function registrarAuditoriaSearchV2(params: AuditoriaSearchV2Params
     total_candidates_especial: especial,
     total_candidates_premium: premium,
     total_candidates_hora_marcada: horaMarcada,
-    total_slots_processed: 0,
-    total_slots_available: 0,
-    early_stop: false,
+    total_slots_processed: typeof totalSlotsProcessed === 'number' ? totalSlotsProcessed : 0,
+    total_slots_available: typeof totalSlotsAvailable === 'number' ? totalSlotsAvailable : 0,
+    early_stop: typeof earlyStop === 'boolean' ? earlyStop : false,
     status,
     error_message: errorMessage ? errorMessage.slice(0, 500) : null,
     started_at: startedAt,

@@ -352,6 +352,7 @@ export async function POST(request: NextRequest) {
       `[PROCURAR_DATAS][v2/pesquisar-compat-async] fim ok=${resultado.ok} candidates=${resultado.payload.candidates.length} duracaoMs=${finishedAtMs - inicioMs}`
     )
 
+    const contadoresMapaKm = resultado.saidaV2.diagnosticoMinimo.contadoresMapaKm
     registrarAuditoriaSearchV2({
       runId,
       clientToken,
@@ -367,6 +368,8 @@ export async function POST(request: NextRequest) {
       status: 'success',
       candidates: resultado.payload.candidates,
       searchTimeSeconds: resultado.payload.searchTime,
+      totalSlotsProcessed: contadoresMapaKm?.slotsProcessados,
+      totalSlotsAvailable: contadoresMapaKm?.slotsComKm,
     }).catch(() => {})
 
     // Auditoria operacional
@@ -396,6 +399,12 @@ export async function POST(request: NextRequest) {
         painel: body.painel,
         tempoNecessario: body.tempoNecessario,
         valorInicialMinimo: typeof body.valorInicialMinimo === 'number' ? body.valorInicialMinimo : undefined,
+      },
+      snapshotTecnico: {
+        candidatosFinais: resultado.saidaV2.snapshotTecnicoCandidatosFinais ?? [],
+        contadoresMapaKm: contadoresMapaKm ?? null,
+        fonteAgenda: resultado.saidaV2.diagnosticoMinimo.fonteAgenda ?? null,
+        fonteDisponibilidade: resultado.saidaV2.diagnosticoMinimo.fonteDisponibilidade ?? null,
       },
       resultados: resultado.payload.candidates,
       status: 'success',

@@ -15,6 +15,7 @@ import { criarBuscarMatrizOSRMTableDiagnosticoV2 } from './osrm-table-client-dia
 import { criarBuscarRotaOSRMRouteDiagnosticoV2 } from './osrm-route-client-diagnostico'
 import { gerarCandidatosComDisponibilidadeRealV2 } from './gerar-candidatos-disponibilidade-real'
 import { recortarCandidatosLegadoEquivalente } from './recortar-candidatos-legado-equivalente'
+import { normalizarEquipe } from './equipe'
 import type { CandidatoPreliminarV2 } from './candidato'
 import type { MedidorPerformanceV2 } from './performance-diagnostico-v2'
 import { montarDiagnosticoResultadoTelaV2SantoAmaro } from './diagnostico-resultado-tela-v2-santo-amaro'
@@ -47,6 +48,36 @@ export type CandidatoFinalPesquisarDatasV2 = {
   horaMarcada: boolean
   kmAdicionalNaRotaM: number | null
   origemKmAdicional: 'slot' | 'global-fallback' | null
+}
+
+/**
+ * Snapshot tecnico por candidato final, capturado ANTES do adapter legado.
+ * Serve para auditoria: permite provar, para cada slot salvo, os dados reais
+ * que a producao usou na classificacao (tempo, km, origem do km, filtro early,
+ * slotTemPontos, motivos). Aditivo — nao altera o resultado exibido.
+ */
+export type SnapshotTecnicoCandidatoFinalV2 = {
+  slotKey: string
+  dataISO: string
+  equipe: string
+  elegivel: boolean
+  tipoOriginal: string
+  motivos: string[]
+  slotAvailMin: number | null
+  serviceMin: number | null
+  kmAdicionalNaRotaM: number | null
+  origemKmAdicionalNaRotaM: DetalheSlotMapaKmAdicional['origemKmAdicionalNaRotaM'] | null
+  filtroEarly: DetalheSlotMapaKmAdicional['filtroEarlyLegado'] | null
+  slotTemPontos: boolean | null
+}
+
+export type ContadoresMapaKmV2 = {
+  slotsRecebidos: number
+  slotsProcessados: number
+  slotsComKm: number
+  slotsComFallbackHaversine: number
+  slotsComErro: number
+  slotsDescartados: number
 }
 
 export type PesquisarDatasV2Output = {
@@ -94,8 +125,12 @@ export type PesquisarDatasV2Output = {
       aindaSemCoordenada: number
       geocodificacoesExternasTentadas: number
     }
+    contadoresMapaKm?: ContadoresMapaKmV2
+    fonteAgenda?: string
+    fonteDisponibilidade?: string
     avisos: string[]
   }
+  snapshotTecnicoCandidatosFinais?: SnapshotTecnicoCandidatoFinalV2[]
   diagnosticoResultadoTelaV2SantoAmaro?: ReturnType<typeof montarDiagnosticoResultadoTelaV2SantoAmaro>
   diagnosticoDeltaSantoAmaro16Jul?: ReturnType<typeof montarDiagnosticoDeltaSantoAmaro16Jul>
   diagnosticoDeltaMajorHardy31Jul?: ReturnType<typeof montarDiagnosticoResultadoTelaV2MajorHardy>
@@ -239,6 +274,37 @@ function mapearCandidatoFinal(candidato: CandidatoPreliminarV2, index: number): 
     kmAdicionalNaRotaM: candidato.distancia.kmAdicionalNaRotaM,
     origemKmAdicional: candidato.distancia.origemKmAdicional ?? null,
   }
+}
+
+/**
+ * Monta o snapshot tecnico dos candidatos finais ANTES do adapter legado,
+ * correlacionando cada candidato preliminar com o detalhe do slot (origem do km
+ * e filtro early). Nao altera o resultado; apenas expoe dados para auditoria.
+ */
+function montarSnapshotTecnicoCandidatosFinais(
+  candidatosFinais: CandidatoPreliminarV2[],
+  detalhesPorSlot: DetalheSlotMapaKmAdicional[]
+): SnapshotTecnicoCandidatoFinalV2[] {
+  const detalhePorChave = new Map(detalhesPorSlot.map((detalhe) => [detalhe.chave, detalhe]))
+  return candidatosFinais.map((candidato) => {
+    const equipeNormalizada = normalizarEquipe(candidato.equipe) ?? candidato.equipe
+    const slotKey = `${candidato.dataISO}::${equipeNormalizada}`
+    const detalhe = detalhePorChave.get(slotKey)
+    return {
+      slotKey,
+      dataISO: candidato.dataISO,
+      equipe: candidato.equipe,
+      elegivel: candidato.elegivel,
+      tipoOriginal: candidato.tipo,
+      motivos: candidato.motivos,
+      slotAvailMin: candidato.operacional.slotAvailMin ?? candidato.operacional.disponivelMin ?? null,
+      serviceMin: candidato.operacional.serviceMin ?? candidato.operacional.tempoNecessarioMin ?? null,
+      kmAdicionalNaRotaM: candidato.distancia.kmAdicionalNaRotaM,
+      origemKmAdicionalNaRotaM: detalhe?.origemKmAdicionalNaRotaM ?? null,
+      filtroEarly: detalhe?.filtroEarlyLegado ?? null,
+      slotTemPontos: candidato.slotTemPontos ?? null,
+    }
+  })
 }
 
 function pontoDiagnosticoDelta(
@@ -786,8 +852,15 @@ export async function pesquisarDatasV2(
         aindaSemCoordenada: resolucaoCoordenadasAgenda.aindaSemCoordenada,
         geocodificacoesExternasTentadas: resolucaoCoordenadasAgenda.geocodificacoesExternasTentadas,
       },
+      contadoresMapaKm: { ...mapaPorSlot.contadores },
+      fonteAgenda: 'google-sheets',
+      fonteDisponibilidade: 'google-sheets',
       avisos: avisosFiltrados,
     },
+    snapshotTecnicoCandidatosFinais: montarSnapshotTecnicoCandidatosFinais(
+      recorte.candidatosFinais,
+      mapaPorSlot.detalhesPorSlot
+    ),
     ...(diagnosticoResultadoTelaV2SantoAmaro
       ? { diagnosticoResultadoTelaV2SantoAmaro }
       : {}),

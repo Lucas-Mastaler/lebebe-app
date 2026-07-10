@@ -51,20 +51,80 @@ export async function POST(request: NextRequest) {
 
   const horarioInicioUTC = new Date().toISOString();
   const horarioInicioBRT = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const tsInicio = Date.now();
+  const requestId = `manual-${horarioInicioUTC}`;
 
   console.log('[EXECUTAR-MANUAL] ========================================');
   console.log(`[EXECUTAR-MANUAL] Inicio. origem=manual horario_brt=${horarioInicioBRT}`);
 
-  try {
-    const supabase = createServiceClient();
+  const supabase = createServiceClient();
 
+  // Criar registro de execucao imediatamente apos auth
+  let execucaoId: string | null = null;
+  const { data: execInsert, error: execInsertErr } = await supabase
+    .from('digisac_finalizacoes_execucoes')
+    .insert({
+      origem: 'manual',
+      status: 'em_andamento',
+      iniciado_em: horarioInicioUTC,
+      request_id: requestId,
+      total_encontrados: 0,
+      total_elegiveis: 0,
+      total_finalizados: 0,
+      total_ignorados: 0,
+      total_erros: 0,
+    })
+    .select('id')
+    .single();
+
+  if (execInsertErr || !execInsert) {
+    console.error('[EXECUTAR-MANUAL] ERRO CRITICO: Falha ao criar registro de execucao inicial. Nao haverá rastreabilidade persistida. Detalhe:', execInsertErr?.message ?? 'sem data');
+  } else {
+    execucaoId = execInsert.id;
+    console.log(`[EXECUTAR-MANUAL] Registro de execucao criado cedo. id=${execucaoId}`);
+  }
+
+  const finalizarComErro = async (etapa: string, mensagemErro: string) => {
+    if (!execucaoId) return;
+    const finalizado_em = new Date().toISOString();
+    const duracao_ms = Date.now() - tsInicio;
+    console.error(`[EXECUTAR-MANUAL] Finalizando execucao com erro. etapa=${etapa} duracao=${duracao_ms}ms`);
+    const { error: updErr } = await supabase
+      .from('digisac_finalizacoes_execucoes')
+      .update({
+        status: 'erro',
+        finalizado_em,
+        duracao_ms,
+        mensagem: `Erro na etapa: ${etapa}`,
+        erro: mensagemErro.substring(0, 500),
+        detalhes: { etapa, horarioInicioBRT },
+      })
+      .eq('id', execucaoId);
+    if (updErr) {
+      console.error('[EXECUTAR-MANUAL] ERRO CRITICO: Falha ao atualizar execucao com erro:', updErr.message);
+    }
+  };
+
+  try {
     // 1. Buscar conexoes habilitadas
     const conexoesHabilitadas = await buscarConexoesHabilitadas(supabase);
     if (conexoesHabilitadas.length === 0) {
       console.warn('[EXECUTAR-MANUAL] Nenhuma conexao habilitada');
+      if (execucaoId) {
+        await supabase
+          .from('digisac_finalizacoes_execucoes')
+          .update({
+            status: 'sem_itens',
+            finalizado_em: new Date().toISOString(),
+            duracao_ms: Date.now() - tsInicio,
+            mensagem: 'Nenhuma conexao habilitada',
+          })
+          .eq('id', execucaoId);
+      }
       return NextResponse.json({
         ok: true,
         modo: 'manual',
+        execucaoId,
         mensagem: 'Nenhuma conexao habilitada para automacao',
       });
     }
@@ -175,15 +235,15 @@ export async function POST(request: NextRequest) {
       ' erros=' + totalErrosRegistro
     );
 
-    // 3. Executar fechamento central (registra execucao no banco com origem=manual)
-    const resultado = await executarFinalizacoesAutomaticas(supabase, 'manual', `manual-${horarioInicioUTC}`);
+    // 3. Executar fechamento central (passa execucaoId existente)
+    const resultado = await executarFinalizacoesAutomaticas(supabase, 'manual', requestId, execucaoId ?? undefined);
 
     // Atualizar total de elegiveis no registro de execucao
-    if (resultado.execucaoId) {
+    if (execucaoId) {
       await supabase
         .from('digisac_finalizacoes_execucoes')
         .update({ total_elegiveis: totalElegiveisGlobal })
-        .eq('id', resultado.execucaoId);
+        .eq('id', execucaoId);
     }
 
     const horarioFimBRT = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
@@ -224,8 +284,9 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const mensagem = err instanceof Error ? err.message : String(err);
     console.error('[EXECUTAR-MANUAL] Erro geral:', mensagem);
+    await finalizarComErro('geral', mensagem);
     return NextResponse.json(
-      { ok: false, error: 'Erro interno' },
+      { ok: false, error: 'Erro interno', execucaoId },
       { status: 500 }
     );
   }

@@ -1,3 +1,45 @@
+## 2026-07-10 - Cascade - Corrigir rastreabilidade do cron de finalizacoes automaticas Digisac
+
+**Resumo:** Corrigido problema de rastreabilidade onde o cron da Vercel chamava a rota, criava pendentes em digisac_fechamentos_automaticos, mas nao registrava execucao em digisac_finalizacoes_execucoes se falhasse antes de chamar executarFinalizacoesAutomaticas. Agora a rota cria o registro de execucao com status em_andamento logo apos validar CRON_SECRET (ou auth na rota manual), antes de qualquer outra etapa. Se falhar, o catch atualiza o registro para status=erro com etapa, mensagem, duracao e detalhes. Adicionado parametro execucaoIdExistente na funcao central para evitar duplicacao.
+
+**Arquivos lidos:**
+- vercel.json
+- src/app/api/cron/digisac-finalizacoes-automaticas/route.ts
+- src/lib/digisac/finalizacoesAutomaticas.ts
+- src/app/api/digisac/finalizacoes-automaticas/executar/route.ts
+- src/app/api/digisac/finalizacoes-automaticas/execucoes/route.ts
+- src/middleware.ts
+- MCP Supabase: estrutura de digisac_finalizacoes_execucoes e digisac_fechamentos_automaticos
+
+**Arquivos alterados:**
+- src/lib/digisac/finalizacoesAutomaticas.ts (adicionado parametro execucaoIdExistente opcional em executarFinalizacoesAutomaticas)
+- src/app/api/cron/digisac-finalizacoes-automaticas/route.ts (registro criado cedo apos auth, try/catch com finalizarComErro, passa execucaoId para funcao central)
+- src/app/api/digisac/finalizacoes-automaticas/executar/route.ts (mesmo tratamento: registro cedo apos auth, try/catch com finalizarComErro, passa execucaoId)
+
+**Validacoes realizadas:**
+- TypeScript: npx tsc --noEmit — 0 erros nos arquivos alterados (2 erros pre-existentes em consulta-datas-mere.ts nao relacionados)
+- MCP Supabase: estrutura de digisac_finalizacoes_execucoes confirmada (colunas, constraints, defaults, RLS)
+- Nao houve alteracao de banco, migration ou regra de negocio
+
+**Comandos rodados e resultados:**
+- npx tsc --noEmit → 2 erros pre-existentes em src/lib/atendimento-automatico/consulta-datas-mere.ts (nao relacionados)
+- npx tsc --noEmit 2>&1 | findstr /i "finalizacoes cron digisac" → nenhum erro nos arquivos alterados
+
+**Pendencias:**
+- Reverter vercel.json para schedule correto apos testes (atualmente em 0 19 para teste do usuario)
+- Validar em producao se o proximo cron registra execucao mesmo em caso de falha
+- Considerar adicionar log de recebimento antes da validacao de auth para diagnosticar se Vercel envia o header
+
+**Riscos conhecidos:**
+- Se o insert inicial falhar (ex: problema RLS ou conexao), nao havera rastreabilidade no banco — apenas console.error nos logs da Vercel
+- O parametro execucaoIdExistente e backward compatible: se nao passado, a funcao cria novo registro como antes
+
+**Proximo passo recomendado:**
+- Deploy de producao e observar proxima execucao do cron
+- Verificar Runtime Logs da Vercel se houver erro
+
+---
+
 ## 2026-07-10 - Cascade - Allowlist wildcard para atendimento automático Mère
 
 **Resumo:** Adicionado suporte a wildcard `*` na env `ATENDIMENTO_POSVENDA_ALLOWED_PHONES`. Quando configurado como `*`, o webhook libera todos os telefones sem exigir match na lista. Env ausente ou vazia continua bloqueando por segurança. Lista de telefones continua funcionando normalmente.

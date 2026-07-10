@@ -1,8 +1,14 @@
 import { createServiceClient } from '@/lib/supabase/service';
 import type { GrupoAgendamento } from '@/lib/google/sheets-service-account';
 import { pesquisarDatasV2, type CandidatoFinalPesquisarDatasV2, type PesquisarDatasV2Output } from '@/lib/procurar-datas/motor/pesquisar-datas-v2';
-import type { PesquisarDatasRequest } from '@/lib/procurar-datas/contratos';
+import type { EnderecoValidado, PesquisarDatasRequest, ValidarEnderecoRequest } from '@/lib/procurar-datas/contratos';
 import { formatarMinutos, parseMinutos } from '@/lib/procurar-datas/motor/tempo';
+import { buscarEnderecoNoGeoCache, normalizarCep, salvarEnderecoNoGeoCache } from '@/lib/procurar-datas/endereco-cache';
+import { buscarEnderecoLocationIq } from '@/lib/procurar-datas/locationiq';
+import { consultarGoogleGeocodingEnderecoDificil } from '@/lib/procurar-datas/google-geocoding';
+import { validarPayloadEndereco } from '@/lib/procurar-datas/validar-endereco-payload';
+import { validarEnderecoProviderDireto } from '@/lib/procurar-datas/validar-endereco-resultado';
+import { chamarAppsScriptProcurarDatas } from '@/lib/procurar-datas/apps-script';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos públicos
@@ -11,19 +17,32 @@ import { formatarMinutos, parseMinutos } from '@/lib/procurar-datas/motor/tempo'
 export interface CoordenadasMere {
   lat: number;
   lng: number;
-  fonte: 'geo_cache';
-  origem: 'geo_cache_cep_numero' | 'geo_cache_endereco_completo' | 'geo_cache_logradouro_numero' | 'geo_cache_cep_unico';
-  estrategia: 'cep_numero' | 'endereco_completo' | 'logradouro_numero' | 'cep';
+  fonte: 'geo_cache' | 'provider';
+  origem: 'geo_cache' | 'locationiq' | 'google_geocoding' | 'appsscript' | 'geo_cache_cep_numero' | 'geo_cache_endereco_completo' | 'geo_cache_logradouro_numero' | 'geo_cache_cep_unico';
+  estrategia: 'geo_cache_match_seguro' | 'provider_locationiq' | 'provider_google_geocoding' | 'provider_appsscript' | 'cep_numero' | 'endereco_completo' | 'logradouro_numero' | 'cep';
   confidence: number | null;
   provider: string | null;
   geoCacheId: string | null;
   cepResolvido: string | null;
   numeroResolvido: string | null;
+  geoCacheHit: boolean;
+  geocodingProviderConsultado: boolean;
+  geocodingProvider: string | null;
+  geoCacheSalvo: boolean;
+  geoCacheSaveErro?: string;
 }
 
 export type ResultadoGeocod =
   | { ok: true; coordenadas: CoordenadasMere }
-  | { ok: false; motivo: string };
+  | {
+      ok: false;
+      motivo: string;
+      geoCacheHit?: boolean;
+      geocodingProviderConsultado?: boolean;
+      geocodingProvider?: string | null;
+      geoCacheSalvo?: boolean;
+      candidatos?: number;
+    };
 
 export interface DatasDisponiveisMere {
   dataISO: string;
@@ -58,6 +77,10 @@ export interface ResultadoExecucaoConsulta {
   coordenadas?: CoordenadasMere;
   geoCacheStatus: 'hit' | 'miss' | 'erro';
   geoCacheMotivo?: string;
+  geoCacheHit?: boolean;
+  geocodingProviderConsultado?: boolean;
+  geocodingProvider?: string | null;
+  geoCacheSalvo?: boolean;
   erros?: string[];
   diagnostico?: DiagnosticoConsultaDatasMere;
 }
@@ -244,6 +267,10 @@ function montarCoordenadasMere(
     geoCacheId: row.chave_endereco,
     cepResolvido: normalizarCepSimples(row.cep) || normalizarCepSimples(decomposto.cep) || null,
     numeroResolvido: row.numero ?? decomposto.numero,
+    geoCacheHit: true,
+    geocodingProviderConsultado: false,
+    geocodingProvider: null,
+    geoCacheSalvo: false,
   };
 }
 
@@ -268,7 +295,9 @@ function escolherUnicoSeguro(rows: GeoCacheRow[], motivoAmbiguo: string): GeoCac
  *   4. CEP apenas, somente com candidato único seguro
  * Não faz geocodificação externa.
  */
-export async function geocodificarEnderecoMere(
+// Mantido temporariamente como referencia do caminho antigo de cache-only.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function geocodificarEnderecoMereGeoCacheLegado(
   enderecoCompleto: string
 ): Promise<ResultadoGeocod> {
   if (!enderecoCompleto || enderecoCompleto.trim().length < 5) {
@@ -377,6 +406,234 @@ export async function geocodificarEnderecoMere(
 // ─────────────────────────────────────────────────────────────────────────────
 // Validação de campos mínimos
 // ─────────────────────────────────────────────────────────────────────────────
+
+type GeocodificarEnderecoMereOptions = {
+  sessaoId?: string;
+};
+
+function coordenadasValidasEndereco(resultado: EnderecoValidado): boolean {
+  const lat = Number(resultado.lat);
+  const lng = Number(resultado.lng);
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180 &&
+    !(lat === 0 && lng === 0)
+  );
+}
+
+function motivoControladoProvider(motivo: string): string {
+  if (motivo === 'coordenadas_invalidas' || motivo === 'coordenada_invalida') return 'geo_cache_lat_lng_invalidos';
+  if (motivo.includes('ambiguo')) return 'geocoding_resultado_ambiguo';
+  if (motivo.includes('mismatch') || motivo.includes('incompativel') || motivo.includes('ausente')) return 'geocoding_resultado_ambiguo';
+  return 'geocoding_provider_falhou';
+}
+
+export function montarPayloadEnderecoMere(enderecoCompleto: string): ValidarEnderecoRequest | null {
+  if (!enderecoCompleto || enderecoCompleto.trim().length < 5) return null;
+
+  const decomposto = decomporEnderecoCompleto(enderecoCompleto);
+  return {
+    logradouro: decomposto.logradouro ?? undefined,
+    numero: decomposto.numero ?? undefined,
+    bairro: decomposto.bairro ?? undefined,
+    cidade: decomposto.cidade ?? undefined,
+    uf: decomposto.uf ?? undefined,
+    cep: decomposto.cep ? normalizarCep(decomposto.cep) : undefined,
+    enderecoCompleto,
+  };
+}
+
+function montarCoordenadasMereDeResultado(params: {
+  resultado: EnderecoValidado;
+  form: ValidarEnderecoRequest;
+  fonte: CoordenadasMere['fonte'];
+  origem: CoordenadasMere['origem'];
+  estrategia: CoordenadasMere['estrategia'];
+  geoCacheHit: boolean;
+  geocodingProviderConsultado: boolean;
+  geocodingProvider: string | null;
+  geoCacheSalvo: boolean;
+  geoCacheId: string | null;
+  geoCacheSaveErro?: string;
+}): CoordenadasMere {
+  const provider = String(params.resultado.provider ?? params.geocodingProvider ?? params.origem);
+  return {
+    lat: Number(params.resultado.lat),
+    lng: Number(params.resultado.lng),
+    fonte: params.fonte,
+    origem: params.origem,
+    estrategia: params.estrategia,
+    confidence: typeof params.resultado.confidence === 'number' ? params.resultado.confidence : null,
+    provider,
+    geoCacheId: params.geoCacheId,
+    cepResolvido: normalizarCep(String(params.resultado.cep ?? params.form.cep ?? '')) || null,
+    numeroResolvido: String(params.form.numero ?? '').trim() || null,
+    geoCacheHit: params.geoCacheHit,
+    geocodingProviderConsultado: params.geocodingProviderConsultado,
+    geocodingProvider: params.geocodingProvider,
+    geoCacheSalvo: params.geoCacheSalvo,
+    geoCacheSaveErro: params.geoCacheSaveErro,
+  };
+}
+
+async function salvarCacheMere(
+  form: ValidarEnderecoRequest,
+  resultado: EnderecoValidado,
+  provider: string,
+  sessaoId?: string
+): Promise<{ ok: true; chaveEndereco: string } | { ok: false; erro: string }> {
+  const cacheSave = await salvarEnderecoNoGeoCache(form, { ...resultado, provider });
+  if (cacheSave.ok) {
+    console.log(`[posvenda-webhook] geo_cache salvo sessaoId=${sessaoId ?? '-'} provider=${provider}`);
+  } else {
+    console.warn(`[posvenda-webhook] geo_cache save falhou sessaoId=${sessaoId ?? '-'} provider=${provider} motivo=${cacheSave.erro}`);
+  }
+  return cacheSave;
+}
+
+export async function geocodificarEnderecoMere(
+  enderecoCompleto: string,
+  options: GeocodificarEnderecoMereOptions = {}
+): Promise<ResultadoGeocod> {
+  const form = montarPayloadEnderecoMere(enderecoCompleto);
+  if (!form) {
+    return { ok: false, motivo: 'endereco_incompleto_para_geocoding', geoCacheHit: false, geocodingProviderConsultado: false, geocodingProvider: null, geoCacheSalvo: false };
+  }
+
+  const cepLog = normalizarCep(form.cep) || '-';
+  const cidadeLog = String(form.cidade ?? '-');
+  const ufLog = String(form.uf ?? '-').toUpperCase();
+  console.log(`[posvenda-webhook] resolvendo coordenadas mere sessaoId=${options.sessaoId ?? '-'} cep=${cepLog} cidade=${cidadeLog} uf=${ufLog}`);
+
+  const validacaoPayload = validarPayloadEndereco(form);
+  if (validacaoPayload) {
+    return { ok: false, motivo: 'endereco_incompleto_para_geocoding', geoCacheHit: false, geocodingProviderConsultado: false, geocodingProvider: null, geoCacheSalvo: false };
+  }
+
+  try {
+    const cache = await buscarEnderecoNoGeoCache(form);
+    if (cache.status === 'hit') {
+      console.log(`[posvenda-webhook] geo_cache hit sessaoId=${options.sessaoId ?? '-'} origem=geo_cache estrategia=geo_cache_match_seguro`);
+      return {
+        ok: true,
+        coordenadas: montarCoordenadasMereDeResultado({
+          resultado: cache.resultado,
+          form,
+          fonte: 'geo_cache',
+          origem: 'geo_cache',
+          estrategia: 'geo_cache_match_seguro',
+          geoCacheHit: true,
+          geocodingProviderConsultado: false,
+          geocodingProvider: null,
+          geoCacheSalvo: false,
+          geoCacheId: String(cache.resultado.chaveEndereco ?? '') || null,
+        }),
+      };
+    }
+
+    if (cache.motivo === 'coordenadas_invalidas') {
+      return { ok: false, motivo: 'geo_cache_lat_lng_invalidos', geoCacheHit: false, geocodingProviderConsultado: false, geocodingProvider: null, geoCacheSalvo: false };
+    }
+    if (cache.motivo === 'cache_ambiguo') {
+      return { ok: false, motivo: 'geocoding_resultado_ambiguo', geoCacheHit: false, geocodingProviderConsultado: false, geocodingProvider: null, geoCacheSalvo: false };
+    }
+
+    console.log(`[posvenda-webhook] geo_cache miss, tentando provider existente sessaoId=${options.sessaoId ?? '-'} motivo=${cache.motivo}`);
+  } catch (error) {
+    const motivo = error instanceof Error ? error.message : String(error);
+    console.warn(`[posvenda-webhook] geo_cache erro, tentando provider existente sessaoId=${options.sessaoId ?? '-'} motivo=${motivo}`);
+  }
+
+  const locationIq = await buscarEnderecoLocationIq(form);
+  if (locationIq.status === 'success') {
+    if (!coordenadasValidasEndereco(locationIq.resultado)) {
+      return { ok: false, motivo: 'geo_cache_lat_lng_invalidos', geoCacheHit: false, geocodingProviderConsultado: true, geocodingProvider: 'locationiq', geoCacheSalvo: false };
+    }
+    console.log(`[posvenda-webhook] geocoding provider sucesso sessaoId=${options.sessaoId ?? '-'} provider=locationiq lat=${Number(locationIq.resultado.lat).toFixed(5)} lng=${Number(locationIq.resultado.lng).toFixed(5)}`);
+    const cacheSave = await salvarCacheMere(form, locationIq.resultado, 'locationiq', options.sessaoId);
+    return {
+      ok: true,
+      coordenadas: montarCoordenadasMereDeResultado({
+        resultado: locationIq.resultado,
+        form,
+        fonte: 'provider',
+        origem: 'locationiq',
+        estrategia: 'provider_locationiq',
+        geoCacheHit: false,
+        geocodingProviderConsultado: true,
+        geocodingProvider: 'locationiq',
+        geoCacheSalvo: cacheSave.ok,
+        geoCacheId: cacheSave.ok ? cacheSave.chaveEndereco : null,
+        geoCacheSaveErro: cacheSave.ok ? undefined : cacheSave.erro,
+      }),
+    };
+  }
+
+  const google = await consultarGoogleGeocodingEnderecoDificil(form, { permitirEnderecoComum: true });
+  if (google.status === 'success') {
+    if (!coordenadasValidasEndereco(google.resultado)) {
+      return { ok: false, motivo: 'geo_cache_lat_lng_invalidos', geoCacheHit: false, geocodingProviderConsultado: true, geocodingProvider: 'google_geocoding', geoCacheSalvo: false };
+    }
+    console.log(`[posvenda-webhook] geocoding provider sucesso sessaoId=${options.sessaoId ?? '-'} provider=google_geocoding lat=${Number(google.resultado.lat).toFixed(5)} lng=${Number(google.resultado.lng).toFixed(5)}`);
+    const cacheSave = await salvarCacheMere(form, google.resultado, 'google_geocoding', options.sessaoId);
+    return {
+      ok: true,
+      coordenadas: montarCoordenadasMereDeResultado({
+        resultado: google.resultado,
+        form,
+        fonte: 'provider',
+        origem: 'google_geocoding',
+        estrategia: 'provider_google_geocoding',
+        geoCacheHit: false,
+        geocodingProviderConsultado: true,
+        geocodingProvider: 'google_geocoding',
+        geoCacheSalvo: cacheSave.ok,
+        geoCacheId: cacheSave.ok ? cacheSave.chaveEndereco : null,
+        geoCacheSaveErro: cacheSave.ok ? undefined : cacheSave.erro,
+      }),
+    };
+  }
+
+  try {
+    const resultado = await chamarAppsScriptProcurarDatas<EnderecoValidado>('LookupCompletoPorEndereco', [form], {
+      rota: 'validar-endereco-mere',
+    });
+    const validacaoAppsScript = validarEnderecoProviderDireto(resultado, form);
+    if (!validacaoAppsScript.ok) {
+      return { ok: false, motivo: motivoControladoProvider(validacaoAppsScript.motivo), geoCacheHit: false, geocodingProviderConsultado: true, geocodingProvider: 'appsscript', geoCacheSalvo: false };
+    }
+    if (!coordenadasValidasEndereco(resultado)) {
+      return { ok: false, motivo: 'geo_cache_lat_lng_invalidos', geoCacheHit: false, geocodingProviderConsultado: true, geocodingProvider: 'appsscript', geoCacheSalvo: false };
+    }
+    console.log(`[posvenda-webhook] geocoding provider sucesso sessaoId=${options.sessaoId ?? '-'} provider=appsscript lat=${Number(resultado.lat).toFixed(5)} lng=${Number(resultado.lng).toFixed(5)}`);
+    const cacheSave = await salvarCacheMere(form, resultado, 'appsscript', options.sessaoId);
+    return {
+      ok: true,
+      coordenadas: montarCoordenadasMereDeResultado({
+        resultado,
+        form,
+        fonte: 'provider',
+        origem: 'appsscript',
+        estrategia: 'provider_appsscript',
+        geoCacheHit: false,
+        geocodingProviderConsultado: true,
+        geocodingProvider: 'appsscript',
+        geoCacheSalvo: cacheSave.ok,
+        geoCacheId: cacheSave.ok ? cacheSave.chaveEndereco : null,
+        geoCacheSaveErro: cacheSave.ok ? undefined : cacheSave.erro,
+      }),
+    };
+  } catch (error) {
+    const motivo = error instanceof Error ? error.message : String(error);
+    console.warn(`[posvenda-webhook] geocoding provider falhou sessaoId=${options.sessaoId ?? '-'} provider=appsscript motivo=${motivo}`);
+  }
+
+  return { ok: false, motivo: 'geocoding_provider_falhou', geoCacheHit: false, geocodingProviderConsultado: true, geocodingProvider: 'appsscript', geoCacheSalvo: false };
+}
 
 export type ValidacaoCamposMere =
   | { ok: true }
@@ -502,6 +759,10 @@ function resumirPayloadConsultaDatasMere(
     geo_cache_status: 'hit',
     geo_cache_origem: coordenadas.origem,
     geo_cache_estrategia: coordenadas.estrategia,
+    geo_cache_hit: coordenadas.geoCacheHit,
+    geocoding_provider_consultado: coordenadas.geocodingProviderConsultado,
+    geocoding_provider: coordenadas.geocodingProvider,
+    geo_cache_salvo: coordenadas.geoCacheSalvo,
     equipe: grupo.equipe_agenda || null,
     isRural: payload.isRural,
     isCondominio: payload.isCondominio,
@@ -571,12 +832,21 @@ export function montarPayloadConsultaDatasMere(
   coordenadas: CoordenadasMere
 ): PesquisarDatasRequest {
   const tempoServico = resolverTempoServicoGrupoMere(grupo);
+  const endereco = montarPayloadEnderecoMere(grupo.endereco_completo ?? '');
   return {
     dataInicial: dataDesejadaISO,
     tempoNecessario: tempoServico ?? '',
     enderecoCompleto: grupo.endereco_completo,
+    logradouro: endereco?.logradouro,
+    numero: endereco?.numero,
+    bairro: endereco?.bairro,
+    cidade: endereco?.cidade,
+    uf: endereco?.uf,
+    cep: endereco?.cep,
     destLat: coordenadas.lat,
     destLng: coordenadas.lng,
+    destDisplay: grupo.endereco_completo,
+    destProvider: coordenadas.provider ?? coordenadas.origem,
     isRural: false,
     isCondominio: false,
   };
@@ -741,22 +1011,28 @@ export async function executarConsultaDatasMere(params: {
 
   // 1. Geocodificar
   const enderecoCompleto = grupo.endereco_completo ?? '';
-  const geocod = await geocodificarEnderecoMere(enderecoCompleto);
+  const geocod = await geocodificarEnderecoMere(enderecoCompleto, { sessaoId });
 
   if (!geocod.ok) {
-    console.log(`[posvenda-webhook] geo_cache miss sessaoId=${sessaoId} motivo=${geocod.motivo}`);
+    console.log(`[posvenda-webhook] coordenadas nao resolvidas motivo=${geocod.motivo} sessaoId=${sessaoId}`);
     return {
       estado: 'erro_coordenadas',
       motivo: geocod.motivo,
       geoCacheStatus: geocod.motivo.startsWith('geo_cache_erro') ? 'erro' : 'miss',
       geoCacheMotivo: geocod.motivo,
+      geoCacheHit: geocod.geoCacheHit ?? false,
+      geocodingProviderConsultado: geocod.geocodingProviderConsultado ?? false,
+      geocodingProvider: geocod.geocodingProvider ?? null,
+      geoCacheSalvo: geocod.geoCacheSalvo ?? false,
     };
   }
 
   const { coordenadas } = geocod;
-  console.log(
-    `[posvenda-webhook] geo_cache hit sessaoId=${sessaoId} origem=${coordenadas.origem} estrategia=${coordenadas.estrategia} cep=${coordenadas.cepResolvido ?? '-'} confidence=${coordenadas.confidence ?? '-'}`
-  );
+  if (coordenadas.geoCacheHit) {
+    console.log(
+      `[posvenda-webhook] geo_cache hit sessaoId=${sessaoId} origem=${coordenadas.origem} estrategia=${coordenadas.estrategia} cep=${coordenadas.cepResolvido ?? '-'} confidence=${coordenadas.confidence ?? '-'}`
+    );
+  }
 
   // 2. Validar campos obrigatórios
   const validacao = validarCamposConsultaMere({ dataDesejadaISO, grupo, coordenadas });
@@ -765,7 +1041,11 @@ export async function executarConsultaDatasMere(params: {
       estado: 'erro_dados',
       motivo: validacao.motivo,
       coordenadas,
-      geoCacheStatus: 'hit',
+      geoCacheStatus: coordenadas.geoCacheHit ? 'hit' : 'miss',
+      geoCacheHit: coordenadas.geoCacheHit,
+      geocodingProviderConsultado: coordenadas.geocodingProviderConsultado,
+      geocodingProvider: coordenadas.geocodingProvider,
+      geoCacheSalvo: coordenadas.geoCacheSalvo,
       erros: validacao.camposFaltando,
       diagnostico: montarDiagnosticoConsultaDatasMere({
         payload: montarPayloadConsultaDatasMere(grupo, dataDesejadaISO, coordenadas),
@@ -787,7 +1067,11 @@ export async function executarConsultaDatasMere(params: {
       estado: 'erro_consulta',
       motivo: resultado.motivo,
       coordenadas,
-      geoCacheStatus: 'hit',
+      geoCacheStatus: coordenadas.geoCacheHit ? 'hit' : 'miss',
+      geoCacheHit: coordenadas.geoCacheHit,
+      geocodingProviderConsultado: coordenadas.geocodingProviderConsultado,
+      geocodingProvider: coordenadas.geocodingProvider,
+      geoCacheSalvo: coordenadas.geoCacheSalvo,
       erros: resultado.erros ?? [],
       diagnostico: resultado.diagnostico,
     };
@@ -801,7 +1085,11 @@ export async function executarConsultaDatasMere(params: {
       runId: resultado.runId,
       totalCandidatos: resultado.totalCandidatos,
       coordenadas,
-      geoCacheStatus: 'hit',
+      geoCacheStatus: coordenadas.geoCacheHit ? 'hit' : 'miss',
+      geoCacheHit: coordenadas.geoCacheHit,
+      geocodingProviderConsultado: coordenadas.geocodingProviderConsultado,
+      geocodingProvider: coordenadas.geocodingProvider,
+      geoCacheSalvo: coordenadas.geoCacheSalvo,
       diagnostico: resultado.diagnostico,
     };
   }
@@ -812,7 +1100,11 @@ export async function executarConsultaDatasMere(params: {
     runId: resultado.runId,
     totalCandidatos: resultado.totalCandidatos,
     coordenadas,
-    geoCacheStatus: 'hit',
+    geoCacheStatus: coordenadas.geoCacheHit ? 'hit' : 'miss',
+    geoCacheHit: coordenadas.geoCacheHit,
+    geocodingProviderConsultado: coordenadas.geocodingProviderConsultado,
+    geocodingProvider: coordenadas.geocodingProvider,
+    geoCacheSalvo: coordenadas.geoCacheSalvo,
     diagnostico: resultado.diagnostico,
   };
 }

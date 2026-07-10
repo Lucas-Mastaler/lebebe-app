@@ -437,37 +437,43 @@ const LIMITE_FECHAMENTO_CENTRAL = 100;
 export async function executarFinalizacoesAutomaticas(
   supabase: ReturnType<typeof import('@/lib/supabase/service').createServiceClient>,
   origem: OrigemExecucao,
-  requestId?: string
+  requestId?: string,
+  execucaoIdExistente?: string
 ): Promise<ResultadoExecucaoCentral> {
   const iniciado_em = new Date().toISOString();
   const tsInicio = Date.now();
 
   console.log(`[EXEC-FINALIZACOES] ========================================`);
-  console.log(`[EXEC-FINALIZACOES] Inicio. origem=${origem} requestId=${requestId ?? 'n/a'}`);
+  console.log(`[EXEC-FINALIZACOES] Inicio. origem=${origem} requestId=${requestId ?? 'n/a'} execucaoIdExistente=${execucaoIdExistente ?? 'n/a'}`);
 
-  // Inserir registro de execucao com status em_andamento
-  let execucaoId: string | null = null;
-  const { data: execInsert, error: execInsertErr } = await supabase
-    .from('digisac_finalizacoes_execucoes')
-    .insert({
-      origem,
-      status: 'em_andamento' as StatusExecucao,
-      iniciado_em,
-      request_id: requestId ?? null,
-      total_encontrados: 0,
-      total_elegiveis: 0,
-      total_finalizados: 0,
-      total_ignorados: 0,
-      total_erros: 0,
-    })
-    .select('id')
-    .single();
+  // Usar ID existente ou criar novo registro de execucao com status em_andamento
+  let execucaoId: string | null = execucaoIdExistente ?? null;
 
-  if (execInsertErr) {
-    console.error('[EXEC-FINALIZACOES] Erro ao criar registro de execucao:', execInsertErr.message);
+  if (!execucaoId) {
+    const { data: execInsert, error: execInsertErr } = await supabase
+      .from('digisac_finalizacoes_execucoes')
+      .insert({
+        origem,
+        status: 'em_andamento' as StatusExecucao,
+        iniciado_em,
+        request_id: requestId ?? null,
+        total_encontrados: 0,
+        total_elegiveis: 0,
+        total_finalizados: 0,
+        total_ignorados: 0,
+        total_erros: 0,
+      })
+      .select('id')
+      .single();
+
+    if (execInsertErr) {
+      console.error('[EXEC-FINALIZACOES] Erro ao criar registro de execucao:', execInsertErr.message);
+    } else {
+      execucaoId = execInsert?.id ?? null;
+      console.log(`[EXEC-FINALIZACOES] Registro de execucao criado. id=${execucaoId}`);
+    }
   } else {
-    execucaoId = execInsert?.id ?? null;
-    console.log(`[EXEC-FINALIZACOES] Registro de execucao criado. id=${execucaoId}`);
+    console.log(`[EXEC-FINALIZACOES] Usando registro de execucao existente. id=${execucaoId}`);
   }
 
   const finalizarExecucao = async (campos: {

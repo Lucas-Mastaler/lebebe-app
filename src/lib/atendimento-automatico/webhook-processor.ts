@@ -103,6 +103,10 @@ async function aplicarResultadoConsultaDatas(params: {
     geo_cache_em: agora,
     geo_cache_motivo: execConsulta.geoCacheMotivo ?? null,
     geo_cache_consultado: true,
+    geo_cache_hit: execConsulta.coordenadas?.geoCacheHit ?? execConsulta.geoCacheHit ?? false,
+    geocoding_provider_consultado: execConsulta.coordenadas?.geocodingProviderConsultado ?? execConsulta.geocodingProviderConsultado ?? false,
+    geocoding_provider: execConsulta.coordenadas?.geocodingProvider ?? execConsulta.geocodingProvider ?? null,
+    geo_cache_salvo: execConsulta.coordenadas?.geoCacheSalvo ?? execConsulta.geoCacheSalvo ?? false,
     ...(execConsulta.coordenadas ? {
       geo_cache_id: execConsulta.coordenadas.geoCacheId,
       geo_cache_provider: execConsulta.coordenadas.provider,

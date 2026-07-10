@@ -44,47 +44,108 @@ interface DiagnosticoResponse {
 export async function GET(request: NextRequest) {
   const horarioInicioUTC = new Date().toISOString();
   const horarioInicioBRT = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const tsInicio = Date.now();
 
   console.log('[CRON-DIGISAC] ========================================');
   console.log(`[CRON-DIGISAC] Inicio (GET). origem=cron horario_brt=${horarioInicioBRT} utc=${horarioInicioUTC}`);
   console.log(`[CRON-DIGISAC] CRON_SECRET configurado: ${!!process.env.CRON_SECRET}`);
 
+  // 1. Validar autorizacao (Vercel Cron envia Authorization: Bearer <CRON_SECRET>)
+  const authHeader = request.headers.get('authorization');
+
+  if (!process.env.CRON_SECRET) {
+    console.error('[CRON-DIGISAC] CRON_SECRET nao configurado no ambiente');
+    return NextResponse.json(
+      { ok: false, error: 'CRON_SECRET nao configurado' },
+      { status: 500 }
+    );
+  }
+
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    console.error('[CRON-DIGISAC] Unauthorized: header=' + (authHeader ? '[presente mas incorreto]' : '[ausente]'));
+    return NextResponse.json(
+      { ok: false, error: 'Unauthorized' },
+      { status: 401 }
+    );
+  }
+
+  // 2. Criar registro de execucao imediatamente apos validar auth
+  const supabase = createServiceClient();
+  const requestId = `cron-${horarioInicioUTC}`;
+
+  let execucaoId: string | null = null;
+  const { data: execInsert, error: execInsertErr } = await supabase
+    .from('digisac_finalizacoes_execucoes')
+    .insert({
+      origem: 'cron',
+      status: 'em_andamento',
+      iniciado_em: horarioInicioUTC,
+      request_id: requestId,
+      total_encontrados: 0,
+      total_elegiveis: 0,
+      total_finalizados: 0,
+      total_ignorados: 0,
+      total_erros: 0,
+    })
+    .select('id')
+    .single();
+
+  if (execInsertErr || !execInsert) {
+    console.error('[CRON-DIGISAC] ERRO CRITICO: Falha ao criar registro de execucao inicial. Nao haverá rastreabilidade persistida. Detalhe:', execInsertErr?.message ?? 'sem data');
+  } else {
+    execucaoId = execInsert.id;
+    console.log(`[CRON-DIGISAC] Registro de execucao criado cedo. id=${execucaoId}`);
+  }
+
+  // Helper para finalizar execucao com erro
+  const finalizarComErro = async (etapa: string, mensagemErro: string) => {
+    if (!execucaoId) return;
+    const finalizado_em = new Date().toISOString();
+    const duracao_ms = Date.now() - tsInicio;
+    console.error(`[CRON-DIGISAC] Finalizando execucao com erro. etapa=${etapa} duracao=${duracao_ms}ms`);
+    const { error: updErr } = await supabase
+      .from('digisac_finalizacoes_execucoes')
+      .update({
+        status: 'erro',
+        finalizado_em,
+        duracao_ms,
+        mensagem: `Erro na etapa: ${etapa}`,
+        erro: mensagemErro.substring(0, 500),
+        detalhes: { etapa, horarioInicioBRT },
+      })
+      .eq('id', execucaoId);
+    if (updErr) {
+      console.error('[CRON-DIGISAC] ERRO CRITICO: Falha ao atualizar execucao com erro:', updErr.message);
+    }
+  };
+
   try {
-    // 1. Validar autorizacao (Vercel Cron envia Authorization: Bearer <CRON_SECRET>)
-    const authHeader = request.headers.get('authorization');
-
-    if (!process.env.CRON_SECRET) {
-      console.error('[CRON-DIGISAC] CRON_SECRET nao configurado no ambiente');
-      return NextResponse.json(
-        { ok: false, error: 'CRON_SECRET nao configurado' },
-        { status: 500 }
-      );
-    }
-
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      console.error('[CRON-DIGISAC] Unauthorized: header=' + (authHeader ? '[presente mas incorreto]' : '[ausente]'));
-      return NextResponse.json(
-        { ok: false, error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const supabase = createServiceClient();
-
-    // 2. Buscar conexoes habilitadas
+    // 3. Buscar conexoes habilitadas
     const conexoesHabilitadas = await buscarConexoesHabilitadas(supabase);
     if (conexoesHabilitadas.length === 0) {
       console.warn('[CRON-DIGISAC] Nenhuma conexao habilitada para automacao');
+      if (execucaoId) {
+        await supabase
+          .from('digisac_finalizacoes_execucoes')
+          .update({
+            status: 'sem_itens',
+            finalizado_em: new Date().toISOString(),
+            duracao_ms: Date.now() - tsInicio,
+            mensagem: 'Nenhuma conexao habilitada',
+          })
+          .eq('id', execucaoId);
+      }
       return NextResponse.json({
         ok: true,
         modo: 'cron-finalizacoes-automaticas',
+        execucaoId,
         mensagem: 'Nenhuma conexao habilitada',
       });
     }
 
     console.log('[CRON-DIGISAC] Conexoes habilitadas:', conexoesHabilitadas.length);
 
-    // 3. Para cada conexao: rodar diagnostico + registrar novos pendentes
+    // 4. Para cada conexao: rodar diagnostico + registrar novos pendentes
     let totalInseridos = 0;
     let totalJaExistentes = 0;
     let totalIgnoradosDiag = 0;
@@ -188,19 +249,19 @@ export async function GET(request: NextRequest) {
       ' erros=' + totalErrosRegistro
     );
 
-    // 4. Executar fechamento central (registra execucao no banco)
+    // 5. Executar fechamento central (passa execucaoId existente)
     console.log('[CRON-DIGISAC] Etapa 2: executando fechamentos...');
 
-    const resultado = await executarFinalizacoesAutomaticas(supabase, 'cron', `cron-${horarioInicioUTC}`);
+    const resultado = await executarFinalizacoesAutomaticas(supabase, 'cron', requestId, execucaoId ?? undefined);
 
-    // Atualizar totais de diagnostico no registro de execucao, se possivel
-    if (resultado.execucaoId) {
+    // Atualizar totais de diagnostico no registro de execucao
+    if (execucaoId) {
       await supabase
         .from('digisac_finalizacoes_execucoes')
         .update({
           total_elegiveis: totalElegiveisGlobal,
         })
-        .eq('id', resultado.execucaoId);
+        .eq('id', execucaoId);
     }
 
     const horarioFimBRT = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
@@ -242,8 +303,9 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     const mensagem = err instanceof Error ? err.message : String(err);
     console.error('[CRON-DIGISAC] Erro geral:', mensagem);
+    await finalizarComErro('geral', mensagem);
     return NextResponse.json(
-      { ok: false, error: 'Erro interno' },
+      { ok: false, error: 'Erro interno', execucaoId },
       { status: 500 }
     );
   }

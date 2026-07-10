@@ -889,3 +889,58 @@ Diagnóstico no código: `consulta-datas-mere.ts` tentava `geo_cache` de forma r
 ### Pendencias
 - Validar em produção o caso real que antes retornou `geo_cache_miss_cep`.
 
+
+---
+
+## Fase: Reuso do fluxo de coordenadas de `/procurar-datas` na Mere
+
+### Problema real
+Em 2026-07-10, um teste real chegou na consulta de datas e voltou a transferir para humano por coordenadas nao resolvidas:
+- `geo_cache_nao_resolvido`
+- `coordenadas nao resolvidas`
+
+Diagnostico confirmado no codigo: a tela `/procurar-datas` ja tenta `geo_cache`, depois providers existentes, e salva o resultado no `geo_cache`. A Mere ainda parava no miss do cache.
+
+### Decisao aplicada
+A Mere passou a montar um payload equivalente ao de `/procurar-datas` com:
+- `cep`
+- `logradouro`
+- `numero`
+- `bairro`
+- `cidade`
+- `uf`
+- `enderecoCompleto`
+
+Depois disso, a resolucao segue a ordem:
+1. `buscarEnderecoNoGeoCache`
+2. `buscarEnderecoLocationIq`
+3. `consultarGoogleGeocodingEnderecoDificil` com `permitirEnderecoComum`
+4. fallback existente `LookupCompletoPorEndereco`
+5. `salvarEnderecoNoGeoCache` quando um provider resolve coordenadas
+
+### Logs e metadata adicionados
+- `geo_cache_hit`
+- `geocoding_provider_consultado`
+- `geocoding_provider`
+- `geo_cache_salvo`
+
+Campos ja existentes de coordenadas foram preservados.
+
+### Nao alterado
+- Motor v2
+- Ranking/classificacao
+- OSRM/Haversine
+- Calendar
+- Sheets
+- Regras de negocio de candidatos
+
+### Validacoes
+- MCP Supabase: estrutura real de `public.geo_cache` confirmada antes da alteracao.
+- `npx tsc --noEmit --pretty false` -> passou.
+- `npx eslint src/lib/atendimento-automatico/consulta-datas-mere.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.ts` -> passou.
+- `npx vitest run src/lib/atendimento-automatico/consulta-datas-mere.test.ts` -> 10 passed, 6 skipped legados.
+- `npx vitest run src/lib/atendimento-automatico/webhook-processor.test.ts` -> 17 passed.
+
+### Pendencias e riscos
+- Suite completa `npm run test` ainda falha em testes fora do escopo: autenticacao Google Sheets `invalid_client` em agenda real e expectativas antigas de diagnostico/assinatura de rota v2.
+- Validar em producao o caso real que antes retornou `geo_cache_nao_resolvido`.

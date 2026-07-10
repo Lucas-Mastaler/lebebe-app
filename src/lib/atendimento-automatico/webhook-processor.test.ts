@@ -393,3 +393,91 @@ describe('processarWebhookPosVenda - bloqueio CLIENTE RETIRA', () => {
     });
   });
 });
+
+describe('processarWebhookPosVenda - allowlist wildcard', () => {
+  it('bloqueia quando env ausente', async () => {
+    delete process.env.ATENDIMENTO_POSVENDA_ALLOWED_PHONES;
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'alterar_entrega',
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('sim', 'msg-confirmacao'));
+
+    expect(resultado).toMatchObject({ ok: true, ignored: true, reason: 'telefone_nao_autorizado' });
+  });
+
+  it('bloqueia quando env vazia', async () => {
+    process.env.ATENDIMENTO_POSVENDA_ALLOWED_PHONES = '';
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'alterar_entrega',
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('sim', 'msg-confirmacao'));
+
+    expect(resultado).toMatchObject({ ok: true, ignored: true, reason: 'telefone_nao_autorizado' });
+  });
+
+  it('libera todos quando env e *', async () => {
+    process.env.ATENDIMENTO_POSVENDA_ALLOWED_PHONES = '*';
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'alterar_entrega',
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('sim', 'msg-confirmacao'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('aguardando_escolha_acao');
+  });
+
+  it('libera apenas telefones da lista', async () => {
+    process.env.ATENDIMENTO_POSVENDA_ALLOWED_PHONES = '5541999999999';
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'alterar_entrega',
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('sim', 'msg-confirmacao'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+  });
+
+  it('bloqueia telefone fora da lista', async () => {
+    process.env.ATENDIMENTO_POSVENDA_ALLOWED_PHONES = '5541888888888';
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'alterar_entrega',
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('sim', 'msg-confirmacao'));
+
+    expect(resultado).toMatchObject({ ok: true, ignored: true, reason: 'telefone_nao_autorizado' });
+  });
+
+  it('normaliza lista com espacos', async () => {
+    process.env.ATENDIMENTO_POSVENDA_ALLOWED_PHONES = ' 5541999999999 , 5541888888888 ';
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'alterar_entrega',
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('sim', 'msg-confirmacao'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+  });
+
+  it('wildcard com espacos ainda libera todos', async () => {
+    process.env.ATENDIMENTO_POSVENDA_ALLOWED_PHONES = ' * ';
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'alterar_entrega',
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('sim', 'msg-confirmacao'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+  });
+});

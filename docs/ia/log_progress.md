@@ -1,3 +1,36 @@
+## 2026-07-10 - Cascade - Allowlist wildcard para atendimento automático Mère
+
+**Resumo:** Adicionado suporte a wildcard `*` na env `ATENDIMENTO_POSVENDA_ALLOWED_PHONES`. Quando configurado como `*`, o webhook libera todos os telefones sem exigir match na lista. Env ausente ou vazia continua bloqueando por segurança. Lista de telefones continua funcionando normalmente.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/webhook-processor.ts (função telefoneAutorizado)
+
+**Arquivos alterados:**
+- src/lib/atendimento-automatico/webhook-processor.ts (adicionado check de wildcard `*` no início de telefoneAutorizado)
+- src/lib/atendimento-automatico/webhook-processor.test.ts (7 testes de integração para allowlist wildcard)
+
+**Validações realizadas:**
+- TypeScript: `npx tsc --noEmit --pretty` — 0 erros
+- ESLint: 0 erros nos arquivos alterados
+- Testes: 17 passed (5 relocalização + 5 CLIENTE RETIRA + 7 allowlist wildcard)
+- Não houve validação no MCP Supabase (não houve alteração de banco)
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit --pretty` → exit 0
+- `npx eslint` nos 2 arquivos alterados → exit 0
+- `npx vitest run webhook-processor.test.ts` → 17 passed
+
+**Pendências:**
+- Nenhuma
+
+**Riscos conhecidos:**
+- Wildcard `*` libera todos os telefones. Deve ser usado com cuidado em produção.
+
+**Próximo passo recomendado:**
+- Validar em ambiente real com `ATENDIMENTO_POSVENDA_ALLOWED_PHONES=*` configurado.
+
+---
+
 ## 2026-07-10 - Cascade - Bloqueio CLIENTE RETIRA no fluxo de alteração de entrega (Mère)
 
 **Resumo:** Adicionado bloqueio determinístico no webhook-processor do atendimento automático. Quando o cliente escolhe adiantar ou postergar e o grupo/pedido tem `EQUIPE AGENDA` contendo `CLIENTE RETIRA`, a Mère transfere para humano imediatamente sem consultar datas, pedir endereço, chamar IA, ou alterar Calendar/Sheets. O bloqueio tem prioridade sobre todos os outros bloqueios existentes (produto pendente, pagamento pendente, prazo) e sobre a IA fallback.

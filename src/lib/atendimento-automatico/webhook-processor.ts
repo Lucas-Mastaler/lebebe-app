@@ -378,6 +378,13 @@ function telefoneAutorizado(telefone: string | null): boolean {
     console.log('[posvenda-webhook] allowlist vazia, fluxo automatico desativado por seguranca');
     return false;
   }
+
+  // Wildcard * libera todos os telefones
+  if (allowedEnv.trim() === '*') {
+    console.log('[posvenda-webhook] allowlist wildcard ativa, telefone autorizado');
+    return true;
+  }
+
   const allowed = allowedEnv.split(',').map((t) => normalizarTelefone(t.trim())).filter(Boolean);
   if (allowed.length === 0) return false;
   if (!telefone) return false;

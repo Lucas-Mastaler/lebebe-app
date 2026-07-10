@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/digisac-finalizacoes-automaticas",
-      "schedule": "0 14 * * *"
+      "schedule": "0 16 * * *"
     }
   ]
 }

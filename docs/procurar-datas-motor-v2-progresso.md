@@ -4694,3 +4694,38 @@ Status: implementado na camada de entrada do atendimento automatico. Nao altera 
 - `npx eslint` nos arquivos alterados passou.
 - `npx vitest run src/lib/atendimento-automatico/consulta-datas-mere.test.ts` passou com 10 testes e 6 testes legados skipados.
 - Suite completa `npm run test` segue com falhas fora desta frente, principalmente Google Sheets `invalid_client` em testes de agenda real e expectativas antigas em diagnosticos v2.
+
+---
+
+## 2026-07-10 - Cache de endereco: confidence minima para hit seguro
+
+Status: implementado no helper compartilhado de endereco/cache. Nao altera motor v2, ranking, classificacao, OSRM, Haversine, Calendar ou Sheets.
+
+### Contexto
+No teste real da Mere para Rua Huxley, 43, Atuba, Colombo, PR - 83408-180, o `geo_cache` retornou um candidato com `confidence=0.05339000762951091` e ele foi tratado como `geo_cache_match_seguro`.
+
+Auditoria read-only no Supabase confirmou:
+- registro usado: `780e9672ed7dfeec7dbcb3eaa8e0b38c9f5c5643`;
+- coordenadas usadas: `lat=-25.3769719`, `lng=-49.1912692`;
+- provider original: `locationiq`;
+- updated_at: `2026-07-10 19:20:38.868+00`;
+- metadata da sessao real marcou `geocoding_provider_consultado=false`.
+
+### Causa
+`buscarEnderecoNoGeoCache` validava compatibilidade de campos, mas nao rejeitava `confidence` numerica muito baixa. Como a Mere reutiliza esse helper, o problema era compartilhado com `/procurar-datas`.
+
+### Correcao
+`src/lib/procurar-datas/endereco-cache.ts` passou a exigir `confidence >= 0.70` quando o campo `confidence` for numerico.
+
+Se o cache for compativel por campos, mas tiver `confidence < 0.70`, o helper retorna miss com motivo `confidence_baixa`; o chamador deve seguir para provider.
+
+### Paridade
+A paridade foi melhorada porque a regra ficou no helper central usado por:
+- rota `/api/procurar-datas/validar-endereco`;
+- fluxo da Mere em `consulta-datas-mere.ts`;
+- demais consumidores que chamam `buscarEnderecoNoGeoCache`.
+
+### Validacoes
+- `npx tsc --noEmit --pretty false` passou.
+- `npx eslint` nos arquivos de cache/Mere/webhook alterados passou.
+- `npx vitest run src/lib/procurar-datas/endereco-cache.test.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.test.ts` passou com 42 tests passed e 6 skipped.

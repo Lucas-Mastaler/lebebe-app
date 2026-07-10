@@ -1,3 +1,89 @@
+## 2026-07-10 - Codex - Rejeitar geo_cache de baixa confidence na Mere
+
+**Resumo:** Auditado e corrigido o aceite de coordenadas da Mere antes da consulta de datas. O problema real nao estava no filtro de `adiantar`: a sessao usou um registro de `geo_cache` com `confidence=0.05339000762951091` como `geo_cache_match_seguro`, sem chamar provider. A correcao foi aplicada no helper compartilhado `buscarEnderecoNoGeoCache`, para manter paridade entre Mere e `/procurar-datas`.
+
+**Caso real auditado:**
+- Pedido 17854, entrega atual `13/08/2026`, acao `adiantar`, data desejada `20/07/2026`.
+- Endereco: Rua Huxley, 43, Atuba, Colombo, PR - 83408-180.
+- Sessao: `b69898c8-713e-41e9-a135-e155547fa70c`.
+- Registro usado antes da correcao: `780e9672ed7dfeec7dbcb3eaa8e0b38c9f5c5643`.
+- Coordenadas usadas: `lat=-25.3769719`, `lng=-49.1912692`.
+- Metadata confirmou `geo_cache_estrategia=geo_cache_match_seguro`, `geo_cache_confidence=0.05339000762951091`, `geocoding_provider_consultado=false`, `geo_cache_salvo=false`.
+
+**Auditoria Supabase:**
+- MCP Supabase read-only em `public.geo_cache` para CEP `83408180` e Rua Huxley/Colombo.
+- Foram encontrados dois registros relevantes:
+  - `780e9672ed7dfeec7dbcb3eaa8e0b38c9f5c5643`, updated_at `2026-07-10 19:20:38.868+00`, bairro salvo `Atuba`, endereco do provider com `Guarani`, provider `locationiq`, confidence `0.05339000762951091`.
+  - `c0d27026f43d49f8613e91853b3ed00d891bdf6c`, updated_at `2026-04-18 22:11:10.089916+00`, bairro `Guarani`, provider `locationiq`, confidence `1`.
+
+**Causa raiz confirmada no codigo:**
+- `src/lib/procurar-datas/endereco-cache.ts` aceitava hit seguro por compatibilidade de campos, sem threshold de `confidence`.
+- `salvarEnderecoNoGeoCache` grava campos estruturados do formulario para lookup futuro; isso pode fazer um resultado de provider com baixa confidence parecer compativel em consultas seguintes.
+- A rota `/api/procurar-datas/validar-endereco` e a Mere usam o mesmo helper central, entao a regra precisava ficar nele.
+
+**Arquivos lidos:**
+- Anexo do pedido em `C:\Users\lebeb\.codex\attachments\10f29ab8-6485-46ff-90bd-bdf04a483167\pasted-text.txt`
+- `.devin/rules/gerais.md`
+- `.devin/rules/supabase.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/atendimento-automatico-posvenda-mere-plano.md`
+- `docs/ia/log_progress.md`
+- `src/lib/procurar-datas/endereco-cache.ts`
+- `src/lib/procurar-datas/endereco-cache.test.ts`
+- `src/app/api/procurar-datas/validar-endereco/route.ts`
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts`
+- `src/lib/atendimento-automatico/consulta-datas-mere.test.ts`
+- `src/lib/atendimento-automatico/webhook-processor.ts`
+
+**Arquivos alterados:**
+- `src/lib/procurar-datas/endereco-cache.ts`
+- `src/lib/procurar-datas/endereco-cache.test.ts`
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts`
+- `src/lib/atendimento-automatico/consulta-datas-mere.test.ts`
+- `docs/atendimento-automatico-posvenda-mere-plano.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/ia/log_progress.md`
+
+**O que mudou:**
+- Adicionado `GEO_CACHE_CONFIDENCE_MINIMA_HIT_SEGURO = 0.7`.
+- `buscarEnderecoNoGeoCache` passa a rejeitar como hit seguro registros com `confidence` numerica menor que `0.70`.
+- Cache rejeitado por baixa confidence retorna miss controlado `confidence_baixa`, permitindo seguir para LocationIQ, Google ou Apps Script conforme o fluxo existente.
+- A Mere ganhou logs seguros para candidato de cache usado, cache rejeitado, tentativa de provider, cache salvo e payload resumido enviado ao motor.
+- Teste de cache cobre `confidence=0.05339000762951091`.
+- Teste da Mere cobre o caminho em que cache baixo chama provider e nao chama o motor com a coordenada rejeitada.
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit --pretty false` -> passou.
+- `npx eslint src/lib/procurar-datas/endereco-cache.ts src/lib/procurar-datas/endereco-cache.test.ts src/lib/atendimento-automatico/consulta-datas-mere.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.ts src/lib/atendimento-automatico/webhook-processor.test.ts` -> passou.
+- `npx vitest run src/lib/procurar-datas/endereco-cache.test.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.test.ts` -> 3 arquivos passaram, 42 tests passed, 6 skipped legados. Dentro do sandbox falhou antes com `spawn EPERM`; validacao final foi executada com permissao elevada.
+
+**Nao alterado:**
+- Motor v2
+- Ranking/classificacao
+- OSRM/Haversine
+- Delta de insercao
+- Calendar
+- Sheets
+- Regras de negocio dos candidatos
+- Banco/migrations
+
+**Pendencias:**
+- Validar em producao o caso Rua Huxley, 43 apos deploy.
+- Confirmar nos logs se o provider retorna coordenada coerente e se o cache salvo passa a ser reutilizado apenas quando a confidence permitir.
+- Suite completa nao foi rodada nesta etapa; havia falhas conhecidas fora do escopo em testes de agenda/diagnostico v2.
+
+**Riscos conhecidos:**
+- Registros de cache com confidence baixa deixarao de ser reaproveitados automaticamente e podem aumentar chamadas a provider.
+- Registros com `confidence` nula continuam dependendo dos campos fortes, para nao quebrar caches de providers sem score numerico.
+- O provider pode retornar a mesma coordenada; a correcao impede apenas o uso silencioso de cache de baixa confidence.
+
+**Proximo passo recomendado:**
+- Fazer deploy com producao restrita (`ATENDIMENTO_POSVENDA_ALLOWED_PHONES=554192350811`) e retestar o pedido 17854/Rua Huxley, verificando logs de `confidence_baixa`, provider consultado, cache salvo e payload enviado ao motor.
+
+---
+
 ## 2026-07-10 - Cascade - Corrigir URL do diagnostico no cron de finalizacoes automaticas
 
 **Resumo:** Corrigido erro que causava falha do cron ao chamar o diagnostico. A URL do diagnostico usava request.nextUrl.origin que na Vercel resolve para o dominio interno do deployment, retornando HTML em vez de JSON. Corrigido para usar APP_URL (env server-side) com fallback para https://lebebe.cloud. Adicionada validacao de content-type antes de chamar json() e extracao de body preview em caso de erro.

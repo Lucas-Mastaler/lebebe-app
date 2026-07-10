@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   cacheRowCompativelComEndereco,
+  cacheRowConfidenceAceitavel,
+  GEO_CACHE_CONFIDENCE_MINIMA_HIT_SEGURO,
   montarEnderecoDisplayProcurarDatas,
   montarHashEnderecoLegado,
   type GeoCacheRow,
@@ -75,5 +77,11 @@ describe('endereco-cache', () => {
 
   it('rejeita cache quando CEP informado diverge do payload', () => {
     expect(cacheRowCompativelComEndereco({ ...rowBase, cep: '80000-000' }, formBase)).toBe(false)
+  })
+
+  it('rejeita confidence baixa como hit seguro de cache', () => {
+    expect(GEO_CACHE_CONFIDENCE_MINIMA_HIT_SEGURO).toBe(0.7)
+    expect(cacheRowConfidenceAceitavel({ ...rowBase, confidence: 0.05339000762951091 })).toBe(false)
+    expect(cacheRowConfidenceAceitavel({ ...rowBase, confidence: 0.7 })).toBe(true)
   })
 })

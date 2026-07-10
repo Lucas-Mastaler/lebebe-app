@@ -499,7 +499,7 @@ async function salvarCacheMere(
 ): Promise<{ ok: true; chaveEndereco: string } | { ok: false; erro: string }> {
   const cacheSave = await salvarEnderecoNoGeoCache(form, { ...resultado, provider });
   if (cacheSave.ok) {
-    console.log(`[posvenda-webhook] geo_cache salvo sessaoId=${sessaoId ?? '-'} provider=${provider}`);
+    console.log(`[posvenda-webhook] geo_cache salvo sessaoId=${sessaoId ?? '-'} provider=${provider} confidence=${resultado.confidence ?? '-'} chave=${cacheSave.chaveEndereco}`);
   } else {
     console.warn(`[posvenda-webhook] geo_cache save falhou sessaoId=${sessaoId ?? '-'} provider=${provider} motivo=${cacheSave.erro}`);
   }
@@ -528,7 +528,10 @@ export async function geocodificarEnderecoMere(
   try {
     const cache = await buscarEnderecoNoGeoCache(form);
     if (cache.status === 'hit') {
-      console.log(`[posvenda-webhook] geo_cache hit sessaoId=${options.sessaoId ?? '-'} origem=geo_cache estrategia=geo_cache_match_seguro`);
+      const enderecoCache = String(cache.resultado.enderecoCompleto ?? cache.resultado.display ?? cache.resultado.display_name ?? '').slice(0, 140);
+      console.log(
+        `[posvenda-webhook] geo_cache candidato usado sessaoId=${options.sessaoId ?? '-'} cep=${normalizarCep(form.cep) || '-'} numero=${form.numero ?? '-'} cidade=${form.cidade ?? '-'} uf=${String(form.uf ?? '-').toUpperCase()} lat=${Number(cache.resultado.lat).toFixed(6)} lng=${Number(cache.resultado.lng).toFixed(6)} confidence=${cache.resultado.confidence ?? '-'} provider=${cache.resultado.providerOriginal ?? cache.resultado.provider ?? '-'} enderecoCache="${enderecoCache}"`
+      );
       return {
         ok: true,
         coordenadas: montarCoordenadasMereDeResultado({
@@ -551,6 +554,10 @@ export async function geocodificarEnderecoMere(
     }
     if (cache.motivo === 'cache_ambiguo') {
       return { ok: false, motivo: 'geocoding_resultado_ambiguo', geoCacheHit: false, geocodingProviderConsultado: false, geocodingProvider: null, geoCacheSalvo: false };
+    }
+    if (cache.motivo === 'confidence_baixa') {
+      console.warn(`[posvenda-webhook] geo_cache rejeitado sessaoId=${options.sessaoId ?? '-'} motivo=confidence_baixa confidence=${cache.confidence ?? '-'} estrategia=geo_cache_match_seguro`);
+      console.log(`[posvenda-webhook] geo_cache insuficiente, tentando provider sessaoId=${options.sessaoId ?? '-'} motivo=confidence_baixa`);
     }
 
     console.log(`[posvenda-webhook] geo_cache miss, tentando provider existente sessaoId=${options.sessaoId ?? '-'} motivo=${cache.motivo}`);
@@ -1000,10 +1007,16 @@ function gerarRunId(): string {
 export async function consultarDatasMere(
   grupo: GrupoAgendamento,
   dataDesejadaISO: string,
-  coordenadas: CoordenadasMere
+  coordenadas: CoordenadasMere,
+  options: { sessaoId?: string } = {}
 ): Promise<ResultadoConsultaDatasMere> {
   const runId = gerarRunId();
   const payload = montarPayloadConsultaDatasMere(grupo, dataDesejadaISO, coordenadas);
+  const endereco = montarPayloadEnderecoMere(grupo.endereco_completo ?? '');
+
+  console.log(
+    `[posvenda-webhook] payload consulta datas mere sessaoId=${options.sessaoId ?? '-'} cep=${endereco?.cep ?? '-'} enderecoCompleto="${String(payload.enderecoCompleto ?? '').slice(0, 140)}" logradouro="${endereco?.logradouro ?? '-'}" numero=${endereco?.numero ?? '-'} bairro="${endereco?.bairro ?? '-'}" cidade=${endereco?.cidade ?? '-'} uf=${endereco?.uf ?? '-'} destLat=${Number(coordenadas.lat).toFixed(6)} destLng=${Number(coordenadas.lng).toFixed(6)} dataInicial=${payload.dataInicial} tempoNecessario=${payload.tempoNecessario} tempoNecessarioMin=${parseMinutos(payload.tempoNecessario ?? '')} condominio=${payload.isCondominio} rural=${payload.isRural} encomenda=false valorInicial=- coordenadas_origem=${coordenadas.origem} geo_cache_estrategia=${coordenadas.estrategia} geo_cache_confidence=${coordenadas.confidence ?? '-'} geocoding_provider_consultado=${coordenadas.geocodingProviderConsultado} geocoding_provider=${coordenadas.geocodingProvider ?? '-'} geo_cache_salvo=${coordenadas.geoCacheSalvo}`
+  );
 
   let resultado: PesquisarDatasV2Output;
   try {
@@ -1133,7 +1146,7 @@ export async function executarConsultaDatasMere(params: {
 
   // 3. Executar consulta
   console.log(`[posvenda-webhook] iniciando consulta datas sessaoId=${sessaoId} data=${dataDesejadaISO}`);
-  const resultado = await consultarDatasMere(grupo, dataDesejadaISO, coordenadas);
+  const resultado = await consultarDatasMere(grupo, dataDesejadaISO, coordenadas, { sessaoId });
 
   if (!resultado.ok) {
     console.log(`[posvenda-webhook] consulta datas erro sessaoId=${sessaoId} motivo=${resultado.motivo}`);

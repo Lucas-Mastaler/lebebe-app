@@ -20,10 +20,12 @@ export type GeoCacheRow = {
 
 export type ResultadoBuscaGeoCache =
   | { status: 'hit'; resultado: EnderecoValidado; motivo: 'match_seguro' }
-  | { status: 'miss'; motivo: string; candidatosAvaliados?: number }
+  | { status: 'miss'; motivo: string; candidatosAvaliados?: number; confidence?: number | null }
 
 const SELECT_COLS =
   'chave_endereco,endereco_completo,logradouro,numero,bairro,cidade,uf,cep,lat,lng,provider,confidence,updated_at'
+
+export const GEO_CACHE_CONFIDENCE_MINIMA_HIT_SEGURO = 0.7
 
 export function normalizarTexto(valor: string | null | undefined): string {
   return String(valor ?? '')
@@ -151,6 +153,13 @@ export function cacheRowCompativelComEndereco(row: GeoCacheRow, form: ValidarEnd
   return true
 }
 
+export function cacheRowConfidenceAceitavel(row: GeoCacheRow): boolean {
+  if (row.confidence == null) return true
+  const confidence = Number(row.confidence)
+  if (!Number.isFinite(confidence)) return true
+  return confidence >= GEO_CACHE_CONFIDENCE_MINIMA_HIT_SEGURO
+}
+
 function deduplicarRows(rows: GeoCacheRow[]): GeoCacheRow[] {
   const porChave = new Map<string, GeoCacheRow>()
   for (const row of rows) {
@@ -160,7 +169,10 @@ function deduplicarRows(rows: GeoCacheRow[]): GeoCacheRow[] {
 }
 
 function selecionarHitSeguro(rows: GeoCacheRow[], form: ValidarEnderecoRequest): GeoCacheRow | null {
-  const compativeis = deduplicarRows(rows).filter((row) => cacheRowCompativelComEndereco(row, form))
+  const compativeis = deduplicarRows(rows).filter((row) => (
+    cacheRowCompativelComEndereco(row, form) &&
+    cacheRowConfidenceAceitavel(row)
+  ))
   if (compativeis.length !== 1) return null
   return compativeis[0]
 }
@@ -200,11 +212,18 @@ export async function buscarEnderecoNoGeoCache(form: ValidarEnderecoRequest): Pr
 
   const hitSeguro = selecionarHitSeguro(candidatos, form)
   if (!hitSeguro) {
-    const totalCompativeis = deduplicarRows(candidatos).filter((row) => cacheRowCompativelComEndereco(row, form)).length
+    const compativeis = deduplicarRows(candidatos).filter((row) => cacheRowCompativelComEndereco(row, form))
+    const compativeisComConfidenceBaixa = compativeis.filter((row) => !cacheRowConfidenceAceitavel(row))
+    const maiorConfidenceBaixa = compativeisComConfidenceBaixa.reduce<number | null>((maior, row) => {
+      const confidence = Number(row.confidence)
+      if (!Number.isFinite(confidence)) return maior
+      return maior == null || confidence > maior ? confidence : maior
+    }, null)
     return {
       status: 'miss',
-      motivo: totalCompativeis > 1 ? 'cache_ambiguo' : 'sem_match_seguro',
+      motivo: compativeisComConfidenceBaixa.length > 0 ? 'confidence_baixa' : compativeis.length > 1 ? 'cache_ambiguo' : 'sem_match_seguro',
       candidatosAvaliados: candidatos.length,
+      confidence: maiorConfidenceBaixa,
     }
   }
 

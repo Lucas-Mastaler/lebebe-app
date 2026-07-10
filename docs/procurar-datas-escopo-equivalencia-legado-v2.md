@@ -34,6 +34,30 @@ Encerrar temporariamente a investigação e monitorar o uso diário. Se aparecer
 
 ---
 
+## 2026-07-10 - Regra de cache: `confidence` baixa nao e hit seguro
+
+Status: implementado no helper compartilhado `buscarEnderecoNoGeoCache`. Nao altera motor, ranking, classificacao, OSRM, Haversine, Calendar ou Sheets.
+
+### Decisao validada
+- Registro de `geo_cache` com `confidence` numerica abaixo de `0.70` nao pode ser tratado como `match_seguro`, mesmo quando os campos estruturados parecem compativeis.
+- Nesses casos o helper retorna miss controlado `confidence_baixa`, e o fluxo deve tentar provider antes de enviar coordenadas ao motor.
+- A regra fica no helper central para manter paridade entre a tela `/procurar-datas` e a Mere.
+
+### Caso que motivou a regra
+- Rua Huxley, 43, Atuba, Colombo, PR - 83408-180.
+- Registro usado pela Mere antes da correcao: `780e9672ed7dfeec7dbcb3eaa8e0b38c9f5c5643`.
+- `confidence=0.05339000762951091`.
+- Coordenadas usadas: `lat=-25.3769719`, `lng=-49.1912692`.
+- Sessao real marcou `geo_cache_estrategia=geo_cache_match_seguro` e `geocoding_provider_consultado=false`.
+
+### Validacoes
+- MCP Supabase read-only confirmou registros de `geo_cache` e metadata da sessao.
+- `npx tsc --noEmit --pretty false` passou.
+- `npx eslint` focado passou.
+- `npx vitest run src/lib/procurar-datas/endereco-cache.test.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.test.ts` passou com 42 tests passed e 6 skipped.
+
+---
+
 ## 2026-07-07 - Cascade - Bugfix: equivalencia do campo encomenda no adaptador v2->legado
 
 Status: implementado e validado manualmente. Correcao de bug inequivoco de equivalencia legado x v2.

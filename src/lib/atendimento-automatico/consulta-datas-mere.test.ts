@@ -396,6 +396,54 @@ describe('consulta-datas-mere', () => {
     expect(resultado.geoCacheSalvo).toBe(true);
   });
 
+  it('quando cache tem confidence baixa, chama provider e nao usa coordenada do cache no motor', async () => {
+    const enderecoHuxleyValidado = {
+      ...enderecoValidado,
+      lat: -25.3769719,
+      lng: -49.1912692,
+      enderecoCompleto: 'Rua Huxley, Guarani, Colombo, Parana, 83408-180, Brasil',
+      display: 'Rua Huxley, Guarani, Colombo, Parana, 83408-180, Brasil',
+      cep: '83408180',
+      address: {
+        road: 'Rua Huxley',
+        house_number: '43',
+        suburb: 'Guarani',
+        city: 'Colombo',
+        state: 'PR',
+        postcode: '83408180',
+      },
+    };
+    buscarEnderecoNoGeoCacheMock.mockResolvedValueOnce({
+      status: 'miss',
+      motivo: 'confidence_baixa',
+      candidatosAvaliados: 1,
+      confidence: 0.05339000762951091,
+    });
+    buscarEnderecoLocationIqMock.mockResolvedValueOnce({ status: 'success', resultado: enderecoHuxleyValidado, reservaUsada: false });
+
+    const resultado = await executarConsultaDatasMere({
+      grupo: grupoBase({
+        endereco_completo: 'Rua Huxley, 43, Atuba, Colombo, PR - 83408-180',
+      }),
+      dataDesejadaISO: '2026-07-20',
+      sessaoId: 'sessao-confidence-baixa',
+    });
+
+    expect(buscarEnderecoLocationIqMock).toHaveBeenCalled();
+    expect(salvarEnderecoNoGeoCacheMock).toHaveBeenCalled();
+    expect(pesquisarDatasV2Mock).toHaveBeenCalledWith(expect.objectContaining({
+      destLat: enderecoHuxleyValidado.lat,
+      destLng: enderecoHuxleyValidado.lng,
+      cep: '83408180',
+      numero: '43',
+      cidade: 'Colombo',
+      uf: 'PR',
+    }));
+    expect(resultado.estado).toBe('datas_encontradas');
+    expect(resultado.geoCacheHit).toBe(false);
+    expect(resultado.geocodingProvider).toBe('locationiq');
+  });
+
   it('quando cache nao encontra e providers falham, retorna motivo controlado sem chamar motor', async () => {
     const resultado = await executarConsultaDatasMere({
       grupo: grupoBase(),

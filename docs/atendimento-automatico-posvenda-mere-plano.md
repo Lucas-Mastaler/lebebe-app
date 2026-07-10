@@ -1005,3 +1005,65 @@ Se o cliente aceitar, a acao passa para `postergar` e as opcoes posteriores ja f
 ### Pendencias e riscos
 - Validar em producao o caso real com entrega atual `13/08/2026` e pedido de adiantar.
 - Suite completa nao foi rodada nesta etapa; havia falhas conhecidas fora do escopo em testes de agenda/diagnostico v2.
+
+---
+
+## Fase: Rejeicao de geo_cache com confidence baixa na Mere
+
+### Problema real
+No teste real do pedido 17854, a Mere aceitou como `geo_cache_match_seguro` um registro de `geo_cache` para:
+- Rua Huxley, 43, Atuba, Colombo, PR - 83408-180
+- `confidence=0.05339000762951091`
+- `lat=-25.3769719`
+- `lng=-49.1912692`
+
+O filtro de datas por acao estava correto para `adiantar`, mas o payload enviado ao motor podia estar ancorado em cache de baixa confianca.
+
+### Auditoria Supabase
+Consulta read-only ao `public.geo_cache` encontrou dois candidatos relevantes:
+- `780e9672ed7dfeec7dbcb3eaa8e0b38c9f5c5643`, atualizado em `2026-07-10`, bairro salvo `Atuba`, endereco do provider com `Guarani`, provider `locationiq`, `confidence=0.05339000762951091`.
+- `c0d27026f43d49f8613e91853b3ed00d891bdf6c`, atualizado em `2026-04-18`, bairro `Guarani`, provider `locationiq`, `confidence=1`.
+
+A sessao real `b69898c8-713e-41e9-a135-e155547fa70c` usou o registro `780e...` com `lat=-25.3769719`, `lng=-49.1912692`, `geo_cache_estrategia=geo_cache_match_seguro`, `geocoding_provider_consultado=false` e `geo_cache_salvo=false`.
+
+### Causa raiz
+O helper compartilhado `buscarEnderecoNoGeoCache` aceitava cache seguro somente por compatibilidade de campos, sem threshold de `confidence`.
+
+Como `salvarEnderecoNoGeoCache` grava os campos estruturados do formulario para lookup futuro, um resultado de provider com `confidence` muito baixa podia ficar parecendo compativel com o endereco informado e ser reutilizado sem nova consulta ao provider.
+
+### Correcao aplicada
+O helper central `src/lib/procurar-datas/endereco-cache.ts` passou a rejeitar como hit seguro qualquer registro com `confidence` numerica abaixo de `0.70`.
+
+Regras:
+- `confidence >= 0.70`: pode ser usado como cache seguro se os campos tambem baterem.
+- `confidence < 0.70`: retorna miss controlado `confidence_baixa`.
+- `confidence` ausente/nula continua dependendo dos campos fortes, para nao quebrar caches de providers que nao retornam score numerico.
+
+Como a Mere e `/procurar-datas` usam o mesmo helper, ambos passam a rejeitar o mesmo cache ruim pelos mesmos criterios.
+
+### Logs adicionados na Mere
+- cache usado com lat/lng, confidence, provider e endereco do cache;
+- cache rejeitado por `confidence_baixa`;
+- tentativa de provider por cache insuficiente;
+- cache salvo por provider com chave e confidence;
+- payload resumido enviado ao motor, incluindo `destLat`, `destLng`, endereco, tempo, origem das coordenadas, provider e status de cache.
+
+### Nao alterado
+- Motor v2
+- Ranking/classificacao
+- OSRM/Haversine
+- Delta de insercao
+- Calendar
+- Sheets
+- Regra de negocio de candidatos
+
+### Validacoes
+- MCP Supabase read-only confirmou os registros de `geo_cache` e a metadata da sessao real.
+- `npx tsc --noEmit --pretty false` -> passou.
+- `npx eslint src/lib/procurar-datas/endereco-cache.ts src/lib/procurar-datas/endereco-cache.test.ts src/lib/atendimento-automatico/consulta-datas-mere.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.ts src/lib/atendimento-automatico/webhook-processor.test.ts` -> passou.
+- `npx vitest run src/lib/procurar-datas/endereco-cache.test.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.test.ts` -> 3 arquivos passaram, 42 tests passed, 6 skipped legados.
+
+### Pendencias e riscos
+- Validar em producao o mesmo caso Rua Huxley, 43 depois do deploy.
+- O provider ainda pode retornar a mesma coordenada; a diferenca esperada e que o cache de baixa confianca nao sera aceito silenciosamente.
+- Recomenda-se manter producao restrita com `ATENDIMENTO_POSVENDA_ALLOWED_PHONES=554192350811` ate validar o caso real.

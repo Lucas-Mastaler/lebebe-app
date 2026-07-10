@@ -259,3 +259,137 @@ describe('processarWebhookPosVenda - relocalizacao de pedido negado', () => {
     });
   });
 });
+
+describe('processarWebhookPosVenda - bloqueio CLIENTE RETIRA', () => {
+  it('transfere para humano quando EQUIPE AGENDA tem CLIENTE RETIRA e cliente escolhe adiantar', async () => {
+    const grupoRetira = grupoBase();
+    grupoRetira.equipe_agenda = '0-  CLIENTE RETIRA DEPOSITO';
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_escolha_acao',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoRetira],
+        pedido_confirmado: true,
+      },
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('1', 'msg-retira-adiantar'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('transferido_humano');
+    expect(updateSessao?.data.status).toBe('transferido_humano');
+    expect(updateSessao?.data.metadata).toMatchObject({
+      acao_alteracao: 'adiantar',
+      motivo_bloqueio_acao: 'cliente_retira_alteracao',
+      bloqueio_cliente_retira: true,
+      precisa_humano_por_regra: true,
+      resposta_sugerida_tipo: 'bloqueio_cliente_retira_alteracao',
+    });
+  });
+
+  it('transfere para humano quando EQUIPE AGENDA tem CLIENTE RETIRA e cliente escolhe postergar', async () => {
+    const grupoRetira = grupoBase();
+    grupoRetira.equipe_agenda = '7.3- CLIENTE RETIRA LOJA/SAI DO C.D';
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_escolha_acao',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoRetira],
+        pedido_confirmado: true,
+      },
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('2', 'msg-retira-postergar'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('transferido_humano');
+    expect(updateSessao?.data.metadata).toMatchObject({
+      acao_alteracao: 'postergar',
+      motivo_bloqueio_acao: 'cliente_retira_alteracao',
+      bloqueio_cliente_retira: true,
+    });
+  });
+
+  it('continua fluxo normal quando EQUIPE AGENDA nao tem CLIENTE RETIRA', async () => {
+    const grupoNormal = grupoBase();
+    grupoNormal.equipe_agenda = '4- EQUIPE 01';
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_escolha_acao',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoNormal],
+        pedido_confirmado: true,
+      },
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('2', 'msg-normal-postergar'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('aguardando_confirmacao_endereco');
+    expect(updateSessao?.data.metadata).toMatchObject({
+      acao_alteracao: 'postergar',
+      endereco_confirmado: false,
+    });
+  });
+
+  it('bloqueia grupo todo se qualquer evento tem CLIENTE RETIRA', async () => {
+    const grupoMisto = grupoBase();
+    grupoMisto.equipe_agenda = '4- EQUIPE 01';
+    grupoMisto.eventos = [
+      { pedido_venda: '12345', evento_id: 'evt-1', calendar_id: 'cal-1', tempo_servico: '00:40', equipe_agenda: '4- EQUIPE 01', data_agenda_google: '17/07/2026', endereco_cliente: 'Rua Teste' },
+      { pedido_venda: '12346', evento_id: 'evt-2', calendar_id: 'cal-2', tempo_servico: '00:30', equipe_agenda: '0-  CLIENTE RETIRA DEPOSITO', data_agenda_google: '17/07/2026', endereco_cliente: 'Rua Teste' },
+    ];
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_escolha_acao',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoMisto],
+        pedido_confirmado: true,
+      },
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('1', 'msg-misto-adiantar'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('transferido_humano');
+    expect(updateSessao?.data.metadata).toMatchObject({
+      motivo_bloqueio_acao: 'cliente_retira_alteracao',
+      bloqueio_cliente_retira: true,
+    });
+  });
+
+  it('bloqueia no shortcut path (1 grupo, cliente envia 1 durante confirmacao)', async () => {
+    const grupoRetira = grupoBase();
+    grupoRetira.equipe_agenda = '0-  CLIENTE RETIRA DEPOSITO';
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'alterar_entrega',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoRetira],
+      },
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('1', 'msg-shortcut-retira'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('transferido_humano');
+    expect(updateSessao?.data.status).toBe('transferido_humano');
+    expect(updateSessao?.data.metadata).toMatchObject({
+      acao_alteracao: 'adiantar',
+      motivo_bloqueio_acao: 'cliente_retira_alteracao',
+      bloqueio_cliente_retira: true,
+      pedido_confirmado: true,
+    });
+  });
+});

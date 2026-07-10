@@ -180,3 +180,14 @@ export function calcularTentativasInvalidas(
   if (ultimoEstado !== estadoAtual) return 1; // primeiro erro neste estado
   return (contadorAtual ?? 0) + 1;
 }
+
+// ---------------------------------------------------------------------------
+// Detecção de CLIENTE RETIRA na coluna EQUIPE AGENDA (helper puro, sem I/O)
+// ---------------------------------------------------------------------------
+
+export function ehClienteRetiraEquipeAgenda(valor: unknown): boolean {
+  if (valor === null || valor === undefined) return false;
+  const n = normalizar(String(valor));
+  if (!n) return false;
+  return n.includes('cliente retira');
+}

@@ -47,7 +47,8 @@ export type TipoRespostaSugerida =
   | 'reagendamento_cancelado'
   | 'reagendamento_dry_run'
   | 'reagendamento_confirmado'
-  | 'transferido_humano_erro_reagendamento';
+  | 'transferido_humano_erro_reagendamento'
+  | 'bloqueio_cliente_retira_alteracao';
 
 export type RespostaSugerida = {
   texto: string;
@@ -214,6 +215,13 @@ export function respostaBloqueioPrazoMenor7Antecipacao(): RespostaSugerida {
   return {
     texto: 'Como sua entrega já está próxima da data prevista, não conseguimos antecipar automaticamente neste momento.\n\nSe precisar, posso encaminhar para nossa equipe verificar para você.',
     tipo: 'bloqueio_prazo_menor_7_antecipacao',
+  };
+}
+
+export function respostaBloqueioClienteRetiraAlteracao(): RespostaSugerida {
+  return {
+    texto: 'Como seu item é para retirada, vou chamar nossa equipe para atender seu caso. Aguarde, por favor.',
+    tipo: 'bloqueio_cliente_retira_alteracao',
   };
 }
 

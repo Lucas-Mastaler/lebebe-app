@@ -8,6 +8,7 @@ import {
   respostaBloqueioPagamentoPendenteAntecipacao,
   respostaBloqueioPrazoCriticoD2Postergacao,
   respostaBloqueioPrazoMenor7Antecipacao,
+  respostaBloqueioClienteRetiraAlteracao,
   respostaBloqueioProdutoPendenteAntecipacao,
   respostaConfirmarEnderecoAlteracao,
   respostaConfirmarEntregaUnica,
@@ -48,7 +49,7 @@ import {
   type RespostaSugerida,
 } from './respostas';
 import { interpretarDataDesejada, validarDataDesejadaParaAcao } from './interpretar-data';
-import { calcularTentativasInvalidas, interpretarAcaoAlteracao, interpretarConfirmacao } from './interpretar-intencao';
+import { calcularTentativasInvalidas, ehClienteRetiraEquipeAgenda, interpretarAcaoAlteracao, interpretarConfirmacao } from './interpretar-intencao';
 import { chaveRespostaAutomatica, processarEnvioAutomatico } from './auto-reply';
 import { tentarIAFallback } from './ia-fallback';
 import {
@@ -575,6 +576,13 @@ type ResultadoBloqueioAcao =
   | { bloqueado: true; motivo: string; resposta: RespostaSugerida };
 
 function validarBloqueioAcao(acao: 'adiantar' | 'postergar', grupo: GrupoAgendamento | null): ResultadoBloqueioAcao {
+  // Bloqueio CLIENTE RETIRA tem prioridade sobre todos os outros bloqueios
+  const equipeAgenda = grupo?.equipe_agenda ?? '';
+  const eventosComClienteRetira = (grupo?.eventos ?? []).some((ev) => ehClienteRetiraEquipeAgenda(ev.equipe_agenda));
+  if (ehClienteRetiraEquipeAgenda(equipeAgenda) || eventosComClienteRetira) {
+    return { bloqueado: true, motivo: 'cliente_retira_alteracao', resposta: respostaBloqueioClienteRetiraAlteracao() };
+  }
+
   const tempoRaw = grupo?.tempo_para_entrega ?? '';
   const tempoNum = normalizarNumeroEntrega(tempoRaw);
   const tempoEntrega = tempoNum !== null ? tempoNum : 999;
@@ -1350,6 +1358,63 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           (textoNormalizado === '1' || textoNormalizado === '2')
         ) {
           const acao = textoNormalizado === '1' ? 'adiantar' : 'postergar';
+
+          // Bloqueio CLIENTE RETIRA: se grupo tem CLIENTE RETIRA, transferir humano
+          const grupoShortcut = obterGrupoSelecionado(metadataAtual);
+          const bloqueioShortcut = validarBloqueioAcao(acao, grupoShortcut);
+          if (bloqueioShortcut.bloqueado) {
+            const novoMetadataBloqueio = await construirMetadataComResposta({
+              sessaoId,
+              metadataAtual: {
+                ...(metadataAtual ?? {}),
+                acao_alteracao: acao,
+                pedido_confirmado: true,
+                precisa_humano_por_regra: true,
+                motivo_bloqueio_acao: bloqueioShortcut.motivo,
+                bloqueio_cliente_retira: bloqueioShortcut.motivo === 'cliente_retira_alteracao',
+                ...(bloqueioShortcut.motivo === 'cliente_retira_alteracao' && grupoShortcut ? { equipe_agenda_original: grupoShortcut.equipe_agenda } : {}),
+              },
+              resposta: bloqueioShortcut.resposta,
+              estado: 'transferido_humano',
+              contactId,
+              ticketId,
+              digisacMessageId: messageId,
+              telefoneAutorizado: telefoneAutorizadoFlag,
+            });
+
+            await supabase.from('atendimento_automatico_sessoes').update({
+              estado: 'transferido_humano',
+              status: 'transferido_humano',
+              metadata: novoMetadataBloqueio,
+              ultima_mensagem_cliente: text.substring(0, 200),
+              ultima_mensagem_em: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }).eq('id', sessaoId);
+
+            await supabase.from('atendimento_automatico_mensagens').insert({
+              sessao_id: sessaoId,
+              digisac_message_id: messageId,
+              digisac_ticket_id: ticketId,
+              digisac_contact_id: contactId ?? null,
+              origem: 'cliente',
+              texto: text,
+              tipo_mensagem: msg.type as string | undefined,
+              timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+              status: 'processada',
+              metadata: { serviceId, departmentId, acao_alteracao: acao, bloqueio: bloqueioShortcut.motivo },
+            });
+
+            await supabase.from('atendimento_automatico_eventos').insert({
+              sessao_id: sessaoId,
+              tipo: 'bloqueio_acao',
+              descricao: `Acao ${acao} bloqueada: ${bloqueioShortcut.motivo}`,
+              metadata: { acao, motivo: bloqueioShortcut.motivo },
+            });
+
+            console.log(`[posvenda-webhook] acao alteracao bloqueada motivo=${bloqueioShortcut.motivo} sessaoId=${sessaoId} acao=${acao}`);
+            return { ok: true, saved: true, origem: 'cliente' };
+          }
+
           const novoMetadata = await construirMetadataComResposta({
             sessaoId,
             metadataAtual: { ...(metadataAtual ?? {}), acao_alteracao: acao, pedido_confirmado: true },
@@ -1637,6 +1702,8 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
                 acao_alteracao: acao,
                 precisa_humano_por_regra: true,
                 motivo_bloqueio_acao: bloqueio.motivo,
+                bloqueio_cliente_retira: bloqueio.motivo === 'cliente_retira_alteracao',
+                ...(bloqueio.motivo === 'cliente_retira_alteracao' && grupo ? { equipe_agenda_original: grupo.equipe_agenda } : {}),
               },
               resposta: bloqueio.resposta,
               estado: 'transferido_humano',

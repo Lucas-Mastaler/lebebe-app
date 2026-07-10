@@ -717,3 +717,65 @@ Quando o fluxo deterministico nao consegue interpretar a mensagem do cliente (re
 - Pendencias: compartilhar planilha original com a service account como Editor; validar em ambiente real com `ATENDIMENTO_POSVENDA_CALENDAR_WRITE_ENABLED=true`
 - Riscos conhecidos: se a service account nao tiver permissao de Editor na planilha original, a escrita falhara com erro controlado `sheets_write_permission_denied` (Calendar ja foi alterado e nao sera desfeito)
 
+---
+
+## Fase: Bloqueio CLIENTE RETIRA (alteração de entrega)
+
+### Objetivo
+Bloquear determinísticamente o fluxo de alteração de entrega quando o grupo/pedido tem `EQUIPE AGENDA` contendo `CLIENTE RETIRA`. O cliente deve ser transferido para humano sem consultar datas, pedir endereço, chamar IA, ou alterar Calendar/Sheets.
+
+### Regra
+- Coluna usada: `EQUIPE AGENDA`
+- Deteccao: helper `ehClienteRetiraEquipeAgenda(valor)` — normaliza (remove acentos, uppercase, colapsa espacos) e verifica se contem `CLIENTE RETIRA`
+- Se grupo OU qualquer evento do grupo tiver `CLIENTE RETIRA`, bloquear o grupo todo
+- Bloqueio tem prioridade sobre todos os outros bloqueios (produto pendente, pagamento pendente, prazo) e sobre IA fallback
+- Aplicado depois que cliente escolhe acao (adiantar/postergar) e antes de avancar para confirmacao de endereco
+
+### Mensagem ao cliente
+`Como seu item e para retirada, vou chamar nossa equipe para atender seu caso. Aguarde, por favor.`
+
+### Metadata registrada
+- `bloqueio_cliente_retira = true`
+- `motivo_bloqueio_acao = "cliente_retira_alteracao"`
+- `equipe_agenda_original` (valor original do campo)
+- `acao_alteracao` = `adiantar` ou `postergar`
+- `precisa_humano_por_regra = true`
+- `resposta_sugerida_tipo = "bloqueio_cliente_retira_alteracao"`
+
+### Estado ao bloquear
+- `estado = transferido_humano`
+- `status = transferido_humano`
+
+### Log seguro
+`[posvenda-webhook] acao alteracao bloqueada motivo=cliente_retira_alteracao sessaoId=... acao=...`
+
+### Arquivos criados
+- `src/lib/atendimento-automatico/cliente-retira.test.ts` — 10 testes unitarios do helper
+
+### Arquivos alterados
+- `src/lib/atendimento-automatico/interpretar-intencao.ts` — adicionado helper `ehClienteRetiraEquipeAgenda`
+- `src/lib/atendimento-automatico/respostas.ts` — adicionado tipo `bloqueio_cliente_retira_alteracao` e funcao `respostaBloqueioClienteRetiraAlteracao`
+- `src/lib/atendimento-automatico/webhook-processor.ts` — bloqueio no inicio de `validarBloqueioAcao` + bloqueio no shortcut path (1 grupo, cliente envia 1/2 durante confirmacao) + metadata `bloqueio_cliente_retira` e `equipe_agenda_original`
+- `src/lib/atendimento-automatico/webhook-processor.test.ts` — 5 testes de integracao
+
+### Pontos de aplicacao
+1. `aguardando_escolha_acao` — apos action ser determinada (adiantar/postergar), antes de ir para `aguardando_confirmacao_endereco`
+2. Shortcut path em `aguardando_confirmacao_pedido` — quando 1 grupo e cliente envia 1/2 (combina confirmacao + escolha de acao)
+
+### Relacao com IA fallback
+- O bloqueio e deterministico e anterior a qualquer chamada de IA
+- A IA fallback nao e chamada para grupos CLIENTE RETIRA porque o bloqueio ocorre antes
+
+### Validacoes
+- TypeScript: 0 erros
+- ESLint: 0 erros
+- Testes: 20 passed (10 unitarios + 5 integracao + 5 relocalizacao existentes)
+
+### Nao alterado
+- Motor /procurar-datas
+- OSRM/Haversine
+- Ranking/classificacao
+- Calendar
+- Sheets
+- Regras de agenda
+

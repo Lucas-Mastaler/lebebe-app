@@ -1,3 +1,46 @@
+## 2026-07-10 - Cascade - Bloqueio CLIENTE RETIRA no fluxo de alteração de entrega (Mère)
+
+**Resumo:** Adicionado bloqueio determinístico no webhook-processor do atendimento automático. Quando o cliente escolhe adiantar ou postergar e o grupo/pedido tem `EQUIPE AGENDA` contendo `CLIENTE RETIRA`, a Mère transfere para humano imediatamente sem consultar datas, pedir endereço, chamar IA, ou alterar Calendar/Sheets. O bloqueio tem prioridade sobre todos os outros bloqueios existentes (produto pendente, pagamento pendente, prazo) e sobre a IA fallback.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/webhook-processor.ts (validarBloqueioAcao, aguardando_escolha_acao, shortcut path)
+- src/lib/atendimento-automatico/interpretar-intencao.ts (normalizar, calcularTentativasInvalidas)
+- src/lib/atendimento-automatico/respostas.ts (TipoRespostaSugerida, funções de bloqueio existentes)
+- src/lib/google/sheets-service-account.ts (GrupoAgendamento, EventoGrupo, campo equipe_agenda)
+- src/lib/atendimento-automatico/webhook-processor.test.ts (estrutura de testes existente)
+
+**Arquivos criados:**
+- src/lib/atendimento-automatico/cliente-retira.test.ts (10 testes unitários do helper ehClienteRetiraEquipeAgenda)
+
+**Arquivos alterados:**
+- src/lib/atendimento-automatico/interpretar-intencao.ts (adicionado helper ehClienteRetiraEquipeAgenda)
+- src/lib/atendimento-automatico/respostas.ts (adicionado tipo 'bloqueio_cliente_retira_alteracao' e função respostaBloqueioClienteRetiraAlteracao)
+- src/lib/atendimento-automatico/webhook-processor.ts (import + bloqueio CLIENTE RETIRA no início de validarBloqueioAcao + bloqueio no shortcut path + metadata bloqueio_cliente_retira e equipe_agenda_original)
+- src/lib/atendimento-automatico/webhook-processor.test.ts (5 testes de integração do bloqueio)
+
+**Validações realizadas:**
+- TypeScript: `npx tsc --noEmit --pretty` — 0 erros
+- ESLint: 0 erros nos arquivos alterados
+- Testes: 20 passed (10 unitários + 5 integração webhook + 5 relocalização existentes)
+- Não houve validação no MCP Supabase (não houve alteração de banco)
+
+**Comandos rodados e resultados:**
+- `npx tsc --noEmit --pretty` → exit 0
+- `npx eslint` nos 5 arquivos alterados → exit 0
+- `npx vitest run cliente-retira.test.ts webhook-processor.test.ts` → 20 passed
+
+**Pendências:**
+- Nenhuma
+
+**Riscos conhecidos:**
+- O bloqueio é determinístico e tem prioridade sobre IA fallback e outros bloqueios. Se o grupo tiver CLIENTE RETIRA em qualquer evento, o grupo todo é bloqueado.
+- Não altera motor /procurar-datas, OSRM, Haversine, ranking, Calendar, Sheets ou regras de agenda.
+
+**Próximo passo recomendado:**
+- Validar em ambiente real com pedidos que tenham `EQUIPE AGENDA` contendo `CLIENTE RETIRA`.
+
+---
+
 ## 2026-07-10 - Cascade - Conclusão temporária da investigação da auditoria do motor /procurar-datas v2
 
 **Contexto:** Após investigação e correções aplicadas na auditoria do motor `/procurar-datas` v2, registra-se a conclusão temporária operacional. O motor não deve ser alterado agora. A auditoria está mais confiável para diferenciar resultado salvo, snapshot técnico da produção, recálculo atual e mudança posterior de agenda/disponibilidade.

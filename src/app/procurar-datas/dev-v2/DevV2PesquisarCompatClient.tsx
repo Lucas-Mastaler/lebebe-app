@@ -2,11 +2,9 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { CENARIOS_DEV_V2, K13_FIXTURE, K14_FIXTURE, K15_FIXTURE } from '@/lib/procurar-datas/v2/dev-fixtures'
+import { K13_FIXTURE } from '@/lib/procurar-datas/v2/dev-fixtures'
 import type { PesquisarDatasRequest } from '@/lib/procurar-datas/contratos'
 import type { ProgressoPesquisa, CandidatoFinal } from '@/lib/procurar-datas/contratos'
-import DevV2DiagMajorHardy from './DevV2DiagMajorHardy'
-import DevV2DiagHenriqueCorreia from './DevV2DiagHenriqueCorreia'
 
 const POST_URL = '/api/procurar-datas/v2/pesquisar-compat-async'
 const GET_URL = '/api/procurar-datas/v2/progresso-compat'
@@ -258,11 +256,6 @@ export default function DevV2PesquisarCompatClient() {
     }
   }
 
-  function handleCenario(id: 'K13' | 'K14' | 'K15') {
-    const payload = id === 'K13' ? K13_FIXTURE : id === 'K14' ? K14_FIXTURE : K15_FIXTURE
-    executar(id, payload)
-  }
-
   function handleCustom() {
     setCustomError('')
     if (!customPayload.trim()) {
@@ -335,19 +328,6 @@ type CandidatoDevV2 = CandidatoFinal & {
           o Apps Script, o motor v2, o orquestrador, o ranking/classificação/recorte, o banco, nem as rotas
           legadas. Ela consome apenas as rotas v2 paralelas já criadas para validação manual.
         </p>
-      </div>
-
-      <div className="flex flex-wrap gap-3">
-        {CENARIOS_DEV_V2.map((c) => (
-          <Button
-            key={c.id}
-            onClick={() => handleCenario(c.id)}
-            disabled={loading}
-            variant={c.id === 'K13' ? 'default' : c.id === 'K14' ? 'secondary' : 'outline'}
-          >
-            {c.nome}
-          </Button>
-        ))}
       </div>
 
       <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-3">
@@ -783,9 +763,6 @@ type CandidatoDevV2 = CandidatoFinal & {
           )}
         </div>
       )}
-
-      <DevV2DiagMajorHardy />
-      <DevV2DiagHenriqueCorreia />
     </div>
   )
 }

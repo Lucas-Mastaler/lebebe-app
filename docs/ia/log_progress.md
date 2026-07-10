@@ -19809,3 +19809,51 @@ Abrir `/procurar-datas/dev-v2` com sessao superadmin, auditar o run informado e 
 
 **Proximo passo recomendado:**
 - Fazer deploy/rebuild e testar o caso real completo: cliente nega entrega, envia novo CPF/CNPJ localizado, recebe nova confirmacao; testar tambem novo CPF/CNPJ nao localizado e duas mensagens sem documento.
+## 2026-07-10 - Codex - Coordenadas da Mère via Supabase geo_cache robusto
+
+**Resumo:** Corrigida a resolução de coordenadas da consulta de datas da Mère para usar o Supabase `geo_cache` com estratégias robustas antes de transferir para humano. A correção de escopo foi aplicada: a planilha não é fonte de LAT/LNG. O fluxo agora tenta CEP+número, endereço completo normalizado, logradouro+número+cidade+UF e, por último, CEP apenas quando houver candidato único seguro. Ambiguidade não é escolhida aleatoriamente; lat/lng inválidos são rejeitados. Não houve geocoding externo.
+
+**Arquivos lidos:**
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts`
+- `src/lib/atendimento-automatico/webhook-processor.ts`
+- `src/lib/google/sheets-service-account.ts`
+- `src/lib/supabase/service.ts`
+- `src/lib/procurar-datas/endereco-cache.ts`
+- `src/lib/procurar-datas/motor/resolver-coordenadas-agenda-producao.ts`
+- `docs/atendimento-automatico-posvenda-mere-plano.md`
+- `docs/ia/log_progress.md`
+- `.devin/rules/gerais.md`
+- `.devin/rules/supabase.md`
+- anexos do pedido em `.codex/attachments`
+
+**Arquivos alterados:**
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts`
+- `src/lib/atendimento-automatico/consulta-datas-mere.test.ts`
+- `src/lib/atendimento-automatico/webhook-processor.ts`
+- `docs/atendimento-automatico-posvenda-mere-plano.md`
+- `docs/ia/log_progress.md`
+
+**Validações realizadas:**
+- MCP Supabase: tabela `public.geo_cache` confirmada com colunas `chave_endereco`, `endereco_completo`, `logradouro`, `numero`, `bairro`, `cidade`, `uf`, `cep`, `lat`, `lng`, `provider`, `confidence`, `updated_at`.
+- Confirmado no código que `sheets-service-account.ts` mapeia `endereco_cliente`, não LAT/LNG; isso foi mantido.
+- Confirmado que o payload para o motor continua usando `destLat` e `destLng` numéricos vindos de `CoordenadasMere`.
+- Confirmado que `webhook-processor.ts` transfere humano em `erro_coordenadas` com `motivo_transferencia_humano: coordenadas_nao_resolvidas`.
+
+**Comandos rodados e resultados:**
+- `npx eslint src/lib/atendimento-automatico/consulta-datas-mere.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.ts --quiet` -> exit 0.
+- `npx tsc --noEmit --pretty false` -> exit 0.
+- `npx vitest run src/lib/atendimento-automatico/consulta-datas-mere.test.ts` no sandbox -> falhou com `spawn EPERM` ao carregar config.
+- `npx vitest run src/lib/atendimento-automatico/consulta-datas-mere.test.ts` fora do sandbox apos aprovacao -> 1 arquivo, 9 testes passando.
+- `npx vitest run src/lib/atendimento-automatico/webhook-processor.test.ts` fora do sandbox apos aprovacao -> 1 arquivo, 17 testes passando.
+
+**Pendências:**
+- Validar em produção o mesmo caso real que antes gerou `geo_cache_miss_cep`.
+
+**Riscos conhecidos:**
+- Se o `geo_cache` tiver múltiplos candidatos compatíveis no fallback por CEP, o fluxo agora retorna `geo_cache_ambiguo` e transfere humano em vez de escolher por score. É conservador, mas pode exigir saneamento do cache.
+- Se o endereço completo da planilha vier em formato muito diferente do cache, o fluxo pode continuar não resolvendo sem geocoding externo, por decisão de escopo.
+
+**Próximo passo recomendado:**
+- Reexecutar o atendimento real com o contato fora da allowlist anterior e verificar logs `geo_cache hit origem=... estrategia=...` ou, se falhar, o novo motivo controlado (`geo_cache_ambiguo`, `geo_cache_lat_lng_invalidos` ou `geo_cache_nao_resolvido`).
+
+---

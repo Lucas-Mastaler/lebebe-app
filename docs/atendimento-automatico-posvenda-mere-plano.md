@@ -779,3 +779,113 @@ Bloquear determinísticamente o fluxo de alteração de entrega quando o grupo/p
 - Sheets
 - Regras de agenda
 
+---
+
+## Fase: Allowlist wildcard para liberar todos os telefones
+
+### Objetivo
+Implementar suporte a valor especial `*` na env `ATENDIMENTO_POSVENDA_ALLOWED_PHONES` para liberar todos os telefones em produção, mantendo trava de segurança quando env ausente ou vazia.
+
+### Regra
+- Env ausente ou vazia: bloqueia fluxo automático por segurança (comportamento atual)
+- Env com `*`: libera todos os telefones sem exigir match na lista
+- Env com lista de telefones: libera apenas números normalizados presentes na lista (comportamento atual)
+
+### Implementação
+- Função `telefoneAutorizado` em `webhook-processor.ts` (linha 375-393)
+- Check de wildcard `*` no início da função, antes de parsear lista
+- Log específico quando wildcard ativo: `allowlist wildcard ativa, telefone autorizado`
+
+### Logs seguros
+- `allowlist wildcard ativa, telefone autorizado` — quando env é `*`
+- `allowlist vazia, fluxo automatico desativado por seguranca` — quando env ausente ou vazia
+- `telefone nao autorizado na allowlist, ignorando` — quando telefone não está na lista
+
+### Arquivos alterados
+- `src/lib/atendimento-automatico/webhook-processor.ts` — adicionado check de wildcard `*` em `telefoneAutorizado`
+- `src/lib/atendimento-automatico/webhook-processor.test.ts` — 7 testes de integração
+
+### Testes rodados
+1. Env ausente → bloqueia por segurança
+2. Env vazia → bloqueia por segurança
+3. Env `*` → autoriza qualquer telefone
+4. Env com lista → autoriza apenas telefones da lista
+5. Env com lista e telefone fora → bloqueia
+6. Env com lista e espaços → normaliza corretamente
+7. Env ` * ` (wildcard com espaços) → libera todos
+
+### Validacoes
+- TypeScript: 0 erros
+- ESLint: 0 erros
+- Testes: 17 passed (5 relocalização + 5 CLIENTE RETIRA + 7 allowlist wildcard)
+
+### Nao alterado
+- Calendar
+- Sheets
+- IA fallback
+- Motor /procurar-datas
+- Estados do fluxo
+- Mensagens de negócio
+
+### Pendencias
+- Validar em ambiente real com `ATENDIMENTO_POSVENDA_ALLOWED_PHONES=*` configurado
+
+### Riscos conhecidos
+- Wildcard `*` libera todos os telefones. Deve ser usado com cuidado em produção.
+
+---
+
+## Fase: Coordenadas da consulta de datas via Supabase geo_cache
+
+### Objetivo
+Corrigir a resolução de coordenadas usada pela Mère antes da consulta de datas. A fonte correta é o Supabase `geo_cache`, não LAT/LNG da planilha.
+
+### Problema observado
+Teste real com allowlist wildcard avançou até a consulta de datas, mas falhou com:
+- `geo_cache_miss_cep`
+- `coordenadas nao resolvidas`
+
+Diagnóstico no código: `consulta-datas-mere.ts` tentava `geo_cache` de forma restrita, basicamente por CEP e CEP+número, e podia encerrar sem tentar match por endereço estruturado.
+
+### Nova ordem de resolução
+1. `geo_cache_cep_numero`: CEP normalizado + número, com cidade/UF quando disponíveis.
+2. `geo_cache_endereco_completo`: endereço completo normalizado.
+3. `geo_cache_logradouro_numero`: logradouro + número + cidade + UF.
+4. `geo_cache_cep_unico`: CEP apenas, somente se houver candidato único seguro.
+
+### Regras de segurança
+- Não usa LAT/LNG da planilha.
+- Não chama geocoding externo.
+- Não escolhe aleatoriamente quando houver múltiplos candidatos.
+- Retorna `geo_cache_ambiguo` quando o cache não permite escolha segura.
+- Valida `lat/lng` como números finitos, dentro de faixa, rejeitando `0,0`.
+- Se não resolver, não chama o motor e transfere para humano com `coordenadas_nao_resolvidas`.
+
+### Logs e metadata
+- Log de hit inclui `origem`, `estrategia`, CEP e confidence.
+- Metadata adicionada: `coordenadas_resolvidas`, `coordenadas_origem`, `coordenadas_lat`, `coordenadas_lng`, `coordenadas_erro_codigo`, `geo_cache_consultado`, `geo_cache_estrategia`.
+- Campos antigos de metadata foram preservados: `geo_cache_status`, `geo_cache_id`, `geo_cache_provider`, `geo_cache_confidence`, `latitude`, `longitude`, `cep_resolvido`, `numero_resolvido`.
+
+### Arquivos alterados
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts`
+- `src/lib/atendimento-automatico/consulta-datas-mere.test.ts`
+- `src/lib/atendimento-automatico/webhook-processor.ts`
+
+### Validacoes
+- MCP Supabase: confirmada tabela `public.geo_cache` com colunas esperadas (`chave_endereco`, `endereco_completo`, `logradouro`, `numero`, `bairro`, `cidade`, `uf`, `cep`, `lat`, `lng`, `provider`, `confidence`, `updated_at`).
+- `npx tsc --noEmit --pretty false` -> 0 erros.
+- `npx eslint src/lib/atendimento-automatico/consulta-datas-mere.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.ts --quiet` -> 0 erros.
+- `npx vitest run src/lib/atendimento-automatico/consulta-datas-mere.test.ts` -> 9 passed.
+- `npx vitest run src/lib/atendimento-automatico/webhook-processor.test.ts` -> 17 passed.
+
+### Nao alterado
+- Motor `/procurar-datas`
+- OSRM/Haversine
+- Ranking/classificação
+- Calendar
+- Sheets
+- Geocoding externo
+
+### Pendencias
+- Validar em produção o caso real que antes retornou `geo_cache_miss_cep`.
+

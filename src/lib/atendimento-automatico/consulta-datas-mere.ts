@@ -12,6 +12,8 @@ export interface CoordenadasMere {
   lat: number;
   lng: number;
   fonte: 'geo_cache';
+  origem: 'geo_cache_cep_numero' | 'geo_cache_endereco_completo' | 'geo_cache_logradouro_numero' | 'geo_cache_cep_unico';
+  estrategia: 'cep_numero' | 'endereco_completo' | 'logradouro_numero' | 'cep';
   confidence: number | null;
   provider: string | null;
   geoCacheId: string | null;
@@ -126,61 +128,144 @@ type GeoCacheRow = {
   lat: string | number;
   lng: string | number;
   endereco_completo: string | null;
+  logradouro: string | null;
   cep: string | null;
   numero: string | null;
+  bairro: string | null;
   cidade: string | null;
   uf: string | null;
   confidence: string | number | null;
   provider: string | null;
+  updated_at: string | null;
 };
 
 function normalizarCepSimples(v: string | null | undefined): string {
   return String(v ?? '').replace(/\D/g, '');
 }
 
-/**
- * Seleciona melhor candidato do geo_cache.
- * Prioridade: maior confidence → cidade/UF compatível → numero compatível.
- */
-function selecionarMelhorCandidato(
-  rows: GeoCacheRow[],
-  decomposto: EnderecoDecomposto
-): GeoCacheRow | null {
-  const validos = rows.filter((r) => {
-    const lat = Number(r.lat);
-    const lng = Number(r.lng);
-    return Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0;
-  });
+function normalizarNumeroSimples(v: string | null | undefined): string {
+  return String(v ?? '').replace(/\D/g, '');
+}
+
+function normalizarTextoGeoCache(v: string | null | undefined): string {
+  return String(v ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizarLogradouroGeoCache(v: string | null | undefined): string {
+  return normalizarTextoGeoCache(v).replace(/^(AV|AVENIDA|R|RUA|AL|ALAMEDA|TRAV|TRAVESSA|ROD|RODOVIA|EST|ESTRADA)\s+/, '');
+}
+
+function termoLogradouroBuscaMere(v: string | null | undefined): string {
+  return String(v ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/^(av\.?|avenida|r\.?|rua|al\.?|alameda|trav\.?|travessa|rod\.?|rodovia|est\.?|estrada)\s+/i, '')
+    .trim();
+}
+
+function coordenadasValidasMere(row: GeoCacheRow): boolean {
+  const lat = Number(row.lat);
+  const lng = Number(row.lng);
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180 &&
+    !(lat === 0 && lng === 0)
+  );
+}
+
+function ordenarCandidatosGeoCache(rows: GeoCacheRow[]): GeoCacheRow[] {
+  return rows
+    .filter(coordenadasValidasMere)
+    .sort((a, b) => {
+      const confA = Number(a.confidence);
+      const confB = Number(b.confidence);
+      const safeConfA = Number.isFinite(confA) ? confA : -1;
+      const safeConfB = Number.isFinite(confB) ? confB : -1;
+      if (safeConfA !== safeConfB) return safeConfB - safeConfA;
+      const timeA = a.updated_at ? Date.parse(a.updated_at) : 0;
+      const timeB = b.updated_at ? Date.parse(b.updated_at) : 0;
+      if (timeA !== timeB) return timeB - timeA;
+      return a.chave_endereco.localeCompare(b.chave_endereco);
+    });
+}
+
+function camposCidadeUfCompativeis(row: GeoCacheRow, decomposto: EnderecoDecomposto): boolean {
+  const cidadeAlvo = normalizarTextoGeoCache(decomposto.cidade);
+  const ufAlvo = normalizarTextoGeoCache(decomposto.uf);
+  const cidadeRow = normalizarTextoGeoCache(row.cidade);
+  const ufRow = normalizarTextoGeoCache(row.uf);
+  if (cidadeAlvo && cidadeRow && cidadeAlvo !== cidadeRow) return false;
+  if (ufAlvo && ufRow && ufAlvo !== ufRow) return false;
+  return true;
+}
+
+function rowBateNumero(row: GeoCacheRow, decomposto: EnderecoDecomposto): boolean {
+  const numeroAlvo = normalizarNumeroSimples(decomposto.numero);
+  const numeroRow = normalizarNumeroSimples(row.numero);
+  return Boolean(numeroAlvo && numeroRow && numeroAlvo === numeroRow);
+}
+
+function rowBateLogradouro(row: GeoCacheRow, decomposto: EnderecoDecomposto): boolean {
+  const logradouroAlvo = normalizarLogradouroGeoCache(decomposto.logradouro);
+  const logradouroRow = normalizarLogradouroGeoCache(row.logradouro);
+  return Boolean(logradouroAlvo && logradouroRow && logradouroAlvo === logradouroRow);
+}
+
+function rowBateEnderecoCompleto(row: GeoCacheRow, enderecoCompleto: string): boolean {
+  const alvo = normalizarTextoGeoCache(enderecoCompleto);
+  const rowEndereco = normalizarTextoGeoCache(row.endereco_completo);
+  return Boolean(alvo && rowEndereco && alvo === rowEndereco);
+}
+
+function montarCoordenadasMere(
+  row: GeoCacheRow,
+  decomposto: EnderecoDecomposto,
+  origem: CoordenadasMere['origem'],
+  estrategia: CoordenadasMere['estrategia']
+): CoordenadasMere {
+  return {
+    lat: Number(row.lat),
+    lng: Number(row.lng),
+    fonte: 'geo_cache',
+    origem,
+    estrategia,
+    confidence: row.confidence !== null ? Number(row.confidence) : null,
+    provider: row.provider ?? null,
+    geoCacheId: row.chave_endereco,
+    cepResolvido: normalizarCepSimples(row.cep) || normalizarCepSimples(decomposto.cep) || null,
+    numeroResolvido: row.numero ?? decomposto.numero,
+  };
+}
+
+type ResultadoEstrategiaGeoCache =
+  | { ok: true; coordenadas: CoordenadasMere }
+  | { ok: false; motivo: string; candidatos?: number };
+
+function escolherUnicoSeguro(rows: GeoCacheRow[], motivoAmbiguo: string): GeoCacheRow | ResultadoEstrategiaGeoCache | null {
+  const validos = ordenarCandidatosGeoCache(rows);
+  if (rows.length > 0 && validos.length === 0) return { ok: false, motivo: 'geo_cache_lat_lng_invalidos', candidatos: rows.length };
   if (validos.length === 0) return null;
-  if (validos.length === 1) return validos[0];
-
-  const cidadeNorm = (v: string | null) =>
-    String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
-
-  const cidadeAlvo = cidadeNorm(decomposto.cidade);
-  const ufAlvo = String(decomposto.uf ?? '').toUpperCase().trim();
-  const numeroAlvo = String(decomposto.numero ?? '').replace(/\D/g, '');
-
-  const scored = validos.map((r) => {
-    let score = 0;
-    const conf = Number(r.confidence);
-    if (Number.isFinite(conf)) score += conf * 10;
-    if (cidadeAlvo && cidadeNorm(r.cidade) === cidadeAlvo) score += 5;
-    if (ufAlvo && String(r.uf ?? '').toUpperCase().trim() === ufAlvo) score += 3;
-    if (numeroAlvo && String(r.numero ?? '').replace(/\D/g, '') === numeroAlvo) score += 4;
-    return { row: r, score };
-  });
-
-  scored.sort((a, b) => b.score - a.score);
-  return scored[0].row;
+  if (validos.length > 1) return { ok: false, motivo: motivoAmbiguo, candidatos: validos.length };
+  return validos[0];
 }
 
 /**
  * Busca coordenadas do endereço do cliente no geo_cache.
  * Estratégia (em ordem):
- *   1. CEP + número → busca direta, desambigua por cidade/UF/confidence
- *   2. CEP apenas → desambigua por numero/cidade/UF
- *   3. Transfere para humano com motivo claro
+ *   1. CEP + número, com cidade/UF quando disponíveis
+ *   2. Endereço completo normalizado
+ *   3. Logradouro + número + cidade + UF
+ *   4. CEP apenas, somente com candidato único seguro
  * Não faz geocodificação externa.
  */
 export async function geocodificarEnderecoMere(
@@ -194,7 +279,7 @@ export async function geocodificarEnderecoMere(
   const cepNorm = normalizarCepSimples(decomposto.cep);
   const db = createServiceClient();
 
-  const SELECT_COLS = 'chave_endereco,lat,lng,endereco_completo,cep,numero,cidade,uf,confidence,provider';
+  const SELECT_COLS = 'chave_endereco,lat,lng,endereco_completo,logradouro,cep,numero,bairro,cidade,uf,confidence,provider,updated_at';
 
   // Estratégia 1: CEP + número
   if (cepNorm && decomposto.numero) {
@@ -202,61 +287,90 @@ export async function geocodificarEnderecoMere(
       .from('geo_cache')
       .select(SELECT_COLS)
       .eq('cep', cepNorm)
+      .eq('numero', decomposto.numero)
+      .order('updated_at', { ascending: false })
       .limit(10);
 
-    if (error) return { ok: false, motivo: `geo_cache_erro: ${error.message}` };
+    if (error) return { ok: false, motivo: `geo_cache_erro_cep_numero: ${error.message}` };
 
-    const rows = (data ?? []) as GeoCacheRow[];
-    const melhor = selecionarMelhorCandidato(rows, decomposto);
-    if (melhor) {
-      return {
-        ok: true,
-        coordenadas: {
-          lat: Number(melhor.lat),
-          lng: Number(melhor.lng),
-          fonte: 'geo_cache',
-          confidence: melhor.confidence !== null ? Number(melhor.confidence) : null,
-          provider: melhor.provider ?? null,
-          geoCacheId: melhor.chave_endereco,
-          cepResolvido: cepNorm,
-          numeroResolvido: decomposto.numero,
-        },
-      };
+    const rows = ((data ?? []) as GeoCacheRow[]).filter((row) => camposCidadeUfCompativeis(row, decomposto));
+    const escolhido = escolherUnicoSeguro(rows, 'geo_cache_ambiguo');
+    if (escolhido && 'ok' in escolhido) return escolhido;
+    if (escolhido) {
+      return { ok: true, coordenadas: montarCoordenadasMere(escolhido, decomposto, 'geo_cache_cep_numero', 'cep_numero') };
     }
   }
 
-  // Estratégia 2: CEP apenas (sem número)
+  // Estrategia 2: endereco completo normalizado.
+  const enderecoBusca = enderecoCompleto.trim();
+  const trechoSeguro = enderecoBusca.split(',').map((p) => p.trim()).filter(Boolean).slice(0, 3).join('%');
+  if (trechoSeguro) {
+    const { data, error } = await db
+      .from('geo_cache')
+      .select(SELECT_COLS)
+      .ilike('endereco_completo', `%${trechoSeguro}%`)
+      .order('updated_at', { ascending: false })
+      .limit(20);
+
+    if (error) return { ok: false, motivo: `geo_cache_erro_endereco_completo: ${error.message}` };
+
+    const rows = ((data ?? []) as GeoCacheRow[]).filter((row) => rowBateEnderecoCompleto(row, enderecoCompleto));
+    const escolhido = escolherUnicoSeguro(rows, 'geo_cache_ambiguo');
+    if (escolhido && 'ok' in escolhido) return escolhido;
+    if (escolhido) {
+      return { ok: true, coordenadas: montarCoordenadasMere(escolhido, decomposto, 'geo_cache_endereco_completo', 'endereco_completo') };
+    }
+  }
+
+  // Estrategia 3: logradouro + numero + cidade + UF.
+  const logradouroBusca = termoLogradouroBuscaMere(decomposto.logradouro);
+  if (logradouroBusca && decomposto.numero && decomposto.cidade && decomposto.uf) {
+    const { data, error } = await db
+      .from('geo_cache')
+      .select(SELECT_COLS)
+      .ilike('logradouro', `%${logradouroBusca}%`)
+      .eq('numero', decomposto.numero)
+      .ilike('cidade', decomposto.cidade)
+      .eq('uf', decomposto.uf.toUpperCase())
+      .order('updated_at', { ascending: false })
+      .limit(20);
+
+    if (error) return { ok: false, motivo: `geo_cache_erro_logradouro_numero: ${error.message}` };
+
+    const rows = ((data ?? []) as GeoCacheRow[]).filter((row) => (
+      rowBateLogradouro(row, decomposto) &&
+      rowBateNumero(row, decomposto) &&
+      camposCidadeUfCompativeis(row, decomposto)
+    ));
+    const escolhido = escolherUnicoSeguro(rows, 'geo_cache_ambiguo');
+    if (escolhido && 'ok' in escolhido) return escolhido;
+    if (escolhido) {
+      return { ok: true, coordenadas: montarCoordenadasMere(escolhido, decomposto, 'geo_cache_logradouro_numero', 'logradouro_numero') };
+    }
+  }
+
+  // Estrategia 4: CEP apenas, somente quando houver candidato unico seguro.
   if (cepNorm) {
     const { data, error } = await db
       .from('geo_cache')
       .select(SELECT_COLS)
       .eq('cep', cepNorm)
+      .order('updated_at', { ascending: false })
       .limit(10);
 
     if (error) return { ok: false, motivo: `geo_cache_erro_cep: ${error.message}` };
 
-    const rows = (data ?? []) as GeoCacheRow[];
-    const melhor = selecionarMelhorCandidato(rows, decomposto);
-    if (melhor) {
-      return {
-        ok: true,
-        coordenadas: {
-          lat: Number(melhor.lat),
-          lng: Number(melhor.lng),
-          fonte: 'geo_cache',
-          confidence: melhor.confidence !== null ? Number(melhor.confidence) : null,
-          provider: melhor.provider ?? null,
-          geoCacheId: melhor.chave_endereco,
-          cepResolvido: cepNorm,
-          numeroResolvido: decomposto.numero,
-        },
-      };
+    const rows = ((data ?? []) as GeoCacheRow[]).filter((row) => camposCidadeUfCompativeis(row, decomposto));
+    const escolhido = escolherUnicoSeguro(rows, 'geo_cache_ambiguo');
+    if (escolhido && 'ok' in escolhido) return escolhido;
+    if (escolhido) {
+      return { ok: true, coordenadas: montarCoordenadasMere(escolhido, decomposto, 'geo_cache_cep_unico', 'cep') };
     }
   }
 
   return {
     ok: false,
-    motivo: cepNorm ? 'geo_cache_miss_cep' : 'geo_cache_sem_cep',
+    motivo: cepNorm ? 'geo_cache_nao_resolvido' : 'geo_cache_sem_cep',
   };
 }
 
@@ -386,6 +500,8 @@ function resumirPayloadConsultaDatasMere(
     longitude_resolvida: arredondarCoordenada(coordenadas.lng),
     geo_cache_id: coordenadas.geoCacheId,
     geo_cache_status: 'hit',
+    geo_cache_origem: coordenadas.origem,
+    geo_cache_estrategia: coordenadas.estrategia,
     equipe: grupo.equipe_agenda || null,
     isRural: payload.isRural,
     isCondominio: payload.isCondominio,
@@ -639,7 +755,7 @@ export async function executarConsultaDatasMere(params: {
 
   const { coordenadas } = geocod;
   console.log(
-    `[posvenda-webhook] geo_cache hit sessaoId=${sessaoId} cep=${coordenadas.cepResolvido ?? '-'} confidence=${coordenadas.confidence ?? '-'}`
+    `[posvenda-webhook] geo_cache hit sessaoId=${sessaoId} origem=${coordenadas.origem} estrategia=${coordenadas.estrategia} cep=${coordenadas.cepResolvido ?? '-'} confidence=${coordenadas.confidence ?? '-'}`
   );
 
   // 2. Validar campos obrigatórios

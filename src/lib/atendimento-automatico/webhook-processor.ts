@@ -102,15 +102,25 @@ async function aplicarResultadoConsultaDatas(params: {
     geo_cache_status: execConsulta.geoCacheStatus,
     geo_cache_em: agora,
     geo_cache_motivo: execConsulta.geoCacheMotivo ?? null,
+    geo_cache_consultado: true,
     ...(execConsulta.coordenadas ? {
       geo_cache_id: execConsulta.coordenadas.geoCacheId,
       geo_cache_provider: execConsulta.coordenadas.provider,
       geo_cache_confidence: execConsulta.coordenadas.confidence,
+      geo_cache_estrategia: execConsulta.coordenadas.estrategia,
+      coordenadas_resolvidas: true,
+      coordenadas_origem: execConsulta.coordenadas.origem,
+      coordenadas_lat: execConsulta.coordenadas.lat,
+      coordenadas_lng: execConsulta.coordenadas.lng,
       latitude: execConsulta.coordenadas.lat,
       longitude: execConsulta.coordenadas.lng,
       cep_resolvido: execConsulta.coordenadas.cepResolvido,
       numero_resolvido: execConsulta.coordenadas.numeroResolvido,
-    } : {}),
+    } : {
+      coordenadas_resolvidas: false,
+      coordenadas_origem: 'nao_resolvido',
+      coordenadas_erro_codigo: execConsulta.geoCacheMotivo ?? null,
+    }),
   };
 
   if (execConsulta.estado === 'erro_coordenadas') {

@@ -1,5 +1,39 @@
 # Escopo e equivalência — motor `/procurar-datas` legado x v2
 
+## Estado consolidado — auditoria v2 (atualizado 2026-07-10)
+
+### Correções aplicadas (escopo B)
+- **P1 — Contadores hardcoded corrigidos:** `total_slots_processed`, `total_slots_available`, `early_stop` passaram a usar contadores reais.
+- **P2 — Snapshot técnico da produção adicionado:** `parametros_json.snapshotTecnico` agora contém dados técnicos dos candidatos finais antes do adapter (slotKey, dataISO, equipe, elegivel, tipoOriginal, motivos, slotAvailMin, serviceMin, kmAdicionalNaRotaM, origemKmAdicionalNaRotaM, filtroEarly, slotTemPontos, fonteAgenda, fonteDisponibilidade, contadoresMapaKm). É a referência principal para entender o que a produção usou no momento da busca.
+- **P3 — Fallback silencioso `tipo || 'normal'` removido:** o adapter não transforma tipo inválido/ausente em `normal`. Tipo inválido é tratado como problema.
+
+### Correções aplicadas na auditoria (rota `auditar-run`)
+- Lê `snapshotTecnico` quando disponível.
+- Retorna `snapshotTecnicoDisponivel`, `snapshotTecnico`, `divergenciasSnapshot`.
+- Diferencia resultado salvo, snapshot da produção e recálculo atual.
+- Marca se o recálculo atual é conclusivo ou não (`recalculoConclusivo`).
+- Rebaixa divergências do recálculo atual para aviso quando o resultado salvo está coerente com o snapshot da produção.
+- **Regra importante:** quando o resultado salvo bate com o snapshot técnico da produção, divergências contra o recálculo atual devem ser interpretadas como aviso/contexto de dados atuais, não como erro forte da busca original.
+
+### Run validado
+- Run: `7a5c8e25-cc5d-4e52-8234-b8af7789234a`
+- pesquisaAuditoriaId: `a00e378b-c66d-4f29-96ed-d42acfc6e5ec`
+- Snapshot técnico confirmou coerência total com os resultados salvos (`divergenciasSnapshot: []`).
+- Divergência do recálculo atual no slot `2026-07-16::EQUIPE 1` explicada por fechamento posterior da agenda, confirmado pelo usuário.
+- Auditoria agora mostra essa divergência como `severidade: aviso`, não erro forte.
+
+### Itens NÃO aplicados (pendentes/bloqueados por decisão de escopo)
+- **P4 — Gate de elegibilidade/inserção completa na produção:** NÃO aplicado. Bloquear salvar como normal quando a inserção não for completa, equivalente ao `validacaoInsercaoReal` da auditoria. Motivo: altera motor/classificação, pode mudar candidatos exibidos, precisa comparação com legado Apps Script antes, não há evidência atual suficiente.
+- **P5 — Unificar `slotTemPontos` entre produção e auditoria:** NÃO aplicado. Motivo: altera comportamento do motor/classificação, pode impactar limites de distância, precisa validação de equivalência com o legado, não deve ser feito sem decisão explícita.
+
+### Conclusão temporária
+A etapa atual pode ser considerada concluída operacionalmente. O motor não deve ser alterado agora. A auditoria está mais confiável para diferenciar resultado salvo, snapshot técnico da produção, recálculo atual e mudança posterior de agenda/disponibilidade. O usuário seguirá usando no dia a dia e retornará se encontrar novas inconsistências reais.
+
+### Próximo passo recomendado
+Encerrar temporariamente a investigação e monitorar o uso diário. Se aparecer nova inconsistência, auditar primeiro `divergenciasSnapshot`; só considerar mexer no motor se o resultado salvo divergir do snapshot técnico ou se houver evidência clara contra o legado.
+
+---
+
 ## 2026-07-07 - Cascade - Bugfix: equivalencia do campo encomenda no adaptador v2->legado
 
 Status: implementado e validado manualmente. Correcao de bug inequivoco de equivalencia legado x v2.

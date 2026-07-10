@@ -111,6 +111,47 @@ type FiltroEarlyAuditoria = {
   motivoTextual: string
 }
 
+type SnapshotTecnicoCandidatoSalvo = {
+  slotKey: string
+  dataISO: string
+  equipe: string
+  elegivel: boolean
+  tipoOriginal: string
+  motivos: string[]
+  slotAvailMin: number | null
+  serviceMin: number | null
+  kmAdicionalNaRotaM: number | null
+  origemKmAdicionalNaRotaM: string | null
+  filtroEarly: unknown
+  slotTemPontos: boolean | null
+}
+
+type SnapshotTecnicoSalvo = {
+  candidatosFinais: SnapshotTecnicoCandidatoSalvo[]
+  contadoresMapaKm: {
+    slotsRecebidos: number
+    slotsProcessados: number
+    slotsComKm: number
+    slotsComFallbackHaversine: number
+    slotsComErro: number
+    slotsDescartados: number
+  } | null
+  fonteAgenda: string | null
+  fonteDisponibilidade: string | null
+}
+
+type RecalculoConclusivo = {
+  conclusivo: boolean
+  motivos: string[]
+}
+
+type DivergenciaSnapshot = {
+  slotKey: string | null
+  tipo: string
+  detalhe: string
+  severidade: 'forte' | 'aviso'
+}
+
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -159,6 +200,151 @@ function normalizarResultadosSalvos(value: unknown): ResultadoSalvoNormalizado[]
       raw: item,
     }
   })
+}
+
+function extrairSnapshotTecnico(parametros: JsonRecord): SnapshotTecnicoSalvo | null {
+  const raw = parametros.snapshotTecnico
+  if (!isRecord(raw)) return null
+  const candidatosRaw = (raw as JsonRecord).candidatosFinais
+  if (!Array.isArray(candidatosRaw)) return null
+  const candidatosFinais: SnapshotTecnicoCandidatoSalvo[] = candidatosRaw
+    .map((item) => {
+      const r = isRecord(item) ? item : {}
+      return {
+        slotKey: asString(r.slotKey) ?? '',
+        dataISO: asString(r.dataISO) ?? '',
+        equipe: asString(r.equipe) ?? '',
+        elegivel: typeof r.elegivel === 'boolean' ? r.elegivel : false,
+        tipoOriginal: asString(r.tipoOriginal) ?? '',
+        motivos: Array.isArray(r.motivos) ? r.motivos.filter((m): m is string => typeof m === 'string') : [],
+        slotAvailMin: asNumber(r.slotAvailMin),
+        serviceMin: asNumber(r.serviceMin),
+        kmAdicionalNaRotaM: asNumber(r.kmAdicionalNaRotaM),
+        origemKmAdicionalNaRotaM: asString(r.origemKmAdicionalNaRotaM),
+        filtroEarly: r.filtroEarly ?? null,
+        slotTemPontos: typeof r.slotTemPontos === 'boolean' ? r.slotTemPontos : null,
+      }
+    })
+    .filter((c) => c.slotKey && c.dataISO)
+  if (candidatosFinais.length === 0) return null
+  const contadoresRaw = (raw as JsonRecord).contadoresMapaKm
+  return {
+    candidatosFinais,
+    contadoresMapaKm: isRecord(contadoresRaw)
+      ? {
+          slotsRecebidos: asNumber(contadoresRaw.slotsRecebidos) ?? 0,
+          slotsProcessados: asNumber(contadoresRaw.slotsProcessados) ?? 0,
+          slotsComKm: asNumber(contadoresRaw.slotsComKm) ?? 0,
+          slotsComFallbackHaversine: asNumber(contadoresRaw.slotsComFallbackHaversine) ?? 0,
+          slotsComErro: asNumber(contadoresRaw.slotsComErro) ?? 0,
+          slotsDescartados: asNumber(contadoresRaw.slotsDescartados) ?? 0,
+        }
+      : null,
+    fonteAgenda: asString((raw as JsonRecord).fonteAgenda),
+    fonteDisponibilidade: asString((raw as JsonRecord).fonteDisponibilidade),
+  }
+}
+
+function avaliarRecalculoConclusivo(input: {
+  diagnosticoReal: Awaited<ReturnType<typeof montarDiagnosticoReal>>
+  snapshotTecnico: SnapshotTecnicoSalvo | null
+}): RecalculoConclusivo {
+  const motivos: string[] = []
+  const dr = input.diagnosticoReal
+
+  if (!dr.disponivel) {
+    motivos.push(`Diagnostico real indisponivel: ${dr.motivoFalhaDiagnosticoReal ?? 'motivo nao informado'}`)
+    return { conclusivo: false, motivos }
+  }
+
+  const totalLinhasAgenda = dr.totalLinhasAgendaLidas ?? 0
+  if (totalLinhasAgenda === 0) {
+    motivos.push('Agenda real lida com 0 linhas — recálculo não conclusivo.')
+  }
+
+  const totalCandidatos = dr.totalCandidatosReais ?? 0
+  if (totalCandidatos === 0) {
+    motivos.push('Nenhum candidato real gerado no recálculo — recálculo não conclusivo.')
+  }
+
+  const slots = Array.isArray(dr.slots) ? dr.slots : []
+  const slotsSemPontos = slots.filter((s: { slotTemPontos?: boolean | null }) => s.slotTemPontos === false)
+  if (slots.length > 0 && slotsSemPontos.length === slots.length) {
+    motivos.push('Todos os slots do recálculo estão sem pontos de agenda — recálculo não conclusivo.')
+  }
+
+  const insercaoCompleta = dr.insercaoRealCompleta
+  if (insercaoCompleta === false) {
+    const interrompidos = (dr.slotsInterrompidosPorFiltroEarly ?? []).length
+    if (interrompidos > 0 && interrompidos === slots.length) {
+      motivos.push('Todos os slots do recálculo foram interrompidos por filtro early — recálculo pode não ser conclusivo para tipo/distância.')
+    }
+  }
+
+  if (input.snapshotTecnico) {
+    const snapContadores = input.snapshotTecnico.contadoresMapaKm
+    if (snapContadores && snapContadores.slotsComKm > 0 && totalCandidatos === 0) {
+      motivos.push('Snapshot da produção tinha slots com km calculado, mas o recálculo atual gerou 0 candidatos — divergência provavelmente por dados de agenda desatualizados.')
+    }
+  }
+
+  return { conclusivo: motivos.length === 0, motivos }
+}
+
+function compararSalvoComSnapshot(
+  resultadosSalvos: ResultadoSalvoNormalizado[],
+  snapshot: SnapshotTecnicoSalvo
+): DivergenciaSnapshot[] {
+  const divergencias: DivergenciaSnapshot[] = []
+  const snapPorChave = new Map<string, SnapshotTecnicoCandidatoSalvo>()
+  for (const snap of snapshot.candidatosFinais) {
+    if (snap.slotKey) snapPorChave.set(snap.slotKey, snap)
+  }
+
+  for (const resultado of resultadosSalvos) {
+    const key = slotKey(resultado.dataISO, resultado.equipe)
+    if (!key) continue
+    const snap = snapPorChave.get(key)
+    if (!snap) {
+      divergencias.push({
+        slotKey: key,
+        tipo: 'resultado-salvo-sem-snapshot',
+        detalhe: 'Resultado salvo não encontrado no snapshot técnico da produção.',
+        severidade: 'aviso',
+      })
+      continue
+    }
+    if (resultado.tipo && snap.tipoOriginal && resultado.tipo !== snap.tipoOriginal) {
+      divergencias.push({
+        slotKey: key,
+        tipo: 'tipo-divergente-snapshot',
+        detalhe: `Resultado salvo tipo=${resultado.tipo}; snapshot da produção tipo=${snap.tipoOriginal}.`,
+        severidade: 'forte',
+      })
+    }
+    if (!snap.elegivel) {
+      divergencias.push({
+        slotKey: key,
+        tipo: 'snapshot-marca-nao-elegivel',
+        detalhe: `Snapshot da produção marca slot como não elegível: ${(snap.motivos ?? []).join('; ') || 'motivo não informado'}.`,
+        severidade: 'forte',
+      })
+    }
+  }
+
+  const salvosChaves = new Set(resultadosSalvos.map((r) => slotKey(r.dataISO, r.equipe)).filter(Boolean))
+  for (const snap of snapshot.candidatosFinais) {
+    if (snap.elegivel && snap.slotKey && !salvosChaves.has(snap.slotKey)) {
+      divergencias.push({
+        slotKey: snap.slotKey,
+        tipo: 'snapshot-elegivel-nao-salvo',
+        detalhe: `Snapshot da produção marca slot como elegível (${snap.tipoOriginal}), mas não está nos resultados salvos.`,
+        severidade: 'aviso',
+      })
+    }
+  }
+
+  return divergencias
 }
 
 function normalizarOsrmBaseUrl(url: string | null | undefined): string {
@@ -439,8 +625,9 @@ async function montarDiagnosticoReal(input: {
   const entradaNormalizada = normalizarEntradaPesquisaV2(input.payload)
   const avisos: string[] = []
   const limitacoesHistoricas = [
-    'A auditoria historica salva parametros e resultados finais, mas nao salva snapshot completo da agenda/disponibilidade/candidatos usados no momento da busca.',
+    'A auditoria historica salva parametros, resultados finais e snapshot técnico dos candidatos (campos técnicos por slot, capturados antes do adapter).',
     'Este diagnostico recalcula com dados reais atuais do Google Sheets; divergencias podem refletir mudancas posteriores na planilha.',
+    'Quando o snapshot técnico está disponível, a comparação resultado salvo x snapshot da produção deve ser usada como referência principal.',
     'Blocos sinteticos nao sao usados como conclusao nesta rota.',
   ]
 
@@ -726,16 +913,36 @@ async function montarDiagnosticoReal(input: {
   }
 }
 
+function salvoCoerenteComSnapshot(
+  slotKeyAlvo: string | null,
+  resultadoSalvo: ResultadoSalvoNormalizado | null,
+  snapshotTecnico: SnapshotTecnicoSalvo | null
+): boolean {
+  if (!slotKeyAlvo || !resultadoSalvo || !snapshotTecnico) return false
+  const snap = snapshotTecnico.candidatosFinais.find((c) => c.slotKey === slotKeyAlvo)
+  if (!snap) return false
+  if (!snap.elegivel) return false
+  if (resultadoSalvo.tipo && snap.tipoOriginal && resultadoSalvo.tipo !== snap.tipoOriginal) return false
+  const motivosRecusa = (snap.motivos ?? []).filter((m) => m && m.trim().length > 0)
+  if (motivosRecusa.length > 0) return false
+  if (snap.slotAvailMin !== null && snap.serviceMin !== null && snap.slotAvailMin < snap.serviceMin) return false
+  if (snap.kmAdicionalNaRotaM === null || !Number.isFinite(snap.kmAdicionalNaRotaM)) return false
+  return true
+}
+
 function montarDivergencias(
   resultadosSalvos: ResultadoSalvoNormalizado[],
-  diagnosticoReal: Awaited<ReturnType<typeof montarDiagnosticoReal>>
+  diagnosticoReal: Awaited<ReturnType<typeof montarDiagnosticoReal>>,
+  recalculoConclusivo: RecalculoConclusivo,
+  snapshotTecnico: SnapshotTecnicoSalvo | null
 ) {
-  const divergencias: Array<{ slotKey: string | null; tipo: string; detalhe: string }> = []
+  const divergencias: Array<{ slotKey: string | null; tipo: string; detalhe: string; severidade: 'forte' | 'aviso' }> = []
   if (!diagnosticoReal.disponivel) {
     divergencias.push({
       slotKey: null,
       tipo: 'diagnostico-real-indisponivel',
       detalhe: diagnosticoReal.motivoFalhaDiagnosticoReal ?? 'Diagnostico real indisponivel.',
+      severidade: 'aviso',
     })
     return divergencias
   }
@@ -753,27 +960,49 @@ function montarDivergencias(
           ? 'insercao-real-interrompida-por-filtro-early'
           : 'insercao-real-incompleta-sem-coordenadas',
         detalhe,
+        severidade: 'aviso',
       })
     }
     if (salvo?.tipo && slot.tipoRecalculado && salvo.tipo !== slot.tipoRecalculado) {
+      const coerenteSnap = salvoCoerenteComSnapshot(slot.slotKey, salvo, snapshotTecnico)
+      const rebaixar = !recalculoConclusivo.conclusivo || coerenteSnap
       divergencias.push({
         slotKey: slot.slotKey,
         tipo: 'tipo-divergente',
-        detalhe: `Resultado salvo tipo=${salvo.tipo}; diagnostico atual tipo=${slot.tipoRecalculado}.`,
+        detalhe: rebaixar
+          ? coerenteSnap
+            ? `Resultado salvo tipo=${salvo.tipo}; diagnostico atual tipo=${slot.tipoRecalculado}. Resultado salvo está coerente com o snapshot técnico da produção. A divergência vem do recálculo atual com dados atuais, possivelmente por mudança posterior de agenda/disponibilidade.`
+            : `Resultado salvo tipo=${salvo.tipo}; diagnostico atual tipo=${slot.tipoRecalculado}. AVISO: recálculo não conclusivo (${recalculoConclusivo.motivos.join('; ')}). Divergência rebaixada para aviso.`
+          : `Resultado salvo tipo=${salvo.tipo}; diagnostico atual tipo=${slot.tipoRecalculado}.`,
+        severidade: rebaixar ? 'aviso' : 'forte',
       })
     }
     if (slot.elegivelRecalculado === false) {
+      const coerenteSnap = salvoCoerenteComSnapshot(slot.slotKey, salvo, snapshotTecnico)
+      const rebaixar = !recalculoConclusivo.conclusivo || coerenteSnap
       divergencias.push({
         slotKey: slot.slotKey,
         tipo: 'resultado-salvo-nao-elegivel-atual',
-        detalhe: `Resultado salvo existe, mas o diagnostico atual marcou como nao elegivel: ${slot.motivoIndisponibilidade ?? 'motivo nao informado'}.`,
+        detalhe: rebaixar
+          ? coerenteSnap
+            ? `Resultado salvo existe, mas o diagnostico atual marcou como nao elegivel: ${slot.motivoIndisponibilidade ?? 'motivo nao informado'}. Resultado salvo está coerente com o snapshot técnico da produção. A divergência vem do recálculo atual com dados atuais, possivelmente por mudança posterior de agenda/disponibilidade.`
+            : `Resultado salvo existe, mas o diagnostico atual marcou como nao elegivel: ${slot.motivoIndisponibilidade ?? 'motivo nao informado'}. AVISO: recálculo não conclusivo — divergência rebaixada para aviso.`
+          : `Resultado salvo existe, mas o diagnostico atual marcou como nao elegivel: ${slot.motivoIndisponibilidade ?? 'motivo nao informado'}.`,
+        severidade: rebaixar ? 'aviso' : 'forte',
       })
     }
     if (slot.entrouNoRecorteAtual === false) {
+      const coerenteSnap = salvoCoerenteComSnapshot(slot.slotKey, salvo, snapshotTecnico)
+      const rebaixar = !recalculoConclusivo.conclusivo || coerenteSnap
       divergencias.push({
         slotKey: slot.slotKey,
         tipo: 'resultado-salvo-fora-do-recorte-atual',
-        detalhe: 'O slot salvo nao apareceu no recorte final recalculado com os dados atuais.',
+        detalhe: rebaixar
+          ? coerenteSnap
+            ? 'O slot salvo nao apareceu no recorte final recalculado com os dados atuais. Resultado salvo está coerente com o snapshot técnico da produção. A divergência vem do recálculo atual com dados atuais, possivelmente por mudança posterior de agenda/disponibilidade.'
+            : 'O slot salvo nao apareceu no recorte final recalculado com os dados atuais. AVISO: recálculo não conclusivo — pode ser mudança na planilha, não bug.'
+          : 'O slot salvo nao apareceu no recorte final recalculado com os dados atuais.',
+        severidade: rebaixar ? 'aviso' : 'forte',
       })
     }
   }
@@ -786,6 +1015,7 @@ function montarDivergencias(
         slotKey: key,
         tipo: 'slot-salvo-sem-diagnostico-atual',
         detalhe: 'Nao foi encontrado diagnostico atual para o slot salvo.',
+        severidade: 'aviso',
       })
     }
   }
@@ -818,12 +1048,22 @@ export async function POST(request: NextRequest) {
 
     const parametros = isRecord(pesquisaRow.parametros_json) ? pesquisaRow.parametros_json : {}
     const resultadosSalvos = normalizarResultadosSalvos(pesquisaRow.resultados_json)
+    const snapshotTecnico = extrairSnapshotTecnico(parametros)
     const payload = montarPayloadDaPesquisa(pesquisaRow, parametros)
     const diagnosticoReal = await montarDiagnosticoReal({
       pesquisa: pesquisaRow,
       payload,
       resultadosSalvos,
     })
+
+    const recalculoConclusivo = avaliarRecalculoConclusivo({
+      diagnosticoReal,
+      snapshotTecnico,
+    })
+
+    const divergenciasSnapshot = snapshotTecnico
+      ? compararSalvoComSnapshot(resultadosSalvos, snapshotTecnico)
+      : []
 
     const pesquisa = {
       id: pesquisaRow.id,
@@ -868,18 +1108,39 @@ export async function POST(request: NextRequest) {
       parametrosRaw: parametros,
     }
 
+    const limitacoesHistoricas = [
+      ...(diagnosticoReal.limitacoesHistoricas ?? []),
+      snapshotTecnico
+        ? 'Snapshot técnico da produção disponível em parametros_json.snapshotTecnico. Use como referência principal para auditoria quando o recálculo atual não for conclusivo.'
+        : 'Snapshot técnico da produção não disponível nesta auditoria. Recálculo atual é a única base de comparação, mas pode não ser conclusivo se a agenda mudou.',
+    ]
+
+    const avisosComparacao = [
+      ...(diagnosticoReal.avisos ?? []),
+      'fonteCandidatos: real quando a leitura atual de agenda/disponibilidade e o recalc do slot foram possiveis.',
+      'fonteDisponibilidade: google-sheets quando a leitura real foi possivel.',
+      'naoUsarComoConclusao: true para qualquer bloco sintetico; esta rota nao usa sintetico como conclusao.',
+    ]
+    if (!recalculoConclusivo.conclusivo) {
+      avisosComparacao.push(
+        `recalculoNaoConclusivo: ${recalculoConclusivo.motivos.join('; ')}`
+      )
+    }
+    if (snapshotTecnico) {
+      avisosComparacao.push(
+        'snapshotTecnicoDisponivel: true — snapshot da produção salvo no momento da busca. Comparação resultado salvo x snapshot da produção incluída.'
+      )
+    }
+
     const comparacao = {
-      divergencias: montarDivergencias(resultadosSalvos, diagnosticoReal),
-      avisos: [
-        ...(diagnosticoReal.avisos ?? []),
-        'fonteCandidatos: real quando a leitura atual de agenda/disponibilidade e o recalc do slot foram possiveis.',
-        'fonteDisponibilidade: google-sheets quando a leitura real foi possivel.',
-        'naoUsarComoConclusao: true para qualquer bloco sintetico; esta rota nao usa sintetico como conclusao.',
-      ],
-      limitacoesHistoricas: diagnosticoReal.limitacoesHistoricas ?? [],
+      divergencias: montarDivergencias(resultadosSalvos, diagnosticoReal, recalculoConclusivo, snapshotTecnico),
+      divergenciasSnapshot,
+      avisos: avisosComparacao,
+      limitacoesHistoricas,
       fonteCandidatos: diagnosticoReal.disponivel ? 'real' : 'indisponivel',
       fonteDisponibilidade: diagnosticoReal.disponivel ? 'google-sheets' : 'indisponivel',
       naoUsarComoConclusao: false,
+      recalculoConclusivo,
     }
 
     const respostaSemTexto = {
@@ -887,6 +1148,8 @@ export async function POST(request: NextRequest) {
       pesquisa,
       entrada,
       resultadosSalvos,
+      snapshotTecnicoDisponivel: snapshotTecnico !== null,
+      snapshotTecnico,
       diagnosticoReal,
       comparacao,
     }

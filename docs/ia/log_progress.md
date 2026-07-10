@@ -1,3 +1,152 @@
+## 2026-07-10 - Cascade - Conclusão temporária da investigação da auditoria do motor /procurar-datas v2
+
+**Contexto:** Após investigação e correções aplicadas na auditoria do motor `/procurar-datas` v2, registra-se a conclusão temporária operacional. O motor não deve ser alterado agora. A auditoria está mais confiável para diferenciar resultado salvo, snapshot técnico da produção, recálculo atual e mudança posterior de agenda/disponibilidade.
+
+**Correções já aplicadas (escopo B):**
+- **P1** — Contadores hardcoded (`total_slots_processed`, `total_slots_available`, `early_stop`) corrigidos para usar contadores reais.
+- **P2** — `parametros_json.snapshotTecnico` adicionado na produção com dados técnicos dos candidatos finais antes do adapter (slotKey, dataISO, equipe, elegivel, tipoOriginal, motivos, slotAvailMin, serviceMin, kmAdicionalNaRotaM, origemKmAdicionalNaRotaM, filtroEarly, slotTemPontos, fonteAgenda, fonteDisponibilidade, contadoresMapaKm).
+- **P3** — Fallback silencioso `tipo || 'normal'` removido do adapter. Tipo inválido agora é tratado como problema, não mascarado.
+
+**Correções aplicadas na auditoria (rota `auditar-run`):**
+- Lê `snapshotTecnico` quando disponível.
+- Retorna `snapshotTecnicoDisponivel`, `snapshotTecnico`, `divergenciasSnapshot`.
+- Diferencia resultado salvo, snapshot da produção e recálculo atual.
+- Marca se o recálculo atual é conclusivo ou não (`recalculoConclusivo`).
+- Rebaixa divergências do recálculo atual para aviso quando o resultado salvo está coerente com o snapshot da produção (helper `salvoCoerenteComSnapshot` — 6 critérios).
+- Regra importante: quando o resultado salvo bate com o snapshot técnico da produção, divergências contra o recálculo atual são tratadas como aviso/contexto de dados atuais, não como erro forte da busca original.
+
+**Run validado:**
+- Run: `7a5c8e25-cc5d-4e52-8234-b8af7789234a`
+- pesquisaAuditoriaId: `a00e378b-c66d-4f29-96ed-d42acfc6e5ec`
+- Entrada: CEP `82800310`, endereço `334, Rua Sétimo Simionato, Capão da Imbuia, Curitiba - PR`, data inicial `2026-07-12`, tempo `00:40`, itens `DIVERSOS`, condomínio/rural/encomenda `false/false/false`, valor inicial mínimo `110`.
+- Resultados salvos: 5 slots (2026-07-16 normal R$ 110, 2026-07-24 especial R$ 210, 2026-07-25 premium R$ 370, 2026-08-13 normal R$ 110, 2026-08-15 normal R$ 170).
+- Snapshot técnico confirmou coerência total: `divergenciasSnapshot: []`.
+- Divergência do recálculo atual no slot `2026-07-16::EQUIPE 1` (tipoRecalculado=indisponivel, elegivelRecalculado=false, motivo=agenda fechada) explicada por fechamento posterior da agenda confirmado pelo usuário.
+- Auditoria agora mostra essa divergência como `severidade: aviso`, não erro forte.
+
+**Validações históricas (contexto, não reexecutadas nesta tarefa):**
+- `npx tsc --noEmit` → exit 0 (sessões anteriores).
+- `npx vitest run src/app/api/procurar-datas/v2/auditar-run/route.test.ts` → 11 passed (sessão anterior).
+
+**Itens NÃO aplicados (pendentes/bloqueados por decisão de escopo):**
+- **P4 — Gate de elegibilidade/inserção completa na produção:** NÃO aplicado. Bloquear salvar como normal quando a inserção não for completa, equivalente ao `validacaoInsercaoReal` da auditoria. Motivo: altera motor/classificação, pode mudar candidatos exibidos, precisa comparação com legado Apps Script antes, não há evidência atual suficiente.
+- **P5 — Unificar `slotTemPontos` entre produção e auditoria:** NÃO aplicado. Motivo: altera comportamento do motor/classificação, pode impactar limites de distância, precisa validação de equivalência com o legado, não deve ser feito sem decisão explícita.
+
+**Estado atual:**
+- Conclusão temporária: a etapa atual pode ser considerada concluída operacionalmente.
+- O motor não deve ser alterado agora.
+- A auditoria agora está mais confiável para diferenciar resultado salvo, snapshot técnico da produção, recálculo atual e mudança posterior de agenda/disponibilidade.
+- O usuário seguirá usando no dia a dia e retornará se encontrar novas inconsistências reais.
+
+**Arquivos lidos:**
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+
+**Arquivos alterados:**
+- `docs/ia/log_progress.md` — esta entrada.
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md` — seção de estado consolidado P1-P5 adicionada no topo.
+
+**Pendências mantidas:**
+- P4 pendente e não aplicado (bloqueado por decisão de escopo até nova evidência ou validação com legado).
+- P5 pendente e não aplicado (bloqueado por decisão de escopo até nova evidência ou validação com legado).
+
+**Riscos conhecidos:**
+- P4 e P5 não aplicados: se futuramente aparecer evidência de que o motor está salvando candidatos com inserção incompleta ou que `slotTemPontos` diverge entre produção e auditoria, será necessário reavaliar.
+- Auditorias sem snapshot técnico (runs anteriores à P2) continuam com comportamento anterior.
+
+**Próximo passo recomendado:** Encerrar temporariamente a investigação e monitorar o uso diário. Se aparecer nova inconsistência, auditar primeiro `divergenciasSnapshot`; só considerar mexer no motor se o resultado salvo divergir do snapshot técnico ou se houver evidência clara contra o legado.
+
+---
+
+## 2026-07-10 - Cascade - Auditoria: rebaixar divergências quando salvo bate com snapshot técnico
+
+**Contexto:** Run real `7a5c8e25-cc5d-4e52-8234-b8af7789234a` (pesquisa `a00e378b-c66d-4f29-96ed-d42acfc6e5ec`) tinha `snapshotTecnicoDisponivel: true` e `divergenciasSnapshot: []` (salvo coerente com snapshot), mas divergências contra o recálculo atual (`tipo-divergente`, `resultado-salvo-nao-elegivel-atual`, `resultado-salvo-fora-do-recorte-atual`) apareciam como `forte` mesmo com `recalculoConclusivo.conclusivo === true`. Causa real: agenda do dia 2026-07-16 foi fechada depois da busca. Divergência não é erro do motor, é mudança posterior.
+
+**Resumo:** Adicionado helper `salvoCoerenteComSnapshot` que valida 6 critérios (slotKey existe no snapshot, `elegivel=true`, tipo salvo == tipo snapshot, motivos vazios, `slotAvailMin >= serviceMin`, `kmAdicionalNaRotaM` válido). `montarDivergencias` agora aceita `snapshotTecnico` como 4º argumento e rebaixa `tipo-divergente`, `resultado-salvo-nao-elegivel-atual` e `resultado-salvo-fora-do-recorte-atual` para `aviso` quando o salvo está coerente com o snapshot, mesmo se `recalculoConclusivo.conclusivo === true`. Mensagem do `detalhe` indica explicitamente "coerente com o snapshot técnico da produção" e "mudança posterior de agenda/disponibilidade".
+
+**Arquivos lidos:**
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `docs/ia/log_progress.md`
+- `src/app/api/procurar-datas/v2/auditar-run/route.ts` (estrutura de slots, montarDivergencias, POST handler)
+- `src/lib/procurar-datas/motor/candidato.ts` (tipo CandidatoPreliminarV2)
+
+**Arquivos alterados:**
+- `src/app/api/procurar-datas/v2/auditar-run/route.ts` — adicionado `salvoCoerenteComSnapshot`; `montarDivergencias` agora aceita 4º argumento `snapshotTecnico`; 3 divergências-alvo rebaixadas quando coerente com snapshot; POST handler atualizado para passar `snapshotTecnico`.
+- `src/app/api/procurar-datas/v2/auditar-run/route.test.ts` — 5 novos testes (cenários 1-5 do usuário).
+
+**Regra de severidade aplicada:**
+- Se `salvoCoerenteComSnapshot(slotKey, resultadoSalvo, snapshotTecnico) === true` → divergências `tipo-divergente`, `resultado-salvo-nao-elegivel-atual`, `resultado-salvo-fora-do-recorte-atual` ficam `severidade: 'aviso'` com mensagem de mudança posterior, mesmo se `recalculoConclusivo.conclusivo === true`.
+- Se salvo não bate com snapshot (tipo divergente, elegivel=false, motivos, etc.) → divergências continuam `forte`.
+- Sem snapshot técnico → comportamento anterior mantido (forte se conclusivo, aviso se não conclusivo).
+
+**Validações realizadas:**
+- `npx tsc --noEmit` → exit 0.
+- `npx vitest run src/app/api/procurar-datas/v2/auditar-run/route.test.ts` → 11 passed (6 anteriores + 5 novos).
+
+**O que NÃO foi alterado:**
+- Motor, ranking, classificação, frete, OSRM, Haversine, `slotTemPontos`, gate de inserção, Apps Script, frontend, banco, migrations, policies.
+- P4/P5 não tocados.
+
+**Pendências:** Nenhuma.
+
+**Riscos conhecidos:**
+- Auditorias sem snapshot técnico continuam com comportamento anterior — sem impacto.
+- O critério de coerência exige `kmAdicionalNaRotaM` válido no snapshot; snapshots antigos sem esse campo não serão considerados coerentes — comportamento conservador correto.
+
+**Próximo passo recomendado:** Usuário executar auditoria do run `7a5c8e25-cc5d-4e52-8234-b8af7789234a` e validar que as divergências do slot `2026-07-16::EQUIPE 1` agora aparecem como aviso/mudança posterior.
+
+---
+
+## 2026-07-10 - Cascade - Correção da rota de auditoria auditar-run: snapshot técnico como referência principal
+
+**Contexto:** A rota `auditar-run` tratava o recálculo atual como verdade absoluta, gerando divergências falsas quando a agenda estava incompleta/zerada. O `snapshotTecnico` já era salvo em `parametros_json.snapshotTecnico` pela produção (P2 anterior), mas a rota de auditoria não o lia nem o usava.
+
+**Resumo:** Corrigida a rota `auditar-run/route.ts` para: (1) extrair e incluir o `snapshotTecnico` no response; (2) detectar recálculo não conclusivo (agenda zerada, 0 candidatos, todos slots sem pontos); (3) rebaixar divergências de tipo/elegível/recorte para `aviso` quando o recálculo não é conclusivo; (4) comparar resultado salvo x snapshot da produção (`divergenciasSnapshot`); (5) ajustar `limitacoesHistoricas` e avisos para mencionar o snapshot técnico.
+
+**Arquivos lidos:**
+- `src/app/api/procurar-datas/v2/auditar-run/route.ts` (rota completa, 910→1142 linhas)
+- `src/lib/procurar-datas/v2/auditoria-pesquisa.ts` (confirma como snapshot é salvo)
+- `src/lib/procurar-datas/motor/pesquisar-datas-v2.ts` (tipo `SnapshotTecnicoCandidatoFinalV2`)
+- `src/app/api/procurar-datas/v2/pesquisar-compat-async/route.ts` (confirma passagem do snapshot)
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+
+**Arquivos alterados:**
+- `src/app/api/procurar-datas/v2/auditar-run/route.ts` — adicionados tipos (`SnapshotTecnicoCandidatoSalvo`, `SnapshotTecnicoSalvo`, `RecalculoConclusivo`, `DivergenciaSnapshot`); helpers `extrairSnapshotTecnico`, `avaliarRecalculoConclusivo`, `compararSalvoComSnapshot`; `montarDivergencias` agora aceita `recalculoConclusivo` e adiciona `severidade` ('forte'|'aviso') em todas as divergências; POST handler extrai snapshot, avalia conclusividade, inclui `snapshotTecnicoDisponivel`, `snapshotTecnico`, `divergenciasSnapshot`, `recalculoConclusivo` no response; `limitacoesHistoricas` atualizado para mencionar snapshot técnico.
+
+**Arquivo criado:**
+- `src/app/api/procurar-datas/v2/auditar-run/route.test.ts` — 6 testes: snapshot disponível/não disponível, divergências snapshot, recálculo não conclusivo, rebaixamento de divergências, limitações históricas.
+
+**Validação de banco (MCP Supabase):**
+- Tabela `procurar_datas_pesquisas_auditoria`, coluna `parametros_json` tipo `jsonb` — confirmada.
+- `parametros_json.snapshotTecnico` existe em produção com `{ candidatosFinais, contadoresMapaKm, fonteAgenda, fonteDisponibilidade }` — confirmado com 3 registros reais.
+- Nenhuma migration necessária.
+
+**Validações realizadas:**
+- `npx tsc --noEmit` → exit 0 (sem erros de tipo).
+- `npx vitest run src/app/api/procurar-datas/v2/auditar-run/route.test.ts` → 6 passed.
+- `npx vitest run` (suite completa) → 1392 passed, 17 failed (3 arquivos pré-existentes: `agenda-real-helper.test.ts`, `diagnostico/route.test.ts`, `pesquisar-compat/route.test.ts` — não relacionados a esta alteração).
+
+**O que NÃO foi alterado:**
+- Motor v2, ranking, classificação, frete, OSRM, Haversine, `slotTemPontos`, gate de inserção completa.
+- `pesquisar-datas-v2.ts`, `adaptar-saida-v2-para-legado.ts`, `auditoria-pesquisa.ts`, `pesquisar-compat-async/route.ts`.
+- Banco, migrations, policies, UI da auditoria.
+
+**Impactos esperados:**
+- Response da auditoria passa a incluir campos aditivos: `snapshotTecnicoDisponivel`, `snapshotTecnico`, `comparacao.divergenciasSnapshot`, `comparacao.recalculoConclusivo`, `severidade` em cada divergência.
+- Divergências falsas por agenda incompleta são marcadas como `aviso` com explicação.
+- Backward compatibility: campos novos são aditivos; consumidores existentes não quebram.
+
+**Riscos conhecidos:**
+- Auditorias antigas sem `snapshotTecnico` em `parametros_json` terão `snapshotTecnicoDisponivel=false` e `snapshotTecnico=null` — comportamento correto e esperado.
+- A UI da auditoria (se consumir `divergencias`) verá o novo campo `severidade` — aditivo, não quebra.
+
+**Próximo passo recomendado:** Usuário executar auditoria em run real com snapshot e validar visualmente as novas informações.
+
+---
+
 ## 2026-07-09 - Cascade - /procurar-datas: instrumentação de auditoria (P1+P2) e P3 no adapter
 
 **Contexto:** Investigação do run onde a busca real salvou 3 slots (24/07, 25/07, 28/07) como `normal`, mas a auditoria recalculada (~1 min depois, planilha inalterada) reprovou os 3 por tempo/distância. Data drift foi descartado pelo usuário (controle operacional da planilha).

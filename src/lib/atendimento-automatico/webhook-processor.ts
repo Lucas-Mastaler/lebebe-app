@@ -500,6 +500,20 @@ async function buscarAncoraCpfBot(
     const endpoint = `/messages?where[ticketId]=${encodeURIComponent(ticketId)}&perPage=50&page=1`;
     const resp = await fetchDigisac(endpoint) as { data?: DigisacMensagem[] };
     const items = Array.isArray(resp?.data) ? resp.data : [];
+    console.log(`[posvenda-webhook] ancora diagnostico ticketId=${ticketId} totalMensagens=${items.length}`);
+    if (items.length > 0) {
+      const amostra = items.slice(0, 3).map((m) => ({
+        id: m.id,
+        type: m.type,
+        isFromMe: m.isFromMe,
+        isComment: m.isComment,
+        visible: m.visible,
+        timestamp: m.timestamp,
+        timestampType: typeof m.timestamp,
+        textPreview: (m.text ?? '').substring(0, 80),
+      }));
+      console.log(`[posvenda-webhook] ancora diagnostico amostra=${JSON.stringify(amostra)}`);
+    }
     mensagens = items.filter((m) => m.type === 'chat' && m.visible !== false && m.isComment !== true);
   } catch (err) {
     console.error(`[posvenda-webhook] erro ao buscar mensagens para ancora ticketId=${ticketId}`, err);
@@ -511,8 +525,11 @@ async function buscarAncoraCpfBot(
     .filter((m) => m.isFromMe === true && m.timestamp && (agora - m.timestamp) <= ANCORA_JANELA_MS)
     .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
 
+  console.log(`[posvenda-webhook] ancora diagnostico mensagensBotRecentes=${mensagensRecentes.length} de ${mensagens.length} mensagens chat`);
+
   for (const msg of mensagensRecentes) {
     const textoNorm = normalizarTextoDigisac(msg.text ?? '');
+    console.log(`[posvenda-webhook] ancora diagnostico textoNorm=${textoNorm.substring(0, 120)}`);
     if (textoNorm.includes(ANCORA_CONFIRMAR)) {
       console.log(`[posvenda-webhook] ancora confirmar entrega detectada contactId=${contactId}`);
       return { tipo: 'confirmar_entrega', ancoraNormalizada: ANCORA_CONFIRMAR };

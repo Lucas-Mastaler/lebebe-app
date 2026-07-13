@@ -17,6 +17,7 @@ import {
   mensagemErroTempo,
 } from '@/lib/procurar-datas/form-helpers'
 import type { OpcoesProcurarDatasResponseSucesso, ValidarEnderecoRequest, ValidarEnderecoResponseSucesso, ValorInicialRequest, ValorInicialResponseSucesso, PesquisarDatasRequest, PesquisarDatasResponseSucesso, ProgressoPesquisaResponseSucesso, PreAgendarRequest, PreAgendarResponseSucesso } from '@/lib/procurar-datas/contratos'
+import { compararEnderecoCEPComGeocodificacao, type ResultadoComparacaoEndereco } from '@/lib/procurar-datas/comparar-endereco'
 
 type OptionLists = {
   tipoBerco?: string[]
@@ -270,6 +271,7 @@ export default function ProcurarDatasPage() {
   const [searching, setSearching] = useState(false)
   const [schedulingIndex, setSchedulingIndex] = useState<number | null>(null)
   const [pesquisaAuditoriaId, setPesquisaAuditoriaId] = useState<string | null>(null)
+  const [addressDivergencia, setAddressDivergencia] = useState<ResultadoComparacaoEndereco | null>(null)
   const cepInputRef = useRef<HTMLInputElement | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -469,6 +471,7 @@ export default function ProcurarDatasPage() {
     setAddressResult(null)
     setAddressConfirmed(false)
     setAddressConfirmedResult(null)
+    setAddressDivergencia(null)
     setSearchPayload(null)
     setValorInicial('')
     setValorInicialNumerico(null)
@@ -490,6 +493,7 @@ export default function ProcurarDatasPage() {
     setAddressResult(null)
     setAddressConfirmed(false)
     setAddressConfirmedResult(null)
+    setAddressDivergencia(null)
     setSearchPayload(null)
     setValorInicial('')
     setValorInicialNumerico(null)
@@ -598,6 +602,7 @@ export default function ProcurarDatasPage() {
     setAddressResult(null)
     setAddressConfirmed(false)
     setAddressConfirmedResult(null)
+    setAddressDivergencia(null)
     setSearchPayload(null)
     setValorInicial('')
     setValorInicialNumerico(null)
@@ -662,6 +667,7 @@ export default function ProcurarDatasPage() {
     setSearchPayload(null)
     setAddressConfirmed(false)
     setAddressConfirmedResult(null)
+    setAddressDivergencia(null)
     setValorInicial('')
     setValorInicialNumerico(null)
     setFormErrors((current) => {
@@ -697,8 +703,19 @@ export default function ProcurarDatasPage() {
       setAddressResult(resultado)
       setAddressConfirmed(false)
       setAddressConfirmedResult(null)
-      setPhase('Endereco validado')
-      toast.success('Endereco validado. Confirme o local para continuar.')
+
+      const comparacao = compararEnderecoCEPComGeocodificacao(
+        { bairro: form.bairro, cidade: form.cidade, uf: form.uf },
+        resultado.address,
+      )
+
+      if (comparacao.divergencia === 'nenhuma') {
+        confirmarLocal(resultado)
+      } else {
+        setAddressDivergencia(comparacao)
+        setPhase('Endereco validado — confirmar divergencia')
+        toast.info('Endereco validado. Confirme se o local esta correto.')
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao validar endereco.'
       const status = (error as ProcurarDatasHttpError).status
@@ -811,17 +828,39 @@ export default function ProcurarDatasPage() {
     }
   }
 
+  function confirmarLocal(resultado: AddressResult) {
+    setAddressConfirmed(true)
+    setAddressConfirmedResult(resultado)
+    setAddressDivergencia(null)
+    setPhase('Local confirmado')
+    toast.success('Local confirmado.')
+    const dataInput = document.getElementById('dataInicial') as HTMLInputElement | null
+    if (dataInput) dataInput.focus()
+  }
+
   function confirmarEndereco() {
     if (!addressResult?.ok || !addressResult.lat || !addressResult.lng) {
       toast.error('Valide o endereco antes de confirmar.')
       return
     }
-    setAddressConfirmed(true)
-    setAddressConfirmedResult(addressResult)
-    setPhase('Local confirmado')
-    toast.success('Local confirmado.')
-    const dataInput = document.getElementById('dataInicial') as HTMLInputElement | null
-    if (dataInput) dataInput.focus()
+    confirmarLocal(addressResult)
+  }
+
+  function revisarEnderecoDivergente() {
+    setAddressDivergencia(null)
+    setAddressConfirmed(false)
+    setAddressConfirmedResult(null)
+    setSearchPayload(null)
+    setValorInicial('')
+    setValorInicialNumerico(null)
+    setProgressStatus('idle')
+    setProgressSnapshot(null)
+    setSearchError('')
+    setElapsedSeconds(0)
+    stopPolling()
+    stopTimer()
+    setEstadoCep('encontrado')
+    setPhase('Revise CEP e endereco')
   }
 
   async function pesquisarDatas() {
@@ -1279,12 +1318,42 @@ export default function ProcurarDatasPage() {
                       Comparar no Google Maps
                     </a>
                   )}
-                  {!addressConfirmed && (
+                  {!addressConfirmed && addressDivergencia && (
                     <Button type="button" size="sm" onClick={confirmarEndereco} disabled={validatingAddress || searching}>
                       Confirmar este local
                     </Button>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {addressDivergencia && !addressConfirmed && (
+            <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+              {addressDivergencia.divergencia === 'bairro' && (
+                <p>
+                  O bairro pesquisado foi <strong>{form.bairro}</strong>, mas a localizacao encontrada retornou <strong>{addressDivergencia.bairroProvider}</strong>. Este local esta correto?
+                </p>
+              )}
+              {addressDivergencia.divergencia === 'cidade' && (
+                <p className="font-medium">
+                  A cidade pesquisada foi <strong>{form.cidade}</strong>, mas a localizacao encontrada retornou <strong>{addressDivergencia.cidadeProvider}</strong>. Este local esta correto?
+                </p>
+              )}
+              {addressDivergencia.divergencia === 'uf' && (
+                <p className="font-medium">
+                  A UF pesquisada foi <strong>{form.uf}</strong>, mas a localizacao encontrada retornou <strong>{addressDivergencia.ufProvider}</strong>. Este local esta correto?
+                </p>
+              )}
+              <div className="mt-3 flex gap-2">
+                <Button type="button" size="sm" onClick={confirmarEndereco} disabled={validatingAddress || searching}>
+                  <CheckCircle2 className="h-4 w-4" />
+                  Sim, confirmar local
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={revisarEnderecoDivergente} disabled={validatingAddress || searching}>
+                  <XCircle className="h-4 w-4" />
+                  Nao, revisar endereco
+                </Button>
               </div>
             </div>
           )}

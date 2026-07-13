@@ -1,3 +1,58 @@
+## 2026-07-13 - Cascade - Frente 1: confirmacao automatica de endereco sem divergencia
+
+**Resumo:** Removida a segunda confirmacao manual ("Confirmar este local") na tela `/procurar-datas` quando nao ha divergencia relevante entre o endereco textual do CEP e o endereco retornado pela geocodificacao. Ao clicar "Endereco correto", o sistema valida a localizacao (fluxo completo atual de cache -> LocationIQ -> Google -> Apps Script), compara bairro/cidade/UF e, se compatveis, avanca automaticamente. So pede confirmacao manual quando ha divergencia de bairro, cidade ou UF. Regras de validacao de coordenadas nao foram alteradas.
+
+**Arquivos lidos:**
+- src/app/procurar-datas/PageClient.tsx
+- src/app/api/procurar-datas/validar-endereco/route.ts
+- src/lib/procurar-datas/validar-endereco-resultado.ts
+- src/lib/procurar-datas/validar-endereco-resultado.test.ts
+- src/lib/procurar-datas/endereco-cache.ts (normalizarTexto)
+- src/lib/procurar-datas/form-helpers.ts
+- src/lib/procurar-datas/locationiq.ts (validarCandidato, bairroDoCandidato, estrutura do resultado)
+- src/lib/procurar-datas/google-geocoding.ts (estrutura do resultado)
+- src/lib/procurar-datas/contratos.ts (EnderecoValidado)
+- src/lib/procurar-datas/cep-helpers.ts
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+
+**Arquivos criados:**
+- src/lib/procurar-datas/comparar-endereco.ts: helper `compararEnderecoCEPComGeocodificacao` que compara bairro/cidade/UF do form com os dados do provider usando `normalizarTexto` (remove acentos, uppercase, pontuacao). Bairro ausente no provider nao bloqueia. Cidade/UF ausentes nao divergem (backend ja rejeita). Retorna tipo `ResultadoComparacaoEndereco` com `divergencia: 'nenhuma' | 'bairro' | 'cidade' | 'uf'` e valores originais para exibicao.
+- src/lib/procurar-datas/comparar-endereco.test.ts: 12 testes cobrindo: sem divergencia, diferenca de acento/caixa/pontuacao, bairro diferente, cidade diferente, UF diferente, bairro ausente, cidade/UF ausentes, UF por extenso, state_code com prefixo BR-.
+
+**Arquivos alterados:**
+- src/app/procurar-datas/PageClient.tsx:
+  - Import de `compararEnderecoCEPComGeocodificacao` e tipo `ResultadoComparacaoEndereco`
+  - Novo estado `addressDivergencia`
+  - `setAddressDivergencia(null)` adicionado a `resetEstadoCepEEndereco`, `limparEstadosDependentesDeCoordenada`, `limparResultadoValidacao`
+  - Funcao `confirmarLocal(resultado)` extraida de `confirmarEndereco()` para reuso
+  - `validarEndereco()`: apos receber coordenada valida, chama `compararEnderecoCEPComGeocodificacao`; se sem divergencia chama `confirmarLocal()` automaticamente; se com divergencia seta `addressDivergencia` e mostra mensagem
+  - Botao "Confirmar este local" so aparece quando `!addressConfirmed && addressDivergencia`
+  - Novo bloco de aviso de divergencia com botoes "Sim, confirmar local" / "Nao, revisar endereco"
+  - Funcao `revisarEnderecoDivergente()` adicionada: limpa estados derivados, volta para `estadoCep='encontrado'`
+
+**Validacoes realizadas:**
+- npx tsc --noEmit --pretty false: sem erros
+- npx eslint nos arquivos alterados: sem erros
+- npx vitest run comparar-endereco.test.ts validar-endereco-resultado.test.ts locationiq.test.ts: 35 passed
+- npx vitest run src/lib/procurar-datas/: 1032 passed, 8 failed (pre-existing em agenda-real-helper.test.ts, nao relacionadas)
+
+**Comandos rodados:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint comparar-endereco.ts comparar-endereco.test.ts PageClient.tsx -> exit 0
+- npx vitest run comparar-endereco.test.ts validar-endereco-resultado.test.ts locationiq.test.ts -> 35 passed
+- npx vitest run src/lib/procurar-datas/ -> 1032 passed, 8 failed (pre-existing)
+
+**Pendencias:**
+- Validar manualmente em producao: CEP com bairro igual -> auto-confirmacao; CEP com bairro diferente -> mostrar divergencia
+- Validar que o fallback de bairro no LocationIQ (suburb || form.bairro) nao mascara divergencias reais — quando o provider nao encontra bairro, ele preenche com form.bairro, logo a comparacao sera igual. Isso e comportamento atual e nao foi alterado.
+
+**Riscos conhecidos:**
+- LocationIQ e Google preenchem `address.suburb` com `form.bairro` como fallback quando o provider nao retorna bairro. Isso significa que bairros ausentes no provider passam como "sem divergencia" — o que e o comportamento desejado (4.5 do pedido).
+- A comparacao e feita no frontend apos o backend ja ter validado a coordenada. Nao ha risco de aceitar coordenada invalida.
+
+---
+
 ## 2026-07-13 - Cascade - Ajuste D+2 automatico + fix timestamp string + logs diagnostico ancora
 
 **Resumo:** Tres alteracoes na Mere: (1) Quando cliente informa data valida menor que D+2, a Mere agora ajusta automaticamente para D+2 e segue para a consulta sem pedir nova data. (2) Mensagem inicial de pedido de data agora inclui data minima dinamica (hoje + 2 dias). (3) Fix de bug onde timestamp string ISO do Digisac fazia o filtro de janela 15min falhar (NaN), impedindo deteccao de ancoras.

@@ -27,7 +27,10 @@ import {
   respostaSemOpcoesAdiantarOferecerPostergar,
   respostaManterDataAtual,
   respostaSemOpcoesPostergar,
+  respostaDataInvalidaAntesD2,
 } from './respostas';
+import { formatarOpcoesDatasParaCliente } from './consulta-datas-mere';
+import type { DatasDisponiveisMere } from './consulta-datas-mere';
 import type { GrupoAgendamento } from '@/lib/google/sheets-service-account';
 
 function grupoBase(parcial: Partial<GrupoAgendamento> = {}): GrupoAgendamento {
@@ -275,5 +278,80 @@ describe('respostas de filtro de datas por acao', () => {
     expect(r.texto).toContain('13/08/2026');
     expect(r.texto).not.toContain('Ã');
     expect(r.texto).not.toContain('Â');
+  });
+});
+
+describe('respostaDataInvalidaAntesD2', () => {
+  it('inclui dataMinima dinamica formatada dd/MM', () => {
+    const r = respostaDataInvalidaAntesD2('12/07');
+    expect(r.tipo).toBe('data_invalida_antes_d2');
+    expect(r.texto).toContain('a partir do dia 12/07');
+    expect(r.texto).toContain('Pode me enviar outra data?');
+  });
+
+  it('mantem quebra de linha entre as frases', () => {
+    const r = respostaDataInvalidaAntesD2('12/07');
+    expect(r.texto).toContain('\n\nPode me enviar outra data?');
+  });
+
+  it('nao contem mojibake', () => {
+    const r = respostaDataInvalidaAntesD2('12/07');
+    expect(r.texto).not.toContain('Ã');
+    expect(r.texto).not.toContain('Â');
+    expect(r.texto).not.toContain('â€');
+  });
+
+  it('exemplo real: hoje 10/07/2026 -> dataMinima 12/07', () => {
+    const hoje = new Date(2026, 6, 10);
+    const d2 = new Date(hoje);
+    d2.setDate(d2.getDate() + 2);
+    const dataMinimaBR = `${String(d2.getDate()).padStart(2, '0')}/${String(d2.getMonth() + 1).padStart(2, '0')}`;
+    const r = respostaDataInvalidaAntesD2(dataMinimaBR);
+    expect(r.texto).toBe('Para conseguir verificar automaticamente, preciso de uma data com pelo menos 2 dias de antecedência, como a partir do dia 12/07.\n\nPode me enviar outra data?');
+  });
+});
+
+describe('formatarOpcoesDatasParaCliente com opcao manter data atual', () => {
+  const datas2: DatasDisponiveisMere[] = [
+    { dataISO: '2026-08-21', dataBR: '21/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 1 },
+    { dataISO: '2026-08-25', dataBR: '25/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 2 },
+  ];
+
+  const datas3: DatasDisponiveisMere[] = [
+    { dataISO: '2026-08-20', dataBR: '20/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 1 },
+    { dataISO: '2026-08-21', dataBR: '21/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 2 },
+    { dataISO: '2026-08-25', dataBR: '25/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 3 },
+  ];
+
+  it('lista com 2 datas inclui opcao 3 - Manter mesma data atual', () => {
+    const texto = formatarOpcoesDatasParaCliente(datas2, true);
+    expect(texto).toContain('1 - 21/08/2026');
+    expect(texto).toContain('2 - 25/08/2026');
+    expect(texto).toContain('3 - Manter mesma data atual');
+    expect(texto).toContain('(1, 2, 3)');
+  });
+
+  it('lista com 3 datas inclui opcao 4 - Manter mesma data atual', () => {
+    const texto = formatarOpcoesDatasParaCliente(datas3, true);
+    expect(texto).toContain('1 - 20/08/2026');
+    expect(texto).toContain('2 - 21/08/2026');
+    expect(texto).toContain('3 - 25/08/2026');
+    expect(texto).toContain('4 - Manter mesma data atual');
+    expect(texto).toContain('(1, 2, 3, 4)');
+  });
+
+  it('sem flag incluirManterDataAtual nao adiciona opcao sintetica', () => {
+    const texto = formatarOpcoesDatasParaCliente(datas2);
+    expect(texto).toContain('1 - 21/08/2026');
+    expect(texto).toContain('2 - 25/08/2026');
+    expect(texto).not.toContain('Manter mesma data atual');
+    expect(texto).toContain('(1, 2)');
+  });
+
+  it('nao contem mojibake na opcao manter', () => {
+    const texto = formatarOpcoesDatasParaCliente(datas2, true);
+    expect(texto).not.toContain('Ã');
+    expect(texto).not.toContain('Â');
+    expect(texto).not.toContain('â€');
   });
 });

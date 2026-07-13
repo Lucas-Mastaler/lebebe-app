@@ -917,13 +917,22 @@ export function extrairDatasDisponiveisElegiveis(
 /**
  * Formata mensagem para o cliente com até 3 opções de data.
  */
-export function formatarOpcoesDatasParaCliente(datas: DatasDisponiveisMere[]): string {
+export function formatarOpcoesDatasParaCliente(datas: DatasDisponiveisMere[], incluirManterDataAtual: boolean = false): string {
   const linhas = datas.map((d) => {
     const diaSemana = isoParaDiaSemana(d.dataISO);
     const label = diaSemana ? `${d.dataBR} (${diaSemana})` : d.dataBR;
     return `${d.rank} - ${label}`;
   });
-  return `Encontrei algumas possibilidades para sua entrega:\n\n${linhas.join('\n')}\n\nQual dessas opções fica melhor para você? Responda com o número desejado (${datas.map((d) => d.rank).join(', ')}).`;
+
+  if (incluirManterDataAtual) {
+    const numeroManter = datas.length + 1;
+    linhas.push(`${numeroManter} - Manter mesma data atual`);
+  }
+
+  const totalOpcoes = incluirManterDataAtual ? datas.length + 1 : datas.length;
+  const numeros = Array.from({ length: totalOpcoes }, (_, i) => i + 1).join(', ');
+
+  return `Encontrei algumas possibilidades para sua entrega:\n\n${linhas.join('\n')}\n\nQual dessas opções fica melhor para você? Responda com o número desejado (${numeros}).`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

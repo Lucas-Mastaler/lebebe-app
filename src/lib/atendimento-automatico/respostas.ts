@@ -256,9 +256,9 @@ export function respostaDataInvalidaPostergar(): RespostaSugerida {
   };
 }
 
-export function respostaDataInvalidaAntesD2(): RespostaSugerida {
+export function respostaDataInvalidaAntesD2(dataMinimaBR: string): RespostaSugerida {
   return {
-    texto: 'Para conseguir verificar automaticamente, preciso de uma data com pelo menos 2 dias de antecedência. Pode me enviar outra data?',
+    texto: `Para conseguir verificar automaticamente, preciso de uma data com pelo menos 2 dias de antecedência, como a partir do dia ${dataMinimaBR}.\n\nPode me enviar outra data?`,
     tipo: 'data_invalida_antes_d2',
   };
 }

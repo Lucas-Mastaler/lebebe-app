@@ -45,6 +45,33 @@ function selecionarUnica(datas: DatasDisponiveisMere[], predicado: (d: DatasDisp
   return { ok: false, motivo: 'nao_encontrada' };
 }
 
+export function interpretarManterDataAtual(texto: string, numeroOpcaoManter: number): boolean {
+  const n = normalizar(texto);
+  if (!n) return false;
+
+  if (n === String(numeroOpcaoManter)) return true;
+
+  const frasesManter = [
+    'nenhuma',
+    'vou deixar como esta',
+    'deixar como esta',
+    'manter',
+    'manter a data',
+    'manter mesma data',
+    'mesma data',
+    'nao quero alterar',
+    'deixa como esta',
+    'deixa a mesma',
+    'continuar como esta',
+  ];
+
+  for (const frase of frasesManter) {
+    if (n === frase || n.includes(frase)) return true;
+  }
+
+  return false;
+}
+
 export function selecionarOpcaoDataPorTexto(texto: string, datas: DatasDisponiveisMere[]): ResultadoSelecaoOpcaoData {
   const n = normalizar(texto);
   if (!n || datas.length === 0) return { ok: false, motivo: 'nao_encontrada' };

@@ -1,3 +1,44 @@
+## 2026-07-10 - Cascade - Ajustes Mere: mensagem D+2 dinamica e opcao Manter mesma data atual
+
+**Resumo:** Dois ajustes na Frente 3 (mensagens/parser/estados) da Mere, sem alterar motor, geocoding, OSRM, Calendar ou Sheets. (1) Mensagem de data invalida por antecedencia D+2 agora inclui dataMinima dinamica (hoje+2) formatada dd/MM. (2) Lista de opcoes de datas sempre inclui opcao sintetica "Manter mesma data atual" como ultimo item, com numeracao correta. Parser aceita numero e textos equivalentes. Ao escolher manter, encerra sem alterar Calendar/Sheets com metadata apropriada.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/respostas.ts
+- src/lib/atendimento-automatico/consulta-datas-mere.ts
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/lib/atendimento-automatico/reagendamento-opcoes.ts
+- src/lib/atendimento-automatico/interpretar-data.ts
+- src/lib/atendimento-automatico/respostas.test.ts
+- src/lib/atendimento-automatico/reagendamento-opcoes.test.ts
+- src/lib/atendimento-automatico/webhook-processor.test.ts
+
+**Arquivos alterados:**
+- src/lib/atendimento-automatico/respostas.ts (respostaDataInvalidaAntesD2 agora aceita dataMinimaBR e inclui na mensagem)
+- src/lib/atendimento-automatico/consulta-datas-mere.ts (formatarOpcoesDatasParaCliente agora aceita incluirManterDataAtual e adiciona opcao sintetica)
+- src/lib/atendimento-automatico/reagendamento-opcoes.ts (adicionada funcao interpretarManterDataAtual)
+- src/lib/atendimento-automatico/webhook-processor.ts (D+2 com dataMinima, aplicar resultado com opcao manter, estado datas_encontradas intercepta manter antes de selecionarOpcaoDataPorTexto, aceitar postergar com opcao manter, fallback com total opcoes atualizado)
+- src/lib/atendimento-automatico/respostas.test.ts (testes D+2 e formatarOpcoesDatasParaCliente)
+- src/lib/atendimento-automatico/reagendamento-opcoes.test.ts (testes interpretarManterDataAtual)
+- src/lib/atendimento-automatico/webhook-processor.test.ts (testes manter por numero, texto e data real)
+
+**Validacoes realizadas:**
+- npx tsc --noEmit --pretty false: sem erros
+- npx eslint nos arquivos alterados: sem erros
+- npx vitest run respostas.test.ts reagendamento-opcoes.test.ts webhook-processor.test.ts: 78 testes passaram
+
+**Comandos rodados:**
+- npx tsc --noEmit --pretty false
+- npx eslint nos 7 arquivos alterados
+- npx vitest run (3 arquivos de teste)
+
+**Pendencias:** Nenhuma.
+
+**Riscos conhecidos:**
+- Sessoes antigas sem opcao_manter_data_atual_numero no metadata: fallback calcula como datas.length + 1.
+- IA fallback nao seleciona opcao sintetica (limite continua totalOpcoes = datas reais), o que e comportamento correto.
+
+---
+
 ## 2026-07-10 - Cascade - Corrigir mojibake em mensagens da Mere
 
 **Resumo:** Corrigido mojibake em tres funcoes de resposta da Mere: `respostaSemOpcoesAdiantarOferecerPostergar`, `respostaManterDataAtual` e `respostaSemOpcoesPostergar`. As strings estavam com acentos corrompidos (ex: `nÃ£o` em vez de `não`, `disponÃ­vel` em vez de `disponível`). Corrigido para UTF-8 correto e adicionados testes para validar ausencia de mojibake.

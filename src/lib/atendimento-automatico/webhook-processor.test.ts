@@ -525,6 +525,9 @@ describe('processarWebhookPosVenda - oferta de postergar apos adiantar sem opcoe
     expect(metadata.datas_disponiveis).toEqual(opcoesPosteriores);
     expect(String(metadata.resposta_sugerida)).toContain('1 - 21/08/2026');
     expect(String(metadata.resposta_sugerida)).toContain('2 - 25/08/2026');
+    expect(String(metadata.resposta_sugerida)).toContain('3 - Manter mesma data atual');
+    expect(metadata.opcao_manter_data_atual_numero).toBe(3);
+    expect(metadata.opcao_manter_data_atual_habilitada).toBe(true);
     expect(String(metadata.resposta_sugerida)).not.toContain('13/08/2026');
   });
 
@@ -556,5 +559,83 @@ describe('processarWebhookPosVenda - oferta de postergar apos adiantar sem opcoe
     });
     const metadata = updateSessao?.data.metadata as Record<string, unknown>;
     expect(String(metadata.resposta_sugerida)).toContain('13/08/2026');
+  });
+});
+
+describe('processarWebhookPosVenda - opcao manter data atual em datas_encontradas', () => {
+  const opcoesDatas = [
+    { dataISO: '2026-08-21', dataBR: '21/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 1 },
+    { dataISO: '2026-08-25', dataBR: '25/08/2026', equipe: 'EQUIPE 1', tipo: 'normal', rank: 2 },
+  ];
+
+  function sessaoDatasEncontradas(): SessaoFake {
+    return sessaoBase({
+      estado: 'datas_encontradas',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [{ ...grupoBase(), data_entrega: '13/08/2026' }],
+        acao_alteracao: 'adiantar',
+        datas_disponiveis: opcoesDatas,
+        total_datas_disponiveis: 2,
+        opcao_manter_data_atual_numero: 3,
+        opcao_manter_data_atual_habilitada: true,
+      },
+    });
+  }
+
+  it('cliente escolhe numero 3 (manter data atual) -> encerra sem Calendar/Sheets', async () => {
+    sessaoAtual = sessaoDatasEncontradas();
+    const resultado = await processarWebhookPosVenda(payload('3', 'msg-manter-numero'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('reagendamento_cancelado');
+    expect(updateSessao?.data.alterou_agenda).toBeUndefined();
+    const metadata = updateSessao?.data.metadata as Record<string, unknown>;
+    expect(metadata).toMatchObject({
+      acao_final: 'manter_data_atual',
+      calendar_alterado: false,
+      planilha_alterada: false,
+      fluxo_concluido: true,
+      motivo_conclusao: 'mantida_data_atual',
+      opcao_manter_data_atual_escolhida: true,
+      opcao_manter_data_atual_origem: 'numero',
+    });
+    expect(String(metadata.resposta_sugerida)).toContain('13/08/2026');
+    expect(String(metadata.resposta_sugerida)).toContain('Tudo bem');
+  });
+
+  it('cliente escreve "Nenhuma vou deixar como está" -> interpreta como manter', async () => {
+    sessaoAtual = sessaoDatasEncontradas();
+    const resultado = await processarWebhookPosVenda(payload('Nenhuma vou deixar como está', 'msg-manter-texto'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('reagendamento_cancelado');
+    const metadata = updateSessao?.data.metadata as Record<string, unknown>;
+    expect(metadata).toMatchObject({
+      acao_final: 'manter_data_atual',
+      calendar_alterado: false,
+      planilha_alterada: false,
+      opcao_manter_data_atual_escolhida: true,
+      opcao_manter_data_atual_origem: 'texto',
+    });
+    expect(String(metadata.resposta_sugerida)).toContain('13/08/2026');
+  });
+
+  it('cliente escolhe numero 1 (data real) -> segue fluxo normal de confirmacao', async () => {
+    sessaoAtual = sessaoDatasEncontradas();
+    const resultado = await processarWebhookPosVenda(payload('1', 'msg-escolhe-data-real'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('aguardando_confirmacao_reagendamento');
+    const metadata = updateSessao?.data.metadata as Record<string, unknown>;
+    expect(metadata).toMatchObject({
+      data_nova_iso: '2026-08-21',
+      confirmacao_reagendamento_pendente: true,
+    });
+    expect(metadata.acao_final).toBeUndefined();
   });
 });

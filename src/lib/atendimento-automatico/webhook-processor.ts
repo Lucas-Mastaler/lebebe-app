@@ -63,7 +63,7 @@ import {
   type ResultadoExecucaoConsulta,
 } from './consulta-datas-mere';
 import { executarReagendamentoCalendar, dataBRParaISO } from './reagendamento-calendar';
-import { selecionarOpcaoDataPorTexto } from './reagendamento-opcoes';
+import { selecionarOpcaoDataPorTexto, interpretarManterDataAtual } from './reagendamento-opcoes';
 
 type OrigemMensagem = 'cliente' | 'bot' | 'humano' | 'sistema';
 
@@ -373,8 +373,9 @@ async function aplicarResultadoConsultaDatas(params: {
     return { ok: true, saved: true, origem: 'cliente' };
   }
 
-  const textoOpcoes = formatarOpcoesDatasParaCliente(datas);
+  const textoOpcoes = formatarOpcoesDatasParaCliente(datas, true);
   const resposta = respostaDatasEncontradas(textoOpcoes);
+  const numeroOpcaoManter = datas.length + 1;
   const novoMetadata = await construirMetadataComResposta({
     sessaoId,
     metadataAtual: {
@@ -396,6 +397,8 @@ async function aplicarResultadoConsultaDatas(params: {
       aguardando_resposta_postergar_sem_opcoes: false,
       total_datas_disponiveis: datas.length,
       datas_disponiveis: datas,
+      opcao_manter_data_atual_numero: numeroOpcaoManter,
+      opcao_manter_data_atual_habilitada: true,
     },
     resposta,
     estado: 'datas_encontradas',
@@ -411,7 +414,7 @@ async function aplicarResultadoConsultaDatas(params: {
     descricao: `Consulta retornou ${datas.length} opção(ões)`,
     metadata: { run_id: execConsulta.runId, datas: datas.map((d: DatasDisponiveisMere) => d.dataISO) },
   });
-  console.log(`[posvenda-webhook] datas encontradas total=${datas.length} sessaoId=${sessaoId}`);
+  console.log(`[posvenda-webhook] opcoes datas exibidas com manter data atual sessaoId=${sessaoId} totalDatas=${datas.length} opcaoManter=${numeroOpcaoManter}`);
   return { ok: true, saved: true, origem: 'cliente' };
 }
 
@@ -2335,7 +2338,10 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           // Outros motivos: manter estado, pedir nova data
           let resposta: RespostaSugerida;
           if (motivo === 'data_desejada_antes_d2') {
-            resposta = respostaDataInvalidaAntesD2();
+            const d2 = new Date(hoje);
+            d2.setDate(d2.getDate() + 2);
+            const dataMinimaBR = `${String(d2.getDate()).padStart(2, '0')}/${String(d2.getMonth() + 1).padStart(2, '0')}`;
+            resposta = respostaDataInvalidaAntesD2(dataMinimaBR);
           } else if (acaoAlteracao === 'adiantar') {
             resposta = respostaDataInvalidaAdiantar();
           } else {
@@ -2818,7 +2824,8 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           const opcoesPosteriores = (metadataAtual?.opcoes_datas_posteriores ?? []) as DatasDisponiveisMere[];
 
           if (respostaOferta === 'aceitar' && opcoesPosteriores.length > 0) {
-            const resposta = respostaDatasEncontradas(formatarOpcoesDatasParaCliente(opcoesPosteriores));
+            const numeroOpcaoManterPostergar = opcoesPosteriores.length + 1;
+            const resposta = respostaDatasEncontradas(formatarOpcoesDatasParaCliente(opcoesPosteriores, true));
             const novoMetadata = await construirMetadataComResposta({
               sessaoId,
               metadataAtual: {
@@ -2831,6 +2838,8 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
                 total_datas_disponiveis: opcoesPosteriores.length,
                 opcoes_datas_exibidas_total: opcoesPosteriores.length,
                 sem_opcoes_para_acao: false,
+                opcao_manter_data_atual_numero: numeroOpcaoManterPostergar,
+                opcao_manter_data_atual_habilitada: true,
               },
               resposta,
               estado: 'datas_encontradas',
@@ -2941,6 +2950,64 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
             });
             return { ok: true, saved: true, origem: 'cliente' };
           }
+        }
+
+        const numeroOpcaoManter = (metadataAtual?.opcao_manter_data_atual_numero as number | undefined) ?? (datasDisponiveis.length + 1);
+        const opcaoManterHabilitada = metadataAtual?.opcao_manter_data_atual_habilitada === true || metadataAtual?.opcao_manter_data_atual_numero !== undefined;
+
+        if (opcaoManterHabilitada && interpretarManterDataAtual(text, numeroOpcaoManter)) {
+          const grupo = obterGrupoSelecionado(metadataAtual);
+          const dataAtualBR = grupo?.data_entrega ?? '';
+          const dataAtualISO = dataBRParaISO(dataAtualBR);
+          const origem = /^\d+$/.test(text.trim()) ? 'numero' : 'texto';
+          const resposta = respostaManterDataAtual(dataAtualBR || dataAtualISO || 'a data atual');
+          const novoMetadata = await construirMetadataComResposta({
+            sessaoId,
+            metadataAtual: {
+              ...(metadataAtual ?? {}),
+              acao_final: 'manter_data_atual',
+              data_entrega_atual_iso: dataAtualISO,
+              calendar_alterado: false,
+              planilha_alterada: false,
+              fluxo_concluido: true,
+              motivo_conclusao: 'mantida_data_atual',
+              opcao_manter_data_atual_escolhida: true,
+              opcao_manter_data_atual_origem: origem,
+            },
+            resposta,
+            estado: 'reagendamento_cancelado',
+            contactId,
+            ticketId,
+            digisacMessageId: messageId,
+            telefoneAutorizado: telefoneAutorizadoFlag,
+          });
+          await supabase.from('atendimento_automatico_sessoes').update({
+            estado: 'reagendamento_cancelado',
+            metadata: novoMetadata,
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', sessaoId);
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, manter_data_atual: true, origem },
+          });
+          await supabase.from('atendimento_automatico_eventos').insert({
+            sessao_id: sessaoId,
+            tipo: 'manter_data_atual',
+            descricao: 'Cliente escolheu manter a data atual',
+            metadata: { data_atual_iso: dataAtualISO, origem },
+          });
+          console.log(`[posvenda-webhook] cliente escolheu manter data atual sessaoId=${sessaoId} dataAtual=${dataAtualISO ?? '-'} origem=${origem}`);
+          return { ok: true, saved: true, origem: 'cliente' };
         }
 
         const selecaoOpcao = selecionarOpcaoDataPorTexto(text, datasDisponiveis);
@@ -3187,7 +3254,8 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           }
 
           // IA nao resolveu: fallback padrao
-          const resposta = respostaDataOpcaoInvalida(totalOpcoes > 0 ? totalOpcoes : 3);
+          const totalOpcoesComManter = opcaoManterHabilitada ? totalOpcoes + 1 : totalOpcoes;
+          const resposta = respostaDataOpcaoInvalida(totalOpcoesComManter > 0 ? totalOpcoesComManter : 3);
           const novoMetadata = await construirMetadataComResposta({
             sessaoId,
             metadataAtual: { ...(metadataAtual ?? {}), ...iaMetadataDatas, ultima_opcao_invalida_em: new Date().toISOString() },

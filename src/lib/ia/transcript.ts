@@ -9,9 +9,11 @@ export interface TranscriptResult {
   tamanhoOriginal: number
 }
 
-function formatarTimestamp(timestamp: number | undefined): string {
+function formatarTimestamp(timestamp: number | string | undefined): string {
   if (!timestamp) return '??/??/???? ??:??'
-  const d = new Date(timestamp * 1000)
+  const ts = typeof timestamp === 'number' ? timestamp * 1000 : Date.parse(timestamp)
+  if (isNaN(ts)) return '??/??/???? ??:??'
+  const d = new Date(ts)
   const dia = String(d.getDate()).padStart(2, '0')
   const mes = String(d.getMonth() + 1).padStart(2, '0')
   const ano = d.getFullYear()
@@ -37,7 +39,11 @@ export async function montarTranscriptChamado(ticketId: string): Promise<Transcr
   })
 
   // Ordena por timestamp ASC
-  const ordenadas = [...filtradas].sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))
+  const ordenadas = [...filtradas].sort((a, b) => {
+    const ta = typeof a.timestamp === 'number' ? a.timestamp : Date.parse(a.timestamp ?? '')
+    const tb = typeof b.timestamp === 'number' ? b.timestamp : Date.parse(b.timestamp ?? '')
+    return (ta ?? 0) - (tb ?? 0)
+  })
 
   const linhas: string[] = []
 

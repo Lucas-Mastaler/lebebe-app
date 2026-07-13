@@ -522,8 +522,18 @@ async function buscarAncoraCpfBot(
 
   const agora = Date.now();
   const mensagensRecentes = mensagens
-    .filter((m) => m.isFromMe === true && m.timestamp && (agora - m.timestamp) <= ANCORA_JANELA_MS)
-    .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+    .filter((m) => {
+      if (m.isFromMe !== true) return false;
+      if (!m.timestamp) return false;
+      const ts = typeof m.timestamp === 'number' ? m.timestamp : Date.parse(m.timestamp);
+      if (isNaN(ts)) return false;
+      return (agora - ts) <= ANCORA_JANELA_MS;
+    })
+    .sort((a, b) => {
+      const ta = typeof a.timestamp === 'number' ? a.timestamp : Date.parse(a.timestamp ?? '');
+      const tb = typeof b.timestamp === 'number' ? b.timestamp : Date.parse(b.timestamp ?? '');
+      return (tb ?? 0) - (ta ?? 0);
+    });
 
   console.log(`[posvenda-webhook] ancora diagnostico mensagensBotRecentes=${mensagensRecentes.length} de ${mensagens.length} mensagens chat`);
 

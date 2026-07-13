@@ -46,7 +46,7 @@ export interface DigisacMensagem {
   isFromMe?: boolean
   visible?: boolean
   isComment?: boolean
-  timestamp?: number
+  timestamp?: number | string
 }
 
 export interface BuscarTicketsOptions {

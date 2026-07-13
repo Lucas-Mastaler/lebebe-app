@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarCheck, CheckCircle2, Edit, Loader2, Search, Send, TimerReset, XCircle } from 'lucide-react'
+import { CalendarCheck, CheckCircle2, Edit, Loader2, RotateCcw, Search, Send, TimerReset, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -278,6 +278,7 @@ export default function ProcurarDatasPage() {
   const activeSearchTokenRef = useRef('')
   const searchStartedAtRef = useRef(0)
   const currentRunIdRef = useRef<string | null>(null)
+  const validationTokenRef = useRef('')
 
   const minDate = useMemo(() => isoDatePlus(form.isEncomenda ? 42 : 2), [form.isEncomenda])
   const maxDate = useMemo(() => isoDatePlus(90), [])
@@ -670,6 +671,8 @@ export default function ProcurarDatasPage() {
     setAddressDivergencia(null)
     setValorInicial('')
     setValorInicialNumerico(null)
+    const validationToken = `val-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    validationTokenRef.current = validationToken
     setFormErrors((current) => {
       const next = { ...current }
       delete next.logradouro
@@ -691,6 +694,7 @@ export default function ProcurarDatasPage() {
         body: JSON.stringify(body),
       })
       const data = (await readJson(response)) as ValidarEnderecoResponseSucesso
+      if (validationTokenRef.current !== validationToken) return
       const resultado = data.resultado as AddressResult
 
       if (!resultado?.ok || !resultado.lat || !resultado.lng) {
@@ -717,6 +721,7 @@ export default function ProcurarDatasPage() {
         toast.info('Endereco validado. Confirme se o local esta correto.')
       }
     } catch (error) {
+      if (validationTokenRef.current !== validationToken) return
       const message = error instanceof Error ? error.message : 'Erro ao validar endereco.'
       const status = (error as ProcurarDatasHttpError).status
       if (status === 422) {
@@ -826,6 +831,29 @@ export default function ProcurarDatasPage() {
       clearInterval(pollRef.current)
       pollRef.current = null
     }
+  }
+
+  function iniciarNovaConsulta() {
+    activeSearchTokenRef.current = ''
+    searchStartedAtRef.current = 0
+    currentRunIdRef.current = null
+    validationTokenRef.current = ''
+    stopPolling()
+    stopTimer()
+    resetEstadoCepEEndereco()
+    setCepInput('')
+    setForm(initialForm)
+    setFormErrors({})
+    setTempoNecessario('')
+    setCalculatingTime(false)
+    setCalculatingValorInicial(false)
+    setSearching(false)
+    setSchedulingIndex(null)
+    setPesquisaAuditoriaId(null)
+    setLoadingCep(false)
+    setValidatingAddress(false)
+    setPhase('Pronto para validar endereco')
+    cepInputRef.current?.focus()
   }
 
   function confirmarLocal(resultado: AddressResult) {
@@ -1069,9 +1097,15 @@ export default function ProcurarDatasPage() {
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
       <div className="flex flex-col gap-2 border-b border-slate-200 pb-4">
-        <div className="flex items-center gap-2 text-[#00A5E6]">
-          <CalendarCheck className="h-5 w-5" />
-          <h1 className="text-xl font-semibold text-slate-900">Procurar Datas</h1>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-[#00A5E6]">
+            <CalendarCheck className="h-5 w-5" />
+            <h1 className="text-xl font-semibold text-slate-900">Procurar Datas</h1>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={iniciarNovaConsulta}>
+            <RotateCcw className="h-4 w-4" />
+            Nova consulta
+          </Button>
         </div>
         <p className="text-sm text-slate-500">Fluxo operacional para pesquisa de datas disponiveis.</p>
       </div>

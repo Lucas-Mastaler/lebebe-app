@@ -1,3 +1,65 @@
+## 2026-07-13 - Cascade - Frente 0/Controle: botao Nova consulta em /procurar-datas
+
+**Resumo:** Adicionado botao "Nova consulta" no topo da tela `/procurar-datas`. Ao clicar, limpa imediatamente toda a consulta atual (CEP, endereco, coordenadas, confirmacao, divergencia, dados da entrega, itens, tempos, resultados, candidato selecionado, pre-agendamento, auditoria, estados de carregamento) e retorna ao estado inicial. Sem modal, sem confirmacao, sem alerta. Requisicoes em andamento (validacao de endereco, polling de busca) sao invalidadas via tokens de execucao (`activeSearchTokenRef`, `validationTokenRef`).
+
+**Arquivos lidos:**
+- src/app/procurar-datas/PageClient.tsx (mapeamento completo de estados, funcoes de limpeza, fluxo de polling, fluxo de validacao)
+- docs/procurar-datas-escopo-equivalencia-legado-v2.md
+- docs/procurar-datas-motor-v2-progresso.md
+- docs/ia/log_progress.md
+
+**Arquivos alterados:**
+- src/app/procurar-datas/PageClient.tsx:
+  - Import de `RotateCcw` do lucide-react
+  - Novo ref `validationTokenRef` para invalidar respostas de validacao de endereco pendentes
+  - `validarEndereco()`: gera `validationToken` no inicio, checa `validationTokenRef.current !== validationToken` apos fetch e no catch para retornar early se a consulta foi resetada
+  - Nova funcao `iniciarNovaConsulta()`: zera `activeSearchTokenRef`, `searchStartedAtRef`, `currentRunIdRef`, `validationTokenRef`; chama `stopPolling()`, `stopTimer()`, `resetEstadoCepEEndereco()`; limpa `cepInput`, `form` (reset para `initialForm`), `formErrors`, `tempoNecessario`, `calculatingTime`, `calculatingValorInicial`, `searching`, `schedulingIndex`, `pesquisaAuditoriaId`, `loadingCep`, `validatingAddress`; seta `phase` para `'Pronto para validar endereco'`; foca no campo CEP
+  - Botao "Nova consulta" adicionado no header da tela, ao lado do titulo, com `variant="outline"`, `size="sm"` e icone `RotateCcw`
+
+**Funcoes reaproveitadas:**
+- `resetEstadoCepEEndereco()` — limpa estadoCep, addressValidationError, addressValidationReviewMode, addressResult, addressConfirmed, addressConfirmedResult, addressDivergencia, searchPayload, valorInicial, valorInicialNumerico, progressStatus, progressSnapshot, searchError, elapsedSeconds, cepSemLogradouro, cepSemBairro, stopPolling, stopTimer
+- `stopPolling()` — limpa pollRef
+- `stopTimer()` — limpa timerRef
+
+**Estados limpos por iniciarNovaConsulta:**
+- CEP: cepInput, estadoCep, loadingCep, cepSemLogradouro, cepSemBairro
+- Endereco: form.logradouro, form.numero, form.bairro, form.cidade, form.uf
+- Coordenadas: addressResult, addressConfirmed, addressConfirmedResult, addressDivergencia, validatingAddress
+- Entrega: form.dataInicial, form.isEncomenda, form.isRural, form.isCondominio, form.tipoBerco, form.comoda, form.roupeiro, form.poltrona, form.painel
+- Tempos: tempoNecessario, calculatingTime
+- Valores: valorInicial, valorInicialNumerico, calculatingValorInicial
+- Resultados: searchPayload, progressSnapshot, progressStatus, searchError, elapsedSeconds, searching, schedulingIndex, pesquisaAuditoriaId
+- Erros: formErrors, addressValidationError, addressValidationReviewMode
+- Refs: activeSearchTokenRef, searchStartedAtRef, currentRunIdRef, validationTokenRef
+- Phase: 'Pronto para validar endereco'
+
+**Estados NAO limpos (correto):**
+- opcoes (listas permanentes carregadas da API)
+- tempoMapLoaded (mapa de tempos carregado uma vez)
+- loadingOptions (carregamento inicial)
+- Autenticacao e permissoes (fora do PageClient)
+
+**Validacoes realizadas:**
+- npx tsc --noEmit --pretty false: sem erros
+- npx eslint src/app/procurar-datas/PageClient.tsx --quiet: sem erros
+- npx vitest run comparar-endereco.test.ts validar-endereco-resultado.test.ts locationiq.test.ts: 35 passed
+
+**Comandos rodados:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint src/app/procurar-datas/PageClient.tsx --quiet -> exit 0
+- npx vitest run comparar-endereco.test.ts validar-endereco-resultado.test.ts locationiq.test.ts -> 35 passed
+
+**Pendencias:**
+- Validacao manual completa (preencher CEP, validar, pesquisar, selecionar, clicar Nova consulta, confirmar reset total)
+- Validar clicar Nova consulta durante validacao de endereco em andamento (resposta nao deve repopular)
+- Validar clicar Nova consulta durante polling de busca (resultados nao devem repopular)
+
+**Riscos conhecidos:**
+- `validarEndereco()` nao usa AbortController, mas usa `validationTokenRef` para ignorar respostas apos reset. Se o fetch ja retornou e esta no meio do processamento sincrono entre `readJson` e a checagem do token, ha uma janela minima onde o resultado poderia setar estado antes da checagem. Risco muito baixo.
+- `buscarCep` (busca de CEP via API) nao usa token de invalidacao. Se o usuario clicar Nova consulta durante um fetch de CEP, a resposta pode setar `form.logradouro`, `form.bairro` etc. Risco baixo pois o fetch de CEP e rapido (~1s) e o form sera sobrescrito com `initialForm` (vazio) pela limpeza. Se a resposta chegar apos a limpeza, setara logradouro/bairro no form ja vazio. **Mitigacao possivel**: adicionar token em buscarCep, mas isso seria alteracao adicional. O comportamento atual de `rejeitarEnderecoCep` tambem nao cancela o fetch de CEP.
+
+---
+
 ## 2026-07-13 - Cascade - Frente 1: confirmacao automatica de endereco sem divergencia
 
 **Resumo:** Removida a segunda confirmacao manual ("Confirmar este local") na tela `/procurar-datas` quando nao ha divergencia relevante entre o endereco textual do CEP e o endereco retornado pela geocodificacao. Ao clicar "Endereco correto", o sistema valida a localizacao (fluxo completo atual de cache -> LocationIQ -> Google -> Apps Script), compara bairro/cidade/UF e, se compatveis, avanca automaticamente. So pede confirmacao manual quando ha divergencia de bairro, cidade ou UF. Regras de validacao de coordenadas nao foram alteradas.

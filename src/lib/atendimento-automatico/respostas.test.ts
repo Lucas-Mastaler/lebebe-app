@@ -27,7 +27,7 @@ import {
   respostaSemOpcoesAdiantarOferecerPostergar,
   respostaManterDataAtual,
   respostaSemOpcoesPostergar,
-  respostaDataInvalidaAntesD2,
+  respostaDataAjustadaD2,
 } from './respostas';
 import { formatarOpcoesDatasParaCliente } from './consulta-datas-mere';
 import type { DatasDisponiveisMere } from './consulta-datas-mere';
@@ -175,10 +175,12 @@ describe('respostas', () => {
     expect(r.texto).toContain('Av. Brasil, 500');
   });
 
-  it('gera resposta aguardando data desejada', () => {
-    const r = respostaAguardandoDataDesejada();
+  it('gera resposta aguardando data desejada com dataMinima dinamica', () => {
+    const r = respostaAguardandoDataDesejada('15/07');
     expect(r.tipo).toBe('aguardando_data_desejada');
     expect(r.texto).toContain('A partir de qual data');
+    expect(r.texto).toContain('15/07');
+    expect(r.texto).toContain('antecedência');
   });
 
   it('gera resposta transferido humano por endereco', () => {
@@ -281,21 +283,21 @@ describe('respostas de filtro de datas por acao', () => {
   });
 });
 
-describe('respostaDataInvalidaAntesD2', () => {
+describe('respostaDataAjustadaD2', () => {
   it('inclui dataMinima dinamica formatada dd/MM', () => {
-    const r = respostaDataInvalidaAntesD2('12/07');
-    expect(r.tipo).toBe('data_invalida_antes_d2');
-    expect(r.texto).toContain('a partir do dia 12/07');
-    expect(r.texto).toContain('Pode me enviar outra data?');
+    const r = respostaDataAjustadaD2('12/07');
+    expect(r.tipo).toBe('data_ajustada_d2');
+    expect(r.texto).toContain('12/07');
+    expect(r.texto).toContain('antecedência');
   });
 
-  it('mantem quebra de linha entre as frases', () => {
-    const r = respostaDataInvalidaAntesD2('12/07');
-    expect(r.texto).toContain('\n\nPode me enviar outra data?');
+  it('nao pede outra data', () => {
+    const r = respostaDataAjustadaD2('12/07');
+    expect(r.texto).not.toContain('Pode me enviar outra data?');
   });
 
   it('nao contem mojibake', () => {
-    const r = respostaDataInvalidaAntesD2('12/07');
+    const r = respostaDataAjustadaD2('12/07');
     expect(r.texto).not.toContain('Ã');
     expect(r.texto).not.toContain('Â');
     expect(r.texto).not.toContain('â€');
@@ -306,8 +308,8 @@ describe('respostaDataInvalidaAntesD2', () => {
     const d2 = new Date(hoje);
     d2.setDate(d2.getDate() + 2);
     const dataMinimaBR = `${String(d2.getDate()).padStart(2, '0')}/${String(d2.getMonth() + 1).padStart(2, '0')}`;
-    const r = respostaDataInvalidaAntesD2(dataMinimaBR);
-    expect(r.texto).toBe('Para conseguir verificar automaticamente, preciso de uma data com pelo menos 2 dias de antecedência, como a partir do dia 12/07.\n\nPode me enviar outra data?');
+    const r = respostaDataAjustadaD2(dataMinimaBR);
+    expect(r.texto).toBe('Para conseguir verificar automaticamente, preciso considerar pelo menos 2 dias de antecedência.\n\nComo a primeira data possível para pesquisa é 12/07, vou verificar as possibilidades a partir dessa data.');
   });
 });
 

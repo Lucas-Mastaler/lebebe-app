@@ -1,3 +1,56 @@
+## 2026-07-13 - Cascade - Ajuste D+2 automatico + fix timestamp string + logs diagnostico ancora
+
+**Resumo:** Tres alteracoes na Mere: (1) Quando cliente informa data valida menor que D+2, a Mere agora ajusta automaticamente para D+2 e segue para a consulta sem pedir nova data. (2) Mensagem inicial de pedido de data agora inclui data minima dinamica (hoje + 2 dias). (3) Fix de bug onde timestamp string ISO do Digisac fazia o filtro de janela 15min falhar (NaN), impedindo deteccao de ancoras.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/lib/atendimento-automatico/respostas.ts
+- src/lib/atendimento-automatico/respostas.test.ts
+- src/lib/atendimento-automatico/interpretar-data.ts
+- src/lib/digisac/sgi-sync.ts (DigisacMensagem)
+- src/lib/ia/transcript.ts (usa DigisacMensagem.timestamp)
+
+**Arquivos alterados:**
+- src/lib/atendimento-automatico/respostas.ts:
+  - `respostaAguardandoDataDesejada` agora recebe `dataMinimaBR: string` e inclui na mensagem
+  - `respostaDataInvalidaAntesD2` substituida por `respostaDataAjustadaD2` (nao pede outra data, avisa que vai usar D+2)
+  - Tipo `data_ajustada_d2` adicionado ao enum `TipoRespostaSugerida`
+- src/lib/atendimento-automatico/webhook-processor.ts:
+  - Bloco `data_desejada_antes_d2`: em vez de pedir nova data, ajusta para D+2, envia mensagem de aviso e dispara consulta automaticamente
+  - Metadata adicionada: `data_desejada_original_iso`, `data_desejada_original_br`, `data_desejada_ajustada_por_d2`, `data_desejada_ajustada_iso`, `data_minima_pesquisa_iso`
+  - Funcoes helper `calcularDataMinimaBR` e `calcularDataMinimaISO` adicionadas
+  - `respostaAguardandoDataDesejada` chamada com `calcularDataMinimaBR(new Date())`
+  - Fix: filtro de timestamp em `buscarAncoraCpfBot` agora converte string ISO com `Date.parse()` antes de comparar
+  - Logs diagnosticos adicionados em `buscarAncoraCpfBot` (totalMensagens, amostra, mensagensBotRecentes, textoNorm)
+- src/lib/digisac/sgi-sync.ts:
+  - Interface `DigisacMensagem.timestamp` atualizada para `number | string`
+- src/lib/ia/transcript.ts:
+  - `formatarTimestamp` e sort ajustados para lidar com `timestamp` como string ou number
+- src/lib/atendimento-automatico/respostas.test.ts:
+  - Teste de `respostaAguardandoDataDesejada` atualizado para receber `dataMinimaBR`
+  - Teste de `respostaDataInvalidaAntesD2` substituido por `respostaDataAjustadaD2` (4 testes)
+
+**Validacoes realizadas:**
+- npx tsc --noEmit --pretty false: sem erros
+- npx eslint nos arquivos alterados: sem erros
+- npx vitest run respostas.test.ts webhook-processor.test.ts: 69 testes passaram (2 arquivos)
+- npx vitest run consulta-datas-mere.test.ts: 15 passed, 6 skipped
+
+**Comandos rodados:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint respostas.ts respostas.test.ts webhook-processor.ts -> exit 0
+- npx vitest run respostas.test.ts webhook-processor.test.ts -> 69 passed
+- npx vitest run consulta-datas-mere.test.ts -> 15 passed, 6 skipped
+
+**Pendencias:**
+- Logs diagnosticos em `buscarAncoraCpfBot` devem ser removidos apos confirmar que a deteccao de ancora funciona em producao
+- Validar em producao o fluxo completo: cliente envia data < D+2 -> Mere ajusta e consulta automaticamente
+
+**Riscos conhecidos:**
+- Se `transcript.ts` usava timestamp como segundos (timestamp * 1000) e o Digisac envia string ISO, `Date.parse` retorna milissegundos - o comportamento pode mudar para mensagens onde timestamp era numero em segundos. Nao confirmado se o Digisac envia timestamp em segundos ou milissegundos quando e numero.
+
+---
+
 ## 2026-07-13 - Cascade - Fix bug gatilho Mere: ancora de CPF do Bot
 
 **Resumo:** Corrigido bug critico onde a Mere iniciava sessao indevidamente quando cliente digitava 1 ou 2 em submenus do Bot (ex: montadores). Causa raiz: detectarSolicitacao tratava 1 e 2 como selecao do menu principal sem validar contexto. Solucao: removidos 1 e 2 como gatilhos diretos; sessao so e criada quando cliente envia CPF apos mensagem do Bot contendo uma das duas ancoras especificas dos fluxos 1/2. Ancoras detectadas via API do Digisac (busca mensagens recentes do ticket, janela 15min, normalizacao de texto). Sessoes ja ativas nao foram afetadas.

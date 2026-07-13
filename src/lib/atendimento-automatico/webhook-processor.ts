@@ -15,7 +15,7 @@ import {
   respostaConfirmarEntregaUnica,
   respostaDataDesejadaRecebida,
   respostaDataInvalidaAdiantar,
-  respostaDataInvalidaAntesD2,
+  respostaDataAjustadaD2,
   respostaDataInvalidaForaJanelaD90,
   respostaDataInvalidaPostergar,
   respostaDataNaoInterpretada,
@@ -551,6 +551,20 @@ async function buscarAncoraCpfBot(
   }
 
   return null;
+}
+
+function calcularDataMinimaBR(hoje: Date): string {
+  const d2 = new Date(hoje);
+  d2.setHours(0, 0, 0, 0);
+  d2.setDate(d2.getDate() + 2);
+  return `${String(d2.getDate()).padStart(2, '0')}/${String(d2.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function calcularDataMinimaISO(hoje: Date): string {
+  const d2 = new Date(hoje);
+  d2.setHours(0, 0, 0, 0);
+  d2.setDate(d2.getDate() + 2);
+  return `${d2.getFullYear()}-${String(d2.getMonth() + 1).padStart(2, '0')}-${String(d2.getDate()).padStart(2, '0')}`;
 }
 
 function extrairTelefone(msg: Record<string, unknown>): string | null {
@@ -2106,7 +2120,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           const novoMetadata = await construirMetadataComResposta({
             sessaoId,
             metadataAtual: { ...(metadataAtual ?? {}), ...iaMetadataEndereco, endereco_confirmado: true },
-            resposta: respostaAguardandoDataDesejada(),
+            resposta: respostaAguardandoDataDesejada(calcularDataMinimaBR(new Date())),
             estado: 'aguardando_data_desejada',
             contactId,
             ticketId,
@@ -2399,14 +2413,99 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
             return { ok: true, saved: true, origem: 'cliente' };
           }
 
+          // data_desejada_antes_d2: ajustar automaticamente para D+2 e seguir consulta
+          if (motivo === 'data_desejada_antes_d2') {
+            const dataMinimaBR = calcularDataMinimaBR(hoje);
+            const dataMinimaISO = calcularDataMinimaISO(hoje);
+            const respostaAjuste = respostaDataAjustadaD2(dataMinimaBR);
+
+            console.log(`[posvenda-webhook] data ajustada D+2 original=${interpretacao.iso} ajustada=${dataMinimaISO} sessaoId=${sessaoId}`);
+
+            // Registrar mensagem do cliente
+            await supabase.from('atendimento_automatico_mensagens').insert({
+              sessao_id: sessaoId,
+              digisac_message_id: messageId,
+              digisac_ticket_id: ticketId,
+              digisac_contact_id: contactId ?? null,
+              origem: 'cliente',
+              texto: text,
+              tipo_mensagem: msg.type as string | undefined,
+              timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+              status: 'processada',
+              metadata: { serviceId, departmentId, data_desejada_iso: interpretacao.iso, data_desejada_br: interpretacao.br },
+            });
+
+            // Registrar evento
+            await supabase.from('atendimento_automatico_eventos').insert({
+              sessao_id: sessaoId,
+              tipo: 'data_desejada_ajustada_d2',
+              descricao: `Data desejada ${interpretacao.br} ajustada para D+2 (${dataMinimaISO})`,
+              metadata: {
+                data_desejada_original_iso: interpretacao.iso,
+                data_desejada_original_br: interpretacao.br,
+                data_desejada_ajustada_iso: dataMinimaISO,
+                data_minima_pesquisa_iso: dataMinimaISO,
+                acao_alteracao: acaoAlteracao,
+              },
+            });
+
+            // Salvar estado consultando_datas + resposta de aviso ao cliente
+            const metadataConsultando = await construirMetadataComResposta({
+              sessaoId,
+              metadataAtual: {
+                ...(metadataAtual ?? {}),
+                data_desejada_texto_original: text.substring(0, 100),
+                data_desejada_original_iso: interpretacao.iso,
+                data_desejada_original_br: interpretacao.br,
+                data_desejada_ajustada_por_d2: true,
+                data_desejada_ajustada_iso: dataMinimaISO,
+                data_minima_pesquisa_iso: dataMinimaISO,
+                data_desejada_iso: dataMinimaISO,
+                data_desejada_br: interpretacao.br,
+                data_desejada_interpretada_em: new Date().toISOString(),
+                data_desejada_valida_para_acao: true,
+                consulta_datas_status: 'consultando',
+                consulta_datas_em: new Date().toISOString(),
+              },
+              resposta: respostaAjuste,
+              estado: 'consultando_datas',
+              contactId,
+              ticketId,
+              digisacMessageId: messageId,
+              telefoneAutorizado: telefoneAutorizadoFlag,
+            });
+
+            await supabase.from('atendimento_automatico_sessoes').update({
+              estado: 'consultando_datas',
+              metadata: metadataConsultando,
+              ultima_mensagem_cliente: text.substring(0, 200),
+              ultima_mensagem_em: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }).eq('id', sessaoId);
+
+            // Disparar consulta de datas com data ajustada D+2
+            const execConsulta = await executarConsultaDatasMere({
+              grupo: obterGrupoSelecionado(metadataAtual),
+              dataDesejadaISO: dataMinimaISO,
+              sessaoId,
+            });
+
+            return await aplicarResultadoConsultaDatas({
+              execConsulta,
+              sessaoId,
+              metadataBase: metadataConsultando as Record<string, unknown>,
+              contactId,
+              ticketId,
+              messageId,
+              telefoneAutorizadoFlag,
+              supabase,
+              text,
+            });
+          }
+
           // Outros motivos: manter estado, pedir nova data
           let resposta: RespostaSugerida;
-          if (motivo === 'data_desejada_antes_d2') {
-            const d2 = new Date(hoje);
-            d2.setDate(d2.getDate() + 2);
-            const dataMinimaBR = `${String(d2.getDate()).padStart(2, '0')}/${String(d2.getMonth() + 1).padStart(2, '0')}`;
-            resposta = respostaDataInvalidaAntesD2(dataMinimaBR);
-          } else if (acaoAlteracao === 'adiantar') {
+          if (acaoAlteracao === 'adiantar') {
             resposta = respostaDataInvalidaAdiantar();
           } else {
             resposta = respostaDataInvalidaPostergar();

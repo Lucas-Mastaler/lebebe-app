@@ -26,6 +26,7 @@ export type TipoRespostaSugerida =
   | 'data_invalida_adiantar'
   | 'data_invalida_postergar'
   | 'data_invalida_antes_d2'
+  | 'data_ajustada_d2'
   | 'data_invalida_fora_janela_d90'
   | 'data_desejada_recebida'
   | 'fallback_confirmacao_pedido'
@@ -186,9 +187,9 @@ export function respostaConfirmarEnderecoAlteracao(acao: 'adiantar' | 'postergar
   };
 }
 
-export function respostaAguardandoDataDesejada(): RespostaSugerida {
+export function respostaAguardandoDataDesejada(dataMinimaBR: string): RespostaSugerida {
   return {
-    texto: 'Perfeito!\n\nA partir de qual data gostaria de receber?\n\nPode responder com uma data, por exemplo: 20/07 ou 20/07/2026.',
+    texto: `Perfeito!\n\nA partir de qual data gostaria de receber?\n\nPara conseguir verificar automaticamente, preciso considerar pelo menos 2 dias de antecedência. Hoje, consigo pesquisar a partir de ${dataMinimaBR}.\n\nPode responder com uma data, por exemplo: 20/07 ou 20/07/2026.`,
     tipo: 'aguardando_data_desejada',
   };
 }
@@ -256,10 +257,10 @@ export function respostaDataInvalidaPostergar(): RespostaSugerida {
   };
 }
 
-export function respostaDataInvalidaAntesD2(dataMinimaBR: string): RespostaSugerida {
+export function respostaDataAjustadaD2(dataMinimaBR: string): RespostaSugerida {
   return {
-    texto: `Para conseguir verificar automaticamente, preciso de uma data com pelo menos 2 dias de antecedência, como a partir do dia ${dataMinimaBR}.\n\nPode me enviar outra data?`,
-    tipo: 'data_invalida_antes_d2',
+    texto: `Para conseguir verificar automaticamente, preciso considerar pelo menos 2 dias de antecedência.\n\nComo a primeira data possível para pesquisa é ${dataMinimaBR}, vou verificar as possibilidades a partir dessa data.`,
+    tipo: 'data_ajustada_d2',
   };
 }
 

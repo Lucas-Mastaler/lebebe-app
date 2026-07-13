@@ -259,7 +259,7 @@ export function respostaDataInvalidaPostergar(): RespostaSugerida {
 
 export function respostaDataAjustadaD2(dataMinimaBR: string): RespostaSugerida {
   return {
-    texto: `Para conseguir verificar automaticamente, preciso considerar pelo menos 2 dias de antecedência.\n\nComo a primeira data possível para pesquisa é ${dataMinimaBR}, vou verificar as possibilidades a partir dessa data.`,
+    texto: `Para conseguir verificar automaticamente, preciso considerar pelo menos 2 dias de antecedência.\n\nComo a primeira data possível para pesquisa é ${dataMinimaBR}, vou verificar as possibilidades a partir dessa data.\n\nAguarde um Momento...`,
     tipo: 'data_ajustada_d2',
   };
 }

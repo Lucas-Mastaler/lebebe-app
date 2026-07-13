@@ -1067,3 +1067,68 @@ Como a Mere e `/procurar-datas` usam o mesmo helper, ambos passam a rejeitar o m
 - Validar em producao o mesmo caso Rua Huxley, 43 depois do deploy.
 - O provider ainda pode retornar a mesma coordenada; a diferenca esperada e que o cache de baixa confianca nao sera aceito silenciosamente.
 - Recomenda-se manter producao restrita com `ATENDIMENTO_POSVENDA_ALLOWED_PHONES=554192350811` ate validar o caso real.
+
+---
+
+## Fase: Fix de gatilho indevido por 1/2 em submenus (ancora de CPF do Bot)
+
+### Problema real
+Cliente digitava `1` ou `2` em submenus do Bot (ex: montadores) e a Mere iniciava sessao indevidamente, pois `detectarSolicitacao` tratava 1 e 2 como selecao do menu principal sem validar contexto.
+
+### Causa raiz
+`detectarSolicitacao` em `webhook-processor.ts` tinha matches exatos para `1` -> `confirmar_entrega` e `2` -> `alterar_entrega`, sem nenhuma verificacao de contexto anterior.
+
+### Correcao aplicada
+1. **Removidos** `if (textoNormalizado === '1') return 'confirmar_entrega'` e `if (textoNormalizado === '2') return 'alterar_entrega'` de `detectarSolicitacao`.
+2. **Nova funcao** `buscarAncoraCpfBot(ticketId, contactId)`: busca mensagens recentes do ticket via `fetchDigisac('/messages?where[ticketId]=...')`, filtra `isFromMe=true` dentro da janela de 15min, normaliza texto com `normalizarTextoDigisac` e procura por duas ancoras oficiais.
+3. **Bloco "Sem sessao existente" reescrito**:
+   - CPF detectado sem ancora -> ignora com log `cpf ignorado sem ancora valida`
+   - CPF detectado com ancora -> cria sessao + processa documento imediatamente via `prepararBuscaAgendaPorDocumento`
+   - Numerico fora de sessao -> ignora com log `opcao numerica ignorada fora de sessao`
+   - Frases textuais ("confirmar data de entrega") continuam funcionando como antes
+4. **Metadata inicial** da sessao agora inclui `gatilho_inicio`, `ancora_detectada`, `mensagem_ancora_normalizada`, `iniciado_por_opcao_menu=false`.
+5. **Logs seguros** (sem logar CPF completo).
+
+### Ancoras oficiais (devem estar nas mensagens do Bot)
+- Fluxo 1 (confirmar): `para eu confirmar a sua data de entrega`
+- Fluxo 2 (alterar): `para verificar a possibilidade de alterar sua data`
+
+### Arquivos alterados
+- `src/lib/atendimento-automatico/webhook-processor.ts` — removidos gatilhos 1/2, adicionada funcao `buscarAncoraCpfBot`, reescrito bloco sem sessao, metadata inicial, logs
+- `src/lib/atendimento-automatico/webhook-processor.test.ts` — mock de `fetchDigisac`, mock de insert com chaining, 9 novos testes
+
+### Testes adicionados (9)
+1. CPF apos ancora confirmar -> cria sessao `confirmar_entrega`
+2. CPF apos ancora alterar -> cria sessao `alterar_entrega`
+3. CPF sem ancora (montadores) -> ignora
+4. CPF sem nenhuma mensagem de Bot -> ignora
+5. Numerico 1 fora de sessao -> ignora
+6. Numerico 2 fora de sessao -> ignora
+7. Sessao ativa em `aguardando_escolha_acao` aceita 1 (nao quebra)
+8. Ancora com markdown e acentos -> detectada
+9. Ancora fora da janela de 15min -> ignora CPF
+
+### Validacoes
+- `npx tsc --noEmit --pretty false` -> 0 erros
+- `npx eslint webhook-processor.ts webhook-processor.test.ts` -> 0 erros
+- `npx vitest run webhook-processor.test.ts` -> 31 passed (22 existentes + 9 novos)
+- `npx vitest run respostas.test.ts reagendamento-opcoes.test.ts` -> 56 passed (nao quebrou)
+
+### Pendencias
+- **Configurar no Digisac** as mensagens de CPF dos fluxos 1 e 2 com as frases ancora exatas. Sem isso, a Mere nao iniciara sessao para clientes sem sessao ativa.
+
+### Riscos conhecidos
+- Se o Digisac nao retornar `isFromMe=true` nas mensagens do Bot, a ancora nao sera detectada
+- Chamada extra a API do Digisac ao receber CPF sem sessao (latencia adicional)
+- Frases textuais continuam funcionando como gatilho sem ancora (fluxo antigo preservado)
+
+### Nao alterado
+- Motor `/procurar-datas`
+- OSRM/Haversine
+- Ranking/classificacao
+- Calendar
+- Sheets
+- Geocoding
+- IA fallback
+- Estados do fluxo dentro de sessao ativa
+- Mensagens de negocio

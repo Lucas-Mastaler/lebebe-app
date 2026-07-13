@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/service';
 import { normalizarTextoDigisac } from '@/lib/digisac/triagem';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
+import type { DigisacMensagem } from '@/lib/digisac/sgi-sync';
 import { buscarAgendamentosPorDocumento, atualizarDataAgendaGoogleOriginalMere } from '@/lib/google/sheets-service-account';
 import type { GrupoAgendamento, EventoReagendamentoPlanilha } from '@/lib/google/sheets-service-account';
 import {
@@ -449,9 +450,6 @@ function detectarSolicitacao(textoNormalizado: string): string | null {
 
   if (ambíguas.includes(textoNormalizado)) return null;
 
-  if (textoNormalizado === '1') return 'confirmar_entrega';
-  if (textoNormalizado === '2') return 'alterar_entrega';
-
   const frasesConfirmar = [
     'confirmar data de entrega',
     'confirmar data entrega',
@@ -484,6 +482,45 @@ function detectarSolicitacao(textoNormalizado: string): string | null {
 
   for (const frase of frasesAlterar) {
     if (textoNormalizado.includes(frase)) return 'alterar_entrega';
+  }
+
+  return null;
+}
+
+const ANCORA_CONFIRMAR = 'para eu confirmar a sua data de entrega';
+const ANCORA_ALTERAR = 'para verificar a possibilidade de alterar sua data';
+const ANCORA_JANELA_MS = 15 * 60 * 1000;
+
+async function buscarAncoraCpfBot(
+  ticketId: string,
+  contactId: string | null
+): Promise<{ tipo: string; ancoraNormalizada: string } | null> {
+  let mensagens: DigisacMensagem[] = [];
+  try {
+    const endpoint = `/messages?where[ticketId]=${encodeURIComponent(ticketId)}&perPage=50&page=1`;
+    const resp = await fetchDigisac(endpoint) as { data?: DigisacMensagem[] };
+    const items = Array.isArray(resp?.data) ? resp.data : [];
+    mensagens = items.filter((m) => m.type === 'chat' && m.visible !== false && m.isComment !== true);
+  } catch (err) {
+    console.error(`[posvenda-webhook] erro ao buscar mensagens para ancora ticketId=${ticketId}`, err);
+    return null;
+  }
+
+  const agora = Date.now();
+  const mensagensRecentes = mensagens
+    .filter((m) => m.isFromMe === true && m.timestamp && (agora - m.timestamp) <= ANCORA_JANELA_MS)
+    .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+
+  for (const msg of mensagensRecentes) {
+    const textoNorm = normalizarTextoDigisac(msg.text ?? '');
+    if (textoNorm.includes(ANCORA_CONFIRMAR)) {
+      console.log(`[posvenda-webhook] ancora confirmar entrega detectada contactId=${contactId}`);
+      return { tipo: 'confirmar_entrega', ancoraNormalizada: ANCORA_CONFIRMAR };
+    }
+    if (textoNorm.includes(ANCORA_ALTERAR)) {
+      console.log(`[posvenda-webhook] ancora alterar entrega detectada contactId=${contactId}`);
+      return { tipo: 'alterar_entrega', ancoraNormalizada: ANCORA_ALTERAR };
+    }
   }
 
   return null;
@@ -3648,11 +3685,34 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
 
     // Sem sessao existente: verificar gatilho antes de qualquer chamada API
     const textoNormalizado = normalizarTextoDigisac(text);
-    const solicitacao = detectarSolicitacao(textoNormalizado);
+    const documentoDetectado = detectarDocumento(text);
 
-    if (!solicitacao) {
-      console.log(`[posvenda-webhook] sem sessao e sem gatilho valido, ignorando texto="${text.substring(0, 50)}"`);
-      return { ok: true, ignored: true, reason: 'sem_gatilho_inicial' };
+    let solicitacao: string | null = null;
+    let ancoraInfo: { tipo: string; ancoraNormalizada: string } | null = null;
+
+    if (documentoDetectado) {
+      // CPF/CNPJ sem sessao: buscar ancora nas mensagens recentes do Bot
+      ancoraInfo = await buscarAncoraCpfBot(ticketId, contactId ?? null);
+
+      if (ancoraInfo) {
+        solicitacao = ancoraInfo.tipo;
+      } else {
+        console.log(`[posvenda-webhook] cpf ignorado sem ancora valida sessaoId=null contactId=${contactId}`);
+        return { ok: true, ignored: true, reason: 'cpf_sem_ancora' };
+      }
+    } else {
+      // Nao e CPF: verificar gatilhos textuais (frases como "confirmar data de entrega")
+      solicitacao = detectarSolicitacao(textoNormalizado);
+
+      if (!solicitacao) {
+        // Log especifico para opcoes numericas fora de sessao
+        if (/^\d+$/.test(textoNormalizado)) {
+          console.log(`[posvenda-webhook] opcao numerica ignorada fora de sessao contactId=${contactId} texto=${textoNormalizado}`);
+        } else {
+          console.log(`[posvenda-webhook] sem sessao e sem gatilho valido, ignorando texto="${text.substring(0, 50)}"`);
+        }
+        return { ok: true, ignored: true, reason: 'sem_gatilho_inicial' };
+      }
     }
 
     // Gatilho valido: resolver telefone via API
@@ -3688,6 +3748,15 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
       }
     }
 
+    const metadataInicial: Record<string, unknown> = {
+      gatilho_inicio: ancoraInfo ? 'ancora_cpf_bot' : 'frase_textual',
+      iniciado_por_opcao_menu: false,
+      ...(ancoraInfo ? {
+        ancora_detectada: ancoraInfo.tipo === 'confirmar_entrega' ? 'confirmar_data_entrega' : 'alterar_data_entrega',
+        mensagem_ancora_normalizada: ancoraInfo.ancoraNormalizada,
+      } : {}),
+    };
+
     const { data: novaSessao, error: errSessao } = await supabase
       .from('atendimento_automatico_sessoes')
       .insert({
@@ -3699,8 +3768,10 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         status: 'ativa',
         estado: 'aguardando_documento',
         tipo_solicitacao: solicitacao,
+        documento_informado: documentoDetectado ?? null,
         ultima_mensagem_cliente: text.substring(0, 200),
         ultima_mensagem_em: new Date().toISOString(),
+        metadata: metadataInicial,
       })
       .select('id')
       .single();
@@ -3716,7 +3787,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
       sessao_id: sessaoId,
       tipo: 'inicio',
       descricao: 'Sessao criada via webhook pos-venda',
-      metadata: { solicitacao },
+      metadata: { solicitacao, ...metadataInicial },
     });
 
     await supabase.from('atendimento_automatico_mensagens').insert({
@@ -3729,8 +3800,48 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
       tipo_mensagem: msg.type as string | undefined,
       timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
       status: 'processada',
-      metadata: { serviceId, departmentId, solicitacao },
+      metadata: { serviceId, departmentId, solicitacao, ...metadataInicial },
     });
+
+    // Se CPF foi detectado e ancora validada, processar documento imediatamente
+    if (documentoDetectado && ancoraInfo) {
+      const telefoneAutorizadoFlag = telefoneAutorizado(telefone);
+      const { novoEstado, metadataBusca } = await prepararBuscaAgendaPorDocumento({
+        documento: documentoDetectado,
+        documentoAnterior: null,
+        modo: 'inicial',
+        sessaoId,
+        metadataAtual: metadataInicial,
+        contactId: contactId ?? null,
+        ticketId,
+        messageId,
+        telefoneAutorizado: telefoneAutorizadoFlag,
+      });
+
+      await supabase
+        .from('atendimento_automatico_sessoes')
+        .update({
+          estado: novoEstado,
+          metadata: metadataBusca,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', sessaoId);
+
+      await supabase.from('atendimento_automatico_eventos').insert({
+        sessao_id: sessaoId,
+        tipo: 'documento_recebido',
+        descricao: 'Documento (CPF/CNPJ) recebido do cliente no inicio da sessao',
+        metadata: {
+          tamanho_documento: documentoDetectado.length,
+          busca_agenda_status: metadataBusca.busca_agenda_status,
+          total_agendamentos_encontrados: metadataBusca.total_agendamentos_encontrados,
+          total_grupos_agendamento: metadataBusca.total_grupos_agendamento,
+        },
+      });
+
+      console.log(`[posvenda-webhook] sessao criada com documento processado sessaoId=${sessaoId} solicitacao=${solicitacao} estado=${novoEstado} telefone=${telefone ?? 'nao_encontrado'}`);
+      return { ok: true, saved: true, origem: 'cliente' };
+    }
 
     await supabase.from('atendimento_automatico_eventos').insert({
       sessao_id: sessaoId,

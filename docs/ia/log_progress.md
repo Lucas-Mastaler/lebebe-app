@@ -1,3 +1,56 @@
+## 2026-07-13 - Cascade - Fix bug gatilho Mere: ancora de CPF do Bot
+
+**Resumo:** Corrigido bug critico onde a Mere iniciava sessao indevidamente quando cliente digitava 1 ou 2 em submenus do Bot (ex: montadores). Causa raiz: detectarSolicitacao tratava 1 e 2 como selecao do menu principal sem validar contexto. Solucao: removidos 1 e 2 como gatilhos diretos; sessao so e criada quando cliente envia CPF apos mensagem do Bot contendo uma das duas ancoras especificas dos fluxos 1/2. Ancoras detectadas via API do Digisac (busca mensagens recentes do ticket, janela 15min, normalizacao de texto). Sessoes ja ativas nao foram afetadas.
+
+**Arquivos lidos:**
+- src/lib/atendimento-automatico/webhook-processor.ts
+- src/lib/atendimento-automatico/webhook-processor.test.ts
+- src/lib/digisac/triagem.ts (normalizarTextoDigisac)
+- src/lib/digisac/clienteDigisac.ts (fetchDigisac)
+- src/lib/digisac/sgi-sync.ts (DigisacMensagem, buscarMensagensTicketPaginado)
+
+**Arquivos alterados:**
+- src/lib/atendimento-automatico/webhook-processor.ts:
+  - Removido `if (textoNormalizado === '1') return 'confirmar_entrega'` e `if (textoNormalizado === '2') return 'alterar_entrega'` de detectarSolicitacao
+  - Adicionado import de DigisacMensagem de sgi-sync
+  - Adicionadas constantes ANCORA_CONFIRMAR, ANCORA_ALTERAR, ANCORA_JANELA_MS (15min)
+  - Adicionada funcao buscarAncoraCpfBot: busca mensagens recentes do ticket via fetchDigisac, filtra isFromMe=true dentro da janela, normaliza texto e procura pelas ancoras
+  - Reescrito bloco "Sem sessao existente": CPF sem ancora -> ignora com log; CPF com ancora -> cria sessao + processa documento imediatamente; numerico fora de sessao -> ignora com log especifico
+  - Metadata inicial da sessao agora inclui gatilho_inicio, ancora_detectada, mensagem_ancora_normalizada, iniciado_por_opcao_menu=false
+  - Logs seguros: cpf ignorado sem ancora, ancora detectada, opcao numerica ignorada (sem logar CPF completo)
+- src/lib/atendimento-automatico/webhook-processor.test.ts:
+  - Adicionado mock de fetchDigisac
+  - Atualizado mock de insert para suportar chaining select().single()
+  - sessaoAtual agora aceita null
+  - 9 novos testes: ancora confirmar, ancora alterar, CPF sem ancora (montadores), CPF sem Bot, numerico 1 fora de sessao, numerico 2 fora de sessao, sessao ativa com 1, ancora com markdown/acentos, ancora fora da janela
+
+**Validacoes realizadas:**
+- npx tsc --noEmit --pretty false: sem erros
+- npx eslint nos arquivos alterados: sem erros
+- npx vitest run webhook-processor.test.ts: 31 testes passaram (22 existentes + 9 novos)
+- npx vitest run respostas.test.ts reagendamento-opcoes.test.ts: 56 testes passaram (nao quebrou)
+
+**Frases ancora oficiais (devem ser configuradas no Bot/Digisac):**
+- Fluxo 1 (confirmar): "Por favor, poderia me informar o *CPF do titular da compra*, para eu confirmar a sua data de entrega?"
+- Fluxo 2 (alterar): "Por favor, poderia me informar o *CPF do titular da compra*, para verificar a possibilidade de alterar sua data?"
+
+**Comandos rodados:**
+- npx tsc --noEmit --pretty false -> exit 0
+- npx eslint webhook-processor.ts webhook-processor.test.ts -> exit 0
+- npx vitest run webhook-processor.test.ts -> 31 passed
+- npx vitest run respostas.test.ts reagendamento-opcoes.test.ts -> 56 passed
+
+**Pendencias:**
+- Configurar no Digisac as mensagens de CPF dos fluxos 1 e 2 com as frases ancora exatas (acima). As mensagens atuais do Bot podem nao conter as ancoras. Sem essa configuracao, a Mere nao iniciara sessao para clientes que ainda nao tem sessao ativa.
+
+**Riscos conhecidos:**
+- Se o Digisac nao retornar isFromMe=true nas mensagens do Bot, a ancora nao sera detectada. Nao confirmado se o campo isFromMe esta disponivel em todas as respostas da API de messages.
+- Se a API de messages retornar mensagens em ordem nao-cronologica, a janela de 15min pode nao funcionar corretamente. O codigo ordena por timestamp descendente mas depende do campo timestamp estar presente.
+- Chamada extra a API do Digisac ao receber CPF sem sessao (latencia adicional).
+- Frases textuais como "confirmar data de entrega" continuam funcionando como gatilho sem ancora (fluxo antigo preservado).
+
+---
+
 ## 2026-07-10 - Cascade - Ajustes Mere: mensagem D+2 dinamica e opcao Manter mesma data atual
 
 **Resumo:** Dois ajustes na Frente 3 (mensagens/parser/estados) da Mere, sem alterar motor, geocoding, OSRM, Calendar ou Sheets. (1) Mensagem de data invalida por antecedencia D+2 agora inclui dataMinima dinamica (hoje+2) formatada dd/MM. (2) Lista de opcoes de datas sempre inclui opcao sintetica "Manter mesma data atual" como ultimo item, com numeracao correta. Parser aceita numero e textos equivalentes. Ao escolher manter, encerra sem alterar Calendar/Sheets com metadata apropriada.

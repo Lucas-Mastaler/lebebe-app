@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { processarWebhookPosVenda } from './webhook-processor';
 import { buscarAgendamentosPorDocumento } from '@/lib/google/sheets-service-account';
 import { createServiceClient } from '@/lib/supabase/service';
+import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
 import type { GrupoAgendamento, AgendamentoEncontrado } from '@/lib/google/sheets-service-account';
 
 vi.mock('@/lib/google/sheets-service-account', () => ({
@@ -10,6 +11,10 @@ vi.mock('@/lib/google/sheets-service-account', () => ({
 
 vi.mock('@/lib/supabase/service', () => ({
   createServiceClient: vi.fn(),
+}));
+
+vi.mock('@/lib/digisac/clienteDigisac', () => ({
+  fetchDigisac: vi.fn(),
 }));
 
 type SessaoFake = {
@@ -26,7 +31,7 @@ type SessaoFake = {
 
 const updates: Array<{ table: string; data: Record<string, unknown> }> = [];
 const inserts: Array<{ table: string; data: Record<string, unknown> }> = [];
-let sessaoAtual: SessaoFake;
+let sessaoAtual: SessaoFake | null;
 
 function criarSupabaseFake() {
   return {
@@ -57,7 +62,18 @@ function criarSupabaseFake() {
         },
         insert(data: Record<string, unknown>) {
           inserts.push({ table, data });
-          return Promise.resolve({ data: null, error: null });
+          const insertBuilder = {
+            select() {
+              return insertBuilder;
+            },
+            single() {
+              if (table === 'atendimento_automatico_sessoes') {
+                return Promise.resolve({ data: { id: 'sessao-nova' }, error: null });
+              }
+              return Promise.resolve({ data: null, error: null });
+            },
+          };
+          return insertBuilder;
         },
       };
       return builder;
@@ -150,6 +166,7 @@ beforeEach(() => {
   inserts.length = 0;
   vi.mocked(createServiceClient).mockReturnValue(criarSupabaseFake() as never);
   vi.mocked(buscarAgendamentosPorDocumento).mockReset();
+  vi.mocked(fetchDigisac).mockReset();
   sessaoAtual = sessaoBase();
 });
 
@@ -637,5 +654,177 @@ describe('processarWebhookPosVenda - opcao manter data atual em datas_encontrada
       confirmacao_reagendamento_pendente: true,
     });
     expect(metadata.acao_final).toBeUndefined();
+  });
+});
+
+describe('processarWebhookPosVenda - gatilho por ancora de CPF do Bot', () => {
+  function mockFetchDigisacComAncora(ancoraTexto: string | null) {
+    vi.mocked(fetchDigisac).mockImplementation(async (endpoint: string) => {
+      if (endpoint.startsWith('/contacts/')) {
+        return { data: { number: '5541999999999' } };
+      }
+      if (endpoint.includes('/messages')) {
+        return {
+          data: ancoraTexto
+            ? [{ id: 'm-bot-1', type: 'chat', isFromMe: true, text: ancoraTexto, timestamp: Date.now() - 60000 }]
+            : [],
+        };
+      }
+      return { data: null };
+    });
+  }
+
+  it('CPF apos ancora de confirmar entrega -> cria sessao com tipo_fluxo=confirmar_entrega', async () => {
+    sessaoAtual = null;
+    mockFetchDigisacComAncora(
+      'Por favor, poderia me informar o *CPF do titular da compra*, para eu confirmar a sua data de entrega?'
+    );
+    vi.mocked(buscarAgendamentosPorDocumento).mockResolvedValue({
+      ok: true,
+      agendamentos: [agendamentoBase()],
+      total: 1,
+      grupos: [grupoBase()],
+      total_grupos: 1,
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('09782588946', 'msg-cpf-confirmar'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const insertSessao = inserts.find((i) => i.table === 'atendimento_automatico_sessoes');
+    expect(insertSessao?.data.tipo_solicitacao).toBe('confirmar_entrega');
+    expect(insertSessao?.data.documento_informado).toBe('09782588946');
+    expect(insertSessao?.data.metadata).toMatchObject({
+      gatilho_inicio: 'ancora_cpf_bot',
+      ancora_detectada: 'confirmar_data_entrega',
+      iniciado_por_opcao_menu: false,
+    });
+  });
+
+  it('CPF apos ancora de alterar entrega -> cria sessao com tipo_fluxo=alterar_entrega', async () => {
+    sessaoAtual = null;
+    mockFetchDigisacComAncora(
+      'Por favor, poderia me informar o *CPF do titular da compra*, para verificar a possibilidade de alterar sua data?'
+    );
+    vi.mocked(buscarAgendamentosPorDocumento).mockResolvedValue({
+      ok: true,
+      agendamentos: [agendamentoBase()],
+      total: 1,
+      grupos: [grupoBase()],
+      total_grupos: 1,
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('09782588946', 'msg-cpf-alterar'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const insertSessao = inserts.find((i) => i.table === 'atendimento_automatico_sessoes');
+    expect(insertSessao?.data.tipo_solicitacao).toBe('alterar_entrega');
+    expect(insertSessao?.data.metadata).toMatchObject({
+      gatilho_inicio: 'ancora_cpf_bot',
+      ancora_detectada: 'alterar_data_entrega',
+    });
+  });
+
+  it('CPF sem ancora (fluxo montadores) -> ignora e nao cria sessao', async () => {
+    sessaoAtual = null;
+    mockFetchDigisacComAncora('Qual o CPF do titular da compra');
+
+    const resultado = await processarWebhookPosVenda(payload('09782588946', 'msg-cpf-montadores'));
+
+    expect(resultado).toMatchObject({ ok: true, ignored: true, reason: 'cpf_sem_ancora' });
+    const insertSessao = inserts.find((i) => i.table === 'atendimento_automatico_sessoes');
+    expect(insertSessao).toBeUndefined();
+  });
+
+  it('CPF sem nenhuma mensagem de Bot -> ignora', async () => {
+    sessaoAtual = null;
+    mockFetchDigisacComAncora(null);
+
+    const resultado = await processarWebhookPosVenda(payload('09782588946', 'msg-cpf-sem-bot'));
+
+    expect(resultado).toMatchObject({ ok: true, ignored: true, reason: 'cpf_sem_ancora' });
+  });
+
+  it('opcao numerica 1 fora de sessao -> ignora sem criar sessao', async () => {
+    sessaoAtual = null;
+
+    const resultado = await processarWebhookPosVenda(payload('1', 'msg-num-1'));
+
+    expect(resultado).toMatchObject({ ok: true, ignored: true, reason: 'sem_gatilho_inicial' });
+    const insertSessao = inserts.find((i) => i.table === 'atendimento_automatico_sessoes');
+    expect(insertSessao).toBeUndefined();
+  });
+
+  it('opcao numerica 2 fora de sessao -> ignora sem criar sessao', async () => {
+    sessaoAtual = null;
+
+    const resultado = await processarWebhookPosVenda(payload('2', 'msg-num-2'));
+
+    expect(resultado).toMatchObject({ ok: true, ignored: true, reason: 'sem_gatilho_inicial' });
+    const insertSessao = inserts.find((i) => i.table === 'atendimento_automatico_sessoes');
+    expect(insertSessao).toBeUndefined();
+  });
+
+  it('sessao ativa em aguardando_escolha_acao aceita 1 como adiantar (nao quebra)', async () => {
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_escolha_acao',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoBase()],
+        pedido_confirmado: true,
+      },
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('1', 'msg-adiantar-ativo'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('aguardando_confirmacao_endereco');
+    expect(updateSessao?.data.metadata).toMatchObject({ acao_alteracao: 'adiantar' });
+  });
+
+  it('ancora com markdown e acentos -> detectada normalmente', async () => {
+    sessaoAtual = null;
+    mockFetchDigisacComAncora(
+      'Por favor, podría me informar o *CPF do titular da compra*, para eu confirmar a sua data de entrega?'
+    );
+    vi.mocked(buscarAgendamentosPorDocumento).mockResolvedValue({
+      ok: true,
+      agendamentos: [agendamentoBase()],
+      total: 1,
+      grupos: [grupoBase()],
+      total_grupos: 1,
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('09782588946', 'msg-cpf-ancora-md'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const insertSessao = inserts.find((i) => i.table === 'atendimento_automatico_sessoes');
+    expect(insertSessao?.data.tipo_solicitacao).toBe('confirmar_entrega');
+  });
+
+  it('ancora antiga fora da janela de 15min -> ignora CPF', async () => {
+    sessaoAtual = null;
+    vi.mocked(fetchDigisac).mockImplementation(async (endpoint: string) => {
+      if (endpoint.startsWith('/contacts/')) {
+        return { data: { number: '5541999999999' } };
+      }
+      if (endpoint.includes('/messages')) {
+        return {
+          data: [{
+            id: 'm-bot-old',
+            type: 'chat',
+            isFromMe: true,
+            text: 'Por favor, poderia me informar o *CPF do titular da compra*, para eu confirmar a sua data de entrega?',
+            timestamp: Date.now() - 20 * 60 * 1000,
+          }],
+        };
+      }
+      return { data: null };
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('09782588946', 'msg-cpf-ancora-velha'));
+
+    expect(resultado).toMatchObject({ ok: true, ignored: true, reason: 'cpf_sem_ancora' });
   });
 });

@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback, Fragment } from 'react'
-import { Loader2, Phone, Package, CreditCard, User, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock, TrendingUp, Users, Activity, Tag, MessageSquarePlus, Eye, Store, Brain, ChevronDown, ChevronUp, HelpCircle } from 'lucide-react'
+import { Loader2, Phone, Package, CreditCard, User, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock, TrendingUp, Users, Activity, Tag, MessageSquarePlus, Eye, Store, Brain, ChevronDown, ChevronUp, HelpCircle, ExternalLink } from 'lucide-react'
+import { montarUrlHistoricoTicket } from '@/lib/digisac/urls'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from '@/components/ui/dialog'
@@ -675,6 +676,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
   const iniciarAnaliseIA = useCallback(async (reanalisar = false) => {
     if (!venda?.numero_lancamento) return
     setIaErro(null)
+    setIaProcessando(true)
 
     const r1 = await fetch('/api/sgi/ia/iniciar-analise', {
       method: 'POST',
@@ -682,11 +684,12 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
       body: JSON.stringify({ numeroLancamento: venda.numero_lancamento, reanalisar }),
     }).catch(() => null)
 
-    if (!r1) { setIaErro('Erro de conexão'); return }
+    if (!r1) { setIaErro('Erro de conexão'); setIaProcessando(false); return }
     const data1 = await r1.json()
 
     if (!r1.ok) {
       setIaErro(data1.error ?? 'Erro ao iniciar análise')
+      setIaProcessando(false)
       return
     }
 
@@ -715,6 +718,9 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
     const filaId = iaFilaIdRef.current ?? iaJob?.id
     if (!filaId) return
     iaFilaIdRef.current = filaId
+    setIaProcessando(true)
+    setIaPausado(false)
+    setIaErro(null)
     await executarLoop(filaId)
   }, [iaJob, executarLoop])
 
@@ -781,7 +787,10 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="!w-[95vw] !sm:w-[85vw] !lg:w-[70vw] !max-w-none max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="!w-[95vw] !sm:w-[85vw] !lg:w-[70vw] !max-w-none max-h-[90vh] overflow-y-auto"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="text-base">
             Venda #{venda?.numero_lancamento}
@@ -1028,6 +1037,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                     <Button
                       size="sm"
                       variant="ghost"
+                      type="button"
                       className="text-xs h-7 text-violet-700 hover:bg-violet-50"
                       onClick={() => {
                         if (!digisacChamadosCicloAberto && digisacChamadosCiclo.length === 0 && venda?.numero_lancamento) {
@@ -1070,7 +1080,12 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                                   </span>
                                 </td>
                                 <td className="py-1.5 pr-3 font-mono text-slate-600">{c.telefone ?? c.telefone_ddi ?? '—'}</td>
-                                <td className="py-1.5 text-slate-500 font-mono">{c.protocolo ?? '—'}</td>
+                                <td className="py-1.5 text-slate-500 font-mono">{c.protocolo ? (
+                                  <a href={montarUrlHistoricoTicket(c.digisac_ticket_id)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline">
+                                    {c.protocolo}
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                ) : '—'}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1538,6 +1553,7 @@ function DigisacSyncPanel({
         <Button
           size="sm"
           variant="outline"
+          type="button"
           disabled={isProcessando}
           onClick={onSincronizar}
           className="text-xs h-8 border-violet-300 text-violet-700 hover:bg-violet-50"
@@ -1552,6 +1568,7 @@ function DigisacSyncPanel({
           <Button
             size="sm"
             variant="ghost"
+            type="button"
             disabled={isProcessando}
             onClick={onForcar}
             className="text-xs h-8 text-slate-500 hover:text-violet-700"
@@ -1646,6 +1663,30 @@ function IaAnalisePanel({
   const [conversaErro, setConversaErro] = useState<string | null>(null)
   const [conversaCache, setConversaCache] = useState<Record<string, { id: string; text: string; isFromMe: boolean; timestamp: number | null }[]>>({})
 
+  const protocoloToTicketId = new Map<string, string>()
+  for (const c of chamados) {
+    if (c.protocolo && c.digisac_ticket_id) {
+      protocoloToTicketId.set(c.protocolo, c.digisac_ticket_id)
+    }
+  }
+
+  function renderProtocoloLink(protocolo: string | null, ticketId?: string | null) {
+    if (!protocolo) return <span className="text-slate-400">—</span>
+    const uuid = ticketId ?? protocoloToTicketId.get(protocolo)
+    if (!uuid) return <span className="font-mono text-slate-500">{protocolo}</span>
+    return (
+      <a
+        href={montarUrlHistoricoTicket(uuid)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline font-mono"
+      >
+        {protocolo}
+        <ExternalLink className="w-3 h-3" />
+      </a>
+    )
+  }
+
   function formatarTimestampMensagem(ts: number | null): string | null {
     if (ts === null || ts === undefined) return null
     // Tenta unix seconds (Digisac retorna segundos)
@@ -1729,6 +1770,7 @@ function IaAnalisePanel({
           <Button
             size="sm"
             variant="outline"
+            type="button"
             onClick={onReanalisar}
             disabled={processando}
             className="ml-auto text-xs h-7 border-indigo-300 text-indigo-700 hover:bg-indigo-50"
@@ -1789,7 +1831,7 @@ function IaAnalisePanel({
                       <td className="py-1.5 pr-3 text-center font-semibold text-indigo-600">
                         {c.ordem_ciclo ?? '—'}
                       </td>
-                      <td className="py-1.5 pr-3 font-mono text-slate-600">{c.protocolo ?? '—'}</td>
+                      <td className="py-1.5 pr-3 font-mono text-slate-600">{renderProtocoloLink(c.protocolo, c.digisac_ticket_id)}</td>
                       <td className="py-1.5 pr-3 whitespace-nowrap">
                         <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
                           c.tipo_chamado === 'ativo' ? 'bg-blue-100 text-blue-700' :
@@ -1933,7 +1975,7 @@ function IaAnalisePanel({
             {chamados.map((c) => (
               <div key={`hist-${c.id}`} className="flex flex-wrap items-center gap-2 text-xs">
                 <span className="font-semibold text-indigo-600">Nº {c.ordem_ciclo ?? '—'}</span>
-                <span className="font-mono text-slate-600">{c.protocolo ?? '—'}</span>
+                <span className="font-mono text-slate-600">{renderProtocoloLink(c.protocolo, c.digisac_ticket_id)}</span>
                 {c.status === 'concluido' ? (
                   <button
                     onClick={async () => {
@@ -2172,7 +2214,7 @@ function IaAnalisePanel({
                         {item.data_prometida && <p className="text-slate-500">Data prometida: <span className="font-medium">{item.data_prometida}</span></p>}
                         <p className="text-slate-400 italic">{item.evidencia}</p>
                         {(item.chamado_numero != null || item.protocolo) && (
-                          <p className="text-slate-400">Chamado Nº {item.chamado_numero ?? '?'}{item.protocolo ? ` — ${item.protocolo}` : ''}</p>
+                          <p className="text-slate-400">Chamado Nº {item.chamado_numero ?? '?'}{item.protocolo ? ' — ' : ''}{item.protocolo && renderProtocoloLink(item.protocolo)}</p>
                         )}
                       </div>
                     ))}
@@ -2189,7 +2231,7 @@ function IaAnalisePanel({
                         {item.valor_negociado && <p className="text-slate-500">Valor negociado: {item.valor_negociado}</p>}
                         <p className="text-slate-400 italic">{item.evidencia}</p>
                         {(item.chamado_numero != null || item.protocolo) && (
-                          <p className="text-slate-400">Chamado Nº {item.chamado_numero ?? '?'}{item.protocolo ? ` — ${item.protocolo}` : ''}</p>
+                          <p className="text-slate-400">Chamado Nº {item.chamado_numero ?? '?'}{item.protocolo ? ' — ' : ''}{item.protocolo && renderProtocoloLink(item.protocolo)}</p>
                         )}
                       </div>
                     ))}
@@ -2207,7 +2249,7 @@ function IaAnalisePanel({
                         {item.percentual && <p className="text-slate-500">Percentual: {item.percentual}</p>}
                         <p className="text-slate-400 italic">{item.evidencia}</p>
                         {(item.chamado_numero != null || item.protocolo) && (
-                          <p className="text-slate-400">Chamado Nº {item.chamado_numero ?? '?'}{item.protocolo ? ` — ${item.protocolo}` : ''}</p>
+                          <p className="text-slate-400">Chamado Nº {item.chamado_numero ?? '?'}{item.protocolo ? ' — ' : ''}{item.protocolo && renderProtocoloLink(item.protocolo)}</p>
                         )}
                       </div>
                     ))}
@@ -2231,7 +2273,7 @@ function IaAnalisePanel({
                         </p>
                         <p className="text-slate-400 italic">{item.evidencia}</p>
                         {(item.chamado_numero != null || item.protocolo) && (
-                          <p className="text-slate-400">Chamado Nº {item.chamado_numero ?? '?'}{item.protocolo ? ` — ${item.protocolo}` : ''}</p>
+                          <p className="text-slate-400">Chamado Nº {item.chamado_numero ?? '?'}{item.protocolo ? ' — ' : ''}{item.protocolo && renderProtocoloLink(item.protocolo)}</p>
                         )}
                       </div>
                     ))}
@@ -2246,7 +2288,7 @@ function IaAnalisePanel({
                         <p className="font-medium">{item.valor} <span className="text-slate-400 font-normal">— {item.contexto}</span></p>
                         <p className="text-slate-400">Tipo: {item.tipo_valor}</p>
                         {(item.chamado_numero != null || item.protocolo) && (
-                          <p className="text-slate-400">Chamado Nº {item.chamado_numero ?? '?'}{item.protocolo ? ` — ${item.protocolo}` : ''}</p>
+                          <p className="text-slate-400">Chamado Nº {item.chamado_numero ?? '?'}{item.protocolo ? ' — ' : ''}{item.protocolo && renderProtocoloLink(item.protocolo)}</p>
                         )}
                       </div>
                     ))}
@@ -2262,19 +2304,30 @@ function IaAnalisePanel({
       <div className="flex gap-2 pt-1 flex-wrap">
         {/* Ainda não iniciado */}
         {nunca && !emAndamento && podeAnalisar && (
-          <Button size="sm" variant="outline" onClick={onAnalisar}
+          <Button size="sm" variant="outline" type="button" onClick={onAnalisar}
+            disabled={processando}
             className="text-xs h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-50">
-            <Brain className="w-3 h-3 mr-1.5" />Analisar com IA
+            {processando ? (
+              <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Analisando...</>
+            ) : (
+              <><Brain className="w-3 h-3 mr-1.5" />Analisar com IA</>
+            )}
           </Button>
         )}
         {/* Pausado: continuar ou reanalisar */}
         {pausado && !emAndamento && (
           <>
-            <Button size="sm" variant="outline" onClick={onContinuar}
+            <Button size="sm" variant="outline" type="button" onClick={onContinuar}
+              disabled={processando}
               className="text-xs h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-50">
-              <Brain className="w-3 h-3 mr-1.5" />Continuar análise
+              {processando ? (
+                <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Continuando...</>
+              ) : (
+                <><Brain className="w-3 h-3 mr-1.5" />Continuar análise</>
+              )}
             </Button>
-            <Button size="sm" variant="ghost" onClick={onReanalisar}
+            <Button size="sm" variant="ghost" type="button" onClick={onReanalisar}
+              disabled={processando}
               className="text-xs h-8 text-slate-500">
               <RefreshCw className="w-3 h-3 mr-1.5" />Reanalisar do zero
             </Button>
@@ -2282,15 +2335,19 @@ function IaAnalisePanel({
         )}
         {/* Concluído, com erro, stale ou inconsistente: reanalisar */}
         {!emAndamento && !pausado && Boolean(job || chamados.length > 0 || consolidado) && (
-          <Button size="sm" variant="outline" onClick={onReanalisar}
+          <Button size="sm" variant="outline" type="button" onClick={onReanalisar}
             disabled={processando}
             className="text-xs h-8 border-indigo-300 text-indigo-700 hover:bg-indigo-50">
-            <RefreshCw className="w-3 h-3 mr-1.5" />Reanalisar IA
+            {processando ? (
+              <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Reanalisando...</>
+            ) : (
+              <><RefreshCw className="w-3 h-3 mr-1.5" />Reanalisar IA</>
+            )}
           </Button>
         )}
         {/* Em andamento: cancelar */}
         {emAndamento && (
-          <Button size="sm" variant="ghost" onClick={onCancelar}
+          <Button size="sm" variant="ghost" type="button" onClick={onCancelar}
             className="text-xs h-8 text-slate-500">
             Pausar
           </Button>

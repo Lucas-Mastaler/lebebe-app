@@ -1,3 +1,166 @@
+## 2026-07-14 - Cascade - Scroll preservado e feedback visual imediato no ModalDetalheVenda
+
+**Resumo:** Dois ajustes no ModalDetalheVenda da tela de Inteligencia Comercial: (1) preservar posicao do scroll do modal apos acoes internas (Analisar IA, Continuar, Reanalisar) e (2) feedback visual imediato ao clicar nos botoes de analise IA, sem aguardar resposta da API.
+
+**Arquivos lidos:**
+- src/components/inteligencia-comercial/ModalDetalheVenda.tsx (fluxo completo: estado, handlers, render)
+- .devin/rules/ (regras do projeto)
+- docs/ia/log_progress.md
+
+**Arquivos alterados:**
+- src/components/inteligencia-comercial/ModalDetalheVenda.tsx
+
+**Alteracoes realizadas:**
+1. Feedback visual imediato:
+   - iniciarAnaliseIA: setIaProcessando(true) adicionado antes do fetch para /api/sgi/ia/iniciar-analise
+   - continuarAnaliseIA: setIaProcessando(true), setIaPausado(false), setIaErro(null) adicionados antes de executarLoop
+   - Revert setIaProcessando(false) em todos os caminhos de erro (conexao, r1 nok)
+   - Botoes "Analisar com IA", "Continuar analise", "Reanalisar IA" e "Reanalisar do zero" agora exibem spinner e texto de processamento quando processando=true
+   - Todos os botoes de acao agora tem disabled={processando}
+2. Scroll preservado:
+   - onOpenAutoFocus={(e) => e.preventDefault()} adicionado ao DialogContent principal para prevenir foco automatico do Radix que causa reset de scroll
+   - type="button" adicionado a todos os botoes de acao dentro do modal (DigisacSyncPanel, IaAnalisePanel, botao Ver detalhes) para prevenir submissao implicita de formulario
+
+**Validacoes realizadas:**
+- npx tsc --noEmit: 0 erros
+- npx eslint src/components/inteligencia-comercial/ModalDetalheVenda.tsx: 0 erros
+- npx next build: build completo sem erros
+
+**Comandos executados:**
+- npx tsc --noEmit --pretty → passou
+- npx eslint src/components/inteligencia-comercial/ModalDetalheVenda.tsx → passou
+- npx next build → passou
+
+**Pendencias:**
+- Validacao manual: rolar ate o final do modal, clicar em Analisar IA, confirmar que o scroll nao volta ao topo
+- Validacao manual: confirmar que spinner e texto "Analisando..." aparecem imediatamente ao clicar
+- Validacao manual: testar Reanalisar e Continuar analise
+- Validacao manual: testar cenario de erro (ex: API indisponivel) e confirmar revert do estado de processamento
+
+**Riscos:**
+- onOpenAutoFocus preventDefault pode afetar acessibilidade (foco nao vai automaticamente para o primeiro elemento do modal). Comportamento aceitavel pois o modal ja esta visivel e o usuario interage com mouse.
+- Se houver outros botoes fora do modal que tambem causem reset de scroll, nao foram tratados nesta tarefa.
+
+**Proximo passo recomendado:**
+- Validar manualmente os dois comportamentos em ambiente de desenvolvimento
+
+---
+
+## 2026-07-14 - Cascade - Links de protocolos Digisac clicaveis no ModalDetalheVenda
+
+**Resumo:** Implementado links clicaveis em todos os protocolos de chamados Digisac exibidos no ModalDetalheVenda da tela de Inteligencia Comercial. Os protocolos agora abrem `https://lebebe.digisac.me/ticket-history/{UUID}` em nova aba. Criado helper centralizado em `src/lib/digisac/urls.ts`. O consolidado da IA nao possui UUID, apenas protocolo, entao foi construido um map `protocolo -> digisac_ticket_id` a partir dos chamados individuais. Tela de Finalizacoes Automaticas ja funcionava e nao foi alterada.
+
+**Arquivos lidos:**
+- src/lib/digisac/finalizacoesAutomaticas.ts (helper montarUrlHistoricoTicket existente)
+- src/lib/digisac/vacuoAtivo.ts (helper duplicado privado)
+- src/app/api/digisac/finalizacoes-automaticas/diagnostico/route.ts (helper duplicado privado)
+- src/app/digisac/finalizacoes-automaticas/PageClient.tsx (link ja implementado)
+- src/components/inteligencia-comercial/ModalDetalheVenda.tsx (8 locais com protocolo sem link)
+- src/app/api/sgi/digisac/chamados-ciclo/route.ts (retorna digisac_ticket_id)
+- src/app/api/sgi/ia/analise-status/route.ts (retorna digisac_ticket_id)
+- src/types/index.ts (interface ChamadoAvaliadoVacuo)
+- .devin/rules/ (regras do projeto)
+- docs/ia/log_progress.md
+
+**Arquivos criados:**
+- src/lib/digisac/urls.ts (helper centralizado DIGISAC_WEB_BASE_URL + montarUrlHistoricoTicket)
+- docs/links-protocolos-digisac.md (documento da tarefa)
+
+**Arquivos alterados:**
+- src/components/inteligencia-comercial/ModalDetalheVenda.tsx (import helper + ExternalLink, map protocoloToTicketId, funcao renderProtocoloLink, 8 locais alterados)
+
+**Validacoes realizadas:**
+- MCP Supabase: query a venda_analise_comercial_ia para confirmar que chamados_que_influenciaram[].ticket_id contem protocolo (nao UUID)
+- npx tsc --noEmit: 0 erros
+- npx eslint nos arquivos alterados: 0 erros
+- npx next build: build completo sem erros
+
+**Comandos executados:**
+- npx tsc --noEmit --pretty → passou
+- npx eslint src/lib/digisac/urls.ts src/components/inteligencia-comercial/ModalDetalheVenda.tsx → passou
+- npx next build → passou
+
+**Pendencias:**
+- Validacao manual dos links em uma venda real com chamados
+- Refactor opcional: substituir 3 copias duplicadas do helper em finalizacoesAutomaticas.ts, vacuoAtivo.ts e diagnostico/route.ts pelo import centralizado de urls.ts
+- IA consolidado: campo ticket_id em chamados_que_influenciaram contem protocolo, nao UUID. Se a IA passar a retornar UUID no futuro, o map podera ser dispensado.
+
+**Riscos:**
+- Protocolo do consolidado sem UUID correspondente no map → fallback como texto simples (comportamento esperado)
+- 3 copias do helper continuam existindo (nao refactoradas por escopo)
+- Helpers duplicados nao causam conflito pois urls.ts e a versao centralizada para novos usos
+
+**Proximo passo recomendado:**
+- Validar manualmente os links em ambiente de desenvolvimento
+- Considerar refactor das 3 copias duplicadas em tarefa separada
+
+---
+
+## 2026-07-14 - Cascade - Auditoria e validacao: multiplas conexoes Digisac na Inteligencia Comercial
+
+**Resumo:** Auditoria completa do fluxo de Inteligencia Comercial para suporte a multiplas conexoes Digisac (Bigorrilho, Portao, Hauer/Marechal). Conclusao: o sistema ja suporta multiplas conexoes. Nenhuma alteracao de codigo necessaria. Bigorrilho e Portao tem zero registros no banco apenas porque nenhuma venda dessas filiais foi sincronizada ainda. Validacao funcional confirmou pipeline completo para Hauer/Marechal (10 tickets, vinculos, analise IA) e Marketing (15 tickets, 8 analises IA). Pós-venda corretamente excluido. Zero duplicatas.
+
+**Decisoes do usuario:**
+- Marketing NAO deve ser excluida do fluxo comercial
+- Conexao antiga (4af28025) NAO deve ser excluida nesta tarefa
+- Manter logica atual de SERVICE_IDS_EXCLUIDOS_COMERCIAL (denylist, nao allowlist)
+- Nao criar configuracao centralizada ou refactor sem necessidade
+
+**Arquivos lidos:**
+- src/lib/digisac/sgi-sync.ts (filtro SERVICE_IDS_EXCLUIDOS_COMERCIAL, buscarTicketsPorTelefonePaginado, buscarTicketsSalvosNoSupabase, calcularVinculosVenda)
+- src/lib/digisac/clienteDigisac.ts (cliente HTTP base)
+- src/lib/digisac/triagem.ts (webhook separado, fora do escopo)
+- src/lib/ia/transcript.ts (montarTranscriptChamado)
+- src/lib/ia/deepseek-client.ts (cliente IA)
+- src/app/api/sgi/digisac/processar-fila/route.ts (processamento de jobs)
+- src/app/api/sgi/digisac/sincronizar-venda/route.ts (criacao de jobs)
+- src/app/api/sgi/digisac/sync-status/route.ts
+- src/app/api/sgi/digisac/chamados-ciclo/route.ts
+- src/app/api/sgi/digisac/mensagens/route.ts
+- src/app/api/sgi/ia/iniciar-analise/route.ts
+- src/app/api/sgi/ia/processar-proximo/route.ts
+- src/app/api/sgi/ia/analise-status/route.ts
+- src/app/inteligencia-comercial/PageClient.tsx
+- src/app/inteligencia-comercial/page.tsx
+- src/hooks/useSyncLote.ts
+- src/components/inteligencia-comercial/ModalDetalheVenda.tsx
+- .env.local (variaveis Digisac)
+
+**Arquivos alterados/criados:**
+- docs/inteligencia-comercial-multiplas-conexoes-digisac.md (criado e atualizado com auditoria + validacao)
+
+**Validacoes realizadas:**
+- MCP Supabase: query a digisac_conversas_resumo (distribuicao por service_id, duplicatas)
+- MCP Supabase: query a venda_conversa_vinculos (vinculos da venda 56022, duplicatas)
+- MCP Supabase: query a digisac_chamados_analise_ia (analises Marechal e Marketing)
+- MCP Supabase: query a ia_analise_comercial_fila (job 56022 travado)
+- MCP Supabase: query a digisac_sync_fila (ausencia de jobs para 29xxx e 65xxx)
+- MCP Supabase: query a sgi_documentos_saida (vendas por filial)
+- API Digisac: busca de tickets por telefone para Bigorrilho (sale 29042), Portao (sales 65431, 65486, 65469, 65466, 65465), Marechal (controle)
+- API Digisac: confirmado ticket Bigorrilho 0ef53545 (0973f84b), ticket Portao 72e90604 (c60d720f)
+- API Digisac: confirmado exclusao de Pós-venda funcionando (zero tickets no banco)
+- Validacao de duplicatas: zero em digisac_conversas_resumo e venda_conversa_vinculos
+
+**Comandos rodados:**
+- Node.js script temporario para query API Digisac (removido apos uso)
+- Resultado: Bigorrilho 1 ticket encontrado, Portao 1 ticket encontrado, Marechal 6 tickets encontrados (controle)
+
+**Pendencias:**
+- Sincronizar vendas de Bigorrilho (29xxx) e Portao (65xxx) na tela de Inteligencia Comercial
+- Completar dados de digisac_conexoes_automacao para Portao e Hauer/Marechal (nao bloqueia IC)
+- Investigar job de IA travado para venda 56022 (separado desta tarefa)
+
+**Riscos conhecidos:**
+- Conexao antiga (4af28025) ainda ativa com 665 tickets; nao excluida por decisao do usuario
+- Marketing incluido no fluxo por decisao do usuario (15 tickets, 8 analises IA)
+- Job de IA 56022 travado em status processando (2/2 chamados, sem consolidado)
+
+**Proximo passo recomendado:**
+- Sincronizar vendas de Bigorrilho e Portao para popular tickets no banco
+- Investigar job 56022 separadamente
+
+---
+
 ## 2026-07-13 - Cascade - Frente 0/Controle: botao Nova consulta em /procurar-datas
 
 **Resumo:** Adicionado botao "Nova consulta" no topo da tela `/procurar-datas`. Ao clicar, limpa imediatamente toda a consulta atual (CEP, endereco, coordenadas, confirmacao, divergencia, dados da entrega, itens, tempos, resultados, candidato selecionado, pre-agendamento, auditoria, estados de carregamento) e retorna ao estado inicial. Sem modal, sem confirmacao, sem alerta. Requisicoes em andamento (validacao de endereco, polling de busca) sao invalidadas via tokens de execucao (`activeSearchTokenRef`, `validationTokenRef`).

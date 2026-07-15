@@ -7,18 +7,15 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Activity, Bot, Calendar, ChevronDown, ChevronLeft, ChevronRight, CheckCircle, BarChart3, LogOut, Users, ClipboardList, Clock, Package, TrendingUp, Search, Settings, ShoppingBag, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePermissoes } from '@/lib/hooks/usePermissoes';
+import { NAVIGATION_GROUPS, type NavigationIconKey, type NavigationItemDefinition } from '@/lib/auth/modulos-app';
 
 interface SidebarProps {
     collapsed: boolean;
     onToggle: () => void;
 }
 
-type NavItem = {
-    label: string;
-    href: string;
+type NavItem = NavigationItemDefinition & {
     icon: React.ElementType;
-    moduleKey?: string;
-    superadminOnly?: boolean;
 };
 
 type NavGroup = {
@@ -27,47 +24,31 @@ type NavGroup = {
     items: NavItem[];
 };
 
-const navGroups: NavGroup[] = [
-    {
-        label: 'VENDAS',
-        icon: ShoppingBag,
-        items: [
-            { label: 'DASHBOARD',                href: '/dashboard',               icon: BarChart3,  moduleKey: 'dashboard' },
-            { label: 'AGENDAMENTOS',             href: '/agendamentos',            icon: Calendar,   moduleKey: 'agendamentos' },
-            { label: 'HORÁRIOS AGENDAMENTOS',    href: '/horarios-agendamentos',   icon: Clock },
-            { label: 'CHAMADOS FINALIZADOS',     href: '/chamados-finalizados',    icon: CheckCircle, moduleKey: 'chamados_finalizados' },
-            { label: 'INTELIGÊNCIA COMERCIAL',   href: '/inteligencia-comercial',  icon: TrendingUp, moduleKey: 'inteligencia_comercial' },
-            { label: 'FINALIZAÇÕES DIGISAC',    href: '/digisac/finalizacoes-automaticas', icon: Bot, moduleKey: 'digisac_finalizacoes_automaticas' },
-        ],
-    },
-    {
-        label: 'PROCURAR DATAS',
-        icon: Search,
-        items: [
-            { label: 'PROCURAR DATAS',           href: '/procurar-datas',          icon: Search,     moduleKey: 'procurar_datas' },
-            { label: 'AUDITORIA DATAS',          href: '/procurar-datas/auditoria', icon: ShieldCheck, moduleKey: 'procurar_datas_auditoria' },
-            { label: 'PERFORMANCE DATAS',        href: '/procurar-datas/performance', icon: Activity,  moduleKey: 'procurar_datas_performance' },
-            { label: 'CONFIG BUSCA',             href: '/configuracoes/procurar-datas', icon: Settings, superadminOnly: true },
-        ],
-    },
-    {
-        label: 'OPERAÇÃO',
-        icon: Package,
-        items: [
-            { label: 'RECEBIMENTO',             href: '/recebimento',             icon: Package,    moduleKey: 'recebimento' },
-            { label: 'PÓS-VENDA',               href: '/pos-venda',               icon: ShoppingBag, moduleKey: 'pos_venda' },
-            { label: 'ATENDIMENTO AUTOMÁTICO',  href: '/pos-venda/atendimento-automatico', icon: Bot, moduleKey: 'pos_venda_atendimento_automatico' },
-        ],
-    },
-    {
-        label: 'CONFIGURAÇÕES',
-        icon: Settings,
-        items: [
-            { label: 'USUÁRIOS',          href: '/superadmin?tab=usuarios',   icon: Users, superadminOnly: true },
-            { label: 'AUDITORIA ACESSOS',  href: '/superadmin?tab=auditoria',  icon: ClipboardList, superadminOnly: true },
-        ],
-    },
-];
+const iconByKey: Record<NavigationIconKey, React.ElementType> = {
+    activity: Activity,
+    barChart3: BarChart3,
+    bot: Bot,
+    calendar: Calendar,
+    checkCircle: CheckCircle,
+    clipboardList: ClipboardList,
+    clock: Clock,
+    package: Package,
+    search: Search,
+    settings: Settings,
+    shieldCheck: ShieldCheck,
+    shoppingBag: ShoppingBag,
+    trendingUp: TrendingUp,
+    users: Users,
+};
+
+const navGroups: NavGroup[] = NAVIGATION_GROUPS.map((group) => ({
+    label: group.label,
+    icon: iconByKey[group.iconKey],
+    items: group.items.map((item) => ({
+        ...item,
+        icon: iconByKey[item.iconKey],
+    })),
+}));
 
 export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     const pathname = usePathname();
@@ -107,8 +88,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     }
 
     function isItemVisible(item: NavItem) {
-        if (item.superadminOnly && !acessoTotal) return false;
-        if (item.moduleKey && !acessoTotal && !chavesPermitidas.includes(item.moduleKey)) return false;
+        if (item.access === 'public') return true;
+        if (item.access === 'superadmin') return acessoTotal;
+        if (!acessoTotal && !chavesPermitidas.includes(item.moduleKey)) return false;
         return true;
     }
 
@@ -125,10 +107,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 collapsed ? 'w-0 md:w-[72px] overflow-hidden' : 'w-[260px]'
             )}
         >
-            {/* Header */}
             <div className={cn(
-                "h-16 flex items-center border-b border-slate-200",
-                collapsed ? "justify-center px-2" : "justify-between px-4"
+                'h-16 flex items-center border-b border-slate-200',
+                collapsed ? 'justify-center px-2' : 'justify-between px-4'
             )}>
                 {!collapsed && (
                     <div className="flex items-center gap-2 px-2">
@@ -155,10 +136,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 </button>
             </div>
 
-            {/* Navigation */}
             <nav className={cn(
-                "flex-1 p-3 overflow-y-auto",
-                collapsed && "hidden md:block"
+                'flex-1 p-3 overflow-y-auto',
+                collapsed && 'hidden md:block'
             )}>
                 <ul className="space-y-2">
                     {permLoading ? (
@@ -239,8 +219,8 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </nav>
 
             <div className={cn(
-                "p-3 border-t border-slate-200",
-                collapsed && "hidden md:block"
+                'p-3 border-t border-slate-200',
+                collapsed && 'hidden md:block'
             )}>
                 <button
                     onClick={handleLogout}

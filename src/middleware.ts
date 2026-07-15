@@ -18,13 +18,6 @@ export async function middleware(request: NextRequest) {
   const publicRoutes = ['/login', '/recuperar-senha', '/resetar-senha', '/definir-senha', '/convite']
   const isPublicRoute = publicRoutes.some(route => request.nextUrl.pathname.startsWith(route))
 
-  // NOVA REGRA: Rota /horarios-agendamentos é 100% pública
-  const isHorariosAgendamentos = request.nextUrl.pathname.startsWith('/horarios-agendamentos')
-  if (isHorariosAgendamentos) {
-    console.log(`[AUTH] Rota pública liberada: ${request.nextUrl.pathname}`)
-    return response
-  }
-
   // Se as variáveis de ambiente não estão configuradas, redireciona para login
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     console.error('[MIDDLEWARE] Variáveis de ambiente do Supabase não configuradas!')
@@ -110,13 +103,17 @@ export async function middleware(request: NextRequest) {
     // Verificar acesso a área superadmin
     if (request.nextUrl.pathname.startsWith('/superadmin')) {
       if (usuarioPermitido.role !== 'superadmin') {
-        return NextResponse.redirect(new URL('/inicio', request.url))
+        const tab = request.nextUrl.searchParams.get('tab') || 'usuarios'
+        if (tab !== 'usuarios') {
+          return NextResponse.redirect(new URL('/superadmin?tab=usuarios', request.url))
+        }
       }
     }
 
-    // Verificar acesso a área de configurações (superadmin only)
+    // Verificar acesso a área de configurações (superadmin only, exceto telas com gate por modulo)
     if (request.nextUrl.pathname.startsWith('/configuracoes')) {
-      if (usuarioPermitido.role !== 'superadmin') {
+      const isConfigProcurarDatas = request.nextUrl.pathname.startsWith('/configuracoes/procurar-datas')
+      if (!isConfigProcurarDatas && usuarioPermitido.role !== 'superadmin') {
         return NextResponse.redirect(new URL('/inicio', request.url))
       }
     }
@@ -137,6 +134,7 @@ export const config = {
     '/procurar-datas/:path*',
     '/configuracoes/:path*',
     '/chamados-finalizados/:path*',
+    '/horarios-agendamentos/:path*',
     '/superadmin/:path*',
     '/recebimento/:path*',
     '/inteligencia-comercial/:path*',

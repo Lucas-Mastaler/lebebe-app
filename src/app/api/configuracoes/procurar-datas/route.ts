@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
+import { requireModuleAccess } from '@/lib/auth/module-access'
 import { lerConfiguracoesProcurarDatas, ConfigSecoes, ConfigItem } from '@/lib/procurar-datas/sheets-config'
 import { buscarConfigsDb } from '@/lib/procurar-datas/config-db'
 
@@ -18,7 +18,7 @@ export const runtime = 'nodejs'
 //   "ausente_na_planilha"— chave existe no banco, não na planilha
 //   "secret"             — chave secreta, comparação não aplicável
 //
-// Acesso restrito a superadmin. Secrets mascarados.
+// Acesso restrito ao modulo configuracoes_procurar_datas. Secrets mascarados.
 // ─────────────────────────────────────────────────────────
 
 export type StatusComparacao =
@@ -53,11 +53,7 @@ export interface ResumoComparacao {
 
 export async function GET() {
   try {
-    const auth = await requireAuthenticatedUser({
-      requireAllowedUser: true,
-      requireActive: true,
-      requiredRole: 'superadmin',
-    })
+    const auth = await requireModuleAccess('configuracoes_procurar_datas')
 
     if (!auth.ok) {
       return auth.response

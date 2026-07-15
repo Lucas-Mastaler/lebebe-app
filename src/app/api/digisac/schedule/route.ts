@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
+import { requireModuleAccess } from '@/lib/auth/module-access';
 import { checkRateLimit } from '@/lib/ratelimit';
 
 const ALLOWED_SERVICE_IDS = new Set(['4af28025-c210-4336-a560-785d2fb8a778']);
@@ -41,8 +42,11 @@ function sanitizeScheduleItem(item: unknown) {
 
 export async function GET(request: NextRequest) {
     try {
+        const access = await requireModuleAccess('horarios_agendamentos');
+        if (!access.ok) return access.response;
+
         // Rate Limit Check
-        const { success, remaining } = await checkRateLimit(request);
+        const { success } = await checkRateLimit(request);
 
         if (!success) {
             console.warn('[API] Rate limit excedido para IP', request.headers.get('x-forwarded-for') || 'unknown');

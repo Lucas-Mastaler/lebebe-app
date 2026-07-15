@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
+import { requireModuleAccess } from '@/lib/auth/module-access'
 import { buscarUltimoSnapshot } from '@/lib/procurar-datas/config-db'
 
 export const runtime = 'nodejs'
@@ -10,16 +10,12 @@ export const runtime = 'nodejs'
 // Retorna o último snapshot de importação salvo no Supabase.
 // Se não houver nenhum, retorna { banco_vazio: true }.
 //
-// Acesso restrito a superadmin.
+// Acesso restrito ao modulo configuracoes_procurar_datas.
 // ─────────────────────────────────────────────────────────
 
 export async function GET() {
   try {
-    const auth = await requireAuthenticatedUser({
-      requireAllowedUser: true,
-      requireActive: true,
-      requiredRole: 'superadmin',
-    })
+    const auth = await requireModuleAccess('configuracoes_procurar_datas')
 
     if (!auth.ok) {
       return auth.response

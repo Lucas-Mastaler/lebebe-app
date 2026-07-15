@@ -122,6 +122,25 @@ export interface AppUsuarioPerfil {
   updated_at: string
 }
 
+export interface AppUnidade {
+  id: string
+  chave: string
+  nome: string
+  ativo: boolean
+  ordem: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AppUsuarioUnidade {
+  id: string
+  usuario_id: string
+  unidade_id: string
+  atribuido_por: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface AppPermissaoPerfil {
   id: string
   perfil_id: string

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
+import { requireModuleAccess } from '@/lib/auth/module-access';
 import { createServiceClient } from '@/lib/supabase/service';
 import type { FiltrosListagemFechamentos, RegistroFechamentoAutomatico } from '@/lib/digisac/finalizacoesAutomaticas';
 
@@ -7,11 +7,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const auth = await requireAuthenticatedUser({
-    requireAllowedUser: true,
-    requireActive: true,
-    requiredRole: 'superadmin',
-  });
+  const auth = await requireModuleAccess('digisac_finalizacoes_automaticas');
   if (!auth.ok) return auth.response;
 
   const { searchParams } = new URL(request.url);

@@ -7,6 +7,7 @@ export interface TranscriptResult {
   truncado: boolean
   totalMensagens: number
   tamanhoOriginal: number
+  mensagens: DigisacMensagem[]
 }
 
 function formatarTimestamp(timestamp: number | string | undefined): string {
@@ -90,5 +91,6 @@ export async function montarTranscriptChamado(ticketId: string): Promise<Transcr
     truncado,
     totalMensagens: ordenadas.length,
     tamanhoOriginal,
+    mensagens: ordenadas,
   }
 }

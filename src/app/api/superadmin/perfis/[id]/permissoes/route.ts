@@ -1,5 +1,10 @@
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
+import {
+  getProfilePermissionGroupLabel,
+  getProfilePermissionOrder,
+  type AppModuleKey,
+} from '@/lib/auth/modulos-app'
 import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
@@ -79,15 +84,26 @@ export async function GET(
       (permissoesResult.data ?? []).map((p) => [p.modulo_id, p.permitido])
     )
 
-    const permissoes = (modulosResult.data ?? []).map((m) => ({
-      moduloId: m.id,
-      chave: m.chave,
-      nome: m.nome,
-      rotaBase: m.rota_base,
-      categoria: m.categoria,
-      ordem: m.ordem,
-      permitido: permissoesMap.get(m.id) ?? false,
-    }))
+    const permissoes = (modulosResult.data ?? [])
+      .map((m) => {
+        const moduleKey = m.chave as AppModuleKey
+        return {
+          moduloId: m.id,
+          chave: m.chave,
+          nome: m.nome,
+          rotaBase: m.rota_base,
+          categoria: m.categoria,
+          ordem: m.ordem,
+          grupo: getProfilePermissionGroupLabel(moduleKey),
+          permitido: permissoesMap.get(m.id) ?? false,
+        }
+      })
+      .sort((a, b) => {
+        const orderA = getProfilePermissionOrder(a.chave as AppModuleKey)
+        const orderB = getProfilePermissionOrder(b.chave as AppModuleKey)
+        if (orderA !== orderB) return orderA - orderB
+        return (a.ordem ?? Number.MAX_SAFE_INTEGER) - (b.ordem ?? Number.MAX_SAFE_INTEGER)
+      })
 
     return NextResponse.json({
       ok: true,

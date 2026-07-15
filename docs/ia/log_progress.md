@@ -1,3 +1,213 @@
+## 2026-07-15 - Codex - Auditoria Superadmin Usuarios, Perfis, Auditoria e unidades
+
+**Resumo:** Auditoria tecnica da tela `/superadmin?tab=usuarios` e plano futuro para permitir acesso limitado apenas a area Usuarios por perfis nao-superadmin, sem liberar Perfis nem Auditoria. Nenhuma implementacao funcional realizada. Criado documento `docs/plano-acesso-usuarios-e-unidades.md`.
+
+**Arquivos lidos:**
+- Anexo do pedido em `C:\Users\lebeb\.codex\attachments\52fc744d-9d9d-49ff-8c77-90eabf731e28\pasted-text.txt`
+- `.agents/skills/supabase/SKILL.md`
+- `docs/ia/log_progress.md`
+- `docs/ia/padrao-novas-telas-permissoes.md`
+- `docs/ia/plano-fase-0-7-modelagem-permissoes-usuarios.md`
+- `src/app/superadmin/page.tsx`
+- `src/app/superadmin/_components/PerfilEditor.tsx`
+- `src/middleware.ts`
+- `src/components/Sidebar.tsx`
+- `src/components/LayoutWrapper.tsx`
+- `src/components/AuthenticatedLayout.tsx`
+- `src/lib/hooks/usePermissoes.ts`
+- `src/lib/auth/api-auth.ts`
+- `src/lib/auth/module-access.ts`
+- `src/lib/auth/access-window.ts`
+- `src/lib/auth/helpers.ts`
+- `src/types/supabase.ts`
+- APIs em `src/app/api/superadmin/*`
+- `src/app/api/me/permissoes/route.ts`
+- migrations de auth/permissoes em `supabase/migrations`
+
+**Arquivos criados:**
+- `docs/plano-acesso-usuarios-e-unidades.md`
+
+**Arquivos alterados:**
+- `docs/ia/log_progress.md`
+
+**Conclusoes principais:**
+1. `/superadmin` hoje e bloqueada inteira por `role = superadmin` no middleware.
+2. `tab=usuarios`, `tab=perfis` e `tab=auditoria` nao tem autorizacao separada por aba.
+3. APIs de usuarios/perfis sob `/api/superadmin/*` exigem `requiredRole: 'superadmin'`.
+4. A aba Auditoria consulta `auditoria_acessos` direto pelo client Supabase; a leitura depende de RLS `is_superadmin()`.
+5. O modelo relacional de perfis/modulos ja existe e deve ser reaproveitado.
+6. Nao foi encontrada estrutura atual de unidades por usuario.
+7. Recomendacao tecnica: criar permissao/modulo especifico para a area Usuarios e estrutura relacional `app_unidades` + `app_usuarios_unidades` futuramente, sem liberar o modulo `superadmin` inteiro.
+
+**Validacoes realizadas:**
+- Leitura de codigo, docs e migrations.
+- MCP Supabase `_execute_sql`: confirmadas colunas de `usuarios_permitidos`, `auditoria_acessos`, `app_modulos`, `app_perfis_acesso`, `app_usuarios_perfis`, `app_permissoes_perfil`, `app_permissoes_usuario`, `app_janelas_acesso_perfil`, `app_janelas_acesso_usuario`, `app_auditoria_permissoes`.
+- MCP Supabase `_execute_sql`: confirmadas policies atuais de `auditoria_acessos` e `usuarios_permitidos`.
+- MCP Supabase `_execute_sql`: confirmadas constraints relevantes, incluindo `UNIQUE(usuario_id)` em `app_usuarios_perfis`.
+- MCP Supabase `_execute_sql`: busca por estruturas de unidade/filial/loja/departamento indicou dados operacionais em SGI/Digisac, mas nao cadastro administrativo de unidades por usuario.
+
+**Comandos rodados e resultados:**
+- `rg` para localizar arquivos/docs/rotas/permissoes relacionados.
+- `Get-Content` para leitura dos arquivos envolvidos.
+- `git status --short` mostrou alteracoes preexistentes fora deste escopo em arquivos da Inteligencia Comercial; nao foram tocadas.
+- Nenhum teste automatizado rodado; tarefa era auditoria e documentacao.
+
+**Pendencias:**
+- Decidir nome final do `moduleKey` para acesso a area Usuarios.
+- Decidir se a futura area Usuarios fica em subrota dedicada ou se permanece acoplada a `/superadmin?tab=usuarios`.
+- Decidir quais acoes um perfil nao-superadmin podera executar: convidar usuario, bloquear/desbloquear, alterar perfil, alterar role, editar unidades.
+- Decidir regra de obrigatoriedade de unidade e migracao de usuarios existentes.
+- Decidir se `POS VENDA` e unidade, departamento ou ambos.
+
+**Riscos conhecidos:**
+- Liberar `/superadmin` inteiro por permissao comum liberaria tambem Perfis/Auditoria na UI se nao houver separacao adicional.
+- Esconder abas no frontend nao seria protecao suficiente.
+- APIs atuais de usuarios sao administrativas demais para um perfil limitado, pois incluem alteracao de role/status/perfil.
+- A leitura client-side de `auditoria_acessos` depende de RLS correta.
+
+**Proximo passo recomendado:**
+- Aguardar aprovacao do plano. Depois, implementar em etapas pequenas: modulo/permissao especifica de Usuarios, separacao de rota/autorizacao, APIs limitadas, modelagem relacional de unidades e auditoria das alteracoes.
+
+---
+
+## 2026-07-14 - Codex - Influencia temporal e historico de chamados na IA Comercial
+
+**Resumo:** Ajustada a analise por IA da Inteligencia Comercial para enviar contexto temporal deterministico dos chamados e ate 3 chamados anteriores ao ciclo da venda. O objetivo e evitar que atendimentos pre-venda com ida a loja, produto pronto/separado ou finalizacao presencial sejam classificados como `Nao/Nenhum` apenas por parecerem operacionais. Caso de referencia: venda `65431`.
+
+**Arquivos lidos:**
+- Anexo do pedido em `C:\Users\lebeb\.codex\attachments\53ffe832-987f-42b5-b6b4-57a6fb01b075\pasted-text.txt`
+- `.devin/rules/gerais.md`
+- `.devin/rules/supabase.md`
+- `.agents/skills/supabase/SKILL.md`
+- `docs/ia/log_progress.md`
+- `docs/inteligencia-comercial-contexto-vendas-anteriores-ia.md`
+- `src/app/api/sgi/ia/processar-proximo/route.ts`
+- `src/lib/ia/transcript.ts`
+- `src/lib/digisac/sgi-sync.ts`
+- `src/lib/ia/extrair-trechos-fatuais.ts`
+
+**Arquivos criados:**
+- `src/lib/ia/contexto-temporal-chamados.ts`
+- `src/lib/ia/contexto-temporal-chamados.test.ts`
+- `docs/inteligencia-comercial-influencia-temporal-historico-chamados.md`
+
+**Arquivos alterados:**
+- `src/app/api/sgi/ia/processar-proximo/route.ts`
+- `src/lib/ia/transcript.ts`
+- `docs/ia/log_progress.md`
+
+**Alteracoes realizadas:**
+1. `montarTranscriptChamado` agora retorna tambem `mensagens` ordenadas, preservando o transcript existente.
+2. Novo helper temporal calcula inicio do chamado versus fechamento, ultima mensagem antes da venda, primeira depois, intervalos e contagens antes/depois.
+3. Novo helper de chamados anteriores busca ate 3 conversas anteriores ao ciclo atual pelo mesmo telefone normalizado/DDI, exclui o ciclo atual e usa os dados apenas como contexto historico.
+4. Prompt individual recebeu blocos de contexto temporal e chamados anteriores, alem de regras para influencia parcial/media quando a conversa pre-venda conduz ida a loja ou finalizacao presencial.
+5. Prompt consolidado recebeu contexto temporal por chamado e o mesmo bloco de chamados anteriores.
+
+**Validacoes realizadas:**
+- MCP Supabase `_execute_sql`: confirmadas colunas reais usadas em `sgi_documentos_saida`, `sgi_documentos_saida_contatos`, `digisac_conversas_resumo`, `venda_conversa_vinculos` e `digisac_chamados_analise_ia`.
+- MCP Supabase `_execute_sql`: venda `65431` conferida com fechamento `2026-07-07 20:59:26+00`, emissao `07/07/2026 17:59:26`, ticket `cf445253-edce-4b2d-a561-c9d9ee626b07`, protocolo `2026070671185`, chamado iniciado em `2026-07-06 15:44:49.111+00`.
+- MCP Supabase `_execute_sql`: nao foram encontrados chamados anteriores ao ciclo da venda `65431` pelo criterio de telefone no banco atual.
+
+**Comandos rodados e resultados:**
+- `rg` e `Get-Content` para mapear fluxo, prompt, transcript, vinculos e docs.
+- `npx vitest run src/lib/ia/contexto-temporal-chamados.test.ts` no sandbox -> falhou com `spawn EPERM`; reexecutado fora do sandbox -> 1 arquivo, 13 testes passando.
+- `npx tsc --noEmit --pretty false` -> exit 0.
+- `npx eslint src/app/api/sgi/ia/processar-proximo/route.ts src/lib/ia/transcript.ts src/lib/ia/contexto-temporal-chamados.ts src/lib/ia/contexto-temporal-chamados.test.ts` -> exit 0.
+- `npx next build` no sandbox -> falhou com `EPERM` ao remover `.next/app-path-routes-manifest.json`; reexecutado fora do sandbox -> build passou. Avisos de `Dynamic server usage` em rotas autenticadas apareceram, sem falhar o build.
+
+**Pendencias:**
+- Reanalise real da venda `65431` em ambiente autenticado/DeepSeek ainda nao executada.
+
+**Riscos conhecidos:**
+- O bloco de chamados anteriores aumenta o prompt, mitigado por limite de 3 chamados e trechos reduzidos.
+- Historico por telefone pode carregar contexto de telefone compartilhado; a instrucao do prompt proibe tratar historico como influencia automatica.
+
+**Proximo passo recomendado:**
+- Reprocessar a venda `65431` pela tela autenticada para gravar e conferir a nova classificacao real.
+
+---
+
+## 2026-07-14 - Codex - Contexto de vendas anteriores na IA da Inteligencia Comercial
+
+**Resumo:** Ajustada a analise por IA da Inteligencia Comercial para enviar um bloco separado de contexto historico com as ultimas vendas anteriores do mesmo cliente. O objetivo e evitar que produtos ja comprados anteriormente, como o berco da venda 65295, sejam classificados como produto de interesse nao fechado ou oportunidade nao convertida na venda atual 65431, que comprou carrinho.
+
+**Arquivos lidos:**
+- Anexo do pedido em `C:\Users\lebeb\.codex\attachments\d0402f0a-deeb-4ccc-9fba-df657276b797\pasted-text.txt`
+- `.devin/rules/gerais.md`
+- `.devin/rules/supabase.md`
+- `.agents/skills/supabase/SKILL.md`
+- `docs/ia/log_progress.md`
+- `docs/inteligencia-comercial-multiplas-conexoes-digisac.md`
+- `docs/links-protocolos-digisac.md`
+- `src/app/api/sgi/vendas/[numero_lancamento]/route.ts`
+- `src/app/api/sgi/vendas/route.ts`
+- `src/app/api/sgi/ia/iniciar-analise/route.ts`
+- `src/app/api/sgi/ia/processar-proximo/route.ts`
+- `src/app/api/sgi/ia/analise-status/route.ts`
+- `src/components/inteligencia-comercial/ModalDetalheVenda.tsx`
+- `src/types/sgi.ts`
+- `src/lib/ia/deepseek-client.ts`
+
+**Arquivos criados:**
+- `src/lib/ia/contexto-vendas-anteriores.ts`
+- `src/lib/ia/contexto-vendas-anteriores.test.ts`
+- `docs/inteligencia-comercial-contexto-vendas-anteriores-ia.md`
+
+**Arquivos alterados:**
+- `src/app/api/sgi/ia/processar-proximo/route.ts`
+- `docs/ia/log_progress.md`
+
+**Alteracoes realizadas:**
+1. Helper `buscarContextoVendasAnterioresIA`:
+   - Reaproveita o criterio ja usado pela UI: contatos da venda atual em `sgi_documentos_saida_contatos`, variacoes de telefone via `gerarVariacoesTelefone`, busca por `telefone_normalizado` e `telefone_normalizado_ddi`.
+   - Exclui a venda atual.
+   - Considera somente vendas anteriores a data de fechamento da venda atual quando as datas existem.
+   - Limita a 5 vendas anteriores, ordenadas da mais recente para a mais antiga.
+   - Carrega produtos historicos com codigo, quantidade, valor, departamento e subgrupo.
+   - Marca `compraConfirmada` somente quando o status indica finalizado/concluido.
+2. Helper `montarBlocoVendasAnterioresIA`:
+   - Monta bloco separado `VENDAS ANTERIORES DO CLIENTE - CONTEXTO HISTORICO`.
+   - Explicita que vendas historicas nao fazem parte da venda atual.
+   - Instrui a IA a nao classificar produto comprado anteriormente como oportunidade nao fechada da venda atual.
+   - Instrui a tratar mencoes de entrega/retirada/montagem/suporte como contexto historico/logistico quando aplicavel.
+3. Rota `processar-proximo`:
+   - Prompt individual agora recebe o bloco historico entre produtos da venda atual e conversa.
+   - Prompt consolidado agora recebe o bloco historico logo apos produtos comprados na venda atual.
+   - Regras de `produtos_fechados` e `produtos_interesse_nao_fechados` reforcadas no consolidado.
+   - Log seguro adicionado: `[IA][CONTEXTO-HISTORICO] vendaAtual=... vendasAnteriores=... produtosHistoricos=... criterio=telefone limite=5`.
+
+**Validacoes realizadas:**
+- MCP Supabase `_list_tables`: schema publico consultado.
+- MCP Supabase `_execute_sql`: confirmadas colunas reais de `sgi_documentos_saida`, `sgi_documentos_saida_produtos`, `sgi_documentos_saida_pagamentos`, `sgi_documentos_saida_contatos`, `venda_conversa_vinculos`, `digisac_conversas_resumo`, `digisac_chamados_analise_ia`, `ia_analise_comercial_fila`, `venda_analise_comercial_ia`.
+- MCP Supabase `_execute_sql`: caso 65431/65295 confirmado. Venda 65431 tem carrinho; venda anterior 65295 tem berco e colchao; ambas finalizadas e vinculadas ao mesmo cliente/telefone.
+- `npx vitest run src/lib/ia/contexto-vendas-anteriores.test.ts`: 10 testes passando.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/lib/ia/contexto-vendas-anteriores.ts src/lib/ia/contexto-vendas-anteriores.test.ts src/app/api/sgi/ia/processar-proximo/route.ts`: passou.
+- `npx next build`: passou apos reexecucao fora do sandbox.
+
+**Comandos rodados e resultados:**
+- `rg` para localizar rotas, prompts, tipos e docs da Inteligencia Comercial.
+- `Get-Content` para leitura dos arquivos envolvidos.
+- `npx vitest run src/lib/ia/contexto-vendas-anteriores.test.ts` no sandbox -> falhou com `spawn EPERM`; reexecutado fora do sandbox -> 1 arquivo, 10 testes passando.
+- `npx tsc --noEmit --pretty false` -> exit 0.
+- `npx eslint ...` -> exit 0.
+- `npx next build` no sandbox -> falhou com `EPERM` ao remover `.next/app-path-routes-manifest.json`; reexecutado fora do sandbox -> build passou. Avisos de `Dynamic server usage` em rotas autenticadas apareceram, sem falhar o build.
+
+**Pendencias:**
+- Validar manualmente a reanalise real da venda 65431 em ambiente autenticado apos deploy/rebuild.
+- Comparar antes/depois do consolidado real para confirmar que o berco nao aparece em `produtos_interesse_nao_fechados`, `produtos_de_interesse` ou `oportunidades_melhoria`, se aparecia antes.
+- Reanalise real nao executada nesta sessao; nao confirmado no fluxo autenticado/DeepSeek.
+
+**Riscos conhecidos:**
+- O criterio por telefone preserva o comportamento existente da UI. Se o telefone for compartilhado por clientes diferentes, pode trazer vendas de outro comprador; nao foi ampliado por nome/homonimo.
+- Vendas canceladas ou nao finalizadas aparecem como contexto, mas o bloco informa `Compra confirmada pelo status: nao`. Se a regra futura exigir omitir canceladas, ajustar o helper.
+- O bloco historico aumenta o prompt; o limite de 5 vendas anteriores reduz esse risco.
+
+**Proximo passo recomendado:**
+- Reanalisar a venda 65431 pela tela de Inteligencia Comercial e validar o consolidado gerado: carrinho como produto fechado atual; berco da venda 65295 tratado como contexto historico/logistico, nao oportunidade nao convertida.
+
+---
+
 ## 2026-07-14 - Cascade - Scroll preservado e feedback visual imediato no ModalDetalheVenda
 
 **Resumo:** Dois ajustes no ModalDetalheVenda da tela de Inteligencia Comercial: (1) preservar posicao do scroll do modal apos acoes internas (Analisar IA, Continuar, Reanalisar) e (2) feedback visual imediato ao clicar nos botoes de analise IA, sem aguardar resposta da API.
@@ -20612,3 +20822,190 @@ Abrir `/procurar-datas/dev-v2` com sessao superadmin, auditar o run informado e 
 - Reexecutar o atendimento real com o contato fora da allowlist anterior e verificar logs `geo_cache hit origem=... estrategia=...` ou, se falhar, o novo motivo controlado (`geo_cache_ambiguo`, `geo_cache_lat_lng_invalidos` ou `geo_cache_nao_resolvido`).
 
 ---
+## 2026-07-15 - Codex - Implementacao de acesso limitado a Usuarios e unidades
+
+- Resumo:
+  - Implementado acesso granular para `Usuarios` em `/superadmin?tab=usuarios` via novo modulo `superadmin_usuarios`.
+  - Criada migration local para `app_unidades`, `app_usuarios_unidades`, seed das unidades iniciais e registro do modulo `superadmin_usuarios`.
+  - Separado `src/app/superadmin/page.tsx` em wrapper server-side e `src/app/superadmin/PageClient.tsx` client-side.
+  - Abas `Perfis` e `Auditoria` continuam visiveis apenas para superadmin.
+  - Sidebar passou a mostrar `USUARIOS` por `moduleKey = superadmin_usuarios`; `AUDITORIA ACESSOS` continua `superadminOnly`.
+  - APIs de Usuarios agora aceitam superadmin ou permissao `superadmin_usuarios`, com travas para acesso limitado nao criar/promover superadmin, nao editar a si mesmo em perfil/status/unidades e nao alterar superadmins.
+  - Cadastro de usuario agora aceita perfil e multiplas unidades; usuarios existentes podem editar unidades por modal e aparecer como `Sem unidade`.
+- Arquivos lidos:
+  - `docs/plano-acesso-usuarios-e-unidades.md`
+  - `docs/ia/log_progress.md`
+  - `docs/ia/padrao-novas-telas-permissoes.md`
+  - `src/app/superadmin/page.tsx`
+  - `src/app/superadmin/_components/PerfilEditor.tsx`
+  - `src/components/Sidebar.tsx`
+  - `src/middleware.ts`
+  - `src/lib/auth/api-auth.ts`
+  - `src/lib/auth/module-access.ts`
+  - APIs sob `src/app/api/superadmin/*`
+  - `src/types/supabase.ts`
+- Arquivos alterados/criados:
+  - `src/app/superadmin/page.tsx`
+  - `src/app/superadmin/PageClient.tsx`
+  - `src/components/Sidebar.tsx`
+  - `src/middleware.ts`
+  - `src/lib/auth/module-access.ts`
+  - `src/lib/auth/superadmin-users-access.ts`
+  - `src/lib/superadmin/usuarios.ts`
+  - `src/lib/superadmin/usuarios.test.ts`
+  - `src/app/api/superadmin/usuarios/route.ts`
+  - `src/app/api/superadmin/adicionar-usuario/route.ts`
+  - `src/app/api/superadmin/usuarios/[id]/status/route.ts`
+  - `src/app/api/superadmin/usuarios/[id]/perfil/route.ts`
+  - `src/app/api/superadmin/usuarios/[id]/unidades/route.ts`
+  - `src/app/api/superadmin/usuarios/perfis-disponiveis/route.ts`
+  - `src/app/api/superadmin/unidades/route.ts`
+  - `src/types/supabase.ts`
+  - `supabase/migrations/20260715120000_add_superadmin_users_units.sql`
+  - `docs/plano-acesso-usuarios-e-unidades.md`
+  - `docs/ia/padrao-novas-telas-permissoes.md`
+  - `docs/ia/log_progress.md`
+- Validacoes realizadas:
+  - MCP Supabase leitura: confirmou que `app_unidades` e `app_usuarios_unidades` nao existiam; listou `app_modulos`; validou colunas, constraints e policies relevantes.
+  - `npx tsc --noEmit`: passou.
+  - `npm run test -- src/lib/superadmin/usuarios.test.ts`: passou, 1 arquivo e 2 testes.
+- Pendencias:
+  - Migration local nao foi aplicada no Supabase.
+  - Depois de aplicar a migration, liberar `superadmin_usuarios` no perfil desejado via editor de Perfis.
+  - Teste manual autenticado em producao nao realizado.
+  - Nao confirmado em browser real.
+- Riscos conhecidos:
+  - Sem a migration aplicada, as APIs novas que leem `app_unidades`/`app_usuarios_unidades` retornarao erro de banco.
+  - Criacao/reativacao de usuario e vinculos de perfil/unidade sao gravados em etapas via API, nao em transacao SQL unica.
+
+## 2026-07-15 - Codex - Sincronizacao Sidebar x app_modulos x Perfis
+
+- Resumo:
+  - Criado catalogo central tipado em `src/lib/auth/modulos-app.ts` para modulos e grupos de navegacao.
+  - `src/components/Sidebar.tsx` passou a consumir `NAVIGATION_GROUPS` do catalogo central, mantendo icones e comportamento visual.
+  - `ModuleKey` em `src/lib/auth/module-access.ts` passou a derivar de `AppModuleKey`.
+  - Criado teste de consistencia `src/lib/auth/modulos-app.test.ts`.
+  - Criada migration local idempotente `supabase/migrations/20260715130000_ensure_menu_catalog_modules.sql` para garantir seeds locais de `digisac_finalizacoes_automaticas` e `procurar_datas_performance`, sem alterar `app_permissoes_perfil`.
+- Arquivos lidos:
+  - `docs/plano-acesso-usuarios-e-unidades.md`
+  - `docs/ia/padrao-novas-telas-permissoes.md`
+  - `docs/ia/log_progress.md`
+  - `.devin/rules/gerais.md`
+  - `.devin/rules/supabase.md`
+  - `.devin/rules/continuidade-agente.md`
+  - `.devin/rules/recebimentos.md`
+  - `.devin/rules/resumo.md`
+  - `src/components/Sidebar.tsx`
+  - `src/app/api/me/permissoes/route.ts`
+  - `src/app/api/superadmin/perfis/[id]/permissoes/route.ts`
+  - `src/lib/auth/module-access.ts`
+  - `src/types/supabase.ts`
+  - migrations que criam/populam `app_modulos`
+- Arquivos alterados/criados:
+  - `src/lib/auth/modulos-app.ts`
+  - `src/lib/auth/modulos-app.test.ts`
+  - `src/components/Sidebar.tsx`
+  - `src/lib/auth/module-access.ts`
+  - `supabase/migrations/20260715130000_ensure_menu_catalog_modules.sql`
+  - `docs/ia/padrao-novas-telas-permissoes.md`
+  - `docs/plano-acesso-usuarios-e-unidades.md`
+  - `docs/ia/log_progress.md`
+- Validacoes realizadas:
+  - MCP Supabase leitura: `app_modulos` atual contem os moduleKeys do menu ja aplicados em producao; `superadmin_usuarios` permanece apenas na migration local pendente.
+  - `npx tsc --noEmit`: passou.
+  - `npm run test -- src/lib/auth/modulos-app.test.ts src/lib/superadmin/usuarios.test.ts`: passou, 2 arquivos e 10 testes.
+  - `npx eslint src/lib/auth/modulos-app.ts src/lib/auth/modulos-app.test.ts src/components/Sidebar.tsx src/lib/auth/module-access.ts src/app/superadmin/page.tsx src/app/superadmin/PageClient.tsx src/app/api/superadmin/usuarios/route.ts src/app/api/superadmin/adicionar-usuario/route.ts src/app/api/superadmin/usuarios/[id]/status/route.ts src/app/api/superadmin/usuarios/[id]/perfil/route.ts src/app/api/superadmin/usuarios/[id]/unidades/route.ts src/app/api/superadmin/usuarios/perfis-disponiveis/route.ts src/app/api/superadmin/unidades/route.ts src/lib/auth/superadmin-users-access.ts src/lib/superadmin/usuarios.ts src/lib/superadmin/usuarios.test.ts src/types/supabase.ts src/middleware.ts`: passou.
+  - `git diff --check`: passou, apenas avisos de CRLF em arquivos ja alterados no worktree.
+- Pendencias:
+  - Nenhuma migration foi aplicada em producao.
+  - Validacao manual autenticada em browser nao realizada.
+- Riscos conhecidos:
+  - A validacao automatizada compara o catalogo com migrations locais conhecidas; divergencias manuais futuras no banco real ainda devem ser checadas por MCP antes de aplicar migrations.
+
+## 2026-07-15 - Codex - Correcao de modulos liberaveis ausentes em Perfis
+
+- Resumo:
+  - Corrigida a divergencia em que quatro itens liberaveis do menu nao apareciam na matriz de Perfis.
+  - Causa confirmada: o editor filtra `app_modulos` por `ativo=true`, `publico=false` e `somente_superadmin=false`; no Supabase real, `horarios_agendamentos` estava `publico=true`, `digisac_finalizacoes_automaticas` e `pos_venda_atendimento_automatico` estavam `somente_superadmin=true`, e `CONFIG BUSCA` usava o modulo generico `configuracoes`, tambem `somente_superadmin=true`.
+  - Criado o modulo granular `configuracoes_procurar_datas`.
+  - Criada migration corretiva local `supabase/migrations/20260715140000_fix_profile_visible_menu_modules.sql`, sem inserts em `app_permissoes_perfil`.
+  - Paginas e APIs das telas corrigidas passaram a usar `checkModuleAndWindowAccess`/`requireModuleAccess` com os moduleKeys especificos.
+  - `AUDITORIA ACESSOS` permaneceu exclusiva de superadmin via `moduleKey = superadmin`.
+- Arquivos lidos:
+  - anexo `C:\Users\lebeb\.codex\attachments\e02eadbd-68a7-4ba2-809f-0feef4f652c0\pasted-text.txt`
+  - `docs/plano-acesso-usuarios-e-unidades.md`
+  - `docs/ia/padrao-novas-telas-permissoes.md`
+  - `docs/ia/log_progress.md`
+  - `.devin/rules/gerais.md`
+  - `.devin/rules/supabase.md`
+  - `.devin/rules/continuidade-agente.md`
+  - `src/lib/auth/modulos-app.ts`
+  - `src/lib/auth/modulos-app.test.ts`
+  - `src/components/Sidebar.tsx`
+  - `src/components/LayoutWrapper.tsx`
+  - `src/middleware.ts`
+  - paginas e APIs de `horarios-agendamentos`, `digisac/finalizacoes-automaticas`, `configuracoes/procurar-datas` e `pos-venda/atendimento-automatico`
+- Arquivos alterados/criados:
+  - `src/lib/auth/modulos-app.ts`
+  - `src/lib/auth/modulos-app.test.ts`
+  - `src/app/horarios-agendamentos/page.tsx`
+  - `src/app/api/digisac/schedule/route.ts`
+  - `src/app/configuracoes/procurar-datas/page.tsx`
+  - `src/app/configuracoes/procurar-datas/PageClient.tsx`
+  - `src/app/api/configuracoes/procurar-datas/*/route.ts`
+  - `src/app/api/digisac/finalizacoes-automaticas/**/route.ts`
+  - `src/middleware.ts`
+  - `src/components/LayoutWrapper.tsx`
+  - `supabase/migrations/20260715140000_fix_profile_visible_menu_modules.sql`
+  - `docs/ia/padrao-novas-telas-permissoes.md`
+  - `docs/plano-acesso-usuarios-e-unidades.md`
+  - `docs/ia/log_progress.md`
+- Validacoes realizadas:
+  - MCP Supabase leitura em `app_modulos` para todos os itens do menu.
+  - Consulta do filtro real do editor: `ativo=true and publico=false and somente_superadmin=false`.
+  - `npm run test -- src/lib/auth/modulos-app.test.ts`: passou, 1 arquivo e 14 testes.
+  - `npx tsc --noEmit`: passou.
+  - `npm run test -- src/lib/auth/modulos-app.test.ts src/lib/superadmin/usuarios.test.ts`: passou, 2 arquivos e 16 testes.
+  - ESLint nos arquivos alterados: passou sem erros; permaneceu apenas aviso pre-existente de `<img>` em `src/components/LayoutWrapper.tsx`.
+  - `git diff --check`: passou, apenas avisos de CRLF.
+- Pendencias:
+  - Nova migration nao foi aplicada em producao nesta tarefa.
+  - Validacao manual autenticada em browser nao realizada.
+- Riscos conhecidos:
+  - Ate aplicar `20260715140000_fix_profile_visible_menu_modules.sql`, o banco real continuara filtrando os modulos conforme o estado antigo.
+  - `CONFIG BUSCA` agora e liberavel por perfil inteiro; as acoes internas da tela ficam protegidas pelo mesmo modulo granular.
+
+## 2026-07-15 - Codex - Ordenacao da matriz de Perfis igual ao Sidebar
+
+- Resumo:
+  - Corrigida a ordenacao da lista de permissoes na tela de Perfis para seguir a ordem visual de `NAVIGATION_GROUPS`.
+  - Causa confirmada: o endpoint `GET /api/superadmin/perfis/[id]/permissoes` ordenava por `app_modulos.ordem`; esses valores estavam desalinhados da ordem visual do menu lateral.
+  - Criados helpers derivados do catalogo central em `src/lib/auth/modulos-app.ts` para ordem e grupo dos modulos liberaveis.
+  - O endpoint de permissoes passou a ordenar a resposta por `getProfilePermissionOrder` e a retornar `grupo`.
+  - `PerfilEditor` passou a separar visualmente as permissoes pelos grupos do menu: VENDAS, PROCURAR DATAS, OPERACAO e CONFIGURACOES.
+  - Criada migration local `supabase/migrations/20260715150000_order_profile_modules_like_sidebar.sql` para alinhar `app_modulos.ordem` ao catalogo, sem alterar `app_permissoes_perfil`.
+- Arquivos lidos:
+  - `src/lib/auth/modulos-app.ts`
+  - `src/app/superadmin/_components/PerfilEditor.tsx`
+  - `src/app/api/superadmin/perfis/[id]/permissoes/route.ts`
+  - `docs/ia/padrao-novas-telas-permissoes.md`
+  - `docs/ia/log_progress.md`
+- Arquivos alterados/criados:
+  - `src/lib/auth/modulos-app.ts`
+  - `src/lib/auth/modulos-app.test.ts`
+  - `src/app/superadmin/_components/PerfilEditor.tsx`
+  - `src/app/api/superadmin/perfis/[id]/permissoes/route.ts`
+  - `supabase/migrations/20260715150000_order_profile_modules_like_sidebar.sql`
+  - `docs/ia/log_progress.md`
+- Validacoes realizadas:
+  - `npm run test -- src/lib/auth/modulos-app.test.ts`: passou, 1 arquivo e 16 testes.
+  - `npx tsc --noEmit`: passou.
+  - `npm run test -- src/lib/auth/modulos-app.test.ts src/lib/superadmin/usuarios.test.ts`: passou, 2 arquivos e 18 testes.
+  - `npx eslint src/lib/auth/modulos-app.ts src/lib/auth/modulos-app.test.ts src/app/superadmin/_components/PerfilEditor.tsx src/app/api/superadmin/perfis/[id]/permissoes/route.ts`: passou.
+  - `git diff --check`: passou, apenas avisos de CRLF.
+- Pendencias:
+  - Nova migration nao foi aplicada em producao nesta tarefa.
+  - Validacao manual autenticada em browser nao realizada.
+- Riscos conhecidos:
+  - A ordenacao da API ja segue o catalogo central mesmo antes da migration; a migration apenas alinha o campo `ordem` do banco para consultas futuras.
+  - Nenhuma permissao salva foi alterada; apenas ordenacao e agrupamento visual foram modificados.

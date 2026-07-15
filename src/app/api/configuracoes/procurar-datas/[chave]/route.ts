@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
+import { requireModuleAccess } from '@/lib/auth/module-access'
 import { editarConfigDb } from '@/lib/procurar-datas/config-db'
 import { validarValorConfig } from '@/lib/procurar-datas/validar-config'
 import { CHAVES_EDITAVEIS_FASE3 } from '@/lib/procurar-datas/chaves-editaveis'
@@ -15,7 +15,7 @@ export const runtime = 'nodejs'
 // Edita o campo `valor` de uma configuração no Supabase (Fase 3).
 //
 // REGRAS:
-//   - Apenas superadmin
+//   - Apenas usuarios com acesso ao modulo configuracoes_procurar_datas
 //   - Apenas chaves da whitelist CHAVES_EDITAVEIS_FASE3 (em chaves-editaveis.ts)
 //   - Não edita: secrets, chaves técnicas, chaves ausentes do banco
 //   - Validação de tipo antes de salvar
@@ -32,11 +32,7 @@ export async function PATCH(
   { params }: { params: Promise<{ chave: string }> }
 ) {
   try {
-    const auth = await requireAuthenticatedUser({
-      requireAllowedUser: true,
-      requireActive: true,
-      requiredRole: 'superadmin',
-    })
+    const auth = await requireModuleAccess('configuracoes_procurar_datas')
 
     if (!auth.ok) {
       return auth.response

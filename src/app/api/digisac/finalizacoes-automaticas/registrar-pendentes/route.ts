@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
+import { requireModuleAccess } from '@/lib/auth/module-access';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
   montarRegistroFechamentoAutomatico,
@@ -174,11 +174,7 @@ async function processarConexao(
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAuthenticatedUser({
-    requireAllowedUser: true,
-    requireActive: true,
-    requiredRole: 'superadmin',
-  });
+  const auth = await requireModuleAccess('digisac_finalizacoes_automaticas');
   if (!auth.ok) return auth.response;
 
   console.log('[REGISTRAR-PENDENTES] Inicio do registro de pendentes.');

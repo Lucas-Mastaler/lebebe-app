@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/service'
-import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
+import { requireSuperadminUsersAccess } from '@/lib/auth/superadmin-users-access'
+import { validarPerfilAtribuivel } from '@/lib/superadmin/usuarios'
 import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
@@ -9,11 +10,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await requireAuthenticatedUser({
-      requireAllowedUser: true,
-      requireActive: true,
-      requiredRole: 'superadmin',
-    })
+    const auth = await requireSuperadminUsersAccess()
 
     if (!auth.ok) {
       return auth.response
@@ -23,7 +20,7 @@ export async function PUT(
 
     if (!id?.trim()) {
       return NextResponse.json(
-        { ok: false, message: 'ID do usuário é obrigatório' },
+        { ok: false, message: 'ID do usuario e obrigatorio' },
         { status: 400 }
       )
     }
@@ -33,14 +30,14 @@ export async function PUT(
       body = await request.json()
     } catch {
       return NextResponse.json(
-        { ok: false, message: 'Payload inválido' },
+        { ok: false, message: 'Payload invalido' },
         { status: 400 }
       )
     }
 
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       return NextResponse.json(
-        { ok: false, message: 'Payload inválido' },
+        { ok: false, message: 'Payload invalido' },
         { status: 400 }
       )
     }
@@ -49,52 +46,50 @@ export async function PUT(
 
     if (typeof perfilId !== 'string' || !perfilId.trim()) {
       return NextResponse.json(
-        { ok: false, message: 'perfilId é obrigatório' },
+        { ok: false, message: 'perfilId e obrigatorio' },
         { status: 400 }
       )
     }
 
     const supabaseAdmin = createServiceClient()
 
-    const [usuarioResult, perfilResult] = await Promise.all([
-      supabaseAdmin
-        .from('usuarios_permitidos')
-        .select('id, email')
-        .eq('id', id)
-        .single(),
+    const { data: usuario, error: usuarioError } = await supabaseAdmin
+      .from('usuarios_permitidos')
+      .select('id, email, role')
+      .eq('id', id)
+      .single()
 
-      supabaseAdmin
-        .from('app_perfis_acesso')
-        .select('id, chave, nome, ativo')
-        .eq('id', perfilId)
-        .single(),
-    ])
-
-    if (usuarioResult.error || !usuarioResult.data) {
+    if (usuarioError || !usuario) {
       return NextResponse.json(
-        { ok: false, message: 'Usuário não encontrado' },
+        { ok: false, message: 'Usuario nao encontrado' },
         { status: 404 }
       )
     }
 
-    if (perfilResult.error || !perfilResult.data) {
+    if (auth.acessoLimitadoUsuarios) {
+      if (usuario.id === auth.allowedUser.id || usuario.role === 'superadmin') {
+        return NextResponse.json(
+          { ok: false, message: 'Acesso negado' },
+          { status: 403 }
+        )
+      }
+    }
+
+    const perfilResult = await validarPerfilAtribuivel(
+      supabaseAdmin,
+      perfilId,
+      auth.acessoLimitadoUsuarios
+    )
+
+    if (!perfilResult.ok) {
       return NextResponse.json(
-        { ok: false, message: 'Perfil não encontrado' },
-        { status: 404 }
+        { ok: false, message: perfilResult.message },
+        { status: perfilResult.status }
       )
     }
 
-    if (!perfilResult.data.ativo) {
-      return NextResponse.json(
-        { ok: false, message: 'Não é possível atribuir perfil inativo' },
-        { status: 422 }
-      )
-    }
+    const perfil = perfilResult.perfil
 
-    const usuario = usuarioResult.data
-    const perfil = perfilResult.data
-
-    // Capturar perfil anterior para auditoria
     const { data: perfilAnterior } = await supabaseAdmin
       .from('app_usuarios_perfis')
       .select('perfil_id')
@@ -107,7 +102,7 @@ export async function PUT(
         {
           usuario_id: id,
           perfil_id: perfilId,
-          atribuido_por: auth.allowedUser!.id,
+          atribuido_por: auth.allowedUser.id,
         },
         { onConflict: 'usuario_id' }
       )
@@ -115,7 +110,7 @@ export async function PUT(
     if (upsertError) {
       console.error('[SUPERADMIN USUARIOS PERFIL PUT] Erro ao atribuir perfil:', upsertError)
       return NextResponse.json(
-        { ok: false, message: 'Erro ao processar requisição' },
+        { ok: false, message: 'Erro ao processar requisicao' },
         { status: 500 }
       )
     }
@@ -123,7 +118,7 @@ export async function PUT(
     await supabaseAdmin
       .from('app_auditoria_permissoes')
       .insert({
-        ator_usuario_id: auth.allowedUser!.id,
+        ator_usuario_id: auth.allowedUser.id,
         alvo_usuario_id: id,
         acao: 'atribuir_perfil',
         entidade: 'app_usuarios_perfis',
@@ -135,13 +130,12 @@ export async function PUT(
 
     return NextResponse.json({
       ok: true,
-      message: 'Perfil atribuído com sucesso',
+      message: 'Perfil atribuido com sucesso',
     })
-
   } catch (error) {
     console.error('[SUPERADMIN USUARIOS PERFIL PUT] Erro geral:', error)
     return NextResponse.json(
-      { ok: false, message: 'Erro ao processar requisição' },
+      { ok: false, message: 'Erro ao processar requisicao' },
       { status: 500 }
     )
   }
@@ -152,11 +146,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await requireAuthenticatedUser({
-      requireAllowedUser: true,
-      requireActive: true,
-      requiredRole: 'superadmin',
-    })
+    const auth = await requireSuperadminUsersAccess()
 
     if (!auth.ok) {
       return auth.response
@@ -166,24 +156,33 @@ export async function DELETE(
 
     if (!id?.trim()) {
       return NextResponse.json(
-        { ok: false, message: 'ID do usuário é obrigatório' },
+        { ok: false, message: 'ID do usuario e obrigatorio' },
         { status: 400 }
       )
     }
 
     const supabaseAdmin = createServiceClient()
 
-    const { data: usuarioResult, error: usuarioError } = await supabaseAdmin
+    const { data: usuario, error: usuarioError } = await supabaseAdmin
       .from('usuarios_permitidos')
-      .select('id, email')
+      .select('id, email, role')
       .eq('id', id)
       .single()
 
-    if (usuarioError || !usuarioResult) {
+    if (usuarioError || !usuario) {
       return NextResponse.json(
-        { ok: false, message: 'Usuário não encontrado' },
+        { ok: false, message: 'Usuario nao encontrado' },
         { status: 404 }
       )
+    }
+
+    if (auth.acessoLimitadoUsuarios) {
+      if (usuario.id === auth.allowedUser.id || usuario.role === 'superadmin') {
+        return NextResponse.json(
+          { ok: false, message: 'Acesso negado' },
+          { status: 403 }
+        )
+      }
     }
 
     const { data: vinculoAtual, error: vinculoError } = await supabaseAdmin
@@ -194,7 +193,7 @@ export async function DELETE(
 
     if (vinculoError || !vinculoAtual) {
       return NextResponse.json(
-        { ok: false, message: 'Usuário não possui perfil atribuído' },
+        { ok: false, message: 'Usuario nao possui perfil atribuido' },
         { status: 404 }
       )
     }
@@ -207,7 +206,7 @@ export async function DELETE(
     if (deleteError) {
       console.error('[SUPERADMIN USUARIOS PERFIL DELETE] Erro ao remover perfil:', deleteError)
       return NextResponse.json(
-        { ok: false, message: 'Erro ao processar requisição' },
+        { ok: false, message: 'Erro ao processar requisicao' },
         { status: 500 }
       )
     }
@@ -215,25 +214,24 @@ export async function DELETE(
     await supabaseAdmin
       .from('app_auditoria_permissoes')
       .insert({
-        ator_usuario_id: auth.allowedUser!.id,
+        ator_usuario_id: auth.allowedUser.id,
         alvo_usuario_id: id,
         acao: 'remover_perfil',
         entidade: 'app_usuarios_perfis',
         entidade_id: vinculoAtual.perfil_id,
         antes: { perfil_id: vinculoAtual.perfil_id },
         depois: null,
-        metadata: { usuario_email: usuarioResult.email },
+        metadata: { usuario_email: usuario.email },
       })
 
     return NextResponse.json({
       ok: true,
       message: 'Perfil removido com sucesso',
     })
-
   } catch (error) {
     console.error('[SUPERADMIN USUARIOS PERFIL DELETE] Erro geral:', error)
     return NextResponse.json(
-      { ok: false, message: 'Erro ao processar requisição' },
+      { ok: false, message: 'Erro ao processar requisicao' },
       { status: 500 }
     )
   }

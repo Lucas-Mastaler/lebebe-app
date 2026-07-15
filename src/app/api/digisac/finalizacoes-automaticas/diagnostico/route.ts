@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
+import { requireModuleAccess } from '@/lib/auth/module-access';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
 import { buscarMensagensTicketPaginado } from '@/lib/digisac/sgi-sync';
 import type { DigisacMensagem } from '@/lib/digisac/sgi-sync';
@@ -390,11 +390,7 @@ export async function GET(request: NextRequest) {
   const isCronInternal = cronSecret && process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET;
 
   if (!isCronInternal) {
-    const auth = await requireAuthenticatedUser({
-      requireAllowedUser: true,
-      requireActive: true,
-      requiredRole: 'superadmin',
-    });
+    const auth = await requireModuleAccess('digisac_finalizacoes_automaticas');
     if (!auth.ok) return auth.response;
   }
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
+import { requireModuleAccess } from '@/lib/auth/module-access';
 import { createServiceClient } from '@/lib/supabase/service';
 import { listarServicosDigisac } from '@/lib/digisac/estatisticas';
 import { buscarConexoesHabilitadas, type ConexaoAutomacao } from '@/lib/digisac/finalizacoesAutomaticas';
@@ -16,11 +16,7 @@ interface ConexaoDisponivel {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAuthenticatedUser({
-    requireAllowedUser: true,
-    requireActive: true,
-    requiredRole: 'superadmin',
-  });
+  const auth = await requireModuleAccess('digisac_finalizacoes_automaticas');
   if (!auth.ok) return auth.response;
 
   console.log('[CONEXOES-AUTOMACAO] POST recebido.');
@@ -121,11 +117,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
-  const auth = await requireAuthenticatedUser({
-    requireAllowedUser: true,
-    requireActive: true,
-    requiredRole: 'superadmin',
-  });
+  const auth = await requireModuleAccess('digisac_finalizacoes_automaticas');
   if (!auth.ok) return auth.response;
 
   console.log('[CONEXOES-AUTOMACAO] Buscando conexoes disponiveis e habilitadas.');

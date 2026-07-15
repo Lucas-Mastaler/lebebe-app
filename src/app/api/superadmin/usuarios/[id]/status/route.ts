@@ -1,6 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/service'
 import { registrarAuditoria } from '@/lib/auth/helpers'
-import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
+import { requireSuperadminUsersAccess } from '@/lib/auth/superadmin-users-access'
 import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
@@ -10,11 +10,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await requireAuthenticatedUser({
-      requireAllowedUser: true,
-      requireActive: true,
-      requiredRole: 'superadmin',
-    })
+    const auth = await requireSuperadminUsersAccess()
 
     if (!auth.ok) {
       return auth.response
@@ -68,6 +64,15 @@ export async function PATCH(
         { ok: false, message: 'Usuário não encontrado' },
         { status: 404 }
       )
+    }
+
+    if (auth.acessoLimitadoUsuarios) {
+      if (alvo.id === auth.allowedUser.id || alvo.role === 'superadmin') {
+        return NextResponse.json(
+          { ok: false, message: 'Acesso negado' },
+          { status: 403 }
+        )
+      }
     }
 
     if (alvo.role === 'superadmin' && ativo === false) {

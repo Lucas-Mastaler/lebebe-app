@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
@@ -9,28 +9,9 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const pathname = usePathname();
 
-    const [isMounted, setIsMounted] = useState(false);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-    useEffect(() => {
-        setIsMounted(true);
-        if (pathname?.startsWith('/horarios-agendamentos')) {
-            const checkAuth = async () => {
-                const { createClient } = await import('@/lib/supabase/client');
-                const supabase = createClient();
-                const { data: { session } } = await supabase.auth.getSession();
-                setIsAuthenticated(!!session);
-            };
-            checkAuth();
-        }
-    }, [pathname]);
-
     const publicRoutes = ['/login', '/recuperar-senha', '/resetar-senha', '/definir-senha', '/convite'];
 
-    // Rota pública "pura" OU rota híbrida sem autenticação
-    const isPublicRoute =
-        publicRoutes.some(route => pathname?.startsWith(route)) ||
-        (pathname?.startsWith('/horarios-agendamentos') && !isAuthenticated);
+    const isPublicRoute = publicRoutes.some(route => pathname?.startsWith(route));
 
     if (isPublicRoute) {
         return (

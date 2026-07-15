@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
+import { requireModuleAccess } from '@/lib/auth/module-access'
 import { buscarConfiguracoesProcurarDatas } from '@/lib/procurar-datas/config-service'
 
 export const runtime = 'nodejs'
@@ -14,18 +14,14 @@ export const runtime = 'nodejs'
 //
 // Fallback automático para planilha se banco estiver vazio ou incompleto.
 //
-// ACESSO: somente superadmin.
+// ACESSO: modulo configuracoes_procurar_datas.
 // ESCRITA: nenhuma — somente leitura.
 // MOTOR: não é chamado por nenhum fluxo de /procurar-datas.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function GET() {
   try {
-    const auth = await requireAuthenticatedUser({
-      requireAllowedUser: true,
-      requireActive: true,
-      requiredRole: 'superadmin',
-    })
+    const auth = await requireModuleAccess('configuracoes_procurar_datas')
 
     if (!auth.ok) {
       return auth.response

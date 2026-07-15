@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
+import { requireModuleAccess } from '@/lib/auth/module-access';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
   isConexaoHabilitada,
@@ -14,11 +14,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireAuthenticatedUser({
-    requireAllowedUser: true,
-    requireActive: true,
-    requiredRole: 'superadmin',
-  });
+  const auth = await requireModuleAccess('digisac_finalizacoes_automaticas');
   if (!auth.ok) return auth.response;
 
   const { id: registroId } = await params;

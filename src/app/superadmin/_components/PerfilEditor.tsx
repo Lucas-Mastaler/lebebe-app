@@ -22,6 +22,7 @@ type PermissaoModulo = {
   rotaBase: string | null
   categoria: string | null
   ordem: number | null
+  grupo: string | null
   permitido: boolean
 }
 
@@ -241,6 +242,22 @@ export default function PerfilEditor() {
   const permissoesAlteradas =
     permissoesEdit.some((edit, i) => edit.permitido !== permissoes[i]?.permitido)
 
+  const permissoesPorGrupo = permissoesEdit.reduce<Array<{ grupo: string; modulos: PermissaoModulo[] }>>(
+    (acc, permissao) => {
+      const grupo = permissao.grupo ?? 'Outros'
+      const atual = acc[acc.length - 1]
+
+      if (atual?.grupo === grupo) {
+        atual.modulos.push(permissao)
+      } else {
+        acc.push({ grupo, modulos: [permissao] })
+      }
+
+      return acc
+    },
+    []
+  )
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -290,41 +307,48 @@ export default function PerfilEditor() {
             {loadingPerm ? (
               <div className="text-sm text-gray-500 py-4 text-center">Carregando...</div>
             ) : (
-              <div className="space-y-2">
-                {permissoesEdit.map((mod) => (
-                  <label
-                    key={mod.moduloId}
-                    className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 cursor-pointer border border-transparent hover:border-gray-200 transition"
-                  >
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-gray-900">{mod.nome}</span>
-                      {(mod.rotaBase || mod.categoria) && (
-                        <span className="text-xs text-gray-400">
-                          {mod.categoria ? `${mod.categoria}` : ''}{mod.categoria && mod.rotaBase ? ' · ' : ''}{mod.rotaBase ?? ''}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 ml-4 shrink-0">
-                      <span className={`text-xs font-medium ${mod.permitido ? 'text-green-600' : 'text-gray-400'}`}>
-                        {mod.permitido ? 'Liberado' : 'Bloqueado'}
-                      </span>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={mod.permitido}
-                        onClick={() => togglePermissao(mod.moduloId)}
-                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${
-                          mod.permitido ? 'bg-indigo-600' : 'bg-gray-300'
-                        }`}
+              <div className="space-y-4">
+                {permissoesPorGrupo.map((grupo) => (
+                  <div key={grupo.grupo} className="space-y-2">
+                    <h4 className="text-xs font-semibold uppercase text-gray-500 tracking-wide px-1">
+                      {grupo.grupo}
+                    </h4>
+                    {grupo.modulos.map((mod) => (
+                      <label
+                        key={mod.moduloId}
+                        className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 cursor-pointer border border-transparent hover:border-gray-200 transition"
                       >
-                        <span
-                          className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
-                            mod.permitido ? 'translate-x-5' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  </label>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-gray-900">{mod.nome}</span>
+                          {(mod.rotaBase || mod.categoria) && (
+                            <span className="text-xs text-gray-400">
+                              {mod.categoria ?? ''}{mod.categoria && mod.rotaBase ? ' Â· ' : ''}{mod.rotaBase ?? ''}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 ml-4 shrink-0">
+                          <span className={`text-xs font-medium ${mod.permitido ? 'text-green-600' : 'text-gray-400'}`}>
+                            {mod.permitido ? 'Liberado' : 'Bloqueado'}
+                          </span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={mod.permitido}
+                            onClick={() => togglePermissao(mod.moduloId)}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${
+                              mod.permitido ? 'bg-indigo-600' : 'bg-gray-300'
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition-transform ${
+                                mod.permitido ? 'translate-x-5' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
                 ))}
               </div>
             )}

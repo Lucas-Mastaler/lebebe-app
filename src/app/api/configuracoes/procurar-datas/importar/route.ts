@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
+import { requireModuleAccess } from '@/lib/auth/module-access'
 import { executarImportacao } from '@/lib/procurar-datas/config-db'
 
 export const runtime = 'nodejs'
@@ -11,21 +11,17 @@ export const runtime = 'nodejs'
 // Cada chamada gera 1 snapshot imutável.
 //
 // IMPORTANTE:
-//   - Ação exclusivamente manual; acionada pelo superadmin
+//   - Ação exclusivamente manual; acionada por usuario com acesso ao modulo configuracoes_procurar_datas
 //   - Não existe cron nem sincronização automática
 //   - Secrets NUNCA são salvos no banco (is_secret=true → valor=null)
 //   - Motor de busca NÃO é afetado
 //
-// Acesso restrito a superadmin.
+// Acesso restrito ao modulo configuracoes_procurar_datas.
 // ─────────────────────────────────────────────────────────
 
 export async function POST() {
   try {
-    const auth = await requireAuthenticatedUser({
-      requireAllowedUser: true,
-      requireActive: true,
-      requiredRole: 'superadmin',
-    })
+    const auth = await requireModuleAccess('configuracoes_procurar_datas')
 
     if (!auth.ok) {
       return auth.response

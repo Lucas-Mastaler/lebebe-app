@@ -5,6 +5,13 @@ import { validateComercialUser } from '@/lib/auth/sgi-auth'
 import { montarTranscriptChamado } from '@/lib/ia/transcript'
 import { extrairTrechosFatuais } from '@/lib/ia/extrair-trechos-fatuais'
 import { analisarChamadoIA, analisarConsolidadoIA } from '@/lib/ia/deepseek-client'
+import { buscarContextoVendasAnterioresIA, montarBlocoVendasAnterioresIA } from '@/lib/ia/contexto-vendas-anteriores'
+import {
+  buscarContextoChamadosAnterioresIA,
+  calcularContextoTemporalChamado,
+  montarBlocoChamadosAnterioresIA,
+  montarBlocoTemporalChamadoIA,
+} from '@/lib/ia/contexto-temporal-chamados'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -86,20 +93,20 @@ export async function POST(request: NextRequest) {
     // Busca metadados do ticket
     const { data: conversa } = await supabase
       .from('digisac_conversas_resumo')
-      .select('protocolo, comments, department_nome, user_nome, service_nome, cliente_nome_digisac, telefone_normalizado, telefone_normalizado_ddi')
+      .select('protocolo, comments, department_nome, user_nome, service_nome, cliente_nome_digisac, telefone_normalizado, telefone_normalizado_ddi, started_at')
       .eq('digisac_ticket_id', ticketId)
       .maybeSingle()
 
     const { data: vinculo } = await supabase
       .from('venda_conversa_vinculos')
-      .select('ordem_conversa_para_venda, dias_antes_da_venda, inicio_chamado, data_conversa')
+      .select('ordem_conversa_para_venda, dias_antes_da_venda, inicio_chamado, data_conversa, data_inicio_ciclo_venda, data_fim_ciclo_venda')
       .eq('numero_lancamento', numeroLancamento)
       .eq('digisac_ticket_id', ticketId)
       .maybeSingle()
 
     const { data: venda } = await supabase
       .from('sgi_documentos_saida')
-      .select('id, cliente, data_fechamento')
+      .select('id, cliente, data_fechamento, emissao_texto')
       .eq('numero_lancamento', numeroLancamento)
       .maybeSingle()
 
@@ -110,11 +117,33 @@ export async function POST(request: NextRequest) {
       .eq('numero_lancamento', numeroLancamento)
 
     // Monta transcript via Digisac API
-    const { transcript, truncado, totalMensagens, tamanhoOriginal } = await montarTranscriptChamado(ticketId)
+    const { transcript, mensagens, truncado, totalMensagens, tamanhoOriginal } = await montarTranscriptChamado(ticketId)
 
     if (truncado) {
       console.log(`[IA][TRUNCADO] numero_lancamento=${numeroLancamento} protocolo=${conversa?.protocolo ?? 'sem_protocolo'} ticketId=${ticketId} tamanhoOriginal=${tamanhoOriginal} limite=22000 mensagens=${totalMensagens} estrategia=inicio_fim_20`)
     }
+
+    const contextoHistorico = await buscarContextoVendasAnterioresIA(supabase, numeroLancamento)
+    console.log(
+      `[IA][CONTEXTO-HISTORICO] vendaAtual=${numeroLancamento} vendasAnteriores=${contextoHistorico.vendas.length} produtosHistoricos=${contextoHistorico.totalProdutosHistoricos} criterio=${contextoHistorico.criterioIdentificacao} limite=${contextoHistorico.limiteVendas}`
+    )
+
+    const contextoTemporal = calcularContextoTemporalChamado({
+      dataFechamentoVenda: venda?.data_fechamento ?? null,
+      emissaoVenda: venda?.emissao_texto ?? null,
+      inicioChamado: conversa?.started_at ?? vinculo?.data_conversa ?? null,
+      inicioCiclo: vinculo?.data_inicio_ciclo_venda ?? null,
+      fimCiclo: vinculo?.data_fim_ciclo_venda ?? null,
+      mensagens,
+    })
+    console.log(
+      `[IA][CONTEXTO-TEMPORAL] vendaAtual=${numeroLancamento} ticket=${ticketId} mensagensAntes=${contextoTemporal.mensagensAntesFechamento} mensagensDepois=${contextoTemporal.mensagensDepoisFechamento} ultimaAntes=${contextoTemporal.ultimaMensagemAntesFechamento ? 'sim' : 'nao'}`
+    )
+
+    const contextoChamadosAnteriores = await buscarContextoChamadosAnterioresIA(supabase, numeroLancamento)
+    console.log(
+      `[IA][CHAMADOS-ANTERIORES] vendaAtual=${numeroLancamento} chamados=${contextoChamadosAnteriores.chamados.length} candidatos=${contextoChamadosAnteriores.totalCandidatosAntesLimite} limite=${contextoChamadosAnteriores.limiteChamados} tamanho=${contextoChamadosAnteriores.tamanhoContextoChars}`
+    )
 
     const produtosLista = (produtosVenda ?? []).map((p) => {
       const partes = [p.produto, p.departamento_classificado, p.subgrupo_classificado].filter(Boolean)
@@ -150,6 +179,9 @@ export async function POST(request: NextRequest) {
       ordemCiclo: vinculo?.ordem_conversa_para_venda ?? null,
       inicioChamado: vinculo?.inicio_chamado ?? 'indefinido',
       produtosVenda: produtosLista,
+      contextoTemporal: montarBlocoTemporalChamadoIA(contextoTemporal),
+      contextoHistorico: montarBlocoVendasAnterioresIA(contextoHistorico),
+      contextoChamadosAnteriores: montarBlocoChamadosAnterioresIA(contextoChamadosAnteriores),
       transcript,
       protocolo: conversa?.protocolo ?? null,
       dadosBebe: dadosBebeConhecidos,
@@ -334,37 +366,63 @@ async function finalizarJob(
   const protocoloMap: Record<string, string | null> = {}
   const ordemMap: Record<string, number | null> = {}
   const dataConversaMap: Record<string, string | null> = {}
+  const startedAtMap: Record<string, string | null> = {}
+  const inicioCicloMap: Record<string, string | null> = {}
+  const fimCicloMap: Record<string, string | null> = {}
   if (ticketIds.length > 0) {
     const { data: conversas } = await supabase
       .from('digisac_conversas_resumo')
-      .select('digisac_ticket_id, protocolo')
+      .select('digisac_ticket_id, protocolo, started_at')
       .in('digisac_ticket_id', ticketIds)
     for (const c of (conversas ?? [])) {
       protocoloMap[c.digisac_ticket_id] = c.protocolo
+      startedAtMap[c.digisac_ticket_id] = c.started_at ?? null
     }
 
     const { data: vinculos } = await supabase
       .from('venda_conversa_vinculos')
-      .select('digisac_ticket_id, ordem_conversa_para_venda, data_conversa')
+      .select('digisac_ticket_id, ordem_conversa_para_venda, data_conversa, data_inicio_ciclo_venda, data_fim_ciclo_venda')
       .eq('numero_lancamento', numeroLancamento)
       .in('digisac_ticket_id', ticketIds)
     for (const v of (vinculos ?? [])) {
       ordemMap[v.digisac_ticket_id] = v.ordem_conversa_para_venda ?? null
       dataConversaMap[v.digisac_ticket_id] = v.data_conversa ?? null
+      inicioCicloMap[v.digisac_ticket_id] = v.data_inicio_ciclo_venda ?? null
+      fimCicloMap[v.digisac_ticket_id] = v.data_fim_ciclo_venda ?? null
     }
   }
+
+  const { data: vendaConsolidado } = await supabase
+    .from('sgi_documentos_saida')
+    .select('data_fechamento, emissao_texto')
+    .eq('numero_lancamento', numeroLancamento)
+    .maybeSingle()
+
+  const dataFechamentoVenda = vendaConsolidado?.data_fechamento
+    ? new Date(vendaConsolidado.data_fechamento).toLocaleDateString('pt-BR')
+    : null
 
   // Rebusca transcripts para extrair trechos fatuais (datas, valores, prazo, link, pagamento)
   // que podem ter sido omitidos no resumo individual mas são necessários ao consolidado
   const transcriptFatuaisMap: Record<string, string[]> = {}
+  const contextoTemporalMap: Record<string, string | null> = {}
   if (ticketIds.length > 0) {
     await Promise.all(
       ticketIds.map(async (ticketId) => {
         try {
-          const { transcript } = await montarTranscriptChamado(ticketId)
+          const { transcript, mensagens } = await montarTranscriptChamado(ticketId)
           transcriptFatuaisMap[ticketId] = extrairTrechosFatuais(transcript)
+          contextoTemporalMap[ticketId] = montarBlocoTemporalChamadoIA(calcularContextoTemporalChamado({
+            dataFechamentoVenda: vendaConsolidado?.data_fechamento ?? null,
+            emissaoVenda: vendaConsolidado?.emissao_texto ?? null,
+            inicioChamado: startedAtMap[ticketId] ?? dataConversaMap[ticketId] ?? null,
+            inicioCiclo: inicioCicloMap[ticketId] ?? null,
+            fimCiclo: fimCicloMap[ticketId] ?? null,
+            mensagens,
+          }))
         } catch {
           transcriptFatuaisMap[ticketId] = []
+          contextoTemporalMap[ticketId] = null
         }
       })
     )
@@ -376,20 +434,20 @@ async function finalizarJob(
     .select('produto, departamento_classificado, subgrupo_classificado')
     .eq('numero_lancamento', numeroLancamento)
 
+  const contextoHistorico = await buscarContextoVendasAnterioresIA(supabase, numeroLancamento)
+  console.log(
+    `[IA][CONTEXTO-HISTORICO] vendaAtual=${numeroLancamento} vendasAnteriores=${contextoHistorico.vendas.length} produtosHistoricos=${contextoHistorico.totalProdutosHistoricos} criterio=${contextoHistorico.criterioIdentificacao} limite=${contextoHistorico.limiteVendas}`
+  )
+
+  const contextoChamadosAnteriores = await buscarContextoChamadosAnterioresIA(supabase, numeroLancamento)
+  console.log(
+    `[IA][CHAMADOS-ANTERIORES] vendaAtual=${numeroLancamento} chamados=${contextoChamadosAnteriores.chamados.length} candidatos=${contextoChamadosAnteriores.totalCandidatosAntesLimite} limite=${contextoChamadosAnteriores.limiteChamados} tamanho=${contextoChamadosAnteriores.tamanhoContextoChars}`
+  )
+
   const produtosCompradosLista = (produtosVendaConsolidado ?? []).map((p) => {
     const partes = [p.produto, p.departamento_classificado, p.subgrupo_classificado].filter(Boolean)
     return partes.join(' — ')
   })
-
-  const { data: vendaConsolidado } = await supabase
-    .from('sgi_documentos_saida')
-    .select('data_fechamento')
-    .eq('numero_lancamento', numeroLancamento)
-    .maybeSingle()
-
-  const dataFechamentoVenda = vendaConsolidado?.data_fechamento
-    ? new Date(vendaConsolidado.data_fechamento).toLocaleDateString('pt-BR')
-    : null
 
   try {
     const consolidadoPrompt = montarPromptConsolidado(
@@ -400,7 +458,10 @@ async function finalizarJob(
       dataConversaMap,
       dataFechamentoVenda,
       produtosCompradosLista,
-      transcriptFatuaisMap
+      montarBlocoVendasAnterioresIA(contextoHistorico),
+      montarBlocoChamadosAnterioresIA(contextoChamadosAnteriores),
+      transcriptFatuaisMap,
+      contextoTemporalMap
     )
 
     const consolidado = await analisarConsolidadoIA(consolidadoPrompt)
@@ -481,6 +542,9 @@ interface PromptChamadoParams {
   ordemCiclo: number | null
   inicioChamado: string
   produtosVenda: string[]
+  contextoTemporal: string
+  contextoHistorico: string
+  contextoChamadosAnteriores: string
   transcript: string
   protocolo: string | null
   dadosBebe: { nomeBebe: string | null; previsaoNascimento: string | null }
@@ -520,13 +584,16 @@ function montarPromptChamado(p: PromptChamadoParams): string {
 - Consultora retomou atendimento anterior sobre produto comprado
 - Conversa manteve o lead ativo sobre produto relacionado
 - Consultora tentou levar o cliente à loja
+- Cliente confirmou que iria à loja antes da venda registrada
+- Consultora deixou produto, atendimento ou separação prontos para finalização presencial
+- Conversa operacional/logística aconteceu antes da venda e ajudou a conduzir visita, pagamento, escolha ou retirada
 ⚠️ REGRA CRÍTICA: Se o transcript menciona produto, categoria ou subgrupo que consta na lista de produtos comprados, classifique no mínimo como "Parcialmente".
 
 **Não** — Use APENAS quando:
 - Assunto completamente sem relação com os produtos comprados
 - Conversa errada ou de outro cliente
 - Atendimento administrativo ou operacional sem vínculo comercial
-- Pós-venda ou suporte após a compra, fora da jornada
+- Pós-venda ou suporte após a compra, fora da jornada, sem relação com decisão anterior
 - Mensagem sem resposta e sem conteúdo sobre produto comprado
 
 **Indefinido** — Use APENAS quando:
@@ -537,7 +604,7 @@ function montarPromptChamado(p: PromptChamadoParams): string {
 ### grau_influencia
 
 **Alto** — Chamado teve papel direto no fechamento, negociação de preço, escolha final ou envio de link de pagamento.
-**Médio** — Chamado tratou diretamente de produto comprado e ajudou na jornada, mesmo sem fechamento explícito.
+**Médio** — Chamado tratou diretamente de produto comprado ou ajudou a avançar/finalizar a jornada antes da venda, mesmo sem fechamento explícito no WhatsApp.
 **Baixo** — Chamado aqueceu o lead ou manteve contato, com pouca evidência de impacto direto.
 **Nenhum** — Use SOMENTE quando influencia_compra = "Não" ou "Indefinido".
 
@@ -556,6 +623,12 @@ function montarPromptChamado(p: PromptChamadoParams): string {
 
 ## PRODUTOS COMPRADOS NESTA VENDA
 ${produtosStr}
+
+${p.contextoTemporal}
+
+${p.contextoHistorico}
+
+${p.contextoChamadosAnteriores}
 
 ## CONVERSA
 ${p.transcript || '(sem mensagens registradas)'}
@@ -597,6 +670,14 @@ Classificação esperada:
 - motivo_influencia: "O chamado tratou de roupeiro (móvel de quarto), valor, pagamento e ida à loja. O produto conversado é diferente do comprado, mas ambos são móveis da mesma jornada. A conversa pode ter contribuído indiretamente para a visita e o fechamento."
 
 Chamado com abordagem sem resposta do cliente: manter "Não / Nenhum" se não houver conteúdo comercial relevante.
+
+## REGRA TEMPORAL E FINALIZAÇÃO PRESENCIAL
+Compare horários do chamado, mensagens e fechamento antes de decidir influência.
+- Se o chamado começou antes do fechamento e houve combinação para cliente ir à loja, produto ficar pronto/separado, pagamento ou finalização presencial, não classifique como "Não" apenas por parecer logística.
+- Se a conversa pré-venda ajudou a conduzir a ida à loja ou a finalização, classifique no mínimo como "Parcialmente".
+- Use grau "Médio" quando a conversa pré-venda ajudou a avançar ou finalizar a compra, mas não há evidência de que foi o fator principal ou único.
+- Use "Não/Nenhum" para logística somente quando ela ocorreu depois do fechamento ou quando não houver elo com decisão, visita, produto, pagamento ou continuidade comercial.
+- Se a hora exata da venda não estiver disponível, declare a limitação no motivo e evite afirmar que o chamado foi posterior.
 
 ## REGRA CONTRA INFERÊNCIA FORTE
 Não transforme informação recebida (prazo, frete, desconto, condição de pagamento) em causa principal de fechamento sem evidência explícita.
@@ -883,7 +964,10 @@ function montarPromptConsolidado(
   dataConversaMap: Record<string, string | null>,
   dataFechamentoVenda: string | null,
   produtosComprados: string[],
-  transcriptFatuaisMap: Record<string, string[]> = {}
+  contextoHistorico: string,
+  contextoChamadosAnteriores: string,
+  transcriptFatuaisMap: Record<string, string[]> = {},
+  contextoTemporalMap: Record<string, string | null> = {}
 ): string {
   // Ordena por ordem_conversa_para_venda ASC; fallback: mantém ordem atual
   const analisadosOrdenados = [...analisados].sort((a, b) => {
@@ -904,11 +988,14 @@ function montarPromptConsolidado(
       ? `\n- Dados do bebê: nome=${a.nome_bebe ?? 'null'}, previsão=${a.previsao_nascimento_bebe ?? 'null'}`
       : ''
     const trechos = transcriptFatuaisMap[ticketId] ?? []
+    const contextoTemporal = contextoTemporalMap[ticketId]
+      ? `\n${contextoTemporalMap[ticketId]}`
+      : ''
     const trechosFatuaisStr = trechos.length > 0
       ? `\n- Trechos fatuais da conversa (datas, valores, prazo, pagamento, link):\n${trechos.map((t) => `  • ${t}`).join('\n')}`
       : ''
     return `### Chamado Nº ${numeroCiclo} — Protocolo ${protocolo}
-- Data do chamado: ${dataChamadoFmt}
+- Data do chamado: ${dataChamadoFmt}${contextoTemporal}
 - Influência: ${a.influencia_compra}
 - Grau: ${a.grau_influencia}
 - Motivo: ${a.motivo_influencia}
@@ -945,6 +1032,10 @@ Total de chamados analisados: ${analisadosOrdenados.length}${ctxDataVenda}${ctxB
 ## PRODUTOS COMPRADOS NESTA VENDA (fonte: SGI)
 ${produtosCompradosStr}
 
+${contextoHistorico}
+
+${contextoChamadosAnteriores}
+
 ${resumos}
 
 ## REGRAS DE NUMERAÇÃO
@@ -963,6 +1054,14 @@ Evite expressões como: "a venda está em andamento", "a venda está em estágio
 O campo "resumo_geral" deve resumir a relação dos chamados com uma venda já registrada.
 O campo "conclusao_comercial" deve concluir a influência comercial sobre a venda já registrada.
 
+## REGRA TEMPORAL E FINALIZACAO PRESENCIAL
+Use os blocos temporais de cada chamado para diferenciar atendimento antes da venda, atendimento depois da venda e logistica de finalizacao.
+- Chamado antes do fechamento com cliente confirmando ida a loja, produto pronto/separado, pagamento ou finalizacao presencial pode influenciar parcialmente a venda.
+- Nao classifique como sem influencia apenas por ser operacional quando a operacao ocorreu antes do fechamento e ajudou a conduzir a compra.
+- Use influencia parcial e grau medio quando o chamado pre-venda ajudou a avancar/finalizar a compra, mas nao foi comprovado como fator principal.
+- Use sem influencia para logistica apenas quando for posterior ao fechamento ou sem elo com decisao, visita, produto, pagamento ou continuidade comercial.
+- Se a hora exata da venda nao estiver disponivel, declare a limitacao e evite afirmar que o chamado foi posterior.
+
 ## REGRAS PARA nome_bebe e previsao_nascimento_bebe
 Estes campos são INDEPENDENTES e SEMPRE devem aparecer no JSON.
 - Se algum chamado individual já trouxe esses dados, propague-os para o consolidado.
@@ -973,11 +1072,16 @@ Estes campos são INDEPENDENTES e SEMPRE devem aparecer no JSON.
 
 ### produtos_fechados
 - Liste SOMENTE os produtos que constam em "PRODUTOS COMPRADOS NESTA VENDA" acima.
+- Produtos das vendas anteriores devem ser considerados contexto historico, nao produtos_fechados da venda atual.
 - Não inclua produtos mencionados na conversa que não estejam na lista de comprados.
 - Se a lista de comprados estiver vazia, retorne array vazio.
 - Use o nome do produto exatamente como aparece na lista de comprados, sem abreviar.
 
 ### produtos_interesse_nao_fechados
+- Antes de listar um produto como nao fechado, verifique tambem "VENDAS ANTERIORES DO CLIENTE - CONTEXTO HISTORICO".
+- Se o produto foi comprado em venda anterior com compra confirmada, registre como contexto historico/logistico quando pertinente, nao como oportunidade nao convertida.
+- Mencoes a entrega, retirada, montagem ou suporte de produto comprado anteriormente nao devem virar oportunidade comercial nao fechada.
+- So classifique como interesse nao fechado quando houver evidencia de interesse comercial atual e ausencia de compra na venda atual e nas vendas anteriores relevantes.
 - Liste produtos ou categorias mencionados nos chamados que NÃO aparecem em "PRODUTOS COMPRADOS NESTA VENDA".
 - Compare pelo nome/categoria: se um produto mencionado for equivalente a um comprado (mesmo que nome ligeiramente diferente), não o inclua como oportunidade, ou marque como "possível oportunidade (confirmar nomenclatura)".
 - Se não houver produto mencionado diferente do comprado, retorne array vazio.

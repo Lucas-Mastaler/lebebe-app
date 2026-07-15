@@ -1,16 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
+import { NextResponse } from 'next/server';
+import { requireModuleAccess } from '@/lib/auth/module-access';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest) {
-  const auth = await requireAuthenticatedUser({
-    requireAllowedUser: true,
-    requireActive: true,
-    requiredRole: 'superadmin',
-  });
+export async function GET() {
+  const auth = await requireModuleAccess('digisac_finalizacoes_automaticas');
   if (!auth.ok) return auth.response;
 
   try {

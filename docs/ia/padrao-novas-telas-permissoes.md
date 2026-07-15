@@ -30,6 +30,25 @@ Garantir que toda nova tela interna nasca integrada ao sistema de permissoes por
 
 ## 3. Checklist obrigatorio para nova tela
 
+### 3.0 Catalogo central
+
+- [ ] Adicionar o modulo em `src/lib/auth/modulos-app.ts`.
+- [ ] Definir no catalogo:
+  - `moduleKey`
+  - `nome`
+  - `descricao`
+  - `rotaBase`
+  - `categoria`
+  - `publico`
+  - `somenteSuperadmin`
+  - `ativo`
+  - `ordem`
+  - `access` (`profile`, `superadmin` ou `public`)
+  - `menuLabel`/`menuHref` apenas quando o item visual do menu precisar divergir do cadastro de `app_modulos`.
+- [ ] Adicionar o item no grupo correto em `NAVIGATION_GROUPS`, no mesmo arquivo.
+- [ ] Nao editar lista manual no Sidebar; o Sidebar consome `NAVIGATION_GROUPS`.
+- [ ] Rodar `npm run test -- src/lib/auth/modulos-app.test.ts`.
+
 ### 3.1 Cadastro do modulo
 
 - [ ] Definir `moduleKey` estavel (snake_case, ex: `novo_modulo`)
@@ -42,15 +61,18 @@ Garantir que toda nova tela interna nasca integrada ao sistema de permissoes por
   - `publico`: `false` para telas internas
   - `somente_superadmin`: `true` apenas se for area restrita
   - `ativo`: `true`
-- [ ] Incluir o modulo na matriz de permissoes dos perfis em `app_permissoes_perfil` (quando aplicavel)
+- [ ] Criar migration explicita e idempotente para inserir/atualizar o modulo em `app_modulos`
+- [ ] Nao inserir permissoes em `app_permissoes_perfil` para perfis existentes, salvo decisao explicita de negocio
 - [ ] Confirmar que o modulo aparece na tela Superadmin > Perfis para liberar/bloquear
 
 ### 3.2 Sidebar
 
-- [ ] Adicionar item em `navItems` em `src/components/Sidebar.tsx` com `moduleKey`
+- [ ] Adicionar item em `NAVIGATION_GROUPS` de `src/lib/auth/modulos-app.ts`
 - [ ] Se `acessoTotal = true` (superadmin), o item aparece automaticamente
 - [ ] Se usuario comum, o item so aparece se `chavesPermitidas` incluir o moduleKey
-- [ ] Item publico intencional (sem `moduleKey`) deve ser documentado como excecional
+- [ ] Item publico intencional deve ter `access = 'public'`
+- [ ] Item exclusivo de superadmin deve ter `access = 'superadmin'`
+- [ ] Item liberavel por perfil deve ter `access = 'profile'`
 
 ### 3.3 Protecao da pagina
 
@@ -112,22 +134,34 @@ export default async function Page() {
 
 ## 5. Padrao de Sidebar
 
-**Arquivo:** `src/components/Sidebar.tsx`
+**Catalogo:** `src/lib/auth/modulos-app.ts`
+**Componente visual:** `src/components/Sidebar.tsx`
 
-- Item interno precisa ter `moduleKey` definido em `navItems`
+- Item interno precisa ter `moduleKey` definido em `APP_MODULES`
+- O Sidebar consome `NAVIGATION_GROUPS`; nao manter lista paralela de rotas/modulos no componente
 - Se `acessoTotal = true` (superadmin), todos os itens aparecem
 - Se usuario comum, so aparecem itens cujo `moduleKey` esta em `chavesPermitidas`
-- Item publico intencional (sem `moduleKey`) deve ser documentado como excecional e nao tratado como modulo interno comum
+- Item publico intencional usa `access = 'public'` e fica fora do bloqueio por perfil
 
 **Exemplo:**
 
 ```ts
-const navItems: NavItem[] = [
-  { label: 'DASHBOARD',  href: '/dashboard',  icon: BarChart3, moduleKey: 'dashboard' },
-  { label: 'NOVO MODULO', href: '/novo-modulo', icon: SomeIcon, moduleKey: 'novo_modulo' },
-  // Item publico (sem moduleKey):
-  { label: 'HORARIOS AGENDAMENTOS', href: '/horarios-agendamentos', icon: Clock },
-]
+// APP_MODULES
+{
+  moduleKey: 'novo_modulo',
+  nome: 'NOVO MODULO',
+  descricao: 'Descricao curta',
+  rotaBase: '/novo-modulo',
+  categoria: 'interno',
+  publico: false,
+  somenteSuperadmin: false,
+  ativo: true,
+  ordem: 110,
+  access: 'profile',
+}
+
+// NAVIGATION_GROUPS
+navigationItem('novo_modulo', 'activity')
 ```
 
 ---
@@ -140,6 +174,34 @@ O modulo deve aparecer na gestao de perfis (Superadmin > Perfis) para ser libera
 - Ao criar um novo modulo, ele aparece na matriz de permissoes
 - O superadmin pode marcar `permitido = true/false` para cada perfil
 - Exceoes individuais podem ser aplicadas via `app_permissoes_usuario`
+- A ausencia de linha em `app_permissoes_perfil` significa bloqueado, pelo fallback `permitido = permissoesMap.get(moduloId) ?? false`
+- E proibido sincronizar `app_modulos` automaticamente durante renderizacao, login, carregamento do Sidebar ou navegacao normal
+- E proibido inserir permissoes automaticamente para perfis existentes sem decisao explicita
+
+### 6.1 Migration de modulo
+
+Criar migration idempotente com `INSERT INTO public.app_modulos (...) VALUES (...) ON CONFLICT (chave) DO UPDATE ...`.
+
+Nao incluir `INSERT INTO public.app_permissoes_perfil` para o novo modulo. O superadmin libera depois pela tela de Perfis.
+
+### 6.2 Validacao automatizada
+
+Rodar:
+
+```bash
+npm run test -- src/lib/auth/modulos-app.test.ts
+```
+
+Esse teste valida:
+
+- `moduleKey` unico no catalogo e no menu
+- rotas de menu sem duplicidade indevida
+- todo item do menu presente no catalogo central
+- classificacao coerente entre `access`, `publico` e `somenteSuperadmin`
+- `USUARIOS` usando `superadmin_usuarios`
+- todo modulo do catalogo aparecendo em migrations de `app_modulos`
+- modulos marcados para liberacao manual sem concessao automatica em `app_permissoes_perfil`
+- fallback bloqueado por padrao no endpoint de permissoes do editor de Perfis
 
 ---
 
@@ -224,7 +286,38 @@ Qualquer agente de IA (Cascade, Copilot, etc) ao criar uma nova tela neste proje
 - Helper de janela: `src/lib/auth/access-window.ts` -- `checkAccessWindowForUser({ usuarioId, role })`
 - API de permissoes: `src/app/api/me/permissoes/route.ts`
 - Hook de permissoes: `src/lib/hooks/usePermissoes.ts`
+- Catalogo central: `src/lib/auth/modulos-app.ts`
+- Teste de consistencia do catalogo/menu/migrations: `src/lib/auth/modulos-app.test.ts`
 - Sidebar: `src/components/Sidebar.tsx`
 - Gestao de perfis: `src/app/superadmin/_components/PerfilEditor.tsx`
 - Paginas de exemplo: `src/app/dashboard/page.tsx`, `src/app/procurar-datas/page.tsx`, `src/app/recebimento/page.tsx`
 - Log de progresso: `docs/ia/log_progress.md`
+## Atualizacao 2026-07-15 - modulo granular de Usuarios
+
+- Para liberar apenas a area de Usuarios, usar `app_modulos.chave = 'superadmin_usuarios'`.
+- Nao alterar `app_modulos.chave = 'superadmin'` para `somente_superadmin = false`.
+- O menu lateral deve usar `moduleKey` quando a tela for liberavel por perfil.
+- Acoes sensiveis de Perfis, Auditoria e alteracao de role continuam superadmin-only salvo decisao explicita em contrario.
+
+## Atualizacao 2026-07-15 - sincronizacao menu x app_modulos
+
+- A fonte central em codigo para modulos e navegacao e `src/lib/auth/modulos-app.ts`.
+- `src/components/Sidebar.tsx` nao deve manter lista propria de labels/rotas/moduleKey; deve consumir `NAVIGATION_GROUPS`.
+- Para adicionar `TESTE NOVO MODULO`:
+  1. adicionar `teste_novo_modulo` em `APP_MODULES`;
+  2. adicionar `navigationItem('teste_novo_modulo', '<icone>')` no grupo correto de `NAVIGATION_GROUPS`;
+  3. criar a pagina/rota;
+  4. criar migration idempotente para `app_modulos`;
+  5. aplicar a migration no ambiente adequado;
+  6. liberar manualmente na tela Superadmin > Perfis.
+- Nao editar `PerfilEditor.tsx` para nova tela; ele le `app_modulos`.
+- Nao inserir linhas em `app_permissoes_perfil` para nova tela sem decisao explicita.
+- Rodar `npm run test -- src/lib/auth/modulos-app.test.ts` antes de considerar o menu/permissoes sincronizados.
+
+## Atualizacao 2026-07-15 - filtro real do editor de Perfis
+
+- Um item do menu so e liberavel por perfil se, alem de estar em `NAVIGATION_GROUPS`, o modulo correspondente estiver em `APP_MODULES` com `access = 'profile'`, `ativo = true`, `publico = false` e `somenteSuperadmin = false`.
+- O endpoint `GET /api/superadmin/perfis/[id]/permissoes` usa exatamente esse filtro em `app_modulos`; portanto qualquer divergencia nesses campos impede a tela de aparecer na matriz.
+- `AUDITORIA ACESSOS` continua apontando para `moduleKey = superadmin` e `access = 'superadmin'`, ficando fora da matriz comum.
+- Para itens do menu que devem ser liberaveis, a pagina precisa usar `checkModuleAndWindowAccess(moduleKey)` e as APIs da tela precisam usar `requireModuleAccess(moduleKey)`.
+- A validacao `src/lib/auth/modulos-app.test.ts` deve falhar quando um item `access = 'profile'` do menu nao puder aparecer na matriz de Perfis.

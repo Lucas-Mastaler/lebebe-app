@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
+import { requireModuleAccess } from '@/lib/auth/module-access'
 import { createServiceClient } from '@/lib/supabase/service'
 
 export const runtime = 'nodejs'
@@ -13,7 +13,7 @@ export const runtime = 'nodejs'
 //   chave   — filtrar por chave específica (opcional, em UPPERCASE)
 //   limite  — número de registros (padrão 50, máximo 200)
 //
-// Acesso restrito a superadmin.
+// Acesso restrito ao modulo configuracoes_procurar_datas.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface AuditoriaItem {
@@ -29,11 +29,7 @@ export interface AuditoriaItem {
 
 export async function GET(request: Request) {
   try {
-    const auth = await requireAuthenticatedUser({
-      requireAllowedUser: true,
-      requireActive: true,
-      requiredRole: 'superadmin',
-    })
+    const auth = await requireModuleAccess('configuracoes_procurar_datas')
 
     if (!auth.ok) {
       return auth.response

@@ -5,25 +5,13 @@ import type { User } from '@supabase/supabase-js'
 import type { AllowedUser } from '@/lib/auth/api-auth'
 import { checkAccessWindowForUser } from '@/lib/auth/access-window'
 import type { AccessWindowCheckResult } from '@/lib/auth/access-window'
+import type { AppModuleKey } from '@/lib/auth/modulos-app'
 
 // ---------------------------------------------------------------------------
 // Types públicos
 // ---------------------------------------------------------------------------
 
-export type ModuleKey =
-  | 'dashboard'
-  | 'agendamentos'
-  | 'procurar_datas'
-  | 'procurar_datas_auditoria'
-  | 'procurar_datas_performance'
-  | 'chamados_finalizados'
-  | 'inteligencia_comercial'
-  | 'pos_venda'
-  | 'pos_venda_atendimento_automatico'
-  | 'recebimento'
-  | 'superadmin'
-  | 'configuracoes'
-  | 'digisac_finalizacoes_automaticas'
+export type ModuleKey = AppModuleKey
 
 export type OrigemPermissao = 'superadmin' | 'usuario' | 'perfil'
 

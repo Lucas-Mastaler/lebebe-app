@@ -87,6 +87,9 @@ describe('modulos-app catalog', () => {
     'CHAMADOS FINALIZADOS',
     'INTELIGÊNCIA COMERCIAL',
     'FINALIZAÇÕES DIGISAC',
+    'Ficha de Atendimento',
+    'Registros de Atendimentos',
+    'Clientes',
     'PROCURAR DATAS',
     'AUDITORIA DATAS',
     'PERFORMANCE DATAS',
@@ -160,10 +163,45 @@ describe('modulos-app catalog', () => {
     )
     expect(PROFILE_PERMISSION_GROUPS.map((group) => group.label)).toEqual([
       'VENDAS',
+      'ATENDIMENTO PRESENCIAL',
       'PROCURAR DATAS',
       'OPERAÇÃO',
       'CONFIGURAÇÕES',
     ])
+  })
+
+  it('cadastra o grupo Atendimento Presencial com chaves, nomes e rotas aprovados', () => {
+    const atendimentoPresencial = NAVIGATION_GROUPS.find((group) => group.label === 'ATENDIMENTO PRESENCIAL')
+
+    expect(atendimentoPresencial?.items.map((item) => item.moduleKey)).toEqual([
+      'atendimento_presencial_ficha',
+      'atendimento_presencial_registros',
+      'atendimento_presencial_clientes',
+    ])
+    expect(atendimentoPresencial?.items.map((item) => item.label)).toEqual([
+      'Ficha de Atendimento',
+      'Registros de Atendimentos',
+      'Clientes',
+    ])
+    expect(atendimentoPresencial?.items.map((item) => item.href)).toEqual([
+      '/atendimento-presencial/ficha',
+      '/atendimento-presencial/registros',
+      '/atendimento-presencial/clientes',
+    ])
+
+    for (const moduleKey of [
+      'atendimento_presencial_ficha',
+      'atendimento_presencial_registros',
+      'atendimento_presencial_clientes',
+    ] as const) {
+      const appModule = getAppModuleDefinition(moduleKey)
+
+      expect(appModule?.access).toBe('profile')
+      expect(appModule?.ativo).toBe(true)
+      expect(appModule?.publico).toBe(false)
+      expect(appModule?.somenteSuperadmin).toBe(false)
+      expect(appModule?.categoria).toBe('atendimento_presencial')
+    }
   })
 
   it('mantem Auditoria Acessos fora da matriz comum de perfis', () => {
@@ -269,6 +307,11 @@ describe('modulos-app catalog', () => {
       'src/app/digisac/finalizacoes-automaticas/page.tsx': "checkModuleAndWindowAccess('digisac_finalizacoes_automaticas')",
       'src/app/configuracoes/procurar-datas/page.tsx': "checkModuleAndWindowAccess('configuracoes_procurar_datas')",
       'src/app/pos-venda/atendimento-automatico/page.tsx': "checkModuleAndWindowAccess('pos_venda_atendimento_automatico')",
+      'src/app/atendimento-presencial/ficha/page.tsx': "checkModuleAndWindowAccess('atendimento_presencial_ficha')",
+      'src/app/atendimento-presencial/registros/page.tsx':
+        "checkModuleAndWindowAccess('atendimento_presencial_registros')",
+      'src/app/atendimento-presencial/clientes/page.tsx':
+        "checkModuleAndWindowAccess('atendimento_presencial_clientes')",
     }
 
     for (const [filePath, expectedGuard] of Object.entries(expectedPageGuards)) {

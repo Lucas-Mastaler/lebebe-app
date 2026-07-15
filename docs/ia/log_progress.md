@@ -1,3 +1,164 @@
+## 2026-07-15 - Codex - Inteligencia Comercial IA com mensagens Digisac sem ticket
+
+**Resumo:** Implementada a proxima etapa da IA da Inteligencia Comercial para incluir mensagens do mesmo `digisac_contact_id` sem `ticketId` como contexto complementar dos prompts individual e consolidado. O transcript principal por ticket foi preservado. A UI `Ver conversa`, a regra de vinculacao de ciclo, migrations, sync Digisac e reanalise em massa nao foram alteradas.
+
+**Arquivos lidos:**
+- Anexo do pedido em `C:\Users\lebeb\.codex\attachments\e90a2d5f-5be2-470c-90d2-5dd5116a95e4\pasted-text.txt`
+- `.agents/skills/supabase/SKILL.md`
+- `docs/ia/log_progress.md`
+- `docs/inteligencia-comercial-mensagens-contato-sem-ticket.md`
+- `src/lib/digisac/sgi-sync.ts`
+- `src/lib/ia/transcript.ts`
+- `src/lib/ia/contexto-vendas-anteriores.ts`
+- `src/app/api/sgi/ia/processar-proximo/route.ts`
+
+**Arquivos alterados/criados:**
+- `src/lib/digisac/sgi-sync.ts`
+- `src/lib/digisac/mensagens-contato.ts`
+- `src/lib/digisac/mensagens-contato.test.ts`
+- `src/lib/ia/contexto-complementar-contato.ts`
+- `src/lib/ia/contexto-complementar-contato.test.ts`
+- `src/app/api/sgi/ia/processar-proximo/route.ts`
+- `docs/inteligencia-comercial-mensagens-contato-sem-ticket.md`
+- `docs/ia/log_progress.md`
+
+**Implementacao:**
+- Criado helper paginado por `contactId` com `perPage=100`, `maxPages=10`, `maxMessages=1000`, janela temporal e ordenacao cronologica final.
+- Criado helper de contexto complementar que classifica mensagens em ticket principal, outros tickets, sem ticket e descartadas.
+- Implementados filtros para `visible !== true`, `reaction`, `ticket`, `data.ticketTransfer=true`, comentario interno, apagadas, vazias e sem conteudo interpretavel.
+- Implementada deduplicacao por `message.id`, com fallback por timestamp/remetente/tipo/conteudo normalizado quando nao ha id.
+- Implementado bloco `CONTEXTO COMPLEMENTAR DO CONTATO - MENSAGENS FORA DO TICKET PRINCIPAL`, com mensagens sem ticket e de outros tickets, sem duplicar o ticket principal.
+- Integrado ao prompt individual da IA depois dos contextos existentes e antes do transcript.
+- Integrado ao prompt consolidado usando contatos dos tickets analisados, removendo todos os tickets principais do bloco complementar.
+- Adicionados logs seguros agregados em `[IA][CONTEXTO-CONTATO]`, sem conteudo de conversa, URLs, tokens ou metadados sensiveis.
+- URLs em mensagens complementares sao mascaradas como `[link]` antes de entrar no prompt.
+
+**Supabase:**
+- MCP Supabase validou colunas reais em `digisac_conversas_resumo`, `venda_conversa_vinculos`, `sgi_documentos_saida` e `digisac_chamados_analise_ia`.
+- Confirmado uso de `digisac_conversas_resumo.digisac_contact_id`, `digisac_conversas_resumo.service_id`, `digisac_conversas_resumo.digisac_ticket_id`, `sgi_documentos_saida.data_fechamento` e datas do vinculo.
+- Nenhuma migration ou alteracao de schema realizada.
+
+**Validacoes realizadas:**
+- `npx vitest run src/lib/digisac/mensagens-contato.test.ts src/lib/ia/contexto-complementar-contato.test.ts` falhou no sandbox com `spawn EPERM` ao carregar Vitest.
+- Mesmo comando fora do sandbox: 2 arquivos, 26 testes aprovados.
+- `npx tsc --noEmit --pretty false`: aprovado.
+- `npx eslint src/lib/digisac/sgi-sync.ts src/lib/digisac/mensagens-contato.ts src/lib/digisac/mensagens-contato.test.ts src/lib/ia/contexto-complementar-contato.ts src/lib/ia/contexto-complementar-contato.test.ts src/app/api/sgi/ia/processar-proximo/route.ts`: aprovado.
+- `npx next build` falhou no sandbox com `EPERM` ao remover `.next/app-path-routes-manifest.json`.
+- `npx next build` fora do sandbox: aprovado. Houve avisos/logs existentes de rotas autenticadas com `Dynamic server usage` por uso de `cookies`, mas a build finalizou com sucesso.
+
+**Caso 65431:**
+- Teste fixture cobre `contactId=67e15f97-a406-445b-9e6d-ae8ecc1f8a55`, `ticketId=cf445253-edce-4b2d-a561-c9d9ee626b07`, 11 mensagens do ticket principal removidas do bloco complementar e 78 mensagens sem ticket disponiveis ao prompt.
+- Reanalise real da venda `65431` nao foi executada nesta etapa.
+
+**Pendencias:**
+- Executar reanalise controlada da venda `65431` em ambiente com IA/configuracao operacional para confirmar `influencia_compra=Sim` e `grau_influencia=Alto`.
+- Decidir separadamente se a UI deve ter uma acao distinta para ver conversa completa do contato; nao implementado por escopo.
+
+**Riscos conhecidos:**
+- Contatos Digisac compartilhados/recriados podem misturar jornadas; mitigacao atual usa apenas `contactId` real associado ao ticket salvo e janela temporal da venda.
+- Midias sem transcricao entram apenas como marcador interpretavel, sem tentativa de baixar binario ou transcrever.
+
+**Proximo passo recomendado:**
+- Rodar uma reanalise individual/controlada da venda `65431` e comparar o resultado final da IA com o diagnostico esperado.
+
+## 2026-07-15 - Cascade - Correções Fluxo Mère: Parser Endereço, Retry CPF, Consistência Sessão
+
+**Resumo:** Implementadas 4 correções no fluxo automático Mère: (1) parser de endereço corrigido para remover faixas de numeração oficial de logradouro, (2) retry de 1s para erro transitório em busca de agenda por CPF, (3) colunas `pedido_confirmado` e `endereco_confirmado` sincronizadas em todos os updates de sessão, (4) logs estruturados adicionados para decomposição de endereço, busca de agenda e geocoding cache.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts`
+- `src/lib/atendimento-automatico/webhook-processor.ts`
+- `src/lib/atendimento-automatico/respostas.ts`
+- `src/lib/google/sheets-service-account.ts`
+- `src/lib/procurar-datas/endereco-cache.ts`
+- `src/lib/procurar-datas/validar-endereco-payload.ts`
+- `src/lib/fetch-with-retry.ts`
+- `supabase/migrations/20260707201710_create_atendimento_automatico_posvenda_tables.sql`
+- `src/lib/atendimento-automatico/consulta-datas-mere.test.ts`
+- `src/lib/atendimento-automatico/webhook-processor.test.ts`
+
+**Arquivos alterados:**
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts` — regex para remover faixas de numeração oficial (`- de N/N ao fim`, `- até N/N`, `- de N a N`), fallback de decomposição, campos `faixaNumeracaoRemovida` e `tentativaDecomposicao` na interface, logs estruturados em decomposição e geocoding cache
+- `src/lib/atendimento-automatico/webhook-processor.ts` — retry de 1s em `prepararBuscaAgendaPorDocumento` para `ok=false`, estado `erro_tecnico_busca_agenda` com transferência humana, colunas `pedido_confirmado`/`endereco_confirmado` em todos os updates de sessão, `novoStatus`/`motivoFalha` propagados no path de nova sessão com documento
+- `src/lib/atendimento-automatico/respostas.ts` — adicionada `respostaErroTecnicoBuscaAgenda` e tipo `erro_tecnico_busca_agenda` na união `TipoRespostaSugerida`
+- `src/lib/atendimento-automatico/consulta-datas-mere.test.ts` — 10 testes do parser de faixa de numeração, 2 testes de payload com faixa
+- `src/lib/atendimento-automatico/webhook-processor.test.ts` — 3 testes de retry CPF, 6 testes de consistência de colunas
+
+**Validações realizadas:**
+- `npx vitest run src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.test.ts`: 67 aprovados, 6 skipped, 0 falhas
+- `npx tsc --noEmit`: aprovado sem erros
+- MCP Supabase: colunas `pedido_confirmado` e `endereco_confirmado` validadas via migration SQL (boolean, default false)
+
+**Pendências:**
+- Validar em ambiente real com webhook ativo
+- Confirmar se regex de faixa cobre todos os formatos encontrados na planilha Google Sheets
+
+**Riscos conhecidos:**
+- Regex pode não cobrir formatos raros de faixa de numeração não identificados nos testes
+- Retry de 1s adiciona latência em caso de erro transitório (aceitável pois só executa em `ok=false`)
+
+**Proximo passo recomendado:**
+- Deploy e validação com webhook real
+
+## 2026-07-15 - Cascade - Auditoria Fluxo Mère Webhook Pós-Venda
+
+**Resumo:** Mapeamento completo do fluxo webhook pós-venda Mère desde entrada de CPF/CNPJ até chamada de procurar datas. Identificados todos os estados, transições, geocodificação com cache e providers, consulta de datas, tratamento de erros, logs, queries Supabase e testes. MCP Supabase instável, então estrutura do banco validada via migration SQL. Nenhuma implementação realizada.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `src/app/api/digisac/webhook/posvenda/route.ts`
+- `src/lib/atendimento-automatico/webhook-processor.ts` (linhas 106-305, 450-949, 1150-1449, 1950-2659)
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts` (linhas 1-100, 100-449, 449-748, 730-1206)
+- `src/lib/google/sheets-service-account.ts` (linhas 1-330)
+- `supabase/migrations/20260707201710_create_atendimento_automatico_posvenda_tables.sql` (linhas 1-225)
+- `src/lib/atendimento-automatico/webhook-processor.test.ts` (linhas 1-580)
+- `src/lib/atendimento-automatico/consulta-datas-mere.test.ts` (linhas 1-582)
+
+**Arquivos alterados:**
+- `docs/ia/log_progress.md`
+
+**Fluxo mapeado:**
+1. **Entrada webhook:** `route.ts` valida secret, parse payload, chama `processarWebhookPosVenda`
+2. **Filtros iniciais:** evento message.created, não-comentário, tipo chat, extrai messageId/contactId/serviceId/ticketId/text
+3. **Allowlist telefone:** `ATENDIMENTO_POSVENDA_ALLOWED_PHONES` (suporta wildcard *)
+4. **Sessão:** busca/cria em `atendimento_automatico_sessoes`, salva mensagem em `atendimento_automatico_mensagens`
+5. **Máquina de estados:**
+   - `aguardando_documento`: detecta CPF/CNPJ, busca Google Sheets, avança para confirmação ou escolha de grupo
+   - `aguardando_escolha_grupo`: parse número, seleciona grupo, avança para confirmação
+   - `aguardando_confirmacao_pedido`: interpreta intenção (confirmar/alterar), avança ou encerra
+   - `aguardando_data_desejada`: interpreta data, valida D+2 (ajusta automático se < D+2), avança para consulta
+   - `consultando_datas`: geocodificação + consulta de datas, aplica resultado
+   - `aguardando_escolha_data`: parse opção, valida, avança para confirmação ou encerra
+   - `aguardando_confirmacao_nova_data`: confirmação, reagendar Calendar/Sheets ou voltar
+6. **Google Sheets:** `buscarAgendamentosPorDocumento` normaliza, busca, agrupa por data+endereço
+7. **Geocodificação:** decompor endereço → cache lookup (estratégias múltiplas, rejeita confidence < 0.5) → providers LocationIQ → Google Geocoding → Apps Script → salvar cache
+8. **Consulta datas:** validar campos → montar payload → chamar `pesquisarDatasV2` → filtrar por ação (adiantar/postergar)
+9. **Aplicação resultado:** `aplicarResultadoConsultaDatas` salva metadata, exibe opções ou transfere humano
+10. **Estrutura banco (via migration):** `atendimento_automatico_sessoes`, `atendimento_automatico_mensagens`, `atendimento_automatico_eventos`, `atendimento_automatico_bloqueios` com RLS restrito a superadmin
+
+**Validações realizadas:**
+- Leitura completa do código do fluxo webhook e consulta-datas
+- Leitura da migration SQL para estrutura de tabelas
+- Leitura de testes para cobertura de cenários
+- MCP Supabase instável/travando, não foi possível validar estrutura via queries em tempo real
+
+**Comandos rodados e resultados:**
+- Nenhum comando rodado (apenas leitura de código)
+
+**Pendências:**
+- Nenhuma (auditoria concluída)
+
+**Riscos conhecidos:**
+- MCP Supabase instável - queries travam, validação em tempo real não foi possível
+
+**Próximo passo recomendado:**
+- Se necessário validar estrutura do banco em tempo real, aguardar estabilização do MCP Supabase ou usar psql direto
+
 ## 2026-07-15 - Codex - Auditoria Superadmin Usuarios, Perfis, Auditoria e unidades
 
 **Resumo:** Auditoria tecnica da tela `/superadmin?tab=usuarios` e plano futuro para permitir acesso limitado apenas a area Usuarios por perfis nao-superadmin, sem liberar Perfis nem Auditoria. Nenhuma implementacao funcional realizada. Criado documento `docs/plano-acesso-usuarios-e-unidades.md`.
@@ -21009,3 +21170,376 @@ Abrir `/procurar-datas/dev-v2` com sessao superadmin, auditar o run informado e 
 - Riscos conhecidos:
   - A ordenacao da API ja segue o catalogo central mesmo antes da migration; a migration apenas alinha o campo `ordem` do banco para consultas futuras.
   - Nenhuma permissao salva foi alterada; apenas ordenacao e agrupamento visual foram modificados.
+
+## 2026-07-15 - Codex - Fase 0 Ficha de Atendimento Presencial
+
+- Resumo:
+  - Realizada auditoria tecnica inicial para o novo modulo "Ficha de Atendimento Presencial".
+  - Nenhum codigo funcional, migration, regra de permissao existente, Inteligencia Comercial ou integracao Digisac foi alterado.
+  - Criado `docs/ficha-atendimento-presencial-progresso.md` com arquitetura proposta, modelo conceitual, matriz de permissoes, harness de validacao, plano por fases, riscos e pendencias.
+  - Confirmado que a estrutura atual de permissoes deve ser reaproveitada: `app_modulos`, `app_perfis_acesso`, `app_usuarios_perfis`, `app_permissoes_perfil`, `app_permissoes_usuario`, `checkModuleAndWindowAccess`, `requireModuleAccess`, Sidebar por `NAVIGATION_GROUPS`.
+  - Confirmado que `app_unidades` e `app_usuarios_unidades` existem, mas `app_usuarios_unidades` esta com 0 linhas no banco atual; portanto a filial por usuario ainda precisa ser populada antes da Ficha operar com unidade real.
+- Arquivos lidos:
+  - anexo `C:\Users\lebeb\.codex\attachments\5902b637-3b73-469f-b8c3-1e2fffd19d85\pasted-text.txt`
+  - `docs/PLANO FUNCIONAL ATUALIZADO — FICHA DE ATENDIMENTO PRESENCIAL.md`
+  - `docs/ia/log_progress.md`
+  - `docs/ia/padrao-novas-telas-permissoes.md`
+  - `.devin/rules/gerais.md`
+  - `.devin/rules/continuidade-agente.md`
+  - `.devin/rules/supabase.md`
+  - `.agents/skills/supabase/SKILL.md`
+  - `src/middleware.ts`
+  - `src/lib/supabase/server.ts`
+  - `src/lib/supabase/client.ts`
+  - `src/lib/supabase/service.ts`
+  - `src/lib/auth/api-auth.ts`
+  - `src/lib/auth/module-access.ts`
+  - `src/lib/auth/access-window.ts`
+  - `src/lib/auth/modulos-app.ts`
+  - `src/lib/hooks/usePermissoes.ts`
+  - `src/components/Sidebar.tsx`
+  - `src/app/api/me/permissoes/route.ts`
+  - `src/app/superadmin/page.tsx`
+  - `src/app/superadmin/PageClient.tsx`
+  - `src/app/superadmin/_components/PerfilEditor.tsx`
+  - APIs de `src/app/api/superadmin/*`
+  - `src/app/api/sgi/vendas/route.ts`
+  - `src/app/api/sgi/vendas/[numero_lancamento]/route.ts`
+  - `src/lib/digisac/sgi-sync.ts`
+  - `src/types/sgi.ts`
+  - migrations recentes de permissoes/unidades em `supabase/migrations`
+  - `package.json`
+  - `vercel.json`
+- Arquivos criados:
+  - `docs/ficha-atendimento-presencial-progresso.md`
+- Arquivos alterados:
+  - `docs/ia/log_progress.md`
+- Validacoes realizadas:
+  - MCP Supabase `_list_tables`: confirmadas tabelas relevantes, RLS enabled e contagens, incluindo `app_unidades` com 5 linhas e `app_usuarios_unidades` com 0 linhas.
+  - MCP Supabase `_execute_sql`: confirmadas colunas de permissoes/usuarios/unidades e tabelas SGI/Inteligencia Comercial.
+  - MCP Supabase `_execute_sql`: confirmadas constraints, FKs, unique keys, indices, functions, triggers e policies relevantes.
+  - Confirmado via MCP que tabelas `app_%` estao com RLS enabled, mas sem policies em `pg_policies`; o codigo atual acessa via service role em APIs protegidas.
+  - Leitura de codigo confirmou que `/superadmin?tab=usuarios` pode ser liberada por `superadmin_usuarios`, enquanto `perfis` e `auditoria` seguem superadmin-only.
+- Comandos rodados e resultados:
+  - `rg` para localizar Ficha/atendimento presencial: encontrou documento funcional e referencias gerais em IA/Inteligencia Comercial.
+  - `rg` para autenticao, permissoes, unidades, filiais, modulos e SGI: localizou os arquivos auditados.
+  - `Get-Content` nos arquivos listados: leitura concluida.
+  - `git status --short`: antes das edicoes havia `docs/PLANO FUNCIONAL ATUALIZADO — FICHA DE ATENDIMENTO PRESENCIAL.md` como untracked; nao foi alterado.
+  - Algumas consultas de dados detalhados no MCP Supabase retornaram erro interno; estrutura critica foi confirmada por outras consultas e valores foram complementados por migrations/codigo quando indicado.
+  - Nenhum teste automatizado rodado; tarefa era auditoria/documentacao e nao houve codigo funcional.
+- Pendencias:
+  - Decidir nomes finais dos tres `moduleKey`/rotas.
+  - Popular ou validar vinculos reais em `app_usuarios_unidades`.
+  - Decidir se atendimento permite mais de um fechamento.
+  - Decidir se um lancamento pode ser vinculado a mais de um atendimento.
+  - Decidir regras finas de edicao/exclusao de fechamento e permissao por perfil/unidade.
+  - Validacao autenticada em browser nao realizada.
+- Riscos conhecidos:
+  - Sem vinculos em `app_usuarios_unidades`, a Ficha nao consegue aplicar filial automatica real.
+  - Telefone como identificador de negocio pode colidir em telefone compartilhado.
+  - Reaproveitar `inteligencia_comercial_clientes` como cadastro principal da Ficha seria arriscado sem decisao explicita; a proposta recomenda tabela propria.
+  - Novas tabelas da Ficha devem nascer com RLS propria, mesmo que a camada `app_%` atual use service role.
+- Proximo passo recomendado:
+  - Aprovar Fase 1: cadastrar apenas os modulos/telas placeholder protegidos no catalogo e em `app_modulos`, sem criar schema de atendimentos ainda.
+
+## 2026-07-15 - Codex - Fase 1 Ficha de Atendimento Presencial
+
+- Resumo:
+  - Implementada somente a base de permissoes e navegacao do modulo "Ficha de Atendimento Presencial".
+  - Adicionado grupo `ATENDIMENTO PRESENCIAL` no catalogo de navegacao com os itens `Ficha de Atendimento`, `Registros de Atendimentos` e `Clientes`.
+  - Criadas tres paginas placeholder protegidas por `checkModuleAndWindowAccess`.
+  - Criada migration idempotente apenas para `public.app_modulos`.
+  - Nenhuma API operacional, tabela operacional ou funcionalidade real de atendimento foi criada.
+- Arquivos lidos:
+  - anexo `C:\Users\lebeb\.codex\attachments\a2cb20af-7aaf-4160-be5f-519fcd024e5f\pasted-text.txt`
+  - `docs/PLANO FUNCIONAL ATUALIZADO - FICHA DE ATENDIMENTO PRESENCIAL.md` (arquivo real com travessao no nome)
+  - `docs/ficha-atendimento-presencial-progresso.md`
+  - `docs/ia/log_progress.md`
+  - `docs/ia/padrao-novas-telas-permissoes.md`
+  - `.devin/rules/gerais.md`
+  - `.devin/rules/continuidade-agente.md`
+  - `.devin/rules/supabase.md`
+  - `.agents/skills/supabase/SKILL.md`
+  - `src/lib/auth/modulos-app.ts`
+  - `src/lib/auth/modulos-app.test.ts`
+  - `src/components/Sidebar.tsx`
+  - `src/lib/auth/module-access.ts`
+  - paginas wrapper existentes como `src/app/dashboard/page.tsx`, `src/app/recebimento/page.tsx` e `src/app/pos-venda/atendimento-automatico/page.tsx`
+  - migrations recentes de modulos em `supabase/migrations`
+- Arquivos criados:
+  - `src/app/atendimento-presencial/ficha/page.tsx`
+  - `src/app/atendimento-presencial/registros/page.tsx`
+  - `src/app/atendimento-presencial/clientes/page.tsx`
+  - `supabase/migrations/20260715160000_add_atendimento_presencial_modules.sql`
+- Arquivos alterados:
+  - `src/lib/auth/modulos-app.ts`
+  - `src/lib/auth/modulos-app.test.ts`
+  - `src/components/Sidebar.tsx`
+  - `docs/ficha-atendimento-presencial-progresso.md`
+  - `docs/ia/log_progress.md`
+- Migration:
+  - `20260715160000_add_atendimento_presencial_modules.sql`
+  - Insere/atualiza `atendimento_presencial_ficha`, `atendimento_presencial_registros` e `atendimento_presencial_clientes` em `app_modulos`.
+  - Nao concede permissao automatica em `app_permissoes_perfil`.
+- Validacoes realizadas:
+  - MCP Supabase `_execute_sql`: confirmou estrutura real de `public.app_modulos`.
+  - MCP Supabase `_execute_sql`: confirmou ausencia previa das tres chaves/rotas novas no banco consultado.
+  - Leitura de codigo confirmou que Sidebar consome `NAVIGATION_GROUPS`, Superadmin usa os modulos ativos do banco e paginas internas usam `checkModuleAndWindowAccess`.
+- Comandos rodados e resultados:
+  - `npm run test -- src/lib/auth/modulos-app.test.ts`: passou, 1 arquivo e 17 testes.
+  - `npx tsc --noEmit --pretty false`: passou.
+  - `npx eslint src/lib/auth/modulos-app.ts src/lib/auth/modulos-app.test.ts src/components/Sidebar.tsx src/app/atendimento-presencial/ficha/page.tsx src/app/atendimento-presencial/registros/page.tsx src/app/atendimento-presencial/clientes/page.tsx`: passou.
+  - `npm run build`: primeira tentativa no sandbox falhou com `EPERM` em `.next\app-path-routes-manifest.json`; repetido fora do sandbox, passou.
+  - `git diff --check`: passou, com avisos de CRLF no checkout.
+- Pendencias:
+  - Migration nao aplicada em producao nesta tarefa.
+  - Validacao manual autenticada em browser nao realizada.
+  - Teste fora da janela de horario depende de ambiente/perfil apropriado.
+  - `app_usuarios_unidades` permanece pendente para fases futuras e nao foi alterada.
+- Riscos conhecidos:
+  - Sem aplicar a migration, os modulos nao aparecem na matriz de Perfis do ambiente.
+  - O build ainda mostra `DYNAMIC_SERVER_USAGE` em rotas existentes que usam cookies; as tres rotas novas foram marcadas como dinamicas.
+- Proximo passo recomendado:
+  - Aplicar a migration no ambiente correto e executar o roteiro manual de permissao: perfil sem acesso, acesso direto bloqueado, liberacao de uma tela, grupo com um item, liberacao das tres telas e ordem final.
+
+## 2026-07-15 - Codex - Fase 2 Ficha de Atendimento Presencial
+
+- Resumo:
+  - Implementada somente a estrutura de clientes presenciais e normalizacao de telefone.
+  - Criada migration local para `public.atendimento_presencial_clientes`.
+  - Criados helpers de telefone, validacao/serializacao de cliente, APIs protegidas e harness minimo em `/atendimento-presencial/clientes`.
+  - Nao foram criadas tabelas de atendimentos, criancas, departamentos, produtos, motivos, rascunhos, fechamentos ou formulario completo da Ficha.
+  - Sistema de permissoes atual foi preservado; a tela continua protegida por `atendimento_presencial_clientes` e janela de acesso.
+- Arquivos lidos:
+  - anexo `C:\Users\lebeb\.codex\attachments\9a402d23-e138-479d-b526-a4fbb5fa36d9\pasted-text.txt`
+  - `docs/PLANO FUNCIONAL ATUALIZADO - FICHA DE ATENDIMENTO PRESENCIAL.md` (arquivo real com travessao no nome)
+  - `docs/ficha-atendimento-presencial-progresso.md`
+  - `docs/ia/log_progress.md`
+  - `docs/ia/padrao-novas-telas-permissoes.md`
+  - `.devin/rules/gerais.md`
+  - `.devin/rules/continuidade-agente.md`
+  - `.devin/rules/supabase.md`
+  - `.agents/skills/supabase/SKILL.md`
+  - `supabase/migrations/001_initial_schema.sql`
+  - `supabase/migrations/009_recebimento_matic.sql`
+  - `supabase/migrations/20260715120000_add_superadmin_users_units.sql`
+  - `supabase/migrations/20260715160000_add_atendimento_presencial_modules.sql`
+  - `src/lib/auth/api-auth.ts`
+  - `src/lib/auth/module-access.ts`
+  - `src/lib/auth/access-window.ts`
+  - `src/lib/supabase/service.ts`
+  - `src/app/api/superadmin/usuarios/route.ts`
+  - `src/app/api/superadmin/usuarios/[id]/unidades/route.ts`
+  - `src/app/api/superadmin/usuarios/[id]/perfil/route.ts`
+  - `src/lib/hooks/usePermissoes.ts`
+  - `src/lib/digisac/sgi-sync.ts`
+  - `src/components/ui/button.tsx`
+  - `src/components/ui/input.tsx`
+  - `src/app/atendimento-presencial/clientes/page.tsx`
+- Arquivos criados:
+  - `src/lib/atendimento-presencial/telefone.ts`
+  - `src/lib/atendimento-presencial/clientes.ts`
+  - `src/lib/atendimento-presencial/api-auth.ts`
+  - `src/lib/atendimento-presencial/telefone.test.ts`
+  - `src/lib/atendimento-presencial/migration.test.ts`
+  - `src/app/api/atendimento-presencial/clientes/route.ts`
+  - `src/app/api/atendimento-presencial/clientes/route.test.ts`
+  - `src/app/api/atendimento-presencial/clientes/[id]/route.ts`
+  - `src/app/api/atendimento-presencial/clientes/[id]/route.test.ts`
+  - `src/app/atendimento-presencial/clientes/PageClient.tsx`
+  - `supabase/migrations/20260715170000_create_atendimento_presencial_clientes.sql`
+- Arquivos alterados:
+  - `src/app/atendimento-presencial/clientes/page.tsx`
+  - `docs/ficha-atendimento-presencial-progresso.md`
+  - `docs/ia/log_progress.md`
+- Banco e RLS:
+  - Tabela proposta: `public.atendimento_presencial_clientes`.
+  - Campos principais: `nome`, `telefone_informado`, `telefone_normalizado`, `telefone_normalizado_ddi`, `parentesco`, `parentesco_outro`, `status`, `version`, `criado_por`, `atualizado_por`, timestamps.
+  - FKs de autoria usam `usuarios_permitidos(id)`, conforme estrutura real confirmada.
+  - Unique parcial impede duas clientes ativas com o mesmo `telefone_normalizado`.
+  - RLS habilitada, `anon`/`authenticated` sem grants diretos e policies explicitas de negacao direta para `authenticated`.
+  - Acesso funcional ocorre por API interna com service role, `requireModuleAccess('atendimento_presencial_clientes')` e janela de acesso.
+- Validacoes MCP Supabase:
+  - Fase 1 confirmada aplicada em `public.app_modulos` para `atendimento_presencial_ficha`, `atendimento_presencial_registros` e `atendimento_presencial_clientes`.
+  - `public.atendimento_presencial_clientes` nao existia no banco consultado antes da migration local da Fase 2.
+  - Confirmado que relacoes de usuario/perfil/unidade usam `usuarios_permitidos.id`.
+  - Contagens consultadas: `app_unidades` 5, `app_usuarios_unidades` 5, `usuarios_permitidos` 11, `app_usuarios_perfis` 9, `app_perfis_acesso` 5.
+  - Distribuicao atual de vinculos por unidade consultada; inconsistencias de vinculos retornaram 0.
+- Comandos rodados e resultados:
+  - `supabase migration new create_atendimento_presencial_clientes`: falhou porque a CLI `supabase` nao esta instalada no ambiente.
+  - `npm run test -- src/lib/atendimento-presencial/telefone.test.ts src/lib/atendimento-presencial/migration.test.ts src/app/api/atendimento-presencial/clientes/route.test.ts src/app/api/atendimento-presencial/clientes/[id]/route.test.ts`: passou, 4 arquivos e 20 testes.
+  - `npx tsc --noEmit --pretty false`: passou.
+  - `npx eslint src/lib/atendimento-presencial/telefone.ts src/lib/atendimento-presencial/clientes.ts src/lib/atendimento-presencial/api-auth.ts src/lib/atendimento-presencial/telefone.test.ts src/lib/atendimento-presencial/migration.test.ts src/app/api/atendimento-presencial/clientes/route.ts src/app/api/atendimento-presencial/clientes/route.test.ts src/app/api/atendimento-presencial/clientes/[id]/route.ts src/app/api/atendimento-presencial/clientes/[id]/route.test.ts src/app/atendimento-presencial/clientes/page.tsx src/app/atendimento-presencial/clientes/PageClient.tsx`: passou.
+  - `npm run build`: primeira tentativa no sandbox falhou com `EPERM` em `.next`; repetido fora do sandbox, passou.
+  - `git diff --check`: passou, com avisos de CRLF no checkout.
+- Pendencias:
+  - Migration da Fase 2 nao aplicada no banco nesta tarefa.
+  - RLS/policies precisam ser validadas no banco apos aplicar a migration.
+  - Validacao manual autenticada em browser nao realizada.
+  - Teste em celular real nao realizado.
+  - Regra futura para telefone compartilhado segue pendente.
+  - `PATCH` de cliente foi adiado para etapa propria com concorrencia/auditoria.
+- Riscos conhecidos:
+  - Enquanto a migration nao for aplicada, APIs da Fase 2 falharao por tabela inexistente no ambiente.
+  - Busca por nome usa `ilike`; sem `unaccent`, busca pode depender de acentos.
+  - A regra atual assume uma cliente ativa por telefone normalizado.
+  - RLS bloqueia acesso direto e concentra a autorizacao funcional na API protegida.
+- Proximo passo recomendado:
+  - Aplicar a migration da Fase 2 no ambiente adequado, validar busca/cadastro com usuario autorizado e nao autorizado, e so depois iniciar a estrutura do atendimento/ficha em nova fase.
+## 2026-07-15 - Codex - Auditoria mensagens do contato sem ticket na IA Comercial
+
+**Resumo:** Auditoria completa para verificar como a Inteligencia Comercial pode usar mensagens Digisac do mesmo contato que nao estao vinculadas a um ticket como contexto complementar da analise IA. Nenhuma implementacao de codigo foi realizada. Criado documento `docs/inteligencia-comercial-mensagens-contato-sem-ticket.md`.
+
+**Arquivos lidos:**
+- Anexo do pedido em `C:\Users\lebeb\.codex\attachments\5fcff5b8-e069-4dc9-bddf-d977ec84d4ec\pasted-text.txt`
+- `.devin/rules/gerais.md`
+- `.devin/rules/supabase.md`
+- `.devin/rules/continuidade-agente.md`
+- `.agents/skills/supabase/SKILL.md`
+- `docs/ia/log_progress.md`
+- `docs/inteligencia-comercial-influencia-temporal-historico-chamados.md`
+- `docs/inteligencia-comercial-contexto-vendas-anteriores-ia.md`
+- `docs/inteligencia-comercial-multiplas-conexoes-digisac.md`
+- `docs/links-protocolos-digisac.md`
+- `src/components/inteligencia-comercial/ModalDetalheVenda.tsx`
+- `src/app/api/sgi/digisac/mensagens/route.ts`
+- `src/app/api/sgi/digisac/chamados-ciclo/route.ts`
+- `src/app/api/sgi/ia/iniciar-analise/route.ts`
+- `src/app/api/sgi/ia/processar-proximo/route.ts`
+- `src/app/api/sgi/ia/analise-status/route.ts`
+- `src/app/api/sgi/vendas/[numero_lancamento]/route.ts`
+- `src/lib/digisac/clienteDigisac.ts`
+- `src/lib/digisac/sgi-sync.ts`
+- `src/lib/ia/transcript.ts`
+- `src/lib/ia/contexto-temporal-chamados.ts`
+
+**Arquivos criados:**
+- `docs/inteligencia-comercial-mensagens-contato-sem-ticket.md`
+
+**Arquivos alterados:**
+- `docs/ia/log_progress.md`
+
+**Conclusoes principais:**
+1. A IA Comercial ainda usa apenas mensagens por `ticketId`, via `montarTranscriptChamado(ticketId)` e `buscarMensagensTicketPaginado(ticketId)`.
+2. O botao `Ver conversa` em `ModalDetalheVenda.tsx` tambem usa apenas `GET /api/sgi/digisac/mensagens?ticketId=...`; portanto a UI nao esta mostrando mensagens mais amplas que a IA.
+3. `contactId` esta salvo em `digisac_conversas_resumo.digisac_contact_id`, mas nao entra no prompt atual.
+4. No caso `65431`, o `digisac_contact_id` confirmado e `67e15f97-a406-445b-9e6d-ae8ecc1f8a55`, vinculado ao ticket `cf445253-edce-4b2d-a561-c9d9ee626b07`.
+5. A API Digisac por contato retornou 90 mensagens; 78 sem `ticketId`. A busca por ticket retornou 12 mensagens.
+6. Os sinais comerciais fortes de carrinho/modelo/cor/preco/parcelamento/link-pagamento/antifraude/loja apareceram nas mensagens sem ticket, nao no ticket analisado atualmente.
+7. Plano minimo proposto: helper de busca por contato, classificador por grupos, dedup por `message.id`, filtros tecnicos e bloco separado no prompt. Nao implementar sem aprovacao.
+
+**Validacoes realizadas:**
+- MCP Supabase `_execute_sql`: confirmadas colunas reais de `digisac_conversas_resumo`, `venda_conversa_vinculos`, `sgi_documentos_saida`, `sgi_documentos_saida_contatos`, `digisac_chamados_analise_ia`, `ia_analise_comercial_fila` e `venda_analise_comercial_ia`.
+- MCP Supabase `_execute_sql`: caso `65431` conferido com venda anterior `65295`, ticket do ciclo, `digisac_contact_id`, `service_id`, telefones normalizados e datas da janela.
+- MCP Supabase `_execute_sql`: para o telefone/contactId do caso `65431`, banco atual mostrou 1 `digisac_contact_id` e 1 ticket salvo em `digisac_conversas_resumo`.
+- API Digisac real consultada com token do ambiente sem expor segredo nem conteudo integral: resposta por `contactId`, resposta por `ticketId`, paginacao e representacao de midia/audio validadas por contagens.
+
+**Comandos rodados e resultados:**
+- `rg` para localizar `Ver conversa`, `contactId`, `/api/v1/messages`, `where[contactId]`, `buscarMensagensTicketPaginado`, `montarTranscript`.
+- `Get-Content` para leitura dos arquivos envolvidos.
+- Scripts Node inline para consultar Digisac de forma agregada:
+  - `paginate=false&limit=20` por contato -> 20 mensagens.
+  - `paginate=false&limit=200` por contato -> 90 mensagens.
+  - `paginate=false` sem limit por contato -> 90 mensagens.
+  - busca por ticket com `perPage=100&page=1` -> 12 mensagens.
+  - paginacao por contato com `perPage=10&page=1/2` -> objeto paginado, `total=90`, `lastPage=9`.
+  - contagem segura por termos comerciais -> sinais fortes concentrados nas mensagens sem `ticketId`.
+
+**Pendencias:**
+- Aguardar aprovacao do plano minimo antes de implementar qualquer fallback por `contactId`.
+- Nao confirmado limite maximo oculto do Digisac acima de 90 mensagens para `paginate=false`.
+- Nao confirmado comportamento de audios transcritos em outros contatos.
+
+**Riscos conhecidos:**
+- Mistura indevida de contexto se mesmo telefone/contactId for compartilhado, recriado ou usado em outra conexao.
+- Prompt pode crescer muito se enviar todas as mensagens do contato.
+- Eventos tecnicos `type=ticket` e `ticketTransfer` precisam ser descartados para nao poluir a IA.
+
+**Proximo passo recomendado:**
+- Se aprovado, implementar primeiro helper isolado e testes unitarios antes de integrar no prompt da IA.
+
+---
+
+## 2026-07-15 - Codex - Ajustes Fase 2 e Fase 3 Ficha de Atendimento Presencial
+
+- Resumo:
+  - Implementados os ajustes finais da Fase 2: mascara brasileira progressiva de telefone e busca flexivel por nome/telefone.
+  - Implementada a Fase 3: estrutura basica de rascunhos de atendimento presencial, APIs protegidas, cache local, autosave, concorrencia por version, expiracao em cinco dias e cron de limpeza.
+  - Migration da Fase 3 aplicada no Supabase via MCP.
+  - Nao foram criados ficha completa, criancas, departamentos, produtos, motivos, fechamento comercial, SGI, Digisac ou Inteligencia Comercial.
+- Arquivos lidos:
+  - anexo `C:\Users\lebeb\.codex\attachments\2fafa716-1649-4253-8920-25118110df3a\pasted-text.txt`
+  - `docs/PLANO FUNCIONAL ATUALIZADO - FICHA DE ATENDIMENTO PRESENCIAL.md`
+  - `docs/ficha-atendimento-presencial-progresso.md`
+  - `docs/ia/log_progress.md`
+  - `docs/ia/padrao-novas-telas-permissoes.md`
+  - `.devin/rules/gerais.md`
+  - `.devin/rules/continuidade-agente.md`
+  - `.devin/rules/supabase.md`
+  - `.devin/rules/resumo.md`
+  - `.agents/skills/supabase/SKILL.md`
+  - migrations das Fases 1 e 2
+  - tela e APIs de Clientes
+  - helpers de telefone, auth, module access, access window, unidades e Supabase
+  - `vercel.json`
+  - crons existentes de auto-logout e Digisac
+- Arquivos criados:
+  - `src/lib/atendimento-presencial/clientes.test.ts`
+  - `src/lib/atendimento-presencial/rascunhos.ts`
+  - `src/lib/atendimento-presencial/rascunho-cache.ts`
+  - `src/lib/atendimento-presencial/rascunhos.test.ts`
+  - `src/lib/atendimento-presencial/rascunho-cache.test.ts`
+  - `src/lib/atendimento-presencial/rascunhos-migration.test.ts`
+  - `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.ts`
+  - `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts`
+  - `src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.ts`
+  - `src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts`
+  - `src/app/api/cron/atendimento-presencial-limpar-rascunhos/route.ts`
+  - `src/app/api/cron/atendimento-presencial-limpar-rascunhos/route.test.ts`
+  - `src/app/atendimento-presencial/ficha/PageClient.tsx`
+  - `supabase/migrations/20260715180000_create_atendimento_presencial_atendimentos.sql`
+  - `supabase/migrations/20260715181000_harden_atendimento_presencial_atendimentos.sql`
+- Arquivos alterados:
+  - `src/lib/atendimento-presencial/telefone.ts`
+  - `src/lib/atendimento-presencial/clientes.ts`
+  - `src/lib/atendimento-presencial/telefone.test.ts`
+  - `src/app/api/atendimento-presencial/clientes/route.ts`
+  - `src/app/api/atendimento-presencial/clientes/route.test.ts`
+  - `src/app/atendimento-presencial/clientes/PageClient.tsx`
+  - `src/app/atendimento-presencial/ficha/page.tsx`
+  - `vercel.json`
+  - `docs/ficha-atendimento-presencial-progresso.md`
+  - `docs/ia/log_progress.md`
+- Validacoes MCP Supabase:
+  - `atendimento_presencial_clientes` existe e possui 2 clientes no banco consultado.
+  - `atendimento_presencial_atendimentos` nao existia antes da Fase 3 e foi criada.
+  - `app_usuarios_unidades` possui 5 vinculos.
+  - Perfis ativos reais confirmados: `consultora`, `supervisora_loja`, `pos_venda`, `gestao`.
+  - Usuarios ativos com perfil `consultora`: 0 no momento da consulta.
+  - FKs, indices, RLS, policies, grants e trigger da nova tabela confirmados.
+  - Funcao `atendimento_presencial_atendimentos_touch` confirmada com `search_path=public`.
+  - Busca agregada: `LU` 1, `Lu Ma` 1, `8707` 1, maior duplicidade ativa por telefone normalizado 1.
+- Supabase advisors:
+  - Advisors indicaram problemas antigos fora do escopo em outras tabelas/views/funcoes.
+  - Advisors indicaram pontos da nova tabela: FKs `criado_por`/`atualizado_por` sem indice e funcao trigger sem `search_path`.
+  - Corrigido com `20260715181000_harden_atendimento_presencial_atendimentos.sql` e validado no MCP.
+- Comandos rodados e resultados:
+  - `npm run test -- src/lib/atendimento-presencial/telefone.test.ts src/lib/atendimento-presencial/clientes.test.ts src/app/api/atendimento-presencial/clientes/route.test.ts src/app/api/atendimento-presencial/clientes/[id]/route.test.ts`: passou, 4 arquivos e 29 testes.
+  - `npm run test -- src/lib/atendimento-presencial/rascunhos.test.ts src/lib/atendimento-presencial/rascunho-cache.test.ts src/lib/atendimento-presencial/rascunhos-migration.test.ts src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts src/app/api/cron/atendimento-presencial-limpar-rascunhos/route.test.ts`: passou, 6 arquivos e 21 testes.
+  - `npm run test -- ...` focado completo: passou, 11 arquivos e 54 testes.
+  - `npx tsc --noEmit --pretty false`: passou.
+  - `npx eslint ...`: passou nos arquivos alterados.
+  - `npm run build`: primeira tentativa no sandbox falhou com `EPERM` em `.next`; repetido fora do sandbox, passou.
+- Pendencias:
+  - Validacao manual autenticada da Fase 3 ainda nao executada neste turno.
+  - Criar/atribuir usuario `consultora` para testar fluxo real de consultora, pois o banco consultado tem 0 usuarios nesse perfil.
+  - Testar cron em ambiente seguro com `CRON_SECRET`.
+  - Decidir regra ampla ou restrita para `gestao`.
+  - Decidir descarte manual de rascunho.
+- Riscos conhecidos:
+  - Cache local usa `localStorage`; payload foi mantido minimo, mas dados locais dependem da seguranca do navegador.
+  - Busca por trecho de telefone pode exigir estrategia de indice melhor se o volume crescer.
+  - Advisors Supabase ainda listam achados antigos fora do escopo.
+  - Build continua exibindo avisos antigos de `DYNAMIC_SERVER_USAGE` em rotas existentes que usam cookies.
+- Proximo passo recomendado:
+  - Executar o roteiro manual autenticado da Fase 3 com consultora/supervisora e confirmar criacao, recuperacao, autosave, conflito e expiracao antes de iniciar a Fase 4.

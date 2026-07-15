@@ -12,6 +12,11 @@ import {
   montarBlocoChamadosAnterioresIA,
   montarBlocoTemporalChamadoIA,
 } from '@/lib/ia/contexto-temporal-chamados'
+import {
+  buscarContextoComplementarContatoIA,
+  montarContextoComplementarContato,
+  montarResumoLogContextoContato,
+} from '@/lib/ia/contexto-complementar-contato'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -93,7 +98,7 @@ export async function POST(request: NextRequest) {
     // Busca metadados do ticket
     const { data: conversa } = await supabase
       .from('digisac_conversas_resumo')
-      .select('protocolo, comments, department_nome, user_nome, service_nome, cliente_nome_digisac, telefone_normalizado, telefone_normalizado_ddi, started_at')
+      .select('protocolo, comments, department_nome, user_nome, service_nome, service_id, digisac_contact_id, cliente_nome_digisac, telefone_normalizado, telefone_normalizado_ddi, started_at')
       .eq('digisac_ticket_id', ticketId)
       .maybeSingle()
 
@@ -145,6 +150,16 @@ export async function POST(request: NextRequest) {
       `[IA][CHAMADOS-ANTERIORES] vendaAtual=${numeroLancamento} chamados=${contextoChamadosAnteriores.chamados.length} candidatos=${contextoChamadosAnteriores.totalCandidatosAntesLimite} limite=${contextoChamadosAnteriores.limiteChamados} tamanho=${contextoChamadosAnteriores.tamanhoContextoChars}`
     )
 
+    const contextoComplementarContato = await buscarContextoComplementarContatoIA({
+      contactIds: [conversa?.digisac_contact_id],
+      ticketIdsPrincipais: [ticketId],
+      dataFechamentoVenda: venda?.data_fechamento ?? null,
+      dataFechamentoVendaAnterior: contextoHistorico.vendas[0]?.dataFechamento ?? null,
+    })
+    console.log(
+      `[IA][CONTEXTO-CONTATO] venda=${numeroLancamento} ${montarResumoLogContextoContato(contextoComplementarContato)}`
+    )
+
     const produtosLista = (produtosVenda ?? []).map((p) => {
       const partes = [p.produto, p.departamento_classificado, p.subgrupo_classificado].filter(Boolean)
       return partes.join(' — ')
@@ -182,6 +197,7 @@ export async function POST(request: NextRequest) {
       contextoTemporal: montarBlocoTemporalChamadoIA(contextoTemporal),
       contextoHistorico: montarBlocoVendasAnterioresIA(contextoHistorico),
       contextoChamadosAnteriores: montarBlocoChamadosAnterioresIA(contextoChamadosAnteriores),
+      contextoComplementarContato: montarContextoComplementarContato(contextoComplementarContato),
       transcript,
       protocolo: conversa?.protocolo ?? null,
       dadosBebe: dadosBebeConhecidos,
@@ -369,14 +385,16 @@ async function finalizarJob(
   const startedAtMap: Record<string, string | null> = {}
   const inicioCicloMap: Record<string, string | null> = {}
   const fimCicloMap: Record<string, string | null> = {}
+  const contactIdMap: Record<string, string | null> = {}
   if (ticketIds.length > 0) {
     const { data: conversas } = await supabase
       .from('digisac_conversas_resumo')
-      .select('digisac_ticket_id, protocolo, started_at')
+      .select('digisac_ticket_id, protocolo, started_at, digisac_contact_id, service_id')
       .in('digisac_ticket_id', ticketIds)
     for (const c of (conversas ?? [])) {
       protocoloMap[c.digisac_ticket_id] = c.protocolo
       startedAtMap[c.digisac_ticket_id] = c.started_at ?? null
+      contactIdMap[c.digisac_ticket_id] = c.digisac_contact_id ?? null
     }
 
     const { data: vinculos } = await supabase
@@ -444,6 +462,16 @@ async function finalizarJob(
     `[IA][CHAMADOS-ANTERIORES] vendaAtual=${numeroLancamento} chamados=${contextoChamadosAnteriores.chamados.length} candidatos=${contextoChamadosAnteriores.totalCandidatosAntesLimite} limite=${contextoChamadosAnteriores.limiteChamados} tamanho=${contextoChamadosAnteriores.tamanhoContextoChars}`
   )
 
+  const contextoComplementarContato = await buscarContextoComplementarContatoIA({
+    contactIds: ticketIds.map((id) => contactIdMap[id]),
+    ticketIdsPrincipais: ticketIds,
+    dataFechamentoVenda: vendaConsolidado?.data_fechamento ?? null,
+    dataFechamentoVendaAnterior: contextoHistorico.vendas[0]?.dataFechamento ?? null,
+  })
+  console.log(
+    `[IA][CONTEXTO-CONTATO] venda=${numeroLancamento} ${montarResumoLogContextoContato(contextoComplementarContato)}`
+  )
+
   const produtosCompradosLista = (produtosVendaConsolidado ?? []).map((p) => {
     const partes = [p.produto, p.departamento_classificado, p.subgrupo_classificado].filter(Boolean)
     return partes.join(' — ')
@@ -460,6 +488,7 @@ async function finalizarJob(
       produtosCompradosLista,
       montarBlocoVendasAnterioresIA(contextoHistorico),
       montarBlocoChamadosAnterioresIA(contextoChamadosAnteriores),
+      montarContextoComplementarContato(contextoComplementarContato),
       transcriptFatuaisMap,
       contextoTemporalMap
     )
@@ -545,6 +574,7 @@ interface PromptChamadoParams {
   contextoTemporal: string
   contextoHistorico: string
   contextoChamadosAnteriores: string
+  contextoComplementarContato: string
   transcript: string
   protocolo: string | null
   dadosBebe: { nomeBebe: string | null; previsaoNascimento: string | null }
@@ -630,6 +660,8 @@ ${p.contextoHistorico}
 
 ${p.contextoChamadosAnteriores}
 
+${p.contextoComplementarContato}
+
 ## CONVERSA
 ${p.transcript || '(sem mensagens registradas)'}
 
@@ -641,6 +673,7 @@ Se a conversa atual trouxer dado diferente, sinalize como possível divergência
 
 ## INSTRUÇÃO FINAL
 Compare o conteúdo da conversa com os produtos listados acima. Se houver menção a produto ou categoria que conste na lista, não classifique como "Não". Seja criterioso para não inventar influência, mas não ignore relação direta entre conversa e produto comprado.
+Use tambem o CONTEXTO COMPLEMENTAR DO CONTATO quando ele trouxer evidencias comerciais antes do fechamento. Mensagens sem ticket nao precisam ter protocolo para provar influencia; cite-as como contexto complementar do contato e nao invente chamado, protocolo ou numero discado.
 
 ## REGRA SOBRE PRODUTOS RELACIONADOS E INFLUÊNCIA INDIRETA
 
@@ -966,6 +999,7 @@ function montarPromptConsolidado(
   produtosComprados: string[],
   contextoHistorico: string,
   contextoChamadosAnteriores: string,
+  contextoComplementarContato: string,
   transcriptFatuaisMap: Record<string, string[]> = {},
   contextoTemporalMap: Record<string, string | null> = {}
 ): string {
@@ -1036,6 +1070,8 @@ ${contextoHistorico}
 
 ${contextoChamadosAnteriores}
 
+${contextoComplementarContato}
+
 ${resumos}
 
 ## REGRAS DE NUMERAÇÃO
@@ -1053,6 +1089,13 @@ Use expressões como: "a venda foi registrada", "a venda foi fechada", "os chama
 Evite expressões como: "a venda está em andamento", "a venda está em estágio avançado", "com perspectiva de conclusão", "deve dar continuidade para finalizar a venda", "cliente com intenção de pagamento" como se a venda ainda não tivesse acontecido.
 O campo "resumo_geral" deve resumir a relação dos chamados com uma venda já registrada.
 O campo "conclusao_comercial" deve concluir a influência comercial sobre a venda já registrada.
+
+## REGRA SOBRE CONTEXTO COMPLEMENTAR DO CONTATO
+O bloco "CONTEXTO COMPLEMENTAR DO CONTATO" pode conter mensagens sem ticket ou de outros tickets do mesmo contactId na janela comercial.
+- Mensagens sem ticket podem provar influencia, continuidade, preco, produto, pagamento, visita ou fechamento mesmo sem protocolo.
+- Nao invente protocolo, numero de chamado ou numero discado para mensagens sem ticket.
+- Quando usar evidencia desse bloco, descreva como "contexto complementar do contato".
+- Nao duplique o transcript principal: mensagens dos tickets principais ja foram removidas desse bloco.
 
 ## REGRA TEMPORAL E FINALIZACAO PRESENCIAL
 Use os blocos temporais de cada chamado para diferenciar atendimento antes da venda, atendimento depois da venda e logistica de finalizacao.

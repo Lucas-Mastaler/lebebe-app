@@ -828,3 +828,203 @@ describe('processarWebhookPosVenda - gatilho por ancora de CPF do Bot', () => {
     expect(resultado).toMatchObject({ ok: true, ignored: true, reason: 'cpf_sem_ancora' });
   });
 });
+
+describe('processarWebhookPosVenda - retry de CPF em erro tecnico', () => {
+  it('retries once when buscarAgendamentosPorDocumento fails with ok=false', async () => {
+    sessaoAtual = null;
+    vi.mocked(fetchDigisac).mockImplementation(async (endpoint: string) => {
+      if (endpoint.startsWith('/contacts/')) {
+        return { data: { number: '5541999999999' } };
+      }
+      if (endpoint.includes('/messages')) {
+        return {
+          data: [{ id: 'm-bot-1', type: 'chat', isFromMe: true, text: 'Por favor, poderia me informar o *CPF do titular da compra*, para eu confirmar a sua data de entrega?', timestamp: Date.now() - 60000 }],
+        };
+      }
+      return { data: null };
+    });
+    vi.mocked(buscarAgendamentosPorDocumento)
+      .mockResolvedValueOnce({ ok: false, erro: 'timeout' })
+      .mockResolvedValueOnce({
+        ok: true,
+        agendamentos: [agendamentoBase()],
+        total: 1,
+        grupos: [grupoBase()],
+        total_grupos: 1,
+      });
+
+    const resultado = await processarWebhookPosVenda(payload('09782588946', 'msg-cpf-retry'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    expect(buscarAgendamentosPorDocumento).toHaveBeenCalledTimes(2);
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('aguardando_confirmacao_pedido');
+  });
+
+  it('transfere para humano when retry also fails', async () => {
+    sessaoAtual = null;
+    vi.mocked(fetchDigisac).mockImplementation(async (endpoint: string) => {
+      if (endpoint.startsWith('/contacts/')) {
+        return { data: { number: '5541999999999' } };
+      }
+      if (endpoint.includes('/messages')) {
+        return {
+          data: [{ id: 'm-bot-1', type: 'chat', isFromMe: true, text: 'Por favor, poderia me informar o *CPF do titular da compra*, para eu confirmar a sua data de entrega?', timestamp: Date.now() - 60000 }],
+        };
+      }
+      return { data: null };
+    });
+    vi.mocked(buscarAgendamentosPorDocumento)
+      .mockResolvedValue({ ok: false, erro: 'timeout' });
+
+    const resultado = await processarWebhookPosVenda(payload('09782588946', 'msg-cpf-retry-falha'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    expect(buscarAgendamentosPorDocumento).toHaveBeenCalledTimes(2);
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('erro_tecnico_busca_agenda');
+    expect(updateSessao?.data.status).toBe('transferido_humano');
+  });
+
+  it('does not retry when first call returns ok=true with empty results', async () => {
+    sessaoAtual = null;
+    vi.mocked(fetchDigisac).mockImplementation(async (endpoint: string) => {
+      if (endpoint.startsWith('/contacts/')) {
+        return { data: { number: '5541999999999' } };
+      }
+      if (endpoint.includes('/messages')) {
+        return {
+          data: [{ id: 'm-bot-1', type: 'chat', isFromMe: true, text: 'Por favor, poderia me informar o *CPF do titular da compra*, para eu confirmar a sua data de entrega?', timestamp: Date.now() - 60000 }],
+        };
+      }
+      return { data: null };
+    });
+    vi.mocked(buscarAgendamentosPorDocumento).mockResolvedValue({
+      ok: true,
+      agendamentos: [],
+      total: 0,
+      grupos: [],
+      total_grupos: 0,
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('09782588946', 'msg-cpf-sem-pedido'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    expect(buscarAgendamentosPorDocumento).toHaveBeenCalledTimes(1);
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('pedido_nao_localizado');
+  });
+});
+
+describe('processarWebhookPosVenda - consistencia de colunas pedido_confirmado e endereco_confirmado', () => {
+  it('atualiza coluna pedido_confirmado=true quando cliente confirma pedido', async () => {
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'alterar_entrega',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoBase()],
+      },
+    });
+
+    await processarWebhookPosVenda(payload('sim', 'msg-confirma-pedido'));
+
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.pedido_confirmado).toBe(true);
+  });
+
+  it('atualiza coluna pedido_confirmado=false quando cliente nega pedido', async () => {
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'alterar_entrega',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoBase()],
+      },
+    });
+
+    await processarWebhookPosVenda(payload('nao', 'msg-nega-pedido'));
+
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.pedido_confirmado).toBe(false);
+  });
+
+  it('atualiza coluna endereco_confirmado=false quando cliente vai confirmar endereco', async () => {
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_escolha_acao',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoBase()],
+        pedido_confirmado: true,
+      },
+    });
+
+    await processarWebhookPosVenda(payload('1', 'msg-adiantar'));
+
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('aguardando_confirmacao_endereco');
+    expect(updateSessao?.data.endereco_confirmado).toBe(false);
+  });
+
+  it('atualiza coluna endereco_confirmado=true quando cliente confirma endereco', async () => {
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_endereco',
+      tipo_solicitacao: 'alterar_entrega',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoBase()],
+        acao_alteracao: 'adiantar',
+        endereco_confirmado: false,
+      },
+    });
+
+    await processarWebhookPosVenda(payload('sim', 'msg-confirma-endereco'));
+
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('aguardando_data_desejada');
+    expect(updateSessao?.data.endereco_confirmado).toBe(true);
+  });
+
+  it('atualiza coluna endereco_confirmado=false quando cliente nega endereco', async () => {
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_endereco',
+      tipo_solicitacao: 'alterar_entrega',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoBase()],
+        acao_alteracao: 'adiantar',
+        endereco_confirmado: false,
+      },
+    });
+
+    await processarWebhookPosVenda(payload('nao', 'msg-nega-endereco'));
+
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('transferido_humano');
+    expect(updateSessao?.data.endereco_confirmado).toBe(false);
+  });
+
+  it('atualiza coluna pedido_confirmado=true no shortcut path com bloqueio CLIENTE RETIRA', async () => {
+    const grupoRetira = grupoBase();
+    grupoRetira.equipe_agenda = '0-  CLIENTE RETIRA DEPOSITO';
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'alterar_entrega',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoRetira],
+      },
+    });
+
+    await processarWebhookPosVenda(payload('1', 'msg-shortcut-retira-confirmado'));
+
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.pedido_confirmado).toBe(true);
+  });
+});

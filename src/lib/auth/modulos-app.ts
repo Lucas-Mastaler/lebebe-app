@@ -58,6 +58,42 @@ export const APP_MODULES = [
     menuLabel: 'FINALIZAÇÕES DIGISAC',
   },
   {
+    moduleKey: 'atendimento_presencial_ficha',
+    nome: 'Ficha de Atendimento',
+    descricao: 'Placeholder protegido da ficha de atendimento presencial',
+    rotaBase: '/atendimento-presencial/ficha',
+    categoria: 'atendimento_presencial',
+    publico: false,
+    somenteSuperadmin: false,
+    ativo: true,
+    ordem: 61,
+    access: 'profile',
+  },
+  {
+    moduleKey: 'atendimento_presencial_registros',
+    nome: 'Registros de Atendimentos',
+    descricao: 'Placeholder protegido dos registros de atendimentos presenciais',
+    rotaBase: '/atendimento-presencial/registros',
+    categoria: 'atendimento_presencial',
+    publico: false,
+    somenteSuperadmin: false,
+    ativo: true,
+    ordem: 62,
+    access: 'profile',
+  },
+  {
+    moduleKey: 'atendimento_presencial_clientes',
+    nome: 'Clientes',
+    descricao: 'Placeholder protegido de clientes do atendimento presencial',
+    rotaBase: '/atendimento-presencial/clientes',
+    categoria: 'atendimento_presencial',
+    publico: false,
+    somenteSuperadmin: false,
+    ativo: true,
+    ordem: 63,
+    access: 'profile',
+  },
+  {
     moduleKey: 'agendamentos',
     nome: 'AGENDAMENTOS',
     descricao: 'Consulta e gestao de agendamentos',
@@ -282,6 +318,15 @@ export const NAVIGATION_GROUPS = [
     ],
   },
   {
+    label: 'ATENDIMENTO PRESENCIAL',
+    iconKey: 'clipboardList',
+    items: [
+      navigationItem('atendimento_presencial_ficha', 'clipboardList'),
+      navigationItem('atendimento_presencial_registros', 'clipboardList'),
+      navigationItem('atendimento_presencial_clientes', 'users'),
+    ],
+  },
+  {
     label: 'PROCURAR DATAS',
     iconKey: 'search',
     items: [
@@ -354,6 +399,9 @@ export const MODULE_KEYS_WITHOUT_AUTOMATIC_PROFILE_GRANT = [
   'configuracoes_procurar_datas',
   'pos_venda_atendimento_automatico',
   'superadmin_usuarios',
+  'atendimento_presencial_ficha',
+  'atendimento_presencial_registros',
+  'atendimento_presencial_clientes',
 ] as const satisfies readonly AppModuleKey[]
 
 export function getAppModuleDefinition(moduleKey: AppModuleKey) {

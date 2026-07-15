@@ -58,6 +58,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
         'VENDAS': false,
         'PROCURAR DATAS': false,
+        'ATENDIMENTO PRESENCIAL': false,
         'OPERAÇÃO': false,
         'CONFIGURAÇÕES': false,
     });

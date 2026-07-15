@@ -107,6 +107,24 @@ export interface EnderecoDecomposto {
   cidade: string | null;
   uf: string | null;
   cep: string | null;
+  faixaNumeracaoRemovida?: boolean;
+  tentativaDecomposicao?: number;
+}
+
+/**
+ * Regex para detectar complementos oficiais de faixa de numeração em logradouros.
+ * Exemplos que detecta:
+ *   " - de 1301/1302 ao fim"
+ *   " - de 100/101 ao fim"
+ *   " - de 1 a 999"
+ *   " - até 500/501"
+ * Não detecta CEPs (formato diferente) nem UF (sem dígitos).
+ */
+const FAIXA_NUMERACAO_RE = /\s+-\s+(?:de\s+\d+(?:\/\d+)?\s+(?:ao\s+fim|a\s+\d+(?:\/\d+)?)|at[eé]\s+\d+(?:\/\d+)?)(?=\s*,|\s*$)/gi;
+
+function removerFaixaNumeracaoOficial(endereco: string): { enderecoLimpo: string; faixaRemovida: boolean } {
+  const enderecoLimpo = endereco.replace(FAIXA_NUMERACAO_RE, '');
+  return { enderecoLimpo, faixaRemovida: enderecoLimpo !== endereco };
 }
 
 /**
@@ -114,13 +132,35 @@ export interface EnderecoDecomposto {
  * Exemplos suportados:
  *   "Rua Fulano, 201, Portão, Curitiba, PR - 81320-260"
  *   "Rua Fulano, 201, Portão, Curitiba - PR, 81320-260, Brasil"
+ *   "Rua Antônio Schiebel - de 1301/1302 ao fim, 1615, Boqueirão, Curitiba, PR - 81670-380"
  * Não lança erros. Campos não encontrados retornam null.
+ * Se a primeira tentativa deixar campos ausentes, tenta remover faixa de numeração oficial e repetir.
  */
 export function decomporEnderecoCompleto(endereco: string): EnderecoDecomposto {
   if (!endereco || endereco.trim().length === 0) {
     return { logradouro: null, numero: null, bairro: null, cidade: null, uf: null, cep: null };
   }
 
+  const resultado1 = decomporEnderecoCompletoInterno(endereco);
+
+  if (!resultado1.logradouro || !resultado1.numero || !resultado1.bairro) {
+    const { enderecoLimpo, faixaRemovida } = removerFaixaNumeracaoOficial(endereco);
+    if (faixaRemovida) {
+      const resultado2 = decomporEnderecoCompletoInterno(enderecoLimpo);
+      if (
+        (!resultado1.logradouro && resultado2.logradouro) ||
+        (!resultado1.numero && resultado2.numero) ||
+        (!resultado1.bairro && resultado2.bairro)
+      ) {
+        return { ...resultado2, faixaNumeracaoRemovida: true, tentativaDecomposicao: 2 };
+      }
+    }
+  }
+
+  return { ...resultado1, faixaNumeracaoRemovida: false, tentativaDecomposicao: 1 };
+}
+
+function decomporEnderecoCompletoInterno(endereco: string): EnderecoDecomposto {
   const cepMatch = endereco.match(/\b(\d{5})[\-\s]?(\d{3})\b/);
   const cep = cepMatch ? `${cepMatch[1]}${cepMatch[2]}` : null;
 
@@ -443,10 +483,38 @@ function motivoControladoProvider(motivo: string): string {
   return 'geocoding_provider_falhou';
 }
 
-export function montarPayloadEnderecoMere(enderecoCompleto: string): ValidarEnderecoRequest | null {
+export function montarPayloadEnderecoMere(
+  enderecoCompleto: string,
+  options?: { sessaoId?: string }
+): ValidarEnderecoRequest | null {
   if (!enderecoCompleto || enderecoCompleto.trim().length < 5) return null;
 
   const decomposto = decomporEnderecoCompleto(enderecoCompleto);
+
+  if (options?.sessaoId) {
+    const camposAusentes: string[] = [];
+    if (!decomposto.logradouro) camposAusentes.push('logradouro');
+    if (!decomposto.numero) camposAusentes.push('numero');
+    if (!decomposto.bairro) camposAusentes.push('bairro');
+    if (!decomposto.cidade) camposAusentes.push('cidade');
+    if (!decomposto.uf) camposAusentes.push('uf');
+    if (!decomposto.cep) camposAusentes.push('cep');
+    console.log(
+      `[posvenda-webhook] decomposicao endereco sessaoId=${options.sessaoId}` +
+      ` etapa=decompor` +
+      ` enderecoCompletoPresente=${!!enderecoCompleto}` +
+      ` logradouroPresente=${!!decomposto.logradouro}` +
+      ` numeroPresente=${!!decomposto.numero}` +
+      ` bairroPresente=${!!decomposto.bairro}` +
+      ` cidadePresente=${!!decomposto.cidade}` +
+      ` ufPresente=${!!decomposto.uf}` +
+      ` cepPresente=${!!decomposto.cep}` +
+      ` normalizacaoFaixaAplicada=${decomposto.faixaNumeracaoRemovida ?? false}` +
+      ` tentativaDecomposicao=${decomposto.tentativaDecomposicao ?? 1}` +
+      ` motivoFalha=${camposAusentes.length > 0 ? camposAusentes.join(';') : '-'}`
+    );
+  }
+
   return {
     logradouro: decomposto.logradouro ?? undefined,
     numero: decomposto.numero ?? undefined,
@@ -510,7 +578,7 @@ export async function geocodificarEnderecoMere(
   enderecoCompleto: string,
   options: GeocodificarEnderecoMereOptions = {}
 ): Promise<ResultadoGeocod> {
-  const form = montarPayloadEnderecoMere(enderecoCompleto);
+  const form = montarPayloadEnderecoMere(enderecoCompleto, { sessaoId: options.sessaoId });
   if (!form) {
     return { ok: false, motivo: 'endereco_incompleto_para_geocoding', geoCacheHit: false, geocodingProviderConsultado: false, geocodingProvider: null, geoCacheSalvo: false };
   }
@@ -557,10 +625,10 @@ export async function geocodificarEnderecoMere(
     }
     if (cache.motivo === 'confidence_baixa') {
       console.warn(`[posvenda-webhook] geo_cache rejeitado sessaoId=${options.sessaoId ?? '-'} motivo=confidence_baixa confidence=${cache.confidence ?? '-'} estrategia=geo_cache_match_seguro`);
-      console.log(`[posvenda-webhook] geo_cache insuficiente, tentando provider sessaoId=${options.sessaoId ?? '-'} motivo=confidence_baixa`);
+      console.log(`[posvenda-webhook] geo_cache encontrado mas rejeitado, tentando provider sessaoId=${options.sessaoId ?? '-'} motivo=confidence_baixa confidence=${cache.confidence ?? '-'}`);
+    } else {
+      console.log(`[posvenda-webhook] geo_cache miss, tentando provider existente sessaoId=${options.sessaoId ?? '-'} motivo=${cache.motivo}`);
     }
-
-    console.log(`[posvenda-webhook] geo_cache miss, tentando provider existente sessaoId=${options.sessaoId ?? '-'} motivo=${cache.motivo}`);
   } catch (error) {
     const motivo = error instanceof Error ? error.message : String(error);
     console.warn(`[posvenda-webhook] geo_cache erro, tentando provider existente sessaoId=${options.sessaoId ?? '-'} motivo=${motivo}`);

@@ -26,6 +26,7 @@ import {
   respostaPedidoConfirmadoAlterarEscolherAcao,
   respostaPedidoConfirmadoConfirmarEntrega,
   respostaPedidoNaoLocalizado,
+  respostaErroTecnicoBuscaAgenda,
   respostaConfirmacaoReagendamentoAmbigua,
   respostaConfirmarReagendamentoFinal,
   respostaDatasEncontradas,
@@ -654,7 +655,36 @@ async function prepararBuscaAgendaPorDocumento(params: {
   metadataBusca: Record<string, unknown>;
 }> {
   const buscaAgendaEm = new Date().toISOString();
-  const resultadoBusca = await buscarAgendamentosPorDocumento(params.documento);
+  const buscaInicioMs = Date.now();
+  let resultadoBusca = await buscarAgendamentosPorDocumento(params.documento);
+  const buscaDuracaoMs = Date.now() - buscaInicioMs;
+  let retryExecutado = false;
+
+  if (!resultadoBusca.ok) {
+    console.log(
+      `[posvenda-webhook] busca agenda erro tecnico sessaoId=${params.sessaoId}` +
+      ` tentativa=1 documentoTamanho=${params.documento.length}` +
+      ` consultaStatus=erro erroTipo=transitorio duracaoMs=${buscaDuracaoMs} retryExecutado=false`
+    );
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const retryInicioMs = Date.now();
+    resultadoBusca = await buscarAgendamentosPorDocumento(params.documento);
+    const retryDuracaoMs = Date.now() - retryInicioMs;
+    retryExecutado = true;
+    console.log(
+      `[posvenda-webhook] busca agenda retry sessaoId=${params.sessaoId}` +
+      ` tentativa=2 documentoTamanho=${params.documento.length}` +
+      ` consultaStatus=${resultadoBusca.ok ? 'ok' : 'erro'}` +
+      ` duracaoMs=${retryDuracaoMs} retryExecutado=true`
+    );
+  } else {
+    console.log(
+      `[posvenda-webhook] busca agenda ok sessaoId=${params.sessaoId}` +
+      ` tentativa=1 documentoTamanho=${params.documento.length}` +
+      ` consultaStatus=ok duracaoMs=${buscaDuracaoMs} retryExecutado=false` +
+      ` total=${resultadoBusca.total}`
+    );
+  }
   const tentativasDocumentoAtual = params.metadataAtual?.tentativas_documento as number | undefined;
   const metadataRetentativa =
     params.modo === 'retentativa_pedido_negado'
@@ -775,17 +805,30 @@ async function prepararBuscaAgendaPorDocumento(params: {
       console.log(`[posvenda-webhook] pedido nao localizado sessaoId=${params.sessaoId}`);
     }
   } else {
-    novoEstado = 'erro_busca_agenda';
-    metadataBusca = {
-      ...(params.metadataAtual ?? {}),
-      ...metadataRetentativa,
-      agendamentos_encontrados: [],
-      total_agendamentos_encontrados: 0,
-      busca_agenda_status: 'erro',
-      busca_agenda_erro: resultadoBusca.erro.substring(0, 200),
-      busca_agenda_em: buscaAgendaEm,
-    };
-    console.log(`[posvenda-webhook] erro busca agenda sessaoId=${params.sessaoId} erro=${resultadoBusca.erro.substring(0, 100)}`);
+    novoEstado = 'erro_tecnico_busca_agenda';
+    novoStatus = 'transferido_humano';
+    metadataBusca = await construirMetadataComResposta({
+      sessaoId: params.sessaoId,
+      metadataAtual: {
+        ...(params.metadataAtual ?? {}),
+        ...metadataRetentativa,
+        agendamentos_encontrados: [],
+        total_agendamentos_encontrados: 0,
+        busca_agenda_status: 'erro_tecnico',
+        busca_agenda_erro: resultadoBusca.erro.substring(0, 200),
+        busca_agenda_em: buscaAgendaEm,
+        busca_agenda_retry_executado: retryExecutado,
+        precisa_humano_por_regra: true,
+        motivo_bloqueio_busca: 'erro_tecnico_busca_agenda',
+      },
+      resposta: respostaErroTecnicoBuscaAgenda(),
+      estado: novoEstado,
+      contactId: params.contactId,
+      ticketId: params.ticketId,
+      digisacMessageId: params.messageId,
+      telefoneAutorizado: params.telefoneAutorizado,
+    });
+    console.log(`[posvenda-webhook] erro tecnico busca agenda sessaoId=${params.sessaoId} retryExecutado=${retryExecutado} erro=${resultadoBusca.erro.substring(0, 100)}`);
   }
 
   return { novoEstado, novoStatus, motivoFalha, metadataBusca };
@@ -1611,6 +1654,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
             await supabase.from('atendimento_automatico_sessoes').update({
               estado: 'transferido_humano',
               status: 'transferido_humano',
+              pedido_confirmado: true,
               metadata: novoMetadataBloqueio,
               ultima_mensagem_cliente: text.substring(0, 200),
               ultima_mensagem_em: new Date().toISOString(),
@@ -1656,6 +1700,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
             .from('atendimento_automatico_sessoes')
             .update({
               estado: 'pedido_confirmado_acao_recebida',
+              pedido_confirmado: true,
               metadata: novoMetadata,
               ultima_mensagem_cliente: text.substring(0, 200),
               ultima_mensagem_em: new Date().toISOString(),
@@ -1721,6 +1766,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
             .from('atendimento_automatico_sessoes')
             .update({
               estado: novoEstado,
+              pedido_confirmado: true,
               metadata: novoMetadata,
               ultima_mensagem_cliente: text.substring(0, 200),
               ultima_mensagem_em: new Date().toISOString(),
@@ -1776,6 +1822,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
             .update({
               estado: 'aguardando_novo_documento_ou_esclarecimento',
               status: 'ativa',
+              pedido_confirmado: false,
               metadata: novoMetadata,
               ultima_mensagem_cliente: text.substring(0, 200),
               ultima_mensagem_em: new Date().toISOString(),
@@ -1986,6 +2033,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
 
           await supabase.from('atendimento_automatico_sessoes').update({
             estado: 'aguardando_confirmacao_endereco',
+            endereco_confirmado: false,
             metadata: novoMetadata,
             ultima_mensagem_cliente: text.substring(0, 200),
             ultima_mensagem_em: new Date().toISOString(),
@@ -2130,6 +2178,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
 
           await supabase.from('atendimento_automatico_sessoes').update({
             estado: 'aguardando_data_desejada',
+            endereco_confirmado: true,
             metadata: novoMetadata,
             ultima_mensagem_cliente: text.substring(0, 200),
             ultima_mensagem_em: new Date().toISOString(),
@@ -2182,6 +2231,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           await supabase.from('atendimento_automatico_sessoes').update({
             estado: 'transferido_humano',
             status: 'transferido_humano',
+            endereco_confirmado: false,
             metadata: novoMetadata,
             ultima_mensagem_cliente: text.substring(0, 200),
             ultima_mensagem_em: new Date().toISOString(),
@@ -3531,6 +3581,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
 
           await supabase.from('atendimento_automatico_sessoes').update({
             estado: 'aguardando_confirmacao_endereco',
+            endereco_confirmado: false,
             metadata: novoMetadata,
             ultima_mensagem_cliente: text.substring(0, 200),
             ultima_mensagem_em: new Date().toISOString(),
@@ -3932,7 +3983,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
     // Se CPF foi detectado e ancora validada, processar documento imediatamente
     if (documentoDetectado && ancoraInfo) {
       const telefoneAutorizadoFlag = telefoneAutorizado(telefone);
-      const { novoEstado, metadataBusca } = await prepararBuscaAgendaPorDocumento({
+      const { novoEstado, novoStatus, motivoFalha, metadataBusca } = await prepararBuscaAgendaPorDocumento({
         documento: documentoDetectado,
         documentoAnterior: null,
         modo: 'inicial',
@@ -3948,6 +3999,8 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         .from('atendimento_automatico_sessoes')
         .update({
           estado: novoEstado,
+          ...(novoStatus ? { status: novoStatus } : {}),
+          ...(motivoFalha ? { motivo_falha: motivoFalha } : {}),
           metadata: metadataBusca,
           updated_at: new Date().toISOString(),
         })

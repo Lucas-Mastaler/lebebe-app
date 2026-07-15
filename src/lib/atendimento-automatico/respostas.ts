@@ -52,7 +52,8 @@ export type TipoRespostaSugerida =
   | 'reagendamento_dry_run'
   | 'reagendamento_confirmado'
   | 'transferido_humano_erro_reagendamento'
-  | 'bloqueio_cliente_retira_alteracao';
+  | 'bloqueio_cliente_retira_alteracao'
+  | 'erro_tecnico_busca_agenda';
 
 export type RespostaSugerida = {
   texto: string;
@@ -73,6 +74,13 @@ export function respostaPedidoNaoLocalizado(): RespostaSugerida {
   return {
     texto: 'Não encontrei pedido com esse CPF/CNPJ. Pode conferir se o documento do titular da compra está correto e me enviar novamente?',
     tipo: 'pedido_nao_localizado',
+  };
+}
+
+export function respostaErroTecnicoBuscaAgenda(): RespostaSugerida {
+  return {
+    texto: 'Tivemos um problema técnico ao consultar seu pedido no momento. Vou encaminhar seu atendimento para nossa equipe verificar manualmente.',
+    tipo: 'erro_tecnico_busca_agenda',
   };
 }
 

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GrupoAgendamento } from '@/lib/google/sheets-service-account';
 import {
+  decomporEnderecoCompleto,
   executarConsultaDatasMere,
   filtrarDatasDisponiveisPorAcaoMere,
   geocodificarEnderecoMere,
@@ -577,5 +578,117 @@ describe('consulta-datas-mere', () => {
     expect(filtro.datasExibidas).toEqual([]);
     expect(filtro.removidasMesmaData).toBe(1);
     expect(filtro.removidasContrariasAcao).toBe(2);
+  });
+
+  describe('decomporEnderecoCompleto - faixa de numeracao oficial', () => {
+    it('endereco comum sem faixa de numeracao', () => {
+      const r = decomporEnderecoCompleto('Rua Fulano, 201, Portao, Curitiba, PR - 81320-260');
+      expect(r.logradouro).toBe('Rua Fulano');
+      expect(r.numero).toBe('201');
+      expect(r.bairro).toBe('Portao');
+      expect(r.cidade).toBe('Curitiba');
+      expect(r.uf).toBe('PR');
+      expect(r.cep).toBe('81320260');
+      expect(r.faixaNumeracaoRemovida).toBe(false);
+    });
+
+    it('endereco com - de 1301/1302 ao fim', () => {
+      const r = decomporEnderecoCompleto('Rua Antônio Schiebel - de 1301/1302 ao fim, 1615, Boqueirão, Curitiba, PR - 81670-380');
+      expect(r.logradouro).toBe('Rua Antônio Schiebel');
+      expect(r.numero).toBe('1615');
+      expect(r.bairro).toBe('Boqueirão');
+      expect(r.cidade).toBe('Curitiba');
+      expect(r.uf).toBe('PR');
+      expect(r.cep).toBe('81670380');
+      expect(r.faixaNumeracaoRemovida).toBe(true);
+      expect(r.tentativaDecomposicao).toBe(2);
+    });
+
+    it('1301 e 1302 nao sao interpretados como numero do imovel', () => {
+      const r = decomporEnderecoCompleto('Rua Antônio Schiebel - de 1301/1302 ao fim, 1615, Boqueirão, Curitiba, PR - 81670-380');
+      expect(r.numero).not.toBe('1301');
+      expect(r.numero).not.toBe('1302');
+      expect(r.numero).toBe('1615');
+    });
+
+    it('endereco com faixa ate', () => {
+      const r = decomporEnderecoCompleto('Rua Exemplo - até 500/501, 320, Bairro, Cidade, PR - 80000-000');
+      expect(r.logradouro).toBe('Rua Exemplo');
+      expect(r.numero).toBe('320');
+      expect(r.bairro).toBe('Bairro');
+      expect(r.cidade).toBe('Cidade');
+      expect(r.uf).toBe('PR');
+      expect(r.cep).toBe('80000000');
+      expect(r.faixaNumeracaoRemovida).toBe(true);
+    });
+
+    it('endereco com faixa - de 1 a 999', () => {
+      const r = decomporEnderecoCompleto('Rua Exemplo - de 1 a 999, 450, Bairro, Cidade, PR - 80000-000');
+      expect(r.logradouro).toBe('Rua Exemplo');
+      expect(r.numero).toBe('450');
+      expect(r.bairro).toBe('Bairro');
+      expect(r.cidade).toBe('Cidade');
+      expect(r.uf).toBe('PR');
+      expect(r.cep).toBe('80000000');
+      expect(r.faixaNumeracaoRemovida).toBe(true);
+    });
+
+    it('endereco com barra na descricao oficial da faixa', () => {
+      const r = decomporEnderecoCompleto('Rua Exemplo - de 100/101 ao fim, 250, Bairro, Cidade, PR - 80000-000');
+      expect(r.logradouro).toBe('Rua Exemplo');
+      expect(r.numero).toBe('250');
+      expect(r.faixaNumeracaoRemovida).toBe(true);
+    });
+
+    it('CEP formatado e sem formatacao', () => {
+      const r1 = decomporEnderecoCompleto('Rua X, 100, Bairro, Cidade, PR - 80000-000');
+      expect(r1.cep).toBe('80000000');
+      const r2 = decomporEnderecoCompleto('Rua X, 100, Bairro, Cidade, PR 80000000');
+      expect(r2.cep).toBe('80000000');
+    });
+
+    it('endereco realmente incompleto', () => {
+      const r = decomporEnderecoCompleto('Curitiba, PR');
+      expect(r.logradouro).toBeTruthy();
+      expect(r.numero).toBeNull();
+      expect(r.bairro).toBeNull();
+    });
+
+    it('preserva acentos no logradouro', () => {
+      const r = decomporEnderecoCompleto('Rua Antônio Schiebel - de 1301/1302 ao fim, 1615, Boqueirão, Curitiba, PR - 81670-380');
+      expect(r.logradouro).toContain('Antônio');
+      expect(r.bairro).toContain('Boqueirão');
+    });
+
+    it('numero correto e 1615 para endereco de referencia', () => {
+      const r = decomporEnderecoCompleto('Rua Antônio Schiebel - de 1301/1302 ao fim, 1615, Boqueirão, Curitiba, PR - 81670-380');
+      expect(r.numero).toBe('1615');
+    });
+  });
+
+  describe('montarPayloadEnderecoMere com faixa de numeracao', () => {
+    it('monta payload correto para endereco com faixa de numeracao', () => {
+      const payload = montarPayloadEnderecoMere('Rua Antônio Schiebel - de 1301/1302 ao fim, 1615, Boqueirão, Curitiba, PR - 81670-380');
+      expect(payload).toMatchObject({
+        logradouro: 'Rua Antônio Schiebel',
+        numero: '1615',
+        bairro: 'Boqueirão',
+        cidade: 'Curitiba',
+        uf: 'PR',
+        cep: '81670380',
+      });
+    });
+
+    it('endereco_incompleto_para_geocoding so ocorre quando faltam campos reais', async () => {
+      const resultado = await executarConsultaDatasMere({
+        grupo: grupoBase({
+          endereco_completo: 'Rua Antônio Schiebel - de 1301/1302 ao fim, 1615, Boqueirão, Curitiba, PR - 81670-380',
+        }),
+        dataDesejadaISO: '2026-08-03',
+        sessaoId: 'sessao-faixa',
+      });
+
+      expect(resultado.motivo).not.toBe('endereco_incompleto_para_geocoding');
+    });
   });
 });

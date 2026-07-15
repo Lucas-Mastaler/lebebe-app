@@ -39,14 +39,26 @@ export interface DigisacTicket {
 }
 
 export interface DigisacMensagem {
-  id: string
-  ticketId?: string
+  id?: string
+  ticketId?: string | null
+  contactId?: string | null
+  serviceId?: string | null
   type?: string
   text?: string
   isFromMe?: boolean
   visible?: boolean
   isComment?: boolean
   timestamp?: number | string
+  data?: {
+    ticketTransfer?: boolean
+    [key: string]: unknown
+  } | null
+  deletedAt?: string | null
+  file?: unknown
+  preview?: unknown
+  thumbnail?: unknown
+  quotedMessage?: unknown
+  origin?: string | null
 }
 
 export interface BuscarTicketsOptions {

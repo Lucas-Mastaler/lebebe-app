@@ -2,12 +2,16 @@ import { NextResponse } from 'next/server'
 import { checkAccessWindowForUser } from '@/lib/auth/access-window'
 import { requireModuleAccess } from '@/lib/auth/module-access'
 import type { AllowedUser } from '@/lib/auth/api-auth'
+import {
+  migrarFichaDadosRascunho,
+  validarFichaDadosRascunho,
+  type FichaDadosRascunho,
+} from './ficha-schema'
 
 export const DRAFT_EXPIRATION_DAYS = 5
 export const DRAFT_PAYLOAD_MAX_BYTES = 4096
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const CHAVES_DADOS_RASCUNHO = new Set(['notaTecnica'])
 
 export type PerfilAtendimento = 'consultora' | 'supervisora_loja' | 'gestao' | 'superadmin' | string
 
@@ -41,9 +45,7 @@ export type AtendimentoPresencialRow = {
   updated_at: string
 }
 
-export type DadosRascunho = {
-  notaTecnica?: string
-}
+export type DadosRascunho = FichaDadosRascunho
 
 export type AtendimentoPresencialDTO = {
   id: string
@@ -73,7 +75,7 @@ export type ContextoAtendimento = {
 
 export type ValidacaoRascunho =
   | { ok: true; dados: DadosRascunho }
-  | { ok: false; message: string; field: 'dadosRascunho' | 'notaTecnica' }
+  | { ok: false; message: string; field: string }
 
 export function isUuid(valor: unknown): valor is string {
   return typeof valor === 'string' && UUID_RE.test(valor)
@@ -91,37 +93,7 @@ export function rascunhoExpirado(expiraEm: string | null | undefined, now = new 
 }
 
 export function validarDadosRascunho(valor: unknown): ValidacaoRascunho {
-  if (valor === undefined || valor === null) return { ok: true, dados: {} }
-
-  if (typeof valor !== 'object' || Array.isArray(valor)) {
-    return { ok: false, field: 'dadosRascunho', message: 'Dados do rascunho invalidos' }
-  }
-
-  const payload = valor as Record<string, unknown>
-  const chavesInvalidas = Object.keys(payload).filter((chave) => !CHAVES_DADOS_RASCUNHO.has(chave))
-  if (chavesInvalidas.length > 0) {
-    return { ok: false, field: 'dadosRascunho', message: 'Dados do rascunho contem campos nao permitidos' }
-  }
-
-  const dados: DadosRascunho = {}
-  if (payload.notaTecnica !== undefined) {
-    if (typeof payload.notaTecnica !== 'string') {
-      return { ok: false, field: 'notaTecnica', message: 'Nota tecnica invalida' }
-    }
-
-    const notaTecnica = payload.notaTecnica.trim()
-    if (notaTecnica.length > 1000) {
-      return { ok: false, field: 'notaTecnica', message: 'Nota tecnica deve ter no maximo 1000 caracteres' }
-    }
-    if (notaTecnica) dados.notaTecnica = notaTecnica
-  }
-
-  const tamanho = Buffer.byteLength(JSON.stringify(dados), 'utf8')
-  if (tamanho > DRAFT_PAYLOAD_MAX_BYTES) {
-    return { ok: false, field: 'dadosRascunho', message: 'Dados do rascunho excedem o limite permitido' }
-  }
-
-  return { ok: true, dados }
+  return validarFichaDadosRascunho(valor)
 }
 
 export function serializarAtendimentoPresencial(row: AtendimentoPresencialRow): AtendimentoPresencialDTO {
@@ -132,7 +104,7 @@ export function serializarAtendimentoPresencial(row: AtendimentoPresencialRow): 
     unidadeId: row.unidade_id,
     status: row.status,
     draftClientId: row.draft_client_id,
-    dadosRascunho: row.dados_rascunho ?? {},
+    dadosRascunho: migrarFichaDadosRascunho(row.dados_rascunho),
     iniciadoEm: row.iniciado_em,
     ultimaAtividadeEm: row.ultima_atividade_em,
     expiraEm: row.expira_em,

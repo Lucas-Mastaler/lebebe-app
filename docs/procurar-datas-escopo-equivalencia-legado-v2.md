@@ -34,6 +34,46 @@ Encerrar temporariamente a investigação e monitorar o uso diário. Se aparecer
 
 ---
 
+## 2026-07-15 - Correção: `confidence` interna normalizada (não copia `importance` do provider)
+
+Status: implementado. Não altera motor, ranking, classificacao, OSRM, Haversine, Calendar ou Sheets.
+
+### Problema confirmado
+- LocationIQ copiava `candidate.importance` diretamente como `confidence` no `EnderecoValidado`.
+- `importance` mede relevância/popularidade do lugar — não a qualidade da correspondência.
+- Endereços exatos e validados com `importance=0.0001` eram salvos com `confidence=0.0001` no `geo_cache`.
+- Pelo threshold `GEO_CACHE_CONFIDENCE_MINIMA_HIT_SEGURO = 0.70`, esses registros eram rejeitados como `confidence_baixa`, causando reconsultas desnecessárias ao provider.
+- Google Geocoding salvava `confidence: null` em todos os registros.
+- Apps Script não calculava `confidence`.
+- MCP Supabase confirmou: 85 registros LocationIQ com confidence < 0.70 (mínimo 0.0001), 23 Google com null.
+
+### Correção
+- Criada função pura `calcularConfiancaInternaEndereco` em `src/lib/procurar-datas/confianca-interna.ts`.
+- A função calcula `confidence` na escala 0–1 baseada apenas nas validações estruturais já existentes (número, logradouro, cidade, UF, CEP, bairro, partial_match, location_type).
+- `importance` do provider NÃO é usado no cálculo — é preservado como `providerImportance` no `EnderecoValidado` apenas para logs.
+- Aplicada nos 3 providers: LocationIQ, Google Geocoding, Apps Script.
+
+### Escala adotada
+- 0.97: exato com Google ROOFTOP sem partial_match
+- 0.95: exato com número confirmado e campos estruturais ok
+- 0.90: exato com bairro divergente
+- 0.85: exato com Google partial_match
+- 0.85: aproximado confiável com CEP ok
+- 0.80: aproximado confiável sem CEP confirmado
+- 0.80: Apps Script (sem validação estrutural completa)
+- 0.75: fallback quando validação incompleta
+
+### Compatibilidade com registros antigos
+- Registros antigos do LocationIQ com `confidence < 0.70` continuam sendo rejeitados pela regra de 2026-07-10.
+- Ao rejeitar, o fluxo consulta o provider novamente, e se aceito, sobrescreve o cache com a nova `confidence` interna.
+- Registros antigos do Google com `confidence: null` são tratados como `confidence=1` pelo `rowParaEnderecoValidado` — comportamento existente, não alterado.
+- Não há batch update nem migração de dados.
+
+### Logs estruturados
+- `[confianca-interna]` com `provider`, `providerImportance`, `confidenceInterna`, `classificacao`, campos validados e `motivo`.
+
+---
+
 ## 2026-07-10 - Regra de cache: `confidence` baixa nao e hit seguro
 
 Status: implementado no helper compartilhado `buscarEnderecoNoGeoCache`. Nao altera motor, ranking, classificacao, OSRM, Haversine, Calendar ou Sheets.

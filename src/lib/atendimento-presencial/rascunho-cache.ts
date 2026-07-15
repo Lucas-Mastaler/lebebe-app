@@ -1,4 +1,5 @@
 import type { DadosRascunho } from './rascunhos'
+import { validarFichaDadosRascunho } from './ficha-schema'
 
 export type RascunhoCache = {
   draftClientId: string
@@ -36,14 +37,15 @@ export function carregarCacheRascunho(
   try {
     const parsed = JSON.parse(raw) as Partial<RascunhoCache>
     if (parsed.usuarioId !== usuarioId || parsed.draftClientId !== draftClientId) return null
+    const validacao = validarFichaDadosRascunho(parsed.dadosRascunho)
+    if (!validacao.ok) return null
+
     return {
       draftClientId,
       usuarioId,
       atendimentoId: typeof parsed.atendimentoId === 'string' ? parsed.atendimentoId : null,
       version: typeof parsed.version === 'number' ? parsed.version : null,
-      dadosRascunho: typeof parsed.dadosRascunho === 'object' && parsed.dadosRascunho !== null
-        ? parsed.dadosRascunho
-        : {},
+      dadosRascunho: validacao.dados,
       atualizadoEm: typeof parsed.atualizadoEm === 'string' ? parsed.atualizadoEm : '',
       sincronizado: parsed.sincronizado === true,
     }

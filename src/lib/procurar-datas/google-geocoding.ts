@@ -1,5 +1,6 @@
 import type { EnderecoValidado, ValidarEnderecoRequest } from './contratos'
 import { normalizarCep, normalizarNumeroEndereco, normalizarTexto } from './endereco-cache'
+import { calcularConfiancaInternaEndereco } from './confianca-interna'
 
 export type GoogleGeocodingEvent =
   | { tipo: 'google_fallback_skip_not_difficult' }
@@ -397,6 +398,20 @@ export function validarResultadoGoogle(
 
   const bairroOkFinal = sinaisFortes ? true : bairroOk
 
+  const confiancaInterna = calcularConfiancaInternaEndereco({
+    match: ancoragemUrbanaForteSemNumero ? 'aproximado_confiavel' : 'exato',
+    numeroOk: !ancoragemUrbanaForteSemNumero,
+    logradouroOk,
+    cidadeOk,
+    ufOk,
+    cepOk,
+    bairroOk: bairroOkFinal,
+    partialMatch,
+    locationType,
+    provider: 'google_geocoding',
+    providerImportance: null,
+  })
+
   return {
     valido: true,
     resultado: {
@@ -412,7 +427,8 @@ export function validarResultadoGoogle(
       numeroOk: !ancoragemUrbanaForteSemNumero,
       numeroObrigatorio,
       motivo: ancoragemUrbanaForteSemNumero ? 'aceito_sem_numero_confirmado' : 'aceito',
-      confidence: null,
+      confidence: confiancaInterna.confidence,
+      providerImportance: null,
       address: {
         road: componenteTexto(result, 'route') || String(form.logradouro ?? ''),
         house_number: componenteTexto(result, 'street_number') || String(form.numero ?? ''),

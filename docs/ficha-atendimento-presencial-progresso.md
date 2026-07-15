@@ -1152,7 +1152,25 @@ Roteiro documentado para executar com usuario autenticado:
 19. Testar usuario sem modulo.
 20. Testar cron em ambiente seguro.
 
-Validacao manual autenticada desta Fase 3 ainda nao foi executada neste turno.
+Validacao manual autenticada desta Fase 3 foi executada posteriormente pelo usuario e aprovada antes da Fase 4.
+
+### Validacao manual registrada em 2026-07-15
+
+O usuario confirmou validacao manual bem-sucedida para:
+
+- criacao de rascunho;
+- unidade automatica;
+- selecao de unidade;
+- regras de consultora;
+- autosave;
+- recuperacao apos refresh;
+- recuperacao apos fechar e reabrir;
+- cache local;
+- sincronizacao apos offline;
+- prevencao de conflito entre abas;
+- destaque visual de `RASCUNHO`;
+- permissoes;
+- vinculo com unidades.
 
 ### Pendencias
 
@@ -1178,4 +1196,349 @@ Validacao manual autenticada desta Fase 3 ainda nao foi executada neste turno.
 
 ### Proximo passo recomendado
 
-Executar validacao manual autenticada da Fase 3 com perfil consultora/supervisora e, somente depois, planejar a Fase 4 da Ficha funcional sem misturar fechamento comercial.
+Fase 3 validada manualmente pelo usuario. Proximo passo: Fase 4 da Ficha funcional sem misturar fechamento comercial.
+
+## Fase 4 - Ficha de Atendimento real em modo rascunho (2026-07-15)
+
+Status: implementada localmente.
+
+### Escopo entregue
+
+- Campo tecnico de teste removido da rota ativa da Ficha.
+- `/atendimento-presencial/ficha` agora usa uma ficha real em seis etapas.
+- Atendimento continua somente como `status = 'rascunho'`.
+- Nenhuma conclusao funcional foi criada.
+- Nenhuma migration nova foi criada.
+- Nenhuma tabela nova foi criada.
+- Dados funcionais da ficha ficam temporariamente em `dados_rascunho` validado.
+- `cliente_id` continua como campo proprio de `atendimento_presencial_atendimentos`.
+
+### Etapas da ficha
+
+1. Cliente.
+2. Crianca.
+3. Interesses.
+4. Resultado do atendimento.
+5. Observacoes.
+6. Revisao.
+
+A interface mostra `Etapa X de 6`, barra de progresso, botoes grandes e acao principal fixa no rodape da ficha quando ha rascunho ativo.
+
+### Schema do rascunho
+
+Arquivo central: `src/lib/atendimento-presencial/ficha-schema.ts`.
+
+Payload permitido:
+
+- `cliente`
+- `criancas`
+- `departamentos`
+- `produtosInteresse`
+- `resultadoAtendimento`
+- `motivosResultado`
+- `motivoOutro`
+- `observacoes`
+- `etapaAtual`
+
+Chaves desconhecidas sao rejeitadas. `unidadeId`, `consultoraUsuarioId`, `status`, `version` e outros IDs protegidos nao sao aceitos dentro do JSONB.
+
+### Compatibilidade com Fase 3
+
+- Rascunhos antigos com `notaTecnica` nao quebram ao abrir.
+- `notaTecnica` e aceita apenas como chave legada de entrada.
+- O valor tecnico antigo e ignorado na migracao de payload.
+- A interface final nao exibe `notaTecnica`.
+- Nao foi criada migration SQL para limpar `notaTecnica`.
+
+### Cliente
+
+- Busca cliente existente por nome ou telefone usando a API ja validada.
+- Seleciona cliente existente.
+- Cadastra nova cliente dentro da ficha.
+- Cadastro reaproveita a API de clientes e a regra de duplicidade por telefone.
+- Apos selecionar ou cadastrar, o atendimento e salvo com `cliente_id`.
+- Dados completos da cliente nao sao duplicados no JSONB.
+- Parentesco continua pertencendo ao cadastro da cliente.
+
+### Criancas
+
+- Permite multiplas criancas.
+- Cada crianca usa identificador local estavel.
+- Situacoes implementadas: `gestacao`, `ja_nasceu`, `presente_outra_pessoa`, `nao_informado`.
+- Gestacao aceita data local `YYYY-MM-DD` sem conversao UTC.
+- Crianca ja nascida usa botoes para meses `1..11` e anos `1..6`.
+- Nome da crianca e opcional.
+- Sexo e opcional.
+- Remocao fica disponivel antes de conclusao futura.
+
+### Interesses
+
+- Departamentos com chaves tecnicas estaveis:
+  - `p_pesada`
+  - `moveis`
+  - `p_leve`
+  - `enxoval`
+  - `decoracao`
+  - `roupinhas`
+- Selecao multipla por botoes/cartoes.
+- Produtos de interesse em tags livres.
+- Enter adiciona produto e nao envia o formulario inteiro.
+- Item vazio e ignorado.
+- Duplicidade identica no rascunho e ignorada.
+- Produtos podem ser removidos.
+
+### Resultado e motivos
+
+- Resultado salvo apenas no rascunho: `sim`, `nao`, `negociacao`.
+- Motivos agrupados por Produto, Condicao comercial, Prazo e necessidade, Decisao e Outro.
+- Motivos sao multisselecao.
+- `Outro` exige complemento para avancar.
+- Numero do lancamento nao foi implementado.
+
+### Observacoes
+
+- Campo opcional multilinha.
+- Preserva quebras de linha.
+- Limite de caracteres aplicado no frontend/schema.
+- Conteudo nao e registrado em logs.
+
+### Revisao
+
+- Mostra resumo de unidade, consultora, cliente, telefone, parentesco, criancas, departamentos, produtos, resultado, motivos e observacoes.
+- Cada bloco possui acao `Editar` para retornar a etapa correspondente.
+- `Concluir atendimento` aparece desabilitado.
+- Aviso exibido: o numero do lancamento sera solicitado ao concluir a ficha.
+
+### Autosave e cache
+
+- Autosave da Fase 3 foi preservado.
+- Cache local permanece separado por usuario e `draft_client_id`.
+- Cache agora valida schema ao recuperar.
+- Payload invalido no cache e descartado.
+- Cache local nao sobrescreve banco mais novo quando a versao local e menor.
+- Ao voltar online, a tela tenta sincronizar novamente.
+- Estados mantidos: ocioso, salvando, salvo, offline, conflito e erro.
+
+### APIs
+
+Rotas reaproveitadas:
+
+- `GET /api/atendimento-presencial/atendimentos/rascunhos`
+- `POST /api/atendimento-presencial/atendimentos/rascunhos`
+- `GET /api/atendimento-presencial/atendimentos/[id]/rascunho`
+- `PATCH /api/atendimento-presencial/atendimentos/[id]/rascunho`
+- APIs existentes de clientes.
+
+Alteracao funcional no `PATCH`: agora aceita `clienteId` fora do JSONB, valida cliente ativa e atualiza `cliente_id` no atendimento com controle de versao.
+
+### Validacao MCP
+
+Consulta MCP Supabase em 2026-07-15 confirmou:
+
+- `public.atendimento_presencial_clientes` existe.
+- `public.atendimento_presencial_atendimentos` existe.
+- `public.atendimento_presencial_criancas` nao existe.
+- `public.atendimento_presencial_departamentos` nao existe.
+- `public.atendimento_presencial_produtos_interesse` nao existe.
+- `public.atendimento_presencial_motivos` nao existe.
+- `public.atendimento_presencial_fechamentos` nao existe.
+- Banco atual: 2 clientes, 3 atendimentos/rascunhos, 9 vinculos usuario-unidade.
+- Colunas reais de clientes e atendimentos conferidas antes de alterar persistencia.
+
+### Arquivos criados
+
+- `src/lib/atendimento-presencial/ficha-schema.ts`
+- `src/lib/atendimento-presencial/ficha-schema.test.ts`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+
+### Arquivos alterados
+
+- `src/app/atendimento-presencial/ficha/page.tsx`
+- `src/app/atendimento-presencial/ficha/PageClient.tsx`
+- `src/lib/atendimento-presencial/rascunhos.ts`
+- `src/lib/atendimento-presencial/rascunhos.test.ts`
+- `src/lib/atendimento-presencial/rascunho-cache.ts`
+- `src/lib/atendimento-presencial/rascunho-cache.test.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts`
+- `docs/ficha-atendimento-presencial-progresso.md`
+- `docs/ia/log_progress.md`
+
+### Comandos e resultados
+
+- `npm run test -- src/lib/atendimento-presencial/ficha-schema.test.ts src/lib/atendimento-presencial/rascunhos.test.ts src/lib/atendimento-presencial/rascunho-cache.test.ts src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts`: passou, 5 arquivos e 23 testes.
+- `npm run test -- src/lib/atendimento-presencial/telefone.test.ts src/lib/atendimento-presencial/clientes.test.ts src/lib/atendimento-presencial/migration.test.ts src/lib/atendimento-presencial/ficha-schema.test.ts src/lib/atendimento-presencial/rascunhos.test.ts src/lib/atendimento-presencial/rascunho-cache.test.ts src/lib/atendimento-presencial/rascunhos-migration.test.ts src/app/api/atendimento-presencial/clientes/route.test.ts src/app/api/atendimento-presencial/clientes/[id]/route.test.ts src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts src/app/api/cron/atendimento-presencial-limpar-rascunhos/route.test.ts`: passou, 12 arquivos e 63 testes.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint ...`: passou nos arquivos da Fase 4.
+- `npm run build`: primeira tentativa no sandbox falhou com `EPERM` ao remover `.next/app-path-routes-manifest.json`; repetido fora do sandbox, passou.
+- `git diff --check`: passou, com avisos de CRLF do checkout.
+
+### Teste manual pendente
+
+Ainda nao executado neste turno:
+
+1. Entrar como consultora.
+2. Iniciar nova ficha.
+3. Buscar cliente por nome parcial.
+4. Buscar por trecho de telefone.
+5. Selecionar cliente.
+6. Trocar cliente.
+7. Cadastrar cliente nova dentro da ficha.
+8. Adicionar uma crianca em gestacao.
+9. Adicionar uma crianca ja nascida.
+10. Selecionar idade em meses.
+11. Selecionar idade em anos.
+12. Selecionar varios departamentos.
+13. Adicionar produtos usando Enter.
+14. Remover produto.
+15. Selecionar resultado.
+16. Selecionar varios motivos.
+17. Testar Outro.
+18. Digitar observacoes.
+19. Atualizar pagina.
+20. Confirmar recuperacao.
+21. Fechar e reabrir.
+22. Confirmar etapa recuperada.
+23. Ficar offline.
+24. Alterar dados.
+25. Voltar online.
+26. Confirmar sincronizacao.
+27. Abrir revisao.
+28. Editar cada secao.
+29. Testar no celular.
+30. Confirmar que nao existe conclusao funcional ainda.
+
+### Pendencias
+
+- Fazer validacao manual autenticada no navegador/celular.
+- Decidir proxima fase de conclusao real e numero de lancamento.
+
+### Riscos conhecidos
+
+- Validacao visual mobile real nao foi executada neste turno.
+- O schema JSONB e temporario para rascunho, nao substitui a futura modelagem definitiva do atendimento concluido.
+- `localStorage` continua dependendo da seguranca do navegador local.
+- O arquivo antigo `PageClient.tsx` foi mantido apenas como reexport porque a remocao direta falhou no OneDrive.
+
+### Rollback
+
+- Reapontar `page.tsx` para o placeholder/cliente antigo, se necessario.
+- Remover `FichaPageClient.tsx`.
+- Remover `ficha-schema.ts` e testes associados.
+- Restaurar validacao anterior de `validarDadosRascunho`, se a Fase 4 precisar ser desativada.
+- Reverter alteracao do `PATCH` que aceita `clienteId`.
+- Nenhuma migration precisa ser revertida porque nenhuma migration foi criada nesta fase.
+
+### Proximo passo recomendado
+
+Executar a validacao manual da Fase 4 em browser autenticado e celular. Depois, planejar a fase de conclusao real, com numero de lancamento e persistencia definitiva fora do JSONB temporario.
+
+## 2026-07-15 - Ajuste de fluxo da Fase 4: ficha unificada e preenchimento nao linear
+
+### Escopo executado
+
+- Reduzido o fluxo ativo da ficha para quatro marcos operacionais:
+  1. Filial e consultora.
+  2. Ficha de Atendimento.
+  3. Resultado do Atendimento.
+  4. Revisao.
+- A etapa `Ficha de Atendimento` agora exibe na mesma tela:
+  - Cliente.
+  - Dados da crianca.
+  - Interesses.
+  - Produtos.
+  - Observacoes.
+- A ficha deixou de exigir passagem linear por `Cliente -> Crianca -> Interesses -> Observacoes`.
+- Apos cadastrar ou selecionar cliente, a cliente fica vinculada ao rascunho atual e a tela continua automaticamente na ficha principal.
+- O texto "Quem esta sendo atendida?" nao fica visivel depois que a cliente ja esta vinculada.
+
+### Compatibilidade de rascunhos antigos
+
+- `etapaAtual = cliente` agora migra para `ficha`.
+- `etapaAtual = criancas` agora migra para `ficha`.
+- `etapaAtual = interesses` agora migra para `ficha`.
+- `etapaAtual = observacoes` agora migra para `ficha`.
+- `etapaAtual = resultado` permanece em `resultado`.
+- `etapaAtual = revisao` permanece em `revisao`.
+- Nao houve migration nova; a compatibilidade ficou no schema TypeScript do JSONB de rascunho.
+
+### Data prevista de nascimento
+
+- O campo deixou de depender do `input type="date"` controlado diretamente pelo valor ISO.
+- A digitacao usa `DD/MM/AAAA`, aceita colagem numerica e colagem ISO `AAAA-MM-DD`.
+- Valores parciais ficam somente no estado local da tela.
+- O rascunho so recebe `AAAA-MM-DD` quando a data esta completa e valida.
+- Conversao usa validacao local por ano/mes/dia, sem conversao UTC.
+
+### Nome da crianca
+
+- A digitacao aceita letras, espacos, acentos, hifen e apostrofo.
+- Numeros, simbolos indevidos e emoji sao filtrados na UI.
+- A normalizacao final reduz espacos e aplica trim no schema, sem impedir a digitacao de espaco no campo.
+
+### Arquivos alterados nesta etapa
+
+- `src/lib/atendimento-presencial/ficha-schema.ts`
+- `src/lib/atendimento-presencial/ficha-schema.test.ts`
+- `src/lib/atendimento-presencial/rascunho-cache.test.ts`
+- `src/lib/atendimento-presencial/rascunhos.test.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `docs/ficha-atendimento-presencial-progresso.md`
+- `docs/ia/log_progress.md`
+
+### Validacoes realizadas
+
+- MCP Supabase consultado para confirmar colunas reais de `public.atendimento_presencial_atendimentos` usadas pelo rascunho:
+  - `id`
+  - `cliente_id`
+  - `dados_rascunho`
+  - `version`
+  - `updated_at`
+- `npm run test -- src/lib/atendimento-presencial/ficha-schema.test.ts src/lib/atendimento-presencial/rascunho-cache.test.ts src/lib/atendimento-presencial/rascunhos.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts`: passou, 4 arquivos e 23 testes.
+- `npx tsc --noEmit`: passou.
+- `npx eslint src/app/atendimento-presencial/ficha/FichaPageClient.tsx src/lib/atendimento-presencial/ficha-schema.ts src/lib/atendimento-presencial/ficha-schema.test.ts src/lib/atendimento-presencial/rascunho-cache.test.ts src/lib/atendimento-presencial/rascunhos.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts`: passou.
+- `npm run lint`: falhou por erros preexistentes fora do escopo em `procurar-datas` e `digisac`; nao houve erro nos arquivos da ficha.
+- `git diff --check`: passou, com avisos de CRLF do checkout.
+- `npm run build`: primeira tentativa no sandbox falhou por `EPERM` em `.next`; primeira tentativa fora do sandbox compilou mas falhou por lock temporario `EBUSY` em `.next`; segunda tentativa fora do sandbox passou.
+
+### Roteiro manual recomendado
+
+1. Abrir `/atendimento-presencial/ficha` como usuario com permissao.
+2. Iniciar nova ficha selecionando filial e consultora.
+3. Confirmar progresso `Etapa 2 de 4` na ficha ativa.
+4. Buscar cliente por nome.
+5. Selecionar cliente e confirmar que a ficha permanece disponivel sem etapa intermediaria.
+6. Trocar cliente e selecionar outra.
+7. Cadastrar cliente nova e confirmar vinculo automatico ao rascunho.
+8. Adicionar crianca em gestacao.
+9. Digitar `20122026` e confirmar exibicao `20/12/2026`.
+10. Digitar data parcial e confirmar que dia/mes nao somem durante a digitacao.
+11. Colar `2026-12-20` e confirmar exibicao `20/12/2026`.
+12. Digitar nome com acento, espaco, hifen e apostrofo.
+13. Tentar inserir numero, simbolo indevido e emoji no nome da crianca.
+14. Adicionar departamentos em qualquer ordem.
+15. Adicionar e remover produtos.
+16. Preencher observacoes antes de preencher dados da crianca.
+17. Avancar para Resultado.
+18. Selecionar resultado e motivos.
+19. Avancar para Revisao.
+20. Usar `Editar` nos blocos da revisao e confirmar retorno para a etapa correta.
+21. Atualizar a pagina e confirmar recuperacao do rascunho.
+22. Fechar e reabrir o navegador e confirmar cache/rascunho.
+23. Testar offline, alterar dados, voltar online e confirmar sincronizacao.
+24. Validar em viewport mobile.
+
+### Fora do escopo mantido
+
+- Sem conclusao final funcional.
+- Sem persistencia definitiva de atendimento concluido.
+- Sem historico completo.
+- Sem integracao SGI, Digisac ou Inteligencia Comercial.
+- Sem alteracao de permissoes, crons ou migrations.
+
+### Riscos conhecidos
+
+- Edicao real de filial/consultora apos o rascunho existir continua nao implementada porque exigiria novo contrato de persistencia.
+- Validacao manual autenticada em navegador/celular ainda precisa ser executada.
+- `dados_rascunho` permanece como JSONB temporario de rascunho, nao como modelo definitivo da ficha concluida.

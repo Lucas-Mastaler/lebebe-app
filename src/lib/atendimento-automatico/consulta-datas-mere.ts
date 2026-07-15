@@ -9,6 +9,7 @@ import { consultarGoogleGeocodingEnderecoDificil } from '@/lib/procurar-datas/go
 import { validarPayloadEndereco } from '@/lib/procurar-datas/validar-endereco-payload';
 import { validarEnderecoProviderDireto } from '@/lib/procurar-datas/validar-endereco-resultado';
 import { chamarAppsScriptProcurarDatas } from '@/lib/procurar-datas/apps-script';
+import { calcularConfiancaInternaEndereco } from '@/lib/procurar-datas/confianca-interna';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos públicos
@@ -567,7 +568,7 @@ async function salvarCacheMere(
 ): Promise<{ ok: true; chaveEndereco: string } | { ok: false; erro: string }> {
   const cacheSave = await salvarEnderecoNoGeoCache(form, { ...resultado, provider });
   if (cacheSave.ok) {
-    console.log(`[posvenda-webhook] geo_cache salvo sessaoId=${sessaoId ?? '-'} provider=${provider} confidence=${resultado.confidence ?? '-'} chave=${cacheSave.chaveEndereco}`);
+    console.log(`[posvenda-webhook] geo_cache salvo sessaoId=${sessaoId ?? '-'} provider=${provider} confidence=${resultado.confidence ?? '-'} providerImportance=${(resultado as Record<string, unknown>).providerImportance ?? '-'} chave=${cacheSave.chaveEndereco}`);
   } else {
     console.warn(`[posvenda-webhook] geo_cache save falhou sessaoId=${sessaoId ?? '-'} provider=${provider} motivo=${cacheSave.erro}`);
   }
@@ -696,11 +697,16 @@ export async function geocodificarEnderecoMere(
       return { ok: false, motivo: 'geo_cache_lat_lng_invalidos', geoCacheHit: false, geocodingProviderConsultado: true, geocodingProvider: 'appsscript', geoCacheSalvo: false };
     }
     console.log(`[posvenda-webhook] geocoding provider sucesso sessaoId=${options.sessaoId ?? '-'} provider=appsscript lat=${Number(resultado.lat).toFixed(5)} lng=${Number(resultado.lng).toFixed(5)}`);
-    const cacheSave = await salvarCacheMere(form, resultado, 'appsscript', options.sessaoId);
+    const confiancaInterna = calcularConfiancaInternaEndereco({
+      provider: 'appsscript',
+      providerImportance: null,
+    });
+    const resultadoComConfianca: EnderecoValidado = { ...resultado, confidence: confiancaInterna.confidence };
+    const cacheSave = await salvarCacheMere(form, resultadoComConfianca, 'appsscript', options.sessaoId);
     return {
       ok: true,
       coordenadas: montarCoordenadasMereDeResultado({
-        resultado,
+        resultado: resultadoComConfianca,
         form,
         fonte: 'provider',
         origem: 'appsscript',

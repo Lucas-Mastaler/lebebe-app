@@ -19,6 +19,7 @@ vi.mock('@/lib/auth/access-window', () => ({
 const usuarioId = '123e4567-e89b-12d3-a456-426614174001'
 const unidadeId = '123e4567-e89b-12d3-a456-426614174002'
 const rascunhoId = '123e4567-e89b-12d3-a456-426614174004'
+const clienteId = '123e4567-e89b-12d3-a456-426614174005'
 
 const rascunhoRow = {
   id: rascunhoId,
@@ -116,5 +117,49 @@ describe('api rascunho por id', () => {
     expect(response.status).toBe(409)
     expect(json.ok).toBe(false)
     expect(json.rascunho.version).toBe(2)
+  })
+
+  it('atualiza cliente_id quando cliente ativa e selecionada', async () => {
+    const atualizado = { ...rascunhoRow, cliente_id: clienteId, version: 3 }
+    mockSupabase({
+      app_usuarios_perfis: [
+        { data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null },
+      ],
+      app_usuarios_unidades: [
+        {
+          data: [{ app_unidades: { id: unidadeId, chave: 'bigorrilho', nome: 'Bigorrilho', ativo: true } }],
+          error: null,
+        },
+      ],
+      atendimento_presencial_atendimentos: [
+        { data: rascunhoRow, error: null },
+        { data: atualizado, error: null },
+      ],
+      atendimento_presencial_clientes: [
+        { data: { id: clienteId }, error: null },
+      ],
+    })
+
+    const response = await PATCH(new Request('http://local', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        version: 2,
+        clienteId,
+        dadosRascunho: {
+          criancas: [],
+          departamentos: ['p_pesada'],
+          produtosInteresse: ['Carrinho Salsa 4'],
+          motivosResultado: [],
+          etapaAtual: 'interesses',
+        },
+      }),
+    }), { params: Promise.resolve({ id: rascunhoId }) })
+    const json = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(json.ok).toBe(true)
+    expect(json.rascunho.clienteId).toBe(clienteId)
+    expect(json.rascunho.dadosRascunho.etapaAtual).toBe('ficha')
+    expect(json.rascunho.dadosRascunho).not.toHaveProperty('clienteId')
   })
 })

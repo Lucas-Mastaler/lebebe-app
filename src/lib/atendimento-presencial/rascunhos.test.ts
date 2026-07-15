@@ -17,10 +17,19 @@ describe('rascunhos atendimento presencial', () => {
   it('valida payload permitido do rascunho', () => {
     expect(validarDadosRascunho({ notaTecnica: ' teste ' })).toEqual({
       ok: true,
-      dados: { notaTecnica: 'teste' },
+      dados: {
+        criancas: [],
+        departamentos: [],
+        produtosInteresse: [],
+        motivosResultado: [],
+        etapaAtual: 'ficha',
+      },
     })
     expect(validarDadosRascunho({ campoLivre: 'x' })).toMatchObject({ ok: false, field: 'dadosRascunho' })
-    expect(validarDadosRascunho({ notaTecnica: 'x'.repeat(1001) })).toMatchObject({ ok: false, field: 'notaTecnica' })
+    expect(validarDadosRascunho({ departamentos: ['invalido'] })).toMatchObject({
+      ok: true,
+      dados: { departamentos: [] },
+    })
   })
 
   it('calcula expiracao em cinco dias desde a atividade', () => {

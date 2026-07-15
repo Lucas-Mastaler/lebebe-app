@@ -1,3 +1,25 @@
+## 2026-07-15 - Cascade - Correção: confidence interna normalizada no geo_cache
+
+Status: implementado e validado. Não altera motor, ranking, classificacao, OSRM, Haversine, Calendar ou Sheets.
+
+### Problema
+- LocationIQ copiava `importance` (relevância/popularidade) diretamente como `confidence` (qualidade da correspondência).
+- Endereços exatos e validados com `importance=0.0001` eram salvos com `confidence=0.0001` e rejeitados pelo threshold `0.70`.
+- Google salvava `confidence: null`. Apps Script não calculava.
+
+### Correção
+- Criada `calcularConfiancaInternaEndereco` em `src/lib/procurar-datas/confianca-interna.ts`.
+- Escala 0–1 baseada apenas em validações estruturais existentes (número, logradouro, cidade, UF, CEP, bairro, partial_match, location_type).
+- `importance` preservado como `providerImportance` apenas para logs.
+- Aplicada em LocationIQ, Google Geocoding e Apps Script.
+
+### Validações
+- 107 testes aprovados (67 procurar-datas + 40 webhook-processor), 6 skipped, 0 falhas.
+- `npx tsc --noEmit`: aprovado.
+- MCP Supabase: 85 registros LocationIQ com confidence < 0.70 confirmados (mínimo 0.0001).
+
+---
+
 ## 2026-07-06 - Cascade - Frente 0/Controle: validacao manual do caso Sao Jose dos Pinhais
 
 Status: correcao validada em producao v2 em segundo caso real. Nenhuma alteracao de codigo, motor, banco ou Apps Script.

@@ -148,16 +148,44 @@ export async function PATCH(
       })
     }
 
+    let clienteIdAtualizado: string | null | undefined
+    if (Object.prototype.hasOwnProperty.call(payload, 'clienteId')) {
+      if (payload.clienteId === null || payload.clienteId === '') {
+        clienteIdAtualizado = null
+      } else if (isUuid(payload.clienteId)) {
+        const { data: cliente, error: clienteError } = await loaded.supabase
+          .from('atendimento_presencial_clientes')
+          .select('id')
+          .eq('id', payload.clienteId)
+          .eq('status', 'ativo')
+          .maybeSingle()
+
+        if (clienteError) {
+          console.error('[ATENDIMENTO PRESENCIAL RASCUNHO] Erro ao validar cliente:', clienteError)
+          return jsonErro('Erro ao processar requisicao', 500)
+        }
+        if (!cliente) return jsonErro('Cliente nao encontrada', 422, { field: 'clienteId' })
+        clienteIdAtualizado = payload.clienteId
+      } else {
+        return jsonErro('Cliente invalida', 422, { field: 'clienteId' })
+      }
+    }
+
     const agora = new Date()
     const expiraEm = calcularExpiracaoRascunho(agora)
+    const updatePayload: Record<string, unknown> = {
+      dados_rascunho: validacaoDados.dados,
+      ultima_atividade_em: agora.toISOString(),
+      expira_em: expiraEm.toISOString(),
+      atualizado_por: loaded.contexto.usuarioId,
+    }
+    if (clienteIdAtualizado !== undefined) {
+      updatePayload.cliente_id = clienteIdAtualizado
+    }
+
     const { data: atualizado, error: updateError } = await loaded.supabase
       .from('atendimento_presencial_atendimentos')
-      .update({
-        dados_rascunho: validacaoDados.dados,
-        ultima_atividade_em: agora.toISOString(),
-        expira_em: expiraEm.toISOString(),
-        atualizado_por: loaded.contexto.usuarioId,
-      })
+      .update(updatePayload)
       .eq('id', id)
       .eq('version', expectedVersion)
       .select(SELECT_RASCUNHO)

@@ -103,6 +103,61 @@
 **Proximo passo recomendado:**
 - Deploy e validação com webhook real
 
+## 2026-07-15 - Cascade - Correção Cálculo confidence no geo_cache
+
+**Resumo:** Auditado e corrigido o cálculo de `confidence` usado no cache de geocodificação (`geo_cache`). Confirmado que LocationIQ copiava `importance` diretamente como `confidence` (valores como 0.0001 para endereços exatos e validados), causando rejeição pelo threshold `GEO_CACHE_CONFIDENCE_MINIMA_HIT_SEGURO = 0.7` e reconsultas desnecessárias ao provider. Google Geocoding salvava `confidence: null` em todos os registros. Apps Script não calculava confidence. Criada função pura `calcularConfiancaInternaEndereco` que normaliza confidence na escala 0–1 baseada apenas nas validações estruturais já existentes (número, logradouro, cidade, UF, CEP, bairro, partial_match, location_type). Aplicada nos 3 providers (LocationIQ, Google, Apps Script). Logs estruturados adicionados com `provider`, `providerImportance`, `confidenceInterna`, classificação e motivo. 85 registros antigos do LocationIQ com confidence 0.0001 serão naturalmente rejeitados, reconsultados e sobrescritos com a nova confidence interna.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+- `docs/procurar-datas-motor-v2-progresso.md`
+- `src/lib/procurar-datas/locationiq.ts`
+- `src/lib/procurar-datas/google-geocoding.ts`
+- `src/lib/procurar-datas/endereco-cache.ts`
+- `src/lib/procurar-datas/contratos.ts`
+- `src/lib/procurar-datas/validar-endereco-resultado.ts`
+- `src/lib/procurar-datas/motor/resolver-coordenadas-agenda-producao.ts`
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts`
+- `src/lib/procurar-datas/locationiq.test.ts`
+- `src/lib/procurar-datas/endereco-cache.test.ts`
+
+**Arquivos criados:**
+- `src/lib/procurar-datas/confianca-interna.ts` — função pura `calcularConfiancaInternaEndereco` com escala 0–1
+- `src/lib/procurar-datas/confianca-interna.test.ts` — 13 testes cobrindo exato, aproximado, bairro divergente, partial_match, ROOFTOP, Apps Script, importance baixa/alta, faixa 0–1
+
+**Arquivos alterados:**
+- `src/lib/procurar-datas/locationiq.ts` — substitui `confidence: candidate.importance` por `calcularConfiancaInternaEndereco(...)`, preserva `providerImportance` no resultado para logs
+- `src/lib/procurar-datas/google-geocoding.ts` — substitui `confidence: null` por `calcularConfiancaInternaEndereco(...)` com partial_match e location_type
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts` — adiciona `calcularConfiancaInternaEndereco` para resultado Apps Script antes de salvar no cache, log de cache salvo inclui `providerImportance`
+
+**Validações realizadas:**
+- MCP Supabase (consulta direta pelo usuário): `geo_cache` tem 858 registros locationiq (85 abaixo de 0.7, min 0.0001), 23 google_geocoding (todos null), 131 photon, 12 maps.co
+- `npx vitest run src/lib/procurar-datas/confianca-interna.test.ts src/lib/procurar-datas/locationiq.test.ts src/lib/procurar-datas/endereco-cache.test.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts`: 67 aprovados, 6 skipped, 0 falhas
+- `npx vitest run src/lib/atendimento-automatico/webhook-processor.test.ts`: 40 aprovados, 0 falhas
+- `npx tsc --noEmit`: aprovado sem erros
+
+**Escala de confidence adotada:**
+- 0.97: exato com Google ROOFTOP sem partial_match
+- 0.95: exato com número confirmado e campos estruturais ok
+- 0.90: exato com bairro divergente
+- 0.85: exato com Google partial_match (0.95 - 0.10)
+- 0.85: aproximado confiável com CEP ok (0.80 + 0.05)
+- 0.80: aproximado confiável sem CEP confirmado
+- 0.80: Apps Script (sem validação estrutural completa)
+- 0.75: fallback quando validação incompleta
+
+**Pendências:**
+- Registros antigos do LocationIQ com confidence 0.0001 não serão corrigidos em batch — serão naturalmente rejeitados, reconsultados e sobrescritos pelo fluxo normal
+- Validar em ambiente real se logs de `confianca-interna` aparecem corretamente
+
+**Riscos conhecidos:**
+- Registros antigos do Google com `confidence: null` são tratados como `confidence=1` pelo `rowParaEnderecoValidado` (linha 114 de endereco-cache.ts) — comportamento existente, não alterado
+- `providerImportance` é preservado no `EnderecoValidado` mas não é salvo no `geo_cache` (não há coluna para isso) — apenas para logs
+
+**Proximo passo recomendado:**
+- Deploy e observação dos logs `[confianca-interna]` para confirmar que novos registros do LocationIQ têm confidence ≥ 0.80
+- Considerar adicionar coluna `provider_importance` ao `geo_cache` no futuro se quiser rastreabilidade
+
 ## 2026-07-15 - Cascade - Auditoria Fluxo Mère Webhook Pós-Venda
 
 **Resumo:** Mapeamento completo do fluxo webhook pós-venda Mère desde entrada de CPF/CNPJ até chamada de procurar datas. Identificados todos os estados, transições, geocodificação com cache e providers, consulta de datas, tratamento de erros, logs, queries Supabase e testes. MCP Supabase instável, então estrutura do banco validada via migration SQL. Nenhuma implementação realizada.
@@ -21543,3 +21598,172 @@ Abrir `/procurar-datas/dev-v2` com sessao superadmin, auditar o run informado e 
   - Build continua exibindo avisos antigos de `DYNAMIC_SERVER_USAGE` em rotas existentes que usam cookies.
 - Proximo passo recomendado:
   - Executar o roteiro manual autenticado da Fase 3 com consultora/supervisora e confirmar criacao, recuperacao, autosave, conflito e expiracao antes de iniciar a Fase 4.
+
+## 2026-07-15 - Codex - Fase 4 Ficha de Atendimento Presencial em rascunho
+
+- Resumo:
+  - Registrada validacao manual da Fase 3 informada pelo usuario: criacao de rascunho, unidade automatica, selecao de unidade, regras de consultora, autosave, recuperacao apos refresh/fechar/reabrir, cache local, sincronizacao offline, conflito entre abas, destaque `RASCUNHO`, permissoes e vinculo com unidades.
+  - Implementada somente a Fase 4 da Ficha de Atendimento Presencial.
+  - Campo tecnico de teste removido da rota ativa da Ficha.
+  - `/atendimento-presencial/ficha` agora usa formulario real em modo rascunho, dividido em Cliente, Crianca, Interesses, Resultado, Observacoes e Revisao.
+  - Atendimento continua somente como `rascunho`.
+  - Nenhuma conclusao funcional, tabela nova, migration nova, SGI, Digisac ou Inteligencia Comercial foi implementada.
+- Arquivos lidos:
+  - anexo `C:\Users\lebeb\.codex\attachments\f914ff78-e9b2-4878-a21b-a9fc34526516\pasted-text.txt`
+  - `.agents/skills/supabase/SKILL.md`
+  - `docs/PLANO FUNCIONAL ATUALIZADO - FICHA DE ATENDIMENTO PRESENCIAL.md`
+  - `docs/ficha-atendimento-presencial-progresso.md`
+  - `docs/ia/log_progress.md`
+  - `docs/ia/padrao-novas-telas-permissoes.md`
+  - `.devin/rules/gerais.md`
+  - `.devin/rules/continuidade-agente.md`
+  - `.devin/rules/supabase.md`
+  - `.devin/rules/resumo.md`
+  - `.devin/rules/recebimentos.md`
+  - migrations `20260715160000`, `20260715170000`, `20260715180000`, `20260715181000`
+  - codigo atual da Ficha, APIs de rascunho, cache local, APIs/tela de clientes, helpers de telefone, module access e access window
+- Arquivos criados:
+  - `src/lib/atendimento-presencial/ficha-schema.ts`
+  - `src/lib/atendimento-presencial/ficha-schema.test.ts`
+  - `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- Arquivos alterados:
+  - `src/app/atendimento-presencial/ficha/page.tsx`
+  - `src/app/atendimento-presencial/ficha/PageClient.tsx`
+  - `src/lib/atendimento-presencial/rascunhos.ts`
+  - `src/lib/atendimento-presencial/rascunhos.test.ts`
+  - `src/lib/atendimento-presencial/rascunho-cache.ts`
+  - `src/lib/atendimento-presencial/rascunho-cache.test.ts`
+  - `src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.ts`
+  - `src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts`
+  - `docs/ficha-atendimento-presencial-progresso.md`
+  - `docs/ia/log_progress.md`
+- Schema:
+  - Novo schema central em `ficha-schema.ts`.
+  - Payload permitido: `cliente`, `criancas`, `departamentos`, `produtosInteresse`, `resultadoAtendimento`, `motivosResultado`, `motivoOutro`, `observacoes`, `etapaAtual`.
+  - `notaTecnica` e aceita apenas como chave legada de entrada e migrada para schema vazio.
+  - Chaves desconhecidas sao rejeitadas.
+  - Unidade, consultora, status, version e cliente nao sao aceitos dentro do JSONB.
+- Componentes e UI:
+  - Nova Ficha mobile-first em `FichaPageClient.tsx`.
+  - Botoes grandes, cards de selecao, progresso `Etapa X de 6`, acao fixa no rodape e largura centralizada no desktop.
+  - Cliente: busca, selecao, troca e cadastro dentro da ficha.
+  - Criancas: multiplas, id local estavel, gestacao, ja nasceu, presente para outra pessoa, nao informado.
+  - Interesses: departamentos por cards e produtos livres por Enter/botao.
+  - Resultado: sim/nao/negociacao e motivos agrupados.
+  - Observacoes: textarea com contador.
+  - Revisao: resumo com botoes `Editar`, botao `Concluir atendimento` desabilitado.
+- Autosave e cache:
+  - Autosave da Fase 3 preservado com debounce.
+  - Cache local validado pelo novo schema ao recuperar.
+  - Payload invalido no cache e descartado.
+  - Cache separado por usuario e `draft_client_id`.
+  - Cache offline so prevalece quando nao esta mais antigo que o banco pelo versionamento local.
+  - Volta online dispara nova tentativa de sincronizacao.
+- APIs:
+  - APIs existentes de rascunho reaproveitadas.
+  - `PATCH /api/atendimento-presencial/atendimentos/[id]/rascunho` agora aceita `clienteId` fora de `dadosRascunho`, valida cliente ativa e atualiza `cliente_id`.
+  - Controle de versionamento, unidade, consultora, expiracao e permissao foi preservado.
+- Validacoes MCP Supabase:
+  - `public.atendimento_presencial_clientes` existe.
+  - `public.atendimento_presencial_atendimentos` existe.
+  - `public.atendimento_presencial_criancas`, `public.atendimento_presencial_departamentos`, `public.atendimento_presencial_produtos_interesse`, `public.atendimento_presencial_motivos` e `public.atendimento_presencial_fechamentos` nao existem.
+  - Banco consultado possui 2 clientes, 3 atendimentos/rascunhos e 9 vinculos usuario-unidade.
+  - Colunas reais de `atendimento_presencial_atendimentos` e `atendimento_presencial_clientes` conferidas antes da alteracao de persistencia.
+- Comandos rodados e resultados:
+  - `npm run test -- src/lib/atendimento-presencial/ficha-schema.test.ts src/lib/atendimento-presencial/rascunhos.test.ts src/lib/atendimento-presencial/rascunho-cache.test.ts src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts`: passou, 5 arquivos e 23 testes.
+  - `npm run test -- src/lib/atendimento-presencial/telefone.test.ts src/lib/atendimento-presencial/clientes.test.ts src/lib/atendimento-presencial/migration.test.ts src/lib/atendimento-presencial/ficha-schema.test.ts src/lib/atendimento-presencial/rascunhos.test.ts src/lib/atendimento-presencial/rascunho-cache.test.ts src/lib/atendimento-presencial/rascunhos-migration.test.ts src/app/api/atendimento-presencial/clientes/route.test.ts src/app/api/atendimento-presencial/clientes/[id]/route.test.ts src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts src/app/api/cron/atendimento-presencial-limpar-rascunhos/route.test.ts`: passou, 12 arquivos e 63 testes.
+  - `npx tsc --noEmit --pretty false`: passou.
+  - `npx eslint ...`: passou nos arquivos da Fase 4.
+  - `npm run build`: primeira tentativa no sandbox falhou com `EPERM` em `.next/app-path-routes-manifest.json`; repetido fora do sandbox, passou. Build ainda mostra avisos antigos de `DYNAMIC_SERVER_USAGE` em rotas autenticadas e aviso de middleware deprecated.
+  - `git diff --check`: passou, com avisos de CRLF do checkout.
+- Pendencias:
+  - Executar validacao manual autenticada da Fase 4 no navegador/celular.
+  - Confirmar visualmente fluxo offline/online em browser real.
+- Riscos conhecidos:
+  - Validacao visual mobile real nao foi executada neste turno.
+  - JSONB continua sendo estrutura temporaria de rascunho, nao modelo definitivo do atendimento concluido.
+  - `localStorage` permanece dependente da seguranca do navegador local.
+  - Remocao direta de `src/app/atendimento-presencial/ficha/PageClient.tsx` falhou no OneDrive; arquivo foi neutralizado como reexport de `FichaPageClient`.
+- Proximo passo recomendado:
+  - Finalizar validacoes tecnicas restantes e depois executar o roteiro manual completo da Fase 4 antes de planejar a conclusao real com numero de lancamento.
+
+## 2026-07-15 - Codex - Ajuste da Ficha de Atendimento Presencial para preenchimento nao linear
+
+- Objetivo:
+  - Reduzir cliques da Ficha de Atendimento Presencial.
+  - Remover etapas lineares desnecessarias dentro do rascunho.
+  - Permitir preenchimento em qualquer ordem na ficha principal.
+  - Corrigir digitacao de data prevista de nascimento e nome da crianca.
+- Diagnostico confirmado no codigo:
+  - `FichaPageClient.tsx` renderizava uma unica secao por `etapaAtual`, com fluxo `cliente -> criancas -> interesses -> resultado -> observacoes -> revisao`.
+  - Apos cadastrar cliente, `cadastrarCliente()` ja chamava `selecionarCliente(data.cliente)`, mas a UI ainda exigia clique em `Continuar` porque permanecia na etapa `cliente`.
+  - `dataPrevistaNascimento` usava `input type="date"` com valor controlado e passava por `migrarFichaDadosRascunho` a cada alteracao; parciais que nao eram `AAAA-MM-DD` eram descartados.
+  - Nome da crianca usava normalizacao generica a cada alteracao e nao tinha filtro especifico para numeros, simbolos indevidos ou emoji.
+- Arquivos lidos:
+  - anexo `C:\Users\lebeb\.codex\attachments\ea79e957-760f-4472-aea8-6ed573dd0dcb\pasted-text.txt`
+  - `.agents/skills/supabase/SKILL.md`
+  - `.devin/rules/gerais.md`
+  - `.devin/rules/continuidade-agente.md`
+  - `.devin/rules/supabase.md`
+  - `.devin/rules/resumo.md`
+  - `docs/PLANO FUNCIONAL ATUALIZADO - FICHA DE ATENDIMENTO PRESENCIAL.md`
+  - `docs/ficha-atendimento-presencial-progresso.md`
+  - `docs/ia/log_progress.md`
+  - `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+  - `src/lib/atendimento-presencial/ficha-schema.ts`
+  - `src/lib/atendimento-presencial/ficha-schema.test.ts`
+  - `src/lib/atendimento-presencial/rascunho-cache.ts`
+  - `src/lib/atendimento-presencial/rascunho-cache.test.ts`
+  - `src/lib/atendimento-presencial/rascunhos.ts`
+  - `src/lib/atendimento-presencial/rascunhos.test.ts`
+  - `src/lib/atendimento-presencial/clientes.ts`
+  - `src/app/api/atendimento-presencial/clientes/route.ts`
+  - `src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.ts`
+  - `src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts`
+- Arquivos alterados:
+  - `src/lib/atendimento-presencial/ficha-schema.ts`
+  - `src/lib/atendimento-presencial/ficha-schema.test.ts`
+  - `src/lib/atendimento-presencial/rascunho-cache.test.ts`
+  - `src/lib/atendimento-presencial/rascunhos.test.ts`
+  - `src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts`
+  - `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+  - `docs/ficha-atendimento-presencial-progresso.md`
+  - `docs/ia/log_progress.md`
+- Implementado:
+  - `FICHA_ETAPAS` passou para `ficha`, `resultado`, `revisao`, mantendo `FICHA_TOTAL_ETAPAS = 4` para incluir o marco inicial de filial/consultora.
+  - Etapas legadas `cliente`, `criancas`, `interesses` e `observacoes` migram para `ficha`.
+  - A tela ativa renderiza Cliente, Dados da crianca, Interesses, Produtos e Observacoes juntas quando `etapaAtual === 'ficha'`.
+  - Resultado e Revisao continuam separados.
+  - Cadastro/selecao de cliente vincula automaticamente e permanece na ficha principal.
+  - Campo de data prevista agora usa texto `DD/MM/AAAA`, mascara local, aceita colagem numerica e ISO, e so persiste ISO completo valido.
+  - Nome da crianca agora filtra digitacao para letras, espacos, acentos, hifen e apostrofo.
+  - Teste da rota PATCH cobre migracao de `etapaAtual: 'interesses'` para `ficha`.
+- Supabase:
+  - MCP Supabase consultado para confirmar colunas reais de `public.atendimento_presencial_atendimentos` antes de assumir persistencia:
+    - `id`
+    - `cliente_id`
+    - `dados_rascunho`
+    - `version`
+    - `updated_at`
+  - Nenhuma migration foi criada.
+- Comandos rodados e resultados:
+  - `npm run test -- src/lib/atendimento-presencial/ficha-schema.test.ts src/lib/atendimento-presencial/rascunho-cache.test.ts src/lib/atendimento-presencial/rascunhos.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts`: passou, 4 arquivos e 23 testes.
+  - `npx tsc --noEmit`: passou.
+  - `npm run lint`: falhou por erros preexistentes fora do escopo em `src/app/api/procurar-datas/v2/diagnostico/route.test.ts`, `src/lib/digisac/finalizacoesAutomaticas.ts` e `src/lib/procurar-datas/motor/resolver-origem-operacional.test.ts`.
+  - `npx eslint src/app/atendimento-presencial/ficha/FichaPageClient.tsx src/lib/atendimento-presencial/ficha-schema.ts src/lib/atendimento-presencial/ficha-schema.test.ts src/lib/atendimento-presencial/rascunho-cache.test.ts src/lib/atendimento-presencial/rascunhos.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts`: passou.
+  - `git diff --check`: passou, com avisos de CRLF do checkout.
+  - `npm run build`: primeira tentativa no sandbox falhou por `EPERM` em `.next`; primeira tentativa fora do sandbox compilou mas falhou por `EBUSY` temporario em `.next`; segunda tentativa fora do sandbox passou.
+- Validacao manual:
+  - Roteiro manual detalhado foi registrado em `docs/ficha-atendimento-presencial-progresso.md`.
+  - Browser autenticado/mobile nao foi executado neste turno.
+- Fora do escopo preservado:
+  - Sem conclusao final funcional.
+  - Sem persistencia definitiva de atendimento concluido.
+  - Sem historico completo.
+  - Sem SGI, Digisac, Inteligencia Comercial, permissoes, crons ou migrations.
+- Riscos conhecidos:
+  - Edicao real de filial/consultora depois do rascunho existir continua nao implementada porque exigiria novo contrato de persistencia.
+  - Campo de data parcial nao e persistido como data completa; fica local ate completar uma data valida.
+  - `dados_rascunho` segue como JSONB temporario.
+- Proximo passo recomendado:
+  - Executar o roteiro manual em browser autenticado e viewport mobile antes de iniciar conclusao final da ficha.

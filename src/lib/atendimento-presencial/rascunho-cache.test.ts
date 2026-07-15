@@ -29,7 +29,14 @@ describe('cache local de rascunho', () => {
       draftClientId: 'draft-1',
       atendimentoId: 'atendimento-1',
       version: 2,
-      dadosRascunho: { notaTecnica: 'texto' },
+      dadosRascunho: {
+        criancas: [],
+        departamentos: [],
+        produtosInteresse: [],
+        motivosResultado: [],
+        etapaAtual: 'ficha',
+        notaTecnica: 'texto',
+      },
       atualizadoEm: '2026-07-15T12:00:00.000Z',
       sincronizado: false,
     })
@@ -37,7 +44,13 @@ describe('cache local de rascunho', () => {
     expect(carregarCacheRascunho(storage, 'usuario-1', 'draft-1')).toMatchObject({
       atendimentoId: 'atendimento-1',
       version: 2,
-      dadosRascunho: { notaTecnica: 'texto' },
+      dadosRascunho: {
+        criancas: [],
+        departamentos: [],
+        produtosInteresse: [],
+        motivosResultado: [],
+        etapaAtual: 'ficha',
+      },
       sincronizado: false,
     })
 

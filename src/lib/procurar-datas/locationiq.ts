@@ -5,6 +5,7 @@ import {
   normalizarNumeroEndereco,
   normalizarTexto,
 } from './endereco-cache'
+import { calcularConfiancaInternaEndereco } from './confianca-interna'
 
 type LocationIqAddress = {
   road?: string
@@ -280,6 +281,19 @@ function validarCandidato(
 
   const address = candidate.address ?? {}
   const enderecoCompleto = display || montarEnderecoDisplayProcurarDatas(form)
+
+  const confiancaInterna = calcularConfiancaInternaEndereco({
+    match: numeroOk ? 'exato' : 'aproximado_confiavel',
+    numeroOk,
+    logradouroOk,
+    cidadeOk,
+    ufOk,
+    cepOk,
+    bairroOk,
+    provider: 'locationiq',
+    providerImportance: typeof candidate.importance === 'number' ? candidate.importance : null,
+  })
+
   return {
     valido: true,
     flags,
@@ -297,7 +311,8 @@ function validarCandidato(
       numeroObrigatorio,
       classificacaoDiagnostica: numeroOk ? 'exato' : 'aproximado_confiavel',
       motivo: numeroOk ? 'aceito_numero_confirmado' : 'aceito_sem_numero_confirmado',
-      confidence: typeof candidate.importance === 'number' ? candidate.importance : null,
+      confidence: confiancaInterna.confidence,
+      providerImportance: typeof candidate.importance === 'number' ? candidate.importance : null,
       address: {
         road: address.road || String(form.logradouro ?? ''),
         house_number: address.house_number ?? '',

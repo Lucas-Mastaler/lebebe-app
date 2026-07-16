@@ -150,14 +150,25 @@ export async function POST(request: NextRequest) {
       `[IA][CHAMADOS-ANTERIORES] vendaAtual=${numeroLancamento} chamados=${contextoChamadosAnteriores.chamados.length} candidatos=${contextoChamadosAnteriores.totalCandidatosAntesLimite} limite=${contextoChamadosAnteriores.limiteChamados} tamanho=${contextoChamadosAnteriores.tamanhoContextoChars}`
     )
 
+    const produtosListaContextoContato = (produtosVenda ?? []).map((p) => {
+      const partes = [p.produto, p.departamento_classificado, p.subgrupo_classificado].filter(Boolean)
+      return partes.join(' — ')
+    })
+
     const contextoComplementarContato = await buscarContextoComplementarContatoIA({
       contactIds: [conversa?.digisac_contact_id],
       ticketIdsPrincipais: [ticketId],
       dataFechamentoVenda: venda?.data_fechamento ?? null,
       dataFechamentoVendaAnterior: contextoHistorico.vendas[0]?.dataFechamento ?? null,
+      vendasAnteriores: contextoHistorico.vendas.map((v) => ({
+        numeroLancamento: v.numeroLancamento,
+        dataFechamento: v.dataFechamento,
+        produtos: v.produtos,
+      })),
+      palavrasChaveProdutos: produtosListaContextoContato,
     })
     console.log(
-      `[IA][CONTEXTO-CONTATO] venda=${numeroLancamento} ${montarResumoLogContextoContato(contextoComplementarContato)}`
+      `[IA][CONTEXTO-90D] venda=${numeroLancamento} ${montarResumoLogContextoContato(contextoComplementarContato)}`
     )
 
     const produtosLista = (produtosVenda ?? []).map((p) => {
@@ -467,9 +478,18 @@ async function finalizarJob(
     ticketIdsPrincipais: ticketIds,
     dataFechamentoVenda: vendaConsolidado?.data_fechamento ?? null,
     dataFechamentoVendaAnterior: contextoHistorico.vendas[0]?.dataFechamento ?? null,
+    vendasAnteriores: contextoHistorico.vendas.map((v) => ({
+      numeroLancamento: v.numeroLancamento,
+      dataFechamento: v.dataFechamento,
+      produtos: v.produtos,
+    })),
+    palavrasChaveProdutos: (produtosVendaConsolidado ?? []).map((p) => {
+      const partes = [p.produto, p.departamento_classificado, p.subgrupo_classificado].filter(Boolean)
+      return partes.join(' — ')
+    }),
   })
   console.log(
-    `[IA][CONTEXTO-CONTATO] venda=${numeroLancamento} ${montarResumoLogContextoContato(contextoComplementarContato)}`
+    `[IA][CONTEXTO-90D] venda=${numeroLancamento} ${montarResumoLogContextoContato(contextoComplementarContato)}`
   )
 
   const produtosCompradosLista = (produtosVendaConsolidado ?? []).map((p) => {
@@ -673,7 +693,7 @@ Se a conversa atual trouxer dado diferente, sinalize como possível divergência
 
 ## INSTRUÇÃO FINAL
 Compare o conteúdo da conversa com os produtos listados acima. Se houver menção a produto ou categoria que conste na lista, não classifique como "Não". Seja criterioso para não inventar influência, mas não ignore relação direta entre conversa e produto comprado.
-Use tambem o CONTEXTO COMPLEMENTAR DO CONTATO quando ele trouxer evidencias comerciais antes do fechamento. Mensagens sem ticket nao precisam ter protocolo para provar influencia; cite-as como contexto complementar do contato e nao invente chamado, protocolo ou numero discado.
+Use tambem o CONTEXTO COMPLEMENTAR DO CONTATO quando ele trouxer evidencias comerciais antes do fechamento. Mensagens sem ticket nao precisam ter protocolo para provar influencia; cite-as como contexto complementar proximo ou historico ampliado, conforme a secao de origem, e nao invente chamado, protocolo ou numero discado. Historico ampliado de ate 90 dias ajuda a entender origem do interesse e retomadas, mas nao vira influencia automaticamente sem continuidade clara com a venda atual.
 
 ## REGRA SOBRE PRODUTOS RELACIONADOS E INFLUÊNCIA INDIRETA
 
@@ -1091,11 +1111,13 @@ O campo "resumo_geral" deve resumir a relação dos chamados com uma venda já r
 O campo "conclusao_comercial" deve concluir a influência comercial sobre a venda já registrada.
 
 ## REGRA SOBRE CONTEXTO COMPLEMENTAR DO CONTATO
-O bloco "CONTEXTO COMPLEMENTAR DO CONTATO" pode conter mensagens sem ticket ou de outros tickets do mesmo contactId na janela comercial.
+O bloco "CONTEXTO COMPLEMENTAR DO CONTATO" pode conter mensagens sem ticket ou de outros tickets do mesmo contactId separadas entre contexto complementar proximo e historico ampliado de ate 90 dias.
 - Mensagens sem ticket podem provar influencia, continuidade, preco, produto, pagamento, visita ou fechamento mesmo sem protocolo.
 - Nao invente protocolo, numero de chamado ou numero discado para mensagens sem ticket.
-- Quando usar evidencia desse bloco, descreva como "contexto complementar do contato".
+- Quando usar evidencia desse bloco, descreva se veio de "contexto complementar proximo" ou "historico ampliado".
 - Nao duplique o transcript principal: mensagens dos tickets principais ja foram removidas desse bloco.
+- Historico ampliado antigo so deve influenciar a conclusao quando houver continuidade clara: mesmo produto/categoria, retomada explicita, mesmo orcamento/objeção/pagamento, acompanhamento da consultora ou compra posterior compativel.
+- Produtos comprados em vendas anteriores devem ser distinguidos dos produtos da venda atual e nao devem virar oportunidade atual sem evidencia nova.
 
 ## REGRA TEMPORAL E FINALIZACAO PRESENCIAL
 Use os blocos temporais de cada chamado para diferenciar atendimento antes da venda, atendimento depois da venda e logistica de finalizacao.

@@ -1,3 +1,73 @@
+## 2026-07-16 - Codex - Inteligencia Comercial IA com contexto historico ampliado 90d por contactId
+
+**Resumo:** Ampliado o contexto por `contactId` usado pela IA da Inteligencia Comercial para buscar ate 90 dias antes do fechamento da venda atual, mantendo separacao entre transcript/ticket principal, contexto complementar proximo e contexto historico ampliado. O fluxo de UI `Ver conversa`, sincronizacao Digisac, vinculos de ciclo, schema Supabase e reanalise em massa nao foram alterados.
+
+**Arquivos lidos:**
+- Anexo do pedido em `C:\Users\lebeb\.codex\attachments\6124a5ce-a7b4-409a-b602-7e00608b9920\pasted-text.txt`
+- `.devin/rules/gerais.md`
+- `.devin/rules/continuidade-agente.md`
+- `.devin/rules/supabase.md`
+- `.devin/rules/resumo.md`
+- `.devin/rules/recebimentos.md`
+- `.agents/skills/supabase/SKILL.md`
+- `docs/ia/log_progress.md`
+- `docs/inteligencia-comercial-mensagens-contato-sem-ticket.md`
+- `docs/inteligencia-comercial-influencia-temporal-historico-chamados.md`
+- `docs/inteligencia-comercial-contexto-vendas-anteriores-ia.md`
+- `docs/inteligencia-comercial-multiplas-conexoes-digisac.md`
+- `src/lib/digisac/mensagens-contato.ts`
+- `src/lib/digisac/mensagens-contato.test.ts`
+- `src/lib/ia/contexto-complementar-contato.ts`
+- `src/lib/ia/contexto-complementar-contato.test.ts`
+- `src/lib/ia/contexto-vendas-anteriores.ts`
+- `src/lib/ia/contexto-temporal-chamados.ts`
+- `src/app/api/sgi/ia/processar-proximo/route.ts`
+
+**Arquivos alterados:**
+- `src/lib/ia/contexto-complementar-contato.ts`
+- `src/lib/ia/contexto-complementar-contato.test.ts`
+- `src/app/api/sgi/ia/processar-proximo/route.ts`
+- `docs/inteligencia-comercial-mensagens-contato-sem-ticket.md`
+- `docs/ia/log_progress.md`
+
+**Implementacao:**
+- Adicionada janela maxima de 90 dias (`JANELA_HISTORICO_AMPLIADO_DIAS_CONTATO`) com fim no fechamento da venda atual.
+- Mantido fallback curto de 30 dias como contexto proximo quando nao ha venda anterior; o restante da janela de 90 dias fica como historico ampliado.
+- Separadas as mensagens em `contexto_proximo` e `historico_ampliado`, mantendo a classificacao tecnica `ticket_atual`, `outro_ticket` e `sem_ticket`.
+- Elevado limite de mensagens relevantes no prompt para 300 e limite de caracteres do bloco para 28000.
+- Priorizacao deterministica: contexto proximo antes do historico ampliado, sem ticket antes de outros tickets, e sinais comerciais/produtos relevantes antes de mensagens genericas.
+- Preservada remocao do ticket principal para nao duplicar o transcript principal.
+- Adicionada relacao temporal com vendas anteriores quando disponivel, como `antes da venda anterior #...` ou `apos venda anterior #...`.
+- Prompts individual e consolidado reforcados para citar evidencia como `contexto complementar proximo` ou `historico ampliado`, sem transformar historico antigo em influencia automatica.
+- Logs agregados trocados para `[IA][CONTEXTO-90D]` com contagens seguras e sem conteudo de conversa.
+
+**Supabase:**
+- MCP Supabase confirmou colunas reais usadas no fluxo em `digisac_conversas_resumo`, `venda_conversa_vinculos`, `sgi_documentos_saida`, `sgi_documentos_saida_produtos`, `sgi_documentos_saida_contatos`, `digisac_chamados_analise_ia`, `ia_analise_comercial_fila`, `venda_analise_comercial_ia` e `inteligencia_comercial_clientes`.
+- Nenhuma migration, schema, RLS, policy, trigger ou persistencia nova foi criada.
+
+**Validacoes realizadas:**
+- `npx vitest run src/lib/ia/contexto-complementar-contato.test.ts src/lib/digisac/mensagens-contato.test.ts`: falhou no sandbox com `spawn EPERM`; reexecutado fora do sandbox com 2 arquivos e 32 testes aprovados.
+- `npx tsc --noEmit --pretty false`: falhou no sandbox por `EPERM` ao gravar `tsconfig.tsbuildinfo`; reexecutado fora do sandbox e aprovado.
+- `npx eslint src/lib/ia/contexto-complementar-contato.ts src/lib/ia/contexto-complementar-contato.test.ts src/app/api/sgi/ia/processar-proximo/route.ts`: aprovado.
+- `npx next build`: falhou no sandbox por `EPERM` ao abrir `.next/trace`; reexecutado fora do sandbox e aprovado. Avisos conhecidos de `Dynamic server usage` em rotas autenticadas com `cookies` permaneceram, sem falhar a build.
+
+**Caso 65431:**
+- Teste fixture preserva `contactId=67e15f97-a406-445b-9e6d-ae8ecc1f8a55`, `ticketId=cf445253-edce-4b2d-a561-c9d9ee626b07`, 11 mensagens do ticket principal removidas e 78 mensagens sem ticket no contexto proximo.
+- Reanalise real da venda `65431` nao foi executada nesta etapa.
+
+**Pendencias:**
+- Reanalisar a venda `65431` em ambiente autenticado/operacional.
+- Testar uma venda real com mensagens anteriores a janela antiga e dentro dos 90 dias.
+- Comparar tokens antes/depois e tempo de processamento antes/depois em ambiente real.
+- Confirmar se ha casos reais com multiplos `contactId` para o mesmo cliente alem dos testes unitarios.
+
+**Riscos conhecidos:**
+- O aumento de janela pode ampliar tokens e tempo em contatos longos; mitigado por limite de 300 mensagens relevantes, limite de caracteres, priorizacao e truncamento.
+- `contactId` compartilhado/recriado ainda pode misturar jornadas; mitigacao atual preserva janela temporal, separacao de camadas e relacao com vendas anteriores, mas validacao real ainda e pendente.
+
+**Proximo passo recomendado:**
+- Rodar reanalise controlada da venda `65431` e de uma venda com historico mais antigo, comparando resultado, tokens e tempo.
+
 ## 2026-07-15 - Codex - Inteligencia Comercial IA com mensagens Digisac sem ticket
 
 **Resumo:** Implementada a proxima etapa da IA da Inteligencia Comercial para incluir mensagens do mesmo `digisac_contact_id` sem `ticketId` como contexto complementar dos prompts individual e consolidado. O transcript principal por ticket foi preservado. A UI `Ver conversa`, a regra de vinculacao de ciclo, migrations, sync Digisac e reanalise em massa nao foram alteradas.

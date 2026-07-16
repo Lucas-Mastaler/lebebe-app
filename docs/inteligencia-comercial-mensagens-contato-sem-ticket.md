@@ -544,3 +544,169 @@ Exemplo:
 - Se audios transcritos aparecem em algum outro contato.
 - Se a UI deve continuar com `Ver conversa` apenas por ticket ou ganhar uma acao separada por contato.
 - Resultado real da reanalise IA da venda `65431`; os testes cobrem o fixture, mas a fila IA real nao foi executada neste ajuste.
+
+## 20. Evolucao 2026-07-16 - contexto historico ampliado por contactId ate 90 dias
+
+Status: implementado no helper e integrado aos prompts individual e consolidado. Reanalise real da venda `65431` ainda nao executada neste ambiente.
+
+### Objetivo
+
+Ampliar a busca por `contactId` para ate 90 dias antes do fechamento da venda atual, mantendo separacao entre:
+
+- venda atual;
+- chamados do ciclo atual e transcript principal;
+- contexto complementar proximo;
+- contexto historico ampliado;
+- vendas anteriores;
+- mensagens sem ticket;
+- mensagens de outros tickets.
+
+### Janela temporal
+
+O fim da janela e sempre `data_fechamento` da venda atual.
+
+O inicio maximo e `data_fechamento - 90 dias`.
+
+O contexto complementar proximo com venda anterior continua iniciando no fechamento da venda anterior, limitado pela janela maxima de 90 dias.
+
+Quando nao ha venda anterior, o contexto proximo usa o fallback curto existente de 30 dias antes da venda atual. O restante da janela, entre 90 dias e esse fallback, entra como historico ampliado.
+
+Mensagens posteriores ao fechamento da venda atual sao excluidas.
+
+### Implementacao
+
+Arquivo principal: `src/lib/ia/contexto-complementar-contato.ts`.
+
+Alteracoes:
+
+- `JANELA_HISTORICO_AMPLIADO_DIAS_CONTATO = 90`.
+- `CONTEXTO_CONTATO_MAX_MENSAGENS_PROMPT = 300`.
+- `CONTEXTO_CONTATO_MAX_CHARS = 28000`.
+- `calcularJanelaComercialContato` agora retorna:
+  - inicio maximo de 90 dias;
+  - inicio do contexto proximo;
+  - fim da venda atual;
+  - origem do contexto proximo (`venda_anterior` ou `fallback_30_dias`).
+- As mensagens relevantes sao classificadas por camada:
+  - `contexto_proximo`;
+  - `historico_ampliado`.
+- A classificacao por vinculo tecnico continua separada:
+  - `ticket_atual`;
+  - `outro_ticket`;
+  - `sem_ticket`.
+- O ticket principal continua removido do bloco complementar para nao duplicar o transcript principal.
+- A deduplicacao continua por `message.id`, com fallback por timestamp/remetente/tipo/conteudo quando nao ha id.
+- Eventos tecnicos seguem descartados: `reaction`, `ticket`, `ticketTransfer`, invisiveis, comentarios internos, apagados e vazios.
+
+### Priorizacao e truncamento
+
+O limite de 300 mensagens conta apenas mensagens relevantes apos filtros e deduplicacao.
+
+Quando ha excesso:
+
+1. O transcript principal nao e afetado.
+2. O contexto proximo tem prioridade sobre o historico ampliado.
+3. Mensagens sem ticket tem prioridade sobre outros tickets dentro da mesma camada.
+4. Sinais comerciais aumentam prioridade: produto, modelo, preco, desconto, pagamento, link, loja, visita, entrega, retirada, objeção, disponibilidade e termos derivados dos produtos da venda atual e das vendas anteriores.
+5. A ordem final enviada ao prompt permanece cronologica.
+6. `truncado=true` e quantidades agregadas sao registradas.
+
+### Relacao com vendas anteriores
+
+Quando o helper recebe vendas anteriores, cada mensagem pode ser marcada em relacao temporal a elas, por exemplo:
+
+- `antes da venda anterior #65295`;
+- `apos venda anterior #65295`.
+
+Isso ajuda a IA a diferenciar produto ja comprado, contexto logistico e novo interesse comercial. O bloco tambem reforca que produtos de vendas anteriores nao sao automaticamente oportunidades atuais.
+
+### Integracao nos prompts
+
+Arquivo: `src/app/api/sgi/ia/processar-proximo/route.ts`.
+
+Analise individual:
+
+- passa produtos da venda atual como palavras-chave de priorizacao;
+- passa vendas anteriores ja calculadas pelo helper historico;
+- injeta o bloco complementar estruturado antes do transcript principal.
+
+Consolidado:
+
+- usa os `contactId` dos tickets analisados;
+- remove todos os tickets principais do bloco complementar;
+- passa produtos da venda atual e vendas anteriores para priorizacao/relacao historica;
+- reforca que a evidencia deve ser citada como `contexto complementar proximo` ou `historico ampliado`.
+
+### Logs seguros
+
+O log agregado passa a usar:
+
+```text
+[IA][CONTEXTO-90D]
+```
+
+Campos registrados:
+
+- `inicio`;
+- `fim`;
+- `contatos`;
+- `totalApi`;
+- `naJanela90d`;
+- `contextoPrincipal`;
+- `contextoProximo`;
+- `historicoAmpliado`;
+- `outrosTickets`;
+- `semTicket`;
+- `descartadas`;
+- `deduplicadas`;
+- `priorizadas`;
+- `enviadasPrompt`;
+- `truncado`.
+
+Nao registra conteudo de mensagens, telefone, CPF, e-mail, links, token, prompt completo nem transcript.
+
+### Testes adicionados/atualizados
+
+Arquivo: `src/lib/ia/contexto-complementar-contato.test.ts`.
+
+Cenarios cobertos:
+
+- janela exata de 90 dias;
+- mensagem com 91 dias excluida;
+- mensagem no limite de 90 dias incluida;
+- venda com venda anterior;
+- venda sem venda anterior;
+- separacao entre contexto proximo e ampliado;
+- mensagem da venda atual nao duplicada;
+- mensagem de venda anterior identificada corretamente;
+- produto historico nao tratado como oportunidade atual no bloco;
+- interesse antigo sem continuidade;
+- interesse antigo com retomada explicita;
+- comparacao de produto semanas antes;
+- objeção antiga superada depois;
+- mais de 300 mensagens;
+- priorizacao comercial;
+- truncamento preservando contexto proximo;
+- historico sem ticket;
+- historico com outros tickets;
+- eventos tecnicos descartados;
+- erro da API sem quebrar analise;
+- reutilizacao/deduplicacao de `contactId` dentro da chamada;
+- caso `65431` sem regressao;
+- cliente com multiplos `contactId`;
+- deduplicacao entre contatos;
+- mensagens posteriores ao fechamento excluidas.
+
+### Validacoes executadas
+
+- `npx vitest run src/lib/ia/contexto-complementar-contato.test.ts src/lib/digisac/mensagens-contato.test.ts`: 2 arquivos, 32 testes aprovados. No sandbox falhou antes com `spawn EPERM`; reexecutado fora do sandbox.
+- `npx tsc --noEmit --pretty false`: aprovado fora do sandbox. No sandbox falhou por `EPERM` ao gravar `tsconfig.tsbuildinfo`.
+- `npx eslint src/lib/ia/contexto-complementar-contato.ts src/lib/ia/contexto-complementar-contato.test.ts src/app/api/sgi/ia/processar-proximo/route.ts`: aprovado.
+- `npx next build`: aprovado fora do sandbox. No sandbox falhou por `EPERM` em `.next/trace`. O build aprovado manteve avisos conhecidos de `Dynamic server usage` em rotas autenticadas com `cookies`.
+
+### Pendencias
+
+- Reanalisar a venda `65431` em ambiente autenticado/operacional.
+- Testar uma venda real com mensagens anteriores a janela antiga e dentro dos 90 dias.
+- Comparar tokens antes/depois e tempo de processamento antes/depois em ambiente real.
+- Confirmar se existem contatos reais com multiplos `contactId` alem dos cenarios unitarios.

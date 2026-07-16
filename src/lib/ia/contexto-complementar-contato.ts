@@ -47,7 +47,7 @@ export type ContextoComplementarContatoIA = {
   janelaInicioMaxima90d: string | null
   janelaInicioContextoProximo: string | null
   janelaFim: string | null
-  janelaOrigem: 'venda_anterior' | 'fallback_30_dias' | null
+  janelaOrigem: 'periodo_valido' | 'venda_anterior' | 'fallback_30_dias' | null
   totalApi: number
   totalNaJanela: number
   mensagensTicketAtual: number
@@ -70,6 +70,7 @@ export type BuscarContextoComplementarContatoOptions = {
   contactIds: Array<string | null | undefined>
   ticketIdsPrincipais: string[]
   dataFechamentoVenda: string | null | undefined
+  dataInicioPeriodoValido?: string | null | undefined
   dataFechamentoVendaAnterior?: string | null | undefined
   vendasAnteriores?: VendaAnteriorReferenciaContato[]
   palavrasChaveProdutos?: string[]
@@ -95,7 +96,7 @@ type JanelaContato = {
   inicioMaximoISO: string
   inicioContextoProximoISO: string
   fimISO: string
-  origem: 'venda_anterior' | 'fallback_30_dias'
+  origem: 'periodo_valido' | 'venda_anterior' | 'fallback_30_dias'
   inicioContextoProximoMs: number
 }
 
@@ -112,18 +113,28 @@ function formatarDataHora(ms: number): string {
 
 export function calcularJanelaComercialContato(
   dataFechamentoVenda: string | null | undefined,
+  dataInicioPeriodoValido?: string | null | undefined,
   dataFechamentoVendaAnterior?: string | null | undefined
 ): JanelaContato | null {
   const fimMs = parseMs(dataFechamentoVenda)
   if (fimMs == null) return null
 
-  const inicioMaximoMs = fimMs - JANELA_HISTORICO_AMPLIADO_DIAS_CONTATO * 24 * 60 * 60 * 1000
+  const inicioPeriodoMs = parseMs(dataInicioPeriodoValido)
   const anteriorMs = parseMs(dataFechamentoVendaAnterior)
   const fallbackMs = fimMs - JANELA_FALLBACK_DIAS_CONTATO * 24 * 60 * 60 * 1000
-  const origem = anteriorMs != null && anteriorMs < fimMs ? 'venda_anterior' : 'fallback_30_dias'
-  const inicioContextoProximoMs = origem === 'venda_anterior'
-    ? Math.max(anteriorMs as number, inicioMaximoMs)
-    : Math.max(fallbackMs, inicioMaximoMs)
+  const origem =
+    inicioPeriodoMs != null && inicioPeriodoMs < fimMs
+      ? 'periodo_valido'
+      : anteriorMs != null && anteriorMs < fimMs
+      ? 'venda_anterior'
+      : 'fallback_30_dias'
+  const inicioContextoProximoMs =
+    origem === 'periodo_valido'
+      ? inicioPeriodoMs as number
+      : origem === 'venda_anterior'
+      ? anteriorMs as number
+      : fallbackMs
+  const inicioMaximoMs = inicioContextoProximoMs - JANELA_HISTORICO_AMPLIADO_DIAS_CONTATO * 24 * 60 * 60 * 1000
 
   return {
     inicioISO: new Date(inicioMaximoMs).toISOString(),
@@ -338,7 +349,11 @@ export async function buscarContextoComplementarContatoIA(
 ): Promise<ContextoComplementarContatoIA> {
   const contactIds = Array.from(new Set(options.contactIds.map((id) => String(id ?? '').trim()).filter(Boolean)))
   const ticketIdsPrincipais = new Set(options.ticketIdsPrincipais.map((id) => id.trim()).filter(Boolean))
-  const janela = calcularJanelaComercialContato(options.dataFechamentoVenda ?? null, options.dataFechamentoVendaAnterior ?? null)
+  const janela = calcularJanelaComercialContato(
+    options.dataFechamentoVenda ?? null,
+    options.dataInicioPeriodoValido ?? null,
+    options.dataFechamentoVendaAnterior ?? null
+  )
 
   if (contactIds.length === 0) return contextoVazio('sem_contact_id')
   if (!janela) return contextoVazio('sem_data_fechamento_venda', contactIds)
@@ -491,15 +506,15 @@ CHAMADOS DO CICLO ATUAL
 O transcript principal e os chamados do ciclo atual continuam sendo a fonte principal para classificar influencia.
 
 CONTEXTO COMPLEMENTAR PROXIMO
-Mensagens do mesmo contato entre a venda anterior e a venda atual, ou a janela curta de fallback quando nao ha venda anterior. Podem estar sem ticket ou vinculadas a outros tickets. Use para reconstruir a continuidade imediata da jornada.
+Mensagens do mesmo contato dentro do periodo valido da venda, ou a janela curta de fallback quando nao ha abertura de periodo. Podem estar sem ticket ou vinculadas a outros tickets. Use para reconstruir a continuidade imediata da jornada.
 
 CONTEXTO HISTORICO AMPLIADO - ATE 90 DIAS
-Mensagens anteriores ao contexto proximo, dentro dos 90 dias anteriores ao fechamento da venda atual.
+Mensagens anteriores ao contexto proximo, dentro dos 90 dias anteriores a abertura do periodo valido da venda.
 Use somente para identificar origem do interesse, retomadas, comparacao de produtos, objecoes antigas e continuidade da jornada.
 Nao trate automaticamente esse historico como parte da venda atual. Nao atribua influencia sem evidencia de continuidade.
 
-Janela maxima 90d: ${contexto.janelaInicioMaxima90d ?? contexto.janelaInicio ?? 'nao informada'} ate ${contexto.janelaFim ?? 'nao informada'}.
-Inicio do contexto proximo: ${contexto.janelaInicioContextoProximo ?? 'nao informado'} (${contexto.janelaOrigem ?? 'origem desconhecida'}).
+Janela historica adicional: ${contexto.janelaInicioMaxima90d ?? contexto.janelaInicio ?? 'nao informada'} ate ${contexto.janelaInicioContextoProximo ?? 'nao informado'}.
+Periodo considerado ate a venda: ${contexto.janelaInicioContextoProximo ?? 'nao informado'} ate ${contexto.janelaFim ?? 'nao informada'} (${contexto.janelaOrigem ?? 'origem desconhecida'}).
 Contatos consultados: ${contexto.contactIdsConsultados.length}. Total API: ${contexto.totalApi}. Na janela 90d: ${contexto.totalNaJanela}. Ticket principal removido: ${contexto.mensagensTicketAtual}. Contexto proximo: ${contexto.mensagensContextoProximo}. Historico ampliado: ${contexto.mensagensHistoricoAmpliado}. Outros tickets: ${contexto.mensagensOutrosTickets}. Sem ticket: ${contexto.mensagensSemTicket}. Descartadas: ${contexto.mensagensDescartadas}. Deduplicadas: ${contexto.deduplicadas}. Priorizadas: ${contexto.priorizadas}. Enviadas ao prompt: ${contexto.enviadasPrompt}. Truncado: ${contexto.truncado ? 'sim' : 'nao'}.
 
 ### CONTEXTO COMPLEMENTAR PROXIMO

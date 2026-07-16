@@ -551,7 +551,7 @@ Status: implementado no helper e integrado aos prompts individual e consolidado.
 
 ### Objetivo
 
-Ampliar a busca por `contactId` para ate 90 dias antes do fechamento da venda atual, mantendo separacao entre:
+Ampliar a busca por `contactId` para ate 90 dias antes da abertura do periodo valido da venda, mantendo separacao entre:
 
 - venda atual;
 - chamados do ciclo atual e transcript principal;
@@ -563,13 +563,15 @@ Ampliar a busca por `contactId` para ate 90 dias antes do fechamento da venda at
 
 ### Janela temporal
 
-O fim da janela e sempre `data_fechamento` da venda atual.
+O fim da janela continua sendo `data_fechamento` da venda atual.
 
-O inicio maximo e `data_fechamento - 90 dias`.
+O inicio maximo e `data_inicio_ciclo_venda - 90 dias`, quando `data_inicio_ciclo_venda` estiver disponivel.
 
-O contexto complementar proximo com venda anterior continua iniciando no fechamento da venda anterior, limitado pela janela maxima de 90 dias.
+O contexto complementar proximo inicia na abertura do periodo valido (`data_inicio_ciclo_venda`) e segue ate o fechamento da venda atual.
 
-Quando nao ha venda anterior, o contexto proximo usa o fallback curto existente de 30 dias antes da venda atual. O restante da janela, entre 90 dias e esse fallback, entra como historico ampliado.
+O contexto historico ampliado fica fora da janela do periodo valido: de `data_inicio_ciclo_venda - 90 dias` ate `data_inicio_ciclo_venda`.
+
+Quando nao ha abertura do periodo valido, o fluxo preserva o fallback anterior: contexto proximo de 30 dias antes do fechamento, e historico ampliado de 90 dias antes desse inicio de fallback.
 
 Mensagens posteriores ao fechamento da venda atual sao excluidas.
 
@@ -583,10 +585,10 @@ Alteracoes:
 - `CONTEXTO_CONTATO_MAX_MENSAGENS_PROMPT = 300`.
 - `CONTEXTO_CONTATO_MAX_CHARS = 28000`.
 - `calcularJanelaComercialContato` agora retorna:
-  - inicio maximo de 90 dias;
+  - inicio maximo de 90 dias antes da abertura do periodo valido;
   - inicio do contexto proximo;
   - fim da venda atual;
-  - origem do contexto proximo (`venda_anterior` ou `fallback_30_dias`).
+  - origem do contexto proximo (`periodo_valido`, `venda_anterior` ou `fallback_30_dias`).
 - As mensagens relevantes sao classificadas por camada:
   - `contexto_proximo`;
   - `historico_ampliado`.
@@ -671,9 +673,9 @@ Arquivo: `src/lib/ia/contexto-complementar-contato.test.ts`.
 
 Cenarios cobertos:
 
-- janela exata de 90 dias;
-- mensagem com 91 dias excluida;
-- mensagem no limite de 90 dias incluida;
+- janela exata de 90 dias antes da abertura do periodo valido;
+- mensagem com 91 dias antes da abertura do periodo valido excluida;
+- mensagem no limite de 90 dias antes da abertura do periodo valido incluida;
 - venda com venda anterior;
 - venda sem venda anterior;
 - separacao entre contexto proximo e ampliado;
@@ -707,6 +709,6 @@ Cenarios cobertos:
 ### Pendencias
 
 - Reanalisar a venda `65431` em ambiente autenticado/operacional.
-- Testar uma venda real com mensagens anteriores a janela antiga e dentro dos 90 dias.
+- Testar uma venda real com mensagens anteriores a abertura do periodo valido e dentro dos 90 dias adicionais.
 - Comparar tokens antes/depois e tempo de processamento antes/depois em ambiente real.
 - Confirmar se existem contatos reais com multiplos `contactId` alem dos cenarios unitarios.

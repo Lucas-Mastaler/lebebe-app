@@ -54,6 +54,7 @@ async function contexto(mensagens: DigisacMensagem[], extra: Partial<Parameters<
     contactIds: [contactId],
     ticketIdsPrincipais: [ticketAtual],
     dataFechamentoVenda: vendaAtual,
+    dataInicioPeriodoValido: vendaAnterior,
     dataFechamentoVendaAnterior: vendaAnterior,
     fetcher: fetcher(mensagens),
     ...extra,
@@ -61,26 +62,27 @@ async function contexto(mensagens: DigisacMensagem[], extra: Partial<Parameters<
 }
 
 describe('contexto complementar do contato IA', () => {
-  it('calcula janela maxima exata de 90 dias antes do fechamento', () => {
-    const janela = calcularJanelaComercialContato(vendaAtual, vendaAnterior)
-    const diffDias = (Date.parse(vendaAtual) - Date.parse(janela?.inicioMaximoISO ?? '')) / (24 * 60 * 60 * 1000)
+  it('calcula janela maxima exata de 90 dias antes da abertura do periodo valido', () => {
+    const janela = calcularJanelaComercialContato(vendaAtual, vendaAnterior, null)
+    const diffDias = (Date.parse(vendaAnterior) - Date.parse(janela?.inicioMaximoISO ?? '')) / (24 * 60 * 60 * 1000)
 
     expect(diffDias).toBe(JANELA_HISTORICO_AMPLIADO_DIAS_CONTATO)
     expect(janela?.fimISO).toBe('2026-07-07T20:59:26.000Z')
+    expect(janela?.origem).toBe('periodo_valido')
   })
 
-  it('exclui mensagem com 91 dias', async () => {
+  it('exclui mensagem com 91 dias antes da abertura do periodo valido', async () => {
     const result = await contexto([
-      msg({ id: '91d', timestamp: '2026-04-07T20:59:25Z' }),
-      msg({ id: 'dentro', timestamp: '2026-04-08T20:59:26Z' }),
+      msg({ id: '91d', timestamp: '2026-03-23T15:44:49Z' }),
+      msg({ id: 'dentro', timestamp: '2026-03-24T15:44:50Z' }),
     ])
 
     expect(result.totalNaJanela).toBe(1)
     expect(result.mensagensHistoricoAmpliado).toBe(1)
   })
 
-  it('inclui mensagem no limite de 90 dias', async () => {
-    const result = await contexto([msg({ id: 'limite', timestamp: '2026-04-08T20:59:26Z' })])
+  it('inclui mensagem no limite de 90 dias antes da abertura do periodo valido', async () => {
+    const result = await contexto([msg({ id: 'limite', timestamp: '2026-03-24T15:44:50Z' })])
 
     expect(result.totalNaJanela).toBe(1)
     expect(result.mensagensHistoricoAmpliado).toBe(1)
@@ -100,7 +102,7 @@ describe('contexto complementar do contato IA', () => {
     const result = await contexto([
       msg({ id: 'historico', timestamp: '2026-05-01T10:00:00Z' }),
       msg({ id: 'proximo', timestamp: '2026-06-20T10:00:00Z' }),
-    ], { dataFechamentoVendaAnterior: null })
+    ], { dataInicioPeriodoValido: null, dataFechamentoVendaAnterior: null })
 
     expect(result.janelaOrigem).toBe('fallback_30_dias')
     expect(result.mensagensHistoricoAmpliado).toBe(1)
@@ -108,7 +110,7 @@ describe('contexto complementar do contato IA', () => {
   })
 
   it('mantem o fallback curto em 30 dias quando nao ha venda anterior', () => {
-    const janela = calcularJanelaComercialContato(vendaAtual, null)
+    const janela = calcularJanelaComercialContato(vendaAtual, null, null)
     const diffDias = (Date.parse(vendaAtual) - Date.parse(janela?.inicioContextoProximoISO ?? '')) / (24 * 60 * 60 * 1000)
 
     expect(diffDias).toBe(JANELA_FALLBACK_DIAS_CONTATO)

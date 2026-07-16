@@ -1,6 +1,6 @@
 ## 2026-07-16 - Codex - Inteligencia Comercial IA com contexto historico ampliado 90d por contactId
 
-**Resumo:** Ampliado o contexto por `contactId` usado pela IA da Inteligencia Comercial para buscar ate 90 dias antes do fechamento da venda atual, mantendo separacao entre transcript/ticket principal, contexto complementar proximo e contexto historico ampliado. O fluxo de UI `Ver conversa`, sincronizacao Digisac, vinculos de ciclo, schema Supabase e reanalise em massa nao foram alterados.
+**Resumo:** Ampliado o contexto por `contactId` usado pela IA da Inteligencia Comercial para buscar ate 90 dias antes da abertura do periodo valido da venda, mantendo separacao entre transcript/ticket principal, contexto complementar proximo e contexto historico ampliado. O fluxo de UI `Ver conversa`, sincronizacao Digisac, vinculos de ciclo, schema Supabase e reanalise em massa nao foram alterados.
 
 **Arquivos lidos:**
 - Anexo do pedido em `C:\Users\lebeb\.codex\attachments\6124a5ce-a7b4-409a-b602-7e00608b9920\pasted-text.txt`
@@ -31,8 +31,9 @@
 - `docs/ia/log_progress.md`
 
 **Implementacao:**
-- Adicionada janela maxima de 90 dias (`JANELA_HISTORICO_AMPLIADO_DIAS_CONTATO`) com fim no fechamento da venda atual.
-- Mantido fallback curto de 30 dias como contexto proximo quando nao ha venda anterior; o restante da janela de 90 dias fica como historico ampliado.
+- Adicionada janela maxima de 90 dias (`JANELA_HISTORICO_AMPLIADO_DIAS_CONTATO`) ancorada na abertura do periodo valido (`data_inicio_ciclo_venda`) quando disponivel.
+- O contexto proximo passa a iniciar na abertura do periodo valido; o historico ampliado fica de `data_inicio_ciclo_venda - 90 dias` ate `data_inicio_ciclo_venda`.
+- Mantido fallback curto de 30 dias como contexto proximo quando nao ha abertura do periodo valido; nesse caso, o historico ampliado fica nos 90 dias anteriores ao inicio do fallback.
 - Separadas as mensagens em `contexto_proximo` e `historico_ampliado`, mantendo a classificacao tecnica `ticket_atual`, `outro_ticket` e `sem_ticket`.
 - Elevado limite de mensagens relevantes no prompt para 300 e limite de caracteres do bloco para 28000.
 - Priorizacao deterministica: contexto proximo antes do historico ampliado, sem ticket antes de outros tickets, e sinais comerciais/produtos relevantes antes de mensagens genericas.
@@ -46,10 +47,10 @@
 - Nenhuma migration, schema, RLS, policy, trigger ou persistencia nova foi criada.
 
 **Validacoes realizadas:**
-- `npx vitest run src/lib/ia/contexto-complementar-contato.test.ts src/lib/digisac/mensagens-contato.test.ts`: falhou no sandbox com `spawn EPERM`; reexecutado fora do sandbox com 2 arquivos e 32 testes aprovados.
+- `npx vitest run src/lib/ia/contexto-complementar-contato.test.ts src/lib/digisac/mensagens-contato.test.ts`: falhou no sandbox com `spawn EPERM`; reexecutado fora do sandbox com 2 arquivos e 32 testes aprovados. Reexecutado apos ajuste da ancora para abertura do periodo valido, novamente com 2 arquivos e 32 testes aprovados.
 - `npx tsc --noEmit --pretty false`: falhou no sandbox por `EPERM` ao gravar `tsconfig.tsbuildinfo`; reexecutado fora do sandbox e aprovado.
 - `npx eslint src/lib/ia/contexto-complementar-contato.ts src/lib/ia/contexto-complementar-contato.test.ts src/app/api/sgi/ia/processar-proximo/route.ts`: aprovado.
-- `npx next build`: falhou no sandbox por `EPERM` ao abrir `.next/trace`; reexecutado fora do sandbox e aprovado. Avisos conhecidos de `Dynamic server usage` em rotas autenticadas com `cookies` permaneceram, sem falhar a build.
+- `npx next build`: falhou no sandbox por `EPERM` ao abrir `.next/trace`; reexecutado fora do sandbox e aprovado. Reexecutado apos ajuste da ancora para abertura do periodo valido e aprovado novamente. Avisos conhecidos de `Dynamic server usage` em rotas autenticadas com `cookies` permaneceram, sem falhar a build.
 
 **Caso 65431:**
 - Teste fixture preserva `contactId=67e15f97-a406-445b-9e6d-ae8ecc1f8a55`, `ticketId=cf445253-edce-4b2d-a561-c9d9ee626b07`, 11 mensagens do ticket principal removidas e 78 mensagens sem ticket no contexto proximo.
@@ -57,7 +58,7 @@
 
 **Pendencias:**
 - Reanalisar a venda `65431` em ambiente autenticado/operacional.
-- Testar uma venda real com mensagens anteriores a janela antiga e dentro dos 90 dias.
+- Testar uma venda real com mensagens anteriores a abertura do periodo valido e dentro dos 90 dias adicionais.
 - Comparar tokens antes/depois e tempo de processamento antes/depois em ambiente real.
 - Confirmar se ha casos reais com multiplos `contactId` para o mesmo cliente alem dos testes unitarios.
 

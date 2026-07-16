@@ -159,6 +159,7 @@ export async function POST(request: NextRequest) {
       contactIds: [conversa?.digisac_contact_id],
       ticketIdsPrincipais: [ticketId],
       dataFechamentoVenda: venda?.data_fechamento ?? null,
+      dataInicioPeriodoValido: vinculo?.data_inicio_ciclo_venda ?? null,
       dataFechamentoVendaAnterior: contextoHistorico.vendas[0]?.dataFechamento ?? null,
       vendasAnteriores: contextoHistorico.vendas.map((v) => ({
         numeroLancamento: v.numeroLancamento,
@@ -473,10 +474,15 @@ async function finalizarJob(
     `[IA][CHAMADOS-ANTERIORES] vendaAtual=${numeroLancamento} chamados=${contextoChamadosAnteriores.chamados.length} candidatos=${contextoChamadosAnteriores.totalCandidatosAntesLimite} limite=${contextoChamadosAnteriores.limiteChamados} tamanho=${contextoChamadosAnteriores.tamanhoContextoChars}`
   )
 
+  const inicioPeriodoValidoConsolidado = Object.values(inicioCicloMap)
+    .filter((data): data is string => Boolean(data))
+    .sort((a, b) => Date.parse(a) - Date.parse(b))[0] ?? null
+
   const contextoComplementarContato = await buscarContextoComplementarContatoIA({
     contactIds: ticketIds.map((id) => contactIdMap[id]),
     ticketIdsPrincipais: ticketIds,
     dataFechamentoVenda: vendaConsolidado?.data_fechamento ?? null,
+    dataInicioPeriodoValido: inicioPeriodoValidoConsolidado,
     dataFechamentoVendaAnterior: contextoHistorico.vendas[0]?.dataFechamento ?? null,
     vendasAnteriores: contextoHistorico.vendas.map((v) => ({
       numeroLancamento: v.numeroLancamento,
@@ -693,7 +699,7 @@ Se a conversa atual trouxer dado diferente, sinalize como possível divergência
 
 ## INSTRUÇÃO FINAL
 Compare o conteúdo da conversa com os produtos listados acima. Se houver menção a produto ou categoria que conste na lista, não classifique como "Não". Seja criterioso para não inventar influência, mas não ignore relação direta entre conversa e produto comprado.
-Use tambem o CONTEXTO COMPLEMENTAR DO CONTATO quando ele trouxer evidencias comerciais antes do fechamento. Mensagens sem ticket nao precisam ter protocolo para provar influencia; cite-as como contexto complementar proximo ou historico ampliado, conforme a secao de origem, e nao invente chamado, protocolo ou numero discado. Historico ampliado de ate 90 dias ajuda a entender origem do interesse e retomadas, mas nao vira influencia automaticamente sem continuidade clara com a venda atual.
+Use tambem o CONTEXTO COMPLEMENTAR DO CONTATO quando ele trouxer evidencias comerciais. Mensagens sem ticket nao precisam ter protocolo para provar influencia; cite-as como contexto complementar proximo ou historico ampliado, conforme a secao de origem, e nao invente chamado, protocolo ou numero discado. Historico ampliado de ate 90 dias antes da abertura do periodo valido ajuda a entender origem do interesse e retomadas, mas nao vira influencia automaticamente sem continuidade clara com a venda atual.
 
 ## REGRA SOBRE PRODUTOS RELACIONADOS E INFLUÊNCIA INDIRETA
 
@@ -1111,7 +1117,7 @@ O campo "resumo_geral" deve resumir a relação dos chamados com uma venda já r
 O campo "conclusao_comercial" deve concluir a influência comercial sobre a venda já registrada.
 
 ## REGRA SOBRE CONTEXTO COMPLEMENTAR DO CONTATO
-O bloco "CONTEXTO COMPLEMENTAR DO CONTATO" pode conter mensagens sem ticket ou de outros tickets do mesmo contactId separadas entre contexto complementar proximo e historico ampliado de ate 90 dias.
+O bloco "CONTEXTO COMPLEMENTAR DO CONTATO" pode conter mensagens sem ticket ou de outros tickets do mesmo contactId separadas entre contexto complementar proximo e historico ampliado de ate 90 dias antes da abertura do periodo valido.
 - Mensagens sem ticket podem provar influencia, continuidade, preco, produto, pagamento, visita ou fechamento mesmo sem protocolo.
 - Nao invente protocolo, numero de chamado ou numero discado para mensagens sem ticket.
 - Quando usar evidencia desse bloco, descreva se veio de "contexto complementar proximo" ou "historico ampliado".

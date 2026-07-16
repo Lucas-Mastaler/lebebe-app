@@ -21,6 +21,8 @@ const usuarioId = '123e4567-e89b-12d3-a456-426614174001'
 const unidadeId = '123e4567-e89b-12d3-a456-426614174002'
 const draftClientId = '123e4567-e89b-12d3-a456-426614174003'
 const rascunhoId = '123e4567-e89b-12d3-a456-426614174004'
+const consultoraId = '123e4567-e89b-12d3-a456-426614174005'
+const perfilConsultoraId = '123e4567-e89b-12d3-a456-426614174006'
 
 const authOk = {
   ok: true as const,
@@ -188,5 +190,80 @@ describe('api rascunhos atendimento presencial', () => {
     }))
 
     expect(response.status).toBe(403)
+  })
+
+  it('lista consultoras disponiveis com unidades vinculadas no contexto gerencial', async () => {
+    mockSupabase({
+      app_usuarios_perfis: [
+        { data: { app_perfis_acesso: { chave: 'gestao', ativo: true } }, error: null },
+        { data: [{ usuario_id: consultoraId }], error: null },
+      ],
+      app_usuarios_unidades: [
+        {
+          data: [{ app_unidades: { id: unidadeId, chave: 'bigorrilho', nome: 'Bigorrilho', ativo: true } }],
+          error: null,
+        },
+        { data: [{ usuario_id: consultoraId, unidade_id: unidadeId }], error: null },
+      ],
+      atendimento_presencial_atendimentos: [
+        { data: [], error: null },
+      ],
+      app_perfis_acesso: [
+        { data: { id: perfilConsultoraId }, error: null },
+      ],
+      usuarios_permitidos: [
+        { data: [{ id: consultoraId, email: 'consultora.loja@example.com' }], error: null },
+      ],
+    })
+
+    const response = await GET()
+    const json = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(json.ok).toBe(true)
+    expect(json.consultorasDisponiveis).toEqual([
+      {
+        id: consultoraId,
+        email: 'consultora.loja@example.com',
+        nome: 'consultora.loja@example.com',
+        unidadeIds: [unidadeId],
+      },
+    ])
+  })
+
+  it('rejeita consultora sem vinculo com a unidade informada', async () => {
+    mockSupabase({
+      app_usuarios_perfis: [
+        { data: { app_perfis_acesso: { chave: 'gestao', ativo: true } }, error: null },
+        { data: { id: 'perfil-vinculo' }, error: null },
+      ],
+      app_usuarios_unidades: [
+        {
+          data: [{ app_unidades: { id: unidadeId, chave: 'bigorrilho', nome: 'Bigorrilho', ativo: true } }],
+          error: null,
+        },
+        { data: null, error: null },
+      ],
+      usuarios_permitidos: [
+        { data: { id: consultoraId, ativo: true }, error: null },
+      ],
+      app_perfis_acesso: [
+        { data: { id: perfilConsultoraId }, error: null },
+      ],
+    })
+
+    const response = await POST(new Request('http://local', {
+      method: 'POST',
+      body: JSON.stringify({
+        draftClientId,
+        unidadeId,
+        consultoraUsuarioId: consultoraId,
+        dadosRascunho: { notaTecnica: 'teste' },
+      }),
+    }))
+    const json = await response.json()
+
+    expect(response.status).toBe(422)
+    expect(json).toMatchObject({ ok: false, message: 'Consultora nao vinculada a unidade', field: 'consultoraUsuarioId' })
   })
 })

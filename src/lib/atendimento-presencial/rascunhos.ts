@@ -7,34 +7,44 @@ import {
   validarFichaDadosRascunho,
   type FichaDadosRascunho,
 } from './ficha-schema'
+import type {
+  AtendimentoPresencialDTO,
+  PerfilAtendimento,
+  StatusAtendimentoPresencial,
+  UnidadeAtendimento,
+} from './rascunhos-shared'
+
+export {
+  filtrarConsultorasPorUnidade,
+  filtrarUnidadesPorConsultora,
+} from './rascunhos-shared'
+export type {
+  AtendimentoPresencialDTO,
+  ConsultoraAtendimento,
+  ContextoAtendimento,
+  PerfilAtendimento,
+  StatusAtendimentoPresencial,
+  UnidadeAtendimento,
+} from './rascunhos-shared'
 
 export const DRAFT_EXPIRATION_DAYS = 5
 export const DRAFT_PAYLOAD_MAX_BYTES = 4096
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-export type PerfilAtendimento = 'consultora' | 'supervisora_loja' | 'gestao' | 'superadmin' | string
-
-export type UnidadeAtendimento = {
-  id: string
-  chave: string
-  nome: string
-}
-
-export type ConsultoraAtendimento = {
-  id: string
-  email: string
-  nome: string
-}
-
 export type AtendimentoPresencialRow = {
   id: string
   cliente_id: string | null
   consultora_usuario_id: string
   unidade_id: string
-  status: 'rascunho'
+  status: StatusAtendimentoPresencial
   draft_client_id: string
   dados_rascunho: DadosRascunho
+  resultado_atendimento?: string | null
+  motivo_outro?: string | null
+  observacoes?: string | null
+  numero_lancamento?: number | null
+  concluido_em?: string | null
   iniciado_em: string
   ultima_atividade_em: string
   expira_em: string
@@ -46,32 +56,6 @@ export type AtendimentoPresencialRow = {
 }
 
 export type DadosRascunho = FichaDadosRascunho
-
-export type AtendimentoPresencialDTO = {
-  id: string
-  clienteId: string | null
-  consultoraUsuarioId: string
-  unidadeId: string
-  status: 'rascunho'
-  draftClientId: string
-  dadosRascunho: DadosRascunho
-  iniciadoEm: string
-  ultimaAtividadeEm: string
-  expiraEm: string
-  version: number
-  criadoPor: string
-  atualizadoPor: string
-  createdAt: string
-  updatedAt: string
-  expirado: boolean
-}
-
-export type ContextoAtendimento = {
-  perfil: PerfilAtendimento
-  usuarioId: string
-  acessoTotal: boolean
-  unidadesPermitidas: UnidadeAtendimento[]
-}
 
 export type ValidacaoRascunho =
   | { ok: true; dados: DadosRascunho }
@@ -105,6 +89,11 @@ export function serializarAtendimentoPresencial(row: AtendimentoPresencialRow): 
     status: row.status,
     draftClientId: row.draft_client_id,
     dadosRascunho: migrarFichaDadosRascunho(row.dados_rascunho),
+    resultadoAtendimento: row.resultado_atendimento ?? null,
+    motivoOutro: row.motivo_outro ?? null,
+    observacoes: row.observacoes ?? null,
+    numeroLancamento: row.numero_lancamento ?? null,
+    concluidoEm: row.concluido_em ?? null,
     iniciadoEm: row.iniciado_em,
     ultimaAtividadeEm: row.ultima_atividade_em,
     expiraEm: row.expira_em,

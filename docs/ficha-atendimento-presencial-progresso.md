@@ -1542,3 +1542,308 @@ Executar a validacao manual da Fase 4 em browser autenticado e celular. Depois, 
 - Edicao real de filial/consultora apos o rascunho existir continua nao implementada porque exigiria novo contrato de persistencia.
 - Validacao manual autenticada em navegador/celular ainda precisa ser executada.
 - `dados_rascunho` permanece como JSONB temporario de rascunho, nao como modelo definitivo da ficha concluida.
+
+## 2026-07-16 - Ajuste final da Fase 4 e Fase 5
+
+Status: Fase 4 validada apos ajuste de consultora/unidade; Fase 5 implementada localmente.
+
+### Ajuste final da Fase 4
+
+- A API de rascunhos passou a retornar `unidadeIds` para cada consultora disponivel.
+- A selecao inicial da ficha agora filtra consultoras por unidade e unidades por consultora.
+- Perfis gerenciais selecionam consultora antes da unidade quando necessario.
+- Consultora sem unidade vinculada fica bloqueada para iniciar ficha e recebe aviso operacional.
+- O backend preserva a validacao `Consultora nao vinculada a unidade`.
+- Nao foi criada lista manual de excecoes para emails administrativos; a exibicao segue o perfil e os vinculos reais do banco.
+
+### Fase 5 - Persistencia definitiva
+
+- Criada migration `20260716100000_conclude_atendimento_presencial.sql`.
+- `atendimento_presencial_atendimentos.status` passa a aceitar `rascunho` e `concluido`.
+- Foram adicionados campos definitivos de conclusao: resultado, motivo outro, observacoes, numero de lancamento e `concluido_em`.
+- Criadas tabelas definitivas: criancas, departamentos, produtos de interesse, motivos e historico.
+- Criada funcao transacional `public.atendimento_presencial_concluir(...)`.
+- RLS das novas tabelas fica ativo, sem acesso direto para `authenticated`, com uso via service role nas APIs protegidas.
+
+### Interface e APIs
+
+- `/atendimento-presencial/ficha` agora conclui a ficha na revisao.
+- Quando o resultado e `Sim`, a tela exige numero do lancamento.
+- Quando o resultado e `Nao` ou `Ainda em negociacao`, o numero do lancamento e limpo e nao enviado.
+- Antes de concluir, a tela faz um PATCH imediato para salvar o rascunho mais recente.
+- Apos concluir, o cache local do rascunho e removido.
+- Criada rota `POST /api/atendimento-presencial/atendimentos/[id]/concluir`.
+- Criada rota `GET /api/atendimento-presencial/atendimentos` para registros concluidos.
+- Criada rota `GET /api/atendimento-presencial/atendimentos/[id]` para detalhe de registro concluido.
+- `/atendimento-presencial/registros` deixou de ser placeholder e passou a listar registros concluidos com detalhe basico.
+
+### Validacao Supabase
+
+- MCP Supabase consultado antes da Fase 5.
+- Confirmado que, antes desta migration, existiam `atendimento_presencial_atendimentos` e `atendimento_presencial_clientes`.
+- Confirmado que as tabelas definitivas de criancas, departamentos, produtos, motivos e historico ainda nao existiam.
+- Confirmado que a constraint de status existente aceitava somente `rascunho`.
+- Confirmado que RLS estava ativo nas tabelas atuais e que o padrao era negar acesso direto a `authenticated`.
+
+### Arquivos criados
+
+- `src/lib/atendimento-presencial/rascunhos-shared.ts`
+- `src/app/api/atendimento-presencial/atendimentos/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts`
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`
+- `supabase/migrations/20260716100000_conclude_atendimento_presencial.sql`
+
+### Arquivos alterados
+
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `src/app/atendimento-presencial/registros/page.tsx`
+- `src/lib/atendimento-presencial/ficha-schema.ts`
+- `src/lib/atendimento-presencial/ficha-schema.test.ts`
+- `src/lib/atendimento-presencial/rascunhos.ts`
+- `src/lib/atendimento-presencial/rascunhos.test.ts`
+
+### Validacoes realizadas
+
+- `npm run test -- src/lib/atendimento-presencial/rascunhos.test.ts src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts`: passou, 2 arquivos e 14 testes, validando o ajuste final da Fase 4.
+- `npm run test -- src/lib/atendimento-presencial/ficha-schema.test.ts src/lib/atendimento-presencial/rascunhos.test.ts src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts`: passou, 5 arquivos e 31 testes.
+- `npx tsc --noEmit`: passou.
+- `npm run lint -- ...`: passou nos arquivos alterados da Fase 5.
+- `npm run build`: falhou no sandbox por rede bloqueada ao buscar Google Fonts.
+- `npm run build` com rede liberada: falhou antes da compilacao por `EPERM` persistente ao remover arquivo em `.next/static`, problema local de lock Windows/OneDrive.
+
+### Nao validado
+
+- Migration ainda nao foi aplicada no Supabase remoto neste turno.
+- SQL da migration nao foi executado contra banco local/remoto neste turno.
+- Fluxo manual autenticado de conclusao e consulta de registro ainda nao foi executado em navegador/celular.
+
+### Fora do escopo preservado
+
+- Sem integracao SGI.
+- Sem Digisac automatico.
+- Sem Inteligencia Comercial.
+- Sem fechamento posterior separado.
+- Sem filtros avancados, relatorios, exportacao ou edicao pos-conclusao.
+
+### Proximo passo recomendado
+
+Aplicar a migration em ambiente controlado, executar a conclusao manual com usuario real e validar `/atendimento-presencial/registros` com dados concluidos reais.
+
+## 2026-07-16 - Revisao da migration Fase 5 antes de aplicacao
+
+### Escopo
+
+- Revisada e corrigida somente a migration pendente `20260716100000_conclude_atendimento_presencial.sql`.
+- A migration nao foi aplicada no Supabase neste turno.
+- Mantida a estrutura funcional ja implementada da Fase 5; o foco foi seguranca, autorizacao, integridade e contrato da RPC.
+
+### Diagnostico confirmado
+
+- A migration anterior aceitava `p_perfil` e `p_role` na RPC, confiando em parametros vindos da API.
+- O MCP Supabase confirmou que `usuarios_permitidos.role` aceita somente `user` e `superadmin`; perfil operacional precisa vir de `app_usuarios_perfis`/`app_perfis_acesso`.
+- O MCP Supabase confirmou que a tabela real `atendimento_presencial_atendimentos` ainda aceita somente `status = 'rascunho'` e que as tabelas normalizadas da Fase 5 ainda nao existem no banco remoto.
+- O contrato correto e concluir via service role, mas com a propria RPC revalidando executor, perfil, consultora responsavel, unidade, cliente e JSONB.
+
+### Correcao implementada
+
+- RPC `public.atendimento_presencial_concluir` agora recebe apenas `p_atendimento_id`, `p_expected_version`, `p_usuario_id` e `p_numero_lancamento`.
+- A RPC busca role real em `usuarios_permitidos` e perfil real em `app_usuarios_perfis`/`app_perfis_acesso`.
+- `superadmin` e tratado por role real; `consultora`, `supervisora_loja` e `gestao` sao tratados por perfil operacional real.
+- Revalidada unidade ativa, consultora responsavel ativa, perfil consultora da responsavel, vinculo da consultora com a unidade e cliente ativo.
+- O JSONB do rascunho e validado antes da normalizacao: chaves permitidas, arrays obrigatorios, tipos, limites de texto, quantidade de itens, duplicidades e regras por resultado.
+- A conclusao permanece atomica com `FOR UPDATE`, checagem de versao e persistencia normalizada antes de limpar o rascunho.
+- `dados_rascunho` passa a guardar apenas marcador minimo de schema concluido apos a normalizacao.
+- Novas tabelas continuam com RLS ativo, sem grants diretos para `anon`/`authenticated`; acesso direto e bloqueado por policies falsas e uso previsto via service role.
+
+### Arquivos alterados nesta revisao
+
+- `supabase/migrations/20260716100000_conclude_atendimento_presencial.sql`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts`
+- `src/app/api/cron/atendimento-presencial-limpar-rascunhos/route.test.ts`
+- `src/lib/atendimento-presencial/conclusao-migration.test.ts`
+
+### Validacoes realizadas
+
+- `npm run test -- src/lib/atendimento-presencial/conclusao-migration.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts src/app/api/cron/atendimento-presencial-limpar-rascunhos/route.test.ts`: passou, 3 arquivos e 13 testes.
+- `npm run test -- src/lib/atendimento-presencial/ficha-schema.test.ts src/lib/atendimento-presencial/rascunhos.test.ts src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts src/app/api/cron/atendimento-presencial-limpar-rascunhos/route.test.ts src/lib/atendimento-presencial/conclusao-migration.test.ts`: passou, 7 arquivos e 42 testes.
+- `npx tsc --noEmit`: passou.
+- `npx eslint src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts src/app/api/cron/atendimento-presencial-limpar-rascunhos/route.test.ts src/lib/atendimento-presencial/conclusao-migration.test.ts`: passou.
+- `git diff --check`: passou, com avisos de CRLF/LF do checkout Windows.
+- `npm run lint`: falhou por erros preexistentes fora do escopo em `/procurar-datas` e `digisac`.
+- `npm run build`: falhou no sandbox por rede bloqueada ao buscar Google Fonts; repetido com rede liberada, falhou duas vezes por `EPERM` em `.next/static`, ruido local Windows/OneDrive.
+
+### Pendencias
+
+- SQL ainda nao executado contra banco local ou remoto.
+- Migration ainda nao aplicada no Supabase remoto.
+- Fluxo manual autenticado de conclusao e consulta de registro ainda nao validado em navegador/celular.
+
+### Proximo passo recomendado
+
+Aplicar a migration em ambiente controlado somente apos autorizacao explicita, testar uma conclusao real por perfil permitido e validar que registros concluidos nao sao afetados pelo cron de limpeza de rascunhos.
+
+## 2026-07-16 - Ajuste final do limite JSONB da migration Fase 5
+
+### Escopo
+
+- Ajustado somente o limite de tamanho de `dados_rascunho` na migration pendente da Fase 5 e no schema funcional correspondente.
+- A migration ainda nao foi aplicada no Supabase.
+- Nenhum limite funcional de produtos, criancas, motivos, observacoes ou motivo outro foi alterado.
+
+### Diagnostico confirmado
+
+- O limite anterior de 4 KB (`pg_column_size(dados_rascunho) <= 4096`) era insuficiente para o payload maximo permitido pelo schema funcional.
+- O payload maximo testado contem 8 criancas, 6 departamentos, 20 produtos com 80 caracteres, 24 motivos, motivo Outro com 120 caracteres e observacoes com 2.000 caracteres.
+- Tamanho medido do payload maximo valido em JSON UTF-8: 5.993 bytes.
+- Novo limite adotado: 16.384 bytes.
+- Margem restante medida: 10.391 bytes.
+- MCP Supabase confirmou 5 rascunhos atuais e maior `dados_rascunho` com 300 bytes; todos continuariam compativeis.
+
+### Regra da consultora responsavel
+
+- `consultora_usuario_id` permanece representando uma usuaria com perfil operacional `consultora`.
+- Supervisora e gestao podem executar a conclusao quando autorizadas, mas nao sao gravadas como consultora responsavel por padrao.
+- A validacao `apa.chave = 'consultora'` na RPC permanece intencional para garantir que a responsavel registrada e consultora real.
+
+### Arquivos alterados nesta revisao
+
+- `supabase/migrations/20260716100000_conclude_atendimento_presencial.sql`
+- `src/lib/atendimento-presencial/ficha-schema.ts`
+- `src/lib/atendimento-presencial/conclusao-migration.test.ts`
+- `docs/ficha-atendimento-presencial-progresso.md`
+- `docs/ia/log_progress.md`
+
+### Validacoes realizadas
+
+- `npm run test -- src/lib/atendimento-presencial/conclusao-migration.test.ts`: passou, 1 arquivo e 8 testes.
+- `npm run test -- src/lib/atendimento-presencial/conclusao-migration.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts`: passou, 2 arquivos e 11 testes.
+- `npm run test -- src/lib/atendimento-presencial/ficha-schema.test.ts src/lib/atendimento-presencial/rascunhos.test.ts src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts src/app/api/cron/atendimento-presencial-limpar-rascunhos/route.test.ts src/lib/atendimento-presencial/conclusao-migration.test.ts`: passou, 7 arquivos e 44 testes.
+- `npx tsc --noEmit`: passou.
+- `npx eslint src/lib/atendimento-presencial/conclusao-migration.test.ts src/lib/atendimento-presencial/ficha-schema.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts src/app/api/cron/atendimento-presencial-limpar-rascunhos/route.test.ts`: passou.
+- `git diff --check`: passou, com avisos de CRLF/LF do checkout Windows.
+
+### Proximo passo recomendado
+
+Aplicar a migration em ambiente controlado somente apos autorizacao explicita e validar uma conclusao real com consultora responsavel, supervisora/gestao executora autorizada e registros concluidos.
+
+## 2026-07-16 - Correcao da fila serial de autosave
+
+### Escopo
+
+- Corrigida a corrida de autosaves concorrentes na Ficha de Atendimento Presencial.
+- Nenhuma migration foi criada ou alterada nesta etapa.
+- Nenhuma RPC, constraint, RLS, grant, permissao, cron ou dado manual no Supabase foi alterado.
+
+### Diagnostico confirmado
+
+- O rascunho de teste `a3583b33-fd65-498c-9b95-f55cad53dde9` foi confirmado via MCP Supabase como `status = rascunho`, `version = 6`, ativo, com cliente, consultora e unidade vinculadas.
+- O fluxo antigo tinha dois caminhos de PATCH: autosave debounced no `useEffect` e salvamento imediato antes de concluir.
+- Ambos usavam `ativo.version` capturado no state React.
+- O primeiro PATCH podia atualizar o banco e incrementar a versao, enquanto PATCHs seguintes ainda enviavam a versao anterior, causando 409 em sequencia.
+- O mecanismo antigo `saveSeq` descartava respostas antigas na UI, mas nao impedia multiplas requisicoes simultaneas no servidor.
+
+### Correcao implementada
+
+- Criado helper `AutosaveSerialQueue` para manter no maximo um PATCH em andamento por rascunho.
+- A fila usa versao corrente fora do state React e atualiza a versao imediatamente apos PATCH 200.
+- Alteracoes durante PATCH em andamento apenas marcam pendencia e o proximo PATCH usa a versao retornada pelo anterior.
+- Payloads sao deduplicados por serializacao canonica, ignorando estados visuais.
+- O debounce passou a ser unico e controlado pela fila, com cancelamento no unmount e antes da conclusao.
+- O cache local passa a usar a versao corrente da fila e nao reduz a versao do servidor.
+
+### Tratamento de conflito
+
+- Em 409, a fila para retry automatico e cancela timer pendente.
+- Se o servidor ja contem o mesmo payload, a versao local e atualizada e o status volta para salvo sem exibir erro.
+- Se o payload diverge, o estado local e o cache sao preservados, o status fica `conflito` e a tela oferece acao para recarregar a versao do servidor.
+- Nao foi removido `expectedVersion` e a protecao contra duas abas permanece ativa.
+
+### Conclusao
+
+- `Concluir atendimento` agora usa `garantirRascunhoSalvoAntesDeConcluir`.
+- A funcao cancela debounce, aguarda PATCH em andamento, salva o payload mais recente se necessario e chama a conclusao com a versao final retornada.
+- O botao usa bloqueio sincronico por ref para evitar duplo clique.
+- Durante a conclusao, novos efeitos de autosave ficam suspensos.
+
+### Logs tecnicos seguros
+
+- Adicionados logs temporarios sem dados pessoais:
+  - inicio do autosave com draft mascarado e versao enviada;
+  - sucesso com nova versao e pendencia;
+  - conflito com versao do servidor e indicacao de payload igual;
+  - conclusao aguardando autosave.
+- Nenhum payload completo, cliente, telefone, crianca, produto, observacao ou token e logado.
+
+### Arquivos alterados nesta etapa
+
+- `src/lib/atendimento-presencial/autosave-fila.ts`
+- `src/lib/atendimento-presencial/autosave-fila.test.ts`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `docs/ficha-atendimento-presencial-progresso.md`
+- `docs/ia/log_progress.md`
+
+### Validacoes realizadas
+
+- `npm run test -- src/lib/atendimento-presencial/autosave-fila.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts`: passou, 3 arquivos e 12 testes.
+- `npm run test -- src/lib/atendimento-presencial/autosave-fila.test.ts src/lib/atendimento-presencial/ficha-schema.test.ts src/lib/atendimento-presencial/rascunho-cache.test.ts src/lib/atendimento-presencial/rascunhos.test.ts src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts src/app/api/cron/atendimento-presencial-limpar-rascunhos/route.test.ts src/lib/atendimento-presencial/conclusao-migration.test.ts`: passou, 9 arquivos e 54 testes.
+- `npx tsc --noEmit`: passou.
+- `npx eslint src/app/atendimento-presencial/ficha/FichaPageClient.tsx src/lib/atendimento-presencial/autosave-fila.ts src/lib/atendimento-presencial/autosave-fila.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts`: passou.
+- `git diff --check`: passou, com avisos CRLF/LF do checkout Windows.
+- `npm run build`: falhou no sandbox por rede bloqueada ao buscar Google Fonts; repetido com rede liberada, passou. Permaneceram logs conhecidos de rotas dinamicas por uso de `cookies`.
+
+### Pendencias
+
+- Teste manual autenticado/mobile ainda pendente.
+- Validar manualmente: edicoes rapidas, troca imediata para Revisao, conclusao logo apos editar, duas abas com conflito real, ausencia de loop 409, offline e retorno online.
+
+### Riscos conhecidos
+
+- A validacao de duas abas e offline depende de navegador real autenticado.
+- A fila protege o frontend atual; chamadas externas diretas ao PATCH continuam corretamente protegidas por `expectedVersion`.
+
+### Proximo passo recomendado
+
+Executar o roteiro manual em navegador autenticado antes de aplicar a migration da Fase 5 em ambiente controlado.
+
+## 2026-07-16 - Registros concluidos e separacao visual da ficha
+
+### Escopo
+
+- Corrigida a leitura de observacoes e cliente vinculada na tela de Registros de Atendimento Presencial.
+- Melhorada a separacao visual interna da Ficha de Atendimento em secoes: Cliente, Dados da crianca, Departamentos, Produtos de interesse e Observacoes.
+- Nenhuma migration, RPC, RLS, grant, permissao, cron, constraint ou dado manual no Supabase foi alterado.
+
+### Diagnostico confirmado
+
+- MCP Supabase confirmou um atendimento concluido real com `observacoes` preenchida, `cliente_id` preenchido e `dados_rascunho` reduzido ao marcador `{"schema":"atendimento_presencial_concluido_v1"}`.
+- A tela de registros lia `selecionado.atendimento.dadosRascunho.observacoes`, fonte incorreta para atendimentos concluidos.
+- A API de detalhe nao retornava objeto `cliente` explicito para o contrato da tela.
+
+### Correcao implementada
+
+- Criado contrato central em `src/lib/atendimento-presencial/registros.ts`.
+- API de detalhe agora busca cliente por `cliente_id` diretamente, sem filtro de status, e retorna `cliente` explicita.
+- API de lista usa a mesma normalizacao de cliente e passa a tratar erro em consultas auxiliares como erro real, sem fallback silencioso.
+- Tela de registros passou a renderizar `atendimento.observacoes` como fonte final.
+- Ficha ganhou wrapper visual `SecaoFicha`, mantendo handlers, autosave, schema, validacoes e etapas existentes.
+
+### Validacoes realizadas
+
+- `npm run test -- src/lib/atendimento-presencial/registros.test.ts src/app/api/atendimento-presencial/atendimentos/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/route.test.ts`: passou, 3 arquivos e 5 testes.
+- `npm run test -- src/lib/atendimento-presencial/registros.test.ts src/lib/atendimento-presencial/ficha-schema.test.ts src/lib/atendimento-presencial/rascunhos.test.ts src/lib/atendimento-presencial/autosave-fila.test.ts src/app/api/atendimento-presencial/atendimentos/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts src/app/api/atendimento-presencial/clientes/route.test.ts src/app/api/atendimento-presencial/clientes/[id]/route.test.ts`: passou, 11 arquivos e 56 testes.
+- `npx tsc --noEmit`: passou.
+- `npx eslint src/lib/atendimento-presencial/registros.ts src/lib/atendimento-presencial/registros.test.ts src/app/api/atendimento-presencial/atendimentos/route.ts src/app/api/atendimento-presencial/atendimentos/route.test.ts "src/app/api/atendimento-presencial/atendimentos/[id]/route.ts" "src/app/api/atendimento-presencial/atendimentos/[id]/route.test.ts" src/app/atendimento-presencial/registros/RegistrosPageClient.tsx src/app/atendimento-presencial/ficha/FichaPageClient.tsx`: passou.
+
+### Pendencias
+
+- Validacao manual autenticada/mobile ainda pendente.
+- Migration da Fase 5 continua nao aplicada neste ajuste.
+
+### Proximo passo recomendado
+
+Validar manualmente um registro concluido real em `/atendimento-presencial/registros` e confirmar no celular a leitura da observacao final e a separacao visual da ficha.

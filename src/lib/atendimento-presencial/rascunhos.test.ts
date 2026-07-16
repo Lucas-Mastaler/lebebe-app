@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   calcularExpiracaoRascunho,
+  filtrarConsultorasPorUnidade,
+  filtrarUnidadesPorConsultora,
   isUuid,
   rascunhoExpirado,
   unidadePermitida,
@@ -56,5 +58,32 @@ describe('rascunhos atendimento presencial', () => {
   it('valida unidade permitida', () => {
     expect(unidadePermitida('loja-1', [{ id: 'loja-1', chave: 'loja_1', nome: 'Loja 1' }])).toBe(true)
     expect(unidadePermitida('loja-2', [{ id: 'loja-1', chave: 'loja_1', nome: 'Loja 1' }])).toBe(false)
+  })
+
+  it('filtra unidades pela consultora selecionada', () => {
+    const unidades = [
+      { id: 'loja-1', chave: 'loja_1', nome: 'Loja 1' },
+      { id: 'loja-2', chave: 'loja_2', nome: 'Loja 2' },
+    ]
+    const consultoras = [
+      { id: 'c1', email: 'c1@example.com', nome: 'c1@example.com', unidadeIds: ['loja-2'] },
+      { id: 'c2', email: 'c2@example.com', nome: 'c2@example.com', unidadeIds: [] },
+    ]
+
+    expect(filtrarUnidadesPorConsultora({ unidades, consultoras, consultoraUsuarioId: 'c1' })).toEqual([unidades[1]])
+    expect(filtrarUnidadesPorConsultora({ unidades, consultoras, consultoraUsuarioId: 'c2' })).toEqual([])
+    expect(filtrarUnidadesPorConsultora({ unidades, consultoras, consultoraUsuarioId: '' })).toEqual(unidades)
+  })
+
+  it('filtra consultoras pela unidade selecionada', () => {
+    const consultoras = [
+      { id: 'c1', email: 'c1@example.com', nome: 'c1@example.com', unidadeIds: ['loja-1', 'loja-2'] },
+      { id: 'c2', email: 'c2@example.com', nome: 'c2@example.com', unidadeIds: ['loja-2'] },
+      { id: 'c3', email: 'c3@example.com', nome: 'c3@example.com', unidadeIds: [] },
+    ]
+
+    expect(filtrarConsultorasPorUnidade({ consultoras, unidadeId: 'loja-1' }).map((item) => item.id)).toEqual(['c1'])
+    expect(filtrarConsultorasPorUnidade({ consultoras, unidadeId: 'loja-2' }).map((item) => item.id)).toEqual(['c1', 'c2'])
+    expect(filtrarConsultorasPorUnidade({ consultoras, unidadeId: '' })).toEqual(consultoras)
   })
 })

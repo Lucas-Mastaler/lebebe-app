@@ -59,4 +59,16 @@ describe('cron limpeza rascunhos atendimento presencial', () => {
     expect(builder.eq).toHaveBeenCalledWith('status', 'rascunho')
     expect(builder.lt).toHaveBeenCalledWith('expira_em', expect.any(String))
   })
+
+  it('mantem filtro de status antes de expira_em para nao excluir concluidos expirados', async () => {
+    vi.stubEnv('CRON_SECRET', 'segredo')
+    const builder = deleteBuilder({ data: [], error: null })
+    vi.mocked(createServiceClient).mockReturnValue({ from: vi.fn(() => builder) } as never)
+
+    await GET(request('Bearer segredo'))
+
+    expect(builder.eq).toHaveBeenCalledWith('status', 'rascunho')
+    expect(builder.lt).toHaveBeenCalledWith('expira_em', expect.any(String))
+    expect(builder.eq).not.toHaveBeenCalledWith('status', 'concluido')
+  })
 })

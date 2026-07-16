@@ -8,6 +8,7 @@ import {
   migrarFichaDadosRascunho,
   nomeCriancaValido,
   validarFichaDadosRascunho,
+  validarFichaParaConclusao,
 } from './ficha-schema'
 
 describe('schema da ficha de atendimento presencial', () => {
@@ -146,5 +147,59 @@ describe('schema da ficha de atendimento presencial', () => {
 
   it('cria crianca com id local estavel', () => {
     expect(criarCriancaRascunho('local-1')).toEqual({ id: 'local-1', situacao: 'nao_informado' })
+  })
+
+  it('valida campos obrigatorios para conclusao definitiva', () => {
+    expect(validarFichaParaConclusao({
+      clienteId: null,
+      numeroLancamento: '123',
+      ficha: {
+        criancas: [],
+        departamentos: ['p_pesada'],
+        produtosInteresse: [],
+        resultadoAtendimento: 'sim',
+        motivosResultado: ['preco'],
+        etapaAtual: 'revisao',
+      },
+    })).toMatchObject({ ok: false, field: 'clienteId' })
+
+    expect(validarFichaParaConclusao({
+      clienteId: 'cliente-1',
+      numeroLancamento: '',
+      ficha: {
+        criancas: [],
+        departamentos: ['p_pesada'],
+        produtosInteresse: [],
+        resultadoAtendimento: 'sim',
+        motivosResultado: ['preco'],
+        etapaAtual: 'revisao',
+      },
+    })).toMatchObject({ ok: false, field: 'numeroLancamento' })
+
+    expect(validarFichaParaConclusao({
+      clienteId: 'cliente-1',
+      numeroLancamento: '987',
+      ficha: {
+        criancas: [],
+        departamentos: ['p_pesada'],
+        produtosInteresse: [],
+        resultadoAtendimento: 'sim',
+        motivosResultado: ['preco'],
+        etapaAtual: 'revisao',
+      },
+    })).toEqual({ ok: true, numeroLancamento: 987 })
+
+    expect(validarFichaParaConclusao({
+      clienteId: 'cliente-1',
+      numeroLancamento: '987',
+      ficha: {
+        criancas: [],
+        departamentos: ['p_pesada'],
+        produtosInteresse: [],
+        resultadoAtendimento: 'nao',
+        motivosResultado: ['preco'],
+        etapaAtual: 'revisao',
+      },
+    })).toEqual({ ok: true, numeroLancamento: null })
   })
 })

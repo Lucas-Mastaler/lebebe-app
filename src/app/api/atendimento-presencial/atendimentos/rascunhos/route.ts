@@ -95,23 +95,30 @@ async function listarConsultorasDisponiveis(
   const { data: vinculos, error: vinculosError } = await vinculosQuery
   if (vinculosError) return []
 
-  const consultoraIdsComUnidade = Array.from(new Set((vinculos ?? []).map((row) => row.usuario_id)))
-  if (consultoraIdsComUnidade.length === 0) return []
+  const unidadesPorConsultora = new Map<string, string[]>()
+  for (const vinculo of vinculos ?? []) {
+    if (!vinculo.usuario_id || !vinculo.unidade_id) continue
+    const atuais = unidadesPorConsultora.get(vinculo.usuario_id) ?? []
+    unidadesPorConsultora.set(vinculo.usuario_id, [...atuais, vinculo.unidade_id])
+  }
 
   const { data: usuarios, error: usuariosError } = await supabase
     .from('usuarios_permitidos')
     .select('id, email')
-    .in('id', consultoraIdsComUnidade)
+    .in('id', usuarioIds)
     .eq('ativo', true)
     .order('email', { ascending: true })
 
   if (usuariosError) return []
 
-  return (usuarios ?? []).map((usuario) => ({
-    id: usuario.id,
-    email: usuario.email,
-    nome: usuario.email,
-  }))
+  return (usuarios ?? [])
+    .map((usuario) => ({
+      id: usuario.id,
+      email: usuario.email,
+      nome: usuario.email,
+      unidadeIds: unidadesPorConsultora.get(usuario.id) ?? [],
+    }))
+    .filter((usuario) => perfil === 'superadmin' || usuario.unidadeIds.length > 0)
 }
 
 async function validarConsultoraNaUnidade(

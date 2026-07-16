@@ -105,7 +105,7 @@ export const FICHA_PRODUTOS_MAX_ITENS = 20
 export const FICHA_OBSERVACOES_MAX_CHARS = 2000
 export const FICHA_NOME_CRIANCA_MAX_CHARS = 80
 export const FICHA_MOTIVO_OUTRO_MAX_CHARS = 120
-export const FICHA_PAYLOAD_MAX_BYTES = 4096
+export const FICHA_PAYLOAD_MAX_BYTES = 16384
 
 export type FichaClienteRascunho = {
   parentesco?: ParentescoCliente
@@ -137,6 +137,10 @@ export type FichaDadosRascunho = {
 
 export type ValidacaoFichaRascunho =
   | { ok: true; dados: FichaDadosRascunho }
+  | { ok: false; field: string; message: string }
+
+export type ValidacaoFichaConclusao =
+  | { ok: true; numeroLancamento: number | null }
   | { ok: false; field: string; message: string }
 
 const etapasValidas = new Set<string>(FICHA_ETAPAS)
@@ -251,6 +255,10 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
   }
 
   const payload = valor as Record<string, unknown>
+  if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > FICHA_PAYLOAD_MAX_BYTES) {
+    return { ok: false, field: 'dadosRascunho', message: 'Dados do rascunho excedem o limite permitido' }
+  }
+
   const chavesInvalidas = Object.keys(payload).filter((chave) => !chavesPermitidas.has(chave))
   if (chavesInvalidas.length > 0) {
     return { ok: false, field: 'dadosRascunho', message: 'Dados do rascunho contem campos nao permitidos' }
@@ -349,6 +357,63 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
 export function migrarFichaDadosRascunho(valor: unknown): FichaDadosRascunho {
   const validacao = validarFichaDadosRascunho(valor)
   return validacao.ok ? validacao.dados : payloadBase()
+}
+
+export function normalizarNumeroLancamento(valor: unknown) {
+  if (typeof valor === 'number' && Number.isInteger(valor)) return valor
+  if (typeof valor !== 'string') return null
+  const somenteDigitos = valor.replace(/\D/g, '')
+  if (!somenteDigitos) return null
+  const numero = Number(somenteDigitos)
+  return Number.isInteger(numero) ? numero : null
+}
+
+export function validarFichaParaConclusao(params: {
+  ficha: FichaDadosRascunho
+  clienteId: string | null
+  numeroLancamento?: unknown
+}): ValidacaoFichaConclusao {
+  if (!params.clienteId) {
+    return { ok: false, field: 'clienteId', message: 'Selecione ou cadastre uma cliente antes de concluir.' }
+  }
+
+  for (const crianca of params.ficha.criancas) {
+    if (crianca.situacao === 'ja_nasceu') {
+      if (crianca.idadeUnidade === 'meses' && (!crianca.idadeValor || crianca.idadeValor < 1 || crianca.idadeValor > 11)) {
+        return { ok: false, field: 'criancas', message: 'Informe idade valida em meses.' }
+      }
+      if (crianca.idadeUnidade === 'anos' && (!crianca.idadeValor || crianca.idadeValor < 1 || crianca.idadeValor > 6)) {
+        return { ok: false, field: 'criancas', message: 'Informe idade valida em anos.' }
+      }
+      if (!crianca.idadeUnidade) return { ok: false, field: 'criancas', message: 'Informe a idade da crianca.' }
+    }
+    if (crianca.situacao === 'gestacao' && crianca.dataPrevistaNascimento && !normalizarDataLocal(crianca.dataPrevistaNascimento)) {
+      return { ok: false, field: 'criancas', message: 'Revise a data prevista de nascimento.' }
+    }
+  }
+
+  if (params.ficha.departamentos.length === 0) {
+    return { ok: false, field: 'departamentos', message: 'Selecione ao menos um departamento.' }
+  }
+  if (!params.ficha.resultadoAtendimento) {
+    return { ok: false, field: 'resultadoAtendimento', message: 'Selecione o resultado do atendimento.' }
+  }
+  if (params.ficha.motivosResultado.length === 0) {
+    return { ok: false, field: 'motivosResultado', message: 'Selecione ao menos um motivo.' }
+  }
+  if (params.ficha.motivosResultado.includes('outro') && !params.ficha.motivoOutro?.trim()) {
+    return { ok: false, field: 'motivoOutro', message: 'Informe o complemento de Outro.' }
+  }
+
+  const numeroLancamento = normalizarNumeroLancamento(params.numeroLancamento)
+  if (params.ficha.resultadoAtendimento === 'sim') {
+    if (!numeroLancamento || numeroLancamento < 1 || numeroLancamento > 999999) {
+      return { ok: false, field: 'numeroLancamento', message: 'Informe o numero do lancamento.' }
+    }
+    return { ok: true, numeroLancamento }
+  }
+
+  return { ok: true, numeroLancamento: null }
 }
 
 export function getDepartamentoLabel(chave: DepartamentoInteresse) {

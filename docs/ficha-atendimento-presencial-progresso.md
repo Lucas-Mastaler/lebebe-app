@@ -2265,3 +2265,43 @@ Validar manualmente em navegador autenticado: selecionar/criar RAQUEL GARCIA com
 ### Proximo passo recomendado
 
 Abrir a Ficha em navegador autenticado, consultar uma cliente com compras SGI reais e conferir desktop/mobile se resumo, vendedor, departamentos, pagamento e tabela de itens ficam imediatamente legiveis.
+
+## 2026-07-17 - Codex - Historico da cliente em Ficha, Registros e Clientes
+
+### Escopo
+
+- O modal de historico da cliente foi extraido da Ficha para um componente reutilizavel.
+- A mesma visualizacao passou a estar disponivel tambem em Registros de Atendimentos Presenciais e Clientes do Atendimento Presencial.
+- Nenhuma migration, RPC, regra de normalizacao de telefone ou regra de busca SGI foi alterada.
+
+### Implementacao
+
+- Criado `HistoricoClienteModal` com a UI ja usada no historico da Ficha, incluindo o label claro `Venda fechada?`.
+- A Ficha passou a usar o componente compartilhado e continua enviando `atendimentoAtualId` para excluir o atendimento atual do historico anterior.
+- Registros passou a exibir `Ver historico` no bloco de cliente do detalhe selecionado.
+- Clientes passou a exibir `Ver historico` em cada resultado de busca.
+
+### Arquivos alterados/criados
+
+- `src/components/atendimento-presencial/HistoricoClienteModal.tsx`
+- `src/components/atendimento-presencial/HistoricoClienteModal.test.ts`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`
+- `src/app/atendimento-presencial/clientes/PageClient.tsx`
+- `docs/ficha-atendimento-presencial-progresso.md`
+- `docs/ia/log_progress.md`
+
+### Validacoes realizadas
+
+- `npm run test -- src/components/atendimento-presencial/HistoricoClienteModal.test.ts`: passou, 1 arquivo e 3 testes.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/components/atendimento-presencial/HistoricoClienteModal.tsx src/components/atendimento-presencial/HistoricoClienteModal.test.ts src/app/atendimento-presencial/ficha/FichaPageClient.tsx src/app/atendimento-presencial/registros/RegistrosPageClient.tsx src/app/atendimento-presencial/clientes/PageClient.tsx`: passou.
+
+### Nao validado
+
+- Browser autenticado/mobile nao executado neste turno.
+- Abertura manual do modal em Registros e Clientes com dados reais ainda pendente.
+
+### Proximo passo recomendado
+
+Validar em navegador autenticado as tres entradas do historico: Ficha, detalhe de Registros e resultado de Clientes, confirmando que o mesmo modal abre e carrega dados da API existente.

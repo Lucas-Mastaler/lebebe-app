@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AlertCircle, Baby, Check, ChevronLeft, ChevronRight, ClipboardList, CreditCard, History, MessageSquareText, Package, Plus, RefreshCw, Save, Search, ShoppingBag, Tag, UserRound, WifiOff, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { AlertCircle, Baby, Check, ChevronLeft, ChevronRight, ClipboardList, History, MessageSquareText, Plus, RefreshCw, Save, Search, ShoppingBag, UserRound, WifiOff, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { HistoricoClienteModal } from '@/components/atendimento-presencial/HistoricoClienteModal'
 import {
   carregarCacheRascunho,
   removerCacheRascunho,
@@ -96,41 +96,6 @@ type ApiClientesResponse = {
   clienteExistente?: boolean
 }
 
-type HistoricoClienteResponse = {
-  ok: boolean
-  message?: string
-  telefoneDisponivel?: boolean
-  atendimentos?: Array<{
-    id: string
-    data: string | null
-    unidade: string | null
-    consultora: string | null
-    resultado: string | null
-    departamentos: string[]
-    produtosInteresse: string[]
-    numeroLancamento: number | null
-  }>
-  vendas?: Array<{
-    numeroLancamento: string
-    data: string | null
-    filial: string | null
-    vendedor: string | null
-    status: string | null
-    departamentos: string[]
-    itens: string[]
-    produtos: Array<{
-      nome: string
-      quantidade: number | null
-      valorTotal: number | null
-      departamento: string | null
-      subgrupo: string | null
-    }>
-    valorTotal: number | null
-    formasPagamento: string[]
-  }>
-  fontesConsultadas?: string[]
-}
-
 type ErroValidacaoFicha = {
   sectionId: string
   fieldId?: string
@@ -165,87 +130,6 @@ function formatarData(valor: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
-}
-
-function formatarDataCurta(valor: string | null) {
-  if (!valor) return 'Sem data'
-  const data = new Date(valor)
-  if (Number.isNaN(data.getTime())) return valor
-  return data.toLocaleDateString('pt-BR')
-}
-
-function formatarDinheiro(valor: number | null) {
-  if (valor === null || !Number.isFinite(valor)) return 'Valor nao informado'
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor)
-}
-
-function HistoricoSecao({
-  icon: Icon,
-  title,
-  subtitle,
-  variant,
-  children,
-}: {
-  icon: LucideIcon
-  title: string
-  subtitle?: string
-  variant: 'blue' | 'amber' | 'green' | 'slate'
-  children: ReactNode
-}) {
-  const variants = {
-    blue: 'border-sky-100 bg-sky-50/60 text-sky-700',
-    amber: 'border-amber-100 bg-amber-50/60 text-amber-700',
-    green: 'border-emerald-100 bg-emerald-50/60 text-emerald-700',
-    slate: 'border-slate-200 bg-slate-50 text-slate-700',
-  } as const
-
-  return (
-    <section className={`rounded-md border p-4 ${variants[variant]}`}>
-      <div className="mb-3 flex items-start gap-2">
-        <span className="mt-0.5 rounded-md bg-white/80 p-1.5 shadow-sm">
-          <Icon className="h-4 w-4" aria-hidden="true" />
-        </span>
-        <div>
-          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">{title}</h3>
-          {subtitle && <p className="text-xs text-slate-600">{subtitle}</p>}
-        </div>
-      </div>
-      <div className="text-slate-900">{children}</div>
-    </section>
-  )
-}
-
-function HistoricoInfoCard({ label, value, emphasis = false }: { label: string; value: ReactNode; emphasis?: boolean }) {
-  return (
-    <div className="rounded-md border border-white/70 bg-white/80 px-3 py-2 shadow-sm">
-      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
-      <div className={`mt-1 text-sm ${emphasis ? 'font-bold text-slate-950' : 'font-semibold text-slate-800'}`}>{value}</div>
-    </div>
-  )
-}
-
-function HistoricoChip({ children, variant = 'slate' }: { children: ReactNode; variant?: 'blue' | 'amber' | 'green' | 'slate' }) {
-  const variants = {
-    blue: 'border-sky-100 bg-sky-50 text-sky-700',
-    amber: 'border-amber-100 bg-amber-50 text-amber-700',
-    green: 'border-emerald-100 bg-emerald-50 text-emerald-700',
-    slate: 'border-slate-200 bg-slate-50 text-slate-700',
-  } as const
-
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-semibold ${variants[variant]}`}>
-      {children}
-    </span>
-  )
-}
-
-function formatarVendaFechadaHistorico(resultado: string | null) {
-  const normalizado = (resultado ?? '').trim().toLowerCase()
-  if (!normalizado) return 'Nao informado'
-  if (normalizado === 'sim') return 'Sim'
-  if (normalizado === 'nao' || normalizado === 'não') return 'Nao'
-  if (normalizado === 'negociacao' || normalizado === 'negociação') return 'Em negociacao'
-  return resultado
 }
 
 function diasRestantes(expiraEm: string) {
@@ -483,9 +367,6 @@ export default function FichaPageClient({ usuarioId }: Props) {
   const [iniciando, setIniciando] = useState(false)
   const [onlineTick, setOnlineTick] = useState(0)
   const [historicoAberto, setHistoricoAberto] = useState(false)
-  const [historicoCarregando, setHistoricoCarregando] = useState(false)
-  const [historicoErro, setHistoricoErro] = useState<string | null>(null)
-  const [historicoCliente, setHistoricoCliente] = useState<HistoricoClienteResponse | null>(null)
   const autosaveQueueRef = useRef<AutosaveSerialQueue | null>(null)
   const mountedRef = useRef(false)
   const concluindoRef = useRef(false)
@@ -822,8 +703,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
 
   function trocarCliente() {
     setClienteSelecionada(null)
-    setHistoricoCliente(null)
-    setHistoricoErro(null)
+    setHistoricoAberto(false)
     atualizarFicha((atual) => ({ ...atual, cliente: undefined }))
   }
 
@@ -992,30 +872,6 @@ export default function FichaPageClient({ usuarioId }: Props) {
         viradaCartaoMes: selecionado && chave === 'virada_cartao' ? undefined : atual.viradaCartaoMes,
       }
     })
-  }
-
-  async function carregarHistoricoCliente() {
-    setHistoricoAberto(true)
-    setHistoricoCliente(null)
-    setHistoricoErro(null)
-    if (!clienteSelecionada) {
-      setHistoricoErro('Selecione uma cliente para consultar o historico.')
-      return
-    }
-    setHistoricoCarregando(true)
-    try {
-      const params = new URLSearchParams()
-      if (ativo?.id) params.set('atendimentoAtualId', ativo.id)
-      const query = params.toString()
-      const response = await fetch(`/api/atendimento-presencial/clientes/${clienteSelecionada.id}/historico${query ? `?${query}` : ''}`, { cache: 'no-store' })
-      const data = (await response.json()) as HistoricoClienteResponse
-      if (!response.ok || !data.ok) throw new Error(data.message ?? 'Erro ao carregar historico da cliente')
-      setHistoricoCliente(data)
-    } catch (error) {
-      setHistoricoErro(error instanceof Error ? error.message : 'Erro ao carregar historico da cliente')
-    } finally {
-      setHistoricoCarregando(false)
-    }
   }
 
   function erroConclusaoParaSecao(field: string | undefined, message: string): ErroValidacaoFicha {
@@ -1289,7 +1145,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
                       <Button type="button" variant="outline" onClick={trocarCliente} className="h-10 rounded-md">
                         Trocar cliente
                       </Button>
-                      <Button type="button" variant="outline" onClick={carregarHistoricoCliente} className="h-10 rounded-md">
+                      <Button type="button" variant="outline" onClick={() => setHistoricoAberto(true)} className="h-10 rounded-md">
                         <History className="mr-2 h-4 w-4" aria-hidden="true" />
                         Ver historico
                       </Button>
@@ -1818,200 +1674,16 @@ export default function FichaPageClient({ usuarioId }: Props) {
         </div>
       )}
 
-      <Dialog open={historicoAberto} onOpenChange={setHistoricoAberto}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle className="text-base">
-              Historico da cliente
-              {clienteSelecionada?.nome && <span className="ml-2 font-normal text-slate-500">- {clienteSelecionada.nome}</span>}
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="grid gap-5">
-            {!clienteSelecionada && (
-              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                Selecione uma cliente para consultar o historico.
-              </p>
-            )}
-
-            {clienteSelecionada && (
-              <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Historico da cliente</p>
-                <div className="mt-1 flex flex-wrap items-end justify-between gap-2">
-                  <div>
-                    <p className="text-base font-bold text-slate-950">{clienteSelecionada.nome}</p>
-                    <p className="text-sm text-slate-600">{clienteSelecionada.telefoneFormatado ?? 'Telefone nao informado'}</p>
-                  </div>
-                  {historicoCliente?.fontesConsultadas?.length ? (
-                    <p className="text-xs font-medium text-slate-500">
-                      Fontes: {historicoCliente.fontesConsultadas.join(', ')}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            )}
-
-            {historicoCarregando && <p className="text-sm text-slate-500">Carregando historico...</p>}
-            {historicoErro && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{historicoErro}</p>}
-
-            {historicoCliente && historicoCliente.telefoneDisponivel === false && (
-              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                Cliente sem telefone normalizado. As compras do SGI nao foram consultadas.
-              </p>
-            )}
-
-            {historicoCliente && (
-              <>
-                <HistoricoSecao
-                  icon={History}
-                  title="Atendimentos presenciais anteriores"
-                  subtitle="Registros concluidos no modulo Atendimento Presencial."
-                  variant="slate"
-                >
-                  {historicoCliente.atendimentos?.length ? (
-                    <div className="grid gap-3">
-                      {historicoCliente.atendimentos.map((item) => (
-                      <article key={item.id} className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="font-semibold text-slate-950">{formatarDataCurta(item.data)}</p>
-                          <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-right">
-                            <p className="text-[10px] font-bold uppercase tracking-wide text-sky-700">Venda fechada?</p>
-                            <p className="text-sm font-bold text-slate-900">{formatarVendaFechadaHistorico(item.resultado)}</p>
-                          </div>
-                        </div>
-                        <p className="mt-1 text-sm text-slate-600">{item.unidade ?? 'Unidade nao informada'} | {item.consultora ?? 'Consultora nao informada'}</p>
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                          <div>
-                            <p className="text-[11px] font-bold uppercase text-slate-500">Departamentos</p>
-                            <div className="mt-1 flex flex-wrap gap-1.5">
-                              {item.departamentos.length ? item.departamentos.map((departamento) => (
-                                <HistoricoChip key={departamento} variant="slate">{departamento}</HistoricoChip>
-                              )) : <span className="text-sm text-slate-500">Nao informado</span>}
-                            </div>
-                          </div>
-                          <div>
-                            <p className="text-[11px] font-bold uppercase text-slate-500">Produtos de interesse</p>
-                            <p className="mt-1 text-sm text-slate-700">{item.produtosInteresse.join(', ') || 'Nao informado'}</p>
-                          </div>
-                        </div>
-                        {item.numeroLancamento && <p className="text-sm text-slate-700">Lancamento: {item.numeroLancamento}</p>}
-                      </article>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="rounded-md border border-dashed border-slate-200 bg-white/80 p-3 text-sm text-slate-500">Nenhum atendimento anterior encontrado.</p>
-                  )}
-                </HistoricoSecao>
-
-                <HistoricoSecao
-                  icon={ShoppingBag}
-                  title="Compras anteriores no SGI"
-                  subtitle="Compras encontradas pelo telefone da cliente."
-                  variant="blue"
-                >
-                  {historicoCliente.vendas?.length ? (
-                    <div className="grid gap-4">
-                      {historicoCliente.vendas.map((item) => (
-                      <article key={item.numeroLancamento} className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Resumo da compra</p>
-                            <h4 className="text-lg font-bold text-slate-950">Lancamento {item.numeroLancamento || 'Nao informado'}</h4>
-                          </div>
-                          <div className="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-right">
-                            <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">Valor total</p>
-                            <p className="text-base font-bold text-emerald-800">{formatarDinheiro(item.valorTotal)}</p>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                          <HistoricoInfoCard label="Data" value={formatarDataCurta(item.data)} />
-                          <HistoricoInfoCard label="Filial" value={item.filial ?? 'Filial nao informada'} />
-                          <HistoricoInfoCard label="Vendedor" value={item.vendedor ?? 'Vendedor nao informado'} />
-                          <HistoricoInfoCard label="Status" value={item.status ?? 'Status nao informado'} />
-                          <HistoricoInfoCard label="Itens" value={`${item.produtos?.length || item.itens.length || 0} produto(s)`} />
-                          <HistoricoInfoCard label="Lancamento" value={item.numeroLancamento || 'Nao informado'} emphasis />
-                        </div>
-
-                        <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
-                          <div className="rounded-md border border-amber-100 bg-amber-50/60 p-3">
-                            <div className="mb-2 flex items-center gap-2">
-                              <Tag className="h-4 w-4 text-amber-700" aria-hidden="true" />
-                              <p className="text-xs font-bold uppercase tracking-wide text-slate-700">Departamentos</p>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {item.departamentos?.length ? item.departamentos.map((departamento) => (
-                                <HistoricoChip key={departamento} variant="amber">{departamento}</HistoricoChip>
-                              )) : <span className="text-sm text-slate-500">Nao informado</span>}
-                            </div>
-                          </div>
-
-                          <div className="rounded-md border border-emerald-100 bg-emerald-50/60 p-3">
-                            <div className="mb-2 flex items-center gap-2">
-                              <CreditCard className="h-4 w-4 text-emerald-700" aria-hidden="true" />
-                              <p className="text-xs font-bold uppercase tracking-wide text-slate-700">Forma de pagamento</p>
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {item.formasPagamento.length ? item.formasPagamento.map((forma) => (
-                                <HistoricoChip key={forma} variant="green">{forma}</HistoricoChip>
-                              )) : <span className="text-sm text-slate-500">Nao informado</span>}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50/70 p-3">
-                          <div className="mb-3 flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <Package className="h-4 w-4 text-slate-600" aria-hidden="true" />
-                              <p className="text-xs font-bold uppercase tracking-wide text-slate-700">Itens/produtos</p>
-                            </div>
-                            <span className="text-xs font-medium text-slate-500">{item.produtos?.length || item.itens.length || 0} item(ns)</span>
-                          </div>
-
-                          {item.produtos?.length ? (
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-sm">
-                                <thead>
-                                  <tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wide text-slate-500">
-                                    <th className="py-2 pr-3">Produto</th>
-                                    <th className="py-2 pr-3">Depto.</th>
-                                    <th className="py-2 pr-3 text-right">Qtd</th>
-                                    <th className="py-2 text-right">Valor</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {item.produtos.map((produto, index) => (
-                                    <tr key={`${item.numeroLancamento}-${produto.nome}-${index}`} className="border-b border-slate-100 last:border-0">
-                                      <td className="py-2 pr-3 font-medium text-slate-900">
-                                        <span className="line-clamp-2">{produto.nome}</span>
-                                        {produto.subgrupo && <span className="mt-0.5 block text-xs font-normal text-slate-500">{produto.subgrupo}</span>}
-                                      </td>
-                                      <td className="py-2 pr-3">
-                                        {produto.departamento ? <HistoricoChip variant="slate">{produto.departamento}</HistoricoChip> : <span className="text-xs text-slate-400">Nao informado</span>}
-                                      </td>
-                                      <td className="py-2 pr-3 text-right font-medium text-slate-700">{produto.quantidade ?? '-'}</td>
-                                      <td className="py-2 text-right font-semibold text-slate-900">{formatarDinheiro(produto.valorTotal)}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          ) : (
-                            <p className="text-sm text-slate-500">{item.itens.join(', ') || 'Nao informado'}</p>
-                          )}
-                        </div>
-                      </article>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="rounded-md border border-dashed border-sky-200 bg-white/80 p-3 text-sm text-slate-500">Nenhuma compra anterior encontrada pelo telefone da cliente.</p>
-                  )}
-                </HistoricoSecao>
-              </>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <HistoricoClienteModal
+        open={historicoAberto}
+        onOpenChange={setHistoricoAberto}
+        cliente={clienteSelecionada ? {
+          id: clienteSelecionada.id,
+          nome: clienteSelecionada.nome,
+          telefoneFormatado: clienteSelecionada.telefoneFormatado,
+        } : null}
+        atendimentoAtualId={ativo?.id ?? null}
+      />
     </main>
   )
 }

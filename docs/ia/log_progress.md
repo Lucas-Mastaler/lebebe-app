@@ -1,3 +1,17 @@
+## 2025-07-17 - Cascade - Correcao de responsividade do HistoricoClienteModal
+
+**Resumo:** Corrigida a responsividade do modal de historico de clientes no mobile. O problema raiz era o overflow-y-auto aplicado no DialogContent, fazendo o botao X sumir ao rolar. A solucao reestruturou o DialogContent para flex-col com header fixo (flex-none, border-b, padding proprio) e conteudo interno scrollavel (flex-1 min-h-0 overflow-y-auto overflow-x-hidden). Adicionado break-words nos artigos para evitar overflow de texto. Artigos de venda com p-3 sm:p-4 para melhor espacamento no mobile. Desktop inalterado.
+
+**Arquivos lidos:** `src/components/atendimento-presencial/HistoricoClienteModal.tsx`, `src/components/ui/dialog.tsx`
+
+**Arquivos alterados:** `src/components/atendimento-presencial/HistoricoClienteModal.tsx` (linhas 175-184, 238, 279, 376-377)
+
+**Validacoes:** tsc --noEmit (exit 0), eslint --quiet (exit 0)
+
+**Pendencias:** Nenhuma.
+
+---
+
 ## 2026-07-17 - Cascade - Revisao tecnica final do plano Hub/Vendas
 
 **Resumo:** Revisao tecnica final completa do plano de implementacao do fluxo Digisac Hub/Vendas. Corrigiu RLS (Alternativa A: apenas service role, USING false para authenticated, seguindo padrao de atendimento_presencial). Adicionou 4a tabela tecnica hub_vendas_eventos_processados para idempotencia completa do webhook. Definiu tratamento de resultado incerto no envio (3 cenarios separados, reconciliacao via Digisac, hash do texto, estado analise_manual). Revisou estados comerciais (adicionou cliente_em_atendimento) e operacionais (adicionou enviando, resultado_incerto, analise_manual). Corrigiu regra de chamado aberto para validar em qualquer loja, nao apenas na de destino. Propos rodizio atomico via pg_advisory_xact_lock. Corrigiu limite diario para usar intervalo UTC de Sao Paulo (nao current_date). Revisou horarios configuraveis para formato HH:MM com timezone e dias_semana. Propos secret obrigatorio em producao para webhook. Atualizou fases com pre-requisitos, criterios de aceite com 35 itens e pendencias reais (4 itens). Adicionou Parte IV (secoes 49-66) ao plano. Nenhum codigo, migration, config operacional, webhook, cron ou banco alterado.
@@ -22372,3 +22386,16 @@ Abrir `/procurar-datas/dev-v2` com sessao superadmin, auditar o run informado e 
 - **Pendencias:** Validar o modal aberto na Ficha com cliente que possua vendas SGI reais, especialmente em desktop e mobile.
 - **Riscos conhecidos:** A melhoria visual depende dos dados retornados pelo SGI; quando vendedor, status, departamento ou valor de item vierem nulos, a UI mostra fallback neutro. O worktree ja continha alteracoes anteriores do fluxo de historico/conclusao e um arquivo nao relacionado `docs/digisac-hub-vendas-plano-progresso.md` modificado antes deste escopo.
 - **Proximo passo recomendado:** Rodar validacao manual autenticada da Ficha, abrir o historico da cliente e conferir se data, filial, vendedor, valor, departamentos, pagamento e itens ficam claros sem procurar a informacao.
+
+## 2026-07-17 - Codex - Historico da cliente compartilhado em Atendimento Presencial
+
+- **Resumo:** Extraido o modal de historico da cliente da Ficha para componente compartilhado e habilitada a mesma visualizacao em Registros de Atendimentos Presenciais e Clientes do Atendimento Presencial. O label de atendimentos anteriores permanece claro como `Venda fechada?` com resposta Sim/Nao/Em negociacao/Nao informado.
+- **Arquivos lidos:** anexo `C:\Users\lebeb\.codex\attachments\c54ca212-e6be-4275-bca2-985e025f015e\pasted-text.txt`; `.devin/rules/continuidade-agente.md`; `.devin/rules/gerais.md`; `.devin/rules/resumo.md`; `.devin/rules/supabase.md`; `.devin/rules/recebimentos.md`; `.devin/skills/supabase/SKILL.md`; `.devin/skills/supabase-postgres-best-practices/SKILL.md`; `.devin/workflows/login.md`; `docs/PLANO FUNCIONAL ATUALIZADO ? FICHA DE ATENDIMENTO PRESENCIAL.md`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`; `docs/ia/padrao-novas-telas-permissoes.md`; `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`; `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`; `src/app/atendimento-presencial/clientes/PageClient.tsx`; rota de historico da cliente; helper de historico.
+- **Supabase/MCP:** Estrutura ja confirmada neste turno para colunas reais usadas por `atendimento_presencial_atendimentos`, `atendimento_presencial_clientes`, tabelas filhas normalizadas e tabelas SGI consultadas pelo historico. Nenhuma DDL, migration, RPC ou dado real foi alterado.
+- **Arquivos alterados/criados:** `src/components/atendimento-presencial/HistoricoClienteModal.tsx`; `src/components/atendimento-presencial/HistoricoClienteModal.test.ts`; `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`; `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`; `src/app/atendimento-presencial/clientes/PageClient.tsx`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`.
+- **Implementacao:** A Ficha deixou de manter JSX/fetch local do modal e passou a usar `HistoricoClienteModal`, preservando `atendimentoAtualId={ativo?.id}`. Registros ganhou botao `Ver historico` no bloco de cliente do detalhe selecionado. Clientes ganhou botao `Ver historico` em cada resultado da busca. O componente compartilhado chama a API existente `/api/atendimento-presencial/clientes/[id]/historico`, com retry simples e estados de carregamento/erro.
+- **Comandos executados e resultados:** `npm run test -- src/components/atendimento-presencial/HistoricoClienteModal.test.ts` passou com 1 arquivo e 3 testes; `npx tsc --noEmit --pretty false` passou; `npx eslint src/components/atendimento-presencial/HistoricoClienteModal.tsx src/components/atendimento-presencial/HistoricoClienteModal.test.ts src/app/atendimento-presencial/ficha/FichaPageClient.tsx src/app/atendimento-presencial/registros/RegistrosPageClient.tsx src/app/atendimento-presencial/clientes/PageClient.tsx` passou sem erros.
+- **Nao validado:** Browser autenticado/mobile nao executado; abertura manual do modal em Registros e Clientes com dados reais ainda nao foi conferida.
+- **Pendencias:** Validar manualmente as tres entradas do historico em navegador autenticado; confirmar permissao real de acesso ao endpoint para usuarios que tenham acesso a Registros/Clientes.
+- **Riscos conhecidos:** A rota de historico existente ainda centraliza o gate de acesso no helper da Ficha; se houver perfil com acesso apenas a Registros/Clientes e sem Ficha, a UI nova pode depender de ajuste posterior de autorizacao do endpoint.
+- **Proximo passo recomendado:** Testar com um usuario real que acesse Registros e Clientes, abrir `Ver historico` em cada tela e confirmar se a API retorna os dados esperados sem alterar filtros ou estado da tela.

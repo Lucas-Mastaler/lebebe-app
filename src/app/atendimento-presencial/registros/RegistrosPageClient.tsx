@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ClipboardList, Plus, RefreshCw, Save, Search, X } from 'lucide-react'
+import { ClipboardList, History, Plus, RefreshCw, Save, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { HistoricoClienteModal, type HistoricoClienteModalCliente } from '@/components/atendimento-presencial/HistoricoClienteModal'
 import {
   DEPARTAMENTOS_INTERESSE,
   FICHA_OBSERVACOES_MAX_CHARS,
@@ -105,6 +106,8 @@ export default function RegistrosPageClient() {
   const [salvandoEdicao, setSalvandoEdicao] = useState(false)
   const [mensagemEdicao, setMensagemEdicao] = useState<string | null>(null)
   const [erroEdicao, setErroEdicao] = useState<string | null>(null)
+  const [historicoAberto, setHistoricoAberto] = useState(false)
+  const [historicoCliente, setHistoricoCliente] = useState<HistoricoClienteModalCliente | null>(null)
 
   async function carregarRegistros(filtrosOverride?: { de: string; ate: string }) {
     setCarregando(true)
@@ -171,6 +174,16 @@ export default function RegistrosPageClient() {
     setMensagemEdicao(null)
     setErroEdicao(null)
     setEdicaoAberta(true)
+  }
+
+  function abrirHistoricoClienteSelecionada() {
+    if (!selecionado?.cliente) return
+    setHistoricoCliente({
+      id: selecionado.cliente.id,
+      nome: selecionado.cliente.nome,
+      telefoneFormatado: selecionado.cliente.telefone,
+    })
+    setHistoricoAberto(true)
   }
 
   function atualizarFichaEdicao(mutator: (atual: FichaDadosRascunho) => FichaDadosRascunho) {
@@ -459,6 +472,10 @@ export default function RegistrosPageClient() {
                     <>
                       <p className="font-semibold text-slate-950">{selecionado.cliente.nome}</p>
                       {selecionado.cliente.telefone && <p>{selecionado.cliente.telefone}</p>}
+                      <Button type="button" variant="outline" onClick={abrirHistoricoClienteSelecionada} className="mt-3 h-10 rounded-md">
+                        <History className="mr-2 h-4 w-4" aria-hidden="true" />
+                        Ver historico
+                      </Button>
                     </>
                   ) : (
                     <p>Cliente nao localizada</p>
@@ -746,6 +763,11 @@ export default function RegistrosPageClient() {
           </aside>
         </div>
       </div>
+      <HistoricoClienteModal
+        open={historicoAberto}
+        onOpenChange={setHistoricoAberto}
+        cliente={historicoCliente}
+      />
     </main>
   )
 }

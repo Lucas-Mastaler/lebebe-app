@@ -1,9 +1,10 @@
 'use client'
 
 import { FormEvent, useMemo, useState } from 'react'
-import { Search, UserPlus, Users } from 'lucide-react'
+import { History, Search, UserPlus, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { HistoricoClienteModal, type HistoricoClienteModalCliente } from '@/components/atendimento-presencial/HistoricoClienteModal'
 import { PARENTESCOS_CLIENTE, type ClientePresencialDTO, type ParentescoCliente } from '@/lib/atendimento-presencial/clientes'
 import { aplicarMascaraTelefoneBR } from '@/lib/atendimento-presencial/telefone'
 
@@ -36,6 +37,8 @@ export default function PageClient() {
   const [salvando, setSalvando] = useState(false)
   const [erroCadastro, setErroCadastro] = useState<string | null>(null)
   const [feedbackCadastro, setFeedbackCadastro] = useState<string | null>(null)
+  const [historicoAberto, setHistoricoAberto] = useState(false)
+  const [historicoCliente, setHistoricoCliente] = useState<HistoricoClienteModalCliente | null>(null)
 
   const podeEnviar = useMemo(() => {
     if (salvando) return false
@@ -124,6 +127,15 @@ export default function PageClient() {
     }
   }
 
+  function abrirHistoricoCliente(cliente: ClientePresencialDTO) {
+    setHistoricoCliente({
+      id: cliente.id,
+      nome: cliente.nome,
+      telefoneFormatado: cliente.telefoneFormatado,
+    })
+    setHistoricoAberto(true)
+  }
+
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
@@ -196,6 +208,10 @@ export default function PageClient() {
                     <span>{cliente.telefoneFormatado ?? 'Sem telefone'}</span>
                     <span>Atualizada em {new Date(cliente.atualizadoEm).toLocaleDateString('pt-BR')}</span>
                   </div>
+                  <Button type="button" variant="outline" onClick={() => abrirHistoricoCliente(cliente)} className="mt-3 h-10 rounded-md">
+                    <History className="mr-2 h-4 w-4" aria-hidden="true" />
+                    Ver historico
+                  </Button>
                 </article>
               ))}
             </div>
@@ -290,6 +306,11 @@ export default function PageClient() {
           </section>
         </div>
       </div>
+      <HistoricoClienteModal
+        open={historicoAberto}
+        onOpenChange={setHistoricoAberto}
+        cliente={historicoCliente}
+      />
     </main>
   )
 }

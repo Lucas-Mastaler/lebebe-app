@@ -1,3 +1,59 @@
+## 2026-07-17 - Codex - Correcao do destino pos-login Google para /inicio
+
+**Resumo:** Investigado o fluxo completo do login Google ate o destino final. Confirmado no codigo que `src/app/(auth)/login/page.tsx` usa `signInWithOAuth` com `redirectTo` fixo para `/auth/callback`, sem `next`, `returnTo`, storage ou rota anterior. Confirmado que `src/app/auth/callback/route.ts` validava a sessao, consultava `usuarios_permitidos`, registrava auditoria e redirecionava hardcoded para `/dashboard`. Como `/dashboard` e protegido por `checkModuleAndWindowAccess('dashboard')`, usuarios sem permissao de dashboard podiam cair em `/acesso-negado` logo apos o login. A correcao minima mudou o redirect de sucesso do callback para `/inicio`.
+
+**Arquivos lidos:**
+- `.devin/rules/continuidade-agente.md`, `.devin/rules/gerais.md`, `.devin/rules/recebimentos.md`, `.devin/rules/resumo.md`, `.devin/rules/supabase.md`
+- `.devin/workflows/login.md`
+- `.agents/skills/supabase/SKILL.md`
+- `docs/ia/log_progress.md`
+- `docs/ia/auditoria-usuarios-login-roles.md`
+- `docs/ia/plano-fase-0-seguranca-auth.md`
+- `docs/ia/padrao-novas-telas-permissoes.md`
+- `docs/plano-acesso-usuarios-e-unidades.md`
+- `docs/ficha-atendimento-presencial-progresso.md`
+- `src/app/(auth)/login/page.tsx`
+- `src/app/auth/callback/route.ts`
+- `src/middleware.ts`
+- `src/app/dashboard/page.tsx`
+- `src/app/inicio/page.tsx`
+- `src/app/page.tsx`
+- `src/components/LayoutWrapper.tsx`
+- `src/components/Sidebar.tsx`
+- `src/lib/hooks/usePermissoes.ts`
+- `src/lib/auth/api-auth.ts`
+- `src/lib/auth/module-access.ts`
+- `src/lib/auth/modulos-app.ts`
+- `src/app/api/me/permissoes/route.ts`
+- `src/app/api/auth/logout/route.ts`
+- `src/lib/auth/helpers.ts`
+
+**Arquivos alterados/criados:**
+- `src/app/auth/callback/route.ts` - redirect final de sucesso alterado de `/dashboard` para `/inicio`.
+- `src/app/auth/callback/route.test.ts` - teste focado garantindo redirect para `/inicio` apos OAuth bem-sucedido.
+- `docs/ia/log_progress.md` - esta entrada.
+
+**Validacoes realizadas:**
+- Supabase MCP: confirmadas estruturas reais de `auth.users`, `usuarios_permitidos`, `app_modulos`, `app_perfis_acesso`, `app_usuarios_perfis`, `app_permissoes_perfil`, `app_permissoes_usuario`, janelas de acesso, `auditoria_acessos` e `google_oauth_setup`; policies de `usuarios_permitidos`/`auditoria_acessos`; triggers de updated_at e protecao de superadmin.
+- `npm run test -- src/app/auth/callback/route.test.ts`: passou, 1 arquivo e 1 teste.
+- `npx eslint src/app/auth/callback/route.ts src/app/auth/callback/route.test.ts`: passou.
+- `npx tsc --noEmit --pretty false`: passou.
+
+**Comandos executados e resultados:**
+- `Get-Content`/`rg` para regras, docs, log e fluxo de auth: leitura concluida.
+- MCP Supabase `_list_tables` e `_execute_sql`: consultas read-only concluidas.
+- `npm run test -- src/app/auth/callback/route.test.ts`: primeira execucao falhou por hoisting do mock Vitest; teste ajustado com `vi.hoisted`; segunda execucao passou.
+- `npx eslint src/app/auth/callback/route.ts src/app/auth/callback/route.test.ts`: exit 0.
+- `npx tsc --noEmit --pretty false`: exit 0.
+
+**Pendencias:** Validacao manual autenticada em ambiente real nao executada neste turno: usuario novo, usuario existente e tentativa previa de rota proibida devem confirmar URL final `/inicio`.
+
+**Riscos conhecidos:** O fluxo de definicao de senha por convite ainda possui `router.push('/dashboard')` e nao foi alterado porque o escopo era login Google. Rotas protegidas continuam bloqueando por modulo normalmente.
+
+**Proximo passo recomendado:** Validar em navegador autenticado: login Google de usuario com perfil sem `dashboard`, login de usuario com `dashboard`, e tentativa de abrir rota proibida antes do login, confirmando que todos terminam em `/inicio` apos o OAuth.
+
+---
+
 ## 2025-07-17 - Cascade - Correcao de responsividade do HistoricoClienteModal
 
 **Resumo:** Corrigida a responsividade do modal de historico de clientes no mobile. O problema raiz era o overflow-y-auto aplicado no DialogContent, fazendo o botao X sumir ao rolar. A solucao reestruturou o DialogContent para flex-col com header fixo (flex-none, border-b, padding proprio) e conteudo interno scrollavel (flex-1 min-h-0 overflow-y-auto overflow-x-hidden). Adicionado break-words nos artigos para evitar overflow de texto. Artigos de venda com p-3 sm:p-4 para melhor espacamento no mobile. Desktop inalterado.

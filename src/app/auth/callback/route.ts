@@ -99,7 +99,7 @@ export async function GET(request: Request) {
       provider: 'google',
     })
 
-    return NextResponse.redirect(`${origin}/dashboard`)
+    return NextResponse.redirect(`${origin}/inicio`)
   }
 
   console.error('[OAuth Callback] Código OAuth não encontrado na URL')

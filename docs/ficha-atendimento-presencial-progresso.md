@@ -1378,7 +1378,7 @@ Consulta MCP Supabase em 2026-07-15 confirmou:
 Ainda nao executado neste turno:
 
 1. Entrar como consultora.
-2. Iniciar nova ficha.
+2. Iniciar novo atendimento.
 3. Buscar cliente por nome parcial.
 4. Buscar por trecho de telefone.
 5. Selecionar cliente.
@@ -1505,7 +1505,7 @@ Executar a validacao manual da Fase 4 em browser autenticado e celular. Depois, 
 ### Roteiro manual recomendado
 
 1. Abrir `/atendimento-presencial/ficha` como usuario com permissao.
-2. Iniciar nova ficha selecionando filial e consultora.
+2. Iniciar novo atendimento selecionando filial e consultora.
 3. Confirmar progresso `Etapa 2 de 4` na ficha ativa.
 4. Buscar cliente por nome.
 5. Selecionar cliente e confirmar que a ficha permanece disponivel sem etapa intermediaria.

@@ -1093,7 +1093,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
             )}
 
             <Button type="button" onClick={iniciarRascunho} disabled={!podeIniciar} className="mt-5 h-12 w-full rounded-md">
-              {iniciando ? 'Iniciando...' : 'Iniciar nova ficha'}
+              {iniciando ? 'Iniciando...' : 'Iniciar novo atendimento'}
             </Button>
 
             <div className="mt-6 border-t border-slate-100 pt-4">

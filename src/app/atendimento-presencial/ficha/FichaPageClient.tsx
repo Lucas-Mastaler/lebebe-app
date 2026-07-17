@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Baby, Check, ChevronLeft, ChevronRight, ClipboardList, MessageSquareText, Plus, RefreshCw, Save, Search, ShoppingBag, UserRound, WifiOff, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   carregarCacheRascunho,
   removerCacheRascunho,
@@ -148,7 +149,13 @@ function normalizarProduto(valor: string) {
 }
 
 function criarPayloadInicial(): FichaDadosRascunho {
-  return { ...payloadInicial, criancas: [], departamentos: [], produtosInteresse: [], motivosResultado: [] }
+  return {
+    ...payloadInicial,
+    criancas: [criarCriancaRascunho(gerarIdLocal('crianca'))],
+    departamentos: [],
+    produtosInteresse: [],
+    motivosResultado: [],
+  }
 }
 
 function StatusSync({ status }: { status: SyncStatus }) {
@@ -193,22 +200,64 @@ function OpcaoButton(props: {
   )
 }
 
+type VariantSecao = 'azul' | 'rosa' | 'amarelo' | 'lilas' | 'verde'
+
+const variantSecaoClasses: Record<VariantSecao, { section: string; iconWrap: string; icon: string; title: string; descricao: string }> = {
+  azul: {
+    section: 'border-blue-200 bg-blue-50/60',
+    iconWrap: 'border-blue-200 bg-white',
+    icon: 'text-blue-700',
+    title: 'text-blue-950',
+    descricao: 'text-blue-600/70',
+  },
+  rosa: {
+    section: 'border-pink-200 bg-pink-50/60',
+    iconWrap: 'border-pink-200 bg-white',
+    icon: 'text-pink-700',
+    title: 'text-pink-950',
+    descricao: 'text-pink-600/70',
+  },
+  amarelo: {
+    section: 'border-amber-200 bg-amber-50/60',
+    iconWrap: 'border-amber-200 bg-white',
+    icon: 'text-amber-700',
+    title: 'text-amber-950',
+    descricao: 'text-amber-600/70',
+  },
+  lilas: {
+    section: 'border-violet-200 bg-violet-50/60',
+    iconWrap: 'border-violet-200 bg-white',
+    icon: 'text-violet-700',
+    title: 'text-violet-950',
+    descricao: 'text-violet-600/70',
+  },
+  verde: {
+    section: 'border-emerald-200 bg-emerald-50/60',
+    iconWrap: 'border-emerald-200 bg-white',
+    icon: 'text-emerald-700',
+    title: 'text-emerald-950',
+    descricao: 'text-emerald-600/70',
+  },
+}
+
 function SecaoFicha(props: {
   titulo: string
   descricao?: string
   icon: LucideIcon
+  variant?: VariantSecao
   children: React.ReactNode
 }) {
   const Icon = props.icon
+  const v = props.variant ? variantSecaoClasses[props.variant] : null
   return (
-    <section className="rounded-md border border-slate-200 bg-slate-50/60 p-4 sm:p-5">
+    <section className={`rounded-md border p-4 sm:p-5 ${v ? v.section : 'border-slate-200 bg-slate-50/60'}`}>
       <div className="mb-4 flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-sky-700">
-          <Icon className="h-4 w-4" aria-hidden="true" />
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border ${v ? v.iconWrap : 'border-slate-200 bg-white'}`}>
+          <Icon className={`h-4 w-4 ${v ? v.icon : 'text-sky-700'}`} aria-hidden="true" />
         </span>
         <div>
-          <h2 className="text-lg font-semibold text-slate-950">{props.titulo}</h2>
-          {props.descricao && <p className="mt-1 text-sm text-slate-500">{props.descricao}</p>}
+          <h2 className={`text-lg font-semibold ${v ? v.title : 'text-slate-950'}`}>{props.titulo}</h2>
+          {props.descricao && <p className={`mt-1 text-sm ${v ? v.descricao : 'text-slate-500'}`}>{props.descricao}</p>}
         </div>
       </div>
       <div className="grid gap-4">{props.children}</div>
@@ -498,6 +547,9 @@ export default function FichaPageClient({ usuarioId }: Props) {
     const usarCache = cache?.sincronizado === false && (cache.version ?? 0) >= rascunho.version
     const dados = usarCache ? cache.dadosRascunho : rascunho.dadosRascunho
     const payload = migrarFichaDadosRascunho(dados)
+    if (payload.criancas.length === 0) {
+      payload.criancas = [criarCriancaRascunho(gerarIdLocal('crianca'))]
+    }
     const payloadServidor = {
       dadosRascunho: migrarFichaDadosRascunho(rascunho.dadosRascunho),
       clienteId: rascunho.clienteId,
@@ -959,6 +1011,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
                 titulo="Cliente"
                 descricao={!clienteSelecionada ? 'Busque por nome ou telefone, ou cadastre uma nova cliente.' : undefined}
                 icon={UserRound}
+                variant="azul"
               >
                 {clienteSelecionada && (
                   <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
@@ -1075,35 +1128,39 @@ export default function FichaPageClient({ usuarioId }: Props) {
                 titulo="Dados da crianca"
                 descricao="Registre uma ou mais criancas quando a cliente informar."
                 icon={Baby}
+                variant="rosa"
               >
-                {ficha.criancas.length === 0 && (
-                  <p className="rounded-md border border-dashed border-slate-200 p-4 text-sm text-slate-500">Nenhuma crianca adicionada ainda.</p>
-                )}
                 {ficha.criancas.map((crianca, index) => (
                   <div key={crianca.id} className="rounded-lg border border-slate-200 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <h3 className="font-semibold text-slate-950">Crianca {index + 1}</h3>
-                      <Button type="button" variant="outline" onClick={() => removerCrianca(crianca.id)} className="h-9 rounded-md">
-                        <X className="h-4 w-4" aria-hidden="true" />
-                      </Button>
+                      {ficha.criancas.length > 1 && (
+                        <Button type="button" variant="outline" onClick={() => removerCrianca(crianca.id)} className="h-9 rounded-md">
+                          <X className="h-4 w-4" aria-hidden="true" />
+                        </Button>
+                      )}
                     </div>
                     <div className="mt-4 grid gap-4">
                       <div>
-                        <p className="text-sm font-semibold text-slate-700">Situacao</p>
-                        <div className="mt-2 grid gap-2">
-                          {SITUACOES_CRIANCA.map((item) => (
-                            <OpcaoButton
-                              key={item.chave}
-                              selected={crianca.situacao === item.chave}
-                              onClick={() => {
-                                setDataPrevistaInputs((atual) => ({ ...atual, [crianca.id]: '' }))
-                                atualizarCrianca(crianca.id, { situacao: item.chave as SituacaoCrianca, idadeUnidade: undefined, idadeValor: undefined, dataPrevistaNascimento: undefined })
-                              }}
-                            >
-                              {item.label}
-                            </OpcaoButton>
-                          ))}
-                        </div>
+                        <label className="text-sm font-semibold text-slate-700" htmlFor={`situacao-${crianca.id}`}>Situacao</label>
+                        <Select
+                          value={crianca.situacao}
+                          onValueChange={(value) => {
+                            setDataPrevistaInputs((atual) => ({ ...atual, [crianca.id]: '' }))
+                            atualizarCrianca(crianca.id, { situacao: value as SituacaoCrianca, idadeUnidade: undefined, idadeValor: undefined, dataPrevistaNascimento: undefined })
+                          }}
+                        >
+                          <SelectTrigger id={`situacao-${crianca.id}`} className="mt-2 min-h-12 w-full rounded-md border border-slate-200 text-base">
+                            <SelectValue placeholder="Selecione a situacao" />
+                          </SelectTrigger>
+                          <SelectContent position="popper" className="max-h-60">
+                            {SITUACOES_CRIANCA.map((item) => (
+                              <SelectItem key={item.chave} value={item.chave}>
+                                {item.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                       {crianca.situacao === 'gestacao' && (
                         <label className="text-sm font-semibold text-slate-700">
@@ -1174,6 +1231,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
                   titulo="Departamentos"
                   descricao="Selecione as areas de interesse informadas pela cliente."
                   icon={ClipboardList}
+                  variant="amarelo"
                 >
                   <p className="text-sm font-semibold text-slate-700">Departamentos</p>
                   <div className="mt-2 grid grid-cols-2 gap-2">
@@ -1189,6 +1247,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
                   titulo="Produtos de interesse"
                   descricao="Registre produtos em texto livre quando a cliente citar itens especificos."
                   icon={ShoppingBag}
+                  variant="lilas"
                 >
                   <label className="text-sm font-semibold text-slate-700" htmlFor="produto-interesse">Produtos de interesse</label>
                   <div className="mt-2 flex gap-2">
@@ -1288,6 +1347,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
                 titulo="Observacoes sobre esse atendimento"
                 descricao="Registre preferencias, duvidas, objecoes ou informacoes importantes para um proximo contato."
                 icon={MessageSquareText}
+                variant="verde"
               >
                 <label className="text-sm font-semibold text-slate-700">
                   Observacoes

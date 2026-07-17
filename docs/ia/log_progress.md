@@ -1,3 +1,38 @@
+## 2026-07-17 - Cascade - UI/UX Ficha: crianca automatica, Select de situacao e cores nas secoes
+
+**Resumo:** Ajustes de UI/UX na Ficha de Atendimento Presencial: primeira crianca nasce automaticamente em gestacao, situacao trocou de OpcaoButton para Radix Select, secoes ganharam cores distintas, botao remover oculto na unica crianca. Nenhuma migration, API, banco, RPC, RLS, permissao, cron ou regra de negocio alterada.
+
+**Arquivos lidos:**
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `src/lib/atendimento-presencial/ficha-schema.ts`
+- `src/lib/atendimento-presencial/ficha-schema.test.ts`
+- `src/components/ui/select.tsx`
+- `docs/ficha-atendimento-presencial-progresso.md`
+- `docs/ia/log_progress.md`
+
+**Arquivos alterados:**
+- `src/lib/atendimento-presencial/ficha-schema.ts` — `criarCriancaRascunho` default `gestacao`
+- `src/lib/atendimento-presencial/ficha-schema.test.ts` — teste atualizado
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx` — import Select, `criarPayloadInicial` com crianca, `aplicarRascunho` com crianca inicial se vazio, `SecaoFicha` com variant de cor, Select de situacao, ocultar remover na unica crianca, remover msg vazia
+- `docs/ficha-atendimento-presencial-progresso.md`
+- `docs/ia/log_progress.md`
+
+**Validacoes realizadas:**
+- `npx vitest run src/lib/atendimento-presencial/ficha-schema.test.ts`: passou, 13 testes.
+- `npx tsc --noEmit`: passou sem erros.
+- `npx eslint`: passou.
+
+**Pendencias:**
+- Validacao manual autenticada/mobile.
+- Migration da Fase 5 continua nao aplicada.
+
+**Riscos conhecidos:**
+- Rascunhos antigos sem criancas dispararao autosave uma vez ao abrir — nao e loop.
+- Schema continua aceitando array vazio.
+
+**Proximo passo recomendado:**
+- Validar no celular: abertura com crianca automatica, Select de situacao, cores das secoes, fluxo de conclusao.
+
 ## 2026-07-16 - Codex - Inteligencia Comercial IA com contexto historico ampliado 90d por contactId
 
 **Resumo:** Ampliado o contexto por `contactId` usado pela IA da Inteligencia Comercial para buscar ate 90 dias antes da abertura do periodo valido da venda, mantendo separacao entre transcript/ticket principal, contexto complementar proximo e contexto historico ampliado. O fluxo de UI `Ver conversa`, sincronizacao Digisac, vinculos de ciclo, schema Supabase e reanalise em massa nao foram alterados.

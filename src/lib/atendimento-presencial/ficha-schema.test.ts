@@ -146,7 +146,7 @@ describe('schema da ficha de atendimento presencial', () => {
   })
 
   it('cria crianca com id local estavel', () => {
-    expect(criarCriancaRascunho('local-1')).toEqual({ id: 'local-1', situacao: 'nao_informado' })
+    expect(criarCriancaRascunho('local-1')).toEqual({ id: 'local-1', situacao: 'gestacao' })
   })
 
   it('valida campos obrigatorios para conclusao definitiva', () => {

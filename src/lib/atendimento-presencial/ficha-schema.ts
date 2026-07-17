@@ -245,7 +245,7 @@ function payloadBase(): FichaDadosRascunho {
 }
 
 export function criarCriancaRascunho(id: string): FichaCriancaRascunho {
-  return { id, situacao: 'nao_informado' }
+  return { id, situacao: 'gestacao' }
 }
 
 export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunho {

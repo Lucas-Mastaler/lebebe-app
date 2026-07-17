@@ -1847,3 +1847,75 @@ Executar o roteiro manual em navegador autenticado antes de aplicar a migration 
 ### Proximo passo recomendado
 
 Validar manualmente um registro concluido real em `/atendimento-presencial/registros` e confirmar no celular a leitura da observacao final e a separacao visual da ficha.
+
+## 2026-07-17 - UI/UX: crianca automatica, Select de situacao e cores nas secoes
+
+### Escopo
+
+- Primeira crianca agora nasce automaticamente na abertura da ficha, sem clique manual.
+- Situacao da crianca trocou de botoes OpcaoButton para Radix Select.
+- Secoes da ficha ganharam cores distintas por variante.
+- Botao remover crianca oculto quando ha apenas uma.
+- Mensagem "Nenhuma crianca adicionada" removida (sempre ha pelo menos uma).
+- Nenhuma migration, RPC, RLS, grant, permissao, cron, constraint, API ou dado manual no Supabase foi alterado.
+
+### Diagnostico confirmado
+
+- `criarCriancaRascunho` retornava `situacao: 'nao_informado'` — alterado para `situacao: 'gestacao'`.
+- `criarPayloadInicial` retornava `criancas: []` — agora inclui uma crianca pre-criada.
+- `aplicarRascunho` preservava array vazio de criancas do servidor — agora adiciona uma inicial se vazio.
+- `SecaoFicha` nao tinha variant de cor — adicionado sistema com 5 variantes.
+- Situacao usava 4 OpcaoButton em grid — substituido por Select/SelectTrigger/SelectContent/SelectItem.
+- Componente Radix Select ja existia em `src/components/ui/select.tsx`.
+
+### Implementacao
+
+- `ficha-schema.ts`: `criarCriancaRascunho` agora retorna `situacao: 'gestacao'`.
+- `FichaPageClient.tsx`:
+  - Import de `Select`, `SelectContent`, `SelectItem`, `SelectTrigger`, `SelectValue`.
+  - `criarPayloadInicial` inclui `criarCriancaRascunho(gerarIdLocal('crianca'))`.
+  - `aplicarRascunho` adiciona crianca inicial se payload migrado tiver 0 criancas.
+  - `SecaoFicha` aceita `variant?: 'azul' | 'rosa' | 'amarelo' | 'lilas' | 'verde'` com mapa de classes.
+  - Cliente=azul, Crianca=rosa, Departamentos=amarelo, Produtos=lilas, Observacoes=verde.
+  - Situacao substituida por Radix Select com `position="popper"`.
+  - Botao remover oculto quando `ficha.criancas.length === 1`.
+  - Mensagem "Nenhuma crianca adicionada" removida.
+- `ficha-schema.test.ts`: teste de `criarCriancaRascunho` atualizado para `situacao: 'gestacao'`.
+
+### Arquivos alterados
+
+- `src/lib/atendimento-presencial/ficha-schema.ts`
+- `src/lib/atendimento-presencial/ficha-schema.test.ts`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `docs/ficha-atendimento-presencial-progresso.md`
+- `docs/ia/log_progress.md`
+
+### Validacoes realizadas
+
+- `npx vitest run src/lib/atendimento-presencial/ficha-schema.test.ts`: passou, 1 arquivo e 13 testes.
+- `npx tsc --noEmit`: passou sem erros.
+- `npx eslint src/app/atendimento-presencial/ficha/FichaPageClient.tsx src/lib/atendimento-presencial/ficha-schema.ts src/lib/atendimento-presencial/ficha-schema.test.ts --quiet`: passou.
+
+### Impactos esperados
+
+- Rascunhos existentes sem criancas passarao a exibir uma crianca inicial em gestacao na UI.
+- Autosave pode disparar uma vez ao abrir rascunho vazio antigo, por diferenca real de payload — nao e loop.
+- Schema de validacao continua aceitando array vazio (nao quebra rascunhos legados).
+
+### O que nao foi alterado
+
+- Migration, banco, RPC, RLS, grants, cron, APIs.
+- Fila de autosave, cache, versionamento.
+- Permissoes, modulos.
+- Tela de Registros.
+- Regras de clientes, conclusao, validacao.
+- Componentes OpcaoButton (ainda usados em outras partes da ficha).
+
+### Pendencias
+
+- Validacao manual autenticada/mobile ainda pendente.
+- Migration da Fase 5 continua nao aplicada.
+
+### Proximo passo recomendado
+
+Validar manualmente no celular: abertura da ficha com crianca automatica, troca de situacao via Select, cores das secoes, e fluxo completo de conclusao.

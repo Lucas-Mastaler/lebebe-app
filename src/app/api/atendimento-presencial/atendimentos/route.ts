@@ -8,6 +8,7 @@ import {
   type AtendimentoPresencialRow,
 } from '@/lib/atendimento-presencial/rascunhos'
 import { serializarClienteRegistro, type ClienteRegistroRow } from '@/lib/atendimento-presencial/registros'
+import { converterViradaCartaoInput, valorOrdenavelViradaCartao } from '@/lib/atendimento-presencial/ficha-schema'
 
 export const runtime = 'nodejs'
 
@@ -21,6 +22,8 @@ const SELECT_ATENDIMENTO = [
   'dados_rascunho',
   'resultado_atendimento',
   'numero_lancamento',
+  'virada_cartao_dia',
+  'virada_cartao_mes',
   'concluido_em',
   'iniciado_em',
   'ultima_atividade_em',
@@ -62,10 +65,17 @@ async function carregarContextoRegistros() {
   }
 }
 
-export async function GET() {
+export async function GET(request = new Request('http://localhost/api/atendimento-presencial/atendimentos')) {
   try {
     const loaded = await carregarContextoRegistros()
     if (!loaded.ok) return loaded.response
+    const params = new URL(request.url).searchParams
+    const viradaCartaoDe = params.get('viradaCartaoDe') ?? params.get('viradaCartao')
+    const viradaCartaoAte = params.get('viradaCartaoAte')
+    const viradaDe = viradaCartaoDe ? converterViradaCartaoInput(viradaCartaoDe) : null
+    const viradaAte = viradaCartaoAte ? converterViradaCartaoInput(viradaCartaoAte) : null
+    if (viradaCartaoDe && !viradaDe) return jsonErro('Virada do cartao inicial invalida', 400)
+    if (viradaCartaoAte && !viradaAte) return jsonErro('Virada do cartao final invalida', 400)
 
     let query = loaded.supabase
       .from('atendimento_presencial_atendimentos')
@@ -83,14 +93,27 @@ export async function GET() {
 
     const { data, error } = await query
       .order('concluido_em', { ascending: false })
-      .limit(50)
+      .limit(viradaDe || viradaAte ? 200 : 50)
 
     if (error) {
       console.error('[ATENDIMENTO PRESENCIAL REGISTROS] Erro ao listar:', error)
       return jsonErro('Erro ao processar requisicao', 500)
     }
 
-    const rows = (data ?? []) as unknown as AtendimentoPresencialRow[]
+    let rows = (data ?? []) as unknown as AtendimentoPresencialRow[]
+    if (viradaDe || viradaAte) {
+      const valorDe = viradaDe ? valorOrdenavelViradaCartao(viradaDe.dia, viradaDe.mes) : null
+      const valorAte = viradaAte ? valorOrdenavelViradaCartao(viradaAte.dia, viradaAte.mes) : null
+      rows = rows.filter((row) => {
+        if (!row.virada_cartao_dia || !row.virada_cartao_mes) return false
+        const valor = valorOrdenavelViradaCartao(row.virada_cartao_dia, row.virada_cartao_mes)
+        if (!valor) return false
+        if (valorDe && valorAte && valorDe > valorAte) return valor >= valorDe || valor <= valorAte
+        if (valorDe && valor < valorDe) return false
+        if (valorAte && valor > valorAte) return false
+        return true
+      })
+    }
     const clienteIds = Array.from(new Set(rows.map((row) => row.cliente_id).filter((id): id is string => Boolean(id))))
     const consultoraIds = Array.from(new Set(rows.map((row) => row.consultora_usuario_id)))
     const unidadeIds = Array.from(new Set(rows.map((row) => row.unidade_id)))
@@ -133,6 +156,8 @@ export async function GET() {
         unidadeNome: unidadesPorId.get(row.unidade_id)?.nome ?? 'Unidade nao localizada',
         resultadoAtendimento: row.resultado_atendimento,
         numeroLancamento: row.numero_lancamento ?? null,
+        viradaCartaoDia: row.virada_cartao_dia ?? null,
+        viradaCartaoMes: row.virada_cartao_mes ?? null,
         concluidoEm: row.concluido_em,
       })),
     })

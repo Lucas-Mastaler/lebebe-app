@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Baby, Check, ChevronLeft, ChevronRight, ClipboardList, MessageSquareText, Plus, RefreshCw, Save, Search, ShoppingBag, UserRound, WifiOff, X } from 'lucide-react'
+import { AlertCircle, Baby, Check, ChevronLeft, ChevronRight, ClipboardList, History, MessageSquareText, Plus, RefreshCw, Save, Search, ShoppingBag, UserRound, WifiOff, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   carregarCacheRascunho,
@@ -21,6 +22,9 @@ import {
   RESULTADOS_ATENDIMENTO,
   SEXOS_CRIANCA,
   SITUACOES_CRIANCA,
+  converterViradaCartaoInput,
+  formatarViradaCartao,
+  formatarViradaCartaoInput,
   converterDataInputParaISO,
   criarCriancaRascunho,
   formatarDataISOParaInput,
@@ -92,6 +96,37 @@ type ApiClientesResponse = {
   clienteExistente?: boolean
 }
 
+type HistoricoClienteResponse = {
+  ok: boolean
+  message?: string
+  telefoneDisponivel?: boolean
+  atendimentos?: Array<{
+    id: string
+    data: string | null
+    unidade: string | null
+    consultora: string | null
+    resultado: string | null
+    departamentos: string[]
+    produtosInteresse: string[]
+    numeroLancamento: number | null
+  }>
+  vendas?: Array<{
+    numeroLancamento: string
+    data: string | null
+    filial: string | null
+    itens: string[]
+    valorTotal: number | null
+    formasPagamento: string[]
+  }>
+  fontesConsultadas?: string[]
+}
+
+type ErroValidacaoFicha = {
+  sectionId: string
+  fieldId?: string
+  message: string
+}
+
 type SyncStatus = 'ocioso' | AutosaveStatus
 
 type Props = {
@@ -120,6 +155,18 @@ function formatarData(valor: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function formatarDataCurta(valor: string | null) {
+  if (!valor) return 'Sem data'
+  const data = new Date(valor)
+  if (Number.isNaN(data.getTime())) return valor
+  return data.toLocaleDateString('pt-BR')
+}
+
+function formatarDinheiro(valor: number | null) {
+  if (valor === null || !Number.isFinite(valor)) return 'Valor nao informado'
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor)
 }
 
 function diasRestantes(expiraEm: string) {
@@ -200,7 +247,7 @@ function OpcaoButton(props: {
   )
 }
 
-type VariantSecao = 'azul' | 'rosa' | 'amarelo' | 'lilas' | 'verde'
+type VariantSecao = 'azul' | 'rosa' | 'amarelo' | 'lilas' | 'verde' | 'laranja'
 
 const variantSecaoClasses: Record<VariantSecao, { section: string; iconWrap: string; icon: string; title: string; descricao: string }> = {
   azul: {
@@ -238,26 +285,43 @@ const variantSecaoClasses: Record<VariantSecao, { section: string; iconWrap: str
     title: 'text-emerald-950',
     descricao: 'text-emerald-600/70',
   },
+  laranja: {
+    section: 'border-orange-200 bg-orange-50/60',
+    iconWrap: 'border-orange-200 bg-white',
+    icon: 'text-orange-700',
+    title: 'text-orange-950',
+    descricao: 'text-orange-600/70',
+  },
 }
 
 function SecaoFicha(props: {
+  id?: string
   titulo: string
   descricao?: string
   icon: LucideIcon
   variant?: VariantSecao
+  erro?: string
   children: React.ReactNode
 }) {
   const Icon = props.icon
   const v = props.variant ? variantSecaoClasses[props.variant] : null
   return (
-    <section className={`rounded-md border p-4 sm:p-5 ${v ? v.section : 'border-slate-200 bg-slate-50/60'}`}>
+    <section
+      id={props.id}
+      className={`scroll-mt-28 rounded-md border p-4 sm:p-5 ${props.erro ? 'border-red-300 bg-red-50/70' : v ? v.section : 'border-slate-200 bg-slate-50/60'}`}
+    >
       <div className="mb-4 flex items-start gap-3">
-        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border ${v ? v.iconWrap : 'border-slate-200 bg-white'}`}>
-          <Icon className={`h-4 w-4 ${v ? v.icon : 'text-sky-700'}`} aria-hidden="true" />
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border ${props.erro ? 'border-red-200 bg-white' : v ? v.iconWrap : 'border-slate-200 bg-white'}`}>
+          {props.erro ? (
+            <AlertCircle className="h-4 w-4 text-red-700" aria-hidden="true" />
+          ) : (
+            <Icon className={`h-4 w-4 ${v ? v.icon : 'text-sky-700'}`} aria-hidden="true" />
+          )}
         </span>
         <div>
-          <h2 className={`text-lg font-semibold ${v ? v.title : 'text-slate-950'}`}>{props.titulo}</h2>
-          {props.descricao && <p className={`mt-1 text-sm ${v ? v.descricao : 'text-slate-500'}`}>{props.descricao}</p>}
+          <h2 className={`text-lg font-semibold ${props.erro ? 'text-red-950' : v ? v.title : 'text-slate-950'}`}>{props.titulo}</h2>
+          {props.descricao && <p className={`mt-1 text-sm ${props.erro ? 'text-red-700' : v ? v.descricao : 'text-slate-500'}`}>{props.descricao}</p>}
+          {props.erro && <p className="mt-2 text-sm font-semibold text-red-700">{props.erro}</p>}
         </div>
       </div>
       <div className="grid gap-4">{props.children}</div>
@@ -269,31 +333,43 @@ function validarEtapa(params: {
   etapa: FichaEtapa
   ficha: FichaDadosRascunho
   clienteSelecionada: ClientePresencialDTO | null
-}) {
+}): ErroValidacaoFicha[] {
   const { etapa, ficha, clienteSelecionada } = params
+  const erros: ErroValidacaoFicha[] = []
   if (etapa === 'ficha') {
-    if (!clienteSelecionada) return 'Selecione ou cadastre uma cliente para continuar.'
+    if (!clienteSelecionada) {
+      erros.push({ sectionId: 'secao-cliente', fieldId: 'busca-cliente', message: 'Selecione uma cliente.' })
+    }
     for (const crianca of ficha.criancas) {
       if (crianca.situacao === 'gestacao' && crianca.dataPrevistaNascimento && !/^\d{4}-\d{2}-\d{2}$/.test(crianca.dataPrevistaNascimento)) {
-        return 'Revise a data prevista de nascimento.'
+        erros.push({ sectionId: 'secao-crianca', fieldId: `data-prevista-${crianca.id}`, message: 'Revise a data prevista de nascimento.' })
       }
       if (crianca.situacao === 'ja_nasceu') {
         if (crianca.idadeUnidade === 'meses' && (!crianca.idadeValor || crianca.idadeValor < 1 || crianca.idadeValor > 11)) {
-          return 'Informe idade valida em meses.'
+          erros.push({ sectionId: 'secao-crianca', message: 'Informe idade valida em meses.' })
         }
         if (crianca.idadeUnidade === 'anos' && (!crianca.idadeValor || crianca.idadeValor < 1 || crianca.idadeValor > 6)) {
-          return 'Informe idade valida em anos.'
+          erros.push({ sectionId: 'secao-crianca', message: 'Informe idade valida em anos.' })
         }
-        if (!crianca.idadeUnidade) return 'Informe a idade da crianca.'
+        if (!crianca.idadeUnidade) erros.push({ sectionId: 'secao-crianca', message: 'Informe a idade da crianca.' })
       }
     }
   }
   if (etapa === 'resultado') {
-    if (!ficha.resultadoAtendimento) return 'Selecione o resultado do atendimento.'
-    if (ficha.motivosResultado.length === 0) return 'Selecione ao menos um motivo.'
-    if (ficha.motivosResultado.includes('outro') && !ficha.motivoOutro?.trim()) return 'Informe o complemento de Outro.'
+    if (!ficha.resultadoAtendimento) erros.push({ sectionId: 'secao-resultado-fechamento', message: 'Escolha o resultado do atendimento.' })
+    if (ficha.motivosResultado.length === 0) erros.push({ sectionId: 'secao-resultado-produto', message: 'Selecione pelo menos um motivo.' })
+    if (ficha.motivosResultado.includes('virada_cartao') && !formatarViradaCartao(ficha.viradaCartaoDia, ficha.viradaCartaoMes)) {
+      erros.push({ sectionId: 'secao-resultado-condicao', fieldId: 'virada-cartao', message: 'Informe a virada do cartao em DD/MM.' })
+    }
+    if (ficha.motivosResultado.includes('outro') && !ficha.motivoOutro?.trim()) {
+      erros.push({ sectionId: 'secao-resultado-outro', fieldId: 'motivo-outro', message: 'Informe o complemento de Outro.' })
+    }
   }
-  return null
+  return erros
+}
+
+function primeiroErroPorSecao(erros: ErroValidacaoFicha[], sectionId: string) {
+  return erros.find((erro) => erro.sectionId === sectionId)?.message
 }
 
 export default function FichaPageClient({ usuarioId }: Props) {
@@ -315,16 +391,22 @@ export default function FichaPageClient({ usuarioId }: Props) {
     parentescoOutro: '',
   })
   const [dataPrevistaInputs, setDataPrevistaInputs] = useState<Record<string, string>>({})
+  const [viradaCartaoInput, setViradaCartaoInput] = useState('')
   const [produtoDigitado, setProdutoDigitado] = useState('')
   const [statusSync, setStatusSync] = useState<SyncStatus>('ocioso')
   const [erro, setErro] = useState<string | null>(null)
   const [erroEtapa, setErroEtapa] = useState<string | null>(null)
+  const [errosValidacao, setErrosValidacao] = useState<ErroValidacaoFicha[]>([])
   const [numeroLancamento, setNumeroLancamento] = useState('')
   const [concluindo, setConcluindo] = useState(false)
   const [mensagemConclusao, setMensagemConclusao] = useState<string | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [iniciando, setIniciando] = useState(false)
   const [onlineTick, setOnlineTick] = useState(0)
+  const [historicoAberto, setHistoricoAberto] = useState(false)
+  const [historicoCarregando, setHistoricoCarregando] = useState(false)
+  const [historicoErro, setHistoricoErro] = useState<string | null>(null)
+  const [historicoCliente, setHistoricoCliente] = useState<HistoricoClienteResponse | null>(null)
   const autosaveQueueRef = useRef<AutosaveSerialQueue | null>(null)
   const mountedRef = useRef(false)
   const concluindoRef = useRef(false)
@@ -561,6 +643,9 @@ export default function FichaPageClient({ usuarioId }: Props) {
     criarFilaAutosave(rascunho, serializarPayloadAutosave(payloadServidor))
     setFicha(payload)
     setDataPrevistaInputs(Object.fromEntries(payload.criancas.map((crianca) => [crianca.id, formatarDataISOParaInput(crianca.dataPrevistaNascimento)])))
+    setViradaCartaoInput(formatarViradaCartao(payload.viradaCartaoDia, payload.viradaCartaoMes))
+    setErrosValidacao([])
+    setErroEtapa(null)
     if (usarCache) salvarCacheLocalRascunho({ rascunho, payload: payloadAtual, sincronizado: false, version: rascunho.version })
     setStatusSync(usarCache ? 'offline' : 'salvo')
     setNumeroLancamento('')
@@ -658,6 +743,8 @@ export default function FichaPageClient({ usuarioId }: Props) {
 
   function trocarCliente() {
     setClienteSelecionada(null)
+    setHistoricoCliente(null)
+    setHistoricoErro(null)
     atualizarFicha((atual) => ({ ...atual, cliente: undefined }))
   }
 
@@ -677,21 +764,45 @@ export default function FichaPageClient({ usuarioId }: Props) {
 
   function irParaEtapa(etapa: FichaEtapa) {
     setErroEtapa(null)
+    setErrosValidacao([])
     atualizarFicha((atual) => ({ ...atual, etapaAtual: etapa }))
   }
 
+  function scrollParaErro(erro: ErroValidacaoFicha) {
+    const section = document.getElementById(erro.sectionId)
+    section?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (!erro.fieldId) return
+    const fieldId = erro.fieldId
+    window.setTimeout(() => {
+      const field = document.getElementById(fieldId)
+      if (field instanceof HTMLElement) field.focus()
+    }, 250)
+  }
+
+  function registrarErrosValidacao(erros: ErroValidacaoFicha[]) {
+    setErrosValidacao(erros)
+    setErroEtapa(erros.length === 1 ? erros[0].message : 'Revise os campos destacados antes de continuar.')
+    if (erros[0]) scrollParaErro(erros[0])
+  }
+
+  function erroSecao(sectionId: string) {
+    return primeiroErroPorSecao(errosValidacao, sectionId)
+  }
+
   function avancar() {
-    const erroValidacao = validarEtapa({ etapa: etapaAtual, ficha, clienteSelecionada })
-    if (erroValidacao) {
-      setErroEtapa(erroValidacao)
+    const erros = validarEtapa({ etapa: etapaAtual, ficha, clienteSelecionada })
+    if (erros.length > 0) {
+      registrarErrosValidacao(erros)
       return
     }
     setErroEtapa(null)
+    setErrosValidacao([])
     irParaEtapa(proximaEtapa(etapaAtual))
   }
 
   function voltar() {
     setErroEtapa(null)
+    setErrosValidacao([])
     irParaEtapa(etapaAnterior(etapaAtual))
   }
 
@@ -730,7 +841,22 @@ export default function FichaPageClient({ usuarioId }: Props) {
   }
 
   function atualizarNomeCrianca(id: string, valor: string) {
-    atualizarCrianca(id, { nome: limparNomeCriancaDigitacao(valor) })
+    atualizarCrianca(id, { nome: limparNomeCriancaDigitacao(valor), nomeNaoInformado: false })
+  }
+
+  function marcarNomeNaoInformado(id: string) {
+    atualizarCrianca(id, { nome: undefined, nomeNaoInformado: true })
+  }
+
+  function atualizarViradaCartao(valor: string) {
+    const formatada = formatarViradaCartaoInput(valor)
+    const convertida = converterViradaCartaoInput(formatada)
+    setViradaCartaoInput(formatada)
+    atualizarFicha((atual) => ({
+      ...atual,
+      viradaCartaoDia: convertida?.dia,
+      viradaCartaoMes: convertida?.mes,
+    }))
   }
 
   function alternarDepartamento(chave: DepartamentoInteresse) {
@@ -759,14 +885,54 @@ export default function FichaPageClient({ usuarioId }: Props) {
   function alternarMotivo(chave: MotivoResultado) {
     atualizarFicha((atual) => {
       const selecionado = atual.motivosResultado.includes(chave)
+      const motivosResultado = selecionado
+        ? atual.motivosResultado.filter((item) => item !== chave)
+        : [...atual.motivosResultado, chave]
+      if (selecionado && chave === 'virada_cartao') setViradaCartaoInput('')
       return {
         ...atual,
-        motivosResultado: selecionado
-          ? atual.motivosResultado.filter((item) => item !== chave)
-          : [...atual.motivosResultado, chave],
+        motivosResultado,
         motivoOutro: selecionado && chave === 'outro' ? undefined : atual.motivoOutro,
+        viradaCartaoDia: selecionado && chave === 'virada_cartao' ? undefined : atual.viradaCartaoDia,
+        viradaCartaoMes: selecionado && chave === 'virada_cartao' ? undefined : atual.viradaCartaoMes,
       }
     })
+  }
+
+  async function carregarHistoricoCliente() {
+    setHistoricoAberto(true)
+    setHistoricoCliente(null)
+    setHistoricoErro(null)
+    if (!clienteSelecionada) {
+      setHistoricoErro('Selecione uma cliente para consultar o historico.')
+      return
+    }
+    setHistoricoCarregando(true)
+    try {
+      const params = new URLSearchParams()
+      if (ativo?.id) params.set('atendimentoAtualId', ativo.id)
+      const query = params.toString()
+      const response = await fetch(`/api/atendimento-presencial/clientes/${clienteSelecionada.id}/historico${query ? `?${query}` : ''}`, { cache: 'no-store' })
+      const data = (await response.json()) as HistoricoClienteResponse
+      if (!response.ok || !data.ok) throw new Error(data.message ?? 'Erro ao carregar historico da cliente')
+      setHistoricoCliente(data)
+    } catch (error) {
+      setHistoricoErro(error instanceof Error ? error.message : 'Erro ao carregar historico da cliente')
+    } finally {
+      setHistoricoCarregando(false)
+    }
+  }
+
+  function erroConclusaoParaSecao(field: string | undefined, message: string): ErroValidacaoFicha {
+    if (field === 'clienteId') return { sectionId: 'secao-cliente', fieldId: 'busca-cliente', message }
+    if (field === 'criancas') return { sectionId: 'secao-crianca', message }
+    if (field === 'departamentos') return { sectionId: 'secao-departamentos', message }
+    if (field === 'resultadoAtendimento') return { sectionId: 'secao-resultado-fechamento', message }
+    if (field === 'motivosResultado') return { sectionId: 'secao-resultado-produto', message }
+    if (field === 'motivoOutro') return { sectionId: 'secao-resultado-outro', fieldId: 'motivo-outro', message }
+    if (field === 'viradaCartao') return { sectionId: 'secao-resultado-condicao', fieldId: 'virada-cartao', message }
+    if (field === 'numeroLancamento') return { sectionId: 'secao-revisao-lancamento', fieldId: 'numero-lancamento', message }
+    return { sectionId: etapaAtual === 'revisao' ? 'secao-revisao' : `secao-${etapaAtual}`, message }
   }
 
   async function garantirRascunhoSalvoAntesDeConcluir() {
@@ -798,7 +964,18 @@ export default function FichaPageClient({ usuarioId }: Props) {
       numeroLancamento,
     })
     if (!validacao.ok) {
-      setErroEtapa(validacao.message)
+      const erroValidacao = erroConclusaoParaSecao(validacao.field, validacao.message)
+      const etapaErro = erroValidacao.sectionId.includes('resultado')
+        ? 'resultado'
+        : erroValidacao.sectionId.includes('revisao')
+          ? 'revisao'
+          : 'ficha'
+      if (etapaErro !== etapaAtual) {
+        setFicha((atual) => ({ ...atual, etapaAtual: etapaErro }))
+        window.setTimeout(() => registrarErrosValidacao([erroValidacao]), 50)
+      } else {
+        registrarErrosValidacao([erroValidacao])
+      }
       concluindoRef.current = false
       return
     }
@@ -833,6 +1010,8 @@ export default function FichaPageClient({ usuarioId }: Props) {
       setBuscaCliente('')
       setClientesEncontradas([])
       setDataPrevistaInputs({})
+      setViradaCartaoInput('')
+      setErrosValidacao([])
       setProdutoDigitado('')
       setNumeroLancamento('')
       setStatusSync('ocioso')
@@ -1008,10 +1187,12 @@ export default function FichaPageClient({ usuarioId }: Props) {
           <section className="grid gap-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
             {etapaAtual === 'ficha' && (
               <SecaoFicha
+                id="secao-cliente"
                 titulo="Cliente"
                 descricao={!clienteSelecionada ? 'Busque por nome ou telefone, ou cadastre uma nova cliente.' : undefined}
                 icon={UserRound}
                 variant="azul"
+                erro={erroSecao('secao-cliente')}
               >
                 {clienteSelecionada && (
                   <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
@@ -1019,9 +1200,15 @@ export default function FichaPageClient({ usuarioId }: Props) {
                     <p className="mt-2 text-base font-semibold text-slate-950">{clienteSelecionada.nome}</p>
                     {clienteSelecionada.telefoneFormatado && <p className="text-sm text-slate-700">{clienteSelecionada.telefoneFormatado}</p>}
                     <p className="text-sm text-slate-700">{clienteSelecionada.parentescoLabel}</p>
-                    <Button type="button" variant="outline" onClick={trocarCliente} className="mt-3 h-10 rounded-md">
-                      Trocar cliente
-                    </Button>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button type="button" variant="outline" onClick={trocarCliente} className="h-10 rounded-md">
+                        Trocar cliente
+                      </Button>
+                      <Button type="button" variant="outline" onClick={carregarHistoricoCliente} className="h-10 rounded-md">
+                        <History className="mr-2 h-4 w-4" aria-hidden="true" />
+                        Ver historico
+                      </Button>
+                    </div>
                   </div>
                 )}
 
@@ -1125,10 +1312,12 @@ export default function FichaPageClient({ usuarioId }: Props) {
 
             {etapaAtual === 'ficha' && (
               <SecaoFicha
+                id="secao-crianca"
                 titulo="Dados da crianca"
                 descricao="Registre uma ou mais criancas quando a cliente informar."
                 icon={Baby}
                 variant="rosa"
+                erro={erroSecao('secao-crianca')}
               >
                 {ficha.criancas.map((crianca, index) => (
                   <div key={crianca.id} className="rounded-lg border border-slate-200 p-4">
@@ -1166,6 +1355,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
                         <label className="text-sm font-semibold text-slate-700">
                           Data prevista de nascimento
                           <input
+                            id={`data-prevista-${crianca.id}`}
                             type="text"
                             inputMode="numeric"
                             placeholder="DD/MM/AAAA"
@@ -1199,11 +1389,25 @@ export default function FichaPageClient({ usuarioId }: Props) {
                       <label className="text-sm font-semibold text-slate-700">
                         Nome da crianca
                         <input
+                          id={`nome-crianca-${crianca.id}`}
                           value={crianca.nome ?? ''}
+                          disabled={crianca.nomeNaoInformado}
                           onChange={(event) => atualizarNomeCrianca(crianca.id, event.target.value)}
-                          className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
+                          className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500 disabled:bg-slate-100"
                           maxLength={80}
                         />
+                      </label>
+                      <label className="flex min-h-11 items-center gap-3 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={crianca.nomeNaoInformado === true}
+                          onChange={(event) => {
+                            if (event.target.checked) marcarNomeNaoInformado(crianca.id)
+                            else atualizarCrianca(crianca.id, { nomeNaoInformado: false })
+                          }}
+                          className="h-4 w-4"
+                        />
+                        Nao sabe o nome ainda
                       </label>
                       <div>
                         <p className="text-sm font-semibold text-slate-700">Sexo</p>
@@ -1228,10 +1432,12 @@ export default function FichaPageClient({ usuarioId }: Props) {
             {etapaAtual === 'ficha' && (
               <>
                 <SecaoFicha
+                  id="secao-departamentos"
                   titulo="Departamentos"
                   descricao="Selecione as areas de interesse informadas pela cliente."
                   icon={ClipboardList}
                   variant="amarelo"
+                  erro={erroSecao('secao-departamentos')}
                 >
                   <p className="text-sm font-semibold text-slate-700">Departamentos</p>
                   <div className="mt-2 grid grid-cols-2 gap-2">
@@ -1244,10 +1450,12 @@ export default function FichaPageClient({ usuarioId }: Props) {
                 </SecaoFicha>
 
                 <SecaoFicha
+                  id="secao-produtos"
                   titulo="Produtos de interesse"
                   descricao="Registre produtos em texto livre quando a cliente citar itens especificos."
                   icon={ShoppingBag}
                   variant="lilas"
+                  erro={erroSecao('secao-produtos')}
                 >
                   <label className="text-sm font-semibold text-slate-700" htmlFor="produto-interesse">Produtos de interesse</label>
                   <div className="mt-2 flex gap-2">
@@ -1288,25 +1496,38 @@ export default function FichaPageClient({ usuarioId }: Props) {
 
             {etapaAtual === 'resultado' && (
               <div className="grid gap-6">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-950">Houve fechamento?</h2>
-                  <p className="mt-1 text-sm text-slate-500">A conclusao comercial sera implementada depois.</p>
-                </div>
-                <div className="grid gap-2">
-                  {RESULTADOS_ATENDIMENTO.map((item) => (
-                    <OpcaoButton
-                      key={item.chave}
-                      selected={ficha.resultadoAtendimento === item.chave}
-                      onClick={() => {
-                        if (item.chave !== 'sim') setNumeroLancamento('')
-                        atualizarFicha((atual) => ({ ...atual, resultadoAtendimento: item.chave as ResultadoAtendimento }))
-                      }}
-                    >
-                      {item.label}
-                    </OpcaoButton>
-                  ))}
-                </div>
-                <div>
+                <SecaoFicha
+                  id="secao-resultado-fechamento"
+                  titulo="Fechamento"
+                  descricao="Informe o desfecho comercial do atendimento."
+                  icon={Check}
+                  variant="azul"
+                  erro={erroSecao('secao-resultado-fechamento')}
+                >
+                  <div className="grid gap-2">
+                    {RESULTADOS_ATENDIMENTO.map((item) => (
+                      <OpcaoButton
+                        key={item.chave}
+                        selected={ficha.resultadoAtendimento === item.chave}
+                        onClick={() => {
+                          if (item.chave !== 'sim') setNumeroLancamento('')
+                          atualizarFicha((atual) => ({ ...atual, resultadoAtendimento: item.chave as ResultadoAtendimento }))
+                        }}
+                      >
+                        {item.label}
+                      </OpcaoButton>
+                    ))}
+                  </div>
+                </SecaoFicha>
+
+                <SecaoFicha
+                  id="secao-resultado-produto"
+                  titulo="Motivos"
+                  descricao="Selecione os fatores citados pela cliente."
+                  icon={ClipboardList}
+                  variant="amarelo"
+                  erro={erroSecao('secao-resultado-produto')}
+                >
                   <p className="text-sm font-semibold text-slate-700">
                     {ficha.resultadoAtendimento === 'sim' && 'Principais motivos para o fechamento'}
                     {ficha.resultadoAtendimento === 'nao' && 'Principais motivos para o nao fechamento'}
@@ -1316,7 +1537,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
                   <div className="mt-3 grid gap-4">
                     {MOTIVOS_RESULTADO_GRUPOS.map((grupo) => (
                       <div key={grupo.chave}>
-                        <p className="mb-2 text-xs font-bold uppercase text-slate-500">{grupo.label}</p>
+                        <p className="mb-2 text-base font-semibold text-slate-800">{grupo.label}</p>
                         <div className="grid gap-2">
                           {grupo.motivos.map((motivo) => (
                             <OpcaoButton key={motivo.chave} selected={ficha.motivosResultado.includes(motivo.chave)} onClick={() => alternarMotivo(motivo.chave)}>
@@ -1327,27 +1548,65 @@ export default function FichaPageClient({ usuarioId }: Props) {
                       </div>
                     ))}
                   </div>
-                  {ficha.motivosResultado.includes('outro') && (
-                    <label className="mt-4 block text-sm font-semibold text-slate-700">
-                      Complemento de Outro
+                </SecaoFicha>
+
+                {ficha.motivosResultado.includes('virada_cartao') && (
+                  <SecaoFicha
+                    id="secao-resultado-condicao"
+                    titulo="Condicao comercial"
+                    descricao="Registre a data de virada do cartao informada pela cliente."
+                    icon={ShoppingBag}
+                    variant="laranja"
+                    erro={erroSecao('secao-resultado-condicao')}
+                  >
+                    <label className="text-sm font-semibold text-slate-700">
+                      Virada do cartao
                       <input
+                        id="virada-cartao"
+                        value={viradaCartaoInput}
+                        onChange={(event) => atualizarViradaCartao(event.target.value)}
+                        className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
+                        inputMode="numeric"
+                        placeholder="DD/MM"
+                        maxLength={5}
+                      />
+                    </label>
+                    <p className="text-xs text-slate-500">Use somente dia e mes, sem ano.</p>
+                  </SecaoFicha>
+                )}
+
+                {ficha.motivosResultado.includes('outro') && (
+                  <SecaoFicha
+                    id="secao-resultado-outro"
+                    titulo="Outro motivo"
+                    descricao="Complemente o motivo quando Outro for selecionado."
+                    icon={MessageSquareText}
+                    variant="verde"
+                    erro={erroSecao('secao-resultado-outro')}
+                  >
+                    <label className="text-sm font-semibold text-slate-700">
+                      Complemento
+                      <input
+                        id="motivo-outro"
                         value={ficha.motivoOutro ?? ''}
                         onChange={(event) => atualizarFicha((atual) => ({ ...atual, motivoOutro: event.target.value }))}
                         className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
                         maxLength={120}
                       />
                     </label>
-                  )}
-                </div>
+                  </SecaoFicha>
+                )}
               </div>
             )}
 
             {etapaAtual === 'ficha' && (
               <SecaoFicha
+                id="secao-observacoes"
                 titulo="Observacoes sobre esse atendimento"
                 descricao="Registre preferencias, duvidas, objecoes ou informacoes importantes para um proximo contato."
                 icon={MessageSquareText}
                 variant="verde"
+                erro={erroSecao('secao-observacoes')}
               >
                 <label className="text-sm font-semibold text-slate-700">
                   Observacoes
@@ -1363,7 +1622,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
             )}
 
             {etapaAtual === 'revisao' && (
-              <div className="grid gap-4">
+              <div id="secao-revisao" className="grid gap-4 scroll-mt-28">
                 <div>
                   <h2 className="text-lg font-semibold text-slate-950">Revisao</h2>
                   <p className="mt-1 text-sm text-slate-500">Confira os dados antes de continuar depois.</p>
@@ -1379,6 +1638,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
                   { titulo: 'Produtos', valor: ficha.produtosInteresse.join(', ') || 'Nao informado', etapa: 'ficha' as FichaEtapa },
                   { titulo: 'Resultado', valor: getResultadoLabel(ficha.resultadoAtendimento), etapa: 'resultado' as FichaEtapa },
                   { titulo: 'Motivos', valor: ficha.motivosResultado.map(getMotivoLabel).join(', ') || 'Nao informado', etapa: 'resultado' as FichaEtapa },
+                  { titulo: 'Virada do cartao', valor: formatarViradaCartao(ficha.viradaCartaoDia, ficha.viradaCartaoMes) || 'Nao informado', etapa: 'resultado' as FichaEtapa },
                   { titulo: 'Observacoes', valor: ficha.observacoes || 'Sem observacoes', etapa: 'ficha' as FichaEtapa },
                 ].map((item) => (
                   <div key={item.titulo} className="rounded-lg border border-slate-200 p-4">
@@ -1395,9 +1655,10 @@ export default function FichaPageClient({ usuarioId }: Props) {
                   Ao concluir, o rascunho sera convertido em registro definitivo.
                 </p>
                 {ficha.resultadoAtendimento === 'sim' && (
-                  <label className="text-sm font-semibold text-slate-700">
+                  <label id="secao-revisao-lancamento" className="scroll-mt-28 text-sm font-semibold text-slate-700">
                     Numero do lancamento
                     <input
+                      id="numero-lancamento"
                       value={numeroLancamento}
                       onChange={(event) => setNumeroLancamento(event.target.value.replace(/\D/g, '').slice(0, 6))}
                       className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
@@ -1409,6 +1670,24 @@ export default function FichaPageClient({ usuarioId }: Props) {
                 <Button type="button" onClick={concluirAtendimento} disabled={concluindo} className="h-12 rounded-md">
                   {concluindo ? 'Concluindo...' : 'Concluir atendimento'}
                 </Button>
+              </div>
+            )}
+
+            {errosValidacao.length > 0 && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                <p className="font-semibold">Revise os campos abaixo.</p>
+                <div className="mt-3 grid gap-2">
+                  {errosValidacao.map((item, index) => (
+                    <button
+                      key={`${item.sectionId}-${item.fieldId ?? index}`}
+                      type="button"
+                      onClick={() => scrollParaErro(item)}
+                      className="rounded-md border border-red-200 bg-white px-3 py-2 text-left font-semibold text-red-700"
+                    >
+                      {item.message}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </section>
@@ -1436,6 +1715,81 @@ export default function FichaPageClient({ usuarioId }: Props) {
           </div>
         </div>
       )}
+
+      <Dialog open={historicoAberto} onOpenChange={setHistoricoAberto}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Historico da cliente</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid gap-4">
+            {!clienteSelecionada && (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Selecione uma cliente para consultar o historico.
+              </p>
+            )}
+
+            {clienteSelecionada && (
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                <p className="text-sm font-semibold text-slate-950">{clienteSelecionada.nome}</p>
+                <p className="text-sm text-slate-600">{clienteSelecionada.telefoneFormatado ?? 'Telefone nao informado'}</p>
+              </div>
+            )}
+
+            {historicoCarregando && <p className="text-sm text-slate-500">Carregando historico...</p>}
+            {historicoErro && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{historicoErro}</p>}
+
+            {historicoCliente && historicoCliente.telefoneDisponivel === false && (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Cliente sem telefone normalizado. As compras do SGI nao foram consultadas.
+              </p>
+            )}
+
+            {historicoCliente && (
+              <>
+                <section className="grid gap-3">
+                  <h3 className="text-sm font-bold uppercase text-slate-500">Atendimentos presenciais anteriores</h3>
+                  {historicoCliente.atendimentos?.length ? (
+                    historicoCliente.atendimentos.map((item) => (
+                      <article key={item.id} className="rounded-md border border-slate-200 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-semibold text-slate-950">{formatarDataCurta(item.data)}</p>
+                          <p className="text-sm text-slate-600">{item.resultado ?? 'Resultado nao informado'}</p>
+                        </div>
+                        <p className="mt-1 text-sm text-slate-600">{item.unidade ?? 'Unidade nao informada'} | {item.consultora ?? 'Consultora nao informada'}</p>
+                        <p className="mt-2 text-sm text-slate-700">Departamentos: {item.departamentos.join(', ') || 'Nao informado'}</p>
+                        <p className="text-sm text-slate-700">Produtos: {item.produtosInteresse.join(', ') || 'Nao informado'}</p>
+                        {item.numeroLancamento && <p className="text-sm text-slate-700">Lancamento: {item.numeroLancamento}</p>}
+                      </article>
+                    ))
+                  ) : (
+                    <p className="rounded-md border border-dashed border-slate-200 p-3 text-sm text-slate-500">Nenhum atendimento anterior encontrado.</p>
+                  )}
+                </section>
+
+                <section className="grid gap-3">
+                  <h3 className="text-sm font-bold uppercase text-slate-500">Compras anteriores no SGI</h3>
+                  {historicoCliente.vendas?.length ? (
+                    historicoCliente.vendas.map((item) => (
+                      <article key={item.numeroLancamento} className="rounded-md border border-slate-200 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-semibold text-slate-950">Lancamento {item.numeroLancamento}</p>
+                          <p className="text-sm font-semibold text-slate-700">{formatarDinheiro(item.valorTotal)}</p>
+                        </div>
+                        <p className="mt-1 text-sm text-slate-600">{formatarDataCurta(item.data)} | {item.filial ?? 'Filial nao informada'}</p>
+                        <p className="mt-2 text-sm text-slate-700">Itens: {item.itens.join(', ') || 'Nao informado'}</p>
+                        <p className="text-sm text-slate-700">Pagamento: {item.formasPagamento.join(', ') || 'Nao informado'}</p>
+                      </article>
+                    ))
+                  ) : (
+                    <p className="rounded-md border border-dashed border-slate-200 p-3 text-sm text-slate-500">Nenhuma compra anterior encontrada pelo telefone da cliente.</p>
+                  )}
+                </section>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </main>
   )
 }

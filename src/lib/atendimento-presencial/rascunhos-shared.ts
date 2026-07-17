@@ -29,6 +29,8 @@ export type AtendimentoPresencialDTO = {
   motivoOutro: string | null
   observacoes: string | null
   numeroLancamento: number | null
+  viradaCartaoDia?: number | null
+  viradaCartaoMes?: number | null
   concluidoEm: string | null
   iniciadoEm: string
   ultimaAtividadeEm: string

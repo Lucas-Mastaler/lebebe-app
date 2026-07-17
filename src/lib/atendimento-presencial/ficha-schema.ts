@@ -67,6 +67,7 @@ export const MOTIVOS_RESULTADO_GRUPOS = [
       { chave: 'brinde', label: 'Brinde' },
       { chave: 'frete', label: 'Frete' },
       { chave: 'montagem', label: 'Montagem' },
+      { chave: 'virada_cartao', label: 'Virada de cartao' },
     ],
   },
   {
@@ -119,6 +120,7 @@ export type FichaCriancaRascunho = {
   idadeUnidade?: UnidadeIdadeCrianca
   idadeValor?: number
   nome?: string
+  nomeNaoInformado?: boolean
   sexo?: SexoCrianca
 }
 
@@ -130,6 +132,8 @@ export type FichaDadosRascunho = {
   resultadoAtendimento?: ResultadoAtendimento
   motivosResultado: MotivoResultado[]
   motivoOutro?: string
+  viradaCartaoDia?: number
+  viradaCartaoMes?: number
   observacoes?: string
   etapaAtual: FichaEtapa
   notaTecnica?: string
@@ -158,6 +162,8 @@ const chavesPermitidas = new Set([
   'resultadoAtendimento',
   'motivosResultado',
   'motivoOutro',
+  'viradaCartaoDia',
+  'viradaCartaoMes',
   'observacoes',
   'etapaAtual',
   'notaTecnica',
@@ -181,6 +187,37 @@ function normalizarDataLocal(valor: unknown) {
   const data = new Date(ano, mes - 1, dia)
   if (data.getFullYear() !== ano || data.getMonth() !== mes - 1 || data.getDate() !== dia) return ''
   return valor
+}
+
+export function formatarViradaCartaoInput(valor: string) {
+  const digitos = valor.replace(/\D/g, '').slice(0, 4)
+  if (digitos.length <= 2) return digitos
+  return `${digitos.slice(0, 2)}/${digitos.slice(2)}`
+}
+
+export function dataViradaCartaoValida(dia: number, mes: number) {
+  if (!Number.isInteger(dia) || !Number.isInteger(mes)) return false
+  if (mes < 1 || mes > 12) return false
+  const diasPorMes = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return dia >= 1 && dia <= diasPorMes[mes - 1]
+}
+
+export function converterViradaCartaoInput(valor: string) {
+  const formatado = formatarViradaCartaoInput(valor)
+  if (!/^\d{2}\/\d{2}$/.test(formatado)) return null
+  const [dia, mes] = formatado.split('/').map(Number)
+  if (!dataViradaCartaoValida(dia, mes)) return null
+  return { dia, mes }
+}
+
+export function formatarViradaCartao(dia: number | null | undefined, mes: number | null | undefined) {
+  if (!dia || !mes || !dataViradaCartaoValida(dia, mes)) return ''
+  return `${String(dia).padStart(2, '0')}/${String(mes).padStart(2, '0')}`
+}
+
+export function valorOrdenavelViradaCartao(dia: number, mes: number) {
+  if (!dataViradaCartaoValida(dia, mes)) return null
+  return mes * 100 + dia
 }
 
 export function formatarDataPrevistaInput(valor: string) {
@@ -276,6 +313,18 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
   }
 
   if (Array.isArray(payload.criancas)) {
+    for (const item of payload.criancas) {
+      if (typeof item !== 'object' || item === null || Array.isArray(item)) continue
+      const row = item as Record<string, unknown>
+      const nomeNaoInformado = row.nomeNaoInformado === true
+      const nome = normalizarNomeCrianca(row.nome)
+      if (nomeNaoInformado && nome) {
+        return { ok: false, field: 'criancas', message: 'Nome da crianca nao pode ser preenchido junto com Nao sabe ainda' }
+      }
+      if (row.nomeNaoInformado !== undefined && typeof row.nomeNaoInformado !== 'boolean') {
+        return { ok: false, field: 'criancas', message: 'Marcacao de nome da crianca invalida' }
+      }
+    }
     dados.criancas = payload.criancas.slice(0, 8).flatMap((item) => {
       if (typeof item !== 'object' || item === null || Array.isArray(item)) return []
       const row = item as Record<string, unknown>
@@ -289,6 +338,7 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
       }
       const nome = normalizarNomeCrianca(row.nome)
       if (nome) crianca.nome = nome
+      if (row.nomeNaoInformado === true) crianca.nomeNaoInformado = true
       if (typeof row.sexo === 'string' && sexosValidos.has(row.sexo)) crianca.sexo = row.sexo as SexoCrianca
       if (situacao === 'gestacao') {
         const dataPrevistaNascimento = normalizarDataLocal(row.dataPrevistaNascimento)
@@ -340,6 +390,16 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
 
   const motivoOutro = normalizarTexto(payload.motivoOutro, FICHA_MOTIVO_OUTRO_MAX_CHARS)
   if (motivoOutro) dados.motivoOutro = motivoOutro
+
+  const temViradaCartao = dados.motivosResultado.includes('virada_cartao')
+  if (temViradaCartao) {
+    const dia = Number(payload.viradaCartaoDia)
+    const mes = Number(payload.viradaCartaoMes)
+    if (dataViradaCartaoValida(dia, mes)) {
+      dados.viradaCartaoDia = dia
+      dados.viradaCartaoMes = mes
+    }
+  }
 
   const observacoes = normalizarTextoMultilinha(payload.observacoes, FICHA_OBSERVACOES_MAX_CHARS)
   if (observacoes) dados.observacoes = observacoes
@@ -403,6 +463,11 @@ export function validarFichaParaConclusao(params: {
   }
   if (params.ficha.motivosResultado.includes('outro') && !params.ficha.motivoOutro?.trim()) {
     return { ok: false, field: 'motivoOutro', message: 'Informe o complemento de Outro.' }
+  }
+  if (params.ficha.motivosResultado.includes('virada_cartao')) {
+    if (!dataViradaCartaoValida(params.ficha.viradaCartaoDia ?? 0, params.ficha.viradaCartaoMes ?? 0)) {
+      return { ok: false, field: 'viradaCartao', message: 'Informe a virada do cartao em DD/MM.' }
+    }
   }
 
   const numeroLancamento = normalizarNumeroLancamento(params.numeroLancamento)

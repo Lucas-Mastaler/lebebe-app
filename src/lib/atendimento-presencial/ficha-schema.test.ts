@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
   converterDataInputParaISO,
+  converterViradaCartaoInput,
   criarCriancaRascunho,
   formatarDataISOParaInput,
   formatarDataPrevistaInput,
+  formatarViradaCartao,
+  formatarViradaCartaoInput,
   limparNomeCriancaDigitacao,
   migrarFichaDadosRascunho,
   nomeCriancaValido,
+  valorOrdenavelViradaCartao,
   validarFichaDadosRascunho,
   validarFichaParaConclusao,
 } from './ficha-schema'
@@ -98,6 +102,22 @@ describe('schema da ficha de atendimento presencial', () => {
     })
   })
 
+  it('aceita nome nao informado e rejeita nome junto com a flag', () => {
+    expect(validarFichaDadosRascunho({
+      criancas: [{ id: 'crianca-1', situacao: 'gestacao', nomeNaoInformado: true }],
+    })).toMatchObject({
+      ok: true,
+      dados: { criancas: [{ nomeNaoInformado: true }] },
+    })
+
+    expect(validarFichaDadosRascunho({
+      criancas: [{ id: 'crianca-1', situacao: 'gestacao', nome: 'Maria', nomeNaoInformado: true }],
+    })).toMatchObject({
+      ok: false,
+      field: 'criancas',
+    })
+  })
+
   it('bloqueia numeros, simbolos indevidos e emoji no nome da crianca', () => {
     expect(nomeCriancaValido('Maria Luisa')).toBe(true)
     expect(nomeCriancaValido('Maria 2')).toBe(false)
@@ -125,6 +145,37 @@ describe('schema da ficha de atendimento presencial', () => {
         etapaAtual: 'revisao',
       },
     })
+  })
+
+  it('normaliza motivo virada de cartao somente com DD/MM valido', () => {
+    expect(formatarViradaCartaoInput('0508')).toBe('05/08')
+    expect(formatarViradaCartaoInput('05/2026')).toBe('05/20')
+    expect(converterViradaCartaoInput('05/08')).toEqual({ dia: 5, mes: 8 })
+    expect(converterViradaCartaoInput('31/04')).toBeNull()
+    expect(converterViradaCartaoInput('29/02')).toEqual({ dia: 29, mes: 2 })
+    expect(formatarViradaCartao(5, 8)).toBe('05/08')
+    expect(valorOrdenavelViradaCartao(5, 8)).toBe(805)
+
+    const resultado = validarFichaDadosRascunho({
+      motivosResultado: ['virada_cartao'],
+      viradaCartaoDia: 5,
+      viradaCartaoMes: 8,
+    })
+
+    expect(resultado).toMatchObject({
+      ok: true,
+      dados: {
+        motivosResultado: ['virada_cartao'],
+        viradaCartaoDia: 5,
+        viradaCartaoMes: 8,
+      },
+    })
+
+    expect(migrarFichaDadosRascunho({
+      motivosResultado: ['preco'],
+      viradaCartaoDia: 5,
+      viradaCartaoMes: 8,
+    })).not.toHaveProperty('viradaCartaoDia')
   })
 
   it('migra rascunho antigo com notaTecnica para schema vazio', () => {
@@ -201,5 +252,18 @@ describe('schema da ficha de atendimento presencial', () => {
         etapaAtual: 'revisao',
       },
     })).toEqual({ ok: true, numeroLancamento: null })
+
+    expect(validarFichaParaConclusao({
+      clienteId: 'cliente-1',
+      numeroLancamento: '',
+      ficha: {
+        criancas: [],
+        departamentos: ['p_pesada'],
+        produtosInteresse: [],
+        resultadoAtendimento: 'nao',
+        motivosResultado: ['virada_cartao'],
+        etapaAtual: 'revisao',
+      },
+    })).toMatchObject({ ok: false, field: 'viradaCartao' })
   })
 })

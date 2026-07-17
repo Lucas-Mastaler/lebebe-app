@@ -1,3 +1,256 @@
+## 2026-07-17 - Cascade - Validacao da infraestrutura VPS Hub/Vendas
+
+**Resumo:** Atualizacao do plano tecnico com a validacao manual da infraestrutura da VPS Hostinger. Ambos os crons (preparacao e processamento) agora rodam na VPS, nao mais na Vercel. Cron de preparacao mudou de 1x/dia (Vercel) para a cada 10 minutos (VPS). Adicionadas 13 subsecoes na secao 36 com detalhes operacionais: ambiente VPS, arquitetura, estrutura de diretorios, cron de preparacao, cron de processamento, validacao de horario dupla, flock, curl, logs, logrotate, fallback, crontab e checklist operacional. Removidas 2 decisoes pendentes (frequencias aprovadas). vercel.json nao precisa ser alterado. Nenhum codigo, migration, config operacional, webhook, cron ou banco alterado.
+
+**Arquivos lidos:**
+- `docs/digisac-hub-vendas-plano-progresso.md` (secoes 27.9, 36, 38.2, 42.3, 44, 45, 48)
+
+**Arquivos alterados:**
+- `docs/digisac-hub-vendas-plano-progresso.md` — secao 27.9 atualizada, secao 36 reescrita com 13 subsecoes, secao 38.2 vercel.json marcado como nao alterar, secao 42.3 impacto Vercel zerado, secao 44 reduzida de 8 para 6 pendencias, secao 45 Fases 3 e 4 atualizadas, secao 48 atualizada, secao 43 risco de fallback corrigido
+- `docs/ia/log_progress.md` — entrada de validacao VPS no topo
+
+**Decisoes confirmadas pelo usuario:**
+- VPS Hostinger: Ubuntu 24.04.3 LTS, timezone America/Sao_Paulo, NTP, cron ativo, curl, Docker/EasyPanel, 76 GB
+- Padrao de organizacao: /opt/devweb/workspace/, scripts/, logs/, cron no host
+- Arquitetura: VPS apenas chama rotas HTTP protegidas, logica fica no app
+- Cron de preparacao: a cada 10 min (*/10 9-17 * * 1-6) na VPS
+- Cron de processamento: a cada 2 min (*/2 9-17 * * 1-6) na VPS
+- Validacao de horario: dupla (crontab + validacao interna nas rotas)
+- Protecao contra sobreposicao: flock nos scripts
+- Secret: arquivo hub_vendas.env com permissao 600, nunca no crontab
+- Logs: apenas data/hora, rotina, HTTP status, duracao, erro tecnico
+- Logrotate: configuracao proposta
+- Sem Vercel cron, sem Docker container, sem n8n, sem GitHub Actions, sem pg_cron, sem Edge Function
+
+**Pendencias:**
+- Usuario aprovar 6 decisoes pendentes (secao 44 do plano)
+- Validar se os 3 department IDs de resgate existem no Digisac
+- Confirmar se a saudacao e enviada por bot (isFromBot) ou por humano
+- Criar e aprovar 5+ versoes de mensagem de abordagem
+
+**Riscos conhecidos:**
+- Department IDs de resgate nao validados no Digisac (risco alto)
+- isFromBot da saudacao nao confirmado
+- Fallback da VPS: itens expiram em 10 min, webhook continua registrando, sem perda de dados
+
+**Proximo passo recomendado:**
+- Usuario aprova as 6 decisoes pendentes
+- Usuario valida department IDs de resgate no Digisac
+- Usuario confirma isFromBot da saudacao
+- Apos aprovacao, iniciar Fase 1 (migration + cadastros)
+
+## 2026-07-17 - Cascade - Consolidacao final do plano Digisac Hub/Vendas
+
+**Resumo:** Consolidacao tecnica final do plano de implementacao do fluxo Digisac Hub/Vendas -> lojas -> recuperacao automatica de leads. Incorporou todas as confirmacoes do usuario: webhook unico reutilizando rota existente, payload real confirmado, endpoints de contato/ticket/envio confirmados, departamentos de resgate (diferentes dos de triagem), regra de chamado aberto, infraestrutura VPS/EasyPanel. Adicionou Parte III ao plano (secoes 26-48) com entendimento final, descobertas confirmadas, regras fechadas, arquitetura de webhook, fluxos de entrada/conversao/contato/ticket/envio, regra de chamado aberto, modelo de dados final (3 tabelas), estados e transicoes, locks e idempotencia, cron e infraestrutura, limites/pausas/protecoes, estrutura de arquivos proposta, APIs e rotas, migration proposta, tela proposta, testes propostos, impacto Supabase/Vercel, riscos restantes, 8 decisoes pendentes, 6 fases de implementacao, criterios de aceite. Nenhum codigo, migration, config operacional, webhook, cron ou banco alterado.
+
+**Arquivos lidos:**
+- `.devin/rules/gerais.md`, `.devin/rules/continuidade-agente.md`, `.devin/rules/recebimentos.md`, `.devin/rules/resumo.md`, `.devin/rules/supabase.md`
+- `docs/digisac-hub-vendas-recuperacao-leads.md` (contrato funcional)
+- `docs/digisac-hub-vendas-plano-progresso.md` (plano anterior com 25 secoes)
+- `docs/ia/log_progress.md`
+- `docs/ia/padrao-novas-telas-permissoes.md`
+- `src/app/api/digisac/webhook/route.ts`
+- `src/app/api/digisac/webhook/posvenda/route.ts`
+- `src/lib/digisac/triagem.ts`
+- `src/lib/digisac/clienteDigisac.ts`
+- `src/lib/digisac/transferencia.ts`
+- `src/lib/digisac/enviar-mensagem.ts`
+- `src/lib/digisac/contatos.ts`
+- `src/lib/digisac/departamentosFixos.ts`
+- `src/lib/digisac/sgi-sync.ts` (normalizarTelefoneDDI, gerarVariacoesTelefone, buscarTicketsPorTelefoneComVariacoes)
+- `src/lib/digisac/finalizacoesAutomaticas.ts` (buscarConexoesHabilitadas, ConexaoAutomacao)
+- `src/lib/digisac/urls.ts`, `src/lib/digisac/utilsDatas.ts`
+- `src/lib/atendimento-presencial/telefone.ts` (normalizarTelefone, mascararTelefoneParaLog)
+- `src/lib/auth/modulos-app.ts` (APP_MODULES, NAVIGATION_GROUPS)
+- `vercel.json`
+- `package.json` (Next.js 16.1.4)
+- `next.config.ts`
+
+**Arquivos alterados:**
+- `docs/digisac-hub-vendas-plano-progresso.md` — Parte III adicionada (secoes 26-48), consolidacao final completa
+- `docs/ia/log_progress.md` — entrada de consolidacao final no topo
+
+**Decisoes confirmadas pelo usuario:**
+- Webhook: unico, reutilizar rota existente com distribuicao interna
+- Payload: estrutura confirmada com event, data.id, serviceId, isFromMe, type, timestamp, contactId, ticketId, text, isComment, isFromBot
+- Conexoes: 4 serviceIds confirmados (Vendas, Bigorrilho, Portao, Marechal/Hauer)
+- Departamentos de resgate: 3 IDs diferentes dos de triagem (Marechal/Hauer: 8c90dba0..., Portao: 7b524eab..., Bigorrilho: d89b13ba...)
+- Contato: POST /api/v1/contacts com number + serviceId
+- Ticket: POST /api/v1/contacts/{contactId}/ticket/transfer com departmentId, userId=null, comments="CHAMADA AUTOMATICA - RESGATE", byUserId
+- Envio: POST /api/v1/messages com contactId (sem ticketId) apos ticket/transfer
+- Regra de chamado aberto: cancela recuperacao, nao envia, nao reutiliza, nao transfere
+- Infraestrutura: VPS/EasyPanel para processador, Vercel para cron da manha
+
+**Validacoes realizadas:**
+- MCP Supabase: `digisac_conexoes_automacao` tem 3 registros (Bigorrilho, Marechal, Portao), Vendas nao cadastrada
+- MCP Supabase: `app_modulos` tem 19 registros, estrutura confirmada (chave, nome, rota_base, categoria, publico, somente_superadmin, ativo, ordem)
+- MCP Supabase: `auditoria_acessos` tem coluna `metadata` jsonb para historico de pausas
+- Codigo: `enviarMensagemDigisac` exige contactId + ticketId — nao deve ser alterada
+- Codigo: `transferirContatoParaDepartamento` usa endpoint ticket/transfer — padrao reutilizavel
+- Codigo: `buscarTicketsPorTelefoneComVariacoes` filtra por serviceId e exclui pos-venda
+- Codigo: `departamentosFixos.ts` tem apenas IDs antigos, novos IDs de resgate nao existem no codigo
+- Codigo: `normalizarTelefoneDDI` de sgi-sync.ts e a funcao correta para chave persistida
+- Codigo: `mascararTelefoneParaLog` de telefone.ts para logs com telefone mascarado
+- Documentacao Next.js 16: runtime padrao e nodejs (confirmado na revisao anterior)
+
+**Pendencias:**
+- Usuario aprovar 8 decisoes pendentes (secao 44 do plano)
+- Validar se os 3 department IDs de resgate existem no Digisac
+- Confirmar se a saudacao e enviada por bot (isFromBot) ou por humano
+- Criar e aprovar 5+ versoes de mensagem de abordagem
+- Cadastrar conexao Vendas em digisac_conexoes_automacao (via migration)
+
+**Riscos conhecidos:**
+- Department IDs de resgate nao validados no Digisac (risco alto se nao existirem)
+- isFromBot da saudacao nao confirmado (pode fazer filtro ignorar a saudacao)
+- Fallback da VPS nao automatizado (itens expiram em 10 min, sem perda de dados)
+- POST /contacts pode retornar erro de duplicidade inesperado (tratamento idempotente necessario)
+
+**Proximo passo recomendado:**
+- Usuario aprova as 8 decisoes pendentes
+- Usuario valida department IDs de resgate no Digisac
+- Usuario confirma isFromBot da saudacao
+- Apos aprovacao, iniciar Fase 1 (migration + cadastros)
+
+## 2026-07-17 - Cascade - Revisao tecnica do plano Digisac Hub/Vendas
+
+**Resumo:** Revisao tecnica completa do plano `docs/digisac-hub-vendas-plano-progresso.md`. Corrigiu informacao de runtime (Node.js e o padrao, nao Edge), adicionou 10 novas secoes (16-25): arquitetura de webhook, obtencao de contactId/ticketId, modelo de dados revisado (3 tabelas vs 5), fonte de verdade dos estados, locks e reserva atomica, infraestrutura do processador, frequencia, env vars revisadas, bloqueios por fase e decisoes pendentes. Descobriu que a API Digisac suporta envio por number+serviceId (PENDENTE DE VALIDACAO). Validou pg_cron disponivel mas nao instalado. Nenhum codigo, migration, config operacional, webhook, cron ou banco alterado.
+
+**Arquivos lidos:**
+- `.devin/rules/gerais.md`, `.devin/rules/continuidade-agente.md`, `.devin/rules/supabase.md`, `.devin/rules/resumo.md`, `.devin/rules/recebimentos.md`
+- `.devin/workflows/login.md` (vazio)
+- `docs/digisac-hub-vendas-recuperacao-leads.md` (mapa de regras)
+- `docs/digisac-hub-vendas-plano-progresso.md` (plano original)
+- `docs/ia/log_progress.md`
+- `package.json` (Next.js 16.1.4)
+- `next.config.ts`
+- `src/app/api/digisac/webhook/route.ts`
+- `src/app/api/digisac/webhook/posvenda/route.ts`
+- `src/lib/digisac/enviar-mensagem.ts`
+- `src/lib/digisac/clienteDigisac.ts`
+- `src/lib/digisac/sgi-sync.ts` (buscarTicketsPorTelefoneComVariacoes, normalizarTelefone, normalizarTelefoneDDI, gerarVariacoesTelefone)
+- `src/lib/digisac/contatos.ts`
+- `src/lib/digisac/triagem.ts`
+- `src/lib/digisac/transferencia.ts`
+- `digisac_docs.md` (departamentos)
+- `vercel.json`
+
+**Arquivos alterados:**
+- `docs/digisac-hub-vendas-plano-progresso.md` — 10 novas secoes adicionadas (16-25), correcao de runtime, indice de conteudo
+- `docs/ia/log_progress.md` — entrada de revisao no topo
+
+**Validacoes realizadas:**
+- Documentacao oficial Next.js 16: runtime padrao de Route Handlers e `'nodejs'` (nao Edge). Edge sendo deprecated no Next.js 16 (PR #93369).
+- Documentacao oficial Digisac: webhooks podem ser tipo Geral (todas conexoes) ou Conexao (especifica). Multiplos webhooks independentes sao suportados.
+- Documentacao Conexa + Postman Digisac: API `/messages` suporta payload com `number` + `serviceId` (sem `contactId`/`ticketId`) — PENDENTE DE VALIDACAO MANUAL.
+- MCP Supabase: `pg_cron` disponivel (v1.6.4) mas nao instalado. `pg_net` tambem disponivel mas nao instalado.
+- Codigo: nenhum endpoint de criacao de contato (`POST /contacts`) ou ticket (`POST /tickets`) existe no projeto.
+- Codigo: `enviarMensagemDigisac` exige `contactId` + `ticketId` — nao suporta envio por numero.
+
+**Correcoes feitas no plano:**
+- Runtime: corrigido de "default edge" para "default nodejs" com citacao da documentacao oficial
+- Modelo de dados: reduzido de 5 tabelas para 3 (leads, fila, config) — contador e pausas consolidados
+- Env vars: reduzido de 8 novas para 1 nova (apenas webhook secret) — regras de negocio movidas para constantes ou config
+- Arquitetura de webhook: adicionada analise das 3 opcoes com recomendacao (Opcao A - webhook separado)
+- ContactId/ticketId: adicionada secao completa com descoberta do envio por numero e fluxos alternativos
+- Estados: adicionada maquina de estados com transicoes, tratamento de eventos problematicos e garantias
+- Locks: adicionado mecanismo de reserva atomica com `FOR UPDATE SKIP LOCKED`
+- Infraestrutura: adicionadas 5 opcoes com recomendacao (VPS/EasyPanel principal, cron externo fallback)
+- Frequencia: calculada e recomendada a cada 2 minutos
+- Bloqueios: definidos criterios explicitos por fase
+
+**Pendencias:**
+- Validar configuracao atual dos webhooks no Digisac (tipo, eventos, URLs) — PENDENTE DE VALIDACAO MANUAL
+- Validar envio por `number` + `serviceId` na API Digisac — PENDENTE DE VALIDACAO MANUAL
+- Confirmar se projeto possui VPS/EasyPanel ativa
+- Aprovacao do usuario sobre 9 decisoes pendentes (secao 25 do plano)
+- Cadastro da conexao Hub/Vendas em `digisac_conexoes_automacao`
+- Criacao e aprovacao de 5+ versoes de mensagem
+
+**Riscos conhecidos:**
+- Envio por numero nao confirmado — se nao funcionar, Fase 4 exige endpoints nao existentes no codigo (bloqueador)
+- Configuracao de webhooks externa ao repositorio — nao pode ser validada no codigo
+- pg_cron nao confirmado no plano gratuito do Supabase
+- EasyPanel mencionado em docs mas nao confirmado como infraestrutura ativa
+
+**Proximo passo recomendado:**
+- Usuario valida as 9 decisoes pendentes (secao 25)
+- Usuario valida manualmente a configuracao de webhooks no Digisac
+- Usuario valida manualmente o envio por number+serviceId na API Digisac
+- Apos validacoes, aprovar Fase 1 (banco) para iniciar implementacao
+
+## 2026-07-17 - Cascade - Auditoria tecnica Digisac Hub/Vendas → Lojas → Recuperacao de Leads
+
+**Resumo:** Auditoria tecnica completa do fluxo Digisac no Le Bebe App para planejar a feature de Hub/Vendas → Lojas → Recuperacao Automatica de Leads. Leu webhook atual, normalizacao de telefone, envio de mensagens, contatos, cron jobs, fila, locks, idempotencia, fluxo antigo de distribuicao (triagem) e componentes reutilizaveis. Validou 14 tabelas Digisac no MCP Supabase (colunas, constraints, indexes, RLS). Criou `docs/digisac-hub-vendas-plano-progresso.md` com plano tecnico de 6 fases. Nenhum codigo, migration, config operacional, webhook, cron ou banco alterado.
+
+**Arquivos lidos:**
+- `docs/digisac-hub-vendas-recuperacao-leads.md` (mapa de regras do usuario)
+- `docs/ia/log_progress.md`
+- `docs/inteligencia-comercial-multiplas-conexoes-digisac.md`
+- `docs/atendimento-automatico-posvenda-mere-plano.md`
+- `docs/links-protocolos-digisac.md`
+- `src/app/api/digisac/webhook/route.ts`
+- `src/app/api/digisac/webhook/posvenda/route.ts`
+- `src/app/api/digisac/schedule/route.ts`
+- `src/app/api/cron/digisac-finalizacoes-automaticas/route.ts`
+- `src/lib/digisac/clienteDigisac.ts`
+- `src/lib/digisac/triagem.ts`
+- `src/lib/digisac/transferencia.ts`
+- `src/lib/digisac/enviar-mensagem.ts`
+- `src/lib/digisac/contatos.ts`
+- `src/lib/digisac/sgi-sync.ts` (normalizarTelefone, normalizarTelefoneDDI, gerarVariacoesTelefone, buscarTicketsPorTelefoneComVariacoes, montarResumoTicket, recalcularHistoricoTelefone)
+- `src/lib/digisac/finalizacoesAutomaticas.ts`
+- `src/lib/digisac/vacuoAtivo.ts`
+- `src/lib/digisac/mensagens-contato.ts`
+- `src/lib/digisac/formatadores.ts`
+- `src/lib/digisac/limiteConcorrencia.ts`
+- `src/lib/digisac/departamentosFixos.ts`
+- `src/lib/digisac/urls.ts`
+- `src/lib/digisac/utilsDatas.ts`
+- `src/lib/atendimento-automatico/webhook-processor.ts`
+- `src/lib/atendimento-automatico/auto-reply.ts`
+- `vercel.json`
+
+**Arquivos criados:**
+- `docs/digisac-hub-vendas-plano-progresso.md` — plano tecnico completo com 15 secoes e 6 fases de implementacao
+
+**Arquivos alterados:**
+- `docs/ia/log_progress.md` — entrada de auditoria no topo
+
+**Validacoes realizadas:**
+- MCP Supabase: listagem de 14 tabelas Digisac com colunas, tipos, constraints, indexes e RLS
+- MCP Supabase: dados reais em `digisac_conexoes_automacao` (3 conexoes: Bigorrilho, Marechal, Portao)
+- MCP Supabase: dados reais em `digisac_triagem_loja` (3 registros, ultimo em 2026-05-31)
+- MCP Supabase: unique constraints validadas (digisac_message_id, digisac_ticket_id, telefone_normalizado_ddi, etc)
+- MCP Supabase: indexes validados em todas as tabelas Digisac
+- Codigo: normalizarTelefone, normalizarTelefoneDDI, gerarVariacoesTelefone confirmados em sgi-sync.ts
+- Codigo: webhook de triagem confirmado em route.ts + triagem.ts
+- Codigo: webhook de posvenda confirmado em posvenda/route.ts + webhook-processor.ts
+- Codigo: envio de mensagem confirmado em enviar-mensagem.ts
+- Codigo: cron de finalizacoes confirmado em route.ts + vercel.json
+- Codigo: fluxo antigo de distribuicao (triagem) mapeado completamente
+
+**Comandos rodados:**
+- Nenhum comando rodado. Auditoria apenas leitura.
+
+**Pendencias:**
+- Implementacao da Fase 1 (banco de dados) — aguardando decisao do usuario
+- Decisao sobre infra do processador curto (Vercel Hobby nao suporta cron a cada 5-10 min)
+- Cadastro da conexao Hub/Vendas em digisac_conexoes_automacao
+- Criacao das 5+ versoes de mensagem de abordagem
+- Cadastro do modulo hub_vendas_recuperacao em app_modulos
+
+**Riscos conhecidos:**
+- Vercel Hobby: cron minimo 1x/dia — processador curto precisa de cron externo
+- Sem lock otimista no projeto — necessario criar mecanismo de reserva
+- limiteConcorrencia.ts tem variavel `i` declarada com const na linha 20 mas nunca usada (codigo morto)
+- normalizarTelefone remove 55 do inicio incondicionalmente — pode quebrar numeros que comecam com 55 sem ser DDI (nao confirmado como problema real)
+- Webhook atual sem secret se env var nao configurada — novo webhook deve ter secret obrigatorio
+
+**Proximo passo recomendado:**
+- Decidir infra do processador curto (cron externo vs processamento no cron da manha)
+- Aprovar Fase 1 (migration do banco) para iniciar implementacao
+
 ## 2026-07-17 - Cascade - UI/UX Ficha: crianca automatica, Select de situacao e cores nas secoes
 
 **Resumo:** Ajustes de UI/UX na Ficha de Atendimento Presencial: primeira crianca nasce automaticamente em gestacao, situacao trocou de OpcaoButton para Radix Select, secoes ganharam cores distintas, botao remover oculto na unica crianca. Nenhuma migration, API, banco, RPC, RLS, permissao, cron ou regra de negocio alterada.
@@ -21961,3 +22214,71 @@ Abrir `/procurar-datas/dev-v2` com sessao superadmin, auditar o run informado e 
 - **Nao validado:** Browser autenticado/mobile nao executado neste turno; migration da Fase 5 nao foi aplicada.
 - **Riscos conhecidos:** A validacao visual final depende de navegador real; o worktree ja tinha alteracoes anteriores fora deste ajuste.
 - **Proximo passo recomendado:** Validar manualmente `/atendimento-presencial/registros` com atendimento concluido real e revisar a ficha em viewport mobile.
+
+## 2026-07-17 - Codex - Atendimento Presencial: historico, virada de cartao e filtros
+
+- **Resumo:** Implementado pacote parcial de melhorias da Ficha/Registros: historico resumido da cliente, `nomeNaoInformado`, validacao visual por secao, etapa Resultado seccionada, motivo `virada_cartao`, virada DD/MM e filtro De/Ate em Registros. Criada migration local para estrutura definitiva e RPCs, sem aplicacao remota.
+- **Arquivos lidos:** anexo `C:\Users\lebeb\.codex\attachments\b1110959-7196-4988-945d-7a4f73568eac\pasted-text.txt`; `.devin/rules/continuidade-agente.md`; `.devin/rules/gerais.md`; `.devin/rules/recebimentos.md`; `.devin/rules/resumo.md`; `.devin/rules/supabase.md`; `.devin/skills/supabase/SKILL.md`; `docs/PLANO FUNCIONAL ATUALIZADO - FICHA DE ATENDIMENTO PRESENCIAL.md`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`; `docs/ia/padrao-novas-telas-permissoes.md`; migrations e rotas de Atendimento Presencial; tela de Ficha; tela de Registros; APIs SGI de vendas; helper `gerarVariacoesTelefone`.
+- **Supabase/MCP:** Confirmadas estruturas remotas atuais de `atendimento_presencial_*`, SGI, constraints, RLS/policies, indices, RPC `atendimento_presencial_concluir` e ausencia de `atendimento_presencial_editar_concluido`. Nenhum dado foi alterado no Supabase.
+- **Arquivos criados:** `src/app/api/atendimento-presencial/clientes/[id]/historico/route.ts`; `src/lib/atendimento-presencial/historico-cliente.ts`; `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`.
+- **Arquivos alterados:** `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`; `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`; `src/app/api/atendimento-presencial/atendimentos/route.ts`; `src/app/api/atendimento-presencial/atendimentos/[id]/route.ts`; `src/lib/atendimento-presencial/ficha-schema.ts`; `src/lib/atendimento-presencial/ficha-schema.test.ts`; `src/lib/atendimento-presencial/rascunhos.ts`; `src/lib/atendimento-presencial/rascunhos-shared.ts`; `src/lib/atendimento-presencial/registros.ts`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`.
+- **Implementacao:** A Ficha ganhou modal de historico por cliente, usando rota dedicada com permissao do modulo e fonte SGI por variacoes de telefone; criancas aceitam `nomeNaoInformado`; validacao mostra resumo clicavel, borda vermelha e scroll/foco; Resultado foi dividido em secoes coloridas e inclui `Virada de cartao` com DD/MM. Registros ganhou filtro De/Ate de virada, exibe a virada e converte departamentos para labels. Detalhe agora retorna permissao calculada no backend para edicao (`podeEditar`, `motivoBloqueio`, `limiteEdicaoEm`).
+- **Migration local:** Preparada migration para `virada_cartao_dia`, `virada_cartao_mes`, `nome_nao_informado`, constraint de motivo `virada_cartao`, historico `editado`, indice de virada e RPCs. A migration nao foi aplicada e precisa de revisao antes de uso.
+- **Validacoes realizadas:** `npx tsc --noEmit --pretty false` passou sem erros; `npm run test -- src/lib/atendimento-presencial/ficha-schema.test.ts src/lib/atendimento-presencial/registros.test.ts src/app/api/atendimento-presencial/atendimentos/route.test.ts` passou com 3 arquivos e 19 testes.
+- **Nao validado:** SQL novo nao executado em banco local/remoto; migration nao aplicada; browser autenticado/mobile nao executado; historico SGI nao validado com dados reais nesta execucao.
+- **Pendencias:** Edicao controlada de atendimentos concluidos nao esta completa de ponta a ponta: falta formulario/drawer, PATCH dedicado, chamada final da RPC, substituicao atomica das tabelas filhas e historico de campos alterados. O botao de edicao no detalhe ainda nao salva alteracoes.
+- **Riscos conhecidos:** Colunas novas selecionadas por Registros exigem migration antes do uso remoto; filtro De/Ate e feito em memoria apos buscar ate 200 registros; a migration local da RPC de edicao precisa ser revisada porque o contrato final de PATCH ainda nao foi implementado.
+- **Proximo passo recomendado:** Completar edicao controlada como uma fase separada curta antes de aplicar a migration: UI de edicao, PATCH transacional, testes de permissao/prazo/versionamento e validacao manual autenticada.
+
+## 2026-07-17 - Codex - Revisao integral da migration local de Atendimento Presencial
+
+- **Resumo:** Revisada e corrigida integralmente a migration local `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`, sem aplicacao no Supabase. A versao simplificada da RPC `atendimento_presencial_concluir` foi substituida por uma versao que preserva as validacoes da RPC remota ja aplicada e acrescenta somente `virada_cartao`, dia/mes da virada, `nomeNaoInformado` e snapshot `concluido_v2`. A RPC `atendimento_presencial_editar_concluido` passou a atualizar dados definitivos normalizados e historico tecnico, nao apenas `dados_rascunho`.
+- **Arquivos lidos:** anexo `C:\Users\lebeb\.codex\attachments\6e49234e-6ba4-4204-a416-3b1111317e15\pasted-text.txt`; `.devin/rules/continuidade-agente.md`; `.devin/rules/gerais.md`; `.devin/rules/recebimentos.md`; `.devin/rules/resumo.md`; `.devin/rules/supabase.md`; `.agents/skills/supabase/SKILL.md`; `.agents/skills/supabase-postgres-best-practices/SKILL.md`; referencias de seguranca/constraints/locks da skill; `docs/PLANO FUNCIONAL ATUALIZADO - FICHA DE ATENDIMENTO PRESENCIAL.md`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`; `docs/ia/padrao-novas-telas-permissoes.md`; migration de conclusao `20260716100000`; migration local `20260717120000`; schema da ficha; rotas de conclusao e detalhe; testes relacionados.
+- **Supabase/MCP:** Confirmada a RPC remota atual `atendimento_presencial_concluir(uuid, integer, uuid, integer)` como fonte de verdade; confirmada ausencia de `atendimento_presencial_editar_concluido`; confirmadas tabelas, colunas, constraints, RLS/policies, indices, grants e triggers de `atendimento_presencial_*`; confirmado trigger `atendimento_presencial_atendimentos_touch()` com `NEW.version = OLD.version + 1`.
+- **Arquivos criados:** `src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts`.
+- **Arquivos alterados:** `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`.
+- **Implementacao:** A migration agora adiciona colunas `virada_cartao_dia`, `virada_cartao_mes` e `nome_nao_informado`; atualiza constraints de conclusao, motivo, historico e snapshot; cria indice de virada; adiciona helper de normalizacao com execute restrito; preserva conclusao via `SECURITY DEFINER` com `search_path` explicito e grants apenas para `service_role`; cria edicao de concluido com regra de 3 dias por `concluido_em >= now() - interval '3 days'`, supervisora por unidade, superadmin liberado e gestao bloqueado quando nao houver outro perfil autorizado.
+- **Validacoes realizadas:** `npm run test -- src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts` passou com 1 arquivo e 5 testes; `npm run test -- src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts src/lib/atendimento-presencial/ficha-schema.test.ts` passou com 2 arquivos e 20 testes; `git diff --check` passou sem erros, apenas avisos CRLF/LF conhecidos do checkout Windows.
+- **Nao validado:** SQL nao executado contra banco local/remoto; migration nao aplicada; browser autenticado/mobile nao executado; PATCH/UI final de edicao controlada nao implementado neste turno.
+- **Riscos conhecidos:** Sintaxe e comportamento transacional da migration ainda precisam ser validados em banco controlado; integracao da RPC de edicao depende de rota/UI final; colunas novas continuam exigindo aplicacao da migration antes do uso remoto.
+- **Proximo passo recomendado:** Executar a migration em ambiente de teste/controlado, validar conclusao e edicao com perfis reais e entao integrar o PATCH/UI da edicao controlada.
+
+## 2026-07-17 - Codex - Segunda revisao da migration local de Atendimento Presencial
+
+- **Resumo:** Ajustada novamente a migration local `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`, sem aplicacao no Supabase. A revisao corrigiu incompatibilidade de retorno da RPC `atendimento_presencial_concluir`, whitelist do payload real, constraint de virada do cartao, filtros de perfis ativos, preservacao das regras atuais de departamentos/motivos/criancas/produtos e edicao sem alteracoes.
+- **Arquivos lidos:** anexo `C:\Users\lebeb\.codex\attachments\d06bc6cc-3d23-48d3-b4e6-ba7fa0929022\pasted-text.txt`; `.devin/rules/continuidade-agente.md`; `.devin/rules/gerais.md`; `.devin/rules/recebimentos.md`; `.devin/rules/resumo.md`; `.devin/rules/supabase.md`; `.devin/skills/supabase/SKILL.md`; `.devin/skills/supabase-postgres-best-practices/SKILL.md`; `.devin/workflows/login.md`; `docs/PLANO FUNCIONAL ATUALIZADO - FICHA DE ATENDIMENTO PRESENCIAL.md`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`; `docs/ia/padrao-novas-telas-permissoes.md`; `supabase/migrations/20260716100000_conclude_atendimento_presencial.sql`; `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`; `src/lib/atendimento-presencial/ficha-schema.ts`; `src/lib/atendimento-presencial/ficha-schema.test.ts`; rota de conclusao; rota de detalhe; helper/testes de registros; teste da migration.
+- **Supabase/MCP:** Confirmado que a RPC remota atual retorna exatamente `TABLE(id uuid, version integer)`; confirmados argumentos, definicao remota, trigger `atendimento_presencial_atendimentos_touch()` com incremento de version, constraints, indices, grants, RLS/policies, colunas de tabelas filhas, perfis ativos e dados existentes em tabelas normalizadas.
+- **Arquivos alterados:** `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`; `src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`.
+- **Implementacao:** Conclusao preserva `returns table(id uuid, version integer)` e nao usa `DROP FUNCTION`; normalizador aceita `etapaAtual`/`notaTecnica`, permite `clienteId` apenas na edicao e descarta chaves tecnicas; virada exige dia/mes juntos; perfis usam `EXISTS` com `apa.ativo = true`; departamentos seguem obrigatorios 1-6; motivos seguem 1-24 com `virada_cartao`; criancas seguem 0-8 com data de gestacao opcional; produtos rejeitam duplicidade case-insensitive; edicao valida unidade/consultora, compara snapshots funcionais antes de gravar e lança `nenhuma_alteracao` sem update/historico vazio.
+- **Validacoes realizadas:** `npm run test -- src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts` passou com 1 arquivo e 12 testes; `npm run test -- src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts src/lib/atendimento-presencial/ficha-schema.test.ts` passou com 2 arquivos e 27 testes; `git diff --check` passou sem erros, apenas avisos CRLF/LF conhecidos.
+- **Validacao SQL real:** Nao executada. `psql` e Supabase CLI nao estavam no PATH; Docker esta instalado, mas o Docker Desktop engine nao estava ativo. Nenhuma tentativa de aplicar ou simular a migration foi feita no Supabase remoto principal.
+- **Nao validado:** Compilacao SQL em banco local/branch; execucao de constraints/funcoes em Postgres real; browser autenticado/mobile; PATCH/UI final de edicao controlada.
+- **Riscos conhecidos:** A migration ainda pode conter erro de sintaxe ou ambiguidade que so apareca ao compilar em Postgres real; a RPC de edicao depende de integracao posterior com API/UI; colunas novas seguem exigindo migration antes do uso remoto.
+- **Proximo passo recomendado:** Validar a migration em banco local descartavel, branch de desenvolvimento do Supabase ou transacao com rollback em ambiente apropriado, e depois integrar PATCH/UI da edicao controlada.
+
+## 2026-07-17 - Codex - Terceira revisao final da migration local de Atendimento Presencial
+
+- **Resumo:** Revisada novamente a migration local `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`, sem aplicacao no Supabase principal. Foram corrigidos os dois pontos funcionais confirmados: `etapaAtual` obrigatoria indevidamente na edicao e precedencia de perfis na conclusao quando o usuario possui multiplos perfis ativos.
+- **Arquivos lidos:** anexo `C:\Users\lebeb\.codex\attachments\b1397955-b288-4d95-b5f3-183de34aae0e\pasted-text.txt`; `.devin/rules/continuidade-agente.md`; `.devin/rules/gerais.md`; `.devin/rules/resumo.md`; `.devin/rules/supabase.md`; `.devin/skills/supabase/SKILL.md`; `.devin/skills/supabase-postgres-best-practices/SKILL.md`; `.devin/workflows/login.md`; `docs/PLANO FUNCIONAL ATUALIZADO - FICHA DE ATENDIMENTO PRESENCIAL.md`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`; `supabase/migrations/20260716100000_conclude_atendimento_presencial.sql`; `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`; `src/lib/atendimento-presencial/ficha-schema.ts`; rota de conclusao; rota de detalhe; teste textual da migration.
+- **Supabase/MCP:** Confirmada novamente a RPC remota aplicada `atendimento_presencial_concluir(uuid, integer, uuid, integer)` com retorno `TABLE(id uuid, version integer)`. Confirmada ausencia remota de `atendimento_presencial_editar_concluido`. Nenhuma migration, DDL ou dado real foi alterado no Supabase principal.
+- **Arquivos alterados:** `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`; `src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`.
+- **Implementacao:** O normalizador agora exige `etapaAtual` somente no modo de conclusao (`p_permitir_cliente_id = false`); na edicao, `etapaAtual` e opcional e validada apenas se enviada. `notaTecnica` permanece opcional, validada como string quando enviada e descartada do payload normalizado. A conclusao passou a avaliar acesso em ordem: superadmin, supervisora vinculada, gestao vinculada, consultora propria vinculada e bloqueio. A edicao manteve gestao bloqueada quando nao houver outro perfil autorizado.
+- **Comandos rodados e resultados:** `npm run test -- src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts` passou com 1 arquivo e 13 testes; `npm run test -- src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts src/lib/atendimento-presencial/ficha-schema.test.ts` passou com 2 arquivos e 28 testes; `rg` de regressao nao encontrou `DROP FUNCTION`, retorno estendido, limite 25 de motivos, crianca minima nem bloco antigo `supervisora or gestao`.
+- **Validacao SQL real:** Nao executada. `psql` e Supabase CLI nao estao no PATH. Docker CLI existe, mas o Docker Desktop engine nao ficou ativo apos tentativa de inicializacao e espera de 3 minutos. A listagem de branches Supabase pelo MCP falhou por erro interno do conector. Nao foi usada transacao DDL no projeto principal.
+- **Pendencias:** Compilar a migration inteira em banco descartavel; executar testes SQL minimos de normalizador, conclusao e edicao; integrar posteriormente PATCH/UI da edicao controlada.
+- **Riscos conhecidos:** Ainda pode haver erro de sintaxe, ambiguidade ou incompatibilidade SQL que apenas Postgres real apontara. A migration ainda nao esta aprovada para aplicacao no projeto principal sem esse gate.
+- **Proximo passo recomendado:** Repetir a validacao com Supabase branch, Supabase local ou Postgres temporario quando houver ambiente descartavel ativo; depois executar os testes SQL minimos antes de aplicar no Supabase principal.
+
+## 2026-07-17 - Codex - Integracao PATCH/UI da edicao de Atendimento Presencial concluido
+
+- **Resumo:** Continuada a implementacao da Ficha/Registros de Atendimento Presencial com a migration `20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql` tratada como ja aplicada e validada no Supabase principal, conforme instrucao da tarefa. Foi implementada a edicao controlada de atendimentos concluidos pelo detalhe de Registros e feito ajuste visual nos titulos dos grupos de motivos da etapa Resultado.
+- **Arquivos lidos:** anexo `C:\Users\lebeb\.codex\attachments\8c3f4bd5-3e0a-4331-bb16-d7d420ddfcf6\pasted-text.txt`; `.devin/rules/continuidade-agente.md`; `.devin/rules/gerais.md`; `.devin/rules/resumo.md`; `.devin/rules/supabase.md`; `.devin/rules/recebimentos.md`; `.devin/skills/supabase/SKILL.md`; `.devin/skills/supabase-postgres-best-practices/SKILL.md`; `.devin/workflows/login.md`; `docs/PLANO FUNCIONAL ATUALIZADO - FICHA DE ATENDIMENTO PRESENCIAL.md`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`; `docs/ia/padrao-novas-telas-permissoes.md`; rotas, telas, schema, helpers e testes de Atendimento Presencial.
+- **Supabase/MCP:** Confirmadas as RPCs remotas `atendimento_presencial_concluir`, `atendimento_presencial_editar_concluido` e `atendimento_presencial_normalizar_payload_ficha`; confirmados `SECURITY DEFINER`, `search_path` explicito e grants restritos a `service_role` nas RPCs principais; confirmadas colunas `virada_cartao_dia`, `virada_cartao_mes` e `nome_nao_informado`. Nenhuma DDL, migration ou dado real foi alterado no Supabase neste turno.
+- **Arquivos alterados neste passo:** `src/app/api/atendimento-presencial/atendimentos/[id]/route.ts`; `src/app/api/atendimento-presencial/atendimentos/[id]/route.test.ts`; `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`; `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`; `src/lib/atendimento-presencial/registros.ts`; `src/lib/atendimento-presencial/registros.test.ts`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`.
+- **Implementacao:** Adicionado PATCH dedicado em `/api/atendimento-presencial/atendimentos/[id]`, usando somente a RPC `atendimento_presencial_editar_concluido`; validacao de payload reaproveita `validarFichaDadosRascunho` e `validarFichaParaConclusao`; o PATCH confere `status = concluido`, permissao de acesso, `version` esperada e mapeia `version_conflict`, `access_denied`, `atendimento_not_found`, payload invalido, estado invalido e `nenhuma_alteracao`. Registros agora abre formulario de edicao apenas com `podeEditar = true`, mantendo cliente/unidade/consultora como leitura e reaproveitando catalogos/helpers da ficha. O detalhe exibe historico tecnico quando disponivel.
+- **Ajuste visual:** Na Ficha e no formulario de edicao em Registros, os titulos de grupos de motivos (`Produto`, `Condicao comercial`, `Prazo e necessidade`, `Decisao`, `Outro`) ficaram maiores e mais fortes, sem alterar textos ou regras.
+- **Comandos executados e resultados:** `npm run test -- src/lib/atendimento-presencial/registros.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/route.test.ts src/lib/atendimento-presencial/ficha-schema.test.ts src/app/api/atendimento-presencial/atendimentos/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts` passou com 5 arquivos e 27 testes; `npm run test -- src/lib/atendimento-presencial/registros.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/route.test.ts` passou com 2 arquivos e 8 testes; `npx tsc --noEmit --pretty false` passou; `npx eslint src/app/atendimento-presencial/ficha/FichaPageClient.tsx src/app/atendimento-presencial/registros/RegistrosPageClient.tsx src/app/api/atendimento-presencial/atendimentos/[id]/route.ts src/app/api/atendimento-presencial/atendimentos/[id]/route.test.ts src/lib/atendimento-presencial/registros.ts src/lib/atendimento-presencial/registros.test.ts` passou sem erros.
+- **Nao validado:** Browser autenticado/mobile nao executado; fluxo real por perfil em ambiente autenticado nao executado; nao foi feita nova aplicacao de migration.
+- **Pendencias:** Validar manualmente consultora propria dentro de 3 dias, consultora fora do prazo, supervisora de unidade vinculada, superadmin e gestao bloqueada; confirmar historico apos edicao real; conferir conflito de versao em duas abas.
+- **Riscos conhecidos:** O backend final depende da RPC remota aplicada para aplicar regras autoritativas e gravar historico; a UI foi validada por typecheck/lint/testes, mas ainda nao por navegador autenticado.
+- **Proximo passo recomendado:** Rodar roteiro manual autenticado em `/atendimento-presencial/registros`, incluindo salvar alteracao real, salvar sem alteracao, conflito de versao e revisao do historico.

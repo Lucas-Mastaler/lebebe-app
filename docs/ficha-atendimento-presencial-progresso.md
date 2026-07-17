@@ -1919,3 +1919,249 @@ Validar manualmente um registro concluido real em `/atendimento-presencial/regis
 ### Proximo passo recomendado
 
 Validar manualmente no celular: abertura da ficha com crianca automatica, troca de situacao via Select, cores das secoes, e fluxo completo de conclusao.
+
+## 2026-07-17 - Codex - Historico da cliente, virada de cartao e filtros de registros
+
+### Escopo
+
+- Implementado historico resumido da cliente na Ficha, com atendimentos anteriores e compras SGI associadas ao telefone.
+- Adicionado `nomeNaoInformado` no schema do rascunho e controle "Nao sabe o nome ainda" na crianca.
+- Adicionada validacao visual por secao com resumo clicavel e rolagem/foco para o primeiro erro.
+- Etapa Resultado reorganizada em secoes coloridas com motivo `virada_cartao` e campo DD/MM.
+- Registros agora exibem labels amigaveis de departamentos, virada do cartao na lista/detalhe e filtro De/Ate por DD/MM.
+- Criada migration local para colunas definitivas de virada, `nome_nao_informado`, historico `editado` e RPCs.
+
+### Arquivos criados
+
+- `src/app/api/atendimento-presencial/clientes/[id]/historico/route.ts`
+- `src/lib/atendimento-presencial/historico-cliente.ts`
+- `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`
+
+### Arquivos alterados
+
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`
+- `src/app/api/atendimento-presencial/atendimentos/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/route.ts`
+- `src/lib/atendimento-presencial/ficha-schema.ts`
+- `src/lib/atendimento-presencial/ficha-schema.test.ts`
+- `src/lib/atendimento-presencial/rascunhos.ts`
+- `src/lib/atendimento-presencial/rascunhos-shared.ts`
+- `src/lib/atendimento-presencial/registros.ts`
+
+### Validacoes realizadas
+
+- Supabase MCP: confirmadas tabelas, colunas, constraints, policies, indices, RPC de conclusao atual e ausencia de `atendimento_presencial_editar_concluido`.
+- `npx tsc --noEmit --pretty false`: passou sem erros.
+- `npm run test -- src/lib/atendimento-presencial/ficha-schema.test.ts src/lib/atendimento-presencial/registros.test.ts src/app/api/atendimento-presencial/atendimentos/route.test.ts`: passou, 3 arquivos e 19 testes.
+
+### Nao validado
+
+- Migration nova nao aplicada no Supabase.
+- SQL da migration nova nao executado contra banco local/remoto.
+- Browser autenticado/mobile nao executado.
+- Edicao controlada ainda nao tem formulario/PATCH funcional completo; detalhe ja retorna `podeEditar`, `motivoBloqueio` e `limiteEdicaoEm`, mas o botao permanece sem fluxo de salvamento.
+
+### Riscos conhecidos
+
+- Codigo que seleciona colunas novas (`virada_cartao_dia`, `virada_cartao_mes`) depende da migration antes do uso em ambiente remoto.
+- O filtro De/Ate por virada e aplicado em memoria apos buscar ate 200 registros por escopo; pode precisar migrar para SQL/RPC se o volume crescer.
+- A migration local de edicao precisa de revisao antes de aplicacao; a RPC de edicao preparada ainda deve ser alinhada ao PATCH definitivo que substitui tabelas filhas atomicamente.
+
+### Proximo passo recomendado
+
+Revisar e completar o fluxo de edicao controlada antes de aplicar a migration: formulario/drawer de edicao, PATCH dedicado, chamada real da RPC, historico de campos alterados e validacao manual autenticada.
+
+## 2026-07-17 - Codex - Revisao integral da migration local 20260717
+
+### Escopo
+
+- Revisada a migration local `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`.
+- A migration nao foi aplicada no Supabase.
+- A RPC `atendimento_presencial_concluir` deixou de ser uma versao simplificada e voltou a preservar o contrato validado da conclusao, com acrescimos para `virada_cartao`, DD/MM e `nomeNaoInformado`.
+- A RPC `atendimento_presencial_editar_concluido` passou a atualizar dados definitivos normalizados: atendimento, cliente vinculado, criancas, departamentos, produtos, motivos e historico.
+
+### Arquivos criados
+
+- `src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts`
+
+### Arquivos alterados
+
+- `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`
+
+### Validacoes realizadas
+
+- Supabase MCP: confirmada definicao remota atual de `atendimento_presencial_concluir(uuid, integer, uuid, integer)`; confirmada ausencia remota de `atendimento_presencial_editar_concluido`; confirmadas tabelas, colunas, constraints, RLS/policies, indices, grants e triggers de `atendimento_presencial_*`.
+- Supabase MCP: confirmado que `atendimento_presencial_atendimentos_touch()` incrementa `NEW.version = OLD.version + 1`.
+- `npm run test -- src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts`: passou, 1 arquivo e 5 testes.
+- `npm run test -- src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts src/lib/atendimento-presencial/ficha-schema.test.ts`: passou, 2 arquivos e 20 testes.
+- `git diff --check`: passou sem erros; apenas avisos CRLF/LF do checkout Windows.
+
+### Nao validado
+
+- SQL da migration nao foi executado contra banco local/remoto.
+- Migration nao foi aplicada.
+- Fluxo manual autenticado/mobile nao foi executado.
+- Nao foi criado PATCH/UI final de edicao neste turno; a revisao foi restrita a migration local e teste de regressao.
+
+### Riscos conhecidos
+
+- A migration precisa ser executada em ambiente controlado para validar sintaxe SQL e comportamento transacional real.
+- O contrato final de API/UI para chamar `atendimento_presencial_editar_concluido` ainda precisa ser integrado.
+
+### Proximo passo recomendado
+
+Executar a migration em banco de teste ou ambiente controlado, validar conclusao e edicao com perfis reais, e so depois integrar o PATCH/UI de edicao controlada.
+
+## 2026-07-17 - Codex - Segunda revisao da migration local 20260717
+
+### Escopo
+
+- Ajustada novamente a migration local `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`.
+- A migration nao foi aplicada no Supabase.
+- A revisao corrigiu regressao de assinatura da RPC de conclusao, whitelist do payload real, constraint de virada, perfis ativos, regras preservadas da RPC aplicada e edicao sem mudancas.
+
+### Correcoes principais
+
+- `atendimento_presencial_concluir` voltou a `returns table(id uuid, version integer)`, sem `DROP FUNCTION`.
+- `etapaAtual` e `notaTecnica` sao aceitas no payload e descartadas do JSON normalizado.
+- `clienteId` so e aceito quando `p_permitir_cliente_id = true`.
+- Constraint de virada exige dia e mes ambos nulos ou ambos preenchidos e validos.
+- Todas as consultas de perfil usam `apa.ativo = true` e `EXISTS`.
+- Departamentos continuam obrigatorios, 1 a 6, com valores permitidos e sem duplicidade.
+- Motivos continuam obrigatorios, 1 a 24, com `virada_cartao` adicionado ao catalogo e sem regra nova por resultado.
+- Criancas continuam 0 a 8, com `id` obrigatorio, data de gestacao opcional e validacoes condicionais completas.
+- Produtos voltaram a rejeitar duplicidade por `lower(trim(...))`.
+- Edicao valida unidade ativa e consultora responsavel ativa/com perfil/vinculo atual.
+- Edicao compara snapshots funcionais antes de apagar dados e lança `nenhuma_alteracao` sem atualizar versao ou historico.
+- Historico registra somente metadados tecnicos e quantidades, sem payload, telefone, nomes, observacoes completas ou produtos completos.
+
+### Arquivos alterados
+
+- `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`
+- `src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts`
+
+### Validacoes realizadas
+
+- Supabase MCP: confirmada assinatura remota `atendimento_presencial_concluir(uuid, integer, uuid, integer)` com `RETURNS TABLE(id uuid, version integer)`.
+- Supabase MCP: confirmadas constraints, indices, RLS/policies, grants, trigger de versionamento, colunas das tabelas filhas, perfis ativos e existencia de dados concluidos.
+- `npm run test -- src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts`: passou, 1 arquivo e 12 testes.
+- `npm run test -- src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts src/lib/atendimento-presencial/ficha-schema.test.ts`: passou, 2 arquivos e 27 testes.
+- `git diff --check`: passou sem erros; apenas avisos CRLF/LF do checkout Windows.
+
+### Nao validado
+
+- SQL real da migration nao foi compilado em banco local porque `psql` e Supabase CLI nao estao no PATH e o Docker engine nao estava ativo.
+- Nenhuma transacao de validacao foi executada no Supabase remoto principal.
+- UI/API final de edicao controlada continua fora deste escopo.
+
+### Riscos conhecidos
+
+- A migration ainda precisa de validacao SQL real em banco local, branch Supabase ou ambiente descartavel antes de aplicacao.
+- A RPC de edicao ainda depende de integracao posterior com PATCH/UI.
+
+### Proximo passo recomendado
+
+Validar a migration em banco local/descartavel com rollback ou branch de desenvolvimento, depois integrar a rota PATCH/UI de edicao controlada.
+
+## 2026-07-17 - Codex - Integracao PATCH/UI da edicao de atendimento concluido
+
+### Escopo
+
+- Continuada a implementacao da Ficha/Registros de Atendimento Presencial a partir do estado atual do projeto.
+- A migration `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql` foi tratada como ja aplicada e validada no Supabase principal, conforme instrucao da tarefa.
+- Nenhuma migration anterior foi alterada ou reaplicada.
+
+### Supabase/MCP
+
+- Confirmadas no Supabase as RPCs `atendimento_presencial_concluir`, `atendimento_presencial_editar_concluido` e `atendimento_presencial_normalizar_payload_ficha`.
+- Confirmado que as RPCs principais seguem com `SECURITY DEFINER`, `search_path` explicito e grants restritos a `service_role`.
+- Confirmadas colunas novas usadas pela UI/API: `virada_cartao_dia`, `virada_cartao_mes` e `nome_nao_informado`.
+
+### Implementacao
+
+- Ajustado o peso visual dos titulos dos grupos de motivos na etapa final da ficha.
+- Adicionado PATCH dedicado em `/api/atendimento-presencial/atendimentos/[id]`, chamando somente a RPC `atendimento_presencial_editar_concluido`.
+- O PATCH valida payload pelo schema existente, valida dados obrigatorios de conclusao, confere `version`, restringe o registro a `status = concluido` e mapeia erros de conflito, acesso, registro inexistente, payload invalido e nenhuma alteracao.
+- A tela de Registros agora abre edicao controlada apenas quando `podeEditar = true`, mantendo cliente, unidade e consultora como leitura.
+- A edicao reutiliza os mesmos catalogos/helpers da ficha para criancas, departamentos, produtos, resultado, motivos, virada de cartao, observacoes e numero de lancamento.
+- O detalhe passa a exibir historico tecnico quando disponivel.
+
+### Arquivos alterados neste passo
+
+- `src/app/api/atendimento-presencial/atendimentos/[id]/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/route.test.ts`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`
+- `src/lib/atendimento-presencial/registros.ts`
+- `src/lib/atendimento-presencial/registros.test.ts`
+
+### Validacoes realizadas
+
+- `npm run test -- src/lib/atendimento-presencial/registros.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/route.test.ts src/lib/atendimento-presencial/ficha-schema.test.ts src/app/api/atendimento-presencial/atendimentos/route.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts`: passou, 5 arquivos e 27 testes.
+- `npm run test -- src/lib/atendimento-presencial/registros.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/route.test.ts`: passou, 2 arquivos e 8 testes.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/app/atendimento-presencial/ficha/FichaPageClient.tsx src/app/atendimento-presencial/registros/RegistrosPageClient.tsx src/app/api/atendimento-presencial/atendimentos/[id]/route.ts src/app/api/atendimento-presencial/atendimentos/[id]/route.test.ts src/lib/atendimento-presencial/registros.ts src/lib/atendimento-presencial/registros.test.ts`: passou sem erros.
+
+### Nao validado
+
+- Browser autenticado/mobile nao foi executado neste turno.
+- Nao foi feita nova aplicacao de migration, por instrucao de tratar a migration como ja aplicada.
+
+### Riscos conhecidos
+
+- A validacao manual ainda precisa confirmar o fluxo real com consultora dentro e fora do prazo, supervisora vinculada, superadmin e gestao bloqueada.
+- O historico exibido depende do snapshot gravado pela RPC aplicada.
+
+### Proximo passo recomendado
+
+Executar validacao manual autenticada em `/atendimento-presencial/registros`: editar atendimento concluido, salvar sem alteracao, simular conflito por versao e conferir historico/visibilidade por perfil.
+
+## 2026-07-17 - Codex - Terceira revisao final da migration local 20260717
+
+### Escopo
+
+- Revisada novamente a migration local `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`.
+- A migration nao foi aplicada no Supabase principal.
+- O ajuste ficou restrito a dois pontos funcionais confirmados: `etapaAtual` na edicao de concluido e precedencia de multiplos perfis na conclusao.
+
+### Correcoes realizadas
+
+- `atendimento_presencial_normalizar_payload_ficha` agora exige `etapaAtual` somente quando `p_permitir_cliente_id = false`, preservando o contrato de conclusao de rascunho.
+- Na edicao de concluido (`p_permitir_cliente_id = true`), `etapaAtual` e opcional; quando enviada, precisa ser string.
+- `notaTecnica` permanece opcional, precisa ser string quando enviada e continua descartada do payload normalizado.
+- A conclusao passou a autorizar por precedencia efetiva: superadmin, supervisora vinculada, gestao vinculada, consultora propria vinculada, bloqueio.
+- A prioridade representativa de historico foi mantida como supervisora, consultora, gestao e nulo.
+- A edicao manteve a precedencia ja desejada: superadmin, supervisora vinculada, propria consultora no prazo, bloqueio; gestao continua bloqueada quando nao houver outro perfil autorizado.
+
+### Validacoes realizadas
+
+- Supabase MCP: confirmada novamente a RPC remota aplicada `atendimento_presencial_concluir(uuid, integer, uuid, integer)` com retorno `TABLE(id uuid, version integer)` e ausencia remota de `atendimento_presencial_editar_concluido`.
+- `npm run test -- src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts`: passou com 1 arquivo e 13 testes.
+- `npm run test -- src/lib/atendimento-presencial/melhorias-ficha-edicao-migration.test.ts src/lib/atendimento-presencial/ficha-schema.test.ts`: passou com 2 arquivos e 28 testes.
+- `rg` de regressao nao encontrou `DROP FUNCTION`, retorno estendido, limite antigo de motivos, exigencia de crianca minima nem bloco antigo `supervisora or gestao`.
+
+### Validacao SQL real
+
+- Nao executada.
+- `psql` e Supabase CLI nao estao no PATH.
+- Docker CLI existe, mas o Docker Desktop engine nao ficou disponivel apos tentativa de inicializacao e espera de 3 minutos.
+- A consulta de branches Supabase pelo MCP falhou por erro interno do conector.
+- Nenhuma transacao DDL foi executada no projeto principal.
+
+### Riscos conhecidos
+
+- A migration ainda precisa compilar em Postgres/Supabase descartavel antes da aplicacao.
+- Testes SQL minimos de normalizador, conclusao e edicao seguem pendentes por falta de ambiente descartavel ativo.
+- A RPC de edicao ainda depende de integracao posterior com PATCH/UI.
+
+### Proximo passo recomendado
+
+Rodar a migration em Supabase branch, Supabase local ou Postgres temporario assim que houver ambiente descartavel ativo, executar os testes SQL minimos e somente depois aprovar a aplicacao no projeto principal.
+
+## 2026-07-17 - Codex - Estado final deste turno
+
+- Estado adotado neste turno: migration `20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql` tratada como ja aplicada e validada no Supabase principal, conforme instrucao recebida.
+- MCP confirmou a existencia remota de `atendimento_presencial_editar_concluido`, alem das colunas novas usadas por API/UI.
+- Integracao PATCH/UI de edicao de atendimento concluido implementada e validada por testes focados, typecheck e lint.
+- Pendencia restante: validacao manual autenticada/mobile em ambiente real.

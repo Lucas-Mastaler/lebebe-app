@@ -231,6 +231,55 @@ describe('api rascunhos atendimento presencial', () => {
     ])
   })
 
+  it('enriquece rascunhos com nomes em consultas batch e usa fallbacks', async () => {
+    const clienteId = '123e4567-e89b-12d3-a456-426614174007'
+    const segundoRascunho = {
+      ...rascunhoRow,
+      id: '123e4567-e89b-12d3-a456-426614174008',
+      cliente_id: clienteId,
+      consultora_usuario_id: consultoraId,
+    }
+    const from = mockSupabase({
+      app_usuarios_perfis: [
+        { data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null },
+      ],
+      app_usuarios_unidades: [
+        {
+          data: [{ app_unidades: { id: unidadeId, chave: 'bigorrilho', nome: 'Bigorrilho', ativo: true } }],
+          error: null,
+        },
+      ],
+      atendimento_presencial_atendimentos: [
+        { data: [rascunhoRow, segundoRascunho], error: null },
+      ],
+      atendimento_presencial_clientes: [
+        { data: [{ id: clienteId, nome: 'Mariana Souza' }], error: null },
+      ],
+      usuarios_permitidos: [
+        { data: [{ id: consultoraId, email: 'consultora@example.com' }], error: null },
+      ],
+    }).from
+
+    const response = await GET()
+    const json = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(json.rascunhos).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: rascunhoId,
+        clienteNome: null,
+        consultoraNome: null,
+      }),
+      expect.objectContaining({
+        id: segundoRascunho.id,
+        clienteNome: 'Mariana Souza',
+        consultoraNome: 'consultora@example.com',
+      }),
+    ]))
+    expect(from.mock.calls.filter(([table]) => table === 'atendimento_presencial_clientes')).toHaveLength(1)
+    expect(from.mock.calls.filter(([table]) => table === 'usuarios_permitidos')).toHaveLength(1)
+  })
+
   it('rejeita consultora sem vinculo com a unidade informada', async () => {
     mockSupabase({
       app_usuarios_perfis: [

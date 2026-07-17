@@ -17,6 +17,7 @@ import {
   type PerfilAtendimento,
   type UnidadeAtendimento,
 } from '@/lib/atendimento-presencial/rascunhos'
+import type { AtendimentoPresencialDTO } from '@/lib/atendimento-presencial/rascunhos-shared'
 
 export const runtime = 'nodejs'
 
@@ -163,6 +164,42 @@ async function validarConsultoraNaUnidade(
   return Boolean(unidadeVinculo)
 }
 
+async function enriquecerRascunhos(
+  supabase: SupabaseClientLike,
+  rascunhos: AtendimentoPresencialDTO[]
+) {
+  const clienteIds = Array.from(new Set(rascunhos.map((rascunho) => rascunho.clienteId).filter(Boolean)))
+  const consultoraIds = Array.from(new Set(rascunhos.map((rascunho) => rascunho.consultoraUsuarioId).filter(Boolean)))
+
+  const [clientesResult, consultorasResult] = await Promise.all([
+    clienteIds.length > 0
+      ? supabase
+        .from('atendimento_presencial_clientes')
+        .select('id, nome')
+        .in('id', clienteIds)
+      : Promise.resolve({ data: [], error: null }),
+    consultoraIds.length > 0
+      ? supabase
+        .from('usuarios_permitidos')
+        .select('id, email')
+        .in('id', consultoraIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  const nomesClientes = new Map(
+    ((clientesResult.data ?? []) as Array<{ id: string; nome: string }>).map((cliente) => [cliente.id, cliente.nome])
+  )
+  const nomesConsultoras = new Map(
+    ((consultorasResult.data ?? []) as Array<{ id: string; email: string }>).map((consultora) => [consultora.id, consultora.email])
+  )
+
+  return rascunhos.map((rascunho) => ({
+    ...rascunho,
+    clienteNome: rascunho.clienteId ? nomesClientes.get(rascunho.clienteId) ?? null : null,
+    consultoraNome: nomesConsultoras.get(rascunho.consultoraUsuarioId) ?? null,
+  }))
+}
+
 function jsonErro(message: string, status: number, extra?: Record<string, unknown>) {
   return NextResponse.json({ ok: false, message, ...extra }, { status })
 }
@@ -201,11 +238,13 @@ export async function GET() {
       return jsonErro('Erro ao processar requisicao', 500)
     }
 
+    const rascunhosSerializados = ((data ?? []) as unknown as AtendimentoPresencialRow[]).map(serializarAtendimentoPresencial)
+    const rascunhos = await enriquecerRascunhos(supabase, rascunhosSerializados)
     const consultorasDisponiveis = await listarConsultorasDisponiveis(supabase, contexto.perfil, contexto.unidadesPermitidas)
 
     return NextResponse.json({
       ok: true,
-      rascunhos: ((data ?? []) as unknown as AtendimentoPresencialRow[]).map(serializarAtendimentoPresencial),
+      rascunhos,
       contexto,
       consultorasDisponiveis,
     })

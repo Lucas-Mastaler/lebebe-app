@@ -171,6 +171,9 @@ describe('api concluir atendimento presencial', () => {
       dados_rascunho: {
         ...rowRascunho.dados_rascunho,
         resultadoAtendimento: 'nao',
+        motivosResultado: ['virada_cartao'],
+        viradaCartaoDia: 20,
+        viradaCartaoMes: 7,
       },
     }
     const concluido = {

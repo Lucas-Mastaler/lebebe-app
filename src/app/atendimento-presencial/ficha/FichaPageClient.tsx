@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Baby, Check, ChevronLeft, ChevronRight, ClipboardList, History, MessageSquareText, Plus, RefreshCw, Save, Search, ShoppingBag, UserRound, WifiOff, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { AlertCircle, Baby, Check, ChevronLeft, ChevronRight, ClipboardList, CreditCard, History, MessageSquareText, Package, Plus, RefreshCw, Save, Search, ShoppingBag, Tag, UserRound, WifiOff, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -114,7 +114,17 @@ type HistoricoClienteResponse = {
     numeroLancamento: string
     data: string | null
     filial: string | null
+    vendedor: string | null
+    status: string | null
+    departamentos: string[]
     itens: string[]
+    produtos: Array<{
+      nome: string
+      quantidade: number | null
+      valorTotal: number | null
+      departamento: string | null
+      subgrupo: string | null
+    }>
     valorTotal: number | null
     formasPagamento: string[]
   }>
@@ -167,6 +177,75 @@ function formatarDataCurta(valor: string | null) {
 function formatarDinheiro(valor: number | null) {
   if (valor === null || !Number.isFinite(valor)) return 'Valor nao informado'
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor)
+}
+
+function HistoricoSecao({
+  icon: Icon,
+  title,
+  subtitle,
+  variant,
+  children,
+}: {
+  icon: LucideIcon
+  title: string
+  subtitle?: string
+  variant: 'blue' | 'amber' | 'green' | 'slate'
+  children: ReactNode
+}) {
+  const variants = {
+    blue: 'border-sky-100 bg-sky-50/60 text-sky-700',
+    amber: 'border-amber-100 bg-amber-50/60 text-amber-700',
+    green: 'border-emerald-100 bg-emerald-50/60 text-emerald-700',
+    slate: 'border-slate-200 bg-slate-50 text-slate-700',
+  } as const
+
+  return (
+    <section className={`rounded-md border p-4 ${variants[variant]}`}>
+      <div className="mb-3 flex items-start gap-2">
+        <span className="mt-0.5 rounded-md bg-white/80 p-1.5 shadow-sm">
+          <Icon className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <div>
+          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-900">{title}</h3>
+          {subtitle && <p className="text-xs text-slate-600">{subtitle}</p>}
+        </div>
+      </div>
+      <div className="text-slate-900">{children}</div>
+    </section>
+  )
+}
+
+function HistoricoInfoCard({ label, value, emphasis = false }: { label: string; value: ReactNode; emphasis?: boolean }) {
+  return (
+    <div className="rounded-md border border-white/70 bg-white/80 px-3 py-2 shadow-sm">
+      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <div className={`mt-1 text-sm ${emphasis ? 'font-bold text-slate-950' : 'font-semibold text-slate-800'}`}>{value}</div>
+    </div>
+  )
+}
+
+function HistoricoChip({ children, variant = 'slate' }: { children: ReactNode; variant?: 'blue' | 'amber' | 'green' | 'slate' }) {
+  const variants = {
+    blue: 'border-sky-100 bg-sky-50 text-sky-700',
+    amber: 'border-amber-100 bg-amber-50 text-amber-700',
+    green: 'border-emerald-100 bg-emerald-50 text-emerald-700',
+    slate: 'border-slate-200 bg-slate-50 text-slate-700',
+  } as const
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-semibold ${variants[variant]}`}>
+      {children}
+    </span>
+  )
+}
+
+function formatarVendaFechadaHistorico(resultado: string | null) {
+  const normalizado = (resultado ?? '').trim().toLowerCase()
+  if (!normalizado) return 'Nao informado'
+  if (normalizado === 'sim') return 'Sim'
+  if (normalizado === 'nao' || normalizado === 'não') return 'Nao'
+  if (normalizado === 'negociacao' || normalizado === 'negociação') return 'Em negociacao'
+  return resultado
 }
 
 function diasRestantes(expiraEm: string) {
@@ -356,10 +435,10 @@ function validarEtapa(params: {
     }
   }
   if (etapa === 'resultado') {
-    if (!ficha.resultadoAtendimento) erros.push({ sectionId: 'secao-resultado-fechamento', message: 'Escolha o resultado do atendimento.' })
+    if (!ficha.resultadoAtendimento) erros.push({ sectionId: 'secao-resultado-fechamento', message: 'Selecione o resultado do atendimento.' })
     if (ficha.motivosResultado.length === 0) erros.push({ sectionId: 'secao-resultado-produto', message: 'Selecione pelo menos um motivo.' })
     if (ficha.motivosResultado.includes('virada_cartao') && !formatarViradaCartao(ficha.viradaCartaoDia, ficha.viradaCartaoMes)) {
-      erros.push({ sectionId: 'secao-resultado-condicao', fieldId: 'virada-cartao', message: 'Informe a virada do cartao em DD/MM.' })
+      erros.push({ sectionId: 'secao-resultado-condicao', fieldId: 'virada-cartao', message: 'Informe o dia e o mes da virada do cartao.' })
     }
     if (ficha.motivosResultado.includes('outro') && !ficha.motivoOutro?.trim()) {
       erros.push({ sectionId: 'secao-resultado-outro', fieldId: 'motivo-outro', message: 'Informe o complemento de Outro.' })
@@ -779,10 +858,26 @@ export default function FichaPageClient({ usuarioId }: Props) {
     }, 250)
   }
 
+  function etapaParaErro(erro: ErroValidacaoFicha): FichaEtapa {
+    if (erro.sectionId.includes('resultado')) return 'resultado'
+    if (erro.sectionId.includes('revisao')) return 'revisao'
+    return 'ficha'
+  }
+
+  function navegarParaErro(erro: ErroValidacaoFicha) {
+    const etapaErro = etapaParaErro(erro)
+    if (etapaErro !== etapaAtual) {
+      setFicha((atual) => ({ ...atual, etapaAtual: etapaErro }))
+      window.setTimeout(() => scrollParaErro(erro), 80)
+      return
+    }
+    scrollParaErro(erro)
+  }
+
   function registrarErrosValidacao(erros: ErroValidacaoFicha[]) {
     setErrosValidacao(erros)
     setErroEtapa(erros.length === 1 ? erros[0].message : 'Revise os campos destacados antes de continuar.')
-    if (erros[0]) scrollParaErro(erros[0])
+    if (erros[0]) navegarParaErro(erros[0])
   }
 
   function erroSecao(sectionId: string) {
@@ -965,17 +1060,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
     })
     if (!validacao.ok) {
       const erroValidacao = erroConclusaoParaSecao(validacao.field, validacao.message)
-      const etapaErro = erroValidacao.sectionId.includes('resultado')
-        ? 'resultado'
-        : erroValidacao.sectionId.includes('revisao')
-          ? 'revisao'
-          : 'ficha'
-      if (etapaErro !== etapaAtual) {
-        setFicha((atual) => ({ ...atual, etapaAtual: etapaErro }))
-        window.setTimeout(() => registrarErrosValidacao([erroValidacao]), 50)
-      } else {
-        registrarErrosValidacao([erroValidacao])
-      }
+      registrarErrosValidacao([erroValidacao])
       concluindoRef.current = false
       return
     }
@@ -1667,13 +1752,30 @@ export default function FichaPageClient({ usuarioId }: Props) {
                     />
                   </label>
                 )}
+                {errosValidacao.length > 0 && (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                    <p className="font-semibold">Revise os campos abaixo antes de concluir:</p>
+                    <div className="mt-3 grid gap-2">
+                      {errosValidacao.map((item, index) => (
+                        <button
+                          key={`revisao-${item.sectionId}-${item.fieldId ?? index}`}
+                          type="button"
+                          onClick={() => navegarParaErro(item)}
+                          className="rounded-md border border-red-200 bg-white px-3 py-2 text-left font-semibold text-red-700"
+                        >
+                          {item.message}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <Button type="button" onClick={concluirAtendimento} disabled={concluindo} className="h-12 rounded-md">
                   {concluindo ? 'Concluindo...' : 'Concluir atendimento'}
                 </Button>
               </div>
             )}
 
-            {errosValidacao.length > 0 && (
+            {errosValidacao.length > 0 && etapaAtual !== 'revisao' && (
               <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
                 <p className="font-semibold">Revise os campos abaixo.</p>
                 <div className="mt-3 grid gap-2">
@@ -1681,7 +1783,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
                     <button
                       key={`${item.sectionId}-${item.fieldId ?? index}`}
                       type="button"
-                      onClick={() => scrollParaErro(item)}
+                      onClick={() => navegarParaErro(item)}
                       className="rounded-md border border-red-200 bg-white px-3 py-2 text-left font-semibold text-red-700"
                     >
                       {item.message}
@@ -1717,12 +1819,15 @@ export default function FichaPageClient({ usuarioId }: Props) {
       )}
 
       <Dialog open={historicoAberto} onOpenChange={setHistoricoAberto}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
           <DialogHeader>
-            <DialogTitle>Historico da cliente</DialogTitle>
+            <DialogTitle className="text-base">
+              Historico da cliente
+              {clienteSelecionada?.nome && <span className="ml-2 font-normal text-slate-500">- {clienteSelecionada.nome}</span>}
+            </DialogTitle>
           </DialogHeader>
 
-          <div className="grid gap-4">
+          <div className="grid gap-5">
             {!clienteSelecionada && (
               <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                 Selecione uma cliente para consultar o historico.
@@ -1730,9 +1835,19 @@ export default function FichaPageClient({ usuarioId }: Props) {
             )}
 
             {clienteSelecionada && (
-              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                <p className="text-sm font-semibold text-slate-950">{clienteSelecionada.nome}</p>
-                <p className="text-sm text-slate-600">{clienteSelecionada.telefoneFormatado ?? 'Telefone nao informado'}</p>
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Historico da cliente</p>
+                <div className="mt-1 flex flex-wrap items-end justify-between gap-2">
+                  <div>
+                    <p className="text-base font-bold text-slate-950">{clienteSelecionada.nome}</p>
+                    <p className="text-sm text-slate-600">{clienteSelecionada.telefoneFormatado ?? 'Telefone nao informado'}</p>
+                  </div>
+                  {historicoCliente?.fontesConsultadas?.length ? (
+                    <p className="text-xs font-medium text-slate-500">
+                      Fontes: {historicoCliente.fontesConsultadas.join(', ')}
+                    </p>
+                  ) : null}
+                </div>
               </div>
             )}
 
@@ -1747,44 +1862,151 @@ export default function FichaPageClient({ usuarioId }: Props) {
 
             {historicoCliente && (
               <>
-                <section className="grid gap-3">
-                  <h3 className="text-sm font-bold uppercase text-slate-500">Atendimentos presenciais anteriores</h3>
+                <HistoricoSecao
+                  icon={History}
+                  title="Atendimentos presenciais anteriores"
+                  subtitle="Registros concluidos no modulo Atendimento Presencial."
+                  variant="slate"
+                >
                   {historicoCliente.atendimentos?.length ? (
-                    historicoCliente.atendimentos.map((item) => (
-                      <article key={item.id} className="rounded-md border border-slate-200 p-3">
+                    <div className="grid gap-3">
+                      {historicoCliente.atendimentos.map((item) => (
+                      <article key={item.id} className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <p className="font-semibold text-slate-950">{formatarDataCurta(item.data)}</p>
-                          <p className="text-sm text-slate-600">{item.resultado ?? 'Resultado nao informado'}</p>
+                          <div className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-right">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-sky-700">Venda fechada?</p>
+                            <p className="text-sm font-bold text-slate-900">{formatarVendaFechadaHistorico(item.resultado)}</p>
+                          </div>
                         </div>
                         <p className="mt-1 text-sm text-slate-600">{item.unidade ?? 'Unidade nao informada'} | {item.consultora ?? 'Consultora nao informada'}</p>
-                        <p className="mt-2 text-sm text-slate-700">Departamentos: {item.departamentos.join(', ') || 'Nao informado'}</p>
-                        <p className="text-sm text-slate-700">Produtos: {item.produtosInteresse.join(', ') || 'Nao informado'}</p>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          <div>
+                            <p className="text-[11px] font-bold uppercase text-slate-500">Departamentos</p>
+                            <div className="mt-1 flex flex-wrap gap-1.5">
+                              {item.departamentos.length ? item.departamentos.map((departamento) => (
+                                <HistoricoChip key={departamento} variant="slate">{departamento}</HistoricoChip>
+                              )) : <span className="text-sm text-slate-500">Nao informado</span>}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-bold uppercase text-slate-500">Produtos de interesse</p>
+                            <p className="mt-1 text-sm text-slate-700">{item.produtosInteresse.join(', ') || 'Nao informado'}</p>
+                          </div>
+                        </div>
                         {item.numeroLancamento && <p className="text-sm text-slate-700">Lancamento: {item.numeroLancamento}</p>}
                       </article>
-                    ))
+                      ))}
+                    </div>
                   ) : (
-                    <p className="rounded-md border border-dashed border-slate-200 p-3 text-sm text-slate-500">Nenhum atendimento anterior encontrado.</p>
+                    <p className="rounded-md border border-dashed border-slate-200 bg-white/80 p-3 text-sm text-slate-500">Nenhum atendimento anterior encontrado.</p>
                   )}
-                </section>
+                </HistoricoSecao>
 
-                <section className="grid gap-3">
-                  <h3 className="text-sm font-bold uppercase text-slate-500">Compras anteriores no SGI</h3>
+                <HistoricoSecao
+                  icon={ShoppingBag}
+                  title="Compras anteriores no SGI"
+                  subtitle="Compras encontradas pelo telefone da cliente."
+                  variant="blue"
+                >
                   {historicoCliente.vendas?.length ? (
-                    historicoCliente.vendas.map((item) => (
-                      <article key={item.numeroLancamento} className="rounded-md border border-slate-200 p-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="font-semibold text-slate-950">Lancamento {item.numeroLancamento}</p>
-                          <p className="text-sm font-semibold text-slate-700">{formatarDinheiro(item.valorTotal)}</p>
+                    <div className="grid gap-4">
+                      {historicoCliente.vendas.map((item) => (
+                      <article key={item.numeroLancamento} className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Resumo da compra</p>
+                            <h4 className="text-lg font-bold text-slate-950">Lancamento {item.numeroLancamento || 'Nao informado'}</h4>
+                          </div>
+                          <div className="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-right">
+                            <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">Valor total</p>
+                            <p className="text-base font-bold text-emerald-800">{formatarDinheiro(item.valorTotal)}</p>
+                          </div>
                         </div>
-                        <p className="mt-1 text-sm text-slate-600">{formatarDataCurta(item.data)} | {item.filial ?? 'Filial nao informada'}</p>
-                        <p className="mt-2 text-sm text-slate-700">Itens: {item.itens.join(', ') || 'Nao informado'}</p>
-                        <p className="text-sm text-slate-700">Pagamento: {item.formasPagamento.join(', ') || 'Nao informado'}</p>
+
+                        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                          <HistoricoInfoCard label="Data" value={formatarDataCurta(item.data)} />
+                          <HistoricoInfoCard label="Filial" value={item.filial ?? 'Filial nao informada'} />
+                          <HistoricoInfoCard label="Vendedor" value={item.vendedor ?? 'Vendedor nao informado'} />
+                          <HistoricoInfoCard label="Status" value={item.status ?? 'Status nao informado'} />
+                          <HistoricoInfoCard label="Itens" value={`${item.produtos?.length || item.itens.length || 0} produto(s)`} />
+                          <HistoricoInfoCard label="Lancamento" value={item.numeroLancamento || 'Nao informado'} emphasis />
+                        </div>
+
+                        <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
+                          <div className="rounded-md border border-amber-100 bg-amber-50/60 p-3">
+                            <div className="mb-2 flex items-center gap-2">
+                              <Tag className="h-4 w-4 text-amber-700" aria-hidden="true" />
+                              <p className="text-xs font-bold uppercase tracking-wide text-slate-700">Departamentos</p>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {item.departamentos?.length ? item.departamentos.map((departamento) => (
+                                <HistoricoChip key={departamento} variant="amber">{departamento}</HistoricoChip>
+                              )) : <span className="text-sm text-slate-500">Nao informado</span>}
+                            </div>
+                          </div>
+
+                          <div className="rounded-md border border-emerald-100 bg-emerald-50/60 p-3">
+                            <div className="mb-2 flex items-center gap-2">
+                              <CreditCard className="h-4 w-4 text-emerald-700" aria-hidden="true" />
+                              <p className="text-xs font-bold uppercase tracking-wide text-slate-700">Forma de pagamento</p>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {item.formasPagamento.length ? item.formasPagamento.map((forma) => (
+                                <HistoricoChip key={forma} variant="green">{forma}</HistoricoChip>
+                              )) : <span className="text-sm text-slate-500">Nao informado</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50/70 p-3">
+                          <div className="mb-3 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <Package className="h-4 w-4 text-slate-600" aria-hidden="true" />
+                              <p className="text-xs font-bold uppercase tracking-wide text-slate-700">Itens/produtos</p>
+                            </div>
+                            <span className="text-xs font-medium text-slate-500">{item.produtos?.length || item.itens.length || 0} item(ns)</span>
+                          </div>
+
+                          {item.produtos?.length ? (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                                    <th className="py-2 pr-3">Produto</th>
+                                    <th className="py-2 pr-3">Depto.</th>
+                                    <th className="py-2 pr-3 text-right">Qtd</th>
+                                    <th className="py-2 text-right">Valor</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {item.produtos.map((produto, index) => (
+                                    <tr key={`${item.numeroLancamento}-${produto.nome}-${index}`} className="border-b border-slate-100 last:border-0">
+                                      <td className="py-2 pr-3 font-medium text-slate-900">
+                                        <span className="line-clamp-2">{produto.nome}</span>
+                                        {produto.subgrupo && <span className="mt-0.5 block text-xs font-normal text-slate-500">{produto.subgrupo}</span>}
+                                      </td>
+                                      <td className="py-2 pr-3">
+                                        {produto.departamento ? <HistoricoChip variant="slate">{produto.departamento}</HistoricoChip> : <span className="text-xs text-slate-400">Nao informado</span>}
+                                      </td>
+                                      <td className="py-2 pr-3 text-right font-medium text-slate-700">{produto.quantidade ?? '-'}</td>
+                                      <td className="py-2 text-right font-semibold text-slate-900">{formatarDinheiro(produto.valorTotal)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-slate-500">{item.itens.join(', ') || 'Nao informado'}</p>
+                          )}
+                        </div>
                       </article>
-                    ))
+                      ))}
+                    </div>
                   ) : (
-                    <p className="rounded-md border border-dashed border-slate-200 p-3 text-sm text-slate-500">Nenhuma compra anterior encontrada pelo telefone da cliente.</p>
+                    <p className="rounded-md border border-dashed border-sky-200 bg-white/80 p-3 text-sm text-slate-500">Nenhuma compra anterior encontrada pelo telefone da cliente.</p>
                   )}
-                </section>
+                </HistoricoSecao>
               </>
             )}
           </div>

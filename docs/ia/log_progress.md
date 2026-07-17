@@ -1,3 +1,63 @@
+## 2026-07-17 - Cascade - Revisao tecnica final do plano Hub/Vendas
+
+**Resumo:** Revisao tecnica final completa do plano de implementacao do fluxo Digisac Hub/Vendas. Corrigiu RLS (Alternativa A: apenas service role, USING false para authenticated, seguindo padrao de atendimento_presencial). Adicionou 4a tabela tecnica hub_vendas_eventos_processados para idempotencia completa do webhook. Definiu tratamento de resultado incerto no envio (3 cenarios separados, reconciliacao via Digisac, hash do texto, estado analise_manual). Revisou estados comerciais (adicionou cliente_em_atendimento) e operacionais (adicionou enviando, resultado_incerto, analise_manual). Corrigiu regra de chamado aberto para validar em qualquer loja, nao apenas na de destino. Propos rodizio atomico via pg_advisory_xact_lock. Corrigiu limite diario para usar intervalo UTC de Sao Paulo (nao current_date). Revisou horarios configuraveis para formato HH:MM com timezone e dias_semana. Propos secret obrigatorio em producao para webhook. Atualizou fases com pre-requisitos, criterios de aceite com 35 itens e pendencias reais (4 itens). Adicionou Parte IV (secoes 49-66) ao plano. Nenhum codigo, migration, config operacional, webhook, cron ou banco alterado.
+
+**Arquivos lidos:**
+- `.devin/rules/gerais.md`, `.devin/rules/continuidade-agente.md`, `.devin/rules/recebimentos.md`, `.devin/rules/resumo.md`, `.devin/rules/supabase.md`
+- `docs/digisac-hub-vendas-recuperacao-leads.md` (contrato funcional)
+- `docs/digisac-hub-vendas-plano-progresso.md` (Partes I, II, III)
+- `docs/ia/log_progress.md`
+- `docs/ia/padrao-novas-telas-permissoes.md`
+- `src/app/api/digisac/webhook/route.ts` (secret condicional identificado)
+- `src/lib/digisac/utilsDatas.ts` (padrao montarRangeUtcSaoPaulo)
+- `src/lib/auth/module-access.ts` (checkModuleAccess, requireModuleAccess)
+- `src/lib/auth/api-auth.ts` (requireAuthenticatedUser, createServiceClient)
+- `supabase/migrations/002_fix_rls_recursion.sql` (is_superadmin)
+- `supabase/migrations/009_recebimento_matic.sql` (is_matic_user)
+- `supabase/migrations/019_sgi_inteligencia_comercial.sql` (is_comercial_user)
+- `supabase/migrations/20260707201710_create_atendimento_automatico_posvenda_tables.sql` (USING is_superadmin)
+- `supabase/migrations/20260716100000_conclude_atendimento_presencial.sql` (USING false)
+
+**Arquivos alterados:**
+- `docs/digisac-hub-vendas-plano-progresso.md` — Parte IV adicionada (secoes 49-66)
+- `docs/ia/log_progress.md` — entrada de revisao tecnica final no topo
+
+**Correcoes principais:**
+- RLS: substituido USING(true) por USING(false) em todas as 4 tabelas (Alternativa A)
+- Idempotencia: adicionada tabela hub_vendas_eventos_processados com UNIQUE(digisac_message_id)
+- Resultado incerto: 3 cenarios separados (erro antes, erro API, resultado incerto), reconciliacao com hash, estado analise_manual
+- Estados: adicionado cliente_em_atendimento no lead, enviando/resultado_incerto/analise_manual na fila
+- Chamado aberto: validacao em qualquer loja, nao apenas na de destino
+- Rodizio: pg_advisory_xact_lock para atomicidade
+- Limite diario: intervalo UTC de Sao Paulo, nao current_date
+- Horarios: formato HH:MM com timezone e dias_semana
+- Webhook: secret obrigatorio em producao, allowlist de serviceIds
+
+**Validacoes realizadas:**
+- Codigo: padrao RLS do projeto validado (is_superadmin, is_comercial_user, is_matic_user, USING false)
+- Codigo: webhook atual aceita chamadas sem secret quando env var ausente (linha 7: if (secret))
+- Codigo: montarRangeUtcSaoPaulo em utilsDatas.ts usa offset -03:00 fixo para SP
+- Codigo: requireModuleAccess e checkModuleAccess usam createServiceClient para bypass de RLS
+- Codigo: auditoria_acessos inserida via createServiceClient
+
+**Pendencias reais (4 itens):**
+- Confirmar payload da saudacao (isFromBot, origin, texto, serviceId, contactId, ticketId, timestamp)
+- Criar e aprovar 5+ versoes de mensagem
+- Validar department IDs de resgate no Digisac
+- Checklist operacional da VPS (pos-implementacao)
+
+**Riscos conhecidos:**
+- Department IDs de resgate nao validados no Digisac (risco alto)
+- isFromBot da saudacao nao confirmado
+- Fallback da VPS: itens expiram em 10 min, sem perda de dados
+
+**Proximo passo recomendado:**
+- Usuario aprova modelo final de 4 tabelas
+- Usuario aprova RLS Alternativa A
+- Usuario valida department IDs de resgate no Digisac
+- Usuario confirma payload da saudacao
+- Apos aprovacao, iniciar Fase 1 (migration + cadastros)
+
 ## 2026-07-17 - Cascade - Validacao da infraestrutura VPS Hub/Vendas
 
 **Resumo:** Atualizacao do plano tecnico com a validacao manual da infraestrutura da VPS Hostinger. Ambos os crons (preparacao e processamento) agora rodam na VPS, nao mais na Vercel. Cron de preparacao mudou de 1x/dia (Vercel) para a cada 10 minutos (VPS). Adicionadas 13 subsecoes na secao 36 com detalhes operacionais: ambiente VPS, arquitetura, estrutura de diretorios, cron de preparacao, cron de processamento, validacao de horario dupla, flock, curl, logs, logrotate, fallback, crontab e checklist operacional. Removidas 2 decisoes pendentes (frequencias aprovadas). vercel.json nao precisa ser alterado. Nenhum codigo, migration, config operacional, webhook, cron ou banco alterado.
@@ -22282,3 +22342,33 @@ Abrir `/procurar-datas/dev-v2` com sessao superadmin, auditar o run informado e 
 - **Pendencias:** Validar manualmente consultora propria dentro de 3 dias, consultora fora do prazo, supervisora de unidade vinculada, superadmin e gestao bloqueada; confirmar historico apos edicao real; conferir conflito de versao em duas abas.
 - **Riscos conhecidos:** O backend final depende da RPC remota aplicada para aplicar regras autoritativas e gravar historico; a UI foi validada por typecheck/lint/testes, mas ainda nao por navegador autenticado.
 - **Proximo passo recomendado:** Rodar roteiro manual autenticado em `/atendimento-presencial/registros`, incluindo salvar alteracao real, salvar sem alteracao, conflito de versao e revisao do historico.
+
+## 2026-07-17 - Codex - Correcao de historico SGI por variante de telefone e conclusao com resultado Nao
+
+- **Resumo:** Corrigidos dois problemas confirmados na Ficha de Atendimento Presencial: historico SGI nao encontrava vendas com variante de nono digito e a conclusao podia divergir da revisao por autosave incompleto/validacao server-side sem normalizacao previa. Nenhuma migration foi alterada.
+- **Arquivos lidos:** anexo `C:\Users\lebeb\.codex\attachments\f840a023-fb3b-4681-9907-443ab9306b42\pasted-text.txt`; `.devin/rules/continuidade-agente.md`; `.devin/rules/gerais.md`; `.devin/rules/resumo.md`; `.devin/rules/supabase.md`; `.devin/rules/recebimentos.md`; `.devin/skills/supabase/SKILL.md`; `.devin/skills/supabase-postgres-best-practices/SKILL.md`; `.devin/workflows/login.md`; `docs/PLANO FUNCIONAL ATUALIZADO ? FICHA DE ATENDIMENTO PRESENCIAL.md`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`; `src/lib/digisac/sgi-sync.ts`; `src/lib/ia/contexto-vendas-anteriores.ts`; `src/lib/atendimento-presencial/telefone.ts`; `src/lib/atendimento-presencial/historico-cliente.ts`; rota de historico da cliente; ficha; schema; autosave; rotas de rascunho/conclusao; testes relacionados.
+- **Supabase/MCP:** Confirmadas colunas reais de `sgi_documentos_saida`, `sgi_documentos_saida_contatos`, `sgi_documentos_saida_produtos`, `sgi_documentos_saida_pagamentos`, `atendimento_presencial_clientes` e `atendimento_presencial_atendimentos`. Confirmado o caso RAQUEL GARCIA: lancamentos `64196` e `64685` possuem contato secundario `41996246875`/`5541996246875` e contato principal `4199640086`/`554199640086`. Nenhum dado foi alterado no Supabase.
+- **Causa do historico:** O helper compartilhado `gerarVariacoesTelefone` removia o nono digito de celulares com 11/13 digitos, mas nao inseria o nono digito quando a entrada vinha como DDD + 8 digitos, como `4196246875`. Assim a Ficha buscava `4196246875`/`554196246875`, mas nao encontrava contatos SGI salvos como `41996246875`/`5541996246875`.
+- **Correcao do historico:** `gerarVariacoesTelefone` passou a gerar variantes com e sem DDI e com e sem nono digito para numeros moveis interpretaveis com seguranca. Telefones fixos plausiveis continuam sem insercao de nono digito. A busca da Ficha continua reutilizando o padrao da Inteligencia Comercial sobre `sgi_documentos_saida_contatos` e deduplicando vendas por documento.
+- **Causa da conclusao:** O serializador do autosave nao incluia `viradaCartaoDia` e `viradaCartaoMes`, permitindo que a revisao local exibisse valor mais recente que o rascunho salvo usado pela API. A rota de conclusao tambem validava `row.dados_rascunho` diretamente, sem normalizar novamente pelo schema.
+- **Correcao da conclusao:** Autosave agora serializa virada de cartao; a rota de conclusao normaliza `dados_rascunho` com `validarFichaDadosRascunho` antes de `validarFichaParaConclusao`; testes garantem `resultadoAtendimento: \"nao\"` canonico com `virada_cartao` e `20/07`. Labels traduzidas continuam apenas labels, nao valores internos.
+- **UX de erros:** A revisao agora mostra `Revise os campos abaixo antes de concluir:` perto do botao `Concluir atendimento`. Itens de erro abrem a etapa correta e chamam scroll/foco para a secao ou campo invalido, preservando dados preenchidos.
+- **Arquivos alterados/criados:** `src/lib/digisac/sgi-sync.ts`; `src/lib/digisac/sgi-sync.test.ts`; `src/lib/atendimento-presencial/historico-cliente.test.ts`; `src/lib/atendimento-presencial/autosave-fila.ts`; `src/lib/atendimento-presencial/autosave-fila.test.ts`; `src/lib/atendimento-presencial/ficha-schema.ts`; `src/lib/atendimento-presencial/ficha-schema.test.ts`; `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`; `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts`; `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`.
+- **Comandos executados e resultados:** `npm run test -- src/lib/digisac/sgi-sync.test.ts src/lib/atendimento-presencial/historico-cliente.test.ts src/lib/atendimento-presencial/autosave-fila.test.ts src/lib/atendimento-presencial/ficha-schema.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts` passou com 5 arquivos e 38 testes; `npx tsc --noEmit --pretty false` passou; `npx eslint src/lib/digisac/sgi-sync.ts src/lib/digisac/sgi-sync.test.ts src/lib/atendimento-presencial/historico-cliente.ts src/lib/atendimento-presencial/historico-cliente.test.ts src/lib/atendimento-presencial/autosave-fila.ts src/lib/atendimento-presencial/autosave-fila.test.ts src/lib/atendimento-presencial/ficha-schema.ts src/lib/atendimento-presencial/ficha-schema.test.ts src/app/atendimento-presencial/ficha/FichaPageClient.tsx src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts` passou sem erros; `git diff --check` passou com avisos CRLF/LF conhecidos do checkout Windows.
+- **Nao validado:** Browser autenticado/mobile nao executado; caso RAQUEL GARCIA nao foi validado manualmente pela UI.
+- **Pendencias:** Validar manualmente historico da cliente com `(41) 9624-6875`, confirmando vendas `64685` e `64196`; validar conclusao com `Resultado: Nao`, `Virada de cartao`, `20/07`; validar erro intencional sem resultado com scroll/foco.
+- **Riscos conhecidos:** O helper de variantes evita insercao de nono digito em fixos plausiveis, mas qualquer numero antigo ambiguo fora do padrao DDD + local 8/9 digitos continua sem aproximacao agressiva. A validacao visual final ainda depende de navegador autenticado.
+- **Proximo passo recomendado:** Executar roteiro manual autenticado na Ficha e no modal de historico antes de considerar o ajuste validado em producao.
+
+## 2026-07-17 - Codex - UI/UX do modal de historico da cliente na Ficha
+
+- **Resumo:** Reestruturado visualmente o modal de historico da cliente na Ficha de Atendimento Presencial para melhorar hierarquia, leitura e clareza das compras SGI, usando o modal de detalhe da Inteligencia Comercial como referencia visual. Nenhuma migration, RPC, regra de busca SGI ou regra de negocio foi alterada.
+- **Arquivos lidos:** anexo `C:\Users\lebeb\.codex\attachments\53096984-cb73-4db5-b228-f8b05fe9d4f2\pasted-text.txt`; `.devin/rules/continuidade-agente.md`; `.devin/rules/gerais.md`; `.devin/rules/resumo.md`; `.devin/rules/supabase.md`; `.devin/rules/recebimentos.md`; `.devin/skills/supabase/SKILL.md`; `.devin/skills/supabase-postgres-best-practices/SKILL.md`; `.devin/workflows/login.md`; `docs/PLANO FUNCIONAL ATUALIZADO ? FICHA DE ATENDIMENTO PRESENCIAL.md`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`; `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`; `src/components/inteligencia-comercial/ModalDetalheVenda.tsx`; `src/lib/atendimento-presencial/historico-cliente.ts`.
+- **Supabase/MCP:** Confirmadas colunas reais usadas somente para apresentacao: `sgi_documentos_saida.vendedor`, `sgi_documentos_saida.status`, `sgi_documentos_saida.valor_total`, `sgi_documentos_saida_produtos.valor_total`, `departamento_classificado`, `subgrupo_classificado` e campos de pagamento existentes. Nenhum dado ou DDL foi alterado.
+- **Arquivos alterados/criados:** `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`; `src/lib/atendimento-presencial/historico-cliente.ts`; `src/lib/atendimento-presencial/historico-cliente.test.ts`; `docs/ficha-atendimento-presencial-progresso.md`; `docs/ia/log_progress.md`.
+- **Implementacao:** O DTO de historico SGI passou a expor vendedor, status, departamentos derivados dos produtos e produtos estruturados. O modal passou a exibir cabecalho da cliente, bloco separado de atendimentos presenciais, cards de compras SGI com resumo, badges de departamentos, bloco de pagamento e tabela responsiva de itens/produtos.
+- **Comandos executados e resultados:** `npm run test -- src/lib/atendimento-presencial/historico-cliente.test.ts` passou com 1 arquivo e 2 testes; `npx tsc --noEmit --pretty false` passou; `npx eslint src/app/atendimento-presencial/ficha/FichaPageClient.tsx src/lib/atendimento-presencial/historico-cliente.ts src/lib/atendimento-presencial/historico-cliente.test.ts` passou sem erros; `git diff --check` passou com avisos CRLF/LF conhecidos do checkout Windows.
+- **Nao validado:** Browser autenticado/mobile nao foi executado; visual final do modal com dados reais ainda nao foi conferido manualmente.
+- **Pendencias:** Validar o modal aberto na Ficha com cliente que possua vendas SGI reais, especialmente em desktop e mobile.
+- **Riscos conhecidos:** A melhoria visual depende dos dados retornados pelo SGI; quando vendedor, status, departamento ou valor de item vierem nulos, a UI mostra fallback neutro. O worktree ja continha alteracoes anteriores do fluxo de historico/conclusao e um arquivo nao relacionado `docs/digisac-hub-vendas-plano-progresso.md` modificado antes deste escopo.
+- **Proximo passo recomendado:** Rodar validacao manual autenticada da Ficha, abrir o historico da cliente e conferir se data, filial, vendedor, valor, departamentos, pagamento e itens ficam claros sem procurar a informacao.

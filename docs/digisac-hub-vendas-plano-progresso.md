@@ -2818,3 +2818,1307 @@ ON CONFLICT (service_id) DO UPDATE SET service_name = EXCLUDED.service_name, ati
 10. **Pós-implementação:** checklist operacional da VPS (seção 36.13) — criar scripts, crontab, env, logs
 
 **Pare aqui. Aguarde aprovação explícita do usuário antes de iniciar qualquer implementação.**
+
+---
+
+# Parte IV — Revisão Técnica Final
+
+> **Esta Parte IV substitui e corrige seções anteriores da Parte III que foram identificadas como insuficientes ou incorretas.**
+> **Seções substituídas:** 33 (modelo de dados), 34 (estados), 35 (locks), 37.6 (validação final), 39 (migration), 43 (riscos), 44 (pendências), 45 (fases), 46 (critérios de aceite), 47 (documentos), 48 (próximo passo).
+> **Seções preservadas:** 26-32, 36 (infraestrutura VPS), 38 (estrutura de arquivos), 40 (tela), 41 (testes), 42 (impacto).
+> **Data da revisão:** 2026-07-17
+
+---
+
+## 49. RLS corrigido — Alternativa A: apenas service role
+
+### 49.1 Padrão validado no projeto
+
+O projeto usa funções SQL `SECURITY DEFINER` para RLS:
+
+| Função | Migration | Uso |
+|---|---|---|
+| `is_superadmin()` | `002_fix_rls_recursion.sql` | Verifica superadmin via `usuarios_permitidos` |
+| `is_comercial_user()` | `019_sgi_inteligencia_comercial.sql` | Usuário ativo do módulo comercial |
+| `is_matic_user()` | `009_recebimento_matic.sql` | Usuário da whitelist do Matic |
+
+**Padrão observado:**
+- `atendimento_automatico_posvenda`: `FOR SELECT TO authenticated USING (is_superadmin())` — apenas superadmin
+- `atendimento_presencial` (ficha): `FOR SELECT TO authenticated USING (false)` — bloqueio total para authenticated, tudo via API
+- `sgi`: `FOR SELECT USING (is_comercial_user())` — usuários comerciais
+- `recebimento`: `FOR SELECT USING (is_matic_user())` — usuários Matic
+
+**Nenhum módulo do projeto usa `USING (true)` para `authenticated`.**
+
+### 49.2 Decisão — Alternativa A
+
+**Recomendado: apenas service role.** Sem policies para `authenticated`.
+
+**Justificativa:**
+- O módulo Hub/Vendas não tem função SQL de autorização própria
+- Criar `is_hub_vendas_user()` exigiria replicar toda a lógica de `app_permissoes_perfil` + `app_permissoes_usuario` em SQL, o que é complexo e frágil
+- O padrão `atendimento_presencial` (ficha) já usa `USING (false)` e funciona corretamente via API
+- Todas as leituras e escritas passam por APIs protegidas com `requireModuleAccess('hub_vendas_recuperacao')`
+- O navegador nunca acessa as tabelas diretamente — sempre via API server-side com `createServiceClient()`
+- Service role bypassa RLS — é o padrão do projeto para webhooks, crons e processadores
+
+### 49.3 RLS final proposto
+
+```sql
+-- ============================================================
+-- RLS: APENAS SERVICE ROLE — SEM ACESSO DIRETO PARA AUTHENTICATED
+-- ============================================================
+
+-- hub_vendas_leads
+ALTER TABLE public.hub_vendas_leads ENABLE ROW LEVEL SECURITY;
+CREATE POLICY hub_vendas_leads_select ON public.hub_vendas_leads
+  FOR SELECT TO authenticated USING (false);
+CREATE POLICY hub_vendas_leads_insert ON public.hub_vendas_leads
+  FOR INSERT TO authenticated WITH CHECK (false);
+CREATE POLICY hub_vendas_leads_update ON public.hub_vendas_leads
+  FOR UPDATE TO authenticated USING (false) WITH CHECK (false);
+-- service_role bypassa RLS automaticamente — sem policies necessárias
+
+-- hub_vendas_recuperacao_fila
+ALTER TABLE public.hub_vendas_recuperacao_fila ENABLE ROW LEVEL SECURITY;
+CREATE POLICY hub_vendas_fila_select ON public.hub_vendas_recuperacao_fila
+  FOR SELECT TO authenticated USING (false);
+CREATE POLICY hub_vendas_fila_insert ON public.hub_vendas_recuperacao_fila
+  FOR INSERT TO authenticated WITH CHECK (false);
+CREATE POLICY hub_vendas_fila_update ON public.hub_vendas_recuperacao_fila
+  FOR UPDATE TO authenticated USING (false) WITH CHECK (false);
+
+-- hub_vendas_config
+ALTER TABLE public.hub_vendas_config ENABLE ROW LEVEL SECURITY;
+CREATE POLICY hub_vendas_config_select ON public.hub_vendas_config
+  FOR SELECT TO authenticated USING (false);
+CREATE POLICY hub_vendas_config_insert ON public.hub_vendas_config
+  FOR INSERT TO authenticated WITH CHECK (false);
+CREATE POLICY hub_vendas_config_update ON public.hub_vendas_config
+  FOR UPDATE TO authenticated USING (false) WITH CHECK (false);
+
+-- hub_vendas_eventos_processados
+ALTER TABLE public.hub_vendas_eventos_processados ENABLE ROW LEVEL SECURITY;
+CREATE POLICY hub_vendas_eventos_select ON public.hub_vendas_eventos_processados
+  FOR SELECT TO authenticated USING (false);
+CREATE POLICY hub_vendas_eventos_insert ON public.hub_vendas_eventos_processados
+  FOR INSERT TO authenticated WITH CHECK (false);
+```
+
+**Resultado:**
+- Usuário autenticado sem módulo: **zero acesso** às tabelas
+- Usuário autenticado com módulo: **zero acesso direto** — tudo via API
+- Service role (server-side): bypassa RLS — acesso total
+- Webhook, crons e processadores: usam service role via `createServiceClient()`
+
+### 49.4 Por que não Alternativa B
+
+A Alternativa B (função SQL de permissão) exigiria:
+1. Criar `is_hub_vendas_user()` como `SECURITY DEFINER`
+2. Replicar a lógica de `app_permissoes_perfil` + `app_permissoes_usuario` + `app_modulos` em SQL
+3. Manter a função sincronizada com mudanças no sistema de permissões
+4. Risco de recursão RLS se a função consultar tabelas com RLS
+
+A Alternativa A é mais segura, mais simples e segue o padrão já validado em `atendimento_presencial`.
+
+---
+
+## 50. Idempotência completa — 4ª tabela técnica
+
+### 50.1 Problema identificado
+
+O plano anterior citava `data.id` para idempotência mas não definia **onde** todos os eventos processados são persistidos. Guardar apenas `digisac_message_id_saudacao` no lead é insuficiente — não cobre:
+- Primeira mensagem em cada loja
+- Segunda/terceira loja chamada
+- Resposta após recuperação
+- Webhook duplicado
+- Evento atrasado
+- Reenvio do Digisac
+- Processamento simultâneo
+
+### 50.2 Decisão — criar `hub_vendas_eventos_processados`
+
+**A quarta tabela é necessária.** Sem ela, não há como garantir que um evento duplicado seja ignorado sem reprocessar toda a lógica de negócio.
+
+### 50.3 Tabela `hub_vendas_eventos_processados`
+
+**Responsabilidade:** registrar todo evento do webhook que foi processado pelo fluxo Hub/Vendas, garantindo idempotência completa.
+
+| Campo | Tipo | Not null | Default | Descrição |
+|---|---|---|---|---|
+| `id` | uuid PK | sim | `gen_random_uuid()` | |
+| `digisac_message_id` | text | sim | | `data.id` do payload |
+| `event` | text | sim | | Tipo do evento (ex: `message.created`) |
+| `service_id` | text | sim | | `data.serviceId` |
+| `contact_id` | text | não | | `data.contactId` |
+| `ticket_id` | text | não | | `data.ticketId` |
+| `tipo_processamento` | text | sim | | `saudacao_hub` / `mensagem_loja` / `resposta_recuperacao` / `ignorado` |
+| `lead_id` | uuid | não | | FK → `hub_vendas_leads` se aplicável |
+| `timestamp_evento` | timestamptz | sim | | `data.timestamp` do payload |
+| `resultado` | text | sim | | `lead_criado` / `conversao_registrada` / `resposta_registrada` / `ignorado_duplicado` / `ignorado_nao_relevante` |
+| `processado_em` | timestamptz | sim | `now()` | |
+
+**Constraints:**
+- `UNIQUE (digisac_message_id)` — impede processamento duplicado
+
+**Indexes:**
+- `idx_hve_message_id` em `digisac_message_id` (redundante com unique mas explícito)
+- `idx_hve_lead_id` em `lead_id`
+- `idx_hve_timestamp` em `timestamp_evento`
+
+### 50.4 Como funciona a idempotência
+
+```typescript
+// Antes de processar qualquer evento:
+const { data: existente } = await supabaseAdmin
+  .from('hub_vendas_eventos_processados')
+  .select('id, resultado')
+  .eq('digisac_message_id', payload.data.id)
+  .maybeSingle();
+
+if (existente) {
+  // Evento já foi processado — ignorar
+  return { ok: true, motivo: 'evento_duplicado', resultado_anterior: existente.resultado };
+}
+
+// Processar evento...
+// Registrar processamento:
+await supabaseAdmin
+  .from('hub_vendas_eventos_processados')
+  .insert({
+    digisac_message_id: payload.data.id,
+    event: payload.event,
+    service_id: payload.data.serviceId,
+    contact_id: payload.data.contactId,
+    ticket_id: payload.data.ticketId,
+    tipo_processamento: tipoProcessamento,
+    lead_id: leadId,
+    timestamp_evento: payload.data.timestamp,
+    resultado: resultadoProcessamento,
+  });
+```
+
+**Race condition:** se duas execuções tentarem inserir o mesmo `digisac_message_id` simultaneamente, a constraint `UNIQUE` faz uma falhar com erro de duplicidade. O código deve tratar esse erro como "evento já processado" (catch + ignorar).
+
+### 50.5 Retenção
+
+- **Período:** 90 dias (3 ciclos completos de 14 dias)
+- **Cleanup:** cron de limpeza (pode ser o mesmo cron de preparação ou um separado)
+- **Query:** `DELETE FROM hub_vendas_eventos_processados WHERE processado_em < now() - interval '90 days'`
+- **Crescimento estimado:** 10-20 eventos relevantes/dia × 90 dias = ~1.800 registros = < 100KB
+
+### 50.6 Impacto no Supabase
+
+- **Tamanho:** < 100KB em 90 dias
+- **Egress:** mínimo — 1 consulta por evento (select por PK)
+- **Write:** 1 insert por evento relevante (não por webhook — apenas eventos que passam o filtro)
+- **Índices:** 3 índices leves
+
+---
+
+## 51. Resultado incerto no envio
+
+### 51.1 Cenário problema
+
+```
+Digisac recebeu a mensagem
+→ aplicação teve timeout
+→ resposta não chegou
+→ messageId não foi persistido
+→ item expira
+→ sistema envia novamente
+→ cliente recebe 2 mensagens
+```
+
+### 51.2 Três cenários separados
+
+| Cenário | Exemplos | Retry automático? |
+|---|---|---|
+| **Erro antes da requisição** | Telefone inválido, chamado aberto, contato não criado, `ticket/transfer` falhou, conexão indisponível | Sim, controlado |
+| **Erro confirmado pela API** | API respondeu 4xx/5xx com body | Sim, avaliar caso |
+| **Resultado incerto** | Timeout no `POST /messages`, conexão encerrada, resposta parcial, erro de parse, processo caiu após chamada | **NÃO — nunca retry automático cego** |
+
+### 51.3 Tratamento de resultado incerto
+
+**Fluxo:**
+1. Marcar item da fila como `resultado_incerto` (não `erro`)
+2. **Não** incrementar contador de erros consecutivos
+3. **Não** permitir nova abordagem naquele ciclo sem decisão segura
+4. Reconciliar no Digisac: consultar mensagens recentes do contato
+5. Comparar:
+   - `contactId` corresponde
+   - `serviceId` corresponde
+   - ticket corresponde (se disponível)
+   - texto ou hash do texto corresponde
+   - horário da tentativa ± 5 minutos
+   - `isFromMe = true`
+6. Se encontrar correspondência: marcar como `enviado`
+7. Se não confirmar com segurança: mover para `analise_manual`
+8. **Não** enviar novamente
+
+### 51.4 Campos adicionais na fila
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `texto_hash` | text | Hash SHA-256 do texto enviado (para reconciliação) |
+| `tentativa_envio_em` | timestamptz | Momento exato da chamada POST /messages |
+| `estado_requisicao` | text | `nao_iniciada` / `em_andamento` / `confirmada` / `erro_api` / `resultado_incerto` |
+| `reconciliado_em` | timestamptz | Quando a reconciliação foi feita |
+| `reconciliacao_resultado` | text | `confirmado_enviado` / `nao_encontrado` / `pendente` |
+
+### 51.5 Critérios para considerar mensagem encontrada
+
+Todos devem ser verdadeiros:
+1. Mensagem encontrada no Digisac com `isFromMe = true`
+2. `contactId` corresponde ao contato criado/buscado
+3. `serviceId` corresponde à conexão de destino
+4. Texto da mensagem corresponde ao `texto_enviado` (ou `texto_hash` corresponde)
+5. Timestamp da mensagem no Digisac está dentro de ± 5 minutos do `tentativa_envio_em`
+
+### 51.6 Prazo para reconciliação
+
+- **Imediato:** na próxima execução do processador (até 2 minutos)
+- **Segunda tentativa:** na próxima preparação (até 10 minutos)
+- **Final:** se não confirmar em 30 minutos, mover para `analise_manual`
+
+### 51.7 Hash do texto
+
+```typescript
+import { createHash } from 'crypto';
+
+function hashTexto(texto: string): string {
+  return createHash('sha256').update(texto).digest('hex').substring(0, 16);
+}
+```
+
+- 16 caracteres (64 bits) — suficiente para evitar colisão em volume baixo
+- Persistido em `texto_hash` na fila
+- Usado na reconciliação para comparar com mensagens do Digisac
+
+---
+
+## 52. Estados revisados — comercial vs operacional
+
+### 52.1 Estado comercial do lead
+
+**Fonte de verdade:** `hub_vendas_leads.status`
+
+```
+aguardando_conversao
+  ├─→ convertido_organicamente (cliente chamou loja dentro de 24h)
+  ├─→ cliente_em_atendimento (chamado aberto em qualquer loja, sem conversão orgânica na janela)
+  ├─→ encaminhado_recuperacao (24h passou, não chamou, cron preparou)
+  │     └─→ recuperacao_enviada (mensagem enviada e confirmada)
+  │     └─→ recuperado (cliente respondeu após recuperação)
+  ├─→ fila_manual (após 48h sem conversão e sem envio)
+  └─→ encerrado (ciclo encerrado manualmente ou por tempo)
+```
+
+**Novo estado: `cliente_em_atendimento`**
+
+Representa: existe chamado aberto em uma das 3 lojas, mas não há evidência de conversão orgânica dentro da janela de 24h.
+
+**Por que existe:**
+- O cliente pode ter chamado a loja fora da janela de 24h (não é conversão orgânica)
+- O cliente pode ter um chamado aberto por outro motivo (não veio do hub)
+- Não deve ser contabilizado como conversão orgânica
+- Não deve receber recuperação automática (já está em atendimento)
+- Deve ser visível na tela e nas métricas como categoria separada
+
+### 52.2 Estado operacional da fila
+
+**Fonte de verdade:** `hub_vendas_recuperacao_fila.status`
+
+```
+agendado
+  ├─→ reservado (processador reservou)
+  │     ├─→ enviando (POST /messages em andamento)
+  │     │     ├─→ enviado (envio confirmado pela API)
+  │     │     ├─→ erro (falha confirmada antes ou pela API)
+  │     │     └─→ resultado_incerto (timeout, resposta perdida)
+  │     │           ├─→ enviado (reconciliação confirmou)
+  │     │           └─→ analise_manual (reconciliação não confirmou)
+  ├─→ cancelado (conversão, chamado aberto, ou pausa)
+  └─→ expirado (reserva expirada após 10 min sem envio)
+```
+
+**Novos estados:**
+- `enviando` — POST /messages em andamento (transitório)
+- `resultado_incerto` — timeout ou resposta perdida
+- `analise_manual` — reconciliação não confirmou envio
+
+### 52.3 Regra de não duplicação
+
+| Conceito | Tabela |
+|---|---|
+| Ciclo de vida do lead | `hub_vendas_leads.status` |
+| Lifecycle do envio | `hub_vendas_recuperacao_fila.status` |
+| Reserva, erro técnico, pausa, timeout, resultado incerto | **Apenas** na fila |
+| Conversão, recuperação, encerramento comercial | **Apenas** no lead |
+
+### 52.4 CHECK constraints atualizados
+
+**Lead:**
+```sql
+CHECK (status IN (
+  'aguardando_conversao',
+  'convertido_organicamente',
+  'cliente_em_atendimento',
+  'encaminhado_recuperacao',
+  'recuperacao_enviada',
+  'recuperado',
+  'fila_manual',
+  'encerrado'
+))
+```
+
+**Fila:**
+```sql
+CHECK (status IN (
+  'agendado', 'reservado', 'enviando', 'enviado',
+  'erro', 'resultado_incerto', 'cancelado', 'expirado', 'analise_manual'
+))
+```
+
+---
+
+## 53. Chamado aberto em qualquer loja
+
+### 53.1 Regra fechada — revisada
+
+A validação **não deve ocorrer apenas na conexão escolhida pelo rodízio**. Se existir chamado aberto em **qualquer uma das três lojas monitoradas**:
+
+- **Não enviar** recuperação
+- **Cancelar** item de fila
+- **Não abrir** ticket
+- **Não transferir**
+- **Não reutilizar** chamado para mensagem de resgate
+- **Registrar** a loja e o ticket encontrados
+- **Registrar** o motivo de bloqueio
+
+### 53.2 Diferenciação de casos
+
+| Caso | Definição | Status do lead |
+|---|---|---|
+| **Conversão orgânica** | Cliente iniciou contato dentro de 24h após entrar no Hub | `convertido_organicamente` |
+| **Cliente em atendimento** | Existe chamado aberto, mas sem evidência de conversão orgânica dentro de 24h | `cliente_em_atendimento` |
+
+**Não contabilizar automaticamente o segundo caso como conversão orgânica.**
+
+### 53.3 Como representar no lead
+
+Quando a reconciliação ou o webhook detectar chamado aberto em qualquer loja:
+
+1. Se dentro de 24h após `data_entrada_hub`:
+   - Marcar `convertido_organicamente` com `loja_principal` = loja do chamado
+   - `data_conversao` = timestamp do chamado
+
+2. Se fora de 24h mas lead ainda em `aguardando_conversao`:
+   - Marcar `cliente_em_atendimento`
+   - Registrar `loja_chamado_aberto` e `ticket_chamado_aberto` (campos novos)
+   - Cancelar item de fila se existir
+   - Não enviar recuperação
+
+### 53.4 Campos adicionais no lead
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `loja_chamado_aberto` | text | Loja onde chamado aberto foi encontrado |
+| `ticket_chamado_aberto_id` | text | ID do ticket aberto encontrado |
+| `data_chamado_aberto_detectado` | timestamptz | Quando o chamado aberto foi detectado |
+
+### 53.5 Métricas
+
+No painel, separar:
+- **Convertidos organicamente:** leads com `status = 'convertido_organicamente'`
+- **Clientes em atendimento:** leads com `status = 'cliente_em_atendimento'`
+- **Não convertidos:** leads com `status = 'aguardando_conversao'` ou `'encaminhado_recuperacao'`
+
+### 53.6 Validação em 3 momentos (mantido)
+
+1. **Reconciliação** (cron de preparação): verificar chamados abertos nas 3 lojas
+2. **Preparação da fila**: antes de agendar, verificar chamado aberto em qualquer loja
+3. **Imediatamente antes do envio** (processador): validação final em qualquer loja
+
+---
+
+## 54. Rodízio atômico
+
+### 54.1 Problema identificado
+
+A preparação ocorre a cada 10 minutos e pode existir concorrência. O padrão atual:
+
+```
+ler última conexão → escolher próxima → atualizar depois
+```
+
+**sem lock ou operação atômica** permite que duas execuções leiam a mesma posição e escolham a mesma conexão.
+
+### 54.2 Avaliação de `hub_vendas_config` com JSONB
+
+JSONB **não é adequado** para controle de rodízio concorrente porque:
+- O `UPDATE` em JSONB não é atômico no nível do campo — lê o JSON inteiro, modifica, reescreve
+- Não há `FOR UPDATE` sobre uma chave JSONB específica
+- Duas execuções podem ler o mesmo JSON simultaneamente
+
+### 54.3 Solução proposta — advisory lock + update condicional
+
+```sql
+-- ============================================================
+-- RODÍZIO ATÔMICO VIA ADVISORY LOCK
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION proxima_conexao_rodizio()
+RETURNS TEXT AS $$
+DECLARE
+  ordem_conexoes TEXT[] := ARRAY[
+    'c60d720f-5ad5-4a1b-bedb-e51495dee686', -- Portão
+    '0973f84b-8294-4615-9657-ba95b6346246', -- Bigorrilho
+    '1352c41b-80a9-4e74-b9d9-4c5e7aed060e'  -- Hauer/Marechal
+  ];
+  posicao_atual INTEGER;
+  proxima_posicao INTEGER;
+  conexao_escolhida TEXT;
+BEGIN
+  -- Advisory lock exclusivo para rodízio
+  PERFORM pg_advisory_xact_lock(987654321);
+
+  -- Ler posição atual
+  SELECT (valor->>'ordem')::INTEGER INTO posicao_atual
+  FROM public.hub_vendas_config
+  WHERE chave = 'rodizio_ultima_conexao';
+
+  -- Calcular próxima posição (circular)
+  proxima_posicao := COALESCE(posicao_atual, -1) + 1;
+  IF proxima_posicao > 2 THEN
+    proxima_posicao := 0;
+  END IF;
+
+  conexao_escolhida := ordem_conexoes[proxima_posicao + 1]; -- arrays SQL são 1-indexed
+
+  -- Persistir nova posição
+  UPDATE public.hub_vendas_config
+  SET valor = jsonb_build_object('serviceId', conexao_escolhida, 'ordem', proxima_posicao),
+      updated_at = now()
+  WHERE chave = 'rodizio_ultima_conexao';
+
+  RETURN conexao_escolhida;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+```
+
+### 54.4 Comportamento
+
+1. `pg_advisory_xact_lock(987654321)` — bloqueia até obter lock exclusivo
+2. Lê posição atual do rodízio
+3. Calcula próxima posição (circular: 0 → 1 → 2 → 0)
+4. Persiste nova posição
+5. Retorna `serviceId` da conexão escolhida
+6. Lock é liberado automaticamente ao final da transação
+
+### 54.5 Quando nenhuma conexão estiver disponível
+
+A função retorna o `serviceId` da próxima conexão na ordem do rodízio. A verificação de elegibilidade (pausada, desconectada, limite atingido) deve ser feita **após** a escolha:
+
+```typescript
+const conexaoEscolhida = await supabaseAdmin.rpc('proxima_conexao_rodizio');
+// Verificar se a conexão está elegível
+if (!conexaoElegivel(conexaoEscolhida)) {
+  // Tentar próxima na ordem
+  // Se nenhuma elegível, não criar item de fila
+}
+```
+
+**Se nenhuma conexão estiver elegível:** não criar item de fila. O lead permanece `aguardando_conversao` ou `encaminhado_recuperacao`. Na próxima execução do cron de preparação, tenta novamente.
+
+### 54.6 Pular conexões inelegíveis
+
+A função `proxima_conexao_rodizio` retorna apenas a próxima posição. A lógica de pular conexões inelegíveis deve ser feita no código:
+
+```typescript
+const ordemConexoes = [
+  SERVICE_ID_PORTAO,
+  SERVICE_ID_BIGORRILHO,
+  SERVICE_ID_HAUER,
+];
+
+let conexaoEscolhida: string | null = null;
+for (let i = 0; i < 3; i++) {
+  const candidata = await supabaseAdmin.rpc('proxima_conexao_rodizio');
+  if (conexaoElegivel(candidata)) {
+    conexaoEscolhida = candidata;
+    break;
+  }
+  // Se não elegível, a próxima chamada avança o rodízio
+}
+```
+
+**Importante:** cada chamada à função avança o rodízio. Se nenhuma das 3 for elegível, o rodízio volta à posição original (3 avanços = volta ao início).
+
+---
+
+## 55. Limite diário por timezone
+
+### 55.1 Problema identificado
+
+```sql
+enviado_em::date = current_date
+```
+
+Isso usa o timezone da sessão do Postgres, que pode não ser `America/Sao_Paulo`. O limite de 15 envios deve considerar o **dia comercial em São Paulo**.
+
+### 55.2 Solução — intervalo UTC calculado
+
+Reutilizar o padrão de `montarRangeUtcSaoPaulo` de `src/lib/digisac/utilsDatas.ts`:
+
+```typescript
+function obterInicioDiaSaoPauloUTC(): { inicioUtc: string; fimUtc: string } {
+  const agora = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const dia = pad(agora.getUTCDate());
+  const mes = pad(agora.getUTCMonth() + 1);
+  const ano = agora.getUTCFullYear();
+
+  // Início do dia em SP: 00:00:00-03:00 = 03:00:00Z
+  const inicioSp = new Date(`${ano}-${mes}-${dia}T00:00:00-03:00`);
+  // Fim do dia em SP: 23:59:59.999-03:00 = 02:59:59.999Z (próximo dia)
+  const fimSp = new Date(`${ano}-${mes}-${dia}T23:59:59.999-03:00`);
+
+  return {
+    inicioUtc: inicioSp.toISOString(),
+    fimUtc: fimSp.toISOString(),
+  };
+}
+```
+
+### 55.3 Query de contagem
+
+```sql
+SELECT count(*) FROM hub_vendas_recuperacao_fila
+WHERE conexao_destino_id = $1
+  AND status = 'enviado'
+  AND enviado_em >= $2  -- inicio_dia_utc
+  AND enviado_em < $3   -- inicio_proximo_dia_utc
+```
+
+### 55.4 Onde usar
+
+A mesma regra deve ser usada em:
+- **Preparação** (cron de 10 min): verificar limite antes de agendar
+- **Validação final** (processador): verificar limite antes de enviar
+- **Métricas**: contagem diária por conexão
+- **Tela administrativa**: exibir envios restantes por conexão
+
+### 55.5 Helper centralizado
+
+Criar `src/lib/digisac/hub-vendas/timezone-helpers.ts` com:
+- `obterInicioDiaSaoPauloUTC()` — retorna intervalo UTC do dia atual em SP
+- `obterIntervaloHorarioPermitido()` — retorna se horário atual está dentro de 09:00-18:00 SP
+- `ehDiaPermitido()` — verifica se é seg-sáb em SP
+- `ehHorarioPermitido()` — combina dia + horário
+
+---
+
+## 56. Horários configuráveis
+
+### 56.1 Formato revisado
+
+**Anterior (insuficiente):**
+```json
+{
+  "horario_inicio": 9,
+  "horario_fim": 18
+}
+```
+
+**Novo formato explícito:**
+```json
+{
+  "horario_inicio": "09:00",
+  "horario_fim": "18:00",
+  "timezone": "America/Sao_Paulo",
+  "dias_semana": [1, 2, 3, 4, 5, 6]
+}
+```
+
+### 56.2 Validação dos valores
+
+- `horario_inicio`: formato `HH:MM`, entre `00:00` e `23:59`
+- `horario_fim`: formato `HH:MM`, entre `00:00` e `23:59`
+- `horario_inicio` < `horario_fim` (não suporta janela noturna)
+- `timezone`: string IANA válida (default: `America/Sao_Paulo`)
+- `dias_semana`: array de inteiros 0-6 (0 = domingo, 6 = sábado)
+
+### 56.3 Comportamento se configuração inválida
+
+- Se `horario_inicio` ou `horario_fim` ausentes ou inválidos: **fallback seguro** — não enviar nada, registrar erro
+- Se `timezone` ausente: usar `America/Sao_Paulo` como default
+- Se `dias_semana` ausente: usar `[1, 2, 3, 4, 5, 6]` como default
+- **Nunca** iniciar envio se a configuração for inválida
+
+### 56.4 Regra absoluta
+
+**Nenhum envio pode começar às 18:00 ou depois.** A validação interna nas rotas deve usar:
+
+```typescript
+function ehHorarioPermitido(config: ConfigHorario): boolean {
+  const agora = new Date();
+  const horaSp = obterHoraSaoPaulo(agora); // "HH:MM"
+  const diaSemana = obterDiaSemanaSaoPaulo(agora); // 0-6
+
+  if (!config.dias_semana.includes(diaSemana)) return false;
+  if (horaSp < config.horario_inicio) return false;
+  if (horaSp >= config.horario_fim) return false; // estritamente menor
+
+  return true;
+}
+```
+
+### 56.5 Feriados
+
+Feriados permanecem **fora do escopo** nesta fase. O sistema não verifica feriados. Se necessário no futuro, adicionar tabela de feriados ou integração com API externa.
+
+---
+
+## 57. Segurança do webhook
+
+### 57.1 Problema identificado
+
+O webhook atual em `src/app/api/digisac/webhook/route.ts:6-15`:
+
+```typescript
+const secret = process.env.DIGISAC_WEBHOOK_SECRET;
+if (secret) {
+  // valida
+}
+```
+
+Se `DIGISAC_WEBHOOK_SECRET` não estiver configurado, **qualquer chamada é aceita**.
+
+### 57.2 Comportamento seguro para produção
+
+**Proposta:**
+
+```typescript
+const secret = process.env.DIGISAC_WEBHOOK_SECRET;
+if (!secret) {
+  // Em produção: erro de configuração
+  if (process.env.NODE_ENV === 'production') {
+    console.error('[WEBHOOK] DIGISAC_WEBHOOK_SECRET não configurado');
+    return NextResponse.json({ ok: false, error: 'config_error' }, { status: 500 });
+  }
+  // Em desenvolvimento: permite sem secret (apenas localhost)
+  // Mas loga aviso
+  console.warn('[WEBHOOK] Secret ausente — modo desenvolvimento');
+} else {
+  const headerSecret =
+    request.headers.get('x-digisac-secret') ??
+    request.nextUrl.searchParams.get('secret');
+  if (headerSecret !== secret) {
+    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
+  }
+}
+```
+
+### 57.3 Validações adicionais
+
+| Validação | Implementação |
+|---|---|
+| **Secret obrigatório em produção** | `if (!secret && NODE_ENV === 'production') return 500` |
+| **Allowlist dos 4 serviceIds** | Rejeitar eventos com `serviceId` não monitorado |
+| **Validação de schema** | `event`, `data.id`, `data.serviceId` obrigatórios |
+| **Limite de tamanho do payload** | Rejeitar payloads > 1MB |
+| **Não logar payload integral** | Apenas `data.id`, `serviceId`, `isFromMe`, `type` |
+| **Sempre impedir conexão não monitorada** | Allowlist antes de qualquer processamento |
+
+### 57.4 Allowlist de serviceIds
+
+```typescript
+const SERVICE_IDS_MONITORADOS = new Set([
+  '4af28025-c210-4336-a560-785d2fb8a778', // Vendas/Hub
+  '0973f84b-8294-4615-9657-ba95b6346246', // Bigorrilho
+  'c60d720f-5ad5-4a1b-bedb-e51495dee686', // Portão
+  '1352c41b-80a9-4e74-b9d9-4c5e7aed060e', // Hauer/Marechal
+]);
+
+const serviceId = payload?.data?.serviceId;
+if (!serviceId || !SERVICE_IDS_MONITORADOS.has(serviceId)) {
+  return NextResponse.json({ ok: true, motivo: 'conexao_nao_monitorada' }, { status: 200 });
+}
+```
+
+**Retorna 200** (não 403) para não acionar retry do Digisac, mas não processa.
+
+---
+
+## 58. Preparação recorrente — idempotente
+
+### 58.1 Decisão mantida
+
+Cron: `*/10 9-17 * * 1-6` (a cada 10 min, seg-sáb, 09:00-17:59)
+Rota: `https://lebebe.cloud/api/cron/hub-vendas-preparar-fila`
+
+### 58.2 Idempotência
+
+A rota deve ser **idempotente** e poder receber chamadas repetidas sem duplicar itens.
+
+**Como garantir:**
+- Unique `lead_id` em `hub_vendas_recuperacao_fila` — se já existe item para o lead, não criar outro
+- `INSERT ... ON CONFLICT (lead_id) DO NOTHING` ou verificar existência antes
+- Múltiplas execuções do cron de preparação não criam filas duplicadas
+
+### 58.3 Critérios de seleção
+
+A preparação deve localizar somente leads que:
+- Completaram 24 horas após `data_entrada_hub`
+- Ainda não completaram 48 horas
+- Não converteram (`status = 'aguardando_conversao'`)
+- Não possuem chamado aberto em qualquer loja
+- Não possuem abordagem ou fila já criada (verificar `hub_vendas_recuperacao_fila` com `lead_id` correspondente)
+- Ainda não foram movidos para manual
+
+### 58.4 Atraso máximo
+
+Atraso máximo esperado após completar 24 horas: **menos de 10 minutos** (próxima execução do cron de 10 min).
+
+### 58.5 Sem dependência de Vercel cron
+
+A preparação roda exclusivamente na VPS. `vercel.json` não é alterado.
+
+---
+
+## 59. Processador periódico — validação interna
+
+### 59.1 Decisão mantida
+
+Cron: `*/2 9-17 * * 1-6` (a cada 2 min, seg-sáb, 09:00-17:59)
+Rota: `https://lebebe.cloud/api/cron/hub-vendas-processar-fila`
+
+### 59.2 Validação interna obrigatória
+
+O cron do host é apenas a **primeira proteção**. A rota deve validar internamente:
+
+```typescript
+function validarHorarioPermitido(): boolean {
+  const agora = new Date();
+  const horaSp = obterHoraSaoPaulo(agora);
+  const diaSemana = obterDiaSemanaSaoPaulo(agora);
+
+  // Segunda a sábado (1-6)
+  if (diaSemana === 0) return false; // Domingo
+  if (diaSemana < 1 || diaSemana > 6) return false;
+
+  // 09:00 a 18:00 (estritamente menor que 18:00)
+  if (horaSp < '09:00') return false;
+  if (horaSp >= '18:00') return false;
+
+  return true;
+}
+
+// Na rota:
+if (!validarHorarioPermitido()) {
+  return NextResponse.json({ ok: true, motivo: 'fora_horario' }, { status: 200 });
+}
+```
+
+### 59.3 Reconciliação de resultado incerto
+
+A cada execução, o processador deve:
+1. Buscar itens com `status = 'resultado_incerto'`
+2. Para cada um, executar reconciliação (ver seção 51)
+3. Se confirmado: marcar `enviado`
+4. Se não confirmado e > 30 min: mover para `analise_manual`
+
+---
+
+## 60. Modelo de dados final — 4 tabelas
+
+### 60.1 Resumo
+
+| Tabela | Responsabilidade | RLS |
+|---|---|---|
+| `hub_vendas_leads` | Ciclo do lead, conversão, lojas, encerramento | `USING (false)` para authenticated |
+| `hub_vendas_recuperacao_fila` | Fila de envios com reserva atômica + log | `USING (false)` para authenticated |
+| `hub_vendas_config` | Pausas, versões de mensagem, parâmetros | `USING (false)` para authenticated |
+| `hub_vendas_eventos_processados` | Idempotência completa do webhook | `USING (false)` para authenticated |
+
+### 60.2 Tabela `hub_vendas_leads` — campos finais
+
+**Mantidos da seção 33.2:**
+- `id`, `telefone_normalizado_ddi`, `telefone_normalizado`, `ciclo_numero`
+- `data_entrada_hub`, `digisac_message_id_saudacao`, `digisac_contact_id_hub`, `digisac_ticket_id_hub`
+- `nome_contato_hub`, `loja_principal`, `lojas_chamadas`, `chamou_mais_de_uma_loja`
+- `data_conversao`, `data_primeira_resposta_loja`
+- `conexao_recuperacao_id`, `data_recuperacao_enviada`, `data_recuperacao_respondida`
+- `versao_mensagem_usada`, `digisac_message_id_recuperacao`, `digisac_contact_id_recuperacao`, `digisac_ticket_id_recuperacao`
+- `erro`, `motivo_fila_manual`, `pausado`, `created_at`, `updated_at`
+
+**Adicionados nesta revisão:**
+- `loja_chamado_aberto` text — loja onde chamado aberto foi encontrado
+- `ticket_chamado_aberto_id` text — ID do ticket aberto
+- `data_chamado_aberto_detectado` timestamptz — quando detectado
+
+**Status atualizado (CHECK):**
+```sql
+CHECK (status IN (
+  'aguardando_conversao',
+  'convertido_organicamente',
+  'cliente_em_atendimento',
+  'encaminhado_recuperacao',
+  'recuperacao_enviada',
+  'recuperado',
+  'fila_manual',
+  'encerrado'
+))
+```
+
+### 60.3 Tabela `hub_vendas_recuperacao_fila` — campos finais
+
+**Mantidos da seção 33.3:**
+- `id`, `lead_id`, `conexao_destino_id`, `conexao_destino_nome`
+- `status`, `programado_para`, `reservado_em`, `reservado_por`
+- `enviado_em`, `resultado`, `erro`, `motivo_cancelamento`
+- `versao_mensagem`, `texto_enviado`
+- `digisac_message_id`, `digisac_contact_id`, `digisac_ticket_id`
+- `created_at`, `updated_at`
+
+**Adicionados nesta revisão:**
+- `texto_hash` text — hash SHA-256 do texto enviado
+- `tentativa_envio_em` timestamptz — momento exato da chamada POST /messages
+- `estado_requisicao` text — `nao_iniciada` / `em_andamento` / `confirmada` / `erro_api` / `resultado_incerto`
+- `reconciliado_em` timestamptz — quando a reconciliação foi feita
+- `reconciliacao_resultado` text — `confirmado_enviado` / `nao_encontrado` / `pendente`
+
+**Status atualizado (CHECK):**
+```sql
+CHECK (status IN (
+  'agendado', 'reservado', 'enviando', 'enviado',
+  'erro', 'resultado_incerto', 'cancelado', 'expirado', 'analise_manual'
+))
+```
+
+### 60.4 Tabela `hub_vendas_config` — formato revisado
+
+**Chave `parametros` revisada:**
+```json
+{
+  "horario_inicio": "09:00",
+  "horario_fim": "18:00",
+  "timezone": "America/Sao_Paulo",
+  "dias_semana": [1, 2, 3, 4, 5, 6],
+  "limite_diario": 15,
+  "intervalo_min_seg": 180,
+  "intervalo_max_seg": 300,
+  "pausa_automatica_erros": 3,
+  "retencao_eventos_dias": 90
+}
+```
+
+### 60.5 Tabela `hub_vendas_eventos_processados` — nova
+
+Conforme seção 50.3.
+
+---
+
+## 61. Migration final proposta
+
+### 61.1 Arquivo
+
+`supabase/migrations/YYYYMMDDHHMMSS_hub_vendas_leads_fila_config_eventos.sql`
+
+### 61.2 Estrutura completa
+
+```sql
+-- ============================================================
+-- HUB VENDAS: LEADS, FILA, CONFIG, EVENTOS PROCESSADOS
+-- RLS: APENAS SERVICE ROLE — SEM ACESSO DIRETO PARA AUTHENTICATED
+-- ============================================================
+
+-- Tabela 1: hub_vendas_leads
+CREATE TABLE IF NOT EXISTS public.hub_vendas_leads (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  telefone_normalizado_ddi text NOT NULL,
+  telefone_normalizado text NOT NULL,
+  ciclo_numero integer NOT NULL,
+  data_entrada_hub timestamptz NOT NULL,
+  digisac_message_id_saudacao text,
+  digisac_contact_id_hub text,
+  digisac_ticket_id_hub text,
+  nome_contato_hub text,
+  status text NOT NULL CHECK (status IN (
+    'aguardando_conversao',
+    'convertido_organicamente',
+    'cliente_em_atendimento',
+    'encaminhado_recuperacao',
+    'recuperacao_enviada',
+    'recuperado',
+    'fila_manual',
+    'encerrado'
+  )),
+  loja_principal text,
+  lojas_chamadas text[],
+  chamou_mais_de_uma_loja boolean DEFAULT false,
+  data_conversao timestamptz,
+  data_primeira_resposta_loja timestamptz,
+  loja_chamado_aberto text,
+  ticket_chamado_aberto_id text,
+  data_chamado_aberto_detectado timestamptz,
+  conexao_recuperacao_id text,
+  data_recuperacao_enviada timestamptz,
+  data_recuperacao_respondida timestamptz,
+  versao_mensagem_usada integer,
+  digisac_message_id_recuperacao text,
+  digisac_contact_id_recuperacao text,
+  digisac_ticket_id_recuperacao text,
+  erro text,
+  motivo_fila_manual text,
+  pausado boolean DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT hub_vendas_leads_telefone_ciclo_unique UNIQUE (telefone_normalizado_ddi, ciclo_numero)
+);
+
+CREATE INDEX IF NOT EXISTS idx_hvl_telefone_ddi ON public.hub_vendas_leads (telefone_normalizado_ddi);
+CREATE INDEX IF NOT EXISTS idx_hvl_status ON public.hub_vendas_leads (status);
+CREATE INDEX IF NOT EXISTS idx_hvl_data_entrada ON public.hub_vendas_leads (data_entrada_hub);
+
+-- Tabela 2: hub_vendas_recuperacao_fila
+CREATE TABLE IF NOT EXISTS public.hub_vendas_recuperacao_fila (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id uuid NOT NULL REFERENCES public.hub_vendas_leads(id),
+  conexao_destino_id text NOT NULL,
+  conexao_destino_nome text,
+  status text NOT NULL CHECK (status IN (
+    'agendado', 'reservado', 'enviando', 'enviado',
+    'erro', 'resultado_incerto', 'cancelado', 'expirado', 'analise_manual'
+  )),
+  programado_para timestamptz NOT NULL,
+  reservado_em timestamptz,
+  reservado_por text,
+  enviado_em timestamptz,
+  resultado text,
+  erro text,
+  motivo_cancelamento text,
+  versao_mensagem integer,
+  texto_enviado text,
+  texto_hash text,
+  tentativa_envio_em timestamptz,
+  estado_requisicao text,
+  reconciliado_em timestamptz,
+  reconciliacao_resultado text,
+  digisac_message_id text,
+  digisac_contact_id text,
+  digisac_ticket_id text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT hub_vendas_fila_lead_unique UNIQUE (lead_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_hvf_status_programado ON public.hub_vendas_recuperacao_fila (status, programado_para);
+CREATE INDEX IF NOT EXISTS idx_hvf_reservado_em ON public.hub_vendas_recuperacao_fila (reservado_em);
+CREATE INDEX IF NOT EXISTS idx_hvf_conexao_data ON public.hub_vendas_recuperacao_fila (conexao_destino_id, enviado_em);
+CREATE INDEX IF NOT EXISTS idx_hvf_estado_requisicao ON public.hub_vendas_recuperacao_fila (estado_requisicao);
+
+-- Tabela 3: hub_vendas_config
+CREATE TABLE IF NOT EXISTS public.hub_vendas_config (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  chave text NOT NULL UNIQUE,
+  valor jsonb NOT NULL,
+  criado_por text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Tabela 4: hub_vendas_eventos_processados
+CREATE TABLE IF NOT EXISTS public.hub_vendas_eventos_processados (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  digisac_message_id text NOT NULL UNIQUE,
+  event text NOT NULL,
+  service_id text NOT NULL,
+  contact_id text,
+  ticket_id text,
+  tipo_processamento text NOT NULL,
+  lead_id uuid REFERENCES public.hub_vendas_leads(id),
+  timestamp_evento timestamptz NOT NULL,
+  resultado text NOT NULL,
+  processado_em timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_hve_lead_id ON public.hub_vendas_eventos_processados (lead_id);
+CREATE INDEX IF NOT EXISTS idx_hve_timestamp ON public.hub_vendas_eventos_processados (timestamp_evento);
+
+-- Config iniciais
+INSERT INTO public.hub_vendas_config (chave, valor) VALUES
+  ('pausa_geral', '{"ativo": false, "motivo": null, "pausado_por": null, "pausado_em": null}'::jsonb),
+  ('rodizio_ultima_conexao', '{"serviceId": null, "ordem": 0}'::jsonb),
+  ('versoes_mensagens', '{"versoes": [], "proxima_versao": 1}'::jsonb),
+  ('parametros', '{"horario_inicio": "09:00", "horario_fim": "18:00", "timezone": "America/Sao_Paulo", "dias_semana": [1,2,3,4,5,6], "limite_diario": 15, "intervalo_min_seg": 180, "intervalo_max_seg": 300, "pausa_automatica_erros": 3, "retencao_eventos_dias": 90}'::jsonb)
+ON CONFLICT (chave) DO NOTHING;
+
+-- Função de rodízio atômico
+CREATE OR REPLACE FUNCTION public.proxima_conexao_rodizio()
+RETURNS TEXT AS $$
+DECLARE
+  ordem_conexoes TEXT[] := ARRAY[
+    'c60d720f-5ad5-4a1b-bedb-e51495dee686',
+    '0973f84b-8294-4615-9657-ba95b6346246',
+    '1352c41b-80a9-4e74-b9d9-4c5e7aed060e'
+  ];
+  posicao_atual INTEGER;
+  proxima_posicao INTEGER;
+  conexao_escolhida TEXT;
+BEGIN
+  PERFORM pg_advisory_xact_lock(987654321);
+  SELECT (valor->>'ordem')::INTEGER INTO posicao_atual
+  FROM public.hub_vendas_config WHERE chave = 'rodizio_ultima_conexao';
+  proxima_posicao := COALESCE(posicao_atual, -1) + 1;
+  IF proxima_posicao > 2 THEN proxima_posicao := 0; END IF;
+  conexao_escolhida := ordem_conexoes[proxima_posicao + 1];
+  UPDATE public.hub_vendas_config
+  SET valor = jsonb_build_object('serviceId', conexao_escolhida, 'ordem', proxima_posicao), updated_at = now()
+  WHERE chave = 'rodizio_ultima_conexao';
+  RETURN conexao_escolhida;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- RLS: APENAS SERVICE ROLE
+ALTER TABLE public.hub_vendas_leads ENABLE ROW LEVEL SECURITY;
+CREATE POLICY hub_vendas_leads_select ON public.hub_vendas_leads FOR SELECT TO authenticated USING (false);
+CREATE POLICY hub_vendas_leads_insert ON public.hub_vendas_leads FOR INSERT TO authenticated WITH CHECK (false);
+CREATE POLICY hub_vendas_leads_update ON public.hub_vendas_leads FOR UPDATE TO authenticated USING (false) WITH CHECK (false);
+
+ALTER TABLE public.hub_vendas_recuperacao_fila ENABLE ROW LEVEL SECURITY;
+CREATE POLICY hub_vendas_fila_select ON public.hub_vendas_recuperacao_fila FOR SELECT TO authenticated USING (false);
+CREATE POLICY hub_vendas_fila_insert ON public.hub_vendas_recuperacao_fila FOR INSERT TO authenticated WITH CHECK (false);
+CREATE POLICY hub_vendas_fila_update ON public.hub_vendas_recuperacao_fila FOR UPDATE TO authenticated USING (false) WITH CHECK (false);
+
+ALTER TABLE public.hub_vendas_config ENABLE ROW LEVEL SECURITY;
+CREATE POLICY hub_vendas_config_select ON public.hub_vendas_config FOR SELECT TO authenticated USING (false);
+CREATE POLICY hub_vendas_config_insert ON public.hub_vendas_config FOR INSERT TO authenticated WITH CHECK (false);
+CREATE POLICY hub_vendas_config_update ON public.hub_vendas_config FOR UPDATE TO authenticated USING (false) WITH CHECK (false);
+
+ALTER TABLE public.hub_vendas_eventos_processados ENABLE ROW LEVEL SECURITY;
+CREATE POLICY hub_vendas_eventos_select ON public.hub_vendas_eventos_processados FOR SELECT TO authenticated USING (false);
+CREATE POLICY hub_vendas_eventos_insert ON public.hub_vendas_eventos_processados FOR INSERT TO authenticated WITH CHECK (false);
+
+-- Cadastro do módulo
+INSERT INTO public.app_modulos (chave, nome, descricao, rota_base, categoria, publico, somente_superadmin, ativo, ordem)
+VALUES ('hub_vendas_recuperacao', 'HUB VENDAS RECUPERACAO', 'Recuperacao automatica de leads do Hub/Vendas', '/hub-vendas/recuperacao', 'interno', false, false, true, 120)
+ON CONFLICT (chave) DO UPDATE SET nome = EXCLUDED.nome, descricao = EXCLUDED.descricao, rota_base = EXCLUDED.rota_base, updated_at = now();
+
+-- Cadastrar conexao Hub/Vendas
+INSERT INTO public.digisac_conexoes_automacao (service_id, service_name, my_number, default_department_id, ativo)
+VALUES ('4af28025-c210-4336-a560-785d2fb8a778', 'VENDAS (Hub)', null, null, true)
+ON CONFLICT (service_id) DO UPDATE SET service_name = EXCLUDED.service_name, ativo = true, updated_at = now();
+```
+
+**Não executar migration nesta tarefa.** Esta é a proposta para aprovação.
+
+---
+
+## 62. Fases de implementação revisadas
+
+### Fase 1 — Banco de dados
+
+**Pré-requisitos:**
+- Modelo final de 4 tabelas aprovado
+- Estratégia de idempotência definida (tabela de eventos)
+- RLS corrigido (Alternativa A — apenas service role)
+- Estados finais definidos (comercial + operacional)
+- Rodízio atômico definido (advisory lock)
+
+**Tarefas:**
+- [ ] Criar migration com 4 tabelas + RLS + indexes + constraints + função de rodízio
+- [ ] Cadastrar módulo `hub_vendas_recuperacao` em `app_modulos`
+- [ ] Cadastrar conexão Vendas em `digisac_conexoes_automacao`
+- [ ] Inserir config iniciais em `hub_vendas_config`
+- [ ] Rodar `get_advisors` para validar RLS
+
+### Fase 2 — Webhook + entrada + conversão
+
+**Pré-requisitos:**
+- Fase 1 concluída
+- Estratégia de eventos processados definida
+- Parser e filtros definidos
+- Payload da saudação pode continuar pendente para ativação, mas deve existir teste com fixture
+
+**Tarefas:**
+- [ ] Criar `src/lib/digisac/hub-vendas/` com tipos, constantes, normalização, timezone-helpers
+- [ ] Criar `processar-webhook.ts`, `registrar-entrada.ts`, `registrar-conversao.ts`
+- [ ] Implementar idempotência via `hub_vendas_eventos_processados`
+- [ ] Alterar `src/app/api/digisac/webhook/route.ts` (adicionar distribuição + segurança)
+- [ ] Testar identificação de saudação com fixture
+- [ ] Testar identificação de conversão
+- [ ] Preservar triagem antiga
+
+### Fase 3 — Preparação + reconciliação
+
+**Pré-requisitos:**
+- Fase 1 concluída
+- Rodízio atômico implementável (função SQL criada)
+- Limite por timezone definido
+- Consultas de chamado aberto em qualquer loja definidas
+
+**Tarefas:**
+- [ ] Criar `reconciliar.ts` e `preparar-fila.ts`
+- [ ] Criar rota `/api/cron/hub-vendas-preparar-fila`
+- [ ] Implementar validação interna de horário
+- [ ] Implementar rodízio atômico via RPC
+- [ ] Implementar limite diário por timezone SP
+- [ ] Implementar verificação de chamado aberto em qualquer loja
+- [ ] Garantir idempotência (unique lead_id na fila)
+- [ ] **Sem alteração em `vercel.json`**
+
+### Fase 4 — Processador + envio
+
+**Pré-requisitos:**
+- Tratamento de resultado incerto definido
+- Estados técnicos definidos
+- Reconciliação pós-timeout definida
+- Mensagens de teste disponíveis
+
+**Tarefas:**
+- [ ] Criar `contato.ts`, `ticket.ts`, `envio.ts`, `processar-fila.ts`, `pausas.ts`
+- [ ] Criar rota `/api/cron/hub-vendas-processar-fila`
+- [ ] Implementar validação interna de horário
+- [ ] Implementar 15 checks de validação final
+- [ ] Implementar tratamento de resultado incerto (timeout, reconciliação)
+- [ ] Implementar pausa automática por erros
+- [ ] Implementar hash do texto para reconciliação
+- [ ] Testar envio end-to-end
+- [ ] **Pós-implementação:** checklist operacional da VPS (seção 36.13)
+
+### Fase 5 — Tela
+
+**Pré-requisitos:**
+- Fase 1 concluída
+
+**Tarefas:**
+- [ ] Adicionar módulo em `modulos-app.ts`
+- [ ] Criar `page.tsx` + `PageClient.tsx` em `/hub-vendas/recuperacao`
+- [ ] Criar APIs: leads, metricas, pausas, versoes-mensagens
+- [ ] Implementar painel com métricas (incluindo `cliente_em_atendimento`)
+- [ ] Implementar listas (incluindo `analise_manual`)
+- [ ] Implementar controles de pausa
+- [ ] Testar permissões (superadmin, perfil autorizado, não autorizado)
+- [ ] Rodar `npm run test -- src/lib/auth/modulos-app.test.ts`
+
+### Fase 6 — Mensagens
+
+**Pré-requisitos:**
+- Nenhum (pode ocorrer a qualquer momento)
+
+**Tarefas:**
+- [ ] Criar 5+ versões de mensagem
+- [ ] Aprovação manual do usuário
+- [ ] Cadastrar em `hub_vendas_config`
+- [ ] Implementar rotação variada na seleção
+
+**Ativação real depende das mensagens aprovadas.**
+
+---
+
+## 63. Critérios de aceite revisados
+
+- [ ] Webhook identifica saudação corretamente (matching robusto)
+- [ ] Webhook identifica conversão em loja dentro de 24h
+- [ ] Triagem antiga funciona inalterada
+- [ ] **Usuário autenticado sem módulo não acessa dados das tabelas Hub/Vendas**
+- [ ] **Nenhuma policy ampla para `authenticated` (USING false em todas)**
+- [ ] **Webhook duplicado não altera métricas duas vezes** (idempotência via `hub_vendas_eventos_processados`)
+- [ ] **Segunda loja chamada é registrada uma única vez**
+- [ ] Cron de preparação prepara fila com rodízio atômico e limite
+- [ ] Reconciliação detecta conversões perdidas
+- [ ] **Chamado aberto em qualquer loja cancela recuperação** (não apenas na conexão de destino)
+- [ ] **Chamado aberto fora de 24h não conta como conversão orgânica** (marca `cliente_em_atendimento`)
+- [ ] Processador envia mensagem na conexão correta
+- [ ] Contato é criado se não existe
+- [ ] Ticket é aberto via `ticket/transfer` com comments "CHAMADA AUTOMATICA - RESGATE"
+- [ ] Intervalo entre envios é 180-300s aleatório por conexão
+- [ ] Limite de 15/dia por conexão é respeitado
+- [ ] **Limite diário considera o dia de São Paulo** (intervalo UTC, não `::date = current_date`)
+- [ ] Horário 09:00-18:00 seg-sáb é respeitado (validação interna + crontab)
+- [ ] **Nenhuma execução inicia envio às 18:00 ou depois**
+- [ ] **Resultado incerto nunca gera retry automático cego**
+- [ ] **Envio confirmado por reconciliação é marcado como enviado**
+- [ ] **Envio não confirmado vai para análise manual**
+- [ ] **Rodízio concorrente não escolhe a mesma posição duas vezes** (advisory lock)
+- [ ] **Preparação recorrente não cria filas duplicadas** (unique lead_id)
+- [ ] Pausa geral interrompe todos os envios
+- [ ] Pausa por conexão interrompe apenas a conexão
+- [ ] Pausa automática após 3 erros consecutivos
+- [ ] Tela mostra métricas e listas (incluindo `cliente_em_atendimento` e `analise_manual`)
+- [ ] Tela permite pausar/despausar
+- [ ] Tela protegida por `checkModuleAndWindowAccess`
+- [ ] APIs protegidas por `requireModuleAccess`
+- [ ] RLS habilitado em todas as 4 tabelas
+- [ ] `npm run test -- src/lib/auth/modulos-app.test.ts` passa
+- [ ] `get_advisors` não reporta vulnerabilidades críticas
+
+---
+
+## 64. Pendências reais
+
+### 64.1 Payload da saudação
+
+Confirmar:
+- `isFromBot`
+- `origin`
+- texto
+- `serviceId`
+- `contactId`
+- `ticketId`
+- timestamp
+
+**Isso bloqueia a ativação em produção, mas não a criação da migration.**
+
+### 64.2 Mensagens
+
+Criar e aprovar pelo menos 5 versões antes de habilitar envios.
+
+### 64.3 Department IDs de resgate
+
+Validar se os 3 department IDs de resgate existem no Digisac.
+
+### 64.4 Checklist operacional da VPS
+
+Somente depois que as rotas existirem:
+1. Criar diretórios
+2. Criar scripts
+3. Cadastrar secrets
+4. Testar manualmente
+5. Cadastrar crontab
+6. Validar logs
+7. Configurar logrotate
+8. Acompanhar primeira execução
+
+**Não tratar infraestrutura como decisão pendente.**
+
+---
+
+## 65. Documentos alterados
+
+| Documento | Alteração |
+|---|---|
+| `docs/digisac-hub-vendas-plano-progresso.md` | Parte IV adicionada (seções 49-66) com revisão técnica final |
+| `docs/ia/log_progress.md` | Entrada de revisão técnica final adicionada |
+
+**Nenhum código foi implementado.** Nenhum arquivo `.ts`, `.tsx`, `.sql` foi criado ou alterado. `vercel.json` intacto. Nenhuma migration criada. Nenhuma tabela criada. Nenhum cron configurado. Nenhum envio feito. Nenhum secret registrado.
+
+---
+
+## 66. Próximo passo recomendado
+
+1. **Usuário aprova o modelo final de 4 tabelas** (seção 60)
+2. **Usuário aprova RLS Alternativa A** (apenas service role, seção 49)
+3. **Usuário valida** se os 3 department IDs de resgate existem no Digisac
+4. **Usuário confirma** payload da saudação (`isFromBot`, `origin`, etc.)
+5. **Usuário cria e aprova** 5+ versões de mensagem
+6. **Após aprovação**, iniciar Fase 1 (migration + cadastros)
+7. **Após Fase 1**, iniciar Fase 2 (webhook + entrada + conversão)
+8. **Após Fase 2**, Fase 3 e 4 podem ocorrer em paralelo
+9. **Fase 5** (tela) após Fase 1 concluída
+10. **Fase 6** (mensagens) pode ocorrer a qualquer momento
+11. **Pós-implementação:** checklist operacional da VPS (seção 36.13)
+
+**Pare aqui. Aguarde aprovação explícita do usuário antes de iniciar qualquer implementação.**

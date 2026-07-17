@@ -2165,3 +2165,103 @@ Rodar a migration em Supabase branch, Supabase local ou Postgres temporario assi
 - MCP confirmou a existencia remota de `atendimento_presencial_editar_concluido`, alem das colunas novas usadas por API/UI.
 - Integracao PATCH/UI de edicao de atendimento concluido implementada e validada por testes focados, typecheck e lint.
 - Pendencia restante: validacao manual autenticada/mobile em ambiente real.
+
+## 2026-07-17 - Codex - Correcao de historico SGI por telefone e conclusao com resultado Nao
+
+### Escopo
+
+- Corrigidos dois problemas confirmados na Ficha de Atendimento Presencial.
+- Nenhuma migration, RPC, regra de permissao ou estrutura geral da ficha foi alterada.
+
+### Historico SGI
+
+- Causa confirmada: `gerarVariacoesTelefone` nao gerava a variante com nono digito quando a entrada era DDD + 8 digitos, por exemplo `4196246875`.
+- O caso RAQUEL GARCIA foi confirmado no Supabase: os lancamentos `64196` e `64685` possuem contatos `41996246875` e `5541996246875`, alem do contato principal `4199640086`/`554199640086`.
+- O helper compartilhado da Inteligencia Comercial agora gera variantes com e sem DDI e com e sem nono digito para estruturas moveis seguras.
+- Telefones fixos plausiveis continuam sem insercao de nono digito.
+- A busca da Ficha continua usando `sgi_documentos_saida_contatos` nos campos `telefone_normalizado` e `telefone_normalizado_ddi`, deduplicando vendas por documento.
+
+### Conclusao e resultado
+
+- Causa confirmada: o serializador do autosave nao considerava `viradaCartaoDia` e `viradaCartaoMes`, permitindo divergencia entre revisao local e rascunho salvo.
+- A rota de conclusao agora normaliza `row.dados_rascunho` com `validarFichaDadosRascunho` antes de aplicar `validarFichaParaConclusao`.
+- Os valores canonicos de resultado permanecem `sim`, `nao` e `negociacao`; labels traduzidas nao sao aceitas como valor interno.
+- A revisao exibe o resumo de validacao perto do botao `Concluir atendimento`.
+- Ao clicar em erro de resultado ou virada, a ficha abre a etapa Resultado e tenta focar a secao/campo correspondente.
+
+### Arquivos alterados/criados neste passo
+
+- `src/lib/digisac/sgi-sync.ts`
+- `src/lib/digisac/sgi-sync.test.ts`
+- `src/lib/atendimento-presencial/historico-cliente.test.ts`
+- `src/lib/atendimento-presencial/autosave-fila.ts`
+- `src/lib/atendimento-presencial/autosave-fila.test.ts`
+- `src/lib/atendimento-presencial/ficha-schema.ts`
+- `src/lib/atendimento-presencial/ficha-schema.test.ts`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts`
+
+### Validacoes realizadas
+
+- Supabase MCP: confirmadas colunas reais de `sgi_documentos_saida`, `sgi_documentos_saida_contatos`, `sgi_documentos_saida_produtos`, `sgi_documentos_saida_pagamentos`, `atendimento_presencial_clientes` e `atendimento_presencial_atendimentos`.
+- Supabase MCP: confirmados os lancamentos `64196` e `64685` vinculados a RAQUEL GARCIA com contato secundario `41996246875`/`5541996246875`.
+- `npm run test -- src/lib/digisac/sgi-sync.test.ts src/lib/atendimento-presencial/historico-cliente.test.ts src/lib/atendimento-presencial/autosave-fila.test.ts src/lib/atendimento-presencial/ficha-schema.test.ts src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts`: passou, 5 arquivos e 38 testes.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint` nos arquivos tocados: passou.
+- `git diff --check`: passou; apenas avisos CRLF/LF conhecidos do checkout Windows.
+
+### Nao validado
+
+- Browser autenticado/mobile nao executado neste turno.
+- Fluxo manual completo com RAQUEL GARCIA nao foi executado na UI.
+
+### Proximo passo recomendado
+
+Validar manualmente em navegador autenticado: selecionar/criar RAQUEL GARCIA com `(41) 9624-6875`, abrir historico, confirmar vendas `64685` e `64196`, concluir atendimento com `Resultado: Nao`, `Virada de cartao` e `20/07`, e testar erro intencional sem resultado.
+
+## 2026-07-17 - Codex - UI/UX do modal de historico da cliente
+
+### Escopo
+
+- Ajustada a apresentacao visual do modal de historico da cliente na Ficha de Atendimento Presencial.
+- O foco ficou em legibilidade, hierarquia visual e alinhamento com o padrao do modal de detalhe da Inteligencia Comercial.
+- Nenhuma migration, RPC, regra de busca por telefone, deduplicacao ou regra de negocio foi alterada.
+
+### Referencia adotada
+
+- A referencia visual foi `src/components/inteligencia-comercial/ModalDetalheVenda.tsx`.
+- Foram reaproveitados o espirito de secoes com bordas/fundos leves, labels fortes, chips de departamento, destaque de valores e tabela de produtos.
+
+### Implementacao
+
+- O modal passou a ter cabecalho mais claro com nome e telefone da cliente.
+- A secao de atendimentos presenciais anteriores ficou separada em bloco proprio, com estado vazio claro.
+- A secao de compras SGI passou a organizar cada venda em blocos de resumo, departamentos, pagamento e itens/produtos.
+- O DTO de historico SGI foi ampliado de forma minima para expor `vendedor`, `status`, `departamentos` e produtos estruturados, usando colunas ja confirmadas no Supabase.
+- Produtos agora aparecem em tabela responsiva com nome, departamento, quantidade e valor quando os detalhes estruturados estao disponiveis.
+
+### Arquivos alterados
+
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `src/lib/atendimento-presencial/historico-cliente.ts`
+- `src/lib/atendimento-presencial/historico-cliente.test.ts`
+- `docs/ficha-atendimento-presencial-progresso.md`
+- `docs/ia/log_progress.md`
+
+### Validacoes
+
+- Supabase MCP: confirmadas colunas reais usadas na apresentacao (`vendedor`, `status`, `valor_total`, `departamento_classificado`, `subgrupo_classificado` e dados relacionados).
+- `npm run test -- src/lib/atendimento-presencial/historico-cliente.test.ts`: passou, 1 arquivo e 2 testes.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/app/atendimento-presencial/ficha/FichaPageClient.tsx src/lib/atendimento-presencial/historico-cliente.ts src/lib/atendimento-presencial/historico-cliente.test.ts`: passou.
+- `git diff --check`: passou, com avisos CRLF/LF conhecidos do checkout Windows.
+
+### Nao validado
+
+- Browser autenticado/mobile nao executado neste turno.
+- Validacao visual manual do modal aberto com vendas reais ainda pendente.
+
+### Proximo passo recomendado
+
+Abrir a Ficha em navegador autenticado, consultar uma cliente com compras SGI reais e conferir desktop/mobile se resumo, vendedor, departamentos, pagamento e tabela de itens ficam imediatamente legiveis.

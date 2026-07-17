@@ -147,6 +147,42 @@ describe('schema da ficha de atendimento presencial', () => {
     })
   })
 
+  it('mantem resultado canonico e nao aceita label traduzida como valor interno', () => {
+    for (const resultadoAtendimento of ['sim', 'nao', 'negociacao']) {
+      expect(validarFichaParaConclusao({
+        clienteId: 'cliente-1',
+        numeroLancamento: resultadoAtendimento === 'sim' ? '123' : '',
+        ficha: {
+          criancas: [],
+          departamentos: ['p_pesada'],
+          produtosInteresse: [],
+          resultadoAtendimento: resultadoAtendimento as 'sim' | 'nao' | 'negociacao',
+          motivosResultado: ['preco'],
+          etapaAtual: 'revisao',
+        },
+      })).toMatchObject({ ok: true })
+    }
+
+    const payloadComLabel = validarFichaDadosRascunho({
+      resultadoAtendimento: 'Não',
+      motivosResultado: ['preco'],
+      departamentos: ['p_pesada'],
+    })
+
+    expect(payloadComLabel).toMatchObject({ ok: true })
+    if (payloadComLabel.ok) {
+      expect(payloadComLabel.dados).not.toHaveProperty('resultadoAtendimento')
+      expect(validarFichaParaConclusao({
+        clienteId: 'cliente-1',
+        ficha: payloadComLabel.dados,
+      })).toMatchObject({
+        ok: false,
+        field: 'resultadoAtendimento',
+        message: 'Selecione o resultado do atendimento.',
+      })
+    }
+  })
+
   it('normaliza motivo virada de cartao somente com DD/MM valido', () => {
     expect(formatarViradaCartaoInput('0508')).toBe('05/08')
     expect(formatarViradaCartaoInput('05/2026')).toBe('05/20')

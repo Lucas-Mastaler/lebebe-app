@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, type Mock } from 'vitest'
-import { AutosaveSerialQueue, type AutosavePayload, type AutosaveSaveResult } from './autosave-fila'
+import { AutosaveSerialQueue, serializarPayloadAutosave, type AutosavePayload, type AutosaveSaveResult } from './autosave-fila'
 import type { AtendimentoPresencialDTO } from './rascunhos-shared'
 
 const payloadBase: AutosavePayload = {
@@ -89,6 +89,31 @@ function criarFila(params?: {
 }
 
 describe('fila serial de autosave presencial', () => {
+  it('serializa resultado canonico e virada de cartao para detectar mudanca antes da conclusao', () => {
+    const payload: AutosavePayload = {
+      clienteId: 'cliente-1',
+      dadosRascunho: {
+        criancas: [],
+        departamentos: ['p_pesada'],
+        produtosInteresse: [],
+        resultadoAtendimento: 'nao',
+        motivosResultado: ['virada_cartao'],
+        viradaCartaoDia: 20,
+        viradaCartaoMes: 7,
+        etapaAtual: 'revisao',
+      },
+    }
+
+    expect(JSON.parse(serializarPayloadAutosave(payload))).toMatchObject({
+      dadosRascunho: {
+        resultadoAtendimento: 'nao',
+        motivosResultado: ['virada_cartao'],
+        viradaCartaoDia: 20,
+        viradaCartaoMes: 7,
+      },
+    })
+  })
+
   it('salva uma alteracao usando a versao inicial', async () => {
     const { fila, save } = criarFila()
 

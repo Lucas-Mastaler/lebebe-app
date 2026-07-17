@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { validarFichaParaConclusao } from '@/lib/atendimento-presencial/ficha-schema'
+import { validarFichaDadosRascunho, validarFichaParaConclusao } from '@/lib/atendimento-presencial/ficha-schema'
 import {
   carregarPerfilAtendimento,
   isUuid,
@@ -140,8 +140,13 @@ export async function POST(
       return jsonErro('Rascunho expirado', 410, { rascunho: serializarAtendimentoPresencial(row) })
     }
 
+    const validacaoDados = validarFichaDadosRascunho(row.dados_rascunho)
+    if (!validacaoDados.ok) {
+      return jsonErro(validacaoDados.message, 422, { field: validacaoDados.field })
+    }
+
     const validacaoConclusao = validarFichaParaConclusao({
-      ficha: row.dados_rascunho,
+      ficha: validacaoDados.dados,
       clienteId: row.cliente_id,
       numeroLancamento: payload.numeroLancamento,
     })

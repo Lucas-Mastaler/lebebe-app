@@ -466,7 +466,7 @@ export function validarFichaParaConclusao(params: {
   }
   if (params.ficha.motivosResultado.includes('virada_cartao')) {
     if (!dataViradaCartaoValida(params.ficha.viradaCartaoDia ?? 0, params.ficha.viradaCartaoMes ?? 0)) {
-      return { ok: false, field: 'viradaCartao', message: 'Informe a virada do cartao em DD/MM.' }
+      return { ok: false, field: 'viradaCartao', message: 'Informe o dia e o mes da virada do cartao.' }
     }
   }
 

@@ -115,9 +115,15 @@ export function gerarVariacoesTelefone(telefoneInput: string): string[] {
     t.length === 13 && t.startsWith('55') && /^55\d{2}9\d{8}$/.test(t)
   const isCelSemDDI = (t: string) =>
     t.length === 11 && /^\d{2}9\d{8}$/.test(t)
+  const isNacionalComDDI = (t: string) =>
+    t.length === 12 && t.startsWith('55') && /^55\d{2}[6-9]\d{7}$/.test(t)
+  const isNacionalSemDDI = (t: string) =>
+    t.length === 10 && /^\d{2}[6-9]\d{7}$/.test(t)
 
   const removerNono = (t: string, posNono: number) =>
     t.slice(0, posNono) + t.slice(posNono + 1)
+  const inserirNonoSemDDI = (t: string) =>
+    `${t.slice(0, 2)}9${t.slice(2)}`
 
   const variants: string[] = []
 
@@ -133,6 +139,13 @@ export function gerarVariacoesTelefone(telefoneInput: string): string[] {
     const comDDI = `55${digits}` // 5541984148660
     const semNonoComDDI = `55${semNono}` // 554184148660
     variants.push(semNonoComDDI, comDDI, semNono, digits)
+  } else if (isNacionalComDDI(digits)) {
+    const semDDI = digits.slice(2)
+    const comNonoSemDDI = inserirNonoSemDDI(semDDI)
+    variants.push(semDDI, comNonoSemDDI, digits, `55${comNonoSemDDI}`)
+  } else if (isNacionalSemDDI(digits)) {
+    const comNono = inserirNonoSemDDI(digits)
+    variants.push(digits, comNono, `55${digits}`, `55${comNono}`)
   } else {
     // Não identificado como celular com 9: tenta com e sem DDI
     variants.push(digits)

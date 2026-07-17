@@ -29,7 +29,17 @@ export type HistoricoVendaSgiDTO = {
   numeroLancamento: string
   data: string | null
   filial: string | null
+  vendedor: string | null
+  status: string | null
+  departamentos: string[]
   itens: string[]
+  produtos: Array<{
+    nome: string
+    quantidade: number | null
+    valorTotal: number | null
+    departamento: string | null
+    subgrupo: string | null
+  }>
   valorTotal: number | null
   formasPagamento: string[]
 }
@@ -39,6 +49,8 @@ type DocumentoSgiRow = {
   numero_lancamento: string | number | null
   data_fechamento: string | null
   filial: string | null
+  vendedor: string | null
+  status: string | null
   valor_total: number | null
 }
 
@@ -46,6 +58,9 @@ type ProdutoSgiRow = {
   documento_saida_id: string
   produto: string | null
   quantidade: number | null
+  valor_total: number | null
+  departamento_classificado: string | null
+  subgrupo_classificado: string | null
 }
 
 type PagamentoSgiRow = {
@@ -99,7 +114,7 @@ export async function buscarVendasSgiPorTelefone(
 
   const documentosQuery = supabase.from('sgi_documentos_saida') as QueryBuilder
   const { data: docsData, error: docsError } = await documentosQuery
-    .select('id, numero_lancamento, data_fechamento, filial, valor_total')
+    .select('id, numero_lancamento, data_fechamento, filial, vendedor, status, valor_total')
     .in('id', documentoIds)
     .order('data_fechamento', { ascending: false })
     .limit(params.limit ?? 10)
@@ -113,7 +128,7 @@ export async function buscarVendasSgiPorTelefone(
   const produtosQuery = supabase.from('sgi_documentos_saida_produtos') as QueryBuilder
   const pagamentosQuery = supabase.from('sgi_documentos_saida_pagamentos') as QueryBuilder
   const [produtosResult, pagamentosResult] = await Promise.all([
-    produtosQuery.select('documento_saida_id, produto, quantidade').in('documento_saida_id', idsLimitados),
+    produtosQuery.select('documento_saida_id, produto, quantidade, valor_total, departamento_classificado, subgrupo_classificado').in('documento_saida_id', idsLimitados),
     pagamentosQuery.select('documento_saida_id, forma_pagamento').in('documento_saida_id', idsLimitados),
   ])
 
@@ -129,14 +144,28 @@ export async function buscarVendasSgiPorTelefone(
     vendas: documentos.map((doc) => {
       const produtos = produtosPorDocumento.get(doc.id) ?? []
       const pagamentos = pagamentosPorDocumento.get(doc.id) ?? []
+      const produtosFormatados = produtos
+        .filter((produto) => Boolean(produto.produto))
+        .map((produto) => ({
+          nome: produto.produto ?? '',
+          quantidade: produto.quantidade,
+          valorTotal: produto.valor_total,
+          departamento: produto.departamento_classificado,
+          subgrupo: produto.subgrupo_classificado,
+        }))
+      const departamentos = Array.from(new Set(produtosFormatados
+        .map((produto) => produto.departamento)
+        .filter((item): item is string => Boolean(item && item !== 'Nao classificado' && item !== 'Não classificado'))))
       return {
         numeroLancamento: String(doc.numero_lancamento ?? ''),
         data: doc.data_fechamento,
         filial: doc.filial,
+        vendedor: doc.vendedor,
+        status: doc.status,
+        departamentos,
         valorTotal: doc.valor_total,
-        itens: produtos
-          .map((produto) => produto.produto ? `${produto.quantidade ?? 1}x ${produto.produto}` : '')
-          .filter(Boolean),
+        itens: produtosFormatados.map((produto) => `${produto.quantidade ?? 1}x ${produto.nome}`),
+        produtos: produtosFormatados,
         formasPagamento: Array.from(new Set(pagamentos.map((pagamento) => pagamento.forma_pagamento).filter((item): item is string => Boolean(item)))),
       }
     }),

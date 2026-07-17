@@ -2305,3 +2305,72 @@ Abrir a Ficha em navegador autenticado, consultar uma cliente com compras SGI re
 ### Proximo passo recomendado
 
 Validar em navegador autenticado as tres entradas do historico: Ficha, detalhe de Registros e resultado de Clientes, confirmando que o mesmo modal abre e carrega dados da API existente.
+
+## 2026-07-17 - Telefone em todas as etapas, rascunhos enriquecidos e separacao visual
+
+### Resumo
+
+Tres ajustes cirurgicos na Ficha de Atendimento Presencial, sem alterar migrations, RPCs, normalizacao de telefone, historico SGI, regras de conclusao ou permissoes:
+
+1. Telefone da cliente disponivel para informar/corrigir em todas as etapas.
+2. Cards de rascunho enriquecidos com nome da cliente e consultora.
+3. Separacao visual clara entre "Novo atendimento" e "Rascunhos em andamento".
+
+### Telefone em todas as etapas (estado unico)
+
+- Novo componente compartilhado `TelefoneClienteRapido` (apenas UI: value, onChange, disabled, erro, loading, compact).
+- Renderizado no fluxo normal (nao fixo) ao final de cada etapa, acima da barra de navegacao.
+- Fonte de verdade unica: antes de vincular cliente usa `novoCliente.telefone`; com cliente vinculada usa o registro da cliente (`clienteSelecionada`). Nao ha segundo telefone independente.
+- Reflete imediatamente na etapa de cliente, na revisao, no payload final e no historico (todos derivam de `clienteSelecionada`).
+- Preservadas mascara, normalizacao, validacao, busca e criacao de cliente. Nenhuma regra de telefone alterada.
+
+### Estrategia de persistencia e autosave
+
+- O telefone nao faz parte do payload do rascunho (autosave continua salvando `{dadosRascunho, clienteId}`), portanto nao houve duplicacao de requisicoes de autosave.
+- Para cliente ja vinculada, a correcao de telefone persiste via novo `PATCH /api/atendimento-presencial/clientes/[id]` (apenas telefone), com debounce de 800 ms, reaproveitando `normalizarTelefone`.
+- Concorrencia otimista por `version` (guard `.eq('version', ...)`), com retorno 409 e cliente atual em conflito. Trigger de banco ja incrementa `version` (nao incrementamos manualmente).
+- Prevencao de telefone duplicado em outra cliente ativa (checagem previa + tratamento de violacao de indice unico 23505).
+- Ao reabrir o rascunho, o telefone e restaurado ao carregar a cliente por `clienteId`.
+
+### Rascunhos enriquecidos
+
+- GET de rascunhos resolve nomes em batch (1 query em `atendimento_presencial_clientes`, 1 query em `usuarios_permitidos`), sem N+1.
+- DTO ganhou `clienteNome?` e `consultoraNome?` (opcionais; anexados apos `serializarAtendimentoPresencial`, sem alterar essa funcao).
+- Fallbacks: "Cliente ainda nao informado" e "Consultora nao identificada". Consultora usa e-mail (nao ha coluna de nome civil em `usuarios_permitidos`).
+- Card reorganizado: linha principal (nome da cliente + status Rascunho), linha secundaria (consultora, unidade, ultima atualizacao, expiracao, inicio) e acao "Continuar preenchendo".
+
+### Separacao visual
+
+- Bloco "Novo atendimento" com fundo azul suave e borda propria.
+- Bloco "Rascunhos em andamento" com fundo ambar suave e borda propria.
+- Cores suaves apenas para distinguir areas; identidade visual global preservada. Nomes longos com `break-words` e `min-w-0` para evitar overflow.
+
+### Arquivos alterados/criados
+
+- `src/components/atendimento-presencial/TelefoneClienteRapido.tsx` (novo)
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `src/app/api/atendimento-presencial/clientes/[id]/route.ts` (novo PATCH)
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.ts`
+- `src/lib/atendimento-presencial/clientes.ts` (`validarAtualizacaoTelefoneCliente`)
+- `src/lib/atendimento-presencial/rascunhos-shared.ts` (campos opcionais no DTO)
+- `src/lib/atendimento-presencial/rascunho-display.ts` (novo, helpers de fallback)
+- Testes: `clientes/[id]/route.test.ts`, `atendimentos/rascunhos/route.test.ts`, `clientes.test.ts`, `rascunho-display.test.ts`
+
+### Validacoes realizadas
+
+- `npx tsc --noEmit`: passou limpo.
+- `npm run test`: modulo atendimento-presencial 20 arquivos / 128 testes passando; suite completa mantem as 18 falhas preexistentes (fora de atendimento-presencial).
+- `npm run lint`: sem novos erros nos arquivos tocados; mantem os 12 erros preexistentes fora do escopo.
+
+### Nao validado
+
+- Validacao manual em navegador autenticado (telefone em etapa intermediaria, revisao, recarregar, concluir; rascunhos com/sem cliente; desktop e mobile 320/375/390/tablet).
+
+### Riscos conhecidos
+
+- Novo caminho de escrita de telefone da cliente (PATCH); mitigado por concorrencia por versao e checagem de duplicidade.
+- Nome da consultora exibido como e-mail por ausencia de coluna de nome civil.
+
+### Proximo passo recomendado
+
+Executar a validacao manual autenticada (telefone e rascunhos) em desktop e mobile e anexar a gravacao.

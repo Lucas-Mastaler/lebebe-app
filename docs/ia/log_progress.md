@@ -1,3 +1,44 @@
+## 2026-07-17 - Devin - Telefone em todas as etapas, rascunhos enriquecidos e separacao visual na Ficha de Atendimento Presencial
+
+**Resumo:** Tres ajustes cirurgicos na Ficha de Atendimento Presencial. (1) Telefone da cliente disponivel para informar/corrigir em todas as etapas via componente compartilhado `TelefoneClienteRapido`, no fluxo normal (nao fixo) proximo aos botoes de navegacao, usando estado unico (antes de vincular: `novoCliente.telefone`; com cliente vinculada: registro da cliente). (2) Cards de rascunho enriquecidos com nome da cliente e consultora, resolvidos em batch no backend (sem N+1), com fallbacks. (3) Separacao visual clara entre "Novo atendimento" (fundo azul suave) e "Rascunhos em andamento" (fundo ambar suave). Nao foram alteradas migrations, RPCs, normalizacao de telefone, historico SGI, regras de conclusao nem permissoes. Decisao do usuario: Opcao B (adicionar PATCH minimo de telefone da cliente). Persistencia do telefone de cliente ja vinculada via novo `PATCH /api/atendimento-presencial/clientes/[id]` (apenas telefone, debounce 800 ms, concorrencia por version, prevencao de duplicidade), reaproveitando `normalizarTelefone`. Telefone nao entra no payload do rascunho; e restaurado ao reabrir carregando a cliente por `clienteId`.
+
+**Arquivos lidos:**
+- `.devin/rules/continuidade-agente.md`, `.devin/rules/gerais.md`, `.devin/rules/resumo.md`, `.devin/workflows/login.md`
+- `docs/ficha-atendimento-presencial-progresso.md`, `docs/ia/log_progress.md`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `src/app/atendimento-presencial/ficha/page.tsx`
+- `src/lib/atendimento-presencial/ficha-schema.ts`, `clientes.ts`, `telefone.ts`, `autosave-fila.ts`, `rascunhos.ts`, `rascunhos-shared.ts`
+- `src/app/api/atendimento-presencial/clientes/route.ts`, `clientes/[id]/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.ts`
+- `supabase/migrations/001_initial_schema.sql`, `20260715170000_create_atendimento_presencial_clientes.sql`, `20260715180000_create_atendimento_presencial_atendimentos.sql`, `20260715120000_add_superadmin_users_units.sql`
+- Testes de atendimento-presencial existentes
+
+**Arquivos alterados/criados:**
+- `src/components/atendimento-presencial/TelefoneClienteRapido.tsx` - novo componente compartilhado (UI apenas).
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx` - campo de telefone em todas as etapas, PATCH debounced, cards de rascunho enriquecidos, separacao visual.
+- `src/app/api/atendimento-presencial/clientes/[id]/route.ts` - novo handler PATCH (apenas telefone).
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.ts` - enriquecimento em batch (clienteNome, consultoraNome).
+- `src/lib/atendimento-presencial/clientes.ts` - `validarAtualizacaoTelefoneCliente`.
+- `src/lib/atendimento-presencial/rascunhos-shared.ts` - campos opcionais `clienteNome`/`consultoraNome` no DTO.
+- `src/lib/atendimento-presencial/rascunho-display.ts` - helpers de fallback (novo).
+- Testes: `clientes/[id]/route.test.ts`, `atendimentos/rascunhos/route.test.ts`, `clientes.test.ts`, `rascunho-display.test.ts`.
+- `docs/ficha-atendimento-presencial-progresso.md`, `docs/ia/log_progress.md` - esta entrada.
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit`: passou limpo.
+- `npm run test`: modulo atendimento-presencial 20 arquivos / 128 testes passando. Suite completa mantem exatamente as 18 falhas baseline preexistentes (procurar-datas e atendimento-automatico), fora do escopo.
+- `npm run lint`: sem novos erros/warnings nos arquivos tocados; mantem os 12 erros baseline preexistentes fora do escopo.
+
+**Comandos executados e resultados:** `npm ci` (ok); `npm run lint` (12 erros preexistentes fora do escopo); `npx tsc --noEmit` (ok); `npm run test` (18 falhas preexistentes fora do escopo, restante ok).
+
+**Pendencias:** Validacao manual em navegador autenticado nao executada ainda: telefone em etapa intermediaria, revisao, recarregar e concluir; rascunhos com e sem cliente; responsividade 320/375/390/tablet/desktop; gravacao.
+
+**Riscos conhecidos:** Novo caminho de escrita de telefone da cliente (PATCH) - mitigado por concorrencia por version e checagem de duplicidade. Nome da consultora exibido como e-mail (nao ha coluna de nome civil em `usuarios_permitidos`).
+
+**Proximo passo recomendado:** Executar validacao manual autenticada (telefone e rascunhos) em desktop e mobile e anexar a gravacao.
+
+---
+
 ## 2026-07-17 - Codex - Correcao do destino pos-login Google para /inicio
 
 **Resumo:** Investigado o fluxo completo do login Google ate o destino final. Confirmado no codigo que `src/app/(auth)/login/page.tsx` usa `signInWithOAuth` com `redirectTo` fixo para `/auth/callback`, sem `next`, `returnTo`, storage ou rota anterior. Confirmado que `src/app/auth/callback/route.ts` validava a sessao, consultava `usuarios_permitidos`, registrava auditoria e redirecionava hardcoded para `/dashboard`. Como `/dashboard` e protegido por `checkModuleAndWindowAccess('dashboard')`, usuarios sem permissao de dashboard podiam cair em `/acesso-negado` logo apos o login. A correcao minima mudou o redirect de sucesso do callback para `/inicio`.

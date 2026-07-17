@@ -65,6 +65,20 @@ export type ResultadoValidacaoCliente =
       field: 'nome' | 'telefone' | 'parentesco' | 'parentescoOutro' | 'payload'
     }
 
+export type ResultadoAtualizacaoTelefoneCliente =
+  | {
+      ok: true
+      telefoneInformado: string | null
+      telefoneNormalizado: string | null
+      telefoneNormalizadoDDI: string | null
+      version: number
+    }
+  | {
+      ok: false
+      message: string
+      field: 'telefone' | 'version' | 'payload'
+    }
+
 export function normalizarNomeCliente(valor: unknown) {
   if (typeof valor !== 'string') return ''
   return valor.trim().replace(/\s+/g, ' ')
@@ -121,6 +135,37 @@ export function validarPayloadCliente(body: unknown): ResultadoValidacaoCliente 
     telefoneNormalizadoDDI: telefone?.telefoneNormalizadoDDI ?? null,
     parentesco,
     parentescoOutro: parentesco === 'outro' ? parentescoOutro : null,
+  }
+}
+
+export function validarAtualizacaoTelefoneCliente(body: unknown): ResultadoAtualizacaoTelefoneCliente {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+    return { ok: false, field: 'payload', message: 'Payload invalido' }
+  }
+
+  const payload = body as Record<string, unknown>
+  const version = Number(payload.version)
+  if (!Number.isInteger(version) || version < 1) {
+    return { ok: false, field: 'version', message: 'Versao esperada invalida' }
+  }
+
+  if (payload.telefone !== null && typeof payload.telefone !== 'string') {
+    return { ok: false, field: 'telefone', message: 'Telefone invalido' }
+  }
+
+  const telefoneInformado = typeof payload.telefone === 'string' ? payload.telefone.trim() : ''
+  const telefone = telefoneInformado ? normalizarTelefone(telefoneInformado) : null
+
+  if (telefone && !telefone.valido) {
+    return { ok: false, field: 'telefone', message: 'Telefone invalido' }
+  }
+
+  return {
+    ok: true,
+    telefoneInformado: telefoneInformado || null,
+    telefoneNormalizado: telefone?.telefoneNormalizado ?? null,
+    telefoneNormalizadoDDI: telefone?.telefoneNormalizadoDDI ?? null,
+    version,
   }
 }
 

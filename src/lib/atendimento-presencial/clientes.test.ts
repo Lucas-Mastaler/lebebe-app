@@ -4,6 +4,7 @@ import {
   escaparTermoIlike,
   normalizarTermosBuscaNome,
   normalizarTrechoBuscaTelefone,
+  validarAtualizacaoTelefoneCliente,
 } from './clientes'
 
 describe('busca de clientes presenciais', () => {
@@ -32,5 +33,38 @@ describe('busca de clientes presenciais', () => {
 
   it('escapa curingas do ilike sem remover o termo', () => {
     expect(escaparTermoIlike('Lu%_Ma')).toBe('Lu\\%\\_Ma')
+  })
+
+  it('valida atualizacao de telefone e normaliza os valores', () => {
+    expect(validarAtualizacaoTelefoneCliente({
+      telefone: '(41) 99642-8707',
+      version: 3,
+    })).toEqual({
+      ok: true,
+      telefoneInformado: '(41) 99642-8707',
+      telefoneNormalizado: '41996428707',
+      telefoneNormalizadoDDI: '5541996428707',
+      version: 3,
+    })
+  })
+
+  it('permite limpar telefone na atualizacao', () => {
+    expect(validarAtualizacaoTelefoneCliente({ telefone: null, version: 1 })).toMatchObject({
+      ok: true,
+      telefoneInformado: null,
+      telefoneNormalizado: null,
+      telefoneNormalizadoDDI: null,
+    })
+  })
+
+  it('rejeita telefone invalido ou versao invalida na atualizacao', () => {
+    expect(validarAtualizacaoTelefoneCliente({ telefone: '123', version: 1 })).toMatchObject({
+      ok: false,
+      field: 'telefone',
+    })
+    expect(validarAtualizacaoTelefoneCliente({ telefone: null, version: 0 })).toMatchObject({
+      ok: false,
+      field: 'version',
+    })
   })
 })

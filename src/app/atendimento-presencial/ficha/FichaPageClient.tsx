@@ -6,6 +6,7 @@ import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { HistoricoClienteModal } from '@/components/atendimento-presencial/HistoricoClienteModal'
+import { TelefoneClienteRapido } from '@/components/atendimento-presencial/TelefoneClienteRapido'
 import {
   carregarCacheRascunho,
   removerCacheRascunho,
@@ -59,6 +60,7 @@ import {
   type ParentescoCliente,
 } from '@/lib/atendimento-presencial/clientes'
 import { aplicarMascaraTelefoneBR } from '@/lib/atendimento-presencial/telefone'
+import { nomeClienteRascunho, nomeConsultoraRascunho } from '@/lib/atendimento-presencial/rascunho-display'
 import {
   filtrarConsultorasPorUnidade,
   filtrarUnidadesPorConsultora,
@@ -130,6 +132,10 @@ function formatarData(valor: string) {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function telefoneFormatadoDaCliente(cliente: ClientePresencialDTO | null) {
+  return cliente?.telefoneFormatado ?? ''
 }
 
 function diasRestantes(expiraEm: string) {
@@ -367,9 +373,17 @@ export default function FichaPageClient({ usuarioId }: Props) {
   const [iniciando, setIniciando] = useState(false)
   const [onlineTick, setOnlineTick] = useState(0)
   const [historicoAberto, setHistoricoAberto] = useState(false)
+  const [telefoneClienteEdicao, setTelefoneClienteEdicao] = useState('')
+  const [erroTelefone, setErroTelefone] = useState<string | null>(null)
+  const [salvandoTelefone, setSalvandoTelefone] = useState(false)
   const autosaveQueueRef = useRef<AutosaveSerialQueue | null>(null)
+  const telefoneDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const telefoneRequestRef = useRef(0)
+  const telefoneClienteSincronizadoRef = useRef('')
+  const clienteSelecionadaRef = useRef<ClientePresencialDTO | null>(null)
   const mountedRef = useRef(false)
   const concluindoRef = useRef(false)
+  clienteSelecionadaRef.current = clienteSelecionada
 
   const etapaAtual = ficha.etapaAtual
   const etapaNumero = ativo ? indexEtapa(etapaAtual) + 2 : 1
@@ -452,8 +466,22 @@ export default function FichaPageClient({ usuarioId }: Props) {
       mountedRef.current = false
       autosaveQueueRef.current?.stop()
       autosaveQueueRef.current = null
+      if (telefoneDebounceRef.current) clearTimeout(telefoneDebounceRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    const cliente = clienteSelecionadaRef.current
+    const sincronizacao = `${cliente?.id ?? ''}:${cliente?.version ?? ''}`
+    if (telefoneClienteSincronizadoRef.current === sincronizacao) return
+    telefoneClienteSincronizadoRef.current = sincronizacao
+    setTelefoneClienteEdicao(telefoneFormatadoDaCliente(cliente))
+    setErroTelefone(null)
+    if (telefoneDebounceRef.current) {
+      clearTimeout(telefoneDebounceRef.current)
+      telefoneDebounceRef.current = null
+    }
+  }, [clienteSelecionada?.id, clienteSelecionada?.version])
 
   useEffect(() => {
     if (!contexto || ativo) return
@@ -643,6 +671,58 @@ export default function FichaPageClient({ usuarioId }: Props) {
       setErro(error instanceof Error ? error.message : 'Erro ao iniciar rascunho')
     } finally {
       setIniciando(false)
+    }
+  }
+
+  function atualizarTelefoneCliente(valor: string) {
+    const telefone = aplicarMascaraTelefoneBR(valor)
+    setErroTelefone(null)
+
+    if (!clienteSelecionada) {
+      setNovoCliente((atual) => ({ ...atual, telefone }))
+      return
+    }
+
+    const cliente = clienteSelecionada
+    setTelefoneClienteEdicao(telefone)
+    setClienteSelecionada((atual) => atual ? {
+      ...atual,
+      telefone: telefone || null,
+      telefoneFormatado: telefone || null,
+    } : atual)
+
+    if (telefoneDebounceRef.current) clearTimeout(telefoneDebounceRef.current)
+    const requestId = telefoneRequestRef.current + 1
+    telefoneRequestRef.current = requestId
+    telefoneDebounceRef.current = setTimeout(() => {
+      void salvarTelefoneCliente(cliente, telefone, requestId)
+    }, 800)
+  }
+
+  async function salvarTelefoneCliente(cliente: ClientePresencialDTO, telefone: string, requestId: number) {
+    setSalvandoTelefone(true)
+    try {
+      const response = await fetch(`/api/atendimento-presencial/clientes/${cliente.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          telefone: telefone || null,
+          version: cliente.version,
+        }),
+      })
+      const data = (await response.json()) as ApiClientesResponse
+      if (requestId !== telefoneRequestRef.current) return
+      if (!response.ok || !data.ok || !data.cliente) {
+        throw new Error(data.message ?? 'Erro ao atualizar telefone')
+      }
+      setClienteSelecionada(data.cliente)
+      setTelefoneClienteEdicao(data.cliente.telefoneFormatado ?? '')
+    } catch (error) {
+      if (requestId === telefoneRequestRef.current) {
+        setErroTelefone(error instanceof Error ? error.message : 'Erro ao atualizar telefone')
+      }
+    } finally {
+      if (requestId === telefoneRequestRef.current) setSalvandoTelefone(false)
     }
   }
 
@@ -1035,90 +1115,109 @@ export default function FichaPageClient({ usuarioId }: Props) {
         {mensagemConclusao && <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{mensagemConclusao}</p>}
 
         {!ativo && (
-          <section className="grid gap-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-            <div className="mb-4">
-              <h2 className="text-lg font-semibold text-slate-950">Nova ficha</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Selecione a unidade e consultora quando necessario para iniciar o rascunho.
-              </p>
-            </div>
+          <section className="grid gap-6">
+            <div className="grid gap-5 rounded-lg border border-sky-200 bg-sky-50/60 p-4 shadow-sm sm:p-6">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-950">Novo atendimento</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  Selecione a unidade e consultora quando necessario para iniciar o atendimento.
+                </p>
+              </div>
 
-            {contexto?.unidadesPermitidas.length === 0 && (
-              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                Usuario sem unidade vinculada. Ajuste a configuracao na tela de usuarios.
-              </p>
-            )}
+              {contexto?.unidadesPermitidas.length === 0 && (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  Usuario sem unidade vinculada. Ajuste a configuracao na tela de usuarios.
+                </p>
+              )}
 
-            {contexto && contexto.unidadesPermitidas.length > 0 && (
-              <div className="grid gap-5">
-                {contexto.perfil !== 'consultora' && (
-                  <div>
-                    <p className="text-sm font-semibold text-slate-700">Consultora</p>
-                    <div className="mt-2 grid gap-2">
-                      {consultorasParaSelecao.length === 0 && (
-                        <p className="rounded-md border border-dashed border-slate-200 p-3 text-sm text-slate-500">
-                          {unidadeId ? 'Nenhuma consultora disponivel para esta unidade.' : 'Nenhuma consultora vinculada as unidades permitidas.'}
+              {contexto && contexto.unidadesPermitidas.length > 0 && (
+                <div className="grid gap-5">
+                  {contexto.perfil !== 'consultora' && (
+                    <div>
+                      <p className="text-sm font-semibold text-slate-700">Consultora</p>
+                      <div className="mt-2 grid gap-2">
+                        {consultorasParaSelecao.length === 0 && (
+                          <p className="rounded-md border border-dashed border-slate-200 p-3 text-sm text-slate-500">
+                            {unidadeId ? 'Nenhuma consultora disponivel para esta unidade.' : 'Nenhuma consultora vinculada as unidades permitidas.'}
+                          </p>
+                        )}
+                        {consultorasParaSelecao.map((consultora) => (
+                          <OpcaoButton key={consultora.id} selected={consultoraUsuarioId === consultora.id} onClick={() => setConsultoraUsuarioId(consultora.id)}>
+                            {consultora.nome}
+                          </OpcaoButton>
+                        ))}
+                      </div>
+                      {consultoraSemUnidade && (
+                        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                          Esta consultora nao possui unidade vinculada. Configure o vinculo na tela de usuarios antes de iniciar a ficha.
                         </p>
                       )}
-                      {consultorasParaSelecao.map((consultora) => (
-                        <OpcaoButton key={consultora.id} selected={consultoraUsuarioId === consultora.id} onClick={() => setConsultoraUsuarioId(consultora.id)}>
-                          {consultora.nome}
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700">Unidade</p>
+                    <div className="mt-2 grid gap-2">
+                      {unidadesParaSelecao.length === 0 && (
+                        <p className="rounded-md border border-dashed border-slate-200 p-3 text-sm text-slate-500">
+                          {consultoraUsuarioId ? 'Nenhuma unidade vinculada a consultora selecionada.' : 'Nenhuma unidade disponivel.'}
+                        </p>
+                      )}
+                      {unidadesParaSelecao.map((unidade) => (
+                        <OpcaoButton key={unidade.id} selected={unidadeId === unidade.id} onClick={() => setUnidadeId(unidade.id)}>
+                          {unidade.nome}
                         </OpcaoButton>
                       ))}
                     </div>
-                    {consultoraSemUnidade && (
-                      <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                        Esta consultora nao possui unidade vinculada. Configure o vinculo na tela de usuarios antes de iniciar a ficha.
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                <div>
-                  <p className="text-sm font-semibold text-slate-700">Unidade</p>
-                  <div className="mt-2 grid gap-2">
-                    {unidadesParaSelecao.length === 0 && (
-                      <p className="rounded-md border border-dashed border-slate-200 p-3 text-sm text-slate-500">
-                        {consultoraUsuarioId ? 'Nenhuma unidade vinculada a consultora selecionada.' : 'Nenhuma unidade disponivel.'}
-                      </p>
-                    )}
-                    {unidadesParaSelecao.map((unidade) => (
-                      <OpcaoButton key={unidade.id} selected={unidadeId === unidade.id} onClick={() => setUnidadeId(unidade.id)}>
-                        {unidade.nome}
-                      </OpcaoButton>
-                    ))}
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            <Button type="button" onClick={iniciarRascunho} disabled={!podeIniciar} className="mt-5 h-12 w-full rounded-md">
-              {iniciando ? 'Iniciando...' : 'Iniciar novo atendimento'}
-            </Button>
+              <Button type="button" onClick={iniciarRascunho} disabled={!podeIniciar} className="h-12 w-full rounded-md">
+                {iniciando ? 'Iniciando...' : 'Iniciar novo atendimento'}
+              </Button>
+            </div>
 
-            <div className="mt-6 border-t border-slate-100 pt-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-950">Rascunhos ativos</h2>
-                <Button type="button" variant="outline" onClick={carregarRascunhos} disabled={carregando} className="h-10 rounded-md">
+            <div className="grid gap-4 rounded-lg border border-amber-200 bg-amber-50/60 p-4 shadow-sm sm:p-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-950">Rascunhos em andamento</h2>
+                  <p className="mt-1 text-sm text-slate-600">Retome um atendimento salvo para continuar o preenchimento.</p>
+                </div>
+                <Button type="button" variant="outline" onClick={carregarRascunhos} disabled={carregando} className="h-10 self-start rounded-md">
                   <RefreshCw className="h-4 w-4" aria-hidden="true" />
                 </Button>
               </div>
               <div className="grid gap-3">
                 {carregando && <p className="text-sm text-slate-500">Carregando...</p>}
                 {!carregando && rascunhos.length === 0 && (
-                  <p className="rounded-md border border-dashed border-slate-200 p-4 text-sm text-slate-500">Nenhum rascunho ativo.</p>
+                  <p className="rounded-md border border-dashed border-slate-200 bg-white/70 p-4 text-sm text-slate-500">Nenhum rascunho ativo.</p>
                 )}
-                {rascunhos.map((rascunho) => (
-                  <article key={rascunho.id} className="rounded-lg border border-amber-300 bg-amber-50 p-4">
-                    <p className="text-sm font-bold uppercase text-amber-800">RASCUNHO</p>
-                    <p className="mt-2 text-sm text-slate-700">Iniciado em: {formatarData(rascunho.iniciadoEm)}</p>
-                    <p className="text-sm text-slate-700">Ultima atualizacao: {formatarData(rascunho.ultimaAtividadeEm)}</p>
-                    <p className="text-sm text-slate-700">Expira em: {diasRestantes(rascunho.expiraEm)} dias</p>
-                    <Button type="button" onClick={() => aplicarRascunho(rascunho)} className="mt-3 h-11 w-full rounded-md">
-                      Continuar preenchendo
-                    </Button>
-                  </article>
-                ))}
+                {rascunhos.map((rascunho) => {
+                  const unidade = contexto?.unidadesPermitidas.find((item) => item.id === rascunho.unidadeId)
+                  return (
+                    <article key={rascunho.id} className="min-w-0 rounded-lg border border-amber-300 bg-white/80 p-4">
+                      <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                        <p className="min-w-0 break-words text-base font-semibold text-slate-950">{nomeClienteRascunho(rascunho.clienteNome)}</p>
+                        <p className="shrink-0 text-xs font-bold uppercase tracking-wide text-amber-800">Rascunho</p>
+                      </div>
+                      <div className="mt-2 grid gap-1 text-sm text-slate-600">
+                        <p className="break-words">
+                          Consultora: <span className="font-medium text-slate-800">{nomeConsultoraRascunho(rascunho.consultoraNome)}</span>
+                        </p>
+                        <p className="break-words">
+                          Unidade: <span className="font-medium text-slate-800">{unidade?.nome ?? rascunho.unidadeId}</span>
+                        </p>
+                        <p>Ultima atualizacao: {formatarData(rascunho.ultimaAtividadeEm)}</p>
+                        <p>Expira em: {diasRestantes(rascunho.expiraEm)} dias</p>
+                        <p>Iniciado em: {formatarData(rascunho.iniciadoEm)}</p>
+                      </div>
+                      <Button type="button" onClick={() => aplicarRascunho(rascunho)} className="mt-3 h-11 w-full rounded-md">
+                        Continuar preenchendo
+                      </Button>
+                    </article>
+                  )
+                })}
               </div>
             </div>
           </section>
@@ -1210,7 +1309,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
                           Telefone opcional
                           <input
                             value={novoCliente.telefone}
-                            onChange={(event) => setNovoCliente((atual) => ({ ...atual, telefone: aplicarMascaraTelefoneBR(event.target.value) }))}
+                            onChange={(event) => atualizarTelefoneCliente(event.target.value)}
                             className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
                             inputMode="tel"
                             placeholder="(41) 99999-9999"
@@ -1648,6 +1747,13 @@ export default function FichaPageClient({ usuarioId }: Props) {
                 </div>
               </div>
             )}
+            <TelefoneClienteRapido
+              value={clienteSelecionada ? telefoneClienteEdicao : novoCliente.telefone}
+              onChange={atualizarTelefoneCliente}
+              erro={erroTelefone}
+              loading={salvandoTelefone}
+              compact={etapaAtual === 'ficha' && !clienteSelecionada}
+            />
           </section>
         )}
       </div>

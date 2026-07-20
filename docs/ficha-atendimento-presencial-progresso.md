@@ -2374,3 +2374,120 @@ Tres ajustes cirurgicos na Ficha de Atendimento Presencial, sem alterar migratio
 ### Proximo passo recomendado
 
 Executar a validacao manual autenticada (telefone e rascunhos) em desktop e mobile e anexar a gravacao.
+
+---
+
+## Atualizacao 2025-07-18 — consultora_nome e data_prevista_nascimento para presente_outra_pessoa
+
+### Resumo
+
+Adicionado campo obrigatorio `consultora_nome` (nome manual da consultora responsavel) ao atendimento presencial. Permitido tambem `data_prevista_nascimento` para criancas com situacao `presente_outra_pessoa`.
+
+### Migration criada
+
+- `supabase/migrations/20260718100000_atendimento_presencial_consultora_nome.sql`
+  - adiciona coluna `consultora_nome` (text, nullable, check length 2-120) em `atendimento_presencial_atendimentos`
+  - recria `atendimento_presencial_normalizar_payload_ficha` incluindo `consultoraNome` e permitindo `dataPrevistaNascimento` para `presente_outra_pessoa`
+  - recria `atendimento_presencial_concluir` aceitando e validando `p_consultora_nome`
+  - recria `atendimento_presencial_editar_concluido` aceitando e validando `p_consultora_nome`
+
+### Arquivos alterados
+
+- `src/lib/atendimento-presencial/ficha-schema.ts`: adicionado `consultoraNome` em `FichaDadosRascunho`, `chavesPermitidas`, validacao, `payloadBase`, `validarFichaParaConclusao` (obrigatorio min 2 chars); permitido `dataPrevistaNascimento` para `presente_outra_pessoa` na validacao de rascunho e conclusao; exportado `FICHA_CONSULTORA_NOME_MAX_CHARS`
+- `src/lib/atendimento-presencial/autosave-fila.ts`: adicionado `consultoraNome` em `serializarPayloadAutosave`
+- `src/lib/atendimento-presencial/rascunhos-shared.ts`: adicionado `consultoraNomeManual` em `AtendimentoPresencialDTO`
+- `src/lib/atendimento-presencial/rascunhos.ts`: adicionado `consultora_nome` em `AtendimentoPresencialRow` e `consultoraNomeManual` em `serializarAtendimentoPresencial`
+- `src/lib/atendimento-presencial/registros.ts`: adicionado `consultoraNomeManual` em `RegistroAtendimentoResumoDTO`; `normalizarDetalheParaFichaEdicao` e `montarPayloadEdicaoAtendimento` incluindo `consultoraNome`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts`: adicionado `consultora_nome` no SELECT e `p_consultora_nome` na RPC
+- `src/app/api/atendimento-presencial/atendimentos/[id]/route.ts`: adicionado `consultora_nome` no SELECT e `p_consultora_nome` na RPC de edicao
+- `src/app/api/atendimento-presencial/atendimentos/route.ts`: adicionado `consultora_nome` no SELECT e `consultoraNomeManual` no response
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.ts`: adicionado `consultora_nome` no SELECT
+- `src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.ts`: adicionado `consultora_nome` no SELECT
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`: adicionado input de `consultoraNome` na etapa ficha, incluido no payload de conclusao, exibido na revisao, permitido data para `presente_outra_pessoa`
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`: exibido `consultoraNomeManual` na listagem e detalhe, adicionado input na edicao, permitido data para `presente_outra_pessoa`
+
+### Validacoes realizadas
+
+- `npx tsc --noEmit`: passou limpo.
+
+### Nao validado
+
+- Testes automatizados (Jest) nao reexecutados.
+- Validacao manual em navegador autenticado.
+- Migration nao aplicada no Supabase (pendente).
+
+### Riscos conhecidos
+
+- Registros antigos nao terao `consultora_nome` (nullable, backward compativel).
+- `consultoraNome` e armazenado apenas na conclusao (coluna da tabela), nao no `dados_rascunho` JSONB. O autosave o mantem no JSONB para persistir durante o preenchimento.
+
+### Proximo passo recomendado
+
+Aplicar migration no Supabase, executar testes automatizados e validar manualmente.
+
+---
+
+## Atualizacao 2025-07-18 (revisao) — Validacao rigorosa de consultora_nome
+
+### Resumo
+
+Corrigida a validacao de `consultora_nome` para rejeitar numeros, e-mail, simbolos e hifens. Adicionada normalizacao de espacos duplicados em todas as camadas SQL. Limite alterado de 120 para 30 caracteres (ja ajustado pelo usuario na migration). Adicionados testes automatizados.
+
+### Alteracoes na migration
+
+- **Constraint**: agora valida regex `^[A-Za-z\xC0-\xD6\xD8-\xF6\xF8-\xFF]+( [A-Za-z\xC0-\xD6\xD8-\xF6\xF8-\xFF]+)*$` alem de tamanho 2-30
+- **`normalizar_payload_ficha`**: usa `regexp_replace(btrim(...), '[[:space:]]+', ' ', 'g')` para normalizar espacos; valida min 2, max 30 e regex
+- **`concluir` RPC**: normaliza com `regexp_replace`, valida min 2, max 30 e regex (rejeita numero, e-mail, simbolo)
+- **`editar_concluido` RPC**: mesma validacao da conclusao
+
+### Alteracoes no TypeScript
+
+- `FICHA_CONSULTORA_NOME_MAX_CHARS` alterado de 120 para 30
+- Novas funcoes `normalizarNomeConsultora` e `validarNomeConsultora` em `ficha-schema.ts`
+- `normalizarFichaDadosRascunho` agora usa `normalizarNomeConsultora` (trim + espacos duplicados + slice 30)
+- `validarFichaParaConclusao` agora usa `validarNomeConsultora` (regex + min 2 + max 30)
+- Testes existentes em `ficha-schema.test.ts` atualizados para incluir `consultoraNome` valido
+
+### Testes criados
+
+- Novo arquivo: `src/lib/atendimento-presencial/consultora-nome.test.ts` (30 testes)
+  - `Ana Clara` valido
+  - `Vitoria` (acento) valido
+  - 30 caracteres valido
+  - 31 caracteres invalido
+  - `Sharon123` invalido (numeros)
+  - `posvenda@lebebe.com.br` invalido (e-mail)
+  - `Ana-Clara` invalido (hifen)
+  - `Maria!` invalido (simbolo)
+  - `Ana    Clara` vira `Ana Clara` (espacos duplicados)
+  - valor vazio invalido na conclusao
+  - valor nulo permitido em rascunho
+  - validacao SQL da constraint, normalizar_payload_ficha, concluir e editar_concluido
+
+### Validacoes realizadas
+
+- `npx tsc --noEmit`: passou limpo.
+- `npx vitest run src/lib/atendimento-presencial/`: 14 arquivos / 124 testes passando.
+
+### Confirmacoes
+
+- Normalizacao de espacos duplicados: confirmada em SQL (`regexp_replace`) e TypeScript (`replace(/\s+/g, ' ')`)
+- Rejeicao de numeros: confirmada (regex nao permite `[0-9]`)
+- Rejeicao de e-mail: confirmada (regex nao permite `@`)
+- Rejeicao de simbolos: confirmada (regex so permite letras latinas e espacos)
+- Rejeicao de hifen: confirmada (regex nao permite `-`)
+- Limite 120 nao existe mais para consultora (confirmado por grep e teste)
+
+### Status da migration
+
+Corrigida, mas nao aplicada.
+
+### Pendencias
+
+- Aplicar migration no Supabase via MCP.
+- Validacao manual em navegador autenticado.
+
+### Riscos conhecidos
+
+- Registros antigos sem `consultora_nome` continuam validos (nullable).
+- Nomes com hifen (ex: `Ana-Clara`) serao rejeitados; se necessario, revisitar regex no futuro.

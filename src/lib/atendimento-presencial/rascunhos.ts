@@ -46,6 +46,7 @@ export type AtendimentoPresencialRow = {
   numero_lancamento?: number | null
   virada_cartao_dia?: number | null
   virada_cartao_mes?: number | null
+  consultora_nome?: string | null
   concluido_em?: string | null
   iniciado_em: string
   ultima_atividade_em: string
@@ -97,6 +98,7 @@ export function serializarAtendimentoPresencial(row: AtendimentoPresencialRow): 
     numeroLancamento: row.numero_lancamento ?? null,
     viradaCartaoDia: row.virada_cartao_dia ?? null,
     viradaCartaoMes: row.virada_cartao_mes ?? null,
+    consultoraNomeManual: row.consultora_nome ?? null,
     concluidoEm: row.concluido_em ?? null,
     iniciadoEm: row.iniciado_em,
     ultimaAtividadeEm: row.ultima_atividade_em,

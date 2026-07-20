@@ -14,6 +14,7 @@ import {
 } from '@/lib/atendimento-presencial/rascunho-cache'
 import {
   DEPARTAMENTOS_INTERESSE,
+  FICHA_CONSULTORA_NOME_MAX_CHARS,
   FICHA_ETAPAS,
   FICHA_OBSERVACOES_MAX_CHARS,
   FICHA_PRODUTO_MAX_CHARS,
@@ -311,6 +312,9 @@ function validarEtapa(params: {
     }
     for (const crianca of ficha.criancas) {
       if (crianca.situacao === 'gestacao' && crianca.dataPrevistaNascimento && !/^\d{4}-\d{2}-\d{2}$/.test(crianca.dataPrevistaNascimento)) {
+        erros.push({ sectionId: 'secao-crianca', fieldId: `data-prevista-${crianca.id}`, message: 'Revise a data prevista de nascimento.' })
+      }
+      if (crianca.situacao === 'presente_outra_pessoa' && crianca.dataPrevistaNascimento && !/^\d{4}-\d{2}-\d{2}$/.test(crianca.dataPrevistaNascimento)) {
         erros.push({ sectionId: 'secao-crianca', fieldId: `data-prevista-${crianca.id}`, message: 'Revise a data prevista de nascimento.' })
       }
       if (crianca.situacao === 'ja_nasceu') {
@@ -955,6 +959,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
   }
 
   function erroConclusaoParaSecao(field: string | undefined, message: string): ErroValidacaoFicha {
+    if (field === 'consultoraNome') return { sectionId: 'secao-consultora-nome', fieldId: 'consultora-nome', message }
     if (field === 'clienteId') return { sectionId: 'secao-cliente', fieldId: 'busca-cliente', message }
     if (field === 'criancas') return { sectionId: 'secao-crianca', message }
     if (field === 'departamentos') return { sectionId: 'secao-departamentos', message }
@@ -1014,6 +1019,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
         body: JSON.stringify({
           version: rascunhoSalvo.version,
           numeroLancamento: validacao.numeroLancamento,
+          consultoraNome: ficha.consultoraNome ?? '',
         }),
       })
       const data = (await response.json()) as ApiConcluirResponse
@@ -1352,6 +1358,29 @@ export default function FichaPageClient({ usuarioId }: Props) {
 
             {etapaAtual === 'ficha' && (
               <SecaoFicha
+                id="secao-consultora-nome"
+                titulo="Nome da consultora"
+                descricao="Informe o nome da consultora responsavel pelo atendimento."
+                icon={UserRound}
+                variant="azul"
+                erro={erroSecao('secao-consultora-nome')}
+              >
+                <label className="text-sm font-semibold text-slate-700">
+                  Nome da consultora
+                  <input
+                    id="consultora-nome"
+                    value={ficha.consultoraNome ?? ''}
+                    onChange={(event) => atualizarFicha((atual) => ({ ...atual, consultoraNome: event.target.value }))}
+                    className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
+                    maxLength={FICHA_CONSULTORA_NOME_MAX_CHARS}
+                    placeholder="Digite o nome da consultora"
+                  />
+                </label>
+              </SecaoFicha>
+            )}
+
+            {etapaAtual === 'ficha' && (
+              <SecaoFicha
                 id="secao-crianca"
                 titulo="Dados da crianca"
                 descricao="Registre uma ou mais criancas quando a cliente informar."
@@ -1391,7 +1420,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
                           </SelectContent>
                         </Select>
                       </div>
-                      {crianca.situacao === 'gestacao' && (
+                      {(crianca.situacao === 'gestacao' || crianca.situacao === 'presente_outra_pessoa') && (
                         <label className="text-sm font-semibold text-slate-700">
                           Data prevista de nascimento
                           <input
@@ -1670,6 +1699,7 @@ export default function FichaPageClient({ usuarioId }: Props) {
                 {[
                   { titulo: 'Unidade', valor: unidadeAtual?.nome ?? 'Nao informada', etapa: 'ficha' as FichaEtapa },
                   { titulo: 'Consultora', valor: consultoraAtual?.nome ?? 'Nao informada', etapa: 'ficha' as FichaEtapa },
+                  { titulo: 'Nome da consultora', valor: ficha.consultoraNome || 'Nao informado', etapa: 'ficha' as FichaEtapa },
                   { titulo: 'Cliente', valor: clienteSelecionada?.nome ?? 'Nao vinculada', etapa: 'ficha' as FichaEtapa },
                   { titulo: 'Telefone', valor: clienteSelecionada?.telefoneFormatado ?? 'Nao informado', etapa: 'ficha' as FichaEtapa },
                   { titulo: 'Parentesco', valor: clienteSelecionada ? getParentescoLabel(clienteSelecionada.parentesco, clienteSelecionada.parentescoOutro) : 'Nao informado', etapa: 'ficha' as FichaEtapa },

@@ -32,6 +32,7 @@ const SELECT_ATENDIMENTO = [
   'numero_lancamento',
   'virada_cartao_dia',
   'virada_cartao_mes',
+  'consultora_nome',
   'concluido_em',
   'iniciado_em',
   'ultima_atividade_em',
@@ -289,12 +290,15 @@ export async function PATCH(
       clienteId,
     }
 
+    const consultoraNome = typeof payload.consultoraNome === 'string' ? payload.consultoraNome.trim() : ''
+
     const { data: rpcData, error: rpcError } = await loaded.supabase.rpc('atendimento_presencial_editar_concluido', {
       p_atendimento_id: id,
       p_expected_version: expectedVersion,
       p_usuario_id: loaded.contexto.usuarioId,
       p_dados: dadosEdicao,
       p_numero_lancamento: validacaoConclusao.numeroLancamento,
+      p_consultora_nome: consultoraNome || null,
     })
 
     if (rpcError) {

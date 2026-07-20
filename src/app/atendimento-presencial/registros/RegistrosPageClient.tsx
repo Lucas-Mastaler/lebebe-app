@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { HistoricoClienteModal, type HistoricoClienteModalCliente } from '@/components/atendimento-presencial/HistoricoClienteModal'
 import {
   DEPARTAMENTOS_INTERESSE,
+  FICHA_CONSULTORA_NOME_MAX_CHARS,
   FICHA_OBSERVACOES_MAX_CHARS,
   FICHA_PRODUTO_MAX_CHARS,
   FICHA_PRODUTOS_MAX_ITENS,
@@ -422,6 +423,7 @@ export default function RegistrosPageClient() {
                     <div>
                       <p className="font-semibold text-slate-950">{registro.clienteNome}</p>
                       <p className="text-sm text-slate-600">{registro.unidadeNome} - {registro.consultoraEmail}</p>
+                      {registro.consultoraNomeManual && <p className="text-sm text-slate-600">Consultora: {registro.consultoraNomeManual}</p>}
                     </div>
                     <span className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-right">
                       <span className="block text-[10px] font-bold uppercase tracking-wide text-sky-700">Venda fechada?</span>
@@ -480,6 +482,10 @@ export default function RegistrosPageClient() {
                   ) : (
                     <p>Cliente nao localizada</p>
                   )}
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase text-slate-500">Nome da consultora</p>
+                  <p>{selecionado.atendimento.consultoraNomeManual ?? 'Nao informado'}</p>
                 </div>
                 <div>
                   <p className="text-xs font-bold uppercase text-slate-500">Departamentos</p>
@@ -550,6 +556,20 @@ export default function RegistrosPageClient() {
                       <p>Cliente: {selecionado.cliente?.nome ?? 'Cliente nao localizada'}</p>
                       <p>Unidade: {resumoSelecionado?.unidadeNome ?? selecionado.atendimento.unidadeId}</p>
                       <p>Consultora: {resumoSelecionado?.consultoraEmail ?? selecionado.atendimento.consultoraUsuarioId}</p>
+                      <p>Nome da consultora: {selecionado.atendimento.consultoraNomeManual ?? 'Nao informado'}</p>
+                    </div>
+
+                    <div className="grid gap-3">
+                      <label className="text-sm font-semibold text-slate-800">
+                        Nome da consultora
+                        <input
+                          value={fichaEdicao.consultoraNome ?? ''}
+                          onChange={(event) => atualizarFichaEdicao((atual) => ({ ...atual, consultoraNome: event.target.value }))}
+                          className="mt-2 min-h-11 w-full rounded-md border border-slate-200 px-3 text-base"
+                          maxLength={FICHA_CONSULTORA_NOME_MAX_CHARS}
+                          placeholder="Digite o nome da consultora"
+                        />
+                      </label>
                     </div>
 
                     <div className="grid gap-3">
@@ -568,14 +588,14 @@ export default function RegistrosPageClient() {
                           >
                             {SITUACOES_CRIANCA.map((item) => <option key={item.chave} value={item.chave}>{item.label}</option>)}
                           </select>
-                          {crianca.situacao === 'gestacao' && (
+                          {crianca.situacao === 'gestacao' || crianca.situacao === 'presente_outra_pessoa' ? (
                             <input
                               value={dataPrevistaEdicaoInputs[crianca.id] ?? formatarDataISOParaInput(crianca.dataPrevistaNascimento)}
                               onChange={(event) => atualizarDataPrevistaEdicao(crianca.id, event.target.value)}
                               className="min-h-11 rounded-md border border-slate-200 px-3 text-base"
                               placeholder="DD/MM/AAAA"
                             />
-                          )}
+                          ) : null}
                           {crianca.situacao === 'ja_nasceu' && (
                             <div className="grid gap-2">
                               <div className="grid grid-cols-2 gap-2">

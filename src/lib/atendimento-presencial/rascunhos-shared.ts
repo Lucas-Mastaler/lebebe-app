@@ -26,6 +26,7 @@ export type AtendimentoPresencialDTO = {
   draftClientId: string
   clienteNome?: string | null
   consultoraNome?: string | null
+  consultoraNomeManual?: string | null
   dadosRascunho: FichaDadosRascunho
   resultadoAtendimento: string | null
   motivoOutro: string | null

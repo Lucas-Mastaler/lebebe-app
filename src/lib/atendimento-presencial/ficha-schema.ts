@@ -126,6 +126,7 @@ export type FichaCriancaRascunho = {
 
 export type FichaDadosRascunho = {
   cliente?: FichaClienteRascunho
+  consultoraNome?: string
   criancas: FichaCriancaRascunho[]
   departamentos: DepartamentoInteresse[]
   produtosInteresse: string[]
@@ -156,6 +157,7 @@ const resultadosValidos = new Set<string>(RESULTADOS_ATENDIMENTO.map((item) => i
 const motivosValidos = new Set<string>(MOTIVOS_RESULTADO_GRUPOS.flatMap((grupo) => grupo.motivos.map((item) => item.chave)))
 const chavesPermitidas = new Set([
   'cliente',
+  'consultoraNome',
   'criancas',
   'departamentos',
   'produtosInteresse',
@@ -281,6 +283,21 @@ function payloadBase(): FichaDadosRascunho {
   }
 }
 
+export const FICHA_CONSULTORA_NOME_MAX_CHARS = 30
+
+const REGEX_CONSULTORA_NOME = /^[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u00FF]+( [A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u00FF]+)*$/
+
+export function normalizarNomeConsultora(valor: unknown): string {
+  if (typeof valor !== 'string') return ''
+  return valor.trim().replace(/\s+/g, ' ').slice(0, FICHA_CONSULTORA_NOME_MAX_CHARS)
+}
+
+export function validarNomeConsultora(valor: string): boolean {
+  if (!valor || valor.trim().length < 2) return false
+  if (valor.length > FICHA_CONSULTORA_NOME_MAX_CHARS) return false
+  return REGEX_CONSULTORA_NOME.test(valor)
+}
+
 export function criarCriancaRascunho(id: string): FichaCriancaRascunho {
   return { id, situacao: 'gestacao' }
 }
@@ -340,7 +357,7 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
       if (nome) crianca.nome = nome
       if (row.nomeNaoInformado === true) crianca.nomeNaoInformado = true
       if (typeof row.sexo === 'string' && sexosValidos.has(row.sexo)) crianca.sexo = row.sexo as SexoCrianca
-      if (situacao === 'gestacao') {
+      if (situacao === 'gestacao' || situacao === 'presente_outra_pessoa') {
         const dataPrevistaNascimento = normalizarDataLocal(row.dataPrevistaNascimento)
         if (dataPrevistaNascimento) crianca.dataPrevistaNascimento = dataPrevistaNascimento
       }
@@ -404,6 +421,9 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
   const observacoes = normalizarTextoMultilinha(payload.observacoes, FICHA_OBSERVACOES_MAX_CHARS)
   if (observacoes) dados.observacoes = observacoes
 
+  const consultoraNome = normalizarNomeConsultora(payload.consultoraNome)
+  if (consultoraNome) dados.consultoraNome = consultoraNome
+
   dados.etapaAtual = mapearEtapaRascunho(payload.etapaAtual)
 
   const tamanho = Buffer.byteLength(JSON.stringify(dados), 'utf8')
@@ -436,6 +456,9 @@ export function validarFichaParaConclusao(params: {
   if (!params.clienteId) {
     return { ok: false, field: 'clienteId', message: 'Selecione ou cadastre uma cliente antes de concluir.' }
   }
+  if (!params.ficha.consultoraNome || !validarNomeConsultora(params.ficha.consultoraNome)) {
+    return { ok: false, field: 'consultoraNome', message: 'Informe o nome da consultora (apenas letras e espacos, 2 a 30 caracteres).' }
+  }
 
   for (const crianca of params.ficha.criancas) {
     if (crianca.situacao === 'ja_nasceu') {
@@ -448,6 +471,9 @@ export function validarFichaParaConclusao(params: {
       if (!crianca.idadeUnidade) return { ok: false, field: 'criancas', message: 'Informe a idade da crianca.' }
     }
     if (crianca.situacao === 'gestacao' && crianca.dataPrevistaNascimento && !normalizarDataLocal(crianca.dataPrevistaNascimento)) {
+      return { ok: false, field: 'criancas', message: 'Revise a data prevista de nascimento.' }
+    }
+    if (crianca.situacao === 'presente_outra_pessoa' && crianca.dataPrevistaNascimento && !normalizarDataLocal(crianca.dataPrevistaNascimento)) {
       return { ok: false, field: 'criancas', message: 'Revise a data prevista de nascimento.' }
     }
   }

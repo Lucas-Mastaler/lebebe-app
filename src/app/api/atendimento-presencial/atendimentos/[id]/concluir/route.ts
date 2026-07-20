@@ -35,6 +35,7 @@ const SELECT_ATENDIMENTO = [
   'atualizado_por',
   'created_at',
   'updated_at',
+  'consultora_nome',
 ].join(', ')
 
 function jsonErro(message: string, status: number, extra?: Record<string, unknown>) {
@@ -154,11 +155,14 @@ export async function POST(
       return jsonErro(validacaoConclusao.message, 422, { field: validacaoConclusao.field })
     }
 
+    const consultoraNome = typeof payload.consultoraNome === 'string' ? payload.consultoraNome.trim() : ''
+
     const { error: rpcError } = await loaded.supabase.rpc('atendimento_presencial_concluir', {
       p_atendimento_id: id,
       p_expected_version: expectedVersion,
       p_usuario_id: loaded.contexto.usuarioId,
       p_numero_lancamento: validacaoConclusao.numeroLancamento,
+      p_consultora_nome: consultoraNome || null,
     })
 
     if (rpcError) {

@@ -153,6 +153,7 @@ describe('schema da ficha de atendimento presencial', () => {
         clienteId: 'cliente-1',
         numeroLancamento: resultadoAtendimento === 'sim' ? '123' : '',
         ficha: {
+          consultoraNome: 'Ana Clara',
           criancas: [],
           departamentos: ['p_pesada'],
           produtosInteresse: [],
@@ -164,6 +165,7 @@ describe('schema da ficha de atendimento presencial', () => {
     }
 
     const payloadComLabel = validarFichaDadosRascunho({
+      consultoraNome: 'Ana Clara',
       resultadoAtendimento: 'Não',
       motivosResultado: ['preco'],
       departamentos: ['p_pesada'],
@@ -254,6 +256,7 @@ describe('schema da ficha de atendimento presencial', () => {
       clienteId: 'cliente-1',
       numeroLancamento: '',
       ficha: {
+        consultoraNome: 'Ana Clara',
         criancas: [],
         departamentos: ['p_pesada'],
         produtosInteresse: [],
@@ -267,6 +270,7 @@ describe('schema da ficha de atendimento presencial', () => {
       clienteId: 'cliente-1',
       numeroLancamento: '987',
       ficha: {
+        consultoraNome: 'Ana Clara',
         criancas: [],
         departamentos: ['p_pesada'],
         produtosInteresse: [],
@@ -280,6 +284,7 @@ describe('schema da ficha de atendimento presencial', () => {
       clienteId: 'cliente-1',
       numeroLancamento: '987',
       ficha: {
+        consultoraNome: 'Ana Clara',
         criancas: [],
         departamentos: ['p_pesada'],
         produtosInteresse: [],
@@ -293,6 +298,7 @@ describe('schema da ficha de atendimento presencial', () => {
       clienteId: 'cliente-1',
       numeroLancamento: '',
       ficha: {
+        consultoraNome: 'Ana Clara',
         criancas: [],
         departamentos: ['p_pesada'],
         produtosInteresse: [],

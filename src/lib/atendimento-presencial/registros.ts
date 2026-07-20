@@ -28,6 +28,7 @@ export type RegistroAtendimentoResumoDTO = {
   clienteTelefone: string | null
   consultoraUsuarioId: string
   consultoraEmail: string
+  consultoraNomeManual: string | null
   unidadeId: string
   unidadeNome: string
   resultadoAtendimento: 'sim' | 'nao' | 'negociacao' | null
@@ -86,6 +87,7 @@ export function normalizarDetalheParaFichaEdicao(detalhe: Pick<
   const motivoOutro = detalhe.motivos.find((item) => item.motivo === 'outro')?.complemento?.trim()
 
   return {
+    consultoraNome: detalhe.atendimento.consultoraNomeManual ?? undefined,
     criancas: ordenarPorOrdem(detalhe.criancas).map((crianca) => ({
       id: crianca.local_id?.trim() || crianca.id,
       situacao: crianca.situacao as SituacaoCrianca,
@@ -122,5 +124,6 @@ export function montarPayloadEdicaoAtendimento(params: {
     clienteId: params.detalhe.atendimento.clienteId,
     dadosRascunho,
     numeroLancamento: params.numeroLancamento,
+    consultoraNome: params.ficha.consultoraNome ?? params.detalhe.atendimento.consultoraNomeManual ?? '',
   }
 }

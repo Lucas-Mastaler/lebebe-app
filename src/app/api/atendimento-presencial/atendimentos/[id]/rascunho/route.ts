@@ -23,6 +23,7 @@ const SELECT_RASCUNHO = [
   'status',
   'draft_client_id',
   'dados_rascunho',
+  'consultora_nome',
   'iniciado_em',
   'ultima_atividade_em',
   'expira_em',

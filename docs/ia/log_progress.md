@@ -1,3 +1,85 @@
+## 2026-07-18 (revisao) - Cascade - Validacao rigorosa de consultora_nome
+
+**Resumo:** Corrigida a validacao de `consultora_nome` para rejeitar numeros, e-mail, simbolos e hifens. Adicionada normalizacao de espacos duplicados em todas as camadas SQL (`regexp_replace`). Limite alterado de 120 para 30 caracteres no TypeScript. Novas funcoes `normalizarNomeConsultora` e `validarNomeConsultora` com regex de letras latinas e espacos. 30 testes novos, 124 testes totais passando. Migration corrigida mas nao aplicada.
+
+**Arquivos lidos:**
+- `supabase/migrations/20260718100000_atendimento_presencial_consultora_nome.sql`
+- `src/lib/atendimento-presencial/ficha-schema.ts`, `ficha-schema.test.ts`
+- `docs/ficha-atendimento-presencial-progresso.md`, `docs/ia/log_progress.md`
+
+**Arquivos alterados/criados:**
+- `supabase/migrations/20260718100000_atendimento_presencial_consultora_nome.sql` - constraint com regex, normalizacao e validacao em 3 funcoes SQL
+- `src/lib/atendimento-presencial/ficha-schema.ts` - `FICHA_CONSULTORA_NOME_MAX_CHARS=30`, `normalizarNomeConsultora`, `validarNomeConsultora`, uso em `normalizarFichaDadosRascunho` e `validarFichaParaConclusao`
+- `src/lib/atendimento-presencial/ficha-schema.test.ts` - adicionado `consultoraNome: 'Ana Clara'` em tests existentes
+- `src/lib/atendimento-presencial/consultora-nome.test.ts` - novo, 30 testes
+- `docs/ficha-atendimento-presencial-progresso.md`, `docs/ia/log_progress.md` - esta entrada
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit`: passou limpo.
+- `npx vitest run src/lib/atendimento-presencial/`: 14 arquivos / 124 testes passando.
+
+**Nao validado:**
+- Migration nao aplicada no Supabase.
+- Validacao manual em navegador.
+
+**Pendencias:**
+- Aplicar migration no Supabase via MCP.
+- Validacao manual.
+
+**Riscos conhecidos:**
+- Nomes com hifen serao rejeitados; se necessario, revisitar regex no futuro.
+- Registros antigos sem consultora_nome continuam validos (nullable).
+
+**Proximo passo recomendado:**
+Aplicar migration no Supabase e validar manualmente.
+
+## 2026-07-18 - Cascade - consultora_nome e data_prevista_nascimento para presente_outra_pessoa
+
+**Resumo:** Adicionado campo obrigatorio `consultora_nome` (nome manual da consultora responsavel) ao atendimento presencial, desde o formulario de ficha ate a persistencia no banco. Permitido tambem `data_prevista_nascimento` para criancas com situacao `presente_outra_pessoa` (antes so era permitido para `gestacao`). Migration SQL criada recriando `normalizar_payload_ficha`, `concluir` e `editar_concluido` RPCs. Frontend, API routes, schema, autosave, DTOs e registros atualizados. TypeScript compila limpo.
+
+**Arquivos lidos:**
+- `docs/ficha-atendimento-presencial-progresso.md`, `docs/ia/log_progress.md`
+- `src/lib/atendimento-presencial/ficha-schema.ts`, `autosave-fila.ts`, `rascunhos.ts`, `rascunhos-shared.ts`, `registros.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts`, `[id]/route.ts`, `route.ts`, `rascunhos/route.ts`, `[id]/rascunho/route.ts`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`, `registros/RegistrosPageClient.tsx`
+- `supabase/migrations/20260717120000_atendimento_presencial_melhorias_ficha_edicao.sql`
+
+**Arquivos alterados/criados:**
+- `supabase/migrations/20260718100000_atendimento_presencial_consultora_nome.sql` - nova migration
+- `src/lib/atendimento-presencial/ficha-schema.ts` - consultoraNome em tipo, validacao, payloadBase, chavesPermitidas, validarFichaParaConclusao; dataPrevistaNascimento para presente_outra_pessoa; FICHA_CONSULTORA_NOME_MAX_CHARS
+- `src/lib/atendimento-presencial/autosave-fila.ts` - consultoraNome em serializarPayloadAutosave
+- `src/lib/atendimento-presencial/rascunhos-shared.ts` - consultoraNomeManual em AtendimentoPresencialDTO
+- `src/lib/atendimento-presencial/rascunhos.ts` - consultora_nome em AtendimentoPresencialRow, consultoraNomeManual em serializarAtendimentoPresencial
+- `src/lib/atendimento-presencial/registros.ts` - consultoraNomeManual em RegistroAtendimentoResumoDTO, normalizarDetalheParaFichaEdicao, montarPayloadEdicaoAtendimento
+- `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts` - consultora_nome no SELECT, p_consultora_nome na RPC
+- `src/app/api/atendimento-presencial/atendimentos/[id]/route.ts` - consultora_nome no SELECT, p_consultora_nome na RPC de edicao
+- `src/app/api/atendimento-presencial/atendimentos/route.ts` - consultora_nome no SELECT, consultoraNomeManual no response
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.ts` - consultora_nome no SELECT
+- `src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.ts` - consultora_nome no SELECT
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx` - input de consultoraNome, payload de conclusao, revisao, data para presente_outra_pessoa
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx` - consultoraNomeManual na listagem, detalhe e edicao; data para presente_outra_pessoa
+- `docs/ficha-atendimento-presencial-progresso.md`, `docs/ia/log_progress.md` - esta entrada
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit`: passou limpo.
+
+**Nao validado:**
+- Testes automatizados (Jest) nao reexecutados.
+- Validacao manual em navegador autenticado.
+- Migration nao aplicada no Supabase (pendente).
+
+**Pendencias:**
+- Aplicar migration no Supabase via MCP.
+- Executar testes automatizados.
+- Validar manualmente em navegador.
+
+**Riscos conhecidos:**
+- Registros antigos nao terao consultora_nome (nullable, backward compativel).
+- consultoraNome e armazenado na coluna da tabela apenas na conclusao. Durante o preenchimento, fica no dados_rascunho JSONB via autosave.
+
+**Proximo passo recomendado:**
+Aplicar migration no Supabase, executar testes e validar manualmente.
+
 ## 2026-07-17 - Devin - Telefone em todas as etapas, rascunhos enriquecidos e separacao visual na Ficha de Atendimento Presencial
 
 **Resumo:** Tres ajustes cirurgicos na Ficha de Atendimento Presencial. (1) Telefone da cliente disponivel para informar/corrigir em todas as etapas via componente compartilhado `TelefoneClienteRapido`, no fluxo normal (nao fixo) proximo aos botoes de navegacao, usando estado unico (antes de vincular: `novoCliente.telefone`; com cliente vinculada: registro da cliente). (2) Cards de rascunho enriquecidos com nome da cliente e consultora, resolvidos em batch no backend (sem N+1), com fallbacks. (3) Separacao visual clara entre "Novo atendimento" (fundo azul suave) e "Rascunhos em andamento" (fundo ambar suave). Nao foram alteradas migrations, RPCs, normalizacao de telefone, historico SGI, regras de conclusao nem permissoes. Decisao do usuario: Opcao B (adicionar PATCH minimo de telefone da cliente). Persistencia do telefone de cliente ja vinculada via novo `PATCH /api/atendimento-presencial/clientes/[id]` (apenas telefone, debounce 800 ms, concorrencia por version, prevencao de duplicidade), reaproveitando `normalizarTelefone`. Telefone nao entra no payload do rascunho; e restaurado ao reabrir carregando a cliente por `clienteId`.

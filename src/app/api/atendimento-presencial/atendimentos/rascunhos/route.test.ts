@@ -22,7 +22,6 @@ const unidadeId = '123e4567-e89b-12d3-a456-426614174002'
 const draftClientId = '123e4567-e89b-12d3-a456-426614174003'
 const rascunhoId = '123e4567-e89b-12d3-a456-426614174004'
 const consultoraId = '123e4567-e89b-12d3-a456-426614174005'
-const perfilConsultoraId = '123e4567-e89b-12d3-a456-426614174006'
 
 const authOk = {
   ok: true as const,
@@ -131,7 +130,7 @@ describe('api rascunhos atendimento presencial', () => {
 
     const response = await POST(new Request('http://local', {
       method: 'POST',
-      body: JSON.stringify({ draftClientId, dadosRascunho: { notaTecnica: 'teste' } }),
+      body: JSON.stringify({ draftClientId, dadosRascunho: { consultoraNome: 'Ana Clara' } }),
     }))
     const json = await response.json()
 
@@ -158,7 +157,7 @@ describe('api rascunhos atendimento presencial', () => {
 
     const response = await POST(new Request('http://local', {
       method: 'POST',
-      body: JSON.stringify({ draftClientId, unidadeId }),
+      body: JSON.stringify({ draftClientId, unidadeId, dadosRascunho: { consultoraNome: 'Ana Clara' } }),
     }))
     const json = await response.json()
 
@@ -167,7 +166,7 @@ describe('api rascunhos atendimento presencial', () => {
     expect(json.idempotente).toBe(true)
   })
 
-  it('rejeita consultora tentando adulterar responsavel', async () => {
+  it('ignora consultoraUsuarioId adulterado e usa usuario autenticado', async () => {
     mockSupabase({
       app_usuarios_perfis: [
         { data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null },
@@ -178,6 +177,10 @@ describe('api rascunhos atendimento presencial', () => {
           error: null,
         },
       ],
+      atendimento_presencial_atendimentos: [
+        { data: null, error: null },
+        { data: { ...rascunhoRow, consultora_usuario_id: usuarioId }, error: null },
+      ],
     })
 
     const response = await POST(new Request('http://local', {
@@ -186,33 +189,29 @@ describe('api rascunhos atendimento presencial', () => {
         draftClientId,
         unidadeId,
         consultoraUsuarioId: '123e4567-e89b-12d3-a456-426614174099',
+        dadosRascunho: { consultoraNome: 'Ana Clara' },
       }),
     }))
+    const json = await response.json()
 
-    expect(response.status).toBe(403)
+    expect(response.status).toBe(201)
+    expect(json.ok).toBe(true)
+    expect(json.rascunho.consultoraUsuarioId).toBe(usuarioId)
   })
 
-  it('lista consultoras disponiveis com unidades vinculadas no contexto gerencial', async () => {
+  it('nao retorna mais lista de consultoras disponiveis', async () => {
     mockSupabase({
       app_usuarios_perfis: [
         { data: { app_perfis_acesso: { chave: 'gestao', ativo: true } }, error: null },
-        { data: [{ usuario_id: consultoraId }], error: null },
       ],
       app_usuarios_unidades: [
         {
           data: [{ app_unidades: { id: unidadeId, chave: 'bigorrilho', nome: 'Bigorrilho', ativo: true } }],
           error: null,
         },
-        { data: [{ usuario_id: consultoraId, unidade_id: unidadeId }], error: null },
       ],
       atendimento_presencial_atendimentos: [
         { data: [], error: null },
-      ],
-      app_perfis_acesso: [
-        { data: { id: perfilConsultoraId }, error: null },
-      ],
-      usuarios_permitidos: [
-        { data: [{ id: consultoraId, email: 'consultora.loja@example.com' }], error: null },
       ],
     })
 
@@ -221,14 +220,7 @@ describe('api rascunhos atendimento presencial', () => {
 
     expect(response.status).toBe(200)
     expect(json.ok).toBe(true)
-    expect(json.consultorasDisponiveis).toEqual([
-      {
-        id: consultoraId,
-        email: 'consultora.loja@example.com',
-        nome: 'consultora.loja@example.com',
-        unidadeIds: [unidadeId],
-      },
-    ])
+    expect(json.consultorasDisponiveis).toEqual([])
   })
 
   it('enriquece rascunhos com nomes em consultas batch e usa fallbacks', async () => {
@@ -280,24 +272,20 @@ describe('api rascunhos atendimento presencial', () => {
     expect(from.mock.calls.filter(([table]) => table === 'usuarios_permitidos')).toHaveLength(1)
   })
 
-  it('rejeita consultora sem vinculo com a unidade informada', async () => {
+  it('cria rascunho para gestao ignorando consultoraUsuarioId e usando usuario autenticado', async () => {
     mockSupabase({
       app_usuarios_perfis: [
         { data: { app_perfis_acesso: { chave: 'gestao', ativo: true } }, error: null },
-        { data: { id: 'perfil-vinculo' }, error: null },
       ],
       app_usuarios_unidades: [
         {
           data: [{ app_unidades: { id: unidadeId, chave: 'bigorrilho', nome: 'Bigorrilho', ativo: true } }],
           error: null,
         },
+      ],
+      atendimento_presencial_atendimentos: [
         { data: null, error: null },
-      ],
-      usuarios_permitidos: [
-        { data: { id: consultoraId, ativo: true }, error: null },
-      ],
-      app_perfis_acesso: [
-        { data: { id: perfilConsultoraId }, error: null },
+        { data: { ...rascunhoRow, consultora_usuario_id: usuarioId }, error: null },
       ],
     })
 
@@ -307,12 +295,14 @@ describe('api rascunhos atendimento presencial', () => {
         draftClientId,
         unidadeId,
         consultoraUsuarioId: consultoraId,
-        dadosRascunho: { notaTecnica: 'teste' },
+        dadosRascunho: { consultoraNome: 'Ana Clara' },
       }),
     }))
     const json = await response.json()
 
-    expect(response.status).toBe(422)
-    expect(json).toMatchObject({ ok: false, message: 'Consultora nao vinculada a unidade', field: 'consultoraUsuarioId' })
+    expect(response.status).toBe(201)
+    expect(json.ok).toBe(true)
+    expect(json.rascunho.consultoraUsuarioId).toBe(usuarioId)
+    expect(json.rascunho.unidadeId).toBe(unidadeId)
   })
 })

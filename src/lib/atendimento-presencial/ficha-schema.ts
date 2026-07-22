@@ -3,7 +3,7 @@ import type { ParentescoCliente } from './clientes'
 export const FICHA_ETAPAS = ['ficha', 'resultado', 'revisao'] as const
 export type FichaEtapa = (typeof FICHA_ETAPAS)[number]
 
-export const FICHA_TOTAL_ETAPAS = 4
+export const FICHA_TOTAL_ETAPAS = 3
 
 export const SITUACOES_CRIANCA = [
   { chave: 'gestacao', label: 'Gestacao' },
@@ -456,7 +456,8 @@ export function validarFichaParaConclusao(params: {
   if (!params.clienteId) {
     return { ok: false, field: 'clienteId', message: 'Selecione ou cadastre uma cliente antes de concluir.' }
   }
-  if (!params.ficha.consultoraNome || !validarNomeConsultora(params.ficha.consultoraNome)) {
+  const consultoraNomeNormalizado = normalizarNomeConsultora(params.ficha.consultoraNome)
+  if (!consultoraNomeNormalizado || !validarNomeConsultora(consultoraNomeNormalizado)) {
     return { ok: false, field: 'consultoraNome', message: 'Informe o nome da consultora (apenas letras e espacos, 2 a 30 caracteres).' }
   }
 

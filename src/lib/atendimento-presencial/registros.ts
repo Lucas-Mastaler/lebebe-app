@@ -1,3 +1,4 @@
+import { normalizarNomeConsultora } from './ficha-schema'
 import type { AtendimentoPresencialDTO } from './rascunhos-shared'
 import type {
   DepartamentoInteresse,
@@ -124,6 +125,6 @@ export function montarPayloadEdicaoAtendimento(params: {
     clienteId: params.detalhe.atendimento.clienteId,
     dadosRascunho,
     numeroLancamento: params.numeroLancamento,
-    consultoraNome: params.ficha.consultoraNome ?? params.detalhe.atendimento.consultoraNomeManual ?? '',
+    consultoraNome: normalizarNomeConsultora(params.ficha.consultoraNome ?? params.detalhe.atendimento.consultoraNomeManual ?? ''),
   }
 }

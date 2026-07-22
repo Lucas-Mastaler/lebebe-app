@@ -5,8 +5,18 @@ import RegistrosPageClient from './RegistrosPageClient'
 export const dynamic = 'force-dynamic'
 
 export default async function RegistrosAtendimentosPresenciaisPage() {
-  const access = await checkModuleAndWindowAccess('atendimento_presencial_registros')
-  if (!access.ok) redirect(access.redirectTo)
+  const acessoRegistros = await checkModuleAndWindowAccess('atendimento_presencial_registros')
+  const acessoRascunhos = await checkModuleAndWindowAccess('atendimento_presencial_ficha')
 
-  return <RegistrosPageClient />
+  if (!acessoRegistros.ok && !acessoRascunhos.ok) {
+    const foraDoHorario = acessoRegistros.redirectTo === '/fora-do-horario' || acessoRascunhos.redirectTo === '/fora-do-horario'
+    redirect(foraDoHorario ? '/fora-do-horario' : acessoRegistros.redirectTo)
+  }
+
+  return (
+    <RegistrosPageClient
+      podeVerRegistros={acessoRegistros.ok}
+      podeVerRascunhos={acessoRascunhos.ok}
+    />
+  )
 }

@@ -88,6 +88,7 @@ const payloadEdicaoValido = {
     ],
     departamentos: ['moveis'],
     produtosInteresse: ['Berco'],
+    consultoraNome: 'Ana',
     resultadoAtendimento: 'nao',
     motivosResultado: ['virada_cartao'],
     viradaCartaoDia: 15,
@@ -202,11 +203,13 @@ describe('api detalhe de registro atendimento presencial', () => {
       p_usuario_id: usuarioId,
       p_dados: expect.objectContaining({
         clienteId,
+        consultoraNome: 'Ana',
         resultadoAtendimento: 'nao',
         viradaCartaoDia: 15,
         viradaCartaoMes: 8,
       }),
       p_numero_lancamento: null,
+      p_consultora_nome: null,
     })
   })
 

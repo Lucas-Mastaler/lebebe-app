@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { validarFichaDadosRascunho, validarFichaParaConclusao } from '@/lib/atendimento-presencial/ficha-schema'
+import { normalizarNomeConsultora, validarFichaDadosRascunho, validarFichaParaConclusao } from '@/lib/atendimento-presencial/ficha-schema'
 import {
   carregarPerfilAtendimento,
   isUuid,
@@ -155,7 +155,7 @@ export async function POST(
       return jsonErro(validacaoConclusao.message, 422, { field: validacaoConclusao.field })
     }
 
-    const consultoraNome = typeof payload.consultoraNome === 'string' ? payload.consultoraNome.trim() : ''
+    const consultoraNome = typeof payload.consultoraNome === 'string' ? normalizarNomeConsultora(payload.consultoraNome) : ''
 
     const { error: rpcError } = await loaded.supabase.rpc('atendimento_presencial_concluir', {
       p_atendimento_id: id,

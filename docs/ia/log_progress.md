@@ -1,3 +1,175 @@
+## 2026-07-22 - Cascade - Rascunhos na tela de Registros do Atendimento Presencial
+
+**Resumo:** Movida a listagem de rascunhos da ficha para uma aba na tela de registros. A ficha passa a carregar contexto no servidor, exibe botao "Ver rascunhos" e carrega rascunho por `?rascunho=<id>` com loading e erros. A tela de registros passa a aceitar `atendimento_presencial_registros` ou `atendimento_presencial_ficha`, exibindo apenas as abas permitidas, com fallback de tab via URL.
+
+**Arquivos lidos:**
+- `docs/atendimento-presencial-registros-rascunhos.md`
+- `docs/atendimento-presencial-simplificacao-fluxo.md`
+- `src/app/atendimento-presencial/ficha/page.tsx`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `src/app/atendimento-presencial/registros/page.tsx`
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`
+- `src/lib/atendimento-presencial/rascunhos.ts`
+- `src/lib/atendimento-presencial/rascunhos-shared.ts`
+- `src/lib/atendimento-presencial/rascunho-display.ts`
+- `src/lib/auth/module-access.ts`
+- `src/components/ui/tabs.tsx`
+
+**Arquivos alterados/criados:**
+- `docs/atendimento-presencial-registros-rascunhos.md` - plano atualizado com regras de permissao
+- `src/app/atendimento-presencial/ficha/page.tsx` - carrega contexto (perfil + unidades) no servidor e passa ao client
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx` - remove lista de rascunhos; adiciona botao "Ver rascunhos"; carrega rascunho por URL com loading/erro
+- `src/app/atendimento-presencial/registros/page.tsx` - verifica `atendimento_presencial_registros` e/ou `atendimento_presencial_ficha`; passa flags ao client
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx` - abas por URL com fallback, lista de rascunhos e acao "Continuar atendimento"
+- `docs/ia/log_progress.md` - esta entrada
+- `docs/atendimento-presencial-simplificacao-fluxo.md` - mencao ao novo fluxo de rascunhos e permissões
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit`: passou.
+- `npx eslint` nos arquivos tocados: passou (apenas warning de .md ignorado).
+- `npx vitest run src/lib/auth/modulos-app.test.ts`: 17/17 passando.
+
+**Nao validado:**
+- `npx next build` completo.
+- Validacao manual no navegador para todas as combinacoes de permissao.
+
+**Pendencias:**
+- Rodar build completo e testes do modulo quando possivel.
+- Validar manualmente: somente ficha, somente registros, ambas, nenhuma, tab invalida, `?rascunho=<id>` valido/invalido.
+
+**Riscos conhecidos:**
+- `page.tsx` de registros chama `checkModuleAndWindowAccess` duas vezes, gerando consultas extras.
+- `FichaPageClient` le `?rascunho` via `useSearchParams` + fallback `window.location` para evitar flash de criacao automatica.
+
+**Proximo passo recomendado:**
+- Rodar `npm run build` e validar manualmente os cenarios de permissao e carregamento por URL.
+
+## 2026-07-22 - Cascade - Ajustes finos na simplificacao do fluxo Atendimento Presencial
+
+**Resumo:** Eliminado botao intermediario de inicio; rascunho cria automaticamente quando unidade e nome normalizado da consultora sao validos. Reordenada etapa 1 para Unidade → Nome da consultora → Cliente. Preservacao de estado durante POST, anti-corrida, primeiro autosave com estado mais recente e tratamento de erro com "Tentar novamente". Validacao de `consultoraNome` adicionada ao `POST` de criacao. Botao "Novo atendimento" limpa estado e aguarda filial + nome.
+
+**Arquivos lidos:**
+- `docs/atendimento-presencial-simplificacao-fluxo.md`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts`
+- `src/lib/atendimento-presencial/ficha-schema.ts`
+- `.devin/rules/gerais.md`, `.devin/rules/resumo.md`, `.devin/rules/continuidade-agente.md`, `.devin/rules/supabase.md`
+
+**Arquivos alterados/criados:**
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx` - remove painel intermediario; reordena campos; criacao automatica; preservacao de estado; `aplicarRascunhoCriado`; `erroCriacao`; `podeCriarRascunho`; ajuste `novoAtendimento`
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.ts` - validacao de `consultoraNome` no POST
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts` - atualiza payloads POST com `consultoraNome`
+- `docs/atendimento-presencial-simplificacao-fluxo.md` - adiciona §15 ajustes finos e checklist
+- `docs/ia/log_progress.md` - esta entrada
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit`: passou.
+- `npx eslint` nos arquivos tocados: passou.
+- `npx vitest run src/lib/atendimento-presencial src/app/api/atendimento-presencial`: 21 arquivos / 158 testes passando.
+- `npx next build`: passou.
+
+**Nao validado:**
+- Validacao manual no navegador.
+
+**Pendencias:**
+- Validar manualmente cenarios: unica unidade, multiplas unidades, sem unidade, superadmin, supervisora, gestao, rascunho novo, rascunho antigo, clique duplo, autosave, botao "Novo atendimento", dados digitados durante a criacao.
+
+**Riscos conhecidos:**
+- Estado local preenchido durante o POST so e persistido se o primeiro `flushNow` apos criacao for bem-sucedido; falha de rede pode exigir acao manual ("Tentar novamente").
+- Rascunhos antigos sem `consultoraNome` continuam exigindo preenchimento manual na conclusao.
+
+**Proximo passo recomendado:**
+- Realizar validacao manual no navegador conforme checklist.
+
+## 2026-07-22 - Cascade - Implementacao da simplificacao do fluxo Atendimento Presencial
+
+**Resumo:** Implementada a simplificacao do fluxo de Atendimento Presencial conforme decisoes aprovadas. Fluxo reduzido para 3 etapas (`FICHA_TOTAL_ETAPAS = 3`). Removida a tela inicial de selecao de e-mail/consultora; `consultora_usuario_id` passa a ser sempre o usuario autenticado, com backend ignorando qualquer `consultoraUsuarioId` enviado. Selecao de unidade movida para o topo da etapa 1, com pre-selecao automatica quando ha uma unica unidade e bloqueio apos criacao do rascunho. Normalizacao do nome da consultora (trim + collapse spaces) aplicada no input, autosave, conclusao e edicao de atendimentos concluidos. Botao "Novo atendimento" reposicionado e retomada de rascunhos antigos preservada.
+
+**Arquivos lidos:**
+- `docs/atendimento-presencial-simplificacao-fluxo.md`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/route.ts`
+- `src/lib/atendimento-presencial/ficha-schema.ts`
+- `src/lib/atendimento-presencial/registros.ts`
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`
+
+**Arquivos alterados/criados:**
+- `src/lib/atendimento-presencial/ficha-schema.ts` - `FICHA_TOTAL_ETAPAS = 3`; `validarFichaParaConclusao` normaliza `consultoraNome`
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.ts` - remove listagem/consultora; POST usa sempre usuario autenticado
+- `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts` - normaliza `consultoraNome` antes de enviar a RPC
+- `src/app/api/atendimento-presencial/atendimentos/[id]/route.ts` - normaliza `consultoraNome` na edicao de concluido
+- `src/lib/atendimento-presencial/registros.ts` - normaliza `consultoraNome` no payload de edicao
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx` - 3 etapas, selecao de unidade no topo, botao Novo atendimento, auto-inicio controlado, normalizacao onBlur
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx` - normalizacao onBlur do `consultoraNome`
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.test.ts` - ajustado para novo comportamento
+- `src/app/api/atendimento-presencial/atendimentos/[id]/route.test.ts` - ajustado `consultoraNome` e expectativas RPC
+- `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.test.ts` - ajustado `consultoraNome` e expiracao
+- `src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.test.ts` - ajustado `expira_em`
+- `docs/atendimento-presencial-simplificacao-fluxo.md` - status e checklist atualizados
+- `docs/ia/log_progress.md` - esta entrada
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit`: passou limpo.
+- `npm run build`: passou limpo (mensagens de `DYNAMIC_SERVER_USAGE` pre-existentes em `/procurar-datas`).
+- `npx vitest run src/lib/atendimento-presencial src/app/api/atendimento-presencial`: 21 arquivos / 158 testes passando.
+- `npm run test` completo: falhas pre-existentes em `procurar-datas` (17 testes) nao relacionadas a este escopo.
+- `npx eslint` nos arquivos tocados: sem erros.
+
+**Nao validado:**
+- Validacao manual em navegador (pendente de acesso ao ambiente de execucao).
+
+**Pendencias:**
+- Validar manualmente os cenarios: unica unidade, multiplas unidades, sem unidade, superadmin, supervisora, gestao, rascunho novo, rascunho antigo, clique duplo, autosave, botao "Novo atendimento".
+
+**Riscos conhecidos:**
+- Rascunhos antigos sem `consultoraNome` exigem preenchimento manual na conclusao.
+- Auto-criacao de rascunho em unidade unica pode conflitar se o usuario recarregar varias vezes (mitigado por `draftClientId` e flags `iniciando`/`autoIniciado`).
+
+**Proximo passo recomendado:**
+Realizar validacao manual e, se necessario, ajustar pontos finos de UX.
+
+## 2025-01-30 - Cascade - Auditoria inicial para simplificacao do fluxo Atendimento Presencial
+
+**Resumo:** Realizada auditoria inicial do fluxo de Atendimento Presencial conforme solicitacao. Mapeadas as 4 etapas reais (selecao de unidade/consultora + ficha + resultado + revisao), confirmadas origens de e-mail, filial, perfil, unidades permitidas e nome da consultora. Validadas tabelas, colunas, FKs e RLS no MCP Supabase. Criado documento de plano `docs/atendimento-presencial-simplificacao-fluxo.md` com diagnostico, arquivos envolvidos, plano minimo, checklist, decisoes pendentes, riscos e proximos passos. Nenhuma alteracao de codigo foi aplicada.
+
+**Arquivos lidos:**
+- `docs/ia/log_progress.md`, `docs/ficha-atendimento-presencial-progresso.md`
+- `docs/PLANO FUNCIONAL ATUALIZADO - FICHA DE ATENDIMENTO PRESENCIAL.md`
+- `docs/ia/padrao-novas-telas-permissoes.md`
+- `.devin/rules/gerais.md`, `.devin/rules/resumo.md`, `.devin/rules/continuidade-agente.md`, `.devin/rules/supabase.md`
+- `src/app/atendimento-presencial/ficha/page.tsx`, `FichaPageClient.tsx`
+- `src/lib/atendimento-presencial/ficha-schema.ts`, `rascunhos.ts`, `rascunhos-shared.ts`, `autosave-fila.ts`, `rascunho-display.ts`
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.ts`, `[id]/rascunho/route.ts`, `[id]/concluir/route.ts`, `[id]/route.ts`, `route.ts`
+- `src/lib/auth/api-auth.ts`, `module-access.ts`, `access-window.ts`, `modulos-app.ts`
+
+**Arquivos alterados/criados:**
+- `docs/atendimento-presencial-simplificacao-fluxo.md` - novo documento de auditoria e plano
+- `docs/ia/log_progress.md` - esta entrada
+
+**Validacoes realizadas:**
+- MCP Supabase `list_tables` (public, verbose=true): confirmadas tabelas `usuarios_permitidos`, `app_unidades`, `app_usuarios_unidades`, `app_perfis_acesso`, `app_usuarios_perfis`, `app_permissoes_perfil`, `app_permissoes_usuario`, `app_modulos`, `atendimento_presencial_atendimentos`, `atendimento_presencial_clientes`.
+- MCP Supabase `execute_sql` em `pg_policies`: confirmadas policies `no_direct_*` de `atendimento_presencial_atendimentos`/`clientes` e policies de `usuarios_permitidos`.
+- MCP Supabase `execute_sql`: amostra de unidades ativas (BIGORRILHO, FEIRA, MARECHAL, PORTAO, POS VENDA) e perfis ativos (consultora, gestao, pos_venda, supervisora_loja), e contagem 47 total / 34 rascunhos / 13 concluidos.
+
+**Nao validado:**
+- Nenhuma alteracao de codigo foi feita; validacao manual/testes ainda nao aplicaveis nesta fase.
+
+**Pendencias:**
+- Aprovacao do usuario sobre as decisoes pendentes no documento de plano.
+- Implementacao das mudancas apos aprovacao.
+- Testes automatizados e manual apos implementacao.
+
+**Riscos conhecidos:**
+- Remover selecao de outra consultora pode conflitar com plano funcional original que previa essa acao para supervisora/gestao.
+- Rascunhos antigos sem `consultoraNome` exigirao preenchimento manual na conclusao.
+- Ajuste no contador de etapas pode afetar barra de progresso e navegacao.
+
+**Proximo passo recomendado:**
+Revisar e aprovar `docs/atendimento-presencial-simplificacao-fluxo.md`; em seguida, prosseguir com a implementacao minima.
+
 ## 2026-07-18 (revisao) - Cascade - Validacao rigorosa de consultora_nome
 
 **Resumo:** Corrigida a validacao de `consultora_nome` para rejeitar numeros, e-mail, simbolos e hifens. Adicionada normalizacao de espacos duplicados em todas as camadas SQL (`regexp_replace`). Limite alterado de 120 para 30 caracteres no TypeScript. Novas funcoes `normalizarNomeConsultora` e `validarNomeConsultora` com regex de letras latinas e espacos. 30 testes novos, 124 testes totais passando. Migration corrigida mas nao aplicada.

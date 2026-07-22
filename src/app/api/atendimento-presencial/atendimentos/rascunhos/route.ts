@@ -5,18 +5,15 @@ import {
   carregarPerfilAtendimento,
   isUuid,
   listarUnidadesDoContexto,
-  perfilPodeSelecionarConsultora,
   requireAtendimentoPresencialFichaAccess,
   serializarAtendimentoPresencial,
   unidadePermitida,
   usuarioPodeAcessarRascunho,
   validarDadosRascunho,
   type AtendimentoPresencialRow,
-  type ConsultoraAtendimento,
   type ContextoAtendimento,
-  type PerfilAtendimento,
-  type UnidadeAtendimento,
 } from '@/lib/atendimento-presencial/rascunhos'
+import { validarNomeConsultora } from '@/lib/atendimento-presencial/ficha-schema'
 import type { AtendimentoPresencialDTO } from '@/lib/atendimento-presencial/rascunhos-shared'
 
 export const runtime = 'nodejs'
@@ -56,113 +53,6 @@ async function montarContexto(supabase: SupabaseClientLike, auth: Awaited<Return
     acessoTotal: auth.acessoTotal,
     unidadesPermitidas,
   } satisfies ContextoAtendimento
-}
-
-async function listarConsultorasDisponiveis(
-  supabase: SupabaseClientLike,
-  perfil: PerfilAtendimento,
-  unidadesPermitidas: UnidadeAtendimento[]
-): Promise<ConsultoraAtendimento[]> {
-  if (perfil === 'consultora') return []
-  if (perfil !== 'superadmin' && unidadesPermitidas.length === 0) return []
-
-  const { data: perfilConsultora } = await supabase
-    .from('app_perfis_acesso')
-    .select('id')
-    .eq('chave', 'consultora')
-    .eq('ativo', true)
-    .maybeSingle()
-
-  if (!perfilConsultora?.id) return []
-
-  const { data: usuariosPerfil, error: usuariosPerfilError } = await supabase
-    .from('app_usuarios_perfis')
-    .select('usuario_id')
-    .eq('perfil_id', perfilConsultora.id)
-
-  if (usuariosPerfilError) return []
-
-  const usuarioIds = (usuariosPerfil ?? []).map((row) => row.usuario_id).filter(Boolean)
-  if (usuarioIds.length === 0) return []
-
-  let vinculosQuery = supabase
-    .from('app_usuarios_unidades')
-    .select('usuario_id, unidade_id')
-    .in('usuario_id', usuarioIds)
-
-  if (perfil !== 'superadmin') {
-    vinculosQuery = vinculosQuery.in('unidade_id', unidadesPermitidas.map((unidade) => unidade.id))
-  }
-
-  const { data: vinculos, error: vinculosError } = await vinculosQuery
-  if (vinculosError) return []
-
-  const unidadesPorConsultora = new Map<string, string[]>()
-  for (const vinculo of vinculos ?? []) {
-    if (!vinculo.usuario_id || !vinculo.unidade_id) continue
-    const atuais = unidadesPorConsultora.get(vinculo.usuario_id) ?? []
-    unidadesPorConsultora.set(vinculo.usuario_id, [...atuais, vinculo.unidade_id])
-  }
-
-  const { data: usuarios, error: usuariosError } = await supabase
-    .from('usuarios_permitidos')
-    .select('id, email')
-    .in('id', usuarioIds)
-    .eq('ativo', true)
-    .order('email', { ascending: true })
-
-  if (usuariosError) return []
-
-  return (usuarios ?? [])
-    .map((usuario) => ({
-      id: usuario.id,
-      email: usuario.email,
-      nome: usuario.email,
-      unidadeIds: unidadesPorConsultora.get(usuario.id) ?? [],
-    }))
-    .filter((usuario) => perfil === 'superadmin' || usuario.unidadeIds.length > 0)
-}
-
-async function validarConsultoraNaUnidade(
-  supabase: SupabaseClientLike,
-  consultoraUsuarioId: string,
-  unidadeId: string
-) {
-  const { data: usuario, error: usuarioError } = await supabase
-    .from('usuarios_permitidos')
-    .select('id, ativo')
-    .eq('id', consultoraUsuarioId)
-    .eq('ativo', true)
-    .maybeSingle()
-
-  if (usuarioError || !usuario) return false
-
-  const { data: perfilConsultora } = await supabase
-    .from('app_perfis_acesso')
-    .select('id')
-    .eq('chave', 'consultora')
-    .eq('ativo', true)
-    .maybeSingle()
-
-  if (!perfilConsultora?.id) return false
-
-  const { data: perfilVinculo } = await supabase
-    .from('app_usuarios_perfis')
-    .select('id')
-    .eq('usuario_id', consultoraUsuarioId)
-    .eq('perfil_id', perfilConsultora.id)
-    .maybeSingle()
-
-  if (!perfilVinculo) return false
-
-  const { data: unidadeVinculo } = await supabase
-    .from('app_usuarios_unidades')
-    .select('id')
-    .eq('usuario_id', consultoraUsuarioId)
-    .eq('unidade_id', unidadeId)
-    .maybeSingle()
-
-  return Boolean(unidadeVinculo)
 }
 
 async function enriquecerRascunhos(
@@ -224,8 +114,7 @@ export async function GET() {
       query = query.eq('consultora_usuario_id', contexto.usuarioId)
     } else if (contexto.perfil !== 'superadmin') {
       if (contexto.unidadesPermitidas.length === 0) {
-        const consultorasDisponiveis = await listarConsultorasDisponiveis(supabase, contexto.perfil, contexto.unidadesPermitidas)
-        return NextResponse.json({ ok: true, rascunhos: [], contexto, consultorasDisponiveis })
+        return NextResponse.json({ ok: true, rascunhos: [], contexto, consultorasDisponiveis: [] })
       }
       query = query.in('unidade_id', contexto.unidadesPermitidas.map((unidade) => unidade.id))
     }
@@ -241,13 +130,12 @@ export async function GET() {
 
     const rascunhosSerializados = ((data ?? []) as unknown as AtendimentoPresencialRow[]).map(serializarAtendimentoPresencial)
     const rascunhos = await enriquecerRascunhos(supabase, rascunhosSerializados)
-    const consultorasDisponiveis = await listarConsultorasDisponiveis(supabase, contexto.perfil, contexto.unidadesPermitidas)
 
     return NextResponse.json({
       ok: true,
       rascunhos,
       contexto,
-      consultorasDisponiveis,
+      consultorasDisponiveis: [],
     })
   } catch (error) {
     console.error('[ATENDIMENTO PRESENCIAL RASCUNHOS] Erro geral no GET:', error)
@@ -283,23 +171,15 @@ export async function POST(request: Request) {
     if (!isUuid(unidadeId)) return jsonErro('Unidade e obrigatoria', 422, { field: 'unidadeId' })
     if (!unidadePermitida(unidadeId, contexto.unidadesPermitidas)) return jsonErro('Unidade nao permitida', 403, { field: 'unidadeId' })
 
-    let consultoraUsuarioId: string
-    const consultoraInformada = typeof payload.consultoraUsuarioId === 'string' ? payload.consultoraUsuarioId : ''
-    if (contexto.perfil === 'consultora') {
-      if (consultoraInformada && consultoraInformada !== contexto.usuarioId) {
-        return jsonErro('Consultora nao permitida', 403, { field: 'consultoraUsuarioId' })
-      }
-      consultoraUsuarioId = contexto.usuarioId
-    } else {
-      if (!perfilPodeSelecionarConsultora(contexto.perfil)) return jsonErro('Perfil nao permitido', 403)
-      if (!isUuid(consultoraInformada)) return jsonErro('Consultora e obrigatoria', 422, { field: 'consultoraUsuarioId' })
-      const consultoraValida = await validarConsultoraNaUnidade(supabase, consultoraInformada, unidadeId)
-      if (!consultoraValida) return jsonErro('Consultora nao vinculada a unidade', 422, { field: 'consultoraUsuarioId' })
-      consultoraUsuarioId = consultoraInformada
-    }
+    const consultoraUsuarioId = contexto.usuarioId
 
     const validacaoDados = validarDadosRascunho(payload.dadosRascunho)
     if (!validacaoDados.ok) return jsonErro(validacaoDados.message, 422, { field: validacaoDados.field })
+
+    const consultoraNome = validacaoDados.dados.consultoraNome ?? ''
+    if (!consultoraNome || !validarNomeConsultora(consultoraNome)) {
+      return jsonErro('Informe o nome da consultora (apenas letras e espacos, 2 a 30 caracteres).', 400, { field: 'consultoraNome' })
+    }
 
     const clienteId = typeof payload.clienteId === 'string' && payload.clienteId ? payload.clienteId : null
     if (clienteId) {

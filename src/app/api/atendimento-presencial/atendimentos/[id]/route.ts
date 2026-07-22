@@ -12,6 +12,7 @@ import {
 } from '@/lib/atendimento-presencial/rascunhos'
 import { serializarClienteRegistro, type ClienteRegistroRow } from '@/lib/atendimento-presencial/registros'
 import {
+  normalizarNomeConsultora,
   validarFichaDadosRascunho,
   validarFichaParaConclusao,
 } from '@/lib/atendimento-presencial/ficha-schema'
@@ -290,7 +291,7 @@ export async function PATCH(
       clienteId,
     }
 
-    const consultoraNome = typeof payload.consultoraNome === 'string' ? payload.consultoraNome.trim() : ''
+    const consultoraNome = typeof payload.consultoraNome === 'string' ? normalizarNomeConsultora(payload.consultoraNome) : ''
 
     const { data: rpcData, error: rpcError } = await loaded.supabase.rpc('atendimento_presencial_editar_concluido', {
       p_atendimento_id: id,

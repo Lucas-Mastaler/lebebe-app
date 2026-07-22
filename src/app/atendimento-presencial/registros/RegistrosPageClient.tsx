@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ClipboardList, History, Plus, RefreshCw, Save, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { HistoricoClienteModal, type HistoricoClienteModalCliente } from '@/components/atendimento-presencial/HistoricoClienteModal'
 import {
   DEPARTAMENTOS_INTERESSE,
@@ -23,6 +25,7 @@ import {
   getDepartamentoLabel,
   getMotivoLabel,
   limparNomeCriancaDigitacao,
+  normalizarNomeConsultora,
   validarFichaParaConclusao,
   type DepartamentoInteresse,
   type FichaCriancaRascunho,
@@ -40,9 +43,25 @@ import {
   type RegistroAtendimentoDetalheDTO,
   type RegistroAtendimentoResumoDTO,
 } from '@/lib/atendimento-presencial/registros'
+import {
+  nomeClienteRascunho,
+  nomeConsultoraRascunho,
+} from '@/lib/atendimento-presencial/rascunho-display'
+import {
+  type AtendimentoPresencialDTO,
+  type ContextoAtendimento,
+} from '@/lib/atendimento-presencial/rascunhos-shared'
 
 type RegistroResumo = RegistroAtendimentoResumoDTO
 type RegistroDetalhe = RegistroAtendimentoDetalheDTO
+
+type ApiListaRascunhosResponse = {
+  ok: boolean
+  message?: string
+  rascunhos?: AtendimentoPresencialDTO[]
+  contexto?: ContextoAtendimento
+  consultorasDisponiveis?: never[]
+}
 
 type ApiListaResponse = {
   ok: boolean
@@ -74,6 +93,11 @@ function formatarData(valor: string | null) {
   })
 }
 
+function diasRestantes(expiraEm: string) {
+  const diff = new Date(expiraEm).getTime() - Date.now()
+  return Math.max(Math.ceil(diff / 86_400_000), 0)
+}
+
 function normalizarProduto(valor: string) {
   return valor.trim().replace(/\s+/g, ' ').slice(0, FICHA_PRODUTO_MAX_CHARS)
 }
@@ -90,10 +114,17 @@ function formatarVendaFechadaRegistro(resultado: ResultadoAtendimento | null | u
   return 'Nao informado'
 }
 
-export default function RegistrosPageClient() {
+type Props = {
+  podeVerRegistros: boolean
+  podeVerRascunhos: boolean
+}
+
+export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos }: Props) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [registros, setRegistros] = useState<RegistroResumo[]>([])
   const [selecionado, setSelecionado] = useState<RegistroDetalhe | null>(null)
-  const [carregando, setCarregando] = useState(true)
+  const [carregando, setCarregando] = useState(false)
   const [carregandoDetalhe, setCarregandoDetalhe] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [viradaCartaoDe, setViradaCartaoDe] = useState('')
@@ -109,6 +140,10 @@ export default function RegistrosPageClient() {
   const [erroEdicao, setErroEdicao] = useState<string | null>(null)
   const [historicoAberto, setHistoricoAberto] = useState(false)
   const [historicoCliente, setHistoricoCliente] = useState<HistoricoClienteModalCliente | null>(null)
+  const [rascunhos, setRascunhos] = useState<AtendimentoPresencialDTO[]>([])
+  const [contextoRascunhos, setContextoRascunhos] = useState<ContextoAtendimento | null>(null)
+  const [carregandoRascunhos, setCarregandoRascunhos] = useState(false)
+  const [erroRascunhos, setErroRascunhos] = useState<string | null>(null)
 
   async function carregarRegistros(filtrosOverride?: { de: string; ate: string }) {
     setCarregando(true)
@@ -321,11 +356,64 @@ export default function RegistrosPageClient() {
     }
   }
 
+  async function carregarRascunhos() {
+    if (!podeVerRascunhos) return
+    setCarregandoRascunhos(true)
+    setErroRascunhos(null)
+    try {
+      const response = await fetch('/api/atendimento-presencial/atendimentos/rascunhos', { cache: 'no-store' })
+      const data = (await response.json()) as ApiListaRascunhosResponse
+      if (!response.ok || !data.ok) throw new Error(data.message ?? 'Erro ao carregar rascunhos')
+      setRascunhos(data.rascunhos ?? [])
+      setContextoRascunhos(data.contexto ?? null)
+    } catch (error) {
+      setErroRascunhos(error instanceof Error ? error.message : 'Erro ao carregar rascunhos')
+    } finally {
+      setCarregandoRascunhos(false)
+    }
+  }
+
+  const abasPermitidas = useMemo(() => {
+    const abas: string[] = []
+    if (podeVerRegistros) abas.push('finalizados')
+    if (podeVerRascunhos) abas.push('rascunhos')
+    return abas
+  }, [podeVerRegistros, podeVerRascunhos])
+
+  const tabPadrao = abasPermitidas[0] ?? ''
+
+  const tabAtual = useMemo(() => {
+    const param = searchParams?.get('tab') ?? ''
+    if (abasPermitidas.includes(param)) return param
+    return tabPadrao
+  }, [searchParams, abasPermitidas, tabPadrao])
+
+  function navegarParaTab(valor: string) {
+    if (!abasPermitidas.includes(valor)) return
+    router.push(`/atendimento-presencial/registros?tab=${valor}`, { scroll: false })
+  }
+
   useEffect(() => {
-    void carregarRegistros()
-    // Busca inicial da tela; filtros de virada continuam acionados pelo botao Buscar.
+    const param = searchParams?.get('tab') ?? ''
+    if (param && abasPermitidas.includes(param)) return
+    if (tabPadrao && param !== tabPadrao) {
+      router.replace(`/atendimento-presencial/registros?tab=${tabPadrao}`, { scroll: false })
+    }
+  }, [searchParams, abasPermitidas, tabPadrao, router])
+
+  useEffect(() => {
+    if (tabAtual === 'finalizados' && podeVerRegistros) {
+      void carregarRegistros()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [tabAtual, podeVerRegistros])
+
+  useEffect(() => {
+    if (tabAtual === 'rascunhos' && podeVerRascunhos) {
+      void carregarRascunhos()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabAtual, podeVerRascunhos])
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
@@ -335,22 +423,34 @@ export default function RegistrosPageClient() {
             <p className="text-sm font-medium uppercase text-slate-500">ATENDIMENTO PRESENCIAL</p>
             <h1 className="mt-2 text-2xl font-semibold text-slate-950 sm:text-3xl">Registros de Atendimentos</h1>
           </div>
-          <Button type="button" variant="outline" onClick={() => void carregarRegistros()} disabled={carregando} className="h-11 rounded-md">
-            <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
-            Atualizar
-          </Button>
+          {podeVerRegistros && (
+            <Button type="button" variant="outline" onClick={() => void carregarRegistros()} disabled={carregando} className="h-11 rounded-md">
+              <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+              Atualizar
+            </Button>
+          )}
         </header>
 
         {erro && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{erro}</p>}
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
-          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-sky-50 text-sky-600">
-                <ClipboardList className="h-5 w-5" aria-hidden="true" />
-              </div>
-              <h2 className="text-lg font-semibold text-slate-950">Concluidos</h2>
-            </div>
+        <Tabs value={tabAtual} onValueChange={navegarParaTab} className="gap-4">
+          <TabsList>
+            {podeVerRegistros && (
+              <TabsTrigger value="finalizados">Atendimentos finalizados</TabsTrigger>
+            )}
+            {podeVerRascunhos && (
+              <TabsTrigger value="rascunhos">Rascunhos</TabsTrigger>
+            )}
+          </TabsList>
+          <TabsContent value="finalizados">
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
+              <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-md bg-sky-50 text-sky-600">
+                    <ClipboardList className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <h2 className="text-lg font-semibold text-slate-950">Concluidos</h2>
+                </div>
 
             <div className="mb-4 grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
               <label className="text-sm font-semibold text-slate-700" htmlFor="filtro-virada-cartao-de">
@@ -565,6 +665,7 @@ export default function RegistrosPageClient() {
                         <input
                           value={fichaEdicao.consultoraNome ?? ''}
                           onChange={(event) => atualizarFichaEdicao((atual) => ({ ...atual, consultoraNome: event.target.value }))}
+                          onBlur={(event) => atualizarFichaEdicao((atual) => ({ ...atual, consultoraNome: normalizarNomeConsultora(event.target.value) }))}
                           className="mt-2 min-h-11 w-full rounded-md border border-slate-200 px-3 text-base"
                           maxLength={FICHA_CONSULTORA_NOME_MAX_CHARS}
                           placeholder="Digite o nome da consultora"
@@ -782,7 +883,54 @@ export default function RegistrosPageClient() {
             )}
           </aside>
         </div>
-      </div>
+      </TabsContent>
+      <TabsContent value="rascunhos">
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-amber-50 text-amber-600">
+              <ClipboardList className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <h2 className="text-lg font-semibold text-slate-950">Rascunhos em andamento</h2>
+          </div>
+          <div className="grid gap-3">
+            {carregandoRascunhos && <p className="text-sm text-slate-500">Carregando...</p>}
+            {erroRascunhos && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{erroRascunhos}</p>}
+            {!carregandoRascunhos && !erroRascunhos && rascunhos.length === 0 && (
+              <p className="rounded-md border border-dashed border-slate-200 p-4 text-sm text-slate-500">Nenhum rascunho ativo.</p>
+            )}
+            {rascunhos.map((rascunho) => {
+              const unidade = contextoRascunhos?.unidadesPermitidas.find((item) => item.id === rascunho.unidadeId)
+              return (
+                <article key={rascunho.id} className="min-w-0 rounded-lg border border-amber-300 bg-white/80 p-4">
+                  <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                    <p className="min-w-0 break-words text-base font-semibold text-slate-950">{nomeClienteRascunho(rascunho.clienteNome)}</p>
+                    <p className="shrink-0 text-xs font-bold uppercase tracking-wide text-amber-800">Rascunho</p>
+                  </div>
+                  <div className="mt-2 grid gap-1 text-sm text-slate-600">
+                    <p className="break-words">
+                      Consultora: <span className="font-medium text-slate-800">{nomeConsultoraRascunho(rascunho.consultoraNome)}</span>
+                    </p>
+                    <p className="break-words">
+                      Unidade: <span className="font-medium text-slate-800">{unidade?.nome ?? rascunho.unidadeId}</span>
+                    </p>
+                    <p>Ultima atualizacao: {formatarData(rascunho.ultimaAtividadeEm)}</p>
+                    <p>Expira em: {diasRestantes(rascunho.expiraEm)} dias</p>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={() => router.push(`/atendimento-presencial/ficha?rascunho=${rascunho.id}`)}
+                    className="mt-3 h-11 w-full rounded-md"
+                  >
+                    Continuar atendimento
+                  </Button>
+                </article>
+              )
+            })}
+          </div>
+        </section>
+      </TabsContent>
+    </Tabs>
+    </div>
       <HistoricoClienteModal
         open={historicoAberto}
         onOpenChange={setHistoricoAberto}

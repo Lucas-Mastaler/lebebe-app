@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { AlertCircle, Baby, Check, ChevronLeft, ChevronRight, ClipboardList, History, MessageSquareText, Plus, RefreshCw, Save, Search, ShoppingBag, UserRound, WifiOff, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -36,7 +37,9 @@ import {
   getResultadoLabel,
   limparNomeCriancaDigitacao,
   migrarFichaDadosRascunho,
+  normalizarNomeConsultora,
   validarFichaParaConclusao,
+  validarNomeConsultora,
   type DepartamentoInteresse,
   type FichaCriancaRascunho,
   type FichaDadosRascunho,
@@ -61,22 +64,10 @@ import {
   type ParentescoCliente,
 } from '@/lib/atendimento-presencial/clientes'
 import { aplicarMascaraTelefoneBR } from '@/lib/atendimento-presencial/telefone'
-import { nomeClienteRascunho, nomeConsultoraRascunho } from '@/lib/atendimento-presencial/rascunho-display'
 import {
-  filtrarConsultorasPorUnidade,
-  filtrarUnidadesPorConsultora,
   type AtendimentoPresencialDTO,
-  type ConsultoraAtendimento,
   type ContextoAtendimento,
 } from '@/lib/atendimento-presencial/rascunhos-shared'
-
-type ApiListarRascunhosResponse = {
-  ok: boolean
-  message?: string
-  rascunhos?: AtendimentoPresencialDTO[]
-  contexto?: ContextoAtendimento
-  consultorasDisponiveis?: ConsultoraAtendimento[]
-}
 
 type ApiRascunhoResponse = {
   ok: boolean
@@ -109,6 +100,8 @@ type SyncStatus = 'ocioso' | AutosaveStatus
 
 type Props = {
   usuarioId: string
+  contextoInicial: ContextoAtendimento
+  unidadeIdInicial: string
 }
 
 const etapaLabels: Record<FichaEtapa, string> = {
@@ -125,23 +118,8 @@ const payloadInicial: FichaDadosRascunho = {
   etapaAtual: 'ficha',
 }
 
-function formatarData(valor: string) {
-  return new Date(valor).toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
 function telefoneFormatadoDaCliente(cliente: ClientePresencialDTO | null) {
   return cliente?.telefoneFormatado ?? ''
-}
-
-function diasRestantes(expiraEm: string) {
-  const diff = new Date(expiraEm).getTime() - Date.now()
-  return Math.max(Math.ceil(diff / 86_400_000), 0)
 }
 
 function gerarIdLocal(prefixo = 'local') {
@@ -200,12 +178,14 @@ function OpcaoButton(props: {
   children: React.ReactNode
   onClick: () => void
   className?: string
+  disabled?: boolean
 }) {
   return (
     <button
       type="button"
       aria-pressed={props.selected}
       onClick={props.onClick}
+      disabled={props.disabled}
       className={[
         'min-h-12 rounded-md border px-4 py-3 text-left text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-sky-500',
         props.selected ? 'border-sky-600 bg-sky-50 text-sky-800' : 'border-slate-200 bg-white text-slate-700',
@@ -310,6 +290,10 @@ function validarEtapa(params: {
     if (!clienteSelecionada) {
       erros.push({ sectionId: 'secao-cliente', fieldId: 'busca-cliente', message: 'Selecione uma cliente.' })
     }
+    const consultoraNomeNormalizado = normalizarNomeConsultora(ficha.consultoraNome)
+    if (!consultoraNomeNormalizado || !validarNomeConsultora(consultoraNomeNormalizado)) {
+      erros.push({ sectionId: 'secao-consultora-nome', fieldId: 'consultora-nome', message: 'Informe o nome da consultora (apenas letras e espacos, 2 a 30 caracteres).' })
+    }
     for (const crianca of ficha.criancas) {
       if (crianca.situacao === 'gestacao' && crianca.dataPrevistaNascimento && !/^\d{4}-\d{2}-\d{2}$/.test(crianca.dataPrevistaNascimento)) {
         erros.push({ sectionId: 'secao-crianca', fieldId: `data-prevista-${crianca.id}`, message: 'Revise a data prevista de nascimento.' })
@@ -345,12 +329,11 @@ function primeiroErroPorSecao(erros: ErroValidacaoFicha[], sectionId: string) {
   return erros.find((erro) => erro.sectionId === sectionId)?.message
 }
 
-export default function FichaPageClient({ usuarioId }: Props) {
-  const [contexto, setContexto] = useState<ContextoAtendimento | null>(null)
-  const [consultoras, setConsultoras] = useState<ConsultoraAtendimento[]>([])
-  const [rascunhos, setRascunhos] = useState<AtendimentoPresencialDTO[]>([])
-  const [unidadeId, setUnidadeId] = useState('')
-  const [consultoraUsuarioId, setConsultoraUsuarioId] = useState('')
+export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdInicial }: Props) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [contexto] = useState<ContextoAtendimento>(contextoInicial)
+  const [unidadeId, setUnidadeId] = useState(unidadeIdInicial)
   const [ativo, setAtivo] = useState<AtendimentoPresencialDTO | null>(null)
   const [ficha, setFicha] = useState<FichaDadosRascunho>(() => criarPayloadInicial())
   const [clienteSelecionada, setClienteSelecionada] = useState<ClientePresencialDTO | null>(null)
@@ -368,12 +351,17 @@ export default function FichaPageClient({ usuarioId }: Props) {
   const [produtoDigitado, setProdutoDigitado] = useState('')
   const [statusSync, setStatusSync] = useState<SyncStatus>('ocioso')
   const [erro, setErro] = useState<string | null>(null)
+  const [erroCriacao, setErroCriacao] = useState<string | null>(null)
   const [erroEtapa, setErroEtapa] = useState<string | null>(null)
   const [errosValidacao, setErrosValidacao] = useState<ErroValidacaoFicha[]>([])
   const [numeroLancamento, setNumeroLancamento] = useState('')
   const [concluindo, setConcluindo] = useState(false)
   const [mensagemConclusao, setMensagemConclusao] = useState<string | null>(null)
-  const [carregando, setCarregando] = useState(true)
+  const [carregandoRascunhoInicial, setCarregandoRascunhoInicial] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return new URLSearchParams(window.location.search).has('rascunho')
+  })
+  const [erroRascunhoInicial, setErroRascunhoInicial] = useState<string | null>(null)
   const [iniciando, setIniciando] = useState(false)
   const [onlineTick, setOnlineTick] = useState(0)
   const [historicoAberto, setHistoricoAberto] = useState(false)
@@ -387,36 +375,27 @@ export default function FichaPageClient({ usuarioId }: Props) {
   const clienteSelecionadaRef = useRef<ClientePresencialDTO | null>(null)
   const mountedRef = useRef(false)
   const concluindoRef = useRef(false)
+  const draftClientIdRef = useRef<string | null>(null)
+  const tentativaUnidadeRef = useRef('')
+  const tentativaNomeRef = useRef('')
   clienteSelecionadaRef.current = clienteSelecionada
 
   const etapaAtual = ficha.etapaAtual
-  const etapaNumero = ativo ? indexEtapa(etapaAtual) + 2 : 1
-  const etapaLabelAtual = ativo ? etapaLabels[etapaAtual] : 'Filial e consultora'
-  const unidadesParaSelecao = useMemo(() => {
-    if (!contexto) return []
-    if (contexto.perfil === 'consultora') return contexto.unidadesPermitidas
-    return filtrarUnidadesPorConsultora({
-      unidades: contexto.unidadesPermitidas,
-      consultoras,
-      consultoraUsuarioId,
-    })
-  }, [consultoraUsuarioId, consultoras, contexto])
-  const consultorasParaSelecao = useMemo(() => {
-    if (!contexto || contexto.perfil === 'consultora') return []
-    return filtrarConsultorasPorUnidade({ consultoras, unidadeId })
-  }, [consultoras, contexto, unidadeId])
-  const consultoraSelecionada = consultoras.find((consultora) => consultora.id === consultoraUsuarioId)
-  const consultoraSemUnidade = contexto?.perfil !== 'consultora' && Boolean(consultoraUsuarioId) && (consultoraSelecionada?.unidadeIds.length ?? 0) === 0
-  const precisaSelecionarUnidade = unidadesParaSelecao.length > 1
+  const etapaNumero = indexEtapa(etapaAtual) + 1
+  const etapaLabelAtual = etapaLabels[etapaAtual]
+  const unidadesParaSelecao = useMemo(() => contexto?.unidadesPermitidas ?? [], [contexto])
 
-  const podeIniciar = useMemo(() => {
-    if (!contexto || iniciando) return false
+  const consultoraNomeNormalizado = useMemo(() => normalizarNomeConsultora(ficha.consultoraNome), [ficha.consultoraNome])
+  const paramRascunho = searchParams?.get('rascunho') ?? null
+
+  const podeCriarRascunho = useMemo(() => {
+    if (!contexto || iniciando || ativo) return false
     if (unidadesParaSelecao.length === 0) return false
-    if (consultoraSemUnidade) return false
-    if (precisaSelecionarUnidade && !unidadeId) return false
-    if (contexto.perfil !== 'consultora' && !consultoraUsuarioId) return false
+    if (!unidadeId || !unidadesParaSelecao.some((unidade) => unidade.id === unidadeId)) return false
+    if (!consultoraNomeNormalizado || !validarNomeConsultora(consultoraNomeNormalizado)) return false
+    if (paramRascunho) return false
     return true
-  }, [consultoraSemUnidade, consultoraUsuarioId, contexto, iniciando, precisaSelecionarUnidade, unidadeId, unidadesParaSelecao.length])
+  }, [ativo, contexto, iniciando, consultoraNomeNormalizado, unidadeId, unidadesParaSelecao, paramRascunho])
 
   function atualizarFicha(mutator: (atual: FichaDadosRascunho) => FichaDadosRascunho) {
     setFicha((atual) => mutator(atual))
@@ -437,32 +416,44 @@ export default function FichaPageClient({ usuarioId }: Props) {
     }
   }
 
-  async function carregarRascunhos() {
-    setCarregando(true)
-    setErro(null)
-    try {
-      const response = await fetch('/api/atendimento-presencial/atendimentos/rascunhos', { cache: 'no-store' })
-      const data = (await response.json()) as ApiListarRascunhosResponse
-      if (!response.ok || !data.ok) throw new Error(data.message ?? 'Erro ao carregar rascunhos')
-
-      setContexto(data.contexto ?? null)
-      setConsultoras(data.consultorasDisponiveis ?? [])
-      setRascunhos(data.rascunhos ?? [])
-      setMensagemConclusao(null)
-
-      if (data.contexto?.perfil === 'consultora' && data.contexto.unidadesPermitidas.length === 1) {
-        setUnidadeId(data.contexto.unidadesPermitidas[0].id)
-      }
-    } catch (error) {
-      setErro(error instanceof Error ? error.message : 'Erro ao carregar rascunhos')
-    } finally {
-      setCarregando(false)
+  const rascunhoIdParam = useMemo(() => {
+    if (paramRascunho) return paramRascunho
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('rascunho') ?? null
     }
-  }
+    return null
+  }, [paramRascunho])
 
   useEffect(() => {
-    void carregarRascunhos()
-  }, [])
+    if (!rascunhoIdParam) return
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    if (!UUID_RE.test(rascunhoIdParam)) {
+      setErroRascunhoInicial('ID do rascunho invalido')
+      setCarregandoRascunhoInicial(false)
+      return
+    }
+
+    let cancelled = false
+    async function carregar() {
+      setCarregandoRascunhoInicial(true)
+      setErroRascunhoInicial(null)
+      setErro(null)
+      try {
+        const response = await fetch(`/api/atendimento-presencial/atendimentos/${rascunhoIdParam}/rascunho`, { cache: 'no-store' })
+        const data = (await response.json()) as ApiRascunhoResponse
+        if (!response.ok || !data.ok || !data.rascunho) throw new Error(data.message ?? 'Erro ao carregar rascunho')
+        if (cancelled) return
+        aplicarRascunho(data.rascunho)
+      } catch (error) {
+        if (!cancelled) setErroRascunhoInicial(error instanceof Error ? error.message : 'Erro ao carregar rascunho')
+      } finally {
+        if (!cancelled) setCarregandoRascunhoInicial(false)
+      }
+    }
+    void carregar()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rascunhoIdParam])
 
   useEffect(() => {
     mountedRef.current = true
@@ -488,33 +479,18 @@ export default function FichaPageClient({ usuarioId }: Props) {
   }, [clienteSelecionada?.id, clienteSelecionada?.version])
 
   useEffect(() => {
-    if (!contexto || ativo) return
-    if (contexto.perfil === 'consultora' && contexto.unidadesPermitidas.length === 1) {
-      setUnidadeId(contexto.unidadesPermitidas[0].id)
-    }
-  }, [ativo, contexto])
+    if (!podeCriarRascunho) return
+    if (tentativaUnidadeRef.current === unidadeId && tentativaNomeRef.current === consultoraNomeNormalizado) return
+    tentativaUnidadeRef.current = unidadeId
+    tentativaNomeRef.current = consultoraNomeNormalizado
+    if (!draftClientIdRef.current) draftClientIdRef.current = gerarIdLocal('draft')
+    void iniciarRascunho(draftClientIdRef.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [podeCriarRascunho, unidadeId, consultoraNomeNormalizado])
 
   useEffect(() => {
-    if (!contexto || ativo || contexto.perfil === 'consultora') return
-    if (!consultoraUsuarioId) return
-
-    const unidadesValidas = filtrarUnidadesPorConsultora({
-      unidades: contexto.unidadesPermitidas,
-      consultoras,
-      consultoraUsuarioId,
-    })
-    if (unidadeId && !unidadesValidas.some((unidade) => unidade.id === unidadeId)) {
-      setUnidadeId('')
-      return
-    }
-    if (!unidadeId && unidadesValidas.length === 1) setUnidadeId(unidadesValidas[0].id)
-  }, [ativo, consultoraUsuarioId, consultoras, contexto, unidadeId])
-
-  useEffect(() => {
-    if (!contexto || ativo || contexto.perfil === 'consultora') return
-    if (!unidadeId || !consultoraUsuarioId) return
-    if (!consultoraSelecionada?.unidadeIds.includes(unidadeId)) setConsultoraUsuarioId('')
-  }, [ativo, consultoraSelecionada, consultoraUsuarioId, contexto, unidadeId])
+    setErroCriacao(null)
+  }, [unidadeId, ficha.consultoraNome])
 
   useEffect(() => {
     function handleOnline() {
@@ -558,7 +534,6 @@ export default function FichaPageClient({ usuarioId }: Props) {
   }) {
     if (!mountedRef.current) return
     setAtivo(params.rascunho)
-    setRascunhos((atuais) => atuais.map((item) => item.id === params.rascunho.id ? params.rascunho : item))
     setErro(null)
     salvarCacheLocalRascunho({
       rascunho: params.rascunho,
@@ -606,7 +581,6 @@ export default function FichaPageClient({ usuarioId }: Props) {
         if (!mountedRef.current) return
         salvarCacheLocalRascunho({ rascunho: servidor ?? rascunho, payload, sincronizado: false })
         if (!payloadIgual) setErro('Conflito de versao. Recarregue o rascunho para comparar com a versao do servidor.')
-        if (servidor) setRascunhos((atuais) => atuais.map((item) => item.id === servidor.id ? servidor : item))
       },
       onLog: (message) => console.log(message),
       getOnline: () => navigator.onLine,
@@ -616,7 +590,6 @@ export default function FichaPageClient({ usuarioId }: Props) {
   function aplicarRascunho(rascunho: AtendimentoPresencialDTO) {
     setAtivo(rascunho)
     setUnidadeId(rascunho.unidadeId)
-    setConsultoraUsuarioId(rascunho.consultoraUsuarioId)
     const cache = carregarCacheRascunho(window.localStorage, usuarioId, rascunho.draftClientId)
     const usarCache = cache?.sincronizado === false && (cache.version ?? 0) >= rascunho.version
     const dados = usarCache ? cache.dadosRascunho : rascunho.dadosRascunho
@@ -645,34 +618,70 @@ export default function FichaPageClient({ usuarioId }: Props) {
     void carregarClientePorId(rascunho.clienteId)
   }
 
-  async function iniciarRascunho() {
-    if (!contexto || !podeIniciar) return
+  function aplicarRascunhoCriado(rascunho: AtendimentoPresencialDTO) {
+    setAtivo(rascunho)
+    setUnidadeId(rascunho.unidadeId)
+
+    const payloadServidor: AutosavePayload = {
+      dadosRascunho: migrarFichaDadosRascunho(rascunho.dadosRascunho),
+      clienteId: rascunho.clienteId,
+    }
+    criarFilaAutosave(rascunho, serializarPayloadAutosave(payloadServidor))
+
+    setErroCriacao(null)
+    setMensagemConclusao(null)
+    setErroEtapa(null)
+    setErrosValidacao([])
+
+    const fila = autosaveQueueRef.current
+    if (fila) {
+      const payloadAtual = montarPayloadAutosave()
+      if (serializarPayloadAutosave(payloadAtual) !== serializarPayloadAutosave(payloadServidor)) {
+        void fila.flushNow(payloadAtual)
+      }
+    }
+  }
+
+  async function iniciarRascunho(draftClientId?: string) {
+    if (!contexto || !podeCriarRascunho) return
     setIniciando(true)
-    setErro(null)
-    const draftClientId = gerarIdLocal('draft')
+    setErroCriacao(null)
+
+    const draftClientIdFinal = draftClientId || draftClientIdRef.current || gerarIdLocal('draft')
+    if (!draftClientIdRef.current) draftClientIdRef.current = draftClientIdFinal
+
     const unidadeFinal = unidadeId || unidadesParaSelecao[0]?.id
-    const dadosRascunho = criarPayloadInicial()
+    const consultoraNomeFinal = normalizarNomeConsultora(ficha.consultoraNome)
+    const clienteIdFinal = clienteSelecionada?.id ?? null
+
+    const dadosRascunhoEnviados: FichaDadosRascunho = {
+      ...ficha,
+      consultoraNome: consultoraNomeFinal,
+    }
+    const payloadEnviado: AutosavePayload = {
+      dadosRascunho: migrarFichaDadosRascunho(dadosRascunhoEnviados),
+      clienteId: clienteIdFinal,
+    }
 
     try {
       const response = await fetch('/api/atendimento-presencial/atendimentos/rascunhos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          draftClientId,
+          draftClientId: draftClientIdFinal,
           unidadeId: unidadeFinal,
-          consultoraUsuarioId: contexto.perfil === 'consultora' ? undefined : consultoraUsuarioId,
-          dadosRascunho,
+          dadosRascunho: payloadEnviado.dadosRascunho,
+          clienteId: clienteIdFinal,
         }),
       })
       const data = (await response.json()) as ApiRascunhoResponse
       if (!response.ok || !data.ok || !data.rascunho) {
-        throw new Error(data.message ?? 'Erro ao iniciar rascunho')
+        throw new Error(data.message ?? 'Erro ao criar rascunho')
       }
 
-      setRascunhos((atuais) => [data.rascunho!, ...atuais.filter((item) => item.id !== data.rascunho?.id)])
-      aplicarRascunho(data.rascunho)
+      aplicarRascunhoCriado(data.rascunho)
     } catch (error) {
-      setErro(error instanceof Error ? error.message : 'Erro ao iniciar rascunho')
+      setErroCriacao(error instanceof Error ? error.message : 'Erro ao criar rascunho')
     } finally {
       setIniciando(false)
     }
@@ -991,6 +1000,59 @@ export default function FichaPageClient({ usuarioId }: Props) {
     return resultado.rascunho
   }
 
+  async function novoAtendimento() {
+    if (ativo && autosaveQueueRef.current) {
+      const payload = montarPayloadAutosave()
+      autosaveQueueRef.current.cancelDebounce()
+      void autosaveQueueRef.current.flushNow(payload)
+    }
+    autosaveQueueRef.current?.stop()
+    autosaveQueueRef.current = null
+    setAtivo(null)
+    setFicha(criarPayloadInicial())
+    setClienteSelecionada(null)
+    setBuscaCliente('')
+    setClientesEncontradas([])
+    setDataPrevistaInputs({})
+    setViradaCartaoInput('')
+    setErrosValidacao([])
+    setErroEtapa(null)
+    setErro(null)
+    setErroCriacao(null)
+    setProdutoDigitado('')
+    setNumeroLancamento('')
+    setStatusSync('ocioso')
+    setMensagemConclusao(null)
+    setErroRascunhoInicial(null)
+    setCarregandoRascunhoInicial(false)
+    draftClientIdRef.current = null
+    tentativaUnidadeRef.current = ''
+    tentativaNomeRef.current = ''
+
+    if (unidadesParaSelecao.length === 1) {
+      setUnidadeId(unidadesParaSelecao[0].id)
+    } else {
+      setUnidadeId('')
+    }
+
+    if (typeof window !== 'undefined' && window.location.search) {
+      void router.replace('/atendimento-presencial/ficha', { scroll: false })
+    }
+  }
+
+  async function verRascunhos() {
+    if (ativo && autosaveQueueRef.current) {
+      const payload = montarPayloadAutosave()
+      autosaveQueueRef.current.cancelDebounce()
+      try {
+        await autosaveQueueRef.current.flushNow(payload)
+      } catch {
+        // segue navegacao mesmo se falhar
+      }
+    }
+    router.push('/atendimento-presencial/registros?tab=rascunhos')
+  }
+
   async function concluirAtendimento() {
     if (!ativo || concluindoRef.current) return
     concluindoRef.current = true
@@ -1013,13 +1075,15 @@ export default function FichaPageClient({ usuarioId }: Props) {
     try {
       const rascunhoSalvo = await garantirRascunhoSalvoAntesDeConcluir()
       if (!rascunhoSalvo) throw new Error('Rascunho nao encontrado')
+      const consultoraNomeNormalizado = normalizarNomeConsultora(ficha.consultoraNome)
+      atualizarFicha((atual) => ({ ...atual, consultoraNome: consultoraNomeNormalizado }))
       const response = await fetch(`/api/atendimento-presencial/atendimentos/${rascunhoSalvo.id}/concluir`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           version: rascunhoSalvo.version,
           numeroLancamento: validacao.numeroLancamento,
-          consultoraNome: ficha.consultoraNome ?? '',
+          consultoraNome: consultoraNomeNormalizado,
         }),
       })
       const data = (await response.json()) as ApiConcluirResponse
@@ -1030,7 +1094,6 @@ export default function FichaPageClient({ usuarioId }: Props) {
       removerCacheRascunho(window.localStorage, usuarioId, rascunhoSalvo.draftClientId)
       autosaveQueueRef.current?.stop()
       autosaveQueueRef.current = null
-      setRascunhos((atuais) => atuais.filter((item) => item.id !== rascunhoSalvo.id))
       setAtivo(null)
       setFicha(criarPayloadInicial())
       setClienteSelecionada(null)
@@ -1082,17 +1145,28 @@ export default function FichaPageClient({ usuarioId }: Props) {
   }, [ativo, clienteSelecionada?.id, ficha, onlineTick, usuarioId])
 
   const unidadeAtual = contexto?.unidadesPermitidas.find((unidade) => unidade.id === unidadeId)
-  const consultoraAtual = contexto?.perfil === 'consultora'
-    ? { nome: 'Consultora autenticada' }
-    : consultoras.find((consultora) => consultora.id === consultoraUsuarioId)
 
   return (
     <main className="min-h-screen bg-slate-50 px-3 pb-28 pt-5 sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-3xl flex-col gap-5">
         <header className="flex flex-col gap-3">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Atendimento presencial</p>
-            <h1 className="mt-1 text-2xl font-semibold text-slate-950">Ficha de Atendimento</h1>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Atendimento presencial</p>
+              <h1 className="mt-1 text-2xl font-semibold text-slate-950">Ficha de Atendimento</h1>
+            </div>
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+              {ativo && (
+                <Button type="button" variant="outline" onClick={novoAtendimento} className="h-10 shrink-0 rounded-md">
+                  <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+                  Novo atendimento
+                </Button>
+              )}
+              <Button type="button" variant="outline" onClick={verRascunhos} className="h-10 shrink-0 rounded-md">
+                <ClipboardList className="mr-2 h-4 w-4" aria-hidden="true" />
+                Ver rascunhos
+              </Button>
+            </div>
           </div>
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -1106,9 +1180,15 @@ export default function FichaPageClient({ usuarioId }: Props) {
           </div>
         </header>
 
-        {erro && (
+        {(erro || erroCriacao) && (
           <div className="grid gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            <p>{erro}</p>
+            <p>{erro ?? erroCriacao}</p>
+            {erroCriacao && !iniciando && (
+              <Button type="button" variant="outline" onClick={() => void iniciarRascunho(draftClientIdRef.current ?? undefined)} className="h-10 justify-self-start rounded-md bg-white">
+                <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+                Tentar novamente
+              </Button>
+            )}
             {statusSync === 'conflito' && (
               <Button type="button" variant="outline" onClick={recarregarRascunhoDoServidor} className="h-10 justify-self-start rounded-md bg-white">
                 <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
@@ -1120,117 +1200,80 @@ export default function FichaPageClient({ usuarioId }: Props) {
         {erroEtapa && <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{erroEtapa}</p>}
         {mensagemConclusao && <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{mensagemConclusao}</p>}
 
-        {!ativo && (
-          <section className="grid gap-6">
-            <div className="grid gap-5 rounded-lg border border-sky-200 bg-sky-50/60 p-4 shadow-sm sm:p-6">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-950">Novo atendimento</h2>
-                <p className="mt-1 text-sm text-slate-600">
-                  Selecione a unidade e consultora quando necessario para iniciar o atendimento.
-                </p>
-              </div>
+        {carregandoRascunhoInicial && (
+          <section className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 text-center shadow-sm">
+            <p className="text-sm font-semibold text-slate-700">Carregando rascunho...</p>
+          </section>
+        )}
 
-              {contexto?.unidadesPermitidas.length === 0 && (
-                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  Usuario sem unidade vinculada. Ajuste a configuracao na tela de usuarios.
-                </p>
-              )}
-
-              {contexto && contexto.unidadesPermitidas.length > 0 && (
-                <div className="grid gap-5">
-                  {contexto.perfil !== 'consultora' && (
-                    <div>
-                      <p className="text-sm font-semibold text-slate-700">Consultora</p>
-                      <div className="mt-2 grid gap-2">
-                        {consultorasParaSelecao.length === 0 && (
-                          <p className="rounded-md border border-dashed border-slate-200 p-3 text-sm text-slate-500">
-                            {unidadeId ? 'Nenhuma consultora disponivel para esta unidade.' : 'Nenhuma consultora vinculada as unidades permitidas.'}
-                          </p>
-                        )}
-                        {consultorasParaSelecao.map((consultora) => (
-                          <OpcaoButton key={consultora.id} selected={consultoraUsuarioId === consultora.id} onClick={() => setConsultoraUsuarioId(consultora.id)}>
-                            {consultora.nome}
-                          </OpcaoButton>
-                        ))}
-                      </div>
-                      {consultoraSemUnidade && (
-                        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                          Esta consultora nao possui unidade vinculada. Configure o vinculo na tela de usuarios antes de iniciar a ficha.
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  <div>
-                    <p className="text-sm font-semibold text-slate-700">Unidade</p>
-                    <div className="mt-2 grid gap-2">
-                      {unidadesParaSelecao.length === 0 && (
-                        <p className="rounded-md border border-dashed border-slate-200 p-3 text-sm text-slate-500">
-                          {consultoraUsuarioId ? 'Nenhuma unidade vinculada a consultora selecionada.' : 'Nenhuma unidade disponivel.'}
-                        </p>
-                      )}
-                      {unidadesParaSelecao.map((unidade) => (
-                        <OpcaoButton key={unidade.id} selected={unidadeId === unidade.id} onClick={() => setUnidadeId(unidade.id)}>
-                          {unidade.nome}
-                        </OpcaoButton>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <Button type="button" onClick={iniciarRascunho} disabled={!podeIniciar} className="h-12 w-full rounded-md">
-                {iniciando ? 'Iniciando...' : 'Iniciar novo atendimento'}
+        {erroRascunhoInicial && (
+          <section className="grid gap-4 rounded-lg border border-red-200 bg-red-50 p-4 shadow-sm sm:p-6">
+            <p className="text-sm text-red-700">{erroRascunhoInicial}</p>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => void novoAtendimento()} className="h-10 rounded-md bg-white">
+                Novo atendimento
               </Button>
-            </div>
-
-            <div className="grid gap-4 rounded-lg border border-amber-200 bg-amber-50/60 p-4 shadow-sm sm:p-6">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-950">Rascunhos em andamento</h2>
-                  <p className="mt-1 text-sm text-slate-600">Retome um atendimento salvo para continuar o preenchimento.</p>
-                </div>
-                <Button type="button" variant="outline" onClick={carregarRascunhos} disabled={carregando} className="h-10 self-start rounded-md">
-                  <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                </Button>
-              </div>
-              <div className="grid gap-3">
-                {carregando && <p className="text-sm text-slate-500">Carregando...</p>}
-                {!carregando && rascunhos.length === 0 && (
-                  <p className="rounded-md border border-dashed border-slate-200 bg-white/70 p-4 text-sm text-slate-500">Nenhum rascunho ativo.</p>
-                )}
-                {rascunhos.map((rascunho) => {
-                  const unidade = contexto?.unidadesPermitidas.find((item) => item.id === rascunho.unidadeId)
-                  return (
-                    <article key={rascunho.id} className="min-w-0 rounded-lg border border-amber-300 bg-white/80 p-4">
-                      <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                        <p className="min-w-0 break-words text-base font-semibold text-slate-950">{nomeClienteRascunho(rascunho.clienteNome)}</p>
-                        <p className="shrink-0 text-xs font-bold uppercase tracking-wide text-amber-800">Rascunho</p>
-                      </div>
-                      <div className="mt-2 grid gap-1 text-sm text-slate-600">
-                        <p className="break-words">
-                          Consultora: <span className="font-medium text-slate-800">{nomeConsultoraRascunho(rascunho.consultoraNome)}</span>
-                        </p>
-                        <p className="break-words">
-                          Unidade: <span className="font-medium text-slate-800">{unidade?.nome ?? rascunho.unidadeId}</span>
-                        </p>
-                        <p>Ultima atualizacao: {formatarData(rascunho.ultimaAtividadeEm)}</p>
-                        <p>Expira em: {diasRestantes(rascunho.expiraEm)} dias</p>
-                        <p>Iniciado em: {formatarData(rascunho.iniciadoEm)}</p>
-                      </div>
-                      <Button type="button" onClick={() => aplicarRascunho(rascunho)} className="mt-3 h-11 w-full rounded-md">
-                        Continuar preenchendo
-                      </Button>
-                    </article>
-                  )
-                })}
-              </div>
+              <Button type="button" variant="outline" onClick={() => void verRascunhos()} className="h-10 rounded-md bg-white">
+                Ver rascunhos
+              </Button>
             </div>
           </section>
         )}
 
-        {ativo && (
+        {(etapaAtual === 'ficha' || ativo) && !carregandoRascunhoInicial && !erroRascunhoInicial && (
           <section className="grid gap-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+            {etapaAtual === 'ficha' && (
+              <SecaoFicha
+                id="secao-unidade"
+                titulo="Unidade"
+                descricao={!ativo ? 'Selecione a unidade do atendimento.' : 'Unidade do atendimento. Para alterar, use o botao Novo atendimento.'}
+                icon={ClipboardList}
+                variant="azul"
+              >
+                <div className="grid gap-2">
+                  {unidadesParaSelecao.map((unidade) => (
+                    <OpcaoButton
+                      key={unidade.id}
+                      selected={unidadeAtual?.id === unidade.id}
+                      onClick={() => {
+                        if (!ativo && !iniciando) setUnidadeId(unidade.id)
+                      }}
+                      disabled={!!ativo || iniciando}
+                    >
+                      {unidade.nome}
+                    </OpcaoButton>
+                  ))}
+                </div>
+                {iniciando && !ativo && (
+                  <p className="text-sm font-semibold text-sky-700">Criando rascunho...</p>
+                )}
+              </SecaoFicha>
+            )}
+
+            {etapaAtual === 'ficha' && (
+              <SecaoFicha
+                id="secao-consultora-nome"
+                titulo="Nome da consultora"
+                descricao="Informe o nome da consultora responsavel pelo atendimento."
+                icon={UserRound}
+                variant="azul"
+                erro={erroSecao('secao-consultora-nome')}
+              >
+                <label className="text-sm font-semibold text-slate-700">
+                  Nome da consultora
+                  <input
+                    id="consultora-nome"
+                    value={ficha.consultoraNome ?? ''}
+                    onChange={(event) => atualizarFicha((atual) => ({ ...atual, consultoraNome: event.target.value }))}
+                    onBlur={(event) => atualizarFicha((atual) => ({ ...atual, consultoraNome: normalizarNomeConsultora(event.target.value) }))}
+                    className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
+                    maxLength={FICHA_CONSULTORA_NOME_MAX_CHARS}
+                    placeholder="Digite o nome da consultora"
+                  />
+                </label>
+              </SecaoFicha>
+            )}
+
             {etapaAtual === 'ficha' && (
               <SecaoFicha
                 id="secao-cliente"
@@ -1353,29 +1396,6 @@ export default function FichaPageClient({ usuarioId }: Props) {
                     </div>
                   </>
                 )}
-              </SecaoFicha>
-            )}
-
-            {etapaAtual === 'ficha' && (
-              <SecaoFicha
-                id="secao-consultora-nome"
-                titulo="Nome da consultora"
-                descricao="Informe o nome da consultora responsavel pelo atendimento."
-                icon={UserRound}
-                variant="azul"
-                erro={erroSecao('secao-consultora-nome')}
-              >
-                <label className="text-sm font-semibold text-slate-700">
-                  Nome da consultora
-                  <input
-                    id="consultora-nome"
-                    value={ficha.consultoraNome ?? ''}
-                    onChange={(event) => atualizarFicha((atual) => ({ ...atual, consultoraNome: event.target.value }))}
-                    className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
-                    maxLength={FICHA_CONSULTORA_NOME_MAX_CHARS}
-                    placeholder="Digite o nome da consultora"
-                  />
-                </label>
               </SecaoFicha>
             )}
 
@@ -1698,7 +1718,6 @@ export default function FichaPageClient({ usuarioId }: Props) {
                 </div>
                 {[
                   { titulo: 'Unidade', valor: unidadeAtual?.nome ?? 'Nao informada', etapa: 'ficha' as FichaEtapa },
-                  { titulo: 'Consultora', valor: consultoraAtual?.nome ?? 'Nao informada', etapa: 'ficha' as FichaEtapa },
                   { titulo: 'Nome da consultora', valor: ficha.consultoraNome || 'Nao informado', etapa: 'ficha' as FichaEtapa },
                   { titulo: 'Cliente', valor: clienteSelecionada?.nome ?? 'Nao vinculada', etapa: 'ficha' as FichaEtapa },
                   { titulo: 'Telefone', valor: clienteSelecionada?.telefoneFormatado ?? 'Nao informado', etapa: 'ficha' as FichaEtapa },

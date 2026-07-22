@@ -31,7 +31,7 @@ const rascunhoRow = {
   dados_rascunho: { notaTecnica: 'atual' },
   iniciado_em: '2026-07-15T12:00:00.000Z',
   ultima_atividade_em: '2026-07-15T12:00:00.000Z',
-  expira_em: '2026-07-20T12:00:00.000Z',
+  expira_em: '2099-07-20T12:00:00.000Z',
   version: 2,
   criado_por: usuarioId,
   atualizado_por: usuarioId,

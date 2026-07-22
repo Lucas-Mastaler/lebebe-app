@@ -363,7 +363,6 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   })
   const [erroRascunhoInicial, setErroRascunhoInicial] = useState<string | null>(null)
   const [iniciando, setIniciando] = useState(false)
-  const [iniciandoNovoAtendimento, setIniciandoNovoAtendimento] = useState(false)
   const [onlineTick, setOnlineTick] = useState(0)
   const [historicoAberto, setHistoricoAberto] = useState(false)
   const [telefoneClienteEdicao, setTelefoneClienteEdicao] = useState('')
@@ -376,13 +375,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const clienteSelecionadaRef = useRef<ClientePresencialDTO | null>(null)
   const mountedRef = useRef(false)
   const concluindoRef = useRef(false)
-<<<<<<< HEAD
   const draftClientIdRef = useRef<string | null>(null)
   const tentativaUnidadeRef = useRef('')
   const tentativaNomeRef = useRef('')
-=======
-  const novoAtendimentoRef = useRef(false)
->>>>>>> 6bef1b45d5439a7076bc630c1f6ba297b848720d
   clienteSelecionadaRef.current = clienteSelecionada
 
   const etapaAtual = ficha.etapaAtual
@@ -1120,39 +1115,6 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     }
   }
 
-  async function novoAtendimento() {
-    if (!ativo || novoAtendimentoRef.current || iniciando) return
-    novoAtendimentoRef.current = true
-    setIniciandoNovoAtendimento(true)
-    setErro(null)
-    setErroEtapa(null)
-    try {
-      const salvo = await garantirRascunhoSalvoAntesDeConcluir()
-      if (!salvo) throw new Error('Rascunho nao encontrado')
-      setRascunhos((atuais) => atuais.map((item) => item.id === salvo.id ? salvo : item))
-      setBuscaCliente('')
-      setClientesEncontradas([])
-      setNovoCliente({
-        nome: '',
-        telefone: '',
-        parentesco: '' as ParentescoCliente | '',
-        parentescoOutro: '',
-      })
-      setTelefoneClienteEdicao('')
-      setErroTelefone(null)
-      setProdutoDigitado('')
-      setNumeroLancamento('')
-      setMensagemConclusao(null)
-      telefoneClienteSincronizadoRef.current = ''
-      await iniciarRascunho()
-    } catch (error) {
-      setErro(error instanceof Error ? error.message : 'Erro ao iniciar novo atendimento')
-    } finally {
-      novoAtendimentoRef.current = false
-      setIniciandoNovoAtendimento(false)
-    }
-  }
-
   useEffect(() => {
     const fila = autosaveQueueRef.current
     if (!ativo || !fila) return
@@ -1188,16 +1150,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     <main className="min-h-screen bg-slate-50 px-3 pb-28 pt-5 sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-3xl flex-col gap-5">
         <header className="flex flex-col gap-3">
-<<<<<<< HEAD
           <div className="flex items-start justify-between gap-3">
-=======
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
->>>>>>> 6bef1b45d5439a7076bc630c1f6ba297b848720d
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Atendimento presencial</p>
               <h1 className="mt-1 text-2xl font-semibold text-slate-950">Ficha de Atendimento</h1>
             </div>
-<<<<<<< HEAD
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
               {ativo && (
                 <Button type="button" variant="outline" onClick={novoAtendimento} className="h-10 shrink-0 rounded-md">
@@ -1210,20 +1167,6 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 Ver rascunhos
               </Button>
             </div>
-=======
-            {ativo && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={novoAtendimento}
-                disabled={iniciandoNovoAtendimento || iniciando || concluindo}
-                className="h-10 w-full shrink-0 rounded-md sm:w-auto"
-              >
-                <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
-                {iniciandoNovoAtendimento ? 'Salvando...' : 'Novo Atendimento'}
-              </Button>
-            )}
->>>>>>> 6bef1b45d5439a7076bc630c1f6ba297b848720d
           </div>
           <div className="flex items-center justify-between gap-3">
             <div>

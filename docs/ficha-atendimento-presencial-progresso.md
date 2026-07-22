@@ -2491,3 +2491,10 @@ Corrigida, mas nao aplicada.
 
 - Registros antigos sem `consultora_nome` continuam validos (nullable).
 - Nomes com hifen (ex: `Ana-Clara`) serao rejeitados; se necessario, revisitar regex no futuro.
+
+## 2026-07-22 - Hotfix conclusao com presente para outra pessoa
+
+- Diagnostico confirmado no Supabase: o rascunho informado falhava na conclusao por `atendimento_presencial_criancas_condicional_check`, nao por consultora nem por numero de lancamento.
+- Causa: a UI/schema/RPC permitem `dataPrevistaNascimento` para crianca em `presente_outra_pessoa`, mas a constraint remota antiga ainda exigia `data_prevista_nascimento is null` nessa situacao.
+- Correcao aplicada: migration `20260722203000_atendimento_presencial_criancas_presente_data.sql` recria a constraint permitindo data prevista para `presente_outra_pessoa`, mantendo idade proibida e mantendo `nao_informado` sem data/idade.
+- Validacao: RPC `atendimento_presencial_concluir` reproduzida em transacao com rollback para o rascunho informado retornou `00000/ok`; testes focados, typecheck e ESLint passaram.

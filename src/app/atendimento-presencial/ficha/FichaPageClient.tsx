@@ -143,10 +143,12 @@ function normalizarProduto(valor: string) {
   return valor.trim().replace(/\s+/g, ' ').slice(0, FICHA_PRODUTO_MAX_CHARS)
 }
 
+const ID_CRIANCA_INICIAL = 'crianca-inicial'
+
 function criarPayloadInicial(): FichaDadosRascunho {
   return {
     ...payloadInicial,
-    criancas: [criarCriancaRascunho(gerarIdLocal('crianca'))],
+    criancas: [criarCriancaRascunho(ID_CRIANCA_INICIAL)],
     departamentos: [],
     produtosInteresse: [],
     motivosResultado: [],
@@ -363,6 +365,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   })
   const [erroRascunhoInicial, setErroRascunhoInicial] = useState<string | null>(null)
   const [iniciando, setIniciando] = useState(false)
+  const [iniciandoNovoAtendimento, setIniciandoNovoAtendimento] = useState(false)
   const [onlineTick, setOnlineTick] = useState(0)
   const [historicoAberto, setHistoricoAberto] = useState(false)
   const [telefoneClienteEdicao, setTelefoneClienteEdicao] = useState('')
@@ -378,6 +381,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const draftClientIdRef = useRef<string | null>(null)
   const tentativaUnidadeRef = useRef('')
   const tentativaNomeRef = useRef('')
+  const autoIniciandoRef = useRef(false)
+  const novoAtendimentoRef = useRef(false)
   clienteSelecionadaRef.current = clienteSelecionada
 
   const etapaAtual = ficha.etapaAtual
@@ -388,14 +393,38 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const consultoraNomeNormalizado = useMemo(() => normalizarNomeConsultora(ficha.consultoraNome), [ficha.consultoraNome])
   const paramRascunho = searchParams?.get('rascunho') ?? null
 
+  const rascunhoIdParam = useMemo(() => {
+    if (paramRascunho) return paramRascunho
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('rascunho') ?? null
+    }
+    return null
+  }, [paramRascunho])
+
   const podeCriarRascunho = useMemo(() => {
     if (!contexto || iniciando || ativo) return false
     if (unidadesParaSelecao.length === 0) return false
     if (!unidadeId || !unidadesParaSelecao.some((unidade) => unidade.id === unidadeId)) return false
     if (!consultoraNomeNormalizado || !validarNomeConsultora(consultoraNomeNormalizado)) return false
-    if (paramRascunho) return false
+    if (rascunhoIdParam) return false
     return true
-  }, [ativo, contexto, iniciando, consultoraNomeNormalizado, unidadeId, unidadesParaSelecao, paramRascunho])
+  }, [ativo, contexto, iniciando, consultoraNomeNormalizado, unidadeId, unidadesParaSelecao, rascunhoIdParam])
+
+  const errosEtapaAtual = useMemo(() => validarEtapa({ etapa: etapaAtual, ficha, clienteSelecionada }), [etapaAtual, ficha, clienteSelecionada])
+
+  const mensagemContinuar = useMemo(() => {
+    if (etapaAtual === 'ficha' && !ativo) {
+      if (iniciando) return 'Salvando rascunho...'
+      if (erroCriacao) return erroCriacao
+      if (!unidadeId) return 'Selecione a filial.'
+      if (!consultoraNomeNormalizado || !validarNomeConsultora(consultoraNomeNormalizado)) {
+        return 'Informe o nome da consultora.'
+      }
+      return 'Aguardando criacao do rascunho...'
+    }
+    if (errosEtapaAtual.length > 0) return errosEtapaAtual[0].message
+    return ''
+  }, [etapaAtual, ativo, iniciando, erroCriacao, unidadeId, consultoraNomeNormalizado, errosEtapaAtual])
 
   function atualizarFicha(mutator: (atual: FichaDadosRascunho) => FichaDadosRascunho) {
     setFicha((atual) => mutator(atual))
@@ -415,14 +444,6 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       setClienteSelecionada(null)
     }
   }
-
-  const rascunhoIdParam = useMemo(() => {
-    if (paramRascunho) return paramRascunho
-    if (typeof window !== 'undefined') {
-      return new URLSearchParams(window.location.search).get('rascunho') ?? null
-    }
-    return null
-  }, [paramRascunho])
 
   useEffect(() => {
     if (!rascunhoIdParam) return
@@ -479,14 +500,29 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }, [clienteSelecionada?.id, clienteSelecionada?.version])
 
   useEffect(() => {
-    if (!podeCriarRascunho) return
+    const unidadeValida = !!unidadeId && unidadesParaSelecao.some((unidade) => unidade.id === unidadeId)
+    const nomeValido = !!consultoraNomeNormalizado && validarNomeConsultora(consultoraNomeNormalizado)
+    const pode =
+      !ativo &&
+      !iniciando &&
+      !concluindo &&
+      !carregandoRascunhoInicial &&
+      !rascunhoIdParam &&
+      unidadeValida &&
+      nomeValido
+    if (!pode) return
+    if (autoIniciandoRef.current) return
     if (tentativaUnidadeRef.current === unidadeId && tentativaNomeRef.current === consultoraNomeNormalizado) return
+    autoIniciandoRef.current = true
     tentativaUnidadeRef.current = unidadeId
     tentativaNomeRef.current = consultoraNomeNormalizado
     if (!draftClientIdRef.current) draftClientIdRef.current = gerarIdLocal('draft')
-    void iniciarRascunho(draftClientIdRef.current)
+    const draftId = draftClientIdRef.current
+    void iniciarRascunho(draftId).finally(() => {
+      autoIniciandoRef.current = false
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [podeCriarRascunho, unidadeId, consultoraNomeNormalizado])
+  }, [ativo, iniciando, concluindo, carregandoRascunhoInicial, rascunhoIdParam, unidadeId, unidadesParaSelecao, consultoraNomeNormalizado])
 
   useEffect(() => {
     setErroCriacao(null)
@@ -618,7 +654,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     void carregarClientePorId(rascunho.clienteId)
   }
 
-  function aplicarRascunhoCriado(rascunho: AtendimentoPresencialDTO) {
+  async function aplicarRascunhoCriado(rascunho: AtendimentoPresencialDTO) {
     setAtivo(rascunho)
     setUnidadeId(rascunho.unidadeId)
 
@@ -634,16 +670,28 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     setErrosValidacao([])
 
     const fila = autosaveQueueRef.current
+    let dadosRascunhoFinais = payloadServidor.dadosRascunho
     if (fila) {
       const payloadAtual = montarPayloadAutosave()
       if (serializarPayloadAutosave(payloadAtual) !== serializarPayloadAutosave(payloadServidor)) {
-        void fila.flushNow(payloadAtual)
+        const resultado = await fila.flushNow(payloadAtual)
+        if (resultado.ok && resultado.rascunho) {
+          dadosRascunhoFinais = migrarFichaDadosRascunho(resultado.rascunho.dadosRascunho)
+        } else {
+          dadosRascunhoFinais = payloadAtual.dadosRascunho
+        }
       }
     }
+
+    setFicha(dadosRascunhoFinais)
+    setDataPrevistaInputs(Object.fromEntries(dadosRascunhoFinais.criancas.map((crianca) => [crianca.id, formatarDataISOParaInput(crianca.dataPrevistaNascimento)])))
+    setViradaCartaoInput(formatarViradaCartao(dadosRascunhoFinais.viradaCartaoDia, dadosRascunhoFinais.viradaCartaoMes))
   }
 
   async function iniciarRascunho(draftClientId?: string) {
-    if (!contexto || !podeCriarRascunho) return
+    if (!contexto || !podeCriarRascunho) {
+      return
+    }
     setIniciando(true)
     setErroCriacao(null)
 
@@ -679,7 +727,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         throw new Error(data.message ?? 'Erro ao criar rascunho')
       }
 
-      aplicarRascunhoCriado(data.rascunho)
+      await aplicarRascunhoCriado(data.rascunho)
     } catch (error) {
       setErroCriacao(error instanceof Error ? error.message : 'Erro ao criar rascunho')
     } finally {
@@ -858,6 +906,10 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   function avancar() {
+    if (!ativo) {
+      setErroEtapa('Rascunho nao criado. Preencha filial e consultora para iniciar o atendimento.')
+      return
+    }
     const erros = validarEtapa({ etapa: etapaAtual, ficha, clienteSelecionada })
     if (erros.length > 0) {
       registrarErrosValidacao(erros)
@@ -1001,42 +1053,62 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   async function novoAtendimento() {
-    if (ativo && autosaveQueueRef.current) {
-      const payload = montarPayloadAutosave()
-      autosaveQueueRef.current.cancelDebounce()
-      void autosaveQueueRef.current.flushNow(payload)
-    }
-    autosaveQueueRef.current?.stop()
-    autosaveQueueRef.current = null
-    setAtivo(null)
-    setFicha(criarPayloadInicial())
-    setClienteSelecionada(null)
-    setBuscaCliente('')
-    setClientesEncontradas([])
-    setDataPrevistaInputs({})
-    setViradaCartaoInput('')
-    setErrosValidacao([])
-    setErroEtapa(null)
+    if (novoAtendimentoRef.current || iniciando || concluindo) return
+    novoAtendimentoRef.current = true
+    setIniciandoNovoAtendimento(true)
     setErro(null)
-    setErroCriacao(null)
-    setProdutoDigitado('')
-    setNumeroLancamento('')
-    setStatusSync('ocioso')
-    setMensagemConclusao(null)
-    setErroRascunhoInicial(null)
-    setCarregandoRascunhoInicial(false)
-    draftClientIdRef.current = null
-    tentativaUnidadeRef.current = ''
-    tentativaNomeRef.current = ''
+    setErroEtapa(null)
+    try {
+      if (ativo && autosaveQueueRef.current) {
+        const salvo = await garantirRascunhoSalvoAntesDeConcluir()
+        if (!salvo) throw new Error('Rascunho nao encontrado')
+      }
+      autosaveQueueRef.current?.stop()
+      autosaveQueueRef.current = null
+      setAtivo(null)
+      setFicha(criarPayloadInicial())
+      setClienteSelecionada(null)
+      setBuscaCliente('')
+      setClientesEncontradas([])
+      setNovoCliente({
+        nome: '',
+        telefone: '',
+        parentesco: '' as ParentescoCliente | '',
+        parentescoOutro: '',
+      })
+      setTelefoneClienteEdicao('')
+      setErroTelefone(null)
+      setDataPrevistaInputs({})
+      setViradaCartaoInput('')
+      setErrosValidacao([])
+      setErroEtapa(null)
+      setErro(null)
+      setErroCriacao(null)
+      setProdutoDigitado('')
+      setNumeroLancamento('')
+      setStatusSync('ocioso')
+      setMensagemConclusao(null)
+      setErroRascunhoInicial(null)
+      setCarregandoRascunhoInicial(false)
+      telefoneClienteSincronizadoRef.current = ''
+      draftClientIdRef.current = null
+      tentativaUnidadeRef.current = ''
+      tentativaNomeRef.current = ''
 
-    if (unidadesParaSelecao.length === 1) {
-      setUnidadeId(unidadesParaSelecao[0].id)
-    } else {
-      setUnidadeId('')
-    }
+      if (unidadesParaSelecao.length === 1) {
+        setUnidadeId(unidadesParaSelecao[0].id)
+      } else {
+        setUnidadeId('')
+      }
 
-    if (typeof window !== 'undefined' && window.location.search) {
-      void router.replace('/atendimento-presencial/ficha', { scroll: false })
+      if (typeof window !== 'undefined' && window.location.search) {
+        void router.replace('/atendimento-presencial/ficha', { scroll: false })
+      }
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : 'Erro ao salvar rascunho atual')
+    } finally {
+      novoAtendimentoRef.current = false
+      setIniciandoNovoAtendimento(false)
     }
   }
 
@@ -1156,12 +1228,16 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
               <h1 className="mt-1 text-2xl font-semibold text-slate-950">Ficha de Atendimento</h1>
             </div>
             <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
-              {ativo && (
-                <Button type="button" variant="outline" onClick={novoAtendimento} className="h-10 shrink-0 rounded-md">
-                  <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
-                  Novo atendimento
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={novoAtendimento}
+                disabled={iniciandoNovoAtendimento || iniciando || concluindo || carregandoRascunhoInicial}
+                className="h-10 w-full shrink-0 rounded-md sm:w-auto"
+              >
+                <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+                {iniciandoNovoAtendimento ? 'Salvando...' : 'Novo Atendimento'}
+              </Button>
               <Button type="button" variant="outline" onClick={verRascunhos} className="h-10 shrink-0 rounded-md">
                 <ClipboardList className="mr-2 h-4 w-4" aria-hidden="true" />
                 Ver rascunhos
@@ -1807,24 +1883,34 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         )}
       </div>
 
-      {ativo && (
+      {!carregandoRascunhoInicial && !erroRascunhoInicial && (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-lg backdrop-blur">
-          <div className="mx-auto flex max-w-3xl gap-2">
-            <Button type="button" variant="outline" onClick={voltar} disabled={etapaAtual === 'ficha'} className="h-12 flex-1 rounded-md">
-              <ChevronLeft className="mr-2 h-4 w-4" aria-hidden="true" />
-              Voltar
-            </Button>
-            {etapaAtual === 'revisao' ? (
-              <Button type="button" onClick={concluirAtendimento} disabled={concluindo} className="h-12 flex-1 rounded-md">
-                <Check className="mr-2 h-4 w-4" aria-hidden="true" />
-                {concluindo ? 'Concluindo...' : 'Concluir'}
-              </Button>
-            ) : (
-              <Button type="button" onClick={avancar} className="h-12 flex-1 rounded-md">
-                Continuar
-                <ChevronRight className="ml-2 h-4 w-4" aria-hidden="true" />
-              </Button>
+          <div className="mx-auto flex max-w-3xl flex-col gap-2">
+            {mensagemContinuar && (
+              <p className="text-center text-xs font-medium text-slate-600">{mensagemContinuar}</p>
             )}
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={voltar} disabled={etapaAtual === 'ficha'} className="h-12 flex-1 rounded-md">
+                <ChevronLeft className="mr-2 h-4 w-4" aria-hidden="true" />
+                Voltar
+              </Button>
+              {etapaAtual === 'revisao' ? (
+                <Button type="button" onClick={concluirAtendimento} disabled={!ativo || concluindo || errosEtapaAtual.length > 0} className="h-12 flex-1 rounded-md">
+                  <Check className="mr-2 h-4 w-4" aria-hidden="true" />
+                  {concluindo ? 'Concluindo...' : 'Concluir'}
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  onClick={avancar}
+                  disabled={!ativo || iniciando || errosEtapaAtual.length > 0}
+                  className="h-12 flex-1 rounded-md"
+                >
+                  {iniciando ? 'Salvando...' : 'Continuar'}
+                  {!iniciando && <ChevronRight className="ml-2 h-4 w-4" aria-hidden="true" />}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       )}

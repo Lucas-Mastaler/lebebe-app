@@ -82,6 +82,36 @@ function mapearErroRpc(error: { code?: string; message?: string }) {
     return jsonErro('Acesso negado ao rascunho', 403)
   }
   if (error.code === '23514') {
+    if (message.includes('consultora_perfil_invalido')) {
+      return jsonErro('A consultora responsavel nao possui o perfil de consultora ativo.', 422, { field: 'consultora' })
+    }
+    if (message.includes('consultora_unidade_invalida')) {
+      return jsonErro('A consultora responsavel nao esta vinculada a unidade selecionada.', 422, { field: 'unidade' })
+    }
+    if (message.includes('consultora_inativa')) {
+      return jsonErro('A consultora responsavel esta inativa.', 422, { field: 'consultora' })
+    }
+    if (message.includes('unidade_inativa')) {
+      return jsonErro('A unidade selecionada esta inativa.', 422, { field: 'unidade' })
+    }
+    if (message.includes('numero_lancamento_obrigatorio')) {
+      return jsonErro('Informe o numero do lancamento.', 422, { field: 'numeroLancamento' })
+    }
+    if (message.includes('numero_lancamento_indevido')) {
+      return jsonErro('Numero do lancamento so deve ser informado para resultado Sim.', 422, { field: 'numeroLancamento' })
+    }
+    if (message.includes('cliente_obrigatoria')) {
+      return jsonErro('Selecione uma cliente antes de concluir.', 422, { field: 'clienteId' })
+    }
+    if (message.includes('cliente_inativa')) {
+      return jsonErro('A cliente selecionada esta inativa.', 422, { field: 'clienteId' })
+    }
+    if (message.includes('consultora_nome_obrigatorio')) {
+      return jsonErro('Informe o nome da consultora.', 422, { field: 'consultoraNome' })
+    }
+    if (message.includes('consultora_nome_invalido')) {
+      return jsonErro('Nome da consultora invalido.', 422, { field: 'consultoraNome' })
+    }
     return jsonErro('Dados obrigatorios da conclusao nao foram preenchidos', 422)
   }
   return null

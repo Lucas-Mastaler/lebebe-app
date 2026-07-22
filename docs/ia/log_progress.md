@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ## 2026-07-22 - Cascade - Rascunhos na tela de Registros do Atendimento Presencial
 
 **Resumo:** Movida a listagem de rascunhos da ficha para uma aba na tela de registros. A ficha passa a carregar contexto no servidor, exibe botao "Ver rascunhos" e carrega rascunho por `?rascunho=<id>` com loading e erros. A tela de registros passa a aceitar `atendimento_presencial_registros` ou `atendimento_presencial_ficha`, exibindo apenas as abas permitidas, com fallback de tab via URL.
@@ -169,6 +170,38 @@ Realizar validacao manual e, se necessario, ajustar pontos finos de UX.
 
 **Proximo passo recomendado:**
 Revisar e aprovar `docs/atendimento-presencial-simplificacao-fluxo.md`; em seguida, prosseguir com a implementacao minima.
+=======
+## 2026-07-18 - Devin - Botao global "Novo Atendimento" na ficha presencial
+
+**Resumo:** Adicionado botao "Novo Atendimento" no cabecalho compartilhado da ficha de atendimento presencial, visivel nas etapas de edicao (`ficha`, `resultado`, `revisao`, quando `ativo`). Ao clicar: faz flush seguro do rascunho atual (reuso de `garantirRascunhoSalvoAntesDeConcluir`, que cancela o debounce e chama `flushNow` com o payload atual), limpa os campos locais da UI, preserva `unidadeId`/`consultoraUsuarioId` e chama `iniciarRascunho()` para criar um novo rascunho vazio e abrir a etapa `ficha`. Sem migration/RPC/rota/permissao. Escopo: apenas frontend.
+
+**Garantias:** salvamento antes da limpeza (o reset so ocorre apos o flush retornar ok; em conflito/offline/erro a funcao lanca, mostramos mensagem e NAO limpamos nem iniciamos novo). Sem sobrescrita com dados vazios: a fila anterior e parada dentro de `criarFilaAutosave` (via `aplicarRascunho`) e o `useEffect` de autosave retorna quando `!ativo`/sem fila. Anti-duplo-clique via `novoAtendimentoRef` + estado `iniciandoNovoAtendimento` (label "Salvando...", botao desabilitado durante `iniciando`/`concluindo`). O rascunho anterior permanece na lista de rascunhos com os dados salvos.
+
+**Arquivos lidos:**
+- `.devin/rules/gerais.md`, `.devin/rules/continuidade-agente.md` (parcial), `docs/ia/log_progress.md`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx` (etapas, autosave, iniciarRascunho, aplicarRascunho, concluir, header)
+
+**Arquivos alterados/criados:**
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx` - estado `iniciandoNovoAtendimento`, ref `novoAtendimentoRef`, funcao `novoAtendimento()`, botao no `<header>`
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit`: passou limpo.
+- `npm run lint`: sem erro/warning novo no arquivo tocado (baseline preexistente de 12 erros / 69 warnings fora de escopo, mantido).
+- `npx vitest run src/lib/atendimento-presencial/ src/app/api/atendimento-presencial/`: 8 falhas em testes de rota (`atendimentos/[id]/route`, `concluir/route`, `rascunho/route`) - COMPROVADAS como preexistentes: as mesmas 8 falhas ocorrem em `origin/main` com a alteracao removida (`git stash`), retornando 410/400 por fixtures baseadas em data e validacao de `consultora_nome` do commit anterior. Nao relacionadas ao botao.
+
+**Nao validado:**
+- Validacao manual em navegador (cenarios 1-8): bloqueada por falta de credenciais Supabase e login apenas Google OAuth.
+
+**Pendencias:**
+- Validacao manual/gravacao no navegador quando houver credenciais de staging.
+- Falhas de rota preexistentes (410/400) registradas separadamente; fora do escopo.
+
+**Riscos conhecidos:**
+- Se `iniciarRascunho()` (POST do novo rascunho) falhar apos o flush ok, o rascunho anterior ja esta salvo; o usuario ve mensagem de erro e pode reiniciar. Comportamento aceitavel.
+
+**Proximo passo recomendado:**
+Validacao manual no navegador dos cenarios 1-8 (incluindo duplo-clique e autosave pendente).
+>>>>>>> 6bef1b45d5439a7076bc630c1f6ba297b848720d
 
 ## 2026-07-18 (revisao) - Cascade - Validacao rigorosa de consultora_nome
 

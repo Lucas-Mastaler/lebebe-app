@@ -372,6 +372,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [erroTelefone, setErroTelefone] = useState<string | null>(null)
   const [salvandoTelefone, setSalvandoTelefone] = useState(false)
   const autosaveQueueRef = useRef<AutosaveSerialQueue | null>(null)
+  const fichaRef = useRef(ficha)
   const telefoneDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const telefoneRequestRef = useRef(0)
   const telefoneClienteSincronizadoRef = useRef('')
@@ -383,6 +384,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const tentativaNomeRef = useRef('')
   const autoIniciandoRef = useRef(false)
   const novoAtendimentoRef = useRef(false)
+  fichaRef.current = ficha
   clienteSelecionadaRef.current = clienteSelecionada
 
   const etapaAtual = ficha.etapaAtual
@@ -526,6 +528,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
 
   useEffect(() => {
     setErroCriacao(null)
+    const nomeNormalizado = normalizarNomeConsultora(ficha.consultoraNome)
+    if (!unidadeId || !nomeNormalizado || !validarNomeConsultora(nomeNormalizado)) {
+      tentativaUnidadeRef.current = ''
+      tentativaNomeRef.current = ''
+    }
   }, [unidadeId, ficha.consultoraNome])
 
   useEffect(() => {
@@ -537,8 +544,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }, [])
 
   function montarPayloadAutosave(
-    fichaAtual = ficha,
-    clienteAtual = clienteSelecionada
+    fichaAtual = fichaRef.current,
+    clienteAtual = clienteSelecionadaRef.current
   ): AutosavePayload {
     return {
       dadosRascunho: migrarFichaDadosRascunho(fichaAtual),
@@ -683,7 +690,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       }
     }
 
-    setFicha(dadosRascunhoFinais)
+    const consultoraNomeAtual = fichaRef.current.consultoraNome
+    setFicha({
+      ...dadosRascunhoFinais,
+      consultoraNome: consultoraNomeAtual ?? dadosRascunhoFinais.consultoraNome,
+    })
     setDataPrevistaInputs(Object.fromEntries(dadosRascunhoFinais.criancas.map((crianca) => [crianca.id, formatarDataISOParaInput(crianca.dataPrevistaNascimento)])))
     setViradaCartaoInput(formatarViradaCartao(dadosRascunhoFinais.viradaCartaoDia, dadosRascunhoFinais.viradaCartaoMes))
   }

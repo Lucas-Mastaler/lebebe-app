@@ -1,3 +1,34 @@
+## 2026-07-22 - Codex - Ajuste minimo no campo de consultora da ficha
+
+**Resumo:** Corrigido comportamento do campo "Nome da consultora" na ficha de Atendimento Presencial. O input podia ser substituido pelo valor normalizado retornado/salvo na criacao automatica do rascunho, dando a impressao de autocorrecao externa. Tambem havia trava de tentativa por unidade+nome normalizado que podia impedir nova tentativa depois de apagar e redigitar o mesmo nome. O ajuste preserva o texto atual digitado no input apos a criacao do rascunho e reseta a trava quando unidade/nome ficam invalidos.
+
+**Arquivos lidos:**
+- `.devin/rules/gerais.md`
+- `docs/ia/log_progress.md`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `src/lib/atendimento-presencial/ficha-schema.ts`
+
+**Arquivos alterados/criados:**
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx` - adiciona `fichaRef` para usar o estado mais recente no autosave/criacao, preserva `consultoraNome` atual no input apos `aplicarRascunhoCriado` e reseta `tentativaUnidadeRef`/`tentativaNomeRef` quando o nome fica invalido.
+- `docs/ia/log_progress.md` - esta entrada.
+
+**Validacoes realizadas:**
+- `npx tsc --noEmit`: passou.
+- `npx eslint src/app/atendimento-presencial/ficha/FichaPageClient.tsx`: passou.
+- `npx vitest run src/lib/atendimento-presencial src/app/api/atendimento-presencial`: primeira tentativa falhou com `spawn EPERM`; repetido fora do sandbox passou com 21 arquivos / 158 testes.
+
+**Nao validado:**
+- Validacao manual no navegador pelo Codex nao executada neste turno.
+
+**Pendencias:**
+- Usuario validar rapidamente digitando, apagando e redigitando o nome da consultora na ficha.
+
+**Riscos conhecidos:**
+- A normalizacao continua ocorrendo no payload/autosave/conclusao e no `onBlur`; o ajuste so evita sobrescrever o texto visivel do input durante a criacao automatica.
+
+**Proximo passo recomendado:**
+- Testar no evento se o campo nao altera o texto durante a digitacao e se o POST de rascunho ainda dispara apos filial + nome valido.
+
 ## 2026-07-22 - Codex - Hotfix urgente do Atendimento Presencial
 
 **Resumo:** Finalizado hotfix iniciado no Atendimento Presencial. Confirmado no codigo e no MCP Supabase que `consultora_usuario_id` agora representa o usuario autenticado que registrou o atendimento, enquanto `consultoraNome`/`consultora_nome` representa o nome manual da consultora. A RPC remota ainda exigia perfil `consultora` para `consultora_usuario_id`, causando `consultora_perfil_invalido`/422 ao concluir atendimento registrado por superadmin ou usuario autorizado sem perfil consultora. A RPC foi corrigida e aplicada no Supabase para validar o executor por usuario ativo, acesso ao modulo `atendimento_presencial_ficha` e unidade do atendimento, preservando superadmin com acesso total. Logs temporarios de diagnostico foram removidos da ficha.

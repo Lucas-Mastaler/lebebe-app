@@ -507,3 +507,30 @@ A partir de 2026-07-22, a lista de rascunhos ativos foi removida da ficha e migr
 
 - `npx next build` completo com as novas alterações.
 - Testes manuais: acesso com permissões variadas, tab por URL, `?rascunho=<id>` válido e inválido, e navegação ficha ↔ registros.
+
+
+---
+
+## 17. Hotfix de conclusao em 2026-07-22
+
+### 17.1 Causa confirmada
+
+O fluxo simplificado passou a gravar `consultora_usuario_id` como o usuario autenticado que registrou o atendimento. O nome da consultora que realizou o atendimento e informado manualmente em `consultoraNome` e persistido na coluna `consultora_nome` ao concluir.
+
+A RPC remota `public.atendimento_presencial_concluir` ainda validava `consultora_usuario_id` como uma pessoa com perfil ativo `consultora`, o que gerava `consultora_perfil_invalido` em atendimentos registrados por `superadmin`, `supervisora_loja` ou usuarios autorizados por modulo/unidade.
+
+### 17.2 Regra final aplicada na RPC
+
+- `consultora_usuario_id` continua representando o usuario autenticado que registrou o atendimento.
+- `consultora_nome` continua representando o nome manual da consultora responsavel pelo atendimento.
+- A conclusao valida o executor por usuario ativo, acesso ao modulo `atendimento_presencial_ficha` e unidade do atendimento.
+- `superadmin` continua com acesso total e nao precisa de vinculo em `app_usuarios_unidades`.
+- A RPC preserva assinatura, retorno, `SECURITY DEFINER`, `search_path`, owner e grants restritos a `service_role`.
+- As validacoes de status, versao, expiracao, unidade ativa, usuario registrador ativo, cliente ativo, payload, nome da consultora e numero de lancamento foram preservadas.
+
+### 17.3 Validacoes
+
+- MCP Supabase confirmou a definicao remota da RPC antes e depois da alteracao.
+- Teste em transacao com `rollback` concluiu o atendimento de diagnostico sem persistir dados, retornando nova versao dentro da transacao.
+- Advisors de seguranca do Supabase nao apontaram a RPC `atendimento_presencial_concluir` como executavel por `anon` ou `authenticated`.
+- Validacao manual do fluxo foi realizada pelo usuario durante o evento.

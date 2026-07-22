@@ -199,3 +199,12 @@ A tela de registros passa a ser um ponto de entrada compartilhado entre dois mó
 3. Validar manualmente os cenários de permissão: somente ficha, somente registros, ambas, nenhuma.
 4. Validar navegação ficha → registros → continuar rascunho, refresh em `?rascunho=<id>` e fallback de abas.
 5. Revisar perfis de acesso no ambiente real, garantindo que usuários que precisam de ambas as visões possuam os dois módulos.
+
+
+---
+
+## 12. Validacao em 2026-07-22
+
+- Build completo executado e aprovado apos liberar rede para `next/font`.
+- Testes relacionados ao Atendimento Presencial passaram: 21 arquivos / 158 testes.
+- Validacao manual do fluxo foi realizada pelo usuario durante o evento, incluindo ficha, rascunhos e conclusao.

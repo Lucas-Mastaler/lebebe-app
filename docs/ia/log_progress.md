@@ -1,3 +1,65 @@
+## 2026-07-22 - Codex - Hotfix urgente do Atendimento Presencial
+
+**Resumo:** Finalizado hotfix iniciado no Atendimento Presencial. Confirmado no codigo e no MCP Supabase que `consultora_usuario_id` agora representa o usuario autenticado que registrou o atendimento, enquanto `consultoraNome`/`consultora_nome` representa o nome manual da consultora. A RPC remota ainda exigia perfil `consultora` para `consultora_usuario_id`, causando `consultora_perfil_invalido`/422 ao concluir atendimento registrado por superadmin ou usuario autorizado sem perfil consultora. A RPC foi corrigida e aplicada no Supabase para validar o executor por usuario ativo, acesso ao modulo `atendimento_presencial_ficha` e unidade do atendimento, preservando superadmin com acesso total. Logs temporarios de diagnostico foram removidos da ficha.
+
+**Arquivos lidos:**
+- `.devin/rules/continuidade-agente.md`, `.devin/rules/gerais.md`, `.devin/rules/resumo.md`, `.devin/rules/supabase.md`, `.devin/rules/recebimentos.md`
+- `.devin/skills/supabase/SKILL.md`
+- `.devin/workflows/login.md`
+- `docs/ia/log_progress.md`
+- `docs/atendimento-presencial-simplificacao-fluxo.md`
+- `docs/atendimento-presencial-registros-rascunhos.md`
+- `src/app/atendimento-presencial/ficha/page.tsx`
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx`
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts`
+- `src/lib/atendimento-presencial/rascunhos.ts`
+- `src/lib/auth/module-access.ts`
+- `src/lib/auth/api-auth.ts`
+- `src/lib/auth/modulos-app.ts`
+- `supabase/migrations/20260722190000_atendimento_presencial_concluir_perfil.sql`
+
+**Arquivos alterados/criados:**
+- `src/app/atendimento-presencial/ficha/FichaPageClient.tsx` - manteve correcoes de auto-criacao/navegacao/Novo Atendimento e removeu `console.debug` temporarios.
+- `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts` - mapeia erros conhecidos da RPC para mensagens/fields especificos.
+- `supabase/migrations/20260722190000_atendimento_presencial_concluir_perfil.sql` - nova migration da RPC `atendimento_presencial_concluir` alinhada ao modelo atual de identidade.
+- `docs/atendimento-presencial-simplificacao-fluxo.md` - documenta causa, regra final da RPC e validacoes do hotfix.
+- `docs/atendimento-presencial-registros-rascunhos.md` - registra validacao final relacionada a rascunhos.
+- `docs/ia/log_progress.md` - esta entrada.
+
+**Validacoes realizadas:**
+- `git status --short`: inicialmente havia 2 arquivos modificados e 1 migration nova nao rastreada.
+- `git diff --stat` e `git diff`: revisados antes e depois das alteracoes.
+- MCP Supabase `list_tables`: confirmou estrutura real de tabelas de usuarios, perfis, unidades, modulos, permissoes e atendimento presencial.
+- MCP Supabase `execute_sql`: confirmou assinatura, retorno, owner, `SECURITY DEFINER`, `search_path` e grants da RPC antes e depois.
+- MCP Supabase `execute_sql`: confirmou o atendimento de diagnostico como rascunho valido, com usuario registrador superadmin ativo, unidade ativa e sem perfil consultora.
+- MCP Supabase `execute_sql`: teste transacional com `rollback` concluiu o atendimento de diagnostico e retornou versao 29 sem persistir dados.
+- MCP Supabase `execute_sql`: aplicou a RPC corrigida no banco remoto.
+- MCP Supabase `get_advisors security`: nao apontou a RPC `atendimento_presencial_concluir` como executavel por `anon`/`authenticated`; avisos retornados sao gerais/preexistentes.
+- `npx tsc --noEmit`: passou.
+- `npx eslint src/app/atendimento-presencial/ficha/FichaPageClient.tsx src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts`: passou.
+- `git diff --check`: passou.
+- `npx vitest run src/lib/atendimento-presencial src/app/api/atendimento-presencial`: primeira tentativa falhou com `spawn EPERM`; repetido fora do sandbox passou com 21 arquivos / 158 testes.
+- `npm run build`: primeira tentativa falhou por rede bloqueada ao buscar Google Fonts; repetido fora do sandbox passou. Mensagens `DYNAMIC_SERVER_USAGE` em rotas protegidas apareceram durante a geracao, mas o comando terminou com exit code 0.
+- Validacao manual do fluxo foi realizada pelo usuario durante o evento.
+
+**Nao validado:**
+- Automacao de navegador pelo Codex nao foi concluida porque o usuario informou que ja havia realizado a validacao manual.
+- Cenarios de usuario nao autorizado e unidade invalida nao foram exercitados por automacao ponta a ponta neste turno; a regra foi validada por leitura de codigo e SQL da RPC.
+
+**Pendencias:**
+- Monitorar uma conclusao real pos-deploy para confirmar ausencia de 422 por `consultora_perfil_invalido`.
+- Avaliar em tarefa separada os avisos gerais do Supabase Advisor, sem misturar com este hotfix.
+
+**Riscos conhecidos:**
+- A RPC agora duplica no banco uma parte da regra de acesso ao modulo `atendimento_presencial_ficha`; futuras mudancas no helper `checkModuleAccess` devem ser refletidas na RPC se alterarem semantica.
+- O campo `perfil` gravado no historico pode ficar `null` para usuarios autorizados por permissao individual sem perfil ativo, embora o `role` continue gravado.
+- Rascunhos antigos sem `consultoraNome` continuam exigindo preenchimento manual antes da conclusao.
+
+**Proximo passo recomendado:**
+- Publicar o commit e acompanhar o primeiro atendimento concluido no evento, verificando Network/response do POST de conclusao e logs da API se houver falha.
+
 ## 2026-07-22 - Cascade - Rascunhos na tela de Registros do Atendimento Presencial
 
 **Resumo:** Movida a listagem de rascunhos da ficha para uma aba na tela de registros. A ficha passa a carregar contexto no servidor, exibe botao "Ver rascunhos" e carrega rascunho por `?rascunho=<id>` com loading e erros. A tela de registros passa a aceitar `atendimento_presencial_registros` ou `atendimento_presencial_ficha`, exibindo apenas as abas permitidas, com fallback de tab via URL.

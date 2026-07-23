@@ -190,6 +190,168 @@ describe('pesquisarDatasV2', () => {
     )
   })
 
+  it('falha fechado quando a leitura da agenda foi truncada', async () => {
+    buscarAgendaMock.mockResolvedValueOnce({
+      diagnostico: {
+        ok: true,
+        executado: true,
+        leitura: {
+          ok: true,
+          linhasLidas: 2002,
+          linhasConvertidas: 2000,
+          linhasDisponiveis: 2001,
+          truncada: true,
+        },
+      },
+      linhasAgenda: [],
+    })
+
+    const result = await pesquisarDatasV2({
+      cep: '83800-000',
+      dataInicial: '2026-07-10',
+      tempoNecessario: '00:40',
+      destLat: -25.769705,
+      destLng: -49.325586,
+    } as never)
+
+    expect(result.ok).toBe(false)
+    expect(result.erros).toEqual([
+      'Leitura de agenda/disponibilidade truncada; pesquisa bloqueada para evitar resultado espacialmente incompleto.',
+    ])
+    expect(calcularMapaMock).not.toHaveBeenCalled()
+  })
+
+  it('remove do resultado final os tres slots ocupados sem pontos e preserva outro slot seguro', async () => {
+    buscarConfigMock.mockResolvedValueOnce({
+      ok: true,
+      origem: 'supabase',
+      faltantesNoSupabase: [],
+      usandoFallbackPlanilha: false,
+      lido_em: '2026-07-23T00:00:00.000Z',
+      config: {
+        supabaseTable: 'geo_cache',
+        diasPesquisaAgenda: 10,
+        osrmBaseUrl: 'https://osrm.lebebe.cloud',
+        equipe1Ativa: true,
+        equipe2Ativa: false,
+        latDeposito: -25.4876648,
+        lngDeposito: -49.2692262,
+        latCasaE1: -25.494297,
+        lngCasaE1: -49.277091,
+        latCasaE2: -25.494297,
+        lngCasaE2: -49.277091,
+        kmAdicionalMaxNaRotaM: 5000,
+        kmAdicionalMaxNaRotaEspecialM: 8000,
+        kmAdicionalMaxNaRotaPremiumM: 15000,
+        kmMaximoNaSemanaM: 40000,
+        kmMaximoNoSabadoM: 45000,
+        horaMarcadaHorasAMais: 2,
+      },
+    })
+    buscarDisponibilidadeMock.mockResolvedValueOnce({
+      diagnostico: { ok: true, executado: true },
+      disponibilidades: [
+        { dataISO: '2026-07-25', equipe: 'EQUIPE 1', disponivelMin: 60, tempoUtilizadoMin: 180, ativa: true },
+        { dataISO: '2026-07-28', equipe: 'EQUIPE 1', disponivelMin: 105, tempoUtilizadoMin: 315, ativa: true },
+        { dataISO: '2026-07-30', equipe: 'EQUIPE 1', disponivelMin: 120, tempoUtilizadoMin: 300, ativa: true },
+        { dataISO: '2026-07-31', equipe: 'EQUIPE 1', disponivelMin: 120, tempoUtilizadoMin: 0, ativa: true },
+      ],
+    })
+    calcularMapaMock.mockResolvedValueOnce({
+      ok: true,
+      modo: 'mapa-km-adicional-por-slot-diagnostico',
+      mapa: {
+        '2026-07-25::EQUIPE 1': null,
+        '2026-07-28::EQUIPE 1': null,
+        '2026-07-30::EQUIPE 1': null,
+        '2026-07-31::EQUIPE 1': 1000,
+      },
+      detalhesPorSlot: [
+        detalheSlotBloqueado('2026-07-25::EQUIPE 1', 180, 60),
+        detalheSlotBloqueado('2026-07-28::EQUIPE 1', 315, 105),
+        detalheSlotBloqueado('2026-07-30::EQUIPE 1', 300, 120),
+        detalheSlot('2026-07-31::EQUIPE 1', 0, 1000),
+      ],
+      contadores: {
+        slotsRecebidos: 10,
+        slotsProcessados: 10,
+        slotsComKm: 1,
+        slotsComFallbackHaversine: 0,
+        slotsComErro: 0,
+        slotsDescartados: 0,
+        slotsBloqueadosInconsistenciaEspacial: 3,
+      },
+      avisos: [],
+      erros: [],
+    })
+
+    const result = await pesquisarDatasV2({
+      cep: '82710-412',
+      dataInicial: '2026-07-25',
+      tempoNecessario: '00:40',
+      destLat: -25.4,
+      destLng: -49.2,
+    } as never)
+
+    expect(result.resultadoFinal.candidatosFinais).toEqual([
+      expect.objectContaining({ dataISO: '2026-07-31', tipo: 'normal', kmAdicionalNaRotaM: 1000 }),
+    ])
+    expect(result.resultadoFinal.candidatosFinais).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ dataISO: '2026-07-25' }),
+        expect.objectContaining({ dataISO: '2026-07-28' }),
+        expect.objectContaining({ dataISO: '2026-07-30' }),
+      ])
+    )
+    expect(result.snapshotTecnicoSlotsBloqueados).toHaveLength(3)
+    expect(result.snapshotTecnicoSlotsBloqueados?.map((slot) => slot.consistenciaEspacial.estado))
+      .toEqual(['ocupado-sem-pontos', 'ocupado-sem-pontos', 'ocupado-sem-pontos'])
+    expect(result.diagnosticoMinimo.estadoResultado).toBe('ok')
+    expect(result.diagnosticoMinimo.consistenciaEspacial?.slotsBloqueados).toBe(3)
+  })
+
+  it('diferencia agenda inconsistente de ausencia comercial de datas quando todos os slots calculaveis bloqueiam', async () => {
+    calcularMapaMock.mockResolvedValueOnce({
+      ok: true,
+      modo: 'mapa-km-adicional-por-slot-diagnostico',
+      mapa: {
+        '2026-07-10::EQUIPE 1': null,
+        '2026-07-11::EQUIPE 1': null,
+        '2026-07-13::EQUIPE 1': null,
+        '2026-07-14::EQUIPE 1': null,
+      },
+      detalhesPorSlot: [
+        detalheSlotBloqueado('2026-07-10::EQUIPE 1', 120, 300),
+        detalheSlotBloqueado('2026-07-11::EQUIPE 1', 60, 300),
+        detalheSlotBloqueado('2026-07-13::EQUIPE 1', 120, 300),
+        detalheSlotBloqueado('2026-07-14::EQUIPE 1', 120, 300),
+      ],
+      contadores: {
+        slotsRecebidos: 5,
+        slotsProcessados: 5,
+        slotsComKm: 0,
+        slotsComFallbackHaversine: 0,
+        slotsComErro: 0,
+        slotsDescartados: 0,
+        slotsBloqueadosInconsistenciaEspacial: 4,
+      },
+      avisos: [],
+      erros: [],
+    })
+
+    const result = await pesquisarDatasV2({
+      cep: '83800-000',
+      dataInicial: '2026-07-10',
+      tempoNecessario: '00:40',
+      destLat: -25.7,
+      destLng: -49.3,
+    } as never)
+
+    expect(result.resultadoFinal.candidatosFinais).toHaveLength(0)
+    expect(result.diagnosticoMinimo.estadoResultado).toBe('agenda-inconsistente')
+    expect(result.snapshotTecnicoSlotsBloqueados).toHaveLength(4)
+  })
+
   it('enriquece coordenadas da agenda antes do mapa para evitar rota simples sem ponto real', async () => {
     resolverCacheMock.mockResolvedValueOnce({
       cacheCoordenadasPorEndereco: {},
@@ -623,6 +785,36 @@ function detalheSlot(chave: string, pontosValidos: number, kmAdicionalNaRotaM = 
     deltaInsercao: null,
     origemOperacional: null,
     ordenacaoRotaBase: null,
+  }
+}
+
+function detalheSlotBloqueado(
+  chave: string,
+  tempoUtilizadoMin: number,
+  disponivelMin: number
+) {
+  const [dataISO, equipe] = chave.split('::')
+  return {
+    ...detalheSlot(chave, 0, 0),
+    kmAdicionalNaRotaM: null,
+    origemKmAdicionalNaRotaM: 'slot-espacial-inconsistente',
+    consistenciaEspacial: {
+      estado: 'ocupado-sem-pontos',
+      motivo: 'Disponibilidade parcial indica trabalho no dia, mas a agenda não fornece os pontos.',
+      rotaSimplesPermitida: false,
+      bloqueado: true,
+      tempoUtilizadoMin,
+      disponivelMin,
+      capacidadeTotalMin: tempoUtilizadoMin + disponivelMin,
+      linhasDaData: 0,
+      linhasDaEquipe: 0,
+      pontosValidos: 0,
+      semEndereco: 0,
+      semCoordenadas: 0,
+    },
+    dataISO,
+    equipe,
+    equipeNormalizada: equipe,
   }
 }
 

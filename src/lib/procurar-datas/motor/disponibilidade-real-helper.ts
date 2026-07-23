@@ -44,6 +44,8 @@ export type DisponibilidadeRealResult =
         linhasLidas: number
         linhasConvertidas: number
         cabecalhoReconhecido: boolean
+        linhasDisponiveis: number
+        truncada: boolean
       }
       parser: {
         ok: boolean
@@ -179,6 +181,8 @@ export async function buscarDisponibilidadeRealDiagnosticaComDados(
         linhasLidas: conversao.linhasLidas,
         linhasConvertidas: conversao.linhasConvertidas,
         cabecalhoReconhecido: conversao.cabecalhoReconhecido,
+        linhasDisponiveis: conversao.linhas.length,
+        truncada: conversao.linhas.length > linhasLimitadas.length,
       },
       parser: {
         ok: parserResult.ok,

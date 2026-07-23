@@ -124,10 +124,12 @@ type SnapshotTecnicoCandidatoSalvo = {
   origemKmAdicionalNaRotaM: string | null
   filtroEarly: unknown
   slotTemPontos: boolean | null
+  consistenciaEspacial: unknown
 }
 
 type SnapshotTecnicoSalvo = {
   candidatosFinais: SnapshotTecnicoCandidatoSalvo[]
+  slotsBloqueados: unknown[]
   contadoresMapaKm: {
     slotsRecebidos: number
     slotsProcessados: number
@@ -135,7 +137,11 @@ type SnapshotTecnicoSalvo = {
     slotsComFallbackHaversine: number
     slotsComErro: number
     slotsDescartados: number
+    slotsBloqueadosInconsistenciaEspacial: number
   } | null
+  estadoResultado: string | null
+  consistenciaEspacial: unknown
+  coberturaFontes: unknown
   fonteAgenda: string | null
   fonteDisponibilidade: string | null
 }
@@ -223,13 +229,17 @@ function extrairSnapshotTecnico(parametros: JsonRecord): SnapshotTecnicoSalvo | 
         origemKmAdicionalNaRotaM: asString(r.origemKmAdicionalNaRotaM),
         filtroEarly: r.filtroEarly ?? null,
         slotTemPontos: typeof r.slotTemPontos === 'boolean' ? r.slotTemPontos : null,
+        consistenciaEspacial: r.consistenciaEspacial ?? null,
       }
     })
     .filter((c) => c.slotKey && c.dataISO)
-  if (candidatosFinais.length === 0) return null
+  const slotsBloqueadosRaw = (raw as JsonRecord).slotsBloqueados
+  const slotsBloqueados = Array.isArray(slotsBloqueadosRaw) ? slotsBloqueadosRaw : []
+  if (candidatosFinais.length === 0 && slotsBloqueados.length === 0) return null
   const contadoresRaw = (raw as JsonRecord).contadoresMapaKm
   return {
     candidatosFinais,
+    slotsBloqueados,
     contadoresMapaKm: isRecord(contadoresRaw)
       ? {
           slotsRecebidos: asNumber(contadoresRaw.slotsRecebidos) ?? 0,
@@ -238,8 +248,13 @@ function extrairSnapshotTecnico(parametros: JsonRecord): SnapshotTecnicoSalvo | 
           slotsComFallbackHaversine: asNumber(contadoresRaw.slotsComFallbackHaversine) ?? 0,
           slotsComErro: asNumber(contadoresRaw.slotsComErro) ?? 0,
           slotsDescartados: asNumber(contadoresRaw.slotsDescartados) ?? 0,
+          slotsBloqueadosInconsistenciaEspacial:
+            asNumber(contadoresRaw.slotsBloqueadosInconsistenciaEspacial) ?? 0,
         }
       : null,
+    estadoResultado: asString((raw as JsonRecord).estadoResultado),
+    consistenciaEspacial: (raw as JsonRecord).consistenciaEspacial ?? null,
+    coberturaFontes: (raw as JsonRecord).coberturaFontes ?? null,
     fonteAgenda: asString((raw as JsonRecord).fonteAgenda),
     fonteDisponibilidade: asString((raw as JsonRecord).fonteDisponibilidade),
   }

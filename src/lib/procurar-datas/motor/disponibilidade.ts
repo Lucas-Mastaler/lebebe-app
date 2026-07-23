@@ -20,6 +20,10 @@ export interface DisponibilidadeEquipeDataV2 {
   dataISO: string
   equipe: string
   disponivelMin: number
+  /** Tempo já consumido no dia, conforme a fonte oficial de disponibilidade. */
+  tempoUtilizadoMin?: number | null
+  /** Capacidade oficial derivada da própria linha (utilizado + disponível). */
+  capacidadeTotalMin?: number | null
   ativa?: boolean
   motivoIndisponibilidade?: string | null
 }

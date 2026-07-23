@@ -58,6 +58,7 @@ describe('calcularKmAdicionalRealControladoV2', () => {
       configOrigem: CONFIG_ORIGEM,
       destino: DESTINO,
       linhasAgenda: [linhaAgenda('A', 'Rua A, 100 - Curitiba - PR, 80000-000')],
+      disponibilidade: { tempoUtilizadoMin: 120, disponivelMin: 300, capacidadeTotalMin: 420 },
       cacheCoordenadasPorEndereco: cacheAgenda(),
       buscarMatrizOSRM: buscarMatrizPorCoordenada(tabela),
     })
@@ -65,6 +66,7 @@ describe('calcularKmAdicionalRealControladoV2', () => {
     expect(resultado.ok).toBe(true)
     expect(resultado.kmAdicionalNaRotaM).toBe(200)
     expect(resultado.origemKmAdicionalNaRotaM).toBe('osrm-table-diagnostico')
+    expect(resultado.consistenciaEspacial?.estado).toBe('com-pontos-validos')
     expect(resultado.deltaInsercao?.melhorInsercao?.indiceInsercao).toBe(0)
     expect(Number.isInteger(resultado.kmAdicionalNaRotaM)).toBe(true)
   })
@@ -240,6 +242,7 @@ describe('calcularKmAdicionalRealControladoV2', () => {
       configOrigem: CONFIG_ORIGEM,
       destino: DESTINO,
       linhasAgenda: [],
+      disponibilidade: { tempoUtilizadoMin: 0, disponivelMin: 420, capacidadeTotalMin: 420 },
       cacheCoordenadasPorEndereco: {},
       buscarMatrizOSRM: buscarMatrizCompleta(1234),
     })
@@ -249,6 +252,7 @@ describe('calcularKmAdicionalRealControladoV2', () => {
       configOrigem: CONFIG_ORIGEM,
       destino: DESTINO,
       linhasAgenda: [],
+      disponibilidade: { tempoUtilizadoMin: 0, disponivelMin: 240, capacidadeTotalMin: 240 },
       cacheCoordenadasPorEndereco: {},
       buscarMatrizOSRM: buscarMatrizCompleta(1234),
     })
@@ -273,7 +277,52 @@ describe('calcularKmAdicionalRealControladoV2', () => {
     expect(resultado.kmAdicionalNaRotaM).toBeNull()
     expect(resultado.origemKmAdicionalNaRotaM).toBe('agenda-sem-coordenadas-producao')
     expect(resultado.deltaInsercao).toBeNull()
-    expect(resultado.avisos.join(' ')).toContain('rota simples origem -> destino nao foi validada')
+    expect(resultado.consistenciaEspacial?.estado).toBe('agenda-sem-coordenadas')
+    expect(resultado.avisos.join(' ')).toContain('Slot bloqueado por inconsistência espacial')
+  })
+
+  it('bloqueia rota simples quando a disponibilidade prova ocupacao sem pontos', async () => {
+    const buscarMatrizOSRM = vi.fn<BuscarMatrizOSRM>()
+    const resultado = await calcularKmAdicionalRealControladoV2({
+      dataISO: '2026-07-28',
+      equipe: 'EQUIPE 1',
+      configOrigem: CONFIG_ORIGEM,
+      destino: DESTINO,
+      linhasAgenda: [],
+      disponibilidade: { tempoUtilizadoMin: 315, disponivelMin: 105, capacidadeTotalMin: 420 },
+      cacheCoordenadasPorEndereco: {},
+      buscarMatrizOSRM,
+    })
+
+    expect(resultado.ok).toBe(true)
+    expect(resultado.kmAdicionalNaRotaM).toBeNull()
+    expect(resultado.origemKmAdicionalNaRotaM).toBe('slot-espacial-inconsistente')
+    expect(resultado.consistenciaEspacial).toMatchObject({
+      estado: 'ocupado-sem-pontos',
+      bloqueado: true,
+      rotaSimplesPermitida: false,
+    })
+    expect(buscarMatrizOSRM).not.toHaveBeenCalled()
+  })
+
+  it('bloqueia somente o slot quando existe evento sem endereco', async () => {
+    const buscarMatrizOSRM = vi.fn<BuscarMatrizOSRM>()
+    const resultado = await calcularKmAdicionalRealControladoV2({
+      dataISO: '2026-07-28',
+      equipe: 'EQUIPE 1',
+      configOrigem: CONFIG_ORIGEM,
+      destino: DESTINO,
+      linhasAgenda: [linhaAgenda('EVENTO SEM ENDERECO', '', 'EQUIPE 1', '2026-07-28')],
+      disponibilidade: { tempoUtilizadoMin: 60, disponivelMin: 360, capacidadeTotalMin: 420 },
+      cacheCoordenadasPorEndereco: {},
+      buscarMatrizOSRM,
+    })
+
+    expect(resultado.ok).toBe(true)
+    expect(resultado.kmAdicionalNaRotaM).toBeNull()
+    expect(resultado.consistenciaEspacial?.estado).toBe('agenda-sem-endereco')
+    expect(resultado.consistenciaEspacial?.linhasDaEquipe).toBe(1)
+    expect(buscarMatrizOSRM).not.toHaveBeenCalled()
   })
 
   it('falha de OSRM usa fallback Haversine e nao retorna null', async () => {
@@ -287,6 +336,7 @@ describe('calcularKmAdicionalRealControladoV2', () => {
       configOrigem: CONFIG_ORIGEM,
       destino: DESTINO,
       linhasAgenda: [],
+      disponibilidade: { tempoUtilizadoMin: 0, disponivelMin: 420, capacidadeTotalMin: 420 },
       cacheCoordenadasPorEndereco: {},
       buscarMatrizOSRM,
     })

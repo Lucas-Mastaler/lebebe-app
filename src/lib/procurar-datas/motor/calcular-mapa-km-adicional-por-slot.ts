@@ -9,6 +9,7 @@ export type SlotInputMapaKmAdicional = {
   dataISO: string
   equipe: string
   linhasAgenda: CalcularKmAdicionalRealControladoInput['linhasAgenda']
+  disponibilidade?: CalcularKmAdicionalRealControladoInput['disponibilidade']
   cacheCoordenadasPorEndereco?: CalcularKmAdicionalRealControladoInput['cacheCoordenadasPorEndereco']
 }
 
@@ -25,6 +26,8 @@ export type DetalheSlotMapaKmAdicional = {
   descartados: unknown[]
   /** Resultado do parse dos pontos da agenda para diagnosticar aceites/descartes do slot. */
   parseAgenda?: CalcularKmAdicionalRealControladoOutput['parseAgenda']
+  /** Decisão fail-closed que distingue dia vazio de agenda espacialmente incompleta. */
+  consistenciaEspacial?: CalcularKmAdicionalRealControladoOutput['consistenciaEspacial']
   /** Matriz OSRM preparada para o slot, quando executada. */
   matrizOSRM?: CalcularKmAdicionalRealControladoOutput['matrizOSRM']
   /** Detalhes do delta de insercao (inclui candidatosInsercao e pontosRotaBase quando incluirDetalhesInsercao=true). */
@@ -59,6 +62,7 @@ export type CalcularMapaKmAdicionalPorSlotOutput = {
     slotsComFallbackHaversine: number
     slotsComErro: number
     slotsDescartados: number
+    slotsBloqueadosInconsistenciaEspacial: number
   }
   avisos: string[]
   erros: string[]
@@ -90,6 +94,7 @@ export async function calcularMapaKmAdicionalPorSlotControladoV2(
         slotsComFallbackHaversine: 0,
         slotsComErro: 0,
         slotsDescartados: 0,
+        slotsBloqueadosInconsistenciaEspacial: 0,
       },
       avisos: avisosSaida,
       erros: errosSaida,
@@ -104,6 +109,7 @@ export async function calcularMapaKmAdicionalPorSlotControladoV2(
   let slotsComFallbackHaversine = 0
   let slotsComErro = 0
   let slotsDescartados = 0
+  let slotsBloqueadosInconsistenciaEspacial = 0
 
   for (const slot of input.slots) {
     const dataISO = typeof slot.dataISO === 'string' ? slot.dataISO.trim() : ''
@@ -129,6 +135,7 @@ export async function calcularMapaKmAdicionalPorSlotControladoV2(
       configFiltroEarlyLegado: input.configFiltroEarlyLegado,
       destino: input.destino,
       linhasAgenda: slot.linhasAgenda ?? [],
+      disponibilidade: slot.disponibilidade,
       cacheCoordenadasPorEndereco: slot.cacheCoordenadasPorEndereco ?? {},
       buscarMatrizOSRM: input.buscarMatrizOSRM,
       incluirDetalhesInsercao: input.incluirDetalhesInsercao,
@@ -140,12 +147,17 @@ export async function calcularMapaKmAdicionalPorSlotControladoV2(
       slotsComKm++
     } else if (resultado.origemKmAdicionalNaRotaM === 'filtrado-early-legado-diagnostico') {
       slotsDescartados++
+    } else if (resultado.consistenciaEspacial?.bloqueado) {
+      // Bloqueio esperado de segurança: não é falha técnica do cálculo.
     } else {
       slotsComErro++
     }
 
     if (resultado.origemKmAdicionalNaRotaM === 'haversine-fallback-legado-diagnostico') {
       slotsComFallbackHaversine++
+    }
+    if (resultado.consistenciaEspacial?.bloqueado) {
+      slotsBloqueadosInconsistenciaEspacial++
     }
 
     detalhesPorSlot.push({
@@ -160,6 +172,7 @@ export async function calcularMapaKmAdicionalPorSlotControladoV2(
       erros: resultado.erros,
       descartados: resultado.descartados,
       parseAgenda: resultado.parseAgenda,
+      consistenciaEspacial: resultado.consistenciaEspacial,
       matrizOSRM: resultado.matrizOSRM,
       deltaInsercao: resultado.deltaInsercao,
       origemOperacional: resultado.origemOperacional,
@@ -182,6 +195,7 @@ export async function calcularMapaKmAdicionalPorSlotControladoV2(
       slotsComFallbackHaversine,
       slotsComErro,
       slotsDescartados,
+      slotsBloqueadosInconsistenciaEspacial,
     },
     avisos: avisosSaida,
     erros: errosSaida,

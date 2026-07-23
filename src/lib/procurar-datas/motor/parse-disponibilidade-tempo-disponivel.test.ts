@@ -34,6 +34,8 @@ describe('parsearDisponibilidadeTempoDisponivelV2 — tempo disponível', () => 
   it('1. parseia "01:00" para 60 minutos', () => {
     const res = parsear({ linhas: [linhaDisponivel({ tempoDisponivel: '01:00' })] })
     expect(res.disponibilidades[0].disponivelMin).toBe(60)
+    expect(res.disponibilidades[0].tempoUtilizadoMin).toBe(360)
+    expect(res.disponibilidades[0].capacidadeTotalMin).toBe(420)
   })
 
   it('9. parseia "00:00" para 0 minutos', () => {
@@ -567,5 +569,36 @@ describe('parsearDisponibilidadeTempoDisponivelV2 — exemplos reais da planilha
     expect(res.disponibilidades[1].dataISO).toBe('2026-06-16')
     expect(res.disponibilidades[2].dataISO).toBe('2026-06-23')
     expect(res.disponibilidades[3].dataISO).toBe('2027-01-05')
+  })
+})
+
+describe('parsearDisponibilidadeTempoDisponivelV2 - tempo utilizado', () => {
+  it('preserva zero confirmado', () => {
+    const res = parsear({ linhas: [linhaDisponivel({ tempoUtilizado: '00:00' })] })
+    expect(res.disponibilidades[0].tempoUtilizadoMin).toBe(0)
+  })
+
+  it.each([
+    ['campo ausente', undefined],
+    ['valor nulo', null],
+    ['campo vazio', ''],
+  ])('mantem null quando %s', (_caso, tempoUtilizado) => {
+    const res = parsear({ linhas: [linhaDisponivel({ tempoUtilizado })] })
+    expect(res.disponibilidades[0].tempoUtilizadoMin).toBeNull()
+  })
+
+  it.each([
+    ['texto inesperado', 'seis horas'],
+    ['numero negativo', -1],
+    ['objeto inesperado', { horas: 6 }],
+  ])('nao converte %s silenciosamente para zero', (_caso, tempoUtilizado) => {
+    const res = parsear({ linhas: [linhaDisponivel({ tempoUtilizado })] })
+    expect(res.disponibilidades[0].tempoUtilizadoMin).toBeNull()
+    expect(res.avisos.join(' ')).toContain('tempo utilizado inválido')
+  })
+
+  it('preserva valor positivo', () => {
+    const res = parsear({ linhas: [linhaDisponivel({ tempoUtilizado: '05:15' })] })
+    expect(res.disponibilidades[0].tempoUtilizadoMin).toBe(315)
   })
 })

@@ -310,6 +310,20 @@ export function parsearDisponibilidadeTempoDisponivelV2(
       continue
     }
     const disponivelMin = parseMinutos(linha.tempoDisponivel)
+    const tempoUtilizadoInformado =
+      linha.tempoUtilizado !== null &&
+      linha.tempoUtilizado !== undefined &&
+      String(linha.tempoUtilizado).trim() !== ''
+    const tempoUtilizadoMin = tempoUtilizadoInformado && validarTempoDisponivel(linha.tempoUtilizado)
+      ? parseMinutos(linha.tempoUtilizado)
+      : null
+    if (tempoUtilizadoInformado && tempoUtilizadoMin === null) {
+      avisos.push(
+        `Linha ${idx}: tempo utilizado inválido — consistência espacial será tratada de forma conservadora.`
+      )
+    }
+    const capacidadeTotalMin =
+      tempoUtilizadoMin === null ? null : tempoUtilizadoMin + disponivelMin
 
     const statusParsed = parsearStatusLinha(linha.status, disponivelMin, idx)
     if (statusParsed.aviso) avisos.push(statusParsed.aviso)
@@ -328,6 +342,8 @@ export function parsearDisponibilidadeTempoDisponivelV2(
           dataISO,
           equipe,
           disponivelMin,
+          tempoUtilizadoMin,
+          capacidadeTotalMin,
           ativa: statusParsed.ativa,
           motivoIndisponibilidade: statusParsed.motivoIndisponibilidade,
         })
@@ -337,6 +353,8 @@ export function parsearDisponibilidadeTempoDisponivelV2(
         dataISO,
         equipe,
         disponivelMin,
+        tempoUtilizadoMin,
+        capacidadeTotalMin,
         ativa: statusParsed.ativa,
         motivoIndisponibilidade: statusParsed.motivoIndisponibilidade,
       })

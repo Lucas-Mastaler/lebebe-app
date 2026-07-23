@@ -4751,3 +4751,102 @@ A paridade foi melhorada porque a regra ficou no helper central usado por:
 - `npx tsc --noEmit --pretty false` passou.
 - `npx eslint` nos arquivos de cache/Mere/webhook alterados passou.
 - `npx vitest run src/lib/procurar-datas/endereco-cache.test.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts src/lib/atendimento-automatico/webhook-processor.test.ts` passou com 42 tests passed e 6 skipped.
+
+---
+
+## 2026-07-23 - Codex - Barreira fail-closed entre disponibilidade e agenda espacial
+
+### Causa confirmada
+
+A fonte externa que alimenta `AGENDA LEBEBE` estava incompleta: havia somente 15 eventos e nenhum nas datas 25, 28 e 30/07/2026. Na mesma planilha, `TEMPO DISPONIVEL POR EQUIPE` comprovava tempo utilizado positivo para a EQUIPE 1 nessas datas. O motor descartava `TEMPO UTILIZADO`, interpretava zero pontos como dia vazio e calculava rota simples.
+
+### Implementacao
+
+- O parser preserva `tempoUtilizadoMin` e diferencia zero confirmado de `null`.
+- O helper puro `avaliarConsistenciaEspacialSlotV2` produz estados explicitos:
+  - `com-pontos-validos`;
+  - `dia-realmente-vazio`;
+  - `ocupado-sem-pontos`;
+  - `agenda-sem-endereco`;
+  - `agenda-sem-coordenadas`;
+  - `capacidade-indeterminada`.
+- `calcularKmAdicionalRealControladoV2` autoriza rota simples somente para `dia-realmente-vazio`; demais inconsistencias retornam km nulo sem chamar OSRM.
+- `pesquisarDatasV2` bloqueia o slot, preserva outros slots seguros e diferencia `sem-datas-disponiveis`, `agenda-inconsistente` e `calculo-espacial-incompleto` no diagnostico.
+- Snapshot e auditoria passaram a salvar slots bloqueados, cobertura das fontes e contadores de consistencia.
+- Leituras truncadas sao detectadas e falham fechado.
+
+### Validacoes
+
+- Testes focados: 7 arquivos, 129 testes aprovados.
+- Suite ampla de `/procurar-datas`: 1.248 aprovados e 17 falhas preexistentes em tres arquivos sem relacao com o diff.
+- `npx tsc --noEmit --pretty false`: passou.
+- ESLint dos arquivos alterados: passou.
+- `npm run build`: passou apos liberar rede para baixar Geist; avisos preexistentes de rotas dinamicas com cookies permaneceram.
+- Releitura real em 23/07/2026: a aba espacial ainda estava incompleta; a validacao real com agenda corrigida permanece pendente.
+
+---
+
+## 2026-07-23 - Codex - Validacao real apos correcao externa da planilha
+
+Status: validado em execucao real do motor contra Google Sheets/OSRM, sem alterar Apps Script, N8N, triggers, estrutura/formulas/abas da planilha, Google Calendar ou processos externos.
+
+### Evidencia
+
+- Auditoria real gravada: `procurar_datas_pesquisas_auditoria.id=761b6a5a-69ca-4513-88cb-440eb3b02b89`, `run_id=053b0546-66ca-4569-8313-92dab0c9889e`.
+- Snapshot tecnico: `fonteAgenda=google-sheets`, `fonteDisponibilidade=google-sheets`.
+- Cobertura: agenda com 482 linhas (`2026-07-20` a `2027-04-29`) e disponibilidade com 308 linhas (`2026-07-25` a `2027-07-24`).
+- Resultado: `estadoResultado=ok`, 5 candidatos finais.
+- Contadores: 100 slots recebidos/processados; 34 com km; 0 com erro; 16 descartados; 50 bloqueados por inconsistencia espacial.
+- Estados espaciais: 42 slots com pontos validos; 8 dias realmente vazios; 30 ocupados sem pontos; 4 agendas sem endereco; 3 agendas sem coordenadas; 13 capacidades indeterminadas.
+- Candidatos finais com pontos reais: `2026-08-15`, `2026-08-21`, `2026-08-29`, todos `EQUIPE 1`, com `origemKmAdicionalNaRotaM=osrm-table-diagnostico`.
+- Candidatos finais realmente vazios: `2026-09-05`, `2026-09-12`, ambos `EQUIPE 1`, com `tempoUtilizadoMin=0` e rota simples permitida.
+
+### Validacoes adicionais
+
+- Testes focados: 7 arquivos, 129 testes aprovados.
+- Suite ampla `/procurar-datas`: 71 arquivos, 1265 testes, 1248 aprovados e 17 falhas preexistentes.
+- `npx tsc --noEmit --pretty false`: passou.
+- ESLint direcionado nos arquivos alterados: passou.
+- `git diff --check`: passou com avisos CRLF/LF do checkout Windows.
+- `npm run build`: falhou no sandbox por nao conseguir buscar `Geist`/`Geist Mono` no Google Fonts; a reexecucao com rede foi solicitada, mas recusada pelo limite de uso da sessao. Build final nao confirmado nesta rodada.
+
+### Limite da evidencia
+
+O snapshot persistido salva candidatos finais e slots bloqueados, mas nao todos os slots avaliados antes do recorte. A execucao temporaria nao reteve stdout detalhado por data; portanto as quantidades especificas de 25/07, 28/07 e 30/07 apos a correcao externa nao foram capturadas nesta validacao. O fluxo real corrigido foi validado, mas esse recorte por data deve ser coletado em nova rodada se permanecer como criterio obrigatorio.
+
+---
+
+## 2026-07-23 - Codex - Auditoria final focada para GO/NO-GO
+
+Status: GO para commit e revisao; GO para deploy apos revisao humana do diff.
+
+### Auditoria dos bloqueios
+
+- Snapshot real auditado: `run_id=053b0546-66ca-4569-8313-92dab0c9889e`.
+- Total de bloqueios: 50.
+- Agrupamento: 30 `ocupado-sem-pontos`, 13 `capacidade-indeterminada`, 4 `agenda-sem-endereco`, 3 `agenda-sem-coordenadas`.
+- Conclusao: bloqueios esperados e seguros. Nao foi encontrado falso positivo da nova barreira; os 50 casos nao tinham evidencia espacial/capacidade suficiente para serem tratados como rota simples segura.
+
+### Tres datas originais
+
+- Coleta temporaria cache-only, removida ao final, confirmou:
+  - `2026-07-25::EQUIPE 1`: 2 linhas da equipe, 2 pontos validos, OSRM table ok, filtro early descartou por Haversine 19.209 km > 12 km, candidato inelegivel.
+  - `2026-07-28::EQUIPE 1`: 2 linhas da equipe, 2 pontos validos, OSRM table ok, filtro early descartou por Haversine 16.188 km > 12 km, candidato inelegivel.
+  - `2026-07-30::EQUIPE 1`: 2 linhas da equipe, 2 pontos validos, OSRM table ok, filtro early descartou por Haversine 14.458 km > 12 km, candidato inelegivel.
+- As tres datas nao foram tratadas como dia vazio e nao foram bloqueadas pela barreira fail-closed.
+- O delta de insercao nao foi calculado nesses tres slots porque o filtro early legacy interrompe antes do delta quando a menor distancia em reta excede o limite.
+
+### Validacoes finais
+
+- Coleta real temporaria: passou com 1 teste; arquivo temporario e JSON local removidos.
+- `npm run test -- src/lib/procurar-datas/motor/pesquisar-datas-v2.test.ts src/app/api/procurar-datas/v2/auditar-run/route.test.ts --silent`: 2 arquivos, 19 testes passaram.
+- Teste temporario de rota async para todos-os-slots-bloqueados: `POST /api/procurar-datas/v2/pesquisar-compat-async` retornou HTTP 200, `status=done`, payload com `candidates=[]`, `normais=[]` e `extras=[]` quando o orquestrador entregou `estadoResultado=agenda-inconsistente`; bloco temporario removido ao final.
+- Comparacao das 17 falhas: mesmos 17 testes falharam no worktree atual e no worktree temporario em `HEAD 7446fa8`; worktree temporario removido.
+- `npx tsc --noEmit --pretty false`: passou.
+- ESLint direcionado nos arquivos alterados: passou.
+- `git diff --check`: passou com avisos LF/CRLF do checkout Windows.
+- `npm run build`: passou, gerando 110 paginas; avisos `DYNAMIC_SERVER_USAGE` por `cookies` permaneceram como avisos de rotas dinamicas.
+
+### Pendencia
+
+As 17 falhas preexistentes devem ser tratadas em tarefa separada; nao bloqueiam este diff porque foram comprovadas no HEAD limpo.

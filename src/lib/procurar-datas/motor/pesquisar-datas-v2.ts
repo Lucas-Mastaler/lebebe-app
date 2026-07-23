@@ -17,6 +17,7 @@ import { gerarCandidatosComDisponibilidadeRealV2 } from './gerar-candidatos-disp
 import { recortarCandidatosLegadoEquivalente } from './recortar-candidatos-legado-equivalente'
 import { normalizarEquipe } from './equipe'
 import type { CandidatoPreliminarV2 } from './candidato'
+import type { DisponibilidadeEquipeDataV2 } from './disponibilidade'
 import type { MedidorPerformanceV2 } from './performance-diagnostico-v2'
 import { montarDiagnosticoResultadoTelaV2SantoAmaro } from './diagnostico-resultado-tela-v2-santo-amaro'
 import {
@@ -69,6 +70,16 @@ export type SnapshotTecnicoCandidatoFinalV2 = {
   origemKmAdicionalNaRotaM: DetalheSlotMapaKmAdicional['origemKmAdicionalNaRotaM'] | null
   filtroEarly: DetalheSlotMapaKmAdicional['filtroEarlyLegado'] | null
   slotTemPontos: boolean | null
+  consistenciaEspacial: DetalheSlotMapaKmAdicional['consistenciaEspacial'] | null
+}
+
+export type SnapshotTecnicoSlotBloqueadoV2 = {
+  slotKey: string
+  dataISO: string
+  equipe: string
+  kmAdicionalNaRotaM: null
+  origemKmAdicionalNaRotaM: DetalheSlotMapaKmAdicional['origemKmAdicionalNaRotaM']
+  consistenciaEspacial: NonNullable<DetalheSlotMapaKmAdicional['consistenciaEspacial']>
 }
 
 export type ContadoresMapaKmV2 = {
@@ -78,6 +89,7 @@ export type ContadoresMapaKmV2 = {
   slotsComFallbackHaversine: number
   slotsComErro: number
   slotsDescartados: number
+  slotsBloqueadosInconsistenciaEspacial: number
 }
 
 export type PesquisarDatasV2Output = {
@@ -107,6 +119,7 @@ export type PesquisarDatasV2Output = {
     diasUsados: string[]
   }
   diagnosticoMinimo: {
+    estadoResultado?: 'ok' | 'sem-datas-disponiveis' | 'agenda-inconsistente' | 'calculo-espacial-incompleto'
     osrmBaseUrlUsado: string
     osrmFallbackUsado: boolean
     quantidadeSlotsComPontos: number
@@ -126,11 +139,25 @@ export type PesquisarDatasV2Output = {
       geocodificacoesExternasTentadas: number
     }
     contadoresMapaKm?: ContadoresMapaKmV2
+    consistenciaEspacial?: {
+      slotsBloqueados: number
+      diasRealmenteVazios: number
+      slotsComPontosValidos: number
+      ocupadosSemPontos: number
+      agendasSemEndereco: number
+      agendasSemCoordenadas: number
+      capacidadesIndeterminadas: number
+    }
     fonteAgenda?: string
     fonteDisponibilidade?: string
+    coberturaFontes?: {
+      agenda: { linhas: number; dataMaisAntiga: string | null; dataMaisRecente: string | null }
+      disponibilidade: { linhas: number; dataMaisAntiga: string | null; dataMaisRecente: string | null }
+    }
     avisos: string[]
   }
   snapshotTecnicoCandidatosFinais?: SnapshotTecnicoCandidatoFinalV2[]
+  snapshotTecnicoSlotsBloqueados?: SnapshotTecnicoSlotBloqueadoV2[]
   diagnosticoResultadoTelaV2SantoAmaro?: ReturnType<typeof montarDiagnosticoResultadoTelaV2SantoAmaro>
   diagnosticoDeltaSantoAmaro16Jul?: ReturnType<typeof montarDiagnosticoDeltaSantoAmaro16Jul>
   diagnosticoDeltaMajorHardy31Jul?: ReturnType<typeof montarDiagnosticoResultadoTelaV2MajorHardy>
@@ -216,6 +243,7 @@ function montarEntradaMinima(
 function montarSlotsAgendaReal(input: {
   janelaDatas: Array<{ dataISO: string }>
   linhasAgenda: SlotInputMapaKmAdicional['linhasAgenda']
+  disponibilidades: DisponibilidadeEquipeDataV2[]
   cacheCoordenadasPorEndereco: Record<string, { lat: number; lng: number }>
   equipe1Ativa: boolean
   equipe2Ativa: boolean
@@ -225,12 +253,28 @@ function montarSlotsAgendaReal(input: {
   if (input.equipe2Ativa) equipes.push('EQUIPE 2')
 
   const slots: SlotInputMapaKmAdicional[] = []
+  const disponibilidadePorSlot = new Map<string, DisponibilidadeEquipeDataV2>(
+    input.disponibilidades.flatMap((disponibilidade) => {
+      const equipe = normalizarEquipe(disponibilidade.equipe)
+      return equipe
+        ? [[`${disponibilidade.dataISO}::${equipe}`, disponibilidade] as const]
+        : []
+    })
+  )
   for (const dataDia of input.janelaDatas) {
     for (const equipe of equipes) {
+      const disponibilidade = disponibilidadePorSlot.get(`${dataDia.dataISO}::${equipe}`)
       slots.push({
         dataISO: dataDia.dataISO,
         equipe,
         linhasAgenda: input.linhasAgenda,
+        disponibilidade: disponibilidade
+          ? {
+              tempoUtilizadoMin: disponibilidade.tempoUtilizadoMin,
+              disponivelMin: disponibilidade.disponivelMin,
+              capacidadeTotalMin: disponibilidade.capacidadeTotalMin,
+            }
+          : null,
         cacheCoordenadasPorEndereco: input.cacheCoordenadasPorEndereco,
       })
     }
@@ -303,8 +347,74 @@ function montarSnapshotTecnicoCandidatosFinais(
       origemKmAdicionalNaRotaM: detalhe?.origemKmAdicionalNaRotaM ?? null,
       filtroEarly: detalhe?.filtroEarlyLegado ?? null,
       slotTemPontos: candidato.slotTemPontos ?? null,
+      consistenciaEspacial: detalhe?.consistenciaEspacial ?? null,
     }
   })
+}
+
+function montarSnapshotTecnicoSlotsBloqueados(
+  detalhesPorSlot: DetalheSlotMapaKmAdicional[]
+): SnapshotTecnicoSlotBloqueadoV2[] {
+  return detalhesPorSlot.flatMap((detalhe) =>
+    detalhe.consistenciaEspacial?.bloqueado
+      ? [{
+          slotKey: detalhe.chave,
+          dataISO: detalhe.dataISO,
+          equipe: detalhe.equipeNormalizada,
+          kmAdicionalNaRotaM: null,
+          origemKmAdicionalNaRotaM: detalhe.origemKmAdicionalNaRotaM,
+          consistenciaEspacial: detalhe.consistenciaEspacial,
+        }]
+      : []
+  )
+}
+
+function resumirConsistenciaEspacial(
+  detalhesPorSlot: DetalheSlotMapaKmAdicional[]
+): NonNullable<PesquisarDatasV2Output['diagnosticoMinimo']['consistenciaEspacial']> {
+  const estados = detalhesPorSlot
+    .map((detalhe) => detalhe.consistenciaEspacial)
+    .filter((item) => item !== null && item !== undefined)
+  const contar = (estado: NonNullable<(typeof estados)[number]>['estado']) =>
+    estados.filter((item) => item?.estado === estado).length
+  return {
+    slotsBloqueados: estados.filter((item) => item?.bloqueado).length,
+    diasRealmenteVazios: contar('dia-realmente-vazio'),
+    slotsComPontosValidos: contar('com-pontos-validos'),
+    ocupadosSemPontos: contar('ocupado-sem-pontos'),
+    agendasSemEndereco: contar('agenda-sem-endereco'),
+    agendasSemCoordenadas: contar('agenda-sem-coordenadas'),
+    capacidadesIndeterminadas: contar('capacidade-indeterminada'),
+  }
+}
+
+function dataISOCobertura(valor: unknown): string | null {
+  const texto = String(valor ?? '').trim()
+  const iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`
+  const br = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})/)
+  return br ? `${br[3]}-${br[2]}-${br[1]}` : null
+}
+
+function resumirCoberturaFontes(
+  linhasAgenda: SlotInputMapaKmAdicional['linhasAgenda'],
+  disponibilidades: DisponibilidadeEquipeDataV2[]
+): NonNullable<PesquisarDatasV2Output['diagnosticoMinimo']['coberturaFontes']> {
+  const resumir = (datas: Array<string | null>, linhas: number) => {
+    const validas = datas.filter((data): data is string => data !== null).sort()
+    return {
+      linhas,
+      dataMaisAntiga: validas[0] ?? null,
+      dataMaisRecente: validas.at(-1) ?? null,
+    }
+  }
+  return {
+    agenda: resumir(linhasAgenda.map((linha) => dataISOCobertura(linha[0])), linhasAgenda.length),
+    disponibilidade: resumir(
+      disponibilidades.map((item) => dataISOCobertura(item.dataISO)),
+      disponibilidades.length
+    ),
+  }
 }
 
 function pontoDiagnosticoDelta(
@@ -561,11 +671,11 @@ export async function pesquisarDatasV2(
 
   const [disponibilidadeReal, agendaReal] = await (perf?.medirAsync('agenda-disponibilidade', () =>
     Promise.all([
-      buscarDisponibilidadeRealDiagnosticaComDados(dataInicialISO, 200, 20, 'entrada'),
+      buscarDisponibilidadeRealDiagnosticaComDados(dataInicialISO, 2000, 20, 'entrada'),
       buscarAgendaRealDiagnosticaComDados(2000),
     ])
   ) ?? Promise.all([
-    buscarDisponibilidadeRealDiagnosticaComDados(dataInicialISO, 200, 20, 'entrada'),
+    buscarDisponibilidadeRealDiagnosticaComDados(dataInicialISO, 2000, 20, 'entrada'),
     buscarAgendaRealDiagnosticaComDados(2000),
   ]))
 
@@ -580,6 +690,17 @@ export async function pesquisarDatasV2(
       ? agendaReal.diagnostico.erro
       : 'Agenda real nao executada.'
     return respostaErro([`Agenda real indisponivel: ${erro}`], avisos, entradaMinima)
+  }
+  if (
+    ('leitura' in disponibilidadeReal.diagnostico &&
+      disponibilidadeReal.diagnostico.leitura.truncada) ||
+    ('leitura' in agendaReal.diagnostico && agendaReal.diagnostico.leitura.truncada)
+  ) {
+    return respostaErro(
+      ['Leitura de agenda/disponibilidade truncada; pesquisa bloqueada para evitar resultado espacialmente incompleto.'],
+      avisos,
+      entradaMinima
+    )
   }
 
   const cacheAgenda = await (perf?.medirAsync('geocodificacao-cache', () =>
@@ -632,6 +753,7 @@ export async function pesquisarDatasV2(
   const slots = montarSlotsAgendaReal({
     janelaDatas: janela.datas,
     linhasAgenda: agendaReal.linhasAgenda,
+    disponibilidades: disponibilidadeReal.disponibilidades,
     cacheCoordenadasPorEndereco: resolucaoCoordenadasAgenda.cacheCoordenadasPorEndereco,
     equipe1Ativa: configResult.config.equipe1Ativa,
     equipe2Ativa: configResult.config.equipe2Ativa,
@@ -692,6 +814,24 @@ export async function pesquisarDatasV2(
 
   const slotTemPontosPorSlotKey = derivarSlotTemPontos(mapaPorSlot.detalhesPorSlot)
   const contagemSlots = contarSlots(slotTemPontosPorSlotKey)
+  const resumoConsistenciaEspacial = resumirConsistenciaEspacial(mapaPorSlot.detalhesPorSlot)
+  const coberturaFontes = resumirCoberturaFontes(
+    agendaReal.linhasAgenda,
+    disponibilidadeReal.disponibilidades
+  )
+  console.info('[procurar-datas:v2:fontes]', {
+    coberturaFontes,
+    janelaInicio: janela.datas[0]?.dataISO ?? null,
+    janelaFim: janela.datas.at(-1)?.dataISO ?? null,
+    ...resumoConsistenciaEspacial,
+  })
+  for (const detalhe of mapaPorSlot.detalhesPorSlot) {
+    if (!detalhe.consistenciaEspacial?.bloqueado) continue
+    console.warn('[procurar-datas:v2:slot-bloqueado]', {
+      slotKey: detalhe.chave,
+      ...detalhe.consistenciaEspacial,
+    })
+  }
   perf?.registrarSlots({
     slotsAvaliados: mapaPorSlot.contadores.slotsProcessados,
     slotsComPontos: contagemSlots.quantidadeSlotsComPontos,
@@ -813,6 +953,15 @@ export async function pesquisarDatasV2(
       !aviso.includes('distanciaKm não fornecida') &&
       !aviso.includes('kmAdicionalNaRotaM não fornecida')
   )
+  const estadoResultado: NonNullable<
+    PesquisarDatasV2Output['diagnosticoMinimo']['estadoResultado']
+  > = recorte.candidatosFinais.length > 0
+    ? 'ok'
+    : resumoConsistenciaEspacial.slotsBloqueados > 0
+      ? 'agenda-inconsistente'
+      : mapaPorSlot.contadores.slotsComErro > 0
+        ? 'calculo-espacial-incompleto'
+        : 'sem-datas-disponiveis'
 
   return {
     ok: candidatos.ok && recorte.ok,
@@ -834,6 +983,7 @@ export async function pesquisarDatasV2(
       diasUsados: recorte.diasUsados,
     },
     diagnosticoMinimo: {
+      estadoResultado,
       osrmBaseUrlUsado: osrmResolvido.url,
       osrmFallbackUsado: osrmResolvido.fallbackUsado,
       quantidadeSlotsComPontos: contagemSlots.quantidadeSlotsComPontos,
@@ -853,12 +1003,17 @@ export async function pesquisarDatasV2(
         geocodificacoesExternasTentadas: resolucaoCoordenadasAgenda.geocodificacoesExternasTentadas,
       },
       contadoresMapaKm: { ...mapaPorSlot.contadores },
+      consistenciaEspacial: resumoConsistenciaEspacial,
       fonteAgenda: 'google-sheets',
       fonteDisponibilidade: 'google-sheets',
+      coberturaFontes,
       avisos: avisosFiltrados,
     },
     snapshotTecnicoCandidatosFinais: montarSnapshotTecnicoCandidatosFinais(
       recorte.candidatosFinais,
+      mapaPorSlot.detalhesPorSlot
+    ),
+    snapshotTecnicoSlotsBloqueados: montarSnapshotTecnicoSlotsBloqueados(
       mapaPorSlot.detalhesPorSlot
     ),
     ...(diagnosticoResultadoTelaV2SantoAmaro

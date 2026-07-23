@@ -34,6 +34,64 @@ Encerrar temporariamente a investigação e monitorar o uso diário. Se aparecer
 
 ---
 
+## 2026-07-23 - Codex - Divergencia deliberada de seguranca para agenda espacial incompleta
+
+Status: implementado na Frente 1 / esquerda, com observabilidade na Frente 3 e registro de controle nesta Frente 0.
+
+### Evidencia do incidente
+
+- O `runId 543bcdfa-a262-4d32-9f1a-ba8eb6ca955e` registrou candidatos normais em 25, 28 e 30/07/2026 com `slotTemPontos=false` e rota simples.
+- A aba oficial de disponibilidade comprovava tempo utilizado positivo nesses tres slots.
+- A aba `AGENDA LEBEBE` tinha zero eventos correspondentes. A causa operacional e uma alimentacao/sincronizacao externa incompleta, corrigida separadamente.
+
+### Regra de seguranca autorizada
+
+> O legado permite rota simples quando nao encontra pontos. A v2 adiciona uma protecao deliberada de seguranca: quando outra fonte oficial comprova ocupacao, a ausencia de pontos nao e interpretada como dia vazio.
+
+- `tempoUtilizadoMin = 0` e evidencia positiva de slot vazio; `null` significa dado ausente/invalido e nao vira zero.
+- Pontos reais e resolvidos continuam seguindo filtro early, OSRM e delta de insercao.
+- Tempo utilizado positivo sem pontos, evento sem endereco, endereco sem coordenada e disponibilidade indeterminada bloqueiam somente o slot, com `kmAdicionalNaRotaM = null`.
+- Leitura truncada de agenda ou disponibilidade bloqueia a pesquisa antes do calculo.
+- Nenhum limite, preco, tipo, ranking, regra regional, origem operacional, sabado, encomenda ou quantidade de normais foi alterado.
+
+### Criterios comprovados
+
+- Dia util e sabado realmente vazios continuam permitindo rota simples.
+- Slot ocupado sem pontos nao chega ao recorte nem ao ranking.
+- Um slot inconsistente nao impede que outro slot seguro seja retornado.
+- Snapshot, auditoria e logs registram estado, motivo, tempos, linhas, pontos e decisao sobre rota simples.
+
+### Validacao apos correcao externa da planilha (2026-07-23)
+
+Status: validado por execucao real do motor contra Google Sheets/OSRM, sem nova alteracao de codigo, Apps Script, N8N, triggers, estrutura da planilha, Google Calendar ou processos externos.
+
+- Pesquisa de validacao gravada em `procurar_datas_pesquisas_auditoria`: `id 761b6a5a-69ca-4513-88cb-440eb3b02b89`, `run_id 053b0546-66ca-4569-8313-92dab0c9889e`.
+- Fontes reais usadas no snapshot: agenda `google-sheets` com 482 linhas, disponibilidade `google-sheets` com 308 linhas.
+- Resultado final: `estadoResultado=ok`, 5 candidatos retornados.
+- Contadores do mapa: 100 slots recebidos/processados, 34 com km, 0 com erro, 16 descartados e 50 bloqueados por inconsistencia espacial.
+- Consistencia espacial: 42 slots com pontos validos, 8 dias realmente vazios, 30 ocupados sem pontos, 4 agendas sem endereco, 3 agendas sem coordenadas e 13 capacidades indeterminadas.
+- Candidatos finais com pontos reais mantiveram OSRM/delta: `2026-08-15::EQUIPE 1`, `2026-08-21::EQUIPE 1` e `2026-08-29::EQUIPE 1` com `origemKmAdicionalNaRotaM=osrm-table-diagnostico`.
+- Candidatos finais realmente vazios preservaram rota simples: `2026-09-05::EQUIPE 1` e `2026-09-12::EQUIPE 1` com `tempoUtilizadoMin=0` e `rotaSimplesPermitida=true`.
+- A barreira fail-closed permaneceu ativa: slots ocupados sem pontos/endereco/coordenada continuaram bloqueados e nao entraram no recorte/ranking.
+
+Limite da evidencia: o snapshot persistido guarda candidatos finais e slots bloqueados, mas nao todos os slots avaliados antes do recorte. A execucao temporaria nao reteve stdout detalhado por data; portanto as quantidades especificas de 25/07, 28/07 e 30/07 apos a correcao externa nao foram capturadas nesta validacao. O cenario real foi validado como fluxo completo, mas esse recorte por data deve ser coletado em nova rodada se for criterio documental obrigatorio.
+
+### Parecer final focado (2026-07-23)
+
+Status: GO para commit e revisao; GO para deploy somente apos revisao humana do diff.
+
+- Auditoria dos 50 bloqueios confirmou que a barreira nao esta bloqueando em excesso: os bloqueios se distribuem em `ocupado-sem-pontos` (30), `capacidade-indeterminada` (13), `agenda-sem-endereco` (4) e `agenda-sem-coordenadas` (3). Em todos os grupos, faltava evidencia espacial ou capacidade confirmada suficiente para tratar o slot como vazio seguro.
+- As tres datas originais foram recalculadas por coleta temporaria com fontes reais e cache-only: `2026-07-25::EQUIPE 1`, `2026-07-28::EQUIPE 1` e `2026-07-30::EQUIPE 1` passaram a ter 2 pontos validos cada, nao foram bloqueadas pela barreira e nao foram tratadas como dia vazio.
+- As tres datas foram recusadas por regra legacy antes do delta: filtro early Haversine aplicado e descartado por distancia em reta acima do limite de 12 km. OSRM table foi executado e retornou ok para a matriz, mas o delta de insercao nao foi calculado porque o filtro early interrompeu antes, conforme regra ja mapeada do legado.
+- Build de producao passou com `npm run build`, gerando 110 paginas. Avisos `DYNAMIC_SERVER_USAGE` por `cookies` apareceram em rotas dinamicas e nao quebraram o build.
+- As 17 falhas da suite ampla foram comprovadas como preexistentes por comparacao com worktree temporario em `HEAD 7446fa8`: os mesmos tres arquivos, mesmos 17 testes e mesmos erros aparecem no HEAD limpo e no worktree atual.
+- Snapshot antigo sem `snapshotTecnico` continua legivel: teste de auditoria confirmou `snapshotTecnicoDisponivel=false` e `snapshotTecnico=null`, sem excecao e sem interpretar campos novos ausentes como zero.
+- O cenario todos-os-slots-calculaveis-bloqueados esta coberto: `pesquisarDatasV2` retorna `estadoResultado=agenda-inconsistente`, sem candidatos finais e com snapshot de slots bloqueados.
+
+Pendencia fora do escopo desta correcao: corrigir separadamente os testes preexistentes de `agenda-real-helper.test.ts`, `diagnostico/route.test.ts` e `pesquisar-compat/route.test.ts`.
+
+---
+
 ## 2026-07-15 - Correção: `confidence` interna normalizada (não copia `importance` do provider)
 
 Status: implementado. Não altera motor, ranking, classificacao, OSRM, Haversine, Calendar ou Sheets.

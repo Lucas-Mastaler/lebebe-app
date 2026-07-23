@@ -40,6 +40,8 @@ export type AgendaRealResult =
         ok: true
         linhasLidas: number
         linhasConvertidas: number
+        linhasDisponiveis: number
+        truncada: boolean
       }
       amostra: LinhaAgendaShAgV2[]
     }
@@ -242,6 +244,8 @@ export async function buscarAgendaRealDiagnosticaComDados(
           ok: true,
           linhasLidas: tabelaCompleta.length,
           linhasConvertidas: linhasAgenda.length,
+          linhasDisponiveis: linhasSemCabecalho.length,
+          truncada: linhasSemCabecalho.length > linhasLimitadas.length,
         },
         amostra: linhasAgenda.slice(0, 20), // Amostra para debug
       },

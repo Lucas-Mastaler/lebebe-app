@@ -33,18 +33,21 @@ const SLOT_E1_SEG: SlotInputMapaKmAdicional = {
   dataISO: '2026-06-15',
   equipe: 'EQUIPE 1',
   linhasAgenda: [],
+  disponibilidade: { tempoUtilizadoMin: 0, disponivelMin: 420, capacidadeTotalMin: 420 },
 }
 
 const SLOT_E2_SEG: SlotInputMapaKmAdicional = {
   dataISO: '2026-06-15',
   equipe: 'EQUIPE 2',
   linhasAgenda: [],
+  disponibilidade: { tempoUtilizadoMin: 0, disponivelMin: 420, capacidadeTotalMin: 420 },
 }
 
 const SLOT_E1_TER: SlotInputMapaKmAdicional = {
   dataISO: '2026-06-16',
   equipe: 'EQUIPE 1',
   linhasAgenda: [],
+  disponibilidade: { tempoUtilizadoMin: 0, disponivelMin: 420, capacidadeTotalMin: 420 },
 }
 
 // ─── Mock de calcularKmAdicionalRealControladoV2 ──────────────────────────────

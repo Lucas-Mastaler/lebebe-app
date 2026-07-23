@@ -16,6 +16,10 @@ import {
   otimizarRotaBaseLegado,
   type DiagnosticoOrdenacaoRotaBase,
 } from './otimizar-rota-base-legado'
+import {
+  avaliarConsistenciaEspacialSlotV2,
+  type ConsistenciaEspacialSlotV2,
+} from './avaliar-consistencia-espacial-slot'
 
 export type CalcularKmAdicionalRealControladoInput = {
   dataISO: string
@@ -27,6 +31,11 @@ export type CalcularKmAdicionalRealControladoInput = {
   }
   destino: Coordenada & { descricao?: string }
   linhasAgenda: LinhaAgendaShAgV2[]
+  disponibilidade?: {
+    tempoUtilizadoMin?: number | null
+    disponivelMin: number
+    capacidadeTotalMin?: number | null
+  } | null
   cacheCoordenadasPorEndereco?: Record<string, { lat: number; lng: number }>
   buscarMatrizOSRM: BuscarMatrizOSRM
   /** Se true, retorna candidatosInsercao e pontosRotaBase no deltaInsercao. */
@@ -42,9 +51,11 @@ export type CalcularKmAdicionalRealControladoOutput = {
     | 'haversine-fallback-legado-diagnostico'
     | 'filtrado-early-legado-diagnostico'
     | 'agenda-sem-coordenadas-producao'
+    | 'slot-espacial-inconsistente'
     | null
   origemOperacional: ReturnType<typeof resolverOrigemOperacionalV2>
   parseAgenda: ReturnType<typeof parsearPontosAgendaDoDiaV2> | null
+  consistenciaEspacial: ConsistenciaEspacialSlotV2 | null
   matrizOSRM: Awaited<ReturnType<typeof prepararMatrizOSRMDiagnosticoV2>> | null
   deltaInsercao: ReturnType<typeof calcularDeltaInsercaoRotaComMatrizDiagnosticoV2> | ReturnType<typeof calcularDeltaInsercaoRotaDiagnosticoV2> | null
   ordenacaoRotaBase: DiagnosticoOrdenacaoRotaBase | null
@@ -212,6 +223,7 @@ export async function calcularKmAdicionalRealControladoV2(
       origemKmAdicionalNaRotaM: null,
       origemOperacional,
       parseAgenda: null,
+      consistenciaEspacial: null,
       matrizOSRM: null,
       deltaInsercao: null,
       ordenacaoRotaBase: null,
@@ -230,6 +242,7 @@ export async function calcularKmAdicionalRealControladoV2(
       origemKmAdicionalNaRotaM: null,
       origemOperacional,
       parseAgenda: null,
+      consistenciaEspacial: null,
       matrizOSRM: null,
       deltaInsercao: null,
       ordenacaoRotaBase: null,
@@ -257,17 +270,26 @@ export async function calcularKmAdicionalRealControladoV2(
     id: `agenda_${p.indiceLinhaOriginal}`,
   }))
 
-  if (parseAgenda.resumo.semCoordenadas > 0) {
+  const consistenciaEspacial = avaliarConsistenciaEspacialSlotV2({
+    disponibilidade: input.disponibilidade,
+    resumoAgenda: parseAgenda.resumo,
+  })
+
+  if (consistenciaEspacial.bloqueado) {
     avisos.push(
-      `Slot contem ${parseAgenda.resumo.semCoordenadas} ponto(s) real(is) da agenda sem coordenada apos tentativas de resolucao; rota simples origem -> destino nao foi validada.`
+      `Slot bloqueado por inconsistência espacial (${consistenciaEspacial.estado}): ${consistenciaEspacial.motivo}`
     )
     return {
       ok: true,
       modo: 'km-adicional-real-controlado-diagnostico',
       kmAdicionalNaRotaM: null,
-      origemKmAdicionalNaRotaM: 'agenda-sem-coordenadas-producao',
+      origemKmAdicionalNaRotaM:
+        consistenciaEspacial.estado === 'agenda-sem-coordenadas'
+          ? 'agenda-sem-coordenadas-producao'
+          : 'slot-espacial-inconsistente',
       origemOperacional,
       parseAgenda,
+      consistenciaEspacial,
       matrizOSRM: null,
       deltaInsercao: null,
       ordenacaoRotaBase: null,
@@ -339,6 +361,7 @@ export async function calcularKmAdicionalRealControladoV2(
           origemKmAdicionalNaRotaM: 'filtrado-early-legado-diagnostico',
           origemOperacional,
           parseAgenda,
+          consistenciaEspacial,
           matrizOSRM,
           deltaInsercao: null,
           ordenacaoRotaBase: null,
@@ -420,6 +443,7 @@ export async function calcularKmAdicionalRealControladoV2(
     origemKmAdicionalNaRotaM,
     origemOperacional,
     parseAgenda,
+    consistenciaEspacial,
     matrizOSRM,
     deltaInsercao,
     ordenacaoRotaBase,

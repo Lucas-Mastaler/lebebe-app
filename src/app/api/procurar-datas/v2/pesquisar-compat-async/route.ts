@@ -353,6 +353,17 @@ export async function POST(request: NextRequest) {
     )
 
     const contadoresMapaKm = resultado.saidaV2.diagnosticoMinimo.contadoresMapaKm
+    console.info('[PROCURAR_DATAS][v2/consistencia-espacial]', {
+      runId,
+      estadoResultado: resultado.saidaV2.diagnosticoMinimo.estadoResultado ?? null,
+      consistenciaEspacial: resultado.saidaV2.diagnosticoMinimo.consistenciaEspacial ?? null,
+      coberturaFontes: resultado.saidaV2.diagnosticoMinimo.coberturaFontes ?? null,
+      slotsBloqueados: resultado.saidaV2.snapshotTecnicoSlotsBloqueados?.map((slot) => ({
+        slotKey: slot.slotKey,
+        estado: slot.consistenciaEspacial.estado,
+        motivo: slot.consistenciaEspacial.motivo,
+      })) ?? [],
+    })
     registrarAuditoriaSearchV2({
       runId,
       clientToken,
@@ -402,7 +413,11 @@ export async function POST(request: NextRequest) {
       },
       snapshotTecnico: {
         candidatosFinais: resultado.saidaV2.snapshotTecnicoCandidatosFinais ?? [],
+        slotsBloqueados: resultado.saidaV2.snapshotTecnicoSlotsBloqueados ?? [],
         contadoresMapaKm: contadoresMapaKm ?? null,
+        estadoResultado: resultado.saidaV2.diagnosticoMinimo.estadoResultado ?? null,
+        consistenciaEspacial: resultado.saidaV2.diagnosticoMinimo.consistenciaEspacial ?? null,
+        coberturaFontes: resultado.saidaV2.diagnosticoMinimo.coberturaFontes ?? null,
         fonteAgenda: resultado.saidaV2.diagnosticoMinimo.fonteAgenda ?? null,
         fonteDisponibilidade: resultado.saidaV2.diagnosticoMinimo.fonteDisponibilidade ?? null,
       },

@@ -67,6 +67,7 @@ type ApiListaResponse = {
   ok: boolean
   message?: string
   registros?: RegistroResumo[]
+  consultoras?: Array<{ nome: string }>
 }
 
 type ApiDetalheResponse = {
@@ -129,6 +130,10 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   const [erro, setErro] = useState<string | null>(null)
   const [viradaCartaoDe, setViradaCartaoDe] = useState('')
   const [viradaCartaoAte, setViradaCartaoAte] = useState('')
+  const [clienteNomeFiltro, setClienteNomeFiltro] = useState('')
+  const [clienteNomeAplicado, setClienteNomeAplicado] = useState('')
+  const [consultoraFiltro, setConsultoraFiltro] = useState('')
+  const [consultorasFinalizados, setConsultorasFinalizados] = useState<Array<{ nome: string }>>([])
   const [edicaoAberta, setEdicaoAberta] = useState(false)
   const [fichaEdicao, setFichaEdicao] = useState<FichaDadosRascunho | null>(null)
   const [numeroLancamentoEdicao, setNumeroLancamentoEdicao] = useState('')
@@ -145,20 +150,31 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   const [carregandoRascunhos, setCarregandoRascunhos] = useState(false)
   const [erroRascunhos, setErroRascunhos] = useState<string | null>(null)
 
-  async function carregarRegistros(filtrosOverride?: { de: string; ate: string }) {
+  async function carregarRegistros(filtrosOverride?: {
+    de?: string
+    ate?: string
+    clienteNome?: string
+    consultora?: string
+  }) {
     setCarregando(true)
     setErro(null)
     try {
       const params = new URLSearchParams()
       const filtroDe = filtrosOverride?.de ?? viradaCartaoDe
       const filtroAte = filtrosOverride?.ate ?? viradaCartaoAte
+      const filtroCliente = filtrosOverride?.clienteNome ?? clienteNomeAplicado
+      const filtroConsultora = filtrosOverride?.consultora ?? consultoraFiltro
       if (filtroDe.trim()) params.set('viradaCartaoDe', filtroDe.trim())
       if (filtroAte.trim()) params.set('viradaCartaoAte', filtroAte.trim())
+      if (filtroCliente.trim()) params.set('clienteNome', filtroCliente.trim())
+      if (filtroConsultora.trim()) params.set('consultora', filtroConsultora.trim())
       const query = params.toString()
       const response = await fetch(`/api/atendimento-presencial/atendimentos${query ? `?${query}` : ''}`, { cache: 'no-store' })
       const data = (await response.json()) as ApiListaResponse
       if (!response.ok || !data.ok) throw new Error(data.message ?? 'Erro ao carregar registros')
       setRegistros(data.registros ?? [])
+      setConsultorasFinalizados(data.consultoras ?? [])
+      setClienteNomeAplicado(filtroCliente)
     } catch (error) {
       setErro(error instanceof Error ? error.message : 'Erro ao carregar registros')
     } finally {
@@ -393,6 +409,19 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     router.push(`/atendimento-presencial/registros?tab=${valor}`, { scroll: false })
   }
 
+  function alterarConsultoraFiltro(valor: string) {
+    setConsultoraFiltro(valor)
+  }
+
+  function limparFiltrosFinalizados() {
+    setViradaCartaoDe('')
+    setViradaCartaoAte('')
+    setClienteNomeFiltro('')
+    setClienteNomeAplicado('')
+    setConsultoraFiltro('')
+    void carregarRegistros({ de: '', ate: '', clienteNome: '', consultora: '' })
+  }
+
   useEffect(() => {
     const param = searchParams?.get('tab') ?? ''
     if (param && abasPermitidas.includes(param)) return
@@ -453,6 +482,33 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                 </div>
 
             <div className="mb-4 grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+                <label className="text-sm font-semibold text-slate-700" htmlFor="filtro-cliente-nome">
+                  Cliente
+                  <input
+                    id="filtro-cliente-nome"
+                    value={clienteNomeFiltro}
+                    onChange={(event) => setClienteNomeFiltro(event.target.value)}
+                    className="mt-1 min-h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-sky-500"
+                    inputMode="search"
+                    placeholder="Pesquisar por nome"
+                  />
+                </label>
+                <label className="text-sm font-semibold text-slate-700" htmlFor="filtro-consultora">
+                  Consultora
+                  <select
+                    id="filtro-consultora"
+                    value={consultoraFiltro}
+                    onChange={(event) => alterarConsultoraFiltro(event.target.value)}
+                    className="mt-1 min-h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-sky-500"
+                  >
+                    <option value="">Todas</option>
+                    {consultorasFinalizados.map((consultora) => (
+                      <option key={consultora.nome} value={consultora.nome}>{consultora.nome}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <label className="text-sm font-semibold text-slate-700" htmlFor="filtro-virada-cartao-de">
                 Virada do cartao
               </label>
@@ -461,12 +517,6 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                   id="filtro-virada-cartao-de"
                   value={viradaCartaoDe}
                   onChange={(event) => setViradaCartaoDe(formatarViradaCartaoInput(event.target.value))}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      void carregarRegistros()
-                    }
-                  }}
                   className="min-h-11 flex-1 rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-sky-500"
                   inputMode="numeric"
                   placeholder="De DD/MM"
@@ -476,29 +526,19 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                   id="filtro-virada-cartao-ate"
                   value={viradaCartaoAte}
                   onChange={(event) => setViradaCartaoAte(formatarViradaCartaoInput(event.target.value))}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault()
-                      void carregarRegistros()
-                    }
-                  }}
                   className="min-h-11 flex-1 rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-sky-500"
                   inputMode="numeric"
                   placeholder="Ate DD/MM"
                   maxLength={5}
                 />
-                <Button type="button" onClick={() => void carregarRegistros()} disabled={carregando} className="h-11 rounded-md">
+                <Button type="button" onClick={() => void carregarRegistros({ clienteNome: clienteNomeFiltro.trim().replace(/\s+/g, ' ') })} disabled={carregando} className="h-11 rounded-md">
                   <Search className="h-4 w-4" aria-hidden="true" />
                 </Button>
-                {(viradaCartaoDe || viradaCartaoAte) && (
+                {(viradaCartaoDe || viradaCartaoAte || clienteNomeFiltro || consultoraFiltro) && (
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                      setViradaCartaoDe('')
-                      setViradaCartaoAte('')
-                      void carregarRegistros({ de: '', ate: '' })
-                    }}
+                    onClick={limparFiltrosFinalizados}
                     className="h-11 rounded-md"
                   >
                     <X className="h-4 w-4" aria-hidden="true" />

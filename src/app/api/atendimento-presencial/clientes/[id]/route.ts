@@ -20,6 +20,10 @@ const SELECT_CLIENTE = [
   'parentesco_outro',
   'status',
   'version',
+  'origem_consultora_nome',
+  'origem_consultora_usuario_id',
+  'origem_unidade_id',
+  'origem_atendimento_id',
   'created_at',
   'updated_at',
 ].join(', ')

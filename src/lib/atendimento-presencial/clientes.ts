@@ -31,8 +31,20 @@ export type ClientePresencialRow = {
   parentesco_outro: string | null
   status: 'ativo' | 'inativo'
   version: number
+  origem_consultora_nome?: string | null
+  origem_consultora_usuario_id?: string | null
+  origem_unidade_id?: string | null
+  origem_atendimento_id?: string | null
   created_at: string
   updated_at: string
+}
+
+export type OrigemClientePresencialDTO = {
+  consultoraNome: string | null
+  consultoraUsuarioId: string | null
+  unidadeId: string | null
+  unidadeNome?: string | null
+  atendimentoId: string | null
 }
 
 export type ClientePresencialDTO = {
@@ -45,6 +57,7 @@ export type ClientePresencialDTO = {
   parentescoOutro: string | null
   status: 'ativo' | 'inativo'
   version: number
+  origem: OrigemClientePresencialDTO
   criadoEm: string
   atualizadoEm: string
 }
@@ -174,7 +187,10 @@ export function getParentescoLabel(parentesco: ParentescoCliente, parentescoOutr
   return PARENTESCOS_CLIENTE.find((item) => item.chave === parentesco)?.label ?? parentesco
 }
 
-export function serializarClientePresencial(row: ClientePresencialRow): ClientePresencialDTO {
+export function serializarClientePresencial(
+  row: ClientePresencialRow,
+  origemExtras?: { unidadeNome?: string | null }
+): ClientePresencialDTO {
   return {
     id: row.id,
     nome: row.nome,
@@ -185,6 +201,13 @@ export function serializarClientePresencial(row: ClientePresencialRow): ClienteP
     parentescoOutro: row.parentesco_outro,
     status: row.status,
     version: row.version,
+    origem: {
+      consultoraNome: row.origem_consultora_nome ?? null,
+      consultoraUsuarioId: row.origem_consultora_usuario_id ?? null,
+      unidadeId: row.origem_unidade_id ?? null,
+      unidadeNome: origemExtras?.unidadeNome ?? null,
+      atendimentoId: row.origem_atendimento_id ?? null,
+    },
     criadoEm: row.created_at,
     atualizadoEm: row.updated_at,
   }

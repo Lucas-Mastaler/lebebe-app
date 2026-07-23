@@ -1,7 +1,7 @@
 'use client'
 
-import { FormEvent, useMemo, useState } from 'react'
-import { History, Search, UserPlus, Users } from 'lucide-react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { ChevronLeft, ChevronRight, History, Search, UserPlus, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { HistoricoClienteModal, type HistoricoClienteModalCliente } from '@/components/atendimento-presencial/HistoricoClienteModal'
@@ -12,6 +12,13 @@ type ApiClientesResponse = {
   ok: boolean
   message?: string
   clientes?: Array<ClientePresencialDTO & { correspondenciaExataTelefone?: boolean }>
+  consultoras?: Array<{ nome: string }>
+  meta?: {
+    page: number
+    pageSize: number
+    total: number
+    totalPages: number
+  }
 }
 
 type ApiCriarClienteResponse = {
@@ -25,10 +32,15 @@ const parentescoInicial: ParentescoCliente = 'mae'
 
 export default function PageClient() {
   const [busca, setBusca] = useState('')
+  const [buscaAplicada, setBuscaAplicada] = useState('')
+  const [consultoraOrigem, setConsultoraOrigem] = useState('')
+  const [consultoras, setConsultoras] = useState<Array<{ nome: string }>>([])
   const [clientes, setClientes] = useState<Array<ClientePresencialDTO & { correspondenciaExataTelefone?: boolean }>>([])
+  const [pagina, setPagina] = useState(1)
+  const [totalClientes, setTotalClientes] = useState(0)
+  const [totalPaginas, setTotalPaginas] = useState(1)
   const [buscando, setBuscando] = useState(false)
   const [erroBusca, setErroBusca] = useState<string | null>(null)
-  const [buscaRealizada, setBuscaRealizada] = useState(false)
 
   const [nome, setNome] = useState('')
   const [telefone, setTelefone] = useState('')
@@ -47,16 +59,22 @@ export default function PageClient() {
     return true
   }, [nome, parentesco, parentescoOutro, salvando])
 
-  async function buscarClientes(event?: FormEvent) {
+  async function buscarClientes(event?: FormEvent, options?: { page?: number; busca?: string; consultora?: string }) {
     event?.preventDefault()
+    const page = options?.page ?? 1
+    const termo = options?.busca ?? busca
+    const consultora = options?.consultora ?? consultoraOrigem
+
     setBuscando(true)
     setErroBusca(null)
     setFeedbackCadastro(null)
 
     try {
       const params = new URLSearchParams()
-      if (busca.trim()) params.set('q', busca.trim())
-      params.set('limit', '12')
+      if (termo.trim()) params.set('q', termo.trim())
+      if (consultora.trim()) params.set('consultoraOrigem', consultora.trim())
+      params.set('page', String(page))
+      params.set('pageSize', '20')
 
       const response = await fetch(`/api/atendimento-presencial/clientes?${params.toString()}`, {
         cache: 'no-store',
@@ -68,15 +86,23 @@ export default function PageClient() {
       }
 
       setClientes(data.clientes ?? [])
-      setBuscaRealizada(true)
+      setConsultoras(data.consultoras ?? [])
+      setPagina(data.meta?.page ?? page)
+      setTotalClientes(data.meta?.total ?? data.clientes?.length ?? 0)
+      setTotalPaginas(data.meta?.totalPages ?? 1)
+      setBuscaAplicada(termo)
     } catch (error) {
       setErroBusca(error instanceof Error ? error.message : 'Erro ao buscar clientes')
       setClientes([])
-      setBuscaRealizada(true)
     } finally {
       setBuscando(false)
     }
   }
+
+  useEffect(() => {
+    void buscarClientes(undefined, { page: 1, busca: '', consultora: '' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function cadastrarCliente(event: FormEvent) {
     event.preventDefault()
@@ -112,7 +138,7 @@ export default function PageClient() {
         const semDuplicar = atuais.filter((cliente) => cliente.id !== data.cliente?.id)
         return [data.cliente!, ...semDuplicar]
       })
-      setBuscaRealizada(true)
+      setTotalClientes((atual) => atual + (data.clienteExistente ? 0 : 1))
 
       if (!data.clienteExistente) {
         setNome('')
@@ -134,6 +160,16 @@ export default function PageClient() {
       telefoneFormatado: cliente.telefoneFormatado,
     })
     setHistoricoAberto(true)
+  }
+
+  function alterarConsultoraOrigem(valor: string) {
+    setConsultoraOrigem(valor)
+    void buscarClientes(undefined, { page: 1, busca: buscaAplicada, consultora: valor })
+  }
+
+  function mudarPagina(proximaPagina: number) {
+    if (proximaPagina < 1 || proximaPagina > totalPaginas || buscando) return
+    void buscarClientes(undefined, { page: proximaPagina, busca: buscaAplicada, consultora: consultoraOrigem })
   }
 
   return (
@@ -159,7 +195,8 @@ export default function PageClient() {
               </div>
             </div>
 
-            <form className="flex flex-col gap-3 sm:flex-row" onSubmit={buscarClientes}>
+            <form className="grid gap-3" onSubmit={(event) => void buscarClientes(event, { page: 1, busca })}>
+              <div className="flex flex-col gap-3 sm:flex-row">
               <Input
                 value={busca}
                 onChange={(event) => setBusca(event.target.value)}
@@ -170,6 +207,20 @@ export default function PageClient() {
               <Button type="submit" className="h-11 rounded-md sm:w-36" disabled={buscando}>
                 {buscando ? 'Buscando...' : 'Buscar'}
               </Button>
+              </div>
+              <label className="text-sm font-medium text-slate-700">
+                Consultora de origem
+                <select
+                  value={consultoraOrigem}
+                  onChange={(event) => alterarConsultoraOrigem(event.target.value)}
+                  className="mt-1 h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-sky-500"
+                >
+                  <option value="">Todas</option>
+                  {consultoras.map((consultora) => (
+                    <option key={consultora.nome} value={consultora.nome}>{consultora.nome}</option>
+                  ))}
+                </select>
+              </label>
             </form>
 
             {erroBusca && (
@@ -179,13 +230,7 @@ export default function PageClient() {
             )}
 
             <div className="mt-5 space-y-3">
-              {!buscaRealizada && (
-                <div className="rounded-lg border border-dashed border-slate-200 p-6 text-sm text-slate-500">
-                  Nenhuma busca realizada.
-                </div>
-              )}
-
-              {buscaRealizada && clientes.length === 0 && !erroBusca && (
+              {clientes.length === 0 && !erroBusca && !buscando && (
                 <div className="rounded-lg border border-dashed border-slate-200 p-6 text-sm text-slate-500">
                   Nenhuma cliente encontrada.
                 </div>
@@ -208,12 +253,30 @@ export default function PageClient() {
                     <span>{cliente.telefoneFormatado ?? 'Sem telefone'}</span>
                     <span>Atualizada em {new Date(cliente.atualizadoEm).toLocaleDateString('pt-BR')}</span>
                   </div>
+                  <div className="mt-3 grid gap-1 text-sm text-slate-600 sm:grid-cols-2">
+                    <p>Consultora origem: <span className="font-medium text-slate-800">{cliente.origem.consultoraNome ?? 'Nao identificado'}</span></p>
+                    <p>Filial origem: <span className="font-medium text-slate-800">{cliente.origem.unidadeNome ?? 'Nao identificado'}</span></p>
+                  </div>
                   <Button type="button" variant="outline" onClick={() => abrirHistoricoCliente(cliente)} className="mt-3 h-10 rounded-md">
                     <History className="mr-2 h-4 w-4" aria-hidden="true" />
                     Ver historico
                   </Button>
                 </article>
               ))}
+            </div>
+
+            <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-4 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+              <p>{totalClientes} cliente{totalClientes === 1 ? '' : 's'} - pagina {pagina} de {totalPaginas}</p>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => mudarPagina(pagina - 1)} disabled={buscando || pagina <= 1} className="h-10 rounded-md">
+                  <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                  Voltar
+                </Button>
+                <Button type="button" variant="outline" onClick={() => mudarPagina(pagina + 1)} disabled={buscando || pagina >= totalPaginas} className="h-10 rounded-md">
+                  Avancar
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </div>
             </div>
           </section>
 

@@ -1,3 +1,97 @@
+## 2026-07-23 - Codex - Hotfix filtros e schema de clientes Atendimento Presencial
+
+**Resumo:** Corrigidos dois pontos reportados apos o ajuste de clientes/finalizados. Na aba de finalizados, digitar nos filtros ou trocar consultora nao dispara mais busca automaticamente; a aplicacao dos filtros fica concentrada no botao de lupa. Na tela de clientes, a API agora tolera o banco remoto ainda sem as colunas `origem_*`, refazendo a listagem com SELECT base para manter a paginacao funcionando ate a migration ser aplicada.
+
+**Arquivos lidos:**
+- `.devin/rules/continuidade-agente.md`, `.devin/rules/gerais.md`, `.devin/rules/supabase.md`
+- `.agents/skills/supabase/SKILL.md`
+- `docs/ia/log_progress.md`
+- `docs/ia/padrao-novas-telas-permissoes.md`
+- `docs/atendimento-presencial-registros-rascunhos.md`
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`
+- `src/app/api/atendimento-presencial/clientes/route.ts`
+- `src/app/atendimento-presencial/clientes/PageClient.tsx`
+- `src/lib/atendimento-presencial/clientes.ts`
+- `src/app/api/atendimento-presencial/clientes/route.test.ts`
+
+**Arquivos alterados/criados:**
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx` - remove disparos automaticos de busca por debounce, troca de consultora e Enter nos campos de virada.
+- `src/app/api/atendimento-presencial/clientes/route.ts` - adiciona fallback para schema remoto sem colunas `origem_*` e usa SELECT base nos retornos de POST enquanto a migration nao estiver aplicada.
+- `src/app/api/atendimento-presencial/clientes/route.test.ts` - cobre fallback para erro Postgres `42703` em coluna de origem ausente.
+- `docs/ia/log_progress.md` - esta entrada.
+
+**Validacoes realizadas:**
+- MCP Supabase `execute_sql`: confirmou que `atendimento_presencial_clientes` no banco remoto ainda nao possui colunas `origem_*`.
+- `npx vitest run src/app/api/atendimento-presencial/clientes/route.test.ts`: primeira tentativa falhou no sandbox com `spawn EPERM`; repetido fora do sandbox passou com 1 arquivo / 12 testes.
+- `npx eslint src/app/api/atendimento-presencial/clientes/route.ts src/app/api/atendimento-presencial/clientes/route.test.ts src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`: passou.
+- `npx tsc --noEmit --pretty false`: passou.
+
+**Nao validado:**
+- Validacao manual autenticada no navegador nao foi executada pelo Codex.
+- A migration de origem dos clientes continua nao aplicada no Supabase remoto.
+
+**Pendencias:**
+- Aplicar a migration de origem no banco remoto para habilitar exibicao/filtro real de consultora e filial de origem.
+
+**Riscos conhecidos:**
+- Enquanto a migration nao for aplicada, a tela de clientes lista e pagina normalmente, mas origem e consultoras de origem ficam vazias/nao identificadas.
+
+**Proximo passo recomendado:**
+- Recarregar `/atendimento-presencial/clientes` e confirmar que o GET `/api/atendimento-presencial/clientes?page=1&pageSize=20` volta 200; em `/atendimento-presencial/registros?tab=finalizados`, confirmar que so a lupa aplica filtros.
+
+## 2026-07-23 - Codex - Clientes e finalizados do Atendimento Presencial
+
+**Resumo:** Ajustadas as telas `/atendimento-presencial/clientes` e `/atendimento-presencial/registros?tab=finalizados`. A tela de clientes agora carrega automaticamente os clientes ativos com paginacao server-side, exibe consultora/filial de origem quando disponiveis e permite filtro por consultora de origem. A aba de finalizados agora permite filtro por nome do cliente, consultora e periodo de virada, preservando o recorte de acesso existente. Foi criada migration local para persistir a origem do cliente a partir do primeiro atendimento identificavel.
+
+**Arquivos lidos:**
+- `.devin/rules/continuidade-agente.md`, `.devin/rules/gerais.md`, `.devin/rules/resumo.md`, `.devin/rules/supabase.md`, `.devin/rules/recebimentos.md`
+- `.devin/skills/supabase/SKILL.md`, `.devin/skills/supabase-postgres-best-practices/SKILL.md`, `.devin/workflows/login.md`
+- `docs/ia/log_progress.md`
+- `docs/ia/padrao-novas-telas-permissoes.md`
+- `docs/atendimento-presencial-simplificacao-fluxo.md`
+- `docs/atendimento-presencial-registros-rascunhos.md`
+- `src/app/atendimento-presencial/clientes/page.tsx`
+- `src/app/atendimento-presencial/clientes/PageClient.tsx`
+- `src/app/atendimento-presencial/registros/page.tsx`
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`
+- Rotas API e libs de `src/app/api/atendimento-presencial/**` e `src/lib/atendimento-presencial/**` relacionadas a clientes, atendimentos, rascunhos, conclusao e historico.
+
+**Arquivos alterados/criados:**
+- `supabase/migrations/20260723120000_atendimento_presencial_clientes_origem.sql` - nova migration local com colunas nullable de origem, backfill deterministico, trigger de preenchimento futuro e indices.
+- `src/lib/atendimento-presencial/clientes.ts` - DTO/serializacao de origem do cliente.
+- `src/app/api/atendimento-presencial/clientes/route.ts` - listagem paginada, filtro por consultora de origem, retorno de consultoras e nomes de filial de origem.
+- `src/app/api/atendimento-presencial/clientes/[id]/route.ts` - inclui campos de origem na leitura individual.
+- `src/app/atendimento-presencial/clientes/PageClient.tsx` - carregamento inicial, filtro, paginacao e exibicao da origem.
+- `src/app/api/atendimento-presencial/atendimentos/route.ts` - filtros de finalizados por cliente e consultora, com opcoes de consultora no recorte de acesso.
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx` - filtros da aba de finalizados.
+- `src/app/api/atendimento-presencial/clientes/route.test.ts`, `src/app/api/atendimento-presencial/atendimentos/route.test.ts`, `src/lib/atendimento-presencial/clientes-origem-migration.test.ts` - cobertura dos novos comportamentos e da migration.
+- `docs/ia/log_progress.md` - esta entrada.
+
+**Validacoes realizadas:**
+- MCP Supabase: confirmado projeto `lebebe.app` (`phsoawbdvhurroryfnok`) e estrutura real das tabelas `atendimento_presencial_clientes` e `atendimento_presencial_atendimentos`, incluindo colunas, FKs, indices atuais, RLS/policies e RPCs relacionadas.
+- `npx vitest run src/app/api/atendimento-presencial/clientes/route.test.ts src/app/api/atendimento-presencial/atendimentos/route.test.ts src/lib/atendimento-presencial/clientes-origem-migration.test.ts`: primeira tentativa falhou com `spawn EPERM`; repetido fora do sandbox passou com 3 arquivos / 18 testes.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npx eslint src/app/atendimento-presencial/clientes/PageClient.tsx src/app/atendimento-presencial/registros/RegistrosPageClient.tsx src/app/api/atendimento-presencial/clientes/route.ts src/app/api/atendimento-presencial/clientes/[id]/route.ts src/app/api/atendimento-presencial/atendimentos/route.ts src/lib/atendimento-presencial/clientes.ts src/app/api/atendimento-presencial/clientes/route.test.ts src/app/api/atendimento-presencial/atendimentos/route.test.ts src/lib/atendimento-presencial/clientes-origem-migration.test.ts`: passou.
+- `npx vitest run src/lib/atendimento-presencial src/app/api/atendimento-presencial src/components/atendimento-presencial`: primeira tentativa falhou com `spawn EPERM`; repetido fora do sandbox passou com 24 arquivos / 170 testes.
+- `npm run build`: primeira tentativa falhou por rede bloqueada ao buscar Google Fonts; primeira repeticao fora do sandbox compilou mas encontrou `EBUSY` em chunk de `.next`; segunda repeticao fora do sandbox passou. Mensagens `DYNAMIC_SERVER_USAGE` de rotas protegidas e aviso de middleware apareceram, mas o comando terminou com exit code 0.
+- `git diff --check`: passou, apenas com avisos de LF/CRLF nos arquivos tocados.
+
+**Nao validado:**
+- A migration local ainda nao foi aplicada no Supabase remoto neste turno.
+- Validacao manual em navegador/autenticada das duas telas nao foi executada pelo Codex.
+- Nao foram executados advisors Supabase apos aplicacao, porque nao houve aplicacao remota da migration.
+
+**Pendencias:**
+- Aplicar a migration no banco remoto e validar a tela autenticada com dados reais.
+- Conferir visualmente a paginacao/filtros nas duas rotas em desktop e mobile.
+
+**Riscos conhecidos:**
+- Clientes antigos sem atendimento identificavel continuam sem origem e aparecem como `Nao identificado`, por desenho de compatibilidade.
+- A origem do cliente e preenchida somente quando campos de origem ainda estao nulos; edicoes futuras de atendimentos nao sobrescrevem origem ja definida.
+
+**Proximo passo recomendado:**
+- Aplicar a migration em ambiente controlado, rodar uma consulta de conferencia do backfill e validar manualmente `/atendimento-presencial/clientes` e `/atendimento-presencial/registros?tab=finalizados` com usuario autorizado.
+
 ## 2026-07-22 - Codex - Ajuste minimo no campo de consultora da ficha
 
 **Resumo:** Corrigido comportamento do campo "Nome da consultora" na ficha de Atendimento Presencial. O input podia ser substituido pelo valor normalizado retornado/salvo na criacao automatica do rascunho, dando a impressao de autocorrecao externa. Tambem havia trava de tentativa por unidade+nome normalizado que podia impedir nova tentativa depois de apagar e redigitar o mesmo nome. O ajuste preserva o texto atual digitado no input apos a criacao do rascunho e reseta a trava quando unidade/nome ficam invalidos.

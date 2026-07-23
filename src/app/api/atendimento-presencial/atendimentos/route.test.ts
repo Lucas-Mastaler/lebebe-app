@@ -26,6 +26,8 @@ function builder(result: unknown) {
     select: vi.fn(() => chain),
     eq: vi.fn(() => chain),
     in: vi.fn(() => chain),
+    ilike: vi.fn(() => chain),
+    not: vi.fn(() => chain),
     order: vi.fn(() => chain),
     limit: vi.fn(() => chain),
     single: vi.fn(() => Promise.resolve(result)),
@@ -82,6 +84,10 @@ describe('api lista registros atendimento presencial', () => {
       ],
       atendimento_presencial_atendimentos: [
         {
+          data: [{ consultora_nome: 'Ana Clara' }],
+          error: null,
+        },
+        {
           data: [{
             id: atendimentoId,
             cliente_id: clienteId,
@@ -92,6 +98,9 @@ describe('api lista registros atendimento presencial', () => {
             dados_rascunho: { schema: 'atendimento_presencial_concluido_v1' },
             resultado_atendimento: 'nao',
             numero_lancamento: null,
+            virada_cartao_dia: null,
+            virada_cartao_mes: null,
+            consultora_nome: 'Ana Clara',
             concluido_em: '2026-07-16T12:00:00.000Z',
             iniciado_em: '2026-07-16T11:00:00.000Z',
             ultima_atividade_em: '2026-07-16T12:00:00.000Z',
@@ -136,5 +145,31 @@ describe('api lista registros atendimento presencial', () => {
       clienteNome: 'Cliente Histórica',
       clienteTelefone: '(41) 99999-2222',
     })
+  })
+
+  it('combina filtro por nome do cliente e consultora do atendimento', async () => {
+    const atendimentoBuilder = builder({ data: [], error: null })
+    const clienteBuilder = builder({ data: [{ id: clienteId }], error: null })
+    const from = vi.fn((table: string) => {
+      if (table === 'atendimento_presencial_atendimentos') return atendimentoBuilder
+      if (table === 'atendimento_presencial_clientes') return clienteBuilder
+      if (table === 'app_usuarios_perfis') {
+        return builder({ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null })
+      }
+      if (table === 'app_usuarios_unidades') {
+        return builder({ data: [{ app_unidades: { id: unidadeId, chave: 'bigorrilho', nome: 'Bigorrilho', ativo: true } }], error: null })
+      }
+      return builder({ data: [], error: null })
+    })
+    vi.mocked(createServiceClient).mockReturnValue({ from } as never)
+
+    const response = await GET(
+      new Request('http://local/api/atendimento-presencial/atendimentos?clienteNome=Cliente&consultora=Ana%20Clara')
+    )
+
+    expect(response.status).toBe(200)
+    expect(clienteBuilder.ilike).toHaveBeenCalledWith('nome', '%Cliente%')
+    expect(atendimentoBuilder.in).toHaveBeenCalledWith('cliente_id', [clienteId])
+    expect(atendimentoBuilder.ilike).toHaveBeenCalledWith('consultora_nome', 'Ana Clara')
   })
 })

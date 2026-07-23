@@ -55,6 +55,7 @@ function makeSelectBuilder(result: unknown) {
     eq: vi.fn(() => builder),
     ilike: vi.fn(() => builder),
     or: vi.fn(() => builder),
+    not: vi.fn(() => builder),
     order: vi.fn(() => builder),
     range: vi.fn(() => result),
     maybeSingle: vi.fn(() => result),
@@ -135,6 +136,64 @@ describe('api atendimento presencial clientes', () => {
     expect(response.status).toBe(200)
     expect(builder.ilike).toHaveBeenCalledWith('nome', '%Lu%')
     expect(builder.ilike).toHaveBeenCalledWith('nome', '%Ma%')
+  })
+
+  it('lista clientes sem termo inicial com limite maximo de 20', async () => {
+    const builder = makeSelectBuilder({ data: [clienteRow], error: null, count: 1 })
+    vi.mocked(createServiceClient).mockReturnValue({ from: vi.fn(() => builder) } as never)
+
+    const response = await GET(
+      new Request('http://local/api/atendimento-presencial/clientes?page=1&pageSize=50')
+    )
+    const json = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(json.ok).toBe(true)
+    expect(json.meta.pageSize).toBe(20)
+    expect(builder.range).toHaveBeenCalledWith(0, 19)
+  })
+
+  it('lista clientes com select base quando colunas de origem ainda nao existem', async () => {
+    const builderComOrigem = makeSelectBuilder({
+      data: null,
+      error: {
+        code: '42703',
+        message: 'column atendimento_presencial_clientes.origem_consultora_nome does not exist',
+      },
+      count: null,
+    })
+    const builderBase = makeSelectBuilder({ data: [clienteRow], error: null, count: 1 })
+    vi.mocked(createServiceClient).mockReturnValue({
+      from: vi.fn()
+        .mockReturnValueOnce(builderComOrigem)
+        .mockReturnValueOnce(builderBase),
+    } as never)
+
+    const response = await GET(
+      new Request('http://local/api/atendimento-presencial/clientes?page=1&pageSize=20')
+    )
+    const json = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(json.ok).toBe(true)
+    expect(json.clientes[0].id).toBe('cliente-1')
+    expect(json.consultoras).toEqual([])
+    expect(builderBase.select).toHaveBeenCalledWith(
+      'id, nome, telefone_informado, telefone_normalizado, telefone_normalizado_ddi, parentesco, parentesco_outro, status, version, created_at, updated_at',
+      { count: 'exact' }
+    )
+  })
+
+  it('filtra por consultora de origem', async () => {
+    const builder = makeSelectBuilder({ data: [clienteRow], error: null, count: 1 })
+    vi.mocked(createServiceClient).mockReturnValue({ from: vi.fn(() => builder) } as never)
+
+    const response = await GET(
+      new Request('http://local/api/atendimento-presencial/clientes?consultoraOrigem=Ana%20Clara')
+    )
+
+    expect(response.status).toBe(200)
+    expect(builder.ilike).toHaveBeenCalledWith('origem_consultora_nome', 'Ana Clara')
   })
 
   it('escapa curingas em busca por nome', async () => {

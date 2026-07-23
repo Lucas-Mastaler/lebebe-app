@@ -71,6 +71,11 @@ describe('endereco-cache', () => {
     expect(cacheRowCompativelComEndereco({ ...rowBase, uf: 'SC' }, formBase)).toBe(false)
   })
 
+  it('cache antigo continua compativel quando bairro salvo e o do formulario, nao o termo generico do provider', () => {
+    expect(cacheRowCompativelComEndereco({ ...rowBase, bairro: 'Xaxim' }, { ...formBase, bairro: 'Xaxim' })).toBe(true)
+    expect(cacheRowCompativelComEndereco({ ...rowBase, bairro: 'Casa' }, { ...formBase, bairro: 'Xaxim' })).toBe(false)
+  })
+
   it('aceita abreviacao segura de tipo de logradouro', () => {
     expect(cacheRowCompativelComEndereco(rowBase, formBase)).toBe(true)
   })

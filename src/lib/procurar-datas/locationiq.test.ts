@@ -352,6 +352,127 @@ describe('buscarEnderecoLocationIq', () => {
     }
   })
 
+  it('resolve Xaxim quando LocationIQ retorna suburb Casa e neighbourhood Xaxim', async () => {
+    vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
+
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          lat: '-25.50907',
+          lon: '-49.26718',
+          display_name: 'Rua Cornelius Pries, Casa, Xaxim, Curitiba, Parana, Brasil',
+          importance: 0.25,
+          address: {
+            road: 'Rua Cornelius Pries',
+            suburb: 'Casa',
+            neighbourhood: 'Xaxim',
+            city: 'Curitiba',
+            state: 'Parana',
+            state_code: 'BR-PR',
+            postcode: '81830-020',
+          },
+        },
+      ],
+    })) as unknown as typeof fetch
+
+    const result = await buscarEnderecoLocationIq({
+      logradouro: 'Rua Cornelius Pries',
+      numero: '100',
+      bairro: 'Xaxim',
+      cidade: 'Curitiba',
+      uf: 'PR',
+      cep: '81830-020',
+    }, { fetchFn })
+
+    expect(result.status).toBe('success')
+    if (result.status === 'success') {
+      const addr = result.resultado.address as { suburb?: string; neighbourhood?: string } | undefined
+      expect(addr?.suburb).toBe('Xaxim')
+      expect(addr?.neighbourhood).toBe('Xaxim')
+      expect(result.resultado.lat).toBe(-25.50907)
+      expect(result.resultado.lng).toBe(-49.26718)
+    }
+  })
+
+  it('resolve Xaxim quando bairro oficial aparece apenas como segmento do display', async () => {
+    vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
+
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          lat: '-25.50907',
+          lon: '-49.26718',
+          display_name: 'Rua Cornelius Pries, Casa, Xaxim, Curitiba, Parana, Brasil',
+          importance: 0.25,
+          address: {
+            road: 'Rua Cornelius Pries',
+            suburb: 'Casa',
+            city: 'Curitiba',
+            state: 'Parana',
+            state_code: 'BR-PR',
+            postcode: '81830-020',
+          },
+        },
+      ],
+    })) as unknown as typeof fetch
+
+    const result = await buscarEnderecoLocationIq({
+      logradouro: 'Rua Cornelius Pries',
+      numero: '100',
+      bairro: 'Xaxim',
+      cidade: 'Curitiba',
+      uf: 'PR',
+      cep: '81830-020',
+    }, { fetchFn })
+
+    expect(result.status).toBe('success')
+    if (result.status === 'success') {
+      const addr = result.resultado.address as { suburb?: string } | undefined
+      expect(addr?.suburb).toBe('Xaxim')
+    }
+  })
+
+  it('nao devolve Casa como bairro confirmado quando so existe termo generico', async () => {
+    vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
+
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          lat: '-25.50907',
+          lon: '-49.26718',
+          display_name: 'Rua Cornelius Pries, Casa, Curitiba, Parana, Brasil',
+          importance: 0.25,
+          address: {
+            road: 'Rua Cornelius Pries',
+            suburb: 'Casa',
+            city: 'Curitiba',
+            state: 'Parana',
+            state_code: 'BR-PR',
+            postcode: '81830-020',
+          },
+        },
+      ],
+    })) as unknown as typeof fetch
+
+    const result = await buscarEnderecoLocationIq({
+      logradouro: 'Rua Cornelius Pries',
+      numero: '100',
+      bairro: 'Xaxim',
+      cidade: 'Curitiba',
+      uf: 'PR',
+      cep: '81830-020',
+    }, { fetchFn })
+
+    expect(result.status).toBe('success')
+    if (result.status === 'success') {
+      const addr = result.resultado.address as { suburb?: string } | undefined
+      expect(addr?.suburb).toBe('')
+    }
+  })
+
   it('nao bloqueia importance baixa quando CEP, logradouro, cidade e UF batem', async () => {
     vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
 

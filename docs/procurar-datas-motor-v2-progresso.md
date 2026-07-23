@@ -4850,3 +4850,48 @@ Status: GO para commit e revisao; GO para deploy apos revisao humana do diff.
 ### Pendencia
 
 As 17 falhas preexistentes devem ser tratadas em tarefa separada; nao bloqueiam este diff porque foram comprovadas no HEAD limpo.
+
+---
+
+## 2026-07-23 - Codex - Correcao de interpretacao geografica Xaxim x Casa
+
+Status: implementado e validado por testes automatizados/build. Validacao manual autenticada permanece pendente.
+
+### Causa comprovada no codigo
+
+- `locationiq.ts` extraia bairro pela primeira ocorrencia entre `suburb`, `neighbourhood`, `city_district` e `quarter`.
+- Quando LocationIQ retornava `suburb=Casa` e `neighbourhood` ou `display_name` continha `Xaxim`, o backend devolvia `Casa` como `address.suburb`.
+- `comparar-endereco.ts` comparava esse valor diretamente com o bairro do CEP/formulario, e `PageClient.tsx` mostrava divergencia falsa `Xaxim x Casa`.
+
+### Implementacao
+
+- Criado vocabulario geografico central em `src/lib/procurar-datas/geografia/`:
+  - 75 bairros canonicos de Curitiba, com aliases controlados.
+  - 29 municipios canonicos da RMC, com aliases controlados.
+  - termos genericos/complementos que nao devem virar bairro.
+  - termos regionais/administrativos que nao devem virar municipio.
+- Criado resolvedor puro para bairro e municipio:
+  - coleta todos os campos estruturados relevantes em vez de parar no primeiro;
+  - resolve match exato com o esperado;
+  - usa segmento completo do `display_name` quando ele corresponde a bairro/municipio conhecido;
+  - nao usa termo generico como bairro confirmado;
+  - marca ambiguidade sem escolher arbitrariamente;
+  - permite municipio fora da RMC quando vem de campo municipal estruturado e diverge/combina de forma exata.
+- LocationIQ passou a devolver `address.suburb` como bairro resolvido canonico, ou vazio quando so houver termo generico.
+- Google Geocoding passou a usar o mesmo resolvedor para bairro/municipio e a ler `administrative_area_level_2`/`locality` por tipo exato, sem confundir qualquer componente `political` com cidade.
+- A comparacao da tela passou a receber o resultado completo para poder usar `display_name`, e so alerta bairro quando existe bairro oficial/confiavel, nao generico, nao ambiguo e realmente divergente.
+
+### Validacoes
+
+- `npm run test -- src/lib/procurar-datas/geografia/resolver-componente-geografico.test.ts src/lib/procurar-datas/locationiq.test.ts src/lib/procurar-datas/google-geocoding.test.ts src/lib/procurar-datas/comparar-endereco.test.ts src/lib/procurar-datas/endereco-cache.test.ts --silent`: 5 arquivos, 106 testes passaram.
+- `npx tsc --noEmit --pretty false`: passou.
+- `npm run lint -- <arquivos alterados>`: passou com 1 warning preexistente em `src/app/procurar-datas/PageClient.tsx` (`progressSnapshot` sem uso).
+- `npm run build`: primeira tentativa falhou por rede bloqueada em Google Fonts; reexecucao com rede liberada passou, gerando 110 paginas. Avisos `DYNAMIC_SERVER_USAGE` por `cookies` permaneceram como avisos de rotas dinamicas.
+
+### Nao alterado
+
+- Nao alterou validacao de numero, CEP, logradouro, cidade/UF, confidence, anti-centroide, fallback Google, fallback Apps Script, cache schema, banco, agenda, disponibilidade, OSRM, Haversine, candidatos, classificacao, precos ou ranking.
+
+### Pendencia
+
+- Validacao manual autenticada na tela `/procurar-datas` com o caso real Xaxim/Casa e divergencias verdadeiras de bairro/cidade.

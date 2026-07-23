@@ -364,6 +364,78 @@ describe('validarResultadoGoogle', () => {
     expect(diag.resultado?.numeroOk).toBe(false)
   })
 
+  it('resolve bairro por segmento do formatted_address quando sublocality e termo generico', () => {
+    const form = formBase({
+      logradouro: 'Rua Cornelius Pries',
+      numero: '100',
+      bairro: 'Xaxim',
+      cidade: 'Curitiba',
+      uf: 'PR',
+      cep: '81830-020',
+    })
+
+    const result: Parameters<typeof validarResultadoGoogle>[0] = {
+      geometry: {
+        location: { lat: -25.50907, lng: -49.26718 },
+        location_type: 'ROOFTOP',
+      },
+      formatted_address: 'Rua Cornelius Pries - Casa, Xaxim, Curitiba - PR, 81830-020, Brasil',
+      address_components: [
+        { long_name: 'Rua Cornelius Pries', short_name: 'R. Cornelius Pries', types: ['route'] },
+        { long_name: 'Casa', short_name: 'Casa', types: ['sublocality', 'political'] },
+        { long_name: 'Curitiba', short_name: 'Curitiba', types: ['administrative_area_level_2', 'political'] },
+        { long_name: 'Parana', short_name: 'PR', types: ['administrative_area_level_1', 'political'] },
+        { long_name: 'Brasil', short_name: 'BR', types: ['country'] },
+        { long_name: '81830-020', short_name: '81830-020', types: ['postal_code'] },
+      ],
+      types: ['street_address'],
+      partial_match: false,
+    }
+
+    const diag = validarResultadoGoogle(result, form)
+
+    expect(diag.valido).toBe(true)
+    expect(diag.bairroOk).toBe(true)
+    expect(diag.bairroRecebido).toBe('Xaxim')
+    expect((diag.resultado?.address as { suburb?: string } | undefined)?.suburb).toBe('Xaxim')
+  })
+
+  it('nao devolve Casa como bairro confirmado quando Google tem apenas termo generico', () => {
+    const form = formBase({
+      logradouro: 'Rua Cornelius Pries',
+      numero: '100',
+      bairro: 'Xaxim',
+      cidade: 'Curitiba',
+      uf: 'PR',
+      cep: '81830-020',
+    })
+
+    const result: Parameters<typeof validarResultadoGoogle>[0] = {
+      geometry: {
+        location: { lat: -25.50907, lng: -49.26718 },
+        location_type: 'ROOFTOP',
+      },
+      formatted_address: 'Rua Cornelius Pries - Casa, Curitiba - PR, 81830-020, Brasil',
+      address_components: [
+        { long_name: 'Rua Cornelius Pries', short_name: 'R. Cornelius Pries', types: ['route'] },
+        { long_name: 'Casa', short_name: 'Casa', types: ['sublocality', 'political'] },
+        { long_name: 'Curitiba', short_name: 'Curitiba', types: ['administrative_area_level_2', 'political'] },
+        { long_name: 'Parana', short_name: 'PR', types: ['administrative_area_level_1', 'political'] },
+        { long_name: 'Brasil', short_name: 'BR', types: ['country'] },
+        { long_name: '81830-020', short_name: '81830-020', types: ['postal_code'] },
+      ],
+      types: ['street_address'],
+      partial_match: false,
+    }
+
+    const diag = validarResultadoGoogle(result, form)
+
+    expect(diag.valido).toBe(true)
+    expect(diag.bairroOk).toBe(true)
+    expect(diag.bairroRecebido).toBe('')
+    expect((diag.resultado?.address as { suburb?: string } | undefined)?.suburb).toBe('')
+  })
+
   it('prioriza cep_mismatch sobre numero ausente no Google', () => {
     const form = formBase({
       logradouro: 'Rua Tenente Francisco Ferreira de Souza',

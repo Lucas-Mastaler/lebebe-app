@@ -1,4 +1,5 @@
 import { normalizarTexto } from './endereco-cache'
+import { resolverBairroGeografico, resolverMunicipioGeografico } from './geografia/resolver-componente-geografico'
 
 export type DivergenciaEndereco = 'nenhuma' | 'bairro' | 'cidade' | 'uf'
 
@@ -60,20 +61,44 @@ function ufCompativel(ufForm: string, ufProvider: string): boolean {
  */
 export function compararEnderecoCEPComGeocodificacao(
   form: { bairro: string; cidade: string; uf: string },
-  addressProvider: Record<string, string> | undefined,
+  addressProvider: Record<string, unknown> | undefined,
 ): ResultadoComparacaoEndereco {
   const bairroForm = normalizarTexto(form.bairro)
   const cidadeForm = normalizarTexto(form.cidade)
   const ufForm = normalizarTexto(form.uf)
 
-  const bairroProvider = normalizarTexto(
-    String(addressProvider?.suburb ?? addressProvider?.neighbourhood ?? ''),
-  )
-  const cidadeProvider = normalizarTexto(
-    String(addressProvider?.city ?? addressProvider?.town ?? addressProvider?.municipality ?? ''),
+  const provider = (addressProvider?.address && typeof addressProvider.address === 'object'
+    ? addressProvider.address
+    : addressProvider) as Record<string, unknown> | undefined
+  const displayName = String(addressProvider?.display_name ?? addressProvider?.display ?? addressProvider?.enderecoCompleto ?? '')
+
+  const bairroResolvido = resolverBairroGeografico({
+    bairroEsperado: form.bairro,
+    address: {
+      suburb: String(provider?.suburb ?? ''),
+      neighbourhood: String(provider?.neighbourhood ?? ''),
+      city_district: String(provider?.city_district ?? ''),
+      quarter: String(provider?.quarter ?? ''),
+    },
+    displayName,
+  })
+  const cidadeResolvida = resolverMunicipioGeografico({
+    cidadeEsperada: form.cidade,
+    address: {
+      city: String(provider?.city ?? ''),
+      town: String(provider?.town ?? ''),
+      municipality: String(provider?.municipality ?? ''),
+      county: String(provider?.county ?? ''),
+    },
+    displayName,
+  })
+
+  const bairroProvider = bairroResolvido.valorCanonico ?? ''
+  const cidadeProvider = cidadeResolvida.valorCanonico ?? normalizarTexto(
+    String(provider?.city ?? provider?.town ?? provider?.municipality ?? ''),
   )
   const ufProvider = normalizarTexto(
-    String(addressProvider?.state ?? addressProvider?.state_code ?? ''),
+    String(provider?.state ?? provider?.state_code ?? ''),
   ).replace(/^BR-/, '').replace(/^BR\s+/, '')
 
   // UF divergente tem prioridade maxima
@@ -84,12 +109,19 @@ export function compararEnderecoCEPComGeocodificacao(
 
   // Cidade divergente
   // Se cidadeProvider ausente, nao diverge — o backend ja rejeita resultados sem cidade
-  if (cidadeForm && cidadeProvider && cidadeForm !== cidadeProvider) {
+  if (cidadeForm && cidadeProvider && normalizarTexto(cidadeProvider) !== cidadeForm) {
     return { divergencia: 'cidade', bairroForm, bairroProvider, cidadeForm, cidadeProvider, ufForm, ufProvider }
   }
 
-  // Bairro divergente (apenas se ambos presentes)
-  if (bairroForm && bairroProvider && bairroForm !== bairroProvider) {
+  // Bairro divergente apenas quando o provider trouxe bairro oficial/confiavel, nao generico e nao ambiguo.
+  if (
+    bairroForm &&
+    bairroProvider &&
+    bairroResolvido.bairroOficialCuritiba &&
+    !bairroResolvido.termoGenerico &&
+    !bairroResolvido.ambiguo &&
+    bairroResolvido.divergenciaReal
+  ) {
     return { divergencia: 'bairro', bairroForm, bairroProvider, cidadeForm, cidadeProvider, ufForm, ufProvider }
   }
 

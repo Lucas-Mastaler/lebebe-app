@@ -6,6 +6,7 @@ import {
   normalizarTexto,
 } from './endereco-cache'
 import { calcularConfiancaInternaEndereco } from './confianca-interna'
+import { resolverBairroGeografico, resolverMunicipioGeografico } from './geografia/resolver-componente-geografico'
 
 type LocationIqAddress = {
   road?: string
@@ -101,7 +102,7 @@ function montarUrlLocationIq(form: ValidarEnderecoRequest, apiKey: string): URL 
 }
 
 function cidadeDoCandidato(address: LocationIqAddress | undefined): string {
-  return normalizarTexto(address?.city ?? address?.town ?? address?.municipality ?? address?.county)
+  return resolverMunicipioGeografico({ address }).valorNormalizado ?? ''
 }
 
 function ufCompativel(address: LocationIqAddress | undefined, uf: string): boolean {
@@ -141,21 +142,6 @@ type MotivoRejeicao =
   | 'cep_mismatch'
   | 'bairro_mismatch'
   | 'importance_baixa'
-
-/**
- * Extrai o bairro do candidato LocationIQ, tentando múltiplos campos.
- */
-function bairroDoCandidato(address: LocationIqAddress | undefined): string {
-  return (
-    normalizarTexto(
-      address?.suburb ??
-        address?.neighbourhood ??
-        address?.city_district ??
-        address?.quarter ??
-        ''
-    )
-  )
-}
 
 type FlagsDiagnosticas = {
   cidadeOk: boolean
@@ -239,7 +225,12 @@ function validarCandidato(
 
   // Validação de bairro (apenas diagnóstico, não rejeita)
   const bairroForm = normalizarTexto(form.bairro)
-  const bairroCandidate = bairroDoCandidato(candidate.address)
+  const resolucaoBairro = resolverBairroGeografico({
+    bairroEsperado: form.bairro,
+    address: candidate.address,
+    displayName: candidate.display_name,
+  })
+  const bairroCandidate = resolucaoBairro.valorNormalizado ?? ''
   const bairroOk: boolean | 'na' =
     !bairroForm || !bairroCandidate ? 'na' : bairroForm === bairroCandidate
 
@@ -281,6 +272,13 @@ function validarCandidato(
 
   const address = candidate.address ?? {}
   const enderecoCompleto = display || montarEnderecoDisplayProcurarDatas(form)
+  const resolucaoCidade = resolverMunicipioGeografico({
+    cidadeEsperada: form.cidade,
+    address,
+    displayName: candidate.display_name,
+  })
+  const bairroResolvido = resolucaoBairro.valorCanonico ?? ''
+  const cidadeResolvida = resolucaoCidade.valorCanonico ?? address.city ?? address.town ?? address.municipality ?? String(form.cidade ?? '')
 
   const confiancaInterna = calcularConfiancaInternaEndereco({
     match: numeroOk ? 'exato' : 'aproximado_confiavel',
@@ -316,8 +314,14 @@ function validarCandidato(
       address: {
         road: address.road || String(form.logradouro ?? ''),
         house_number: address.house_number ?? '',
-        suburb: address.suburb || address.neighbourhood || String(form.bairro ?? ''),
-        city: address.city || address.town || address.municipality || String(form.cidade ?? ''),
+        suburb: bairroResolvido,
+        neighbourhood: address.neighbourhood ?? '',
+        city_district: address.city_district ?? '',
+        quarter: address.quarter ?? '',
+        city: cidadeResolvida,
+        town: address.town ?? '',
+        municipality: address.municipality ?? '',
+        county: address.county ?? '',
         state: address.state || String(form.uf ?? ''),
         postcode: address.postcode || '',
       },
@@ -405,8 +409,18 @@ export async function buscarEnderecoLocationIq(
         const lngStr = Number.isFinite(lng) ? lng.toFixed(5) : '-'
         const displayTrunc = (candidate.display_name ?? '').slice(0, 80)
         const addr = candidate.address ?? {}
-        const bairroCandidate = bairroDoCandidato(addr) || '-'
-        const cidadeCandidate = addr.city ?? addr.town ?? addr.municipality ?? '-'
+        const resolucaoBairroLog = resolverBairroGeografico({
+          bairroEsperado: form.bairro,
+          address: addr,
+          displayName: candidate.display_name,
+        })
+        const resolucaoCidadeLog = resolverMunicipioGeografico({
+          cidadeEsperada: form.cidade,
+          address: addr,
+          displayName: candidate.display_name,
+        })
+        const bairroCandidate = resolucaoBairroLog.valorCanonico ?? '-'
+        const cidadeCandidate = resolucaoCidadeLog.valorCanonico ?? addr.city ?? addr.town ?? addr.municipality ?? '-'
         const bairroForm = normalizarTexto(form.bairro)
         const flags = validacao.flags
 
@@ -423,8 +437,9 @@ export async function buscarEnderecoLocationIq(
             ` importance=${candidate.importance ?? '-'}` +
             ` house_number="${addr.house_number ?? '-'}"` +
             ` road="${addr.road ?? '-'}"` +
-            ` bairroForm="${bairroForm}" bairroCandidate="${bairroCandidate}" bairroOk=${flags.bairroOk}` +
+            ` bairroForm="${bairroForm}" bairroCandidate="${bairroCandidate}" bairroSource=${resolucaoBairroLog.origem} bairroGenerico=${resolucaoBairroLog.termoGenerico} bairroAmbiguo=${resolucaoBairroLog.ambiguo} bairroOk=${flags.bairroOk}` +
             ` city="${cidadeCandidate}"` +
+            ` cidadeSource=${resolucaoCidadeLog.origem}` +
             ` state="${addr.state ?? '-'}"` +
             ` postcode="${addr.postcode ?? '-'}"` +
             ` cidadeOk=${flags.cidadeOk} ufOk=${flags.ufOk}` +
@@ -450,8 +465,9 @@ export async function buscarEnderecoLocationIq(
           ` importance=${candidate.importance ?? '-'}` +
           ` house_number="${addr.house_number ?? '-'}"` +
           ` road="${addr.road ?? '-'}"` +
-          ` bairroForm="${bairroForm}" bairroCandidate="${bairroCandidate}" bairroOk=${flags.bairroOk}` +
+          ` bairroForm="${bairroForm}" bairroCandidate="${bairroCandidate}" bairroSource=${resolucaoBairroLog.origem} bairroGenerico=${resolucaoBairroLog.termoGenerico} bairroAmbiguo=${resolucaoBairroLog.ambiguo} bairroOk=${flags.bairroOk}` +
           ` city="${cidadeCandidate}"` +
+          ` cidadeSource=${resolucaoCidadeLog.origem}` +
           ` state="${addr.state ?? '-'}"` +
           ` postcode="${addr.postcode ?? '-'}"` +
           ` cidadeOk=${flags.cidadeOk} ufOk=${flags.ufOk}` +

@@ -1,6 +1,7 @@
 import type { EnderecoValidado, ValidarEnderecoRequest } from './contratos'
 import { normalizarCep, normalizarNumeroEndereco, normalizarTexto } from './endereco-cache'
 import { calcularConfiancaInternaEndereco } from './confianca-interna'
+import { resolverBairroGeografico, resolverMunicipioGeografico } from './geografia/resolver-componente-geografico'
 
 export type GoogleGeocodingEvent =
   | { tipo: 'google_fallback_skip_not_difficult' }
@@ -137,6 +138,10 @@ function componenteCurto(result: GoogleGeocodingResult, ...tipos: string[]): str
   return componente(result, ...tipos)?.short_name ?? ''
 }
 
+function componenteTextoPorTipo(result: GoogleGeocodingResult, tipo: string): string {
+  return result.address_components?.find((c) => c.types.includes(tipo))?.long_name ?? ''
+}
+
 function ufCompativelGoogle(result: GoogleGeocodingResult, uf: string): boolean {
   const ufNorm = normalizarTexto(uf)
   const administrative = componenteCurto(result, 'administrative_area_level_1')
@@ -156,8 +161,8 @@ function extrairCidadeDoFormatted(formatted: string): string {
 }
 
 function cidadeRecebidaGoogle(result: GoogleGeocodingResult): { cidade: string; source: string } {
-  const admin2 = componenteTexto(result, 'administrative_area_level_2', 'political')
-  const locality = componenteTexto(result, 'locality', 'political')
+  const admin2 = componenteTextoPorTipo(result, 'administrative_area_level_2')
+  const locality = componenteTextoPorTipo(result, 'locality')
   const formatted = extrairCidadeDoFormatted(result.formatted_address ?? '')
 
   if (admin2) return { cidade: admin2, source: 'administrative_area_level_2' }
@@ -166,16 +171,57 @@ function cidadeRecebidaGoogle(result: GoogleGeocodingResult): { cidade: string; 
   return { cidade: '', source: 'none' }
 }
 
+function resolverMunicipioGoogle(
+  result: GoogleGeocodingResult,
+  cidadeEsperada: string
+): { cidade: string; source: string; matchEsperado: boolean; divergenciaReal: boolean; ambiguo: boolean; indeterminado: boolean } {
+  const admin2 = componenteTextoPorTipo(result, 'administrative_area_level_2')
+  const locality = componenteTextoPorTipo(result, 'locality')
+  const formatted = extrairCidadeDoFormatted(result.formatted_address ?? '')
+  const resolucao = resolverMunicipioGeografico({
+    cidadeEsperada,
+    displayName: result.formatted_address,
+    extras: [
+      { fonte: 'administrative_area_level_2', valor: admin2 },
+      { fonte: 'locality', valor: locality },
+      { fonte: 'formatted_address', valor: formatted },
+    ],
+  })
+  if (resolucao.valorCanonico) {
+    return {
+      cidade: resolucao.valorCanonico,
+      source: resolucao.origem,
+      matchEsperado: resolucao.matchEsperado,
+      divergenciaReal: resolucao.divergenciaReal,
+      ambiguo: resolucao.ambiguo,
+      indeterminado: resolucao.indeterminado,
+    }
+  }
+  const legado = cidadeRecebidaGoogle(result)
+  return {
+    cidade: legado.cidade,
+    source: legado.source,
+    matchEsperado: !!cidadeEsperada && normalizarTexto(legado.cidade) === normalizarTexto(cidadeEsperada),
+    divergenciaReal: false,
+    ambiguo: resolucao.ambiguo,
+    indeterminado: resolucao.indeterminado,
+  }
+}
+
 function cidadeCompativelGoogle(result: GoogleGeocodingResult, cidade: string): boolean {
   const cidadeForm = normalizarTexto(cidade)
   if (!cidadeForm) return false
 
-  const { cidade: cidadeRecebida, source } = cidadeRecebidaGoogle(result)
+  const cidadeResolvida = resolverMunicipioGoogle(result, cidade)
+  if (cidadeResolvida.matchEsperado) return true
+  if (cidadeResolvida.divergenciaReal) return false
+
+  const { cidade: cidadeRecebida } = cidadeRecebidaGoogle(result)
   if (normalizarTexto(cidadeRecebida) === cidadeForm) return true
 
   // Fallback: nao tratar sublocality/bairro como cidade, mas verificar locality/admin2 se existirem
-  const locality = componenteTexto(result, 'locality', 'political')
-  const admin2 = componenteTexto(result, 'administrative_area_level_2', 'political')
+  const locality = componenteTextoPorTipo(result, 'locality')
+  const admin2 = componenteTextoPorTipo(result, 'administrative_area_level_2')
   const formatted = extrairCidadeDoFormatted(result.formatted_address ?? '')
 
   return [locality, admin2, formatted].some((c) => normalizarTexto(c) === cidadeForm)
@@ -323,7 +369,9 @@ export function validarResultadoGoogle(
   }
 
   const cidadeForm = normalizarTexto(String(form.cidade ?? ''))
-  const { cidade: cidadeRecebida, source: cidadeSource } = cidadeRecebidaGoogle(result)
+  const cidadeResolvidaGoogle = resolverMunicipioGoogle(result, String(form.cidade ?? ''))
+  const cidadeRecebida = cidadeResolvidaGoogle.cidade
+  const cidadeSource = cidadeResolvidaGoogle.source
   const formattedCity = extrairCidadeDoFormatted(result.formatted_address ?? '')
   const formattedCityMatch = !!cidadeForm && normalizarTexto(formattedCity) === cidadeForm
   const cidadeOk = !cidadeForm || cidadeCompativelGoogle(result, cidadeForm) || formattedCityMatch
@@ -338,10 +386,18 @@ export function validarResultadoGoogle(
     return { valido: false, motivo: 'logradouro_incompativel', cidadeOk, ufOk, logradouroOk, numeroOk: false, bairroOk: false, cepOk: false, cidadeRecebida, cidadeSource, formattedCityMatch, ufRecebida, logradouroRecebido, bairroRecebido: '', cepRecebido: '', ...baseDiag }
   }
 
-  const bairroRecebido = componenteTexto(result, 'sublocality', 'political') || componenteTexto(result, 'neighborhood') || ''
+  const bairroResolvidoGoogle = resolverBairroGeografico({
+    bairroEsperado: form.bairro,
+    address: {
+      suburb: componenteTextoPorTipo(result, 'sublocality'),
+      neighbourhood: componenteTextoPorTipo(result, 'neighborhood'),
+    },
+    displayName: result.formatted_address,
+  })
+  const bairroRecebido = bairroResolvidoGoogle.valorCanonico ?? ''
   const bairroForm = normalizarTexto(String(form.bairro ?? ''))
   // Para enderecos dificeis, bairro divergente nao e bloqueio absoluto; e apenas aviso
-  const bairroOk = !bairroForm || enderecoDificil || normalizarTexto(bairroRecebido) === bairroForm
+  const bairroOk = !bairroForm || enderecoDificil || bairroResolvidoGoogle.indeterminado || bairroResolvidoGoogle.matchEsperado
 
   const cepRecebido = componenteTexto(result, 'postal_code') || ''
   const cepForm = normalizarCep(String(form.cep ?? ''))
@@ -432,7 +488,7 @@ export function validarResultadoGoogle(
       address: {
         road: componenteTexto(result, 'route') || String(form.logradouro ?? ''),
         house_number: componenteTexto(result, 'street_number') || String(form.numero ?? ''),
-        suburb: componenteTexto(result, 'sublocality', 'political') || String(form.bairro ?? ''),
+        suburb: bairroResolvidoGoogle.valorCanonico ?? '',
         city: cidadeRecebida || String(form.cidade ?? ''),
         state: componenteTexto(result, 'administrative_area_level_1') || String(form.uf ?? ''),
         postcode: postalCode || '',
@@ -533,7 +589,7 @@ export async function consultarGoogleGeocodingEnderecoDificil(
     const partialMatch = resultado.partial_match ?? false
     const route = componenteTexto(resultado, 'route') || ''
     const streetNumber = componenteTexto(resultado, 'street_number') || ''
-    const bairroCandidate = componenteTexto(resultado, 'sublocality', 'political') || componenteTexto(resultado, 'neighborhood') || ''
+    const bairroCandidate = validacao.bairroRecebido
     const cityCandidate = validacao.cidadeRecebida
     const stateCandidate = validacao.ufRecebida
     const postcode = componenteTexto(resultado, 'postal_code') || ''
@@ -571,7 +627,7 @@ export async function consultarGoogleGeocodingEnderecoDificil(
       options.onEvent?.({ tipo: 'google_fallback_rejected', motivo })
 
       if (motivo === 'cidade_incompativel') {
-        const componentsResumo = `city="${cityCandidate}" state="${stateCandidate}" locality="${componenteTexto(resultado, 'locality', 'political')}" admin2="${componenteTexto(resultado, 'administrative_area_level_2', 'political')}"`
+        const componentsResumo = `city="${cityCandidate}" state="${stateCandidate}" locality="${componenteTextoPorTipo(resultado, 'locality')}" admin2="${componenteTextoPorTipo(resultado, 'administrative_area_level_2')}"`
         options.onEvent?.({
           tipo: 'google_reject_detail',
           motivo: 'cidade_incompativel',

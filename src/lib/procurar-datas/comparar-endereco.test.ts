@@ -34,6 +34,79 @@ describe('compararEnderecoCEPComGeocodificacao', () => {
     expect(r.divergencia).toBe('bairro')
   })
 
+  it('nao gera divergencia falsa quando suburb generico Casa mas neighbourhood e Xaxim', () => {
+    const r = compararEnderecoCEPComGeocodificacao(
+      { bairro: 'Xaxim', cidade: 'Curitiba', uf: 'PR' },
+      {
+        address: {
+          suburb: 'Casa',
+          neighbourhood: 'Xaxim',
+          city: 'Curitiba',
+          state: 'Parana',
+        },
+        display_name: 'Rua Cornelius Pries, Casa, Xaxim, Curitiba, Parana, Brasil',
+      },
+    )
+    expect(r.divergencia).toBe('nenhuma')
+    expect(r.bairroProvider).toBe('Xaxim')
+  })
+
+  it('nao gera divergencia falsa quando Xaxim aparece apenas no display', () => {
+    const r = compararEnderecoCEPComGeocodificacao(
+      { bairro: 'Xaxim', cidade: 'Curitiba', uf: 'PR' },
+      {
+        address: {
+          suburb: 'Casa',
+          city: 'Curitiba',
+          state: 'Parana',
+        },
+        display_name: 'Rua Cornelius Pries, Casa, Xaxim, Curitiba, Parana, Brasil',
+      },
+    )
+    expect(r.divergencia).toBe('nenhuma')
+    expect(r.bairroProvider).toBe('Xaxim')
+  })
+
+  it('nao gera divergencia quando provider trouxe apenas termo generico como bairro', () => {
+    const r = compararEnderecoCEPComGeocodificacao(
+      { bairro: 'Xaxim', cidade: 'Curitiba', uf: 'PR' },
+      {
+        suburb: 'Casa',
+        city: 'Curitiba',
+        state: 'Parana',
+      },
+    )
+    expect(r.divergencia).toBe('nenhuma')
+    expect(r.bairroProvider).toBe('')
+  })
+
+  it('mantem divergencia real de bairro oficial diferente', () => {
+    const r = compararEnderecoCEPComGeocodificacao(
+      { bairro: 'Xaxim', cidade: 'Curitiba', uf: 'PR' },
+      {
+        suburb: 'Centro',
+        city: 'Curitiba',
+        state: 'Parana',
+      },
+    )
+    expect(r.divergencia).toBe('bairro')
+    expect(r.bairroProvider).toBe('Centro')
+  })
+
+  it('nao escolhe bairro arbitrario quando provider retorna bairros oficiais conflitantes', () => {
+    const r = compararEnderecoCEPComGeocodificacao(
+      { bairro: 'Hauer', cidade: 'Curitiba', uf: 'PR' },
+      {
+        suburb: 'Centro',
+        neighbourhood: 'Xaxim',
+        city: 'Curitiba',
+        state: 'Parana',
+      },
+    )
+    expect(r.divergencia).toBe('nenhuma')
+    expect(r.bairroProvider).toBe('')
+  })
+
   it('cidade diferente -> divergencia cidade', () => {
     const r = compararEnderecoCEPComGeocodificacao(
       { bairro: 'Centro', cidade: 'Curitiba', uf: 'PR' },

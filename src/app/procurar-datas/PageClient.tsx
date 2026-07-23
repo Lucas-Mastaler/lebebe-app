@@ -710,7 +710,7 @@ export default function ProcurarDatasPage() {
 
       const comparacao = compararEnderecoCEPComGeocodificacao(
         { bairro: form.bairro, cidade: form.cidade, uf: form.uf },
-        resultado.address,
+        resultado,
       )
 
       if (comparacao.divergencia === 'nenhuma') {

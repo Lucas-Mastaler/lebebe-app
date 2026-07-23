@@ -3780,3 +3780,23 @@ Status: implementado como ferramenta de auditoria interna, sem mudanca de regra 
 - Nao altera motor v2, legado Apps Script, ranking, classificacao, recorte, limites, OSRM, Haversine, frete, regras de equivalencia, producao, migrations, RLS ou policies.
 
 ---
+
+## 2026-07-23 - Codex - Interpretacao geografica local para bairros/municipios
+
+Status: implementado na Frente 1 / esquerda, com apoio de diagnostico na Frente 3. Frente 2 nao foi alterada.
+
+### Decisao
+
+- A validacao de endereco passa a usar um vocabulario geografico local versionado para distinguir bairro oficial de Curitiba, municipio da RMC, termo generico, complemento/tipo de imovel e ambiguidade.
+- O vocabulario auxilia a interpretacao dos componentes retornados por LocationIQ/Google e da comparacao da tela.
+- O vocabulario nao substitui CEP, coordenadas, LocationIQ, Google Geocoding, Apps Script, regras anti-centroide, validacao de logradouro/numero, cidade/UF, confidence, cache, OSRM ou regras comerciais.
+
+### Causa confirmada
+
+- LocationIQ podia retornar `suburb=Casa` e outro campo/segmento com `Xaxim`.
+- O codigo priorizava `suburb` e a UI comparava diretamente `Xaxim` contra `Casa`, gerando divergencia falsa.
+
+### Escopo preservado
+
+- Nao houve alteracao de agenda, disponibilidade, OSRM, Haversine, filtros, candidatos, classificacao, precos, ranking, Apps Script, banco, schema, planilha ou N8N.
+- Cache antigo continua compativel: `geo_cache.bairro` segue sendo o bairro salvo pelo fluxo/formulario e so e aceito como hit seguro quando bate com os campos do payload.

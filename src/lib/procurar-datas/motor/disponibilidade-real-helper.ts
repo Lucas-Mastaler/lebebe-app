@@ -14,6 +14,7 @@ import { lerPlanilhaTempoDisponivel } from '../google-sheets-tempo-disponivel'
 import { converterTabelaTempoDisponivel } from './leitor-sheets-tempo-disponivel'
 import { parsearDisponibilidadeTempoDisponivelV2 } from './parse-disponibilidade-tempo-disponivel'
 import type { DisponibilidadeEquipeDataV2 } from './disponibilidade'
+import type { MedidorPerformanceV2 } from './performance-diagnostico-v2'
 
 // ─── Constantes da planilha real ─────────────────────────────────────────────
 
@@ -118,13 +119,19 @@ export async function buscarDisponibilidadeRealDiagnosticaComDados(
   dataInicialISO: string,
   limite: number = LIMITE_PADRAO,
   tamAmostra: number = 20,
-  dataInicialOrigem: 'entrada' | 'diagnostico-hoje' = 'diagnostico-hoje'
+  dataInicialOrigem: 'entrada' | 'diagnostico-hoje' = 'diagnostico-hoje',
+  medidorPerformance?: MedidorPerformanceV2
 ): Promise<DisponibilidadeRealComDadosResult> {
   // ── 1. Ler planilha ───────────────────────────────────────────────────────
-  const leituraResult = await lerPlanilhaTempoDisponivel({
+  const leituraResult = await (medidorPerformance?.medirAsync('google-sheets-disponibilidade-leitura', () =>
+    lerPlanilhaTempoDisponivel({
+      spreadsheetId: SPREADSHEET_ID_TEMPO_DISPONIVEL,
+      gid: GID_TEMPO_DISPONIVEL,
+    })
+  ) ?? lerPlanilhaTempoDisponivel({
     spreadsheetId: SPREADSHEET_ID_TEMPO_DISPONIVEL,
     gid: GID_TEMPO_DISPONIVEL,
-  })
+  }))
 
   if (!leituraResult.ok) {
     return {
@@ -147,6 +154,7 @@ export async function buscarDisponibilidadeRealDiagnosticaComDados(
   }
 
   // ── 2. Converter tabela para LinhaTempoDisponivelV2[] ────────────────────
+  const inicioParseMs = typeof performance !== 'undefined' ? performance.now() : Date.now()
   const conversao = converterTabelaTempoDisponivel(leituraResult.tabela)
 
   // ── 3. Limitar linhas antes do parser ─────────────────────────────────────
@@ -157,6 +165,11 @@ export async function buscarDisponibilidadeRealDiagnosticaComDados(
     linhas: linhasLimitadas,
     dataInicialISO,
   })
+  medidorPerformance?.registrarEtapa(
+    'google-sheets-disponibilidade-parse',
+    (typeof performance !== 'undefined' ? performance.now() : Date.now()) - inicioParseMs,
+    linhasLimitadas.length
+  )
 
   const amostra = parserResult.disponibilidades.slice(0, tamAmostra)
 

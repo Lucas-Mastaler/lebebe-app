@@ -39,6 +39,7 @@ export interface OrquestrarPesquisaV2ComPayloadLegadoDeps {
     request: PesquisarDatasRequest,
     options?: {
       medidorPerformance?: MedidorPerformanceV2
+      modoLogsPerformance?: 'atual' | 'sem-slots' | 'agregado'
       diagnosticoResultadoTelaV2SantoAmaro?: boolean
       diagnosticoDeltaSantoAmaro16Jul?: boolean
       diagnosticoDeltaMajorHardy31Jul?: boolean
@@ -48,6 +49,7 @@ export interface OrquestrarPesquisaV2ComPayloadLegadoDeps {
   buscarRota: BuscarRotaDepositoDestino
   agoraMs?: () => number
   medidorPerformance?: MedidorPerformanceV2
+  modoLogsPerformance?: 'atual' | 'sem-slots' | 'agregado'
   diagnosticoResultadoTelaV2SantoAmaro?: boolean
   diagnosticoDeltaSantoAmaro16Jul?: boolean
   diagnosticoDeltaMajorHardy31Jul?: boolean
@@ -143,12 +145,14 @@ export async function orquestrarPesquisaV2ComPayloadLegado(
     saidaV2 = await (perf?.medirAsync('pesquisar-datas-v2', () =>
       deps.pesquisarDatas(request, {
         medidorPerformance: perf,
+        modoLogsPerformance: deps.modoLogsPerformance,
         diagnosticoResultadoTelaV2SantoAmaro: deps.diagnosticoResultadoTelaV2SantoAmaro,
         diagnosticoDeltaSantoAmaro16Jul: deps.diagnosticoDeltaSantoAmaro16Jul,
         diagnosticoDeltaMajorHardy31Jul: deps.diagnosticoDeltaMajorHardy31Jul,
       })
     ) ?? deps.pesquisarDatas(request, {
       diagnosticoResultadoTelaV2SantoAmaro: deps.diagnosticoResultadoTelaV2SantoAmaro,
+      modoLogsPerformance: deps.modoLogsPerformance,
       diagnosticoDeltaSantoAmaro16Jul: deps.diagnosticoDeltaSantoAmaro16Jul,
       diagnosticoDeltaMajorHardy31Jul: deps.diagnosticoDeltaMajorHardy31Jul,
     }))

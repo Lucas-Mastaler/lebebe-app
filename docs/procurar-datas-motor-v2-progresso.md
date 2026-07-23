@@ -4845,6 +4845,7 @@ Status: GO para commit e revisao; GO para deploy apos revisao humana do diff.
 - `npx tsc --noEmit --pretty false`: passou.
 - ESLint direcionado nos arquivos alterados: passou.
 - `git diff --check`: passou com avisos LF/CRLF do checkout Windows.
+- `npm run build`: primeira tentativa falhou por rede bloqueada em Google Fonts; reexecucao com rede liberada passou, gerando 110 paginas e mantendo avisos `DYNAMIC_SERVER_USAGE` por `cookies`.
 - `npm run build`: passou, gerando 110 paginas; avisos `DYNAMIC_SERVER_USAGE` por `cookies` permaneceram como avisos de rotas dinamicas.
 
 ### Pendencia
@@ -4895,3 +4896,92 @@ Status: implementado e validado por testes automatizados/build. Validacao manual
 ### Pendencia
 
 - Validacao manual autenticada na tela `/procurar-datas` com o caso real Xaxim/Casa e divergencias verdadeiras de bairro/cidade.
+
+---
+
+## 2026-07-23 - Codex - CARREGAMENTO operacional sem endereco na barreira fail-closed
+
+Status: implementado e validado por testes automatizados focados. Validacao manual/autenticada com ocorrencia real permanece pendente porque a leitura atual da AGENDA nao encontrou linhas contendo `CARREGAMENTO`.
+
+### Causa confirmada
+
+- O parser tratava toda linha da AGENDA sem endereco como `sem_endereco`.
+- A consistencia espacial bloqueava qualquer `semEndereco > 0`, mesmo quando a disponibilidade era consumida por um evento operacional sem rota.
+- A AGENDA real possui coluna oficial `DURACAO` no indice 3; portanto a regra nao precisa nem deve depender do texto `(00:30)` no titulo.
+
+### Implementacao
+
+- Criado helper puro `classificarEventoAgendaV2`.
+- Regra de reconhecimento:
+  - titulo normalizado contem palavra isolada `CARREGAMENTO`;
+  - duracao oficial > 0 e <= 60 minutos;
+  - evento nao tem endereco.
+- `DESCARREGAMENTO`, `RECARREGAMENTO`, duracao ausente/invalida/zero/acima de 60 e evento desconhecido continuam fail-closed.
+- O parser agora contabiliza:
+  - `eventosOperacionaisNaoEspaciais`;
+  - `tempoOperacionalNaoEspacialMin`;
+  - `eventosDesconhecidosSemEndereco`;
+  - `tempoDesconhecidoSemEnderecoMin`.
+- A consistencia espacial adicionou os estados `rota-simples-com-carregamento` e `evento-desconhecido-sem-endereco`, preservando os estados anteriores.
+- `CARREGAMENTO` reconhecido nao vira ponto, nao entra em OSRM como waypoint e nao usa deposito como ponto artificial.
+
+### Validacoes
+
+- `npm run test -- src/lib/procurar-datas/motor/classificar-evento-agenda.test.ts src/lib/procurar-datas/motor/parse-agenda-shag.test.ts src/lib/procurar-datas/motor/avaliar-consistencia-espacial-slot.test.ts src/lib/procurar-datas/motor/avaliar-consistencia-espacial-slot-carregamento.test.ts src/lib/procurar-datas/motor/calcular-km-adicional-real-controlado.test.ts src/lib/procurar-datas/motor/calcular-mapa-km-adicional-por-slot.test.ts src/lib/procurar-datas/motor/pesquisar-datas-v2.test.ts --silent`: 7 arquivos, 106 testes passaram.
+- `npx tsc --noEmit --pretty false`: passou.
+- ESLint direcionado nos arquivos alterados: passou.
+- `git diff --check`: passou com avisos LF/CRLF do checkout Windows.
+
+### Evidencia real
+
+- Leitura somente leitura da planilha real retornou cabecalho A:J com `DURACAO` na coluna D.
+- Nao havia linhas atuais com `CARREGAMENTO` (`matchCountTotal=0`).
+
+### Nao alterado
+
+- Ranking, precos, limites comerciais, candidatos, classificacao, recorte, OSRM, Haversine, origem operacional, delta de insercao, Apps Script, banco/schema e regras de sabado.
+
+---
+
+## 2026-07-23 - Codex - Otimizacao do `geo_cache` da agenda por lote
+
+Status: implementado em codigo e validado por testes automatizados/build. Medicao real dos cenarios A/B permanece pendente.
+
+### Causa confirmada
+
+- A auditoria anterior mediu o gargalo dominante em `geocodificacao-agenda-producao`.
+- O codigo real de `resolverCoordenadasAgendaProducao` fazia uma chamada sequencial a `buscarEnderecoNoGeoCache` para cada endereco unico da agenda sem coordenada inicial.
+- Cada chamada individual podia consultar `geo_cache` por hash e depois por campos, amplificando o custo quando a janela tinha dezenas de enderecos.
+
+### Implementacao
+
+- Criado `buscarEnderecosNoGeoCacheEmLote` em `src/lib/procurar-datas/endereco-cache.ts`.
+- A funcao gera os mesmos hashes existentes: hash com numero e hash legado sem numero.
+- Os hashes sao deduplicados e consultados via `.in('chave_endereco', chunk)`, com chunk padrao 100.
+- A tabela real `public.geo_cache` foi validada via MCP Supabase: `chave_endereco` e `text not null`, unique/indexada; `lat/lng` sao `numeric not null`; `confidence` e `numeric`.
+- A selecao de hit seguro reutiliza as regras atuais: compatibilidade de numero, logradouro, bairro, cidade, UF, CEP quando aplicavel, confidence minima, ambiguidade e coordenada valida.
+- `resolverCoordenadasAgendaProducao` coleta/deduplica enderecos antes do banco, aplica hits do lote em memoria e deixa misses seguirem para o helper individual por campos sem repetir a consulta por hash.
+- Fallback externo restante preserva ordem LocationIQ -> Google, respeita `maxGeocodificacoesExternas` e passa a usar concorrencia controlada 4.
+
+### Diagnostico
+
+- O aviso agregado da resolucao da agenda agora registra: eventos com endereco, enderecos unicos, duplicatas eliminadas, consultas antigas estimadas, consultas atuais, chunks, hits/misses do lote, fallbacks executados e concorrencia.
+- O diagnostico nao registra endereco completo, numero, coordenadas completas, nomes, CPF, telefone, email, tokens ou respostas brutas de provider.
+
+### Validacoes
+
+- `npm run test -- src/lib/procurar-datas/endereco-cache.test.ts src/lib/procurar-datas/motor/resolver-coordenadas-agenda-producao.test.ts --silent`: 2 arquivos, 21 testes passaram.
+- `npm run test -- src/lib/procurar-datas/endereco-cache.test.ts src/lib/procurar-datas/motor/resolver-coordenadas-agenda-producao.test.ts --silent -t "deduplica|busca em lote|chunks|concorrencia"`: 5 testes passaram, 16 skipped.
+- `npm run test -- src/lib/procurar-datas/endereco-cache.test.ts src/lib/procurar-datas/motor/resolver-coordenadas-agenda-producao.test.ts src/lib/procurar-datas/motor/calcular-mapa-km-adicional-por-slot.test.ts src/lib/procurar-datas/motor/calcular-km-adicional-real-controlado.test.ts src/lib/procurar-datas/motor/pesquisar-datas-v2.test.ts src/app/api/procurar-datas/v2/pesquisar-compat-async/route.test.ts --silent`: 6 arquivos, 68 testes passaram.
+- `npx tsc --noEmit --pretty false`: passou.
+- ESLint direcionado nos arquivos alterados: passou.
+- `git diff --check`: passou com avisos LF/CRLF do Windows.
+- `npm run build`: falhou no sandbox por Google Fonts e passou com rede liberada, gerando 110 paginas; avisos `DYNAMIC_SERVER_USAGE` por `cookies` permaneceram.
+
+### Nao alterado
+
+- Apps Script, schema, migrations, RLS, policies, OSRM, Haversine, origem operacional, delta, agenda/disponibilidade, CARREGAMENTO, candidatos, classificacao, ranking, precos, limites, recorte e frontend.
+
+### Pendente
+
+- Reexecutar os cenarios reais A/B da auditoria com diagnostico de performance habilitado para confirmar tempo total antes/depois, tempo de cache antes/depois, ganho absoluto, ganho percentual e p95.

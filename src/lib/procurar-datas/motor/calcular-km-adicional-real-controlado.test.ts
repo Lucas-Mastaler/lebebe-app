@@ -320,9 +320,44 @@ describe('calcularKmAdicionalRealControladoV2', () => {
 
     expect(resultado.ok).toBe(true)
     expect(resultado.kmAdicionalNaRotaM).toBeNull()
-    expect(resultado.consistenciaEspacial?.estado).toBe('agenda-sem-endereco')
+    expect(resultado.consistenciaEspacial?.estado).toBe('evento-desconhecido-sem-endereco')
     expect(resultado.consistenciaEspacial?.linhasDaEquipe).toBe(1)
     expect(buscarMatrizOSRM).not.toHaveBeenCalled()
+  })
+
+  it('permite rota simples com CARREGAMENTO operacional sem criar ponto artificial', async () => {
+    const buscarMatrizOSRM = vi.fn<BuscarMatrizOSRM>(async (coordenadas) => ({
+      distances: coordenadas.map((_, i) => coordenadas.map((__, j) => (i === j ? 0 : 1000))),
+    }))
+
+    const resultado = await calcularKmAdicionalRealControladoV2({
+      dataISO: '2026-07-28',
+      equipe: 'EQUIPE 1',
+      configOrigem: CONFIG_ORIGEM,
+      destino: DESTINO,
+      linhasAgenda: [
+        ['2026-07-28', '', '9 (00:30) CARREGAMENTO SEG-QUI (EQP DE TRANSFERENCIA)', '00:30', '', '', 'EQUIPE 1'],
+      ],
+      disponibilidade: { tempoUtilizadoMin: 30, disponivelMin: 390, capacidadeTotalMin: 420 },
+      cacheCoordenadasPorEndereco: {},
+      buscarMatrizOSRM,
+      incluirDetalhesInsercao: true,
+    })
+
+    expect(resultado.ok).toBe(true)
+    expect(resultado.consistenciaEspacial).toMatchObject({
+      estado: 'rota-simples-com-carregamento',
+      bloqueado: false,
+      rotaSimplesPermitida: true,
+      eventosOperacionaisNaoEspaciais: 1,
+      tempoOperacionalNaoEspacialMin: 30,
+    })
+    expect(resultado.parseAgenda?.resumo.semEndereco).toBe(0)
+    expect(resultado.parseAgenda?.resumo.pontosValidos).toBe(0)
+    expect(resultado.kmAdicionalNaRotaM).toEqual(expect.any(Number))
+    expect(buscarMatrizOSRM).toHaveBeenCalledTimes(1)
+    expect(buscarMatrizOSRM.mock.calls[0][0]).toHaveLength(2)
+    expect(resultado.deltaInsercao?.ok).toBe(true)
   })
 
   it('falha de OSRM usa fallback Haversine e nao retorna null', async () => {

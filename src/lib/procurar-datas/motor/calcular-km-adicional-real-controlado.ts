@@ -20,6 +20,7 @@ import {
   avaliarConsistenciaEspacialSlotV2,
   type ConsistenciaEspacialSlotV2,
 } from './avaliar-consistencia-espacial-slot'
+import type { MedidorPerformanceV2 } from './performance-diagnostico-v2'
 
 export type CalcularKmAdicionalRealControladoInput = {
   dataISO: string
@@ -40,6 +41,7 @@ export type CalcularKmAdicionalRealControladoInput = {
   buscarMatrizOSRM: BuscarMatrizOSRM
   /** Se true, retorna candidatosInsercao e pontosRotaBase no deltaInsercao. */
   incluirDetalhesInsercao?: boolean
+  medidorPerformance?: MedidorPerformanceV2
 }
 
 export type CalcularKmAdicionalRealControladoOutput = {
@@ -204,12 +206,17 @@ function avaliarFiltroEarlyLegado(input: {
 export async function calcularKmAdicionalRealControladoV2(
   input: CalcularKmAdicionalRealControladoInput
 ): Promise<CalcularKmAdicionalRealControladoOutput> {
+  const perf = input.medidorPerformance
   const avisos: string[] = [
     'Calculo real controlado executado apenas em diagnostico. Nao altera producao, frontend ou ranking final.',
   ]
   const erros: string[] = []
 
-  const origemOperacional = resolverOrigemOperacionalV2({
+  const origemOperacional = perf?.medir('slot-origem-operacional', () => resolverOrigemOperacionalV2({
+    dataISO: input.dataISO,
+    equipe: input.equipe,
+    config: input.configOrigem,
+  })) ?? resolverOrigemOperacionalV2({
     dataISO: input.dataISO,
     equipe: input.equipe,
     config: input.configOrigem,
@@ -254,12 +261,18 @@ export async function calcularKmAdicionalRealControladoV2(
   }
 
   const equipeNormalizada = origemOperacional.contexto.equipe
-  const parseAgenda = parsearPontosAgendaDoDiaV2({
+  const parseAgenda = perf?.medir('slot-parse-agenda', () => parsearPontosAgendaDoDiaV2({
+    linhasAgenda: input.linhasAgenda,
+    dataAlvoISO: input.dataISO,
+    equipeAlvo: equipeNormalizada,
+    cacheCoordenadasPorEndereco: input.cacheCoordenadasPorEndereco,
+  })) ?? parsearPontosAgendaDoDiaV2({
     linhasAgenda: input.linhasAgenda,
     dataAlvoISO: input.dataISO,
     equipeAlvo: equipeNormalizada,
     cacheCoordenadasPorEndereco: input.cacheCoordenadasPorEndereco,
   })
+  perf?.registrarEtapa('slot-parse-agenda-itens', 0, input.linhasAgenda.length)
 
   const pontosAgenda = parseAgenda.pontos.map((p) => ({
     loc: p.coordenadas,
@@ -270,7 +283,10 @@ export async function calcularKmAdicionalRealControladoV2(
     id: `agenda_${p.indiceLinhaOriginal}`,
   }))
 
-  const consistenciaEspacial = avaliarConsistenciaEspacialSlotV2({
+  const consistenciaEspacial = perf?.medir('slot-consistencia-espacial', () => avaliarConsistenciaEspacialSlotV2({
+    disponibilidade: input.disponibilidade,
+    resumoAgenda: parseAgenda.resumo,
+  })) ?? avaliarConsistenciaEspacialSlotV2({
     disponibilidade: input.disponibilidade,
     resumoAgenda: parseAgenda.resumo,
   })
@@ -343,7 +359,13 @@ export async function calcularKmAdicionalRealControladoV2(
       const calcularDistanciaM = criarCalculadorComFallback(calcularPorMatriz, avisos, () => {
         fallbackHaversineUsado = true
       })
-      filtroEarlyLegado = avaliarFiltroEarlyLegado({
+      filtroEarlyLegado = perf?.medir('slot-filtro-early', () => avaliarFiltroEarlyLegado({
+        pontosAgenda,
+        destino,
+        calcularDistanciaM,
+        kmMaxEntrePontosKm: input.configFiltroEarlyLegado?.kmMaxEntrePontosKm,
+        kmAdicionalMaxNaRotaPremiumM: input.configFiltroEarlyLegado?.kmAdicionalMaxNaRotaPremiumM,
+      })) ?? avaliarFiltroEarlyLegado({
         pontosAgenda,
         destino,
         calcularDistanciaM,
@@ -384,7 +406,14 @@ export async function calcularKmAdicionalRealControladoV2(
         twoOptAplicado: ordenacao.twoOptAplicado,
       }
 
-      deltaInsercao = calcularDeltaInsercaoRotaComMatrizDiagnosticoV2({
+      deltaInsercao = perf?.medir('slot-delta-insercao', () => calcularDeltaInsercaoRotaComMatrizDiagnosticoV2({
+        origem,
+        destino,
+        pontosAgenda: ordenacao.pontosOrdenados,
+        calcularDistanciaM,
+        modo: 'matriz-distancia-diagnostico',
+        incluirDetalhes: input.incluirDetalhesInsercao,
+      })) ?? calcularDeltaInsercaoRotaComMatrizDiagnosticoV2({
         origem,
         destino,
         pontosAgenda: ordenacao.pontosOrdenados,
@@ -421,7 +450,13 @@ export async function calcularKmAdicionalRealControladoV2(
       twoOptExecutado: ordenacao.twoOptExecutado,
       twoOptAplicado: ordenacao.twoOptAplicado,
     }
-    const fallback = calcularDeltaInsercaoRotaDiagnosticoV2({
+    const fallback = perf?.medir('slot-delta-insercao', () => calcularDeltaInsercaoRotaDiagnosticoV2({
+      origem,
+      destino,
+      pontosAgenda: ordenacao.pontosOrdenados,
+      modo: 'haversine-diagnostico',
+      incluirDetalhes: input.incluirDetalhesInsercao,
+    })) ?? calcularDeltaInsercaoRotaDiagnosticoV2({
       origem,
       destino,
       pontosAgenda: ordenacao.pontosOrdenados,

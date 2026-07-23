@@ -3800,3 +3800,68 @@ Status: implementado na Frente 1 / esquerda, com apoio de diagnostico na Frente 
 
 - Nao houve alteracao de agenda, disponibilidade, OSRM, Haversine, filtros, candidatos, classificacao, precos, ranking, Apps Script, banco, schema, planilha ou N8N.
 - Cache antigo continua compativel: `geo_cache.bairro` segue sendo o bairro salvo pelo fluxo/formulario e so e aceito como hit seguro quando bate com os campos do payload.
+
+---
+
+## 2026-07-23 - Codex - Ajuste fail-closed para CARREGAMENTO sem endereco
+
+Status: implementado na Frente 1 / esquerda, com observabilidade na Frente 3 e registro de controle nesta Frente 0. Frente 2 nao foi alterada.
+
+### Regra adicionada
+
+- Evento de AGENDA sem endereco pode deixar de bloquear o slot somente quando for reconhecido como `CARREGAMENTO` operacional nao espacial.
+- O reconhecimento exige palavra isolada `CARREGAMENTO` no titulo normalizado e duracao oficial da agenda maior que 0 e menor ou igual a 60 minutos.
+- A duracao vem da coluna oficial `DURACAO` da AGENDA (indice 3 no parser), nao do texto `(00:30)` dentro do titulo.
+- `DESCARREGAMENTO`, `RECARREGAMENTO`, duracao ausente/invalida/zero/acima de 60 e evento desconhecido sem endereco continuam fail-closed.
+
+### Efeito no motor
+
+- `CARREGAMENTO` reconhecido consome disponibilidade, nao requer endereco, nao entra na rota, nao cria ponto artificial/deposito e permite rota simples quando nao ha ponto espacial nem evento desconhecido concorrente.
+- O novo estado seguro e `rota-simples-com-carregamento`.
+- Evento desconhecido sem endereco pode aparecer como `evento-desconhecido-sem-endereco`.
+- Estados anteriores permanecem no contrato: `dia-realmente-vazio`, `com-pontos-validos`, `ocupado-sem-pontos`, `agenda-sem-endereco`, `agenda-sem-coordenadas` e `capacidade-indeterminada`.
+
+### Evidencia real
+
+- Leitura diagnostica somente leitura da AGENDA real confirmou o cabecalho: `DATA ENTREGA`, `FIM`, `DESCRICAO`, `DURACAO`, `OBSERVACOES`, `LUGAR`, `NOME DA AGENDA`, `EVENT_ID`, `TEMPO UTILIZADO`, `ULTIMA ATUALIZACAO`.
+- A mesma leitura nao encontrou linhas atuais com titulo contendo `CARREGAMENTO` (`matchCountTotal=0`), portanto a validacao real de ocorrencia em producao permanece pendente.
+
+### Nao alterado
+
+- OSRM, Haversine, waypoints, origem operacional, delta de insercao, agenda com pontos validos, disponibilidade, regras de sabado, candidatos, classificacao, precos, limites comerciais, ranking, recorte, Apps Script, banco e schema.
+
+---
+
+## 2026-07-23 - Codex - Otimizacao tecnica do cache de coordenadas da agenda
+
+Status: implementado como Frente 1 / esquerda, com observabilidade na Frente 3 e registro nesta Frente 0. Frente 2 nao foi alterada.
+
+### Decisao de escopo
+
+- A resolucao de coordenadas da agenda pode consultar `geo_cache` em lote por hashes exatos para reduzir latencia.
+- Essa mudanca e tecnica: nao altera regra comercial, regra de aceite, ranking, classificacao, candidatos, precos, limites, OSRM, Haversine, Apps Script, frontend, schema ou RLS.
+- A equivalencia funcional deve ser preservada porque o lote usa os mesmos hashes e as mesmas regras de hit seguro do helper central.
+
+### Regra preservada
+
+- Hash atual com numero e hash legado sem numero continuam aceitos.
+- Confidence numerica abaixo de `0.70` continua nao sendo hit seguro.
+- Cache ambiguo continua miss controlado; a v2 nao escolhe arbitrariamente entre multiplos registros compativeis.
+- Coordenada invalida continua miss e nao vira `0,0`, deposito ou rota simples.
+- Miss do lote pode seguir para busca por campos e fallback externo existente; endereco ainda nao resolvido permanece sem coordenada e segue fail-closed.
+
+### Controle operacional
+
+- O lote usa `.in('chave_endereco', chunk)` sobre `public.geo_cache.chave_endereco`, validado no MCP Supabase como coluna unique/indexada.
+- Chunk padrao atual: 100 hashes.
+- Fallback externo restante usa concorrencia controlada 4 e continua limitado por `maxGeocodificacoesExternas`.
+
+### Validacao e pendencia
+
+- Testes automatizados focados e build passaram na etapa de implementacao.
+- Pendente: medir novamente os cenarios reais A/B da auditoria para confirmar ganho real de performance e p95. Ate essa medicao, a melhoria esta validada funcionalmente e sinteticamente, mas o ganho real permanece nao confirmado.
+
+### Rollback
+
+- Reverter `src/lib/procurar-datas/endereco-cache.ts` e `src/lib/procurar-datas/motor/resolver-coordenadas-agenda-producao.ts` volta ao caminho sequencial anterior.
+- Nao ha migration, dado remoto, flag permanente ou alteracao externa para reverter.

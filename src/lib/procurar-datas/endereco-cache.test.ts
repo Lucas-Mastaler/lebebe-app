@@ -1,12 +1,27 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  buscarEnderecosNoGeoCacheEmLote,
   cacheRowCompativelComEndereco,
   cacheRowConfidenceAceitavel,
+  GEO_CACHE_BATCH_HASH_CHUNK_SIZE,
   GEO_CACHE_CONFIDENCE_MINIMA_HIT_SEGURO,
   montarEnderecoDisplayProcurarDatas,
+  montarHashEnderecoComNumero,
   montarHashEnderecoLegado,
   type GeoCacheRow,
 } from './endereco-cache'
+
+const supabaseInMock = vi.hoisted(() => vi.fn())
+
+vi.mock('@/lib/supabase/service', () => ({
+  createServiceClient: () => ({
+    from: () => ({
+      select: () => ({
+        in: supabaseInMock,
+      }),
+    }),
+  }),
+}))
 
 const rowBase: GeoCacheRow = {
   chave_endereco: 'cache-key',
@@ -33,6 +48,11 @@ const formBase = {
 }
 
 describe('endereco-cache', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    supabaseInMock.mockResolvedValue({ data: [], error: null })
+  })
+
   it('monta display no formato usado pelo fluxo de procurar datas', () => {
     expect(
       montarEnderecoDisplayProcurarDatas({
@@ -88,5 +108,94 @@ describe('endereco-cache', () => {
     expect(GEO_CACHE_CONFIDENCE_MINIMA_HIT_SEGURO).toBe(0.7)
     expect(cacheRowConfidenceAceitavel({ ...rowBase, confidence: 0.05339000762951091 })).toBe(false)
     expect(cacheRowConfidenceAceitavel({ ...rowBase, confidence: 0.7 })).toBe(true)
+  })
+
+  it('busca em lote por hash com numero e retorna hit seguro', async () => {
+    supabaseInMock.mockResolvedValueOnce({
+      data: [{ ...rowBase, chave_endereco: montarHashEnderecoComNumero(formBase) }],
+      error: null,
+    })
+
+    const resultado = await buscarEnderecosNoGeoCacheEmLote([{ chave: 'agenda-1', form: formBase }])
+
+    expect(supabaseInMock).toHaveBeenCalledTimes(1)
+    expect(resultado.hashesConsultados).toBe(2)
+    expect(resultado.chunks).toBe(1)
+    expect(resultado.registrosRetornados).toBe(1)
+    expect(resultado.resultadosPorChave['agenda-1']).toMatchObject({
+      status: 'hit',
+      motivo: 'match_seguro',
+    })
+  })
+
+  it('busca em lote por hash legado sem numero', async () => {
+    supabaseInMock.mockResolvedValueOnce({
+      data: [{ ...rowBase, chave_endereco: montarHashEnderecoLegado(formBase) }],
+      error: null,
+    })
+
+    const resultado = await buscarEnderecosNoGeoCacheEmLote([{ chave: 'agenda-1', form: formBase }])
+
+    expect(resultado.resultadosPorChave['agenda-1']).toMatchObject({
+      status: 'hit',
+      motivo: 'match_seguro',
+    })
+  })
+
+  it('preserva cache ambiguo quando hashes retornam mais de um registro compativel', async () => {
+    supabaseInMock.mockResolvedValueOnce({
+      data: [
+        { ...rowBase, chave_endereco: montarHashEnderecoComNumero(formBase), lat: -25.1 },
+        { ...rowBase, chave_endereco: montarHashEnderecoLegado(formBase), lat: -25.2 },
+      ],
+      error: null,
+    })
+
+    const resultado = await buscarEnderecosNoGeoCacheEmLote([{ chave: 'agenda-1', form: formBase }])
+
+    expect(resultado.resultadosPorChave['agenda-1']).toMatchObject({
+      status: 'miss',
+      motivo: 'cache_ambiguo',
+      candidatosAvaliados: 2,
+    })
+  })
+
+  it('preserva confidence baixa e coordenada invalida como miss no lote', async () => {
+    supabaseInMock.mockResolvedValueOnce({
+      data: [{ ...rowBase, chave_endereco: montarHashEnderecoComNumero(formBase), confidence: 0.1 }],
+      error: null,
+    })
+    const baixa = await buscarEnderecosNoGeoCacheEmLote([{ chave: 'baixa', form: formBase }])
+    expect(baixa.resultadosPorChave.baixa).toMatchObject({
+      status: 'miss',
+      motivo: 'confidence_baixa',
+      confidence: 0.1,
+    })
+
+    supabaseInMock.mockResolvedValueOnce({
+      data: [{ ...rowBase, chave_endereco: montarHashEnderecoComNumero(formBase), lat: 'abc' }],
+      error: null,
+    })
+    const invalida = await buscarEnderecosNoGeoCacheEmLote([{ chave: 'invalida', form: formBase }])
+    expect(invalida.resultadosPorChave.invalida).toMatchObject({
+      status: 'miss',
+      motivo: 'coordenadas_invalidas',
+    })
+  })
+
+  it('respeita chunks configurados sem baixar tabela inteira', async () => {
+    const entradas = Array.from({ length: 3 }, (_, index) => ({
+      chave: `agenda-${index}`,
+      form: {
+        ...formBase,
+        numero: String(5000 + index),
+      },
+    }))
+
+    await buscarEnderecosNoGeoCacheEmLote(entradas, { chunkSize: 2 })
+
+    expect(GEO_CACHE_BATCH_HASH_CHUNK_SIZE).toBe(100)
+    expect(supabaseInMock).toHaveBeenCalledTimes(2)
+    expect(supabaseInMock.mock.calls.every(([, hashes]) => hashes.length <= 2)).toBe(true)
   })
 })

@@ -65,6 +65,22 @@ function flagDiagnosticoPerformance(
   )
 }
 
+function flagDiagnosticoPerformanceQuery(request: NextRequest): boolean {
+  const query = request.nextUrl.searchParams.get('diagnosticoPerformanceV2')
+  return query === 'true' || query === '1'
+}
+
+function modoLogsPerformance(
+  request: NextRequest,
+  body: { modoLogsPerformanceV2?: unknown; diagnosticoModoLogsV2?: unknown }
+): 'atual' | 'sem-slots' | 'agregado' {
+  const valor = request.nextUrl.searchParams.get('modoLogsPerformanceV2') ??
+    request.nextUrl.searchParams.get('diagnosticoModoLogsV2') ??
+    body.modoLogsPerformanceV2 ??
+    body.diagnosticoModoLogsV2
+  return valor === 'sem-slots' || valor === 'agregado' ? valor : 'atual'
+}
+
 function flagDiagnosticoResultadoTelaV2SantoAmaro(
   request: NextRequest,
   body: {
@@ -99,22 +115,31 @@ function flagDiagnosticoDeltaSantoAmaro16Jul(
 
 export async function POST(request: NextRequest) {
   const inicioMs = Date.now()
+  const medidorPerformanceQuery = criarMedidorPerformanceV2(flagDiagnosticoPerformanceQuery(request))
   console.log('[PROCURAR_DATAS][v2/pesquisar-compat-async] inicio')
 
   try {
-    const acesso = await validarAcessoProcurarDatas()
+    const acesso = await (medidorPerformanceQuery?.medirAsync('validacao-auth', () =>
+      validarAcessoProcurarDatas()
+    ) ?? validarAcessoProcurarDatas())
     if (acesso.response) return acesso.response
 
-    const body = (await request.json()) as PesquisarDatasRequest & {
+    const body = (await (medidorPerformanceQuery?.medirAsync('parse-request', () =>
+      request.json()
+    ) ?? request.json())) as PesquisarDatasRequest & {
       clientToken?: string
       diagnosticoPerformanceV2?: boolean
       incluirDiagnosticoPerformanceV2?: boolean
+      modoLogsPerformanceV2?: unknown
+      diagnosticoModoLogsV2?: unknown
       diagnosticoResultadoTelaV2SantoAmaro?: boolean
       usarDiagnosticoResultadoTelaV2SantoAmaro?: boolean
       diagnosticoDeltaSantoAmaro16Jul?: boolean
       usarDiagnosticoDeltaSantoAmaro16Jul?: boolean
     }
-    const medidorPerformance = criarMedidorPerformanceV2(flagDiagnosticoPerformance(request, body))
+    const medidorPerformance =
+      medidorPerformanceQuery ?? criarMedidorPerformanceV2(flagDiagnosticoPerformance(request, body))
+    const modoLogsPerformanceV2 = modoLogsPerformance(request, body)
     const incluirDiagnosticoResultadoTelaV2SantoAmaro =
       flagDiagnosticoResultadoTelaV2SantoAmaro(request, body)
     const incluirDiagnosticoDeltaSantoAmaro16Jul =
@@ -129,7 +154,9 @@ export async function POST(request: NextRequest) {
     const runId = gerarRunId()
 
     const progressoQueued = criarProgressoInicial(clientToken)
-    await salvarProgressoCompat(clientToken, progressoQueued)
+    await (medidorPerformance?.medirAsync('redis-queued', () =>
+      salvarProgressoCompat(clientToken, progressoQueued)
+    ) ?? salvarProgressoCompat(clientToken, progressoQueued))
 
     let configCache: (ConfigOrquestradorPayloadLegado & { osrmBaseUrl: string }) | null = null
 
@@ -162,6 +189,7 @@ export async function POST(request: NextRequest) {
           },
           agoraMs: () => Date.now(),
           medidorPerformance,
+          modoLogsPerformance: modoLogsPerformanceV2,
           diagnosticoResultadoTelaV2SantoAmaro: incluirDiagnosticoResultadoTelaV2SantoAmaro,
           diagnosticoDeltaSantoAmaro16Jul: incluirDiagnosticoDeltaSantoAmaro16Jul,
         })
@@ -177,6 +205,7 @@ export async function POST(request: NextRequest) {
           return buscarRota(de, para)
         },
         agoraMs: () => Date.now(),
+        modoLogsPerformance: modoLogsPerformanceV2,
         diagnosticoResultadoTelaV2SantoAmaro: incluirDiagnosticoResultadoTelaV2SantoAmaro,
         diagnosticoDeltaSantoAmaro16Jul: incluirDiagnosticoDeltaSantoAmaro16Jul,
       }))
@@ -327,8 +356,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    medidorPerformance?.registrarEtapa('rota-pesquisar-compat-async', Date.now() - inicioMs)
-    const diagnosticoPerformanceV2 = medidorPerformance?.finalizar()
+    medidorPerformance?.registrarEtapa('rota-ate-orquestrador', Date.now() - inicioMs)
+    const diagnosticoPerformanceV2Parcial = medidorPerformance?.finalizar()
     const diagnosticoResultadoTelaV2SantoAmaro =
       resultado.saidaV2.diagnosticoResultadoTelaV2SantoAmaro
     const diagnosticoDeltaSantoAmaro16Jul =
@@ -340,12 +369,14 @@ export async function POST(request: NextRequest) {
       resultado.payload,
       startedAt,
       inicioMs,
-      diagnosticoPerformanceV2,
+      diagnosticoPerformanceV2Parcial,
       diagnosticoResultadoTelaV2SantoAmaro,
       diagnosticoDeltaSantoAmaro16Jul
     )
 
-    await salvarProgressoCompat(clientToken, progressoDone)
+    await (medidorPerformance?.medirAsync('redis-done', () =>
+      salvarProgressoCompat(clientToken, progressoDone)
+    ) ?? salvarProgressoCompat(clientToken, progressoDone))
 
     const finishedAtMs = Date.now()
     console.log(
@@ -353,18 +384,27 @@ export async function POST(request: NextRequest) {
     )
 
     const contadoresMapaKm = resultado.saidaV2.diagnosticoMinimo.contadoresMapaKm
-    console.info('[PROCURAR_DATAS][v2/consistencia-espacial]', {
-      runId,
-      estadoResultado: resultado.saidaV2.diagnosticoMinimo.estadoResultado ?? null,
-      consistenciaEspacial: resultado.saidaV2.diagnosticoMinimo.consistenciaEspacial ?? null,
-      coberturaFontes: resultado.saidaV2.diagnosticoMinimo.coberturaFontes ?? null,
-      slotsBloqueados: resultado.saidaV2.snapshotTecnicoSlotsBloqueados?.map((slot) => ({
-        slotKey: slot.slotKey,
-        estado: slot.consistenciaEspacial.estado,
-        motivo: slot.consistenciaEspacial.motivo,
-      })) ?? [],
-    })
-    registrarAuditoriaSearchV2({
+    const emitirLogConsistenciaRota = () => {
+      console.info('[PROCURAR_DATAS][v2/consistencia-espacial]', {
+        runId,
+        estadoResultado: resultado.saidaV2.diagnosticoMinimo.estadoResultado ?? null,
+        consistenciaEspacial: resultado.saidaV2.diagnosticoMinimo.consistenciaEspacial ?? null,
+        coberturaFontes: resultado.saidaV2.diagnosticoMinimo.coberturaFontes ?? null,
+        slotsBloqueados: modoLogsPerformanceV2 === 'sem-slots'
+          ? []
+          : resultado.saidaV2.snapshotTecnicoSlotsBloqueados?.map((slot) => ({
+              slotKey: slot.slotKey,
+              estado: slot.consistenciaEspacial.estado,
+              motivo: slot.consistenciaEspacial.motivo,
+            })) ?? [],
+      })
+    }
+    if (medidorPerformance) {
+      medidorPerformance.medir('logs-consistencia-rota', emitirLogConsistenciaRota)
+    } else {
+      emitirLogConsistenciaRota()
+    }
+    await (medidorPerformance?.medirAsync('auditoria-search-supabase', () => registrarAuditoriaSearchV2({
       runId,
       clientToken,
       userEmail: acesso.auth.email || '',
@@ -381,10 +421,28 @@ export async function POST(request: NextRequest) {
       searchTimeSeconds: resultado.payload.searchTime,
       totalSlotsProcessed: contadoresMapaKm?.slotsProcessados,
       totalSlotsAvailable: contadoresMapaKm?.slotsComKm,
-    }).catch(() => {})
+    }).catch(() => {})) ?? registrarAuditoriaSearchV2({
+      runId,
+      clientToken,
+      userEmail: acesso.auth.email || '',
+      cep: body.cep ?? null,
+      enderecoCompleto: body.enderecoCompleto ?? null,
+      tempoNecessario: body.tempoNecessario ?? null,
+      isRural: !!body.isRural,
+      isCondominio: !!body.isCondominio,
+      startedAt,
+      finishedAtMs,
+      inicioMs,
+      status: 'success',
+      candidates: resultado.payload.candidates,
+      searchTimeSeconds: resultado.payload.searchTime,
+      totalSlotsProcessed: contadoresMapaKm?.slotsProcessados,
+      totalSlotsAvailable: contadoresMapaKm?.slotsComKm,
+    }).catch(() => {}))
 
     // Auditoria operacional
-    const auditoriaPesquisaResultado = await registrarAuditoriaPesquisa({
+    const auditoriaPesquisaResultado = await (medidorPerformance?.medirAsync('auditoria-pesquisa-supabase', () =>
+      registrarAuditoriaPesquisa({
       runId,
       clientToken,
       userId: acesso.auth.userId || null,
@@ -426,13 +484,58 @@ export async function POST(request: NextRequest) {
       duracaoMs: finishedAtMs - inicioMs,
       startedAt,
       finishedAt: new Date(finishedAtMs).toISOString(),
-    }).catch((err) => {
+    })
+    ) ?? registrarAuditoriaPesquisa({
+      runId,
+      clientToken,
+      userId: acesso.auth.userId || null,
+      userEmail: acesso.auth.email || '',
+      cep: body.cep || null,
+      numero: body.numero,
+      logradouro: body.logradouro,
+      bairro: body.bairro,
+      cidade: body.cidade,
+      uf: body.uf,
+      enderecoCompleto: body.enderecoCompleto,
+      latitude: body.lat,
+      longitude: body.lng,
+      parametros: {
+        dataInicial: body.dataInicial,
+        encomenda: body.isEncomenda,
+        areaRural: body.isRural,
+        condominio: body.isCondominio,
+        bercoCama: body.tipoBerco,
+        comoda: body.comoda,
+        roupeiro: body.roupeiro,
+        poltrona: body.poltrona,
+        painel: body.painel,
+        tempoNecessario: body.tempoNecessario,
+        valorInicialMinimo: typeof body.valorInicialMinimo === 'number' ? body.valorInicialMinimo : undefined,
+      },
+      snapshotTecnico: {
+        candidatosFinais: resultado.saidaV2.snapshotTecnicoCandidatosFinais ?? [],
+        slotsBloqueados: resultado.saidaV2.snapshotTecnicoSlotsBloqueados ?? [],
+        contadoresMapaKm: contadoresMapaKm ?? null,
+        estadoResultado: resultado.saidaV2.diagnosticoMinimo.estadoResultado ?? null,
+        consistenciaEspacial: resultado.saidaV2.diagnosticoMinimo.consistenciaEspacial ?? null,
+        coberturaFontes: resultado.saidaV2.diagnosticoMinimo.coberturaFontes ?? null,
+        fonteAgenda: resultado.saidaV2.diagnosticoMinimo.fonteAgenda ?? null,
+        fonteDisponibilidade: resultado.saidaV2.diagnosticoMinimo.fonteDisponibilidade ?? null,
+      },
+      resultados: resultado.payload.candidates,
+      status: 'success',
+      duracaoMs: finishedAtMs - inicioMs,
+      startedAt,
+      finishedAt: new Date(finishedAtMs).toISOString(),
+    })).catch((err) => {
       console.error('[PROCURAR_DATAS][v2/pesquisar-compat-async] erro ao gravar auditoria operacional', err)
       return { id: '', sucesso: false, erro: err instanceof Error ? err.message : 'Erro desconhecido' }
     })
 
-    return NextResponse.json(
-      {
+    medidorPerformance?.registrarEtapa('rota-pesquisar-compat-async', Date.now() - inicioMs)
+    const diagnosticoPerformanceV2 = medidorPerformance?.finalizar()
+
+    const responseBody = {
         ok: true,
         clientToken,
         runId,
@@ -446,7 +549,12 @@ export async function POST(request: NextRequest) {
         ...(diagnosticoDeltaSantoAmaro16Jul
           ? { diagnosticoDeltaSantoAmaro16Jul }
           : {}),
-      },
+      }
+    return medidorPerformance?.medir('serializacao-response', () => NextResponse.json(
+      responseBody,
+      { status: 200 }
+    )) ?? NextResponse.json(
+      responseBody,
       { status: 200 }
     )
   } catch (error) {

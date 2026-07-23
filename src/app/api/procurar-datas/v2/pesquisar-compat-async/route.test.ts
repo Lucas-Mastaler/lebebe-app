@@ -194,7 +194,7 @@ describe('POST /api/procurar-datas/v2/pesquisar-compat-async', () => {
     expect(res.status).toBe(200)
     expect(json.diagnosticoPerformanceV2).toMatchObject({
       habilitado: true,
-      versao: 1,
+      versao: 2,
       fluxo: {
         postAguardaOrquestradorCompleto: true,
         pollingAguardaResultado: false,
@@ -209,7 +209,13 @@ describe('POST /api/procurar-datas/v2/pesquisar-compat-async', () => {
     expect(json.diagnosticoPerformanceV2.osrm.porTipo['deposito-destino'].total).toBe(1)
 
     const progressoDone = salvarProgressoMock.mock.calls[1][1]
-    expect(progressoDone.diagnosticoPerformanceV2).toEqual(json.diagnosticoPerformanceV2)
+    expect(progressoDone.diagnosticoPerformanceV2).toMatchObject({
+      habilitado: true,
+      versao: 2,
+      temposMs: expect.objectContaining({
+        orquestrador: expect.any(Number),
+      }),
+    })
   })
 
   it('com flag Santo Amaro retorna e salva diagnosticoResultadoTelaV2SantoAmaro', async () => {

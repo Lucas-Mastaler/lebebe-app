@@ -22,10 +22,24 @@ export type ResultadoBuscaGeoCache =
   | { status: 'hit'; resultado: EnderecoValidado; motivo: 'match_seguro' }
   | { status: 'miss'; motivo: string; candidatosAvaliados?: number; confidence?: number | null }
 
+export type EntradaBuscaGeoCacheLote = {
+  chave: string
+  form: ValidarEnderecoRequest
+}
+
+export type ResultadoBuscaGeoCacheLote = {
+  resultadosPorChave: Record<string, ResultadoBuscaGeoCache>
+  candidatosPorChave: Record<string, GeoCacheRow[]>
+  hashesConsultados: number
+  chunks: number
+  registrosRetornados: number
+}
+
 const SELECT_COLS =
   'chave_endereco,endereco_completo,logradouro,numero,bairro,cidade,uf,cep,lat,lng,provider,confidence,updated_at'
 
 export const GEO_CACHE_CONFIDENCE_MINIMA_HIT_SEGURO = 0.7
+export const GEO_CACHE_BATCH_HASH_CHUNK_SIZE = 100
 
 export function normalizarTexto(valor: string | null | undefined): string {
   return String(valor ?? '')
@@ -177,16 +191,101 @@ function selecionarHitSeguro(rows: GeoCacheRow[], form: ValidarEnderecoRequest):
   return compativeis[0]
 }
 
-export async function buscarEnderecoNoGeoCache(form: ValidarEnderecoRequest): Promise<ResultadoBuscaGeoCache> {
-  const hashes = [...new Set([montarHashEnderecoComNumero(form), montarHashEnderecoLegado(form)])]
+function montarMissGeoCache(candidatos: GeoCacheRow[], form: ValidarEnderecoRequest): ResultadoBuscaGeoCache {
+  const compativeis = deduplicarRows(candidatos).filter((row) => cacheRowCompativelComEndereco(row, form))
+  const compativeisComConfidenceBaixa = compativeis.filter((row) => !cacheRowConfidenceAceitavel(row))
+  const maiorConfidenceBaixa = compativeisComConfidenceBaixa.reduce<number | null>((maior, row) => {
+    const confidence = Number(row.confidence)
+    if (!Number.isFinite(confidence)) return maior
+    return maior == null || confidence > maior ? confidence : maior
+  }, null)
+  return {
+    status: 'miss',
+    motivo: compativeisComConfidenceBaixa.length > 0 ? 'confidence_baixa' : compativeis.length > 1 ? 'cache_ambiguo' : 'sem_match_seguro',
+    candidatosAvaliados: candidatos.length,
+    confidence: maiorConfidenceBaixa,
+  }
+}
+
+function selecionarResultadoGeoCache(candidatos: GeoCacheRow[], form: ValidarEnderecoRequest): ResultadoBuscaGeoCache {
   const display = montarEnderecoDisplayProcurarDatas(form)
+  const hitSeguro = selecionarHitSeguro(candidatos, form)
+  if (!hitSeguro) return montarMissGeoCache(candidatos, form)
+
+  const resultado = rowParaEnderecoValidado(hitSeguro, display)
+  if (!resultado) return { status: 'miss', motivo: 'coordenadas_invalidas', candidatosAvaliados: candidatos.length }
+  return { status: 'hit', resultado, motivo: 'match_seguro' }
+}
+
+export async function buscarEnderecosNoGeoCacheEmLote(
+  entradas: EntradaBuscaGeoCacheLote[],
+  options: { chunkSize?: number } = {}
+): Promise<ResultadoBuscaGeoCacheLote> {
+  const entradasUnicas = new Map<string, EntradaBuscaGeoCacheLote>()
+  for (const entrada of entradas) {
+    if (!entradasUnicas.has(entrada.chave)) entradasUnicas.set(entrada.chave, entrada)
+  }
+
+  const chavesPorHash = new Map<string, Set<string>>()
+  for (const entrada of entradasUnicas.values()) {
+    const hashes = [...new Set([montarHashEnderecoComNumero(entrada.form), montarHashEnderecoLegado(entrada.form)])]
+    for (const hash of hashes) {
+      const chaves = chavesPorHash.get(hash) ?? new Set<string>()
+      chaves.add(entrada.chave)
+      chavesPorHash.set(hash, chaves)
+    }
+  }
+
+  const hashes = [...chavesPorHash.keys()]
+  const chunkSize = Math.max(1, Math.floor(options.chunkSize ?? GEO_CACHE_BATCH_HASH_CHUNK_SIZE))
+  const db = createServiceClient()
+  const rows: GeoCacheRow[] = []
+  let chunks = 0
+
+  for (let i = 0; i < hashes.length; i += chunkSize) {
+    const chunk = hashes.slice(i, i + chunkSize)
+    chunks++
+    const response = await db.from('geo_cache').select(SELECT_COLS).in('chave_endereco', chunk)
+    if (response.error) throw response.error
+    rows.push(...((response.data ?? []) as GeoCacheRow[]))
+  }
+
+  const rowsPorChave: Record<string, GeoCacheRow[]> = {}
+  for (const entrada of entradasUnicas.values()) rowsPorChave[entrada.chave] = []
+  for (const row of rows) {
+    const chaves = chavesPorHash.get(row.chave_endereco)
+    if (!chaves) continue
+    for (const chave of chaves) rowsPorChave[chave]?.push(row)
+  }
+
+  const resultadosPorChave: Record<string, ResultadoBuscaGeoCache> = {}
+  for (const entrada of entradasUnicas.values()) {
+    resultadosPorChave[entrada.chave] = selecionarResultadoGeoCache(rowsPorChave[entrada.chave] ?? [], entrada.form)
+  }
+
+  return {
+    resultadosPorChave,
+    candidatosPorChave: rowsPorChave,
+    hashesConsultados: hashes.length,
+    chunks,
+    registrosRetornados: rows.length,
+  }
+}
+
+export async function buscarEnderecoNoGeoCache(
+  form: ValidarEnderecoRequest,
+  options: { candidatosIniciais?: GeoCacheRow[]; pularConsultaHash?: boolean } = {}
+): Promise<ResultadoBuscaGeoCache> {
+  const hashes = [...new Set([montarHashEnderecoComNumero(form), montarHashEnderecoLegado(form)])]
   const db = createServiceClient()
 
-  const candidatos: GeoCacheRow[] = []
+  const candidatos: GeoCacheRow[] = [...(options.candidatosIniciais ?? [])]
 
-  const porHash = await db.from('geo_cache').select(SELECT_COLS).in('chave_endereco', hashes).limit(10)
-  if (porHash.error) throw porHash.error
-  candidatos.push(...((porHash.data ?? []) as GeoCacheRow[]))
+  if (!options.pularConsultaHash) {
+    const porHash = await db.from('geo_cache').select(SELECT_COLS).in('chave_endereco', hashes).limit(10)
+    if (porHash.error) throw porHash.error
+    candidatos.push(...((porHash.data ?? []) as GeoCacheRow[]))
+  }
 
   const logradouro = termoLogradouroParaBusca(String(form.logradouro ?? ''))
   const bairro = String(form.bairro ?? '').trim()
@@ -210,26 +309,7 @@ export async function buscarEnderecoNoGeoCache(form: ValidarEnderecoRequest): Pr
   if (porCampos.error) throw porCampos.error
   candidatos.push(...((porCampos.data ?? []) as GeoCacheRow[]))
 
-  const hitSeguro = selecionarHitSeguro(candidatos, form)
-  if (!hitSeguro) {
-    const compativeis = deduplicarRows(candidatos).filter((row) => cacheRowCompativelComEndereco(row, form))
-    const compativeisComConfidenceBaixa = compativeis.filter((row) => !cacheRowConfidenceAceitavel(row))
-    const maiorConfidenceBaixa = compativeisComConfidenceBaixa.reduce<number | null>((maior, row) => {
-      const confidence = Number(row.confidence)
-      if (!Number.isFinite(confidence)) return maior
-      return maior == null || confidence > maior ? confidence : maior
-    }, null)
-    return {
-      status: 'miss',
-      motivo: compativeisComConfidenceBaixa.length > 0 ? 'confidence_baixa' : compativeis.length > 1 ? 'cache_ambiguo' : 'sem_match_seguro',
-      candidatosAvaliados: candidatos.length,
-      confidence: maiorConfidenceBaixa,
-    }
-  }
-
-  const resultado = rowParaEnderecoValidado(hitSeguro, display)
-  if (!resultado) return { status: 'miss', motivo: 'coordenadas_invalidas', candidatosAvaliados: candidatos.length }
-  return { status: 'hit', resultado, motivo: 'match_seguro' }
+  return selecionarResultadoGeoCache(candidatos, form)
 }
 
 export async function salvarEnderecoNoGeoCache(

@@ -22,6 +22,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { normalizarEquipe } from './equipe'
+import { classificarEventoAgendaV2, type ClassificacaoEventoAgendaV2 } from './classificar-evento-agenda'
 
 // ─── Tipos de entrada ─────────────────────────────────────────────────────────
 
@@ -114,10 +115,12 @@ export type PontoAgendaDescartadoV2 = {
   dadosBrutos: {
     data?: unknown
     titulo?: unknown
+    duracao?: unknown
     observacoes?: unknown
     endereco?: unknown
     equipe?: unknown
   }
+  classificacaoEvento?: ClassificacaoEventoAgendaV2
 }
 
 export type ResumoParseAgendaV2 = {
@@ -128,6 +131,10 @@ export type ResumoParseAgendaV2 = {
   pontosDescartados: number
   semEndereco: number
   semCoordenadas: number
+  eventosOperacionaisNaoEspaciais?: number
+  tempoOperacionalNaoEspacialMin?: number
+  eventosDesconhecidosSemEndereco?: number
+  tempoDesconhecidoSemEnderecoMin?: number
 }
 
 export type ParsearPontosAgendaDoDiaV2Output = {
@@ -299,6 +306,10 @@ export function parsearPontosAgendaDoDiaV2(
   let linhasDaEquipe = 0
   let semEndereco = 0
   let semCoordenadas = 0
+  let eventosOperacionaisNaoEspaciais = 0
+  let tempoOperacionalNaoEspacialMin = 0
+  let eventosDesconhecidosSemEndereco = 0
+  let tempoDesconhecidoSemEnderecoMin = 0
 
   const cache = input.cacheCoordenadasPorEndereco ?? {}
 
@@ -311,7 +322,7 @@ export function parsearPontosAgendaDoDiaV2(
         indiceLinhaOriginal: i,
         motivo: 'linha_incompleta',
         descricao: `Linha nao e array ou tem menos de 7 colunas (tem: ${Array.isArray(linha) ? linha.length : 'nao-array'})`,
-        dadosBrutos: { data: linha?.[0], titulo: linha?.[2], observacoes: linha?.[4], endereco: linha?.[5], equipe: linha?.[6] },
+        dadosBrutos: { data: linha?.[0], titulo: linha?.[2], duracao: linha?.[3], observacoes: linha?.[4], endereco: linha?.[5], equipe: linha?.[6] },
       })
       continue
     }
@@ -325,7 +336,7 @@ export function parsearPontosAgendaDoDiaV2(
         indiceLinhaOriginal: i,
         motivo: 'data_invalida',
         descricao: `Nao foi possivel parsear data: ${JSON.stringify(dataRaw)}`,
-        dadosBrutos: { data: dataRaw, titulo: linha[2], observacoes: linha[4], endereco: linha[5], equipe: linha[6] },
+        dadosBrutos: { data: dataRaw, titulo: linha[2], duracao: linha[3], observacoes: linha[4], endereco: linha[5], equipe: linha[6] },
       })
       continue
     }
@@ -345,7 +356,7 @@ export function parsearPontosAgendaDoDiaV2(
         indiceLinhaOriginal: i,
         motivo: 'equipe_invalida',
         descricao: `Equipe nao reconhecida: ${JSON.stringify(equipeRaw)}`,
-        dadosBrutos: { data: dataRaw, titulo: linha[2], observacoes: linha[4], endereco: linha[5], equipe: equipeRaw },
+        dadosBrutos: { data: dataRaw, titulo: linha[2], duracao: linha[3], observacoes: linha[4], endereco: linha[5], equipe: equipeRaw },
       })
       continue
     }
@@ -358,14 +369,28 @@ export function parsearPontosAgendaDoDiaV2(
 
     // Extrai endereco
     const extracao = extrairEnderecoAgendaShAgV2(linha)
+    const classificacaoEvento = classificarEventoAgendaV2({
+      titulo: linha[2],
+      duracaoOficial: linha[3],
+      temEndereco: extracao !== null,
+    })
 
     if (!extracao) {
+      if (classificacaoEvento.natureza === 'operacional-nao-espacial') {
+        eventosOperacionaisNaoEspaciais++
+        tempoOperacionalNaoEspacialMin += classificacaoEvento.duracaoMin ?? 0
+        continue
+      }
+
       semEndereco++
+      eventosDesconhecidosSemEndereco++
+      tempoDesconhecidoSemEnderecoMin += classificacaoEvento.duracaoMin ?? 0
       descartados.push({
         indiceLinhaOriginal: i,
         motivo: 'sem_endereco',
-        descricao: 'Coluna 6 vazia e regex em observacoes nao encontrou ENDERECO:',
-        dadosBrutos: { data: dataRaw, titulo: linha[2], observacoes: linha[4], endereco: linha[5], equipe: equipeRaw },
+        descricao: `Coluna 6 vazia e regex em observacoes nao encontrou ENDERECO:. Evento sem endereco espacialmente utilizavel (${classificacaoEvento.motivo}).`,
+        dadosBrutos: { data: dataRaw, titulo: linha[2], duracao: linha[3], observacoes: linha[4], endereco: linha[5], equipe: equipeRaw },
+        classificacaoEvento,
       })
       continue
     }
@@ -386,7 +411,8 @@ export function parsearPontosAgendaDoDiaV2(
         indiceLinhaOriginal: i,
         motivo: 'sem_coordenadas_cache',
         descricao: `Endereco nao encontrado no cache injetado: "${endereco}" (chave: "${chaveCache}")`,
-        dadosBrutos: { data: dataRaw, titulo: linha[2], observacoes: linha[4], endereco: linha[5], equipe: equipeRaw },
+        dadosBrutos: { data: dataRaw, titulo: linha[2], duracao: linha[3], observacoes: linha[4], endereco: linha[5], equipe: equipeRaw },
+        classificacaoEvento,
       })
       continue
     }
@@ -417,11 +443,21 @@ export function parsearPontosAgendaDoDiaV2(
     pontosDescartados: descartados.length,
     semEndereco,
     semCoordenadas,
+    eventosOperacionaisNaoEspaciais,
+    tempoOperacionalNaoEspacialMin,
+    eventosDesconhecidosSemEndereco,
+    tempoDesconhecidoSemEnderecoMin,
   }
 
   // Avisos informativos
   if (semEndereco > 0) {
-    avisos.push(`${semEndereco} ponto(s) descartado(s) por falta de endereco (coluna 6 vazia e sem ENDERECO: nas observacoes)`)
+    avisos.push(`${semEndereco} evento(s) desconhecido(s) descartado(s) por falta de endereco (coluna 6 vazia e sem ENDERECO: nas observacoes)`)
+  }
+  if (eventosOperacionaisNaoEspaciais > 0) {
+    avisos.push(
+      `${eventosOperacionaisNaoEspaciais} evento(s) operacional(is) sem rota reconhecido(s), ` +
+      `${tempoOperacionalNaoEspacialMin} min consumidos fora da rota.`
+    )
   }
   if (semCoordenadas > 0) {
     avisos.push(`${semCoordenadas} ponto(s) descartado(s) por falta de coordenadas no cache injetado`)
@@ -430,7 +466,7 @@ export function parsearPontosAgendaDoDiaV2(
     avisos.push('Nenhum ponto valido encontrado para a data/equipe solicitada')
   }
 
-  const ok = pontos.length > 0 || (input.linhasAgenda.length === 0)
+  const ok = pontos.length > 0 || (input.linhasAgenda.length === 0) || eventosOperacionaisNaoEspaciais > 0
 
   return {
     ok,

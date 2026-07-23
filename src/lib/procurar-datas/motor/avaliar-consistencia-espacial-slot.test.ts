@@ -9,6 +9,10 @@ const resumoBase = {
   pontosDescartados: 0,
   semEndereco: 0,
   semCoordenadas: 0,
+  eventosOperacionaisNaoEspaciais: 0,
+  tempoOperacionalNaoEspacialMin: 0,
+  eventosDesconhecidosSemEndereco: 0,
+  tempoDesconhecidoSemEnderecoMin: 0,
 }
 
 describe('avaliarConsistenciaEspacialSlotV2', () => {

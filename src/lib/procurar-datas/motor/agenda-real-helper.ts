@@ -13,6 +13,7 @@
 import { google } from 'googleapis'
 import { OAuth2Client } from 'google-auth-library'
 import type { LinhaAgendaShAgV2 } from './parse-agenda-shag'
+import type { MedidorPerformanceV2 } from './performance-diagnostico-v2'
 
 // ─── Constantes da planilha real ─────────────────────────────────────────────
 
@@ -128,11 +129,14 @@ export async function buscarAgendaRealDiagnostica(
 
 export async function buscarAgendaRealDiagnosticaComDados(
   limite: number = LIMITE_PADRAO,
-  gidAba?: number
+  gidAba?: number,
+  medidorPerformance?: MedidorPerformanceV2
 ): Promise<AgendaRealComDadosResult> {
   const gidEfetivo = typeof gidAba === 'number' && Number.isFinite(gidAba) ? gidAba : GID_AGENDA
   // ── 1. Criar cliente Google Sheets ──────────────────────────────────────────
-  const clienteResult = await criarClienteSheets()
+  const clienteResult = await (medidorPerformance?.medirAsync('google-sheets-agenda-leitura', () =>
+    criarClienteSheets()
+  ) ?? criarClienteSheets())
   if (!clienteResult.ok) {
     return {
       diagnostico: {
@@ -155,10 +159,15 @@ export async function buscarAgendaRealDiagnosticaComDados(
   // ── 2. Buscar metadados para resolver nome da aba pelo gid ─────────────────
   let abaNomeResolvido: string
   try {
-    const metadata = await sheets.spreadsheets.get({
+    const metadata = await (medidorPerformance?.medirAsync('google-sheets-agenda-leitura', () =>
+      sheets.spreadsheets.get({
+        spreadsheetId: SPREADSHEET_ID_AGENDA,
+        fields: 'sheets.properties(sheetId,title)',
+      })
+    ) ?? sheets.spreadsheets.get({
       spreadsheetId: SPREADSHEET_ID_AGENDA,
       fields: 'sheets.properties(sheetId,title)',
-    })
+    }))
 
     const todasAbas = metadata.data.sheets ?? []
     const aba = todasAbas.find((sheet) => sheet.properties?.sheetId === gidEfetivo)
@@ -207,16 +216,24 @@ export async function buscarAgendaRealDiagnosticaComDados(
   try {
     const range = montarRangeA1DaAba(abaNomeResolvido)
 
-    const response = await sheets.spreadsheets.values.get({
+    const response = await (medidorPerformance?.medirAsync('google-sheets-agenda-leitura', () =>
+      sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID_AGENDA,
+        range,
+        valueRenderOption: 'FORMATTED_VALUE',
+        dateTimeRenderOption: 'FORMATTED_STRING',
+      })
+    ) ?? sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID_AGENDA,
       range,
       valueRenderOption: 'FORMATTED_VALUE',
       dateTimeRenderOption: 'FORMATTED_STRING',
-    })
+    }))
 
     const valores = response.data.values as string[][] | null | undefined
     const tabelaCompleta = valores ?? []
 
+    const inicioParseMs = typeof performance !== 'undefined' ? performance.now() : Date.now()
     // Ignora cabeçalho (primeira linha) e aplica limite
     const linhasSemCabecalho = tabelaCompleta.slice(1)
     const linhasLimitadas = linhasSemCabecalho.slice(0, limite)
@@ -226,6 +243,11 @@ export async function buscarAgendaRealDiagnosticaComDados(
       // Garante que cada linha tenha pelo menos 7 elementos (índices 0-6)
       // Preenche elementos ausentes com string vazia
       Array.from({ length: 7 }, (_, i) => linha[i] ?? '')
+    )
+    medidorPerformance?.registrarEtapa(
+      'google-sheets-agenda-parse',
+      (typeof performance !== 'undefined' ? performance.now() : Date.now()) - inicioParseMs,
+      linhasAgenda.length
     )
 
     return {

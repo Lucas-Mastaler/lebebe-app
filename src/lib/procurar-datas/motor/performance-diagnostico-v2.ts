@@ -12,21 +12,58 @@ export type EtapaPerformanceV2 =
   | 'rota-pesquisar-compat-async'
   | 'orquestrador'
   | 'pesquisar-datas-v2'
+  | 'validacao-auth'
+  | 'parse-request'
+  | 'redis-queued'
+  | 'redis-done'
   | 'adaptador-payload-legado'
   | 'frete-dist-km-deposito-destino'
   | 'config'
   | 'janela-datas'
   | 'agenda-disponibilidade'
+  | 'google-sheets-disponibilidade-leitura'
+  | 'google-sheets-disponibilidade-parse'
+  | 'google-sheets-agenda-leitura'
+  | 'google-sheets-agenda-parse'
+  | 'montagem-slots'
   | 'geocodificacao-cache'
+  | 'geocodificacao-agenda-producao'
+  | 'geocodificacao-agenda-cache-lote'
+  | 'geocodificacao-agenda-cache-campos'
+  | 'geocodificacao-agenda-externa'
   | 'mapa-km-adicional-slots'
+  | 'slot-origem-operacional'
+  | 'slot-parse-agenda'
+  | 'slot-consistencia-espacial'
+  | 'slot-filtro-early'
+  | 'slot-delta-insercao'
   | 'geracao-candidatos'
   | 'recorte'
+  | 'snapshot-tecnico-candidatos'
+  | 'snapshot-tecnico-slots-bloqueados'
+  | 'logs-fontes-consistencia'
+  | 'logs-slots-bloqueados'
+  | 'logs-consistencia-rota'
+  | 'auditoria-search-supabase'
+  | 'auditoria-pesquisa-supabase'
+  | 'serializacao-response'
   | 'redis-progresso'
   | 'osrm-total'
 
 export interface RegistroEtapaPerformanceV2 {
   nome: EtapaPerformanceV2 | string
   duracaoMs: number
+  itens?: number
+}
+
+export interface ResumoEtapaPerformanceV2 {
+  totalMs: number
+  count: number
+  avgMs: number | null
+  minMs: number | null
+  maxMs: number | null
+  p95Ms: number | null
+  itensTotal?: number
 }
 
 export interface ResumoOsrmPorTipoPerformanceV2 {
@@ -63,9 +100,10 @@ export interface ContadoresPerformanceV2 {
 
 export interface DiagnosticoPerformanceV2 {
   habilitado: true
-  versao: 1
+  versao: 2
   temposMs: Record<string, number>
   etapas: RegistroEtapaPerformanceV2[]
+  etapasResumo: Record<string, ResumoEtapaPerformanceV2>
   osrm: {
     total: ResumoOsrmPorTipoPerformanceV2
     porTipo: Partial<Record<TipoUsoOsrmPerformanceV2, ResumoOsrmPorTipoPerformanceV2>>
@@ -121,6 +159,33 @@ function resumirChamadas(chamadas: ChamadaOsrmPerformanceV2[]): ResumoOsrmPorTip
     tempoMaxMs: duracoes.length > 0 ? duracoes[duracoes.length - 1] : null,
     tempoP95Ms: p95Index >= 0 ? duracoes[p95Index] : null,
   }
+}
+
+function resumirEtapas(etapas: RegistroEtapaPerformanceV2[]): Record<string, ResumoEtapaPerformanceV2> {
+  const porNome = new Map<string, RegistroEtapaPerformanceV2[]>()
+  for (const etapa of etapas) {
+    const lista = porNome.get(etapa.nome) ?? []
+    lista.push(etapa)
+    porNome.set(etapa.nome, lista)
+  }
+
+  const resumo: Record<string, ResumoEtapaPerformanceV2> = {}
+  for (const [nome, lista] of porNome) {
+    const duracoes = lista.map((e) => e.duracaoMs).sort((a, b) => a - b)
+    const totalMs = duracoes.reduce((acc, v) => acc + v, 0)
+    const p95Index = duracoes.length > 0 ? Math.ceil(duracoes.length * 0.95) - 1 : -1
+    const itensTotal = lista.reduce((acc, e) => acc + (typeof e.itens === 'number' ? e.itens : 0), 0)
+    resumo[nome] = {
+      totalMs,
+      count: lista.length,
+      avgMs: duracoes.length > 0 ? Math.round(totalMs / duracoes.length) : null,
+      minMs: duracoes.length > 0 ? duracoes[0] : null,
+      maxMs: duracoes.length > 0 ? duracoes[duracoes.length - 1] : null,
+      p95Ms: p95Index >= 0 ? duracoes[p95Index] : null,
+      ...(itensTotal > 0 ? { itensTotal } : {}),
+    }
+  }
+  return resumo
 }
 
 function contarPorTipo<T extends { tipo: string }>(itens: T[]): Record<string, number> {
@@ -184,8 +249,12 @@ export class MedidorPerformanceV2 {
     }
   }
 
-  registrarEtapa(nome: EtapaPerformanceV2 | string, duracaoMs: number): void {
-    this.etapas.push({ nome, duracaoMs: arredondarMs(duracaoMs) })
+  registrarEtapa(nome: EtapaPerformanceV2 | string, duracaoMs: number, itens?: number): void {
+    this.etapas.push({
+      nome,
+      duracaoMs: arredondarMs(duracaoMs),
+      ...(typeof itens === 'number' && Number.isFinite(itens) ? { itens } : {}),
+    })
   }
 
   registrarOsrm(
@@ -282,12 +351,13 @@ export class MedidorPerformanceV2 {
 
     return {
       habilitado: true,
-      versao: 1,
+      versao: 2,
       temposMs: {
         totalMedido: arredondarMs(this.now() - this.inicioMs),
         ...temposMs,
       },
       etapas: this.etapas,
+      etapasResumo: resumirEtapas(this.etapas),
       osrm: {
         total: osrmTotal,
         porTipo,
@@ -332,5 +402,9 @@ export function criarMedidorPerformanceV2(
   habilitado: boolean,
   now?: () => number
 ): MedidorPerformanceV2 | undefined {
-  return habilitado ? new MedidorPerformanceV2(now) : undefined
+  return habilitado
+    ? new MedidorPerformanceV2(
+        now ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now()))
+      )
+    : undefined
 }

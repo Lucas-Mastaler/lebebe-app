@@ -4,6 +4,7 @@ import type {
   CalcularKmAdicionalRealControladoOutput,
 } from './calcular-km-adicional-real-controlado'
 import { normalizarEquipe } from './equipe'
+import type { MedidorPerformanceV2 } from './performance-diagnostico-v2'
 
 export type SlotInputMapaKmAdicional = {
   dataISO: string
@@ -48,6 +49,7 @@ export type CalcularMapaKmAdicionalPorSlotInput = {
   buscarMatrizOSRM: CalcularKmAdicionalRealControladoInput['buscarMatrizOSRM']
   /** Se true, retorna candidatosInsercao e pontosRotaBase no detalhe de cada slot. */
   incluirDetalhesInsercao?: boolean
+  medidorPerformance?: MedidorPerformanceV2
 }
 
 export type CalcularMapaKmAdicionalPorSlotOutput = {
@@ -128,7 +130,21 @@ export async function calcularMapaKmAdicionalPorSlotControladoV2(
 
     slotsProcessados++
 
-    const resultado = await calcularKmAdicionalRealControladoV2({
+    const resultado = await (input.medidorPerformance?.medirAsync('slot-total', () =>
+      calcularKmAdicionalRealControladoV2({
+        dataISO,
+        equipe: equipeRaw,
+        configOrigem: input.configOrigem,
+        configFiltroEarlyLegado: input.configFiltroEarlyLegado,
+        destino: input.destino,
+        linhasAgenda: slot.linhasAgenda ?? [],
+        disponibilidade: slot.disponibilidade,
+        cacheCoordenadasPorEndereco: slot.cacheCoordenadasPorEndereco ?? {},
+        buscarMatrizOSRM: input.buscarMatrizOSRM,
+        incluirDetalhesInsercao: input.incluirDetalhesInsercao,
+        medidorPerformance: input.medidorPerformance,
+      })
+    ) ?? calcularKmAdicionalRealControladoV2({
       dataISO,
       equipe: equipeRaw,
       configOrigem: input.configOrigem,
@@ -139,7 +155,8 @@ export async function calcularMapaKmAdicionalPorSlotControladoV2(
       cacheCoordenadasPorEndereco: slot.cacheCoordenadasPorEndereco ?? {},
       buscarMatrizOSRM: input.buscarMatrizOSRM,
       incluirDetalhesInsercao: input.incluirDetalhesInsercao,
-    })
+      medidorPerformance: input.medidorPerformance,
+    }))
 
     mapa[chave] = resultado.kmAdicionalNaRotaM
 

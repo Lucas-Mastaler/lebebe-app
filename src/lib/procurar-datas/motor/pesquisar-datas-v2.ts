@@ -145,8 +145,12 @@ export type PesquisarDatasV2Output = {
       slotsComPontosValidos: number
       ocupadosSemPontos: number
       agendasSemEndereco: number
+      eventosDesconhecidosSemEndereco: number
       agendasSemCoordenadas: number
       capacidadesIndeterminadas: number
+      rotasSimplesComCarregamento: number
+      eventosOperacionaisNaoEspaciais: number
+      tempoOperacionalNaoEspacialMin: number
     }
     fonteAgenda?: string
     fonteDisponibilidade?: string
@@ -166,6 +170,7 @@ export type PesquisarDatasV2Output = {
 
 export type PesquisarDatasV2Options = {
   medidorPerformance?: MedidorPerformanceV2
+  modoLogsPerformance?: 'atual' | 'sem-slots' | 'agregado'
   diagnosticoResultadoTelaV2SantoAmaro?: boolean
   diagnosticoDeltaSantoAmaro16Jul?: boolean
   diagnosticoDeltaMajorHardy31Jul?: boolean
@@ -383,8 +388,18 @@ function resumirConsistenciaEspacial(
     slotsComPontosValidos: contar('com-pontos-validos'),
     ocupadosSemPontos: contar('ocupado-sem-pontos'),
     agendasSemEndereco: contar('agenda-sem-endereco'),
+    eventosDesconhecidosSemEndereco: contar('evento-desconhecido-sem-endereco'),
     agendasSemCoordenadas: contar('agenda-sem-coordenadas'),
     capacidadesIndeterminadas: contar('capacidade-indeterminada'),
+    rotasSimplesComCarregamento: contar('rota-simples-com-carregamento'),
+    eventosOperacionaisNaoEspaciais: estados.reduce(
+      (acc, item) => acc + (item?.eventosOperacionaisNaoEspaciais ?? 0),
+      0
+    ),
+    tempoOperacionalNaoEspacialMin: estados.reduce(
+      (acc, item) => acc + (item?.tempoOperacionalNaoEspacialMin ?? 0),
+      0
+    ),
   }
 }
 
@@ -635,7 +650,8 @@ export async function pesquisarDatasV2(
     'Rota v2 paralela. Nao altera producao, frontend ou Apps Script.',
   ]
 
-  const entrada = normalizarEntradaPesquisaV2(body)
+  const entrada = perf?.medir('normalizacao-entrada', () => normalizarEntradaPesquisaV2(body)) ??
+    normalizarEntradaPesquisaV2(body)
   const entradaMinima = montarEntradaMinima(entrada)
 
   if (!entrada.dataInicialISO) {
@@ -671,8 +687,12 @@ export async function pesquisarDatasV2(
 
   const [disponibilidadeReal, agendaReal] = await (perf?.medirAsync('agenda-disponibilidade', () =>
     Promise.all([
-      buscarDisponibilidadeRealDiagnosticaComDados(dataInicialISO, 2000, 20, 'entrada'),
-      buscarAgendaRealDiagnosticaComDados(2000),
+      perf.medirAsync('google-sheets-disponibilidade-total', () =>
+        buscarDisponibilidadeRealDiagnosticaComDados(dataInicialISO, 2000, 20, 'entrada', perf)
+      ),
+      perf.medirAsync('google-sheets-agenda-total', () =>
+        buscarAgendaRealDiagnosticaComDados(2000, undefined, perf)
+      ),
     ])
   ) ?? Promise.all([
     buscarDisponibilidadeRealDiagnosticaComDados(dataInicialISO, 2000, 20, 'entrada'),
@@ -730,6 +750,7 @@ export async function pesquisarDatasV2(
       equipesAlvo: equipesAtivas,
       cacheCoordenadasPorEndereco: cacheAgenda.cacheCoordenadasPorEndereco,
       maxGeocodificacoesExternas: 5,
+      medidorPerformance: perf,
     })
   ) ?? resolverCoordenadasAgendaProducao({
     linhasAgenda: agendaReal.linhasAgenda,
@@ -737,6 +758,7 @@ export async function pesquisarDatasV2(
     equipesAlvo: equipesAtivas,
     cacheCoordenadasPorEndereco: cacheAgenda.cacheCoordenadasPorEndereco,
     maxGeocodificacoesExternas: 5,
+    medidorPerformance: perf,
   }))
   avisos.push(...resolucaoCoordenadasAgenda.avisos)
 
@@ -750,7 +772,14 @@ export async function pesquisarDatasV2(
         perf.medirOsrm('matriz-table', () => buscarMatrizOSRMBase(coordenadas))
     : buscarMatrizOSRMBase
 
-  const slots = montarSlotsAgendaReal({
+  const slots = perf?.medir('montagem-slots', () => montarSlotsAgendaReal({
+    janelaDatas: janela.datas,
+    linhasAgenda: agendaReal.linhasAgenda,
+    disponibilidades: disponibilidadeReal.disponibilidades,
+    cacheCoordenadasPorEndereco: resolucaoCoordenadasAgenda.cacheCoordenadasPorEndereco,
+    equipe1Ativa: configResult.config.equipe1Ativa,
+    equipe2Ativa: configResult.config.equipe2Ativa,
+  })) ?? montarSlotsAgendaReal({
     janelaDatas: janela.datas,
     linhasAgenda: agendaReal.linhasAgenda,
     disponibilidades: disponibilidadeReal.disponibilidades,
@@ -758,6 +787,7 @@ export async function pesquisarDatasV2(
     equipe1Ativa: configResult.config.equipe1Ativa,
     equipe2Ativa: configResult.config.equipe2Ativa,
   })
+  perf?.registrarEtapa('montagem-slots-itens', 0, slots.length)
 
   const mapaPorSlot = await (perf?.medirAsync('mapa-km-adicional-slots', () =>
     calcularMapaKmAdicionalPorSlotControladoV2({
@@ -784,6 +814,7 @@ export async function pesquisarDatasV2(
         options.diagnosticoResultadoTelaV2SantoAmaro === true ||
         options.diagnosticoDeltaSantoAmaro16Jul === true ||
         options.diagnosticoDeltaMajorHardy31Jul === true,
+      medidorPerformance: perf,
     })
   ) ?? calcularMapaKmAdicionalPorSlotControladoV2({
     slots,
@@ -809,6 +840,7 @@ export async function pesquisarDatasV2(
       options.diagnosticoResultadoTelaV2SantoAmaro === true ||
       options.diagnosticoDeltaSantoAmaro16Jul === true ||
       options.diagnosticoDeltaMajorHardy31Jul === true,
+    medidorPerformance: perf,
   }))
   avisos.push(...mapaPorSlot.avisos)
 
@@ -819,18 +851,48 @@ export async function pesquisarDatasV2(
     agendaReal.linhasAgenda,
     disponibilidadeReal.disponibilidades
   )
-  console.info('[procurar-datas:v2:fontes]', {
-    coberturaFontes,
-    janelaInicio: janela.datas[0]?.dataISO ?? null,
-    janelaFim: janela.datas.at(-1)?.dataISO ?? null,
-    ...resumoConsistenciaEspacial,
-  })
-  for (const detalhe of mapaPorSlot.detalhesPorSlot) {
-    if (!detalhe.consistenciaEspacial?.bloqueado) continue
-    console.warn('[procurar-datas:v2:slot-bloqueado]', {
-      slotKey: detalhe.chave,
-      ...detalhe.consistenciaEspacial,
+  const modoLogsPerformance = options.modoLogsPerformance ?? 'atual'
+  if (perf) {
+    perf.medir('logs-fontes-consistencia', () => {
+      console.info('[procurar-datas:v2:fontes]', {
+        coberturaFontes,
+        janelaInicio: janela.datas[0]?.dataISO ?? null,
+        janelaFim: janela.datas.at(-1)?.dataISO ?? null,
+        ...resumoConsistenciaEspacial,
+      })
     })
+  } else {
+    console.info('[procurar-datas:v2:fontes]', {
+      coberturaFontes,
+      janelaInicio: janela.datas[0]?.dataISO ?? null,
+      janelaFim: janela.datas.at(-1)?.dataISO ?? null,
+      ...resumoConsistenciaEspacial,
+    })
+  }
+  const slotsBloqueadosParaLog = mapaPorSlot.detalhesPorSlot.filter(
+    (detalhe) => detalhe.consistenciaEspacial?.bloqueado
+  )
+  perf?.registrarEtapa('logs-slots-bloqueados-itens', 0, slotsBloqueadosParaLog.length)
+  const emitirLogsSlotsBloqueados = () => {
+    if (modoLogsPerformance === 'sem-slots') return
+    if (modoLogsPerformance === 'agregado') {
+      console.warn('[procurar-datas:v2:slots-bloqueados-resumo]', {
+        total: slotsBloqueadosParaLog.length,
+        estados: resumoConsistenciaEspacial,
+      })
+      return
+    }
+    for (const detalhe of slotsBloqueadosParaLog) {
+      console.warn('[procurar-datas:v2:slot-bloqueado]', {
+        slotKey: detalhe.chave,
+        ...detalhe.consistenciaEspacial,
+      })
+    }
+  }
+  if (perf) {
+    perf.medir('logs-slots-bloqueados', emitirLogsSlotsBloqueados)
+  } else {
+    emitirLogsSlotsBloqueados()
   }
   perf?.registrarSlots({
     slotsAvaliados: mapaPorSlot.contadores.slotsProcessados,
@@ -962,6 +1024,20 @@ export async function pesquisarDatasV2(
       : mapaPorSlot.contadores.slotsComErro > 0
         ? 'calculo-espacial-incompleto'
         : 'sem-datas-disponiveis'
+  const snapshotTecnicoCandidatosFinais = perf?.medir('snapshot-tecnico-candidatos', () =>
+    montarSnapshotTecnicoCandidatosFinais(
+      recorte.candidatosFinais,
+      mapaPorSlot.detalhesPorSlot
+    )
+  ) ?? montarSnapshotTecnicoCandidatosFinais(
+    recorte.candidatosFinais,
+    mapaPorSlot.detalhesPorSlot
+  )
+  perf?.registrarEtapa('snapshot-tecnico-candidatos-itens', 0, snapshotTecnicoCandidatosFinais.length)
+  const snapshotTecnicoSlotsBloqueados = perf?.medir('snapshot-tecnico-slots-bloqueados', () =>
+    montarSnapshotTecnicoSlotsBloqueados(mapaPorSlot.detalhesPorSlot)
+  ) ?? montarSnapshotTecnicoSlotsBloqueados(mapaPorSlot.detalhesPorSlot)
+  perf?.registrarEtapa('snapshot-tecnico-slots-bloqueados-itens', 0, snapshotTecnicoSlotsBloqueados.length)
 
   return {
     ok: candidatos.ok && recorte.ok,
@@ -1009,13 +1085,8 @@ export async function pesquisarDatasV2(
       coberturaFontes,
       avisos: avisosFiltrados,
     },
-    snapshotTecnicoCandidatosFinais: montarSnapshotTecnicoCandidatosFinais(
-      recorte.candidatosFinais,
-      mapaPorSlot.detalhesPorSlot
-    ),
-    snapshotTecnicoSlotsBloqueados: montarSnapshotTecnicoSlotsBloqueados(
-      mapaPorSlot.detalhesPorSlot
-    ),
+    snapshotTecnicoCandidatosFinais,
+    snapshotTecnicoSlotsBloqueados,
     ...(diagnosticoResultadoTelaV2SantoAmaro
       ? { diagnosticoResultadoTelaV2SantoAmaro }
       : {}),

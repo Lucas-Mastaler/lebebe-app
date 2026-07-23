@@ -15,15 +15,16 @@ import {
 function linhaAgenda(overrides: Partial<{
   data: unknown
   titulo: unknown
+  duracao: unknown
   observacoes: unknown
   endereco: unknown
   equipe: unknown
 }> = {}): LinhaAgendaShAgV2 {
   return [
     overrides.data ?? '15/06/2026',      // [0] Data
-    '',                                   // [1] (nao usado)
+    '',                                   // [1] Fim
     overrides.titulo ?? 'Cliente A',      // [2] Titulo/Evento
-    '',                                   // [3] (nao usado)
+    overrides.duracao ?? '00:40',         // [3] Duracao
     overrides.observacoes ?? '',            // [4] Observacoes
     overrides.endereco ?? 'Rua A, 123, Curitiba-PR', // [5] Endereco
     overrides.equipe ?? 'Equipe 1',       // [6] Equipe
@@ -85,6 +86,77 @@ describe('parsearPontosAgendaDoDiaV2 — caso basico valido', () => {
     })
 
     expect(res.pontos[0].indiceLinhaOriginal).toBe(1)
+  })
+})
+
+describe('parsearPontosAgendaDoDiaV2 - eventos operacionais sem endereco', () => {
+  it('reconhece CARREGAMENTO sem endereco como operacional nao espacial usando duracao oficial', () => {
+    const res = parsear({
+      linhasAgenda: [
+        linhaAgenda({
+          titulo: '9 (00:30) CARREGAMENTO SEG-QUI (EQP DE TRANSFERENCIA)',
+          duracao: '00:30',
+          endereco: '',
+        }),
+      ],
+      dataAlvoISO: '2026-06-15',
+      equipeAlvo: 'EQUIPE 1',
+      cacheCoordenadasPorEndereco: {},
+    })
+
+    expect(res.pontos).toHaveLength(0)
+    expect(res.descartados).toHaveLength(0)
+    expect(res.resumo).toMatchObject({
+      linhasDaEquipe: 1,
+      pontosValidos: 0,
+      semEndereco: 0,
+      eventosOperacionaisNaoEspaciais: 1,
+      tempoOperacionalNaoEspacialMin: 30,
+      eventosDesconhecidosSemEndereco: 0,
+    })
+  })
+
+  it('nao reconhece DESCARREGAMENTO nem RECARREGAMENTO como CARREGAMENTO', () => {
+    const res = parsear({
+      linhasAgenda: [
+        linhaAgenda({ titulo: 'DESCARREGAMENTO SEXTA', duracao: '00:30', endereco: '' }),
+        linhaAgenda({ titulo: 'RECARREGAMENTO QUARTA', duracao: '00:30', endereco: '' }),
+      ],
+      dataAlvoISO: '2026-06-15',
+      equipeAlvo: 'EQUIPE 1',
+      cacheCoordenadasPorEndereco: {},
+    })
+
+    expect(res.descartados).toHaveLength(2)
+    expect(res.resumo).toMatchObject({
+      semEndereco: 2,
+      eventosOperacionaisNaoEspaciais: 0,
+      eventosDesconhecidosSemEndereco: 2,
+      tempoDesconhecidoSemEnderecoMin: 60,
+    })
+  })
+
+  it('preserva fail-closed quando CARREGAMENTO depende apenas da duracao no titulo', () => {
+    const res = parsear({
+      linhasAgenda: [
+        linhaAgenda({
+          titulo: '9 (00:30) CARREGAMENTO SEG-QUI (EQP DE TRANSFERENCIA)',
+          duracao: '',
+          endereco: '',
+        }),
+      ],
+      dataAlvoISO: '2026-06-15',
+      equipeAlvo: 'EQUIPE 1',
+      cacheCoordenadasPorEndereco: {},
+    })
+
+    expect(res.descartados).toHaveLength(1)
+    expect(res.descartados[0].classificacaoEvento).toMatchObject({
+      natureza: 'desconhecido',
+      motivo: 'carregamento-com-duracao-oficial-invalida',
+      duracaoMin: null,
+    })
+    expect(res.resumo.semEndereco).toBe(1)
   })
 })
 

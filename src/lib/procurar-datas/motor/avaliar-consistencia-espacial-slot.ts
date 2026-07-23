@@ -4,8 +4,10 @@ import type { ResumoParseAgendaV2 } from './parse-agenda-shag'
 export type EstadoConsistenciaEspacialSlotV2 =
   | 'com-pontos-validos'
   | 'dia-realmente-vazio'
+  | 'rota-simples-com-carregamento'
   | 'ocupado-sem-pontos'
   | 'agenda-sem-endereco'
+  | 'evento-desconhecido-sem-endereco'
   | 'agenda-sem-coordenadas'
   | 'capacidade-indeterminada'
 
@@ -22,6 +24,10 @@ export type ConsistenciaEspacialSlotV2 = {
   pontosValidos: number
   semEndereco: number
   semCoordenadas: number
+  eventosOperacionaisNaoEspaciais: number
+  tempoOperacionalNaoEspacialMin: number
+  eventosDesconhecidosSemEndereco: number
+  tempoDesconhecidoSemEnderecoMin: number
 }
 
 export function avaliarConsistenciaEspacialSlotV2(input: {
@@ -51,13 +57,17 @@ export function avaliarConsistenciaEspacialSlotV2(input: {
     pontosValidos: input.resumoAgenda.pontosValidos,
     semEndereco: input.resumoAgenda.semEndereco,
     semCoordenadas: input.resumoAgenda.semCoordenadas,
+    eventosOperacionaisNaoEspaciais: input.resumoAgenda.eventosOperacionaisNaoEspaciais ?? 0,
+    tempoOperacionalNaoEspacialMin: input.resumoAgenda.tempoOperacionalNaoEspacialMin ?? 0,
+    eventosDesconhecidosSemEndereco: input.resumoAgenda.eventosDesconhecidosSemEndereco ?? 0,
+    tempoDesconhecidoSemEnderecoMin: input.resumoAgenda.tempoDesconhecidoSemEnderecoMin ?? 0,
   }
 
   if (input.resumoAgenda.semCoordenadas > 0) {
     return {
       ...base,
       estado: 'agenda-sem-coordenadas',
-      motivo: 'Há agendamento real com endereço, mas sem coordenadas resolvidas.',
+      motivo: 'Ha agendamento real com endereco, mas sem coordenadas resolvidas.',
       rotaSimplesPermitida: false,
       bloqueado: true,
     }
@@ -66,8 +76,10 @@ export function avaliarConsistenciaEspacialSlotV2(input: {
   if (input.resumoAgenda.semEndereco > 0) {
     return {
       ...base,
-      estado: 'agenda-sem-endereco',
-      motivo: 'Há agendamento real sem endereço espacialmente utilizável.',
+      estado: base.eventosDesconhecidosSemEndereco > 0
+        ? 'evento-desconhecido-sem-endereco'
+        : 'agenda-sem-endereco',
+      motivo: 'Ha evento real sem endereco espacialmente utilizavel e sem classificacao operacional segura.',
       rotaSimplesPermitida: false,
       bloqueado: true,
     }
@@ -77,7 +89,7 @@ export function avaliarConsistenciaEspacialSlotV2(input: {
     return {
       ...base,
       estado: 'com-pontos-validos',
-      motivo: 'Agenda e disponibilidade possuem evidência espacial suficiente.',
+      motivo: 'Agenda e disponibilidade possuem evidencia espacial suficiente.',
       rotaSimplesPermitida: false,
       bloqueado: false,
     }
@@ -87,17 +99,27 @@ export function avaliarConsistenciaEspacialSlotV2(input: {
     return {
       ...base,
       estado: 'capacidade-indeterminada',
-      motivo: 'Tempo utilizado não confirmado; não é seguro presumir dia vazio.',
+      motivo: 'Tempo utilizado nao confirmado; nao e seguro presumir dia vazio.',
       rotaSimplesPermitida: false,
       bloqueado: true,
     }
   }
 
   if (tempoUtilizadoMin > 0) {
+    if (base.eventosOperacionaisNaoEspaciais > 0 && base.eventosDesconhecidosSemEndereco === 0) {
+      return {
+        ...base,
+        estado: 'rota-simples-com-carregamento',
+        motivo: 'Tempo utilizado explicado por evento operacional sem rota; rota simples permitida sem criar ponto artificial.',
+        rotaSimplesPermitida: true,
+        bloqueado: false,
+      }
+    }
+
     return {
       ...base,
       estado: 'ocupado-sem-pontos',
-      motivo: 'Disponibilidade parcial indica trabalho no dia, mas a agenda não fornece os pontos.',
+      motivo: 'Disponibilidade parcial indica trabalho no dia, mas a agenda nao fornece os pontos.',
       rotaSimplesPermitida: false,
       bloqueado: true,
     }
@@ -106,7 +128,7 @@ export function avaliarConsistenciaEspacialSlotV2(input: {
   return {
     ...base,
     estado: 'dia-realmente-vazio',
-    motivo: 'Tempo utilizado igual a zero e nenhuma evidência de agendamento no slot.',
+    motivo: 'Tempo utilizado igual a zero e nenhuma evidencia de agendamento no slot.',
     rotaSimplesPermitida: true,
     bloqueado: false,
   }

@@ -25,6 +25,7 @@ import {
   respostaPedidoConfirmadoAlterarAcaoJaEscolhida,
   respostaPedidoConfirmadoAlterarEscolherAcao,
   respostaPedidoConfirmadoConfirmarEntrega,
+  montarMensagemRetiradaDisponivel,
   respostaPedidoNaoLocalizado,
   respostaErroTecnicoBuscaAgenda,
   respostaConfirmacaoReagendamentoAmbigua,
@@ -51,6 +52,9 @@ import {
   respostaSemOpcoesAdiantarOferecerPostergar,
   respostaManterDataAtual,
   respostaSemOpcoesPostergar,
+  calcularDataDisponivelRetirada,
+  diaSemanaDataBR,
+  grupoEhClienteRetira,
   type RespostaSugerida,
 } from './respostas';
 import { interpretarDataDesejada, validarDataDesejadaParaAcao } from './interpretar-data';
@@ -77,6 +81,15 @@ type ResultadoWebhook =
 type SupabaseClient = ReturnType<typeof createServiceClient>;
 
 type RespostaOfertaPostergar = 'aceitar' | 'recusar' | 'humano' | null;
+
+function normalizarEquipeAgendaParaLog(valor: string | null | undefined): string {
+  return (valor ?? '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 function interpretarRespostaOfertaPostergar(texto: string): RespostaOfertaPostergar {
   const normalizado = texto
@@ -729,6 +742,14 @@ async function prepararBuscaAgendaPorDocumento(params: {
           telefoneAutorizado: params.telefoneAutorizado,
         });
         console.log(`[posvenda-webhook] pedido localizado sessaoId=${params.sessaoId} total=${resultadoBusca.total} grupos=${grupos.length}`);
+        if (grupoEhClienteRetira(grupo)) {
+          console.log(
+            `[posvenda-webhook] pedido classificado como retirada sessaoId=${params.sessaoId}` +
+            ` equipeNormalizada="${normalizarEquipeAgendaParaLog(grupo.equipe_agenda)}"` +
+            ` dataAgenda=${grupo.data_entrega}` +
+            ` etapa=confirmacao_pedido_retirada`
+          );
+        }
       } else {
         const nomeCliente = grupos[0]?.nome_cliente ?? '';
         novoEstado = 'aguardando_escolha_grupo';
@@ -1531,6 +1552,14 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
             });
 
             console.log(`[posvenda-webhook] grupo selecionado sessaoId=${sessaoId} grupo=${numero}`);
+            if (grupoEhClienteRetira(grupoSelecionado)) {
+              console.log(
+                `[posvenda-webhook] pedido classificado como retirada sessaoId=${sessaoId}` +
+                ` equipeNormalizada="${normalizarEquipeAgendaParaLog(grupoSelecionado.equipe_agenda)}"` +
+                ` dataAgenda=${grupoSelecionado.data_entrega}` +
+                ` etapa=grupo_retirada_selecionado`
+              );
+            }
             return { ok: true, saved: true, origem: 'cliente' };
           }
         }
@@ -1736,10 +1765,47 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           const grupo = obterGrupoSelecionado(metadataAtual);
           let novoEstado: string;
           let resposta: RespostaSugerida;
+          let metadataConfirmacaoExtra: Record<string, unknown> = {};
 
           if (sessaoExistente.tipo_solicitacao === 'confirmar_entrega') {
             novoEstado = 'pedido_confirmado';
-            resposta = respostaPedidoConfirmadoConfirmarEntrega(grupo?.data_entrega ?? '');
+            if (grupoEhClienteRetira(grupo)) {
+              const dataAgenda = grupo?.data_entrega ?? '';
+              const dataDisponivel = calcularDataDisponivelRetirada(dataAgenda);
+              const diaSemanaAgenda = diaSemanaDataBR(dataAgenda);
+              const equipeNormalizada = normalizarEquipeAgendaParaLog(grupo?.equipe_agenda);
+              resposta = montarMensagemRetiradaDisponivel(dataDisponivel);
+              metadataConfirmacaoExtra = {
+                fluxo_cliente_retira: true,
+                etapa_retirada: 'pedido_confirmado_retirada',
+                equipe_agenda_normalizada: equipeNormalizada,
+                data_agenda_retirada: dataAgenda,
+                data_disponivel_retirada: dataDisponivel,
+                filial_retirada: 'Hauer',
+                filial_retirada_origem: 'regra_fixa_cliente_retira',
+                ciclo_confirmacao_retirada_encerrado: true,
+                ...(diaSemanaAgenda !== 3 ? { aviso_data_agenda_retirada_fora_quarta: true } : {}),
+              };
+
+              console.log(
+                `[posvenda-webhook] retirada confirmada sessaoId=${sessaoId}` +
+                ` equipeNormalizada="${equipeNormalizada}"` +
+                ` dataAgenda=${dataAgenda}` +
+                ` dataDisponivel=${dataDisponivel}` +
+                ` filialRetirada="Hauer"` +
+                ` etapa=pedido_confirmado_retirada`
+              );
+              if (diaSemanaAgenda !== 3) {
+                console.warn(
+                  `[posvenda-webhook] aviso retirada com agenda fora de quarta sessaoId=${sessaoId}` +
+                  ` dataAgenda=${dataAgenda}` +
+                  ` dataDisponivel=${dataDisponivel}` +
+                  ` diaSemana=${diaSemanaAgenda ?? 'invalido'}`
+                );
+              }
+            } else {
+              resposta = respostaPedidoConfirmadoConfirmarEntrega(grupo?.data_entrega ?? '');
+            }
           } else {
             const acaoExistente = metadataAtual?.acao_alteracao as string | undefined;
             if (acaoExistente) {
@@ -1753,7 +1819,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
 
           const novoMetadata = await construirMetadataComResposta({
             sessaoId,
-            metadataAtual: { ...(metadataAtual ?? {}), ...iaMetadataConfirmacao, pedido_confirmado: true },
+            metadataAtual: { ...(metadataAtual ?? {}), ...iaMetadataConfirmacao, ...metadataConfirmacaoExtra, pedido_confirmado: true },
             resposta,
             estado: novoEstado,
             contactId,
@@ -1784,14 +1850,32 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
             tipo_mensagem: msg.type as string | undefined,
             timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
             status: 'processada',
-            metadata: { serviceId, departmentId, pedido_confirmado: true },
+            metadata: {
+              serviceId,
+              departmentId,
+              pedido_confirmado: true,
+              ...(metadataConfirmacaoExtra.fluxo_cliente_retira ? { fluxo_cliente_retira: true } : {}),
+            },
           });
 
           await supabase.from('atendimento_automatico_eventos').insert({
             sessao_id: sessaoId,
             tipo: 'pedido_confirmado',
             descricao: 'Cliente confirmou o pedido/entrega',
-            metadata: { tipo_solicitacao: sessaoExistente.tipo_solicitacao, estado_destino: novoEstado },
+            metadata: {
+              tipo_solicitacao: sessaoExistente.tipo_solicitacao,
+              estado_destino: novoEstado,
+              ...(metadataConfirmacaoExtra.fluxo_cliente_retira
+                ? {
+                    fluxo_cliente_retira: true,
+                    data_agenda_retirada: metadataConfirmacaoExtra.data_agenda_retirada,
+                    data_disponivel_retirada: metadataConfirmacaoExtra.data_disponivel_retirada,
+                    filial_retirada: metadataConfirmacaoExtra.filial_retirada,
+                    filial_retirada_origem: metadataConfirmacaoExtra.filial_retirada_origem,
+                    aviso_data_agenda_retirada_fora_quarta: metadataConfirmacaoExtra.aviso_data_agenda_retirada_fora_quarta === true,
+                  }
+                : {}),
+            },
           });
 
           console.log(`[posvenda-webhook] pedido confirmado sessaoId=${sessaoId} estado=${novoEstado}`);

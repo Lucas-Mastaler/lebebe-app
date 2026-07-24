@@ -28,6 +28,10 @@ import {
   respostaManterDataAtual,
   respostaSemOpcoesPostergar,
   respostaDataAjustadaD2,
+  calcularDataDisponivelRetirada,
+  diaSemanaDataBR,
+  grupoEhClienteRetira,
+  montarMensagemRetiradaDisponivel,
 } from './respostas';
 import { formatarOpcoesDatasParaCliente } from './consulta-datas-mere';
 import type { DatasDisponiveisMere } from './consulta-datas-mere';
@@ -65,6 +69,20 @@ describe('respostas', () => {
     expect(resposta.texto).toContain('É esta entrega mesmo?');
   });
 
+  it('gera resposta de confirmacao especifica para cliente retira', () => {
+    const resposta = respostaConfirmarEntregaUnica(grupoBase({
+      equipe_agenda: '7.3- CLIENTE RETIRA LOJA/SAI DO C.D',
+      data_entrega: '29/07/2026',
+    }));
+
+    expect(resposta.tipo).toBe('confirmar_retirada_unica');
+    expect(resposta.texto).toContain('Encontrei este pedido');
+    expect(resposta.texto).toContain('Retirada agendada para: 29/07/2026');
+    expect(resposta.texto).toContain('É este pedido mesmo?');
+    expect(resposta.texto).not.toContain('Encontrei esta entrega');
+    expect(resposta.texto).not.toContain('entrega e montagem');
+  });
+
   it('gera resposta de escolha de multiplos grupos', () => {
     const grupos = [
       grupoBase({ indice: 1, pedidos_venda: ['65469'], data_entrega: '17/07/2026' }),
@@ -93,6 +111,47 @@ describe('respostas', () => {
     const resposta = respostaPedidoConfirmadoConfirmarEntrega('17/07/2026');
     expect(resposta.tipo).toBe('pedido_confirmado_confirmar');
     expect(resposta.texto).toContain('17/07/2026');
+  });
+
+  it('calcula retirada na proxima quinta apos quarta-feira da agenda', () => {
+    expect(diaSemanaDataBR('29/07/2026')).toBe(3);
+    expect(diaSemanaDataBR('30/07/2026')).toBe(4);
+    expect(calcularDataDisponivelRetirada('29/07/2026')).toBe('30/07/2026');
+  });
+
+  it('calcula retirada na proxima quinta quando agenda cai em outro dia e troca mes', () => {
+    expect(diaSemanaDataBR('31/07/2026')).toBe(5);
+    expect(diaSemanaDataBR('06/08/2026')).toBe(4);
+    expect(calcularDataDisponivelRetirada('31/07/2026')).toBe('06/08/2026');
+  });
+
+  it('calcula retirada na proxima quinta posterior quando agenda cai em quinta e troca ano', () => {
+    expect(diaSemanaDataBR('31/12/2026')).toBe(4);
+    expect(diaSemanaDataBR('07/01/2027')).toBe(4);
+    expect(calcularDataDisponivelRetirada('31/12/2026')).toBe('07/01/2027');
+  });
+
+  it('gera resposta final de retirada sem afirmar entrega ou montagem', () => {
+    const resposta = montarMensagemRetiradaDisponivel('30/07/2026');
+    expect(resposta.tipo).toBe('pedido_confirmado_retirada');
+    expect(resposta.texto).toContain('poder retirar a partir do dia 30/07');
+    expect(resposta.texto).toContain('filial do Hauer');
+    expect(resposta.texto).toContain('das 10h às 18h');
+    expect(resposta.texto).toContain('*Te ajudo em algo mais?*');
+    expect(resposta.texto).not.toContain('entrega e montagem');
+    expect(resposta.texto).not.toContain('Nossa equipe entra em contato');
+    expect(resposta.texto).not.toContain('equipe irá');
+  });
+
+  it('identifica grupo de retirada por equipe do grupo ou dos eventos', () => {
+    expect(grupoEhClienteRetira(grupoBase({ equipe_agenda: '4- EQUIPE 01' }))).toBe(false);
+    expect(grupoEhClienteRetira(grupoBase({ equipe_agenda: '  cliente retira loja  ' }))).toBe(true);
+    expect(grupoEhClienteRetira(grupoBase({
+      equipe_agenda: '4- EQUIPE 01',
+      eventos: [
+        { pedido_venda: '65469', evento_id: 'evt-1', calendar_id: 'cal-1', tempo_servico: '30 min', equipe_agenda: '7.3- CLIENTE RETIRA LOJA/SAI DO C.D', data_agenda_google: '29/07/2026', endereco_cliente: 'Rua das Flores' },
+      ],
+    }))).toBe(true);
   });
 
   it('normaliza confirmacoes positivas', () => {

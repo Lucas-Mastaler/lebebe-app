@@ -10,6 +10,14 @@ describe('ehClienteRetiraEquipeAgenda', () => {
     expect(ehClienteRetiraEquipeAgenda('7.3- CLIENTE RETIRA LOJA/SAI DO C.D')).toBe(true);
   });
 
+  it('retorna true para segunda variacao com complemento diferente', () => {
+    expect(ehClienteRetiraEquipeAgenda('8.1 CLIENTE RETIRA PORTAO/LOJA')).toBe(true);
+  });
+
+  it('retorna true com caixa diferente e espacos extras', () => {
+    expect(ehClienteRetiraEquipeAgenda('  cliente retira loja  ')).toBe(true);
+  });
+
   it('retorna true para "CLIENTE RETIRA"', () => {
     expect(ehClienteRetiraEquipeAgenda('CLIENTE RETIRA')).toBe(true);
   });

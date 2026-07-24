@@ -411,6 +411,114 @@ describe('processarWebhookPosVenda - bloqueio CLIENTE RETIRA', () => {
   });
 });
 
+describe('processarWebhookPosVenda - confirmacao de retirada CLIENTE RETIRA', () => {
+  it('confirma pedido de retirada com mensagem especifica, Hauer fixo e proxima quinta', async () => {
+    const grupoRetira: GrupoAgendamento = {
+      ...grupoBase(),
+      data_entrega: '29/07/2026',
+      equipe_agenda: '7.3- CLIENTE RETIRA LOJA/SAI DO C.D',
+      itens_originais: [
+        {
+          ...agendamentoBase(),
+          filial_venda: 'LEBEBE BIGORRILHO',
+          data_agenda_google: '29/07/2026',
+          equipe_agenda: '7.3- CLIENTE RETIRA LOJA/SAI DO C.D',
+        },
+      ],
+    };
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'confirmar_entrega',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoRetira],
+      },
+    });
+
+    const resultado = await processarWebhookPosVenda(payload('sim', 'msg-confirma-retirada'));
+
+    expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('pedido_confirmado');
+    expect(updateSessao?.data.pedido_confirmado).toBe(true);
+    expect(updateSessao?.data.metadata).toMatchObject({
+      fluxo_cliente_retira: true,
+      etapa_retirada: 'pedido_confirmado_retirada',
+      data_agenda_retirada: '29/07/2026',
+      data_disponivel_retirada: '30/07/2026',
+      filial_retirada: 'Hauer',
+      filial_retirada_origem: 'regra_fixa_cliente_retira',
+      ciclo_confirmacao_retirada_encerrado: true,
+      resposta_sugerida_tipo: 'pedido_confirmado_retirada',
+    });
+    const metadata = updateSessao?.data.metadata as Record<string, unknown>;
+    expect(metadata.resposta_sugerida).toContain('poder retirar a partir do dia 30/07');
+    expect(metadata.resposta_sugerida).toContain('filial do Hauer');
+    expect(metadata.resposta_sugerida).toContain('*Te ajudo em algo mais?*');
+    expect(metadata.resposta_sugerida).not.toContain('entrega e montagem');
+    expect(metadata.resposta_sugerida).not.toContain('Nossa equipe entra em contato');
+  });
+
+  it('usa a proxima quinta quando agenda de retirada nao esta em quarta', async () => {
+    const grupoRetira: GrupoAgendamento = {
+      ...grupoBase(),
+      data_entrega: '31/07/2026',
+      equipe_agenda: '8.1 CLIENTE RETIRA PORTAO/LOJA',
+      itens_originais: [
+        {
+          ...agendamentoBase(),
+          filial_venda: 'LEBEBE PORTAO',
+          data_agenda_google: '31/07/2026',
+          equipe_agenda: '8.1 CLIENTE RETIRA PORTAO/LOJA',
+        },
+      ],
+    };
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'confirmar_entrega',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoRetira],
+      },
+    });
+
+    await processarWebhookPosVenda(payload('sim', 'msg-confirma-retirada-fora-quarta'));
+
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.metadata).toMatchObject({
+      data_agenda_retirada: '31/07/2026',
+      data_disponivel_retirada: '06/08/2026',
+      filial_retirada: 'Hauer',
+      filial_retirada_origem: 'regra_fixa_cliente_retira',
+      aviso_data_agenda_retirada_fora_quarta: true,
+    });
+  });
+
+  it('preserva resposta comum para equipe sem CLIENTE RETIRA', async () => {
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'confirmar_entrega',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [{ ...grupoBase(), equipe_agenda: '4- EQUIPE 01' }],
+      },
+    });
+
+    await processarWebhookPosVenda(payload('sim', 'msg-confirma-entrega-comum'));
+
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    const metadata = updateSessao?.data.metadata as Record<string, unknown>;
+    expect(updateSessao?.data.estado).toBe('pedido_confirmado');
+    expect(metadata.resposta_sugerida_tipo).toBe('pedido_confirmado_confirmar');
+    expect(metadata.resposta_sugerida).toContain('Sua entrega está agendada');
+    expect(metadata.resposta_sugerida).toContain('entrega e montagem');
+    expect(metadata.fluxo_cliente_retira).toBeUndefined();
+  });
+});
+
 describe('processarWebhookPosVenda - allowlist wildcard', () => {
   it('bloqueia quando env ausente', async () => {
     delete process.env.ATENDIMENTO_POSVENDA_ALLOWED_PHONES;

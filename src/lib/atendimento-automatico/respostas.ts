@@ -1,4 +1,5 @@
 import type { GrupoAgendamento } from '@/lib/google/sheets-service-account';
+import { ehClienteRetiraEquipeAgenda } from './interpretar-intencao';
 
 export type TipoRespostaSugerida =
   | 'pedido_nao_localizado'
@@ -7,10 +8,13 @@ export type TipoRespostaSugerida =
   | 'fallback_novo_documento_ou_esclarecimento'
   | 'transferido_humano_sem_documento_relocalizacao'
   | 'confirmar_entrega_unica'
+  | 'confirmar_retirada_unica'
   | 'escolher_grupo'
   | 'grupo_selecionado'
+  | 'grupo_retirada_selecionado'
   | 'escolha_invalida'
   | 'pedido_confirmado_confirmar'
+  | 'pedido_confirmado_retirada'
   | 'pedido_confirmado_alterar_escolher_acao'
   | 'pedido_confirmado_alterar_acao_ja_escolhida'
   | 'pedido_negado'
@@ -70,6 +74,80 @@ function formatarEnderecoCurto(endereco: string): string {
   return endereco || '-';
 }
 
+export function grupoEhClienteRetira(grupo: GrupoAgendamento | null | undefined): boolean {
+  if (!grupo) return false;
+  if (ehClienteRetiraEquipeAgenda(grupo.equipe_agenda)) return true;
+  return grupo.eventos.some((evento) => ehClienteRetiraEquipeAgenda(evento.equipe_agenda));
+}
+
+export function calcularDataDisponivelRetirada(dataAgendaBR: string): string {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dataAgendaBR.trim());
+  if (!match) return dataAgendaBR;
+
+  const diaInicial = Number(match[1]);
+  const mesInicial = Number(match[2]);
+  const anoInicial = Number(match[3]);
+  let dia = diaInicial;
+  let mes = mesInicial;
+  let ano = anoInicial;
+  if (!Number.isInteger(dia) || !Number.isInteger(mes) || !Number.isInteger(ano)) return dataAgendaBR;
+  if (mes < 1 || mes > 12) return dataAgendaBR;
+
+  const diasNoMes = new Date(ano, mes, 0, 12).getDate();
+  if (dia < 1 || dia > diasNoMes) return dataAgendaBR;
+
+  for (let i = 0; i < 7; i += 1) {
+    const ultimoDiaMes = new Date(ano, mes, 0, 12).getDate();
+    dia += 1;
+    if (dia > ultimoDiaMes) {
+      dia = 1;
+      mes += 1;
+      if (mes > 12) {
+        mes = 1;
+        ano += 1;
+      }
+    }
+
+    if (diaSemanaDataBR(`${String(dia).padStart(2, '0')}/${String(mes).padStart(2, '0')}/${ano}`) === 4) {
+      return `${String(dia).padStart(2, '0')}/${String(mes).padStart(2, '0')}/${ano}`;
+    }
+  }
+
+  return `${String(diaInicial).padStart(2, '0')}/${String(mesInicial).padStart(2, '0')}/${anoInicial}`;
+}
+
+export function diaSemanaDataBR(dataBR: string): number | null {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dataBR.trim());
+  if (!match) return null;
+  const dia = Number(match[1]);
+  const mes = Number(match[2]);
+  const ano = Number(match[3]);
+  const data = new Date(ano, mes - 1, dia, 12);
+  if (data.getFullYear() !== ano || data.getMonth() !== mes - 1 || data.getDate() !== dia) return null;
+  return data.getDay();
+}
+
+function formatarDataRetiradaParaMensagem(dataBR: string): string {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dataBR.trim());
+  if (!match) return dataBR;
+  return `${match[1]}/${match[2]}`;
+}
+
+export function montarMensagemConfirmacaoRetirada(grupo: GrupoAgendamento): RespostaSugerida {
+  return {
+    texto: `Encontrei este pedido:\n\nCliente: ${grupo.nome_cliente}\nPedido(s): ${formatarPedidos(grupo.pedidos_venda)}\nRetirada agendada para: ${grupo.data_entrega}\nEndereço: ${formatarEnderecoCurto(grupo.endereco_curto)}\n\nÉ este pedido mesmo?`,
+    tipo: 'confirmar_retirada_unica',
+  };
+}
+
+export function montarMensagemRetiradaDisponivel(dataDisponivel: string): RespostaSugerida {
+  const dataMensagem = formatarDataRetiradaParaMensagem(dataDisponivel);
+  return {
+    texto: `Perfeito.\n\nSeu pedido está previsto para poder retirar a partir do dia ${dataMensagem}, na nossa filial do Hauer, em horário de funcionamento da loja, das 10h às 18h, de segunda a sexta.\n\n*Te ajudo em algo mais?*`,
+    tipo: 'pedido_confirmado_retirada',
+  };
+}
+
 export function respostaPedidoNaoLocalizado(): RespostaSugerida {
   return {
     texto: 'Não encontrei pedido com esse CPF/CNPJ. Pode conferir se o documento do titular da compra está correto e me enviar novamente?',
@@ -113,6 +191,10 @@ export function respostaTransferidoHumanoSemDocumentoRelocalizacao(): RespostaSu
 }
 
 export function respostaConfirmarEntregaUnica(grupo: GrupoAgendamento): RespostaSugerida {
+  if (grupoEhClienteRetira(grupo)) {
+    return montarMensagemConfirmacaoRetirada(grupo);
+  }
+
   return {
     texto: `Encontrei esta entrega:\n\nCliente: ${grupo.nome_cliente}\nPedido(s): ${formatarPedidos(grupo.pedidos_venda)}\nEntrega agendada para: ${grupo.data_entrega}\nEndereço: ${formatarEnderecoCurto(grupo.endereco_curto)}\n\nÉ esta entrega mesmo?`,
     tipo: 'confirmar_entrega_unica',
@@ -138,6 +220,13 @@ export function respostaEscolherGrupo(nomeCliente: string, grupos: GrupoAgendame
 }
 
 export function respostaGrupoSelecionado(grupo: GrupoAgendamento): RespostaSugerida {
+  if (grupoEhClienteRetira(grupo)) {
+    return {
+      ...montarMensagemConfirmacaoRetirada(grupo),
+      tipo: 'grupo_retirada_selecionado',
+    };
+  }
+
   return {
     texto: `Certo, selecionei esta entrega:\n\nPedido(s): ${formatarPedidos(grupo.pedidos_venda)}\nEntrega agendada para: ${grupo.data_entrega}\nEndereço: ${formatarEnderecoCurto(grupo.endereco_curto)}\n\nÉ esta entrega mesmo?`,
     tipo: 'grupo_selecionado',

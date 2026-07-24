@@ -779,6 +779,18 @@ Bloquear determinísticamente o fluxo de alteração de entrega quando o grupo/p
 - Sheets
 - Regras de agenda
 
+### 2026-07-24 - Codex - Confirmacao de data para CLIENTE RETIRA
+
+- Escopo: fluxo de confirmacao de pedido/data em `confirmar_entrega` quando `EQUIPE AGENDA` contem `CLIENTE RETIRA`.
+- Deteccao: reutiliza `ehClienteRetiraEquipeAgenda`, inclusive quando a equipe aparece no grupo ou em qualquer evento do grupo.
+- Mensagem de identificacao: usa "pedido" e "Retirada agendada para", sem afirmar entrega ou montagem.
+- Mensagem final: apos confirmacao positiva, informa retirada na filial fixa do Hauer e encerra o ciclo especifico de confirmacao de retirada.
+- Data de retirada: calculada como a proxima quinta-feira civil posterior a data da agenda. Exemplo validado: agenda `29/07/2026` (quarta) -> retirada `30/07/2026` (quinta). Agenda fora de quarta gera aviso seguro em log e metadata, mas ainda usa a proxima quinta.
+- Texto final usado: `Perfeito.` + `Seu pedido esta previsto para poder retirar a partir do dia DD/MM, na nossa filial do Hauer, em horario de funcionamento da loja, das 10h as 18h, de segunda a sexta.` + `*Te ajudo em algo mais?*`.
+- Metadata: `fluxo_cliente_retira`, `etapa_retirada`, `equipe_agenda_normalizada`, `data_agenda_retirada`, `data_disponivel_retirada`, `filial_retirada = Hauer`, `filial_retirada_origem = regra_fixa_cliente_retira`, `ciclo_confirmacao_retirada_encerrado`, e aviso de data fora de quarta quando aplicavel.
+- Validacao real Supabase: em metadata salva foram encontrados registros `CLIENTE RETIRA` em `15/07/2026` e `29/07/2026`, ambos quarta-feira. Nao foi encontrada segunda variacao real salva diferente de `7.3- CLIENTE RETIRA LOJA/SAI DO C.D`; teste sintetico cobre complemento diferente para proteger a regra por substring.
+- Nao alterado: bloqueio de alteracao de data para `CLIENTE RETIRA`, fluxos de entrega comum, entrega e montagem, montagem, alterar entrega, Calendar, Sheets, `/procurar-datas`, IA fallback e demais opcoes.
+
 ---
 
 ## Fase: Allowlist wildcard para liberar todos os telefones

@@ -4985,3 +4985,57 @@ Status: implementado em codigo e validado por testes automatizados/build. Medica
 ### Pendente
 
 - Reexecutar os cenarios reais A/B da auditoria com diagnostico de performance habilitado para confirmar tempo total antes/depois, tempo de cache antes/depois, ganho absoluto, ganho percentual e p95.
+
+---
+
+## 2026-07-23 - Codex - Resultado final da otimizacao de performance do `geo_cache`
+
+Status: performance real aprovada em producao. GO para commit/review e GO para deploy controlado apos revisao humana do diff.
+
+### Gargalo confirmado
+
+- O gargalo dominante estava em `resolverCoordenadasAgendaProducao`, na etapa `geocodificacao-agenda-producao`.
+- A causa era a consulta sequencial ao `geo_cache` por endereco estruturado da agenda.
+- Cada endereco podia gerar busca por hash e por campos.
+- Nos cenarios auditados, 32 a 39 enderecos consumiam aproximadamente 12 a 16 segundos somente no cache; fallbacks externos adicionavam aproximadamente 1,4 a 2,5 segundos.
+
+### Estrategia implementada
+
+- Coleta dos enderecos da agenda que precisam de coordenada.
+- Normalizacao e deduplicacao antes de consultar banco.
+- Consulta em lote ao `geo_cache` pelos hashes existentes.
+- Reuso do mesmo criterio de hit seguro do helper central.
+- Fallback individual somente para misses do lote.
+- Concorrencia controlada em 4 para fallbacks restantes.
+- Fail-closed preservado para endereco ainda sem coordenada.
+
+### Validacao real no Supabase
+
+- Validacao feita no banco `lebebe.app`, usando registros reais das tabelas de auditoria.
+- Execucao problematica anterior: `run_id=b71ce607-15cd-475e-82bd-ffeb15e4c502`; duracao total `32.249 ms`; tempo de busca `29,9 s`; `3` candidatos; `100` slots processados; `31` slots disponiveis; status `success`.
+- Execucao otimizada 1: `run_id=83875dc3-fef2-48c6-8e5e-7099262c6419`; duracao total `6.999 ms`; tempo de busca `6,3 s`; `3` candidatos; `100` slots processados; `31` slots disponiveis; status `success`.
+- Execucao otimizada 2: `run_id=e3101049-4109-4e35-b1e4-d01a932839b7`; duracao total `5.626 ms`; tempo de busca `5,1 s`; `4` candidatos; `100` slots processados; `31` slots disponiveis; status `success`.
+
+### Numeros finais
+
+- `32,2 s -> 7,0 s`: reducao aproximada de `78%`.
+- `20,6 s -> 5,6 s`: reducao aproximada de `73%`.
+- Cinco execucoes recentes apos a otimizacao: media `8,33 s`, mediana `7,39 s`, minimo `5,63 s`, maximo `13,74 s`.
+- A meta minima de reducao de 50% foi superada.
+- O resultado real ficou entre aproximadamente 5 e 7 segundos nas ultimas execucoes destacadas.
+
+### Equivalencia preservada
+
+- `100` slots continuaram sendo processados.
+- Os resultados continuaram retornando candidatos.
+- Todas as execucoes comparadas terminaram com status `success`.
+- Nao houve reducao artificial da janela.
+- Nao houve corte de slots.
+- O ganho veio da otimizacao do cache/geocodificacao.
+- OSRM, Haversine, ranking, candidatos, classificacao, precos, limites e frontend permaneceram preservados.
+
+### Observacao desta entrada
+
+- Esta entrada e somente documental.
+- Nao houve alteracao de codigo, testes, regras, configuracoes, banco, planilhas, Apps Script, N8N, frontend ou migrations nesta tarefa.
+- Nao houve commit, push ou deploy nesta tarefa.

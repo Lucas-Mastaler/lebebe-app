@@ -83,6 +83,7 @@ function resumirResultado(row: PesquisaRow) {
     usuarioEmail: row.usuario_email,
     cep: row.cep,
     numeroResidencia: row.numero_residencia,
+    logradouro: row.logradouro,
     bairro: row.bairro,
     cidade: row.cidade,
     uf: row.uf,
@@ -196,6 +197,7 @@ async function buscarListagem(params: URLSearchParams) {
   const status = params.get('status')?.trim()
   const tevePreAgendamento = params.get('tevePreAgendamento')?.trim()
   const dataPreAgendada = params.get('dataPreAgendada')?.trim()
+  const rua = params.get('rua')?.trim()
 
   console.info('[PROCURAR_DATAS][auditoria] consulta listagem', {
     page,
@@ -210,6 +212,7 @@ async function buscarListagem(params: URLSearchParams) {
       status: status || null,
       tevePreAgendamento: tevePreAgendamento || null,
       dataPreAgendada: dataPreAgendada || null,
+      rua: rua || null,
     },
   })
 
@@ -236,6 +239,7 @@ async function buscarListagem(params: URLSearchParams) {
   if (cep) query = query.ilike('cep', `%${cep.replace(/\D/g, '') || cep}%`)
   if (cidade) query = query.ilike('cidade', `%${cidade}%`)
   if (uf) query = query.eq('uf', uf)
+  if (rua) query = query.ilike('logradouro', `%${rua}%`)
   if (status) query = query.eq('status', status)
   if (tevePreAgendamento === 'sim' || dataPreAgendada) {
     query = query.in('id', idsComPreAgendamento ?? [])

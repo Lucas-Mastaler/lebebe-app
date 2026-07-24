@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Eye, RefreshCcw, Search, Clock, MapPin, Settings, ListChecks, CalendarCheck, CheckCircle2, AlertCircle, Cpu, Hash } from 'lucide-react'
 import { formatarDataBrasileira, formatarDiasAteData, extrairResumoPreAgendamento } from '@/lib/procurar-datas/formatar-apresentacao'
@@ -29,6 +29,7 @@ type AuditoriaItem = {
   usuarioEmail: string
   cep: string | null
   numeroResidencia: string | null
+  logradouro: string | null
   bairro: string | null
   cidade: string | null
   uf: string | null
@@ -109,6 +110,7 @@ type Filtros = {
   status: string
   tevePreAgendamento: string
   dataPreAgendada: string
+  rua: string
 }
 
 const LIMIT = 20
@@ -135,6 +137,7 @@ function filtrosIniciais(): Filtros {
     status: '',
     tevePreAgendamento: 'todos',
     dataPreAgendada: '',
+    rua: '',
   }
 }
 
@@ -326,6 +329,8 @@ export default function PageClient() {
     setFiltros((current) => ({ ...current, [key]: value }))
   }
 
+  const ruaDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   function pesquisar() {
     carregar(1, filtros)
   }
@@ -389,6 +394,17 @@ export default function PageClient() {
             <span className="text-xs font-medium text-slate-600">Data pré-agendada</span>
             <Input type="date" value={filtros.dataPreAgendada} onChange={(e) => atualizarFiltro('dataPreAgendada', e.target.value)} />
           </label>
+          <label className="space-y-1 md:col-span-2">
+            <span className="text-xs font-medium text-slate-600">Rua pesquisada</span>
+            <Input value={filtros.rua} onChange={(e) => {
+              const value = e.target.value
+              atualizarFiltro('rua', value)
+              if (ruaDebounceRef.current) clearTimeout(ruaDebounceRef.current)
+              ruaDebounceRef.current = setTimeout(() => {
+                carregar(1, { ...filtros, rua: value })
+              }, 250)
+            }} placeholder="Ex: Rua Raul" />
+          </label>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -417,13 +433,14 @@ export default function PageClient() {
           <div className="p-6 text-sm text-slate-500">Nenhum registro encontrado.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[1180px] w-full text-sm">
+            <table className="min-w-[1280px] w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
                   <th className="px-3 py-2 text-left">Data/hora</th>
                   <th className="px-3 py-2 text-left">Usuário</th>
                   <th className="px-3 py-2 text-left">CEP</th>
                   <th className="px-3 py-2 text-left">Número</th>
+                  <th className="px-3 py-2 text-left">Rua pesquisada</th>
                   <th className="px-3 py-2 text-left">Bairro</th>
                   <th className="px-3 py-2 text-left">Cidade/UF</th>
                   <th className="px-3 py-2 text-left">Tempo</th>
@@ -441,6 +458,7 @@ export default function PageClient() {
                     <td className="px-3 py-2">{item.usuarioEmail}</td>
                     <td className="px-3 py-2">{item.cep ?? '-'}</td>
                     <td className="px-3 py-2">{item.numeroResidencia ?? '-'}</td>
+                    <td className="px-3 py-2 max-w-[200px] truncate" title={item.logradouro ?? undefined}>{item.logradouro ?? '—'}</td>
                     <td className="px-3 py-2">{item.bairro ?? '-'}</td>
                     <td className="px-3 py-2">{item.cidade ?? '-'} / {item.uf ?? '-'}</td>
                     <td className="px-3 py-2">{item.tempoNecessario ?? '-'}</td>

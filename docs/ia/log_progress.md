@@ -1,3 +1,44 @@
+## 2026-07-24 - Cascade - Auditoria: coluna Rua pesquisada e filtro dinamico
+
+- **Agente/ferramenta:** Cascade (Windsurf)
+- **Resumo:** Adicionada coluna "Rua pesquisada" (campo `logradouro`) na tabela de resultados da auditoria em `/procurar-datas/auditoria` e filtro dinamico por rua com debounce de 250ms. Filtro backend via `ilike` (case-insensitive e correspondencia parcial). Nenhuma regra do motor foi alterada.
+- **Arquivos lidos:** `docs/procurar-datas-escopo-equivalencia-legado-v2.md`, `docs/procurar-datas-motor-v2-progresso.md`, `docs/ia/log_progress.md`, `src/app/procurar-datas/auditoria/page.tsx`, `src/app/procurar-datas/auditoria/PageClient.tsx`, `src/app/api/procurar-datas/auditoria/route.ts`, `src/app/api/procurar-datas/v2/auditar-run/route.ts`
+- **Arquivos alterados:**
+  - `src/app/api/procurar-datas/auditoria/route.ts` — adicionado `logradouro` no retorno de `resumirResultado`; adicionado filtro `rua` via `ilike` na query
+  - `src/app/procurar-datas/auditoria/PageClient.tsx` — adicionado campo `logradouro` ao tipo `AuditoriaItem`; adicionado campo `rua` ao tipo `Filtros` e `filtrosIniciais`; adicionado filtro de rua com debounce 250ms; adicionada coluna "Rua pesquisada" na tabela; largura minima da tabela ajustada de 1180px para 1280px
+- **Validacoes realizadas:**
+  - MCP Supabase: confirmada tabela `procurar_datas_pesquisas_auditoria`, coluna `logradouro` (text, nullable)
+  - MCP Supabase: confirmado que `logradouro` ja estava no SELECT da API mas nao era retornado no resumo
+  - MCP Supabase: extensao `unaccent` disponivel mas nao usada no filtro (limitacao do client Supabase)
+  - TypeScript: `npx tsc --noEmit` passou sem erros
+  - ESLint: passou sem erros nos dois arquivos alterados
+  - Dados reais validados: ex "RUA RIO PIQUIRI", "RUA ISIDIO ALVES RIBEIRO", "TRAVESSA EMA MORO"
+- **Comandos executados:** `npx tsc --noEmit --pretty` (exit 0), `npx eslint` nos dois arquivos (exit 0)
+- **Pendencias:** Nenhuma
+- **Riscos conhecidos:**
+  - O filtro `ilike` e case-insensitive e parcial, mas nao e accent-insensitive (o client Supabase nao suporta `unaccent()` em `.ilike()`). Se necessario, pode ser implementado via RPC ou filtro frontend complementar no futuro.
+  - A coluna nova aumenta a largura minima da tabela de 1180px para 1280px; em telas menores a tabela ja tem `overflow-x-auto`.
+- **Nao alterado:** Motor `/procurar-datas`, OSRM, Haversine, ranking, classificacao, candidatos, Apps Script, banco de dados (sem migration), outras colunas, outros filtros, paginacao, ordenacao, modal de detalhe, layout geral da pagina
+- **Proximo passo recomendado:** Revisar o diff, commitar e fazer deploy controlado
+
+## 2026-07-23 - Codex - Resultado final da otimizacao de performance `/procurar-datas`
+
+- **Resumo documental:** Registrado o resultado final da validacao real em producao da otimizacao de performance de `resolverCoordenadasAgendaProducao`. Esta tarefa foi exclusivamente documental.
+- **Causa original:** O gargalo estava nas consultas sequenciais ao `geo_cache` por endereco estruturado da agenda. Cada endereco podia gerar busca por hash e por campos; cenarios com 32 a 39 enderecos consumiam aproximadamente 12 a 16 segundos apenas no cache, alem de aproximadamente 1,4 a 2,5 segundos em fallbacks externos.
+- **Solucao implementada previamente:** Coleta, normalizacao e deduplicacao dos enderecos da agenda; consulta em lote ao `geo_cache` pelos hashes existentes; reaproveitamento do mesmo criterio de hit seguro; fallback individual somente para misses; concorrencia controlada em 4 para fallbacks restantes; fail-closed preservado.
+- **Arquivos principais envolvidos na implementacao:** `src/lib/procurar-datas/endereco-cache.ts`; `src/lib/procurar-datas/motor/resolver-coordenadas-agenda-producao.ts`; `src/lib/procurar-datas/motor/performance-diagnostico-v2.ts`; testes correspondentes.
+- **Validacao real documentada:** Banco `lebebe.app`, usando registros reais das tabelas de auditoria. Execucao anterior problematica: `run_id=b71ce607-15cd-475e-82bd-ffeb15e4c502`, duracao total `32.249 ms`, tempo de busca `29,9 s`, `3` candidatos, `100` slots processados, `31` slots disponiveis, status `success`.
+- **Execucoes apos otimizacao:** `run_id=83875dc3-fef2-48c6-8e5e-7099262c6419`, duracao total `6.999 ms`, tempo de busca `6,3 s`, `3` candidatos, `100` slots processados, `31` slots disponiveis, status `success`; `run_id=e3101049-4109-4e35-b1e4-d01a932839b7`, duracao total `5.626 ms`, tempo de busca `5,1 s`, `4` candidatos, `100` slots processados, `31` slots disponiveis, status `success`.
+- **Metricas comparativas:** `32,2 s -> 7,0 s`, reducao aproximada de `78%`; `20,6 s -> 5,6 s`, reducao aproximada de `73%`. Cinco execucoes recentes apos a otimizacao: media `8,33 s`, mediana `7,39 s`, minimo `5,63 s`, maximo `13,74 s`.
+- **Equivalencia funcional:** A validacao confirmou `100` slots processados, candidatos retornados, execucoes com sucesso, sem reducao artificial da janela, sem corte de slots e sem alteracao de OSRM, Haversine, ranking, candidatos, classificacao, precos, limites ou frontend.
+- **Comandos/consultas desta tarefa documental:** Nao houve nova consulta ao Supabase nesta tarefa; os run_ids e metricas acima foram fornecidos no pedido para registro. Comandos executados nesta tarefa: leitura dos documentos obrigatorios, `git status --short`, edicao documental e validacao final com `git diff --check`.
+- **Arquivos alterados nesta tarefa:** `docs/ia/log_progress.md`; `docs/procurar-datas-motor-v2-progresso.md`; `docs/procurar-datas-escopo-equivalencia-legado-v2.md`.
+- **Nao alterado:** Codigo, testes, regras, configuracoes, banco, planilhas, Apps Script, N8N, frontend e migrations. Nao houve commit, push ou deploy.
+- **Resultado final:** Performance real aprovada; meta minima de reducao de 50% superada; GO para commit/review; GO para deploy controlado apos revisao humana do diff.
+- **Pendencias:** Revisao humana do diff e deploy controlado, se aprovado.
+- **Riscos residuais:** Monitorar novas execucoes reais para confirmar que o patamar de 5 a 8 segundos se mantem em diferentes janelas e volumes de misses. Se a agenda tiver muitos misses de hash, a busca por campos/fallback ainda pode ser custo residual.
+- **Proximo passo recomendado:** Revisar o diff documental junto do diff de implementacao, commitar e seguir com deploy controlado apos aprovacao humana.
+
 ## 2026-07-23 - Codex - Hotfix filtros e schema de clientes Atendimento Presencial
 
 **Resumo:** Corrigidos dois pontos reportados apos o ajuste de clientes/finalizados. Na aba de finalizados, digitar nos filtros ou trocar consultora nao dispara mais busca automaticamente; a aplicacao dos filtros fica concentrada no botao de lupa. Na tela de clientes, a API agora tolera o banco remoto ainda sem as colunas `origem_*`, refazendo a listagem com SELECT base para manter a paginacao funcionando ate a migration ser aplicada.

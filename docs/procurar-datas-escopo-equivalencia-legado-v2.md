@@ -3865,3 +3865,37 @@ Status: implementado como Frente 1 / esquerda, com observabilidade na Frente 3 e
 
 - Reverter `src/lib/procurar-datas/endereco-cache.ts` e `src/lib/procurar-datas/motor/resolver-coordenadas-agenda-producao.ts` volta ao caminho sequencial anterior.
 - Nao ha migration, dado remoto, flag permanente ou alteracao externa para reverter.
+
+---
+
+## 2026-07-23 - Codex - Resultado final da otimizacao de performance da agenda
+
+Status: risco de performance do `geo_cache` sequencial considerado resolvido apos validacao real em producao.
+
+### Decisao confirmada
+
+- A otimizacao de `resolverCoordenadasAgendaProducao` e uma mudanca tecnica de performance, sem alteracao de regra de negocio.
+- A v2 continua preservando resultados funcionais, fail-closed, OSRM, Haversine, candidatos, classificacao, ranking, precos, limites, recorte e frontend.
+- Frente 2 permaneceu intocada.
+- Nao houve alteracao de Apps Script, banco/schema, migrations, RLS, policies, planilhas, N8N ou regras comerciais.
+
+### Evidencia final
+
+- Execucao problematica anterior: `run_id=b71ce607-15cd-475e-82bd-ffeb15e4c502`, duracao total `32.249 ms`, tempo de busca `29,9 s`, `100` slots processados, `31` slots disponiveis, `3` candidatos, status `success`.
+- Execucao otimizada: `run_id=83875dc3-fef2-48c6-8e5e-7099262c6419`, duracao total `6.999 ms`, tempo de busca `6,3 s`, `100` slots processados, `31` slots disponiveis, `3` candidatos, status `success`.
+- Execucao otimizada adicional: `run_id=e3101049-4109-4e35-b1e4-d01a932839b7`, duracao total `5.626 ms`, tempo de busca `5,1 s`, `100` slots processados, `31` slots disponiveis, `4` candidatos, status `success`.
+- Reducoes documentadas: `32,2 s -> 7,0 s` (~`78%`) e `20,6 s -> 5,6 s` (~`73%`).
+- Cinco execucoes recentes apos a otimizacao: media `8,33 s`, mediana `7,39 s`, minimo `5,63 s`, maximo `13,74 s`.
+
+### Criterio de aceite
+
+- A meta minima de reducao de 50% foi superada.
+- `100` slots continuaram sendo processados, sem reducao artificial da janela e sem corte de slots.
+- Os resultados continuaram retornando candidatos e todas as execucoes comparadas terminaram com status `success`.
+- Parecer: GO para commit/review e GO para deploy controlado apos revisao humana do diff.
+
+### Observacao documental
+
+- Esta entrada apenas documenta a validacao final fornecida para registro.
+- Nesta tarefa documental nao houve alteracao de codigo, testes, configuracao, banco, planilha, Apps Script, N8N, frontend ou migration.
+- Nao houve commit, push ou deploy.

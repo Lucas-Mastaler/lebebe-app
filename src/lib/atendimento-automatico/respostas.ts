@@ -134,8 +134,9 @@ function formatarDataRetiradaParaMensagem(dataBR: string): string {
 }
 
 export function montarMensagemConfirmacaoRetirada(grupo: GrupoAgendamento): RespostaSugerida {
+  const dataRetirada = formatarDataRetiradaParaMensagem(calcularDataDisponivelRetirada(grupo.data_entrega));
   return {
-    texto: `Encontrei este pedido:\n\nCliente: ${grupo.nome_cliente}\nPedido(s): ${formatarPedidos(grupo.pedidos_venda)}\nRetirada agendada para: ${grupo.data_entrega}\nEndereço: ${formatarEnderecoCurto(grupo.endereco_curto)}\n\nÉ este pedido mesmo?`,
+    texto: `Encontrei este pedido:\n\nCliente: ${grupo.nome_cliente}\nPedido(s): ${formatarPedidos(grupo.pedidos_venda)}\nRetirada agendada para: ${dataRetirada}\nEndereço: ${formatarEnderecoCurto(grupo.endereco_curto)}\n\nÉ este pedido mesmo?`,
     tipo: 'confirmar_retirada_unica',
   };
 }

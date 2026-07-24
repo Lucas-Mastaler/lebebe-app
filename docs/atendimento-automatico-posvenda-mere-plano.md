@@ -783,7 +783,7 @@ Bloquear determinísticamente o fluxo de alteração de entrega quando o grupo/p
 
 - Escopo: fluxo de confirmacao de pedido/data em `confirmar_entrega` quando `EQUIPE AGENDA` contem `CLIENTE RETIRA`.
 - Deteccao: reutiliza `ehClienteRetiraEquipeAgenda`, inclusive quando a equipe aparece no grupo ou em qualquer evento do grupo.
-- Mensagem de identificacao: usa "pedido" e "Retirada agendada para", sem afirmar entrega ou montagem.
+- Mensagem de identificacao: usa "pedido" e "Retirada agendada para" com a mesma proxima quinta-feira exibida na mensagem final, sem afirmar entrega ou montagem.
 - Mensagem final: apos confirmacao positiva, informa retirada na filial fixa do Hauer e encerra o ciclo especifico de confirmacao de retirada.
 - Data de retirada: calculada como a proxima quinta-feira civil posterior a data da agenda. Exemplo validado: agenda `29/07/2026` (quarta) -> retirada `30/07/2026` (quinta). Agenda fora de quarta gera aviso seguro em log e metadata, mas ainda usa a proxima quinta.
 - Texto final usado: `Perfeito.` + `Seu pedido esta previsto para poder retirar a partir do dia DD/MM, na nossa filial do Hauer, em horario de funcionamento da loja, das 10h as 18h, de segunda a sexta.` + `*Te ajudo em algo mais?*`.

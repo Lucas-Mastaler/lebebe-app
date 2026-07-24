@@ -77,10 +77,21 @@ describe('respostas', () => {
 
     expect(resposta.tipo).toBe('confirmar_retirada_unica');
     expect(resposta.texto).toContain('Encontrei este pedido');
-    expect(resposta.texto).toContain('Retirada agendada para: 29/07/2026');
+    expect(resposta.texto).toContain('Retirada agendada para: 30/07');
     expect(resposta.texto).toContain('É este pedido mesmo?');
     expect(resposta.texto).not.toContain('Encontrei esta entrega');
     expect(resposta.texto).not.toContain('entrega e montagem');
+  });
+
+  it('usa a mesma proxima quinta na confirmacao inicial quando agenda nao cai em quarta', () => {
+    const resposta = respostaConfirmarEntregaUnica(grupoBase({
+      equipe_agenda: '8.1 CLIENTE RETIRA PORTAO/LOJA',
+      data_entrega: '31/07/2026',
+    }));
+
+    expect(resposta.tipo).toBe('confirmar_retirada_unica');
+    expect(resposta.texto).toContain('Retirada agendada para: 06/08');
+    expect(resposta.texto).not.toContain('Retirada agendada para: 31/07/2026');
   });
 
   it('gera resposta de escolha de multiplos grupos', () => {

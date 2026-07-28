@@ -4,6 +4,7 @@ import {
   cacheRowCompativelComEndereco,
   cacheRowConfidenceAceitavel,
   GEO_CACHE_BATCH_HASH_CHUNK_SIZE,
+  GEO_CACHE_COORDENADA_TOLERANCIA_GRAUS,
   GEO_CACHE_CONFIDENCE_MINIMA_HIT_SEGURO,
   montarEnderecoDisplayProcurarDatas,
   montarHashEnderecoComNumero,
@@ -45,6 +46,15 @@ const formBase = {
   cidade: 'Curitiba',
   uf: 'PR',
   cep: '81610-000',
+}
+
+const formJorgeBonn = {
+  logradouro: 'Rua Jorge Bonn',
+  numero: '5000',
+  bairro: 'Santa Felicidade',
+  cidade: 'Curitiba',
+  uf: 'PR',
+  cep: '82020-770',
 }
 
 describe('endereco-cache', () => {
@@ -157,6 +167,155 @@ describe('endereco-cache', () => {
       status: 'miss',
       motivo: 'cache_ambiguo',
       candidatosAvaliados: 2,
+    })
+  })
+
+  it('aceita duplicatas textualmente compativeis quando representam a mesma coordenada', async () => {
+    supabaseInMock.mockResolvedValueOnce({
+      data: [
+        { ...rowBase, chave_endereco: montarHashEnderecoComNumero(formBase), confidence: 0.85, updated_at: '2026-07-10T10:00:00.000Z' },
+        { ...rowBase, chave_endereco: montarHashEnderecoLegado(formBase), confidence: 0.85, updated_at: '2026-07-09T10:00:00.000Z' },
+      ],
+      error: null,
+    })
+
+    const resultado = await buscarEnderecosNoGeoCacheEmLote([{ chave: 'agenda-1', form: formBase }])
+
+    expect(resultado.resultadosPorChave['agenda-1']).toMatchObject({
+      status: 'hit',
+      motivo: 'match_seguro',
+    })
+  })
+
+  it('usa maior confidence como desempate deterministico entre duplicatas equivalentes', async () => {
+    const chaveAlta = montarHashEnderecoComNumero(formBase)
+    const chaveBaixa = montarHashEnderecoLegado(formBase)
+    supabaseInMock.mockResolvedValueOnce({
+      data: [
+        { ...rowBase, chave_endereco: chaveBaixa, confidence: 0.72, updated_at: '2026-07-11T10:00:00.000Z' },
+        { ...rowBase, chave_endereco: chaveAlta, confidence: 0.9, updated_at: '2026-07-10T10:00:00.000Z' },
+      ],
+      error: null,
+    })
+
+    const resultado = await buscarEnderecosNoGeoCacheEmLote([{ chave: 'agenda-1', form: formBase }])
+
+    expect(resultado.resultadosPorChave['agenda-1']).toMatchObject({
+      status: 'hit',
+      resultado: { chaveEndereco: chaveAlta, confidence: 0.9 },
+    })
+  })
+
+  it('usa updated_at mais recente quando confidence empata entre duplicatas equivalentes', async () => {
+    const chaveAntiga = montarHashEnderecoComNumero(formBase)
+    const chaveNova = montarHashEnderecoLegado(formBase)
+    supabaseInMock.mockResolvedValueOnce({
+      data: [
+        { ...rowBase, chave_endereco: chaveAntiga, confidence: 0.9, updated_at: '2026-07-10T10:00:00.000Z' },
+        { ...rowBase, chave_endereco: chaveNova, confidence: 0.9, updated_at: '2026-07-12T10:00:00.000Z' },
+      ],
+      error: null,
+    })
+
+    const resultado = await buscarEnderecosNoGeoCacheEmLote([{ chave: 'agenda-1', form: formBase }])
+
+    expect(resultado.resultadosPorChave['agenda-1']).toMatchObject({
+      status: 'hit',
+      resultado: { chaveEndereco: chaveNova },
+    })
+  })
+
+  it('aceita diferenca minima de coordenadas dentro da tolerancia explicita', async () => {
+    expect(GEO_CACHE_COORDENADA_TOLERANCIA_GRAUS).toBe(0.000001)
+    supabaseInMock.mockResolvedValueOnce({
+      data: [
+        { ...rowBase, chave_endereco: montarHashEnderecoComNumero(formBase) },
+        {
+          ...rowBase,
+          chave_endereco: montarHashEnderecoLegado(formBase),
+          lat: Number(rowBase.lat) + GEO_CACHE_COORDENADA_TOLERANCIA_GRAUS / 2,
+          lng: Number(rowBase.lng) - GEO_CACHE_COORDENADA_TOLERANCIA_GRAUS / 2,
+        },
+      ],
+      error: null,
+    })
+
+    const resultado = await buscarEnderecosNoGeoCacheEmLote([{ chave: 'agenda-1', form: formBase }])
+
+    expect(resultado.resultadosPorChave['agenda-1']).toMatchObject({
+      status: 'hit',
+      motivo: 'match_seguro',
+    })
+  })
+
+  it('nao colapsa candidatos de numero ou CEP divergente como duplicata equivalente', async () => {
+    supabaseInMock.mockResolvedValueOnce({
+      data: [
+        { ...rowBase, chave_endereco: montarHashEnderecoComNumero(formBase), numero: '5636' },
+        { ...rowBase, chave_endereco: montarHashEnderecoLegado(formBase), cep: '80000-000' },
+      ],
+      error: null,
+    })
+
+    const resultado = await buscarEnderecosNoGeoCacheEmLote([{ chave: 'agenda-1', form: formBase }])
+
+    expect(resultado.resultadosPorChave['agenda-1']).toMatchObject({
+      status: 'miss',
+      motivo: 'sem_match_seguro',
+    })
+  })
+
+  it('regressao Rua Jorge Bonn: hash com numero e legado com mesma coordenada viram hit seguro', async () => {
+    const chaveComNumero = montarHashEnderecoComNumero(formJorgeBonn)
+    const chaveLegado = montarHashEnderecoLegado(formJorgeBonn)
+    supabaseInMock.mockResolvedValueOnce({
+      data: [
+        {
+          ...rowBase,
+          chave_endereco: chaveComNumero,
+          endereco_completo: 'Rua Jorge Bonn, 5000, Santa Felicidade, Curitiba - PR, Brasil',
+          logradouro: 'Rua Jorge Bonn',
+          numero: '5000',
+          bairro: 'Santa Felicidade',
+          cidade: 'Curitiba',
+          uf: 'PR',
+          cep: '82020-770',
+          lat: -25.3950289,
+          lng: -49.3468272,
+          confidence: 1,
+          provider: 'appsscript',
+          updated_at: '2026-07-10T10:00:00.000Z',
+        },
+        {
+          ...rowBase,
+          chave_endereco: chaveLegado,
+          endereco_completo: 'Rua Jorge Bonn, 5000, Santa Felicidade, Curitiba - PR, Brasil',
+          logradouro: 'Rua Jorge Bonn',
+          numero: '5000',
+          bairro: 'Santa Felicidade',
+          cidade: 'Curitiba',
+          uf: 'PR',
+          cep: '82020-770',
+          lat: -25.3950289,
+          lng: -49.3468272,
+          confidence: 1,
+          provider: 'appsscript',
+          updated_at: '2026-07-09T10:00:00.000Z',
+        },
+      ],
+      error: null,
+    })
+
+    const resultado = await buscarEnderecosNoGeoCacheEmLote([{ chave: 'jorge-bonn', form: formJorgeBonn }])
+
+    expect(resultado.resultadosPorChave['jorge-bonn']).toMatchObject({
+      status: 'hit',
+      motivo: 'match_seguro',
+      resultado: {
+        lat: -25.3950289,
+        lng: -49.3468272,
+        chaveEndereco: chaveComNumero,
+      },
     })
   })
 

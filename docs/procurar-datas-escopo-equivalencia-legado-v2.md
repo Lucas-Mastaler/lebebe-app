@@ -3899,3 +3899,19 @@ Status: risco de performance do `geo_cache` sequencial considerado resolvido apo
 - Esta entrada apenas documenta a validacao final fornecida para registro.
 - Nesta tarefa documental nao houve alteracao de codigo, testes, configuracao, banco, planilha, Apps Script, N8N, frontend ou migration.
 - Nao houve commit, push ou deploy.
+## 2026-07-28 - Codex - Frente 1: duplicatas equivalentes no geo_cache
+
+Status: implementado e validado em testes focados. Nao altera motor, candidatos, classificacao, ranking, OSRM, Haversine, agenda, frontend, banco ou Apps Script.
+
+### Regra aplicada
+- Multiplos registros de `geo_cache` que passam pelos mesmos campos fortes de compatibilidade (numero, logradouro normalizado, bairro, cidade, UF e CEP quando presente nos dois lados) deixam de ser tratados automaticamente como `cache_ambiguo` quando todos representam a mesma coordenada dentro da tolerancia explicita `0.000001` grau.
+- A escolha entre duplicatas equivalentes e deterministica: maior `confidence`, depois `updated_at` mais recente, depois `chave_endereco`.
+- Ambiguidade real por coordenadas divergentes permanece `cache_ambiguo`.
+- `confidence_baixa` e coordenadas invalidas continuam sem virar hit seguro.
+- Na Mere, `cache_ambiguo` deixou de ser erro final imediato e passa a seguir fallback externo LocationIQ -> Google Geocoding -> Apps Script; se todos falharem, o motivo final reflete falha real de provider.
+
+### Evidencia
+- Testes focados adicionados em `src/lib/procurar-datas/endereco-cache.test.ts` cobrem duplicatas equivalentes, desempate por `confidence`, desempate por `updated_at`, tolerancia, divergencia de numero/CEP, divergencia real de coordenadas e regressao Rua Jorge Bonn.
+- Testes focados adicionados em `src/lib/atendimento-automatico/consulta-datas-mere.test.ts` cobrem fallback de `cache_ambiguo` para LocationIQ, Google, Apps Script e falha final quando todos os providers falham.
+
+---

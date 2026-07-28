@@ -58,6 +58,18 @@ export const APP_MODULES = [
     menuLabel: 'FINALIZAÇÕES DIGISAC',
   },
   {
+    moduleKey: 'hub_vendas_recuperacao',
+    nome: 'HUB VENDAS RECUPERACAO',
+    descricao: 'Recuperacao automatica de leads do Hub/Vendas',
+    rotaBase: '/hub-vendas/recuperacao',
+    categoria: 'digisac',
+    publico: false,
+    somenteSuperadmin: false,
+    ativo: true,
+    ordem: 65,
+    access: 'profile',
+  },
+  {
     moduleKey: 'atendimento_presencial_ficha',
     nome: 'Ficha de Atendimento',
     descricao: 'Placeholder protegido da ficha de atendimento presencial',
@@ -402,6 +414,7 @@ export const MODULE_KEYS_WITHOUT_AUTOMATIC_PROFILE_GRANT = [
   'atendimento_presencial_ficha',
   'atendimento_presencial_registros',
   'atendimento_presencial_clientes',
+  'hub_vendas_recuperacao',
 ] as const satisfies readonly AppModuleKey[]
 
 export function getAppModuleDefinition(moduleKey: AppModuleKey) {

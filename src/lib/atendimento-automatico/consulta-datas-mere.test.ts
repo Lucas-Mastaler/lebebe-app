@@ -397,6 +397,101 @@ describe('consulta-datas-mere', () => {
     expect(resultado.geoCacheSalvo).toBe(true);
   });
 
+  it('quando geo_cache fica ambiguo, segue para LocationIQ antes de consultar datas', async () => {
+    buscarEnderecoNoGeoCacheMock.mockResolvedValueOnce({
+      status: 'miss',
+      motivo: 'cache_ambiguo',
+      candidatosAvaliados: 2,
+    });
+    buscarEnderecoLocationIqMock.mockResolvedValueOnce({ status: 'success', resultado: enderecoValidado, reservaUsada: false });
+
+    const resultado = await executarConsultaDatasMere({
+      grupo: grupoBase(),
+      dataDesejadaISO: '2026-08-03',
+      sessaoId: 'sessao-cache-ambiguo-locationiq',
+    });
+
+    expect(buscarEnderecoLocationIqMock).toHaveBeenCalled();
+    expect(consultarGoogleGeocodingMock).not.toHaveBeenCalled();
+    expect(chamarAppsScriptProcurarDatasMock).not.toHaveBeenCalled();
+    expect(pesquisarDatasV2Mock).toHaveBeenCalled();
+    expect(resultado.estado).toBe('datas_encontradas');
+    expect(resultado.geoCacheHit).toBe(false);
+    expect(resultado.geocodingProvider).toBe('locationiq');
+  });
+
+  it('quando geo_cache fica ambiguo e LocationIQ falha, segue para Google Geocoding', async () => {
+    buscarEnderecoNoGeoCacheMock.mockResolvedValueOnce({
+      status: 'miss',
+      motivo: 'cache_ambiguo',
+      candidatosAvaliados: 2,
+    });
+    buscarEnderecoLocationIqMock.mockResolvedValueOnce({ status: 'failed', motivo: 'sem_resultado_valido' });
+    consultarGoogleGeocodingMock.mockResolvedValueOnce({
+      status: 'success',
+      resultado: { ...enderecoValidado, provider: 'google_geocoding' },
+    });
+
+    const resultado = await executarConsultaDatasMere({
+      grupo: grupoBase(),
+      dataDesejadaISO: '2026-08-03',
+      sessaoId: 'sessao-cache-ambiguo-google',
+    });
+
+    expect(buscarEnderecoLocationIqMock).toHaveBeenCalled();
+    expect(consultarGoogleGeocodingMock).toHaveBeenCalled();
+    expect(chamarAppsScriptProcurarDatasMock).not.toHaveBeenCalled();
+    expect(pesquisarDatasV2Mock).toHaveBeenCalled();
+    expect(resultado.estado).toBe('datas_encontradas');
+    expect(resultado.geocodingProvider).toBe('google_geocoding');
+  });
+
+  it('quando geo_cache fica ambiguo e providers diretos falham, segue para Apps Script', async () => {
+    buscarEnderecoNoGeoCacheMock.mockResolvedValueOnce({
+      status: 'miss',
+      motivo: 'cache_ambiguo',
+      candidatosAvaliados: 2,
+    });
+    buscarEnderecoLocationIqMock.mockResolvedValueOnce({ status: 'failed', motivo: 'sem_resultado_valido' });
+    consultarGoogleGeocodingMock.mockResolvedValueOnce({ status: 'failed', motivo: 'google_status_ZERO_RESULTS' });
+    chamarAppsScriptProcurarDatasMock.mockResolvedValueOnce({ ...enderecoValidado, provider: 'appsscript' });
+
+    const resultado = await executarConsultaDatasMere({
+      grupo: grupoBase(),
+      dataDesejadaISO: '2026-08-03',
+      sessaoId: 'sessao-cache-ambiguo-appsscript',
+    });
+
+    expect(buscarEnderecoLocationIqMock).toHaveBeenCalled();
+    expect(consultarGoogleGeocodingMock).toHaveBeenCalled();
+    expect(chamarAppsScriptProcurarDatasMock).toHaveBeenCalled();
+    expect(pesquisarDatasV2Mock).toHaveBeenCalled();
+    expect(resultado.estado).toBe('datas_encontradas');
+    expect(resultado.geocodingProvider).toBe('appsscript');
+  });
+
+  it('quando geo_cache fica ambiguo e todos os fallbacks falham, retorna falha real de provider', async () => {
+    buscarEnderecoNoGeoCacheMock.mockResolvedValueOnce({
+      status: 'miss',
+      motivo: 'cache_ambiguo',
+      candidatosAvaliados: 2,
+    });
+
+    const resultado = await executarConsultaDatasMere({
+      grupo: grupoBase(),
+      dataDesejadaISO: '2026-08-03',
+      sessaoId: 'sessao-cache-ambiguo-falha',
+    });
+
+    expect(buscarEnderecoLocationIqMock).toHaveBeenCalled();
+    expect(consultarGoogleGeocodingMock).toHaveBeenCalled();
+    expect(chamarAppsScriptProcurarDatasMock).toHaveBeenCalled();
+    expect(resultado.estado).toBe('erro_coordenadas');
+    expect(resultado.motivo).toBe('geocoding_provider_falhou');
+    expect(resultado.geocodingProviderConsultado).toBe(true);
+    expect(pesquisarDatasV2Mock).not.toHaveBeenCalled();
+  });
+
   it('quando cache tem confidence baixa, chama provider e nao usa coordenada do cache no motor', async () => {
     const enderecoHuxleyValidado = {
       ...enderecoValidado,

@@ -4122,3 +4122,137 @@ Somente depois que as rotas existirem:
 11. **Pós-implementação:** checklist operacional da VPS (seção 36.13)
 
 **Pare aqui. Aguarde aprovação explícita do usuário antes de iniciar qualquer implementação.**
+
+---
+
+## 67. Atualização vigente 2026-07-24 — Fase 1 implementada
+
+Esta seção substitui, para fins de continuidade, as pendências antigas das seções 64 e 66 quando houver contradição.
+
+### 67.1 Correções documentais consolidadas
+
+- Payload da saudação confirmado para a futura rota direta do aplicativo como corpo Digisac `{ event: "message.created", data: {} }`, sem envelope n8n.
+- Saudação do Hub confirmada como mensagem enviada pela empresa: `isFromMe=true`, `sent=true`, `type=chat`, `visible=true`, `origin=user`, `userId` pode ser `null`, `isComment=false`, `isFromBot=false`, `serviceId` da conexão Vendas e texto oficial da saudação.
+- Texto oficial da saudação e cinco versões de mensagem de recuperação estão aprovados.
+- Departamentos de resgate confirmados por chamadas reais de `ticket/transfer`: Bigorrilho `d89b13ba-560b-4e39-9a23-26d62caa9e15`, Portão `7b524eab-a7c4-48d2-b249-3a5027e43728`, Marechal/Hauer `8c90dba0-a855-49ae-bed4-f133f8509df9`.
+- Infraestrutura VPS Hostinger já validada; não é pendência desta fase.
+- Idempotência vigente: reservar evento primeiro com `hub_vendas_eventos_processados.digisac_message_id` único e status inicial `processando`; runtime da reserva fica para Fase 2.
+- RLS vigente: RLS habilitado e ausência de policies para `authenticated`; acesso operacional por `service_role` no servidor.
+- Timezone vigente: `America/Sao_Paulo`, com futuro limite diário por intervalo UTC semiaberto; não usar offset fixo como regra permanente.
+
+### 67.2 Fase 1 aplicada
+
+Migration criada e aplicada no Supabase `lebebe.app`:
+
+- `supabase/migrations/20260724200159_hub_vendas_fase1_base.sql`
+
+Tabelas criadas:
+
+- `public.hub_vendas_leads`
+- `public.hub_vendas_recuperacao_fila`
+- `public.hub_vendas_config`
+- `public.hub_vendas_eventos_processados`
+
+Base estrutural criada:
+
+- Constraints de telefone DDI, ciclo positivo, status comercial, lojas conhecidas, conexão de recuperação, fila única por lead, status técnico, contador de reconciliação não negativo, versão de mensagem entre 1 e 5, hash SHA-256 opcional, evento único por `digisac_message_id`, status de evento e tentativas não negativas.
+- Índices para status/entrada, telefone, contact/ticket Hub, conversão, fila por status/programação, reserva, conexão/data de envio, lead, contact/ticket de recuperação, eventos por status/reserva, lead, timestamp e service.
+- Triggers `updated_at` para as quatro tabelas.
+- `hub_vendas_config` com automação inativa/pausada, parâmetros operacionais, pausas por conexão, rodízio e cinco mensagens inativas.
+- Função `public.selecionar_proxima_conexao_hub_vendas(text[])` com `pg_advisory_xact_lock`, `SECURITY DEFINER`, `search_path` explícito e `EXECUTE` restrito a `service_role`.
+- Módulo `hub_vendas_recuperacao` cadastrado em `app_modulos`, sem concessão automática em `app_permissoes_perfil`.
+- Conexão Hub/Vendas cadastrada em `digisac_conexoes_automacao` como `VENDAS (Hub)`, `my_number=NULL`, `default_department_id=NULL`, `ativo=true`, porque esses campos não estavam confirmados e a tabela permite `NULL`.
+- Catálogo `src/lib/auth/modulos-app.ts` atualizado apenas para tipagem/reconhecimento futuro do módulo; não foi adicionado item em `NAVIGATION_GROUPS` para evitar link quebrado antes da tela existir.
+
+### 67.3 Validações executadas
+
+- MCP Supabase confirmou antes da migration que as tabelas `hub_vendas_*` não existiam e que `app_modulos`/`digisac_conexoes_automacao` tinham as colunas e constraints necessárias.
+- Migration aplicada com sucesso via MCP Supabase.
+- Consultas MCP confirmaram as quatro tabelas, constraints, índices, RLS ativo, zero policies nas quatro tabelas novas e grants somente para `service_role` entre `anon`, `authenticated` e `service_role`.
+- Consulta MCP confirmou cinco configs iniciais, automação `ativa=false` e `pausada=true`, `timezone=America/Sao_Paulo`, limite 15, intervalo 180-300, dias `[1,2,3,4,5,6]` e cinco mensagens inativas.
+- Consulta MCP confirmou módulo `hub_vendas_recuperacao` e conexão `4af28025-c210-4336-a560-785d2fb8a778`.
+- Teste transacional com rollback confirmou: lead ciclo 1, bloqueio de duplicidade telefone+ciclo, ciclo 2 permitido, status inválido rejeitado, ciclo zero rejeitado, fila única por lead, FK de lead, evento único por `digisac_message_id`, status `processando/processado/ignorado/erro`, tentativas negativas rejeitadas e rodízio Portão → Bigorrilho → Hauer/Marechal → Portão, com pulo de inelegível e lista vazia retornando `NULL`.
+- `npm run test -- src/lib/digisac/hub-vendas-fase1-migration.test.ts src/lib/auth/modulos-app.test.ts --silent` passou com 2 arquivos e 25 testes.
+- `npx tsc --noEmit --pretty false` passou.
+- `npx eslint src/lib/auth/modulos-app.ts src/lib/auth/modulos-app.test.ts src/lib/digisac/hub-vendas-fase1-migration.test.ts` passou.
+- `git diff --check` passou, com avisos LF/CRLF conhecidos do checkout Windows.
+- Supabase Advisors executados para segurança e performance.
+
+### 67.4 Resultado dos Advisors
+
+- Avisos diretamente relacionados às quatro tabelas novas: apenas `rls_enabled_no_policy` nível `INFO`, esperado e coerente com a decisão aprovada de `service_role` only.
+- Sem alerta crítico novo identificado para a função `selecionar_proxima_conexao_hub_vendas`.
+- Advisors continuam listando avisos preexistentes fora do escopo, incluindo views `SECURITY DEFINER`, funções antigas com `search_path` mutável, funções antigas `SECURITY DEFINER` executáveis por `anon/authenticated`, policies antigas permissivas e índices/FKs preexistentes.
+
+### 67.5 O que permanece fora do escopo
+
+Não foi criado webhook, cron, script VPS, crontab, tela administrativa, API de listagem, API de pausa, parser da saudação, registro runtime de leads, busca/criação de contatos, abertura de tickets, envio de mensagens, métrica, alteração em `vercel.json` ou contato real com clientes.
+
+### 67.6 Próximo passo recomendado
+
+Parar após a Fase 1. A próxima etapa só deve iniciar com aprovação explícita: Fase 2 — webhook dedicado, entrada no Hub e identificação de conversão, usando a estrutura idempotente já criada.
+
+---
+
+## 68. Atualizacao vigente 2026-07-28 - Fase 2 implementada
+
+Esta secao substitui a expressao antiga "webhook dedicado" da secao 67.6. A arquitetura vigente usa a rota existente `src/app/api/digisac/webhook/route.ts` com dois handlers internos isolados: triagem legada e Hub/Vendas.
+
+### 68.1 Escopo implementado
+
+- Criado modulo interno `src/lib/digisac/hub-vendas/` para payload, constantes, telefone, eventos, entrada, conversao e orquestracao do webhook.
+- A rota existente `/api/digisac/webhook` continua validando `DIGISAC_WEBHOOK_SECRET` quando configurado e agora chama `processarTriagemLojaDigisac(rawPayload)` e `processarWebhookHubVendas(rawPayload)` com isolamento via `Promise.allSettled`.
+- A resposta HTTP preserva o comportamento antigo: 401 para secret invalido, 200 para processamento normal e corpo baseado no resultado da triagem.
+- Em `NODE_ENV=production`, se `DIGISAC_WEBHOOK_SECRET` nao estiver configurado, o handler Hub/Vendas nao processa eventos e marca internamente como ignorado por `secret_nao_configurado`; a triagem legada preserva o comportamento anterior.
+- Implementada deteccao robusta da saudacao do Hub em mensagem enviada pela empresa na conexao Vendas, incluindo texto direto e `interactive.body.text`, com exigencia de `central de atendimento`, `Le Bebe` equivalente e pelo menos 2 telefones oficiais de loja.
+- Implementado registro de entrada por telefone normalizado, com busca de contato por `contactId`, reutilizacao de `buscarContatoCompleto`, `normalizarTelefoneDDI`, `gerarVariacoesTelefone` e validacao/mascara de `src/lib/atendimento-presencial/telefone.ts`.
+- Implementada regra de ciclo: sem lead anterior cria ciclo 1; saudacao antes de 14 dias reutiliza ciclo e registra evento ignorado; saudacao depois de 14 dias cria `ciclo_numero + 1`.
+- Implementada conversao organica por mensagem entrante nas conexoes de loja monitoradas, usando telefone do contato e variacoes com/sem nono digito para encontrar o ciclo mais recente compativel.
+- A janela de conversao foi implementada como intervalo semiaberto: `timestamp >= data_entrada_hub` e `timestamp < data_entrada_hub + 24 hours`. Mensagem exatamente em `+24h` fica fora da conversao organica.
+- Primeira loja define `loja_principal`, `data_conversao`, `status='convertido_organicamente'` e `lojas_chamadas`; segunda loja distinta na mesma janela preserva primeira loja/data e marca `chamou_mais_de_uma_loja=true`; repeticao da mesma loja nao duplica.
+- Eventos relevantes usam reserva idempotente em `hub_vendas_eventos_processados` com status inicial `processando` e finalizacao como `processado`, `ignorado` ou `erro`.
+
+### 68.2 Banco de dados
+
+Migration criada e aplicada no Supabase `lebebe.app`:
+
+- `supabase/migrations/20260728120000_hub_vendas_fase2_conversao_rpc.sql`
+
+Funcao criada:
+
+- `public.hub_vendas_registrar_conversao(uuid, text, timestamptz)`
+
+Propriedades confirmadas:
+
+- `SECURITY DEFINER`
+- `SET search_path = pg_catalog, public`
+- `FOR UPDATE` no lead selecionado
+- `EXECUTE` revogado de `PUBLIC`, `anon` e `authenticated`
+- `EXECUTE` concedido somente a `service_role`
+
+### 68.3 Validacoes executadas
+
+- MCP Supabase confirmou estrutura real das tabelas `hub_vendas_*`, RLS ativo, zero policies e grants somente para `service_role` nas tabelas Hub.
+- MCP Supabase confirmou `hub_vendas_registrar_conversao` com `anon_execute=false`, `authenticated_execute=false` e `service_role_execute=true`.
+- Teste transacional com rollback confirmou primeira loja, segunda loja, repeticao de mesma loja e limite superior de 24h exclusivo.
+- `npm run test -- src/lib/digisac/hub-vendas/payload.test.ts src/lib/digisac/hub-vendas/processar-webhook.test.ts src/lib/digisac/hub-vendas/registrar-entrada.test.ts src/lib/digisac/hub-vendas/registrar-conversao.test.ts src/app/api/digisac/webhook/route.test.ts src/lib/digisac/hub-vendas-fase1-migration.test.ts --silent` passou com 6 arquivos e 31 testes.
+- `npx tsc --noEmit --pretty false` passou.
+- `npx eslint src/app/api/digisac/webhook/route.ts src/app/api/digisac/webhook/route.test.ts src/lib/digisac/hub-vendas src/lib/digisac/hub-vendas-fase1-migration.test.ts` passou.
+- `git diff --check` passou, com avisos LF/CRLF conhecidos do checkout Windows.
+- Busca focada por secrets encontrou apenas nomes de env vars e o literal `service_role` da migration, sem valores secretos.
+- `npm run build` falhou inicialmente no sandbox por rede bloqueada em Google Fonts e passou na reexecucao com rede liberada; manteve avisos conhecidos `DYNAMIC_SERVER_USAGE` por rotas que usam `cookies`.
+- Supabase Advisors de seguranca e performance executados. Para Hub, permanecem `rls_enabled_no_policy` INFO nas tabelas `hub_vendas_*`, esperado pela decisao service-role only. A nova RPC nao apareceu como executavel por `anon`/`authenticated`; demais avisos sao preexistentes fora do escopo.
+
+### 68.4 Fora do escopo preservado
+
+Nao foi criado webhook publico novo, rota `/api/digisac/webhook/hub-vendas`, cron, script VPS, crontab, preparacao de fila, reconciliacao, rodizio runtime de recuperacao, limite diario runtime, abertura/criacao/transferencia de ticket, envio de mensagem, tela administrativa, APIs de metricas/listagem/pausa, item de menu, alteracao em `vercel.json` ou contato real com clientes.
+
+### 68.5 Nao validado
+
+- Chamada real ao Digisac em producao nao foi executada.
+- Browser autenticado nao foi validado, pois a Fase 2 nao cria tela.
+- Payload real de producao apos apontar o webhook direto ainda precisa ser acompanhado com logs sanitizados.
+
+### 68.6 Proximo passo recomendado
+
+Fazer deploy controlado da Fase 2, conferir `DIGISAC_WEBHOOK_SECRET` configurado em producao antes de ativar o processamento Hub, e acompanhar os primeiros eventos reais por logs `[HUB VENDAS]` sem dados sensiveis. Depois disso, iniciar Fase 3 somente com nova aprovacao explicita.

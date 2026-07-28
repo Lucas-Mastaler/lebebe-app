@@ -40,6 +40,7 @@ const SELECT_COLS =
 
 export const GEO_CACHE_CONFIDENCE_MINIMA_HIT_SEGURO = 0.7
 export const GEO_CACHE_BATCH_HASH_CHUNK_SIZE = 100
+export const GEO_CACHE_COORDENADA_TOLERANCIA_GRAUS = 0.000001
 
 export function normalizarTexto(valor: string | null | undefined): string {
   return String(valor ?? '')
@@ -139,6 +140,70 @@ function rowParaEnderecoValidado(row: GeoCacheRow, displayFallback: string): End
   }
 }
 
+function coordenadasValidasGeoCache(row: GeoCacheRow): boolean {
+  const lat = Number(row.lat)
+  const lng = Number(row.lng)
+  return Number.isFinite(lat) && Number.isFinite(lng)
+}
+
+function coordenadasEquivalentesGeoCache(a: GeoCacheRow, b: GeoCacheRow): boolean {
+  return (
+    Math.abs(Number(a.lat) - Number(b.lat)) <= GEO_CACHE_COORDENADA_TOLERANCIA_GRAUS &&
+    Math.abs(Number(a.lng) - Number(b.lng)) <= GEO_CACHE_COORDENADA_TOLERANCIA_GRAUS
+  )
+}
+
+function contarGruposCoordenadasGeoCache(rows: GeoCacheRow[]): number {
+  const grupos: GeoCacheRow[] = []
+  for (const row of rows) {
+    if (!grupos.some((grupo) => coordenadasEquivalentesGeoCache(grupo, row))) {
+      grupos.push(row)
+    }
+  }
+  return grupos.length
+}
+
+function confidenceOrdenacaoGeoCache(row: GeoCacheRow): number {
+  const confidence = Number(row.confidence)
+  return Number.isFinite(confidence) ? confidence : -1
+}
+
+function updatedAtOrdenacaoGeoCache(row: GeoCacheRow): number {
+  const updatedAt = row.updated_at ? Date.parse(row.updated_at) : NaN
+  return Number.isFinite(updatedAt) ? updatedAt : 0
+}
+
+function ordenarPreferenciaGeoCache(a: GeoCacheRow, b: GeoCacheRow): number {
+  const confidenceDiff = confidenceOrdenacaoGeoCache(b) - confidenceOrdenacaoGeoCache(a)
+  if (confidenceDiff !== 0) return confidenceDiff
+
+  const updatedAtDiff = updatedAtOrdenacaoGeoCache(b) - updatedAtOrdenacaoGeoCache(a)
+  if (updatedAtDiff !== 0) return updatedAtDiff
+
+  return String(a.chave_endereco ?? '').localeCompare(String(b.chave_endereco ?? ''))
+}
+
+function resumoSanitizadoGeoCache(rows: GeoCacheRow[]): string {
+  const providers = [...new Set(rows.map((row) => row.provider || '-'))].sort().join(',')
+  const confidences = rows.map((row) => row.confidence ?? '-').join(',')
+  const hashes = rows.map((row) => String(row.chave_endereco ?? '').slice(0, 8)).sort().join(',')
+  return `providers=${providers || '-'} confidences=${confidences || '-'} hashes=${hashes || '-'}`
+}
+
+function logDecisaoMultiploGeoCache(params: {
+  candidatos: number
+  compativeis: GeoCacheRow[]
+  gruposCoordenadas: number
+  decisao: 'cache_aceito' | 'cache_ambiguo'
+  motivo: string
+  escolhido?: GeoCacheRow
+}) {
+  const escolhido = params.escolhido ? ` escolhido=${String(params.escolhido.chave_endereco ?? '').slice(0, 8)}` : ''
+  console.log(
+    `[PROCURAR_DATAS][geo_cache] multiplos_compativeis candidatos=${params.candidatos} compativeis=${params.compativeis.length} gruposCoordenadas=${params.gruposCoordenadas} ${resumoSanitizadoGeoCache(params.compativeis)} decisao=${params.decisao} motivo=${params.motivo}${escolhido}`
+  )
+}
+
 export function cacheRowCompativelComEndereco(row: GeoCacheRow, form: ValidarEnderecoRequest): boolean {
   const numeroForm = normalizarNumeroEndereco(form.numero)
   const numeroRow = normalizarNumeroEndereco(row.numero)
@@ -182,17 +247,7 @@ function deduplicarRows(rows: GeoCacheRow[]): GeoCacheRow[] {
   return [...porChave.values()]
 }
 
-function selecionarHitSeguro(rows: GeoCacheRow[], form: ValidarEnderecoRequest): GeoCacheRow | null {
-  const compativeis = deduplicarRows(rows).filter((row) => (
-    cacheRowCompativelComEndereco(row, form) &&
-    cacheRowConfidenceAceitavel(row)
-  ))
-  if (compativeis.length !== 1) return null
-  return compativeis[0]
-}
-
-function montarMissGeoCache(candidatos: GeoCacheRow[], form: ValidarEnderecoRequest): ResultadoBuscaGeoCache {
-  const compativeis = deduplicarRows(candidatos).filter((row) => cacheRowCompativelComEndereco(row, form))
+function montarMissGeoCache(candidatos: GeoCacheRow[], compativeis: GeoCacheRow[]): ResultadoBuscaGeoCache {
   const compativeisComConfidenceBaixa = compativeis.filter((row) => !cacheRowConfidenceAceitavel(row))
   const maiorConfidenceBaixa = compativeisComConfidenceBaixa.reduce<number | null>((maior, row) => {
     const confidence = Number(row.confidence)
@@ -209,8 +264,40 @@ function montarMissGeoCache(candidatos: GeoCacheRow[], form: ValidarEnderecoRequ
 
 function selecionarResultadoGeoCache(candidatos: GeoCacheRow[], form: ValidarEnderecoRequest): ResultadoBuscaGeoCache {
   const display = montarEnderecoDisplayProcurarDatas(form)
-  const hitSeguro = selecionarHitSeguro(candidatos, form)
-  if (!hitSeguro) return montarMissGeoCache(candidatos, form)
+  const compativeis = deduplicarRows(candidatos).filter((row) => cacheRowCompativelComEndereco(row, form))
+  const compativeisComConfidenceBaixa = compativeis.filter((row) => !cacheRowConfidenceAceitavel(row))
+  if (compativeisComConfidenceBaixa.length > 0) return montarMissGeoCache(candidatos, compativeis)
+
+  const compativeisValidos = compativeis.filter(coordenadasValidasGeoCache)
+  if (compativeis.length > 0 && compativeisValidos.length === 0) {
+    return { status: 'miss', motivo: 'coordenadas_invalidas', candidatosAvaliados: candidatos.length }
+  }
+
+  if (compativeisValidos.length === 0) return montarMissGeoCache(candidatos, compativeis)
+
+  const gruposCoordenadas = contarGruposCoordenadasGeoCache(compativeisValidos)
+  if (compativeisValidos.length > 1 && gruposCoordenadas > 1) {
+    logDecisaoMultiploGeoCache({
+      candidatos: candidatos.length,
+      compativeis: compativeisValidos,
+      gruposCoordenadas,
+      decisao: 'cache_ambiguo',
+      motivo: 'coordenadas_divergentes',
+    })
+    return { status: 'miss', motivo: 'cache_ambiguo', candidatosAvaliados: candidatos.length }
+  }
+
+  const hitSeguro = [...compativeisValidos].sort(ordenarPreferenciaGeoCache)[0]
+  if (compativeisValidos.length > 1) {
+    logDecisaoMultiploGeoCache({
+      candidatos: candidatos.length,
+      compativeis: compativeisValidos,
+      gruposCoordenadas,
+      decisao: 'cache_aceito',
+      motivo: 'duplicatas_equivalentes',
+      escolhido: hitSeguro,
+    })
+  }
 
   const resultado = rowParaEnderecoValidado(hitSeguro, display)
   if (!resultado) return { status: 'miss', motivo: 'coordenadas_invalidas', candidatosAvaliados: candidatos.length }

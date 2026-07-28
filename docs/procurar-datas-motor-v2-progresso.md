@@ -5039,3 +5039,16 @@ Status: performance real aprovada em producao. GO para commit/review e GO para d
 - Esta entrada e somente documental.
 - Nao houve alteracao de codigo, testes, regras, configuracoes, banco, planilhas, Apps Script, N8N, frontend ou migrations nesta tarefa.
 - Nao houve commit, push ou deploy nesta tarefa.
+## 2026-07-28 - Codex - Frente 1: geo_cache com duplicatas equivalentes
+
+Status: implementado e validado em testes focados. Escopo limitado ao helper central de coordenadas e ao fallback Mere; sem alteracao de Frente 2, motor, candidatos, ranking, OSRM, Haversine, agenda, frontend, schema ou migrations.
+
+- `src/lib/procurar-datas/endereco-cache.ts` agora diferencia duplicata equivalente de ambiguidade real: quando multiplos registros compativeis apontam para a mesma coordenada dentro de `0.000001` grau, o cache retorna `hit` seguro.
+- O desempate e deterministico por maior `confidence`, `updated_at` mais recente e `chave_endereco`.
+- Registros compativeis com coordenadas divergentes continuam retornando `cache_ambiguo`.
+- `confidence_baixa` e coordenadas invalidas continuam fail-closed.
+- Logs sanitizados informam quantidade de candidatos/compativeis, grupos de coordenadas, providers, confidences, hashes truncados, decisao e motivo, sem endereco completo.
+- `src/lib/atendimento-automatico/consulta-datas-mere.ts` nao encerra mais a resolucao em `geocoding_resultado_ambiguo` quando o cache retorna `cache_ambiguo`; o fluxo segue LocationIQ -> Google Geocoding -> Apps Script e so falha se a cadeia externa falhar.
+- Validado com `npm run test -- src/lib/procurar-datas/endereco-cache.test.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts --silent`, `npx eslint` nos quatro arquivos TS afetados e `npx tsc --noEmit`.
+
+---

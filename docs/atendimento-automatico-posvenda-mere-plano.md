@@ -1144,3 +1144,14 @@ Cliente digitava `1` ou `2` em submenus do Bot (ex: montadores) e a Mere iniciav
 - IA fallback
 - Estados do fluxo dentro de sessao ativa
 - Mensagens de negocio
+## 2026-07-28 - Codex - Correcao de cache ambiguo na resolucao de coordenadas
+
+Status: implementado e validado em testes focados. Escopo limitado ao `geo_cache` compartilhado com `/procurar-datas` e ao fallback de geocoding da Mere; sem alteracao de mensagens, Digisac, estado da conversa, agenda, motor, ranking, banco ou frontend.
+
+- Quando o `geo_cache` possui multiplos registros compativeis para o mesmo endereco e todos representam a mesma coordenada dentro de tolerancia explicita, o helper central retorna `hit` seguro em vez de `cache_ambiguo`.
+- Se as coordenadas compativeis forem realmente divergentes, o cache continua retornando `cache_ambiguo`; a Mere agora segue LocationIQ -> Google Geocoding -> Apps Script antes de falhar.
+- O erro final `geocoding_resultado_ambiguo` deixou de ser produzido prematuramente pelo `cache_ambiguo` do cache; se todos os fallbacks falharem, o motivo fica `geocoding_provider_falhou`.
+- Caso de regressao Rua Jorge Bonn coberto no teste do helper com hash atual e hash legado equivalentes.
+- Validado com testes focados de cache e Mere, ESLint direcionado e `npx tsc --noEmit`.
+
+---

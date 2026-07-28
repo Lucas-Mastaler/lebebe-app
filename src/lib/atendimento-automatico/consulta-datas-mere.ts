@@ -622,9 +622,9 @@ export async function geocodificarEnderecoMere(
       return { ok: false, motivo: 'geo_cache_lat_lng_invalidos', geoCacheHit: false, geocodingProviderConsultado: false, geocodingProvider: null, geoCacheSalvo: false };
     }
     if (cache.motivo === 'cache_ambiguo') {
-      return { ok: false, motivo: 'geocoding_resultado_ambiguo', geoCacheHit: false, geocodingProviderConsultado: false, geocodingProvider: null, geoCacheSalvo: false };
-    }
-    if (cache.motivo === 'confidence_baixa') {
+      console.warn(`[posvenda-webhook] geo_cache ambiguo, seguindo fallback provider sessaoId=${options.sessaoId ?? '-'} candidatos=${cache.candidatosAvaliados ?? '-'} motivo=cache_ambiguo`);
+      console.log(`[posvenda-webhook] geo_cache encontrado mas rejeitado, tentando provider sessaoId=${options.sessaoId ?? '-'} motivo=cache_ambiguo`);
+    } else if (cache.motivo === 'confidence_baixa') {
       console.warn(`[posvenda-webhook] geo_cache rejeitado sessaoId=${options.sessaoId ?? '-'} motivo=confidence_baixa confidence=${cache.confidence ?? '-'} estrategia=geo_cache_match_seguro`);
       console.log(`[posvenda-webhook] geo_cache encontrado mas rejeitado, tentando provider sessaoId=${options.sessaoId ?? '-'} motivo=confidence_baixa confidence=${cache.confidence ?? '-'}`);
     } else {

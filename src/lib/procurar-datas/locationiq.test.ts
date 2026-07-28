@@ -29,6 +29,7 @@ const FORM_CATARINA = {
 describe('buscarEnderecoLocationIq', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
+    vi.restoreAllMocks()
   })
 
   // ── Casos do fluxo base ──────────────────────────────────────────────────
@@ -867,5 +868,93 @@ describe('buscarEnderecoLocationIq', () => {
       // Este branch não deve ser alcançado
       expect(result.resultado.ok).toBe(false)
     }
+  })
+
+  it('inclui contexto opcional da Mere nos logs sem expor token', async () => {
+    vi.stubEnv('LOCATIONIQ_API_KEY', 'secret-locationiq-key')
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          lat: '-25.478',
+          lon: '-49.252',
+          display_name: 'Rua Fortaleza, 1210, Hauer, Curitiba, Parana, Brasil',
+          importance: 0.72,
+          address: {
+            road: 'Rua Fortaleza',
+            house_number: '1210',
+            suburb: 'Hauer',
+            city: 'Curitiba',
+            state: 'Parana',
+            state_code: 'BR-PR',
+            postcode: '81610-000',
+          },
+        },
+      ],
+    })) as unknown as typeof fetch
+
+    const result = await buscarEnderecoLocationIq(FORM_FORTALEZA, {
+      fetchFn,
+      context: {
+        sessaoId: 'sessao-mere-1234567890',
+        messageId: 'msg-locationiq-abcdef123456',
+        origemFluxo: 'atendimento_automatico_mere',
+        finalidade: 'destino_cliente',
+        tentativa: 1,
+        funcaoOrigem: 'geocodificarEnderecoMere',
+        proximoFallback: 'google_geocoding',
+      },
+    })
+
+    expect(result.status).toBe('success')
+    const logs = logSpy.mock.calls.map((call) => String(call[0])).join('\n')
+    expect(logs).toContain('[LOCATIONIQ] consulta iniciada')
+    expect(logs).toContain('[LOCATIONIQ] resposta provider')
+    expect(logs).toContain('[PROCURAR_DATAS][validar-endereco][locationiq_candidate]')
+    expect(logs).toContain('[PROCURAR_DATAS][validar-endereco][locationiq_summary]')
+    expect(logs).toContain('[LOCATIONIQ] consulta concluida')
+    expect(logs).toContain('sessaoId=sessao-m...7890')
+    expect(logs).toContain('messageId=msg-loca...3456')
+    expect(logs).toContain('origemFluxo=atendimento_automatico_mere')
+    expect(logs).toContain('finalidade=destino_cliente')
+    expect(logs).toContain('funcaoOrigem=geocodificarEnderecoMere')
+    expect(logs).toContain('proximoFallback=none')
+    expect(logs).not.toContain('secret-locationiq-key')
+  })
+
+  it('mantem chamadas sem contexto funcionando e informa fallback apos rejeicao', async () => {
+    vi.stubEnv('LOCATIONIQ_API_KEY', 'test-key')
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      json: async () => [
+        {
+          lat: '-25.478',
+          lon: '-49.252',
+          display_name: 'Rua das Flores, 1210, Hauer, Curitiba, Parana, Brasil',
+          address: {
+            road: 'Rua das Flores',
+            house_number: '1210',
+            suburb: 'Hauer',
+            city: 'Curitiba',
+            state: 'Parana',
+            state_code: 'BR-PR',
+          },
+        },
+      ],
+    })) as unknown as typeof fetch
+
+    const result = await buscarEnderecoLocationIq(FORM_FORTALEZA, { fetchFn })
+
+    expect(result).toEqual({ status: 'failed', motivo: 'sem_resultado_valido' })
+    const logs = logSpy.mock.calls.map((call) => String(call[0])).join('\n')
+    expect(logs).toContain('origemFluxo=procurar_datas')
+    expect(logs).toContain('finalidade=geocodificacao_endereco')
+    expect(logs).toContain('motivos=logradouro_mismatch')
+    expect(logs).toContain('proximoFallback=-')
+    expect(logs).not.toContain('test-key')
   })
 })

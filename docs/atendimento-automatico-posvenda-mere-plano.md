@@ -5,6 +5,15 @@
 
 ---
 
+## Atualizacao 2026-07-28 - Retry CPF/CNPJ vazio e logs LocationIQ
+
+- Ajuste pequeno aplicado no fluxo de pos-venda Mère: quando a consulta por CPF/CNPJ retorna `ok=true` sem grupos/agendamentos na primeira tentativa, o sistema aguarda 5000 ms e repete uma vez com o mesmo documento normalizado antes de usar o comportamento existente de pedido nao localizado.
+- Erros tecnicos de consulta preservam o retry tecnico ja existente de 1000 ms.
+- Logs LocationIQ ganharam contexto sanitizado para origem do fluxo, finalidade, funcao chamadora, fallback previsto, duracao e IDs truncados. Chaves de API, payload bruto, telefone, CPF/CNPJ e texto livre do cliente nao foram adicionados aos logs.
+- Nao houve alteracao de banco, mensagens de negocio, motor `/procurar-datas`, OSRM, Haversine, ranking, UI ou integracoes reais.
+
+---
+
 ## 1. Objetivo da feature
 
 Implementar atendimento automatico de pos-venda via WhatsApp/Digisac (bot Mere) no Le Bebe App.

@@ -378,7 +378,20 @@ describe('consulta-datas-mere', () => {
     });
 
     expect(buscarEnderecoNoGeoCacheMock).toHaveBeenCalled();
-    expect(buscarEnderecoLocationIqMock).toHaveBeenCalled();
+    expect(buscarEnderecoLocationIqMock).toHaveBeenCalledWith(expect.objectContaining({
+      cep: '81320260',
+      numero: '201',
+      cidade: 'Curitiba',
+      uf: 'PR',
+    }), expect.objectContaining({
+      context: expect.objectContaining({
+        sessaoId: 'sessao-provider',
+        origemFluxo: 'atendimento_automatico_mere',
+        finalidade: 'destino_cliente',
+        funcaoOrigem: 'geocodificarEnderecoMere',
+        proximoFallback: 'google_geocoding',
+      }),
+    }));
     expect(salvarEnderecoNoGeoCacheMock).toHaveBeenCalledWith(
       expect.objectContaining({ cep: '81320260', numero: '201', cidade: 'Curitiba', uf: 'PR' }),
       expect.objectContaining({ lat: enderecoValidado.lat, lng: enderecoValidado.lng, provider: 'locationiq' })

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { processarWebhookPosVenda } from './webhook-processor';
 import { buscarAgendamentosPorDocumento } from '@/lib/google/sheets-service-account';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -32,6 +32,7 @@ type SessaoFake = {
 const updates: Array<{ table: string; data: Record<string, unknown> }> = [];
 const inserts: Array<{ table: string; data: Record<string, unknown> }> = [];
 let sessaoAtual: SessaoFake | null;
+let mensagemExistente: { id: string } | null;
 
 function criarSupabaseFake() {
   return {
@@ -50,7 +51,7 @@ function criarSupabaseFake() {
           return this;
         },
         maybeSingle() {
-          if (table === 'atendimento_automatico_mensagens') return Promise.resolve({ data: null, error: null });
+          if (table === 'atendimento_automatico_mensagens') return Promise.resolve({ data: mensagemExistente, error: null });
           if (table === 'atendimento_automatico_sessoes') return Promise.resolve({ data: sessaoAtual, error: null });
           if (table === 'atendimento_automatico_bloqueios') return Promise.resolve({ data: null, error: null });
           return Promise.resolve({ data: null, error: null });
@@ -168,6 +169,11 @@ beforeEach(() => {
   vi.mocked(buscarAgendamentosPorDocumento).mockReset();
   vi.mocked(fetchDigisac).mockReset();
   sessaoAtual = sessaoBase();
+  mensagemExistente = null;
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe('processarWebhookPosVenda - relocalizacao de pedido negado', () => {
@@ -218,7 +224,166 @@ describe('processarWebhookPosVenda - relocalizacao de pedido negado', () => {
     });
   });
 
+  it('primeira consulta localizada nao aguarda retry e segue fluxo normal', async () => {
+    vi.mocked(buscarAgendamentosPorDocumento).mockResolvedValue({
+      ok: true,
+      agendamentos: [agendamentoBase()],
+      total: 1,
+      grupos: [grupoBase()],
+      total_grupos: 1,
+    });
+    sessaoAtual = sessaoBase({ estado: 'aguardando_documento', documento_informado: null, metadata: {} });
+
+    await processarWebhookPosVenda(payload('10976025914', 'msg-doc-primeira-localizada'));
+
+    expect(buscarAgendamentosPorDocumento).toHaveBeenCalledTimes(1);
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('aguardando_confirmacao_pedido');
+    expect(updateSessao?.data.metadata).toMatchObject({
+      busca_agenda_status: 'encontrado',
+      busca_agenda_tentativas: 1,
+      busca_agenda_retry_executado: false,
+      resposta_sugerida_tipo: 'confirmar_entrega_unica',
+    });
+  });
+
+  it('primeira consulta vazia aguarda 5s e segunda localizada segue sem mensagem de erro', async () => {
+    vi.useFakeTimers();
+    sessaoAtual = sessaoBase({ estado: 'aguardando_documento', documento_informado: null, metadata: {} });
+    vi.mocked(buscarAgendamentosPorDocumento)
+      .mockResolvedValueOnce({ ok: true, agendamentos: [], total: 0, grupos: [], total_grupos: 0 })
+      .mockResolvedValueOnce({
+        ok: true,
+        agendamentos: [agendamentoBase()],
+        total: 1,
+        grupos: [grupoBase()],
+        total_grupos: 1,
+      });
+
+    const processamento = processarWebhookPosVenda(payload('10976025914', 'msg-doc-retry-localizado'));
+    await vi.waitFor(() => expect(buscarAgendamentosPorDocumento).toHaveBeenCalledTimes(1));
+    expect(updates.find((u) => u.table === 'atendimento_automatico_sessoes')).toBeUndefined();
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await processamento;
+
+    expect(buscarAgendamentosPorDocumento).toHaveBeenCalledTimes(2);
+    expect(buscarAgendamentosPorDocumento).toHaveBeenNthCalledWith(1, '10976025914');
+    expect(buscarAgendamentosPorDocumento).toHaveBeenNthCalledWith(2, '10976025914');
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('aguardando_confirmacao_pedido');
+    expect(updateSessao?.data.metadata).toMatchObject({
+      busca_agenda_status: 'encontrado',
+      busca_agenda_tentativas: 2,
+      busca_agenda_retry_executado: true,
+      busca_agenda_retry_vazio_executado: true,
+      resposta_sugerida_tipo: 'confirmar_entrega_unica',
+    });
+    expect(String((updateSessao?.data.metadata as Record<string, unknown>).resposta_sugerida_tipo)).not.toBe('pedido_nao_localizado');
+  });
+
+  it('primeira e segunda consultas vazias enviam mensagem atual somente apos retry', async () => {
+    vi.useFakeTimers();
+    sessaoAtual = sessaoBase({ estado: 'aguardando_documento', documento_informado: null, metadata: {} });
+    vi.mocked(buscarAgendamentosPorDocumento).mockResolvedValue({
+      ok: true,
+      agendamentos: [],
+      total: 0,
+      grupos: [],
+      total_grupos: 0,
+    });
+
+    const processamento = processarWebhookPosVenda(payload('10976025914', 'msg-doc-retry-vazio'));
+    await vi.waitFor(() => expect(buscarAgendamentosPorDocumento).toHaveBeenCalledTimes(1));
+    expect(updates.find((u) => u.table === 'atendimento_automatico_sessoes')).toBeUndefined();
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await processamento;
+
+    expect(buscarAgendamentosPorDocumento).toHaveBeenCalledTimes(2);
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('pedido_nao_localizado');
+    expect(updateSessao?.data.metadata).toMatchObject({
+      busca_agenda_status: 'nao_encontrado',
+      busca_agenda_tentativas: 2,
+      busca_agenda_retry_executado: true,
+      busca_agenda_retry_vazio_executado: true,
+      resposta_sugerida_tipo: 'pedido_nao_localizado',
+    });
+  });
+
+  it('CPF invalido nao executa consulta nem retry quando validacao atual bloqueia', async () => {
+    sessaoAtual = sessaoBase({ estado: 'aguardando_documento', documento_informado: null, metadata: {} });
+
+    await processarWebhookPosVenda(payload('12345', 'msg-doc-invalido'));
+
+    expect(buscarAgendamentosPorDocumento).not.toHaveBeenCalled();
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBeUndefined();
+  });
+
+  it('erro tecnico na primeira consulta preserva retry tecnico existente sem virar pedido vazio', async () => {
+    vi.useFakeTimers();
+    sessaoAtual = sessaoBase({ estado: 'aguardando_documento', documento_informado: null, metadata: {} });
+    vi.mocked(buscarAgendamentosPorDocumento).mockResolvedValue({ ok: false, erro: 'falha temporaria' });
+
+    const processamento = processarWebhookPosVenda(payload('10976025914', 'msg-doc-erro-tecnico'));
+    await vi.waitFor(() => expect(buscarAgendamentosPorDocumento).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(1000);
+    await processamento;
+
+    expect(buscarAgendamentosPorDocumento).toHaveBeenCalledTimes(2);
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('erro_tecnico_busca_agenda');
+    expect(updateSessao?.data.status).toBeUndefined();
+    expect(updateSessao?.data.metadata).toMatchObject({
+      busca_agenda_status: 'erro_tecnico',
+      busca_agenda_retry_vazio_executado: false,
+      busca_agenda_tentativas: 2,
+      resposta_sugerida_tipo: 'erro_tecnico_busca_agenda',
+    });
+  });
+
+  it('messageId duplicado nao executa consulta nem retry paralelo', async () => {
+    mensagemExistente = { id: 'msg-ja-processada' };
+    sessaoAtual = sessaoBase({ estado: 'aguardando_documento', documento_informado: null, metadata: {} });
+
+    const resultado = await processarWebhookPosVenda(payload('10976025914', 'msg-duplicada'));
+
+    expect(resultado).toMatchObject({ ok: true, ignored: true, reason: 'duplicado' });
+    expect(buscarAgendamentosPorDocumento).not.toHaveBeenCalled();
+  });
+
+  it('nova mensagem durante espera e processada pelo mecanismo atual sem resposta duplicada do primeiro messageId', async () => {
+    vi.useFakeTimers();
+    sessaoAtual = sessaoBase({ estado: 'aguardando_documento', documento_informado: null, metadata: {} });
+    vi.mocked(buscarAgendamentosPorDocumento)
+      .mockResolvedValueOnce({ ok: true, agendamentos: [], total: 0, grupos: [], total_grupos: 0 })
+      .mockResolvedValueOnce({
+        ok: true,
+        agendamentos: [agendamentoBase()],
+        total: 1,
+        grupos: [grupoBase()],
+        total_grupos: 1,
+      });
+
+    const primeira = processarWebhookPosVenda(payload('10976025914', 'msg-doc-espera'));
+    await vi.waitFor(() => expect(buscarAgendamentosPorDocumento).toHaveBeenCalledTimes(1));
+
+    const segunda = await processarWebhookPosVenda(payload('obrigada', 'msg-durante-espera'));
+    expect(segunda).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
+    expect(updates.some((u) => u.data.estado === 'pedido_nao_localizado')).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await primeira;
+
+    expect(inserts.filter((i) => i.table === 'atendimento_automatico_mensagens' && i.data.digisac_message_id === 'msg-doc-espera')).toHaveLength(1);
+    expect(inserts.filter((i) => i.table === 'atendimento_automatico_mensagens' && i.data.digisac_message_id === 'msg-durante-espera')).toHaveLength(1);
+    expect(updates.filter((u) => u.table === 'atendimento_automatico_sessoes' && u.data.estado === 'aguardando_confirmacao_pedido')).toHaveLength(1);
+  });
+
   it('transfere para humano quando novo CPF valido nao localiza pedido', async () => {
+    vi.useFakeTimers();
     sessaoAtual = sessaoBase({ estado: 'aguardando_novo_documento_ou_esclarecimento' });
     vi.mocked(buscarAgendamentosPorDocumento).mockResolvedValue({
       ok: true,
@@ -228,7 +393,10 @@ describe('processarWebhookPosVenda - relocalizacao de pedido negado', () => {
       total_grupos: 0,
     });
 
-    await processarWebhookPosVenda(payload('10976025914', 'msg-doc-nao-localizado'));
+    const processamento = processarWebhookPosVenda(payload('10976025914', 'msg-doc-nao-localizado'));
+    await vi.waitFor(() => expect(buscarAgendamentosPorDocumento).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(5000);
+    await processamento;
 
     const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
     expect(updateSessao?.data.estado).toBe('transferido_humano');
@@ -994,7 +1162,8 @@ describe('processarWebhookPosVenda - retry de CPF em erro tecnico', () => {
     expect(updateSessao?.data.status).toBe('transferido_humano');
   });
 
-  it('does not retry when first call returns ok=true with empty results', async () => {
+  it('retries after 5s when first call returns ok=true with empty results', async () => {
+    vi.useFakeTimers();
     sessaoAtual = null;
     vi.mocked(fetchDigisac).mockImplementation(async (endpoint: string) => {
       if (endpoint.startsWith('/contacts/')) {
@@ -1015,12 +1184,19 @@ describe('processarWebhookPosVenda - retry de CPF em erro tecnico', () => {
       total_grupos: 0,
     });
 
-    const resultado = await processarWebhookPosVenda(payload('09782588946', 'msg-cpf-sem-pedido'));
+    const processamento = processarWebhookPosVenda(payload('09782588946', 'msg-cpf-sem-pedido'));
+    await vi.waitFor(() => expect(buscarAgendamentosPorDocumento).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(5000);
+    const resultado = await processamento;
 
     expect(resultado).toMatchObject({ ok: true, saved: true, origem: 'cliente' });
-    expect(buscarAgendamentosPorDocumento).toHaveBeenCalledTimes(1);
+    expect(buscarAgendamentosPorDocumento).toHaveBeenCalledTimes(2);
     const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
     expect(updateSessao?.data.estado).toBe('pedido_nao_localizado');
+    expect(updateSessao?.data.metadata).toMatchObject({
+      busca_agenda_tentativas: 2,
+      busca_agenda_retry_vazio_executado: true,
+    });
   });
 });
 

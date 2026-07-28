@@ -47,6 +47,16 @@ export type ResultadoLocationIq =
   | { status: 'success'; resultado: EnderecoValidado; reservaUsada: boolean }
   | { status: 'failed'; motivo: string }
 
+export type LocationIqLogContext = {
+  sessaoId?: string | null
+  messageId?: string | null
+  origemFluxo?: 'atendimento_automatico_mere' | 'procurar_datas'
+  finalidade?: 'destino_cliente' | 'geocodificacao_endereco' | 'origem_agenda' | 'fallback_cache_ambiguo' | 'validacao_reserva'
+  tentativa?: number
+  funcaoOrigem?: string
+  proximoFallback?: string
+}
+
 const UF_NOMES: Record<string, string> = {
   AC: 'ACRE',
   AL: 'ALAGOAS',
@@ -99,6 +109,44 @@ function montarUrlLocationIq(form: ValidarEnderecoRequest, apiKey: string): URL 
   url.searchParams.set('countrycodes', 'br')
   url.searchParams.set('accept-language', 'pt-BR')
   return url
+}
+
+function truncarIdentificador(valor: string | null | undefined): string {
+  if (!valor) return '-'
+  return valor.length <= 12 ? valor : `${valor.slice(0, 8)}...${valor.slice(-4)}`
+}
+
+function sanitizarCampoLog(valor: string | null | undefined, max = 60): string {
+  return normalizarTexto(valor).slice(0, max) || '-'
+}
+
+function contextoLogLocationIq(
+  form: ValidarEnderecoRequest,
+  context: LocationIqLogContext | undefined,
+  reserva: boolean
+): string {
+  return (
+    ` sessaoId=${truncarIdentificador(context?.sessaoId)}` +
+    ` messageId=${truncarIdentificador(context?.messageId)}` +
+    ` origemFluxo=${context?.origemFluxo ?? 'procurar_datas'}` +
+    ` finalidade=${context?.finalidade ?? 'geocodificacao_endereco'}` +
+    ` tentativa=${context?.tentativa ?? 1}` +
+    ` reserva=${reserva}` +
+    ` provider=locationiq` +
+    ` funcaoOrigem=${context?.funcaoOrigem ?? 'buscarEnderecoLocationIq'}` +
+    ` cep=${normalizarCep(form.cep) || '-'}` +
+    ` cidade=${sanitizarCampoLog(form.cidade, 40)}` +
+    ` uf=${sanitizarCampoLog(form.uf, 2)}`
+  )
+}
+
+function proximoFallbackLocationIq(context: LocationIqLogContext | undefined, reserva: boolean, existeReservaPendente: boolean): string {
+  if (!reserva && existeReservaPendente) return 'locationiq_reserva'
+  return context?.proximoFallback ?? '-'
+}
+
+function sanitizarMotivoLog(valor: string): string {
+  return valor.replace(/[^\w:.-]/g, '_').slice(0, 120)
 }
 
 function cidadeDoCandidato(address: LocationIqAddress | undefined): string {
@@ -369,6 +417,7 @@ export async function buscarEnderecoLocationIq(
   options: {
     fetchFn?: typeof fetch
     onEvent?: (event: LocationIqEvent) => void
+    context?: LocationIqLogContext
   } = {}
 ): Promise<ResultadoLocationIq> {
   const fetchFn = options.fetchFn ?? fetch
@@ -376,14 +425,30 @@ export async function buscarEnderecoLocationIq(
   if (chaves.length === 0) return { status: 'failed', motivo: 'locationiq_key_ausente' }
 
   let ultimoMotivo = 'sem_resultado_valido'
-  for (const { chave, reserva } of chaves) {
+  for (let tentativaProvider = 0; tentativaProvider < chaves.length; tentativaProvider++) {
+    const { chave, reserva } = chaves[tentativaProvider]
+    const existeReservaPendente = tentativaProvider + 1 < chaves.length
+    const inicioTentativaMs = Date.now()
+    const contextoLog = contextoLogLocationIq(form, options.context, reserva)
+    const proximoFallback = proximoFallbackLocationIq(options.context, reserva, existeReservaPendente)
     if (reserva) options.onEvent?.({ tipo: 'locationiq_reserve_key_used' })
     options.onEvent?.({ tipo: 'locationiq_start', reserva })
+    console.log(`[LOCATIONIQ] consulta iniciada${contextoLog}`)
 
     try {
       const response = await fetchFn(montarUrlLocationIq(form, chave), { headers: { Accept: 'application/json' } })
+      const duracaoProviderMs = Date.now() - inicioTentativaMs
       if (!response.ok) {
         ultimoMotivo = `http_${response.status}`
+        console.log(
+          `[LOCATIONIQ] resposta provider${contextoLog}` +
+          ` status=http_${response.status} total=- duracaoMs=${duracaoProviderMs}` +
+          ` rateLimit=${response.status === 429} timeout=false erro=${ultimoMotivo}`
+        )
+        console.log(
+          `[LOCATIONIQ] consulta concluida${contextoLog}` +
+          ` resultado=erro motivo=${ultimoMotivo} proximoFallback=${proximoFallback} duracaoMs=${Date.now() - inicioTentativaMs}`
+        )
         options.onEvent?.({ tipo: 'locationiq_failed', reserva, motivo: ultimoMotivo })
         continue
       }
@@ -391,11 +456,25 @@ export async function buscarEnderecoLocationIq(
       const data = (await response.json()) as unknown
       if (!Array.isArray(data)) {
         ultimoMotivo = 'payload_invalido'
+        console.log(
+          `[LOCATIONIQ] resposta provider${contextoLog}` +
+          ` status=payload_invalido total=- duracaoMs=${Date.now() - inicioTentativaMs}` +
+          ` rateLimit=false timeout=false erro=payload_invalido`
+        )
+        console.log(
+          `[LOCATIONIQ] consulta concluida${contextoLog}` +
+          ` resultado=erro motivo=payload_invalido proximoFallback=${proximoFallback} duracaoMs=${Date.now() - inicioTentativaMs}`
+        )
         options.onEvent?.({ tipo: 'locationiq_failed', reserva, motivo: ultimoMotivo })
         continue
       }
 
       const candidatos = data as LocationIqCandidate[]
+      console.log(
+        `[LOCATIONIQ] resposta provider${contextoLog}` +
+        ` status=ok total=${candidatos.length} duracaoMs=${Date.now() - inicioTentativaMs}` +
+        ` rateLimit=false timeout=false erro=-`
+      )
       const contadores: Record<string, number> = {}
       let aceitos = 0
 
@@ -431,7 +510,8 @@ export async function buscarEnderecoLocationIq(
         if (validacao.valido) {
           console.log(
             `[PROCURAR_DATAS][validar-endereco][locationiq_candidate]` +
-            ` idx=${idx} reserva=${reserva} motivo=${validacao.resultado.motivo ?? 'aceito'}` +
+            contextoLog +
+            ` idx=${idx} motivo=${validacao.resultado.motivo ?? 'aceito'}` +
             ` motivos=${motivosStr || 'nenhum'}` +
             ` lat=${latStr} lng=${lngStr}` +
             ` importance=${candidate.importance ?? '-'}` +
@@ -448,6 +528,17 @@ export async function buscarEnderecoLocationIq(
             ` display="${displayTrunc}"`
           )
           aceitos++
+          console.log(
+            `[PROCURAR_DATAS][validar-endereco][locationiq_summary]` +
+            contextoLog +
+            ` total=${candidatos.length} aceitos=${aceitos} rejeitados=${idx}` +
+            ` motivos=${Object.entries(contadores).map(([k, v]) => `${k}:${v}`).join(',') || 'nenhum'}` +
+            ` selecionado=${idx} proximoFallback=none duracaoMs=${Date.now() - inicioTentativaMs}`
+          )
+          console.log(
+            `[LOCATIONIQ] consulta concluida${contextoLog}` +
+            ` resultado=aceito selecionado=${idx} proximoFallback=none duracaoMs=${Date.now() - inicioTentativaMs}`
+          )
           options.onEvent?.({ tipo: 'locationiq_success', reserva })
           return { status: 'success', resultado: validacao.resultado, reservaUsada: reserva }
         }
@@ -460,7 +551,8 @@ export async function buscarEnderecoLocationIq(
 
         console.log(
           `[PROCURAR_DATAS][validar-endereco][locationiq_candidate]` +
-          ` idx=${idx} reserva=${reserva} motivos=${motivosStr}` +
+          contextoLog +
+          ` idx=${idx} motivos=${motivosStr}` +
           ` lat=${latStr} lng=${lngStr}` +
           ` importance=${candidate.importance ?? '-'}` +
           ` house_number="${addr.house_number ?? '-'}"` +
@@ -493,8 +585,15 @@ export async function buscarEnderecoLocationIq(
         .join(',')
       console.log(
         `[PROCURAR_DATAS][validar-endereco][locationiq_summary]` +
-        ` reserva=${reserva} total=${candidatos.length} aceitos=${aceitos} rejeitados=${rejeitados}` +
-        ` motivos=${motivosStr || 'nenhum'}`
+        contextoLog +
+        ` total=${candidatos.length} aceitos=${aceitos} rejeitados=${rejeitados}` +
+        ` motivos=${motivosStr || 'nenhum'} selecionado=- proximoFallback=${proximoFallback}` +
+        ` duracaoMs=${Date.now() - inicioTentativaMs}`
+      )
+      console.log(
+        `[LOCATIONIQ] consulta concluida${contextoLog}` +
+        ` resultado=rejeitado motivo=sem_resultado_valido proximoFallback=${proximoFallback}` +
+        ` duracaoMs=${Date.now() - inicioTentativaMs}`
       )
 
       ultimoMotivo = 'sem_resultado_valido'
@@ -504,6 +603,17 @@ export async function buscarEnderecoLocationIq(
       options.onEvent?.({ tipo: 'locationiq_failed', reserva, motivo: ultimoMotivo })
     } catch (error) {
       ultimoMotivo = error instanceof Error ? error.message : 'erro_desconhecido'
+      const motivoLog = sanitizarMotivoLog(ultimoMotivo)
+      console.log(
+        `[LOCATIONIQ] resposta provider${contextoLog}` +
+        ` status=erro total=- duracaoMs=${Date.now() - inicioTentativaMs}` +
+        ` rateLimit=false timeout=${/timeout|timed.?out/i.test(ultimoMotivo)} erro=${motivoLog}`
+      )
+      console.log(
+        `[LOCATIONIQ] consulta concluida${contextoLog}` +
+        ` resultado=erro motivo=${motivoLog} proximoFallback=${proximoFallback}` +
+        ` duracaoMs=${Date.now() - inicioTentativaMs}`
+      )
       options.onEvent?.({ tipo: 'locationiq_failed', reserva, motivo: ultimoMotivo })
     }
   }

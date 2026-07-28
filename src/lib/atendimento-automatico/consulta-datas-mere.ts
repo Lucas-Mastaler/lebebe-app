@@ -635,7 +635,16 @@ export async function geocodificarEnderecoMere(
     console.warn(`[posvenda-webhook] geo_cache erro, tentando provider existente sessaoId=${options.sessaoId ?? '-'} motivo=${motivo}`);
   }
 
-  const locationIq = await buscarEnderecoLocationIq(form);
+  const locationIq = await buscarEnderecoLocationIq(form, {
+    context: {
+      sessaoId: options.sessaoId,
+      origemFluxo: 'atendimento_automatico_mere',
+      finalidade: 'destino_cliente',
+      tentativa: 1,
+      funcaoOrigem: 'geocodificarEnderecoMere',
+      proximoFallback: 'google_geocoding',
+    },
+  });
   if (locationIq.status === 'success') {
     if (!coordenadasValidasEndereco(locationIq.resultado)) {
       return { ok: false, motivo: 'geo_cache_lat_lng_invalidos', geoCacheHit: false, geocodingProviderConsultado: true, geocodingProvider: 'locationiq', geoCacheSalvo: false };

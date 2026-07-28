@@ -221,8 +221,24 @@ export async function resolverCoordenadasAgendaProducao(
   await mapearComConcorrencia(pendentesFallback, GEO_CACHE_FALLBACK_CONCORRENCIA, async (pendente) => {
     try {
       const locationIq = await (perf?.medirAsync('geocodificacao-agenda-externa', () =>
-        buscarEnderecoLocationIq(pendente.form)
-      ) ?? buscarEnderecoLocationIq(pendente.form))
+        buscarEnderecoLocationIq(pendente.form, {
+          context: {
+            origemFluxo: 'procurar_datas',
+            finalidade: 'origem_agenda',
+            tentativa: 1,
+            funcaoOrigem: 'resolverCoordenadasAgendaProducao',
+            proximoFallback: 'google_geocoding',
+          },
+        })
+      ) ?? buscarEnderecoLocationIq(pendente.form, {
+        context: {
+          origemFluxo: 'procurar_datas',
+          finalidade: 'origem_agenda',
+          tentativa: 1,
+          funcaoOrigem: 'resolverCoordenadasAgendaProducao',
+          proximoFallback: 'google_geocoding',
+        },
+      }))
       if (locationIq.status === 'success' && coordenadaValida({ lat: locationIq.resultado.lat, lng: locationIq.resultado.lng })) {
         const cacheSave = await salvarEnderecoNoGeoCache(pendente.form, locationIq.resultado)
         if (!cacheSave.ok) avisos.push(`Agenda producao: coordenada resolvida por LocationIQ, mas cache nao foi salvo (${cacheSave.erro}).`)

@@ -5052,3 +5052,17 @@ Status: implementado e validado em testes focados. Escopo limitado ao helper cen
 - Validado com `npm run test -- src/lib/procurar-datas/endereco-cache.test.ts src/lib/atendimento-automatico/consulta-datas-mere.test.ts --silent`, `npx eslint` nos quatro arquivos TS afetados e `npx tsc --noEmit`.
 
 ---
+## 2026-07-28 - Codex - Observabilidade LocationIQ compartilhada
+
+Status: implementado e validado. Alteracao restrita a logs/contexto do helper LocationIQ e seus consumidores; nao altera motor, ranking, classificacao, OSRM, Haversine, Calendar, Sheets, candidatos, frete ou regras de negocio.
+
+### Ajuste
+- `buscarEnderecoLocationIq` passou a aceitar contexto opcional sanitizado (`origemFluxo`, `finalidade`, `funcaoOrigem`, fallback previsto e IDs truncados quando existirem).
+- Consumidores de Mère, validar-endereco e resolucao de coordenadas de agenda agora informam contexto proprio para facilitar auditoria sem expor dados sensiveis.
+
+### Validacoes
+- Testes focados de LocationIQ, Mère e webhook processor passaram.
+- Testes de validar-endereco e `resolver-coordenadas-agenda-producao` passaram.
+- Typecheck, ESLint direcionado e `git diff --check` passaram, com avisos LF/CRLF conhecidos no Windows.
+
+---

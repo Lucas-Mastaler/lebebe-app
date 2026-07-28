@@ -649,6 +649,12 @@ function mascararDocumentoMetadata(documento: string | null | undefined): string
   return null;
 }
 
+const RETRY_BUSCA_DOCUMENTO_VAZIA_MS = 5000;
+
+async function aguardarMilissegundos(tempoMs: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, tempoMs));
+}
+
 type ModoBuscaDocumento = 'inicial' | 'retentativa_pedido_negado';
 
 async function prepararBuscaAgendaPorDocumento(params: {
@@ -672,6 +678,8 @@ async function prepararBuscaAgendaPorDocumento(params: {
   let resultadoBusca = await buscarAgendamentosPorDocumento(params.documento);
   const buscaDuracaoMs = Date.now() - buscaInicioMs;
   let retryExecutado = false;
+  let retryVazioExecutado = false;
+  let tentativasBuscaAgenda = 1;
 
   if (!resultadoBusca.ok) {
     console.log(
@@ -679,11 +687,12 @@ async function prepararBuscaAgendaPorDocumento(params: {
       ` tentativa=1 documentoTamanho=${params.documento.length}` +
       ` consultaStatus=erro erroTipo=transitorio duracaoMs=${buscaDuracaoMs} retryExecutado=false`
     );
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await aguardarMilissegundos(1000);
     const retryInicioMs = Date.now();
     resultadoBusca = await buscarAgendamentosPorDocumento(params.documento);
     const retryDuracaoMs = Date.now() - retryInicioMs;
     retryExecutado = true;
+    tentativasBuscaAgenda = 2;
     console.log(
       `[posvenda-webhook] busca agenda retry sessaoId=${params.sessaoId}` +
       ` tentativa=2 documentoTamanho=${params.documento.length}` +
@@ -697,6 +706,43 @@ async function prepararBuscaAgendaPorDocumento(params: {
       ` consultaStatus=ok duracaoMs=${buscaDuracaoMs} retryExecutado=false` +
       ` total=${resultadoBusca.total}`
     );
+    if (resultadoBusca.total === 0 && resultadoBusca.grupos.length === 0) {
+      console.log(
+        `[posvenda-webhook] pedido nao encontrado primeira tentativa sessaoId=${params.sessaoId}` +
+        ` tentativa=1 retryEmMs=${RETRY_BUSCA_DOCUMENTO_VAZIA_MS}` +
+        ` documentoTamanho=${params.documento.length}`
+      );
+      await aguardarMilissegundos(RETRY_BUSCA_DOCUMENTO_VAZIA_MS);
+      console.log(
+        `[posvenda-webhook] repetindo consulta de pedido sessaoId=${params.sessaoId}` +
+        ` tentativa=2 documentoTamanho=${params.documento.length}`
+      );
+      const retryInicioMs = Date.now();
+      resultadoBusca = await buscarAgendamentosPorDocumento(params.documento);
+      const retryDuracaoMs = Date.now() - retryInicioMs;
+      retryExecutado = true;
+      retryVazioExecutado = true;
+      tentativasBuscaAgenda = 2;
+
+      if (resultadoBusca.ok && resultadoBusca.total > 0 && resultadoBusca.grupos.length > 0) {
+        console.log(
+          `[posvenda-webhook] pedido encontrado no retry sessaoId=${params.sessaoId}` +
+          ` tentativa=2 quantidadePedidos=${resultadoBusca.total} grupos=${resultadoBusca.grupos.length}` +
+          ` duracaoMs=${retryDuracaoMs}`
+        );
+      } else if (resultadoBusca.ok) {
+        console.log(
+          `[posvenda-webhook] pedido nao encontrado apos retry sessaoId=${params.sessaoId}` +
+          ` tentativas=2 total=${resultadoBusca.total} grupos=${resultadoBusca.grupos.length}` +
+          ` duracaoMs=${retryDuracaoMs}`
+        );
+      } else {
+        console.log(
+          `[posvenda-webhook] busca agenda retry vazio retornou erro tecnico sessaoId=${params.sessaoId}` +
+          ` tentativa=2 consultaStatus=erro duracaoMs=${retryDuracaoMs}`
+        );
+      }
+    }
   }
   const tentativasDocumentoAtual = params.metadataAtual?.tentativas_documento as number | undefined;
   const metadataRetentativa =
@@ -733,6 +779,9 @@ async function prepararBuscaAgendaPorDocumento(params: {
             grupo_agendamento_selecionado: 1,
             busca_agenda_status: 'encontrado',
             busca_agenda_em: buscaAgendaEm,
+            busca_agenda_tentativas: tentativasBuscaAgenda,
+            busca_agenda_retry_executado: retryExecutado,
+            busca_agenda_retry_vazio_executado: retryVazioExecutado,
           },
           resposta: respostaConfirmarEntregaUnica(grupo),
           estado: novoEstado,
@@ -765,6 +814,9 @@ async function prepararBuscaAgendaPorDocumento(params: {
             grupo_agendamento_selecionado: null,
             busca_agenda_status: 'encontrado',
             busca_agenda_em: buscaAgendaEm,
+            busca_agenda_tentativas: tentativasBuscaAgenda,
+            busca_agenda_retry_executado: retryExecutado,
+            busca_agenda_retry_vazio_executado: retryVazioExecutado,
           },
           resposta: respostaEscolherGrupo(nomeCliente, grupos),
           estado: novoEstado,
@@ -791,6 +843,9 @@ async function prepararBuscaAgendaPorDocumento(params: {
           grupo_agendamento_selecionado: null,
           busca_agenda_status: 'nao_encontrado',
           busca_agenda_em: buscaAgendaEm,
+          busca_agenda_tentativas: tentativasBuscaAgenda,
+          busca_agenda_retry_executado: retryExecutado,
+          busca_agenda_retry_vazio_executado: retryVazioExecutado,
           precisa_humano_por_regra: true,
           motivo_transferencia_humano: 'novo_documento_nao_localizado',
         },
@@ -815,6 +870,9 @@ async function prepararBuscaAgendaPorDocumento(params: {
           grupo_agendamento_selecionado: null,
           busca_agenda_status: 'nao_encontrado',
           busca_agenda_em: buscaAgendaEm,
+          busca_agenda_tentativas: tentativasBuscaAgenda,
+          busca_agenda_retry_executado: retryExecutado,
+          busca_agenda_retry_vazio_executado: retryVazioExecutado,
         },
         resposta: respostaPedidoNaoLocalizado(),
         estado: novoEstado,
@@ -839,6 +897,8 @@ async function prepararBuscaAgendaPorDocumento(params: {
         busca_agenda_erro: resultadoBusca.erro.substring(0, 200),
         busca_agenda_em: buscaAgendaEm,
         busca_agenda_retry_executado: retryExecutado,
+        busca_agenda_retry_vazio_executado: retryVazioExecutado,
+        busca_agenda_tentativas: tentativasBuscaAgenda,
         precisa_humano_por_regra: true,
         motivo_bloqueio_busca: 'erro_tecnico_busca_agenda',
       },

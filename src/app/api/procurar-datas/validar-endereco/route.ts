@@ -60,7 +60,16 @@ export async function POST(request: NextRequest) {
       console.log(`[PROCURAR_DATAS][validar-endereco] ${event.tipo} duracaoMs=${Date.now() - inicio}`)
     }
 
-    const locationIq = await buscarEnderecoLocationIq(body, { onEvent: logLocationIq })
+    const locationIq = await buscarEnderecoLocationIq(body, {
+      onEvent: logLocationIq,
+      context: {
+        origemFluxo: 'procurar_datas',
+        finalidade: 'geocodificacao_endereco',
+        tentativa: 1,
+        funcaoOrigem: 'POST /api/procurar-datas/validar-endereco',
+        proximoFallback: 'google_geocoding',
+      },
+    })
     if (locationIq.status === 'success') {
       const cacheSave = await salvarEnderecoNoGeoCache(body, locationIq.resultado)
       if (!cacheSave.ok) {

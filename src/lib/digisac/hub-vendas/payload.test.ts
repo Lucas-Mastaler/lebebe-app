@@ -21,11 +21,22 @@ describe('payload Hub/Vendas', () => {
     ).toBe(true)
   })
 
+  it('reconhece texto de data.data.interactive.body.text sem busca recursiva generica', () => {
+    expect(
+      extrairTextoMensagemDigisac({
+        data: {
+          interactive: { body: { text: SAUDACAO_OFICIAL } },
+          qualquer: { text: 'texto que nao deve ser lido' },
+        },
+      })
+    ).toBe(SAUDACAO_OFICIAL.trim())
+  })
+
   it('nao reconhece mensagem manual incompleta sem dois telefones de loja', () => {
     expect(pareceSaudacaoHubVendas('Oi, central de atendimento Le Bebe. Loja Portao 554184426528')).toBe(false)
   })
 
-  it('filtra antes de consultar quando evento nao e message.created ou faltam campos', () => {
+  it('filtra antes de consultar quando evento nao e message.created ou faltam campos minimos', () => {
     expect(validarMensagemDigisac({ event: 'ticket.created', data: {} })).toBeNull()
     expect(validarMensagemDigisac({ event: 'message.created', data: { id: 'm1' } })).toBeNull()
   })
@@ -52,6 +63,28 @@ describe('payload Hub/Vendas', () => {
       serviceId: 'service-1',
       ticketId: 'ticket-1',
       texto: 'Oi',
+    })
+  })
+
+  it('mantem tipo nao chat para decisao auditavel no handler', () => {
+    const mensagem = validarMensagemDigisac({
+      event: 'message.created',
+      data: {
+        id: 'msg-1',
+        type: 'interactive',
+        contactId: 'contact-1',
+        serviceId: 'service-1',
+        timestamp: '2026-07-24T15:00:00.000Z',
+        data: { interactive: { body: { text: 'Oi' } } },
+      },
+    })
+
+    expect(mensagem).toMatchObject({
+      messageId: 'msg-1',
+      contactId: 'contact-1',
+      serviceId: 'service-1',
+      texto: 'Oi',
+      data: { type: 'interactive' },
     })
   })
 })

@@ -4256,3 +4256,49 @@ Nao foi criado webhook publico novo, rota `/api/digisac/webhook/hub-vendas`, cro
 ### 68.6 Proximo passo recomendado
 
 Fazer deploy controlado da Fase 2, conferir `DIGISAC_WEBHOOK_SECRET` configurado em producao antes de ativar o processamento Hub, e acompanhar os primeiros eventos reais por logs `[HUB VENDAS]` sem dados sensiveis. Depois disso, iniciar Fase 3 somente com nova aprovacao explicita.
+
+---
+
+## 69. Atualizacao vigente 2026-07-28 - Fase 2 hotfix de webhook e observabilidade
+
+Esta secao complementa a secao 68 apos teste real em producao indicar logs somente da triagem legada e zero registros em `hub_vendas_eventos_processados` / `hub_vendas_leads`.
+
+### 69.1 Diagnostico confirmado
+
+- A rota existente condicionava o handler Hub/Vendas a `DIGISAC_WEBHOOK_SECRET` em `NODE_ENV=production`. Se o secret estivesse ausente, o Hub era ignorado internamente por `secret_nao_configurado`, enquanto a triagem legada continuava executando.
+- O handler Hub/Vendas tambem filtrava `type !== "chat"`, `visible=false`, `isComment=true`, campos ausentes e saudacao nao reconhecida antes de reservar evento. Assim, eventos monitorados ignorados nao ficavam auditaveis.
+- O parser extraia `data.text`, `data.interactive.body.text` e `data.data.text`, mas nao extraia `data.data.interactive.body.text`.
+- MCP Supabase confirmou em producao 0 linhas em `hub_vendas_eventos_processados` e 0 linhas em `hub_vendas_leads` no momento da auditoria, alem das quatro conexoes monitoradas ativas.
+
+### 69.2 Ajuste implementado
+
+- `DIGISAC_TRIAGEM_LOJA_ATIVA` passa a controlar somente a triagem legada. A triagem antiga executa apenas quando o valor for exatamente `"true"`. Valor ausente, `"false"` ou qualquer outro valor mantem a triagem desligada.
+- Para producao atual, configurar `DIGISAC_TRIAGEM_LOJA_ATIVA=false`.
+- Hub/Vendas permanece ativo independente da flag da triagem e nao e mais pulado apenas por `DIGISAC_WEBHOOK_SECRET` ausente. A autenticacao continua igual: se `DIGISAC_WEBHOOK_SECRET` estiver configurado e o valor recebido estiver incorreto, a rota retorna 401 antes de qualquer handler.
+- A rota registra `[DIGISAC-WEBHOOK] Evento recebido` com resumo sanitizado: `event`, `messageId`, `serviceId`, `type`, flags booleanas, presenca de texto e presenca de interativo. Nao registra texto completo, telefone, nome, token, secret, payload completo ou `contactId`.
+- `Promise.allSettled` agora inspeciona os dois handlers e registra falhas como `[DIGISAC-WEBHOOK] Falha no Hub/Vendas` e `[DIGISAC-WEBHOOK] Falha na triagem`.
+- O handler Hub/Vendas registra `[HUB VENDAS] Handler iniciado` em toda chamada e padroniza motivos de early return: `evento_nao_suportado`, `service_id_nao_monitorado`, `message_id_ausente`, `tipo_nao_suportado`, `comentario`, `mensagem_invisivel`, `sem_texto_util`, `nao_e_saudacao`, `nao_e_conversao`.
+- Eventos das quatro conexoes monitoradas com `messageId` e `serviceId` validos sao reservados em `hub_vendas_eventos_processados` antes da decisao comercial e finalizados como `ignorado` quando nao geram entrada/conversao.
+- Conexoes fora da allowlist geram log controlado e nao escrevem no banco.
+- Texto interativo agora cobre explicitamente `data.interactive.body.text` e `data.data.interactive.body.text`, sem busca recursiva generica por qualquer campo `text`.
+
+### 69.3 Validacao operacional esperada apos deploy
+
+1. Enviar saudacao pela conexao Vendas.
+2. Buscar logs `[DIGISAC-WEBHOOK]`.
+3. Buscar logs `[HUB VENDAS]`.
+4. Consultar `hub_vendas_eventos_processados`.
+5. Consultar `hub_vendas_leads`.
+
+Resultado esperado quando a saudacao for reconhecida: evento reservado, saudacao reconhecida, lead criado e evento processado.
+
+Resultado esperado quando a mensagem nao for saudacao/conversao: evento reservado e finalizado como `ignorado` com motivo claro.
+
+### 69.4 Validacoes executadas
+
+- `npm run test -- src/lib/digisac/hub-vendas/payload.test.ts src/lib/digisac/hub-vendas/processar-webhook.test.ts src/lib/digisac/hub-vendas/registrar-entrada.test.ts src/lib/digisac/hub-vendas/registrar-conversao.test.ts src/app/api/digisac/webhook/route.test.ts src/lib/digisac/hub-vendas-fase1-migration.test.ts --silent` passou com 6 arquivos e 39 testes.
+- `npx eslint src/app/api/digisac/webhook/route.ts src/app/api/digisac/webhook/route.test.ts src/lib/digisac/hub-vendas src/lib/digisac/hub-vendas-fase1-migration.test.ts` passou.
+- `npx tsc --noEmit --pretty false` passou.
+- `git diff --check` passou, apenas com avisos LF/CRLF conhecidos no checkout Windows.
+- Busca focada por logs sensiveis nao encontrou texto completo, payload, token ou secret nos logs novos.
+- `npm run build` falhou inicialmente no sandbox por rede bloqueada em Google Fonts e passou com rede liberada, mantendo avisos conhecidos `DYNAMIC_SERVER_USAGE` em rotas com `cookies`.

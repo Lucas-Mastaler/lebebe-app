@@ -6,6 +6,9 @@ import type { HubVendasMensagemValidada } from './payload'
 import { extrairTelefoneContatoHubVendas } from './telefone'
 
 type SupabaseServiceClient = ReturnType<typeof createServiceClient>
+type ConversaoReservadaHubVendas = {
+  eventoId: string
+}
 
 type HubVendasLeadConversaoRow = {
   id: string
@@ -48,14 +51,20 @@ async function buscarLeadCompativel(
 export async function registrarConversaoHubVendas(
   mensagem: HubVendasMensagemValidada,
   loja: HubVendasLoja,
-  supabase = createServiceClient()
+  supabase = createServiceClient(),
+  conversaoReservada?: ConversaoReservadaHubVendas
 ): Promise<ResultadoConversaoHubVendas> {
-  const reserva = await reservarEventoHubVendas(supabase, mensagem, 'conversao_loja')
-  if (!reserva.reservado) {
-    return { ok: true, ignored: true, reason: reserva.motivo }
-  }
+  const reserva = conversaoReservada
+    ? { reservado: true as const, eventoId: conversaoReservada.eventoId }
+    : await reservarEventoHubVendas(supabase, mensagem, 'conversao_loja')
+  if (!reserva.reservado) return { ok: true, ignored: true, reason: reserva.motivo }
 
   try {
+    if (!mensagem.contactId) {
+      await finalizarEventoHubVendas(supabase, reserva.eventoId, 'erro', { reason: 'contact_id_ausente' })
+      return { ok: false, error: 'contact_id_ausente' }
+    }
+
     const contato = await buscarContatoCompleto(mensagem.contactId)
     const telefone = extrairTelefoneContatoHubVendas(contato)
 

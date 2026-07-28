@@ -6,6 +6,9 @@ import type { HubVendasMensagemValidada } from './payload'
 import { extrairNomeContatoDigisac, extrairTelefoneContatoHubVendas } from './telefone'
 
 type SupabaseServiceClient = ReturnType<typeof createServiceClient>
+type EntradaReservadaHubVendas = {
+  eventoId: string
+}
 
 type HubVendasLeadRow = {
   id: string
@@ -37,14 +40,20 @@ async function buscarLeadMaisRecentePorTelefone(
 
 export async function registrarEntradaHubVendas(
   mensagem: HubVendasMensagemValidada,
-  supabase = createServiceClient()
+  supabase = createServiceClient(),
+  entradaReservada?: EntradaReservadaHubVendas
 ): Promise<ResultadoEntradaHubVendas> {
-  const reserva = await reservarEventoHubVendas(supabase, mensagem, 'entrada_hub')
-  if (!reserva.reservado) {
-    return { ok: true, ignored: true, reason: reserva.motivo }
-  }
+  const reserva = entradaReservada
+    ? { reservado: true as const, eventoId: entradaReservada.eventoId }
+    : await reservarEventoHubVendas(supabase, mensagem, 'entrada_hub')
+  if (!reserva.reservado) return { ok: true, ignored: true, reason: reserva.motivo }
 
   try {
+    if (!mensagem.contactId) {
+      await finalizarEventoHubVendas(supabase, reserva.eventoId, 'erro', { reason: 'contact_id_ausente' })
+      return { ok: false, error: 'contact_id_ausente' }
+    }
+
     const contato = await buscarContatoCompleto(mensagem.contactId)
     const telefone = extrairTelefoneContatoHubVendas(contato)
 

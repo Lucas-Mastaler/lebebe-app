@@ -28,7 +28,7 @@ export type HubVendasWebhookPayload = {
 export type HubVendasMensagemValidada = {
   event: 'message.created'
   messageId: string
-  contactId: string
+  contactId: string | null
   serviceId: string
   ticketId: string | null
   timestampEvento: Date
@@ -53,12 +53,14 @@ export function extrairTextoMensagemDigisac(data: HubVendasDigisacMessage): stri
   const interactiveBodyText = asString(interactiveBody?.text)
   if (interactiveBodyText) return interactiveBodyText
 
-  const interactiveText = asString(interactive?.text)
-  if (interactiveText) return interactiveText
-
   const dataInterna = asRecord(data.data)
   const dataText = asString(dataInterna?.text)
   if (dataText) return dataText
+
+  const dataInternaInteractive = asRecord(dataInterna?.interactive)
+  const dataInternaInteractiveBody = asRecord(dataInternaInteractive?.body)
+  const dataInternaInteractiveBodyText = asString(dataInternaInteractiveBody?.text)
+  if (dataInternaInteractiveBodyText) return dataInternaInteractiveBodyText
 
   return ''
 }
@@ -115,18 +117,14 @@ export function validarMensagemDigisac(rawPayload: unknown): HubVendasMensagemVa
   const serviceId = asString(data.serviceId)
   const timestampEvento = parseTimestamp(data.timestamp)
 
-  if (!messageId || !contactId || !serviceId || !timestampEvento) return null
-  if (data.type !== 'chat') return null
-  if (data.visible === false) return null
-  if (data.isComment === true) return null
-
+  if (!messageId || !serviceId) return null
   return {
     event: 'message.created',
     messageId,
     contactId,
     serviceId,
     ticketId: asString(data.ticketId),
-    timestampEvento,
+    timestampEvento: timestampEvento ?? new Date(),
     texto: extrairTextoMensagemDigisac(data),
     data,
   }

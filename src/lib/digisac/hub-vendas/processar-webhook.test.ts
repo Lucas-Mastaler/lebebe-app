@@ -3,6 +3,20 @@ import { processarWebhookHubVendas } from './processar-webhook'
 
 const registrarEntradaHubVendasMock = vi.hoisted(() => vi.fn())
 const registrarConversaoHubVendasMock = vi.hoisted(() => vi.fn())
+const createServiceClientMock = vi.hoisted(() => vi.fn())
+const reservarEventoHubVendasMock = vi.hoisted(() => vi.fn())
+const finalizarEventoHubVendasMock = vi.hoisted(() => vi.fn())
+
+const supabaseFake = {}
+
+vi.mock('@/lib/supabase/service', () => ({
+  createServiceClient: createServiceClientMock,
+}))
+
+vi.mock('./eventos', () => ({
+  reservarEventoHubVendas: reservarEventoHubVendasMock,
+  finalizarEventoHubVendas: finalizarEventoHubVendasMock,
+}))
 
 vi.mock('./registrar-entrada', () => ({
   registrarEntradaHubVendas: registrarEntradaHubVendasMock,
@@ -39,6 +53,14 @@ function payload(overrides: Record<string, unknown>) {
 
 describe('processarWebhookHubVendas', () => {
   beforeEach(() => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://supabase.local'
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-test'
+    createServiceClientMock.mockReset()
+    createServiceClientMock.mockReturnValue(supabaseFake)
+    reservarEventoHubVendasMock.mockReset()
+    reservarEventoHubVendasMock.mockResolvedValue({ reservado: true, eventoId: 'evento-1' })
+    finalizarEventoHubVendasMock.mockReset()
+    finalizarEventoHubVendasMock.mockResolvedValue(undefined)
     registrarEntradaHubVendasMock.mockReset()
     registrarConversaoHubVendasMock.mockReset()
     registrarEntradaHubVendasMock.mockResolvedValue({ ok: true, processed: true })
@@ -51,15 +73,66 @@ describe('processarWebhookHubVendas', () => {
     )
 
     expect(resultado).toEqual({ ok: true, processed: true, kind: 'entrada_hub' })
-    expect(registrarEntradaHubVendasMock).toHaveBeenCalledTimes(1)
+    expect(reservarEventoHubVendasMock).toHaveBeenCalledWith(expect.any(Object), expect.any(Object), 'entrada_hub')
+    expect(registrarEntradaHubVendasMock).toHaveBeenCalledWith(
+      expect.any(Object),
+      supabaseFake,
+      { eventoId: 'evento-1' }
+    )
   })
 
-  it('ignora evento impossivel antes de chamar banco ou Digisac', async () => {
+  it('reserva e ignora mensagem enviada pelo Hub que nao e saudacao forte', async () => {
+    const resultado = await processarWebhookHubVendas(
+      payload({ isFromMe: true, sent: true, origin: 'user', text: 'Oi' })
+    )
+
+    expect(resultado).toEqual({ ok: true, ignored: true, reason: 'nao_e_saudacao' })
+    expect(reservarEventoHubVendasMock).toHaveBeenCalledTimes(1)
+    expect(finalizarEventoHubVendasMock).toHaveBeenCalledWith(
+      supabaseFake,
+      'evento-1',
+      'ignorado',
+      { reason: 'nao_e_saudacao' }
+    )
+    expect(registrarEntradaHubVendasMock).not.toHaveBeenCalled()
+  })
+
+  it('reserva e ignora tipo nao suportado em conexao monitorada', async () => {
     const resultado = await processarWebhookHubVendas(payload({ type: 'image' }))
 
-    expect(resultado).toEqual({ ok: true, ignored: true, reason: 'evento_fora_do_formato_monitorado' })
+    expect(resultado).toEqual({ ok: true, ignored: true, reason: 'tipo_nao_suportado' })
+    expect(reservarEventoHubVendasMock).toHaveBeenCalledTimes(1)
+    expect(finalizarEventoHubVendasMock).toHaveBeenCalledWith(
+      supabaseFake,
+      'evento-1',
+      'ignorado',
+      { reason: 'tipo_nao_suportado' }
+    )
     expect(registrarEntradaHubVendasMock).not.toHaveBeenCalled()
     expect(registrarConversaoHubVendasMock).not.toHaveBeenCalled()
+  })
+
+  it('nao reserva evento de conexao fora da allowlist', async () => {
+    const resultado = await processarWebhookHubVendas(payload({ serviceId: 'service-fora', text: 'Oi' }))
+
+    expect(resultado).toEqual({ ok: true, ignored: true, reason: 'service_id_nao_monitorado' })
+    expect(reservarEventoHubVendasMock).not.toHaveBeenCalled()
+  })
+
+  it('processa saudacao interativa pelo caminho data.data.interactive.body.text', async () => {
+    const resultado = await processarWebhookHubVendas(
+      payload({
+        type: 'interactive',
+        isFromMe: true,
+        sent: true,
+        origin: 'user',
+        text: '',
+        data: { interactive: { body: { text: SAUDACAO } } },
+      })
+    )
+
+    expect(resultado).toEqual({ ok: true, processed: true, kind: 'entrada_hub' })
+    expect(registrarEntradaHubVendasMock).toHaveBeenCalledTimes(1)
   })
 
   it('processa mensagem entrante em loja monitorada como conversao', async () => {
@@ -68,7 +141,12 @@ describe('processarWebhookHubVendas', () => {
     )
 
     expect(resultado).toEqual({ ok: true, processed: true, kind: 'conversao_loja' })
-    expect(registrarConversaoHubVendasMock).toHaveBeenCalledWith(expect.any(Object), 'bigorrilho')
+    expect(registrarConversaoHubVendasMock).toHaveBeenCalledWith(
+      expect.any(Object),
+      'bigorrilho',
+      supabaseFake,
+      { eventoId: 'evento-1' }
+    )
   })
 
   it('ignora mensagem enviada por nos em loja', async () => {
@@ -76,7 +154,13 @@ describe('processarWebhookHubVendas', () => {
       payload({ serviceId: '0973f84b-8294-4615-9657-ba95b6346246', isFromMe: true, text: 'Mensagem ativa' })
     )
 
-    expect(resultado).toEqual({ ok: true, ignored: true, reason: 'nao_e_mensagem_cliente_loja' })
+    expect(resultado).toEqual({ ok: true, ignored: true, reason: 'nao_e_conversao' })
+    expect(finalizarEventoHubVendasMock).toHaveBeenCalledWith(
+      supabaseFake,
+      'evento-1',
+      'ignorado',
+      { reason: 'nao_e_conversao' }
+    )
     expect(registrarConversaoHubVendasMock).not.toHaveBeenCalled()
   })
 })

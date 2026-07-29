@@ -131,6 +131,20 @@ function criarSupabaseFake(leadsIniciais: LeadRow[]) {
     rpc(_fn: string, params: { p_lead_id: string; p_loja: string; p_timestamp_evento: string }) {
       const lead = leads.find((item) => item.id === params.p_lead_id)!
       const lojaJaExistia = lead.lojas_chamadas.includes(params.p_loja)
+      if (lojaJaExistia) {
+        return Promise.resolve({
+          data: {
+            atualizado: false,
+            motivo: 'loja_ja_registrada',
+            resultado_semantico: 'loja_ja_registrada',
+            loja_ja_existia: true,
+            chamou_mais_de_uma_loja: lead.chamou_mais_de_uma_loja,
+            quantidade_lojas: lead.lojas_chamadas.length,
+          },
+          error: null,
+        })
+      }
+      const resultadoSemantico = lead.loja_principal ? 'loja_adicional' : 'primeira_conversao'
       if (!lojaJaExistia) lead.lojas_chamadas.push(params.p_loja)
       lead.loja_principal ??= params.p_loja
       lead.data_conversao ??= params.p_timestamp_evento
@@ -141,6 +155,8 @@ function criarSupabaseFake(leadsIniciais: LeadRow[]) {
           atualizado: true,
           loja_ja_existia: lojaJaExistia,
           chamou_mais_de_uma_loja: lead.chamou_mais_de_uma_loja,
+          resultado_semantico: resultadoSemantico,
+          quantidade_lojas: lead.lojas_chamadas.length,
         },
         error: null,
       })
@@ -196,7 +212,7 @@ describe('registrarConversaoHubVendas', () => {
       supabase as never
     )
 
-    expect(resultado).toEqual({ ok: true, ignored: true, reason: 'sem_lead_compativel_na_janela' })
+    expect(resultado).toEqual({ ok: true, ignored: true, reason: 'fora_janela_conversao' })
     expect(supabase.leads[0].status).toBe('aguardando_conversao')
   })
 
@@ -213,13 +229,14 @@ describe('registrarConversaoHubVendas', () => {
       'bigorrilho',
       supabase as never
     )
-    await registrarConversaoHubVendas(
+    const mesmaLoja = await registrarConversaoHubVendas(
       criarMensagem('msg-loja-3', '2026-07-24T15:00:00.000Z'),
       'bigorrilho',
       supabase as never
     )
 
     expect(segundaLoja).toMatchObject({ ok: true, processed: true, multipleStores: true })
+    expect(mesmaLoja).toEqual({ ok: true, ignored: true, reason: 'loja_ja_registrada' })
     expect(supabase.leads[0]).toMatchObject({
       loja_principal: 'portao',
       lojas_chamadas: ['portao', 'bigorrilho'],

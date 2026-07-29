@@ -15,6 +15,10 @@ describe('migration hub vendas fase 1', () => {
     path.join(process.cwd(), 'supabase', 'migrations', '20260728120000_hub_vendas_fase2_conversao_rpc.sql'),
     'utf8'
   )
+  const fase3Sql = readFileSync(
+    path.join(process.cwd(), 'supabase', 'migrations', '20260728180000_hub_vendas_fase3_preparacao.sql'),
+    'utf8'
+  )
 
   function trechoEntre(inicio: string, fim: string) {
     const inicioIndex = sql.indexOf(inicio)
@@ -82,6 +86,21 @@ describe('migration hub vendas fase 1', () => {
     expect(fase2Sql).toContain('GRANT EXECUTE ON FUNCTION public.hub_vendas_registrar_conversao(uuid, text, timestamptz)')
     expect(fase2Sql).not.toContain('/api/digisac/webhook/hub-vendas')
     expect(fase2Sql).not.toContain('/api/cron/hub-vendas')
+  })
+
+  it('mantem preparacao de Fase 3 idempotente e sem envio', () => {
+    expect(fase3Sql).toContain('idx_hub_vendas_fila_conexao_programado_capacidade')
+    expect(fase3Sql).toContain('CREATE OR REPLACE FUNCTION public.hub_vendas_preparar_fila_recuperacao')
+    expect(fase3Sql).toContain('public.selecionar_proxima_conexao_hub_vendas(v_conexoes_restantes)')
+    expect(fase3Sql).toContain("WHERE fila.lead_id = v_lead.id")
+    expect(fase3Sql).toContain("status = 'encaminhado_recuperacao'")
+    expect(fase3Sql).toContain("status IN ('agendado', 'reservado', 'enviando', 'enviado', 'resultado_incerto')")
+    expect(fase3Sql).toContain("v_programado AT TIME ZONE p_timezone")
+    expect(fase3Sql).toContain('REVOKE ALL ON FUNCTION public.hub_vendas_preparar_fila_recuperacao')
+    expect(fase3Sql).toContain('TO service_role')
+    expect(fase3Sql).not.toContain('fetch(')
+    expect(fase3Sql).not.toContain('POST /messages')
+    expect(fase3Sql).not.toContain('/api/v1/messages')
   })
 
   it('ativa rls sem policies para authenticated e restringe acesso operacional', () => {

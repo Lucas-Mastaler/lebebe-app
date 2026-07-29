@@ -4302,3 +4302,51 @@ Resultado esperado quando a mensagem nao for saudacao/conversao: evento reservad
 - `git diff --check` passou, apenas com avisos LF/CRLF conhecidos no checkout Windows.
 - Busca focada por logs sensiveis nao encontrou texto completo, payload, token ou secret nos logs novos.
 - `npm run build` falhou inicialmente no sandbox por rede bloqueada em Google Fonts e passou com rede liberada, mantendo avisos conhecidos `DYNAMIC_SERVER_USAGE` em rotas com `cookies`.
+
+---
+
+## 70. Atualizacao vigente 2026-07-28 - Fase 2 observabilidade final e Fase 3 preparacao
+
+Esta secao registra apenas o ajuste incremental solicitado apos a validacao real da Fase 2 em producao.
+
+### 70.1 Fase 2 - observabilidade incremental
+
+- A rota existente `/api/digisac/webhook` preserva o comportamento atual de `DIGISAC_WEBHOOK_SECRET`: se configurado, valida; se ausente, nao bloqueia.
+- O warning tecnico de secret ausente passou a ser emitido uma unica vez por processo.
+- `hub_vendas_registrar_conversao` agora retorna `resultado_semantico`: `primeira_conversao`, `loja_adicional`, `loja_ja_registrada`, `fora_janela_conversao`, `lead_nao_encontrado` ou `status_nao_elegivel`.
+- O handler diferencia primeira conversao, loja adicional e mesma loja ja registrada. Mesma loja ja registrada nao e tratada como nova conversao.
+
+### 70.2 Fase 3 - implementado nesta rodada
+
+- Criada rota protegida `GET /api/cron/hub-vendas-preparar-fila`, autenticada por `Authorization: Bearer $CRON_SECRET`.
+- Criado helper interno de preparacao que le `hub_vendas_config`, respeita automacao inativa/pausada e seleciona leads `aguardando_conversao` depois de 24h e antes de 48h.
+- A reconciliacao busca tickets por telefone nas tres lojas sem logar telefone completo ou payload bruto.
+- Conversao organica encontrada pela reconciliacao chama a RPC de conversao e cancela fila pendente.
+- Chamado aberto em loja marca o lead como `cliente_em_atendimento`, registra motivo tecnico claro e cancela fila pendente.
+- A preparacao da fila usa RPC `hub_vendas_preparar_fila_recuperacao`, que reaproveita `selecionar_proxima_conexao_hub_vendas`, respeita unique `lead_id`, revalida capacidade diaria por timezone `America/Sao_Paulo` e cria item `agendado`.
+- Foi criado indice parcial `idx_hub_vendas_fila_conexao_programado_capacidade` para contagem diaria por conexao e `programado_para`.
+
+### 70.3 Estado real do banco apos migration
+
+- Migration `hub_vendas_fase3_preparacao` aplicada no Supabase `phsoawbdvhurroryfnok`.
+- MCP confirmou `idx_hub_vendas_fila_conexao_programado_capacidade`.
+- MCP confirmou as RPCs `hub_vendas_registrar_conversao` e `hub_vendas_preparar_fila_recuperacao` com `SECURITY DEFINER`, `anon_execute=false`, `authenticated_execute=false` e `service_role_execute=true`.
+- MCP confirmou `hub_vendas_config.automacao` com `ativa=false` e `pausada=true`.
+- MCP confirmou `hub_vendas_recuperacao_fila` sem linhas no momento da validacao.
+
+### 70.4 Fora do escopo preservado
+
+Nao foi implementado envio de recuperacao, criacao de contato, abertura ou transferencia de ticket, processador de fila, shell/VPS/crontab/flock, tela administrativa, APIs de metricas/listagem/pausa, navegacao, `vercel.json`, Fase 4 ou contato real com cliente.
+
+### 70.5 Validacoes executadas
+
+- `npm run test -- src/lib/digisac/hub-vendas/registrar-conversao.test.ts src/app/api/digisac/webhook/route.test.ts src/app/api/cron/hub-vendas-preparar-fila/route.test.ts src/lib/digisac/hub-vendas/tempo.test.ts src/lib/digisac/hub-vendas-fase1-migration.test.ts` passou com 5 arquivos e 29 testes.
+- `npx tsc --noEmit --pretty false` passou.
+- `npx eslint src/app/api/digisac/webhook/route.ts src/lib/digisac/hub-vendas/registrar-conversao.ts src/lib/digisac/hub-vendas/preparar-fila.ts src/lib/digisac/hub-vendas/tempo.ts src/app/api/cron/hub-vendas-preparar-fila/route.ts src/lib/digisac/hub-vendas/registrar-conversao.test.ts src/app/api/cron/hub-vendas-preparar-fila/route.test.ts src/lib/digisac/hub-vendas/tempo.test.ts src/lib/digisac/hub-vendas-fase1-migration.test.ts` passou.
+
+### 70.6 Riscos e pendencias
+
+- `DIGISAC_WEBHOOK_SECRET` segue ausente por decisao operacional temporaria do usuario; risco aceito nesta etapa.
+- A rota cron nova ainda nao foi chamada em ambiente de producao apos deploy.
+- A reconciliacao real depende de disponibilidade e formato atual da API Digisac; testes locais cobrem contrato interno, nao chamada real.
+- Proximo passo recomendado: deploy controlado e chamada autenticada da rota `GET /api/cron/hub-vendas-preparar-fila` com automacao ainda pausada para confirmar retorno sem criar fila; so depois ativar automacao em tarefa separada.

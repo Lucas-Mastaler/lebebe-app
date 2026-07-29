@@ -7,6 +7,8 @@ export const runtime = 'nodejs';
 
 type WebhookPayloadRecord = Record<string, unknown>
 
+let secretAusenteAvisado = false
+
 function asRecord(value: unknown): WebhookPayloadRecord | null {
   return value && typeof value === 'object' ? (value as WebhookPayloadRecord) : null
 }
@@ -64,7 +66,8 @@ export async function POST(request: NextRequest) {
     const rawPayload: unknown = await request.json();
     console.log(`[DIGISAC-WEBHOOK] Evento recebido ${JSON.stringify(extrairResumoSeguro(rawPayload))}`);
 
-    if (!secret) {
+    if (!secret && !secretAusenteAvisado) {
+      secretAusenteAvisado = true
       console.warn('[DIGISAC-WEBHOOK] DIGISAC_WEBHOOK_SECRET nao configurado');
     }
 

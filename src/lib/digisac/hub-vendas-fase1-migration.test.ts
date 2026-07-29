@@ -19,6 +19,10 @@ describe('migration hub vendas fase 1', () => {
     path.join(process.cwd(), 'supabase', 'migrations', '20260728180000_hub_vendas_fase3_preparacao.sql'),
     'utf8'
   )
+  const hotfixConversaoSql = readFileSync(
+    path.join(process.cwd(), 'supabase', 'migrations', '20260729183000_hub_vendas_corrige_ambiguidade_conversao.sql'),
+    'utf8'
+  )
 
   function trechoEntre(inicio: string, fim: string) {
     const inicioIndex = sql.indexOf(inicio)
@@ -101,6 +105,31 @@ describe('migration hub vendas fase 1', () => {
     expect(fase3Sql).not.toContain('fetch(')
     expect(fase3Sql).not.toContain('POST /messages')
     expect(fase3Sql).not.toContain('/api/v1/messages')
+  })
+
+  it('corrige ambiguidade da RPC de conversao sem alterar escopo operacional', () => {
+    expect(hotfixConversaoSql).toContain('DROP FUNCTION IF EXISTS public.hub_vendas_registrar_conversao(uuid, text, timestamptz)')
+    expect(hotfixConversaoSql).toContain('CREATE OR REPLACE FUNCTION public.hub_vendas_registrar_conversao')
+    expect(hotfixConversaoSql).toContain('RETURNS TABLE')
+    expect(hotfixConversaoSql).toContain('resultado_semantico text')
+    expect(hotfixConversaoSql).toContain('SELECT lead.*')
+    expect(hotfixConversaoSql).toContain('FROM public.hub_vendas_leads AS lead')
+    expect(hotfixConversaoSql).toContain('WHERE lead.id = p_lead_id')
+    expect(hotfixConversaoSql).toContain('UPDATE public.hub_vendas_leads AS lead')
+    expect(hotfixConversaoSql).toContain('WHERE lead.id = v_lead.id')
+    expect(hotfixConversaoSql).toContain('UPDATE public.hub_vendas_recuperacao_fila AS fila')
+    expect(hotfixConversaoSql).toContain('quantidade_reconciliacoes = fila.quantidade_reconciliacoes + 1')
+    expect(hotfixConversaoSql).toContain('WHERE fila.lead_id = v_lead.id')
+    expect(hotfixConversaoSql).toContain("AND fila.status IN ('agendado', 'reservado', 'enviando', 'resultado_incerto')")
+    expect(hotfixConversaoSql).toContain('SECURITY DEFINER')
+    expect(hotfixConversaoSql).toContain('SET search_path = pg_catalog, public')
+    expect(hotfixConversaoSql).toContain('FROM PUBLIC, anon, authenticated')
+    expect(hotfixConversaoSql).toContain('TO service_role')
+    expect(hotfixConversaoSql).not.toContain('WHERE lead_id = v_lead.id')
+    expect(hotfixConversaoSql).not.toContain("AND status IN ('agendado', 'reservado', 'enviando', 'resultado_incerto')")
+    expect(hotfixConversaoSql).not.toContain('#variable_conflict')
+    expect(hotfixConversaoSql).not.toContain('/api/v1/messages')
+    expect(hotfixConversaoSql).not.toContain('hub_vendas_config')
   })
 
   it('ativa rls sem policies para authenticated e restringe acesso operacional', () => {

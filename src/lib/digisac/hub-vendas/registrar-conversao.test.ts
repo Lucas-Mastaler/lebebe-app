@@ -55,7 +55,7 @@ function criarLead(id = 'lead-1', dataEntrada = '2026-07-24T12:00:00.000Z'): Lea
   }
 }
 
-function criarSupabaseFake(leadsIniciais: LeadRow[]) {
+function criarSupabaseFake(leadsIniciais: LeadRow[], rpcError?: { code?: string; message?: string }) {
   const leads = leadsIniciais
   const eventos: EventRow[] = []
 
@@ -129,6 +129,10 @@ function criarSupabaseFake(leadsIniciais: LeadRow[]) {
       return builder
     },
     rpc(_fn: string, params: { p_lead_id: string; p_loja: string; p_timestamp_evento: string }) {
+      if (rpcError) {
+        return Promise.resolve({ data: null, error: rpcError })
+      }
+
       const lead = leads.find((item) => item.id === params.p_lead_id)!
       const lojaJaExistia = lead.lojas_chamadas.includes(params.p_loja)
       if (lojaJaExistia) {
@@ -259,5 +263,38 @@ describe('registrarConversaoHubVendas', () => {
 
     expect(resultado).toMatchObject({ leadId: 'lead-novo' })
     expect(antigo.lojas_chamadas).toEqual([])
+  })
+
+  it('registra erro tecnico sanitizado quando RPC falha', async () => {
+    const supabase = criarSupabaseFake(
+      [criarLead()],
+      {
+        code: '42702',
+        message: 'column reference "lead_id" is ambiguous',
+      }
+    )
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const resultado = await registrarConversaoHubVendas(
+      criarMensagem('msg-loja-erro', '2026-07-24T13:00:00.000Z'),
+      'portao',
+      supabase as never
+    )
+
+    expect(resultado).toEqual({ ok: false, error: 'erro_registro_conversao' })
+    expect(supabase.eventos[0]).toMatchObject({
+      status: 'erro',
+      erro: 'postgres_42702_coluna_ambigua',
+      resultado: {
+        reason: 'erro_registro_conversao',
+        operacao: 'rpc_hub_vendas_registrar_conversao',
+        codigo: '42702',
+        mensagem: 'column reference "lead_id" is ambiguous',
+      },
+    })
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      '[HUB VENDAS] Falha ao registrar conversao operacao=rpc_hub_vendas_registrar_conversao codigo=42702'
+    )
+    consoleErrorSpy.mockRestore()
   })
 })

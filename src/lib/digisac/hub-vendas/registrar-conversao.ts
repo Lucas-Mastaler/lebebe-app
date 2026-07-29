@@ -33,6 +33,56 @@ type BuscaLeadCompativel =
   | { lead: HubVendasLeadConversaoRow; motivo: null }
   | { lead: null; motivo: 'lead_compativel_nao_encontrado' | 'fora_janela_conversao' }
 
+type ErroTecnicoHubVendas = {
+  erro: string
+  resultado: {
+    reason: 'erro_registro_conversao'
+    operacao: string
+    codigo: string | null
+    mensagem: string | null
+  }
+  log: string
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null
+}
+
+function sanitizarMensagemErro(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null
+  return value
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[email]')
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, '[numero]')
+    .slice(0, 240)
+}
+
+function sanitizarCodigoErro(value: unknown): string | null {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_]+$/.test(value)) return null
+  return value.slice(0, 40)
+}
+
+function normalizarErroTecnico(error: unknown, operacao: string): ErroTecnicoHubVendas {
+  const record = asRecord(error)
+  const codigo = sanitizarCodigoErro(record?.code) ?? sanitizarCodigoErro(record?.status) ?? null
+  const mensagem = sanitizarMensagemErro(record?.message) ?? sanitizarMensagemErro(error instanceof Error ? error.message : null)
+  const erro = codigo === '42702'
+    ? 'postgres_42702_coluna_ambigua'
+    : codigo
+      ? `supabase_${codigo}`
+      : `${operacao}_falhou`
+
+  return {
+    erro,
+    resultado: {
+      reason: 'erro_registro_conversao',
+      operacao,
+      codigo,
+      mensagem,
+    },
+    log: `operacao=${operacao} codigo=${codigo ?? 'n/a'}`,
+  }
+}
+
 async function buscarLeadCompativel(
   supabase: SupabaseServiceClient,
   variacoesDDI: string[],
@@ -166,9 +216,16 @@ export async function registrarConversaoHubVendas(
       resultadoSemantico: resultadoSemantico === 'loja_adicional' ? 'loja_adicional' : 'primeira_conversao',
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'erro_desconhecido'
-    await finalizarEventoHubVendas(supabase, reserva.eventoId, 'erro', { reason: 'erro_registro_conversao' }, null, message)
-    console.error(`[HUB VENDAS] erro ao registrar conversao erro=${message}`)
+    const erroTecnico = normalizarErroTecnico(error, 'rpc_hub_vendas_registrar_conversao')
+    await finalizarEventoHubVendas(
+      supabase,
+      reserva.eventoId,
+      'erro',
+      erroTecnico.resultado,
+      null,
+      erroTecnico.erro
+    )
+    console.error(`[HUB VENDAS] Falha ao registrar conversao ${erroTecnico.log}`)
     return { ok: false, error: 'erro_registro_conversao' }
   }
 }

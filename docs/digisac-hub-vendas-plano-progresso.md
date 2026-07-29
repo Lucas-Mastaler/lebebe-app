@@ -4350,3 +4350,55 @@ Nao foi implementado envio de recuperacao, criacao de contato, abertura ou trans
 - A rota cron nova ainda nao foi chamada em ambiente de producao apos deploy.
 - A reconciliacao real depende de disponibilidade e formato atual da API Digisac; testes locais cobrem contrato interno, nao chamada real.
 - Proximo passo recomendado: deploy controlado e chamada autenticada da rota `GET /api/cron/hub-vendas-preparar-fila` com automacao ainda pausada para confirmar retorno sem criar fila; so depois ativar automacao em tarefa separada.
+
+---
+
+## 71. Atualizacao vigente 2026-07-29 - Hotfix RPC conversao Hub/Vendas
+
+Esta secao registra o hotfix de producao da RPC `hub_vendas_registrar_conversao`, sem avancar Fase 4 e sem ativar automacao.
+
+### 71.1 Causa confirmada
+
+- A RPC aplicada em producao continha referencias nao qualificadas dentro do cancelamento da fila: `lead_id`, `status` e `quantidade_reconciliacoes`.
+- Como a funcao retorna uma coluna OUT chamada `lead_id`, o Postgres tratou `lead_id` como referencia ambigua entre variavel PL/pgSQL e coluna da tabela.
+- A funcao `hub_vendas_preparar_fila_recuperacao` foi conferida e ja usava aliases nos pontos equivalentes; ela nao era a origem do erro.
+
+### 71.2 Eventos afetados
+
+- MCP Supabase encontrou 72 eventos `conversao_loja` com `status='erro'`, `lead_id IS NULL`, `resultado.reason='erro_registro_conversao'` e `erro='erro_desconhecido'`.
+- Janela encontrada: primeiro evento em `2026-07-29 00:38:40.901+00` e ultimo em `2026-07-29 17:49:52.057+00`.
+- Abrangencia: 3 services, 8 contacts e 9 tickets. A contagem inicial de 9 eventos do pedido estava desatualizada no momento da consulta.
+- Diagnostico por `digisac_ticket_id` em `digisac_conversas_resumo` nao encontrou conversas correspondentes para os 9 grupos contact/ticket/service. Sem telefone auditavel no banco, os eventos antigos foram classificados como `impossivel_determinar_sem_telefone`.
+
+### 71.3 Correcao aplicada
+
+- Criada e aplicada a migration `20260729183000_hub_vendas_corrige_ambiguidade_conversao.sql`, recriando somente `public.hub_vendas_registrar_conversao(uuid, text, timestamptz)`.
+- A RPC agora usa aliases explicitos `lead` e `fila` em selects/updates/where/returning.
+- O cancelamento de fila pendente usa `fila.lead_id`, `fila.status` e `fila.quantidade_reconciliacoes`.
+- A migration preserva `SECURITY DEFINER`, `SET search_path = pg_catalog, public`, formato de retorno e grants apenas para `service_role`.
+
+### 71.4 Tratamento TypeScript
+
+- `registrar-conversao.ts` passou a normalizar erro tecnico da chamada RPC sem registrar dados pessoais, payload, token, secret ou stack.
+- Erro Postgres `42702` passa a ser persistido como `postgres_42702_coluna_ambigua`.
+- O JSON do evento de erro registra `reason`, `operacao`, `codigo` e mensagem sanitizada/truncada.
+
+### 71.5 Validacoes realizadas
+
+- Teste transacional com rollback no Supabase confirmou a RPC sem ambiguidade em: primeira conversao, loja adicional, mesma loja ja registrada, limite de 24h, cancelamento de fila pendente e preservacao de filas nao cancelaveis.
+- O teste de fila pendente confirmou cancelamento para `agendado`, `reservado`, `enviando` e `resultado_incerto`, com incremento de reconciliacao.
+- O teste confirmou preservacao de `enviado`, `cancelado`, `expirado`, `erro` e `analise_manual`.
+- Os dados do teste foram revertidos por rollback.
+- `npm run test -- src/lib/digisac/hub-vendas/registrar-conversao.test.ts src/lib/digisac/hub-vendas-fase1-migration.test.ts src/lib/digisac/hub-vendas/processar-webhook.test.ts src/app/api/digisac/webhook/route.test.ts src/app/api/cron/hub-vendas-preparar-fila/route.test.ts src/lib/digisac/hub-vendas/tempo.test.ts` passou com 6 arquivos e 38 testes.
+- `npx tsc --noEmit --pretty false` passou.
+- `npx eslint src/app/api/digisac/webhook/route.ts src/lib/digisac/hub-vendas/registrar-conversao.ts src/lib/digisac/hub-vendas/preparar-fila.ts src/lib/digisac/hub-vendas/tempo.ts src/app/api/cron/hub-vendas-preparar-fila/route.ts src/lib/digisac/hub-vendas/registrar-conversao.test.ts src/app/api/cron/hub-vendas-preparar-fila/route.test.ts src/lib/digisac/hub-vendas/tempo.test.ts src/lib/digisac/hub-vendas-fase1-migration.test.ts` passou.
+- `git diff --check` passou, com avisos LF/CRLF conhecidos do checkout Windows.
+- Busca focada por logs/secrets encontrou somente campos tecnicos e telefone mascarado ja existente nos logs de sucesso; o novo log de erro nao inclui payload, token, secret, telefone ou stack.
+- `npm run build` falhou inicialmente no sandbox por rede bloqueada em Google Fonts e passou na reexecucao com rede liberada, mantendo avisos conhecidos `DYNAMIC_SERVER_USAGE` em rotas com `cookies`.
+- Supabase Advisors de seguranca e performance foram executados. Para Hub/Vendas, permanecem apenas avisos INFO `rls_enabled_no_policy` nas tabelas `hub_vendas_*`, esperados pelo desenho service-role only. As RPCs Hub nao aparecem como executaveis por `anon` ou `authenticated`.
+- Logs Postgres das ultimas 24h mostraram ocorrencias `column reference "lead_id" is ambiguous` antes da migration e nenhuma nova ocorrencia desse erro apos a aplicacao na janela retornada. Dois erros `column "ativa" does not exist` foram gerados por uma consulta de validacao incorreta desta rodada e corrigidos com leitura do JSON `valor`.
+- MCP confirmou `hub_vendas_config.automacao` com `ativa=false` e `pausada=true`; `hub_vendas_recuperacao_fila` permanece sem linhas.
+
+### 71.6 Fora do escopo preservado
+
+Nao foi feito reprocessamento dos eventos antigos, chamada real ao Digisac, envio de mensagem, criacao de contato, abertura ou transferencia de ticket, processador de fila, cron/VPS/crontab/flock, tela administrativa, metricas, Fase 4 ou ativacao de automacao.

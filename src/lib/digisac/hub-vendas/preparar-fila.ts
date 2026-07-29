@@ -48,6 +48,8 @@ type ConfigParametros = {
 
 type ConfigRodizio = {
   ordem: string[]
+  ultima_posicao: number | null
+  ultima_conexao_id: string | null
 }
 
 type ConexaoFila = {
@@ -65,11 +67,29 @@ type ResultadoPreparacaoLead =
   | 'erro_reconciliacao'
   | 'ignorado'
 
+type DiagnosticoTesteLead = {
+  leadEncontrado: boolean
+  elegivelTemporal: boolean
+  motivoBloqueio: string | null
+  statusLead: string | null
+  dataEntradaHub: string | null
+  resultadoReconciliacao: ResultadoPreparacaoLead | null
+  conexoesElegiveis: string[]
+  conexaoSimuladaId: string | null
+  programadoPara: string | null
+  limiteDiarioPorConexao: number | null
+  statusFinalSimulado: ResultadoPreparacaoLead | null
+}
+
 export type ResultadoPreparacaoHubVendas = {
   ok: boolean
   automacaoAtiva: boolean
   pausada: boolean
   motivo: string | null
+  modoTeste?: boolean
+  modoSimulacao?: boolean
+  leadId?: string | null
+  detalheTeste?: DiagnosticoTesteLead
   totalCandidatos: number
   totalConvertidosReconciliacao: number
   totalClienteEmAtendimento: number
@@ -153,7 +173,15 @@ function lerParametros(valor: unknown): ConfigParametros {
 function lerRodizio(valor: unknown): ConfigRodizio {
   const record = asRecord(valor)
   const ordem = asStringArray(record.ordem)
-  return { ordem: ordem.length ? ordem : Object.values(HUB_VENDAS_LOJAS).map((loja) => loja.serviceId) }
+  const ultimaPosicao = typeof record.ultima_posicao === 'number' && Number.isInteger(record.ultima_posicao)
+    ? record.ultima_posicao
+    : null
+  const ultimaConexaoId = typeof record.ultima_conexao_id === 'string' ? record.ultima_conexao_id : null
+  return {
+    ordem: ordem.length ? ordem : Object.values(HUB_VENDAS_LOJAS).map((loja) => loja.serviceId),
+    ultima_posicao: ultimaPosicao,
+    ultima_conexao_id: ultimaConexaoId,
+  }
 }
 
 function conexaoPausada(pausas: unknown, serviceId: string): boolean {
@@ -268,11 +296,14 @@ async function marcarClienteEmAtendimento(
   await cancelarFilaPendente(supabase, lead.id, 'cliente_em_atendimento')
 }
 
-async function reconciliarLead(
-  supabase: SupabaseServiceClient,
+async function analisarReconciliacaoLead(
   lead: HubVendasLeadPendente,
   agora: Date
-): Promise<ResultadoPreparacaoLead> {
+): Promise<{
+  resultado: ResultadoPreparacaoLead
+  chamadoAberto?: { ticket: DigisacTicket; loja: HubVendasLoja; data: Date | null }
+  conversoes: Array<{ ticket: DigisacTicket; loja: HubVendasLoja; data: Date }>
+}> {
   const tickets = await buscarTicketsLojasPorTelefone(lead.telefone_normalizado_ddi, lead.data_entrada_hub)
   const entradaMs = new Date(lead.data_entrada_hub).getTime()
   const limiteConversaoMs = entradaMs + HUB_VENDAS_JANELA_CONVERSAO_MS
@@ -284,23 +315,39 @@ async function reconciliarLead(
 
   const chamadoAberto = ticketsMonitorados.find((item) => item.ticket.isOpen === true)
   if (chamadoAberto) {
-    await marcarClienteEmAtendimento(
-      supabase,
-      lead,
-      chamadoAberto.ticket,
-      chamadoAberto.loja,
-      chamadoAberto.data ?? agora
-    )
-    return 'cliente_em_atendimento'
+    return { resultado: 'cliente_em_atendimento', chamadoAberto, conversoes: [] }
   }
 
   const conversoes = ticketsMonitorados.filter((item) => {
     const dataMs = item.data?.getTime()
     return typeof dataMs === 'number' && dataMs >= entradaMs && dataMs < limiteConversaoMs
-  })
+  }) as Array<{ ticket: DigisacTicket; loja: HubVendasLoja; data: Date }>
 
-  if (conversoes.length > 0) {
-    for (const conversao of conversoes) {
+  if (conversoes.length > 0) return { resultado: 'convertido_reconciliacao', conversoes }
+
+  return { resultado: 'ignorado', conversoes: [] }
+}
+
+async function reconciliarLead(
+  supabase: SupabaseServiceClient,
+  lead: HubVendasLeadPendente,
+  agora: Date
+): Promise<ResultadoPreparacaoLead> {
+  const analise = await analisarReconciliacaoLead(lead, agora)
+
+  if (analise.chamadoAberto) {
+    await marcarClienteEmAtendimento(
+      supabase,
+      lead,
+      analise.chamadoAberto.ticket,
+      analise.chamadoAberto.loja,
+      analise.chamadoAberto.data ?? agora
+    )
+    return 'cliente_em_atendimento'
+  }
+
+  if (analise.conversoes.length > 0) {
+    for (const conversao of analise.conversoes) {
       const { error } = await supabase.rpc('hub_vendas_registrar_conversao', {
         p_lead_id: lead.id,
         p_loja: conversao.loja,
@@ -350,6 +397,47 @@ async function buscarLeadsCandidatos(
 
   if (error) throw error
   return (data ?? []) as HubVendasLeadPendente[]
+}
+
+async function buscarLeadPorId(
+  supabase: SupabaseServiceClient,
+  leadId: string
+): Promise<HubVendasLeadPendente | null> {
+  const { data, error } = await supabase
+    .from('hub_vendas_leads')
+    .select('id, telefone_normalizado_ddi, data_entrada_hub, status')
+    .eq('id', leadId)
+    .limit(1)
+
+  if (error) throw error
+  return ((data ?? []) as HubVendasLeadPendente[])[0] ?? null
+}
+
+async function existeFilaParaLead(supabase: SupabaseServiceClient, leadId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('hub_vendas_recuperacao_fila')
+    .select('id')
+    .eq('lead_id', leadId)
+    .limit(1)
+
+  if (error) throw error
+  return Boolean((data ?? [])[0])
+}
+
+function avaliarElegibilidadeTemporal(
+  lead: HubVendasLeadPendente,
+  parametros: ConfigParametros,
+  agora: Date
+): { elegivel: boolean; motivo: string | null } {
+  if (lead.status !== 'aguardando_conversao') return { elegivel: false, motivo: 'status_nao_elegivel' }
+
+  const entradaMs = new Date(lead.data_entrada_hub).getTime()
+  if (!Number.isFinite(entradaMs)) return { elegivel: false, motivo: 'data_entrada_hub_invalida' }
+
+  const idadeHoras = (agora.getTime() - entradaMs) / (60 * 60 * 1000)
+  if (idadeHoras < parametros.janela_conversao_horas) return { elegivel: false, motivo: 'antes_janela_24h' }
+  if (idadeHoras >= parametros.elegibilidade_horas) return { elegivel: false, motivo: 'apos_janela_48h' }
+  return { elegivel: true, motivo: null }
 }
 
 async function buscarUltimosProgramados(
@@ -431,6 +519,21 @@ function calcularProgramados(
   return programados
 }
 
+function simularProximaConexao(rodizio: ConfigRodizio, conexoesElegiveis: ConexaoFila[]): ConexaoFila | null {
+  if (conexoesElegiveis.length === 0) return null
+  const elegiveis = new Set(conexoesElegiveis.map((conexao) => conexao.id))
+  const ordem = rodizio.ordem.length ? rodizio.ordem : conexoesElegiveis.map((conexao) => conexao.id)
+  const total = ordem.length
+  for (let offset = 1; offset <= total; offset += 1) {
+    const posicao = (Math.max(rodizio.ultima_posicao ?? -1, -1) + offset) % total
+    const serviceId = ordem[posicao]
+    if (elegiveis.has(serviceId)) {
+      return conexoesElegiveis.find((conexao) => conexao.id === serviceId) ?? null
+    }
+  }
+  return null
+}
+
 function sortearIntervaloSegundos(parametros: ConfigParametros): number {
   const minimo = Math.max(Math.floor(parametros.intervalo_min_segundos), 1)
   const maximo = Math.max(Math.floor(parametros.intervalo_max_segundos), minimo)
@@ -475,6 +578,36 @@ async function prepararLeadNaFila(
   return 'ignorado'
 }
 
+async function simularPreparacaoLeadNaFila(
+  supabase: SupabaseServiceClient,
+  lead: HubVendasLeadPendente,
+  conexoes: ConexaoFila[],
+  parametros: ConfigParametros,
+  rodizio: ConfigRodizio,
+  agora: Date
+): Promise<DiagnosticoTesteLead> {
+  const ultimosProgramados = await buscarUltimosProgramados(supabase, conexoes)
+  const programados = calcularProgramados(conexoes, ultimosProgramados, parametros, agora)
+  const conexoesElegiveis = await conexoesComCapacidade(supabase, conexoes, programados, parametros)
+  const conexaoSimulada = simularProximaConexao(rodizio, conexoesElegiveis)
+  const programadoPara = conexaoSimulada ? programados.get(conexaoSimulada.id)?.toISOString() ?? null : null
+  const statusFinalSimulado: ResultadoPreparacaoLead = conexaoSimulada ? 'fila_criada' : 'sem_capacidade_diaria'
+
+  return {
+    leadEncontrado: true,
+    elegivelTemporal: true,
+    motivoBloqueio: conexaoSimulada ? null : 'sem_capacidade_diaria',
+    statusLead: lead.status,
+    dataEntradaHub: lead.data_entrada_hub,
+    resultadoReconciliacao: 'ignorado',
+    conexoesElegiveis: conexoesElegiveis.map((conexao) => conexao.id),
+    conexaoSimuladaId: conexaoSimulada?.id ?? null,
+    programadoPara,
+    limiteDiarioPorConexao: parametros.limite_diario_por_conexao,
+    statusFinalSimulado,
+  }
+}
+
 function incrementarResumo(resumo: ResultadoPreparacaoHubVendas, resultado: ResultadoPreparacaoLead) {
   if (resultado === 'convertido_reconciliacao') resumo.totalConvertidosReconciliacao += 1
   if (resultado === 'cliente_em_atendimento') resumo.totalClienteEmAtendimento += 1
@@ -488,10 +621,16 @@ export async function prepararFilaRecuperacaoHubVendas({
   supabase = createServiceClient(),
   limite = 50,
   agora = new Date(),
+  leadId,
+  modoTeste = false,
+  modoSimulacao = false,
 }: {
   supabase?: SupabaseServiceClient
   limite?: number
   agora?: Date
+  leadId?: string
+  modoTeste?: boolean
+  modoSimulacao?: boolean
 } = {}): Promise<ResultadoPreparacaoHubVendas> {
   console.log('[HUB VENDAS PREPARACAO] execucao iniciada')
 
@@ -501,6 +640,9 @@ export async function prepararFilaRecuperacaoHubVendas({
     automacaoAtiva: config.automacao.ativa,
     pausada: config.automacao.pausada,
     motivo: config.automacao.motivo ?? null,
+    modoTeste,
+    modoSimulacao,
+    leadId: leadId ?? null,
     totalCandidatos: 0,
     totalConvertidosReconciliacao: 0,
     totalClienteEmAtendimento: 0,
@@ -510,7 +652,13 @@ export async function prepararFilaRecuperacaoHubVendas({
     totalErros: 0,
   }
 
-  if (!config.automacao.ativa || config.automacao.pausada) {
+  if (leadId && !modoTeste) {
+    resumo.ok = false
+    resumo.motivo = 'modo_teste_obrigatorio_para_lead'
+    return resumo
+  }
+
+  if ((!config.automacao.ativa || config.automacao.pausada) && !modoTeste) {
     console.log('[HUB VENDAS PREPARACAO] automacao inativa ou pausada; fila nao sera criada')
     return resumo
   }
@@ -525,11 +673,97 @@ export async function prepararFilaRecuperacaoHubVendas({
     return resumo
   }
 
-  const leads = await buscarLeadsCandidatos(supabase, config.parametros, agora, limite)
+  const leads = leadId
+    ? [await buscarLeadPorId(supabase, leadId)].filter((lead): lead is HubVendasLeadPendente => Boolean(lead))
+    : await buscarLeadsCandidatos(supabase, config.parametros, agora, limite)
+
+  if (leadId && leads.length === 0) {
+    resumo.detalheTeste = {
+      leadEncontrado: false,
+      elegivelTemporal: false,
+      motivoBloqueio: 'lead_nao_encontrado',
+      statusLead: null,
+      dataEntradaHub: null,
+      resultadoReconciliacao: null,
+      conexoesElegiveis: [],
+      conexaoSimuladaId: null,
+      programadoPara: null,
+      limiteDiarioPorConexao: config.parametros.limite_diario_por_conexao,
+      statusFinalSimulado: null,
+    }
+    return resumo
+  }
+
   resumo.totalCandidatos = leads.length
 
   for (const lead of leads) {
     try {
+      if (leadId && await existeFilaParaLead(supabase, lead.id)) {
+        resumo.totalFilaExistente += 1
+        resumo.detalheTeste = {
+          leadEncontrado: true,
+          elegivelTemporal: false,
+          motivoBloqueio: 'fila_ja_existente',
+          statusLead: lead.status,
+          dataEntradaHub: lead.data_entrada_hub,
+          resultadoReconciliacao: null,
+          conexoesElegiveis: [],
+          conexaoSimuladaId: null,
+          programadoPara: null,
+          limiteDiarioPorConexao: config.parametros.limite_diario_por_conexao,
+          statusFinalSimulado: 'fila_ja_existente',
+        }
+        continue
+      }
+
+      const elegibilidade = avaliarElegibilidadeTemporal(lead, config.parametros, agora)
+      if (!elegibilidade.elegivel) {
+        resumo.detalheTeste = {
+          leadEncontrado: true,
+          elegivelTemporal: false,
+          motivoBloqueio: elegibilidade.motivo,
+          statusLead: lead.status,
+          dataEntradaHub: lead.data_entrada_hub,
+          resultadoReconciliacao: null,
+          conexoesElegiveis: [],
+          conexaoSimuladaId: null,
+          programadoPara: null,
+          limiteDiarioPorConexao: config.parametros.limite_diario_por_conexao,
+          statusFinalSimulado: 'ignorado',
+        }
+        continue
+      }
+
+      if (modoSimulacao) {
+        const analise = await analisarReconciliacaoLead(lead, agora)
+        if (analise.resultado === 'convertido_reconciliacao' || analise.resultado === 'cliente_em_atendimento') {
+          resumo.detalheTeste = {
+            leadEncontrado: true,
+            elegivelTemporal: true,
+            motivoBloqueio: analise.resultado,
+            statusLead: lead.status,
+            dataEntradaHub: lead.data_entrada_hub,
+            resultadoReconciliacao: analise.resultado,
+            conexoesElegiveis: [],
+            conexaoSimuladaId: null,
+            programadoPara: null,
+            limiteDiarioPorConexao: config.parametros.limite_diario_por_conexao,
+            statusFinalSimulado: analise.resultado,
+          }
+          continue
+        }
+
+        resumo.detalheTeste = await simularPreparacaoLeadNaFila(
+          supabase,
+          lead,
+          conexoes,
+          config.parametros,
+          config.rodizio,
+          agora
+        )
+        continue
+      }
+
       const reconciliacao = await reconciliarLead(supabase, lead, agora)
       if (reconciliacao === 'convertido_reconciliacao' || reconciliacao === 'cliente_em_atendimento') {
         incrementarResumo(resumo, reconciliacao)

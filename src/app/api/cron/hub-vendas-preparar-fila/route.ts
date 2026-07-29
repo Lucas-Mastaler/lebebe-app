@@ -27,12 +27,42 @@ function parseLimite(request: NextRequest): number {
   return Math.min(valor, 200)
 }
 
+function parseBooleanParam(request: NextRequest, nome: string): boolean {
+  return request.nextUrl.searchParams.get(nome) === 'true'
+}
+
+function parseLeadId(request: NextRequest): { leadId?: string; error?: string } {
+  const leadId = request.nextUrl.searchParams.get('leadId')?.trim()
+  if (!leadId) return {}
+
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  if (!uuidRegex.test(leadId)) return { error: 'lead_id_invalido' }
+  return { leadId }
+}
+
 export async function GET(request: NextRequest) {
   const erroAuth = validarCronSecret(request)
   if (erroAuth) return erroAuth
 
   try {
-    const resultado = await prepararFilaRecuperacaoHubVendas({ limite: parseLimite(request) })
+    const { leadId, error } = parseLeadId(request)
+    if (error) return NextResponse.json({ ok: false, error }, { status: 400 })
+
+    const modoTeste = parseBooleanParam(request, 'modoTeste')
+    const modoSimulacao = parseBooleanParam(request, 'modoSimulacao')
+    if ((leadId || modoSimulacao) && !modoTeste) {
+      return NextResponse.json({ ok: false, error: 'modo_teste_obrigatorio' }, { status: 400 })
+    }
+    if (modoTeste && !leadId) {
+      return NextResponse.json({ ok: false, error: 'lead_id_obrigatorio_modo_teste' }, { status: 400 })
+    }
+
+    const resultado = await prepararFilaRecuperacaoHubVendas({
+      limite: parseLimite(request),
+      leadId,
+      modoTeste,
+      modoSimulacao,
+    })
     return NextResponse.json(resultado)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'erro_desconhecido'

@@ -4402,3 +4402,71 @@ Esta secao registra o hotfix de producao da RPC `hub_vendas_registrar_conversao`
 ### 71.6 Fora do escopo preservado
 
 Nao foi feito reprocessamento dos eventos antigos, chamada real ao Digisac, envio de mensagem, criacao de contato, abertura ou transferencia de ticket, processador de fila, cron/VPS/crontab/flock, tela administrativa, metricas, Fase 4 ou ativacao de automacao.
+
+---
+
+## 72. Atualizacao vigente 2026-07-29 - Teste isolado da preparacao de fila
+
+Esta secao registra a verificacao de armazenamento da ativacao/pausa e a criacao de modo seguro para testar a preparacao de fila com um unico lead.
+
+### 72.1 Configuracao real
+
+- `hub_vendas_config` e uma tabela chave/valor: `id uuid`, `chave text`, `valor jsonb`, `created_at`, `updated_at`.
+- `ativa`, `pausada`, `motivo` e `pausado_em` ficam no registro `chave='automacao'`, dentro de `valor jsonb`.
+- Parametros operacionais ficam em `chave='parametros'`, tambem em JSONB: timezone, dias da semana, horarios, limite diario, intervalo, janela de conversao e elegibilidade.
+- Pausas por conexao ficam em `chave='pausas_conexoes'`.
+- Rodizio fica em `chave='rodizio'`, com `ordem`, `ultima_posicao` e `ultima_conexao_id`.
+
+### 72.2 Risco confirmado
+
+- O helper global so processa quando `automacao.ativa=true` e `automacao.pausada=false`.
+- Se a automacao global for ativada, `preparar-fila.ts` seleciona todos os leads `aguardando_conversao` entre 24h e 48h ate o limite informado.
+- MCP Supabase confirmou 0 candidatos reais nessa janela no momento da consulta, mas o risco estrutural permanece quando houver novos leads elegiveis.
+
+### 72.3 Solucao implementada
+
+- A rota existente `GET /api/cron/hub-vendas-preparar-fila` aceita agora `leadId`, `modoTeste=true` e `modoSimulacao=true`.
+- `leadId` precisa ser UUID valido.
+- Qualquer uso de `leadId` ou `modoSimulacao` exige `modoTeste=true`.
+- O caminho isolado continua protegido por `Authorization: Bearer $CRON_SECRET`.
+- Sem `leadId`, o comportamento global anterior foi preservado.
+- Com `leadId` e `modoTeste=true`, o helper busca somente o lead informado, mesmo com automacao global inativa/pausada.
+
+### 72.4 Dry-run
+
+- `modoSimulacao=true` calcula elegibilidade temporal, reconciliacao, conexoes elegiveis, capacidade diaria, conexao simulada e `programado_para`.
+- O dry-run nao chama a RPC de preparacao, nao cria fila, nao altera lead, nao altera configuracao e nao avanca rodizio.
+- A simulacao do rodizio usa `hub_vendas_config.rodizio` em memoria.
+
+### 72.5 Teste real controlado
+
+- Lead usado: `da772a09-dcf0-4476-a81d-86983d7ac624`.
+- Estado inicial confirmado: `status='aguardando_conversao'`, `loja_principal IS NULL`, `lojas_chamadas=[]`, `conexao_recuperacao_id IS NULL`, sem fila.
+- `data_entrada_hub` original: `2026-07-29 18:49:44.117+00`.
+- Para o teste, a data foi ajustada temporariamente para dentro da janela 24h-48h.
+- Dry-run real passou com `statusFinalSimulado='fila_criada'`.
+- Preparacao real criou exatamente uma fila para o lead de teste.
+- Conexao escolhida: Portao (`c60d720f-5ad5-4a1b-bedb-e51495dee686`).
+- `programado_para`: `2026-07-29 19:05:05.875+00`.
+- Nenhuma mensagem foi enviada; Fase 4 nao foi implementada.
+
+### 72.6 Reversao
+
+- A fila criada foi mantida como historico auditavel e marcada `status='cancelado'`, `motivo_cancelamento='teste_controlado'`.
+- O lead foi restaurado para `status='aguardando_conversao'`, `data_entrada_hub='2026-07-29 18:49:44.117+00'` e `conexao_recuperacao_id=NULL`.
+- O rodizio foi restaurado ao valor anterior ao teste.
+- A configuracao final segue `automacao.ativa=false` e `automacao.pausada=true`.
+- Consulta de verificacao encontrou 0 outros leads atualizados e 0 filas de outros leads criadas nos 10 minutos ao redor do teste.
+
+### 72.7 Validacoes finais
+
+- `npm run test -- src/lib/digisac/hub-vendas/__tmp-preparar-fila-real.test.ts` passou com teste real controlado; o arquivo temporario foi removido.
+- `npm run test -- src/lib/digisac/hub-vendas/preparar-fila.test.ts src/app/api/cron/hub-vendas-preparar-fila/route.test.ts` passou com 2 arquivos e 10 testes.
+- Suite focada Hub/Vendas passou com 7 arquivos e 45 testes.
+- `npx tsc --noEmit --pretty false` passou.
+- ESLint direcionado passou.
+- `git diff --check` passou com avisos LF/CRLF conhecidos do checkout Windows.
+- `npm run build` falhou inicialmente no sandbox por rede bloqueada em Google Fonts e passou na reexecucao com rede liberada, gerando 110 paginas e mantendo avisos conhecidos `DYNAMIC_SERVER_USAGE` em rotas com `cookies`.
+- Supabase Advisors de seguranca e performance foram executados. Para Hub/Vendas, permanecem os avisos INFO `rls_enabled_no_policy` nas tabelas `hub_vendas_*`, coerentes com o desenho service-role only.
+- A rota nova precisa de deploy para ser usada por HTTP em producao.
+- A fila cancelada `teste_controlado` permanece como evidencia auditavel e bloqueia nova preparacao real para o mesmo lead pelo unique `lead_id`; novo teste real exige decisao operacional sobre usar outro lead ou tratar essa fila manualmente.

@@ -2083,21 +2083,6 @@ function scanChangedSlots_() {
     }
   });
 
-  // 5.1 – SEMPRE recalc para SÁBADOS com endereço (mesmo sem mudança de hash)
-  Object.keys(slots).forEach(key => {
-    if (changedKey.has(key)) return; // já marcado
-    const pack = slots[key];
-    const d = pack.dia;
-    if (d.getDay() !== 6) return; // só sábado
-
-    // janela e domingo já filtrados acima; aqui só garante que há endereço
-    const hasAnyLocation = (sigBag[key] || []).some(s => s && s.trim() !== '' && !/^ORIGEM=/.test(s));
-    if (!hasAnyLocation) return;
-
-    changed.push(montarChangeSlot(key));
-    changedKey.add(key);
-  });
-
   return { changes: changed, prevMap, newMap };
 }
 
@@ -2174,12 +2159,30 @@ function gerarEventosDeslocamento() {
         const resultado = recalcDeslocamentoDiaEquipeBackend_(dia, team, cfg, shAg, change);
         if (resultado && resultado.ok === true) {
           if (resultado.status === 'SEM_ATENDIMENTOS') {
-            delete confirmMap[key];
-
-            Logger.log(
-              `Deslocamentos: hash removido porque o dia/equipe ficou sem atendimentos | ` +
-              `${formatDatePt(dia)} | ${team}`
+            const aindaExisteNoScan = Object.prototype.hasOwnProperty.call(
+              scan.newMap || {},
+              key
             );
+
+            if (aindaExisteNoScan) {
+              // O dia/equipe ainda existe nas fontes, mas não possui endereço
+              // utilizável. Confirmar o hash evita repetir o mesmo processamento
+              // em toda execução horária sem que tenha ocorrido nova mudança.
+              confirmMap[key] = scan.newMap[key];
+
+              Logger.log(
+                `Deslocamentos: hash confirmado para dia/equipe sem atendimentos utilizaveis | ` +
+                `${formatDatePt(dia)} | ${team}`
+              );
+            } else {
+              // O dia/equipe desapareceu completamente das fontes monitoradas.
+              delete confirmMap[key];
+
+              Logger.log(
+                `Deslocamentos: hash removido porque o dia/equipe desapareceu das fontes | ` +
+                `${formatDatePt(dia)} | ${team}`
+              );
+            }
           } else {
             confirmMap[key] = scan.newMap[key];
           }
@@ -2266,4 +2269,109 @@ function resetarLastRun() {
 function resetCalSigMap(){
   PropertiesService.getScriptProperties().deleteProperty(PROP_CAL_SIG_MAP);
   Logger.log('🗑️ Assinaturas (PROP_CAL_SIG_MAP) limpas.');
+}
+
+/**
+ * Verificação periódica dos deslocamentos.
+ *
+ * Não usa gatilhos de alteração do Calendar porque o próprio script cria e
+ * atualiza eventos nas agendas monitoradas. Isso poderia disparar um ciclo de
+ * novas execuções.
+ *
+ * A função roda a cada 5 minutos, mas só faz o scanner entre 07h e 22h.
+ */
+function verificarDeslocamentosPeriodicamente() {
+  const hora = Number(
+    Utilities.formatDate(
+      new Date(),
+      'America/Sao_Paulo',
+      'H'
+    )
+  );
+
+  if (hora < 7 || hora > 22) {
+    Logger.log(
+      `Deslocamentos: verificacao periodica ignorada fora do horario | hora=${hora}`
+    );
+    return;
+  }
+
+  gerarEventosDeslocamento();
+}
+
+/**
+ * Remove todos os gatilhos antigos e atuais ligados aos deslocamentos.
+ *
+ * Inclui os handlers anteriores para que a migração elimine os seis gatilhos
+ * de Calendar e o gatilho horário já instalados.
+ */
+function removerTodosGatilhosDeslocamentos_() {
+  const handlers = {
+    aoAlterarCalendarioDeslocamentos: true,
+    verificarDeslocamentosHorarioComercial: true,
+    verificarDeslocamentosPeriodicamente: true
+  };
+
+  let removidos = 0;
+
+  ScriptApp.getProjectTriggers().forEach(trigger => {
+    const handler = trigger.getHandlerFunction();
+
+    if (handlers[handler]) {
+      ScriptApp.deleteTrigger(trigger);
+      removidos++;
+    }
+  });
+
+  Logger.log(
+    `Deslocamentos: gatilhos antigos removidos=${removidos}`
+  );
+
+  return removidos;
+}
+
+/**
+ * Instala somente um gatilho baseado no tempo, a cada 5 minutos.
+ *
+ * Execute manualmente uma vez depois de salvar o código.
+ */
+function instalarGatilhoPeriodicoDeslocamentos() {
+  removerTodosGatilhosDeslocamentos_();
+
+  ScriptApp
+    .newTrigger('verificarDeslocamentosPeriodicamente')
+    .timeBased()
+    .everyMinutes(1)
+    .create();
+
+  Logger.log(
+    'Deslocamentos: gatilho periodico criado a cada 1 minuto.'
+  );
+}
+
+/**
+ * Nome mantido por compatibilidade com a instrução anterior.
+ *
+ * Agora instala somente o gatilho periódico seguro e não cria gatilhos de
+ * alteração do Calendar.
+ */
+function instalarTodosGatilhosDeslocamentos() {
+  instalarGatilhoPeriodicoDeslocamentos();
+
+  Logger.log(
+    'Deslocamentos: sistema de gatilho periodico instalado sem gatilhos de Calendar.'
+  );
+}
+
+/**
+ * Função de emergência para interromper todos os gatilhos de deslocamentos.
+ *
+ * Pode ser executada manualmente sem alterar hashes ou eventos.
+ */
+function desativarTodosGatilhosDeslocamentos() {
+  const removidos = removerTodosGatilhosDeslocamentos_();
+
+  Logger.log(
+    `Deslocamentos: todos os gatilhos foram desativados | removidos=${removidos}`
+  );
 }

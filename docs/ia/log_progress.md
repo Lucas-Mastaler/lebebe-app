@@ -1,3 +1,53 @@
+## 2026-07-30 - Cascade - /procurar-datas Frente 1: adicionar três lojas Le Bébé como locais fixos
+
+- **Resumo:** Adicionadas três lojas Le Bébé (Marechal/Hauer, Portão, Bigorrilho) ao catálogo centralizado de locais fixos do backend. Endereços de transferência que antes eram recusados com status `PAYLOAD_INVALIDO/endereco_incompleto` agora são resolvidos imediatamente como `RESOLVIDO_ORIGEM_FIXA` usando coordenadas fixas, sem chamar geocodificadores externos. A ordem de resolução foi ajustada para verificar locais fixos ANTES da validação de payload incompleto.
+- **Frente `/procurar-datas`:** Frente 1 / esquerda — distância, agenda, geocodificação, OSRM, Haversine, origem, delta de inserção e helpers puros. Nenhuma alteração em candidatos, ranking, classificação, frete, Mère, pré-agendamento, frontend, motor de sábado, escolha da origem de sábado, política de OSRM, cálculo de distância oficial, geocodificação, coordenadas resolvidas, ordem da rota, distância, duração, hashes, alertas, status `VALIDA`/`PARCIAL`/falhas, política de `geo_cache`.
+- **Arquivos lidos:** `docs/procurar-datas-escopo-equivalencia-legado-v2.md`; `docs/procurar-datas-motor-v2-progresso.md`; `docs/ia/log_progress.md`; `src/lib/procurar-datas/deslocamentos/origens-fixas.ts`; `src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.ts`.
+- **Arquivos alterados:** `src/lib/procurar-datas/deslocamentos/origens-fixas.ts`; `src/lib/procurar-datas/deslocamentos/origens-fixas.test.ts`; `src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.ts`; `docs/ia/log_progress.md`.
+- **Implementacao:**
+  - Atualizado tipo `OrigemFixa` para incluir `LOJA_MARECHAL_HAUER`, `LOJA_PORTAO` e `LOJA_BIGORRILHO`.
+  - Adicionadas três entradas ao catálogo `ORIGENS_FIXAS` com aliases, tokens obrigatórios, números e coordenadas fixas:
+    - Marechal/Hauer: `FLORIANO` + `PEIXOTO`, número `5636`, lat `-25.477376`, lng `-49.249524`
+    - Portão: `ARGENTINA` + `2777`, número `2777`, lat `-25.470662`, lng `-49.294289`
+    - Bigorrilho: `HARTMANN`, número `456`, lat `-25.431229`, lng `-49.291418`
+  - Ajustada função `agruparAtendimentos` na rota para verificar locais fixos ANTES de validar payload e marcar como `PAYLOAD_INVALIDO/endereco_incompleto`.
+  - Ajustada função `resolverGrupo` na rota para verificar locais fixos ANTES de tentar cache, LocationIQ ou Google Geocoding.
+  - Adicionados 18 testes novos para as três lojas (com/sem acento, com/sem bairro, Av./Avenida, número diferente, etc.), totalizando 27 testes no arquivo.
+- **Banco/MCP:** Nao envolve banco de dados.
+- **Comandos executados/resultados:**
+  - `npm run test -- src/lib/procurar-datas/deslocamentos/origens-fixas.test.ts --silent`: passou, 27 testes.
+  - `npx tsc --noEmit --pretty false`: passou.
+  - `npx eslint src/lib/procurar-datas/deslocamentos/origens-fixas.ts src/lib/procurar-datas/deslocamentos/origens-fixas.test.ts src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.ts`: passou.
+  - `git diff --check`: passou com avisos LF/CRLF conhecidos.
+- **Nao alterado:** schema, migrations, RLS, policies; política geral de `geo_cache`; geocodificadores externos (LocationIQ, Google); OSRM; cálculo de distância; candidatos; ranking; classificação; frete; Mère; pré-agendamento; frontend; motor de sábado; escolha da origem de sábado.
+- **Nao validado:** Execução real no backend com payload exato do Apps Script para confirmar que os três endereços de transferência agora retornam `RESOLVIDO_ORIGEM_FIXA` e não chamam geocodificadores externos.
+- **Riscos conhecidos:** Matching por tokens + número é deliberadamente conservador. Se o Apps Script enviar uma variação dos endereços das lojas que não contenha tanto o nome quanto o número correto, a resolução cairá para `geo_cache`/externos. Isso é aceitável porque evita matching falso.
+- **Proximo passo recomendado:** Testar no backend real com payload contendo os endereços de transferência das três lojas para confirmar que retornam `status=RESOLVIDO_ORIGEM_FIXA`, `source=fixed_known_location` e não chamam LocationIQ nem Google.
+
+## 2026-07-30 - Cascade - /procurar-datas Frente 1: sistema automático de atualização dos deslocamentos
+
+- **Resumo:** Implementado sistema automático de atualização dos deslocamentos no Apps Script `deslocamentos.gs`. Evento criado/editado/excluído em qualquer calendário de `MONITOR_CAL_IDS` aciona verificação imediata via gatilho de Calendar. Verificação horária a cada hora entre 07h e 22h executa scanner como segurança. Removido recálculo obrigatório de sábados; agora sábado só é recalculado quando hash muda ou quando não há evento de deslocamento.
+- **Frente `/procurar-datas`:** Frente 1 / esquerda — distância, agenda, geocodificação, OSRM, Haversine, origem, delta de inserção e helpers puros. Nenhuma alteração em backend, geocodificação, OSRM, cálculo, regra de origem, regras de negócio, candidatos, ranking, classificação, frete, Mère, pré-agendamento, frontend, motor de sábado, escolha da origem de sábado, política de OSRM, cálculo de distância oficial, geocodificação, coordenadas resolvidas, ordem da rota, distância, duração, hashes, alertas, status `VALIDA`/`PARCIAL`/falhas, política de `geo_cache` nem implementação legada.
+- **Arquivos lidos:** `docs/procurar-datas-escopo-equivalencia-legado-v2.md`; `docs/procurar-datas-motor-v2-progresso.md`; `docs/ia/log_progress.md`; `deslocamentos.gs`.
+- **Arquivos alterados:** `deslocamentos.gs`; `docs/ia/log_progress.md`.
+- **Implementacao:**
+  - `scanChangedSlots_()` mantém assinatura do Calendar somente por `evt.location` (linha 1969), sem incluir título, descrição, updated ou summary.
+  - Removido bloco de recálculo obrigatório de sábados (linhas 2086-2099). Sábado agora só é recalculado quando hash muda ou quando não há evento de deslocamento.
+  - Criado `aoAlterarCalendarioDeslocamentos()` que chama `gerarEventosDeslocamento()` ao alterar evento em calendários monitorados.
+  - Criado `instalarGatilhosCalendarioDeslocamentos()` que cria gatilho `onEventUpdated` para cada calendário em `MONITOR_CAL_IDS` (6 gatilhos).
+  - Criado `verificarDeslocamentosHorarioComercial()` que verifica hora (07h-22h) e executa scanner se dentro do horário.
+  - Criado `instalarGatilhoHorarioDeslocamentos()` que cria trigger horário executado a cada hora.
+  - Criado `removerGatilhosDeslocamentosPorHandler_()` helper para evitar gatilhos duplicados.
+  - Criado `instalarTodosGatilhosDeslocamentos()` instalador único que deve ser executado manualmente uma vez após publicar o código.
+- **Banco/MCP:** Nao envolve banco de dados.
+- **Comandos executados/resultados:**
+  - `node --check deslocamentos_temp_check.js` (copia temporária de `deslocamentos.gs`): passou; arquivo temporário removido.
+  - `git diff --check`: passou.
+- **Nao alterado:** backend, geocodificação, OSRM, cálculo, regra de origem, regras de negócio, schema, migrations, RLS, policies, candidatos, ranking, classificação, frete, Mère, pré-agendamento, frontend, motor de sábado, escolha da origem de sábado, política de OSRM, cálculo de distância oficial, geocodificação, coordenadas resolvidas, ordem da rota, distância, duração, hashes, alertas, status `VALIDA`/`PARCIAL`/falhas, política de `geo_cache`.
+- **Nao validado:** Execução real no Apps Script/Google Apps Script para confirmar criação de gatilhos e comportamento de acionamento.
+- **Riscos conhecidos:** Gatilhos de Calendar podem ser acionados em excesso se houver muitas edições simultâneas; lock de 10 segundos em `gerarEventosDeslocamento()` evita execuções concorrentes. Verificação horária ignora fora de 07h-22h para evitar execuções desnecessárias à noite.
+- **Proximo passo recomendado:** Publicar código no Apps Script, executar `instalarTodosGatilhosDeslocamentos()` manualmente uma vez, verificar que 6 gatilhos de Calendar e 1 gatilho horário foram criados, testar alteração de `location` e confirmar recálculo somente do dia/equipe alterado.
+
 ## 2026-07-30 - Cascade - /procurar-datas Frente 1: descrição limpa dos eventos de deslocamento (formato reajustado)
 
 - **Resumo:** Ajustada a descrição dos eventos de deslocamento gerados pelo fluxo backend no Apps Script `deslocamentos.gs`. Removido o bloco `GEO` poluído de cada parada, mantido apenas endereço original + referências, adicionado segundo link do Google Maps montado com os endereços originais (origem + ordem da rota), e reorganizada a ordem das seções conforme solicitado.

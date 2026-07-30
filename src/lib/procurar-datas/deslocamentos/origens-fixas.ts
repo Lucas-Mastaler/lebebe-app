@@ -1,7 +1,7 @@
 import type { EnderecoValidado } from '../contratos'
 
 export type OrigemFixa = {
-  label: 'DEPOSITO_LEBEBE' | 'LOJA_LEBEBE'
+  label: 'DEPOSITO_LEBEBE' | 'LOJA_LEBEBE' | 'LOJA_MARECHAL_HAUER' | 'LOJA_PORTAO' | 'LOJA_BIGORRILHO'
   aliases: string[]
   tokensObrigatorios: string[]
   numero: string
@@ -40,6 +40,47 @@ export const ORIGENS_FIXAS: OrigemFixa[] = [
     lat: -25.4944568,
     lng: -49.2771426,
     display: '872, Rua Deputado Néo Martins, Novo Mundo, Curitiba, Paraná, 81030-470, Brasil',
+  },
+  {
+    label: 'LOJA_MARECHAL_HAUER',
+    aliases: [
+      'Av. Mal. Floriano Peixoto, 5636 - Hauer, Curitiba - PR, 81630-000',
+      'Av Mal Floriano Peixoto 5636 Hauer Curitiba PR 81630-000',
+      'Avenida Marechal Floriano Peixoto, 5636, Hauer, Curitiba - PR',
+    ],
+    tokensObrigatorios: ['FLORIANO', 'PEIXOTO'],
+    numero: '5636',
+    lat: -25.477376,
+    lng: -49.249524,
+    display: '5636, Avenida Marechal Floriano Peixoto, Hauer, Curitiba, Paraná, 81630-000, Brasil',
+  },
+  {
+    label: 'LOJA_PORTAO',
+    aliases: [
+      'Av. Rep. Argentina, 2777, Curitiba - PR, 80610-260',
+      'Av Rep Argentina 2777 Curitiba PR 80610-260',
+      'Avenida República Argentina, 2777, Portão, Curitiba - PR',
+      'Avenida Republica Argentina, 2777, Portao, Curitiba - PR',
+    ],
+    tokensObrigatorios: ['ARGENTINA', '2777'],
+    numero: '2777',
+    lat: -25.470662,
+    lng: -49.294289,
+    display: '2777, Avenida República Argentina, Portão, Curitiba, Paraná, 80610-260, Brasil',
+  },
+  {
+    label: 'LOJA_BIGORRILHO',
+    aliases: [
+      'Av. Cândido Hartmann, 456, 80730-440',
+      'Av Candido Hartmann 456 80730-440',
+      'Avenida Cândido Hartmann, 456, Bigorrilho, Curitiba - PR',
+      'Avenida Candido Hartmann, 456, Bigorrilho, Curitiba - PR',
+    ],
+    tokensObrigatorios: ['HARTMANN'],
+    numero: '456',
+    lat: -25.431229,
+    lng: -49.291418,
+    display: '456, Avenida Cândido Hartmann, Bigorrilho, Curitiba, Paraná, 80730-440, Brasil',
   },
 ]
 

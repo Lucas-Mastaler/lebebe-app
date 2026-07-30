@@ -12,7 +12,10 @@ import { consultarGoogleGeocodingEnderecoDificil } from '@/lib/procurar-datas/go
 import { buscarConfiguracoesProcurarDatas } from '@/lib/procurar-datas/config-service'
 import { criarBuscarMatrizOSRMTableDiagnosticoV2 } from '@/lib/procurar-datas/motor/osrm-table-client-diagnostico'
 import { otimizarRotaDeslocamentosPorMatrizOSRM } from '@/lib/procurar-datas/deslocamentos/otimizar-rota-osrm'
-import { resolverOrigemFixa } from '@/lib/procurar-datas/deslocamentos/origens-fixas'
+import {
+  resolverOrigemFixa,
+  origemFixaParaEnderecoValidado,
+} from '@/lib/procurar-datas/deslocamentos/origens-fixas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -158,6 +161,37 @@ function agruparAtendimentos(itens: AtendimentoInput[]): {
   itens.forEach((item, indice) => {
     const id = String(item.id ?? item.eventId ?? item.linha ?? `item-${indice + 1}`)
     const enderecoOriginal = String(item.enderecoOriginal ?? '').trim()
+
+    // 1. Verificar local fixo antes de validar payload
+    const localFixo = resolverOrigemFixa(enderecoOriginal)
+    if (localFixo.ok) {
+      const form = montarFormGeoCachePorEnderecoAgenda(enderecoOriginal)
+      if (!form) {
+        rejeitados.push({
+          id,
+          enderecoOriginal,
+          enderecoNormalizado: normalizarTexto(enderecoOriginal),
+          status: 'PAYLOAD_INVALIDO',
+          motivo: 'endereco_incompleto',
+          eventIds: item.eventId ? [item.eventId] : [],
+          linhas: typeof item.linha === 'number' ? [item.linha] : [],
+          referencias: [{ id, eventId: item.eventId, linha: item.linha, titulo: item.titulo }],
+        })
+        return
+      }
+      const chave = chaveGrupo(form, enderecoOriginal)
+      const grupo = gruposPorChave.get(chave) ?? {
+        chave,
+        enderecoOriginal: enderecoOriginal || montarEnderecoDisplayProcurarDatas(form),
+        form,
+        referencias: [],
+      }
+      grupo.referencias.push({ id, eventId: item.eventId, linha: item.linha, titulo: item.titulo })
+      gruposPorChave.set(chave, grupo)
+      return
+    }
+
+    // 2. Se não for local fixo, validar payload
     const form = formDeEnderecoInput(item.endereco ?? enderecoOriginal)
     if (!form) {
       rejeitados.push({
@@ -274,6 +308,15 @@ async function resolverOrigem(
 }
 
 async function resolverGrupo(grupo: GrupoAtendimento, runId: string, finalidade: 'origem_agenda' | 'geocodificacao_endereco'): Promise<ItemResolvido> {
+  // 1. Verificar local fixo antes de cache/geocodificadores
+  const localFixo = resolverOrigemFixa(grupo.enderecoOriginal)
+  if (localFixo.ok) {
+    console.log(
+      `[DESLOCAMENTOS] item_resolvido runId=${runId} estrategia=fixed_known_location label=${localFixo.label} endereco="${grupo.enderecoOriginal}"`
+    )
+    return resultadoParaItem(grupo, origemFixaParaEnderecoValidado(localFixo), 'RESOLVIDO_ORIGEM_FIXA')
+  }
+
   const motivosRejeicao: string[] = []
 
   try {

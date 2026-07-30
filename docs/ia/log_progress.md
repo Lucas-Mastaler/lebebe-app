@@ -1,3 +1,27 @@
+## 2026-07-30 - Cascade - /procurar-datas Frente 1: descrição limpa dos eventos de deslocamento
+
+- **Resumo:** Ajustada a descrição dos eventos de deslocamento gerados pelo fluxo backend no Apps Script `deslocamentos.gs`. Removido o bloco `GEO` poluído de cada parada, mantido apenas endereço original + referências, e adicionado segundo link do Google Maps montado com os endereços originais (origem + ordem da rota).
+- **Frente `/procurar-datas`:** Frente 1 / esquerda — distância, agenda, geocodificação, OSRM, Haversine, origem, delta de inserção e helpers puros. Nenhuma alteração em candidatos, ranking, classificação, frete, Mère, pré-agendamento, frontend, motor de sábado, escolha da origem de sábado, política de OSRM, cálculo de distância oficial, geocodificação, coordenadas resolvidas, ordem da rota, distância, duração, hashes, alertas, status `VALIDA`/`PARCIAL`/falhas, política de `geo_cache` nem implementação legada.
+- **Arquivos lidos:** `docs/procurar-datas-escopo-equivalencia-legado-v2.md`; `docs/procurar-datas-motor-v2-progresso.md`; `docs/ia/log_progress.md`; `deslocamentos.gs`.
+- **Arquivos criados:** `src/lib/procurar-datas/deslocamentos/apps-script-descricao.ts`; `src/lib/procurar-datas/deslocamentos/apps-script-descricao.test.ts`.
+- **Arquivos alterados:** `deslocamentos.gs`; `docs/ia/log_progress.md`.
+- **Implementacao:**
+  - `formatarLinhaBackend_` agora retorna apenas `${enderecoOriginal}\n  refs: ...`, sem `GEO`.
+  - Criada `buildMapsLinkBackendEnderecos_` que recebe `origemOriginal` e `rota.ordem`, extrai `enderecoOriginal` de cada parada, filtra vazios/nulos e gera `https://www.google.com/maps/dir/<origem>/<parada1>/<parada2>` com `encodeURIComponent` individual.
+  - `atualizarEventoDeslocamentoBackend_` gera dois links: `(coordenadas reais)` e `(enderecos originais)`; na seção `Origem:` prefere `enderecoOriginal` sobre `display`.
+  - Helpers espelhados em TypeScript (`apps-script-descricao.ts`) garantem testes automatizados da mesma lógica.
+- **Banco/MCP:** Nao envolve banco de dados.
+- **Comandos executados/resultados:**
+  - `npm run test -- src/lib/procurar-datas/deslocamentos/apps-script-descricao.test.ts --silent`: passou, 11 testes.
+  - `npx tsc --noEmit --pretty false`: passou.
+  - `npx eslint` nos novos arquivos: passou (0 erros, 0 warnings).
+  - `node --check deslocamentos_temp_check.js` (copia temporária de `deslocamentos.gs`): passou; arquivo temporário removido.
+  - `git diff --check`: passou.
+- **Nao alterado:** geocodificação, OSRM, Haversine, distância, duração, ordem da rota, lógica de sábado, hashes, alertas, status `VALIDA`/`PARCIAL`/falhas, política de `geo_cache`, schema/migrations/RLS/policies, candidatos, ranking, classificação, frete, Mère, pré-agendamento, frontend.
+- **Nao validado:** Execução real no Apps Script/Google Apps Script para confirmar renderização da descrição no Google Calendar.
+- **Riscos conhecidos:** O segundo link usa endereços originais textuais; se o Google Maps não resolver algum endereço, a rota pode diferir do link por coordenadas. Isso é esperado e documentado no rótulo do link.
+- **Proximo passo recomendado:** Executar `testarDeslocamentoBackendControlado()` no Apps Script e inspecionar a descrição do evento criado/ atualizado, verificando ausência de `GEO:` e presença dos dois links.
+
 ## 2026-07-30 - Cascade - /procurar-datas Frente 1: resolver origens fixas no backend
 
 - **Resumo:** Corrigida falha `FALHA_ORIGEM` no teste controlado do Apps Script para `2026-08-03 / EQUIPE 1`. O backend agora resolve endereços fixos conhecidos (depósito e loja Le Bébé) antes de consultar `geo_cache`, LocationIQ ou Google Geocoding. Logs sanitizados foram adicionados na rota e no Apps Script, e a resposta `FALHA_ORIGEM` agora traz `motivo`, `origemRecebida` e `tentativas`.

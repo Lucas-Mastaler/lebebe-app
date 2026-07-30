@@ -27,6 +27,7 @@ const MAX_POINT_KM_FROM_ORIGIN = 80;  // ponto muito longe da origem → suspeit
 const HAVERSINE_ROAD_FACTOR = 1.28;     // “rua” ~28% acima da linha reta (ajuste se quiser)
 const HAVERSINE_ACCEPT_PCT  = 0.80;     // aceitamos fallback se haversine*factor <= 80% do limite
 
+
 const MONITOR_CAL_IDS = [
   //AGENDAS EQUIPE 1
   // EQP1 principal
@@ -1440,8 +1441,24 @@ function consultarBackendDeslocamentos_(payload, cfgSheet) {
     throw new Error('backend_json_invalido_http_' + status);
   }
 
-  if (status >= 500) throw new Error('backend_http_' + status);
-  if (status === 401) throw new Error('backend_unauthorized');
+  if (status >= 500) {
+    Logger.log(
+      `Backend retornou erro interno | ` +
+      `http=${status} | ` +
+      `url=${url} | ` +
+      `body=${String(text).slice(0, 1500)}`
+    );
+
+    throw new Error(
+      `backend_http_${status}: ` +
+      `${String(body && (body.error || body.message || body.motivo) || text).slice(0, 500)}`
+    );
+  }
+
+  if (status === 401) {
+    throw new Error('backend_unauthorized');
+  }
+
   return { status, body };
 }
 
@@ -1503,6 +1520,14 @@ function buildMapsLinkBackend_(origem, ordem) {
   return 'https://www.google.com/maps/dir/' + coords.map(encodeURIComponent).join('/');
 }
 
+function buildMapsLinkBackendEnderecos_(origemOriginal, ordem) {
+  const enderecos = [
+    String(origemOriginal || '').trim(),
+    ...(ordem || []).map(p => String(p.enderecoOriginal || '').trim())
+  ].filter(Boolean);
+  return 'https://www.google.com/maps/dir/' + enderecos.map(encodeURIComponent).join('/');
+}
+
 function formatarLinhaBackend_(p) {
   const refs = (p.referencias || []).map(r => {
     const partes = [];
@@ -1511,7 +1536,7 @@ function formatarLinhaBackend_(p) {
     if (r.titulo) partes.push(String(r.titulo).slice(0, 60));
     return partes.join(' | ');
   }).filter(Boolean);
-  return `${p.enderecoOriginal || p.display || '-'}\n  GEO: ${p.display || '-'}\n  refs: ${refs.join('; ') || '-'}`;
+  return `${p.enderecoOriginal || p.display || '-'}\n  refs: ${refs.join('; ') || '-'}`;
 }
 
 function truncarTextoBackend_(valor, limite) {
@@ -1707,7 +1732,11 @@ function atualizarEventoDeslocamentoBackend_(dia, team, resposta) {
   if (!Number.isFinite(distanciaKm)) throw new Error('distancia_backend_invalida');
 
   const tempoStr = getRoundedTime(distanciaKm);
-  const mapsLink = buildMapsLinkBackend_(resposta.origem, rota.ordem);
+  const mapsLinkCoordenadas = buildMapsLinkBackend_(resposta.origem, rota.ordem);
+  const mapsLinkEnderecos = buildMapsLinkBackendEnderecos_(
+    resposta.origem && resposta.origem.enderecoOriginal,
+    rota.ordem
+  );
   const pontosDesc = rota.ordem.map(formatarLinhaBackend_).join('\n-> ');
   const rejeitados = (resposta.itens || []).filter(item => {
     const valido = itemBackendTemCoordenadaValida_(item);
@@ -1719,11 +1748,12 @@ function atualizarEventoDeslocamentoBackend_(dia, team, resposta) {
     `Distancia total OSRM Table: ${distanciaKm.toFixed(2)} km\n` +
     `Duracao OSRM Table: ${rota.duracaoTotalSegundos == null ? 'nao informada' : Math.round(rota.duracaoTotalSegundos / 60) + ' min'}\n` +
     `RunId: ${resposta.runId || '-'}\n` +
-    `Status backend: ${resposta.status}\n` +
-    `Origem:\n${(resposta.origem && (resposta.origem.display || resposta.origem.enderecoOriginal)) || '-'}\n\n` +
+    `Status backend: ${resposta.status}\n\n` +
+    `Origem:\n${(resposta.origem && (resposta.origem.enderecoOriginal || resposta.origem.display)) || '-'}\n\n` +
     `Pontos da rota:\nORIGEM\n-> ${pontosDesc}\n\n` +
     (rejeitados.length ? `Itens nao usados:\n- ${rejeitados.map(i => `${truncarTextoBackend_(i.enderecoOriginal || i.id, 120)}: ${i.status || '-'} ${motivoItemBackend_(i)}`).join('\n- ')}\n\n` : '') +
-    `Rota no Google Maps (coordenadas reais):\n${mapsLink}`;
+    `Rota no Google Maps (coordenadas reais):\n${mapsLinkCoordenadas}\n\n` +
+    `Rota no Google Maps (enderecos originais):\n${mapsLinkEnderecos}`;
 
   const calId = (team === 'EQUIPE 1') ? CAL_DESLOC_E1 : CAL_DESLOC_E2;
   const cal = CalendarApp.getCalendarById(calId);
@@ -1823,7 +1853,7 @@ function recalcDeslocamentoDiaEquipeBackend_(dia, team, cfg, shAg, contextoScan,
     ? (team === 'EQUIPE 1' ? HOME_E1 : HOME_E2)
     : DEPOSIT;
 
-  Logger.log(
+    Logger.log(
     `Deslocamentos: origem enviada ao backend | ` +
     `data=${toYmd(dia)} | equipe=${team} | origem="${origemStr}"`
   );

@@ -12,6 +12,7 @@ import { consultarGoogleGeocodingEnderecoDificil } from '@/lib/procurar-datas/go
 import { buscarConfiguracoesProcurarDatas } from '@/lib/procurar-datas/config-service'
 import { criarBuscarMatrizOSRMTableDiagnosticoV2 } from '@/lib/procurar-datas/motor/osrm-table-client-diagnostico'
 import { otimizarRotaDeslocamentosPorMatrizOSRM } from '@/lib/procurar-datas/deslocamentos/otimizar-rota-osrm'
+import { resolverOrigemFixa } from '@/lib/procurar-datas/deslocamentos/origens-fixas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -20,6 +21,7 @@ type StatusItem =
   | 'CACHE_HIT'
   | 'RESOLVIDO_LOCATIONIQ'
   | 'RESOLVIDO_GOOGLE'
+  | 'RESOLVIDO_ORIGEM_FIXA'
   | 'CACHE_AMBIGUO'
   | 'REJEITADO'
   | 'FALHA_TEMPORARIA'
@@ -128,6 +130,20 @@ function formDeEnderecoInput(input: string | EnderecoInput | undefined): Validar
   return validarPayloadEndereco(form) ? null : form
 }
 
+function stringOrigem(origem: string | EnderecoInput | undefined): string {
+  if (!origem) return ''
+  if (typeof origem === 'string') return origem.trim()
+  const form: ValidarEnderecoRequest = {
+    logradouro: String(origem.logradouro ?? '').trim(),
+    numero: String(origem.numero ?? '').trim(),
+    bairro: String(origem.bairro ?? '').trim(),
+    cidade: String(origem.cidade ?? '').trim(),
+    uf: String(origem.uf ?? '').trim().toUpperCase(),
+    cep: String(origem.cep ?? '').trim(),
+  }
+  return montarEnderecoDisplayProcurarDatas(form)
+}
+
 function chaveGrupo(form: ValidarEnderecoRequest, enderecoOriginal: string): string {
   return normalizarTexto(montarEnderecoDisplayProcurarDatas(form) || enderecoOriginal)
 }
@@ -191,6 +207,70 @@ function resultadoParaItem(
     linhas: grupo.referencias.map((r) => r.linha).filter((v): v is number => typeof v === 'number'),
     referencias: grupo.referencias,
   }
+}
+
+async function resolverOrigem(
+  origem: string | EnderecoInput | undefined,
+  runId: string
+): Promise<ItemResolvido> {
+  const origemRecebida = stringOrigem(origem)
+  console.log(
+    `[DESLOCAMENTOS] origem_enviada runId=${runId} origem="${origemRecebida}"`
+  )
+
+  const origemFixa = resolverOrigemFixa(origemRecebida)
+  if (origemFixa.ok) {
+    console.log(
+      `[DESLOCAMENTOS] origem_resolvida runId=${runId} estrategia=fixed_known_location label=${origemFixa.label} origemNormalizada="${origemFixa.normalizada}"`
+    )
+    return {
+      id: 'origem',
+      enderecoOriginal: origemRecebida,
+      enderecoNormalizado: origemFixa.normalizada,
+      lat: origemFixa.lat,
+      lng: origemFixa.lng,
+      display: origemFixa.display,
+      provider: origemFixa.estrategia,
+      status: 'RESOLVIDO_ORIGEM_FIXA',
+      eventIds: [],
+      linhas: [],
+      referencias: [{ id: 'origem' }],
+    }
+  }
+
+  const form = formDeEnderecoInput(origem)
+  if (!form) {
+    console.log(
+      `[DESLOCAMENTOS] origem_parse_invalido runId=${runId} origemNormalizada="${origemFixa.normalizada}"`
+    )
+    return {
+      id: 'origem',
+      enderecoOriginal: origemRecebida,
+      enderecoNormalizado: origemFixa.normalizada,
+      status: 'PAYLOAD_INVALIDO',
+      motivo: 'origem_incompleta',
+      eventIds: [],
+      linhas: [],
+      referencias: [{ id: 'origem' }],
+    }
+  }
+
+  const grupo: GrupoAtendimento = {
+    chave: 'origem',
+    enderecoOriginal: origemRecebida,
+    form,
+    referencias: [{ id: 'origem' }],
+  }
+
+  const resultado = await resolverGrupo(grupo, runId, 'origem_agenda')
+
+  if (!coordenadaValida(resultado)) {
+    console.log(
+      `[DESLOCAMENTOS] origem_nao_resolvida runId=${runId} motivo=${resultado.motivo ?? resultado.status}`
+    )
+  }
+
+  return resultado
 }
 
 async function resolverGrupo(grupo: GrupoAtendimento, runId: string, finalidade: 'origem_agenda' | 'geocodificacao_endereco'): Promise<ItemResolvido> {
@@ -287,31 +367,15 @@ export async function POST(request: NextRequest) {
   const maxItens = parseMaxItens()
   if (itens.length > maxItens) return erroJson('limite_itens_excedido', 400)
 
-  const origemForm = formDeEnderecoInput(body.origem)
-  if (!origemForm) {
-    return NextResponse.json({
-      ok: true,
-      status: 'FALHA_ORIGEM' satisfies StatusGeral,
-      runId,
-      motivo: 'origem_invalida',
-      itens: [],
-      rota: null,
-    })
-  }
-
-  const origemGrupo: GrupoAtendimento = {
-    chave: 'origem',
-    enderecoOriginal: typeof body.origem === 'string' ? body.origem : montarEnderecoDisplayProcurarDatas(origemForm),
-    form: origemForm,
-    referencias: [{ id: 'origem' }],
-  }
-  const origem = await resolverGrupo(origemGrupo, runId, 'origem_agenda')
+  const origem = await resolverOrigem(body.origem, runId)
   if (!coordenadaValida(origem)) {
     return NextResponse.json({
       ok: true,
       status: 'FALHA_ORIGEM' satisfies StatusGeral,
       runId,
       motivo: origem.motivo ?? origem.status,
+      origemRecebida: stringOrigem(body.origem),
+      tentativas: ['fixed_known_location', 'geo_cache', 'locationiq', 'google'],
       origem,
       itens: [],
       rota: null,

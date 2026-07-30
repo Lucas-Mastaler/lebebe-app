@@ -1,5 +1,15 @@
 # Escopo e equivalência — motor `/procurar-datas` legado x v2
 
+## 2026-07-30 - Frente 1 / esquerda: resolução de origens fixas
+
+- Resolvida falha `FALHA_ORIGEM` no teste controlado `testarDeslocamentoBackendControlado()` para `2026-08-03 / EQUIPE 1`.
+- Backend agora resolve endereços fixos conhecidos (depósito e loja Le Bébé) antes de consultar `geo_cache`, LocationIQ ou Google Geocoding.
+- Ordem: (1) origem fixa; (2) `geo_cache` somente leitura; (3) LocationIQ; (4) Google; (5) `FALHA_ORIGEM`.
+- Equivalente funcional ao legado: o Apps Script já possui `FIXED_KNOWN_LOCATIONS` para depósito e loja; a v2 replica o mesmo conceito no backend para evitar dependência de geocodificadores externos para origens conhecidas.
+- Não altera regra de negócio de cálculo de distância, OSRM, Haversine, candidatos, ranking, classificação, frete, Mère, pré-agendamento, motor de sábado, frontend, schema, migrations, RLS ou policies.
+
+---
+
 ## Estado consolidado — auditoria v2 (atualizado 2026-07-10)
 
 ### Correções aplicadas (escopo B)

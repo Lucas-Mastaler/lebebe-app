@@ -1,3 +1,40 @@
+## 2026-07-30 - Cascade - Frente 1: resolução segura de origens fixas
+
+Status: implementado e testado. Não altera motor, ranking, classificação, frete, Mère, pré-agendamento, frontend, motor de sábado, escolha da origem de sábado, política de OSRM, cálculo de distância oficial, Haversine, candidatos nem implementação legada.
+
+### Problema
+- Teste controlado `testarDeslocamentoBackendControlado()` para `2026-08-03 / EQUIPE 1` retornava `FALHA_ORIGEM`.
+- O backend convertia o endereço do depósito em `ValidarEnderecoRequest` e só resolvia via `geo_cache`, LocationIQ ou Google Geocoding.
+- Sem cache hit e com geocodificadores externos indisponíveis/falhos, a origem conhecida do depósito não era resolvida.
+
+### Correção
+- Criado catálogo seguro de origens fixas em `src/lib/procurar-datas/deslocamentos/origens-fixas.ts`.
+- Endereços conhecidos: depósito (`Rua Doutor Francisco Soares, 860`) e loja (`Rua Deputado Néo Martins, 872`).
+- Matching exige tokens obrigatórios do local **e** o número correto, evitando correspondência falsa.
+- Ordem de resolução da origem: (1) origem fixa; (2) `geo_cache` somente leitura; (3) LocationIQ; (4) Google; (5) `FALHA_ORIGEM`.
+- Logs sanitizados na rota: `origem_enviada`, `origem_resolvida`, `origem_parse_invalido`, `origem_nao_resolvida`.
+- Log sanitizado no Apps Script: `Deslocamentos: origem enviada ao backend | data=... | equipe=... | origem="..."`.
+- Resposta `FALHA_ORIGEM` agora inclui `motivo`, `origemRecebida`, `tentativas` e objeto `origem`.
+
+### Validações
+- `npm run test -- src/lib/procurar-datas/deslocamentos/origens-fixas.test.ts src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.test.ts --silent`: 2 arquivos, 19 testes passed.
+- `npx tsc --noEmit --pretty false`: aprovado.
+- `npx eslint` nos arquivos alterados: 0 erros, 0 warnings.
+- `git diff --check`: aprovado com avisos LF/CRLF conhecidos.
+
+### Não alterado
+- Schema/migrations/RLS/policies.
+- Política geral de `geo_cache`.
+- Candidatos, ranking, classificação, frete, Mère, pré-agendamento, frontend.
+- Motor de sábado, escolha da origem de sábado, política de OSRM, cálculo de distância oficial.
+- Haversine continua não sendo cálculo oficial.
+- Implementação legada.
+
+### Pendência
+- Validar com `testarDeslocamentoBackendControlado()` real no Apps Script para `2026-08-03 / EQUIPE 1`.
+
+---
+
 ## 2026-07-15 - Cascade - Correção: confidence interna normalizada no geo_cache
 
 Status: implementado e validado. Não altera motor, ranking, classificacao, OSRM, Haversine, Calendar ou Sheets.

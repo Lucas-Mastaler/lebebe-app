@@ -122,6 +122,77 @@ describe('POST /api/procurar-datas/interno/deslocamentos/calcular/v1', () => {
     expect(body).toEqual({ ok: false, error: 'unauthorized' })
   })
 
+  it('resolve origem fixa do deposito por string sem chamar geocodificadores externos', async () => {
+    buscarEnderecoNoGeoCacheMock.mockResolvedValue({ status: 'miss', motivo: 'sem_match_seguro' })
+    buscarEnderecoLocationIqMock.mockResolvedValue({
+      status: 'success',
+      resultado: enderecoResultado('123A', -25.44, -49.24, 'locationiq'),
+      reservaUsada: false,
+    })
+
+    const response = await POST(criarRequest({
+      ...payloadBase,
+      origem: 'Rua Doutor Francisco Soares, 860, Curitiba - PR, 81030-470',
+    }))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.status).toBe('VALIDA')
+    expect(body.origem).toMatchObject({
+      status: 'RESOLVIDO_ORIGEM_FIXA',
+      provider: 'fixed_known_location',
+      lat: -25.4934984,
+      lng: -49.2765509,
+    })
+    expect(buscarEnderecoNoGeoCacheMock).toHaveBeenCalledTimes(1) // apenas item
+    expect(buscarEnderecoNoGeoCacheMock.mock.calls[0][0].logradouro).toBe('Rua Teste')
+    expect(buscarEnderecoLocationIqMock).toHaveBeenCalledTimes(1) // item
+    expect(consultarGoogleMock).not.toHaveBeenCalled()
+  })
+
+  it('resolve origem fixa da loja por string com acento', async () => {
+    buscarEnderecoNoGeoCacheMock.mockResolvedValue({ status: 'miss', motivo: 'sem_match_seguro' })
+    buscarEnderecoLocationIqMock.mockResolvedValue({
+      status: 'success',
+      resultado: enderecoResultado('123A', -25.44, -49.24, 'locationiq'),
+      reservaUsada: false,
+    })
+
+    const response = await POST(criarRequest({
+      ...payloadBase,
+      origem: 'Rua Deputado Néo Martins, 872, Curitiba - PR, 81030-470',
+    }))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.status).toBe('VALIDA')
+    expect(body.origem).toMatchObject({
+      status: 'RESOLVIDO_ORIGEM_FIXA',
+      provider: 'fixed_known_location',
+      lat: -25.4944568,
+      lng: -49.2771426,
+    })
+  })
+
+  it('retorna FALHA_ORIGEM com motivo e tentativas para endereco desconhecido', async () => {
+    buscarEnderecoNoGeoCacheMock.mockResolvedValue({ status: 'miss', motivo: 'sem_match_seguro' })
+    buscarEnderecoLocationIqMock.mockResolvedValue({ status: 'failed', motivo: 'sem_resultado_valido' })
+    consultarGoogleMock.mockResolvedValue({ status: 'failed', motivo: 'sem_resultado_valido' })
+
+    const response = await POST(criarRequest({
+      ...payloadBase,
+      origem: 'Rua XV de Novembro, 100, Centro, Curitiba - PR',
+    }))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.status).toBe('FALHA_ORIGEM')
+    expect(body.motivo).toBeTruthy()
+    expect(body.origemRecebida).toBe('Rua XV de Novembro, 100, Centro, Curitiba - PR')
+    expect(body.tentativas).toEqual(['fixed_known_location', 'geo_cache', 'locationiq', 'google'])
+    expect(body.origem).toMatchObject({ status: 'REJEITADO' })
+  })
+
   it('nao aceita cache com numero 123 para payload 123A e cai para LocationIQ sem salvar cache', async () => {
     buscarEnderecoNoGeoCacheMock
       .mockResolvedValueOnce({ status: 'hit', resultado: enderecoResultado('860', -25.49, -49.27), motivo: 'match_seguro' })

@@ -1,3 +1,29 @@
+## 2026-07-30 - Cascade - /procurar-datas Frente 1: resolver origens fixas no backend
+
+- **Resumo:** Corrigida falha `FALHA_ORIGEM` no teste controlado do Apps Script para `2026-08-03 / EQUIPE 1`. O backend agora resolve endereços fixos conhecidos (depósito e loja Le Bébé) antes de consultar `geo_cache`, LocationIQ ou Google Geocoding. Logs sanitizados foram adicionados na rota e no Apps Script, e a resposta `FALHA_ORIGEM` agora traz `motivo`, `origemRecebida` e `tentativas`.
+- **Frente `/procurar-datas`:** Frente 1 / esquerda — distância, agenda, geocodificação, OSRM, Haversine, origem, delta de inserção e helpers puros. Nenhuma alteração em candidatos, ranking, classificação, frete, Mère, pré-agendamento, frontend, motor de sábado, escolha da origem de sábado, política de OSRM ou cálculo de distância oficial.
+- **Causa raiz:** A rota `deslocamentos/calcular/v1` convertia o endereço do depósito em `ValidarEnderecoRequest` e só resolvia via `geo_cache`/LocationIQ/Google. Se o cache não contivesse a chave exata e os geocodificadores externos falhassem, retornava `FALHA_ORIGEM` mesmo para o endereço conhecido do depósito.
+- **Arquivos lidos:** `docs/procurar-datas-escopo-equivalencia-legado-v2.md`; `docs/procurar-datas-motor-v2-progresso.md`; `docs/ia/log_progress.md`; `src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.ts`; `src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.test.ts`; `src/lib/procurar-datas/endereco-cache.ts`; `src/lib/procurar-datas/motor/cache-coordenadas-agenda-diagnostico.ts`; `src/lib/procurar-datas/contratos.ts`; `deslocamentos.gs`.
+- **Arquivos criados:** `src/lib/procurar-datas/deslocamentos/origens-fixas.ts`; `src/lib/procurar-datas/deslocamentos/origens-fixas.test.ts`.
+- **Arquivos alterados:** `src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.ts`; `src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.test.ts`; `deslocamentos.gs`; `docs/ia/log_progress.md`; `docs/procurar-datas-motor-v2-progresso.md`.
+- **Implementacao:**
+  - `origens-fixas.ts` contém catálogo de `DEPOSITO_LEBEBE` e `LOJA_LEBEBE` com aliases, tokens obrigatórios e coordenadas fixas. A normalização remove acentos, expande abreviações (`R.`, `Dr.`, `Av.`, `Al.`, etc.), remove `Brasil` e ignora vírgulas/hifens.
+  - `resolverOrigemFixa` exige que o texto normalizado contenha os tokens obrigatórios do local (ex: `FRANCISCO`, `SOARES`) **e** o número correto (`860` ou `872`). Matching não é excessivamente permissivo.
+  - A rota agora chama `resolverOrigem` que tenta: (1) origem fixa; (2) `geo_cache`; (3) LocationIQ; (4) Google; (5) `FALHA_ORIGEM`.
+  - Logs: `origem_enviada`, `origem_resolvida` (quando fixa), `origem_parse_invalido` e `origem_nao_resolvida`.
+  - Apps Script: adicionado log `Deslocamentos: origem enviada ao backend | data=... | equipe=... | origem="..."`.
+  - Resposta `FALHA_ORIGEM` inclui `motivo`, `origemRecebida`, `tentativas: ['fixed_known_location', 'geo_cache', 'locationiq', 'google']` e objeto `origem`.
+- **Banco/MCP:** Nao envolve banco de dados. Nenhuma migration, schema, RLS ou policy foi alterada.
+- **Comandos executados/resultados:**
+  - `npm run test -- src/lib/procurar-datas/deslocamentos/origens-fixas.test.ts src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.test.ts --silent`: passou, 2 arquivos, 19 testes.
+  - `npx tsc --noEmit --pretty false`: passou.
+  - `npx eslint` nos arquivos alterados: passou (0 erros, 0 warnings).
+  - `git diff --check`: passou com avisos LF/CRLF conhecidos do checkout Windows.
+- **Nao alterado:** schema/migrations/RLS/policies; política geral de `geo_cache`; candidatos; ranking; classificação; frete; Mère; pré-agendamento; frontend; motor de sábado; escolha da origem de sábado; política de OSRM; cálculo de distância oficial; Haversine como cálculo oficial; implementação legada.
+- **Nao validado:** Execução real no Apps Script/Google Apps Script; chamada real ao backend com payload exato do Apps Script; OSRM real para o dia 2026-08-03.
+- **Riscos conhecidos:** O matching por tokens + número é deliberadamente conservador. Se o Apps Script enviar uma variação do endereço do depósito/loja que não contenha tanto o nome quanto o número correto, a origem cairá para `geo_cache`/externos. Isso é aceitável porque evita matching falso. A função `origemFixaParaEnderecoValidado` permanece exportada mas não é usada; pode ser removida futuramente se não houver outro consumidor.
+- **Proximo passo recomendado:** Executar `testarDeslocamentoBackendControlado()` no Apps Script para `2026-08-03 / EQUIPE 1` e confirmar status `VALIDA` ou `PARCIAL` (não `FALHA_ORIGEM`). Acompanhar logs `[DESLOCAMENTOS] origem_resolvida`.
+
 ## 2026-07-30 - Cascade - deslocamentos.gs: alertas no scanner, coordenada 0,0 e legado desativado
 
 - **Resumo:** Tres correcoes no Apps Script `deslocamentos.gs`: (1) `isOurDeslocEvent_` agora tambem ignora eventos com titulo `ROTA PARCIAL` ou `FALHA ROTA`, evitando que alertas sejam interpretados como atendimentos no scanner; (2) `coordenadaValida_` rejeita explicitamente `lat = 0` e `lng = 0`; (3) `gerarEventosDeslocamentoLegadoDesativado_` foi corrigido para usar o objeto retornado por `scanChangedSlots_` (`scan.changes`).

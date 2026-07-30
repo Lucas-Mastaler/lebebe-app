@@ -1823,6 +1823,11 @@ function recalcDeslocamentoDiaEquipeBackend_(dia, team, cfg, shAg, contextoScan,
     ? (team === 'EQUIPE 1' ? HOME_E1 : HOME_E2)
     : DEPOSIT;
 
+  Logger.log(
+    `Deslocamentos: origem enviada ao backend | ` +
+    `data=${toYmd(dia)} | equipe=${team} | origem="${origemStr}"`
+  );
+
   const runId = `desloc-${toYmd(dia)}-${team.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
   const payload = {
     runId,

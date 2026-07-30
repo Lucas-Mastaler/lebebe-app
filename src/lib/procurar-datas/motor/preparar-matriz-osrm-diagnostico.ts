@@ -43,6 +43,8 @@ export type PontoRotaOSRM = {
 export type ResultadoMatrizOSRM = {
   /** Distancias na mesma ordem dos pontos enviados. */
   distances: (number | null)[][]
+  /** Duracoes opcionais na mesma ordem dos pontos enviados, em segundos. */
+  durations?: (number | null)[][]
 }
 
 /**

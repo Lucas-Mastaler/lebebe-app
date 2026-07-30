@@ -3915,3 +3915,53 @@ Status: implementado e validado em testes focados. Nao altera motor, candidatos,
 - Testes focados adicionados em `src/lib/atendimento-automatico/consulta-datas-mere.test.ts` cobrem fallback de `cache_ambiguo` para LocationIQ, Google, Apps Script e falha final quando todos os providers falham.
 
 ---
+
+## 2026-07-29 - Codex - Deslocamentos via endpoint interno isolado
+
+Status: implementado e validado localmente em testes focados; sem teste real de Google Calendar/Apps Script em producao.
+
+### Escopo
+
+- Frente 1 / esquerda: geocodificacao segura e OSRM Table para calculo de deslocamentos das equipes.
+- Frente 0 / Controle: documentacao e rollback operacional.
+- Frente 2 permaneceu intocada: candidatos, ranking, classificacao, delta de insercao, frete, recorte e UI de `/procurar-datas` nao foram alterados.
+
+### Regra aplicada
+
+- A rota interna `POST /api/procurar-datas/interno/deslocamentos/calcular/v1` usa Bearer dedicado `APPS_SCRIPT_DESLOCAMENTOS_TOKEN`.
+- O endpoint consulta `geo_cache` apenas para leitura, rejeita uso de cache ambiguo e aplica checagem local mais estrita para numero com sufixo, sem alterar o helper global.
+- Em miss, o endpoint tenta LocationIQ e Google Geocoding com validadores existentes e nao chama Apps Script provider, Maps.co, Nominatim nem aproximacao por CEP.
+- O endpoint nao chama `salvarEnderecoNoGeoCache` e nao cria migration/tabela/policy.
+- O calculo de rota usa OSRM `/table` para distancia e duracao, com helper puro de vizinho mais proximo + 2-opt e sem retorno para origem.
+
+### Rollback
+
+- Apps Script manteve o recalc legado no arquivo e adicionou config `DESLOCAMENTOS USAR LEGADO?` para voltar temporariamente ao fluxo antigo.
+- O rollback operacional tambem exige remover/ignorar `DESLOCAMENTOS_API_URL` e `APPS_SCRIPT_DESLOCAMENTOS_TOKEN` nas Script Properties conforme decisao de operacao.
+
+### Nao validado
+
+- Chamada real Apps Script -> Next.js -> Google Calendar nao foi executada nesta rodada.
+- Sucesso real de criacao/atualizacao de evento no Calendar nao foi confirmado.
+
+---
+
+## 2026-07-29 - Codex - Addendum pre-teste real de deslocamentos
+
+Status: revisao corretiva curta implementada antes do primeiro teste real; sem deploy e sem chamada real externa.
+
+### Ajustes de seguranca
+
+- `deslocamentos.gs` voltou a ter uma unica funcao publica efetiva `gerarEventosDeslocamento`; a implementacao antiga ficou privada/desativada para nao depender de precedencia de declaracao.
+- A chamada `UrlFetchApp.fetch` usa `timeoutSeconds: 30`, parametro suportado pelo Apps Script.
+- Coordenadas vindas do backend passam por helper puro que rejeita ausente, vazio, `NaN`, infinito e valores fora de faixa; `null` e string vazia nao viram `0,0`.
+- Rollback legado ausente ou vazio passa a significar backend novo; rollback legado explicito continua temporario e nao confirma hash automaticamente.
+- `SEM_ATENDIMENTOS` so apaga rota quando nao ha atendimento valido na planilha e tambem nao ha assinatura/endereco observado pelo scanner. Caso Calendar indique endereco e a planilha retorne zero itens, o fluxo retorna `DIVERGENCIA_FONTES`, preserva a rota anterior e cria alerta.
+
+### Fora do escopo preservado
+
+- Nao houve alteracao de candidatos, classificacao, ranking, delta, frete, pre-agendamento, Mere, frontend, banco, migrations, RLS/policies ou politica global de `geo_cache`.
+
+### Teste real controlado
+
+- Foi adicionada a funcao publica `testarDeslocamentoBackendControlado()` para executar somente uma data/equipe configurada em Script Properties, sem varrer a janela automatica e sem atualizar `CAL_SIG_MAP_V1`.

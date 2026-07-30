@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { criarBuscarMatrizOSRMTableDiagnosticoV2 } from './osrm-table-client-diagnostico'
 import type { Coordenada } from './distancia'
 
@@ -321,5 +321,46 @@ describe('criarBuscarMatrizOSRMTableDiagnosticoV2', () => {
       expect.stringContaining(BASE_URL),
       expect.objectContaining({ n: COORDS.length })
     )
+  })
+
+  it('extra. pode solicitar e retornar durations junto com distances', async () => {
+    const fetchMock = mockFetch({
+      code: 'Ok',
+      distances: [
+        [0, 1500],
+        [1500, 0],
+      ],
+      durations: [
+        [0, 180],
+        [180, 0],
+      ],
+    })
+    const buscar = criarBuscarMatrizOSRMTableDiagnosticoV2({
+      baseUrl: BASE_URL,
+      fetchImpl: fetchMock,
+      annotations: 'distance,duration',
+    })
+
+    const resultado = await buscar(COORDS.slice(0, 2))
+
+    expect(fetchMock.mock.calls[0][0] as string).toContain('annotations=distance,duration')
+    expect(resultado.distances[0][1]).toBe(1500)
+    expect(resultado.durations?.[0][1]).toBe(180)
+  })
+
+  it('extra. durations ausente vira erro quando solicitado', async () => {
+    const buscar = criarBuscarMatrizOSRMTableDiagnosticoV2({
+      baseUrl: BASE_URL,
+      fetchImpl: mockFetch({
+        code: 'Ok',
+        distances: [
+          [0, 1500],
+          [1500, 0],
+        ],
+      }),
+      annotations: 'distance,duration',
+    })
+
+    await expect(buscar(COORDS.slice(0, 2))).rejects.toThrow('OSRM resposta sem campo durations')
   })
 })

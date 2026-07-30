@@ -23,6 +23,18 @@ describe('migration hub vendas fase 1', () => {
     path.join(process.cwd(), 'supabase', 'migrations', '20260729183000_hub_vendas_corrige_ambiguidade_conversao.sql'),
     'utf8'
   )
+  const fase4Sql = readFileSync(
+    path.join(process.cwd(), 'supabase', 'migrations', '20260729210000_hub_vendas_fase4_processamento.sql'),
+    'utf8'
+  )
+  const fase4RetryFixSql = readFileSync(
+    path.join(process.cwd(), 'supabase', 'migrations', '20260729213000_hub_vendas_fase4_retry_counter_fix.sql'),
+    'utf8'
+  )
+  const fase4ConexaoDestinoFixSql = readFileSync(
+    path.join(process.cwd(), 'supabase', 'migrations', '20260729220000_hub_vendas_corrige_conexao_destino_erro_fila.sql'),
+    'utf8'
+  )
 
   function trechoEntre(inicio: string, fim: string) {
     const inicioIndex = sql.indexOf(inicio)
@@ -130,6 +142,55 @@ describe('migration hub vendas fase 1', () => {
     expect(hotfixConversaoSql).not.toContain('#variable_conflict')
     expect(hotfixConversaoSql).not.toContain('/api/v1/messages')
     expect(hotfixConversaoSql).not.toContain('hub_vendas_config')
+  })
+
+  it('cria transicoes atomicas da Fase 4 sem endpoint externo na migration', () => {
+    expect(fase4Sql).toContain('ADD COLUMN IF NOT EXISTS tentativas_envio')
+    expect(fase4Sql).toContain('idx_hub_vendas_fila_reserva_vencida')
+    expect(fase4Sql).toContain('CREATE OR REPLACE FUNCTION public.hub_vendas_reservar_filas_recuperacao')
+    expect(fase4Sql).toContain('FOR UPDATE SKIP LOCKED')
+    expect(fase4Sql).toContain('CREATE OR REPLACE FUNCTION public.hub_vendas_marcar_fila_enviando')
+    expect(fase4Sql).toContain('CREATE OR REPLACE FUNCTION public.hub_vendas_confirmar_fila_enviada')
+    expect(fase4Sql).toContain('CREATE OR REPLACE FUNCTION public.hub_vendas_registrar_resultado_incerto')
+    expect(fase4Sql).toContain('CREATE OR REPLACE FUNCTION public.hub_vendas_registrar_erro_fila')
+    expect(fase4Sql).toContain('FROM PUBLIC, anon, authenticated')
+    expect(fase4Sql).toContain('TO service_role')
+    expect(fase4Sql).not.toContain('/messages')
+    expect(fase4Sql).not.toContain('/contacts')
+    expect(fase4Sql).not.toContain('DIGISAC_TOKEN')
+  })
+
+  it('mantem retry da Fase 4 contabilizado antes e depois do envio', () => {
+    expect(fase4RetryFixSql).toContain('CREATE OR REPLACE FUNCTION public.hub_vendas_registrar_erro_fila')
+    expect(fase4RetryFixSql).toContain('v_tentativas_final integer')
+    expect(fase4RetryFixSql).toContain("WHEN v_fila.status = 'reservado' THEN v_fila.tentativas_envio + 1")
+    expect(fase4RetryFixSql).toContain('WHEN p_retentavel IS TRUE AND v_tentativas_final <= 3')
+    expect(fase4RetryFixSql).toContain("tentativas_envio = CASE WHEN fila.status = 'reservado' THEN fila.tentativas_envio + 1 ELSE fila.tentativas_envio END")
+    expect(fase4RetryFixSql).toContain('v_fila.conexao_destino_id')
+    expect(fase4RetryFixSql).toContain('FROM PUBLIC, anon, authenticated')
+    expect(fase4RetryFixSql).toContain('TO service_role')
+    expect(fase4RetryFixSql).not.toContain('v_fila.conexao_destino,')
+    expect(fase4RetryFixSql).not.toContain('ARRAY[v_fila.conexao_destino,')
+    expect(fase4RetryFixSql).not.toContain('/messages')
+    expect(fase4RetryFixSql).not.toContain('/contacts')
+    expect(fase4RetryFixSql).not.toContain('DIGISAC_TOKEN')
+  })
+
+  it('corrige pausa automatica por conexao_destino_id e exige message id no envio', () => {
+    expect(fase4ConexaoDestinoFixSql).toContain('CREATE OR REPLACE FUNCTION public.hub_vendas_registrar_erro_fila')
+    expect(fase4ConexaoDestinoFixSql).toContain('CREATE OR REPLACE FUNCTION public.hub_vendas_confirmar_fila_enviada')
+    expect(fase4ConexaoDestinoFixSql).toContain('v_pausas->v_fila.conexao_destino_id')
+    expect(fase4ConexaoDestinoFixSql).toContain('ARRAY[v_fila.conexao_destino_id')
+    expect(fase4ConexaoDestinoFixSql).toContain('IF p_digisac_message_id IS NULL OR btrim(p_digisac_message_id) = \'\' THEN')
+    expect(fase4ConexaoDestinoFixSql).toContain('hub_vendas_digisac_message_id_obrigatorio')
+    expect(fase4ConexaoDestinoFixSql).toContain('WHEN p_retentavel IS TRUE AND v_tentativas_final <= 3')
+    expect(fase4ConexaoDestinoFixSql).toContain('FROM PUBLIC, anon, authenticated')
+    expect(fase4ConexaoDestinoFixSql).toContain('TO service_role')
+    expect(fase4ConexaoDestinoFixSql).not.toContain('v_fila.conexao_destino,')
+    expect(fase4ConexaoDestinoFixSql).not.toContain('ARRAY[v_fila.conexao_destino,')
+    expect(fase4ConexaoDestinoFixSql).not.toContain('/messages')
+    expect(fase4ConexaoDestinoFixSql).not.toContain('/contacts')
+    expect(fase4ConexaoDestinoFixSql).not.toContain('DIGISAC_TOKEN')
   })
 
   it('ativa rls sem policies para authenticated e restringe acesso operacional', () => {

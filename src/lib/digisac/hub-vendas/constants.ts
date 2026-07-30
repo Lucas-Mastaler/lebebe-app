@@ -31,3 +31,11 @@ export const HUB_VENDAS_SERVICE_ID_PARA_LOJA = new Map<string, HubVendasLoja>(
 
 export const HUB_VENDAS_JANELA_CONVERSAO_MS = 24 * 60 * 60 * 1000
 export const HUB_VENDAS_CICLO_MS = 14 * 24 * 60 * 60 * 1000
+
+export const HUB_VENDAS_DEPARTAMENTOS_RESGATE: Record<HubVendasLoja, string> = {
+  portao: '7b524eab-a7c4-48d2-b249-3a5027e43728',
+  bigorrilho: 'd89b13ba-560b-4e39-9a23-26d62caa9e15',
+  hauer_marechal: '8c90dba0-a855-49ae-bed4-f133f8509df9',
+}
+
+export const HUB_VENDAS_COMENTARIO_RESGATE = 'CHAMADA AUTOMATICA - RESGATE'

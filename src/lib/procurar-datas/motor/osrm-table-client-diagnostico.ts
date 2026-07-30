@@ -57,7 +57,7 @@ export type ConfigOSRMTableClient = {
    * Annotation a solicitar. Default: 'distance'.
    * OSRM retorna distances em metros.
    */
-  annotations?: 'distance'
+  annotations?: 'distance' | 'distance,duration'
 
   /**
    * Logger opcional para auditar chamadas e respostas sem I/O externo obrigatorio.
@@ -71,6 +71,7 @@ export type ConfigOSRMTableClient = {
 type RespostaOSRMTable = {
   code: string
   distances?: (number | null)[][]
+  durations?: (number | null)[][]
   message?: string
 }
 
@@ -188,20 +189,38 @@ export function criarBuscarMatrizOSRMTableDiagnosticoV2(
 
     // ── Sanitizar distancias ──────────────────────────────────────────────
     // OSRM ja retorna em metros. Preservar null. Tratar NaN/Infinity/negativo.
-    const distancesSanitizadas: (number | null)[][] = data.distances.map((linha, i) => {
+    const sanitizarMatrizNumerica = (
+      matriz: (number | null)[][],
+      campo: 'distancia' | 'duracao'
+    ): (number | null)[][] => matriz.map((linha, i) => {
       if (!Array.isArray(linha)) {
-        log?.(`OSRM linha ${i} invalida, substituida por null`, { linha })
+        log?.(`OSRM linha ${i} invalida em ${campo}, substituida por null`, { linha })
         return new Array(coordenadas.length).fill(null) as null[]
       }
       return linha.map((v) => {
         if (v === null) return null
         if (!Number.isFinite(v) || v < 0) {
-          log?.(`OSRM distancia invalida: ${v}, substituida por null`)
+          log?.(`OSRM ${campo} invalida: ${v}, substituida por null`)
           return null
         }
         return v
       })
     })
+
+    const distancesSanitizadas = sanitizarMatrizNumerica(data.distances, 'distancia')
+
+    if (annotations.includes('duration')) {
+      if (!data.durations) {
+        throw new Error('OSRM resposta sem campo durations')
+      }
+      if (!Array.isArray(data.durations)) {
+        throw new Error('OSRM durations com formato invalido')
+      }
+      return {
+        distances: distancesSanitizadas,
+        durations: sanitizarMatrizNumerica(data.durations, 'duracao'),
+      }
+    }
 
     return { distances: distancesSanitizadas }
   }

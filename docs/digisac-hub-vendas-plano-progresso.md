@@ -4470,3 +4470,113 @@ Esta secao registra a verificacao de armazenamento da ativacao/pausa e a criacao
 - Supabase Advisors de seguranca e performance foram executados. Para Hub/Vendas, permanecem os avisos INFO `rls_enabled_no_policy` nas tabelas `hub_vendas_*`, coerentes com o desenho service-role only.
 - A rota nova precisa de deploy para ser usada por HTTP em producao.
 - A fila cancelada `teste_controlado` permanece como evidencia auditavel e bloqueia nova preparacao real para o mesmo lead pelo unique `lead_id`; novo teste real exige decisao operacional sobre usar outro lead ou tratar essa fila manualmente.
+
+---
+
+## 73. Atualizacao vigente 2026-07-29 - Fase 4 processamento seguro da fila
+
+Esta secao registra a implementacao da Fase 4 limitada ao processador seguro de fila e ao caminho real de envio Digisac, sem ativar automacao global, sem envio real, sem cron recorrente e sem alterar `vercel.json`.
+
+### 73.1 Escopo implementado
+
+- Criada rota protegida `GET /api/cron/hub-vendas-processar-fila`, autenticada por `Authorization: Bearer $CRON_SECRET`.
+- Criado helper `processarFilaRecuperacaoHubVendas` para reservar filas vencidas, reconciliar lead, localizar/criar contato, localizar/abrir ticket, transferir para departamento de resgate e enviar mensagem.
+- Criado helper especifico `src/lib/digisac/hub-vendas/envio.ts`; `src/lib/digisac/enviar-mensagem.ts` nao foi alterado.
+- Adicionado modo isolado por `filaId` com `modoTeste=true`.
+- Adicionado `modoSimulacao=true` sem reserva, sem mutacao no banco, sem criacao de contato/ticket e sem POST de mensagem.
+- O modo global continua bloqueado quando `hub_vendas_config.automacao.ativa=false` ou `pausada=true`.
+
+### 73.2 Banco e transicoes
+
+- Migration `20260729210000_hub_vendas_fase4_processamento.sql` criou `tentativas_envio`, indice parcial `idx_hub_vendas_fila_reserva_vencida` e RPCs atomicas da Fase 4.
+- Migration complementar `20260729213000_hub_vendas_fase4_retry_counter_fix.sql` ajustou a contagem de tentativas em erro antes do POST.
+- RPCs criadas/alteradas: `hub_vendas_reservar_filas_recuperacao`, `hub_vendas_marcar_fila_enviando`, `hub_vendas_confirmar_fila_enviada`, `hub_vendas_cancelar_fila_reservada`, `hub_vendas_registrar_resultado_incerto`, `hub_vendas_registrar_erro_fila`.
+- Todas as RPCs da Fase 4 foram aplicadas no Supabase com `SECURITY DEFINER`, `SET search_path = pg_catalog, public`, revoke para `PUBLIC/anon/authenticated` e grant para `service_role`.
+- Reserva usa `FOR UPDATE SKIP LOCKED`, worker id e transicoes controladas por status.
+- Erro retentavel agenda backoff de 5, 15 e 60 minutos; resultado incerto nao faz retry cego.
+- Pausa automatica por conexao usa `hub_vendas_config.pausas_conexoes` quando erro de infraestrutura atinge `pausa_automatica_erros`.
+
+### 73.3 Digisac
+
+- Contato e buscado por telefone normalizado no service de destino; se inexistente, e criado com comentario `CHAMADA AUTOMATICA - RESGATE`.
+- Ticket aberto e reaproveitado quando existente; se nao houver, o helper abre ticket no service destino e transfere para o departamento de resgate.
+- Departamentos de resgate cadastrados em constantes: Portao, Bigorrilho e Hauer/Marechal.
+- Mensagem e enviada por `POST /messages` com `contactId` apos transferencia do ticket, preservando o caminho operacional validado anteriormente.
+- Logs de cliente Digisac sanitizam `Bearer` e sequencias numericas longas antes de imprimir URL/erro.
+
+### 73.4 Estado real preservado
+
+- Fila preparada para primeiro teste futuro: `2afa6d30-2a17-46fe-b968-3d412bcaf0f3`.
+- Lead preparado: `da772a09-dcf0-4476-a81d-86983d7ac624`.
+- Estado confirmado apos implementacao: fila `status='agendado'`, `programado_para='2026-07-29 19:30:00+00'`, `reservado_por=NULL`, `digisac_message_id=NULL`, `tentativas_envio=0`.
+- Lead confirmado: `status='encaminhado_recuperacao'`, `conexao_recuperacao_id='c60d720f-5ad5-4a1b-bedb-e51495dee686'`.
+- Config final confirmada: `automacao.ativa=false`, `automacao.pausada=true`; pausas por conexao sem pausa; mensagens de recuperacao cadastradas, mas `ativa=false`.
+- Como as mensagens estao inativas, um envio real hoje bloquearia em `sem_mensagem_ativa` ate decisao operacional separada.
+
+### 73.5 Validacoes
+
+- Teste transacional com rollback no Supabase reservou a fila preparada, confirmou que segunda reserva concorrente logica nao pegou a mesma fila, marcou `enviando`, confirmou `enviado` e reverteu. A fila permaneceu `agendado` apos rollback.
+- `npm run test -- src/lib/digisac/hub-vendas/processar-fila.test.ts src/app/api/cron/hub-vendas-processar-fila/route.test.ts` passou com 2 arquivos e 12 testes.
+- Suite focada Hub/Vendas passou com 9 arquivos e 58 testes.
+- `npx tsc --noEmit --pretty false` passou antes da documentacao final.
+- ESLint direcionado passou antes da documentacao final.
+- `npm run build` falhou primeiro no sandbox por rede bloqueada em Google Fonts e passou na reexecucao com rede liberada, gerando 110 paginas e mantendo avisos conhecidos `DYNAMIC_SERVER_USAGE` em rotas com `cookies`.
+- Supabase Advisors de seguranca e performance foram executados. Para Hub/Vendas, permanecem avisos INFO `rls_enabled_no_policy` nas tabelas `hub_vendas_*`, coerentes com desenho service-role only.
+
+### 73.6 Fora do escopo preservado
+
+Nao foi ativada automacao global, nao houve envio real, nao houve dry-run real por HTTP em producao, nao foi criado cron recorrente, nao foi alterado `vercel.json`, nao foi criada tela administrativa, nao foram criadas APIs de metricas/listagem/pausa, nao houve mudanca em atendimento automatico, `/procurar-datas` ou atendimento presencial.
+
+---
+
+## 74. Atualizacao vigente 2026-07-29 - Hotfix divergencia RPC Fase 4
+
+Esta secao registra a correcao da divergencia entre o SQL local/remoto da Fase 4 e a definicao efetivamente instalada de `public.hub_vendas_registrar_erro_fila`.
+
+### 74.1 Divergencia confirmada
+
+- MCP Supabase confirmou que a tabela `hub_vendas_recuperacao_fila` possui `conexao_destino_id` e `conexao_destino_nome`; nao possui coluna `conexao_destino`.
+- A definicao instalada antes do hotfix usava `v_fila.conexao_destino` em `v_pausas #>> ARRAY[...]` e em `jsonb_set(...)`.
+- A migration remota registrada `20260729194911` (`hub_vendas_fase4_registrar_erro_fila_retry_counter_fix`) continha o mesmo SQL incorreto.
+- A migration local `20260729213000_hub_vendas_fase4_retry_counter_fix.sql` tambem continha a referencia incorreta e foi corrigida localmente para nao manter fonte divergente no repositorio.
+- A migration local principal `20260729210000_hub_vendas_fase4_processamento.sql` ja usava `conexao_destino_id`.
+
+### 74.2 Correcao aplicada
+
+- Criada migration `20260729220000_hub_vendas_corrige_conexao_destino_erro_fila.sql`.
+- A migration substitui somente `hub_vendas_registrar_erro_fila(...)` e `hub_vendas_confirmar_fila_enviada(...)`.
+- `hub_vendas_registrar_erro_fila` agora usa somente `v_fila.conexao_destino_id` para ler/escrever `pausas_conexoes`.
+- `hub_vendas_confirmar_fila_enviada` agora rejeita `p_digisac_message_id IS NULL` ou vazio com erro `hub_vendas_digisac_message_id_obrigatorio`.
+- O helper TypeScript tambem passou a tratar resposta Digisac `ok` sem `messageId` como `resultado_incerto`, sem chamar a RPC de confirmacao.
+
+### 74.3 Pausa automatica e tentativas
+
+- Teste transacional com rollback criou lead/fila sinteticos, colocou a fila em `reservado`, chamou `hub_vendas_registrar_erro_fila` com `p_incrementa_erro_conexao=true`, repetiu ate o limite e confirmou que a pausa ocorre somente na chave `conexao_destino_id` correta.
+- O teste confirmou que nao sao criadas chaves `"null"` ou `"Portao"`, que Bigorrilho e Hauer/Marechal permanecem intactos, que `nome` e campos nao relacionados sao preservados, e que `motivo`, `pausada` e `pausada_em` sao gravados ao atingir o limite.
+- Semantica validada: `v_tentativas_final <= 3` permite tres falhas retentaveis reagendadas; a quarta falha retentavel vira `erro` definitivo. Isso equivale a tentativa inicial mais ate 3 ciclos retentaveis contabilizados na fila antes do erro final.
+
+### 74.4 Auditoria das RPCs Fase 4
+
+- MCP confirmou uma unica assinatura de `hub_vendas_registrar_erro_fila(uuid,text,text,text,boolean,integer,boolean)`.
+- MCP confirmou as RPCs Fase 4 com `SECURITY DEFINER`, `search_path=pg_catalog, public`, `PUBLIC/anon/authenticated` sem execute e `service_role` com execute.
+- As demais RPCs Fase 4 foram revisadas por definicao instalada. Nao foi encontrada referencia a coluna inexistente `conexao_destino` fora da funcao corrigida.
+- Risco documentado: nao existe ainda mecanismo seguro para recuperar fila presa em `reservado` se o worker morrer antes de marcar `enviando` ou registrar erro. Esse ponto fica como bloqueio para ativacao global; uma solucao futura deve liberar apenas reservas antigas ainda sem `requisicao_iniciada_em`, nunca filas que chegaram a `enviando`.
+
+### 74.5 Estado final preservado
+
+- Fila real `2afa6d30-2a17-46fe-b968-3d412bcaf0f3` permaneceu `agendado`, `programado_para='2026-07-29 19:30:00+00'`, `reservado_por=NULL`, `digisac_message_id=NULL`, `tentativas_envio=0`.
+- Config final permaneceu `automacao.ativa=false` e `automacao.pausada=true`.
+- Todas as mensagens de recuperacao permaneceram `ativa=false`.
+- Nao houve dry-run HTTP real, criacao real de contato/ticket, transferencia real ou envio real.
+
+### 74.6 Validacoes
+
+- Migration corretiva aplicada no Supabase como `hub_vendas_corrige_conexao_destino_erro_fila`.
+- `pg_get_functiondef` confirmou `conexao_destino_id` na definicao instalada e ausencia de `v_fila.conexao_destino,` / `ARRAY[v_fila.conexao_destino,`.
+- Teste transacional com rollback passou e retornou `rollback_ok`.
+- Suite focada Hub/Vendas passou com 9 arquivos e 61 testes.
+- `npx tsc --noEmit --pretty false` passou.
+- ESLint focado passou nos arquivos Hub/Vendas alterados.
+- `git diff --check` passou com avisos LF/CRLF conhecidos do checkout Windows.
+- `npm run build` falhou inicialmente por rede bloqueada em Google Fonts e passou na reexecucao com rede liberada, gerando 110 paginas e mantendo avisos conhecidos `DYNAMIC_SERVER_USAGE` em rotas com `cookies`.
+- Supabase Advisors de seguranca e performance foram executados; para Hub/Vendas permaneceram avisos INFO `rls_enabled_no_policy`, coerentes com desenho service-role only.

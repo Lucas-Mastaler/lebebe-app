@@ -2,6 +2,12 @@
 const BASE_URL = process.env.DIGISAC_BASE_URL;
 const TOKEN = process.env.DIGISAC_TOKEN;
 
+export function sanitizarDigisacParaLog(valor: string): string {
+  return valor
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/g, 'Bearer [redacted]')
+    .replace(/\d{8,}/g, (match) => `${match.slice(0, 2)}***${match.slice(-2)}`);
+}
+
 function buildDigisacRequest(endpoint: string, options: RequestInit): { url: string; init: RequestInit } {
   if (!BASE_URL || !TOKEN) {
     throw new Error('DIGISAC_BASE_URL ou DIGISAC_TOKEN não configurados');
@@ -17,7 +23,7 @@ function buildDigisacRequest(endpoint: string, options: RequestInit): { url: str
   };
 
   const finalUrl = new URL(url);
-  console.log(`[DIGISAC] Request: ${options.method || 'GET'} ${finalUrl.pathname}${finalUrl.search}`);
+  console.log(`[DIGISAC] Request: ${options.method || 'GET'} ${sanitizarDigisacParaLog(`${finalUrl.pathname}${finalUrl.search}`)}`);
 
   return { url, init: { ...options, headers } };
 }
@@ -62,7 +68,7 @@ export async function fetchDigisac(endpoint: string, options: RequestInit = {}) 
   const finalUrl = new URL(url); // Apenas para log, validando formato
 
   // Log de debug sem expor token
-  console.log(`[DIGISAC] Request: ${options.method || 'GET'} ${finalUrl.pathname}${finalUrl.search}`);
+  console.log(`[DIGISAC] Request: ${options.method || 'GET'} ${sanitizarDigisacParaLog(`${finalUrl.pathname}${finalUrl.search}`)}`);
 
   try {
     const controller = new AbortController();
@@ -86,7 +92,7 @@ export async function fetchDigisac(endpoint: string, options: RequestInit = {}) 
             throw new Error('Digisac Rate Limit');
         }
         const bodyTxt = await res.text().catch(() => 'sem corpo');
-        console.error(`[DIGISAC] Erro ${res.status}: ${bodyTxt.substring(0, 200)}`);
+        console.error(`[DIGISAC] Erro ${res.status}: ${sanitizarDigisacParaLog(bodyTxt).substring(0, 200)}`);
         throw new Error(`Erro API Digisac: ${res.status}`);
     }
 

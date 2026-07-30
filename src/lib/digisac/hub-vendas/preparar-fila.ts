@@ -16,7 +16,7 @@ import {
 
 type SupabaseServiceClient = ReturnType<typeof createServiceClient>
 
-type HubVendasLeadPendente = {
+export type HubVendasLeadPendente = {
   id: string
   telefone_normalizado_ddi: string
   data_entrada_hub: string
@@ -296,7 +296,7 @@ async function marcarClienteEmAtendimento(
   await cancelarFilaPendente(supabase, lead.id, 'cliente_em_atendimento')
 }
 
-async function analisarReconciliacaoLead(
+export async function analisarReconciliacaoLead(
   lead: HubVendasLeadPendente,
   agora: Date
 ): Promise<{

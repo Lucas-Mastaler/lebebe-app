@@ -5066,3 +5066,44 @@ Status: implementado e validado. Alteracao restrita a logs/contexto do helper Lo
 - Typecheck, ESLint direcionado e `git diff --check` passaram, com avisos LF/CRLF conhecidos no Windows.
 
 ---
+
+## 2026-07-29 - Codex - Endpoint interno de deslocamentos
+
+Status: implementado localmente. Validado por testes focados, `tsc`, ESLint direcionado e checagem sintatica do Apps Script via copia temporaria `.js`.
+
+### Implementacao
+
+- Criada rota `POST /api/procurar-datas/interno/deslocamentos/calcular/v1` para calculo de deslocamento diario/equipe.
+- Autenticacao por Bearer dedicado `APPS_SCRIPT_DESLOCAMENTOS_TOKEN`.
+- Geocoding do endpoint: `geo_cache` read-only -> LocationIQ -> Google Geocoding. Sem escrita no cache e sem providers legados do Apps Script.
+- Adicionado helper puro `otimizarRotaDeslocamentosPorMatrizOSRM` com nearest-neighbor + 2-opt, sem retorno para origem.
+- Cliente OSRM Table passou a aceitar `annotations=distance,duration`, preservando comportamento default `distance` dos consumidores existentes.
+- `deslocamentos.gs` passou a chamar o backend no fluxo automatico, usar `LockService`, preservar rota anterior em falha/parcial com evento de alerta, e confirmar hash somente apos `VALIDA` e escrita no Calendar.
+
+### Fora do escopo preservado
+
+- Motor de candidatos, classificacao, ranking, delta, frete, pre-agendamento, frontend, migrations, Mère e HMAC nao foram alterados.
+
+### Pendencias
+
+- Configurar `DESLOCAMENTOS_API_URL` e `APPS_SCRIPT_DESLOCAMENTOS_TOKEN` em Script Properties antes do uso real.
+- Executar teste real controlado no Apps Script para confirmar chamada ao backend e atualizacao/criacao de evento no Google Calendar.
+
+---
+
+## 2026-07-29 - Codex - Revisao corretiva pre-teste real de deslocamentos
+
+Status: implementado e validado localmente; aguardando teste real controlado apos configuracao/deploy.
+
+### Ajustes
+
+- Removida a ambiguidade de duas funcoes publicas `gerarEventosDeslocamento`; somente o fluxo novo backend permanece como funcao publica efetiva.
+- Ajustado `UrlFetchApp.fetch` para `timeoutSeconds: 30`.
+- Adicionado helper de coordenadas no Apps Script para impedir que coordenadas ausentes/vazias sejam usadas como `0,0` em links e rejeicoes.
+- Alertas de falha/parcial passaram a incluir runId, contagens esperada/resolvida/pendente e lista truncada de pendencias.
+- `SEM_ATENDIMENTOS` passou a preservar a rota quando houver divergencia entre assinatura/endereco do Calendar e coleta vazia da planilha.
+- Adicionada funcao `testarDeslocamentoBackendControlado()` para uma unica data/equipe, sem `scanChangedSlots_` e sem gravar `CAL_SIG_MAP_V1`.
+
+### Escopo preservado
+
+- Frente 2, candidatos, ranking, classificacao, frete, Mere, banco e politica global de `geo_cache` nao foram alterados.

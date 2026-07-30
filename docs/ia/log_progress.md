@@ -1,3 +1,48 @@
+## 2026-07-30 - Cascade - /procurar-datas Frente 1: correção definitiva reconhecimento das três lojas no backend
+
+- **Resumo:** Corrigido bug no backend de deslocamentos onde as três lojas Le Bébé (Marechal/Hauer, Portão, Bigorrilho) continuavam retornando `PAYLOAD_INVALIDO`/`endereco_incompleto` mesmo já estando no catálogo de locais fixos. A causa raiz era que `agruparAtendimentos()` chamava `montarFormGeoCachePorEnderecoAgenda()` para tentar parsear o endereço em form estruturado mesmo quando o local fixo já havia sido reconhecido. Endereços como "Av. Cândido Hartmann, 456, 80730-440" (sem bairro/cidade) falhavam no parser e eram rejeitados antes de chegar a `resolverGrupo()` que teria retornado as coordenadas fixas. Correção: quando `resolverOrigemFixa()` retorna `ok: true`, criar grupo com form mínimo sem exigir parseamento completo, pois `resolverGrupo()` já retorna coordenadas fixas antes de usar cache/geocodificadores.
+- **Frente `/procurar-datas`:** Frente 1 / esquerda — distância, agenda, geocodificação, OSRM, Haversine, origem, delta de inserção e helpers puros. Nenhuma alteração em geocodificação, OSRM, ranking, candidatos, cálculo de distância, schema, migrations, RLS, policies.
+- **Arquivos lidos:** `docs/procurar-datas-escopo-equivalencia-legado-v2.md`; `docs/procurar-datas-motor-v2-progresso.md`; `docs/ia/log_progress.md`; `src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.ts`; `src/lib/procurar-datas/deslocamentos/origens-fixas.ts`; `src/lib/procurar-datas/validar-endereco-payload.ts`; `src/lib/procurar-datas/motor/cache-coordenadas-agenda-diagnostico.ts`; `src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.test.ts`.
+- **Arquivos alterados:** `src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.ts`; `src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.test.ts`; `docs/ia/log_progress.md`.
+- **Implementacao:**
+  - `agruparAtendimentos()`: quando `resolverOrigemFixa(enderecoOriginal)` retorna `ok: true`, criar grupo com chave `fixed:${localFixo.label}` e form mínimo (`logradouro=enderecoOriginal`, demais campos vazios) sem chamar `montarFormGeoCachePorEnderecoAgenda()`. Isso evita que endereços sem bairro/cidade sejam rejeitados por `endereco_incompleto`.
+  - `resolverGrupo()`: já verificava locais fixos antes de cache/geocodificadores (linha 312-318) — não foi alterado.
+  - Testes adicionados (7 novos): resolve item Marechal/Hauer sem geocodificadores; resolve item Portão sem geocodificadores; resolve item Bigorrilho sem bairro/cidade sem geocodificadores; rota com somente Bigorrilho retorna VALIDA; rota com São José mais três lojas inclui quatro pontos; número diferente não casa; endereço semelhante não casa.
+- **Banco/MCP:** Nao envolve banco de dados.
+- **Comandos executados/resultados:**
+  - `npx vitest run src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.test.ts --reporter=verbose`: 13 passed (13).
+  - `npx tsc --noEmit --pretty false`: passou.
+  - `npx eslint src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.ts src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.test.ts`: passou.
+  - `git diff --check`: apenas warnings CRLF, sem erros de whitespace.
+- **Nao alterado:** geocodificação, OSRM, ranking, candidatos, origem, cálculo de distância, schema, migrations, RLS, policies, `origens-fixas.ts`, `validar-endereco-payload.ts`, `cache-coordenadas-agenda-diagnostico.ts`.
+- **Nao validado:** Execução real em produção para confirmar que as três lojas são reconhecidas.
+- **Riscos conhecidos:** Nenhum risco identificado. A alteração apenas remove uma barreira desnecessária (parseamento de form) para locais já reconhecidos como fixos.
+- **Proximo passo recomendado:** Commit/push e confirmar deploy de produção.
+
+## 2026-07-30 - Cascade - /procurar-datas Frente 1: PARCIAL atualiza evento normal de deslocamento
+
+- **Resumo:** Ajustado fluxo de deslocamentos para que respostas `PARCIAL` atualizem o evento normal `DESLOCAMENTO`, em vez de criar evento separado `ROTA PARCIAL`. Quando ao menos um endereço é resolvido, o evento normal é atualizado com aviso de rota parcial na descrição, distância calculada com os pontos resolvidos e lista de endereços não incluídos. Hash é confirmado para `PARCIAL`, evitando recálculo contínuo. Quando zero resolvidos, mantém comportamento `FALHA`.
+- **Frente `/procurar-datas`:** Frente 1 / esquerda — distância, agenda, geocodificação, OSRM, Haversine, origem, delta de inserção e helpers puros. Nenhuma alteração em geocodificação, OSRM, ranking, candidatos, origem, cálculo de distância, schema, migrations, RLS, policies, backend.
+- **Arquivos lidos:** `docs/procurar-datas-escopo-equivalencia-legado-v2.md`; `docs/procurar-datas-motor-v2-progresso.md`; `docs/ia/log_progress.md`; `deslocamentos.gs`; `src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.ts`.
+- **Arquivos alterados:** `deslocamentos.gs`; `docs/ia/log_progress.md`.
+- **Implementacao:**
+  - `recalcDeslocamentoDiaEquipeBackend_()`: ajustado para tratar `PARCIAL` como `VALIDA`, chamando `atualizarEventoDeslocamentoBackend_()` e retornando `{ ok: true, status: 'PARCIAL', runId }`. Para `PARCIAL`, validação é menos rígida: apenas verifica origem válida, rota com pelo menos um ponto e distância válida.
+  - `atualizarEventoDeslocamentoBackend_()`: quando `resposta.status === 'PARCIAL'`, adiciona aviso no início da descrição com `⚠️ ROTA PARCIAL`, quantidades esperada/incluída/pendente e lista de endereços não incluídos com motivos. Usa rótulos "Distancia parcial OSRM Table" e "Duracao parcial OSRM Table".
+  - Título continua sem `PARCIAL`: `9 (00:30) DESLOCAMENTO EQUIPE 1`. Tempo calculado com distância dos pontos resolvidos.
+  - Alertas: `apagarAlertasDeslocamento_()` já apaga `ROTA PARCIAL` e `FALHA ROTA` quando atualiza evento normal.
+  - Hash confirmado: como `PARCIAL` agora retorna `{ ok: true }`, hash é confirmado automaticamente (linha 2203-2230).
+- **Backend:** Não foi alterado. Backend já retorna rota com `rota.ordem` mesmo quando status é `PARCIAL` (linha 476-500).
+- **Banco/MCP:** Nao envolve banco de dados.
+- **Comandos executados/resultados:**
+  - `Copy-Item -Path 'deslocamentos.gs' -Destination 'deslocamentos_temp_check.js'; node --check deslocamentos_temp_check.js; Remove-Item -Path 'deslocamentos_temp_check.js'`: passou.
+  - `npx tsc --noEmit --pretty false`: passou.
+  - `npx eslint src/app/api/procurar-datas/interno/deslocamentos/calcular/v1/route.ts`: passou.
+  - `git diff --check`: passou.
+- **Nao alterado:** geocodificação, OSRM, ranking, candidatos, origem, cálculo de distância, schema, migrations, RLS, policies, backend.
+- **Nao validado:** Execução real no Apps Script/Google Calendar para confirmar que evento `ROTA PARCIAL` deixa de ser criado e evento `DESLOCAMENTO` é atualizado com aviso de rota parcial.
+- **Riscos conhecidos:** Validação menos rígida para `PARCIAL` pode aceitar respostas com problemas sutis que seriam rejeitadas em `VALIDA`. Isso é aceitável porque o objetivo é mostrar rota parcial mesmo quando alguns endereços falham.
+- **Proximo passo recomendado:** Testar no Apps Script real com cenário de dois endereços resolvidos e um rejeitado para confirmar que evento `DESLOCAMENTO` é atualizado com aviso de rota parcial, nenhum evento `ROTA PARCIAL` é criado e hash é confirmado.
+
 ## 2026-07-30 - Cascade - /procurar-datas Frente 1: adicionar três lojas Le Bébé como locais fixos
 
 - **Resumo:** Adicionadas três lojas Le Bébé (Marechal/Hauer, Portão, Bigorrilho) ao catálogo centralizado de locais fixos do backend. Endereços de transferência que antes eram recusados com status `PAYLOAD_INVALIDO/endereco_incompleto` agora são resolvidos imediatamente como `RESOLVIDO_ORIGEM_FIXA` usando coordenadas fixas, sem chamar geocodificadores externos. A ordem de resolução foi ajustada para verificar locais fixos ANTES da validação de payload incompleto.

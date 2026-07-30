@@ -1745,13 +1745,30 @@ function atualizarEventoDeslocamentoBackend_(dia, team, resposta) {
   });
 
   const desc =
+    (resposta.status === 'PARCIAL'
+      ? `*⚠️ ROTA PARCIAL*\n\n` +
+        `A distância e o tempo abaixo foram calculados somente com os endereços resolvidos.\n\n` +
+        `Quantidade esperada: ${itens.length}\n` +
+        `Quantidade incluída na rota: ${rota.ordem.length}\n` +
+        `Quantidade pendente: ${itens.length - rota.ordem.length}\n\n` +
+        (rejeitados.length
+          ? `*Endereços não incluídos:*\n` +
+            rejeitados
+              .map(i => `📍 ${truncarTextoBackend_(i.enderecoOriginal || i.id, 120)}\n  motivo: ${i.status || '-'} ${motivoItemBackend_(i)}`)
+              .join('\n\n') +
+            '\n\n'
+          : '')
+      : '') +
     `*Origem:*\n${(resposta.origem && (resposta.origem.enderecoOriginal || resposta.origem.display)) || '-'}\n\n` +
     `*Pontos da rota:*\n*ORIGEM*\n\n${pontosDesc}\n\n` +
-    (rejeitados.length ? `Itens nao usados:\n- ${rejeitados.map(i => `${truncarTextoBackend_(i.enderecoOriginal || i.id, 120)}: ${i.status || '-'} ${motivoItemBackend_(i)}`).join('\n- ')}\n\n` : '') +
+    (resposta.status !== 'PARCIAL' && rejeitados.length ? `Itens nao usados:\n- ${rejeitados.map(i => `${truncarTextoBackend_(i.enderecoOriginal || i.id, 120)}: ${i.status || '-'} ${motivoItemBackend_(i)}`).join('\n- ')}\n\n` : '') +
     `*Rota no Google Maps (coordenadas reais):*\n${mapsLinkCoordenadas}\n\n` +
     `*Rota no Google Maps (enderecos originais):*\n${mapsLinkEnderecos}\n\n` +
-    `Distancia total OSRM Table: ${distanciaKm.toFixed(2)} km\n` +
-    `Duracao OSRM Table: ${rota.duracaoTotalSegundos == null ? 'nao informada' : Math.round(rota.duracaoTotalSegundos / 60) + ' min'}\n` +
+    (resposta.status === 'PARCIAL'
+      ? `Distancia parcial OSRM Table: ${distanciaKm.toFixed(2)} km\n` +
+        `Duracao parcial OSRM Table: ${rota.duracaoTotalSegundos == null ? 'nao informada' : Math.round(rota.duracaoTotalSegundos / 60) + ' min'}\n`
+      : `Distancia total OSRM Table: ${distanciaKm.toFixed(2)} km\n` +
+        `Duracao OSRM Table: ${rota.duracaoTotalSegundos == null ? 'nao informada' : Math.round(rota.duracaoTotalSegundos / 60) + ' min'}\n`) +
     `RunId: ${resposta.runId || '-'}\n` +
     `Status backend: ${resposta.status}`;
 
@@ -1775,6 +1792,8 @@ function atualizarEventoDeslocamentoBackend_(dia, team, resposta) {
   } else {
     cal.createAllDayEvent(title, dia, { description: desc });
   }
+
+  // Apagar alertas ROTA PARCIAL e FALHA ROTA quando atualiza evento normal
   apagarAlertasDeslocamento_(dia, team);
 }
 
@@ -1870,53 +1889,77 @@ function recalcDeslocamentoDiaEquipeBackend_(dia, team, cfg, shAg, contextoScan,
   const resposta = consultarBackendDeslocamentos_(payload, cfg).body;
   if (!resposta || resposta.ok !== true) throw new Error('backend_resposta_nao_ok');
 
-  if (resposta.status === 'VALIDA') {
-    const validacaoResposta = validarRespostaBackendValida_(
-      resposta,
-      itens.length
-    );
-
-    if (!validacaoResposta.ok) {
-      const errosTexto = validacaoResposta.erros.join(', ');
-
-      const desc = [
-        'Backend retornou status VALIDA, mas a resposta falhou na validacao defensiva do Apps Script.',
-        'Rota anterior preservada.',
-        `Data/equipe: ${formatDatePt(dia)} | ${team}`,
-        `RunId: ${runId}`,
-        `Erros: ${truncarTextoBackend_(errosTexto, 800)}`
-      ].join('\n');
-
-      atualizarAlertaDeslocamento_(
-        dia,
-        team,
-        'FALHA ROTA',
-        desc
+  if (
+    resposta.status === 'VALIDA' ||
+    resposta.status === 'PARCIAL'
+  ) {
+    if (resposta.status === 'VALIDA') {
+      const validacaoResposta = validarRespostaBackendValida_(
+        resposta,
+        itens.length
       );
 
-      Logger.log(
-        `Deslocamentos: resposta VALIDA rejeitada pelo Apps Script | ` +
-        `runId=${runId} | erros=${errosTexto}`
-      );
+      if (!validacaoResposta.ok) {
+        const errosTexto = validacaoResposta.erros.join(', ');
 
-      return {
-        ok: false,
-        status: 'FALHA_RESPOSTA_INVALIDA',
-        runId: runId
-      };
+        const desc = [
+          'Backend retornou status VALIDA, mas a resposta falhou na validacao defensiva do Apps Script.',
+          'Rota anterior preservada.',
+          `Data/equipe: ${formatDatePt(dia)} | ${team}`,
+          `RunId: ${runId}`,
+          `Erros: ${truncarTextoBackend_(errosTexto, 800)}`
+        ].join('\n');
+
+        atualizarAlertaDeslocamento_(
+          dia,
+          team,
+          'FALHA ROTA',
+          desc
+        );
+
+        Logger.log(
+          `Deslocamentos: resposta VALIDA rejeitada pelo Apps Script | ` +
+          `runId=${runId} | erros=${errosTexto}`
+        );
+
+        return {
+          ok: false,
+          status: 'FALHA_RESPOSTA_INVALIDA',
+          runId: runId
+        };
+      }
     }
 
-    atualizarEventoDeslocamentoBackend_(dia, team, resposta);
+    // Para PARCIAL, validar apenas o essencial
+    if (resposta.status === 'PARCIAL') {
+      if (!resposta.origem || !coordenadaValida_(resposta.origem.lat, resposta.origem.lng)) {
+        throw new Error('parcial_sem_origem_valida');
+      }
+      const rota = resposta.rota;
+      if (!rota || !Array.isArray(rota.ordem) || rota.ordem.length === 0) {
+        throw new Error('parcial_sem_ordem');
+      }
+      if (!Number.isFinite(rota.distanciaTotalKm)) {
+        throw new Error('parcial_distancia_invalida');
+      }
+    }
+
+    atualizarEventoDeslocamentoBackend_(
+      dia,
+      team,
+      resposta
+    );
 
     Logger.log(
-      `Deslocamento backend valido: ` +
-      `${formatDatePt(dia)} | ${team} | runId=${runId}`
+      `Deslocamento backend atualizado | ` +
+      `${formatDatePt(dia)} | ${team} | ` +
+      `status=${resposta.status} | runId=${runId}`
     );
 
     return {
       ok: true,
-      status: 'VALIDA',
-      runId: runId
+      status: resposta.status,
+      runId
     };
   }
 

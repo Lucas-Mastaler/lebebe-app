@@ -219,6 +219,213 @@ describe('POST /api/procurar-datas/interno/deslocamentos/calcular/v1', () => {
     }))
   })
 
+  // ---- Testes para locais fixos como itens ----
+
+  it('resolve item loja Marechal/Hauer sem chamar geocodificadores externos', async () => {
+    const response = await POST(criarRequest({
+      ...payloadBase,
+      origem: 'Rua Doutor Francisco Soares, 860, Curitiba - PR, 81030-470',
+      itens: [
+        {
+          id: 'evt-marechal',
+          enderecoOriginal: 'Av. Mal. Floriano Peixoto, 5636 - Hauer, Curitiba - PR, 81630-000',
+        },
+      ],
+    }))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.status).toBe('VALIDA')
+    expect(body.itens[0]).toMatchObject({
+      status: 'RESOLVIDO_ORIGEM_FIXA',
+      provider: 'fixed_known_location',
+      lat: -25.477376,
+      lng: -49.249524,
+    })
+    expect(buscarEnderecoNoGeoCacheMock).not.toHaveBeenCalled()
+    expect(buscarEnderecoLocationIqMock).not.toHaveBeenCalled()
+    expect(consultarGoogleMock).not.toHaveBeenCalled()
+  })
+
+  it('resolve item loja Portao sem chamar geocodificadores externos', async () => {
+    const response = await POST(criarRequest({
+      ...payloadBase,
+      origem: 'Rua Doutor Francisco Soares, 860, Curitiba - PR, 81030-470',
+      itens: [
+        {
+          id: 'evt-portao',
+          enderecoOriginal: 'Av. Rep. Argentina, 2777, Curitiba - PR, 80610-260',
+        },
+      ],
+    }))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.status).toBe('VALIDA')
+    expect(body.itens[0]).toMatchObject({
+      status: 'RESOLVIDO_ORIGEM_FIXA',
+      provider: 'fixed_known_location',
+      lat: -25.470662,
+      lng: -49.294289,
+    })
+    expect(buscarEnderecoNoGeoCacheMock).not.toHaveBeenCalled()
+    expect(buscarEnderecoLocationIqMock).not.toHaveBeenCalled()
+    expect(consultarGoogleMock).not.toHaveBeenCalled()
+  })
+
+  it('resolve item loja Bigorrilho sem bairro e cidade sem chamar geocodificadores externos', async () => {
+    const response = await POST(criarRequest({
+      ...payloadBase,
+      origem: 'Rua Doutor Francisco Soares, 860, Curitiba - PR, 81030-470',
+      itens: [
+        {
+          id: 'evt-bigorrilho',
+          enderecoOriginal: 'Av. Cândido Hartmann, 456, 80730-440',
+        },
+      ],
+    }))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.status).toBe('VALIDA')
+    expect(body.itens[0]).toMatchObject({
+      status: 'RESOLVIDO_ORIGEM_FIXA',
+      provider: 'fixed_known_location',
+      lat: -25.431229,
+      lng: -49.291418,
+    })
+    expect(buscarEnderecoNoGeoCacheMock).not.toHaveBeenCalled()
+    expect(buscarEnderecoLocationIqMock).not.toHaveBeenCalled()
+    expect(consultarGoogleMock).not.toHaveBeenCalled()
+  })
+
+  it('rota com somente Bigorrilho retorna VALIDA', async () => {
+    buscarMatrizMock.mockResolvedValue({
+      distances: [
+        [0, 5000],
+        [5000, 0],
+      ],
+      durations: [
+        [0, 600],
+        [600, 0],
+      ],
+    })
+
+    const response = await POST(criarRequest({
+      ...payloadBase,
+      origem: 'Rua Doutor Francisco Soares, 860, Curitiba - PR, 81030-470',
+      itens: [
+        {
+          id: 'evt-bigorrilho-only',
+          enderecoOriginal: 'Av. Cândido Hartmann, 456, 80730-440',
+        },
+      ],
+    }))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.status).toBe('VALIDA')
+    expect(body.rota.ordem).toHaveLength(1)
+    expect(body.rota.ordem[0]).toMatchObject({
+      lat: -25.431229,
+      lng: -49.291418,
+    })
+  })
+
+  it('rota com Sao Jose mais as tres lojas inclui quatro pontos', async () => {
+    buscarEnderecoNoGeoCacheMock.mockResolvedValue({ status: 'miss', motivo: 'sem_match_seguro' })
+    buscarEnderecoLocationIqMock.mockResolvedValue({
+      status: 'success',
+      resultado: enderecoResultado('293', -25.53, -49.20, 'locationiq'),
+      reservaUsada: false,
+    })
+    buscarMatrizMock.mockResolvedValue({
+      distances: Array.from({ length: 5 }, () => Array(5).fill(1000)),
+      durations: Array.from({ length: 5 }, () => Array(5).fill(120)),
+    })
+
+    const response = await POST(criarRequest({
+      ...payloadBase,
+      origem: 'Rua Doutor Francisco Soares, 860, Curitiba - PR, 81030-470',
+      itens: [
+        {
+          id: 'evt-sao-jose',
+          enderecoOriginal: 'Rua Barão do Cerro Azul, 293, Bom Jesus, São José dos Pinhais - PR, 83025-140',
+        },
+        {
+          id: 'evt-marechal',
+          enderecoOriginal: 'Av. Mal. Floriano Peixoto, 5636 - Hauer, Curitiba - PR, 81630-000',
+        },
+        {
+          id: 'evt-portao',
+          enderecoOriginal: 'Av. Rep. Argentina, 2777, Curitiba - PR, 80610-260',
+        },
+        {
+          id: 'evt-bigorrilho',
+          enderecoOriginal: 'Av. Cândido Hartmann, 456, 80730-440',
+        },
+      ],
+    }))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.status).toBe('VALIDA')
+    expect(body.rota.ordem).toHaveLength(4)
+    const labels = body.itens.map((item: { status: string; provider?: string }) => item.provider)
+    expect(labels.filter((p: string) => p === 'fixed_known_location')).toHaveLength(3)
+    expect(labels.filter((p: string) => p === 'locationiq')).toHaveLength(1)
+  })
+
+  it('numero diferente nao casa loja Bigorrilho e cai para geocodificadores', async () => {
+    buscarEnderecoNoGeoCacheMock.mockResolvedValue({ status: 'miss', motivo: 'sem_match_seguro' })
+    buscarEnderecoLocationIqMock.mockResolvedValue({
+      status: 'success',
+      resultado: enderecoResultado('789', -25.43, -49.29, 'locationiq'),
+      reservaUsada: false,
+    })
+
+    const response = await POST(criarRequest({
+      ...payloadBase,
+      origem: 'Rua Doutor Francisco Soares, 860, Curitiba - PR, 81030-470',
+      itens: [
+        {
+          id: 'evt-numero-errado',
+          enderecoOriginal: 'Av. Cândido Hartmann, 789, Bigorrilho, Curitiba - PR',
+        },
+      ],
+    }))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.itens[0].status).not.toBe('RESOLVIDO_ORIGEM_FIXA')
+    expect(buscarEnderecoNoGeoCacheMock).toHaveBeenCalled()
+  })
+
+  it('endereco semelhante mas nao exato nao casa loja Portao', async () => {
+    buscarEnderecoNoGeoCacheMock.mockResolvedValue({ status: 'miss', motivo: 'sem_match_seguro' })
+    buscarEnderecoLocationIqMock.mockResolvedValue({
+      status: 'success',
+      resultado: enderecoResultado('2777', -25.47, -49.29, 'locationiq'),
+      reservaUsada: false,
+    })
+
+    const response = await POST(criarRequest({
+      ...payloadBase,
+      origem: 'Rua Doutor Francisco Soares, 860, Curitiba - PR, 81030-470',
+      itens: [
+        {
+          id: 'evt-endereco-similar',
+          enderecoOriginal: 'Av. das Araucárias, 2777, Capão Raso, Curitiba - PR',
+        },
+      ],
+    }))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.itens[0].status).not.toBe('RESOLVIDO_ORIGEM_FIXA')
+    expect(buscarEnderecoNoGeoCacheMock).toHaveBeenCalled()
+  })
+
   it('retorna PARCIAL quando pelo menos um endereco falha e preserva rota dos aproveitados', async () => {
     buscarEnderecoNoGeoCacheMock
       .mockResolvedValueOnce({ status: 'hit', resultado: enderecoResultado('860', -25.49, -49.27), motivo: 'match_seguro' })

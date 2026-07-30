@@ -165,24 +165,21 @@ function agruparAtendimentos(itens: AtendimentoInput[]): {
     // 1. Verificar local fixo antes de validar payload
     const localFixo = resolverOrigemFixa(enderecoOriginal)
     if (localFixo.ok) {
-      const form = montarFormGeoCachePorEnderecoAgenda(enderecoOriginal)
-      if (!form) {
-        rejeitados.push({
-          id,
-          enderecoOriginal,
-          enderecoNormalizado: normalizarTexto(enderecoOriginal),
-          status: 'PAYLOAD_INVALIDO',
-          motivo: 'endereco_incompleto',
-          eventIds: item.eventId ? [item.eventId] : [],
-          linhas: typeof item.linha === 'number' ? [item.linha] : [],
-          referencias: [{ id, eventId: item.eventId, linha: item.linha, titulo: item.titulo }],
-        })
-        return
+      // Para locais fixos, não é necessário parsear o endereço em form completo.
+      // resolverGrupo já retorna coordenadas fixas antes de usar cache/geocodificadores.
+      // Usar form mínimo apenas para agrupamento.
+      const chave = `fixed:${localFixo.label}`
+      const form: ValidarEnderecoRequest = {
+        logradouro: enderecoOriginal,
+        numero: '',
+        bairro: '',
+        cidade: '',
+        uf: '',
+        cep: '',
       }
-      const chave = chaveGrupo(form, enderecoOriginal)
       const grupo = gruposPorChave.get(chave) ?? {
         chave,
-        enderecoOriginal: enderecoOriginal || montarEnderecoDisplayProcurarDatas(form),
+        enderecoOriginal: enderecoOriginal || localFixo.display,
         form,
         referencias: [],
       }

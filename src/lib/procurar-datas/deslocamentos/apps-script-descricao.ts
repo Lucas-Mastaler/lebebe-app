@@ -30,7 +30,7 @@ export function formatarLinhaBackend(p: PontoRotaBackend): string {
     })
     .filter(Boolean)
 
-  return `${p.enderecoOriginal || p.display || '-'}` +
+  return `📍 ${p.enderecoOriginal || p.display || '-'}` +
     `\n  refs: ${refs.join('; ') || '-'}`
 }
 

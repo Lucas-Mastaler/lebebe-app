@@ -18,8 +18,9 @@ const pontoBase = {
 
 describe('apps-script-descricao', () => {
   describe('formatarLinhaBackend', () => {
-    it('exibe endereco original e refs sem bloco GEO', () => {
+    it('exibe endereco original com 📍 e refs sem bloco GEO', () => {
       const linha = formatarLinhaBackend(pontoBase)
+      expect(linha).toContain('📍')
       expect(linha).toContain(pontoBase.enderecoOriginal)
       expect(linha).toContain('refs: linha 42 | event evt-1 | 1 (00:30) PORTÃO OS 4715 (PORTÃO) (CHEGOU)')
       expect(linha).not.toContain('GEO:')
@@ -38,11 +39,13 @@ describe('apps-script-descricao', () => {
         display: 'Rua Fallback, 1',
         referencias: [{ linha: 10 }],
       })
+      expect(linha).toContain('📍')
       expect(linha).toContain('Rua Fallback, 1')
     })
 
     it('retorna hifen quando nao ha endereco nem display', () => {
       const linha = formatarLinhaBackend({})
+      expect(linha).toContain('📍')
       expect(linha).toContain('-')
     })
   })

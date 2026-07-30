@@ -1536,7 +1536,7 @@ function formatarLinhaBackend_(p) {
     if (r.titulo) partes.push(String(r.titulo).slice(0, 60));
     return partes.join(' | ');
   }).filter(Boolean);
-  return `${p.enderecoOriginal || p.display || '-'}\n  refs: ${refs.join('; ') || '-'}`;
+  return `📍 ${p.enderecoOriginal || p.display || '-'}\n  refs: ${refs.join('; ') || '-'}`;
 }
 
 function truncarTextoBackend_(valor, limite) {
@@ -1737,7 +1737,7 @@ function atualizarEventoDeslocamentoBackend_(dia, team, resposta) {
     resposta.origem && resposta.origem.enderecoOriginal,
     rota.ordem
   );
-  const pontosDesc = rota.ordem.map(formatarLinhaBackend_).join('\n-> ');
+  const pontosDesc = rota.ordem.map(formatarLinhaBackend_).join('\n\n');
   const rejeitados = (resposta.itens || []).filter(item => {
     const valido = itemBackendTemCoordenadaValida_(item);
     if (!valido) logCoordenadaBackendInvalida_('item', item);
@@ -1745,15 +1745,15 @@ function atualizarEventoDeslocamentoBackend_(dia, team, resposta) {
   });
 
   const desc =
+    `*Origem:*\n${(resposta.origem && (resposta.origem.enderecoOriginal || resposta.origem.display)) || '-'}\n\n` +
+    `*Pontos da rota:*\n*ORIGEM*\n\n${pontosDesc}\n\n` +
+    (rejeitados.length ? `Itens nao usados:\n- ${rejeitados.map(i => `${truncarTextoBackend_(i.enderecoOriginal || i.id, 120)}: ${i.status || '-'} ${motivoItemBackend_(i)}`).join('\n- ')}\n\n` : '') +
+    `*Rota no Google Maps (coordenadas reais):*\n${mapsLinkCoordenadas}\n\n` +
+    `*Rota no Google Maps (enderecos originais):*\n${mapsLinkEnderecos}\n\n` +
     `Distancia total OSRM Table: ${distanciaKm.toFixed(2)} km\n` +
     `Duracao OSRM Table: ${rota.duracaoTotalSegundos == null ? 'nao informada' : Math.round(rota.duracaoTotalSegundos / 60) + ' min'}\n` +
     `RunId: ${resposta.runId || '-'}\n` +
-    `Status backend: ${resposta.status}\n\n` +
-    `Origem:\n${(resposta.origem && (resposta.origem.enderecoOriginal || resposta.origem.display)) || '-'}\n\n` +
-    `Pontos da rota:\nORIGEM\n-> ${pontosDesc}\n\n` +
-    (rejeitados.length ? `Itens nao usados:\n- ${rejeitados.map(i => `${truncarTextoBackend_(i.enderecoOriginal || i.id, 120)}: ${i.status || '-'} ${motivoItemBackend_(i)}`).join('\n- ')}\n\n` : '') +
-    `Rota no Google Maps (coordenadas reais):\n${mapsLinkCoordenadas}\n\n` +
-    `Rota no Google Maps (enderecos originais):\n${mapsLinkEnderecos}`;
+    `Status backend: ${resposta.status}`;
 
   const calId = (team === 'EQUIPE 1') ? CAL_DESLOC_E1 : CAL_DESLOC_E2;
   const cal = CalendarApp.getCalendarById(calId);

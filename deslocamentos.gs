@@ -2011,6 +2011,52 @@ function recalcDeslocamentoDiaEquipeBackend_(dia, team, cfg, shAg, contextoScan,
   return { ok:false, status:resposta.status || 'FALHA', runId };
 }
 
+function parseCalendarEventDate_(start) {
+  if (!start) return null;
+
+  // Eventos de dia inteiro retornam somente yyyy-MM-dd.
+  // Não usar new Date("yyyy-MM-dd"), pois isso interpreta como UTC
+  // e pode deslocar para o dia anterior em America/Sao_Paulo.
+  if (start.date) {
+    const partes = String(start.date)
+      .split('-')
+      .map(Number);
+
+    if (
+      partes.length !== 3 ||
+      !partes[0] ||
+      !partes[1] ||
+      !partes[2]
+    ) {
+      return null;
+    }
+
+    return new Date(
+      partes[0],
+      partes[1] - 1,
+      partes[2],
+      0,
+      0,
+      0,
+      0
+    );
+  }
+
+  // Eventos com horário possuem offset/timezone e podem ser
+  // interpretados normalmente.
+  if (start.dateTime) {
+    const data = new Date(start.dateTime);
+
+    if (Number.isNaN(data.getTime())) {
+      return null;
+    }
+
+    return onlyDate(data);
+  }
+
+  return null;
+}
+
 function scanChangedSlots_() {
   const today  = onlyDate(new Date());
   const tMin   = new Date(today.getTime() + WINDOW_DAYS_MIN * 86400000);
@@ -2039,9 +2085,8 @@ function scanChangedSlots_() {
       pageToken = resp.nextPageToken;
       (resp.items || []).forEach(evt => {
         if (isOurDeslocEvent_(evt)) return;
-        const raw = (evt.start && (evt.start.date || evt.start.dateTime)) || null;
-        if (!raw) return;
-        const d = onlyDate(new Date(raw));
+        const d = parseCalendarEventDate_(evt.start);
+        if (!d) return;
         if (d.getDay() === 0) return; // domingo fora
 
         const team = teamFromCalId(calId);

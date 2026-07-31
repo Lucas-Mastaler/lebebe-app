@@ -1724,7 +1724,7 @@ function atualizarAlertaDeslocamento_(dia, team, titulo, descricao) {
   }
 }
 
-function atualizarEventoDeslocamentoBackend_(dia, team, resposta) {
+function atualizarEventoDeslocamentoBackend_(dia, team, resposta, quantidadeEsperada) {
   const rota = resposta && resposta.rota;
   if (!rota || !Array.isArray(rota.ordem)) throw new Error('resposta_backend_sem_rota');
 
@@ -1738,19 +1738,40 @@ function atualizarEventoDeslocamentoBackend_(dia, team, resposta) {
     rota.ordem
   );
   const pontosDesc = rota.ordem.map(formatarLinhaBackend_).join('\n\n');
-  const rejeitados = (resposta.itens || []).filter(item => {
+  const itensBackend = Array.isArray(resposta && resposta.itens)
+    ? resposta.itens
+    : [];
+  const totalEsperadoNumero = Number(quantidadeEsperada);
+  const totalEsperado = Number.isFinite(totalEsperadoNumero)
+    ? totalEsperadoNumero
+    : itensBackend.length;
+
+  const rejeitados = itensBackend.filter(item => {
     const valido = itemBackendTemCoordenadaValida_(item);
-    if (!valido) logCoordenadaBackendInvalida_('item', item);
-    return !valido;
+    const rejeitado = !valido || (item && item.usableInRoute === false);
+    if (rejeitado) logCoordenadaBackendInvalida_('item', item);
+    return rejeitado;
   });
+
+  const resolvidos = itensBackend.filter(item => {
+    return (
+      itemBackendTemCoordenadaValida_(item) &&
+      (!item || item.usableInRoute !== false)
+    );
+  });
+
+  const totalIncluido = itensBackend.length
+    ? resolvidos.length
+    : rota.ordem.length;
+  const totalPendente = Math.max(0, totalEsperado - totalIncluido);
 
   const desc =
     (resposta.status === 'PARCIAL'
       ? `*⚠️ ROTA PARCIAL*\n\n` +
         `A distância e o tempo abaixo foram calculados somente com os endereços resolvidos.\n\n` +
-        `Quantidade esperada: ${itens.length}\n` +
-        `Quantidade incluída na rota: ${rota.ordem.length}\n` +
-        `Quantidade pendente: ${itens.length - rota.ordem.length}\n\n` +
+        `Quantidade esperada: ${totalEsperado}\n` +
+        `Quantidade incluída na rota: ${totalIncluido}\n` +
+        `Quantidade pendente: ${totalPendente}\n\n` +
         (rejeitados.length
           ? `*Endereços não incluídos:*\n` +
             rejeitados
@@ -1939,15 +1960,33 @@ function recalcDeslocamentoDiaEquipeBackend_(dia, team, cfg, shAg, contextoScan,
       if (!rota || !Array.isArray(rota.ordem) || rota.ordem.length === 0) {
         throw new Error('parcial_sem_ordem');
       }
-      if (!Number.isFinite(rota.distanciaTotalKm)) {
+      const distanciaParcialKm = Number(rota.distanciaTotalKm);
+      if (!Number.isFinite(distanciaParcialKm) || distanciaParcialKm < 0) {
         throw new Error('parcial_distancia_invalida');
+      }
+
+      rota.ordem.forEach((ponto, indice) => {
+        if (!coordenadaValida_(ponto && ponto.lat, ponto && ponto.lng)) {
+          throw new Error(`parcial_ponto_${indice}_coordenada_invalida`);
+        }
+      });
+
+      if (
+        rota.duracaoTotalSegundos !== null &&
+        rota.duracaoTotalSegundos !== undefined
+      ) {
+        const duracaoParcial = Number(rota.duracaoTotalSegundos);
+        if (!Number.isFinite(duracaoParcial) || duracaoParcial < 0) {
+          throw new Error('parcial_duracao_invalida');
+        }
       }
     }
 
     atualizarEventoDeslocamentoBackend_(
       dia,
       team,
-      resposta
+      resposta,
+      itens.length
     );
 
     Logger.log(
@@ -1963,7 +2002,9 @@ function recalcDeslocamentoDiaEquipeBackend_(dia, team, cfg, shAg, contextoScan,
     };
   }
 
-  const titulo = resposta.status === 'PARCIAL' ? 'ROTA PARCIAL' : 'FALHA ROTA';
+  // PARCIAL já foi tratado acima como evento normal de DESLOCAMENTO.
+  // Somente falhas sem rota utilizável chegam a este ramo.
+  const titulo = 'FALHA ROTA';
   const desc = montarDescricaoAlertaBackend_(dia, team, resposta, itens.length, runId);
   atualizarAlertaDeslocamento_(dia, team, titulo, desc);
   Logger.log(`Deslocamento backend sem confirmacao: ${formatDatePt(dia)} | ${team} | status=${resposta.status}`);

@@ -48,6 +48,23 @@ const MONITOR_CAL_IDS = [
   'c_34997be850c99f047dfa6bf199d813b61545f50d6fc4766effc30a1a030d599c@group.calendar.google.com'
 ];
 
+const SOURCE_CALENDAR_TEAM_MAP = {
+  // EQUIPE 1
+  'lebebe.com.br_jv9ficm9er76am9kpm86t05nfo@group.calendar.google.com': 'EQUIPE 1',
+  'c_f95026c40c9bf3fdbea5c1482252522b34536fd5877f7f9b82904128fa7f4ac7@group.calendar.google.com': 'EQUIPE 1',
+  'c_80ffd705800afd46fe21c57e7470eb8f86f20bdb197f91dd0b7e9599fada0ebb@group.calendar.google.com': 'EQUIPE 1',
+
+  // EQUIPE 2
+  'lebebe.com.br_r77ap0bqal0hlhijmf7ad3rq1s@group.calendar.google.com': 'EQUIPE 2',
+  'c_r7b684kgg0rt64lbrabeacf5po@group.calendar.google.com': 'EQUIPE 2',
+  'c_34997be850c99f047dfa6bf199d813b61545f50d6fc4766effc30a1a030d599c@group.calendar.google.com': 'EQUIPE 2'
+};
+
+const OUTPUT_CALENDAR_BY_TEAM = {
+  'EQUIPE 1': CAL_DESLOC_E1,
+  'EQUIPE 2': CAL_DESLOC_E2
+};
+
 const GEO_MIN_CONFIDENCE_ADDR_PARTS = 2; // mínimo de partes úteis no endereço geocodificado
 const GEO_BLOCK_GENERIC_CURITIBA = true;
 
@@ -501,10 +518,18 @@ function toYmd(d){ return Utilities.formatDate(onlyDate(d), 'GMT-3', 'yyyy-MM-dd
 
 // Qual equipe pelo índice do calendário monitorado
 
-function teamFromCalId(calId){
-  const i = MONITOR_CAL_IDS.indexOf(calId);
-  if (i < 0) return null;
-  return i <= 2 ? 'EQUIPE 1' : 'EQUIPE 2';
+function teamFromCalId(calId) {
+  return SOURCE_CALENDAR_TEAM_MAP[String(calId)] || null;
+}
+
+function getOutputCalendarId_(team) {
+  const calId = OUTPUT_CALENDAR_BY_TEAM[team];
+
+  if (!calId) {
+    throw new Error(`Calendário de saída não configurado para ${team}`);
+  }
+
+  return calId;
 }
 
 function isOurDeslocEvent_(evt) {
@@ -695,7 +720,7 @@ function approximateByHaversineForCep_(cep, addrHint, cfgSheet){
 
 function deleteDeslocamentoEventsForDayTeam_(dia, team){
   try {
-    const calId = (team === 'EQUIPE 1') ? CAL_DESLOC_E1 : CAL_DESLOC_E2;
+    const calId = getOutputCalendarId_(team);
     const cal   = CalendarApp.getCalendarById(calId);
     const eventsDay = cal.getEventsForDay(dia);
 
@@ -1311,7 +1336,8 @@ function recalcDeslocamentoDiaEquipe(dia, team, forceRefresh) {
   const pontosDesc = rotaObj.orderedPoints.map(formatarLinhaPonto_).filter(Boolean).join('\n→ ');
 
   try {
-    const calId = (team === 'EQUIPE 1') ? CAL_DESLOC_E1 : CAL_DESLOC_E2;
+    const calId = getOutputCalendarId_(team);
+    Logger.log(`Deslocamentos: calendario de saida | equipe=${team} | calendarId=${calId}`);
     const cal   = CalendarApp.getCalendarById(calId);
     const title = `${titlePrefix}9 (${tempoStr}) DESLOCAMENTO ${team}`;
 
@@ -1688,8 +1714,9 @@ function quantidadeAssinaturasEndereco_(contextoScan) {
 
 function apagarAlertasDeslocamento_(dia, team) {
   try {
-    const calId = (team === 'EQUIPE 1') ? CAL_DESLOC_E1 : CAL_DESLOC_E2;
-    const cal = CalendarApp.getCalendarById(calId);
+    const calId = getOutputCalendarId_(team);
+    Logger.log(`Deslocamentos: calendario de saida | equipe=${team} | calendarId=${calId}`);
+    const cal   = CalendarApp.getCalendarById(calId);
     cal.getEventsForDay(dia).forEach(ev => {
       const t = String(ev.getTitle() || '').toUpperCase();
       if ((t.includes('ROTA PARCIAL') || t.includes('FALHA ROTA')) && t.includes(team)) {
@@ -1703,7 +1730,8 @@ function apagarAlertasDeslocamento_(dia, team) {
 
 function atualizarAlertaDeslocamento_(dia, team, titulo, descricao) {
   try {
-    const calId = (team === 'EQUIPE 1') ? CAL_DESLOC_E1 : CAL_DESLOC_E2;
+    const calId = getOutputCalendarId_(team);
+    Logger.log(`Deslocamentos: calendario de saida | equipe=${team} | calendarId=${calId}`);
     const cal = CalendarApp.getCalendarById(calId);
     const title = `${titulo} ${team}`;
     const candidatos = cal.getEventsForDay(dia).filter(ev => {
@@ -1722,6 +1750,65 @@ function atualizarAlertaDeslocamento_(dia, team, titulo, descricao) {
   } catch (e) {
     Logger.log('Falha ao criar/atualizar alerta de deslocamento: ' + e.message);
   }
+}
+
+function quantidadeEventosItemBackend_(item) {
+  const referencias = Array.isArray(item && item.referencias)
+    ? item.referencias
+    : [];
+
+  return referencias.length || 1;
+}
+
+function formatarRejeitadosBackend_(rejeitados) {
+  const linhas = [];
+
+  (rejeitados || []).forEach(item => {
+    const endereco = truncarTextoBackend_(
+      item.enderecoOriginal || item.display || item.id || '-',
+      140
+    );
+
+    const motivo =
+      `${item.status || '-'} ${motivoItemBackend_(item)}`.trim();
+
+    const referencias = Array.isArray(item.referencias)
+      ? item.referencias
+      : [];
+
+    if (!referencias.length) {
+      linhas.push(
+        `📍 ${endereco}\n` +
+        `  evento: referência não informada\n` +
+        `  motivo: ${motivo}`
+      );
+      return;
+    }
+
+    referencias.forEach(ref => {
+      const dados = [];
+
+      if (ref.linha) {
+        dados.push(`linha ${ref.linha}`);
+      }
+
+      if (ref.titulo) {
+        dados.push(truncarTextoBackend_(ref.titulo, 100));
+      }
+
+      if (ref.eventId) {
+        dados.push(`event ${String(ref.eventId).slice(0, 12)}`);
+      }
+
+      linhas.push(
+        `📍 ${endereco}\n` +
+        `  evento: ${dados.join(' | ') || ref.id || '-'}\n` +
+        `  motivo: ${motivo}`
+      );
+    });
+  });
+
+  return linhas.join('\n\n');
 }
 
 function atualizarEventoDeslocamentoBackend_(dia, team, resposta, quantidadeEsperada) {
@@ -1760,10 +1847,15 @@ function atualizarEventoDeslocamentoBackend_(dia, team, resposta, quantidadeEspe
     );
   });
 
-  const totalIncluido = itensBackend.length
-    ? resolvidos.length
-    : rota.ordem.length;
-  const totalPendente = Math.max(0, totalEsperado - totalIncluido);
+  const totalPendente = rejeitados.reduce(
+    (total, item) => total + quantidadeEventosItemBackend_(item),
+    0
+  );
+
+  const totalIncluido = Math.max(
+    0,
+    totalEsperado - totalPendente
+  );
 
   const desc =
     (resposta.status === 'PARCIAL'
@@ -1774,9 +1866,7 @@ function atualizarEventoDeslocamentoBackend_(dia, team, resposta, quantidadeEspe
         `Quantidade pendente: ${totalPendente}\n\n` +
         (rejeitados.length
           ? `*Endereços não incluídos:*\n` +
-            rejeitados
-              .map(i => `📍 ${truncarTextoBackend_(i.enderecoOriginal || i.id, 120)}\n  motivo: ${i.status || '-'} ${motivoItemBackend_(i)}`)
-              .join('\n\n') +
+            formatarRejeitadosBackend_(rejeitados) +
             '\n\n'
           : '')
       : '') +
@@ -1793,7 +1883,8 @@ function atualizarEventoDeslocamentoBackend_(dia, team, resposta, quantidadeEspe
     `RunId: ${resposta.runId || '-'}\n` +
     `Status backend: ${resposta.status}`;
 
-  const calId = (team === 'EQUIPE 1') ? CAL_DESLOC_E1 : CAL_DESLOC_E2;
+  const calId = getOutputCalendarId_(team);
+  Logger.log(`Deslocamentos: calendario de saida | equipe=${team} | calendarId=${calId}`);
   const cal = CalendarApp.getCalendarById(calId);
   const title = `9 (${tempoStr}) DESLOCAMENTO ${team}`;
   const eventsDay = cal.getEventsForDay(dia);
@@ -2190,8 +2281,8 @@ function scanChangedSlots_() {
   });
 
   // 5) Força recálculo se não houver evento de deslocamento criado mas houver endereço
-  const calDeslocE1 = CalendarApp.getCalendarById(CAL_DESLOC_E1);
-  const calDeslocE2 = CalendarApp.getCalendarById(CAL_DESLOC_E2);
+  const calDeslocE1 = CalendarApp.getCalendarById(OUTPUT_CALENDAR_BY_TEAM['EQUIPE 1']);
+  const calDeslocE2 = CalendarApp.getCalendarById(OUTPUT_CALENDAR_BY_TEAM['EQUIPE 2']);
 
   Object.keys(sigBag).forEach(key=>{
     if (changedKey.has(key)) return;
@@ -2407,7 +2498,7 @@ function resetCalSigMap(){
  * atualiza eventos nas agendas monitoradas. Isso poderia disparar um ciclo de
  * novas execuções.
  *
- * A função roda a cada 5 minutos, mas só faz o scanner entre 07h e 22h.
+ * A função roda a cada 1 minutos, mas só faz o scanner entre 07h e 22h.
  */
 function verificarDeslocamentosPeriodicamente() {
   const hora = Number(

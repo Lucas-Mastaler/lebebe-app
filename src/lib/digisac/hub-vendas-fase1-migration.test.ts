@@ -35,6 +35,10 @@ describe('migration hub vendas fase 1', () => {
     path.join(process.cwd(), 'supabase', 'migrations', '20260729220000_hub_vendas_corrige_conexao_destino_erro_fila.sql'),
     'utf8'
   )
+  const mensagemNomeSql = readFileSync(
+    path.join(process.cwd(), 'supabase', 'migrations', '20260730120000_hub_vendas_adiciona_nome_mensagem_recuperacao.sql'),
+    'utf8'
+  )
 
   function trechoEntre(inicio: string, fim: string) {
     const inicioIndex = sql.indexOf(inicio)
@@ -191,6 +195,21 @@ describe('migration hub vendas fase 1', () => {
     expect(fase4ConexaoDestinoFixSql).not.toContain('/messages')
     expect(fase4ConexaoDestinoFixSql).not.toContain('/contacts')
     expect(fase4ConexaoDestinoFixSql).not.toContain('DIGISAC_TOKEN')
+  })
+
+  it('atualiza somente o texto da mensagem direta com placeholder de nome', () => {
+    expect(mensagemNomeSql).toContain("WHERE config.chave = 'mensagens_recuperacao'")
+    expect(mensagemNomeSql).toContain("versao.item->>'id' = 'direta'")
+    expect(mensagemNomeSql).toContain('Olá, [NOME]!')
+    expect(mensagemNomeSql).toContain('Le Bébé [LOJA]')
+    expect(mensagemNomeSql).toContain('jsonb_array_elements')
+    expect(mensagemNomeSql).toContain('jsonb_agg')
+    expect(mensagemNomeSql).not.toContain("chave = 'automacao'")
+    expect(mensagemNomeSql).not.toContain("'ativa', true")
+    expect(mensagemNomeSql).not.toContain("'pausada', false")
+    expect(mensagemNomeSql).not.toContain('INSERT INTO public.hub_vendas_recuperacao_fila')
+    expect(mensagemNomeSql).not.toContain('/messages')
+    expect(mensagemNomeSql).not.toContain('DIGISAC_TOKEN')
   })
 
   it('ativa rls sem policies para authenticated e restringe acesso operacional', () => {

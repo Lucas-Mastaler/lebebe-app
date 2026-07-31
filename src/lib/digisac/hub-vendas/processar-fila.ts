@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/service'
+import { buscarContatoCompleto } from '@/lib/digisac/contatos'
 import { analisarReconciliacaoLead, type HubVendasLeadPendente } from './preparar-fila'
 import {
   abrirTicketResgateHubVendas,
@@ -9,6 +10,15 @@ import {
   hashTextoHubVendas,
   mascararTextoParaResposta,
 } from './envio'
+import {
+  montarMensagemRecuperacaoHubVendas,
+  obterNomeExibicaoLojaHubVendas,
+  resolverNomeClienteHubVendas,
+  validarTextoFinalHubVendas,
+  type FonteNomeHubVendas,
+  type ResultadoNomeHubVendas,
+} from './mensagem'
+import { extrairCandidatosNomeContatoDigisac } from './telefone'
 
 type SupabaseServiceClient = ReturnType<typeof createServiceClient>
 
@@ -73,12 +83,19 @@ type DetalheProcessamento = {
   acao: string
   motivo?: string
   conexaoDestinoId?: string | null
-  contato?: 'existente' | 'criado' | 'nao_consultado'
+  contato?: 'existente' | 'criado' | 'nao_consultado' | 'nao_encontrado'
   ticket?: 'aberto_existente' | 'transferido' | 'nao_consultado'
   versaoMensagem?: number | null
   hashTexto?: string | null
   textoMascarado?: string | null
+  placeholdersPendentes?: string[]
   programadoPara?: string | null
+  nomeUtilizado?: string | null
+  origemNome?: ResultadoNomeHubVendas['origemNome']
+  fallbackNome?: boolean
+  nomeBrutoSanitizado?: string | null
+  lojaExibicao?: string
+  reutilizouTextoPersistido?: boolean
 }
 
 export type ResultadoProcessamentoHubVendas = {
@@ -111,6 +128,7 @@ type CategoriaErro =
   | 'mensagem'
   | 'erro_interno'
   | 'configuracao'
+  | 'placeholder_nao_resolvido'
 
 const LIMITE_PADRAO = 1
 const LIMITE_MAXIMO = 5
@@ -180,6 +198,9 @@ function classificarErro(error: unknown): { categoria: CategoriaErro; retentavel
   if (/sem_mensagem_ativa|configuracao|configura/i.test(mensagem)) {
     return { categoria: 'configuracao', retentavel: false, incrementaInfra: false, resultadoIncerto: false, mensagem }
   }
+  if (/placeholder_nao_resolvido/i.test(mensagem)) {
+    return { categoria: 'placeholder_nao_resolvido', retentavel: false, incrementaInfra: false, resultadoIncerto: false, mensagem }
+  }
   if (/timeout|aborted|network|fetch|econnreset|terminated/i.test(mensagem)) {
     return { categoria: 'timeout_resultado_incerto', retentavel: false, incrementaInfra: false, resultadoIncerto: true, mensagem }
   }
@@ -202,6 +223,15 @@ function classificarErro(error: unknown): { categoria: CategoriaErro; retentavel
 }
 
 function escolherMensagem(mensagens: MensagemRecuperacao[], fila: HubVendasFila): MensagemRecuperacao | null {
+  if (fila.versao_mensagem && fila.texto_enviado) {
+    return mensagens.find((mensagem) => mensagem.ordem === fila.versao_mensagem) ?? {
+      ordem: fila.versao_mensagem,
+      id: 'persistida',
+      nome: 'Persistida',
+      ativa: false,
+      texto: '',
+    }
+  }
   const ativas = mensagens.filter((mensagem) => mensagem.ativa)
   if (ativas.length === 0) return null
   if (fila.versao_mensagem) {
@@ -211,8 +241,47 @@ function escolherMensagem(mensagens: MensagemRecuperacao[], fila: HubVendasFila)
   return ativas[indice]
 }
 
-function montarTextoMensagem(mensagem: MensagemRecuperacao, fila: HubVendasFila): string {
-  return mensagem.texto.replaceAll('[LOJA]', fila.conexao_destino_nome ?? 'Le Bebe')
+function prepararTextoMensagem(params: {
+  mensagem: MensagemRecuperacao
+  fila: HubVendasFila
+  nome: ResultadoNomeHubVendas
+}): {
+  versaoMensagem: number
+  texto: string
+  hash: string
+  lojaExibicao: string
+  reutilizouTextoPersistido: boolean
+} {
+  if (params.fila.texto_enviado && params.fila.hash_texto_enviado && params.fila.versao_mensagem) {
+    return {
+      versaoMensagem: params.fila.versao_mensagem,
+      texto: params.fila.texto_enviado,
+      hash: params.fila.hash_texto_enviado,
+      lojaExibicao: obterNomeExibicaoLojaHubVendas({
+        serviceId: params.fila.conexao_destino_id,
+        fallback: params.fila.conexao_destino_nome,
+      }),
+      reutilizouTextoPersistido: true,
+    }
+  }
+
+  const lojaExibicao = obterNomeExibicaoLojaHubVendas({
+    serviceId: params.fila.conexao_destino_id,
+    fallback: params.fila.conexao_destino_nome,
+  })
+  const texto = montarMensagemRecuperacaoHubVendas({
+    template: params.mensagem.texto,
+    nome: params.nome.primeiroNome,
+    lojaExibicao,
+  })
+
+  return {
+    versaoMensagem: params.mensagem.ordem,
+    texto,
+    hash: hashTextoHubVendas(texto),
+    lojaExibicao,
+    reutilizouTextoPersistido: false,
+  }
 }
 
 async function buscarConfig(supabase: SupabaseServiceClient): Promise<ConfigHubVendas> {
@@ -262,15 +331,52 @@ async function buscarFilasSimulacao(supabase: SupabaseServiceClient, limite: num
   return (data ?? []) as HubVendasFila[]
 }
 
-async function buscarLead(supabase: SupabaseServiceClient, leadId: string): Promise<HubVendasLeadPendente & { nome_contato_hub?: string | null } | null> {
+async function buscarLead(supabase: SupabaseServiceClient, leadId: string): Promise<HubVendasLeadPendente & {
+  nome_contato_hub?: string | null
+  digisac_contact_id_hub?: string | null
+} | null> {
   const { data, error } = await supabase
     .from('hub_vendas_leads')
-    .select('id, telefone_normalizado_ddi, data_entrada_hub, status, nome_contato_hub')
+    .select('id, telefone_normalizado_ddi, data_entrada_hub, status, nome_contato_hub, digisac_contact_id_hub')
     .eq('id', leadId)
     .limit(1)
 
   if (error) throw error
-  return ((data ?? []) as Array<HubVendasLeadPendente & { nome_contato_hub?: string | null }>)[0] ?? null
+  return ((data ?? []) as Array<HubVendasLeadPendente & {
+    nome_contato_hub?: string | null
+    digisac_contact_id_hub?: string | null
+  }>)[0] ?? null
+}
+
+async function buscarFontesNomeOrigem(lead: HubVendasLeadPendente & {
+  nome_contato_hub?: string | null
+  digisac_contact_id_hub?: string | null
+}): Promise<FonteNomeHubVendas[]> {
+  const fontes: FonteNomeHubVendas[] = []
+  if (lead.nome_contato_hub) {
+    fontes.push({
+      nomeBruto: lead.nome_contato_hub,
+      origem: 'lead_persistido',
+      campo: 'hub_vendas_leads.nome_contato_hub',
+    })
+  }
+
+  if (lead.digisac_contact_id_hub) {
+    try {
+      const contatoHub = await buscarContatoCompleto(lead.digisac_contact_id_hub)
+      fontes.push(
+        ...extrairCandidatosNomeContatoDigisac(contatoHub, 'contato_hub').map((candidato) => ({
+          nomeBruto: candidato.nomeBruto,
+          origem: candidato.origem,
+          campo: candidato.campo,
+        }))
+      )
+    } catch {
+      console.warn(`[HUB VENDAS ENVIO] nome origem hub indisponivel leadId=${lead.id}`)
+    }
+  }
+
+  return fontes
 }
 
 async function reservarFilas(params: {
@@ -296,7 +402,7 @@ async function marcarEnviando(params: {
   workerId: string
   contactId: string
   ticketId: string | null
-  mensagem: MensagemRecuperacao
+  versaoMensagem: number
   texto: string
   hash: string
 }) {
@@ -305,7 +411,7 @@ async function marcarEnviando(params: {
     p_worker: params.workerId,
     p_digisac_contact_id: params.contactId,
     p_digisac_ticket_id: params.ticketId,
-    p_versao_mensagem: params.mensagem.ordem,
+    p_versao_mensagem: params.versaoMensagem,
     p_texto_enviado: params.texto,
     p_hash_texto_enviado: params.hash,
   })
@@ -347,6 +453,30 @@ async function registrarResultadoIncerto(supabase: SupabaseServiceClient, fila: 
     p_categoria: 'timeout_resultado_incerto',
     p_erro: erro,
   })
+  if (error) throw error
+}
+
+async function registrarAnaliseManual(params: {
+  supabase: SupabaseServiceClient
+  fila: HubVendasFila
+  workerId: string
+  categoria: string
+  erro: string
+}) {
+  const { error } = await params.supabase
+    .from('hub_vendas_recuperacao_fila')
+    .update({
+      status: 'analise_manual',
+      categoria_erro: params.categoria,
+      erro: params.erro.slice(0, 500),
+      resultado: 'bloqueado',
+      requisicao_finalizada_em: new Date().toISOString(),
+      reservado_em: null,
+      reservado_por: null,
+    })
+    .eq('id', params.fila.id)
+    .eq('status', 'reservado')
+    .eq('reservado_por', params.workerId)
   if (error) throw error
 }
 
@@ -392,13 +522,84 @@ async function processarFilaReservada(params: {
   const mensagem = escolherMensagem(params.config.mensagens, params.fila)
   if (!mensagem) throw new Error('sem_mensagem_ativa')
 
-  const texto = montarTextoMensagem(mensagem, params.fila)
-  const hash = hashTextoHubVendas(texto)
+  const fontesOrigem = await buscarFontesNomeOrigem(lead)
+  const nomeOrigem = resolverNomeClienteHubVendas({
+    fontes: fontesOrigem,
+    telefoneNormalizadoDDI: lead.telefone_normalizado_ddi,
+  })
+
+  if (params.fila.texto_enviado && params.fila.hash_texto_enviado && params.fila.versao_mensagem) {
+    const textoPersistido = prepararTextoMensagem({ mensagem, fila: params.fila, nome: nomeOrigem })
+    const validacaoPersistida = validarTextoFinalHubVendas(textoPersistido.texto)
+    if (!validacaoPersistida.ok) {
+      await registrarAnaliseManual({
+        supabase: params.supabase,
+        fila: params.fila,
+        workerId: params.workerId,
+        categoria: 'placeholder_nao_resolvido',
+        erro: `placeholders_pendentes=${validacaoPersistida.placeholdersPendentes.join(',')}`,
+      })
+      console.error(`[HUB VENDAS ENVIO] envio bloqueado por placeholder nao resolvido filaId=${params.fila.id}`)
+      return {
+        filaId: params.fila.id,
+        leadId: lead.id,
+        statusInicial: params.fila.status,
+        acao: 'analise_manual',
+        motivo: 'placeholder_nao_resolvido',
+        versaoMensagem: textoPersistido.versaoMensagem,
+        hashTexto: textoPersistido.hash,
+        textoMascarado: mascararTextoParaResposta(textoPersistido.texto),
+        placeholdersPendentes: validacaoPersistida.placeholdersPendentes,
+        lojaExibicao: textoPersistido.lojaExibicao,
+        reutilizouTextoPersistido: true,
+      }
+    }
+  }
+
   const contato = await garantirContatoResgateHubVendas({
     telefoneNormalizadoDDI: lead.telefone_normalizado_ddi,
     serviceId: params.fila.conexao_destino_id,
-    nomeContato: lead.nome_contato_hub ?? null,
+    nomeContato: nomeOrigem.nomeCompleto,
   })
+  const fontesDestino: FonteNomeHubVendas[] = contato.nomeContatoBruto
+    ? [{ nomeBruto: contato.nomeContatoBruto, origem: contato.origemNomeBruto }]
+    : []
+  const nome = resolverNomeClienteHubVendas({
+    fontes: nomeOrigem.primeiroNome ? fontesOrigem : [...fontesOrigem, ...fontesDestino],
+    telefoneNormalizadoDDI: lead.telefone_normalizado_ddi,
+  })
+  console.log(`[HUB VENDAS ENVIO] nome ${nome.primeiroNome ? 'validado' : 'indisponivel, usando fallback'} filaId=${params.fila.id} nomeValido=${Boolean(nome.primeiroNome)} origem=${nome.origemNome}`)
+  const textoMensagem = prepararTextoMensagem({ mensagem, fila: params.fila, nome })
+  const validacaoTexto = validarTextoFinalHubVendas(textoMensagem.texto)
+  if (!validacaoTexto.ok) {
+    await registrarAnaliseManual({
+      supabase: params.supabase,
+      fila: params.fila,
+      workerId: params.workerId,
+      categoria: 'placeholder_nao_resolvido',
+      erro: `placeholders_pendentes=${validacaoTexto.placeholdersPendentes.join(',')}`,
+    })
+    console.error(`[HUB VENDAS ENVIO] envio bloqueado por placeholder nao resolvido filaId=${params.fila.id}`)
+    return {
+      filaId: params.fila.id,
+      leadId: lead.id,
+      statusInicial: params.fila.status,
+      acao: 'analise_manual',
+      motivo: 'placeholder_nao_resolvido',
+      contato: contato.criado ? 'criado' : 'existente',
+      ticket: 'nao_consultado',
+      versaoMensagem: textoMensagem.versaoMensagem,
+      hashTexto: textoMensagem.hash,
+      textoMascarado: mascararTextoParaResposta(textoMensagem.texto),
+      placeholdersPendentes: validacaoTexto.placeholdersPendentes,
+      nomeUtilizado: nome.primeiroNome,
+      origemNome: nome.origemNome,
+      fallbackNome: nome.fallbackNome,
+      nomeBrutoSanitizado: nome.nomeBrutoSanitizado,
+      lojaExibicao: textoMensagem.lojaExibicao,
+      reutilizouTextoPersistido: textoMensagem.reutilizouTextoPersistido,
+    }
+  }
 
   const ticketAberto = await buscarTicketAbertoContato(contato.contactId)
   if (ticketAberto) {
@@ -411,6 +612,12 @@ async function processarFilaReservada(params: {
       motivo: 'chamado_aberto_na_conexao_destino',
       contato: contato.criado ? 'criado' : 'existente',
       ticket: 'aberto_existente',
+      nomeUtilizado: nome.primeiroNome,
+      origemNome: nome.origemNome,
+      fallbackNome: nome.fallbackNome,
+      nomeBrutoSanitizado: nome.nomeBrutoSanitizado,
+      lojaExibicao: textoMensagem.lojaExibicao,
+      reutilizouTextoPersistido: textoMensagem.reutilizouTextoPersistido,
     }
   }
 
@@ -425,12 +632,12 @@ async function processarFilaReservada(params: {
     workerId: params.workerId,
     contactId: contato.contactId,
     ticketId: ticket.ticketId,
-    mensagem,
-    texto,
-    hash,
+    versaoMensagem: textoMensagem.versaoMensagem,
+    texto: textoMensagem.texto,
+    hash: textoMensagem.hash,
   })
 
-  const envio = await enviarMensagemResgateHubVendas({ contactId: contato.contactId, texto })
+  const envio = await enviarMensagemResgateHubVendas({ contactId: contato.contactId, texto: textoMensagem.texto })
   if (!envio.ok) {
     if (envio.resultadoIncerto) {
       await registrarResultadoIncerto(params.supabase, params.fila, params.workerId, envio.erro)
@@ -461,9 +668,15 @@ async function processarFilaReservada(params: {
     conexaoDestinoId: params.fila.conexao_destino_id,
     contato: contato.criado ? 'criado' : 'existente',
     ticket: 'transferido',
-    versaoMensagem: mensagem.ordem,
-    hashTexto: hash,
-    textoMascarado: mascararTextoParaResposta(texto),
+    versaoMensagem: textoMensagem.versaoMensagem,
+    hashTexto: textoMensagem.hash,
+    textoMascarado: mascararTextoParaResposta(textoMensagem.texto),
+    nomeUtilizado: nome.primeiroNome,
+    origemNome: nome.origemNome,
+    fallbackNome: nome.fallbackNome,
+    nomeBrutoSanitizado: nome.nomeBrutoSanitizado,
+    lojaExibicao: textoMensagem.lojaExibicao,
+    reutilizouTextoPersistido: textoMensagem.reutilizouTextoPersistido,
   }
 }
 
@@ -475,28 +688,47 @@ async function simularFila(params: {
 }): Promise<DetalheProcessamento> {
   const lead = await buscarLead(params.supabase, params.fila.lead_id)
   const mensagem = escolherMensagem(params.config.mensagens, params.fila)
-  const texto = mensagem ? montarTextoMensagem(mensagem, params.fila) : null
+  const fontesOrigem = lead ? await buscarFontesNomeOrigem(lead) : []
   const contatoExistente = lead
     ? await buscarContatoResgatePorTelefone({
       telefoneNormalizadoDDI: lead.telefone_normalizado_ddi,
       serviceId: params.fila.conexao_destino_id,
     })
     : null
+  const fontesDestino: FonteNomeHubVendas[] = contatoExistente?.nomeContatoBruto
+    ? [{ nomeBruto: contatoExistente.nomeContatoBruto, origem: contatoExistente.origemNomeBruto }]
+    : []
+  const nome = resolverNomeClienteHubVendas({
+    fontes: [...fontesOrigem, ...fontesDestino],
+    telefoneNormalizadoDDI: lead?.telefone_normalizado_ddi ?? null,
+  })
+  const textoMensagem = mensagem ? prepararTextoMensagem({ mensagem, fila: params.fila, nome }) : null
+  const validacaoTexto = textoMensagem ? validarTextoFinalHubVendas(textoMensagem.texto) : null
   const analise = lead ? await analisarReconciliacaoLead(lead, params.agora) : null
 
   return {
     filaId: params.fila.id,
     leadId: params.fila.lead_id,
     statusInicial: params.fila.status,
-    acao: mensagem && lead && analise?.resultado === 'ignorado' ? 'enviaria' : 'bloqueado',
-    motivo: !lead ? 'lead_nao_encontrado' : !mensagem ? 'sem_mensagem_ativa' : analise?.resultado ?? undefined,
+    acao: mensagem && lead && analise?.resultado === 'ignorado' && validacaoTexto?.ok !== false ? 'enviaria' : 'bloqueado',
+    motivo: !lead ? 'lead_nao_encontrado' : !mensagem ? 'sem_mensagem_ativa' : validacaoTexto?.ok === false ? 'placeholder_nao_resolvido' : analise?.resultado ?? undefined,
     conexaoDestinoId: params.fila.conexao_destino_id,
-    contato: contatoExistente ? 'existente' : 'nao_consultado',
+    contato: contatoExistente ? 'existente' : 'nao_encontrado',
     ticket: 'nao_consultado',
-    versaoMensagem: mensagem?.ordem ?? null,
-    hashTexto: texto ? hashTextoHubVendas(texto) : null,
-    textoMascarado: texto ? mascararTextoParaResposta(texto) : null,
+    versaoMensagem: textoMensagem?.versaoMensagem ?? null,
+    hashTexto: textoMensagem?.hash ?? null,
+    textoMascarado: textoMensagem ? mascararTextoParaResposta(textoMensagem.texto) : null,
+    placeholdersPendentes: validacaoTexto?.placeholdersPendentes ?? [],
     programadoPara: params.fila.programado_para,
+    nomeUtilizado: nome.primeiroNome,
+    origemNome: nome.origemNome,
+    fallbackNome: nome.fallbackNome,
+    nomeBrutoSanitizado: nome.nomeBrutoSanitizado,
+    lojaExibicao: textoMensagem?.lojaExibicao ?? obterNomeExibicaoLojaHubVendas({
+      serviceId: params.fila.conexao_destino_id,
+      fallback: params.fila.conexao_destino_nome,
+    }),
+    reutilizouTextoPersistido: textoMensagem?.reutilizouTextoPersistido,
   }
 }
 

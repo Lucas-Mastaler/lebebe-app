@@ -4,14 +4,17 @@ export const HUB_VENDAS_LOJAS = {
   portao: {
     serviceId: 'c60d720f-5ad5-4a1b-bedb-e51495dee686',
     numero: '554184426528',
+    nomeExibicao: 'Portão',
   },
   bigorrilho: {
     serviceId: '0973f84b-8294-4615-9657-ba95b6346246',
     numero: '554188043042',
+    nomeExibicao: 'Bigorrilho',
   },
   hauer_marechal: {
     serviceId: '1352c41b-80a9-4e74-b9d9-4c5e7aed060e',
     numero: '554192220492',
+    nomeExibicao: 'Hauer',
   },
 } as const
 

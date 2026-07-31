@@ -14,6 +14,7 @@ type LeadRow = {
   telefone_normalizado: string
   ciclo_numero: number
   data_entrada_hub: string
+  nome_contato_hub?: string | null
 }
 
 type EventRow = {
@@ -129,6 +130,22 @@ describe('registrarEntradaHubVendas', () => {
       status: 'aguardando_conversao',
     })
     expect(supabase.eventos[0]).toMatchObject({ status: 'processado', lead_id: 'lead-1' })
+  })
+
+  it('persiste nome valido do perfil recebido no webhook da entrada', async () => {
+    buscarContatoCompletoMock.mockResolvedValue({
+      name: 'Cliente',
+      data: { number: '+55 (41) 99624-6875' },
+    })
+    const supabase = criarSupabaseFake()
+    const mensagem = criarMensagem('msg-1')
+    mensagem.data.data = { pushName: 'M\u00ea Mastaler' }
+
+    await registrarEntradaHubVendas(mensagem, supabase as never)
+
+    expect(supabase.leads[0]).toMatchObject({
+      nome_contato_hub: 'M\u00ea Mastaler',
+    })
   })
 
   it('ignora saudacao repetida antes de 14 dias no mesmo telefone', async () => {

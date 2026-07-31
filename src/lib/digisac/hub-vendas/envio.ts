@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto'
 import { fetchDigisac, fetchDigisacRaw, sanitizarDigisacParaLog } from '@/lib/digisac/clienteDigisac'
 import { gerarVariacoesTelefone, normalizarTelefoneDDI, type DigisacTicket } from '@/lib/digisac/sgi-sync'
 import { HUB_VENDAS_COMENTARIO_RESGATE, HUB_VENDAS_DEPARTAMENTOS_RESGATE, HUB_VENDAS_SERVICE_ID_PARA_LOJA } from './constants'
-import { extrairTelefoneContatoHubVendas } from './telefone'
+import { extrairCandidatosNomeContatoDigisac, extrairNomeContatoDigisac, extrairTelefoneContatoHubVendas } from './telefone'
+import type { OrigemNomeHubVendas } from './mensagem'
 
 type DigisacContact = {
   id: string
@@ -16,6 +17,8 @@ type DigisacContact = {
 export type ContatoResgate = {
   contactId: string
   criado: boolean
+  nomeContatoBruto: string | null
+  origemNomeBruto: OrigemNomeHubVendas
 }
 
 export type TicketResgate = {
@@ -77,7 +80,12 @@ export async function buscarContatoResgatePorTelefone(params: {
       if (!telefone) continue
       const variacoesContato = new Set(gerarVariacoesTelefone(normalizarTelefoneDDI(telefone.telefoneNormalizadoDDI)))
       if (variacoesContato.has(variacao) || telefone.variacoesDDI.includes(params.telefoneNormalizadoDDI)) {
-        return { contactId: contato.id, criado: false }
+        return {
+          contactId: contato.id,
+          criado: false,
+          nomeContatoBruto: extrairNomeContatoDigisac(contato),
+          origemNomeBruto: 'contato_destino_existente',
+        }
       }
     }
   }
@@ -123,7 +131,14 @@ export async function criarContatoResgateHubVendas(params: {
 
   const contato = extrairContato(JSON.parse(bodyText || '{}'))
   if (!contato?.id) throw new Error('contato_criado_sem_id')
-  return { contactId: contato.id, criado: true }
+  const nomeContatoBruto = extrairNomeContatoDigisac(contato) ?? params.nomeContato?.trim() ?? null
+  const candidatoResposta = extrairCandidatosNomeContatoDigisac(contato, 'contato_destino_criado')[0]
+  return {
+    contactId: contato.id,
+    criado: true,
+    nomeContatoBruto,
+    origemNomeBruto: candidatoResposta?.origem ?? (nomeContatoBruto ? 'lead_persistido' : 'indisponivel'),
+  }
 }
 
 export async function garantirContatoResgateHubVendas(params: {

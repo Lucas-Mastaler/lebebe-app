@@ -3,7 +3,8 @@ import { buscarContatoCompleto } from '@/lib/digisac/contatos'
 import { HUB_VENDAS_CICLO_MS } from './constants'
 import { finalizarEventoHubVendas, reservarEventoHubVendas } from './eventos'
 import type { HubVendasMensagemValidada } from './payload'
-import { extrairNomeContatoDigisac, extrairTelefoneContatoHubVendas } from './telefone'
+import { resolverNomeClienteHubVendas, type FonteNomeHubVendas } from './mensagem'
+import { extrairCandidatosNomeContatoDigisac, extrairTelefoneContatoHubVendas } from './telefone'
 
 type SupabaseServiceClient = ReturnType<typeof createServiceClient>
 type EntradaReservadaHubVendas = {
@@ -87,7 +88,22 @@ export async function registrarEntradaHubVendas(
     }
 
     const cicloNumero = (leadAnterior?.ciclo_numero ?? 0) + 1
-    const nomeContato = extrairNomeContatoDigisac(contato)
+    const fontesNome: FonteNomeHubVendas[] = [
+      ...extrairCandidatosNomeContatoDigisac(mensagem.data, 'contato_hub').map((candidato) => ({
+        nomeBruto: candidato.nomeBruto,
+        origem: candidato.origem,
+        campo: candidato.campo,
+      })),
+      ...extrairCandidatosNomeContatoDigisac(contato, 'contato_hub').map((candidato) => ({
+        nomeBruto: candidato.nomeBruto,
+        origem: candidato.origem,
+        campo: candidato.campo,
+      })),
+    ]
+    const nomeContato = resolverNomeClienteHubVendas({
+      fontes: fontesNome,
+      telefoneNormalizadoDDI: telefone.telefoneNormalizadoDDI,
+    }).nomeCompleto
 
     const { data: leadCriado, error } = await supabase
       .from('hub_vendas_leads')

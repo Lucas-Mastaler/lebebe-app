@@ -8,6 +8,11 @@ const envioMocks = vi.hoisted(() => ({
   abrirTicketResgateHubVendas: vi.fn(),
   enviarMensagemResgateHubVendas: vi.fn(),
 }))
+const buscarContatoCompletoMock = vi.hoisted(() => vi.fn())
+
+vi.mock('@/lib/digisac/contatos', () => ({
+  buscarContatoCompleto: buscarContatoCompletoMock,
+}))
 
 vi.mock('./envio', async () => {
   const crypto = await import('node:crypto')
@@ -32,6 +37,7 @@ type LeadRow = {
   data_entrada_hub: string
   status: string
   nome_contato_hub: string | null
+  digisac_contact_id_hub: string | null
 }
 
 type FilaRow = {
@@ -104,6 +110,7 @@ function criarSupabaseFake(options: { automacaoAtiva?: boolean; pausada?: boolea
       data_entrada_hub: '2026-07-29T18:49:44.117Z',
       status: 'encaminhado_recuperacao',
       nome_contato_hub: 'Cliente Teste',
+      digisac_contact_id_hub: 'contact-hub',
     }] as LeadRow[],
     rpcCalls: [] as Array<{ fn: string; params: Record<string, unknown> }>,
     config: [
@@ -121,7 +128,7 @@ function criarSupabaseFake(options: { automacaoAtiva?: boolean; pausada?: boolea
         chave: 'mensagens_recuperacao',
         valor: {
           versoes: [
-            { id: 'direta', nome: 'Direta', ordem: 1, ativa: options.mensagensAtivas ?? true, texto: 'Ola [LOJA], podemos ajudar?' },
+            { id: 'direta', nome: 'Direta', ordem: 1, ativa: options.mensagensAtivas ?? true, texto: 'Olá, [NOME]!\n\nAqui é da Le Bébé [LOJA].' },
           ],
         },
       },
@@ -131,10 +138,16 @@ function criarSupabaseFake(options: { automacaoAtiva?: boolean; pausada?: boolea
   class Builder {
     private filters: Record<string, unknown> = {}
     private inFilters: Record<string, unknown[]> = {}
+    private updates: Record<string, unknown> | null = null
 
     constructor(private table: string) {}
 
     select() {
+      return this
+    }
+
+    update(values: Record<string, unknown>) {
+      this.updates = values
       return this
     }
 
@@ -174,8 +187,12 @@ function criarSupabaseFake(options: { automacaoAtiva?: boolean; pausada?: boolea
         let data = [...state.filas]
         if (this.filters.id) data = data.filter((fila) => fila.id === this.filters.id)
         if (this.filters.status) data = data.filter((fila) => fila.status === this.filters.status)
+        if (this.filters.reservado_por) data = data.filter((fila) => fila.reservado_por === this.filters.reservado_por)
         if (this.filters.programado_para__lte) {
           data = data.filter((fila) => fila.programado_para <= String(this.filters.programado_para__lte))
+        }
+        if (this.updates) {
+          for (const fila of data) Object.assign(fila, this.updates)
         }
         return { data, error: null }
       }
@@ -251,7 +268,16 @@ describe('processarFilaRecuperacaoHubVendas', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     envioMocks.buscarContatoResgatePorTelefone.mockResolvedValue(null)
-    envioMocks.garantirContatoResgateHubVendas.mockResolvedValue({ contactId: 'contact-1', criado: false })
+    buscarContatoCompletoMock.mockResolvedValue({
+      name: 'Cliente Teste',
+      data: { number: '+55 (41) 99999-9161' },
+    })
+    envioMocks.garantirContatoResgateHubVendas.mockResolvedValue({
+      contactId: 'contact-1',
+      criado: false,
+      nomeContatoBruto: 'MARIA EDUARDA SILVA',
+      origemNomeBruto: 'contato_destino_existente',
+    })
     envioMocks.buscarTicketAbertoContato.mockResolvedValue(null)
     envioMocks.abrirTicketResgateHubVendas.mockResolvedValue({ ticketId: 'ticket-1', transferido: true })
     envioMocks.enviarMensagemResgateHubVendas.mockResolvedValue({ ok: true, messageId: 'message-1', ticketId: 'ticket-1', contactId: 'contact-1' })
@@ -286,7 +312,12 @@ describe('processarFilaRecuperacaoHubVendas', () => {
   })
 
   it('processa uma fila isolada e confirma envio sem tocar outras filas', async () => {
-    envioMocks.garantirContatoResgateHubVendas.mockResolvedValue({ contactId: 'contact-1', criado: false })
+    envioMocks.garantirContatoResgateHubVendas.mockResolvedValue({
+      contactId: 'contact-1',
+      criado: false,
+      nomeContatoBruto: 'MARIA EDUARDA SILVA',
+      origemNomeBruto: 'contato_destino_existente',
+    })
     envioMocks.buscarTicketAbertoContato.mockResolvedValue(null)
     envioMocks.abrirTicketResgateHubVendas.mockResolvedValue({ ticketId: 'ticket-1', transferido: true })
     envioMocks.enviarMensagemResgateHubVendas.mockResolvedValue({ ok: true, messageId: 'message-1', ticketId: 'ticket-1', contactId: 'contact-1' })
@@ -301,12 +332,215 @@ describe('processarFilaRecuperacaoHubVendas', () => {
 
     expect(resultado.totalReservado).toBe(1)
     expect(resultado.totalEnviado).toBe(1)
-    expect(supabase.state.filas[0]).toMatchObject({ status: 'enviado', digisac_message_id: 'message-1', versao_mensagem: 1 })
+    expect(supabase.state.filas[0]).toMatchObject({
+      status: 'enviado',
+      digisac_message_id: 'message-1',
+      versao_mensagem: 1,
+      texto_enviado: 'Olá, Maria!\n\nAqui é da Le Bébé Portão.',
+    })
+    expect(resultado.detalhes[0]).toMatchObject({
+      nomeUtilizado: 'Maria',
+      origemNome: 'contato_destino_existente',
+      fallbackNome: false,
+      lojaExibicao: 'Portão',
+    })
     expect(supabase.state.leads[0].status).toBe('recuperacao_enviada')
   })
 
+  it('usa nome persistido no lead quando o contato ainda nao existe na loja', async () => {
+    const supabase = criarSupabaseFake({ mensagensAtivas: true })
+    supabase.state.leads[0].nome_contato_hub = 'M\u00ea Mastaler'
+    envioMocks.garantirContatoResgateHubVendas.mockResolvedValue({
+      contactId: 'contact-1',
+      criado: true,
+      nomeContatoBruto: 'M\u00ea Mastaler',
+      origemNomeBruto: 'lead_persistido',
+    })
+
+    const resultado = await processarFilaRecuperacaoHubVendas({
+      supabase: supabase as never,
+      filaId: FILA_ID,
+      modoTeste: true,
+      workerId: 'worker-teste',
+    })
+
+    expect(envioMocks.garantirContatoResgateHubVendas).toHaveBeenCalledWith({
+      telefoneNormalizadoDDI: '5541999999161',
+      serviceId: PORTAO_ID,
+      nomeContato: 'M\u00ea Mastaler',
+    })
+    expect(supabase.state.filas[0].texto_enviado).toBe('Ol\u00e1, M\u00ea!\n\nAqui \u00e9 da Le B\u00e9b\u00e9 Port\u00e3o.')
+    expect(supabase.state.filas[0].texto_enviado).not.toContain('[NOME]')
+    expect(resultado.detalhes[0]).toMatchObject({
+      contato: 'criado',
+      nomeUtilizado: 'M\u00ea',
+      origemNome: 'lead_persistido',
+      fallbackNome: false,
+    })
+  })
+
+  it('usa nome de perfil WhatsApp do contato Hub quando nome salvo no lead e invalido', async () => {
+    const supabase = criarSupabaseFake({ mensagensAtivas: true })
+    supabase.state.leads[0].nome_contato_hub = 'Cliente'
+    buscarContatoCompletoMock.mockResolvedValue({
+      name: 'Cliente',
+      data: {
+        number: '+55 (41) 99999-9161',
+        pushName: 'M\u00ea Mastaler',
+      },
+    })
+    envioMocks.garantirContatoResgateHubVendas.mockResolvedValue({
+      contactId: 'contact-1',
+      criado: true,
+      nomeContatoBruto: 'M\u00ea Mastaler',
+      origemNomeBruto: 'lead_persistido',
+    })
+
+    const resultado = await processarFilaRecuperacaoHubVendas({
+      supabase: supabase as never,
+      filaId: FILA_ID,
+      modoTeste: true,
+      workerId: 'worker-teste',
+    })
+
+    expect(envioMocks.garantirContatoResgateHubVendas).toHaveBeenCalledWith(expect.objectContaining({
+      nomeContato: 'M\u00ea Mastaler',
+    }))
+    expect(supabase.state.filas[0].texto_enviado).toBe('Ol\u00e1, M\u00ea!\n\nAqui \u00e9 da Le B\u00e9b\u00e9 Port\u00e3o.')
+    expect(resultado.detalhes[0]).toMatchObject({
+      nomeUtilizado: 'M\u00ea',
+      origemNome: 'perfil_whatsapp',
+      fallbackNome: false,
+    })
+  })
+
+  it('usa fallback natural quando contato nao tem nome valido', async () => {
+    envioMocks.garantirContatoResgateHubVendas.mockResolvedValue({
+      contactId: 'contact-1',
+      criado: false,
+      nomeContatoBruto: 'Cliente',
+      origemNomeBruto: 'contato_destino_existente',
+    })
+    const supabase = criarSupabaseFake({ mensagensAtivas: true })
+
+    const resultado = await processarFilaRecuperacaoHubVendas({
+      supabase: supabase as never,
+      filaId: FILA_ID,
+      modoTeste: true,
+      workerId: 'worker-teste',
+    })
+
+    expect(resultado.totalEnviado).toBe(1)
+    expect(supabase.state.filas[0].texto_enviado).toBe('Olá!\n\nAqui é da Le Bébé Portão.')
+    expect(resultado.detalhes[0]).toMatchObject({
+      nomeUtilizado: null,
+      origemNome: 'indisponivel',
+      fallbackNome: true,
+      lojaExibicao: 'Portão',
+    })
+  })
+
+  it('dry-run mostra nome e loja sem alterar banco nem criar contato', async () => {
+    envioMocks.buscarContatoResgatePorTelefone.mockResolvedValue({
+      contactId: 'contact-1',
+      criado: false,
+      nomeContatoBruto: 'JOÃO PEDRO',
+      origemNomeBruto: 'contato_destino_existente',
+    })
+    const supabase = criarSupabaseFake({ mensagensAtivas: true })
+
+    const resultado = await processarFilaRecuperacaoHubVendas({
+      supabase: supabase as never,
+      filaId: FILA_ID,
+      modoTeste: true,
+      modoSimulacao: true,
+      workerId: 'worker-teste',
+    })
+
+    expect(resultado.detalhes[0]).toMatchObject({
+      acao: 'enviaria',
+      nomeUtilizado: 'João',
+      origemNome: 'contato_destino_existente',
+      fallbackNome: false,
+      lojaExibicao: 'Portão',
+    })
+    expect(supabase.state.filas[0].status).toBe('agendado')
+    expect(envioMocks.garantirContatoResgateHubVendas).not.toHaveBeenCalled()
+    expect(envioMocks.enviarMensagemResgateHubVendas).not.toHaveBeenCalled()
+  })
+
+  it('retry reutiliza texto e hash persistidos sem recalcular nome', async () => {
+    const textoPersistido = 'Olá, Ana!\n\nAqui é da Le Bébé Portão.'
+    const hashPersistido = 'a'.repeat(64)
+    const supabase = criarSupabaseFake({ mensagensAtivas: false })
+    supabase.state.filas[0] = criarFila({
+      texto_enviado: textoPersistido,
+      hash_texto_enviado: hashPersistido,
+      versao_mensagem: 1,
+    })
+    envioMocks.garantirContatoResgateHubVendas.mockResolvedValue({
+      contactId: 'contact-1',
+      criado: false,
+      nomeContatoBruto: 'MARIA NOVA',
+      origemNomeBruto: 'contato_destino_existente',
+    })
+
+    const resultado = await processarFilaRecuperacaoHubVendas({
+      supabase: supabase as never,
+      filaId: FILA_ID,
+      modoTeste: true,
+      workerId: 'worker-teste',
+    })
+
+    expect(resultado.totalEnviado).toBe(1)
+    expect(supabase.state.filas[0]).toMatchObject({
+      texto_enviado: textoPersistido,
+      hash_texto_enviado: hashPersistido,
+      versao_mensagem: 1,
+    })
+    expect(resultado.detalhes[0]).toMatchObject({
+      hashTexto: hashPersistido,
+      reutilizouTextoPersistido: true,
+    })
+  })
+
+  it('bloqueia placeholder persistido antes de consultar ticket ou enviar mensagem', async () => {
+    const supabase = criarSupabaseFake({ mensagensAtivas: false })
+    supabase.state.filas[0] = criarFila({
+      texto_enviado: 'OlÃ¡, [NOME]!\n\nAqui Ã© da Le BÃ©bÃ© PortÃ£o.',
+      hash_texto_enviado: 'b'.repeat(64),
+      versao_mensagem: 1,
+    })
+
+    const resultado = await processarFilaRecuperacaoHubVendas({
+      supabase: supabase as never,
+      filaId: FILA_ID,
+      modoTeste: true,
+      workerId: 'worker-teste',
+    })
+
+    expect(resultado.totalAnaliseManual).toBe(1)
+    expect(resultado.totalEnviado).toBe(0)
+    expect(supabase.state.filas[0]).toMatchObject({
+      status: 'analise_manual',
+      categoria_erro: 'placeholder_nao_resolvido',
+    })
+    expect(resultado.detalhes[0]).toMatchObject({
+      acao: 'analise_manual',
+      motivo: 'placeholder_nao_resolvido',
+      placeholdersPendentes: ['[NOME]'],
+    })
+    expect(envioMocks.buscarTicketAbertoContato).not.toHaveBeenCalled()
+    expect(envioMocks.enviarMensagemResgateHubVendas).not.toHaveBeenCalled()
+  })
+
   it('marca resultado incerto em timeout sem retry automatico cego', async () => {
-    envioMocks.garantirContatoResgateHubVendas.mockResolvedValue({ contactId: 'contact-1', criado: false })
+    envioMocks.garantirContatoResgateHubVendas.mockResolvedValue({
+      contactId: 'contact-1',
+      criado: false,
+      nomeContatoBruto: 'MARIA EDUARDA SILVA',
+      origemNomeBruto: 'contato_destino_existente',
+    })
     envioMocks.buscarTicketAbertoContato.mockResolvedValue(null)
     envioMocks.abrirTicketResgateHubVendas.mockResolvedValue({ ticketId: 'ticket-1', transferido: true })
     envioMocks.enviarMensagemResgateHubVendas.mockResolvedValue({ ok: false, status: null, erro: 'Digisac Request Timeout (30s)', resultadoIncerto: true })
@@ -324,7 +558,12 @@ describe('processarFilaRecuperacaoHubVendas', () => {
   })
 
   it('nao confirma enviado quando resposta ok vem sem messageId', async () => {
-    envioMocks.garantirContatoResgateHubVendas.mockResolvedValue({ contactId: 'contact-1', criado: false })
+    envioMocks.garantirContatoResgateHubVendas.mockResolvedValue({
+      contactId: 'contact-1',
+      criado: false,
+      nomeContatoBruto: 'MARIA EDUARDA SILVA',
+      origemNomeBruto: 'contato_destino_existente',
+    })
     envioMocks.buscarTicketAbertoContato.mockResolvedValue(null)
     envioMocks.abrirTicketResgateHubVendas.mockResolvedValue({ ticketId: 'ticket-1', transferido: true })
     envioMocks.enviarMensagemResgateHubVendas.mockResolvedValue({ ok: true, messageId: null, ticketId: 'ticket-1', contactId: 'contact-1' })

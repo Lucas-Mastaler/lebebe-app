@@ -22,9 +22,9 @@ function validarCronSecret(request: NextRequest): NextResponse | null {
 
 function parseLimite(request: NextRequest): number {
   const raw = request.nextUrl.searchParams.get('limite')
-  const valor = raw ? Number(raw) : 50
-  if (!Number.isInteger(valor) || valor < 1) return 50
-  return Math.min(valor, 200)
+  const valor = raw ? Number(raw) : 1
+  if (!Number.isInteger(valor) || valor < 1) return 1
+  return Math.min(valor, 10)
 }
 
 function parseBooleanParam(request: NextRequest, nome: string): boolean {
@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
   const erroAuth = validarCronSecret(request)
   if (erroAuth) return erroAuth
 
+  const inicio = Date.now()
   try {
     const { leadId, error } = parseLeadId(request)
     if (error) return NextResponse.json({ ok: false, error }, { status: 400 })
@@ -63,10 +64,16 @@ export async function GET(request: NextRequest) {
       modoTeste,
       modoSimulacao,
     })
+    console.log(
+      `[HUB VENDAS CRON] preparacao concluida candidatos=${resultado.totalCandidatos} criadas=${resultado.totalFilaCriada} existentes=${resultado.totalFilaExistente} semCapacidade=${resultado.totalSemCapacidade} erros=${resultado.totalErros} duracaoMs=${Date.now() - inicio}`
+    )
+    if (resultado.totalSemCapacidade > 0) {
+      console.warn(`[HUB VENDAS ALERTA] limite diario atingido ou sem capacidade total=${resultado.totalSemCapacidade}`)
+    }
     return NextResponse.json(resultado)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'erro_desconhecido'
-    console.error(`[HUB VENDAS PREPARACAO] erro geral=${message}`)
+    console.error(`[HUB VENDAS ALERTA] cron falhou rota=preparar-fila erro=${message} duracaoMs=${Date.now() - inicio}`)
     return NextResponse.json({ ok: false, error: 'erro_preparacao_fila' }, { status: 500 })
   }
 }

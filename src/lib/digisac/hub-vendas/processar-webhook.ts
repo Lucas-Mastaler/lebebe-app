@@ -8,6 +8,7 @@ import { finalizarEventoHubVendas, reservarEventoHubVendas, type TipoProcessamen
 import { pareceSaudacaoHubVendas, validarMensagemDigisac } from './payload'
 import { registrarConversaoHubVendas } from './registrar-conversao'
 import { registrarEntradaHubVendas } from './registrar-entrada'
+import { registrarLogRespostaRecuperacaoHubVendas } from './resposta'
 
 export type ResultadoWebhookHubVendas =
   | { ok: true; ignored: true; reason: string }
@@ -139,6 +140,18 @@ export async function processarWebhookHubVendas(rawPayload: unknown): Promise<Re
   if (!mensagem.texto.trim()) return ignorarReservado('sem_texto_util')
 
   if (mensagem.data.isFromMe !== false) return ignorarReservado('nao_e_conversao')
+
+  try {
+    await registrarLogRespostaRecuperacaoHubVendas({
+      supabase,
+      ticketId: mensagem.ticketId,
+      serviceId: mensagem.serviceId,
+    })
+  } catch (error) {
+    console.warn(
+      `[HUB VENDAS] falha ao registrar log de resposta de recuperacao erro=${error instanceof Error ? error.message : String(error)}`
+    )
+  }
 
   const resultado = await registrarConversaoHubVendas(mensagem, loja, supabase, { eventoId: reserva.eventoId })
   if (!resultado.ok) return resultado

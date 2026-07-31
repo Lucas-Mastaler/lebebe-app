@@ -6,6 +6,7 @@ const registrarConversaoHubVendasMock = vi.hoisted(() => vi.fn())
 const createServiceClientMock = vi.hoisted(() => vi.fn())
 const reservarEventoHubVendasMock = vi.hoisted(() => vi.fn())
 const finalizarEventoHubVendasMock = vi.hoisted(() => vi.fn())
+const registrarLogRespostaRecuperacaoHubVendasMock = vi.hoisted(() => vi.fn())
 
 const supabaseFake = {}
 
@@ -24,6 +25,10 @@ vi.mock('./registrar-entrada', () => ({
 
 vi.mock('./registrar-conversao', () => ({
   registrarConversaoHubVendas: registrarConversaoHubVendasMock,
+}))
+
+vi.mock('./resposta', () => ({
+  registrarLogRespostaRecuperacaoHubVendas: registrarLogRespostaRecuperacaoHubVendasMock,
 }))
 
 const SAUDACAO = `
@@ -63,8 +68,10 @@ describe('processarWebhookHubVendas', () => {
     finalizarEventoHubVendasMock.mockResolvedValue(undefined)
     registrarEntradaHubVendasMock.mockReset()
     registrarConversaoHubVendasMock.mockReset()
+    registrarLogRespostaRecuperacaoHubVendasMock.mockReset()
     registrarEntradaHubVendasMock.mockResolvedValue({ ok: true, processed: true })
     registrarConversaoHubVendasMock.mockResolvedValue({ ok: true, processed: true })
+    registrarLogRespostaRecuperacaoHubVendasMock.mockResolvedValue({ encontrada: false })
   })
 
   it('processa saudacao do Hub enviada pela empresa', async () => {
@@ -141,12 +148,28 @@ describe('processarWebhookHubVendas', () => {
     )
 
     expect(resultado).toEqual({ ok: true, processed: true, kind: 'conversao_loja' })
+    expect(registrarLogRespostaRecuperacaoHubVendasMock).toHaveBeenCalledWith({
+      supabase: supabaseFake,
+      ticketId: 'ticket-1',
+      serviceId: '0973f84b-8294-4615-9657-ba95b6346246',
+    })
     expect(registrarConversaoHubVendasMock).toHaveBeenCalledWith(
       expect.any(Object),
       'bigorrilho',
       supabaseFake,
       { eventoId: 'evento-1' }
     )
+  })
+
+  it('mantem conversao quando log de resposta de recuperacao falha', async () => {
+    registrarLogRespostaRecuperacaoHubVendasMock.mockRejectedValueOnce(new Error('falha leitura fila'))
+
+    const resultado = await processarWebhookHubVendas(
+      payload({ serviceId: '0973f84b-8294-4615-9657-ba95b6346246', isFromMe: false, text: 'Oi' })
+    )
+
+    expect(resultado).toEqual({ ok: true, processed: true, kind: 'conversao_loja' })
+    expect(registrarConversaoHubVendasMock).toHaveBeenCalledTimes(1)
   })
 
   it('ignora mensagem enviada por nos em loja', async () => {

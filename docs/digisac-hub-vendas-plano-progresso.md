@@ -4580,3 +4580,52 @@ Esta secao registra a correcao da divergencia entre o SQL local/remoto da Fase 4
 - `git diff --check` passou com avisos LF/CRLF conhecidos do checkout Windows.
 - `npm run build` falhou inicialmente por rede bloqueada em Google Fonts e passou na reexecucao com rede liberada, gerando 110 paginas e mantendo avisos conhecidos `DYNAMIC_SERVER_USAGE` em rotas com `cookies`.
 - Supabase Advisors de seguranca e performance foram executados; para Hub/Vendas permaneceram avisos INFO `rls_enabled_no_policy`, coerentes com desenho service-role only.
+
+---
+
+## 75. Atualizacao vigente 2026-07-31 - Crons e recuperacao segura de filas abandonadas
+
+Esta secao registra a fase de hardening operacional para crons Vercel, recuperacao segura de filas abandonadas, ativacao gradual e observabilidade minima. A automacao global continuou desligada e pausada; nao houve envio real, criacao real de contato/ticket ou mudanca em `/procurar-datas`, deslocamentos, Atendimento Presencial ou Atendimento Automatico.
+
+### 75.1 Escopo implementado
+
+- Criada rota protegida `GET /api/cron/hub-vendas-recuperar-filas` para executar manutencao segura sem POST Digisac.
+- Criada rota protegida `GET /api/cron/hub-vendas-status` para status read-only sem PII.
+- Adicionados crons em `vercel.json` para preparar, processar, recuperar filas abandonadas e coletar status.
+- Ajustados os crons existentes de preparacao/processamento para logs resumidos e alertas sanitizados.
+- Adicionada leitura de `limite_por_execucao`, `limite_diario_por_conexao`, `modo_ativacao_gradual`, `reserva_timeout_minutos` e `envio_timeout_minutos` em `hub_vendas_config.parametros`.
+- Adicionado log read-only de resposta recebida em ticket de recuperacao ja enviada, sem criar lead/fila nova e sem bloquear conversao caso a consulta auxiliar falhe.
+
+### 75.2 Banco e recuperacao
+
+- Migration `20260731120000_hub_vendas_recuperacao_crons_status.sql` adicionou parametros graduais, indices parciais para filas abandonadas e RPCs `hub_vendas_recuperar_filas_abandonadas` e `hub_vendas_status_contadores`.
+- Migration complementar `20260731162000_hub_vendas_recuperacao_limite_total.sql` garantiu que `p_limite` seja limite global por execucao da recuperacao, nao limite por bloco de status.
+- RPC de recuperacao libera somente `reservado` antigo sem `requisicao_iniciada_em` e sem `digisac_message_id`, retornando a fila para `agendado`.
+- Fila em `enviando` antiga sem `digisac_message_id` vai para `resultado_incerto`; nao ha retry cego.
+- Fila em `enviando` antiga com `digisac_message_id` pode ser reconciliada como `enviado`.
+- Todas as novas RPCs foram aplicadas com `SECURITY DEFINER`, `SET search_path = pg_catalog, public`, revoke para `PUBLIC/anon/authenticated` e grant para `service_role`.
+
+### 75.3 Estado real confirmado
+
+- Migrations aplicadas no Supabase como `hub_vendas_recuperacao_crons_status` e `hub_vendas_recuperacao_limite_total`.
+- Config final confirmada: `automacao.ativa=false`, `automacao.pausada=true`.
+- Parametros finais confirmados incluem `limite_diario_por_conexao=2`, `limite_por_execucao=1`, `modo_ativacao_gradual=true`, `reserva_timeout_minutos=10` e `envio_timeout_minutos=15`.
+- Status real da fila no momento da validacao: 3 registros `enviado`, sendo 1 `enviado_hoje`; dry-run do RPC de recuperacao retornou vazio porque nao havia fila abandonada elegivel.
+- Indices confirmados: `idx_hub_vendas_fila_reservado_abandonado`, `idx_hub_vendas_fila_enviando_abandonado`, `idx_hub_vendas_fila_status_updated`.
+
+### 75.4 Validacoes
+
+- Migration validada primeiro com `BEGIN; ... ROLLBACK;` via MCP Supabase e depois aplicada via MCP.
+- MCP confirmou RPCs novas com `SECURITY DEFINER` e `search_path=pg_catalog, public`.
+- `npm run test -- src/lib/digisac/hub-vendas src/lib/digisac/hub-vendas-fase1-migration.test.ts src/app/api/cron/hub-vendas-preparar-fila/route.test.ts src/app/api/cron/hub-vendas-processar-fila/route.test.ts src/app/api/cron/hub-vendas-recuperar-filas/route.test.ts src/app/api/cron/hub-vendas-status/route.test.ts src/app/api/digisac/webhook/route.test.ts --silent` passou com 17 arquivos e 124 testes.
+- `npx tsc --noEmit --pretty false` passou.
+- ESLint direcionado passou nos arquivos Hub/Vendas e crons alterados.
+- `npm run build` falhou primeiro por rede bloqueada em Google Fonts e depois por `RESEND_API_KEY` ausente no ambiente local; passou na reexecucao com rede liberada e `RESEND_API_KEY` dummy local, mantendo avisos conhecidos de rotas dinamicas por `cookies` e rate limit fail-open sem Upstash local.
+
+### 75.5 Pendencias e riscos
+
+- Os crons de `vercel.json` usam horarios UTC; a regra operacional interna continua lendo `timezone=America/Sao_Paulo`.
+- A disponibilidade de frequencia sub-horaria depende do plano/configuracao real do projeto Vercel e precisa ser confirmada no deploy.
+- Nao houve chamada HTTP real em producao dos novos endpoints protegidos por `CRON_SECRET`.
+- Nao houve envio real Digisac nesta rodada.
+- A ativacao global segue pendente de decisao operacional explicita.

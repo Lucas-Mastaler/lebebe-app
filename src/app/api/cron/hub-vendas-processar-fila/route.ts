@@ -46,6 +46,7 @@ export async function GET(request: NextRequest) {
   const erroAuth = validarCronSecret(request)
   if (erroAuth) return erroAuth
 
+  const inicio = Date.now()
   try {
     const { filaId, error } = parseFilaId(request)
     if (error) return NextResponse.json({ ok: false, error }, { status: 400 })
@@ -66,11 +67,23 @@ export async function GET(request: NextRequest) {
       modoTeste,
       modoSimulacao,
     })
+    console.log(
+      `[HUB VENDAS CRON] processamento concluido reservadas=${resultado.totalReservado} enviadas=${resultado.totalEnviado} canceladas=${resultado.totalCancelado} incertas=${resultado.totalResultadoIncerto} retry=${resultado.totalRetryAgendado} erro=${resultado.totalErro} analiseManual=${resultado.totalAnaliseManual} duracaoMs=${Date.now() - inicio}`
+    )
+    if (!resultado.automacaoAtiva || resultado.pausada) {
+      console.warn(`[HUB VENDAS ALERTA] automacao pausada ativa=${resultado.automacaoAtiva} pausada=${resultado.pausada} motivo=${resultado.motivo ?? 'n/a'}`)
+    }
+    if (resultado.totalResultadoIncerto > 0) {
+      console.error(`[HUB VENDAS ALERTA] resultado_incerto total=${resultado.totalResultadoIncerto}`)
+    }
+    if (resultado.totalAnaliseManual > 0) {
+      console.error(`[HUB VENDAS ALERTA] placeholder bloqueado ou analise manual total=${resultado.totalAnaliseManual}`)
+    }
 
     return NextResponse.json(resultado)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'erro_desconhecido'
-    console.error(`[HUB VENDAS ENVIO] erro geral=${message}`)
+    console.error(`[HUB VENDAS ALERTA] cron falhou rota=processar-fila erro=${message} duracaoMs=${Date.now() - inicio}`)
     return NextResponse.json({ ok: false, error: 'erro_processamento_fila' }, { status: 500 })
   }
 }

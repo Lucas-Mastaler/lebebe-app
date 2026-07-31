@@ -40,6 +40,8 @@ type ConfigParametros = {
   horario_inicio: string
   horario_fim: string
   limite_diario_por_conexao: number
+  limite_por_execucao: number
+  modo_ativacao_gradual: boolean
   intervalo_min_segundos: number
   intervalo_max_segundos: number
   elegibilidade_horas: number
@@ -105,6 +107,8 @@ const CONFIG_PADRAO_PARAMETROS: ConfigParametros = {
   horario_inicio: '09:00',
   horario_fim: '18:00',
   limite_diario_por_conexao: 15,
+  limite_por_execucao: 1,
+  modo_ativacao_gradual: true,
   intervalo_min_segundos: 180,
   intervalo_max_segundos: 300,
   elegibilidade_horas: 48,
@@ -157,6 +161,8 @@ function lerParametros(valor: unknown): ConfigParametros {
       record.limite_diario_por_conexao ?? record.limite_diario,
       CONFIG_PADRAO_PARAMETROS.limite_diario_por_conexao
     ),
+    limite_por_execucao: asNumber(record.limite_por_execucao, CONFIG_PADRAO_PARAMETROS.limite_por_execucao),
+    modo_ativacao_gradual: asBoolean(record.modo_ativacao_gradual, CONFIG_PADRAO_PARAMETROS.modo_ativacao_gradual),
     intervalo_min_segundos: asNumber(
       record.intervalo_min_segundos ?? record.intervalo_min_seg,
       CONFIG_PADRAO_PARAMETROS.intervalo_min_segundos
@@ -635,6 +641,9 @@ export async function prepararFilaRecuperacaoHubVendas({
   console.log('[HUB VENDAS PREPARACAO] execucao iniciada')
 
   const config = await buscarConfig(supabase)
+  const limiteEfetivo = leadId
+    ? Math.min(Math.max(Math.floor(limite), 1), 10)
+    : Math.min(Math.max(Math.floor(limite), 1), Math.max(Math.floor(config.parametros.limite_por_execucao), 1))
   const resumo: ResultadoPreparacaoHubVendas = {
     ok: true,
     automacaoAtiva: config.automacao.ativa,
@@ -675,7 +684,7 @@ export async function prepararFilaRecuperacaoHubVendas({
 
   const leads = leadId
     ? [await buscarLeadPorId(supabase, leadId)].filter((lead): lead is HubVendasLeadPendente => Boolean(lead))
-    : await buscarLeadsCandidatos(supabase, config.parametros, agora, limite)
+    : await buscarLeadsCandidatos(supabase, config.parametros, agora, limiteEfetivo)
 
   if (leadId && leads.length === 0) {
     resumo.detalheTeste = {

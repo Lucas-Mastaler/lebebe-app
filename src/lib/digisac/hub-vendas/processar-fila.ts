@@ -59,6 +59,7 @@ type ConfigAutomacao = {
 
 type ConfigParametros = {
   pausa_automatica_erros: number
+  limite_por_execucao: number
 }
 
 type MensagemRecuperacao = {
@@ -163,6 +164,7 @@ function lerParametros(valor: unknown): ConfigParametros {
   const record = asRecord(valor)
   return {
     pausa_automatica_erros: asNumber(record.pausa_automatica_erros, 3),
+    limite_por_execucao: asNumber(record.limite_por_execucao, 1),
   }
 }
 
@@ -758,8 +760,11 @@ export async function processarFilaRecuperacaoHubVendas({
   agora?: Date
   workerId?: string
 } = {}): Promise<ResultadoProcessamentoHubVendas> {
-  const limiteSeguro = Math.min(Math.max(Math.floor(limite), 1), LIMITE_MAXIMO)
   const config = await buscarConfig(supabase)
+  const limiteConfig = filaId
+    ? LIMITE_MAXIMO
+    : Math.min(Math.max(Math.floor(config.parametros.limite_por_execucao), 1), LIMITE_MAXIMO)
+  const limiteSeguro = Math.min(Math.max(Math.floor(limite), 1), limiteConfig)
   const resultado: ResultadoProcessamentoHubVendas = {
     ok: true,
     automacaoAtiva: config.automacao.ativa,

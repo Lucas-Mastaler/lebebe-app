@@ -39,6 +39,14 @@ describe('migration hub vendas fase 1', () => {
     path.join(process.cwd(), 'supabase', 'migrations', '20260730120000_hub_vendas_adiciona_nome_mensagem_recuperacao.sql'),
     'utf8'
   )
+  const recuperacaoCronsSql = readFileSync(
+    path.join(process.cwd(), 'supabase', 'migrations', '20260731120000_hub_vendas_recuperacao_crons_status.sql'),
+    'utf8'
+  )
+  const recuperacaoLimiteTotalSql = readFileSync(
+    path.join(process.cwd(), 'supabase', 'migrations', '20260731162000_hub_vendas_recuperacao_limite_total.sql'),
+    'utf8'
+  )
 
   function trechoEntre(inicio: string, fim: string) {
     const inicioIndex = sql.indexOf(inicio)
@@ -210,6 +218,44 @@ describe('migration hub vendas fase 1', () => {
     expect(mensagemNomeSql).not.toContain('INSERT INTO public.hub_vendas_recuperacao_fila')
     expect(mensagemNomeSql).not.toContain('/messages')
     expect(mensagemNomeSql).not.toContain('DIGISAC_TOKEN')
+  })
+
+  it('cria manutencao segura de filas abandonadas sem reenvio automatico', () => {
+    expect(recuperacaoCronsSql).toContain('CREATE OR REPLACE FUNCTION public.hub_vendas_recuperar_filas_abandonadas')
+    expect(recuperacaoCronsSql).toContain('p_reserva_timeout_minutos integer DEFAULT 10')
+    expect(recuperacaoCronsSql).toContain('p_envio_timeout_minutos integer DEFAULT 15')
+    expect(recuperacaoCronsSql).toContain('FOR UPDATE SKIP LOCKED')
+    expect(recuperacaoCronsSql).toContain("fila.status = 'reservado'")
+    expect(recuperacaoCronsSql).toContain('fila.requisicao_iniciada_em IS NULL')
+    expect(recuperacaoCronsSql).toContain('fila.digisac_message_id IS NULL')
+    expect(recuperacaoCronsSql).toContain("status = 'agendado'")
+    expect(recuperacaoCronsSql).toContain("status = 'resultado_incerto'")
+    expect(recuperacaoCronsSql).toContain("status = 'enviado'")
+    expect(recuperacaoCronsSql).toContain('digisac_message_id IS NOT NULL')
+    expect(recuperacaoCronsSql).toContain('hub_vendas_status_contadores')
+    expect(recuperacaoCronsSql).toContain('idx_hub_vendas_fila_reservado_abandonado')
+    expect(recuperacaoCronsSql).toContain('idx_hub_vendas_fila_enviando_abandonado')
+    expect(recuperacaoCronsSql).toContain('limite_por_execucao')
+    expect(recuperacaoCronsSql).toContain('modo_ativacao_gradual')
+    expect(recuperacaoCronsSql).toContain('FROM PUBLIC, anon, authenticated')
+    expect(recuperacaoCronsSql).toContain('TO service_role')
+    expect(recuperacaoCronsSql).not.toContain('/messages')
+    expect(recuperacaoCronsSql).not.toContain('/contacts')
+    expect(recuperacaoCronsSql).not.toContain('DIGISAC_TOKEN')
+  })
+
+  it('mantem limite global na recuperacao de filas abandonadas', () => {
+    expect(recuperacaoLimiteTotalSql).toContain('CREATE OR REPLACE FUNCTION public.hub_vendas_recuperar_filas_abandonadas')
+    expect(recuperacaoLimiteTotalSql).toContain('v_restante integer')
+    expect(recuperacaoLimiteTotalSql).toContain('GET DIAGNOSTICS v_processadas = ROW_COUNT')
+    expect(recuperacaoLimiteTotalSql).toContain('v_restante := v_restante - v_processadas')
+    expect(recuperacaoLimiteTotalSql).toContain('LIMIT v_restante')
+    expect(recuperacaoLimiteTotalSql).toContain('FOR UPDATE SKIP LOCKED')
+    expect(recuperacaoLimiteTotalSql).toContain('FROM PUBLIC, anon, authenticated')
+    expect(recuperacaoLimiteTotalSql).toContain('TO service_role')
+    expect(recuperacaoLimiteTotalSql).not.toContain('/messages')
+    expect(recuperacaoLimiteTotalSql).not.toContain('/contacts')
+    expect(recuperacaoLimiteTotalSql).not.toContain('DIGISAC_TOKEN')
   })
 
   it('ativa rls sem policies para authenticated e restringe acesso operacional', () => {

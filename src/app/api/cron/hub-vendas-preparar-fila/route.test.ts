@@ -64,7 +64,7 @@ describe('/api/cron/hub-vendas-preparar-fila', () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ ok: true, automacaoAtiva: false, totalFilaCriada: 0 })
     expect(prepararFilaRecuperacaoHubVendasMock).toHaveBeenCalledWith({
-      limite: 200,
+      limite: 10,
       leadId: undefined,
       modoTeste: false,
       modoSimulacao: false,

@@ -56,6 +56,7 @@ export type TipoRespostaSugerida =
   | 'reagendamento_dry_run'
   | 'reagendamento_confirmado'
   | 'transferido_humano_erro_reagendamento'
+  | 'transferido_humano_outro_assunto'
   | 'bloqueio_cliente_retira_alteracao'
   | 'erro_tecnico_busca_agenda';
 
@@ -243,8 +244,29 @@ export function respostaEscolhaInvalida(): RespostaSugerida {
 
 export function respostaPedidoConfirmadoConfirmarEntrega(dataEntrega: string): RespostaSugerida {
   return {
-    texto: `Perfeito. Sua entrega está agendada para ${dataEntrega}.\n\nA entrega e montagem acontecem no mesmo dia, em horário comercial. Nossa equipe entra em contato próximo da data.\n\nTe ajudo em algo mais?`,
+    texto: `Perfeito. Sua entrega está agendada para ${dataEntrega}.\n\nA entrega e montagem acontecem no mesmo dia, em horário comercial. Nossa equipe entra em contato próximo da data.\n\nVocê deseja manter esta data, tentar antecipar, escolher uma data posterior ou falar com nossa equipe?\n\n1 - Manter a data atual\n2 - Tentar antecipar\n3 - Escolher uma data posterior\n4 - Outro assunto`,
     tipo: 'pedido_confirmado_confirmar',
+  };
+}
+
+export function respostaAguardandoDataInicialAposConfirmacao(acao: 'adiantar' | 'postergar'): RespostaSugerida {
+  if (acao === 'adiantar') {
+    return {
+      texto: 'Certo. A partir de qual data você gostaria que eu começasse a procurar uma possibilidade de antecipação?\n\nInforme a data no formato dia, mês e ano. Por exemplo: 10/08/2026.',
+      tipo: 'aguardando_data_desejada',
+    };
+  }
+
+  return {
+    texto: 'Certo. A partir de qual data você gostaria que eu começasse a procurar uma nova data para depois da entrega atual?\n\nInforme a data no formato dia, mês e ano. Por exemplo: 01/09/2026.',
+    tipo: 'aguardando_data_desejada',
+  };
+}
+
+export function respostaTransferidoHumanoOutroAssunto(): RespostaSugerida {
+  return {
+    texto: 'Certo. Vou encaminhar seu atendimento para nossa equipe continuar por aqui.',
+    tipo: 'transferido_humano_outro_assunto',
   };
 }
 
@@ -350,7 +372,7 @@ export function respostaDataInvalidaAdiantar(): RespostaSugerida {
 
 export function respostaDataInvalidaPostergar(): RespostaSugerida {
   return {
-    texto: 'Para postergar, preciso de uma data igual ou posterior à entrega atual. Pode me enviar outra data?',
+    texto: 'Para postergar, preciso de uma data posterior à entrega atual. Pode me enviar outra data?',
     tipo: 'data_invalida_postergar',
   };
 }

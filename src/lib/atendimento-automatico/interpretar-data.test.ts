@@ -148,7 +148,18 @@ describe('validarDataDesejadaParaAcao', () => {
       hoje: HOJE,
     });
     expect(r.valida).toBe(false);
-    if (!r.valida) expect(r.motivo).toBe('data_desejada_anterior_entrega_atual');
+    if (!r.valida) expect(r.motivo).toBe('data_desejada_nao_posterior_entrega_atual');
+  });
+
+  it('postergar invalido: data igual a entrega atual', () => {
+    const r = validarDataDesejadaParaAcao({
+      isoDesejada: '2026-07-17',
+      isoEntregaAtual: '2026-07-17',
+      acao: 'postergar',
+      hoje: HOJE,
+    });
+    expect(r.valida).toBe(false);
+    if (!r.valida) expect(r.motivo).toBe('data_desejada_nao_posterior_entrega_atual');
   });
 
   it('data antes de D+2 invalida', () => {

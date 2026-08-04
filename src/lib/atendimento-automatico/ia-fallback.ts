@@ -8,6 +8,7 @@ export type AcaoIA =
   | 'negar'
   | 'adiantar'
   | 'postergar'
+  | 'manter_data'
   | 'endereco_correto'
   | 'endereco_incorreto'
   | 'data_informada'
@@ -46,6 +47,7 @@ const ACOES_VALIDAS: ReadonlySet<string> = new Set<AcaoIA>([
   'negar',
   'adiantar',
   'postergar',
+  'manter_data',
   'endereco_correto',
   'endereco_incorreto',
   'data_informada',
@@ -373,10 +375,12 @@ function acoesPermitidasPorEstado(estado: string): AcaoIA[] {
       return ['confirmar', 'negar', 'transferir_humano', 'pedir_esclarecimento'];
     case 'aguardando_escolha_acao':
       return ['adiantar', 'postergar', 'transferir_humano', 'pedir_esclarecimento'];
+    case 'aguardando_acao_apos_confirmacao':
+      return ['manter_data', 'adiantar', 'postergar', 'transferir_humano', 'pedir_esclarecimento'];
     case 'aguardando_confirmacao_endereco':
       return ['endereco_correto', 'endereco_incorreto', 'transferir_humano', 'pedir_esclarecimento'];
     case 'aguardando_data_desejada':
-      return ['data_informada', 'pedir_esclarecimento', 'transferir_humano'];
+      return ['data_informada', 'manter_data', 'adiantar', 'postergar', 'pedir_esclarecimento', 'transferir_humano'];
     case 'datas_encontradas':
       return ['opcao_data_escolhida', 'pedir_esclarecimento', 'transferir_humano'];
     case 'aguardando_confirmacao_reagendamento':
@@ -476,6 +480,7 @@ export async function tentarIAFallback(
     negar: 'negar',
     adiantar: 'adiantar',
     postergar: 'postergar',
+    manter_data: 'manter_data',
     endereco_correto: 'confirmar',
     endereco_incorreto: 'negar',
     data_informada: 'data_informada',

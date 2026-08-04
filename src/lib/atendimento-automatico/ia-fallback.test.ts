@@ -318,4 +318,56 @@ describe('ia-fallback', () => {
       expect(iaFallbackHabilitada()).toBe(true);
     });
   });
+
+  describe('menu apos confirmacao', () => {
+    it.each([
+      ['uma data mais cedo seria melhor', 'adiantar'],
+      ['prefiro receber mais adiante', 'postergar'],
+    ])('restringe a IA ao enum controlado para %s', async (mensagem, acao) => {
+      vi.stubEnv('ATENDIMENTO_POSVENDA_IA_FALLBACK_ENABLED', 'true');
+      vi.stubEnv('ATENDIMENTO_POSVENDA_IA_FALLBACK_API_KEY', 'test-key');
+      vi.stubEnv('ATENDIMENTO_POSVENDA_IA_FALLBACK_PROVIDER', 'deepseek');
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: JSON.stringify({
+            acao,
+            confianca: 'alta',
+            mensagem_cliente: 'intencao sobre data',
+            motivo: 'classificacao controlada',
+            dados_extraidos: {},
+          }) } }],
+        }),
+      });
+
+      const { tentarIAFallback } = await import('./ia-fallback');
+      const resultado = await tentarIAFallback('aguardando_acao_apos_confirmacao', mensagem, null);
+      expect(resultado.acao_mapeada).toBe(acao);
+      expect(resultado.dados_extraidos).toEqual({});
+    });
+
+    it('baixa confianca nao produz acao executavel', async () => {
+      vi.stubEnv('ATENDIMENTO_POSVENDA_IA_FALLBACK_ENABLED', 'true');
+      vi.stubEnv('ATENDIMENTO_POSVENDA_IA_FALLBACK_API_KEY', 'test-key');
+      vi.stubEnv('ATENDIMENTO_POSVENDA_IA_FALLBACK_PROVIDER', 'deepseek');
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: JSON.stringify({
+            acao: 'adiantar',
+            confianca: 'baixa',
+            mensagem_cliente: 'ambigua',
+            motivo: 'sem certeza',
+            dados_extraidos: { data: '2099-01-01' },
+          }) } }],
+        }),
+      });
+
+      const { tentarIAFallback } = await import('./ia-fallback');
+      const resultado = await tentarIAFallback('aguardando_acao_apos_confirmacao', 'não sei bem', null);
+      expect(resultado.acao_mapeada).toBeNull();
+      expect(resultado.erro_codigo).toBe('confianca_baixa');
+      expect(resultado.metadata_ia).toMatchObject({ ia_fallback_usada_para_resposta: false });
+    });
+  });
 });

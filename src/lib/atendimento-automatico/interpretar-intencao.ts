@@ -166,6 +166,66 @@ export function interpretarAcaoAlteracao(texto: string): 'adiantar' | 'postergar
   return 'ambigua';
 }
 
+export type IntencaoAposConfirmacao =
+  | 'manter_data'
+  | 'adiantar'
+  | 'postergar'
+  | 'outro_assunto'
+  | 'ambigua';
+
+export type OrigemIntencaoAposConfirmacao = 'numero' | 'palavra_chave' | 'nao_identificada';
+
+export function identificarIntencaoAposConfirmacao(texto: string): {
+  intencao: IntencaoAposConfirmacao;
+  origem: OrigemIntencaoAposConfirmacao;
+} {
+  const n = normalizar(texto);
+
+  const opcoesNumericas: Record<string, Exclude<IntencaoAposConfirmacao, 'ambigua'>> = {
+    '1': 'manter_data',
+    '2': 'adiantar',
+    '3': 'postergar',
+    '4': 'outro_assunto',
+  };
+  if (opcoesNumericas[n]) {
+    return { intencao: opcoesNumericas[n], origem: 'numero' };
+  }
+
+  const padroesOutroAssunto = [
+    /\b(outro assunto|outra duvida|atendente|humano|falar com alguem|falar com uma pessoa)\b/,
+    /\b(preciso de ajuda|quero ajuda|falar com a equipe)\b/,
+  ];
+  if (padroesOutroAssunto.some((padrao) => padrao.test(n))) {
+    return { intencao: 'outro_assunto', origem: 'palavra_chave' };
+  }
+
+  const padroesManter = [
+    /\b(manter|confirmo|pode manter|pode deixar assim|deixa como esta|deixar como esta)\b/,
+    /\b(essa data esta boa|a data esta boa|nao quero alterar|nao quero mais mudar|esta certo)\b/,
+  ];
+  if (padroesManter.some((padrao) => padrao.test(n))) {
+    return { intencao: 'manter_data', origem: 'palavra_chave' };
+  }
+
+  const padroesAdiantar = [
+    /\b(antecipar|adiantar|antes|data anterior|data mais proxima|quanto antes)\b/,
+    /\b(ver uma data mais proxima|tem como ser antes|da para antecipar)\b/,
+  ];
+  if (padroesAdiantar.some((padrao) => padrao.test(n))) {
+    return { intencao: 'adiantar', origem: 'palavra_chave' };
+  }
+
+  const padroesPostergar = [
+    /\b(postergar|adiar|depois|mais para frente|data posterior|data futura|mais tarde)\b/,
+    /\b(nao posso receber nessa data|remarcar para depois)\b/,
+  ];
+  if (padroesPostergar.some((padrao) => padrao.test(n))) {
+    return { intencao: 'postergar', origem: 'palavra_chave' };
+  }
+
+  return { intencao: 'ambigua', origem: 'nao_identificada' };
+}
+
 // ---------------------------------------------------------------------------
 // Contador de tentativas inválidas por estado (helper puro, sem I/O)
 // ---------------------------------------------------------------------------

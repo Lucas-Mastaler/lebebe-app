@@ -10,6 +10,13 @@ export async function enviarMensagemDigisac(params: {
   texto: string;
 }): Promise<ResultadoEnvioMensagem> {
   try {
+    const usuarioAutomacaoId = process.env.DIGISAC_BOT_USER_ID;
+    if (!usuarioAutomacaoId) {
+      console.error('[DIGISAC-AUTO-REPLY] usuario automatico nao configurado; envio bloqueado');
+      return { ok: false, erro: 'DIGISAC_BOT_USER_ID_nao_configurado' };
+    }
+
+    console.log('[DIGISAC-AUTO-REPLY] usuario automatico configurado=true autoria=payload userId');
     const response = await fetchDigisacRaw('/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -19,6 +26,7 @@ export async function enviarMensagemDigisac(params: {
         contactId: params.contactId,
         ticketId: params.ticketId,
         fromMe: true,
+        userId: usuarioAutomacaoId,
       }),
     });
 
@@ -27,7 +35,7 @@ export async function enviarMensagemDigisac(params: {
     if (!response.ok) {
       return {
         ok: false,
-        erro: `Erro ao enviar mensagem Digisac. Status=${response.status}. Body=${bodyText.substring(0, 200)}`,
+        erro: `Erro ao enviar mensagem Digisac. Status=${response.status}`,
       };
     }
 

@@ -1164,3 +1164,37 @@ Status: implementado e validado em testes focados. Escopo limitado ao `geo_cache
 - Validado com testes focados de cache e Mere, ESLint direcionado e `npx tsc --noEmit`.
 
 ---
+
+## 2026-08-04 - Menu apos confirmacao da entrega e autoria automatica DigiSac
+
+### Diagnostico confirmado
+
+- O fluxo `confirmar_entrega` terminava em `pedido_confirmado` depois da resposta positiva, com a pergunta generica "Te ajudo em algo mais?".
+- O fluxo `alterar_entrega` ja preservava em `metadata` o grupo selecionado, endereco, data atual, eventos, calendar, equipe e tempo de servico, mas entrava por `aguardando_escolha_acao` e depois confirmava o endereco.
+- A tabela real `atendimento_automatico_sessoes` usa `estado text` e `metadata jsonb`, sem constraint fechada para os estados; nao foi necessaria migration.
+- A API DigiSac confirmou que o token configurado localmente pertence a um usuario diferente do usuario de automacao. Uma mensagem automatica existente tinha `userId` igual ao usuario do token. O envio por `POST /messages` nao informava `userId`.
+- O usuario `Z AUTOMACAO LEBEBE` e o departamento `POS VENDA` foram confirmados na mesma conta informada. Associacao direta usuario-departamento nao e exposta pelos payloads consultados e permanece nao confirmada.
+
+### Implementacao
+
+- Entrega normal confirmada entra em `aguardando_acao_apos_confirmacao` e recebe o menu manter/antecipar/postergar/outro assunto.
+- `CLIENTE RETIRA` preserva o encerramento em `pedido_confirmado`, proxima quinta estritamente posterior, filial Hauer e mensagem propria sem entrega/montagem.
+- `identificarIntencaoAposConfirmacao` classifica primeiro numero exato e depois palavras-chave. Se nao resolver, reutiliza `tentarIAFallback` com enum fechado. Baixa confianca no menu resulta em transferencia segura.
+- Antecipar/postergar reutiliza o grupo salvo e entra direto em `aguardando_data_desejada`, sem nova consulta por CPF, sem reconfirmar pedido e sem reconfirmar endereco.
+- Durante a pergunta da data, o cliente pode manter a data, trocar entre antecipacao/postergacao ou pedir humano.
+- Postergação agora exige data estritamente posterior a entrega atual; data igual e rejeitada.
+- O envio automatico inclui `userId` lido de `DIGISAC_BOT_USER_ID`. Ausencia da env bloqueia o envio com erro controlado. A atribuicao do ticket/departamento nao foi alterada.
+- Logs adicionados registram estado, intencao, origem da classificacao, reutilizacao de contexto, destino da transicao e fonte de autoria, sem CPF, endereco, texto integral ou credenciais.
+
+### Configuracao necessaria
+
+- `DIGISAC_BOT_USER_ID=dccc9334-ba37-452d-bee4-acec3eef7789`
+- A env local ja estava configurada com esse ID. A configuracao do ambiente de deploy precisa ser conferida antes da validacao real.
+
+### Nao alterado
+
+- Motor `/procurar-datas`, disponibilidade, ranking, OSRM/Haversine, opcoes 3 a 9 do menu inicial, regras de CPF, agrupamento, escrita Calendar/Sheets e departamento do chamado.
+
+### Validacao manual pendente
+
+- Executar uma unica conversa controlada apos deploy e confirmar que a mensagem aparece como `Z AUTOMACAO LEBEBE`. A API nao ofereceu documentacao OpenAPI publica que confirmasse previamente a precedencia de `userId` sobre a identidade do token.

@@ -679,7 +679,8 @@ describe('processarWebhookPosVenda - confirmacao de retirada CLIENTE RETIRA', ()
 
     const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
     const metadata = updateSessao?.data.metadata as Record<string, unknown>;
-    expect(updateSessao?.data.estado).toBe('pedido_confirmado');
+    expect(updateSessao?.data.estado).toBe('aguardando_acao_apos_confirmacao');
+    expect(metadata.menu_apos_confirmacao_ativo).toBe(true);
     expect(metadata.resposta_sugerida_tipo).toBe('pedido_confirmado_confirmar');
     expect(metadata.resposta_sugerida).toContain('Sua entrega está agendada');
     expect(metadata.resposta_sugerida).toContain('entrega e montagem');
@@ -1310,5 +1311,199 @@ describe('processarWebhookPosVenda - consistencia de colunas pedido_confirmado e
 
     const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
     expect(updateSessao?.data.pedido_confirmado).toBe(true);
+  });
+});
+
+describe('processarWebhookPosVenda - menu apos confirmacao da entrega', () => {
+  it('entrega normal confirmada exibe o novo menu', async () => {
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'confirmar_entrega',
+    });
+
+    await processarWebhookPosVenda(payload('sim', 'msg-menu-apos-confirmacao'));
+
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('aguardando_acao_apos_confirmacao');
+    expect(updateSessao?.data.metadata).toMatchObject({
+      pedido_confirmado: true,
+      menu_apos_confirmacao_ativo: true,
+      contexto_pedido_reutilizavel: true,
+    });
+    expect(String((updateSessao?.data.metadata as Record<string, unknown>).resposta_sugerida)).toContain('1 - Manter a data atual');
+    expect(String((updateSessao?.data.metadata as Record<string, unknown>).resposta_sugerida)).toContain('4 - Outro assunto');
+  });
+
+  it('CLIENTE RETIRA preserva encerramento proprio e nao entra no novo menu', async () => {
+    const grupoRetira = { ...grupoBase(), equipe_agenda: '7.3- CLIENTE RETIRA LOJA/SAI DO C.D', data_entrega: '29/07/2026' };
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'confirmar_entrega',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoRetira],
+      },
+    });
+
+    await processarWebhookPosVenda(payload('sim', 'msg-confirma-retirada-regressao'));
+
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('pedido_confirmado');
+    expect(updateSessao?.data.metadata).toMatchObject({
+      fluxo_cliente_retira: true,
+      data_disponivel_retirada: '30/07/2026',
+      filial_retirada: 'Hauer',
+      ciclo_confirmacao_retirada_encerrado: true,
+      resposta_sugerida_tipo: 'pedido_confirmado_retirada',
+    });
+    expect(String((updateSessao?.data.metadata as Record<string, unknown>).resposta_sugerida)).not.toContain('Tentar antecipar');
+  });
+
+  it('pedido negado nao entra no menu', async () => {
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_confirmacao_pedido',
+      tipo_solicitacao: 'confirmar_entrega',
+    });
+
+    await processarWebhookPosVenda(payload('não', 'msg-pedido-negado-sem-menu'));
+
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('aguardando_novo_documento_ou_esclarecimento');
+  });
+
+  it.each(['1', 'manter', 'pode deixar assim'])(
+    'mantem a data com resposta %s sem alterar evento',
+    async (texto) => {
+      sessaoAtual = sessaoBase({
+        estado: 'aguardando_acao_apos_confirmacao',
+        tipo_solicitacao: 'confirmar_entrega',
+      });
+
+      await processarWebhookPosVenda(payload(texto, `msg-manter-${texto}`));
+
+      const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+      expect(updateSessao?.data.estado).toBe('pedido_confirmado');
+      expect(updateSessao?.data.metadata).toMatchObject({ ciclo_confirmacao_entrega_encerrado: true });
+      expect(inserts.some((i) => i.table === 'atendimento_automatico_eventos' && i.data.tipo === 'reagendamento_confirmado')).toBe(false);
+    },
+  );
+
+  it.each(['2', 'adiantar', 'quero uma data antes'])(
+    'entra direto na pergunta de data para antecipar com %s',
+    async (texto) => {
+      sessaoAtual = sessaoBase({
+        estado: 'aguardando_acao_apos_confirmacao',
+        tipo_solicitacao: 'confirmar_entrega',
+      });
+
+      await processarWebhookPosVenda(payload(texto, `msg-antecipar-${texto}`));
+
+      const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+      expect(updateSessao?.data.estado).toBe('aguardando_data_desejada');
+      expect(updateSessao?.data.tipo_solicitacao).toBe('alterar_entrega');
+      expect(updateSessao?.data.endereco_confirmado).toBe(true);
+      expect(updateSessao?.data.metadata).toMatchObject({
+        acao_alteracao: 'adiantar',
+        contexto_reutilizado_apos_confirmacao: true,
+        entrada_fluxo_opcao_2: 'aguardando_data_desejada',
+      });
+      expect(String((updateSessao?.data.metadata as Record<string, unknown>).resposta_sugerida)).toContain('possibilidade de antecipação');
+      expect(buscarAgendamentosPorDocumento).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['3', 'adiar', 'quero uma data depois'])(
+    'entra direto na pergunta de data para postergar com %s',
+    async (texto) => {
+      sessaoAtual = sessaoBase({
+        estado: 'aguardando_acao_apos_confirmacao',
+        tipo_solicitacao: 'confirmar_entrega',
+      });
+
+      await processarWebhookPosVenda(payload(texto, `msg-postergar-${texto}`));
+
+      const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+      expect(updateSessao?.data.estado).toBe('aguardando_data_desejada');
+      expect(updateSessao?.data.metadata).toMatchObject({ acao_alteracao: 'postergar' });
+      expect(String((updateSessao?.data.metadata as Record<string, unknown>).resposta_sugerida)).toContain('depois da entrega atual');
+      expect(buscarAgendamentosPorDocumento).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['4', 'quero falar com alguém', 'assunto sem relação com a entrega'])(
+    'encaminha com seguranca para humano com %s',
+    async (texto) => {
+      sessaoAtual = sessaoBase({
+        estado: 'aguardando_acao_apos_confirmacao',
+        tipo_solicitacao: 'confirmar_entrega',
+      });
+
+      await processarWebhookPosVenda(payload(texto, `msg-humano-${texto}`));
+
+      const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+      expect(updateSessao?.data.estado).toBe('transferido_humano');
+      expect(updateSessao?.data.status).toBe('transferido_humano');
+    },
+  );
+
+  it('ausencia do grupo salvo usa fallback seguro', async () => {
+    sessaoAtual = sessaoBase({
+      estado: 'aguardando_acao_apos_confirmacao',
+      tipo_solicitacao: 'confirmar_entrega',
+      metadata: { grupos_agendamento: [], grupo_agendamento_selecionado: null },
+    });
+
+    await processarWebhookPosVenda(payload('2', 'msg-contexto-ausente'));
+
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('transferido_humano');
+    expect(updateSessao?.data.metadata).toMatchObject({ motivo_transferencia_humano: 'contexto_pedido_ausente' });
+  });
+});
+
+describe('processarWebhookPosVenda - comandos durante pergunta da data inicial', () => {
+  function sessaoAguardandoData(acao: 'adiantar' | 'postergar') {
+    return sessaoBase({
+      estado: 'aguardando_data_desejada',
+      tipo_solicitacao: 'alterar_entrega',
+      metadata: {
+        total_grupos_agendamento: 1,
+        grupo_agendamento_selecionado: 1,
+        grupos_agendamento: [grupoBase()],
+        acao_alteracao: acao,
+      },
+    });
+  }
+
+  it('cancela alteracao e mantem data', async () => {
+    sessaoAtual = sessaoAguardandoData('adiantar');
+    await processarWebhookPosVenda(payload('deixa como está', 'msg-cancela-durante-data'));
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('pedido_confirmado');
+    expect(updateSessao?.data.metadata).toMatchObject({ alteracao_cancelada_pelo_cliente: true });
+  });
+
+  it('troca de antecipacao para postergacao', async () => {
+    sessaoAtual = sessaoAguardandoData('adiantar');
+    await processarWebhookPosVenda(payload('na verdade quero depois', 'msg-troca-para-depois'));
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('aguardando_data_desejada');
+    expect(updateSessao?.data.metadata).toMatchObject({ acao_alteracao: 'postergar', mudanca_intencao_durante_data: true });
+  });
+
+  it('troca de postergacao para antecipacao', async () => {
+    sessaoAtual = sessaoAguardandoData('postergar');
+    await processarWebhookPosVenda(payload('na verdade quero antes', 'msg-troca-para-antes'));
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.metadata).toMatchObject({ acao_alteracao: 'adiantar', mudanca_intencao_durante_data: true });
+  });
+
+  it('encaminha para humano durante a pergunta de data', async () => {
+    sessaoAtual = sessaoAguardandoData('postergar');
+    await processarWebhookPosVenda(payload('quero falar com alguém', 'msg-humano-durante-data'));
+    const updateSessao = updates.find((u) => u.table === 'atendimento_automatico_sessoes');
+    expect(updateSessao?.data.estado).toBe('transferido_humano');
+    expect(updateSessao?.data.status).toBe('transferido_humano');
   });
 });

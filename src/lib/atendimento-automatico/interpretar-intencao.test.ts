@@ -1,9 +1,39 @@
 import { describe, expect, it } from 'vitest';
 import {
   calcularTentativasInvalidas,
+  identificarIntencaoAposConfirmacao,
   interpretarAcaoAlteracao,
   interpretarConfirmacao,
 } from './interpretar-intencao';
+
+describe('identificarIntencaoAposConfirmacao', () => {
+  it.each([
+    ['1', 'manter_data', 'numero'],
+    ['manter', 'manter_data', 'palavra_chave'],
+    ['pode deixar assim', 'manter_data', 'palavra_chave'],
+    ['sim, pode manter', 'manter_data', 'palavra_chave'],
+    ['2', 'adiantar', 'numero'],
+    ['adiantar', 'adiantar', 'palavra_chave'],
+    ['quero uma data antes', 'adiantar', 'palavra_chave'],
+    ['quanto antes melhor', 'adiantar', 'palavra_chave'],
+    ['3', 'postergar', 'numero'],
+    ['adiar', 'postergar', 'palavra_chave'],
+    ['quero uma data depois', 'postergar', 'palavra_chave'],
+    ['não posso receber nessa data', 'postergar', 'palavra_chave'],
+    ['4', 'outro_assunto', 'numero'],
+    ['quero falar com alguém', 'outro_assunto', 'palavra_chave'],
+    ['preciso de ajuda', 'outro_assunto', 'palavra_chave'],
+  ])('classifica %s como %s por %s', (texto, intencao, origem) => {
+    expect(identificarIntencaoAposConfirmacao(texto)).toEqual({ intencao, origem });
+  });
+
+  it('mantém frase ambígua como não identificada', () => {
+    expect(identificarIntencaoAposConfirmacao('talvez, não sei')).toEqual({
+      intencao: 'ambigua',
+      origem: 'nao_identificada',
+    });
+  });
+});
 
 describe('interpretarConfirmacao', () => {
   it('sim => confirmar', () => expect(interpretarConfirmacao('sim')).toBe('confirmar'));

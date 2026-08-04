@@ -28,6 +28,7 @@ import {
   respostaManterDataAtual,
   respostaSemOpcoesPostergar,
   respostaDataAjustadaD2,
+  respostaAguardandoDataInicialAposConfirmacao,
   calcularDataDisponivelRetirada,
   diaSemanaDataBR,
   grupoEhClienteRetira,
@@ -122,6 +123,30 @@ describe('respostas', () => {
     const resposta = respostaPedidoConfirmadoConfirmarEntrega('17/07/2026');
     expect(resposta.tipo).toBe('pedido_confirmado_confirmar');
     expect(resposta.texto).toContain('17/07/2026');
+    expect(resposta.texto).toContain('1 - Manter a data atual');
+    expect(resposta.texto).toContain('2 - Tentar antecipar');
+    expect(resposta.texto).toContain('3 - Escolher uma data posterior');
+    expect(resposta.texto).toContain('4 - Outro assunto');
+  });
+
+  it('preserva mensagem e regra de CLIENTE RETIRA', () => {
+    const grupo = grupoBase({
+      equipe_agenda: '7.3- CLIENTE RETIRA LOJA/SAI DO C.D',
+      data_entrega: '29/07/2026',
+    });
+    const confirmacao = respostaConfirmarEntregaUnica(grupo);
+    const final = montarMensagemRetiradaDisponivel(calcularDataDisponivelRetirada(grupo.data_entrega));
+
+    expect(confirmacao.texto).toContain('Retirada agendada para: 30/07');
+    expect(final.tipo).toBe('pedido_confirmado_retirada');
+    expect(final.texto).toContain('filial do Hauer');
+    expect(final.texto).toContain('*Te ajudo em algo mais?*');
+    expect(final.texto).not.toContain('entrega e montagem');
+  });
+
+  it('pergunta a data inicial com texto especifico por intencao', () => {
+    expect(respostaAguardandoDataInicialAposConfirmacao('adiantar').texto).toContain('possibilidade de antecipação');
+    expect(respostaAguardandoDataInicialAposConfirmacao('postergar').texto).toContain('depois da entrega atual');
   });
 
   it('calcula retirada na proxima quinta apos quarta-feira da agenda', () => {

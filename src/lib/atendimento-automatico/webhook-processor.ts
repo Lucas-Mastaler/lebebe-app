@@ -25,6 +25,8 @@ import {
   respostaPedidoConfirmadoAlterarAcaoJaEscolhida,
   respostaPedidoConfirmadoAlterarEscolherAcao,
   respostaPedidoConfirmadoConfirmarEntrega,
+  respostaAguardandoDataInicialAposConfirmacao,
+  respostaTransferidoHumanoOutroAssunto,
   montarMensagemRetiradaDisponivel,
   respostaPedidoNaoLocalizado,
   respostaErroTecnicoBuscaAgenda,
@@ -58,7 +60,7 @@ import {
   type RespostaSugerida,
 } from './respostas';
 import { interpretarDataDesejada, validarDataDesejadaParaAcao } from './interpretar-data';
-import { calcularTentativasInvalidas, ehClienteRetiraEquipeAgenda, interpretarAcaoAlteracao, interpretarConfirmacao } from './interpretar-intencao';
+import { calcularTentativasInvalidas, ehClienteRetiraEquipeAgenda, identificarIntencaoAposConfirmacao, interpretarAcaoAlteracao, interpretarConfirmacao, type IntencaoAposConfirmacao, type OrigemIntencaoAposConfirmacao } from './interpretar-intencao';
 import { chaveRespostaAutomatica, processarEnvioAutomatico } from './auto-reply';
 import { tentarIAFallback } from './ia-fallback';
 import {
@@ -1864,7 +1866,14 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
                 );
               }
             } else {
+              novoEstado = 'aguardando_acao_apos_confirmacao';
               resposta = respostaPedidoConfirmadoConfirmarEntrega(grupo?.data_entrega ?? '');
+              metadataConfirmacaoExtra = {
+                menu_apos_confirmacao_ativo: true,
+                menu_apos_confirmacao_em: new Date().toISOString(),
+                contexto_pedido_reutilizavel: true,
+              };
+              console.log(`[posvenda-webhook] entrada menu apos confirmacao sessaoId=${sessaoId}`);
             }
           } else {
             const acaoExistente = metadataAtual?.acao_alteracao as string | undefined;
@@ -2058,6 +2067,132 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           console.log(`[posvenda-webhook] confirmacao ambigua tentativas=${tentativas} transferir=${transferir} sessaoId=${sessaoId}`);
           return { ok: true, saved: true, origem: 'cliente' };
         }
+      }
+
+      // Estado: menu posterior a confirmacao de uma entrega normal
+      if (sessaoExistente.estado === 'aguardando_acao_apos_confirmacao') {
+        const metadataAtual = sessaoExistente.metadata as Record<string, unknown> | null;
+        const telefoneAutorizadoFlag = telefoneAutorizado(sessaoExistente.telefone);
+        const grupo = obterGrupoSelecionado(metadataAtual);
+        const deterministica = identificarIntencaoAposConfirmacao(text);
+        let intencao: IntencaoAposConfirmacao = deterministica.intencao;
+        let origemIdentificacao: OrigemIntencaoAposConfirmacao | 'ia' | 'fallback_seguro' = deterministica.origem;
+        let metadataIA: Record<string, unknown> = {};
+
+        if (intencao === 'ambigua') {
+          const iaResult = await tentarIAFallback('aguardando_acao_apos_confirmacao', text, metadataAtual);
+          metadataIA = iaResult.metadata_ia;
+          if (iaResult.acao_mapeada === 'manter_data') intencao = 'manter_data';
+          else if (iaResult.acao_mapeada === 'adiantar') intencao = 'adiantar';
+          else if (iaResult.acao_mapeada === 'postergar') intencao = 'postergar';
+          else intencao = 'outro_assunto';
+          origemIdentificacao = iaResult.acao_mapeada ? 'ia' : 'fallback_seguro';
+        }
+
+        let novoEstado: string;
+        let resposta: RespostaSugerida;
+        let statusTransferido = false;
+        let metadataTransicao: Record<string, unknown> = {
+          ...metadataIA,
+          intencao_apos_confirmacao: intencao,
+          intencao_apos_confirmacao_origem: origemIdentificacao,
+          intencao_apos_confirmacao_em: new Date().toISOString(),
+        };
+
+        if (intencao === 'manter_data') {
+          novoEstado = 'pedido_confirmado';
+          resposta = respostaManterDataAtual(grupo?.data_entrega ?? '');
+          metadataTransicao = {
+            ...metadataTransicao,
+            menu_apos_confirmacao_ativo: false,
+            ciclo_confirmacao_entrega_encerrado: true,
+          };
+        } else if (intencao === 'adiantar' || intencao === 'postergar') {
+          const bloqueio = grupo ? validarBloqueioAcao(intencao, grupo) : null;
+          if (!grupo || bloqueio?.bloqueado) {
+            novoEstado = 'transferido_humano';
+            statusTransferido = true;
+            resposta = bloqueio?.bloqueado ? bloqueio.resposta : respostaTransferidoHumanoOutroAssunto();
+            metadataTransicao = {
+              ...metadataTransicao,
+              precisa_humano_por_regra: true,
+              motivo_transferencia_humano: bloqueio?.bloqueado ? bloqueio.motivo : 'contexto_pedido_ausente',
+            };
+          } else {
+            novoEstado = 'aguardando_data_desejada';
+            resposta = respostaAguardandoDataInicialAposConfirmacao(intencao);
+            metadataTransicao = {
+              ...metadataTransicao,
+              acao_alteracao: intencao,
+              endereco_confirmado: true,
+              contexto_reutilizado_apos_confirmacao: true,
+              entrada_fluxo_opcao_2: 'aguardando_data_desejada',
+              menu_apos_confirmacao_ativo: false,
+            };
+          }
+        } else {
+          novoEstado = 'transferido_humano';
+          statusTransferido = true;
+          resposta = respostaTransferidoHumanoOutroAssunto();
+          metadataTransicao = {
+            ...metadataTransicao,
+            precisa_humano_por_regra: true,
+            motivo_transferencia_humano: origemIdentificacao === 'fallback_seguro'
+              ? 'intencao_sem_confianca_suficiente'
+              : 'outro_assunto_apos_confirmacao',
+          };
+        }
+
+        const novoMetadata = await construirMetadataComResposta({
+          sessaoId,
+          metadataAtual: { ...(metadataAtual ?? {}), ...metadataTransicao },
+          resposta,
+          estado: novoEstado,
+          contactId,
+          ticketId,
+          digisacMessageId: messageId,
+          telefoneAutorizado: telefoneAutorizadoFlag,
+        });
+
+        await supabase.from('atendimento_automatico_sessoes').update({
+          estado: novoEstado,
+          ...(statusTransferido ? { status: 'transferido_humano' } : {}),
+          ...((intencao === 'adiantar' || intencao === 'postergar') && !statusTransferido
+            ? { tipo_solicitacao: 'alterar_entrega', endereco_confirmado: true }
+            : {}),
+          metadata: novoMetadata,
+          ultima_mensagem_cliente: text.substring(0, 200),
+          ultima_mensagem_em: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('id', sessaoId);
+
+        await supabase.from('atendimento_automatico_mensagens').insert({
+          sessao_id: sessaoId,
+          digisac_message_id: messageId,
+          digisac_ticket_id: ticketId,
+          digisac_contact_id: contactId ?? null,
+          origem: 'cliente',
+          texto: text,
+          tipo_mensagem: msg.type as string | undefined,
+          timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+          status: 'processada',
+          metadata: { serviceId, departmentId, intencao, origem_identificacao: origemIdentificacao },
+        });
+
+        await supabase.from('atendimento_automatico_eventos').insert({
+          sessao_id: sessaoId,
+          tipo: statusTransferido ? 'transferido_humano' : 'intencao_apos_confirmacao',
+          descricao: statusTransferido
+            ? 'Atendimento encaminhado com seguranca apos confirmacao da entrega'
+            : `Intencao identificada apos confirmacao: ${intencao}`,
+          metadata: { intencao, origem_identificacao: origemIdentificacao, estado_destino: novoEstado },
+        });
+
+        console.log(`[posvenda-webhook] intencao apos confirmacao sessaoId=${sessaoId} intencao=${intencao} origem=${origemIdentificacao} destino=${novoEstado}`);
+        if (novoEstado === 'aguardando_data_desejada') {
+          console.log(`[posvenda-webhook] contexto do pedido reutilizado sessaoId=${sessaoId} entradaFluxoOpcao2=aguardando_data_desejada acao=${intencao}`);
+        }
+        return { ok: true, saved: true, origem: 'cliente' };
       }
 
       // Estado: aguardando_escolha_acao
@@ -2460,11 +2595,131 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         const hoje = new Date();
         hoje.setHours(0, 0, 0, 0);
 
+        const aplicarComandoDurantePerguntaData = async (
+          intencao: IntencaoAposConfirmacao,
+          origemIdentificacao: OrigemIntencaoAposConfirmacao | 'ia',
+          metadataIA: Record<string, unknown> = {},
+        ): Promise<{ ok: true; saved: true; origem: 'cliente' } | null> => {
+          if (intencao === 'ambigua') return null;
+
+          const grupo = obterGrupoSelecionado(metadataAtual);
+          let novoEstado: string;
+          let resposta: RespostaSugerida;
+          let statusTransferido = false;
+          let metadataComando: Record<string, unknown> = {
+            ...metadataIA,
+            comando_durante_pergunta_data: intencao,
+            comando_durante_pergunta_data_origem: origemIdentificacao,
+          };
+
+          if (intencao === 'manter_data') {
+            novoEstado = 'pedido_confirmado';
+            resposta = respostaManterDataAtual(grupo?.data_entrega ?? '');
+            metadataComando = {
+              ...metadataComando,
+              alteracao_cancelada_pelo_cliente: true,
+              ciclo_confirmacao_entrega_encerrado: true,
+            };
+          } else if (intencao === 'adiantar' || intencao === 'postergar') {
+            const bloqueio = grupo ? validarBloqueioAcao(intencao, grupo) : null;
+            if (!grupo || bloqueio?.bloqueado) {
+              novoEstado = 'transferido_humano';
+              statusTransferido = true;
+              resposta = bloqueio?.bloqueado ? bloqueio.resposta : respostaTransferidoHumanoOutroAssunto();
+              metadataComando = {
+                ...metadataComando,
+                precisa_humano_por_regra: true,
+                motivo_transferencia_humano: bloqueio?.bloqueado ? bloqueio.motivo : 'contexto_pedido_ausente',
+              };
+            } else {
+              novoEstado = 'aguardando_data_desejada';
+              resposta = respostaAguardandoDataInicialAposConfirmacao(intencao);
+              metadataComando = {
+                ...metadataComando,
+                acao_alteracao: intencao,
+                mudanca_intencao_durante_data: intencao !== acaoAlteracao,
+              };
+            }
+          } else {
+            novoEstado = 'transferido_humano';
+            statusTransferido = true;
+            resposta = respostaTransferidoHumanoOutroAssunto();
+            metadataComando = {
+              ...metadataComando,
+              precisa_humano_por_regra: true,
+              motivo_transferencia_humano: 'pedido_humano_durante_pergunta_data',
+            };
+          }
+
+          const novoMetadata = await construirMetadataComResposta({
+            sessaoId,
+            metadataAtual: { ...(metadataAtual ?? {}), ...metadataComando },
+            resposta,
+            estado: novoEstado,
+            contactId,
+            ticketId,
+            digisacMessageId: messageId,
+            telefoneAutorizado: telefoneAutorizadoFlag,
+          });
+
+          await supabase.from('atendimento_automatico_sessoes').update({
+            estado: novoEstado,
+            ...(statusTransferido ? { status: 'transferido_humano' } : {}),
+            metadata: novoMetadata,
+            ultima_mensagem_cliente: text.substring(0, 200),
+            ultima_mensagem_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq('id', sessaoId);
+
+          await supabase.from('atendimento_automatico_mensagens').insert({
+            sessao_id: sessaoId,
+            digisac_message_id: messageId,
+            digisac_ticket_id: ticketId,
+            digisac_contact_id: contactId ?? null,
+            origem: 'cliente',
+            texto: text,
+            tipo_mensagem: msg.type as string | undefined,
+            timestamp_digisac: msg.timestamp ? new Date(msg.timestamp as number).toISOString() : null,
+            status: 'processada',
+            metadata: { serviceId, departmentId, comando: intencao, origem_identificacao: origemIdentificacao },
+          });
+
+          await supabase.from('atendimento_automatico_eventos').insert({
+            sessao_id: sessaoId,
+            tipo: statusTransferido ? 'transferido_humano' : 'comando_durante_pergunta_data',
+            descricao: `Comando durante pergunta de data: ${intencao}`,
+            metadata: { intencao, origem_identificacao: origemIdentificacao, estado_destino: novoEstado },
+          });
+
+          console.log(`[posvenda-webhook] comando durante pergunta data sessaoId=${sessaoId} intencao=${intencao} origem=${origemIdentificacao} destino=${novoEstado}`);
+          return { ok: true, saved: true, origem: 'cliente' };
+        };
+
+        const comandoDeterministico = identificarIntencaoAposConfirmacao(text);
+        const resultadoComandoDeterministico = await aplicarComandoDurantePerguntaData(
+          comandoDeterministico.intencao,
+          comandoDeterministico.origem,
+        );
+        if (resultadoComandoDeterministico) return resultadoComandoDeterministico;
+
         const interpretacao = interpretarDataDesejada(text, hoje);
 
         if (!interpretacao.ok) {
           // Data nao interpretada: tentar IA fallback antes do fallback padrao
           const iaResultData = await tentarIAFallback('aguardando_data_desejada', text, metadataAtual);
+          const intencaoIA: IntencaoAposConfirmacao =
+            iaResultData.acao_mapeada === 'manter_data' ? 'manter_data'
+              : iaResultData.acao_mapeada === 'adiantar' ? 'adiantar'
+                : iaResultData.acao_mapeada === 'postergar' ? 'postergar'
+                  : iaResultData.acao_mapeada === 'transferir_humano' ? 'outro_assunto'
+                    : 'ambigua';
+          const resultadoComandoIA = await aplicarComandoDurantePerguntaData(
+            intencaoIA,
+            'ia',
+            iaResultData.metadata_ia,
+          );
+          if (resultadoComandoIA) return resultadoComandoIA;
+
           if (iaResultData.acao_mapeada === 'transferir_humano') {
             const resposta = respostaTransferidoHumanoMuitasTentativas('acao');
             const novoMetadata = await construirMetadataComResposta({

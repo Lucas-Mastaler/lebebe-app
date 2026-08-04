@@ -155,8 +155,8 @@ export function validarDataDesejadaParaAcao(params: {
   }
 
   if (acao === 'postergar') {
-    if (desejada < entregaAtual) {
-      return { valida: false, motivo: 'data_desejada_anterior_entrega_atual' };
+    if (desejada <= entregaAtual) {
+      return { valida: false, motivo: 'data_desejada_nao_posterior_entrega_atual' };
     }
   }
 

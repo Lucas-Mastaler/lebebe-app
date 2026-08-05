@@ -8,6 +8,16 @@ Loja Bigorrilho https://wa.me/554188043042
 Loja Hauer http://wa.me/+55 (41) 9222-0492
 `
 
+const SAUDACAO_COM_OLA = `Olá! Seja bem-vindo à Central de Atendimento Le🌟Bébé!
+
+Por favor, clique na loja que você deseja falar:
+
+🛒 Loja Portão  http://wa.me/+554184426528
+
+🛒 Loja Bigorrilho http://wa.me/+554188043042
+
+🛒 Loja Hauer http://wa.me/+554192220492`
+
 describe('payload Hub/Vendas', () => {
   it('reconhece saudacao robusta com links e numeros formatados', () => {
     expect(pareceSaudacaoHubVendas(SAUDACAO_OFICIAL)).toBe(true)
@@ -85,6 +95,55 @@ describe('payload Hub/Vendas', () => {
       serviceId: 'service-1',
       texto: 'Oi',
       data: { type: 'interactive' },
+    })
+  })
+
+  describe('variacao com Ola na saudacao', () => {
+    it('reconhece texto exato da variacao com Ola e emoji estrela', () => {
+      expect(pareceSaudacaoHubVendas(SAUDACAO_COM_OLA)).toBe(true)
+    })
+
+    it('reconhece variacao com Ola em linha separada', () => {
+      const texto = `Olá!\nSeja bem-vindo à Central de Atendimento Le🌟Bébé!\n\nPor favor, clique na loja que você deseja falar:\n\n🛒 Loja Portão  http://wa.me/+554184426528\n\n🛒 Loja Bigorrilho http://wa.me/+554188043042\n\n🛒 Loja Hauer http://wa.me/+554192220492`
+      expect(pareceSaudacaoHubVendas(texto)).toBe(true)
+    })
+
+    it('reconhece variacao com duas ou mais linhas vazias', () => {
+      const texto = `Olá!\n\n\nSeja bem-vindo à Central de Atendimento Le🌟Bébé!\n\n\n\nPor favor, clique na loja que você deseja falar:\n\n\n🛒 Loja Portão  http://wa.me/+554184426528\n\n🛒 Loja Bigorrilho http://wa.me/+554188043042\n\n🛒 Loja Hauer http://wa.me/+554192220492`
+      expect(pareceSaudacaoHubVendas(texto)).toBe(true)
+    })
+
+    it('reconhece variacao com \\r\\n', () => {
+      const texto = `Olá!\r\nSeja bem-vindo à Central de Atendimento Le🌟Bébé!\r\n\r\nPor favor, clique na loja que você deseja falar:\r\n\r\n🛒 Loja Portão  http://wa.me/+554184426528\r\n\r\n🛒 Loja Bigorrilho http://wa.me/+554188043042\r\n\r\n🛒 Loja Hauer http://wa.me/+554192220492`
+      expect(pareceSaudacaoHubVendas(texto)).toBe(true)
+    })
+
+    it('reconhece variacao com espacos duplicados', () => {
+      const texto = `Olá!  Seja  bem-vindo  à  Central  de  Atendimento  Le🌟Bébé!\n\nPor favor, clique na loja que você deseja falar:\n\n🛒  Loja  Portão   http://wa.me/+554184426528\n\n🛒  Loja  Bigorrilho  http://wa.me/+554188043042\n\n🛒  Loja  Hauer  http://wa.me/+554192220492`
+      expect(pareceSaudacaoHubVendas(texto)).toBe(true)
+    })
+
+    it('reconhece variacao com espacos antes e depois das linhas', () => {
+      const texto = `  Olá! Seja bem-vindo à Central de Atendimento Le🌟Bébé!  \n\n  Por favor, clique na loja que você deseja falar:  \n\n  🛒 Loja Portão  http://wa.me/+554184426528  \n\n  🛒 Loja Bigorrilho http://wa.me/+554188043042  \n\n  🛒 Loja Hauer http://wa.me/+554192220492  `
+      expect(pareceSaudacaoHubVendas(texto)).toBe(true)
+    })
+
+    it('mensagem antiga sem Ola continua reconhecida', () => {
+      expect(pareceSaudacaoHubVendas(SAUDACAO_OFICIAL)).toBe(true)
+    })
+
+    it('nao reconhece mensagem semelhante sem elementos caracteristicos (sem lojas)', () => {
+      const texto = `Olá! Seja bem-vindo à Central de Atendimento Le🌟Bébé!\n\nPor favor, clique na loja que você deseja falar:`
+      expect(pareceSaudacaoHubVendas(texto)).toBe(false)
+    })
+
+    it('nao reconhece mensagem com apenas uma loja', () => {
+      const texto = `Olá! Seja bem-vindo à Central de Atendimento Le🌟Bébé!\n\nPor favor, clique na loja que você deseja falar:\n\n🛒 Loja Portão  http://wa.me/+554184426528`
+      expect(pareceSaudacaoHubVendas(texto)).toBe(false)
+    })
+
+    it('nao reconhece mensagem comum contendo apenas Ola', () => {
+      expect(pareceSaudacaoHubVendas('Olá')).toBe(false)
     })
   })
 })

@@ -1,8 +1,14 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   validarLimiteDiario,
   mascararTelefone,
   LIMITE_DIARIO_MAXIMO,
+  alterarLimiteDiarioHubVendas,
+  pausarAutomacaoHubVendas,
+  reativarAutomacaoHubVendas,
+  cancelarFilaAgendadaHubVendas,
+  reprocessarFilaErroHubVendas,
+  liberarAnaliseManualHubVendas,
 } from './gestao'
 
 describe('validarLimiteDiario', () => {
@@ -150,5 +156,116 @@ describe('mascararTelefone', () => {
   it('retorna *** para telefone muito curto', () => {
     const r = mascararTelefone('123')
     expect(r).toBe('***')
+  })
+})
+
+
+describe('acoes administrativas transacionais', () => {
+  function criarSupabaseFake(resposta?: unknown, erro?: { message: string }) {
+    return {
+      rpc: vi.fn().mockResolvedValue({ data: resposta, error: erro ?? null })
+    }
+  }
+
+  it('alterar limite chama RPC com parametros corretos', async () => {
+    const supabase = criarSupabaseFake({
+      ok: true,
+      valor_anterior: 10,
+      valor_novo: 20,
+      atualizado_em: '2026-08-06T18:00:00.000Z'
+    })
+    const r = await alterarLimiteDiarioHubVendas(20, 'admin@example.com', supabase as never)
+    expect(supabase.rpc).toHaveBeenCalledWith('hub_vendas_alterar_limite_diario', {
+      p_email: 'admin@example.com',
+      p_novo_limite: 20
+    })
+    expect(r).toMatchObject({
+      ok: true,
+      valorAnterior: 10,
+      valorNovo: 20
+    })
+  })
+
+  it('pausar automacao chama RPC com parametros corretos', async () => {
+    const supabase = criarSupabaseFake({
+      ok: true,
+      pausada: true,
+      motivo: 'manutencao',
+      atualizado_em: '2026-08-06T18:00:00.000Z'
+    })
+    const r = await pausarAutomacaoHubVendas('manutencao', 'admin@example.com', supabase as never)
+    expect(supabase.rpc).toHaveBeenCalledWith('hub_vendas_pausar_automacao', {
+      p_email: 'admin@example.com',
+      p_motivo: 'manutencao'
+    })
+    expect(r.pausada).toBe(true)
+    expect(r.motivo).toBe('manutencao')
+  })
+
+  it('reativar automacao chama RPC com parametros corretos', async () => {
+    const supabase = criarSupabaseFake({
+      ok: true,
+      pausada: false,
+      motivo: 'retomada',
+      atualizado_em: '2026-08-06T18:00:00.000Z'
+    })
+    const r = await reativarAutomacaoHubVendas('retomada', 'admin@example.com', supabase as never)
+    expect(supabase.rpc).toHaveBeenCalledWith('hub_vendas_reativar_automacao', {
+      p_email: 'admin@example.com',
+      p_motivo: 'retomada'
+    })
+    expect(r.pausada).toBe(false)
+    expect(r.motivo).toBe('retomada')
+  })
+
+  it('cancelar fila chama RPC com parametros corretos', async () => {
+    const supabase = criarSupabaseFake({
+      ok: true,
+      fila_id: '123e4567-e89b-12d3-a456-426614174000',
+      status: 'cancelado'
+    })
+    const r = await cancelarFilaAgendadaHubVendas('123e4567-e89b-12d3-a456-426614174000', 'motivo', 'admin@example.com', supabase as never)
+    expect(supabase.rpc).toHaveBeenCalledWith('hub_vendas_cancelar_fila_agendada', {
+      p_email: 'admin@example.com',
+      p_fila_id: '123e4567-e89b-12d3-a456-426614174000',
+      p_motivo: 'motivo'
+    })
+    expect(r.status).toBe('cancelado')
+  })
+
+  it('reprocessar fila chama RPC com parametros corretos', async () => {
+    const supabase = criarSupabaseFake({
+      ok: true,
+      fila_id: '123e4567-e89b-12d3-a456-426614174000',
+      status: 'agendado'
+    })
+    const r = await reprocessarFilaErroHubVendas('123e4567-e89b-12d3-a456-426614174000', 'admin@example.com', supabase as never)
+    expect(supabase.rpc).toHaveBeenCalledWith('hub_vendas_reprocessar_fila_erro', {
+      p_email: 'admin@example.com',
+      p_fila_id: '123e4567-e89b-12d3-a456-426614174000'
+    })
+    expect(r.status).toBe('agendado')
+  })
+
+  it('liberar analise manual chama RPC com parametros corretos', async () => {
+    const supabase = criarSupabaseFake({
+      ok: true,
+      fila_id: '123e4567-e89b-12d3-a456-426614174000',
+      status: 'cancelado'
+    })
+    const r = await liberarAnaliseManualHubVendas('123e4567-e89b-12d3-a456-426614174000', 'motivo', 'admin@example.com', supabase as never)
+    expect(supabase.rpc).toHaveBeenCalledWith('hub_vendas_liberar_analise_manual', {
+      p_email: 'admin@example.com',
+      p_fila_id: '123e4567-e89b-12d3-a456-426614174000',
+      p_motivo: 'motivo'
+    })
+    expect(r.status).toBe('cancelado')
+  })
+
+  it('propaga erro da RPC sem alterar dados', async () => {
+    const supabase = criarSupabaseFake(undefined, { message: 'transicao invalida' })
+    await expect(
+      cancelarFilaAgendadaHubVendas('123e4567-e89b-12d3-a456-426614174000', 'motivo', 'admin@example.com', supabase as never)
+    ).rejects.toThrow('transicao invalida')
   })
 })

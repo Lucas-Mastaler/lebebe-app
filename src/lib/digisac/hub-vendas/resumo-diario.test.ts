@@ -78,7 +78,7 @@ const mockSupabase = {
       return {
         select: () => {
           const obj: Record<string, unknown> = {}
-          let eqFilters: Record<string, unknown> = {}
+          const eqFilters: Record<string, unknown> = {}
           obj.eq = (col: string, val: unknown) => {
             eqFilters[col] = val
             return obj
@@ -254,5 +254,87 @@ describe('resumo diário Hub/Vendas', () => {
     // O resumo só faz select e insert em hub_vendas_alertas
     // Não deve fazer update/delete em filas ou leads
     // (verificado pela estrutura do mock que não tem update/delete)
+  })
+
+  it('resumo enviado cria registro com status = enviado', async () => {
+    vi.mocked(fetchDigisacRaw).mockImplementationOnce(async () => ({
+      ok: true,
+      text: () => Promise.resolve('{}'),
+    }) as Response)
+
+    await enviarResumoDiarioHubVendas({ supabase: mockSupabase as never })
+
+    const ultimo = alertasState[alertasState.length - 1]
+    expect(ultimo.tipo).toBe('resumo_diario')
+    expect(ultimo.status).toBe('enviado')
+  })
+
+  it('resumo com falha nao bloqueia tentativa futura', async () => {
+    const { obterPartesDataLocal } = await import('./tempo')
+    const partes = obterPartesDataLocal(new Date(), 'America/Sao_Paulo')
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const chaveEsperada = `${partes.ano}-${pad(partes.mes)}-${pad(partes.dia)}`
+
+    // Simular falha anterior
+    alertasState.push({
+      tipo: 'resumo_diario',
+      chave_deduplicacao: chaveEsperada,
+      status: 'falha',
+      enviado_em: new Date().toISOString(),
+    })
+
+    // A funcao verifica somente status='enviado', entao falha anterior permite novo envio
+    let capturedBody: Record<string, unknown> | null = null
+    vi.mocked(fetchDigisacRaw).mockImplementationOnce(async (_endpoint: string, options?: RequestInit) => {
+      capturedBody = JSON.parse(options!.body as string)
+      return { ok: true, text: () => Promise.resolve('{}') } as Response
+    })
+
+    const resultado = await enviarResumoDiarioHubVendas({ supabase: mockSupabase as never })
+
+    expect(resultado.ok).toBe(true)
+    if (resultado.ok) {
+      expect(resultado.enviado).toBe(true)
+    }
+    expect(capturedBody).toBeTruthy()
+  })
+
+  it('registro unico do resumo por data local', async () => {
+    const { obterPartesDataLocal } = await import('./tempo')
+    const partes = obterPartesDataLocal(new Date(), 'America/Sao_Paulo')
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const chaveEsperada = `${partes.ano}-${pad(partes.mes)}-${pad(partes.dia)}`
+
+    // Simular resumo ja enviado
+    alertasState.push({
+      tipo: 'resumo_diario',
+      chave_deduplicacao: chaveEsperada,
+      status: 'enviado',
+      enviado_em: new Date().toISOString(),
+    })
+
+    const enviadosAntes = alertasState.filter((a) => a.status === 'enviado' && a.tipo === 'resumo_diario').length
+
+    await enviarResumoDiarioHubVendas({ supabase: mockSupabase as never })
+
+    const enviadosDepois = alertasState.filter((a) => a.status === 'enviado' && a.tipo === 'resumo_diario').length
+    expect(enviadosDepois).toBe(enviadosAntes)
+  })
+
+  it('metadata do resumo nao contem dados sensiveis', async () => {
+    vi.mocked(fetchDigisacRaw).mockImplementationOnce(async () => ({
+      ok: true,
+      text: () => Promise.resolve('{}'),
+    }) as Response)
+
+    await enviarResumoDiarioHubVendas({ supabase: mockSupabase as never })
+
+    const ultimo = alertasState[alertasState.length - 1]
+    const metadata = JSON.stringify(ultimo.metadata)
+    expect(metadata).not.toContain('Bearer')
+    expect(metadata).not.toContain('Authorization')
+    expect(metadata).not.toContain('token')
+    expect(metadata).not.toContain('secret')
+    expect(metadata).not.toMatch(/55\d{10,11}/)
   })
 })

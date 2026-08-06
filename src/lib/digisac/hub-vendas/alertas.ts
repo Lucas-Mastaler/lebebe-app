@@ -22,11 +22,14 @@ export type TipoAlertaHubVendas =
   | 'retry_agendado'
   | 'falha_recorrente_conexao'
   | 'cron_falhou'
+  | 'resumo_diario'
 
 type ResultadoEnvioAlerta =
   | { ok: true; deduplicado: false }
   | { ok: true; deduplicado: true }
   | { ok: false; erro: string }
+
+type StatusAlertaHubVendas = 'enviado' | 'falha'
 
 function obterBotUserId(): string {
   const id = process.env.DIGISAC_BOT_USER_ID
@@ -78,12 +81,34 @@ async function alertaRecenteEnviado(
   return (data?.length ?? 0) > 0
 }
 
+function sanitizarMetadataAlerta(metadata: Record<string, unknown>): Record<string, unknown> {
+  const resultado: Record<string, unknown> = {}
+  for (const [chave, valor] of Object.entries(metadata)) {
+    if (typeof valor === 'string') {
+      const sanitizado = sanitizarDigisacParaLog(valor)
+        .replace(/Bearer\s+\[redacted\]/gi, '[redacted]')
+        .replace(/password\s+\[redacted\]/gi, '[redacted]')
+      resultado[chave] = sanitizado
+    } else if (Array.isArray(valor)) {
+      resultado[chave] = valor.map((item) => {
+        if (typeof item !== 'string') return item
+        return sanitizarDigisacParaLog(item)
+          .replace(/Bearer\s+\[redacted\]/gi, '[redacted]')
+          .replace(/password\s+\[redacted\]/gi, '[redacted]')
+      })
+    } else {
+      resultado[chave] = valor
+    }
+  }
+  return resultado
+}
+
 async function registrarAlertaEnviado(
   supabase: SupabaseServiceClient,
   params: {
     tipo: TipoAlertaHubVendas
     chaveDeduplicacao: string
-    status: 'enviado' | 'deduplicado' | 'falha'
+    status: StatusAlertaHubVendas
     metadata: Record<string, unknown>
   }
 ): Promise<void> {
@@ -93,7 +118,7 @@ async function registrarAlertaEnviado(
     contato_id: obterAlertasContactId(),
     service_id: obterAlertasServiceId(),
     status: params.status,
-    metadata: params.metadata,
+    metadata: sanitizarMetadataAlerta(params.metadata),
     enviado_em: new Date().toISOString(),
   })
   if (error) {
@@ -150,12 +175,6 @@ export async function enviarAlertaOperacionalHubVendas(params: {
   const jaEnviado = await alertaRecenteEnviado(supabase, params.tipo, params.chaveDeduplicacao)
   if (jaEnviado) {
     console.log(`[HUB VENDAS ALERTA] deduplicado tipo=${params.tipo} chave=${params.chaveDeduplicacao}`)
-    await registrarAlertaEnviado(supabase, {
-      tipo: params.tipo,
-      chaveDeduplicacao: params.chaveDeduplicacao,
-      status: 'deduplicado',
-      metadata: params.metadata ?? {},
-    })
     return { ok: true, deduplicado: true }
   }
 

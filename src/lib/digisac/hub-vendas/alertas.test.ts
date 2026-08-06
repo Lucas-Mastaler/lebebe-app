@@ -257,4 +257,111 @@ describe('alertas Hub/Vendas', () => {
     // O sanitizador deve remover tokens Bearer
     expect(texto).not.toContain('Bearer abc123')
   })
+
+  it('registra alerta enviado com status = enviado', async () => {
+    vi.mocked(fetchDigisacRaw).mockImplementationOnce(async () => ({
+      ok: true,
+      text: () => Promise.resolve('{}'),
+    }) as Response)
+
+    await enviarAlertaOperacionalHubVendas({
+      tipo: 'erro_envio',
+      chaveDeduplicacao: 'fila:status-test',
+      texto: 'alerta',
+    })
+
+    const ultimo = alertasState[alertasState.length - 1]
+    expect(ultimo.status).toBe('enviado')
+    expect(ultimo.tipo).toBe('erro_envio')
+  })
+
+  it('registra alerta falho com status = falha', async () => {
+    vi.mocked(fetchDigisacRaw).mockImplementationOnce(async () => ({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve('erro'),
+    }) as unknown as Response)
+
+    await enviarAlertaOperacionalHubVendas({
+      tipo: 'erro_envio',
+      chaveDeduplicacao: 'fila:falha-test',
+      texto: 'alerta',
+    })
+
+    const ultimo = alertasState[alertasState.length - 1]
+    expect(ultimo.status).toBe('falha')
+  })
+
+  it('não cria registro ao deduplicar alerta', async () => {
+    const inseridosAntes = alertasState.length
+
+    // Simula alerta ja enviado
+    alertasState.push({
+      tipo: 'erro_envio',
+      chave_deduplicacao: 'fila:nao-duplicar',
+      status: 'enviado',
+      enviado_em: new Date().toISOString(),
+    })
+
+    const fetchSpy = vi.mocked(fetchDigisacRaw)
+    fetchSpy.mockClear()
+
+    await enviarAlertaOperacionalHubVendas({
+      tipo: 'erro_envio',
+      chaveDeduplicacao: 'fila:nao-duplicar',
+      texto: 'alerta',
+    })
+
+    // Nao chamou fetch nem inseriu novo registro
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(alertasState.length).toBe(inseridosAntes + 1)
+    expect(alertasState[alertasState.length - 1].chave_deduplicacao).toBe('fila:nao-duplicar')
+    expect(alertasState[alertasState.length - 1].status).not.toBe('deduplicado')
+  })
+
+  it('nunca tenta inserir status = deduplicado', async () => {
+    const inseridosAntes = alertasState.length
+
+    // Simula alerta ja enviado para deduplicar
+    alertasState.push({
+      tipo: 'erro_envio',
+      chave_deduplicacao: 'fila:sem-deduplicado-status',
+      status: 'enviado',
+      enviado_em: new Date().toISOString(),
+    })
+
+    await enviarAlertaOperacionalHubVendas({
+      tipo: 'erro_envio',
+      chaveDeduplicacao: 'fila:sem-deduplicado-status',
+      texto: 'alerta',
+    })
+
+    // Nenhum registro com status deduplicado deve existir
+    expect(alertasState.some((a) => a.status === 'deduplicado')).toBe(false)
+    expect(alertasState.length).toBe(inseridosAntes + 1)
+  })
+
+  it('metadata do alerta nao contem dados sensiveis', async () => {
+    vi.mocked(fetchDigisacRaw).mockImplementationOnce(async () => ({
+      ok: true,
+      text: () => Promise.resolve('{}'),
+    }) as Response)
+
+    await enviarAlertaOperacionalHubVendas({
+      tipo: 'erro_envio',
+      chaveDeduplicacao: 'fila:metadata-seguro',
+      texto: 'alerta',
+      metadata: {
+        erro: 'Bearer token-abc-123',
+        telefone: '5541999999999',
+        serviceId: 'c60d720f-5ad5-4a1b-bedb-e51495dee686',
+      },
+    })
+
+    const ultimo = alertasState[alertasState.length - 1]
+    const metadata = JSON.stringify(ultimo.metadata)
+    expect(metadata).not.toContain('Bearer')
+    expect(metadata).not.toContain('token-abc-123')
+    expect(metadata).not.toContain('5541999999999')
+  })
 })

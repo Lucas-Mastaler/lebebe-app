@@ -633,33 +633,9 @@ export function validarLimiteDiario(entrada: unknown): ValidacaoLimite {
 }
 
 // ---------------------------------------------------------------------------
-// Helper de auditoria segura — falha aqui impede a ação crítica
-// ---------------------------------------------------------------------------
-
-/**
- * Registra auditoria e lança erro se o insert falhar.
- * Garante que ações críticas não fiquem sem registro de auditoria.
- */
-async function registrarAuditoriaCritica(
-  supabase: SupabaseServiceClient,
-  params: {
-    acao: string
-    email: string
-    metadata: Record<string, unknown>
-  }
-): Promise<void> {
-  const { error } = await supabase.from('auditoria_acessos').insert({
-    acao: params.acao,
-    email: params.email,
-    metadata: params.metadata,
-  })
-  if (error) {
-    throw new Error(`auditoria_falhou acao=${params.acao} erro=${error.message}`)
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Alterar limite diário por loja
+// Acoes administrativas com atomicidade real via RPC transacional.
+// Cada RPC atualiza o dado e insere auditoria na mesma transacao PostgreSQL.
+// Se a auditoria falhar, a alteracao faz ROLLBACK automaticamente.
 // ---------------------------------------------------------------------------
 
 export async function alterarLimiteDiarioHubVendas(
@@ -672,44 +648,19 @@ export async function alterarLimiteDiarioHubVendas(
     throw new Error(validacao.erro ?? 'Limite inválido')
   }
 
-  // Ler valor atual
-  const { data: configRow, error: readError } = await supabase
-    .from('hub_vendas_config')
-    .select('valor')
-    .eq('chave', 'parametros')
-    .single()
-  if (readError) throw readError
-
-  const valorAtual = asRecord(configRow.valor)
-  const limiteAnterior = asNumber(valorAtual.limite_diario_por_conexao ?? valorAtual.limite_diario, 15)
-
-  // Atualizar apenas o campo limite_diario_por_conexao, preservando os demais
-  const novoValor = { ...valorAtual, limite_diario_por_conexao: validacao.valor }
-
-  const { data: updated, error: updateError } = await supabase
-    .from('hub_vendas_config')
-    .update({ valor: novoValor, updated_at: new Date().toISOString() })
-    .eq('chave', 'parametros')
-    .select('updated_at')
-    .single()
-  if (updateError) throw updateError
-
-  // Registrar auditoria
-  await registrarAuditoriaCritica(supabase, {
-    acao: 'hub_vendas_limite_alterado',
-    email: emailUsuario,
-    metadata: {
-      valor_anterior: limiteAnterior,
-      valor_novo: validacao.valor,
-      chave: 'parametros.limite_diario_por_conexao',
-    },
+  const { data, error } = await supabase.rpc('hub_vendas_alterar_limite_diario', {
+    p_email: emailUsuario,
+    p_novo_limite: validacao.valor,
   })
 
+  if (error) throw new Error(error.message)
+
+  const resultado = data as { ok: true; valor_anterior: number; valor_novo: number; atualizado_em: string }
   return {
     ok: true,
-    valorAnterior: limiteAnterior,
-    valorNovo: validacao.valor,
-    atualizadoEm: updated.updated_at,
+    valorAnterior: resultado.valor_anterior,
+    valorNovo: resultado.valor_novo,
+    atualizadoEm: resultado.atualizado_em,
   }
 }
 
@@ -722,42 +673,19 @@ export async function pausarAutomacaoHubVendas(
   emailUsuario: string,
   supabase: SupabaseServiceClient = createServiceClient()
 ): Promise<ResultadoPausaHubVendas> {
-  const motivoSanitizado = motivo.trim().slice(0, 500) || 'Pausa manual via tela administrativa'
-
-  const { data: configRow, error: readError } = await supabase
-    .from('hub_vendas_config')
-    .select('valor')
-    .eq('chave', 'automacao')
-    .single()
-  if (readError) throw readError
-
-  const valorAtual = asRecord(configRow.valor)
-  const novoValor = {
-    ...valorAtual,
-    pausada: true,
-    motivo: motivoSanitizado,
-    pausado_em: new Date().toISOString(),
-  }
-
-  const { data: updated, error: updateError } = await supabase
-    .from('hub_vendas_config')
-    .update({ valor: novoValor, updated_at: new Date().toISOString() })
-    .eq('chave', 'automacao')
-    .select('updated_at')
-    .single()
-  if (updateError) throw updateError
-
-  await registrarAuditoriaCritica(supabase, {
-    acao: 'hub_vendas_automacao_pausada',
-    email: emailUsuario,
-    metadata: { motivo: motivoSanitizado },
+  const { data, error } = await supabase.rpc('hub_vendas_pausar_automacao', {
+    p_email: emailUsuario,
+    p_motivo: motivo,
   })
 
+  if (error) throw new Error(error.message)
+
+  const resultado = data as { ok: true; pausada: boolean; motivo: string; atualizado_em: string }
   return {
     ok: true,
-    pausada: true,
-    motivo: motivoSanitizado,
-    atualizadoEm: updated.updated_at,
+    pausada: resultado.pausada,
+    motivo: resultado.motivo,
+    atualizadoEm: resultado.atualizado_em,
   }
 }
 
@@ -770,187 +698,74 @@ export async function reativarAutomacaoHubVendas(
   emailUsuario: string,
   supabase: SupabaseServiceClient = createServiceClient()
 ): Promise<ResultadoPausaHubVendas> {
-  const motivoSanitizado = motivo.trim().slice(0, 500) || 'Reativação manual via tela administrativa'
-
-  const { data: configRow, error: readError } = await supabase
-    .from('hub_vendas_config')
-    .select('valor')
-    .eq('chave', 'automacao')
-    .single()
-  if (readError) throw readError
-
-  const valorAtual = asRecord(configRow.valor)
-  // Limpa metadados de pausa
-  const novoValor = {
-    ...valorAtual,
-    pausada: false,
-    motivo: motivoSanitizado,
-    pausado_em: null,
-  }
-
-  const { data: updated, error: updateError } = await supabase
-    .from('hub_vendas_config')
-    .update({ valor: novoValor, updated_at: new Date().toISOString() })
-    .eq('chave', 'automacao')
-    .select('updated_at')
-    .single()
-  if (updateError) throw updateError
-
-  await registrarAuditoriaCritica(supabase, {
-    acao: 'hub_vendas_automacao_reativada',
-    email: emailUsuario,
-    metadata: { motivo: motivoSanitizado },
+  const { data, error } = await supabase.rpc('hub_vendas_reativar_automacao', {
+    p_email: emailUsuario,
+    p_motivo: motivo,
   })
 
+  if (error) throw new Error(error.message)
+
+  const resultado = data as { ok: true; pausada: boolean; motivo: string; atualizado_em: string }
   return {
     ok: true,
-    pausada: false,
-    motivo: motivoSanitizado,
-    atualizadoEm: updated.updated_at,
+    pausada: resultado.pausada,
+    motivo: resultado.motivo,
+    atualizadoEm: resultado.atualizado_em,
   }
 }
 
 // ---------------------------------------------------------------------------
-// Ações manuais em filas (apenas as seguras com infraestrutura existente)
+// Ações manuais em filas
 // ---------------------------------------------------------------------------
 
-/**
- * Cancela uma fila agendada.
- * Só permite cancelar filas com status 'agendado'.
- * Usa update direto com validação de transição.
- */
 export async function cancelarFilaAgendadaHubVendas(
   filaId: string,
   motivo: string,
   emailUsuario: string,
   supabase: SupabaseServiceClient = createServiceClient()
 ): Promise<{ ok: true; filaId: string; status: string }> {
-  // Verificar status atual
-  const { data: fila, error: readError } = await supabase
-    .from('hub_vendas_recuperacao_fila')
-    .select('id, status')
-    .eq('id', filaId)
-    .maybeSingle()
-  if (readError) throw readError
-  if (!fila) throw new Error('Fila não encontrada')
-
-  const statusAtual = (fila as { status: string }).status
-  if (statusAtual !== 'agendado') {
-    throw new Error(`Transição inválida: não é possível cancelar fila com status "${statusAtual}". Apenas filas agendadas podem ser canceladas.`)
-  }
-
-  const motivoSanitizado = motivo.trim().slice(0, 500) || 'Cancelamento manual via tela administrativa'
-
-  const { error: updateError } = await supabase
-    .from('hub_vendas_recuperacao_fila')
-    .update({
-      status: 'cancelado',
-      motivo_cancelamento: motivoSanitizado,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', filaId)
-    .eq('status', 'agendado')
-  if (updateError) throw updateError
-
-  await registrarAuditoriaCritica(supabase, {
-    acao: 'hub_vendas_fila_cancelada',
-    email: emailUsuario,
-    metadata: { fila_id: filaId, motivo: motivoSanitizado },
+  const { data, error } = await supabase.rpc('hub_vendas_cancelar_fila_agendada', {
+    p_email: emailUsuario,
+    p_fila_id: filaId,
+    p_motivo: motivo,
   })
 
-  return { ok: true, filaId, status: 'cancelado' }
+  if (error) throw new Error(error.message)
+
+  const resultado = data as { ok: true; fila_id: string; status: string }
+  return { ok: true, filaId: resultado.fila_id, status: resultado.status }
 }
 
-/**
- * Reprocessa uma fila com erro.
- * Só permite reprocessar filas com status 'erro'.
- * Move de volta para 'agendado' mantendo tentativas_envio (o processador natural vai retomar).
- */
 export async function reprocessarFilaErroHubVendas(
   filaId: string,
   emailUsuario: string,
   supabase: SupabaseServiceClient = createServiceClient()
 ): Promise<{ ok: true; filaId: string; status: string }> {
-  const { data: fila, error: readError } = await supabase
-    .from('hub_vendas_recuperacao_fila')
-    .select('id, status, programado_para')
-    .eq('id', filaId)
-    .maybeSingle()
-  if (readError) throw readError
-  if (!fila) throw new Error('Fila não encontrada')
-
-  const filaData = fila as { status: string; programado_para: string }
-  if (filaData.status !== 'erro') {
-    throw new Error(`Transição inválida: não é possível reprocessar fila com status "${filaData.status}". Apenas filas com erro podem ser reprocessadas.`)
-  }
-
-  // Reprogramar para agora (próximo ciclo do cron processará)
-  const agora = new Date().toISOString()
-
-  const { error: updateError } = await supabase
-    .from('hub_vendas_recuperacao_fila')
-    .update({
-      status: 'agendado',
-      programado_para: agora,
-      erro: null,
-      categoria_erro: null,
-      updated_at: agora,
-    })
-    .eq('id', filaId)
-    .eq('status', 'erro')
-  if (updateError) throw updateError
-
-  await registrarAuditoriaCritica(supabase, {
-    acao: 'hub_vendas_fila_reprocessada',
-    email: emailUsuario,
-    metadata: { fila_id: filaId },
+  const { data, error } = await supabase.rpc('hub_vendas_reprocessar_fila_erro', {
+    p_email: emailUsuario,
+    p_fila_id: filaId,
   })
 
-  return { ok: true, filaId, status: 'agendado' }
+  if (error) throw new Error(error.message)
+
+  const resultado = data as { ok: true; fila_id: string; status: string }
+  return { ok: true, filaId: resultado.fila_id, status: resultado.status }
 }
 
-/**
- * Libera um item em análise manual.
- * Move de 'analise_manual' para 'cancelado' com motivo.
- * Não reenvia — apenas remove da análise.
- */
 export async function liberarAnaliseManualHubVendas(
   filaId: string,
   motivo: string,
   emailUsuario: string,
   supabase: SupabaseServiceClient = createServiceClient()
 ): Promise<{ ok: true; filaId: string; status: string }> {
-  const { data: fila, error: readError } = await supabase
-    .from('hub_vendas_recuperacao_fila')
-    .select('id, status')
-    .eq('id', filaId)
-    .maybeSingle()
-  if (readError) throw readError
-  if (!fila) throw new Error('Fila não encontrada')
-
-  const statusAtual = (fila as { status: string }).status
-  if (statusAtual !== 'analise_manual') {
-    throw new Error(`Transição inválida: não é possível liberar fila com status "${statusAtual}". Apenas filas em análise manual podem ser liberadas.`)
-  }
-
-  const motivoSanitizado = motivo.trim().slice(0, 500) || 'Liberação manual via tela administrativa'
-
-  const { error: updateError } = await supabase
-    .from('hub_vendas_recuperacao_fila')
-    .update({
-      status: 'cancelado',
-      motivo_cancelamento: motivoSanitizado,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', filaId)
-    .eq('status', 'analise_manual')
-  if (updateError) throw updateError
-
-  await registrarAuditoriaCritica(supabase, {
-    acao: 'hub_vendas_analise_manual_liberada',
-    email: emailUsuario,
-    metadata: { fila_id: filaId, motivo: motivoSanitizado },
+  const { data, error } = await supabase.rpc('hub_vendas_liberar_analise_manual', {
+    p_email: emailUsuario,
+    p_fila_id: filaId,
+    p_motivo: motivo,
   })
 
-  return { ok: true, filaId, status: 'cancelado' }
+  if (error) throw new Error(error.message)
+
+  const resultado = data as { ok: true; fila_id: string; status: string }
+  return { ok: true, filaId: resultado.fila_id, status: resultado.status }
 }

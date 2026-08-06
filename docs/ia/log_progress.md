@@ -1,3 +1,36 @@
+## 2026-08-06 - Devin - Hub/Vendas: feedback visual nos botoes e botao de alerta de teste
+
+- **Resumo:** Ajustes pontuais na tela administrativa `/hub-vendas`: (1) feedback visual independente para os dois botoes de atualizacao (status geral e alertas/resumo) com spinner, texto "Atualizando...", horario da ultima consulta e mensagem de sucesso/erro; (2) botao "Enviar alerta de teste" exclusivo para superadmin com modal de confirmacao, que chama a rota protegida `POST /api/hub-vendas/alertas/teste` enviando apenas ao contato tecnico com autoria de bot, sem afetar filas, leads, limites ou pausas; (3) novo tipo `teste_manual` no modulo de alertas com deduplicacao curta por minuto. Nenhuma regra comercial ou operacional foi alterada.
+- **Arquivos lidos:** `src/app/hub-vendas/PageClient.tsx`; `src/app/api/hub-vendas/alertas/route.ts`; `src/app/api/hub-vendas/pausar/route.ts`; `src/lib/auth/module-access.ts`; `src/lib/digisac/hub-vendas/alertas.ts`; `src/lib/digisac/hub-vendas/constants.ts`; `supabase/migrations/20260806150000_hub_vendas_alertas.sql` (confirmar ausencia de CHECK em coluna tipo).
+- **Arquivos criados:**
+  - `src/app/api/hub-vendas/alertas/teste/route.ts` — POST protegido: exige autenticacao + modulo `hub_vendas_gestao` + superadmin (`acessoTotal`), nao aceita contactId/serviceId/userId/texto do frontend, chama `alertarTesteManual()`, retorna `{ ok, deduplicado, enviadoEm }` sem expor IDs tecnicos.
+  - `src/app/api/hub-vendas/alertas/teste/route.test.ts` — 10 testes cobrindo autenticacao, superadmin, 403 para nao-superadmin, sucesso, deduplicado, falha 502, excecao 500, nao-aceita-payload, sem IDs na resposta e uso de alertarTesteManual.
+- **Arquivos alterados:**
+  - `src/lib/digisac/hub-vendas/alertas.ts` — adicionado `'teste_manual'` ao tipo `TipoAlertaHubVendas` e funcao `alertarTesteManual()` com texto controlado pelo backend, deduplicacao por minuto (chave `teste:YYYY-MM-DDTHH:MM`) e metadata sanitizado.
+  - `src/lib/digisac/hub-vendas/alertas.test.ts` — 6 novos testes para `alertarTesteManual` (autoria bot, tipo teste_manual, status enviado/falha, nao cria fila, metadata seguro, texto seguro, deduplicacao curta).
+  - `src/app/hub-vendas/PageClient.tsx` — estados `atualizandoStatus`, `ultimaAtualizacaoStatus`, `feedbackStatus`, `atualizandoAlertas`, `ultimaAtualizacaoAlertas`, `feedbackAlertas`, `modalTesteAlerta`, `enviandoTeste`, `feedbackTeste`; `carregarStatus(manual)` e `carregarAlertas(manual)`/`carregarResumo(manual)` suportam flag manual; botoes com spinner e feedback; botao "Enviar alerta de teste" com modal de confirmacao; refresh automatico dos alertas apos teste.
+- **Nao alterado:** regras comerciais/operacionais (processar-fila, manutencao, envio, gestao, crons); layout/estrutura da tela alem dos botoes citados e do novo botao; migrations ja aplicadas; cron VPS; `vercel.json`; funcoes existentes em `alertas.ts` (apenas adicionado tipo e funcao nova); padrao de autenticacao (`requireModuleAccess`).
+- **Validacoes realizadas:**
+  - `npx tsc --noEmit`: passou (unico erro preexistente em pedidos-personalizados, nao relacionado).
+  - `npx eslint` (arquivos alterados): passou (0 errors, 0 warnings).
+  - `npx vitest run src/lib/digisac/hub-vendas/ src/app/api/hub-vendas/`: 176 passed (16 test files).
+  - `npm run build`: compilou com sucesso.
+  - `git diff --check`: passou (apenas warnings CRLF preexistentes).
+- **Comandos e resultados:**
+  - `npx vitest run src/lib/digisac/hub-vendas/alertas.test.ts src/app/api/hub-vendas/alertas/teste/route.test.ts`: 30 passed.
+  - `npx vitest run src/lib/digisac/hub-vendas/ src/app/api/hub-vendas/`: 176 passed (16 test files).
+- **Commit:** `3f887b8` — `feat(hub-vendas): feedback visual nos botoes de atualizacao e botao de alerta de teste`.
+- **Deploy:** push para `main` realizado; deploy Vercel disparado automaticamente. Status `READY` nao confirmado (sem acesso Vercel neste ambiente).
+- **Riscos conhecidos:**
+  - A rota de teste exige `DIGISAC_BOT_USER_ID`, `HUB_VENDAS_ALERTAS_CONTACT_ID` e `HUB_VENDAS_ALERTAS_SERVICE_ID` configuradas (ja cadastradas na Vercel).
+  - A deduplicacao por minuto permite no maximo 1 teste enviado por minuto; cliques dentro do mesmo minuto sao deduplicados (nao enviam mensagem nova).
+  - O botao de teste so aparece para usuarios que acessam a tela `/hub-vendas` (que ja exige superadmin via `checkModuleAndWindowAccess`). A verificacao de superadmin no backend e redundante por seguranca.
+- **Pendencias:**
+  - Confirmar deploy Vercel `READY`.
+  - Executar teste real do alerta (aguardando autorizacao explicita do usuario — nao executado durante o desenvolvimento).
+- **Proximo passo recomendado:** Apos confirmar deploy `READY`, o usuario pode clicar no botao "Enviar alerta de teste" na tela `/hub-vendas` para validar a integracao com o contato tecnico.
+
+
 ## 2026-08-06 - Devin - Hub/Vendas: auditoria transacional e compatibilidade com migration de alertas aplicada
 
 - **Resumo:** Corrigida compatibilidade do codigo com a migration `20260806150000_hub_vendas_alertas.sql` aplicada manualmente no Supabase (versao alterada pelo usuario). O alertas.ts nao mais insere `status = 'deduplicado'`; deduplicacoes agora apenas suprimem o envio sem criar registro. O tipo `TipoAlertaHubVendas` passou a incluir `resumo_diario` e o metadata inserido e sanitizado para nao conter telefones completos, tokens, Authorization, secrets ou payload bruto. Implementada atomicidade real para as 6 acoes administrativas do Hub/Vendas (alterar limite, pausar, reativar, cancelar fila, reprocessar erro, liberar analise manual) por meio de 6 RPCs transacionais PostgreSQL na migration `20260806170000_hub_vendas_auditoria_transacional.sql`. Cada RPC faz `UPDATE` da configuracao/fila e `INSERT` em `auditoria_acessos` dentro da mesma transacao: se a auditoria falhar, o `UPDATE` e desfeito por ROLLBACK. O gestao.ts foi refatorado para chamar as RPCs em vez de fazer multiplas operacoes independentes. Foram adicionados testes administrativos e testes de compatibilidade da migration de alertas.

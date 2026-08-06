@@ -58,10 +58,27 @@ export default function PageClient() {
   const [statusResumo, setStatusResumo] = useState<{ ultimoResumoEm: string | null; ultimoResumoDataLocal: string | null; ultimoResumoStatus: string | null }>({ ultimoResumoEm: null, ultimoResumoDataLocal: null, ultimoResumoStatus: null })
   const [loadingAlertas, setLoadingAlertas] = useState(true)
 
+  // Feedback visual dos botões de atualização (independentes)
+  const [atualizandoStatus, setAtualizandoStatus] = useState(false)
+  const [ultimaAtualizacaoStatus, setUltimaAtualizacaoStatus] = useState<string | null>(null)
+  const [feedbackStatus, setFeedbackStatus] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null)
+  const [atualizandoAlertas, setAtualizandoAlertas] = useState(false)
+  const [ultimaAtualizacaoAlertas, setUltimaAtualizacaoAlertas] = useState<string | null>(null)
+  const [feedbackAlertas, setFeedbackAlertas] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null)
+
+  // Alerta de teste
+  const [modalTesteAlerta, setModalTesteAlerta] = useState(false)
+  const [enviandoTeste, setEnviandoTeste] = useState(false)
+  const [feedbackTeste, setFeedbackTeste] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null)
+
   // ---------------------------------------------------------------------------
   // Carregamento de status
   // ---------------------------------------------------------------------------
-  const carregarStatus = useCallback(async () => {
+  const carregarStatus = useCallback(async (manual = false) => {
+    if (manual) {
+      setAtualizandoStatus(true)
+      setFeedbackStatus(null)
+    }
     try {
       setErroStatus(null)
       const res = await fetch('/api/hub-vendas/status')
@@ -71,13 +88,21 @@ export default function PageClient() {
         if (novoLimite === '') {
           setNovoLimite(String(data.parametros.limiteDiarioPorConexao))
         }
+        if (manual) {
+          const agora = new Date()
+          setUltimaAtualizacaoStatus(agora.toLocaleTimeString('pt-BR'))
+          setFeedbackStatus({ tipo: 'sucesso', texto: 'Dados atualizados' })
+        }
       } else {
         setErroStatus(data.message || data.error || 'Erro ao carregar status')
+        if (manual) setFeedbackStatus({ tipo: 'erro', texto: 'Não foi possível atualizar os dados' })
       }
     } catch {
       setErroStatus('Erro de conexão ao carregar status')
+      if (manual) setFeedbackStatus({ tipo: 'erro', texto: 'Não foi possível atualizar os dados' })
     } finally {
       setLoadingStatus(false)
+      if (manual) setAtualizandoStatus(false)
     }
   }, [novoLimite])
 
@@ -116,29 +141,54 @@ export default function PageClient() {
   // ---------------------------------------------------------------------------
   // Carregamento de alertas e resumo operacional
   // ---------------------------------------------------------------------------
-  const carregarAlertas = useCallback(async () => {
+  const carregarAlertas = useCallback(async (manual = false) => {
+    if (manual) {
+      setAtualizandoAlertas(true)
+      setFeedbackAlertas(null)
+    }
     try {
       const res = await fetch('/api/hub-vendas/alertas')
       const data = await res.json()
       if (data.ok) {
         setAlertas(data.alertas)
+        if (manual) {
+          const agora = new Date()
+          setUltimaAtualizacaoAlertas(agora.toLocaleTimeString('pt-BR'))
+        }
+      } else if (manual) {
+        setFeedbackAlertas({ tipo: 'erro', texto: 'Não foi possível atualizar os dados' })
       }
     } catch {
-      // silencioso — nao bloqueia a tela
+      if (manual) setFeedbackAlertas({ tipo: 'erro', texto: 'Não foi possível atualizar os dados' })
+      // silencioso no automático — nao bloqueia a tela
     } finally {
       setLoadingAlertas(false)
+      if (manual) setAtualizandoAlertas(false)
     }
   }, [])
 
-  const carregarResumo = useCallback(async () => {
+  const carregarResumo = useCallback(async (manual = false) => {
+    if (manual) {
+      setAtualizandoAlertas(true)
+    }
     try {
       const res = await fetch('/api/hub-vendas/resumo')
       const data = await res.json()
       if (data.ok) {
         setStatusResumo(data.resumo)
+        if (manual) {
+          const agora = new Date()
+          setUltimaAtualizacaoAlertas(agora.toLocaleTimeString('pt-BR'))
+          setFeedbackAlertas({ tipo: 'sucesso', texto: 'Dados atualizados' })
+        }
+      } else if (manual) {
+        setFeedbackAlertas({ tipo: 'erro', texto: 'Não foi possível atualizar os dados' })
       }
     } catch {
-      // silencioso
+      if (manual) setFeedbackAlertas({ tipo: 'erro', texto: 'Não foi possível atualizar os dados' })
+      // silencioso no automático
+    } finally {
+      if (manual) setAtualizandoAlertas(false)
     }
   }, [])
 
@@ -276,6 +326,36 @@ export default function PageClient() {
     }
   }
 
+  async function enviarTesteAlerta() {
+    setEnviandoTeste(true)
+    setFeedbackTeste(null)
+    try {
+      const res = await fetch('/api/hub-vendas/alertas/teste', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setModalTesteAlerta(false)
+        setFeedbackTeste({
+          tipo: 'sucesso',
+          texto: data.deduplicado
+            ? 'Alerta de teste deduplicado (aguarde 1 minuto para novo teste)'
+            : 'Alerta de teste enviado',
+        })
+        // Atualizar lista de alertas automaticamente
+        carregarAlertas(true)
+        carregarResumo(true)
+      } else {
+        setFeedbackTeste({ tipo: 'erro', texto: data.error || 'Falha ao enviar alerta de teste' })
+      }
+    } catch {
+      setFeedbackTeste({ tipo: 'erro', texto: 'Erro de conexão ao enviar alerta de teste' })
+    } finally {
+      setEnviandoTeste(false)
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -292,7 +372,7 @@ export default function PageClient() {
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
         <AlertCircle className="w-10 h-10 text-red-500" />
         <p className="text-slate-600">{erroStatus}</p>
-        <button onClick={carregarStatus} className="px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 text-sm">
+        <button onClick={() => carregarStatus()} className="px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 text-sm">
           Tentar novamente
         </button>
       </div>
@@ -316,13 +396,24 @@ export default function PageClient() {
             <p className="text-sm text-slate-500">Monitoramento e configuração da automação</p>
           </div>
         </div>
-        <button
-          onClick={() => { carregarStatus(); carregarFilas(pagina) }}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 text-sm font-medium text-slate-700 transition-colors"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Atualizar agora
-        </button>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            onClick={() => { carregarStatus(true); carregarFilas(pagina) }}
+            disabled={atualizandoStatus}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 text-sm font-medium text-slate-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <RefreshCw className={`w-4 h-4 ${atualizandoStatus ? 'animate-spin' : ''}`} />
+            {atualizandoStatus ? 'Atualizando...' : 'Atualizar agora'}
+          </button>
+          {ultimaAtualizacaoStatus && (
+            <span className="text-xs text-slate-400">Atualizado às {ultimaAtualizacaoStatus}</span>
+          )}
+          {feedbackStatus && (
+            <span className={`text-xs ${feedbackStatus.tipo === 'sucesso' ? 'text-green-600' : 'text-red-600'}`}>
+              {feedbackStatus.texto}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Estado geral da automação */}
@@ -419,16 +510,44 @@ export default function PageClient() {
 
       {/* Alertas e resumo operacional */}
       <section className="bg-white border border-slate-200 rounded-xl p-5">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
           <h2 className="text-sm font-semibold text-slate-700">Alertas e resumo operacional</h2>
-          <button
-            onClick={() => { carregarAlertas(); carregarResumo() }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-lg hover:bg-slate-200 text-xs font-medium text-slate-600 transition-colors"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Atualizar
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { carregarAlertas(true); carregarResumo(true) }}
+              disabled={atualizandoAlertas}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-lg hover:bg-slate-200 text-xs font-medium text-slate-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${atualizandoAlertas ? 'animate-spin' : ''}`} />
+              {atualizandoAlertas ? 'Atualizando...' : 'Atualizar'}
+            </button>
+            <button
+              onClick={() => { setFeedbackTeste(null); setModalTesteAlerta(true) }}
+              disabled={enviandoTeste}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 text-xs font-medium text-sky-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              Enviar alerta de teste
+            </button>
+          </div>
         </div>
+        {(ultimaAtualizacaoAlertas || feedbackAlertas) && (
+          <div className="flex items-center gap-3 mb-3 text-xs">
+            {ultimaAtualizacaoAlertas && (
+              <span className="text-slate-400">Atualizado às {ultimaAtualizacaoAlertas}</span>
+            )}
+            {feedbackAlertas && (
+              <span className={feedbackAlertas.tipo === 'sucesso' ? 'text-green-600' : 'text-red-600'}>
+                {feedbackAlertas.texto}
+              </span>
+            )}
+          </div>
+        )}
+        {feedbackTeste && (
+          <div className={`mb-3 px-3 py-2 rounded-lg text-xs ${feedbackTeste.tipo === 'sucesso' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+            {feedbackTeste.texto}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Resumo diário */}
@@ -759,6 +878,57 @@ export default function PageClient() {
           corBotao="red"
           textoBotao="Confirmar"
         />
+      )}
+
+      {/* Modal Teste de Alerta */}
+      {modalTesteAlerta && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-sky-50 p-2 rounded-lg">
+                <ShieldAlert className="w-5 h-5 text-sky-600" />
+              </div>
+              <h3 className="text-base font-bold text-slate-800">Enviar alerta de teste</h3>
+            </div>
+            <p className="text-sm text-slate-600 mb-4">
+              Enviar um alerta de teste para o contato técnico do Hub/Vendas? Esta ação não afeta clientes ou filas.
+            </p>
+            <ul className="text-xs text-slate-500 space-y-1 mb-5">
+              <li>• A mensagem será enviada apenas ao contato técnico</li>
+              <li>• Não será enviada para cliente</li>
+              <li>• Nenhuma fila será criada</li>
+              <li>• Nenhum lead será alterado</li>
+              <li>• Nenhum limite será alterado</li>
+              <li>• A automação não será pausada</li>
+            </ul>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => { setModalTesteAlerta(false) }}
+                disabled={enviandoTeste}
+                className="px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 text-sm font-medium text-slate-700 transition-colors disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={enviarTesteAlerta}
+                disabled={enviandoTeste}
+                className="flex items-center gap-2 px-4 py-2 bg-sky-600 rounded-lg hover:bg-sky-700 text-sm font-medium text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {enviandoTeste ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Enviando teste...
+                  </>
+                ) : (
+                  <>
+                    <ShieldAlert className="w-4 h-4" />
+                    Enviar teste
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

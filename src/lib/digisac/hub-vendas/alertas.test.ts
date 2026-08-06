@@ -57,6 +57,7 @@ const {
   alertarErroEnvio,
   alertarResultadoIncerto,
   alertarAnaliseManual,
+  alertarTesteManual,
 } = await import('./alertas')
 
 describe('alertas Hub/Vendas', () => {
@@ -363,5 +364,109 @@ describe('alertas Hub/Vendas', () => {
     expect(metadata).not.toContain('Bearer')
     expect(metadata).not.toContain('token-abc-123')
     expect(metadata).not.toContain('5541999999999')
+  })
+
+  it('alertarTesteManual envia como bot com tipo teste_manual', async () => {
+    let capturedBody: Record<string, unknown> | null = null
+    vi.mocked(fetchDigisacRaw).mockImplementationOnce(async (_endpoint: string, options?: RequestInit) => {
+      capturedBody = JSON.parse(options!.body as string)
+      return { ok: true, text: () => Promise.resolve('{}') } as Response
+    })
+
+    const resultado = await alertarTesteManual()
+    expect(resultado.ok).toBe(true)
+    expect(capturedBody).toBeTruthy()
+    expect(capturedBody!.origin).toBe('bot')
+    expect(capturedBody!.fromMe).toBe(true)
+    expect(capturedBody!.userId).toBe('bot-user-test-id')
+    expect(capturedBody!.contactId).toBe('contact-test-id')
+    expect(capturedBody!.serviceId).toBe('service-test-id')
+
+    const ultimo = alertasState[alertasState.length - 1]
+    expect(ultimo.tipo).toBe('teste_manual')
+    expect(ultimo.status).toBe('enviado')
+  })
+
+  it('alertarTesteManual falha registra status = falha', async () => {
+    vi.mocked(fetchDigisacRaw).mockImplementationOnce(async () => ({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve('erro'),
+    }) as unknown as Response)
+
+    const resultado = await alertarTesteManual()
+    expect(resultado.ok).toBe(false)
+
+    const ultimo = alertasState[alertasState.length - 1]
+    expect(ultimo.tipo).toBe('teste_manual')
+    expect(ultimo.status).toBe('falha')
+  })
+
+  it('alertarTesteManual não cria fila nem altera lead/config', async () => {
+    vi.mocked(fetchDigisacRaw).mockImplementationOnce(async () => ({
+      ok: true,
+      text: () => Promise.resolve('{}'),
+    }) as Response)
+
+    await alertarTesteManual()
+
+    // O mock do supabase não tem update/delete em filas/leads/config
+    // Apenas insert em hub_vendas_alertas é chamado
+    const registrosAlertas = alertasState.filter((a) => a.tipo === 'teste_manual')
+    expect(registrosAlertas.length).toBe(1)
+  })
+
+  it('alertarTesteManual metadata não contém dados sensíveis', async () => {
+    vi.mocked(fetchDigisacRaw).mockImplementationOnce(async () => ({
+      ok: true,
+      text: () => Promise.resolve('{}'),
+    }) as Response)
+
+    await alertarTesteManual()
+
+    const ultimo = alertasState[alertasState.length - 1]
+    const metadata = JSON.stringify(ultimo.metadata)
+    expect(metadata).not.toContain('Bearer')
+    expect(metadata).not.toContain('token')
+    expect(metadata).not.toContain('secret')
+    expect(metadata).not.toContain('Authorization')
+    expect(metadata).not.toMatch(/55\d{10,11}/)
+  })
+
+  it('alertarTesteManual texto não contém dados sensíveis', async () => {
+    let capturedBody: Record<string, unknown> | null = null
+    vi.mocked(fetchDigisacRaw).mockImplementationOnce(async (_endpoint: string, options?: RequestInit) => {
+      capturedBody = JSON.parse(options!.body as string)
+      return { ok: true, text: () => Promise.resolve('{}') } as Response
+    })
+
+    await alertarTesteManual()
+
+    const texto = String(capturedBody!.text)
+    expect(texto).toContain('TESTE DE ALERTA')
+    expect(texto).not.toContain('Bearer')
+    expect(texto).not.toContain('token')
+    expect(texto).not.toContain('secret')
+    expect(texto).not.toContain('Authorization')
+  })
+
+  it('alertarTesteManual deduplicação curta por minuto', async () => {
+    // Primeiro envio
+    vi.mocked(fetchDigisacRaw).mockImplementationOnce(async () => ({
+      ok: true,
+      text: () => Promise.resolve('{}'),
+    }) as Response)
+    await alertarTesteManual()
+
+    // Segundo envio no mesmo minuto — deve deduplicar
+    const fetchSpy = vi.mocked(fetchDigisacRaw)
+    fetchSpy.mockClear()
+
+    const resultado = await alertarTesteManual()
+    expect(resultado.ok).toBe(true)
+    if (resultado.ok) {
+      expect(resultado.deduplicado).toBe(true)
+    }
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 })

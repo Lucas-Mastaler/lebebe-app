@@ -23,6 +23,7 @@ export type TipoAlertaHubVendas =
   | 'falha_recorrente_conexao'
   | 'cron_falhou'
   | 'resumo_diario'
+  | 'teste_manual'
 
 type ResultadoEnvioAlerta =
   | { ok: true; deduplicado: false }
@@ -428,6 +429,44 @@ export async function alertarCronFalhou(params: {
     chaveDeduplicacao: `rota:${params.rota}`,
     texto,
     metadata: { rota: params.rota },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Teste manual — envia alerta apenas ao contato técnico, sem afetar filas/leads.
+// Deduplicação curta por minuto para evitar clique duplo sem bloquear testes futuros.
+// ---------------------------------------------------------------------------
+
+export async function alertarTesteManual(params?: {
+  supabase?: SupabaseServiceClient
+  timezone?: string
+}): Promise<ResultadoEnvioAlerta> {
+  const tz = params?.timezone ?? 'America/Sao_Paulo'
+  const agora = new Date()
+  const partes = obterPartesDataLocal(agora, tz)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const dataHoraLocal = `${pad(partes.dia)}/${pad(partes.mes)}/${partes.ano} ${pad(partes.hora)}:${pad(partes.minuto)}`
+  // Chave por minuto — janela curta de deduplicação (~30-60s) sem bloquear testes futuros
+  const chaveDedup = `teste:${partes.ano}-${pad(partes.mes)}-${pad(partes.dia)}T${pad(partes.hora)}:${pad(partes.minuto)}`
+
+  const texto = [
+    'HUB/VENDAS — TESTE DE ALERTA',
+    '',
+    'Este é um teste manual da integração de alertas.',
+    '',
+    'Origem: tela administrativa',
+    'Resultado esperado: mensagem enviada pelo bot',
+    `Data/hora: ${dataHoraLocal} (${tz})`,
+    '',
+    'Nenhuma fila, lead ou cliente foi alterado.',
+  ].join('\n')
+
+  return enviarAlertaOperacionalHubVendas({
+    supabase: params?.supabase,
+    tipo: 'teste_manual',
+    chaveDeduplicacao: chaveDedup,
+    texto,
+    metadata: { origem: 'tela_administrativa', timezone: tz },
   })
 }
 

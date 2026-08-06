@@ -364,6 +364,7 @@ export const NAVIGATION_GROUPS = [
       navigationItem('chamados_finalizados', 'checkCircle'),
       navigationItem('inteligencia_comercial', 'trendingUp'),
       navigationItem('digisac_finalizacoes_automaticas', 'bot'),
+      navigationItem('hub_vendas_gestao', 'bot'),
     ],
   },
   {
@@ -404,7 +405,6 @@ export const NAVIGATION_GROUPS = [
         label: 'AUDITORIA ACESSOS',
         href: '/superadmin?tab=auditoria',
       },
-      navigationItem('hub_vendas_gestao', 'bot'),
     ],
   },
 ] as const satisfies readonly NavigationGroupDefinition[]

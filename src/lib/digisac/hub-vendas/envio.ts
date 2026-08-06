@@ -215,6 +215,16 @@ export async function enviarMensagemResgateHubVendas(params: {
   contactId: string
   texto: string
 }): Promise<ResultadoMensagemResgate> {
+  const botUserId = process.env.DIGISAC_BOT_USER_ID
+  if (!botUserId) {
+    return {
+      ok: false,
+      status: null,
+      erro: 'digisac_bot_user_id_nao_configurado',
+      resultadoIncerto: false,
+    }
+  }
+
   try {
     const response = await fetchDigisacRaw('/messages', {
       method: 'POST',
@@ -223,6 +233,9 @@ export async function enviarMensagemResgateHubVendas(params: {
         text: params.texto,
         type: 'chat',
         contactId: params.contactId,
+        userId: botUserId,
+        origin: 'bot',
+        fromMe: true,
         editMessage: null,
         isComment: false,
         subject: 'Sem Assunto',

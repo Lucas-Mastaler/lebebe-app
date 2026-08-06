@@ -42,3 +42,21 @@ export const HUB_VENDAS_DEPARTAMENTOS_RESGATE: Record<HubVendasLoja, string> = {
 }
 
 export const HUB_VENDAS_COMENTARIO_RESGATE = 'CHAMADA AUTOMATICA - RESGATE'
+
+// Destino centralizado dos alertas operacionais e resumo diario do Hub/Vendas.
+// Os IDs podem ser sobrescritos por variaveis de ambiente (HUB_VENDAS_ALERTAS_CONTACT_ID,
+// HUB_VENDAS_ALERTAS_SERVICE_ID); os valores abaixo sao fallback seguro.
+export const HUB_VENDAS_ALERTAS_CONTACT_ID_FALLBACK = 'c2f3d98b-7256-4c81-bd6d-072ba1163d7e'
+export const HUB_VENDAS_ALERTAS_SERVICE_ID_FALLBACK = 'ece0fdac-962e-491c-b47f-fa912b17a878'
+
+export function obterAlertasContactId(): string {
+  return process.env.HUB_VENDAS_ALERTAS_CONTACT_ID ?? HUB_VENDAS_ALERTAS_CONTACT_ID_FALLBACK
+}
+
+export function obterAlertasServiceId(): string {
+  return process.env.HUB_VENDAS_ALERTAS_SERVICE_ID ?? HUB_VENDAS_ALERTAS_SERVICE_ID_FALLBACK
+}
+
+// Janela de deduplicacao de alertas (em minutos). O mesmo problema so gera novo alerta
+// apos esse periodo OU se o problema foi resolvido e ocorreu novamente.
+export const HUB_VENDAS_ALERTA_JANELA_DEDUP_MINUTOS = 30

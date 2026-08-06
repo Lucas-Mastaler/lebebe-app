@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { recuperarFilasAbandonadasHubVendas } from '@/lib/digisac/hub-vendas/manutencao'
+import { alertarCronFalhou } from '@/lib/digisac/hub-vendas/alertas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -51,6 +52,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'erro_desconhecido'
     console.error(`[HUB VENDAS ALERTA] cron falhou rota=recuperar-filas erro=${message} duracaoMs=${Date.now() - inicio}`)
+    await alertarCronFalhou({ rota: 'recuperar-filas', erro: message })
     return NextResponse.json({ ok: false, error: 'erro_recuperacao_filas' }, { status: 500 })
   }
 }

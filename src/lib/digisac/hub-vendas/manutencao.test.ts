@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { recuperarFilasAbandonadasHubVendas } from './manutencao'
+
+vi.mock('./alertas', () => ({
+  alertarEnvioTravado: vi.fn().mockResolvedValue(undefined),
+  alertarReservaLiberada: vi.fn().mockResolvedValue(undefined),
+}))
 
 function criarSupabaseFake(rows: unknown[]) {
   const state = {
@@ -18,12 +23,36 @@ function criarSupabaseFake(rows: unknown[]) {
       return this
     }
 
+    eq() {
+      return this
+    }
+
+    gte() {
+      return this
+    }
+
+    lt() {
+      return this
+    }
+
+    order() {
+      return this
+    }
+
+    limit() {
+      return this
+    }
+
     then(resolve: (value: unknown) => void) {
-      const config = [
-        { chave: 'automacao', valor: { ativa: false, pausada: true, motivo: 'fase' } },
-        { chave: 'parametros', valor: { reserva_timeout_minutos: 10, envio_timeout_minutos: 15 } },
-      ].filter((row) => this.inValues.includes(row.chave))
-      resolve({ data: config, error: null })
+      if (this.inValues.length > 0) {
+        const config = [
+          { chave: 'automacao', valor: { ativa: false, pausada: true, motivo: 'fase' } },
+          { chave: 'parametros', valor: { reserva_timeout_minutos: 10, envio_timeout_minutos: 15 } },
+        ].filter((row) => this.inValues.includes(row.chave))
+        resolve({ data: config, error: null })
+        return
+      }
+      resolve({ data: [], error: null })
     }
   }
 

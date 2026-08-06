@@ -27,6 +27,12 @@ vi.mock('./preparar-fila', () => ({
   analisarReconciliacaoLead: vi.fn().mockResolvedValue({ resultado: 'ignorado', conversoes: [] }),
 }))
 
+vi.mock('./alertas', () => ({
+  alertarAnaliseManual: vi.fn().mockResolvedValue(undefined),
+  alertarErroEnvio: vi.fn().mockResolvedValue(undefined),
+  alertarResultadoIncerto: vi.fn().mockResolvedValue(undefined),
+}))
+
 const FILA_ID = '2afa6d30-2a17-46fe-b968-3d412bcaf0f3'
 const LEAD_ID = 'da772a09-dcf0-4476-a81d-86983d7ac624'
 const PORTAO_ID = 'c60d720f-5ad5-4a1b-bedb-e51495dee686'
@@ -166,6 +172,16 @@ function criarSupabaseFake(options: { automacaoAtiva?: boolean; pausada?: boolea
       return this
     }
 
+    gte(column: string, value: unknown) {
+      this.filters[`${column}__gte`] = value
+      return this
+    }
+
+    lt(column: string, value: unknown) {
+      this.filters[`${column}__lt`] = value
+      return this
+    }
+
     order() {
       return this
     }
@@ -200,6 +216,9 @@ function criarSupabaseFake(options: { automacaoAtiva?: boolean; pausada?: boolea
         let data = [...state.leads]
         if (this.filters.id) data = data.filter((lead) => lead.id === this.filters.id)
         return { data, error: null }
+      }
+      if (this.table === 'hub_vendas_alertas') {
+        return { data: [], error: null }
       }
       return { data: [], error: null }
     }

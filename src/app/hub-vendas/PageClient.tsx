@@ -53,6 +53,11 @@ export default function PageClient() {
   const [motivoAcao, setMotivoAcao] = useState('')
   const [processandoAcao, setProcessandoAcao] = useState(false)
 
+  // Alertas e resumo operacional
+  const [alertas, setAlertas] = useState<{ total24h: number; ultimoAlertaEm: string | null; ultimoTipo: string | null; ultimos: Array<{ tipo: string; status: string; enviadoEm: string; chaveDeduplicacao: string }> }>({ total24h: 0, ultimoAlertaEm: null, ultimoTipo: null, ultimos: [] })
+  const [statusResumo, setStatusResumo] = useState<{ ultimoResumoEm: string | null; ultimoResumoDataLocal: string | null; ultimoResumoStatus: string | null }>({ ultimoResumoEm: null, ultimoResumoDataLocal: null, ultimoResumoStatus: null })
+  const [loadingAlertas, setLoadingAlertas] = useState(true)
+
   // ---------------------------------------------------------------------------
   // Carregamento de status
   // ---------------------------------------------------------------------------
@@ -109,16 +114,47 @@ export default function PageClient() {
   }, [filtros])
 
   // ---------------------------------------------------------------------------
+  // Carregamento de alertas e resumo operacional
+  // ---------------------------------------------------------------------------
+  const carregarAlertas = useCallback(async () => {
+    try {
+      const res = await fetch('/api/hub-vendas/alertas')
+      const data = await res.json()
+      if (data.ok) {
+        setAlertas(data.alertas)
+      }
+    } catch {
+      // silencioso — nao bloqueia a tela
+    } finally {
+      setLoadingAlertas(false)
+    }
+  }, [])
+
+  const carregarResumo = useCallback(async () => {
+    try {
+      const res = await fetch('/api/hub-vendas/resumo')
+      const data = await res.json()
+      if (data.ok) {
+        setStatusResumo(data.resumo)
+      }
+    } catch {
+      // silencioso
+    }
+  }, [])
+
+  // ---------------------------------------------------------------------------
   // Polling e carregamento inicial
   // ---------------------------------------------------------------------------
   useEffect(() => {
     carregarStatus()
     carregarFilas(1)
+    carregarAlertas()
+    carregarResumo()
     const interval = setInterval(() => {
       carregarStatus()
     }, POLLING_INTERVAL_MS)
     return () => clearInterval(interval)
-  }, [carregarStatus, carregarFilas])
+  }, [carregarStatus, carregarFilas, carregarAlertas, carregarResumo])
 
   // Debounce para filtro de cliente
   useEffect(() => {
@@ -380,6 +416,112 @@ export default function PageClient() {
           <span>{status.resumo.conexoesPausadas} conexão(ões) pausada(s) por erro automático.</span>
         </div>
       )}
+
+      {/* Alertas e resumo operacional */}
+      <section className="bg-white border border-slate-200 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-slate-700">Alertas e resumo operacional</h2>
+          <button
+            onClick={() => { carregarAlertas(); carregarResumo() }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-lg hover:bg-slate-200 text-xs font-medium text-slate-600 transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Atualizar
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Resumo diário */}
+          <div className="border border-slate-200 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Clock className="w-4 h-4 text-slate-400" />
+              <span className="text-xs font-semibold text-slate-600">Resumo diário</span>
+            </div>
+            {loadingAlertas ? (
+              <div className="text-xs text-slate-400">Carregando...</div>
+            ) : statusResumo.ultimoResumoEm ? (
+              <div className="space-y-1 text-xs">
+                <div className="text-slate-700">
+                  <span className="text-slate-400">Data:</span> {statusResumo.ultimoResumoDataLocal ?? '—'}
+                </div>
+                <div className="text-slate-700">
+                  <span className="text-slate-400">Enviado:</span> {formatarData(statusResumo.ultimoResumoEm)}
+                </div>
+                <div className="text-slate-700">
+                  <span className="text-slate-400">Status:</span>{' '}
+                  <span className={statusResumo.ultimoResumoStatus === 'enviado' ? 'text-green-600' : 'text-red-600'}>
+                    {statusResumo.ultimoResumoStatus ?? '—'}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-xs text-slate-400">Nenhum resumo enviado ainda.</div>
+            )}
+          </div>
+
+          {/* Alertas 24h */}
+          <div className="border border-slate-200 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertCircle className="w-4 h-4 text-slate-400" />
+              <span className="text-xs font-semibold text-slate-600">Alertas (24h)</span>
+            </div>
+            {loadingAlertas ? (
+              <div className="text-xs text-slate-400">Carregando...</div>
+            ) : (
+              <div className="space-y-1 text-xs">
+                <div className="text-2xl font-bold text-slate-800">{alertas.total24h}</div>
+                {alertas.ultimoAlertaEm && (
+                  <div className="text-slate-500">
+                    Último: {formatarData(alertas.ultimoAlertaEm)}
+                  </div>
+                )}
+                {alertas.ultimoTipo && (
+                  <div className="text-slate-500">
+                    Tipo: {alertas.ultimoTipo}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Estado saudável */}
+          <div className="border border-slate-200 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle className="w-4 h-4 text-slate-400" />
+              <span className="text-xs font-semibold text-slate-600">Estado operacional</span>
+            </div>
+            <div className="text-xs">
+              {alertas.total24h === 0 && status.resumo.erro === 0 && status.resumo.resultadoIncerto === 0 ? (
+                <span className="text-green-600 font-medium">✅ Saudável</span>
+              ) : (
+                <span className="text-amber-600 font-medium">⚠️ Com atenção</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Alertas recentes */}
+        {alertas.ultimos.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <h3 className="text-xs font-semibold text-slate-600 mb-2">Alertas recentes</h3>
+            <div className="space-y-1.5 max-h-40 overflow-y-auto">
+              {alertas.ultimos.map((alerta, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs text-slate-600">
+                  <span className={`px-1.5 py-0.5 rounded font-medium ${
+                    alerta.status === 'enviado' ? 'bg-green-50 text-green-700' :
+                    alerta.status === 'deduplicado' ? 'bg-slate-50 text-slate-500' :
+                    'bg-red-50 text-red-700'
+                  }`}>
+                    {alerta.status}
+                  </span>
+                  <span className="font-medium">{alerta.tipo}</span>
+                  <span className="text-slate-400">{formatarData(alerta.enviadoEm)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* Cards por loja */}
       <section>

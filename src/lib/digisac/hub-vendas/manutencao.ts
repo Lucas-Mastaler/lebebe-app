@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/service'
+import { alertarEnvioTravado, alertarReservaLiberada } from './alertas'
 
 type SupabaseServiceClient = ReturnType<typeof createServiceClient>
 
@@ -146,11 +147,23 @@ export async function recuperarFilasAbandonadasHubVendas({
       console.warn(
         `[HUB VENDAS RECUPERACAO] reserva liberada filaId=${detalhe.filaId} leadId=${detalhe.leadId} conexao=${detalhe.conexaoDestinoId ?? 'n/a'} motivo=${detalhe.motivo}`
       )
+      await alertarReservaLiberada({
+        supabase,
+        filaId: detalhe.filaId,
+        serviceId: detalhe.conexaoDestinoId,
+        motivo: detalhe.motivo,
+      })
     }
     if (detalhe.acao === 'movido_resultado_incerto') {
       console.error(
         `[HUB VENDAS RECUPERACAO] envio movido para resultado_incerto filaId=${detalhe.filaId} leadId=${detalhe.leadId} conexao=${detalhe.conexaoDestinoId ?? 'n/a'} motivo=${detalhe.motivo}`
       )
+      await alertarEnvioTravado({
+        supabase,
+        filaId: detalhe.filaId,
+        serviceId: detalhe.conexaoDestinoId,
+        motivo: detalhe.motivo,
+      })
     }
   }
 

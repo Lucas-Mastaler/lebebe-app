@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prepararFilaRecuperacaoHubVendas } from '@/lib/digisac/hub-vendas/preparar-fila'
+import { alertarCronFalhou } from '@/lib/digisac/hub-vendas/alertas'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -74,6 +75,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'erro_desconhecido'
     console.error(`[HUB VENDAS ALERTA] cron falhou rota=preparar-fila erro=${message} duracaoMs=${Date.now() - inicio}`)
+    await alertarCronFalhou({ rota: 'preparar-fila', erro: message })
     return NextResponse.json({ ok: false, error: 'erro_preparacao_fila' }, { status: 500 })
   }
 }

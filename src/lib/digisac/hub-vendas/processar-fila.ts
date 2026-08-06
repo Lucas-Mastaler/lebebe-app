@@ -19,6 +19,11 @@ import {
   type ResultadoNomeHubVendas,
 } from './mensagem'
 import { extrairCandidatosNomeContatoDigisac } from './telefone'
+import {
+  alertarAnaliseManual,
+  alertarErroEnvio,
+  alertarResultadoIncerto,
+} from './alertas'
 
 type SupabaseServiceClient = ReturnType<typeof createServiceClient>
 
@@ -541,6 +546,12 @@ async function processarFilaReservada(params: {
         categoria: 'placeholder_nao_resolvido',
         erro: `placeholders_pendentes=${validacaoPersistida.placeholdersPendentes.join(',')}`,
       })
+      await alertarAnaliseManual({
+        supabase: params.supabase,
+        filaId: params.fila.id,
+        serviceId: params.fila.conexao_destino_id,
+        categoria: 'placeholder_nao_resolvido',
+      })
       console.error(`[HUB VENDAS ENVIO] envio bloqueado por placeholder nao resolvido filaId=${params.fila.id}`)
       return {
         filaId: params.fila.id,
@@ -580,6 +591,12 @@ async function processarFilaReservada(params: {
       workerId: params.workerId,
       categoria: 'placeholder_nao_resolvido',
       erro: `placeholders_pendentes=${validacaoTexto.placeholdersPendentes.join(',')}`,
+    })
+    await alertarAnaliseManual({
+      supabase: params.supabase,
+      filaId: params.fila.id,
+      serviceId: params.fila.conexao_destino_id,
+      categoria: 'placeholder_nao_resolvido',
     })
     console.error(`[HUB VENDAS ENVIO] envio bloqueado por placeholder nao resolvido filaId=${params.fila.id}`)
     return {
@@ -643,6 +660,12 @@ async function processarFilaReservada(params: {
   if (!envio.ok) {
     if (envio.resultadoIncerto) {
       await registrarResultadoIncerto(params.supabase, params.fila, params.workerId, envio.erro)
+      await alertarResultadoIncerto({
+        supabase: params.supabase,
+        filaId: params.fila.id,
+        serviceId: params.fila.conexao_destino_id,
+        erro: envio.erro,
+      })
       return { filaId: params.fila.id, leadId: lead.id, statusInicial: params.fila.status, acao: 'resultado_incerto', motivo: 'timeout_resultado_incerto' }
     }
     throw new Error(envio.erro)
@@ -650,6 +673,12 @@ async function processarFilaReservada(params: {
 
   if (!envio.messageId?.trim()) {
     await registrarResultadoIncerto(params.supabase, params.fila, params.workerId, 'digisac_message_id_ausente_apos_post')
+    await alertarResultadoIncerto({
+      supabase: params.supabase,
+      filaId: params.fila.id,
+      serviceId: params.fila.conexao_destino_id,
+      erro: 'digisac_message_id_ausente_apos_post',
+    })
     return { filaId: params.fila.id, leadId: lead.id, statusInicial: params.fila.status, acao: 'resultado_incerto', motivo: 'digisac_message_id_ausente' }
   }
 
@@ -823,6 +852,12 @@ export async function processarFilaRecuperacaoHubVendas({
       const erro = classificarErro(error)
       if (erro.resultadoIncerto) {
         await registrarResultadoIncerto(supabase, fila, workerId, erro.mensagem)
+        await alertarResultadoIncerto({
+          supabase,
+          filaId: fila.id,
+          serviceId: fila.conexao_destino_id,
+          erro: erro.mensagem,
+        })
         const detalhe = { filaId: fila.id, leadId: fila.lead_id, statusInicial: fila.status, acao: 'resultado_incerto', motivo: erro.categoria }
         resultado.detalhes.push(detalhe)
         incrementar(resultado, detalhe)
@@ -835,6 +870,14 @@ export async function processarFilaRecuperacaoHubVendas({
       resultado.detalhes.push(detalhe)
       incrementar(resultado, detalhe)
       console.error(`[HUB VENDAS ENVIO] erro filaId=${fila.id} categoria=${erro.categoria}`)
+      await alertarErroEnvio({
+        supabase,
+        filaId: fila.id,
+        serviceId: fila.conexao_destino_id,
+        tentativa: (fila.tentativas_envio ?? 0) + 1,
+        erro: erro.mensagem,
+        retryAgendado: acao === 'retry_agendado',
+      })
     }
   }
 

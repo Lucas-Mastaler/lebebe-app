@@ -633,6 +633,32 @@ export function validarLimiteDiario(entrada: unknown): ValidacaoLimite {
 }
 
 // ---------------------------------------------------------------------------
+// Helper de auditoria segura — falha aqui impede a ação crítica
+// ---------------------------------------------------------------------------
+
+/**
+ * Registra auditoria e lança erro se o insert falhar.
+ * Garante que ações críticas não fiquem sem registro de auditoria.
+ */
+async function registrarAuditoriaCritica(
+  supabase: SupabaseServiceClient,
+  params: {
+    acao: string
+    email: string
+    metadata: Record<string, unknown>
+  }
+): Promise<void> {
+  const { error } = await supabase.from('auditoria_acessos').insert({
+    acao: params.acao,
+    email: params.email,
+    metadata: params.metadata,
+  })
+  if (error) {
+    throw new Error(`auditoria_falhou acao=${params.acao} erro=${error.message}`)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Alterar limite diário por loja
 // ---------------------------------------------------------------------------
 
@@ -669,7 +695,7 @@ export async function alterarLimiteDiarioHubVendas(
   if (updateError) throw updateError
 
   // Registrar auditoria
-  await supabase.from('auditoria_acessos').insert({
+  await registrarAuditoriaCritica(supabase, {
     acao: 'hub_vendas_limite_alterado',
     email: emailUsuario,
     metadata: {
@@ -721,7 +747,7 @@ export async function pausarAutomacaoHubVendas(
     .single()
   if (updateError) throw updateError
 
-  await supabase.from('auditoria_acessos').insert({
+  await registrarAuditoriaCritica(supabase, {
     acao: 'hub_vendas_automacao_pausada',
     email: emailUsuario,
     metadata: { motivo: motivoSanitizado },
@@ -770,7 +796,7 @@ export async function reativarAutomacaoHubVendas(
     .single()
   if (updateError) throw updateError
 
-  await supabase.from('auditoria_acessos').insert({
+  await registrarAuditoriaCritica(supabase, {
     acao: 'hub_vendas_automacao_reativada',
     email: emailUsuario,
     metadata: { motivo: motivoSanitizado },
@@ -826,7 +852,7 @@ export async function cancelarFilaAgendadaHubVendas(
     .eq('status', 'agendado')
   if (updateError) throw updateError
 
-  await supabase.from('auditoria_acessos').insert({
+  await registrarAuditoriaCritica(supabase, {
     acao: 'hub_vendas_fila_cancelada',
     email: emailUsuario,
     metadata: { fila_id: filaId, motivo: motivoSanitizado },
@@ -874,7 +900,7 @@ export async function reprocessarFilaErroHubVendas(
     .eq('status', 'erro')
   if (updateError) throw updateError
 
-  await supabase.from('auditoria_acessos').insert({
+  await registrarAuditoriaCritica(supabase, {
     acao: 'hub_vendas_fila_reprocessada',
     email: emailUsuario,
     metadata: { fila_id: filaId },
@@ -920,7 +946,7 @@ export async function liberarAnaliseManualHubVendas(
     .eq('status', 'analise_manual')
   if (updateError) throw updateError
 
-  await supabase.from('auditoria_acessos').insert({
+  await registrarAuditoriaCritica(supabase, {
     acao: 'hub_vendas_analise_manual_liberada',
     email: emailUsuario,
     metadata: { fila_id: filaId, motivo: motivoSanitizado },

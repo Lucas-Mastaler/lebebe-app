@@ -70,6 +70,19 @@ export const APP_MODULES = [
     access: 'profile',
   },
   {
+    moduleKey: 'hub_vendas_gestao',
+    nome: 'GESTAO HUB VENDAS',
+    descricao: 'Tela administrativa de gestao, monitoramento e configuracao da automacao Hub/Vendas',
+    rotaBase: '/hub-vendas',
+    categoria: 'admin',
+    publico: false,
+    somenteSuperadmin: true,
+    ativo: true,
+    ordem: 64,
+    access: 'superadmin',
+    menuLabel: 'GESTÃO HUB VENDAS',
+  },
+  {
     moduleKey: 'atendimento_presencial_ficha',
     nome: 'Ficha de Atendimento',
     descricao: 'Placeholder protegido da ficha de atendimento presencial',
@@ -367,6 +380,7 @@ export const NAVIGATION_GROUPS = [
         label: 'AUDITORIA ACESSOS',
         href: '/superadmin?tab=auditoria',
       },
+      navigationItem('hub_vendas_gestao', 'bot'),
     ],
   },
 ] as const satisfies readonly NavigationGroupDefinition[]

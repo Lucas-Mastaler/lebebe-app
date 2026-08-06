@@ -15,6 +15,7 @@ import type {
   FormatoTapeteMoriah,
   PedidoPersonalizadoMoriahEntrada,
   ProblemaPedidoPersonalizado,
+  StatusPedidoPersonalizado,
   UnidadePedidoPersonalizado,
 } from '@/lib/pedidos-personalizados'
 
@@ -43,6 +44,7 @@ export type OpcoesNovoPedido = {
   produtos: ProdutoOpcao[]
   cores: CorOpcao[]
   formatos: FormatoTapeteMoriah[]
+  status?: StatusPedidoPersonalizado[]
   limites: {
     tapetesPorPedido: number
     coresPorTapete: number
@@ -55,6 +57,7 @@ export type TapeteFormulario = {
   chaveLocal: string
   tapeteId: string | null
   anexos: AnexoFormulario[]
+  anexosLocais: AnexoLocalFormulario[]
   formato: FormatoTapeteMoriah
   dimensao1Metros: string
   dimensao2Metros: string
@@ -62,6 +65,14 @@ export type TapeteFormulario = {
   nomeColecaoCatalogo: string
   referenciaCatalogo: string
   observacoes: string
+}
+
+export type AnexoLocalFormulario = {
+  slot: 1 | 2
+  arquivo: File
+  previewUrl: string | null
+  estado: 'selecionado' | 'enviando' | 'falhou'
+  erro: string | null
 }
 
 export type AnexoFormulario = {
@@ -116,6 +127,7 @@ export function criarTapeteVazio(chaveLocal: string): TapeteFormulario {
     chaveLocal,
     tapeteId: null,
     anexos: [],
+    anexosLocais: [],
     formato: 'RETANGULAR',
     dimensao1Metros: '',
     dimensao2Metros: '',
@@ -431,6 +443,8 @@ type RespostaMutacaoAnexo = {
   tamanho: number
   createdAt?: string
   version: number
+  teveAlteracaoLayout?: boolean
+  quantidadeAlteracoesLayout?: number | null
 }
 
 function validarRespostaMutacaoAnexo(valor: unknown): RespostaMutacaoAnexo {
@@ -473,12 +487,40 @@ export async function enviarAnexo(params: {
   return validarRespostaMutacaoAnexo(await response.json())
 }
 
+export async function enviarAnexoGestao(params: {
+  pedidoId: string
+  tapeteId: string
+  slot: 1 | 2
+  arquivo: File
+  expectedVersion: number
+}, fetcher: FetchLike = fetch): Promise<RespostaMutacaoAnexo> {
+  const response = await fetcher(
+    `/api/pedidos-personalizados/gestao/pedidos/${params.pedidoId}/tapetes/${params.tapeteId}/anexos`,
+    { method: 'POST', body: montarFormDataAnexo(params.arquivo, params.expectedVersion, params.slot) }
+  )
+  if (!response.ok) throw await lerErro(response)
+  return validarRespostaMutacaoAnexo(await response.json())
+}
+
 export async function substituirAnexo(params: {
   anexoId: string
   arquivo: File
   expectedVersion: number
 }, fetcher: FetchLike = fetch): Promise<RespostaMutacaoAnexo> {
   const response = await fetcher(`/api/pedidos-personalizados/anexos/${params.anexoId}`, {
+    method: 'PUT',
+    body: montarFormDataAnexo(params.arquivo, params.expectedVersion),
+  })
+  if (!response.ok) throw await lerErro(response)
+  return validarRespostaMutacaoAnexo(await response.json())
+}
+
+export async function substituirAnexoGestao(params: {
+  anexoId: string
+  arquivo: File
+  expectedVersion: number
+}, fetcher: FetchLike = fetch): Promise<RespostaMutacaoAnexo> {
+  const response = await fetcher(`/api/pedidos-personalizados/gestao/anexos/${params.anexoId}`, {
     method: 'PUT',
     body: montarFormDataAnexo(params.arquivo, params.expectedVersion),
   })
@@ -501,6 +543,30 @@ export async function removerAnexoApi(params: {
     throw { status: 500, codigo: 'RESPOSTA_INVALIDA', mensagem: 'A resposta do servidor não pôde ser confirmada.' } satisfies ErroHttpNovoPedido
   }
   return { anexoId: params.anexoId, version: body.version as number }
+}
+
+export async function removerAnexoGestaoApi(params: {
+  anexoId: string
+  expectedVersion: number
+}, fetcher: FetchLike = fetch): Promise<{ anexoId: string; version: number; teveAlteracaoLayout?: boolean; quantidadeAlteracoesLayout?: number | null }> {
+  const response = await fetcher(`/api/pedidos-personalizados/gestao/anexos/${params.anexoId}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expectedVersion: params.expectedVersion }),
+  })
+  if (!response.ok) throw await lerErro(response)
+  const body = await response.json() as { ok?: unknown; anexoId?: unknown; version?: unknown; teveAlteracaoLayout?: unknown; quantidadeAlteracoesLayout?: unknown }
+  if (body.ok !== true || body.anexoId !== params.anexoId || !Number.isInteger(body.version)) {
+    throw { status: 500, codigo: 'RESPOSTA_INVALIDA', mensagem: 'A resposta do servidor não pôde ser confirmada.' } satisfies ErroHttpNovoPedido
+  }
+  return {
+    anexoId: params.anexoId,
+    version: body.version as number,
+    teveAlteracaoLayout: typeof body.teveAlteracaoLayout === 'boolean' ? body.teveAlteracaoLayout : undefined,
+    quantidadeAlteracoesLayout: typeof body.quantidadeAlteracoesLayout === 'number' || body.quantidadeAlteracoesLayout === null
+      ? body.quantidadeAlteracoesLayout
+      : undefined,
+  }
 }
 
 export async function solicitarUrlAnexo(

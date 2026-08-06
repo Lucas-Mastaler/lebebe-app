@@ -206,7 +206,9 @@ export class RepositorioPedidosPersonalizados {
       .from('pedidos_personalizados_pedidos')
       .select(`
         id, created_at, updated_at, unidade_id, consultora, cliente,
-        numero_lancamento, status, version,
+        numero_lancamento, data_entrega, data_pedido_fornecedor,
+        numero_pedido_compra, comprador, status, version,
+        fornecedor:pedidos_personalizados_fornecedores!pedidos_personalizados_pedidos_fornecedor_id_fkey(chave, nome),
         unidade:app_unidades!pedidos_personalizados_pedidos_unidade_id_fkey(chave, nome)
       `, { count: 'exact' })
       .in('unidade_id', unidadeIds)
@@ -222,6 +224,10 @@ export class RepositorioPedidosPersonalizados {
     if (filtros.status) query = query.eq('status', filtros.status)
     if (filtros.dataInicial) query = query.gte('created_at', `${filtros.dataInicial}T00:00:00-03:00`)
     if (filtros.dataFinal) query = query.lt('created_at', `${proximoDiaIso(filtros.dataFinal)}T00:00:00-03:00`)
+    if (filtros.dataPedidoFornecedorInicial) query = query.gte('data_pedido_fornecedor', filtros.dataPedidoFornecedorInicial)
+    if (filtros.dataPedidoFornecedorFinal) query = query.lte('data_pedido_fornecedor', filtros.dataPedidoFornecedorFinal)
+    if (filtros.dataEntregaInicial) query = query.gte('data_entrega', filtros.dataEntregaInicial)
+    if (filtros.dataEntregaFinal) query = query.lte('data_entrega', filtros.dataEntregaFinal)
     if (pedidoIdsProduto) query = query.in('id', pedidoIdsProduto)
 
     const inicio = (filtros.pagina - 1) * 20

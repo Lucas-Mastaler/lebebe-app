@@ -1,6 +1,5 @@
 import {
   AVISO_MUITAS_ALTERACOES_LAYOUT,
-  AVISO_MUITAS_CORES,
   AVISO_MEDIDA_RECOMENDADA,
   FORNECEDOR_MORIAH,
   LIMITE_CORES_POR_TAPETE,
@@ -42,7 +41,7 @@ import type {
 
 const LETRAS_E_ESPACOS = /^\p{L}+(?: \p{L}+)*$/u
 const NUMERO_LANCAMENTO = /^\d{1,6}$/
-const NUMERO_PEDIDO_COMPRA = /^\d{1,20}$/
+const NUMERO_PEDIDO_COMPRA = /^\d{1,5}$/
 const REFERENCIA_CATALOGO = /^[A-Z0-9-]+$/
 
 type Erro = ProblemaPedidoPersonalizado<CodigoErroPedidoPersonalizado>
@@ -65,7 +64,7 @@ export function validarCoresSelecionadas(
   const ordens = new Set<number>()
 
   if (cores.length > LIMITE_CORES_POR_TAPETE) {
-    erros.push(erro('LIMITE_CORES', 'cores', 'Cada tapete pode possuir no máximo 8 cores.'))
+    erros.push(erro('LIMITE_CORES', 'cores', 'Selecione no máximo 6 cores.'))
   }
 
   const dados = cores.map((cor, indice) => {
@@ -76,7 +75,7 @@ export function validarCoresSelecionadas(
     ids.add(id)
 
     if (!Number.isInteger(cor.ordem) || cor.ordem < 1 || cor.ordem > LIMITE_CORES_POR_TAPETE) {
-      erros.push(erro('ORDEM_COR_INVALIDA', `${campo}.ordem`, 'A ordem da cor deve estar entre 1 e 8.'))
+      erros.push(erro('ORDEM_COR_INVALIDA', `${campo}.ordem`, 'A ordem da cor deve estar entre 1 e 6.'))
     } else if (ordens.has(cor.ordem)) {
       erros.push(erro('ORDEM_COR_DUPLICADA', `${campo}.ordem`, 'A ordem das cores não pode se repetir.'))
     }
@@ -90,10 +89,6 @@ export function validarCoresSelecionadas(
       nome: cor.nome?.trim() || null,
     }
   })
-
-  if (cores.length >= 7 && cores.length <= LIMITE_CORES_POR_TAPETE) {
-    avisos.push({ codigo: 'MUITAS_CORES', campo: 'cores', mensagem: AVISO_MUITAS_CORES })
-  }
 
   return { valido: erros.length === 0, dados: erros.length === 0 ? dados : null, erros, avisos }
 }
@@ -137,7 +132,9 @@ export function converterDataAdministrativaParaISO(
   const texto = valor?.trim() ?? ''
   if (!texto) return { valido: true, dados: null, erros: [], avisos: [] }
 
-  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(texto)
+  const matchBr = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(texto)
+  const matchIso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(texto)
+  const match = matchBr ?? matchIso
   if (!match) {
     return {
       valido: false,
@@ -147,9 +144,9 @@ export function converterDataAdministrativaParaISO(
     }
   }
 
-  const dia = Number(match[1])
+  const dia = Number(matchBr ? match[1] : match[3])
   const mes = Number(match[2])
-  const ano = Number(match[3])
+  const ano = Number(matchBr ? match[3] : match[1])
   const bissexto = ano % 4 === 0 && (ano % 100 !== 0 || ano % 400 === 0)
   const diasPorMes = [31, bissexto ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
@@ -191,8 +188,10 @@ function validarIdentificacao(
   if (numeroLancamento !== null && !NUMERO_LANCAMENTO.test(numeroLancamento)) {
     erros.push(erro('NUMERO_LANCAMENTO_INVALIDO', 'numeroLancamento', 'O número de lançamento deve conter somente números e ter no máximo 6 dígitos.'))
   }
-  if (numeroPedidoCompra !== null && !NUMERO_PEDIDO_COMPRA.test(numeroPedidoCompra)) {
-    erros.push(erro('NUMERO_PEDIDO_COMPRA_INVALIDO', 'numeroPedidoCompra', 'O pedido de compra deve conter de 1 a 20 dígitos.'))
+  if (numeroPedidoCompra !== null && !/^\d+$/.test(numeroPedidoCompra)) {
+    erros.push(erro('NUMERO_PEDIDO_COMPRA_INVALIDO', 'numeroPedidoCompra', 'Use somente números no pedido de compra.'))
+  } else if (numeroPedidoCompra !== null && !NUMERO_PEDIDO_COMPRA.test(numeroPedidoCompra)) {
+    erros.push(erro('NUMERO_PEDIDO_COMPRA_INVALIDO', 'numeroPedidoCompra', 'O pedido de compra deve conter no máximo 5 dígitos.'))
   }
   if (comprador !== null && (comprador.length < 2 || comprador.length > 40 || !LETRAS_E_ESPACOS.test(comprador))) {
     erros.push(erro('COMPRADOR_INVALIDO', 'comprador', 'O comprador deve ter de 2 a 40 letras e espaços.'))

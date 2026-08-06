@@ -13,6 +13,8 @@ type Dependencias = {
   agora: () => Date
 }
 
+type ContextoMutacaoAnexo = 'inicial' | 'gestao'
+
 const padrao: Dependencias = {
   carregarContexto: carregarContextoPedidosPersonalizados,
   criarRepositorio: (contexto) => new RepositorioAnexos(contexto.supabase),
@@ -37,11 +39,15 @@ function erroBanco(error: { code?: string; message?: string }) {
   return jsonErro('ERRO_INTERNO', 'Não foi possível concluir a operação.', 500)
 }
 
-async function contexto(log: ContextoLogPedidos, deps: Dependencias) {
-  const acesso = await deps.carregarContexto([
+async function contexto(
+  log: ContextoLogPedidos,
+  deps: Dependencias,
+  modulos: Parameters<typeof carregarContextoPedidosPersonalizados>[0] = [
     'pedidos_personalizados_gestao',
     'pedidos_personalizados_novo',
-  ])
+  ]
+) {
+  const acesso = await deps.carregarContexto(modulos)
   if (!acesso.ok) return acesso
   log.usuarioId = acesso.contexto.allowedUser.id
   return acesso
@@ -62,9 +68,17 @@ async function compensar(repo: RepositorioAnexos, storage: StorageAnexos, caminh
 function idsValidos(...ids: string[]) { return ids.every(ehUuid) }
 function unidades(ctx: ContextoPedidosPersonalizados) { return ctx.unidades.map((item) => item.id) }
 
-export async function uploadAnexo(request: Request, pedidoId: string, tapeteId: string, deps: Dependencias = padrao) {
+export async function uploadAnexo(
+  request: Request,
+  pedidoId: string,
+  tapeteId: string,
+  deps: Dependencias = padrao,
+  contextoMutacao: ContextoMutacaoAnexo = 'inicial'
+) {
   const log: ContextoLogPedidos = { rota: '/api/pedidos-personalizados/pedidos/[id]/tapetes/[tapeteId]/anexos', operacao: 'upload_anexo', inicio: Date.now(), pedidoId, tapeteId }
-  const acesso = await contexto(log, deps)
+  const acesso = await contexto(log, deps, contextoMutacao === 'gestao'
+    ? ['pedidos_personalizados_gestao']
+    : ['pedidos_personalizados_novo'])
   if (!acesso.ok) return acesso.response
   if (!idsValidos(pedidoId, tapeteId)) return jsonErro('ID_INVALIDO', 'ID inválido.', 400)
   const repo = deps.criarRepositorio(acesso.contexto)
@@ -92,13 +106,24 @@ export async function uploadAnexo(request: Request, pedidoId: string, tapeteId: 
     p_slot: form.slot, p_caminho_objeto: caminho, p_nome_original: form.arquivo.nomeOriginal,
     p_mime_type: form.arquivo.mimeType, p_tamanho_bytes: form.arquivo.tamanhoBytes,
     p_usuario_id: acesso.contexto.allowedUser.id,
+    p_contabilizar_alteracao_layout: contextoMutacao === 'gestao',
   })
   if (registrado.error) {
     await compensar(repo, storage, caminho)
     return erroBanco(registrado.error)
   }
   registrarResultado({ ...log, anexoId, slot: form.slot, tamanho: form.arquivo.tamanhoBytes, mime: form.arquivo.mimeType }, 'sucesso', 'ANEXO_CRIADO')
-  return NextResponse.json({ ok: true, anexoId, slot: form.slot, nomeOriginal: form.arquivo.nomeOriginal, mime: form.arquivo.mimeType, tamanho: form.arquivo.tamanhoBytes, version: registrado.data.version }, { status: 201 })
+  return NextResponse.json({
+    ok: true,
+    anexoId,
+    slot: form.slot,
+    nomeOriginal: form.arquivo.nomeOriginal,
+    mime: form.arquivo.mimeType,
+    tamanho: form.arquivo.tamanhoBytes,
+    version: registrado.data.version,
+    teveAlteracaoLayout: registrado.data.teve_alteracao_layout,
+    quantidadeAlteracoesLayout: registrado.data.quantidade_alteracoes_layout,
+  }, { status: 201 })
 }
 
 async function carregarAnexo(anexoId: string, log: ContextoLogPedidos, deps: Dependencias) {
@@ -126,10 +151,25 @@ export async function abrirAnexo(_request: Request, anexoId: string, deps: Depen
   return NextResponse.json({ ok: true, url: url.url, expiraEm, nomeOriginal: carregado.escopo.anexo.nome_original, mime: carregado.escopo.anexo.mime_type })
 }
 
-export async function substituirAnexo(request: Request, anexoId: string, deps: Dependencias = padrao) {
+export async function substituirAnexo(
+  request: Request,
+  anexoId: string,
+  deps: Dependencias = padrao,
+  contextoMutacao: ContextoMutacaoAnexo = 'inicial'
+) {
   const log: ContextoLogPedidos = { rota: '/api/pedidos-personalizados/anexos/[anexoId]', operacao: 'substituir_anexo', inicio: Date.now(), anexoId }
-  const carregado = await carregarAnexo(anexoId, log, deps)
-  if (!carregado.ok) return carregado.response
+  const acesso = await contexto(log, deps, contextoMutacao === 'gestao'
+    ? ['pedidos_personalizados_gestao']
+    : ['pedidos_personalizados_novo'])
+  if (!acesso.ok) return acesso.response
+  if (!ehUuid(anexoId)) return jsonErro('ID_INVALIDO', 'ID inválido.', 400)
+  const repo = deps.criarRepositorio(acesso.contexto)
+  const escopo = await repo.buscarAnexoNoEscopo(anexoId, unidades(acesso.contexto))
+  if (escopo.error) return erroBanco(escopo.error)
+  if (!escopo.data?.anexo || !verificarAcessoAnexoPedidoPersonalizado(acesso.contexto, escopo.data.pedido)) {
+    return jsonErro('ANEXO_NAO_ENCONTRADO', 'Recurso não encontrado.', 404)
+  }
+  const carregado = { acesso: acesso.contexto, repo, escopo: escopo.data as EscopoAnexo & { anexo: NonNullable<EscopoAnexo['anexo']> } }
   let form
   try { form = await lerMultipartAnexo(request, false) } catch (error) { return erroArquivo(error) ?? jsonErro('PAYLOAD_INVALIDO', 'Payload inválido.', 422) }
   if (carregado.escopo.pedido.version !== form.expectedVersion) return jsonErro('CONFLITO_VERSAO', 'O pedido foi alterado.', 409)
@@ -141,29 +181,57 @@ export async function substituirAnexo(request: Request, anexoId: string, deps: D
     p_pedido_id: carregado.escopo.pedido.id, p_anexo_id: anexoId, p_expected_version: form.expectedVersion,
     p_caminho_objeto: caminho, p_nome_original: form.arquivo.nomeOriginal, p_mime_type: form.arquivo.mimeType,
     p_tamanho_bytes: form.arquivo.tamanhoBytes, p_usuario_id: carregado.acesso.allowedUser.id,
+    p_contabilizar_alteracao_layout: contextoMutacao === 'gestao',
   })
   if (resultado.error) { await compensar(carregado.repo, storage, caminho); return erroBanco(resultado.error) }
   registrarResultado({ ...log, tamanho: form.arquivo.tamanhoBytes, mime: form.arquivo.mimeType }, 'sucesso', 'ANEXO_SUBSTITUIDO')
-  return NextResponse.json({ ok: true, anexoId, slot: carregado.escopo.anexo.slot, nomeOriginal: form.arquivo.nomeOriginal, mime: form.arquivo.mimeType, tamanho: form.arquivo.tamanhoBytes, createdAt: carregado.escopo.anexo.created_at, version: resultado.data.version })
+  return NextResponse.json({ ok: true, anexoId, slot: carregado.escopo.anexo.slot, nomeOriginal: form.arquivo.nomeOriginal, mime: form.arquivo.mimeType, tamanho: form.arquivo.tamanhoBytes, createdAt: carregado.escopo.anexo.created_at, version: resultado.data.version, teveAlteracaoLayout: resultado.data.teve_alteracao_layout, quantidadeAlteracoesLayout: resultado.data.quantidade_alteracoes_layout })
 }
 
-export async function removerAnexo(request: Request, anexoId: string, deps: Dependencias = padrao) {
+export async function removerAnexo(
+  request: Request,
+  anexoId: string,
+  deps: Dependencias = padrao,
+  contextoMutacao: ContextoMutacaoAnexo = 'inicial'
+) {
   const log: ContextoLogPedidos = { rota: '/api/pedidos-personalizados/anexos/[anexoId]', operacao: 'remover_anexo', inicio: Date.now(), anexoId }
-  const carregado = await carregarAnexo(anexoId, log, deps)
-  if (!carregado.ok) return carregado.response
+  const acesso = await contexto(log, deps, contextoMutacao === 'gestao'
+    ? ['pedidos_personalizados_gestao']
+    : ['pedidos_personalizados_novo'])
+  if (!acesso.ok) return acesso.response
+  if (!ehUuid(anexoId)) return jsonErro('ID_INVALIDO', 'ID inválido.', 400)
+  const repo = deps.criarRepositorio(acesso.contexto)
+  const escopo = await repo.buscarAnexoNoEscopo(anexoId, unidades(acesso.contexto))
+  if (escopo.error) return erroBanco(escopo.error)
+  if (!escopo.data?.anexo || !verificarAcessoAnexoPedidoPersonalizado(acesso.contexto, escopo.data.pedido)) {
+    return jsonErro('ANEXO_NAO_ENCONTRADO', 'Recurso não encontrado.', 404)
+  }
+  const carregado = { acesso: acesso.contexto, repo, escopo: escopo.data as EscopoAnexo & { anexo: NonNullable<EscopoAnexo['anexo']> } }
   const corpo = await lerJsonLimitado(request)
   if (!corpo.ok) return corpo.response
   if (!ehObjeto(corpo.valor) || !Number.isInteger(corpo.valor.expectedVersion) || Number(corpo.valor.expectedVersion) < 1) return jsonErro('PAYLOAD_INVALIDO', 'Payload inválido.', 422)
   if (carregado.escopo.pedido.version !== corpo.valor.expectedVersion) {
     return jsonErro('CONFLITO_VERSAO', 'O pedido foi alterado.', 409)
   }
-  const resultado = await carregado.repo.remover({ p_pedido_id: carregado.escopo.pedido.id, p_anexo_id: anexoId, p_expected_version: corpo.valor.expectedVersion, p_usuario_id: carregado.acesso.allowedUser.id })
+  const resultado = await carregado.repo.remover({ p_pedido_id: carregado.escopo.pedido.id, p_anexo_id: anexoId, p_expected_version: corpo.valor.expectedVersion, p_usuario_id: carregado.acesso.allowedUser.id, p_contabilizar_alteracao_layout: contextoMutacao === 'gestao' })
   if (resultado.error) return erroBanco(resultado.error)
   const caminho = String(resultado.data.caminho_enfileirado)
   const removido = await deps.criarStorage(carregado.acesso).remover(caminho)
   if (removido.ok) await carregado.repo.marcarProcessadoPorCaminho(caminho, deps.agora().toISOString())
   registrarResultado(log, 'sucesso', 'ANEXO_REMOVIDO')
-  return NextResponse.json({ ok: true, anexoId, version: resultado.data.version })
+  return NextResponse.json({ ok: true, anexoId, version: resultado.data.version, teveAlteracaoLayout: resultado.data.teve_alteracao_layout, quantidadeAlteracoesLayout: resultado.data.quantidade_alteracoes_layout })
+}
+
+export function uploadAnexoGestao(request: Request, pedidoId: string, tapeteId: string) {
+  return uploadAnexo(request, pedidoId, tapeteId, padrao, 'gestao')
+}
+
+export function substituirAnexoGestao(request: Request, anexoId: string) {
+  return substituirAnexo(request, anexoId, padrao, 'gestao')
+}
+
+export function removerAnexoGestao(request: Request, anexoId: string) {
+  return removerAnexo(request, anexoId, padrao, 'gestao')
 }
 
 export type { Dependencias as DependenciasApiAnexos }

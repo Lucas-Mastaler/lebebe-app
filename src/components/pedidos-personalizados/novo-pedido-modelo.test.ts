@@ -12,15 +12,18 @@ import {
   deveAvisarDadosNaoSalvos,
   enviarNovoPedido,
   enviarAnexo,
+  enviarAnexoGestao,
   filtrarCores,
   gerarIdempotencyKey,
   montarPayloadCriacao,
   moverItem,
   removerTapete,
   removerAnexoApi,
+  removerAnexoGestaoApi,
   resumirTapete,
   solicitarUrlAnexo,
   substituirAnexo,
+  substituirAnexoGestao,
   validarArquivoAnexo,
 } from './novo-pedido-modelo'
 import type { CorOpcao, EstadoNovoPedido, OpcoesNovoPedido, ProdutoOpcao } from './novo-pedido-modelo'
@@ -50,7 +53,7 @@ const opcoes: OpcoesNovoPedido = {
   produtos,
   cores,
   formatos: ['REDONDO', 'RETANGULAR', 'ORGANICO'],
-  limites: { tapetesPorPedido: 10, coresPorTapete: 8, medidaMinimaCm: 10, medidaMaximaCm: 1500 },
+  limites: { tapetesPorPedido: 10, coresPorTapete: 6, medidaMinimaCm: 10, medidaMaximaCm: 1500 },
 }
 
 function estadoValido(): EstadoNovoPedido {
@@ -87,6 +90,7 @@ describe('estado do formulário de novo pedido', () => {
     const estado = criarEstadoInicial('local-1')
     expect(estado.tapetes).toHaveLength(1)
     expect(estado.unidade).toBe('')
+    expect(estado.tapetes[0].anexosLocais).toEqual([])
   })
 
   it('adiciona até dez tapetes e rejeita o décimo primeiro', () => {
@@ -119,16 +123,16 @@ describe('estado do formulário de novo pedido', () => {
 })
 
 describe('cores do formulário', () => {
-  it.each([0, 1, 6, 7, 8])('mantém %i cores selecionadas', (quantidade) => {
+  it.each([0, 1, 6])('mantém %i cores selecionadas', (quantidade) => {
     let tapete = criarEstadoInicial('x').tapetes[0]
     for (const cor of cores.slice(0, quantidade)) tapete = alternarCor(tapete, cor.id)
     expect(tapete.corIds).toHaveLength(quantidade)
   })
 
-  it('rejeita a nona cor', () => {
+  it('rejeita a sétima cor', () => {
     let tapete = criarEstadoInicial('x').tapetes[0]
-    for (const cor of cores.slice(0, 9)) tapete = alternarCor(tapete, cor.id)
-    expect(tapete.corIds).toEqual(cores.slice(0, 8).map((cor) => cor.id))
+    for (const cor of cores.slice(0, 7)) tapete = alternarCor(tapete, cor.id)
+    expect(tapete.corIds).toEqual(cores.slice(0, 6).map((cor) => cor.id))
   })
 
   it('não duplica e remove uma cor já selecionada', () => {
@@ -324,6 +328,22 @@ describe('arquivos e cliente HTTP de anexos', () => {
     expect((init.body as FormData).get('expectedVersion')).toBe('1')
   })
 
+  it('usa rotas separadas para mutações iniciais e de gestão', async () => {
+    const resposta = { ok: true, anexoId: ANEXO_ID, slot: 1, nomeOriginal: 'foto.png', mime: 'image/png', tamanho: 10, version: 2, teveAlteracaoLayout: true, quantidadeAlteracoesLayout: 1 }
+    const fetcher = vi.fn().mockResolvedValue(responseJson(resposta, 201))
+    const arquivo = new File([new Uint8Array([1])], 'foto.png', { type: 'image/png' })
+    await enviarAnexoGestao({ pedidoId: PEDIDO_ID, tapeteId: TAPETE_ID, slot: 1, arquivo, expectedVersion: 1 }, fetcher)
+    expect(fetcher.mock.calls[0][0]).toContain('/gestao/pedidos/')
+
+    fetcher.mockResolvedValue(responseJson(resposta))
+    await substituirAnexoGestao({ anexoId: ANEXO_ID, arquivo, expectedVersion: 2 }, fetcher)
+    expect(fetcher.mock.calls[1][0]).toContain('/gestao/anexos/')
+
+    fetcher.mockResolvedValue(responseJson({ ok: true, anexoId: ANEXO_ID, version: 3, teveAlteracaoLayout: true, quantidadeAlteracoesLayout: 2 }))
+    await expect(removerAnexoGestaoApi({ anexoId: ANEXO_ID, expectedVersion: 2 }, fetcher)).resolves.toMatchObject({ version: 3, quantidadeAlteracoesLayout: 2 })
+    expect(fetcher.mock.calls[2][0]).toContain('/gestao/anexos/')
+  })
+
   it('substitui sem apagar metadado local no cliente e envia a versão global', async () => {
     const fetcher = vi.fn().mockResolvedValue(responseJson({
       ok: true,
@@ -386,12 +406,16 @@ describe('proteção, dados não salvos e bloqueio seguro de anexos', () => {
     expect(blocoMenu).not.toContain("navigationItem('pedidos_personalizados_novo'")
   })
 
-  it('exibe anexos somente após associar IDs e mantém os dados comerciais bloqueados', () => {
+  it('seleciona anexos antes do salvamento e só envia depois de associar os IDs reais', () => {
     const formulario = readFileSync(path.resolve('src/components/pedidos-personalizados/FormularioNovoPedido.tsx'), 'utf8')
     const anexos = readFileSync(path.resolve('src/components/pedidos-personalizados/AnexosTapete.tsx'), 'utf8')
+    const anexosIniciais = readFileSync(path.resolve('src/components/pedidos-personalizados/AnexosIniciaisTapete.tsx'), 'utf8')
     expect(formulario).toContain('tapete.tapeteId ?')
     expect(formulario).toContain('const formularioBloqueado = enviando || !!salvo')
     expect(formulario).toContain('operacaoAnexoRef.current')
+    expect(formulario).toContain('await enviarAnexosIniciais(resposta, tapetesAssociados)')
+    expect(formulario.indexOf('associarTapetesCriados')).toBeLessThan(formulario.indexOf('await enviarAnexosIniciais'))
+    expect(anexosIniciais).toContain('Selecione até dois arquivos antes de salvar')
     expect(anexos).toContain('type="file"')
     expect(anexos).toContain('Slot {slot}')
     expect(anexos).toContain('Até dois arquivos')

@@ -80,16 +80,8 @@ describe('validação de cores', () => {
     expect(resultado.dados?.map((cor) => cor.id)).toEqual(cores(quantidade).map((cor) => cor.id))
   })
 
-  it.each([7, 8])('aceita %i cores com aviso não bloqueante', (quantidade) => {
-    const resultado = validarCoresSelecionadas(cores(quantidade))
-    expect(resultado.valido).toBe(true)
-    expect(resultado.avisos).toEqual([
-      expect.objectContaining({ codigo: 'MUITAS_CORES', mensagem: expect.stringContaining('mais de 6 cores') }),
-    ])
-  })
-
-  it('rejeita nove cores', () => {
-    expect(validarCoresSelecionadas(cores(9)).erros).toContainEqual(expect.objectContaining({ codigo: 'LIMITE_CORES' }))
+  it('rejeita sete cores', () => {
+    expect(validarCoresSelecionadas(cores(7)).erros).toContainEqual(expect.objectContaining({ codigo: 'LIMITE_CORES' }))
   })
 
   it('rejeita cor, ordem e posição inválidas ou duplicadas', () => {
@@ -133,6 +125,7 @@ describe('validação de alterações de layout', () => {
 describe('datas administrativas', () => {
   it('converte datas reais sem depender de fuso horário', () => {
     expect(converterDataAdministrativaParaISO('05/08/2026').dados).toBe('2026-08-05')
+    expect(converterDataAdministrativaParaISO('2026-08-05').dados).toBe('2026-08-05')
     expect(converterDataAdministrativaParaISO('29/02/2028').dados).toBe('2028-02-29')
     expect(converterDataAdministrativaParaISO(' 05/08/2026 ').dados).toBe('2026-08-05')
   })
@@ -195,7 +188,7 @@ describe('validação completa do pedido Moriah', () => {
       cliente: '   ',
       comprador: 'J@',
       numeroLancamento: '12A',
-      numeroPedidoCompra: '1'.repeat(21),
+      numeroPedidoCompra: '1'.repeat(6),
       dataEntrega: '31/02/2026',
       tapetes: [tapete({ formato: 'REDONDO', dimensao1Metros: '0,099', dimensao2Metros: '2,00', referenciaCatalogo: 'ABC 123' })],
     }))
@@ -243,6 +236,16 @@ describe('validação completa do pedido Moriah', () => {
       numeroLancamento: '000001',
       tapetes: [{ nomeColecaoCatalogo: 'C'.repeat(30), referenciaCatalogo: 'R'.repeat(20) }],
     })
+  })
+
+  it.each(['', '1', '00001'])('aceita pedido de compra vazio ou com até 5 dígitos: %s', (numeroPedidoCompra) => {
+    expect(validarPedidoPersonalizadoMoriah(pedido({ numeroPedidoCompra })).valido).toBe(true)
+  })
+
+  it.each(['123456', '12A45', '12 45', '+1234'])('rejeita pedido de compra inválido: %s', (numeroPedidoCompra) => {
+    expect(validarPedidoPersonalizadoMoriah(pedido({ numeroPedidoCompra })).erros).toContainEqual(
+      expect.objectContaining({ campo: 'numeroPedidoCompra', codigo: 'NUMERO_PEDIDO_COMPRA_INVALIDO' })
+    )
   })
 
   it.each(['', '1', '000001'])('aceita lançamento vazio ou com até 6 dígitos: %s', (numeroLancamento) => {
@@ -298,11 +301,11 @@ describe('validação completa do pedido Moriah', () => {
   it('mantém erros bloqueantes separados dos avisos não bloqueantes', () => {
     const resultado = validarPedidoPersonalizadoMoriah(pedido({
       unidade: 'pos_venda',
-      tapetes: [tapete({ dimensao1Metros: '2,03', cores: cores(7), teveAlteracaoLayout: true, quantidadeAlteracoesLayout: 6 })],
+      tapetes: [tapete({ dimensao1Metros: '2,03', cores: cores(6), teveAlteracaoLayout: true, quantidadeAlteracoesLayout: 6 })],
     }))
     expect(resultado.erros).toContainEqual(expect.objectContaining({ codigo: 'UNIDADE_INVALIDA' }))
     expect(resultado.avisos.map((item) => item.codigo)).toEqual(expect.arrayContaining([
-      'MEDIDA_FORA_INTERVALO_RECOMENDADO', 'MUITAS_CORES', 'MUITAS_ALTERACOES_LAYOUT',
+      'MEDIDA_FORA_INTERVALO_RECOMENDADO', 'MUITAS_ALTERACOES_LAYOUT',
     ]))
   })
 })

@@ -1,0 +1,197 @@
+import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import {
+  atualizarAdministrativoGestao,
+  atualizarComercialGestao,
+  detalheParaAdministrativo,
+  detalheParaFormulario,
+  listarPedidosGestao,
+  payloadAtualizacaoAdministrativa,
+  payloadAtualizacaoComercial,
+  validarAdministrativo,
+} from './gestao-modelo'
+import type { OpcoesNovoPedido } from './novo-pedido-modelo'
+import type { PedidoDetalhe } from './gestao-modelo'
+
+const PEDIDO = '10000000-0000-4000-8000-000000000001'
+const TAPETE = '20000000-0000-4000-8000-000000000001'
+const COR = '30000000-0000-4000-8000-000000000001'
+
+const detalhe: PedidoDetalhe = {
+  id: PEDIDO,
+  fornecedor: { chave: 'moriah_tapetes', nome: 'MORIAH TAPETES' },
+  unidade: { chave: 'portao', nome: 'PORTÃO' },
+  consultora: 'ANA', cliente: 'CLIENTE', numeroLancamento: '000001',
+  dataEntrega: null, dataPedidoFornecedor: null, numeroPedidoCompra: null, comprador: null,
+  status: 'CADASTRADO', version: 4, createdAt: '2026-08-06T10:00:00Z', updatedAt: '2026-08-06T10:00:00Z',
+  tapetes: [{
+    id: TAPETE, ordem: 1, formato: 'RETANGULAR', dimensao1Cm: 200, dimensao2Cm: 300,
+    areaCobradaCentesimosM2: 600, produto: { id: 'p', codigo: '21158', descricao: 'Produto' },
+    nomeColecaoCatalogo: 'COLECAO', referenciaCatalogo: 'REF-1', observacoes: 'Teste',
+    teveAlteracaoLayout: true, quantidadeAlteracoesLayout: 2,
+    cores: [{ id: COR, ordem: 1, numero: '01', codigo: 'K-01', nome: 'Grafite' }], anexos: [],
+  }],
+}
+
+const opcoes = {
+  fornecedor: { id: 'f', chave: 'moriah_tapetes', nome: 'MORIAH TAPETES' },
+  unidades: [{ chave: 'portao', nome: 'PORTÃO' }],
+  produtos: [{ id: 'p', codigo: '21158', descricao: 'Produto' }],
+  cores: [{ id: COR, numero: '01', codigo: 'K-01', nome: 'Grafite', ordem: 1 }],
+  formatos: ['RETANGULAR'], status: ['CADASTRADO'],
+  limites: { tapetesPorPedido: 10, coresPorTapete: 6, medidaMinimaCm: 10, medidaMaximaCm: 1500 },
+} as OpcoesNovoPedido
+
+describe('modelo da gestão de pedidos personalizados', () => {
+  it('converte detalhe sem perder IDs, ordem, medidas, cores e anexos', () => {
+    const formulario = detalheParaFormulario(detalhe)
+    expect(formulario).toMatchObject({ unidade: 'portao', consultora: 'ANA', cliente: 'CLIENTE' })
+    expect(formulario.tapetes[0]).toMatchObject({ tapeteId: TAPETE, dimensao1Metros: '2,00', dimensao2Metros: '3,00', corIds: [COR] })
+  })
+
+  it('monta atualização comercial com expectedVersion e IDs persistidos', () => {
+    const payload = payloadAtualizacaoComercial(detalheParaFormulario(detalhe), 4, opcoes)
+    expect(payload).toMatchObject({ expectedVersion: 4, unidade: 'portao', tapetes: [{ id: TAPETE, ordem: 1 }] })
+    expect(JSON.stringify(payload)).not.toMatch(/dataEntrega|comprador|status/)
+  })
+
+  it('serializa filtros e paginação na listagem', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true, itens: [], pagina: 2, totalPaginas: 2, totalRegistros: 21, limite: 20 }), { status: 200 }))
+    await listarPedidosGestao({
+      cliente: 'Bebê', consultora: '', numeroLancamento: '000001', status: '', unidade: 'portao', dataInicial: '', dataFinal: '',
+      dataPedidoFornecedorInicial: '2026-08-01', dataPedidoFornecedorFinal: '2026-08-15',
+      dataEntregaInicial: '2026-08-20', dataEntregaFinal: '2026-08-31',
+    }, 2)
+    expect(String(fetchMock.mock.calls[0][0])).toContain('page=2')
+    expect(String(fetchMock.mock.calls[0][0])).toContain('numeroLancamento=000001')
+    expect(String(fetchMock.mock.calls[0][0])).toContain('dataPedidoFornecedorInicial=2026-08-01')
+    expect(String(fetchMock.mock.calls[0][0])).toContain('dataEntregaFinal=2026-08-31')
+    fetchMock.mockRestore()
+  })
+
+  it('usa PATCH e expectedVersion para atualização comercial', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true, version: 5 }), { status: 200 }))
+    const payload = payloadAtualizacaoComercial(detalheParaFormulario(detalhe), 4, opcoes)
+    await expect(atualizarComercialGestao(PEDIDO, payload)).resolves.toBe(5)
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'PATCH' })
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ expectedVersion: 4 })
+    fetchMock.mockRestore()
+  })
+
+  it('monta o formulário administrativo somente com os campos confirmados no schema', () => {
+    const estado = detalheParaAdministrativo({
+      ...detalhe,
+      numeroLancamento: '000001',
+      dataEntrega: '2026-08-20',
+      dataPedidoFornecedor: '2026-08-07',
+      numeroPedidoCompra: '00001',
+      comprador: 'ANA SILVA',
+    })
+    expect(estado).toEqual({
+      numeroLancamento: '000001',
+      dataEntrega: '2026-08-20',
+      dataPedidoFornecedor: '2026-08-07',
+      numeroPedidoCompra: '00001',
+      comprador: 'ANA SILVA',
+    })
+    expect(estado).not.toHaveProperty('numeroPedido')
+    expect(estado).not.toHaveProperty('dataPedido')
+  })
+
+  it('valida limites e datas reais do contrato administrativo atual', () => {
+    expect(validarAdministrativo({
+      numeroLancamento: '000001', dataEntrega: '2028-02-29', dataPedidoFornecedor: '',
+      numeroPedidoCompra: '00001', comprador: 'ANA MARIA',
+    })).toEqual({})
+    expect(validarAdministrativo({
+      numeroLancamento: '1234567', dataEntrega: '31/02/2026', dataPedidoFornecedor: '2026-08-07',
+      numeroPedidoCompra: '1'.repeat(6), comprador: 'A1',
+    })).toEqual({
+      numeroLancamento: expect.any(String),
+      numeroPedidoCompra: expect.any(String),
+      comprador: expect.any(String),
+      dataEntrega: expect.any(String),
+    })
+  })
+
+  it('bloqueia intervalos de filtro invertidos antes da requisição', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    await expect(listarPedidosGestao({
+      cliente: '', consultora: '', numeroLancamento: '', status: '', unidade: '', dataInicial: '', dataFinal: '',
+      dataPedidoFornecedorInicial: '2026-08-10', dataPedidoFornecedorFinal: '2026-08-01',
+      dataEntregaInicial: '', dataEntregaFinal: '',
+    }, 1)).rejects.toThrow('pedido ao fornecedor')
+    expect(fetchMock).not.toHaveBeenCalled()
+    fetchMock.mockRestore()
+  })
+
+  it('preserva zeros, status e layout atuais no payload administrativo atômico', () => {
+    const payload = payloadAtualizacaoAdministrativa(detalhe, {
+      numeroLancamento: '000001', dataEntrega: '', dataPedidoFornecedor: '2026-08-07',
+      numeroPedidoCompra: '00012', comprador: ' ana  silva ',
+    })
+    expect(payload).toMatchObject({
+      expectedVersion: 4,
+      numeroLancamento: '000001',
+      numeroPedidoCompra: '00012',
+      comprador: 'ANA SILVA',
+      status: 'CADASTRADO',
+      layoutTapetes: [{ tapeteId: TAPETE, teveAlteracaoLayout: true, quantidadeAlteracoesLayout: 2 }],
+    })
+    expect(payload).not.toHaveProperty('numeroPedido')
+    expect(payload).not.toHaveProperty('dataPedido')
+    expect(payload).not.toHaveProperty('createdAt')
+  })
+
+  it('usa somente a rota administrativa aprovada, PATCH e expectedVersion', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true, version: 5 }), { status: 200 }))
+    const payload = payloadAtualizacaoAdministrativa(detalhe, detalheParaAdministrativo(detalhe))
+    await expect(atualizarAdministrativoGestao(PEDIDO, payload)).resolves.toBe(5)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][0]).toBe(`/api/pedidos-personalizados/pedidos/${PEDIDO}/administrativo`)
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'PATCH' })
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ expectedVersion: 4, status: 'CADASTRADO' })
+    fetchMock.mockRestore()
+  })
+
+  it.each([
+    [401, 'Sua sessão expirou. Entre novamente.'],
+    [403, 'Você não possui acesso à gestão de pedidos personalizados.'],
+    [404, 'Pedido não encontrado ou fora do seu escopo.'],
+    [409, 'Este pedido foi alterado por outra pessoa. Recarregue os dados antes de continuar.'],
+  ])('traduz HTTP %s da atualização administrativa sem expor resposta técnica', async (status, mensagem) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ mensagem: 'select segredo' }), { status }))
+    const payload = payloadAtualizacaoAdministrativa(detalhe, detalheParaAdministrativo(detalhe))
+    await expect(atualizarAdministrativoGestao(PEDIDO, payload)).rejects.toThrow(mensagem)
+    await expect(atualizarAdministrativoGestao(PEDIDO, payload)).rejects.not.toThrow('select segredo')
+    fetchMock.mockRestore()
+  })
+
+  it('mantém detalhe/comercial responsivos e administração em modal separado', () => {
+    const componente = readFileSync(path.resolve('src/components/pedidos-personalizados/GestaoPedidosPersonalizados.tsx'), 'utf8')
+    const anexos = readFileSync(path.resolve('src/components/pedidos-personalizados/AnexosTapete.tsx'), 'utf8')
+    expect(componente).toContain('lg:!w-[80vw]')
+    expect(componente).toContain('sm:!w-[90vw]')
+    expect(componente).toContain('overflow-x-hidden')
+    expect(componente).toContain('Editar dados administrativos')
+    expect(componente).toContain('Salvar dados administrativos')
+    expect(componente).toContain('Pedido de compra')
+    expect(componente).toContain('dataPedidoFornecedor')
+    expect(componente).toContain('dataEntrega')
+    expect(componente).toContain('type="date"')
+    expect(componente).toContain('maxLength={5}')
+    expect(componente).toContain('bg-gradient-to-r')
+    expect(componente).toContain('classeStatus(item.status)')
+    expect(anexos).toContain('CheckCircle2')
+    expect(anexos).toContain('border-emerald-200')
+  })
+
+  it('protege a página de gestão sem adicionar item ao menu', () => {
+    const page = readFileSync(path.resolve('src/app/pedidos-personalizados/page.tsx'), 'utf8')
+    const catalogo = readFileSync(path.resolve('src/lib/auth/modulos-app.ts'), 'utf8')
+    const menu = catalogo.slice(catalogo.indexOf('export const NAVIGATION_GROUPS'), catalogo.indexOf('export const PROFILE_CONTROLLED_MODULE_KEYS'))
+    expect(page).toContain("checkModuleAndWindowAccess('pedidos_personalizados_gestao')")
+    expect(menu).not.toContain("navigationItem('pedidos_personalizados_gestao'")
+  })
+})

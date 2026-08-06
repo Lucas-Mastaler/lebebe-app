@@ -137,6 +137,7 @@ function validarRelacoesCatalogo(
 function serializarItemListagem(valor: unknown) {
   const row = valor as Record<string, unknown>
   const unidade = row.unidade as { chave?: string } | null
+  const fornecedor = row.fornecedor as { chave?: string; nome?: string } | null
   const chave = typeof unidade?.chave === 'string' ? unidade.chave : ''
   return {
     id: row.id,
@@ -148,9 +149,14 @@ function serializarItemListagem(valor: unknown) {
         ? UNIDADE_PARA_EXIBICAO[chave as keyof typeof UNIDADE_PARA_EXIBICAO]
         : null,
     },
+    fornecedor: fornecedor ? { chave: fornecedor.chave, nome: fornecedor.nome } : null,
     consultora: row.consultora,
     cliente: row.cliente,
     numeroLancamento: row.numero_lancamento,
+    dataEntrega: row.data_entrega,
+    dataPedidoFornecedor: row.data_pedido_fornecedor,
+    numeroPedidoCompra: row.numero_pedido_compra,
+    comprador: row.comprador,
     status: row.status,
     version: row.version,
     quantidadeTapetes: row.quantidade_tapetes,
@@ -474,6 +480,13 @@ export async function atualizarAdministrativo(
   const atual = await repo.buscarPedidoNoEscopo(pedidoId, acesso.contexto.unidades.map((item) => item.id))
   if (atual.error) return falhaBanco(log, atual.error)
   if (!atual.data) return jsonErro('PEDIDO_NAO_ENCONTRADO', 'Pedido não encontrado.', 404)
+  if (validacao.dados.status !== atual.data.status) {
+    return jsonErro(
+      'TRANSICAO_STATUS_NAO_DEFINIDA',
+      'A alteração de status ainda não está disponível.',
+      422
+    )
+  }
 
   const idsAtuais = await repo.listarTapeteIds(pedidoId)
   if (idsAtuais.error) return falhaBanco(log, idsAtuais.error)

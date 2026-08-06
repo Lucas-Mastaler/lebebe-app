@@ -98,29 +98,34 @@ describe('upload de anexo', () => {
     expect(d.criarStorage).not.toHaveBeenCalled()
   })
 
-  it('consulta gestão antes de novo e autoriza gestão para pedido de outro criador', async () => {
-    const d = deps(repo({
+  it('separa o contexto inicial do contexto de gestão sem receber o booleano do navegador', async () => {
+    const r = repo({
       buscarTapeteNoEscopo: vi.fn().mockResolvedValue({
         data: escopo(false, { created_by: OUTRO_USUARIO }),
         error: null,
       }),
+    })
+    const d = deps(r)
+    expect((await uploadAnexo(multipart(), PEDIDO, TAPETE, d, 'gestao')).status).toBe(201)
+    expect(d.carregarContexto).toHaveBeenCalledWith(['pedidos_personalizados_gestao'])
+    expect(r.registrar).toHaveBeenCalledWith(expect.objectContaining({
+      p_contabilizar_alteracao_layout: true,
     }))
-    expect((await uploadAnexo(multipart(), PEDIDO, TAPETE, d)).status).toBe(201)
-    expect(d.carregarContexto).toHaveBeenCalledWith([
-      'pedidos_personalizados_gestao',
-      'pedidos_personalizados_novo',
-    ])
   })
 
   it('autoriza novo no próprio pedido CADASTRADO', async () => {
+    const r = repo()
     const s = storage()
     expect((await uploadAnexo(
       multipart(),
       PEDIDO,
       TAPETE,
-      deps(repo(), s, contexto('pedidos_personalizados_novo'))
+      deps(r, s, contexto('pedidos_personalizados_novo'))
     )).status).toBe(201)
     expect(s.upload).toHaveBeenCalledOnce()
+    expect(r.registrar).toHaveBeenCalledWith(expect.objectContaining({
+      p_contabilizar_alteracao_layout: false,
+    }))
   })
 
   it.each([
@@ -258,6 +263,16 @@ describe('abertura, substituição e remoção', () => {
     expect(s.remover).not.toHaveBeenCalled()
   })
 
+  it('contabiliza substituição somente no contexto de gestão', async () => {
+    const inicial = repo()
+    await substituirAnexo(multipart(undefined), ANEXO, deps(inicial, storage(), contexto('pedidos_personalizados_novo')))
+    expect(inicial.substituir).toHaveBeenCalledWith(expect.objectContaining({ p_contabilizar_alteracao_layout: false }))
+
+    const gestao = repo()
+    await substituirAnexo(multipart(undefined), ANEXO, deps(gestao), 'gestao')
+    expect(gestao.substituir).toHaveBeenCalledWith(expect.objectContaining({ p_contabilizar_alteracao_layout: true }))
+  })
+
   it('novo substitui o anexo próprio e não chama Storage/RPC quando a autorização falha', async () => {
     const autorizado = repo()
     expect((await substituirAnexo(
@@ -295,6 +310,16 @@ describe('abertura, substituição e remoção', () => {
     const response = await removerAnexo(requisicaoRemocao(), ANEXO, deps(r))
     expect(await response.json()).toMatchObject({ anexoId: ANEXO, version: 2 })
     expect(r.marcarProcessadoPorCaminho).toHaveBeenCalledOnce()
+  })
+
+  it('contabiliza remoção somente no contexto de gestão', async () => {
+    const inicial = repo()
+    await removerAnexo(requisicaoRemocao(), ANEXO, deps(inicial, storage(), contexto('pedidos_personalizados_novo')))
+    expect(inicial.remover).toHaveBeenCalledWith(expect.objectContaining({ p_contabilizar_alteracao_layout: false }))
+
+    const gestao = repo()
+    await removerAnexo(requisicaoRemocao(), ANEXO, deps(gestao), 'gestao')
+    expect(gestao.remover).toHaveBeenCalledWith(expect.objectContaining({ p_contabilizar_alteracao_layout: true }))
   })
 
   it('novo remove o anexo próprio e não chama RPC/Storage quando a autorização falha', async () => {

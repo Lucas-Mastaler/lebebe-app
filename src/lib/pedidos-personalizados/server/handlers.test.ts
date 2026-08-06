@@ -132,6 +132,7 @@ describe('opções de pedidos personalizados', () => {
     expect(body.fornecedor.chave).toBe('moriah_tapetes')
     expect(body.produtos).toHaveLength(3)
     expect(body.cores).toHaveLength(31)
+    expect(body.limites.coresPorTapete).toBe(6)
     expect(body.unidades).toContainEqual({ chave: 'portao', nome: 'PORTÃO' })
     expect(JSON.stringify(body)).not.toContain('decorisi')
   })
@@ -208,10 +209,10 @@ describe('criação de pedido personalizado', () => {
     expect((await criarPedido(requestJson(pedido({ tapetes: onze })), deps())).status).toBe(422)
   })
 
-  it('aceita oito cores e rejeita nove', async () => {
+  it('aceita seis cores e rejeita sete', async () => {
     const cores = (quantidade: number) => Array.from({ length: quantidade }, (_, indice) => ({ id: uuidCor(indice + 1), ordem: indice + 1 }))
-    expect((await criarPedido(requestJson(pedido({ tapetes: [tapete({ cores: cores(8) })] })), deps())).status).toBe(201)
-    expect((await criarPedido(requestJson(pedido({ tapetes: [tapete({ cores: cores(9) })] })), deps())).status).toBe(422)
+    expect((await criarPedido(requestJson(pedido({ tapetes: [tapete({ cores: cores(6) })] })), deps())).status).toBe(201)
+    expect((await criarPedido(requestJson(pedido({ tapetes: [tapete({ cores: cores(7) })] })), deps())).status).toBe(422)
   })
 
   it('resolve cores no catálogo ativo', async () => {
@@ -287,6 +288,10 @@ describe('listagem de pedidos personalizados', () => {
             consultora: 'ANA',
             cliente: 'CLIENTE',
             numero_lancamento: '0001',
+            data_entrega: '2026-08-20',
+            data_pedido_fornecedor: '2026-08-07',
+            numero_pedido_compra: '00001',
+            comprador: 'ANA SILVA',
             status: 'CADASTRADO',
             version: 1,
             quantidade_tapetes: 2,
@@ -300,7 +305,14 @@ describe('listagem de pedidos personalizados', () => {
     const response = await listarPedidos(new Request('http://localhost/api/pedidos-personalizados/pedidos?page=2'), deps(repo))
     const body = await response.json()
     expect(body).toMatchObject({ pagina: 2, totalPaginas: 2, totalRegistros: 21, limite: 20 })
-    expect(body.itens[0]).toMatchObject({ unidade: { chave: 'portao', nome: 'PORTÃO' }, quantidadeTapetes: 2 })
+    expect(body.itens[0]).toMatchObject({
+      unidade: { chave: 'portao', nome: 'PORTÃO' },
+      quantidadeTapetes: 2,
+      dataEntrega: '2026-08-20',
+      dataPedidoFornecedor: '2026-08-07',
+      numeroPedidoCompra: '00001',
+      comprador: 'ANA SILVA',
+    })
     expect(body.itens[0]).not.toHaveProperty('observacoes')
   })
 
@@ -309,6 +321,8 @@ describe('listagem de pedidos personalizados', () => {
     ['consultora=B', 422],
     ['dataInicial=2026-02-30', 422],
     ['dataInicial=2026-08-10&dataFinal=2026-08-01', 422],
+    ['dataPedidoFornecedorInicial=2026-08-10&dataPedidoFornecedorFinal=2026-08-01', 422],
+    ['dataEntregaInicial=2026-08-10&dataEntregaFinal=2026-08-01', 422],
     ['pageSize=21', 422],
     ['codigoProduto=99999', 422],
     ['numeroLancamento=12A', 422],
@@ -323,7 +337,7 @@ describe('listagem de pedidos personalizados', () => {
 
   it('encaminha todos os filtros válidos ao repositório', async () => {
     const repo = criarRepo()
-    const url = 'http://localhost/api?page=3&unidade=bigorrilho&cliente=Maria&consultora=Ana&numeroLancamento=0001&status=CADASTRADO&dataInicial=2026-08-01&dataFinal=2026-08-05&codigoProduto=21158'
+    const url = 'http://localhost/api?page=3&unidade=bigorrilho&cliente=Maria&consultora=Ana&numeroLancamento=0001&status=CADASTRADO&dataInicial=2026-08-01&dataFinal=2026-08-05&dataPedidoFornecedorInicial=2026-08-02&dataPedidoFornecedorFinal=2026-08-06&dataEntregaInicial=2026-08-20&dataEntregaFinal=2026-08-31&codigoProduto=21158'
     expect((await listarPedidos(new Request(url), deps(repo))).status).toBe(200)
     expect(repo.listar).toHaveBeenCalledWith(expect.objectContaining({
       pagina: 3,
@@ -331,6 +345,10 @@ describe('listagem de pedidos personalizados', () => {
       cliente: 'Maria',
       consultora: 'Ana',
       numeroLancamento: '0001',
+      dataPedidoFornecedorInicial: '2026-08-02',
+      dataPedidoFornecedorFinal: '2026-08-06',
+      dataEntregaInicial: '2026-08-20',
+      dataEntregaFinal: '2026-08-31',
       codigoProduto: '21158',
     }), unidades)
   })
@@ -455,14 +473,38 @@ describe('atualização administrativa', () => {
     }
   }
 
-  it.each(['CADASTRADO', 'AGUARDANDO LAYOUT', 'AGUARDANDO APROVAÇÃO DO CLIENTE', 'EM PRODUÇÃO', 'RECEBIDO'])('aceita status %s', async (status) => {
-    const repo = criarRepo()
-    const response = await atualizarAdministrativo(requestJson(payloadAdministrativo({ status }), 'PATCH'), PEDIDO_ID, deps(repo))
-    expect(response.status).toBe(200)
-    expect(repo.atualizarAdministrativo).toHaveBeenCalledWith(expect.objectContaining({
-      dados: expect.objectContaining({ status, dataEntrega: '2026-08-10', numeroLancamento: '0001' }),
-    }))
+  it.each(['123456', '12A45'])('rejeita pedido de compra acima do limite ou não numérico: %s', async (numeroPedidoCompra) => {
+    const response = await atualizarAdministrativo(requestJson(payloadAdministrativo({ numeroPedidoCompra }), 'PATCH'), PEDIDO_ID, deps())
+    expect(response.status).toBe(422)
   })
+
+  it.each(['CADASTRADO', 'AGUARDANDO LAYOUT', 'AGUARDANDO APROVAÇÃO DO CLIENTE', 'EM PRODUÇÃO', 'RECEBIDO'])(
+    'preserva o status atual %s enquanto não há transições aprovadas',
+    async (status) => {
+      const repo = criarRepo({
+        buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
+          data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status, version: 1 },
+          error: null,
+        }),
+      })
+      const response = await atualizarAdministrativo(requestJson(payloadAdministrativo({ status }), 'PATCH'), PEDIDO_ID, deps(repo))
+      expect(response.status).toBe(200)
+      expect(repo.atualizarAdministrativo).toHaveBeenCalledWith(expect.objectContaining({
+        dados: expect.objectContaining({ status, dataEntrega: '2026-08-10', numeroLancamento: '0001' }),
+      }))
+    }
+  )
+
+  it.each(['AGUARDANDO LAYOUT', 'AGUARDANDO APROVAÇÃO DO CLIENTE', 'EM PRODUÇÃO', 'RECEBIDO'])(
+    'não inventa a transição de CADASTRADO para %s',
+    async (status) => {
+      const repo = criarRepo()
+      const response = await atualizarAdministrativo(requestJson(payloadAdministrativo({ status }), 'PATCH'), PEDIDO_ID, deps(repo))
+      expect(response.status).toBe(422)
+      expect((await response.json()).erro).toBe('TRANSICAO_STATUS_NAO_DEFINIDA')
+      expect(repo.atualizarAdministrativo).not.toHaveBeenCalled()
+    }
+  )
 
   it('rejeita campo comercial', async () => {
     const response = await atualizarAdministrativo(requestJson(payloadAdministrativo({ cliente: 'ALTERADO' }), 'PATCH'), PEDIDO_ID, deps())

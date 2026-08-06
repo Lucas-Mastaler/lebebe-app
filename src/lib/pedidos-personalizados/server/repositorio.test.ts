@@ -10,6 +10,7 @@ function builder(resultado: unknown, rastreio: { order: Array<[string, unknown]>
     in: vi.fn(() => chain),
     ilike: vi.fn(() => chain),
     gte: vi.fn(() => chain),
+    lte: vi.fn(() => chain),
     lt: vi.fn(() => chain),
     order: vi.fn((campo: string, opcoes?: unknown) => {
       rastreio.order.push([campo, opcoes])
@@ -33,6 +34,10 @@ function filtros(overrides: Partial<FiltrosPedidos> = {}): FiltrosPedidos {
     status: null,
     dataInicial: null,
     dataFinal: null,
+    dataPedidoFornecedorInicial: null,
+    dataPedidoFornecedorFinal: null,
+    dataEntregaInicial: null,
+    dataEntregaFinal: null,
     codigoProduto: null,
     ...overrides,
   }
@@ -119,6 +124,10 @@ describe('repositório server-only de pedidos personalizados', () => {
       status: 'CADASTRADO',
       dataInicial: '2026-08-01',
       dataFinal: '2026-08-05',
+      dataPedidoFornecedorInicial: '2026-08-02',
+      dataPedidoFornecedorFinal: '2026-08-06',
+      dataEntregaInicial: '2026-08-20',
+      dataEntregaFinal: '2026-08-31',
       codigoProduto: '21158',
     }), unidades)
 
@@ -129,6 +138,10 @@ describe('repositório server-only de pedidos personalizados', () => {
     expect(pedidosBuilder.ilike).toHaveBeenCalledWith('consultora', '%C\\_D%')
     expect(pedidosBuilder.gte).toHaveBeenCalledWith('created_at', '2026-08-01T00:00:00-03:00')
     expect(pedidosBuilder.lt).toHaveBeenCalledWith('created_at', '2026-08-06T00:00:00-03:00')
+    expect(pedidosBuilder.gte).toHaveBeenCalledWith('data_pedido_fornecedor', '2026-08-02')
+    expect(pedidosBuilder.lte).toHaveBeenCalledWith('data_pedido_fornecedor', '2026-08-06')
+    expect(pedidosBuilder.gte).toHaveBeenCalledWith('data_entrega', '2026-08-20')
+    expect(pedidosBuilder.lte).toHaveBeenCalledWith('data_entrega', '2026-08-31')
   })
 
   it('carrega detalhe em no máximo três consultas, com tapetes e cores ordenados', async () => {

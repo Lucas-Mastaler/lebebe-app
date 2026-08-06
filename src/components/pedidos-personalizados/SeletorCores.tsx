@@ -5,7 +5,7 @@ import { ArrowDown, ArrowUp, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { AVISO_MUITAS_CORES, LIMITE_CORES_POR_TAPETE } from '@/lib/pedidos-personalizados'
+import { LIMITE_CORES_POR_TAPETE } from '@/lib/pedidos-personalizados'
 import { filtrarCores, moverItem } from './novo-pedido-modelo'
 import type { CorOpcao } from './novo-pedido-modelo'
 
@@ -102,14 +102,7 @@ export function SeletorCores({ tapeteNumero, cores, selecionadas, disabled, onCh
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-slate-500">{selecionadas.length} de {LIMITE_CORES_POR_TAPETE} cores</p>
-        {selecionadas.length >= 7 && (
-          <p role="status" className="max-w-md rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            {AVISO_MUITAS_CORES}
-          </p>
-        )}
-      </div>
+      <p className="text-sm text-slate-500">{selecionadas.length} de {LIMITE_CORES_POR_TAPETE} cores</p>
 
       <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-600">
         Cartela visual da Moriah ainda não adicionada ao sistema.

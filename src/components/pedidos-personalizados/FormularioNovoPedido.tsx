@@ -23,6 +23,7 @@ import {
 import { LIMITE_TAPETES_POR_PEDIDO } from '@/lib/pedidos-personalizados'
 import { CardTapete } from './CardTapete'
 import { AnexosTapete } from './AnexosTapete'
+import { AnexosIniciaisTapete } from './AnexosIniciaisTapete'
 import { PreviaMensagem } from './PreviaMensagem'
 import {
   adicionarTapete,
@@ -85,9 +86,15 @@ export default function FormularioNovoPedido() {
   const enviandoRef = useRef(false)
   const operacaoAnexoRef = useRef(false)
   const idempotencyKeyRef = useRef('')
+  const urlsPreviewRef = useRef(new Set<string>())
 
   useEffect(() => {
     idempotencyKeyRef.current = gerarIdempotencyKey()
+    const urls = urlsPreviewRef.current
+    return () => {
+      for (const url of urls) URL.revokeObjectURL(url)
+      urls.clear()
+    }
   }, [])
 
   const carregar = useCallback(async () => {
@@ -112,7 +119,7 @@ export default function FormularioNovoPedido() {
   const errosTodos = avaliacao?.validacao.erros ?? []
   const erros = errosTodos.filter((item) => tentouSalvar || camposTocados.has(item.campo))
   const avisos = avaliacao?.validacao.avisos ?? []
-  const possuiUploadPendente = operacaoAnexo !== null
+  const possuiUploadPendente = operacaoAnexo !== null || estado.tapetes.some((tapete) => tapete.anexosLocais.length > 0)
   const deveAvisarSaida = deveAvisarDadosNaoSalvos(alterado, !!salvo, possuiUploadPendente)
 
   useEffect(() => {
@@ -136,6 +143,120 @@ export default function FormularioNovoPedido() {
     const tapetes = [...estado.tapetes]
     tapetes[indice] = tapete
     atualizarEstado({ ...estado, tapetes })
+  }
+
+  function revogarPreview(url: string | null) {
+    if (!url) return
+    URL.revokeObjectURL(url)
+    urlsPreviewRef.current.delete(url)
+  }
+
+  function selecionarAnexoInicial(indice: number, slot: 1 | 2, arquivo: File) {
+    const erro = validarArquivoAnexo(arquivo)
+    if (erro) {
+      toast.error(erro)
+      return
+    }
+    const atual = estado.tapetes[indice]
+    const anterior = atual.anexosLocais.find((item) => item.slot === slot)
+    revogarPreview(anterior?.previewUrl ?? null)
+    const previewUrl = arquivo.type.startsWith('image/') ? URL.createObjectURL(arquivo) : null
+    if (previewUrl) urlsPreviewRef.current.add(previewUrl)
+    atualizarTapete(indice, {
+      ...atual,
+      anexosLocais: [
+        ...atual.anexosLocais.filter((item) => item.slot !== slot),
+        { slot, arquivo, previewUrl, estado: 'selecionado' as const, erro: null },
+      ].sort((a, b) => a.slot - b.slot),
+    })
+  }
+
+  function removerAnexoInicial(indice: number, slot: 1 | 2) {
+    const atual = estado.tapetes[indice]
+    revogarPreview(atual.anexosLocais.find((item) => item.slot === slot)?.previewUrl ?? null)
+    atualizarTapete(indice, { ...atual, anexosLocais: atual.anexosLocais.filter((item) => item.slot !== slot) })
+  }
+
+  function atualizarEstadoAnexoInicial(chaveLocal: string, slot: 1 | 2, estadoAnexo: 'selecionado' | 'enviando' | 'falhou', erro: string | null) {
+    setEstado((atual) => ({
+      ...atual,
+      tapetes: atual.tapetes.map((tapete) => tapete.chaveLocal === chaveLocal
+        ? { ...tapete, anexosLocais: tapete.anexosLocais.map((item) => item.slot === slot ? { ...item, estado: estadoAnexo, erro } : item) }
+        : tapete),
+    }))
+  }
+
+  async function enviarUmAnexoInicial(pedidoId: string, tapete: TapeteFormulario, slot: 1 | 2, version: number) {
+    const local = tapete.anexosLocais.find((item) => item.slot === slot)
+    if (!tapete.tapeteId || !local) return version
+    atualizarEstadoAnexoInicial(tapete.chaveLocal, slot, 'enviando', null)
+    try {
+      const resposta = await enviarAnexo({
+        pedidoId,
+        tapeteId: tapete.tapeteId,
+        slot,
+        arquivo: local.arquivo,
+        expectedVersion: version,
+      })
+      revogarPreview(local.previewUrl)
+      setEstado((atual) => ({
+        ...atual,
+        tapetes: atual.tapetes.map((item) => item.chaveLocal === tapete.chaveLocal ? {
+          ...item,
+          anexosLocais: item.anexosLocais.filter((anexo) => anexo.slot !== slot),
+          anexos: [...item.anexos.filter((anexo) => anexo.slot !== slot), {
+            anexoId: resposta.anexoId,
+            slot: resposta.slot,
+            nomeOriginal: resposta.nomeOriginal,
+            mime: resposta.mime,
+            tamanho: resposta.tamanho,
+            createdAt: resposta.createdAt ?? null,
+          }].sort((a, b) => a.slot - b.slot),
+        } : item),
+      }))
+      setSalvo((atual) => atual ? { ...atual, version: resposta.version } : atual)
+      return resposta.version
+    } catch (erro) {
+      const mensagem = ehErroHttpNovoPedido(erro) ? erro.mensagem : 'Não foi possível enviar este anexo. Tente novamente.'
+      atualizarEstadoAnexoInicial(tapete.chaveLocal, slot, 'falhou', mensagem)
+      registrarErroAnexo(tapete.chaveLocal, slot, mensagem)
+      setFalhaParcialAnexos(true)
+      if (ehErroHttpNovoPedido(erro) && erro.status === 409) setConflitoVersionamento(true)
+      throw erro
+    }
+  }
+
+  async function enviarAnexosIniciais(resposta: RespostaCriacao, tapetes: TapeteFormulario[]) {
+    let version = resposta.version
+    let houveFalha = false
+    for (const tapete of tapetes) {
+      for (const local of [...tapete.anexosLocais].sort((a, b) => a.slot - b.slot)) {
+        try {
+          version = await enviarUmAnexoInicial(resposta.pedidoId, tapete, local.slot, version)
+        } catch (erro) {
+          houveFalha = true
+          if (ehErroHttpNovoPedido(erro) && erro.status === 409) return
+        }
+      }
+    }
+    setFalhaParcialAnexos(houveFalha)
+    if (!houveFalha && tapetes.some((tapete) => tapete.anexosLocais.length > 0)) toast.success('Anexos iniciais enviados.')
+  }
+
+  async function reenviarAnexoInicial(tapete: TapeteFormulario, slot: 1 | 2) {
+    if (!salvo || operacaoAnexoRef.current || conflitoVersionamento) return
+    operacaoAnexoRef.current = true
+    setOperacaoAnexo({ chaveLocal: tapete.chaveLocal, slot, tipo: 'upload' })
+    try {
+      await enviarUmAnexoInicial(salvo.pedidoId, tapete, slot, salvo.version)
+      setFalhaParcialAnexos(estado.tapetes.some((item) => item.anexosLocais.some((anexo) => anexo.estado === 'falhou' && !(item.chaveLocal === tapete.chaveLocal && anexo.slot === slot))))
+      toast.success(`Anexo do slot ${slot} enviado.`)
+    } catch (erro) {
+      toast.error(ehErroHttpNovoPedido(erro) ? erro.mensagem : 'Não foi possível reenviar o anexo.')
+    } finally {
+      operacaoAnexoRef.current = false
+      setOperacaoAnexo(null)
+    }
   }
 
   function mensagens(campo: string) {
@@ -195,6 +316,7 @@ export default function FormularioNovoPedido() {
       setSalvo(resposta)
       setAlterado(false)
       toast.success(resposta.reutilizado ? 'Pedido recuperado sem duplicação.' : 'Pedido personalizado salvo.')
+      await enviarAnexosIniciais(resposta, tapetesAssociados)
     } catch (erro) {
       const mensagem = ehErroHttpNovoPedido(erro) ? erro.mensagem : 'Falha de rede. Tente novamente com o mesmo pedido.'
       setErroEnvio(mensagem)
@@ -345,6 +467,9 @@ export default function FormularioNovoPedido() {
   }
 
   function iniciarNovoPedido() {
+    for (const tapete of estado.tapetes) {
+      for (const anexo of tapete.anexosLocais) revogarPreview(anexo.previewUrl)
+    }
     setEstado(criarEstadoInicial(uuidSeguro()))
     idempotencyKeyRef.current = gerarIdempotencyKey()
     setAlterado(false)
@@ -431,23 +556,37 @@ export default function FormularioNovoPedido() {
             <Button type="button" variant="outline" className="min-h-11" disabled={formularioBloqueado || estado.tapetes.length >= LIMITE_TAPETES_POR_PEDIDO} onClick={() => atualizarEstado(adicionarTapete(estado, uuidSeguro()))}><Plus />Adicionar tapete</Button>
           </div>
           {estado.tapetes.map((tapete, indice) => (
-            <CardTapete
-              key={tapete.chaveLocal}
-              tapete={tapete}
-              indice={indice}
-              total={estado.tapetes.length}
-              produtos={opcoes.produtos}
-              cores={opcoes.cores}
-              erros={erros}
-              camposTocados={camposTocados}
-              tentouSalvar={tentouSalvar}
-              disabled={formularioBloqueado}
-              onChange={(proximo) => atualizarTapete(indice, proximo)}
-              onMover={(direcao) => atualizarEstado({ ...estado, tapetes: moverItem(estado.tapetes, indice, direcao) })}
-              onRemover={() => atualizarEstado(removerTapete(estado, tapete.chaveLocal))}
-              onLimiteCores={() => toast.error('Cada tapete pode possuir no máximo 8 cores.')}
-              onTocar={marcarTocado}
-            />
+            <div key={tapete.chaveLocal}>
+              <CardTapete
+                tapete={tapete}
+                indice={indice}
+                total={estado.tapetes.length}
+                produtos={opcoes.produtos}
+                cores={opcoes.cores}
+                erros={erros}
+                camposTocados={camposTocados}
+                tentouSalvar={tentouSalvar}
+                disabled={formularioBloqueado}
+                onChange={(proximo) => atualizarTapete(indice, proximo)}
+                onMover={(direcao) => atualizarEstado({ ...estado, tapetes: moverItem(estado.tapetes, indice, direcao) })}
+                onRemover={() => {
+                  tapete.anexosLocais.forEach((item) => revogarPreview(item.previewUrl))
+                  atualizarEstado(removerTapete(estado, tapete.chaveLocal))
+                }}
+                onLimiteCores={() => toast.error('Selecione no máximo 6 cores.')}
+                onTocar={marcarTocado}
+              />
+              {(!salvo || tapete.anexosLocais.length > 0) && (
+                <AnexosIniciaisTapete
+                  tapete={tapete}
+                  ordem={indice + 1}
+                  bloqueado={enviando || operacaoAnexo !== null || conflitoVersionamento}
+                  onSelecionar={(slot, arquivo) => selecionarAnexoInicial(indice, slot, arquivo)}
+                  onRemover={(slot) => removerAnexoInicial(indice, slot)}
+                  onReenviar={(slot) => void reenviarAnexoInicial(tapete, slot)}
+                />
+              )}
+            </div>
           ))}
         </section>
 

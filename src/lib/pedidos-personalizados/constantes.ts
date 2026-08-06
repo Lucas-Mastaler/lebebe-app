@@ -26,15 +26,12 @@ export const FORNECEDOR_MORIAH = 'moriah_tapetes' as const
 export const CODIGOS_PRODUTO_MORIAH = ['21157', '21158', '21159'] as const
 
 export const LIMITE_TAPETES_POR_PEDIDO = 10
-export const LIMITE_CORES_POR_TAPETE = 8
+export const LIMITE_CORES_POR_TAPETE = 6
 export const MEDIDA_MINIMA_CM = 10
 export const MEDIDA_MAXIMA_CM = 1500
 
 export const AVISO_MEDIDA_RECOMENDADA =
   'A Moriah produz preferencialmente em medidas de 5 cm em 5 cm. A medida final pode ser aproximada pelo fabricante e sofrer variação de até 2%.'
-
-export const AVISO_MUITAS_CORES =
-  'Este tapete possui mais de 6 cores. O limite máximo é de 8 cores.'
 
 export const AVISO_MUITAS_ALTERACOES_LAYOUT =
   'Este tapete possui mais de 5 alterações de layout e poderá ter custo adicional.'

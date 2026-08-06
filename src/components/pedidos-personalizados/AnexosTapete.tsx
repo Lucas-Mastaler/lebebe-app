@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ExternalLink, FileUp, Loader2, RefreshCw, Trash2 } from 'lucide-react'
+import { CheckCircle2, ExternalLink, FileUp, Loader2, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -85,10 +85,11 @@ export function AnexosTapete({
           const processando = estaProcessando(slot)
           const erro = errosPorSlot[slot]
           return (
-            <div key={slot} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div key={slot} className={`rounded-xl border p-4 ${anexo ? 'border-emerald-200 bg-emerald-50/60' : 'border-slate-200 bg-slate-50'}`}>
               <div className="flex items-center justify-between gap-2">
                 <p className="font-semibold text-slate-800">Slot {slot}</p>
-                <span className="text-xs font-medium text-slate-500" aria-live="polite">
+                <span className={`inline-flex items-center gap-1 text-xs font-semibold ${anexo ? 'text-emerald-700' : 'text-slate-500'}`} aria-live="polite">
+                  {anexo && !processando && <CheckCircle2 className="size-4" aria-hidden="true" />}
                   {processando ? 'Processando...' : anexo ? 'Concluído' : 'Aguardando arquivo'}
                 </span>
               </div>
@@ -152,8 +153,8 @@ export function AnexosTapete({
       </div>
 
       <Dialog open={confirmacao !== null} onOpenChange={(aberto) => { if (!aberto) setConfirmacao(null) }}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="overflow-hidden p-0">
+          <DialogHeader className="border-b bg-gradient-to-r from-slate-50 to-sky-50 px-6 py-5">
             <DialogTitle>{confirmacao?.tipo === 'remover' ? 'Remover este anexo?' : 'Substituir este anexo?'}</DialogTitle>
             <DialogDescription>
               {confirmacao?.tipo === 'remover'
@@ -161,7 +162,7 @@ export function AnexosTapete({
                 : 'O arquivo atual será mantido caso a substituição não possa ser concluída.'}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="border-t bg-slate-50 px-6 py-4">
             <Button type="button" variant="outline" onClick={() => setConfirmacao(null)}>Cancelar</Button>
             <Button type="button" variant={confirmacao?.tipo === 'remover' ? 'destructive' : 'default'} onClick={() => void confirmar()}>
               {confirmacao?.tipo === 'remover' ? 'Remover anexo' : 'Substituir anexo'}

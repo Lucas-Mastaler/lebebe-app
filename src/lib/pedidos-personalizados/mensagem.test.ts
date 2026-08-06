@@ -83,8 +83,8 @@ describe('mensagem comercial de Pedidos Personalizados', () => {
     expect(gerarMensagemPedidoPersonalizado(pedido, PRODUTOS).dados).toContain('UNIDADE: PORTÃO')
   })
 
-  it('inclui opcionais preenchidos, acentos, observações multilinha e oito cores na ordem', () => {
-    const cores = Array.from({ length: 8 }, (_, indice) => ({
+  it('inclui opcionais preenchidos, acentos, observações multilinha e seis cores na ordem', () => {
+    const cores = Array.from({ length: 6 }, (_, indice) => ({
       id: `cor-${indice + 1}`,
       ordem: indice + 1,
       numero: String(indice + 1).padStart(2, '0'),
@@ -106,7 +106,7 @@ describe('mensagem comercial de Pedidos Personalizados', () => {
     expect(mensagem).toContain('NOME DA COLEÇÃO CATÁLOGO: COLEÇÃO FORMAS')
     expect(mensagem).toContain('REFERÊNCIA DO TAPETE DO CATÁLOGO: ABC-123')
     expect(mensagem).toContain('CORES:\n01 - K-1 - Índigo\n02 - K-2 - Cor 2')
-    expect(mensagem).toContain('08 - K-8 - Cor 8')
+    expect(mensagem).toContain('06 - K-6 - Cor 6')
     expect(mensagem).toContain('OBSERVAÇÕES: Primeira linha\nSegunda linha')
   })
 

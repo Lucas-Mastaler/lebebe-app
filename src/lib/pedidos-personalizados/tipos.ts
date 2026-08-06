@@ -45,7 +45,6 @@ export type CodigoErroPedidoPersonalizado =
 
 export type CodigoAvisoPedidoPersonalizado =
   | 'MEDIDA_FORA_INTERVALO_RECOMENDADO'
-  | 'MUITAS_CORES'
   | 'MUITAS_ALTERACOES_LAYOUT'
 
 export type ProblemaPedidoPersonalizado<

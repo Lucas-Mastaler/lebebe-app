@@ -22,7 +22,7 @@ import { ehObjeto, ehUuid, possuiAlgumCampo } from './http'
 
 const LETRAS_E_ESPACOS = /^\p{L}+(?: \p{L}+)*$/u
 const NUMERO_LANCAMENTO = /^\d{1,6}$/
-const NUMERO_PEDIDO_COMPRA = /^\d{1,20}$/
+const NUMERO_PEDIDO_COMPRA = /^\d{1,5}$/
 const CAMPOS_ADMINISTRATIVOS = [
   'numeroLancamento',
   'dataEntrega',
@@ -57,6 +57,10 @@ export type FiltrosPedidos = {
   status: StatusPedidoPersonalizado | null
   dataInicial: string | null
   dataFinal: string | null
+  dataPedidoFornecedorInicial: string | null
+  dataPedidoFornecedorFinal: string | null
+  dataEntregaInicial: string | null
+  dataEntregaFinal: string | null
   codigoProduto: '21157' | '21158' | '21159' | null
 }
 
@@ -232,6 +236,26 @@ export function validarFiltrosPedidos(url: URL):
     return { ok: false, mensagem: 'A data inicial não pode ser posterior à data final.' }
   }
 
+  const dataPedidoFornecedorInicial = url.searchParams.get('dataPedidoFornecedorInicial')?.trim() || null
+  const dataPedidoFornecedorFinal = url.searchParams.get('dataPedidoFornecedorFinal')?.trim() || null
+  const dataEntregaInicial = url.searchParams.get('dataEntregaInicial')?.trim() || null
+  const dataEntregaFinal = url.searchParams.get('dataEntregaFinal')?.trim() || null
+  const datasAdministrativas = [
+    dataPedidoFornecedorInicial,
+    dataPedidoFornecedorFinal,
+    dataEntregaInicial,
+    dataEntregaFinal,
+  ]
+  if (datasAdministrativas.some((data) => data !== null && !dataIsoReal(data))) {
+    return { ok: false, mensagem: 'Filtro de data administrativa inválido.' }
+  }
+  if (dataPedidoFornecedorInicial && dataPedidoFornecedorFinal && dataPedidoFornecedorInicial > dataPedidoFornecedorFinal) {
+    return { ok: false, mensagem: 'O início do pedido ao fornecedor não pode ser posterior ao fim.' }
+  }
+  if (dataEntregaInicial && dataEntregaFinal && dataEntregaInicial > dataEntregaFinal) {
+    return { ok: false, mensagem: 'O início da entrega não pode ser posterior ao fim.' }
+  }
+
   const codigoProdutoTexto = url.searchParams.get('codigoProduto')?.trim() || null
   if (codigoProdutoTexto && !CODIGOS_PRODUTO_MORIAH.includes(codigoProdutoTexto as never)) {
     return { ok: false, mensagem: 'Código de produto inválido.' }
@@ -248,6 +272,10 @@ export function validarFiltrosPedidos(url: URL):
       status: statusTexto as StatusPedidoPersonalizado | null,
       dataInicial,
       dataFinal,
+      dataPedidoFornecedorInicial,
+      dataPedidoFornecedorFinal,
+      dataEntregaInicial,
+      dataEntregaFinal,
       codigoProduto: codigoProdutoTexto as FiltrosPedidos['codigoProduto'],
     },
   }
@@ -283,7 +311,11 @@ export function validarDadosAdministrativos(valor: unknown):
   const numeroPedidoCompra = normalizarNumeroPedidoCompra(stringOpcional(valor.numeroPedidoCompra))
   const comprador = normalizarComprador(stringOpcional(valor.comprador))
   if (numeroLancamento !== null && !NUMERO_LANCAMENTO.test(numeroLancamento)) problemas.push({ campo: 'numeroLancamento', mensagem: 'Número de lançamento inválido.' })
-  if (numeroPedidoCompra !== null && !NUMERO_PEDIDO_COMPRA.test(numeroPedidoCompra)) problemas.push({ campo: 'numeroPedidoCompra', mensagem: 'Número do pedido de compra inválido.' })
+  if (numeroPedidoCompra !== null && !/^\d+$/.test(numeroPedidoCompra)) {
+    problemas.push({ campo: 'numeroPedidoCompra', mensagem: 'Use somente números no pedido de compra.' })
+  } else if (numeroPedidoCompra !== null && !NUMERO_PEDIDO_COMPRA.test(numeroPedidoCompra)) {
+    problemas.push({ campo: 'numeroPedidoCompra', mensagem: 'O pedido de compra deve conter no máximo 5 dígitos.' })
+  }
   if (comprador !== null && (comprador.length < 2 || comprador.length > 40 || !LETRAS_E_ESPACOS.test(comprador))) {
     problemas.push({ campo: 'comprador', mensagem: 'Comprador inválido.' })
   }

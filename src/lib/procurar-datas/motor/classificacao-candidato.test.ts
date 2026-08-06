@@ -766,4 +766,214 @@ describe('classificarCandidatoOperacionalV2', () => {
       expect(result.detalhes.horaMarcadaCalculadaPorTempo).toBe(true)
     })
   })
+
+  // ─── Testes de tolerância de tempo (≤30min, NORMAL, não quarta, não sábado) ───
+  describe('tolerância de tempo - candidato NORMAL com tempo insuficiente', () => {
+    // Helper para input com tempo insuficiente real (disponivelMin < tempoNecessarioMin)
+    function criarInputTempoInsuficiente(
+      props: Partial<ClassificarCandidatoOperacionalV2Input> = {}
+    ): ClassificarCandidatoOperacionalV2Input {
+      return {
+        ...criarInput({
+          suficienteParaServico: false,
+          disponivelMin: 100,
+          tempoNecessarioMin: 120, // falta 20min
+          kmAdicionalNaRotaM: 3000, // dentro do limite base (5000m) → NORMAL
+          diaSemana: 1, // segunda
+          ehSabado: false,
+          ehDomingo: false,
+        }),
+        ...props,
+      }
+    }
+
+    it('NORMAL com tempo insuficiente + segunda → elegível normal com tolerância', () => {
+      const result = classificarCandidatoOperacionalV2(criarInputTempoInsuficiente())
+
+      expect(result.tipo).toBe('normal')
+      expect(result.elegivel).toBe(true)
+      expect(result.detalhes.usouToleranciaTempo).toBe(true)
+      expect(result.detalhes.toleranciaTempoMin).toBe(20)
+      expect(result.detalhes.toleranciaTempoMotivo).toContain('Tolerância')
+    })
+
+    it('NORMAL com tempo insuficiente + terça → elegível normal com tolerância', () => {
+      const result = classificarCandidatoOperacionalV2(
+        criarInputTempoInsuficiente({ diaSemana: 2 })
+      )
+
+      expect(result.tipo).toBe('normal')
+      expect(result.elegivel).toBe(true)
+      expect(result.detalhes.usouToleranciaTempo).toBe(true)
+    })
+
+    it('NORMAL com tempo insuficiente + sexta → elegível normal com tolerância', () => {
+      const result = classificarCandidatoOperacionalV2(
+        criarInputTempoInsuficiente({ diaSemana: 5 })
+      )
+
+      expect(result.tipo).toBe('normal')
+      expect(result.elegivel).toBe(true)
+      expect(result.detalhes.usouToleranciaTempo).toBe(true)
+    })
+
+    it('NORMAL com falta exata de 30min → elegível normal com tolerância', () => {
+      const result = classificarCandidatoOperacionalV2(
+        criarInputTempoInsuficiente({ disponivelMin: 90, tempoNecessarioMin: 120 })
+      )
+
+      expect(result.tipo).toBe('normal')
+      expect(result.elegivel).toBe(true)
+      expect(result.detalhes.usouToleranciaTempo).toBe(true)
+      expect(result.detalhes.toleranciaTempoMin).toBe(30)
+    })
+
+    it('NORMAL com falta de 31min → indisponível (excede limite)', () => {
+      const result = classificarCandidatoOperacionalV2(
+        criarInputTempoInsuficiente({ disponivelMin: 89, tempoNecessarioMin: 120 })
+      )
+
+      expect(result.tipo).toBe('indisponivel')
+      expect(result.elegivel).toBe(false)
+      expect(result.detalhes.usouToleranciaTempo).toBe(false)
+      expect(result.motivos).toContain('Tempo disponível insuficiente para o serviço.')
+    })
+
+    it('ESPECIAL com tempo insuficiente + não quarta → indisponível (tolerância só para NORMAL)', () => {
+      const result = classificarCandidatoOperacionalV2(
+        criarInputTempoInsuficiente({ kmAdicionalNaRotaM: 7000 }) // ESPECIAL
+      )
+
+      expect(result.tipo).toBe('indisponivel')
+      expect(result.elegivel).toBe(false)
+      expect(result.detalhes.usouToleranciaTempo).toBe(false)
+      expect(result.motivos).toContain('Tempo disponível insuficiente para o serviço.')
+    })
+
+    it('PREMIUM com tempo insuficiente + não quarta → indisponível (tolerância só para NORMAL)', () => {
+      const result = classificarCandidatoOperacionalV2(
+        criarInputTempoInsuficiente({ kmAdicionalNaRotaM: 12000 }) // PREMIUM
+      )
+
+      expect(result.tipo).toBe('indisponivel')
+      expect(result.elegivel).toBe(false)
+      expect(result.detalhes.usouToleranciaTempo).toBe(false)
+    })
+
+    it('NORMAL com tempo insuficiente + quarta → indisponível (quarta bloqueia tolerância)', () => {
+      const result = classificarCandidatoOperacionalV2(
+        criarInputTempoInsuficiente({ diaSemana: 3 })
+      )
+
+      expect(result.tipo).toBe('indisponivel')
+      expect(result.elegivel).toBe(false)
+      expect(result.detalhes.usouToleranciaTempo).toBe(false)
+      expect(result.motivos).toContain('Tempo disponível insuficiente para o serviço.')
+    })
+
+    it('NORMAL com tempo insuficiente + sábado → indisponível (sábado bloqueia tolerância)', () => {
+      const result = classificarCandidatoOperacionalV2(
+        criarInputTempoInsuficiente({ diaSemana: 6, ehSabado: true })
+      )
+
+      expect(result.tipo).toBe('indisponivel')
+      expect(result.elegivel).toBe(false)
+      expect(result.detalhes.usouToleranciaTempo).toBe(false)
+    })
+
+    it('fora do limite premium com tempo insuficiente → indisponível', () => {
+      const result = classificarCandidatoOperacionalV2(
+        criarInputTempoInsuficiente({ kmAdicionalNaRotaM: 20000 }) // fora de todos os limites
+      )
+
+      expect(result.tipo).toBe('indisponivel')
+      expect(result.elegivel).toBe(false)
+      expect(result.detalhes.usouToleranciaTempo).toBe(false)
+      expect(result.motivos).toContain('Distância adicional fora dos limites configurados.')
+    })
+
+    it('tempo suficiente + NORMAL → elegível sem tolerância', () => {
+      const result = classificarCandidatoOperacionalV2(
+        criarInput({ suficienteParaServico: true, disponivelMin: 200, tempoNecessarioMin: 120 })
+      )
+
+      expect(result.tipo).toBe('normal')
+      expect(result.elegivel).toBe(true)
+      expect(result.detalhes.usouToleranciaTempo).toBe(false)
+      expect(result.detalhes.toleranciaTempoMin).toBeNull()
+    })
+
+    it('km null com tempo insuficiente → indisponível (não chega à tolerância)', () => {
+      const result = classificarCandidatoOperacionalV2(
+        criarInputTempoInsuficiente({ kmAdicionalNaRotaM: null })
+      )
+
+      expect(result.tipo).toBe('indisponivel')
+      expect(result.elegivel).toBe(false)
+      expect(result.detalhes.usouToleranciaTempo).toBe(false)
+      expect(result.motivos).toContain('Distância adicional na rota ausente ou inválida.')
+    })
+
+    it('config inválida com tempo insuficiente → indisponível (não chega à tolerância)', () => {
+      const result = classificarCandidatoOperacionalV2(
+        criarInputTempoInsuficiente({
+          config: { ...configBase, kmAdicionalMaxNaRotaM: null },
+        })
+      )
+
+      expect(result.tipo).toBe('indisponivel')
+      expect(result.elegivel).toBe(false)
+      expect(result.detalhes.usouToleranciaTempo).toBe(false)
+      expect(result.motivos).toContain('Configuração de distância ausente ou inválida.')
+    })
+
+    it('domingo com tempo insuficiente → indisponível (não chega à tolerância)', () => {
+      const result = classificarCandidatoOperacionalV2(
+        criarInputTempoInsuficiente({ ehDomingo: true, diaSemana: 0 })
+      )
+
+      expect(result.tipo).toBe('indisponivel')
+      expect(result.elegivel).toBe(false)
+      expect(result.detalhes.usouToleranciaTempo).toBe(false)
+      expect(result.motivos).toContain('Domingo não elegível para atendimento.')
+    })
+
+    it('equipe inativa com tempo insuficiente → indisponível (não chega à tolerância)', () => {
+      const result = classificarCandidatoOperacionalV2(
+        criarInputTempoInsuficiente({ ativa: false })
+      )
+
+      expect(result.tipo).toBe('indisponivel')
+      expect(result.elegivel).toBe(false)
+      expect(result.detalhes.usouToleranciaTempo).toBe(false)
+      expect(result.motivos).toContain('Equipe inativa.')
+    })
+
+    it('tempoNecessarioMin null com tempo insuficiente → indisponível (não chega à tolerância)', () => {
+      const result = classificarCandidatoOperacionalV2(
+        criarInputTempoInsuficiente({ tempoNecessarioMin: null })
+      )
+
+      expect(result.tipo).toBe('indisponivel')
+      expect(result.elegivel).toBe(false)
+      expect(result.detalhes.usouToleranciaTempo).toBe(false)
+      expect(result.motivos).toContain('Tempo necessário ausente ou inválido.')
+    })
+
+    // CUIDADO CRÍTICO 1 — regressão de gates antecipados
+    it('REGRESSÃO: todos os gates antecipados permanecem bloqueando mesmo com tempo insuficiente', () => {
+      // Equipe vazia
+      expect(classificarCandidatoOperacionalV2(criarInputTempoInsuficiente({ equipe: '' })).tipo).toBe('indisponivel')
+      // Equipe inativa
+      expect(classificarCandidatoOperacionalV2(criarInputTempoInsuficiente({ ativa: false })).tipo).toBe('indisponivel')
+      // tempoNecessarioMin null
+      expect(classificarCandidatoOperacionalV2(criarInputTempoInsuficiente({ tempoNecessarioMin: null })).tipo).toBe('indisponivel')
+      // Domingo
+      expect(classificarCandidatoOperacionalV2(criarInputTempoInsuficiente({ ehDomingo: true, diaSemana: 0 })).tipo).toBe('indisponivel')
+      // km null
+      expect(classificarCandidatoOperacionalV2(criarInputTempoInsuficiente({ kmAdicionalNaRotaM: null })).tipo).toBe('indisponivel')
+      // Config inválida
+      expect(classificarCandidatoOperacionalV2(criarInputTempoInsuficiente({ config: { ...configBase, kmAdicionalMaxNaRotaM: null } })).tipo).toBe('indisponivel')
+    })
+  })
 })

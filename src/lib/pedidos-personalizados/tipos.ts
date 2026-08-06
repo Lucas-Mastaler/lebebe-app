@@ -19,6 +19,8 @@ export type CodigoErroPedidoPersonalizado =
   | 'CONSULTORA_INVALIDA'
   | 'CLIENTE_OBRIGATORIO'
   | 'CLIENTE_INVALIDO'
+  | 'TELEFONE_OBRIGATORIO'
+  | 'TELEFONE_INVALIDO'
   | 'NUMERO_LANCAMENTO_INVALIDO'
   | 'NUMERO_PEDIDO_COMPRA_INVALIDO'
   | 'COMPRADOR_INVALIDO'
@@ -95,6 +97,7 @@ export type TapeteMoriahEntrada = {
 export type IdentificacaoPedidoPersonalizadoEntrada = {
   consultora: string
   cliente: string
+  telefone: string
   numeroLancamento?: string | null
   numeroPedidoCompra?: string | null
   comprador?: string | null
@@ -138,6 +141,7 @@ export type TapeteMoriahNormalizado = {
 export type IdentificacaoPedidoPersonalizadoNormalizada = {
   consultora: string
   cliente: string
+  telefoneNormalizado: string
   numeroLancamento: string | null
   numeroPedidoCompra: string | null
   comprador: string | null
@@ -197,6 +201,7 @@ export type ParametrosCriarPedidoPersonalizadoMoriahRpc = {
   p_unidade_id: string
   p_consultora: string
   p_cliente: string
+  p_telefone_normalizado: string
   p_tapetes: TapeteMoriahRpc[]
   p_numero_lancamento: string | null
   p_data_entrega: string | null
@@ -212,6 +217,7 @@ export type ParametrosAtualizarPedidoComercialMoriahRpc = {
   p_unidade_id: string
   p_consultora: string
   p_cliente: string
+  p_telefone_normalizado: string
   p_tapetes: TapeteMoriahRpc[]
 }
 

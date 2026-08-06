@@ -102,6 +102,7 @@ function pedido(overrides: Record<string, unknown> = {}) {
     unidade: 'bigorrilho',
     consultora: 'Ana Silva',
     cliente: 'Cliente Teste',
+    telefone: '(41) 99999-9999',
     tapetes: [tapete()],
     ...overrides,
   }
@@ -172,8 +173,9 @@ describe('criação de pedido personalizado', () => {
     const response = await criarPedido(requestJson(pedido({
       tapetes: [tapete({ areaCobradaCentesimosM2: 1, codigoProduto: '21159', produtoId: 'forjado' })],
     })), deps(repo))
-    const chamada = vi.mocked(repo.criar).mock.calls[0][0] as { p_tapetes: Array<Record<string, unknown>> }
+    const chamada = vi.mocked(repo.criar).mock.calls[0][0] as { p_telefone_normalizado: string; p_tapetes: Array<Record<string, unknown>> }
     expect(response.status).toBe(201)
+    expect(chamada.p_telefone_normalizado).toBe('41999999999')
     expect(chamada.p_tapetes[0]).toMatchObject({
       area_cobrada_centesimos_m2: 600,
       produto_id: catalogos.produtos[1].id,
@@ -287,6 +289,7 @@ describe('listagem de pedidos personalizados', () => {
             unidade: { chave: 'portao' },
             consultora: 'ANA',
             cliente: 'CLIENTE',
+            telefone_normalizado: '41999999999',
             numero_lancamento: '0001',
             data_entrega: '2026-08-20',
             data_pedido_fornecedor: '2026-08-07',
@@ -312,6 +315,7 @@ describe('listagem de pedidos personalizados', () => {
       dataPedidoFornecedor: '2026-08-07',
       numeroPedidoCompra: '00001',
       comprador: 'ANA SILVA',
+      telefone: '41999999999',
     })
     expect(body.itens[0]).not.toHaveProperty('observacoes')
   })
@@ -368,7 +372,7 @@ describe('detalhe de pedido personalizado', () => {
             id: PEDIDO_ID,
             fornecedor: { chave: 'moriah_tapetes', nome: 'MORIAH TAPETES' },
             unidade: { chave: 'bigorrilho', nome: 'BIGORRILHO' },
-            consultora: 'ANA', cliente: 'CLIENTE', numero_lancamento: '001',
+            consultora: 'ANA', cliente: 'CLIENTE', telefone_normalizado: '4133334444', numero_lancamento: '001',
             data_entrega: '2026-08-10', data_pedido_fornecedor: '2026-08-05',
             numero_pedido_compra: '002', comprador: 'JOÃO', status: 'CADASTRADO',
             version: 4, created_at: 'agora', updated_at: 'agora', caminho_objeto: 'privado',
@@ -387,7 +391,7 @@ describe('detalhe de pedido personalizado', () => {
       }),
     })
     const body = await (await obterDetalhePedido(new Request('http://localhost'), PEDIDO_ID, deps(repo))).json()
-    expect(body.pedido).toMatchObject({ version: 4, dataEntrega: '2026-08-10', numeroPedidoCompra: '002' })
+    expect(body.pedido).toMatchObject({ version: 4, telefone: '4133334444', dataEntrega: '2026-08-10', numeroPedidoCompra: '002' })
     expect(body.pedido.tapetes[0].cores[0]).toMatchObject({ ordem: 1, codigo: 'K-1' })
     expect(body.pedido.tapetes[0].anexos[0]).toEqual({
       anexoId: '90000000-0000-4000-8000-000000000001', slot: 1,
@@ -404,7 +408,7 @@ describe('detalhe de pedido personalizado', () => {
 
 describe('atualização comercial', () => {
   function payloadComercial(overrides: Record<string, unknown> = {}) {
-    return { expectedVersion: 1, unidade: 'bigorrilho', consultora: 'Ana Silva', cliente: 'Cliente', tapetes: [tapete({ id: TAPETE_ID })], ...overrides }
+    return { expectedVersion: 1, unidade: 'bigorrilho', consultora: 'Ana Silva', cliente: 'Cliente', telefone: '(41) 99999-9999', tapetes: [tapete({ id: TAPETE_ID })], ...overrides }
   }
 
   it('recalcula dados e retorna nova versão', async () => {
@@ -414,6 +418,7 @@ describe('atualização comercial', () => {
     expect(await response.json()).toMatchObject({ pedidoId: PEDIDO_ID, version: 2 })
     expect(repo.atualizarComercial).toHaveBeenCalledWith(expect.objectContaining({
       p_expected_version: 1,
+      p_telefone_normalizado: '41999999999',
       p_tapetes: [expect.objectContaining({ area_cobrada_centesimos_m2: 600, produto_id: catalogos.produtos[1].id })],
     }))
   })

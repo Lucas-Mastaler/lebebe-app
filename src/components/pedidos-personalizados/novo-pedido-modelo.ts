@@ -93,6 +93,7 @@ export type EstadoNovoPedido = {
   unidade: '' | UnidadePedidoPersonalizado
   consultora: string
   cliente: string
+  telefone: string
   numeroLancamento: string
   tapetes: TapeteFormulario[]
 }
@@ -183,6 +184,7 @@ export function criarEstadoInicial(chaveLocal: string): EstadoNovoPedido {
     unidade: '',
     consultora: '',
     cliente: '',
+    telefone: '',
     numeroLancamento: '',
     tapetes: [criarTapeteVazio(chaveLocal)],
   }
@@ -250,6 +252,7 @@ export function montarEntradaDominio(
     unidade: estado.unidade,
     consultora: estado.consultora,
     cliente: estado.cliente,
+    telefone: estado.telefone,
     numeroLancamento: estado.numeroLancamento,
     status: 'CADASTRADO',
     tapetes: estado.tapetes.map((tapete, indice) => ({
@@ -331,6 +334,7 @@ export function montarPayloadCriacao(
     unidade: entrada.unidade,
     consultora: entrada.consultora,
     cliente: entrada.cliente,
+    telefone: estado.telefone,
     numeroLancamento: entrada.numeroLancamento,
     tapetes: entrada.tapetes.map((tapete) => ({
       ordem: tapete.ordem,

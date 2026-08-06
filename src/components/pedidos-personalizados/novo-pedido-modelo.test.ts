@@ -63,6 +63,7 @@ function estadoValido(): EstadoNovoPedido {
     unidade: 'portao',
     consultora: 'Ana Maria',
     cliente: 'Cliente Teste',
+    telefone: '(41) 99999-9999',
     numeroLancamento: '000123',
     tapetes: [{
       ...estado.tapetes[0],
@@ -178,7 +179,7 @@ describe('medidas, área e produto exibidos', () => {
 describe('validação, mensagem e payload', () => {
   it('usa o domínio para normalizar identificação e opcionais', () => {
     const avaliacao = avaliarFormulario(estadoValido(), opcoes)
-    expect(avaliacao.validacao.dados).toMatchObject({ consultora: 'ANA MARIA', cliente: 'CLIENTE TESTE', numeroLancamento: '000123' })
+    expect(avaliacao.validacao.dados).toMatchObject({ consultora: 'ANA MARIA', cliente: 'CLIENTE TESTE', telefoneNormalizado: '41999999999', numeroLancamento: '000123' })
   })
 
   it('gera mensagem com PORTÃO, vários campos e sem administrativos ou anexos', () => {
@@ -195,12 +196,12 @@ describe('validação, mensagem e payload', () => {
   it('bloqueia unidade, consultora, cliente e medidas ausentes', () => {
     const resultado = avaliarFormulario(criarEstadoInicial('x'), opcoes).validacao
     expect(resultado.valido).toBe(false)
-    expect(resultado.erros.map((item) => item.campo)).toEqual(expect.arrayContaining(['unidade', 'consultora', 'cliente', 'tapetes.0.dimensao1Metros']))
+    expect(resultado.erros.map((item) => item.campo)).toEqual(expect.arrayContaining(['unidade', 'consultora', 'cliente', 'telefone', 'tapetes.0.dimensao1Metros']))
   })
 
   it('monta payload com idempotência e sem campos calculados ou fornecedor', () => {
     const payload = montarPayloadCriacao(estadoValido(), '40000000-0000-4000-8000-000000000001', opcoes)
-    expect(payload).toMatchObject({ idempotencyKey: '40000000-0000-4000-8000-000000000001', numeroLancamento: '000123' })
+    expect(payload).toMatchObject({ idempotencyKey: '40000000-0000-4000-8000-000000000001', telefone: '(41) 99999-9999', numeroLancamento: '000123' })
     expect(JSON.stringify(payload)).not.toMatch(/area|produto|fornecedor|descricao/i)
   })
 })

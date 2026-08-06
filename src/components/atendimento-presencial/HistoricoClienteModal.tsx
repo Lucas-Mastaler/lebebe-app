@@ -2,10 +2,12 @@
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { CreditCard, History, Package, RefreshCw, ShoppingBag, Tag } from 'lucide-react'
+import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { HistoricoAtendimentoClienteDTO, HistoricoVendaSgiDTO } from '@/lib/atendimento-presencial/historico-cliente'
+import type { HistoricoPedidoPersonalizadoDTO } from '@/lib/pedidos-personalizados/server/historico'
 
 export type HistoricoClienteModalCliente = {
   id: string
@@ -19,6 +21,7 @@ type HistoricoClienteResponse = {
   telefoneDisponivel?: boolean
   atendimentos?: HistoricoAtendimentoClienteDTO[]
   vendas?: HistoricoVendaSgiDTO[]
+  pedidosPersonalizados?: HistoricoPedidoPersonalizadoDTO[]
   fontesConsultadas?: string[]
 }
 
@@ -371,6 +374,42 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
                   <p className="rounded-md border border-dashed border-sky-200 bg-white/80 p-3 text-sm text-slate-500">Nenhuma compra anterior encontrada pelo telefone da cliente.</p>
                 )}
               </HistoricoSecao>
+
+              {historicoCarregado.pedidosPersonalizados && (
+                <HistoricoSecao
+                  icon={Package}
+                  title="Pedidos personalizados"
+                  subtitle="Pedidos Moriah encontrados pelo telefone normalizado da cliente."
+                  variant="amber"
+                >
+                  {historicoCarregado.pedidosPersonalizados.length ? (
+                    <div className="grid gap-3">
+                      {historicoCarregado.pedidosPersonalizados.map((pedido) => (
+                        <article key={pedido.id} className="rounded-md border border-amber-100 bg-white p-3 shadow-sm">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="font-bold text-slate-950">{formatarDataCurta(pedido.createdAt)} · {pedido.unidade}</p>
+                              <p className="mt-1 text-sm text-slate-600">{pedido.status}</p>
+                            </div>
+                            <Button asChild type="button" size="sm" variant="outline">
+                              <Link href={`/pedidos-personalizados?pedidoId=${pedido.id}`}>Abrir detalhe</Link>
+                            </Button>
+                          </div>
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                            <HistoricoInfoCard label="Lançamento" value={pedido.numeroLancamento ?? 'Não informado'} />
+                            <HistoricoInfoCard label="Pedido de compra" value={pedido.numeroPedidoCompra ?? 'Não informado'} />
+                            <HistoricoInfoCard label="Tapetes" value={pedido.quantidadeTapetes} />
+                            <HistoricoInfoCard label="Pedido ao fornecedor" value={formatarDataCurta(pedido.dataPedidoFornecedor)} />
+                            <HistoricoInfoCard label="Data de entrega" value={formatarDataCurta(pedido.dataEntrega)} />
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="rounded-md border border-dashed border-amber-200 bg-white/80 p-3 text-sm text-slate-500">Nenhum pedido personalizado encontrado pelo telefone da cliente.</p>
+                  )}
+                </HistoricoSecao>
+              )}
             </>
           )}
         </div>

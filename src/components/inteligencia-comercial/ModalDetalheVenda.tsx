@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback, Fragment } from 'react'
+import Link from 'next/link'
 import { Loader2, Phone, Package, CreditCard, User, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock, TrendingUp, Users, Activity, Tag, MessageSquarePlus, Eye, Store, Brain, ChevronDown, ChevronUp, HelpCircle, ExternalLink } from 'lucide-react'
 import { montarUrlHistoricoTicket } from '@/lib/digisac/urls'
 import {
@@ -1011,6 +1012,37 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                 </div>
               )}
             </Section>
+
+            {detalhe.pedidosPersonalizados && (
+              <Section icon={Package} title={`Pedidos personalizados (${detalhe.pedidosPersonalizados.length})`} variant="brown">
+                {detalhe.pedidosPersonalizados.length === 0 ? (
+                  <p className="text-xs text-slate-400">Nenhum pedido personalizado encontrado pelo telefone normalizado.</p>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {detalhe.pedidosPersonalizados.map((pedido) => (
+                      <article key={pedido.id} className="rounded-lg border border-amber-100 bg-white p-3 text-xs shadow-sm">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="font-semibold text-slate-900">{formatDataSimples(pedido.createdAt)} · {pedido.unidade}</p>
+                            <p className="mt-0.5 text-slate-500">{pedido.status}</p>
+                          </div>
+                          <Button asChild variant="ghost" size="sm" className="h-8">
+                            <Link href={`/pedidos-personalizados?pedidoId=${pedido.id}`}>Abrir detalhe</Link>
+                          </Button>
+                        </div>
+                        <dl className="mt-3 grid grid-cols-2 gap-2 text-slate-600">
+                          <div><dt className="text-[10px] uppercase text-slate-400">Lançamento</dt><dd className="font-medium">{pedido.numeroLancamento ?? '—'}</dd></div>
+                          <div><dt className="text-[10px] uppercase text-slate-400">Pedido de compra</dt><dd className="font-medium">{pedido.numeroPedidoCompra ?? '—'}</dd></div>
+                          <div><dt className="text-[10px] uppercase text-slate-400">Tapetes</dt><dd className="font-medium">{pedido.quantidadeTapetes}</dd></div>
+                          <div><dt className="text-[10px] uppercase text-slate-400">Pedido ao fornecedor</dt><dd className="font-medium">{formatDataSimples(pedido.dataPedidoFornecedor)}</dd></div>
+                          <div><dt className="text-[10px] uppercase text-slate-400">Entrega</dt><dd className="font-medium">{formatDataSimples(pedido.dataEntrega)}</dd></div>
+                        </dl>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </Section>
+            )}
 
             {/* Digisac */}
             <Section icon={MessageCircle} title="Digisac — Histórico de Chamados" variant="purple">

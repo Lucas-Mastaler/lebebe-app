@@ -5144,3 +5144,39 @@ Status: implementado e validado localmente; aguardando teste real controlado apo
 ### Escopo preservado
 
 - Frente 2, candidatos, ranking, classificacao, frete, Mere, banco e politica global de `geo_cache` nao foram alterados.
+
+---
+
+## 2026-08-06 - Devin - Tolerancia de tempo para candidatos NORMAL
+
+Status: implementado e testado. Divergencia intencional aprovada em relacao ao legado.
+
+### O que foi feito
+
+Adicionada regra de tolerancia de ate 30 minutos no tempo disponivel para candidatos NORMAL, em dias uteis que nao sejam quarta-feira nem sabado. O motor v2 agora aceita candidatos com tempo insuficiente mediante tolerancia, desde que a classificacao de distancia seja NORMAL, a falta de tempo seja > 0 e <= 30 minutos, e todas as demais regras de elegibilidade permanecam validas.
+
+### Arquivos criados
+
+- `src/lib/procurar-datas/motor/tolerancia-tempo-normal.ts` — helper puro `verificarToleranciaTempoNormal()`
+- `src/lib/procurar-datas/motor/tolerancia-tempo-normal.test.ts` — 23 testes unitarios
+
+### Arquivos alterados
+
+- `src/lib/procurar-datas/motor/classificacao-candidato.ts` — gate de `suficienteParaServico` adiado para apos classificacao de distancia; campos `usouToleranciaTempo`, `toleranciaTempoMin`, `toleranciaTempoMotivo` em `detalhes`
+- `src/lib/procurar-datas/motor/classificacao-candidato.test.ts` — 17 testes de integracao + regressao de gates
+- `src/lib/procurar-datas/motor/candidato.ts` — campos de tolerancia em `CandidatoPreliminarV2.operacional`
+- `src/lib/procurar-datas/motor/pesquisar-datas-v2.ts` — campos de tolerancia em `SnapshotTecnicoCandidatoFinalV2`
+- `src/lib/procurar-datas/motor/gerar-candidatos-disponibilidade-real.test.ts` — 2 testes adicionais (tolerancia aplicada e quarta bloqueada)
+- `docs/procurar-datas-escopo-equivalencia-legado-v2.md` — secao sobre divergencia intencional
+
+### Validacoes
+
+- 1000 testes do motor passando (excluindo agenda-real-helper.test.ts com falhas pre-existentes)
+- Typecheck: sem erros nos arquivos alterados (10 erros pre-existentes em hub-vendas/alertas/teste/route.test.ts)
+- Lint: sem erros nos arquivos alterados (1 warning pre-existente em gerar-candidatos-disponibilidade-real.test.ts)
+
+### Cuidados criticos verificados
+
+1. Gates antecipados (equipe, ativa, tempoNecessarioMin, domingo, km, config, limites) permanecem intactos
+2. Helper usa apenas `diaSemana` (nao `ehSabado`) — quarta = 3, sabado = 6 derivados internamente
+3. `disponivelMin` confirmado como mesmo valor que originou `suficienteParaServico`

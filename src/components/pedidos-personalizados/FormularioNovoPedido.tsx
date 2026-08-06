@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { LIMITE_TAPETES_POR_PEDIDO } from '@/lib/pedidos-personalizados'
+import { aplicarMascaraTelefoneBR, extrairDigitosTelefone } from '@/lib/atendimento-presencial/telefone'
 import { CardTapete } from './CardTapete'
 import { AnexosTapete } from './AnexosTapete'
 import { AnexosIniciaisTapete } from './AnexosIniciaisTapete'
@@ -276,6 +277,14 @@ export default function FormularioNovoPedido() {
     event.preventDefault()
     atualizarEstado({ ...estado, numeroLancamento: event.clipboardData.getData('text') })
     marcarTocado('numeroLancamento')
+  }
+
+  function colarTelefone(event: ClipboardEvent<HTMLInputElement>) {
+    const texto = event.clipboardData.getData('text')
+    if (extrairDigitosTelefone(texto).length <= 11) return
+    event.preventDefault()
+    atualizarEstado({ ...estado, telefone: texto })
+    marcarTocado('telefone')
   }
 
   function focarPrimeiroErro(problemas: typeof errosTodos) {
@@ -546,6 +555,11 @@ export default function FormularioNovoPedido() {
               <label htmlFor="cliente" className="mb-1.5 block text-sm font-medium text-slate-700">Cliente *</label>
               <Input id="cliente" value={estado.cliente} onChange={(event) => atualizarEstado({ ...estado, cliente: event.target.value })} onBlur={() => marcarTocado('cliente')} maxLength={40} disabled={formularioBloqueado} aria-invalid={mensagens('cliente').length > 0} aria-describedby={mensagens('cliente').length > 0 ? 'cliente-erro' : undefined} className="h-11" />
               {mensagens('cliente')[0] && <p id="cliente-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('cliente')[0]}</p>}
+            </div>
+            <div>
+              <label htmlFor="telefone" className="mb-1.5 block text-sm font-medium text-slate-700">Telefone do cliente *</label>
+              <Input id="telefone" value={estado.telefone} onChange={(event) => atualizarEstado({ ...estado, telefone: aplicarMascaraTelefoneBR(event.target.value) })} onPaste={colarTelefone} onBlur={() => marcarTocado('telefone')} inputMode="tel" autoComplete="tel" placeholder="(41) 99999-9999" disabled={formularioBloqueado} aria-invalid={mensagens('telefone').length > 0} aria-describedby={mensagens('telefone').length > 0 ? 'telefone-erro' : undefined} className="h-11" />
+              {mensagens('telefone')[0] && <p id="telefone-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('telefone')[0]}</p>}
             </div>
           </div>
         </section>

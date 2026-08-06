@@ -9,6 +9,7 @@ import {
   listarPedidosGestao,
   payloadAtualizacaoAdministrativa,
   payloadAtualizacaoComercial,
+  gerarResumoFornecedorDetalhe,
   validarAdministrativo,
 } from './gestao-modelo'
 import type { OpcoesNovoPedido } from './novo-pedido-modelo'
@@ -22,7 +23,7 @@ const detalhe: PedidoDetalhe = {
   id: PEDIDO,
   fornecedor: { chave: 'moriah_tapetes', nome: 'MORIAH TAPETES' },
   unidade: { chave: 'portao', nome: 'PORTÃO' },
-  consultora: 'ANA', cliente: 'CLIENTE', numeroLancamento: '000001',
+  consultora: 'ANA', cliente: 'CLIENTE', telefone: '41999999999', numeroLancamento: '000001',
   dataEntrega: null, dataPedidoFornecedor: null, numeroPedidoCompra: null, comprador: null,
   status: 'CADASTRADO', version: 4, createdAt: '2026-08-06T10:00:00Z', updatedAt: '2026-08-06T10:00:00Z',
   tapetes: [{
@@ -52,8 +53,18 @@ describe('modelo da gestão de pedidos personalizados', () => {
 
   it('monta atualização comercial com expectedVersion e IDs persistidos', () => {
     const payload = payloadAtualizacaoComercial(detalheParaFormulario(detalhe), 4, opcoes)
-    expect(payload).toMatchObject({ expectedVersion: 4, unidade: 'portao', tapetes: [{ id: TAPETE, ordem: 1 }] })
+    expect(payload).toMatchObject({ expectedVersion: 4, unidade: 'portao', telefone: '41999999999', tapetes: [{ id: TAPETE, ordem: 1 }] })
     expect(JSON.stringify(payload)).not.toMatch(/dataEntrega|comprador|status/)
+  })
+
+  it('gera o resumo persistido pelo helper aprovado sem telefone, IDs, anexos ou controle técnico', () => {
+    const resumo = gerarResumoFornecedorDetalhe(detalhe) ?? ''
+    expect(resumo).toContain('UNIDADE: PORTÃO')
+    expect(resumo).toContain('TAPETE 1')
+    expect(resumo).toContain('01 - K-01 - Grafite')
+    expect(resumo).not.toContain(detalhe.telefone ?? '')
+    expect(resumo).not.toContain(PEDIDO)
+    expect(resumo).not.toMatch(/ANEXO|VERSÃO|ALTERAÇÃO DE LAYOUT/i)
   })
 
   it('serializa filtros e paginação na listagem', async () => {
@@ -183,6 +194,13 @@ describe('modelo da gestão de pedidos personalizados', () => {
     expect(componente).toContain('maxLength={5}')
     expect(componente).toContain('bg-gradient-to-r')
     expect(componente).toContain('classeStatus(item.status)')
+    expect(componente).toContain('Resumo para o fornecedor')
+    expect(componente).toContain('COPIAR RESUMO')
+    expect(componente).toContain('CheckCircle2')
+    expect(componente).toContain('mt-6 border-t border-slate-200 pt-5')
+    expect(componente).not.toContain('Não disponível no schema')
+    expect(componente).not.toMatch(/label="Número do pedido"/)
+    expect(componente).not.toMatch(/label="Data do pedido"/)
     expect(anexos).toContain('CheckCircle2')
     expect(anexos).toContain('border-emerald-200')
   })

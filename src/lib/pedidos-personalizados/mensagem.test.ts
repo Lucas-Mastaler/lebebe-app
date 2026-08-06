@@ -44,6 +44,7 @@ function normalizar(tapetes: TapeteMoriahEntrada[], overrides: Partial<PedidoPer
     unidade: 'bigorrilho',
     consultora: 'Niége Silva',
     cliente: 'Cliente Bebê',
+    telefone: '41999999999',
     tapetes,
     ...overrides,
   })

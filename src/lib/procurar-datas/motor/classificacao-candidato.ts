@@ -11,6 +11,8 @@
 //   - Não consulta disponibilidade real
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { verificarToleranciaTempoNormal } from './tolerancia-tempo-normal'
+
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
 /** Classificação operacional possível de um cenário de atendimento. */
@@ -91,6 +93,12 @@ export interface ClassificacaoCandidatoOperacionalV2 {
     horaMarcadaHorasAMais?: number | null
     limiteMinimoHoraMarcadaMin?: number | null
     horaMarcadaCalculadaPorTempo?: boolean
+    /** true quando o candidato foi aceito mediante tolerância de tempo (≤30min, NORMAL, não quarta, não sábado). */
+    usouToleranciaTempo?: boolean
+    /** Diferença em minutos tolerada (tempoNecessarioMin - disponivelMin). Presente apenas quando usouToleranciaTempo: true. */
+    toleranciaTempoMin?: number | null
+    /** Motivo humano-legível da decisão de tolerância. */
+    toleranciaTempoMotivo?: string | null
   }
 }
 
@@ -143,10 +151,11 @@ export function classificarCandidatoOperacionalV2(
     return resultado('indisponivel', false, motivos, avisos, input)
   }
 
-  if (input.suficienteParaServico === false) {
-    motivos.push('Tempo disponível insuficiente para o serviço.')
-    return resultado('indisponivel', false, motivos, avisos, input)
-  }
+  // Tolerância de tempo: em vez de bloquear imediatamente quando tempo é insuficiente,
+  // marcar flag e adiar a decisão para depois da classificação de distância.
+  // A tolerância só se aplica se a classificação final for NORMAL, não for quarta,
+  // não for sábado, e a falta for <= 30 minutos.
+  const tempoInsuficiente = input.suficienteParaServico === false
 
   if (input.tempoNecessarioMin === null || !Number.isFinite(input.tempoNecessarioMin)) {
     motivos.push('Tempo necessário ausente ou inválido.')
@@ -235,38 +244,79 @@ export function classificarCandidatoOperacionalV2(
 
   // Hora marcada e calculada como flag diagnostica nao exclusiva em resultado().
 
-  // ── 5. Normal ────────────────────────────────────────────────────────────
+  // ── 5-8. Classificação de distância (Normal / Especial / Premium / Fora-limite)
+  //
+  // CUIDADO CRÍTICO 1: quando tempoInsuficiente === true, não retornar elegível
+  // imediatamente. Determinar o tipo de distância primeiro e aplicar tolerância
+  // apenas se for NORMAL + não quarta + não sábado + falta <= 30min.
+  // Especial, Premium e fora-limite com tempo insuficiente continuam indisponíveis.
 
+  let tipoDistancia: TipoClassificacaoCandidatoV2
   if (kmAdicionalM <= limiteBaseM) {
-    return resultado('normal', true, motivos, avisos, input)
+    tipoDistancia = 'normal'
+  } else if (guardaEspecialM > 0 && kmAdicionalM <= limiteEspecialM) {
+    tipoDistancia = 'especial'
+  } else if (guardaPremiumM > 0 && kmAdicionalM <= limitePremiumM) {
+    tipoDistancia = 'premium'
+  } else {
+    tipoDistancia = 'indisponivel'
+    motivos.push('Distância adicional fora dos limites configurados.')
   }
 
-  // ── 6. Especial ────────────────────────────────────────────────────────────
+  // ── 9. Aplicar tolerância de tempo se necessário ───────────────────────────
+  //
+  // Se o tempo é suficiente, retornar conforme classificação de distância.
+  // Se o tempo é insuficiente, verificar tolerância (apenas NORMAL, não quarta,
+  // não sábado, falta <= 30min). Caso contrário, indisponível.
 
-  if (guardaEspecialM > 0 && kmAdicionalM <= limiteEspecialM) {
-    return resultado('especial', true, motivos, avisos, input)
+  if (!tempoInsuficiente) {
+    // Tempo suficiente — fluxo normal
+    const elegivel = tipoDistancia !== 'indisponivel'
+    return resultado(tipoDistancia, elegivel, motivos, avisos, input)
   }
 
-  // ── 7. Premium ─────────────────────────────────────────────────────────────
+  // Tempo insuficiente — verificar tolerância
+  const tolerancia = verificarToleranciaTempoNormal({
+    suficienteParaServico: false,
+    disponivelMin: input.disponivelMin,
+    tempoNecessarioMin: input.tempoNecessarioMin,
+    diaSemana: input.diaSemana,
+    tipoClassificacao: tipoDistancia,
+  })
 
-  if (guardaPremiumM > 0 && kmAdicionalM <= limitePremiumM) {
-    return resultado('premium', true, motivos, avisos, input)
+  if (tolerancia.aplicaTolerancia) {
+    // Tolerância aplicada — candidato NORMAL elegível com metadados de tolerância
+    return resultado('normal', true, motivos, avisos, input, {
+      usouToleranciaTempo: true,
+      toleranciaTempoMin: tolerancia.diferencaMin,
+      toleranciaTempoMotivo: tolerancia.motivo,
+    })
   }
 
-  // ── 8. Fora de todos os limites ────────────────────────────────────────────
-
-  motivos.push('Distância adicional fora dos limites configurados.')
+  // Tolerância não se aplica — indisponível por tempo insuficiente
+  motivos.push('Tempo disponível insuficiente para o serviço.')
+  if (tolerancia.motivo && !tolerancia.motivo.includes('Tempo suficiente')) {
+    avisos.push(`Tolerância não aplicada: ${tolerancia.motivo}`)
+  }
   return resultado('indisponivel', false, motivos, avisos, input)
 }
 
 // ─── Helper interno ───────────────────────────────────────────────────────────
+
+/** Metadados opcionais de tolerância de tempo propagados para detalhes. */
+interface MetadadosTolerancia {
+  usouToleranciaTempo: boolean
+  toleranciaTempoMin: number
+  toleranciaTempoMotivo: string
+}
 
 function resultado(
   tipo: TipoClassificacaoCandidatoV2,
   elegivel: boolean,
   motivos: string[],
   avisos: string[],
-  input: ClassificarCandidatoOperacionalV2Input
+  input: ClassificarCandidatoOperacionalV2Input,
+  tolerancia?: MetadadosTolerancia
 ): ClassificacaoCandidatoOperacionalV2 {
   const limites = calcularLimitesDiagnosticos(input)
   const kmAdicionalNaRotaM =
@@ -314,6 +364,9 @@ function resultado(
       horaMarcadaHorasAMais: horaMarcada.horaMarcadaHorasAMais,
       limiteMinimoHoraMarcadaMin: horaMarcada.limiteMinimoHoraMarcadaMin,
       horaMarcadaCalculadaPorTempo: horaMarcada.horaMarcadaCalculadaPorTempo,
+      usouToleranciaTempo: tolerancia?.usouToleranciaTempo ?? false,
+      toleranciaTempoMin: tolerancia?.toleranciaTempoMin ?? null,
+      toleranciaTempoMotivo: tolerancia?.toleranciaTempoMotivo ?? null,
     },
   }
 }

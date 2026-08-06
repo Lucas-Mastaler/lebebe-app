@@ -24,6 +24,7 @@ import {
   normalizarObservacoes,
   normalizarReferenciaCatalogo,
 } from './normalizacao'
+import { normalizarTelefone } from '@/lib/atendimento-presencial/telefone'
 import type {
   CodigoAvisoPedidoPersonalizado,
   CodigoErroPedidoPersonalizado,
@@ -173,6 +174,7 @@ function validarIdentificacao(
 ): Omit<PedidoPersonalizadoMoriahNormalizado, 'fornecedor' | 'unidade' | 'status' | 'tapetes' | 'dataEntrega' | 'dataPedidoFornecedor'> {
   const consultora = normalizarConsultora(entrada.consultora)
   const cliente = normalizarCliente(entrada.cliente)
+  const telefone = normalizarTelefone(entrada.telefone)
   const numeroLancamento = normalizarNumeroLancamento(entrada.numeroLancamento)
   const numeroPedidoCompra = normalizarNumeroPedidoCompra(entrada.numeroPedidoCompra)
   const comprador = normalizarComprador(entrada.comprador)
@@ -184,6 +186,12 @@ function validarIdentificacao(
 
   if (!cliente) erros.push(erro('CLIENTE_OBRIGATORIO', 'cliente', 'Informe o nome do cliente.'))
   else if (cliente.length > 40) erros.push(erro('CLIENTE_INVALIDO', 'cliente', 'O cliente deve ter no máximo 40 caracteres.'))
+
+  if (!(entrada.telefone ?? '').trim()) {
+    erros.push(erro('TELEFONE_OBRIGATORIO', 'telefone', 'Informe o telefone do cliente.'))
+  } else if (!telefone.valido || !telefone.telefoneNormalizado) {
+    erros.push(erro('TELEFONE_INVALIDO', 'telefone', 'Digite um telefone válido com DDD.'))
+  }
 
   if (numeroLancamento !== null && !NUMERO_LANCAMENTO.test(numeroLancamento)) {
     erros.push(erro('NUMERO_LANCAMENTO_INVALIDO', 'numeroLancamento', 'O número de lançamento deve conter somente números e ter no máximo 6 dígitos.'))
@@ -197,7 +205,14 @@ function validarIdentificacao(
     erros.push(erro('COMPRADOR_INVALIDO', 'comprador', 'O comprador deve ter de 2 a 40 letras e espaços.'))
   }
 
-  return { consultora, cliente, numeroLancamento, numeroPedidoCompra, comprador }
+  return {
+    consultora,
+    cliente,
+    telefoneNormalizado: telefone.telefoneNormalizado ?? '',
+    numeroLancamento,
+    numeroPedidoCompra,
+    comprador,
+  }
 }
 
 export function validarPedidoPersonalizadoMoriah(

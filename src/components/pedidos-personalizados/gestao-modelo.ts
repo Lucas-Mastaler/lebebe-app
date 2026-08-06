@@ -1,10 +1,11 @@
 import {
   converterDataAdministrativaParaISO,
+  gerarMensagemPedidoPersonalizado,
   normalizarComprador,
   normalizarNumeroLancamento,
   normalizarNumeroPedidoCompra,
 } from '@/lib/pedidos-personalizados'
-import type { StatusPedidoPersonalizado, UnidadePedidoPersonalizado } from '@/lib/pedidos-personalizados'
+import type { CodigoProdutoMoriah, PedidoPersonalizadoMoriahNormalizado, StatusPedidoPersonalizado, UnidadePedidoPersonalizado } from '@/lib/pedidos-personalizados'
 import type { AnexoFormulario, EstadoNovoPedido, OpcoesNovoPedido, TapeteFormulario } from './novo-pedido-modelo'
 import { ehErroHttpNovoPedido } from './novo-pedido-modelo'
 
@@ -30,6 +31,7 @@ export type ItemPedidoGestao = {
   unidade: { chave: UnidadePedidoPersonalizado; nome: string }
   consultora: string
   cliente: string
+  telefone: string | null
   numeroLancamento: string | null
   dataEntrega: string | null
   dataPedidoFornecedor: string | null
@@ -65,6 +67,7 @@ export type PedidoDetalhe = {
   unidade: { chave: UnidadePedidoPersonalizado; nome: string }
   consultora: string
   cliente: string
+  telefone: string | null
   numeroLancamento: string | null
   dataEntrega: string | null
   dataPedidoFornecedor: string | null
@@ -151,6 +154,7 @@ export function detalheParaFormulario(pedido: PedidoDetalhe): EstadoNovoPedido {
     unidade: pedido.unidade.chave,
     consultora: pedido.consultora,
     cliente: pedido.cliente,
+    telefone: pedido.telefone ?? '',
     numeroLancamento: pedido.numeroLancamento ?? '',
     tapetes: pedido.tapetes.map((tapete) => ({
       chaveLocal: tapete.id,
@@ -176,6 +180,46 @@ export function detalheParaAdministrativo(pedido: PedidoDetalhe): EstadoAdminist
     numeroPedidoCompra: pedido.numeroPedidoCompra ?? '',
     comprador: pedido.comprador ?? '',
   }
+}
+
+export function gerarResumoFornecedorDetalhe(pedido: PedidoDetalhe) {
+  const normalizado: PedidoPersonalizadoMoriahNormalizado = {
+    fornecedor: 'moriah_tapetes',
+    unidade: pedido.unidade.chave,
+    consultora: pedido.consultora,
+    cliente: pedido.cliente,
+    telefoneNormalizado: pedido.telefone ?? '',
+    numeroLancamento: pedido.numeroLancamento,
+    numeroPedidoCompra: pedido.numeroPedidoCompra,
+    comprador: pedido.comprador,
+    dataEntrega: pedido.dataEntrega,
+    dataPedidoFornecedor: pedido.dataPedidoFornecedor,
+    status: pedido.status,
+    tapetes: pedido.tapetes.map((tapete) => ({
+      id: tapete.id,
+      ordem: tapete.ordem,
+      formato: tapete.formato,
+      dimensao1Cm: tapete.dimensao1Cm,
+      dimensao2Cm: tapete.dimensao2Cm,
+      areaCobradaCentesimosM2: tapete.areaCobradaCentesimosM2,
+      codigoProduto: tapete.produto.codigo as CodigoProdutoMoriah,
+      nomeColecaoCatalogo: tapete.nomeColecaoCatalogo,
+      referenciaCatalogo: tapete.referenciaCatalogo,
+      observacoes: tapete.observacoes,
+      cores: tapete.cores.map((cor) => ({ ...cor })),
+      teveAlteracaoLayout: tapete.teveAlteracaoLayout,
+      quantidadeAlteracoesLayout: tapete.quantidadeAlteracoesLayout,
+    })),
+  }
+  const resultado = gerarMensagemPedidoPersonalizado(
+    normalizado,
+    pedido.tapetes.map((tapete) => ({
+      id: tapete.produto.id,
+      codigo: tapete.produto.codigo as CodigoProdutoMoriah,
+      descricao: tapete.produto.descricao,
+    }))
+  )
+  return resultado.valido ? resultado.dados : null
 }
 
 export function validarAdministrativo(estado: EstadoAdministrativo): ErrosAdministrativos {
@@ -231,6 +275,7 @@ export function payloadAtualizacaoComercial(estado: EstadoNovoPedido, expectedVe
     unidade: estado.unidade,
     consultora: estado.consultora,
     cliente: estado.cliente,
+    telefone: estado.telefone,
     tapetes: estado.tapetes.map((tapete, indice) => ({
       id: tapete.tapeteId,
       ordem: indice + 1,

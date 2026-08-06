@@ -205,7 +205,7 @@ export class RepositorioPedidosPersonalizados {
     let query = this.supabase
       .from('pedidos_personalizados_pedidos')
       .select(`
-        id, created_at, updated_at, unidade_id, consultora, cliente,
+        id, created_at, updated_at, unidade_id, consultora, cliente, telefone_normalizado,
         numero_lancamento, data_entrega, data_pedido_fornecedor,
         numero_pedido_compra, comprador, status, version,
         fornecedor:pedidos_personalizados_fornecedores!pedidos_personalizados_pedidos_fornecedor_id_fkey(chave, nome),
@@ -275,7 +275,7 @@ export class RepositorioPedidosPersonalizados {
     const { data: pedido, error: pedidoError } = await this.supabase
       .from('pedidos_personalizados_pedidos')
       .select(`
-        id, fornecedor_id, unidade_id, consultora, cliente, numero_lancamento,
+        id, fornecedor_id, unidade_id, consultora, cliente, telefone_normalizado, numero_lancamento,
         data_entrega, data_pedido_fornecedor, numero_pedido_compra, comprador,
         status, version, created_at, updated_at,
         fornecedor:pedidos_personalizados_fornecedores!pedidos_personalizados_pedidos_fornecedor_id_fkey(chave, nome),

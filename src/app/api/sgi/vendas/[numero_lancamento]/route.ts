@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { validateComercialUser } from '@/lib/auth/sgi-auth'
 import type { SgiVendaDetalhe, SgiVendaClienteResumo } from '@/types/sgi'
 import { gerarVariacoesTelefone } from '@/lib/digisac/sgi-sync'
+import { carregarContextoPedidosPersonalizados } from '@/lib/pedidos-personalizados/server/contexto'
+import { buscarPedidosPersonalizadosPorTelefones } from '@/lib/pedidos-personalizados/server/historico'
 
 export const runtime = 'nodejs'
 
@@ -49,9 +51,6 @@ export async function GET(
 
       if (variacoesArray.length > 0) {
         console.log(`[VENDA-CLIENTE] numero_lancamento=${numero_lancamento}`)
-        console.log(`[VENDA-CLIENTE] contatos atuais:`, contatosAtuais)
-        console.log(`[VENDA-CLIENTE] variações geradas:`, variacoesArray)
-
         // Abordagem mais confiável: duas queries separadas com .in()
         // IMPORTANTE: NÃO excluir o lançamento atual — precisamos dele para marcar venda_atual
         const [porTelefoneNormalizado, porTelefoneDdi] = await Promise.all([
@@ -159,6 +158,18 @@ export async function GET(
       .eq('documento_saida_id', doc.id),
   ])
 
+  const contextoPedidos = await carregarContextoPedidosPersonalizados(['pedidos_personalizados_gestao'])
+  const pedidosPersonalizados = contextoPedidos.ok
+    ? await buscarPedidosPersonalizadosPorTelefones(contextoPedidos.contexto.supabase, {
+        telefones: (contatosResult.data ?? []).flatMap((contato) => [
+          contato.telefone_normalizado,
+          contato.telefone_normalizado_ddi,
+        ]),
+        unidadeIds: contextoPedidos.contexto.unidades.map((unidade) => unidade.id),
+        limit: 10,
+      })
+    : null
+
   // Deduplicar vendasCliente por numero_lancamento (evita duplicatas quando query já retorna a venda atual)
   const vendasClienteMap = new Map<string, SgiVendaClienteResumo>()
   const numeroLancamentoAtualStr = String(doc.numero_lancamento).trim()
@@ -212,6 +223,7 @@ export async function GET(
     produtos: produtosResult.data ?? [],
     pagamentos: pagamentosResult.data ?? [],
     vendasCliente: vendasClienteFinal,
+    ...(pedidosPersonalizados === null ? {} : { pedidosPersonalizados }),
   }
 
   return NextResponse.json(detalhe)

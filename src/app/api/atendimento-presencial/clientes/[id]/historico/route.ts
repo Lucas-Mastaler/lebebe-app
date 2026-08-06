@@ -12,6 +12,8 @@ import {
   buscarVendasSgiPorTelefone,
   serializarHistoricoAtendimento,
 } from '@/lib/atendimento-presencial/historico-cliente'
+import { carregarContextoPedidosPersonalizados } from '@/lib/pedidos-personalizados/server/contexto'
+import { buscarPedidosPersonalizadosPorTelefones } from '@/lib/pedidos-personalizados/server/historico'
 
 export const runtime = 'nodejs'
 
@@ -76,6 +78,7 @@ export async function GET(
 
     const cliente = clienteData as ClienteHistoricoRow
     const atendimentoAtualId = new URL(request.url).searchParams.get('atendimentoAtualId')
+    const contextoPedidos = await carregarContextoPedidosPersonalizados(['pedidos_personalizados_gestao'])
 
     let query = supabase
       .from('atendimento_presencial_atendimentos')
@@ -121,7 +124,7 @@ export async function GET(
     const unidadeIds = Array.from(new Set(rows.map((row) => row.unidade_id)))
     const consultoraIds = Array.from(new Set(rows.map((row) => row.consultora_usuario_id)))
 
-    const [departamentosResult, produtosResult, unidadesResult, consultorasResult, vendasResult] = await Promise.all([
+    const [departamentosResult, produtosResult, unidadesResult, consultorasResult, vendasResult, pedidosPersonalizados] = await Promise.all([
       atendimentoIds.length
         ? supabase.from('atendimento_presencial_departamentos').select('atendimento_id, departamento').in('atendimento_id', atendimentoIds).order('ordem', { ascending: true })
         : Promise.resolve({ data: [], error: null }),
@@ -139,6 +142,13 @@ export async function GET(
         telefoneNormalizadoDdi: cliente.telefone_normalizado_ddi,
         limit: 10,
       }),
+      contextoPedidos.ok
+        ? buscarPedidosPersonalizadosPorTelefones(contextoPedidos.contexto.supabase, {
+            telefones: [cliente.telefone_normalizado, cliente.telefone_normalizado_ddi],
+            unidadeIds: contextoPedidos.contexto.unidades.map((unidade) => unidade.id),
+            limit: 10,
+          })
+        : Promise.resolve(null),
     ])
 
     if (departamentosResult.error || produtosResult.error || unidadesResult.error || consultorasResult.error) {
@@ -175,7 +185,12 @@ export async function GET(
         produtosInteresse: produtosPorAtendimento.get(row.id) ?? [],
       })),
       vendas: vendasResult.vendas,
-      fontesConsultadas: ['atendimento_presencial', 'sgi_documentos_saida'],
+      ...(pedidosPersonalizados === null ? {} : { pedidosPersonalizados }),
+      fontesConsultadas: [
+        'atendimento_presencial',
+        'sgi_documentos_saida',
+        ...(pedidosPersonalizados === null ? [] : ['pedidos_personalizados']),
+      ],
     })
   } catch (error) {
     console.error('[ATENDIMENTO PRESENCIAL HISTORICO CLIENTE] Erro geral:', error)

@@ -152,6 +152,7 @@ function serializarItemListagem(valor: unknown) {
     fornecedor: fornecedor ? { chave: fornecedor.chave, nome: fornecedor.nome } : null,
     consultora: row.consultora,
     cliente: row.cliente,
+    telefone: row.telefone_normalizado,
     numeroLancamento: row.numero_lancamento,
     dataEntrega: row.data_entrega,
     dataPedidoFornecedor: row.data_pedido_fornecedor,
@@ -183,6 +184,7 @@ function serializarDetalhe(valor: { pedido: unknown; tapetes: unknown[] }) {
     },
     consultora: pedido.consultora,
     cliente: pedido.cliente,
+    telefone: pedido.telefone_normalizado,
     numeroLancamento: pedido.numero_lancamento,
     dataEntrega: pedido.data_entrega,
     dataPedidoFornecedor: pedido.data_pedido_fornecedor,
@@ -306,6 +308,7 @@ export async function criarPedido(
     p_unidade_id: unidade.id,
     p_consultora: validacao.dados.consultora,
     p_cliente: validacao.dados.cliente,
+    p_telefone_normalizado: validacao.dados.telefoneNormalizado,
     p_tapetes: tapetesRpc,
     p_numero_lancamento: validacao.dados.numeroLancamento,
     p_data_entrega: validacao.dados.dataEntrega,
@@ -447,6 +450,7 @@ export async function atualizarComercial(
     p_unidade_id: unidade.id,
     p_consultora: validacao.dados.consultora,
     p_cliente: validacao.dados.cliente,
+    p_telefone_normalizado: validacao.dados.telefoneNormalizado,
     p_tapetes: tapetesRpc,
   }
   const resultado = await repo.atualizarComercial(parametros)

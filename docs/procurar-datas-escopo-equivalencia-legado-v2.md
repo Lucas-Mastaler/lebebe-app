@@ -3975,3 +3975,43 @@ Status: revisao corretiva curta implementada antes do primeiro teste real; sem d
 ### Teste real controlado
 
 - Foi adicionada a funcao publica `testarDeslocamentoBackendControlado()` para executar somente uma data/equipe configurada em Script Properties, sem varrer a janela automatica e sem atualizar `CAL_SIG_MAP_V1`.
+
+---
+
+## 2026-08-06 - Devin - Tolerancia de tempo para candidatos NORMAL (divergencia intencional aprovada)
+
+Status: implementado e testado. Divergencia intencional e explicita em relacao ao legado.
+
+### Regra aprovada
+
+O motor v2 agora aceita candidatos com tempo disponivel insuficiente mediante tolerancia de ate 30 minutos, restrita a:
+- Classificacao de distancia final = NORMAL
+- Dia da semana nao e quarta-feira (diaSemana !== 3)
+- Dia da semana nao e sabado (diaSemana !== 6)
+- Falta de tempo > 0 e <= 30 minutos (inclusivo: 30 aceita, 31 rejeita)
+- Todas as demais regras de elegibilidade permanecem obrigatorias
+
+### Divergencia do legado
+
+O legado Apps Script NAO possui tolerancia de tempo. A comparacao `avail >= minMin` em `getSlots()` (CEP-CONFIG.gs:1590) e estrita e exclui slots insuficientes antes da classificacao. Esta e a unica divergencia intencional nova, aprovada explicitamente pelo usuario.
+
+### Implementacao
+
+- **Helper puro:** `src/lib/procurar-datas/motor/tolerancia-tempo-normal.ts` — funcao `verificarToleranciaTempoNormal()` que decide se a tolerancia se aplica. Usa apenas `diaSemana` (nao `ehSabado`) para evitar duas fontes da mesma informacao.
+- **Integracao:** `src/lib/procurar-datas/motor/classificacao-candidato.ts` — o gate de `suficienteParaServico === false` deixou de ser retorno antecipado e passou a ser verificado apos a classificacao de distancia. Todos os demais gates antecipados (equipe, ativa, tempoNecessarioMin, domingo, km, config, limites) permanecem intactos.
+- **Propagacao:** `CandidatoPreliminarV2.operacional` e `SnapshotTecnicoCandidatoFinalV2` receberam campos `usouToleranciaTempo`, `toleranciaTempoMin`, `toleranciaTempoMotivo`.
+
+### Testes
+
+- 23 testes unitarios do helper puro (`tolerancia-tempo-normal.test.ts`)
+- 17 testes de integracao na classificacao (`classificacao-candidato.test.ts`), incluindo regressao de gates antecipados
+- 2 testes adicionais em `gerar-candidatos-disponibilidade-real.test.ts` (tolerancia aplicada e quarta bloqueada)
+- Total: 1000 testes do motor passando (excluindo agenda-real-helper.test.ts com falhas pre-existentes)
+
+### Decisoes aprovadas
+
+1. Ranking: sem mudanca (candidatos com tolerancia competem igualmente)
+2. Sabado: bloqueado (somente seg-sex exceto quarta)
+3. Frontend: sem mudanca (backend-only)
+4. API: sem alteracao de contrato
+5. Persistencia: sem migration (apenas snapshot tecnico em memoria)

@@ -81,11 +81,12 @@ describe('gerarCandidatosComDisponibilidadeRealV2', () => {
   })
 
   // 2. Não gera candidato elegível quando disponivelMin < tempoNecessarioMin
-  it('gera candidato indisponivel quando disponivelMin menor que tempoNecessarioMin', () => {
+  //    Usa diferença de 45min (acima do limite de tolerância de 30min) para garantir indisponibilidade.
+  it('gera candidato indisponivel quando disponivelMin menor que tempoNecessarioMin (diferença > 30min)', () => {
     const resultado = gerarCandidatosComDisponibilidadeRealV2(
       criarInput({
         disponibilidades: [
-          { dataISO: '2026-06-15', equipe: 'EQUIPE 1', disponivelMin: 30, ativa: true },
+          { dataISO: '2026-06-15', equipe: 'EQUIPE 1', disponivelMin: 15, ativa: true },
         ],
         tempoNecessarioMin: 60,
       })
@@ -97,6 +98,48 @@ describe('gerarCandidatosComDisponibilidadeRealV2', () => {
     expect(resultado.candidatos[0].motivos).toContain(
       'Tempo disponível insuficiente para o serviço.'
     )
+  })
+
+  // 2b. Candidato NORMAL com falta de 30min em segunda → elegível por tolerância
+  it('gera candidato elegível por tolerância quando falta exatamente 30min em dia útil não-quarta', () => {
+    const resultado = gerarCandidatosComDisponibilidadeRealV2(
+      criarInput({
+        disponibilidades: [
+          { dataISO: '2026-06-15', equipe: 'EQUIPE 1', disponivelMin: 30, ativa: true },
+        ],
+        tempoNecessarioMin: 60,
+      })
+    )
+
+    expect(resultado.ok).toBe(true)
+    expect(resultado.candidatos).toHaveLength(1)
+    expect(resultado.candidatos[0].elegivel).toBe(true)
+    expect(resultado.candidatos[0].tipo).toBe('normal')
+    expect(resultado.candidatos[0].operacional.usouToleranciaTempo).toBe(true)
+    expect(resultado.candidatos[0].operacional.toleranciaTempoMin).toBe(30)
+  })
+
+  // 2c. Candidato NORMAL com falta de 30min em quarta → indisponível (quarta bloqueia tolerância)
+  it('gera candidato indisponível na quarta mesmo com falta de 30min (quarta bloqueia tolerância)', () => {
+    const resultado = gerarCandidatosComDisponibilidadeRealV2(
+      criarInput({
+        janelaDatas: [
+          { dataISO: '2026-06-17', indice: 0, diaSemana: 3, ehSabado: false, ehDomingo: false },
+        ],
+        disponibilidades: [
+          { dataISO: '2026-06-17', equipe: 'EQUIPE 1', disponivelMin: 30, ativa: true },
+        ],
+        tempoNecessarioMin: 60,
+      })
+    )
+
+    expect(resultado.ok).toBe(true)
+    expect(resultado.candidatos).toHaveLength(1)
+    expect(resultado.candidatos[0].elegivel).toBe(false)
+    expect(resultado.candidatos[0].motivos).toContain(
+      'Tempo disponível insuficiente para o serviço.'
+    )
+    expect(resultado.candidatos[0].operacional.usouToleranciaTempo).toBe(false)
   })
 
   // 3. Marca equipe inativa como indisponível

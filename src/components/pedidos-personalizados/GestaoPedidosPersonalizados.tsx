@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { AlertCircle, ChevronLeft, ChevronRight, ClipboardList, Eye, Loader2, PackageCheck, Pencil, RefreshCw, Search, ShoppingBag, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Eye, Loader2, PackageCheck, Pencil, RefreshCw, Search, ShoppingBag, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CardTapete } from './CardTapete'
 import { AnexosTapete } from './AnexosTapete'
+import { PreviaMensagem } from './PreviaMensagem'
+import { aplicarMascaraTelefoneBR, formatarTelefone } from '@/lib/atendimento-presencial/telefone'
 import {
   adicionarTapete,
   avaliarFormulario,
@@ -30,6 +32,7 @@ import {
   carregarDetalheGestao,
   detalheParaAdministrativo,
   detalheParaFormulario,
+  gerarResumoFornecedorDetalhe,
   listarPedidosGestao,
   mensagemErroGestao,
   payloadAtualizacaoAdministrativa,
@@ -103,8 +106,10 @@ export function GestaoPedidosPersonalizados() {
   const [conflitoAdministrativo, setConflitoAdministrativo] = useState(false)
   const [formulario, setFormulario] = useState<EstadoNovoPedido | null>(null)
   const [salvando, setSalvando] = useState(false)
+  const [resumoCopiado, setResumoCopiado] = useState(false)
   const [operacaoAnexo, setOperacaoAnexo] = useState<{ chaveLocal: string; slot: 1 | 2; tipo: 'upload' | 'substituicao' | 'remocao' | 'abertura' } | null>(null)
   const mutacaoRef = useRef(false)
+  const detalheInicialRef = useRef(false)
 
   const carregarLista = useCallback(async (signal?: AbortSignal) => {
     setCarregando(true)
@@ -124,6 +129,13 @@ export function GestaoPedidosPersonalizados() {
   }, [])
 
   useEffect(() => {
+    if (detalheInicialRef.current) return
+    detalheInicialRef.current = true
+    const pedidoId = new URLSearchParams(window.location.search).get('pedidoId')
+    if (pedidoId) void abrirDetalhe(pedidoId)
+  }, [])
+
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       setPagina(1)
       setFiltrosAplicados(filtros)
@@ -138,6 +150,19 @@ export function GestaoPedidosPersonalizados() {
   }, [carregarLista])
 
   const avaliacaoEdicao = useMemo(() => formulario && opcoes ? avaliarFormulario(formulario, opcoes) : null, [formulario, opcoes])
+  const resumoFornecedor = useMemo(() => detalhe ? gerarResumoFornecedorDetalhe(detalhe) : null, [detalhe])
+
+  async function copiarResumoFornecedor() {
+    if (!resumoFornecedor) return
+    try {
+      await navigator.clipboard.writeText(resumoFornecedor)
+      setResumoCopiado(true)
+      toast.success('Resumo copiado para a área de transferência.')
+      window.setTimeout(() => setResumoCopiado(false), 2000)
+    } catch {
+      toast.error('Não foi possível copiar o resumo.')
+    }
+  }
 
   async function abrirDetalhe(id: string) {
     setCarregandoDetalhe(true)
@@ -331,6 +356,7 @@ export function GestaoPedidosPersonalizados() {
               <div className="flex flex-1 flex-col p-5">
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                   <div><dt className="text-slate-500">Nº de lançamento</dt><dd className="font-semibold text-slate-900">{item.numeroLancamento ?? '—'}</dd></div>
+                  <div><dt className="text-slate-500">Telefone</dt><dd className="font-semibold text-slate-900">{item.telefone ? formatarTelefone(item.telefone) : 'Não informado'}</dd></div>
                   <div><dt className="text-slate-500">Pedido de compra</dt><dd className="font-semibold text-slate-900">{item.numeroPedidoCompra ?? '—'}</dd></div>
                   <div><dt className="text-slate-500">Pedido ao fornecedor</dt><dd className="font-medium">{item.dataPedidoFornecedor ? dataIsoParaExibicao(item.dataPedidoFornecedor) : '—'}</dd></div>
                   <div><dt className="text-slate-500">Data de entrega</dt><dd className="font-medium">{item.dataEntrega ? dataIsoParaExibicao(item.dataEntrega) : '—'}</dd></div>
@@ -385,6 +411,7 @@ export function GestaoPedidosPersonalizados() {
                       <div><dt className="text-slate-500">Unidade</dt><dd className="font-medium">{detalhe.unidade.nome}</dd></div>
                       <div><dt className="text-slate-500">Consultora</dt><dd className="font-medium">{detalhe.consultora}</dd></div>
                       <div><dt className="text-slate-500">Cliente</dt><dd className="font-medium">{detalhe.cliente}</dd></div>
+                      <div><dt className="text-slate-500">Telefone</dt><dd className="font-medium">{detalhe.telefone ? formatarTelefone(detalhe.telefone) : 'Não informado'}</dd></div>
                       <div><dt className="text-slate-500">Lançamento</dt><dd className="font-medium">{detalhe.numeroLancamento ?? '—'}</dd></div>
                       <div className="sm:col-span-2 xl:col-span-1 2xl:col-span-2"><dt className="text-slate-500">Fornecedor</dt><dd className="font-medium">{detalhe.fornecedor?.nome ?? '—'}</dd></div>
                     </dl>
@@ -398,8 +425,6 @@ export function GestaoPedidosPersonalizados() {
                       <div><dt className="text-slate-500">Data do pedido ao fornecedor</dt><dd className="font-medium">{detalhe.dataPedidoFornecedor ? dataIsoParaExibicao(detalhe.dataPedidoFornecedor) : '—'}</dd></div>
                       <div><dt className="text-slate-500">Data de entrega</dt><dd className="font-medium">{detalhe.dataEntrega ? dataIsoParaExibicao(detalhe.dataEntrega) : '—'}</dd></div>
                       <div><dt className="text-slate-500">Comprador</dt><dd className="font-medium">{detalhe.comprador ?? '—'}</dd></div>
-                      <div><dt className="text-slate-500">Número do pedido</dt><dd className="text-slate-500">Não disponível no schema</dd></div>
-                      <div><dt className="text-slate-500">Data do pedido</dt><dd className="text-slate-500">Não disponível no schema</dd></div>
                     </dl>
                   </section>
 
@@ -421,6 +446,7 @@ export function GestaoPedidosPersonalizados() {
                     <div><label htmlFor="gestao-unidade" className="mb-1 block text-sm font-medium">Unidade</label><Select value={formulario.unidade} onValueChange={(v) => setFormulario({ ...formulario, unidade: v as EstadoNovoPedido['unidade'] })}><SelectTrigger id="gestao-unidade"><SelectValue /></SelectTrigger><SelectContent>{opcoes.unidades.map((u) => <SelectItem key={u.chave} value={u.chave}>{u.nome}</SelectItem>)}</SelectContent></Select></div>
                     <div><label htmlFor="gestao-consultora" className="mb-1 block text-sm font-medium">Consultora</label><Input id="gestao-consultora" maxLength={20} value={formulario.consultora} onChange={(e) => setFormulario({ ...formulario, consultora: e.target.value })} /></div>
                     <div><label htmlFor="gestao-cliente" className="mb-1 block text-sm font-medium">Cliente</label><Input id="gestao-cliente" maxLength={40} value={formulario.cliente} onChange={(e) => setFormulario({ ...formulario, cliente: e.target.value })} /></div>
+                    <div><label htmlFor="gestao-telefone" className="mb-1 block text-sm font-medium">Telefone do cliente</label><Input id="gestao-telefone" inputMode="tel" autoComplete="tel" placeholder="(41) 99999-9999" value={formulario.telefone} onChange={(e) => setFormulario({ ...formulario, telefone: aplicarMascaraTelefoneBR(e.target.value) })} /></div>
                   </div>
                   {formulario.tapetes.map((tapete, indice) => <CardTapete key={tapete.chaveLocal} tapete={tapete} indice={indice} total={formulario.tapetes.length} produtos={opcoes.produtos} cores={opcoes.cores} erros={avaliacaoEdicao?.validacao.erros ?? []} camposTocados={new Set()} tentouSalvar disabled={salvando} onChange={(v) => atualizarTapete(indice, v)} onMover={(d) => setFormulario({ ...formulario, tapetes: moverItem(formulario.tapetes, indice, d) })} onRemover={() => setFormulario(removerTapete(formulario, tapete.chaveLocal))} onLimiteCores={() => toast.error('Máximo de 6 cores por tapete.')} onTocar={() => undefined} />)}
                   <Button type="button" variant="outline" disabled={formulario.tapetes.length >= 10} onClick={() => setFormulario(adicionarTapete(formulario, crypto.randomUUID()))}>Adicionar tapete</Button>
@@ -429,8 +455,77 @@ export function GestaoPedidosPersonalizados() {
               ) : (
                 <section className="space-y-4" aria-labelledby="tapetes-titulo">
                   <h3 id="tapetes-titulo" className="flex items-center gap-2 font-semibold text-slate-900"><PackageCheck className="size-5 text-violet-700" />Tapetes, cores, anexos e alterações de layout</h3>
-                  {detalhe.tapetes.map((tapete) => <section key={tapete.id} className="overflow-hidden rounded-xl border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h4 className="font-bold">Tapete {tapete.ordem} · {tapete.formato}</h4><p className="break-words text-sm text-slate-600">{tapete.produto.codigo} — {tapete.produto.descricao}</p></div><div className="text-right text-sm"><p className="font-semibold">{formatarArea(tapete.areaCobradaCentesimosM2)}</p><p className="text-slate-500">{tapete.dimensao1Cm} cm{tapete.dimensao2Cm ? ` × ${tapete.dimensao2Cm} cm` : ''}</p></div></div><dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">Cores</dt><dd className="break-words">{tapete.cores.map((c) => `${c.numero} — ${c.codigo} — ${c.nome}`).join(', ') || 'Nenhuma'}</dd></div><div><dt className="text-slate-500">Coleção / referência</dt><dd className="break-words">{tapete.nomeColecaoCatalogo || '—'} / {tapete.referenciaCatalogo || '—'}</dd></div><div className="sm:col-span-2"><dt className="text-slate-500">Observações</dt><dd className="whitespace-pre-wrap break-words">{tapete.observacoes || '—'}</dd></div><div><dt className="text-slate-500">Alteração de layout</dt><dd>{tapete.teveAlteracaoLayout ? `Sim (${tapete.quantidadeAlteracoesLayout ?? 0})` : 'Não'}</dd></div></dl><AnexosTapete tapete={{ ...detalheParaFormulario(detalhe).tapetes.find((item) => item.tapeteId === tapete.id)!, anexos: tapete.anexos }} ordem={tapete.ordem} bloqueado={operacaoAnexo !== null} operacao={operacaoAnexo} errosPorSlot={{}} onUpload={(slot, arquivo) => uploadGestao(tapete, slot, arquivo)} onAbrir={(anexo) => executarAnexo(tapete, anexo.slot, 'abertura', async () => { const { url } = await solicitarUrlAnexo(anexo.anexoId); window.open(url, '_blank', 'noopener,noreferrer') })} onSubstituir={(anexo, arquivo) => substituirGestao(tapete, anexo, arquivo)} onRemover={(anexo) => removerGestao(tapete, anexo)} /></section>)}
+                  {detalhe.tapetes.map((tapete) => (
+                    <section key={tapete.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                      <div className="border-b border-slate-100 pb-4">
+                        <h4 className="font-bold text-slate-950">Tapete {tapete.ordem} · {tapete.formato}</h4>
+                        <p className="mt-1 break-words text-sm text-slate-600">{tapete.produto.codigo} — {tapete.produto.descricao}</p>
+                      </div>
+
+                      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                        <section className="rounded-xl border border-sky-100 bg-sky-50/60 p-4" aria-label={`Medidas do tapete ${tapete.ordem}`}>
+                          <h5 className="text-xs font-bold uppercase tracking-wide text-sky-800">Medidas</h5>
+                          <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+                            <div>
+                              <dt className="text-slate-500">{tapete.formato === 'REDONDO' ? 'Diâmetro' : tapete.formato === 'ORGANICO' ? 'Maior largura' : 'Largura'}</dt>
+                              <dd className="font-semibold text-slate-900">{(tapete.dimensao1Cm / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m</dd>
+                            </div>
+                            {tapete.dimensao2Cm !== null && (
+                              <div>
+                                <dt className="text-slate-500">{tapete.formato === 'ORGANICO' ? 'Maior comprimento' : 'Comprimento'}</dt>
+                                <dd className="font-semibold text-slate-900">{(tapete.dimensao2Cm / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m</dd>
+                              </div>
+                            )}
+                            <div className="rounded-lg bg-white px-3 py-2 sm:col-span-2">
+                              <dt className="text-xs font-bold uppercase tracking-wide text-sky-700">Área calculada</dt>
+                              <dd className="mt-1 text-lg font-bold text-slate-950">{formatarArea(tapete.areaCobradaCentesimosM2)}</dd>
+                            </div>
+                          </dl>
+                        </section>
+
+                        <section className="rounded-xl border border-violet-100 bg-violet-50/50 p-4" aria-label={`Cores do tapete ${tapete.ordem}`}>
+                          <h5 className="text-xs font-bold uppercase tracking-wide text-violet-800">Cores</h5>
+                          {tapete.cores.length ? (
+                            <ul className="mt-3 space-y-2">
+                              {tapete.cores.map((cor) => (
+                                <li key={cor.id} className="flex min-w-0 items-start gap-2 text-sm text-slate-800">
+                                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-violet-600" aria-hidden="true" />
+                                  <span className="break-words">{cor.numero} — {cor.codigo} — {cor.nome}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : <p className="mt-3 text-sm text-slate-500">Nenhuma cor selecionada.</p>}
+                        </section>
+                      </div>
+
+                      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                        <div><dt className="text-slate-500">Coleção</dt><dd className="break-words font-medium">{tapete.nomeColecaoCatalogo || '—'}</dd></div>
+                        <div><dt className="text-slate-500">Referência</dt><dd className="break-words font-medium">{tapete.referenciaCatalogo || '—'}</dd></div>
+                        <div className="sm:col-span-2"><dt className="text-slate-500">Observações</dt><dd className="whitespace-pre-wrap break-words">{tapete.observacoes || '—'}</dd></div>
+                      </dl>
+
+                      <section className="mt-5 border-t border-slate-200 pt-4" aria-label={`Alterações de layout do tapete ${tapete.ordem}`}>
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Alterações de layout</p>
+                        <p className="mt-1 text-sm font-medium">{tapete.teveAlteracaoLayout ? `Sim (${tapete.quantidadeAlteracoesLayout ?? 0})` : 'Não'}</p>
+                      </section>
+
+                      <div className="mt-6 border-t border-slate-200 pt-5">
+                        <AnexosTapete tapete={{ ...detalheParaFormulario(detalhe).tapetes.find((item) => item.tapeteId === tapete.id)!, anexos: tapete.anexos }} ordem={tapete.ordem} bloqueado={operacaoAnexo !== null} operacao={operacaoAnexo} errosPorSlot={{}} onUpload={(slot, arquivo) => uploadGestao(tapete, slot, arquivo)} onAbrir={(anexo) => executarAnexo(tapete, anexo.slot, 'abertura', async () => { const { url } = await solicitarUrlAnexo(anexo.anexoId); window.open(url, '_blank', 'noopener,noreferrer') })} onSubstituir={(anexo, arquivo) => substituirGestao(tapete, anexo, arquivo)} onRemover={(anexo) => removerGestao(tapete, anexo)} />
+                      </div>
+                    </section>
+                  ))}
                 </section>
+              )}
+
+              {!editando && resumoFornecedor && (
+                <PreviaMensagem
+                  mensagem={resumoFornecedor}
+                  copiada={resumoCopiado}
+                  onCopiar={() => void copiarResumoFornecedor()}
+                  titulo="Resumo para o fornecedor"
+                  subtitulo="Gerado a partir dos dados atuais deste pedido."
+                  rotuloBotao="COPIAR RESUMO"
+                />
               )}
             </div>
           )}
@@ -462,9 +557,6 @@ export function GestaoPedidosPersonalizados() {
           </DialogHeader>
           {detalhe && administrativo && (
             <div className="min-h-0 flex-1 space-y-5 overflow-x-hidden overflow-y-auto px-4 py-5 sm:px-6">
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                Número do pedido e Data do pedido ainda não existem no schema. Pedido de compra e data do pedido ao fornecedor permanecem identificados separadamente.
-              </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <CampoAdministrativo id="admin-lancamento" label="Número de lançamento" erro={errosAdministrativos.numeroLancamento}>
                   <Input id="admin-lancamento" inputMode="numeric" maxLength={6} value={administrativo.numeroLancamento} aria-invalid={Boolean(errosAdministrativos.numeroLancamento)} aria-describedby={errosAdministrativos.numeroLancamento ? 'admin-lancamento-erro' : undefined} onChange={(e) => atualizarCampoAdministrativo('numeroLancamento', e.target.value.replace(/\D/g, '').slice(0, 6))} />

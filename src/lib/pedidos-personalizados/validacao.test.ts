@@ -55,6 +55,7 @@ function pedido(overrides: Partial<PedidoPersonalizadoMoriahEntrada> = {}): Pedi
     unidade: 'bigorrilho',
     consultora: '  Niége   Silva ',
     cliente: '  Cliente  2 ',
+    telefone: '(41) 99999-9999',
     tapetes: [tapete()],
     ...overrides,
   }
@@ -165,9 +166,29 @@ describe('validação completa do pedido Moriah', () => {
       unidade: 'bigorrilho',
       consultora: 'NIÉGE SILVA',
       cliente: 'CLIENTE 2',
+      telefoneNormalizado: '41999999999',
       status: 'CADASTRADO',
       tapetes: [{ dimensao1Cm: 200, dimensao2Cm: 300, areaCobradaCentesimosM2: 600, codigoProduto: '21158' }],
     })
+  })
+
+  it.each([
+    ['(41) 3333-4444', '4133334444'],
+    ['(41) 99999-9999', '41999999999'],
+    ['+55 (41) 99999-9999', '41999999999'],
+  ])('reutiliza a regra canônica de telefone para %s', (telefone, telefoneNormalizado) => {
+    expect(validarPedidoPersonalizadoMoriah(pedido({ telefone })).dados).toMatchObject({ telefoneNormalizado })
+  })
+
+  it.each([
+    ['', 'TELEFONE_OBRIGATORIO'],
+    ['00999999999', 'TELEFONE_INVALIDO'],
+    ['419999999999', 'TELEFONE_INVALIDO'],
+    ['telefone', 'TELEFONE_INVALIDO'],
+  ])('rejeita telefone inválido %s', (telefone, codigo) => {
+    expect(validarPedidoPersonalizadoMoriah(pedido({ telefone })).erros).toContainEqual(
+      expect.objectContaining({ campo: 'telefone', codigo })
+    )
   })
 
   it('aceita dez tapetes com ordens únicas', () => {
@@ -278,12 +299,14 @@ describe('validação completa do pedido Moriah', () => {
       unidade: '',
       consultora: '',
       cliente: '',
+      telefone: '',
       tapetes: [tapete({ dimensao1Metros: '', dimensao2Metros: '' })],
     }))
     expect(resultado.erros).toEqual(expect.arrayContaining([
       expect.objectContaining({ campo: 'unidade', mensagem: 'Selecione uma unidade.' }),
       expect.objectContaining({ campo: 'consultora', mensagem: 'Informe o nome da consultora.' }),
       expect.objectContaining({ campo: 'cliente', mensagem: 'Informe o nome do cliente.' }),
+      expect.objectContaining({ campo: 'telefone', mensagem: 'Informe o telefone do cliente.' }),
       expect.objectContaining({ campo: 'tapetes.0.dimensao1Metros', mensagem: 'Informe a largura do tapete.' }),
       expect.objectContaining({ campo: 'tapetes.0.dimensao2Metros', mensagem: 'Informe o comprimento do tapete.' }),
     ]))

@@ -71,6 +71,12 @@ export type SnapshotTecnicoCandidatoFinalV2 = {
   filtroEarly: DetalheSlotMapaKmAdicional['filtroEarlyLegado'] | null
   slotTemPontos: boolean | null
   consistenciaEspacial: DetalheSlotMapaKmAdicional['consistenciaEspacial'] | null
+  /** true quando o candidato foi aceito mediante tolerância de tempo (≤30min, NORMAL, não quarta, não sábado). */
+  usouToleranciaTempo?: boolean
+  /** Diferença em minutos tolerada (tempoNecessarioMin - disponivelMin). */
+  toleranciaTempoMin?: number | null
+  /** Motivo humano-legível da decisão de tolerância. */
+  toleranciaTempoMotivo?: string | null
 }
 
 export type SnapshotTecnicoSlotBloqueadoV2 = {
@@ -353,6 +359,9 @@ function montarSnapshotTecnicoCandidatosFinais(
       filtroEarly: detalhe?.filtroEarlyLegado ?? null,
       slotTemPontos: candidato.slotTemPontos ?? null,
       consistenciaEspacial: detalhe?.consistenciaEspacial ?? null,
+      usouToleranciaTempo: candidato.operacional.usouToleranciaTempo ?? false,
+      toleranciaTempoMin: candidato.operacional.toleranciaTempoMin ?? null,
+      toleranciaTempoMotivo: candidato.operacional.toleranciaTempoMotivo ?? null,
     }
   })
 }

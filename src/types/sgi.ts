@@ -113,6 +113,7 @@ export interface SgiVendaDetalhe extends SgiDocumento {
   produtos: SgiProduto[]
   pagamentos: SgiPagamento[]
   vendasCliente?: SgiVendaClienteResumo[]
+  pedidosPersonalizados?: import('@/lib/pedidos-personalizados/server/historico').HistoricoPedidoPersonalizadoDTO[]
 }
 
 export interface SgiCards {

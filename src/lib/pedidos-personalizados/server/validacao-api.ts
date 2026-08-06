@@ -37,6 +37,7 @@ const CAMPOS_COMERCIAIS = [
   'unidade',
   'consultora',
   'cliente',
+  'telefone',
   'tapetes',
   'formato',
   'dimensao1Metros',
@@ -152,6 +153,7 @@ export function montarEntradaPedido(
     typeof valor.unidade !== 'string'
     || typeof valor.consultora !== 'string'
     || typeof valor.cliente !== 'string'
+    || typeof valor.telefone !== 'string'
     || !Array.isArray(valor.tapetes)
   ) return { ok: false, codigo: 'PAYLOAD_INVALIDO' }
 
@@ -165,6 +167,7 @@ export function montarEntradaPedido(
     unidade: valor.unidade,
     consultora: valor.consultora,
     cliente: valor.cliente,
+    telefone: valor.telefone,
     numeroLancamento: opcoes.comercial ? null : stringOpcional(valor.numeroLancamento),
     dataEntrega: opcoes.comercial ? null : stringOpcional(valor.dataEntrega),
     dataPedidoFornecedor: opcoes.comercial ? null : stringOpcional(valor.dataPedidoFornecedor),

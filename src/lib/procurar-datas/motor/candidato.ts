@@ -73,6 +73,12 @@ export interface CandidatoPreliminarV2 {
     tempoNecessarioMin: number | null
     slotAvailMin?: number | null
     serviceMin?: number | null
+    /** true quando o candidato foi aceito mediante tolerância de tempo (≤30min, NORMAL, não quarta, não sábado). */
+    usouToleranciaTempo?: boolean
+    /** Diferença em minutos tolerada (tempoNecessarioMin - disponivelMin). Presente apenas quando usouToleranciaTempo: true. */
+    toleranciaTempoMin?: number | null
+    /** Motivo humano-legível da decisão de tolerância. */
+    toleranciaTempoMotivo?: string | null
   }
 
   distancia: {
@@ -216,6 +222,9 @@ export function montarCandidatoPreliminarV2(
       tempoNecessarioMin: input.tempoNecessarioMin ?? null,
       slotAvailMin: input.classificacao?.detalhes?.slotAvailMin ?? null,
       serviceMin: input.classificacao?.detalhes?.serviceMin ?? null,
+      usouToleranciaTempo: input.classificacao?.detalhes?.usouToleranciaTempo ?? false,
+      toleranciaTempoMin: input.classificacao?.detalhes?.toleranciaTempoMin ?? null,
+      toleranciaTempoMotivo: input.classificacao?.detalhes?.toleranciaTempoMotivo ?? null,
     },
 
     distancia: {

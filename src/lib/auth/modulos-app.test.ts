@@ -155,18 +155,25 @@ describe('modulos-app catalog', () => {
   it('deriva a ordem da matriz de perfis da mesma ordem visual do menu', () => {
     const profileMenuKeys = profileNavigationItems.map((item) => item.moduleKey)
     const profileMenuLabels = profileNavigationItems.map((item) => item.label)
+    const hiddenPermissionKeys = [
+      'pedidos_personalizados_novo',
+      'pedidos_personalizados_gestao',
+    ]
 
-    expect(PROFILE_PERMISSION_MODULE_KEYS).toEqual(profileMenuKeys)
+    expect(PROFILE_PERMISSION_MODULE_KEYS).toEqual([...profileMenuKeys, ...hiddenPermissionKeys])
     expect(profileMenuLabels).toEqual(expectedProfileMenuLabels)
-    expect([...profileMenuKeys].sort((a, b) => getProfilePermissionOrder(a) - getProfilePermissionOrder(b))).toEqual(
-      profileMenuKeys
-    )
+    expect(
+      [...PROFILE_PERMISSION_MODULE_KEYS].sort(
+        (a, b) => getProfilePermissionOrder(a) - getProfilePermissionOrder(b)
+      )
+    ).toEqual(PROFILE_PERMISSION_MODULE_KEYS)
     expect(PROFILE_PERMISSION_GROUPS.map((group) => group.label)).toEqual([
       'VENDAS',
       'ATENDIMENTO PRESENCIAL',
       'PROCURAR DATAS',
       'OPERAÇÃO',
       'CONFIGURAÇÕES',
+      'PEDIDOS PERSONALIZADOS',
     ])
   })
 
@@ -202,6 +209,38 @@ describe('modulos-app catalog', () => {
       expect(appModule?.somenteSuperadmin).toBe(false)
       expect(appModule?.categoria).toBe('atendimento_presencial')
     }
+  })
+
+  it('cadastra Pedidos Personalizados na matriz de perfis sem expor links no menu', () => {
+    const moduleKeys = [
+      'pedidos_personalizados_novo',
+      'pedidos_personalizados_gestao',
+    ] as const
+    const navigationKeys = navigationItems.map((item) => item.moduleKey)
+    const permissionGroup = PROFILE_PERMISSION_GROUPS.find(
+      (group) => group.label === 'PEDIDOS PERSONALIZADOS'
+    )
+
+    expect(permissionGroup?.moduleKeys).toEqual(moduleKeys)
+
+    for (const moduleKey of moduleKeys) {
+      const appModule = getAppModuleDefinition(moduleKey)
+
+      expect(navigationKeys).not.toContain(moduleKey)
+      expect(appModule?.access).toBe('profile')
+      expect(appModule?.ativo).toBe(true)
+      expect(appModule?.publico).toBe(false)
+      expect(appModule?.somenteSuperadmin).toBe(false)
+      expect(appModule?.categoria).toBe('pedidos_personalizados')
+      expect(MODULE_KEYS_WITHOUT_AUTOMATIC_PROFILE_GRANT).toContain(moduleKey)
+    }
+
+    expect(getAppModuleDefinition('pedidos_personalizados_novo')?.rotaBase).toBe(
+      '/pedidos-personalizados/novo'
+    )
+    expect(getAppModuleDefinition('pedidos_personalizados_gestao')?.rotaBase).toBe(
+      '/pedidos-personalizados'
+    )
   })
 
   it('mantem Auditoria Acessos fora da matriz comum de perfis', () => {

@@ -1,0 +1,153 @@
+import { describe, expect, it, vi } from 'vitest'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { RepositorioPedidosPersonalizados } from './repositorio'
+import type { FiltrosPedidos } from './validacao-api'
+
+function builder(resultado: unknown, rastreio: { order: Array<[string, unknown]> }) {
+  const chain = {
+    select: vi.fn(() => chain),
+    eq: vi.fn(() => chain),
+    in: vi.fn(() => chain),
+    ilike: vi.fn(() => chain),
+    gte: vi.fn(() => chain),
+    lt: vi.fn(() => chain),
+    order: vi.fn((campo: string, opcoes?: unknown) => {
+      rastreio.order.push([campo, opcoes])
+      return chain
+    }),
+    range: vi.fn(() => Promise.resolve(resultado)),
+    maybeSingle: vi.fn(() => Promise.resolve(resultado)),
+    then: (resolve: (valor: unknown) => unknown, reject: (erro?: unknown) => unknown) =>
+      Promise.resolve(resultado).then(resolve, reject),
+  }
+  return chain
+}
+
+function filtros(overrides: Partial<FiltrosPedidos> = {}): FiltrosPedidos {
+  return {
+    pagina: 1,
+    unidade: null,
+    cliente: null,
+    consultora: null,
+    numeroLancamento: null,
+    status: null,
+    dataInicial: null,
+    dataFinal: null,
+    codigoProduto: null,
+    ...overrides,
+  }
+}
+
+const unidades = [{ id: 'unidade-1', chave: 'bigorrilho' as const, nome: 'BIGORRILHO', nomeExibicao: 'BIGORRILHO' }]
+
+describe('repositório server-only de pedidos personalizados', () => {
+  it('confirma a criação em duas consultas fixas e ordena os IDs dos tapetes por ordem', async () => {
+    const rastreio = { order: [] as Array<[string, unknown]> }
+    const filas: Record<string, unknown[]> = {
+      pedidos_personalizados_pedidos: [{
+        data: { id: 'pedido-1', unidade_id: 'unidade-1', status: 'CADASTRADO', version: 1 },
+        error: null,
+      }],
+      pedidos_personalizados_moriah_tapetes: [{
+        data: [{ id: 'tapete-1', ordem: 1 }, { id: 'tapete-2', ordem: 2 }],
+        error: null,
+      }],
+    }
+    const builders: ReturnType<typeof builder>[] = []
+    const from = vi.fn((tabela: string) => {
+      const atual = builder(filas[tabela].shift(), rastreio)
+      builders.push(atual)
+      return atual
+    })
+    const repo = new RepositorioPedidosPersonalizados({ from } as unknown as SupabaseClient)
+    const resultado = await repo.buscarPedidoCriado('pedido-1', ['unidade-1'])
+
+    expect(resultado.data?.tapetes).toEqual([{ id: 'tapete-1', ordem: 1 }, { id: 'tapete-2', ordem: 2 }])
+    expect(from).toHaveBeenCalledTimes(2)
+    expect(builders[1].select).toHaveBeenCalledWith('id, ordem')
+    expect(builders[1].eq).toHaveBeenCalledWith('pedido_id', 'pedido-1')
+    expect(rastreio.order).toContainEqual(['ordem', { ascending: true }])
+  })
+
+  it('lista com ordem estável, range de 20 e duas consultas fixas sem N+1', async () => {
+    const rastreio = { order: [] as Array<[string, unknown]> }
+    const filas: Record<string, unknown[]> = {
+      pedidos_personalizados_pedidos: [{
+        data: [{ id: 'pedido-1', unidade: { chave: 'bigorrilho' } }],
+        error: null,
+        count: 41,
+      }],
+      pedidos_personalizados_moriah_tapetes: [{
+        data: [
+          { pedido_id: 'pedido-1', produto: { codigo: '21158' } },
+          { pedido_id: 'pedido-1', produto: { codigo: '21158' } },
+        ],
+        error: null,
+      }],
+    }
+    const from = vi.fn((tabela: string) => builder(filas[tabela].shift(), rastreio))
+    const repo = new RepositorioPedidosPersonalizados({ from } as unknown as SupabaseClient)
+    const resultado = await repo.listar(filtros({ pagina: 2 }), unidades)
+
+    expect(resultado.error).toBeNull()
+    expect(resultado.data?.total).toBe(41)
+    expect(resultado.data?.itens[0]).toMatchObject({ quantidade_tapetes: 2, codigos_produtos: ['21158'] })
+    expect(from).toHaveBeenCalledTimes(2)
+    expect(rastreio.order.slice(0, 2)).toEqual([
+      ['created_at', { ascending: false }],
+      ['id', { ascending: false }],
+    ])
+  })
+
+  it('aplica filtros escapados, período semiaberto e produto sem SQL concatenado', async () => {
+    const rastreio = { order: [] as Array<[string, unknown]> }
+    const pedidosBuilder = builder({ data: [], error: null, count: 0 }, rastreio)
+    const builders: Record<string, ReturnType<typeof builder>[]> = {
+      pedidos_personalizados_produtos: [builder({ data: [{ id: 'produto-1' }], error: null }, rastreio)],
+      pedidos_personalizados_moriah_tapetes: [
+        builder({ data: [{ pedido_id: 'pedido-1' }], error: null }, rastreio),
+        builder({ data: [], error: null }, rastreio),
+      ],
+      pedidos_personalizados_pedidos: [pedidosBuilder],
+    }
+    const from = vi.fn((tabela: string) => builders[tabela].shift())
+    const repo = new RepositorioPedidosPersonalizados({ from } as unknown as SupabaseClient)
+    await repo.listar(filtros({
+      cliente: 'A%_B',
+      consultora: 'C_D',
+      numeroLancamento: '0001',
+      status: 'CADASTRADO',
+      dataInicial: '2026-08-01',
+      dataFinal: '2026-08-05',
+      codigoProduto: '21158',
+    }), unidades)
+
+    const pedidos = builders.pedidos_personalizados_pedidos[0]
+    expect(pedidos).toBeUndefined()
+    expect(from).toHaveBeenCalledTimes(3)
+    expect(pedidosBuilder.ilike).toHaveBeenCalledWith('cliente', '%A\\%\\_B%')
+    expect(pedidosBuilder.ilike).toHaveBeenCalledWith('consultora', '%C\\_D%')
+    expect(pedidosBuilder.gte).toHaveBeenCalledWith('created_at', '2026-08-01T00:00:00-03:00')
+    expect(pedidosBuilder.lt).toHaveBeenCalledWith('created_at', '2026-08-06T00:00:00-03:00')
+  })
+
+  it('carrega detalhe em no máximo três consultas, com tapetes e cores ordenados', async () => {
+    const rastreio = { order: [] as Array<[string, unknown]> }
+    const filas: Record<string, unknown[]> = {
+      pedidos_personalizados_pedidos: [{ data: { id: 'pedido-1' }, error: null }],
+      pedidos_personalizados_moriah_tapetes: [{ data: [{ id: 'tapete-1', ordem: 1 }], error: null }],
+      pedidos_personalizados_tapete_cores: [{ data: [{ tapete_id: 'tapete-1', ordem: 1, cor: { id: 'cor-1' } }], error: null }],
+      pedidos_personalizados_anexos: [{ data: [{ tapete_id: 'tapete-1', id: 'anexo-1', slot: 1, nome_original: 'arquivo.pdf', mime_type: 'application/pdf', tamanho_bytes: 10, created_at: '2026-08-05T10:00:00Z' }], error: null }],
+    }
+    const from = vi.fn((tabela: string) => builder(filas[tabela].shift(), rastreio))
+    const repo = new RepositorioPedidosPersonalizados({ from } as unknown as SupabaseClient)
+    const resultado = await repo.carregarDetalhe('pedido-1', ['unidade-1'])
+    expect(resultado.data?.tapetes[0]).toMatchObject({
+      cores: [{ ordem: 1, id: 'cor-1' }],
+      anexos: [{ id: 'anexo-1', slot: 1, nome_original: 'arquivo.pdf', mime_type: 'application/pdf', tamanho_bytes: 10 }],
+    })
+    expect(JSON.stringify(resultado.data)).not.toContain('caminho_objeto')
+    expect(from).toHaveBeenCalledTimes(4)
+    expect(rastreio.order).toContainEqual(['ordem', { ascending: true }])
+  })
+})

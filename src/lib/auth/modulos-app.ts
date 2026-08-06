@@ -119,6 +119,30 @@ export const APP_MODULES = [
     access: 'profile',
   },
   {
+    moduleKey: 'pedidos_personalizados_novo',
+    nome: 'NOVO PEDIDO PERSONALIZADO',
+    descricao: 'Cadastro de pedidos personalizados',
+    rotaBase: '/pedidos-personalizados/novo',
+    categoria: 'pedidos_personalizados',
+    publico: false,
+    somenteSuperadmin: false,
+    ativo: true,
+    ordem: 66,
+    access: 'profile',
+  },
+  {
+    moduleKey: 'pedidos_personalizados_gestao',
+    nome: 'PEDIDOS PERSONALIZADOS',
+    descricao: 'Gestao de pedidos personalizados',
+    rotaBase: '/pedidos-personalizados',
+    categoria: 'pedidos_personalizados',
+    publico: false,
+    somenteSuperadmin: false,
+    ativo: true,
+    ordem: 67,
+    access: 'profile',
+  },
+  {
     moduleKey: 'agendamentos',
     nome: 'AGENDAMENTOS',
     descricao: 'Consulta e gestao de agendamentos',
@@ -389,14 +413,30 @@ export const PROFILE_CONTROLLED_MODULE_KEYS = APP_MODULES
   .filter((module) => module.access === 'profile')
   .map((module) => module.moduleKey)
 
-export const PROFILE_PERMISSION_GROUPS = NAVIGATION_GROUPS
-  .map((group) => ({
-    label: group.label,
-    moduleKeys: group.items
-      .filter((item) => item.access === 'profile')
-      .map((item) => item.moduleKey),
-  }))
-  .filter((group) => group.moduleKeys.length > 0)
+const PROFILE_PERMISSION_ONLY_GROUPS = [
+  {
+    label: 'PEDIDOS PERSONALIZADOS',
+    moduleKeys: [
+      'pedidos_personalizados_novo',
+      'pedidos_personalizados_gestao',
+    ],
+  },
+] as const satisfies readonly {
+  label: string
+  moduleKeys: readonly AppModuleKey[]
+}[]
+
+export const PROFILE_PERMISSION_GROUPS = [
+  ...NAVIGATION_GROUPS
+    .map((group) => ({
+      label: group.label,
+      moduleKeys: group.items
+        .filter((item) => item.access === 'profile')
+        .map((item) => item.moduleKey),
+    }))
+    .filter((group) => group.moduleKeys.length > 0),
+  ...PROFILE_PERMISSION_ONLY_GROUPS,
+]
 
 export const PROFILE_PERMISSION_MODULE_KEYS = PROFILE_PERMISSION_GROUPS.flatMap((group) => group.moduleKeys)
 
@@ -429,6 +469,8 @@ export const MODULE_KEYS_WITHOUT_AUTOMATIC_PROFILE_GRANT = [
   'atendimento_presencial_registros',
   'atendimento_presencial_clientes',
   'hub_vendas_recuperacao',
+  'pedidos_personalizados_novo',
+  'pedidos_personalizados_gestao',
 ] as const satisfies readonly AppModuleKey[]
 
 export function getAppModuleDefinition(moduleKey: AppModuleKey) {

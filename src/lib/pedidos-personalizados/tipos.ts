@@ -1,0 +1,230 @@
+export type FormatoTapeteMoriah = 'REDONDO' | 'RETANGULAR' | 'ORGANICO'
+
+export type StatusPedidoPersonalizado =
+  | 'CADASTRADO'
+  | 'AGUARDANDO LAYOUT'
+  | 'AGUARDANDO APROVAÇÃO DO CLIENTE'
+  | 'EM PRODUÇÃO'
+  | 'RECEBIDO'
+
+export type UnidadePedidoPersonalizado = 'bigorrilho' | 'portao' | 'marechal' | 'feira'
+export type FornecedorPedidoPersonalizado = 'moriah_tapetes'
+export type CodigoProdutoMoriah = '21157' | '21158' | '21159'
+
+export type CodigoErroPedidoPersonalizado =
+  | 'FORNECEDOR_INVALIDO'
+  | 'UNIDADE_INVALIDA'
+  | 'STATUS_INVALIDO'
+  | 'CONSULTORA_OBRIGATORIA'
+  | 'CONSULTORA_INVALIDA'
+  | 'CLIENTE_OBRIGATORIO'
+  | 'CLIENTE_INVALIDO'
+  | 'NUMERO_LANCAMENTO_INVALIDO'
+  | 'NUMERO_PEDIDO_COMPRA_INVALIDO'
+  | 'COMPRADOR_INVALIDO'
+  | 'LIMITE_TAPETES'
+  | 'ORDEM_TAPETE_INVALIDA'
+  | 'ORDEM_TAPETE_DUPLICADA'
+  | 'FORMATO_INVALIDO'
+  | 'MEDIDA_INVALIDA'
+  | 'MEDIDA_FORA_DO_LIMITE'
+  | 'DIMENSOES_INCOMPATIVEIS'
+  | 'COLECAO_INVALIDA'
+  | 'REFERENCIA_INVALIDA'
+  | 'OBSERVACOES_EXCEDIDAS'
+  | 'LIMITE_CORES'
+  | 'COR_INVALIDA'
+  | 'COR_DUPLICADA'
+  | 'ORDEM_COR_INVALIDA'
+  | 'ORDEM_COR_DUPLICADA'
+  | 'LAYOUT_INVALIDO'
+  | 'DATA_INVALIDA'
+  | 'PRODUTO_CATALOGO_AUSENTE'
+  | 'COR_CATALOGO_INCOMPLETA'
+  | 'TAPETE_ID_INVALIDO'
+
+export type CodigoAvisoPedidoPersonalizado =
+  | 'MEDIDA_FORA_INTERVALO_RECOMENDADO'
+  | 'MUITAS_CORES'
+  | 'MUITAS_ALTERACOES_LAYOUT'
+
+export type ProblemaPedidoPersonalizado<
+  Codigo extends string = CodigoErroPedidoPersonalizado | CodigoAvisoPedidoPersonalizado,
+> = {
+  codigo: Codigo
+  campo: string
+  mensagem: string
+}
+
+export type ResultadoValidacao<T> = {
+  valido: boolean
+  dados: T | null
+  erros: ProblemaPedidoPersonalizado<CodigoErroPedidoPersonalizado>[]
+  avisos: ProblemaPedidoPersonalizado<CodigoAvisoPedidoPersonalizado>[]
+}
+
+export type CorSelecionadaMoriahEntrada = {
+  id: string
+  ordem: number
+  numero?: string
+  codigo?: string
+  nome?: string
+}
+
+export type CorSelecionadaMoriahNormalizada = {
+  id: string
+  ordem: number
+  numero: string | null
+  codigo: string | null
+  nome: string | null
+}
+
+export type TapeteMoriahEntrada = {
+  id?: string | null
+  ordem: number
+  formato: string
+  dimensao1Metros: string
+  dimensao2Metros?: string | null
+  nomeColecaoCatalogo?: string | null
+  referenciaCatalogo?: string | null
+  observacoes?: string | null
+  cores?: readonly CorSelecionadaMoriahEntrada[]
+  teveAlteracaoLayout?: boolean
+  quantidadeAlteracoesLayout?: number | null
+}
+
+export type IdentificacaoPedidoPersonalizadoEntrada = {
+  consultora: string
+  cliente: string
+  numeroLancamento?: string | null
+  numeroPedidoCompra?: string | null
+  comprador?: string | null
+}
+
+export type PedidoPersonalizadoMoriahEntrada = IdentificacaoPedidoPersonalizadoEntrada & {
+  fornecedor: string
+  unidade: string
+  dataEntrega?: string | null
+  dataPedidoFornecedor?: string | null
+  status?: string
+  tapetes: readonly TapeteMoriahEntrada[]
+}
+
+export type ResultadoCalculoArea = {
+  areaCm2: number
+  areaCobradaCentesimosM2: number
+}
+
+export type ResultadoClassificacaoProdutoMoriah = {
+  codigo: CodigoProdutoMoriah
+  criterio: 'MEDIDA_PADRAO' | 'REDONDO' | 'DUAS_MEDIDAS_ACIMA_2M' | 'DEMAIS_CASOS'
+}
+
+export type TapeteMoriahNormalizado = {
+  id: string | null
+  ordem: number
+  formato: FormatoTapeteMoriah
+  dimensao1Cm: number
+  dimensao2Cm: number | null
+  areaCobradaCentesimosM2: number
+  codigoProduto: CodigoProdutoMoriah
+  nomeColecaoCatalogo: string | null
+  referenciaCatalogo: string | null
+  observacoes: string | null
+  cores: CorSelecionadaMoriahNormalizada[]
+  teveAlteracaoLayout: boolean
+  quantidadeAlteracoesLayout: number | null
+}
+
+export type IdentificacaoPedidoPersonalizadoNormalizada = {
+  consultora: string
+  cliente: string
+  numeroLancamento: string | null
+  numeroPedidoCompra: string | null
+  comprador: string | null
+}
+
+export type PedidoPersonalizadoMoriahNormalizado = IdentificacaoPedidoPersonalizadoNormalizada & {
+  fornecedor: FornecedorPedidoPersonalizado
+  unidade: UnidadePedidoPersonalizado
+  dataEntrega: string | null
+  dataPedidoFornecedor: string | null
+  status: StatusPedidoPersonalizado
+  tapetes: TapeteMoriahNormalizado[]
+}
+
+export type ProdutoCatalogoMoriah = {
+  id: string
+  codigo: CodigoProdutoMoriah
+  descricao: string
+}
+
+export type DadosMensagemPedidoPersonalizado = {
+  pedido: PedidoPersonalizadoMoriahNormalizado
+  produtos: readonly ProdutoCatalogoMoriah[]
+}
+
+export type CorTapeteMoriahRpc = {
+  cor_id: string
+  ordem: number
+}
+
+/** Estrutura exata de cada item do JSONB `p_tapetes` das RPCs comerciais da Fase 1B. */
+export type TapeteMoriahRpc = {
+  id?: string
+  ordem: number
+  formato: FormatoTapeteMoriah
+  dimensao_1_cm: number
+  dimensao_2_cm: number | null
+  area_cobrada_centesimos_m2: number
+  produto_id: string
+  nome_colecao_catalogo: string | null
+  referencia_catalogo: string | null
+  observacoes: string | null
+  cores: CorTapeteMoriahRpc[]
+}
+
+/** Estrutura exata de cada item do JSONB `p_layout_tapetes` da RPC administrativa da Fase 1B. */
+export type LayoutTapeteMoriahRpc = {
+  tapete_id: string
+  teve_alteracao_layout: boolean
+  quantidade_alteracoes_layout?: number
+}
+
+export type ParametrosCriarPedidoPersonalizadoMoriahRpc = {
+  p_usuario_id: string
+  p_idempotency_key: string
+  p_fornecedor_id: string
+  p_unidade_id: string
+  p_consultora: string
+  p_cliente: string
+  p_tapetes: TapeteMoriahRpc[]
+  p_numero_lancamento: string | null
+  p_data_entrega: string | null
+  p_data_pedido_fornecedor: string | null
+  p_numero_pedido_compra: string | null
+  p_comprador: string | null
+}
+
+export type ParametrosAtualizarPedidoComercialMoriahRpc = {
+  p_pedido_id: string
+  p_expected_version: number
+  p_usuario_id: string
+  p_unidade_id: string
+  p_consultora: string
+  p_cliente: string
+  p_tapetes: TapeteMoriahRpc[]
+}
+
+export type ParametrosAtualizarPedidoAdministrativoRpc = {
+  p_pedido_id: string
+  p_expected_version: number
+  p_usuario_id: string
+  p_numero_lancamento: string | null
+  p_data_entrega: string | null
+  p_data_pedido_fornecedor: string | null
+  p_numero_pedido_compra: string | null
+  p_comprador: string | null
+  p_status: StatusPedidoPersonalizado
+  p_layout_tapetes: LayoutTapeteMoriahRpc[]
+}

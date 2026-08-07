@@ -6,7 +6,6 @@ import {
 } from '../constantes'
 import {
   normalizarComprador,
-  normalizarNumeroLancamento,
   normalizarNumeroPedidoCompra,
 } from '../normalizacao'
 import type {
@@ -18,13 +17,13 @@ import {
   converterDataAdministrativaParaISO,
   validarAlteracoesLayout,
 } from '../validacao'
+import { dataOperacionalBrasil } from '../prazo'
 import { ehObjeto, ehUuid, possuiAlgumCampo } from './http'
 
 const LETRAS_E_ESPACOS = /^\p{L}+(?: \p{L}+)*$/u
 const NUMERO_LANCAMENTO = /^\d{1,6}$/
 const NUMERO_PEDIDO_COMPRA = /^\d{1,5}$/
 const CAMPOS_ADMINISTRATIVOS = [
-  'numeroLancamento',
   'dataEntrega',
   'dataPedidoFornecedor',
   'numeroPedidoCompra',
@@ -47,7 +46,10 @@ const CAMPOS_COMERCIAIS = [
   'nomeColecaoCatalogo',
   'referenciaCatalogo',
   'observacoes',
+  'numeroLancamento',
 ] as const
+
+export type SituacaoPrazoFiltro = 'NO PRAZO' | 'PRESTES A VENCER' | 'ATRASADO'
 
 export type FiltrosPedidos = {
   pagina: number
@@ -62,12 +64,12 @@ export type FiltrosPedidos = {
   dataPedidoFornecedorFinal: string | null
   dataEntregaInicial: string | null
   dataEntregaFinal: string | null
+  situacaoPrazo: SituacaoPrazoFiltro | null
   codigoProduto: '21157' | '21158' | '21159' | null
 }
 
 export type DadosAdministrativosNormalizados = {
   expectedVersion: number
-  numeroLancamento: string | null
   dataEntrega: string | null
   dataPedidoFornecedor: string | null
   numeroPedidoCompra: string | null
@@ -78,6 +80,17 @@ export type DadosAdministrativosNormalizados = {
     teve_alteracao_layout: boolean
     quantidade_alteracoes_layout?: number
   }>
+}
+
+export type DadosTransicaoStatus = {
+  expectedVersion: number
+  statusDestino: StatusPedidoPersonalizado
+  numeroPedidoCompra: string | null
+  dataPedidoFornecedor: string | null
+  comprador: string | null
+  dataEntrega: string | null
+  dataRecebimento: string | null
+  justificativa: string | null
 }
 
 function stringOpcional(valor: unknown): string | null | undefined {
@@ -168,7 +181,7 @@ export function montarEntradaPedido(
     consultora: valor.consultora,
     cliente: valor.cliente,
     telefone: valor.telefone,
-    numeroLancamento: opcoes.comercial ? null : stringOpcional(valor.numeroLancamento),
+    numeroLancamento: stringOpcional(valor.numeroLancamento),
     dataEntrega: opcoes.comercial ? null : stringOpcional(valor.dataEntrega),
     dataPedidoFornecedor: opcoes.comercial ? null : stringOpcional(valor.dataPedidoFornecedor),
     numeroPedidoCompra: opcoes.comercial ? null : stringOpcional(valor.numeroPedidoCompra),
@@ -195,6 +208,84 @@ function dataIsoReal(valor: string): boolean {
   const bissexto = ano % 4 === 0 && (ano % 100 !== 0 || ano % 400 === 0)
   const dias = [31, bissexto ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
   return dia >= 1 && dia <= dias[mes - 1]
+}
+
+export function validarTransicaoStatus(valor: unknown):
+  | { ok: true; dados: DadosTransicaoStatus }
+  | { ok: false; codigo: string; mensagem: string } {
+  if (!ehObjeto(valor)) return { ok: false, codigo: 'PAYLOAD_INVALIDO', mensagem: 'Payload inválido.' }
+  const permitidos = new Set([
+    'expectedVersion', 'statusDestino', 'numeroPedidoCompra',
+    'dataPedidoFornecedor', 'comprador', 'dataEntrega', 'dataRecebimento', 'justificativa',
+  ])
+  if (Object.keys(valor).some((campo) => !permitidos.has(campo))) {
+    return { ok: false, codigo: 'CAMPO_NAO_PERMITIDO', mensagem: 'Campo não permitido nesta operação.' }
+  }
+  if (!Number.isInteger(valor.expectedVersion) || Number(valor.expectedVersion) < 1
+      || typeof valor.statusDestino !== 'string'
+      || !ehStatusPedidoPersonalizado(valor.statusDestino)) {
+    return { ok: false, codigo: 'PAYLOAD_INVALIDO', mensagem: 'Revise a versão e o status de destino.' }
+  }
+
+  for (const campo of ['numeroPedidoCompra', 'dataPedidoFornecedor', 'comprador', 'dataEntrega', 'dataRecebimento', 'justificativa'] as const) {
+    if (valor[campo] !== undefined && valor[campo] !== null && typeof valor[campo] !== 'string') {
+      return { ok: false, codigo: 'PAYLOAD_INVALIDO', mensagem: 'Revise os campos da etapa.' }
+    }
+  }
+  const numeroPedidoCompra = stringOpcional(valor.numeroPedidoCompra) ?? null
+  const dataPedidoFornecedor = stringOpcional(valor.dataPedidoFornecedor) ?? null
+  const comprador = stringOpcional(valor.comprador) ?? null
+  const dataEntrega = stringOpcional(valor.dataEntrega) ?? null
+  const dataRecebimento = stringOpcional(valor.dataRecebimento) ?? null
+  const justificativa = stringOpcional(valor.justificativa) ?? null
+
+  const numeroNormalizado = normalizarNumeroPedidoCompra(numeroPedidoCompra)
+  const compradorNormalizado = normalizarComprador(comprador)
+  const dataFornecedorNormalizada = dataPedidoFornecedor?.trim() || null
+  const dataEntregaNormalizada = dataEntrega?.trim() || null
+  const dataRecebimentoNormalizada = dataRecebimento?.trim() || null
+  const justificativaNormalizada = justificativa?.trim() || null
+
+  if (numeroNormalizado !== null && !NUMERO_PEDIDO_COMPRA.test(numeroNormalizado)) {
+    return { ok: false, codigo: 'CAMPOS_PRODUCAO_OBRIGATORIOS', mensagem: 'Revise o pedido de compra.' }
+  }
+  if (dataFornecedorNormalizada !== null && !dataIsoReal(dataFornecedorNormalizada)) {
+    return { ok: false, codigo: 'CAMPOS_PRODUCAO_OBRIGATORIOS', mensagem: 'Revise a data do pedido ao fornecedor.' }
+  }
+  if (dataFornecedorNormalizada !== null && dataFornecedorNormalizada > dataOperacionalBrasil()) {
+    return { ok: false, codigo: 'DATA_FORNECEDOR_FUTURA', mensagem: 'A data do pedido ao fornecedor não pode ser futura.' }
+  }
+  if (compradorNormalizado !== null
+      && (compradorNormalizado.length < 2 || compradorNormalizado.length > 40 || !LETRAS_E_ESPACOS.test(compradorNormalizado))) {
+    return { ok: false, codigo: 'CAMPOS_PRODUCAO_OBRIGATORIOS', mensagem: 'Revise o comprador.' }
+  }
+  if (dataEntregaNormalizada !== null && !dataIsoReal(dataEntregaNormalizada)) {
+    return { ok: false, codigo: 'DATA_ENTREGA_OBRIGATORIA', mensagem: 'Informe uma previsão de entrega válida.' }
+  }
+  if (dataRecebimentoNormalizada !== null && !dataIsoReal(dataRecebimentoNormalizada)) {
+    return { ok: false, codigo: 'DATA_RECEBIMENTO_OBRIGATORIA', mensagem: 'Informe uma data de recebimento válida.' }
+  }
+  if (valor.statusDestino === 'CANCELADO'
+      && (!justificativaNormalizada || justificativaNormalizada.length > 500)) {
+    return { ok: false, codigo: 'JUSTIFICATIVA_CANCELAMENTO_OBRIGATORIA', mensagem: 'Informe a justificativa do cancelamento.' }
+  }
+  if (valor.statusDestino !== 'CANCELADO' && justificativaNormalizada) {
+    return { ok: false, codigo: 'JUSTIFICATIVA_NAO_PERMITIDA', mensagem: 'Justificativa é aceita somente no cancelamento.' }
+  }
+
+  return {
+    ok: true,
+    dados: {
+      expectedVersion: Number(valor.expectedVersion),
+      statusDestino: valor.statusDestino,
+      numeroPedidoCompra: valor.statusDestino === 'AGUARDANDO LAYOUT' ? numeroNormalizado : null,
+      dataPedidoFornecedor: valor.statusDestino === 'AGUARDANDO LAYOUT' ? dataFornecedorNormalizada : null,
+      comprador: valor.statusDestino === 'AGUARDANDO LAYOUT' ? compradorNormalizado : null,
+      dataEntrega: valor.statusDestino === 'EM PRODUÇÃO' ? dataEntregaNormalizada : null,
+      dataRecebimento: valor.statusDestino === 'RECEBIDO' ? dataRecebimentoNormalizada : null,
+      justificativa: valor.statusDestino === 'CANCELADO' ? justificativaNormalizada : null,
+    },
+  }
 }
 
 export function proximoDiaIso(valor: string) {
@@ -243,6 +334,10 @@ export function validarFiltrosPedidos(url: URL):
   const dataPedidoFornecedorFinal = url.searchParams.get('dataPedidoFornecedorFinal')?.trim() || null
   const dataEntregaInicial = url.searchParams.get('dataEntregaInicial')?.trim() || null
   const dataEntregaFinal = url.searchParams.get('dataEntregaFinal')?.trim() || null
+  const situacaoPrazoTexto = url.searchParams.get('situacaoPrazo')?.trim() || null
+  if (situacaoPrazoTexto && !['NO PRAZO', 'PRESTES A VENCER', 'ATRASADO'].includes(situacaoPrazoTexto)) {
+    return { ok: false, mensagem: 'Situação de prazo inválida.' }
+  }
   const datasAdministrativas = [
     dataPedidoFornecedorInicial,
     dataPedidoFornecedorFinal,
@@ -279,6 +374,7 @@ export function validarFiltrosPedidos(url: URL):
       dataPedidoFornecedorFinal,
       dataEntregaInicial,
       dataEntregaFinal,
+      situacaoPrazo: situacaoPrazoTexto as SituacaoPrazoFiltro | null,
       codigoProduto: codigoProdutoTexto as FiltrosPedidos['codigoProduto'],
     },
   }
@@ -294,7 +390,7 @@ export function validarDadosAdministrativos(valor: unknown):
   if (!Number.isInteger(valor.expectedVersion) || (valor.expectedVersion as number) < 1) {
     return { ok: false, codigo: 'PAYLOAD_INVALIDO' }
   }
-  for (const campo of ['numeroLancamento', 'dataEntrega', 'dataPedidoFornecedor', 'numeroPedidoCompra', 'comprador'] as const) {
+  for (const campo of ['dataEntrega', 'dataPedidoFornecedor', 'numeroPedidoCompra', 'comprador'] as const) {
     const informado = valor[campo]
     if (informado !== undefined && informado !== null && typeof informado !== 'string') {
       return {
@@ -310,10 +406,8 @@ export function validarDadosAdministrativos(valor: unknown):
   if (!Array.isArray(valor.layoutTapetes)) return { ok: false, codigo: 'PAYLOAD_INVALIDO' }
 
   const problemas: Array<{ campo: string; mensagem: string }> = []
-  const numeroLancamento = normalizarNumeroLancamento(stringOpcional(valor.numeroLancamento))
   const numeroPedidoCompra = normalizarNumeroPedidoCompra(stringOpcional(valor.numeroPedidoCompra))
   const comprador = normalizarComprador(stringOpcional(valor.comprador))
-  if (numeroLancamento !== null && !NUMERO_LANCAMENTO.test(numeroLancamento)) problemas.push({ campo: 'numeroLancamento', mensagem: 'Número de lançamento inválido.' })
   if (numeroPedidoCompra !== null && !/^\d+$/.test(numeroPedidoCompra)) {
     problemas.push({ campo: 'numeroPedidoCompra', mensagem: 'Use somente números no pedido de compra.' })
   } else if (numeroPedidoCompra !== null && !NUMERO_PEDIDO_COMPRA.test(numeroPedidoCompra)) {
@@ -327,6 +421,9 @@ export function validarDadosAdministrativos(valor: unknown):
   const dataPedidoFornecedor = converterDataAdministrativaParaISO(stringOpcional(valor.dataPedidoFornecedor))
   if (!dataEntrega.valido) problemas.push({ campo: 'dataEntrega', mensagem: 'Data de entrega inválida.' })
   if (!dataPedidoFornecedor.valido) problemas.push({ campo: 'dataPedidoFornecedor', mensagem: 'Data do pedido ao fornecedor inválida.' })
+  if (dataPedidoFornecedor.valido && dataPedidoFornecedor.dados && dataPedidoFornecedor.dados > dataOperacionalBrasil()) {
+    problemas.push({ campo: 'dataPedidoFornecedor', mensagem: 'A data do pedido ao fornecedor não pode ser futura.' })
+  }
 
   const ids = new Set<string>()
   const layoutTapetes = valor.layoutTapetes.map((item, indice) => {
@@ -356,7 +453,6 @@ export function validarDadosAdministrativos(valor: unknown):
     ok: true,
     dados: {
       expectedVersion: valor.expectedVersion as number,
-      numeroLancamento,
       dataEntrega: dataEntrega.dados,
       dataPedidoFornecedor: dataPedidoFornecedor.dados,
       numeroPedidoCompra,

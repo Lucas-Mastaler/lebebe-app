@@ -10,6 +10,7 @@ import {
   payloadAtualizacaoAdministrativa,
   payloadAtualizacaoComercial,
   gerarResumoFornecedorDetalhe,
+  requisitosPendentesTransicao,
   validarAdministrativo,
 } from './gestao-modelo'
 import type { OpcoesNovoPedido } from './novo-pedido-modelo'
@@ -20,6 +21,7 @@ const TAPETE = '20000000-0000-4000-8000-000000000001'
 const COR = '30000000-0000-4000-8000-000000000001'
 
 const detalhe: PedidoDetalhe = {
+  historico: [],
   id: PEDIDO,
   fornecedor: { chave: 'moriah_tapetes', nome: 'MORIAH TAPETES' },
   unidade: { chave: 'portao', nome: 'PORTÃO' },
@@ -51,9 +53,20 @@ describe('modelo da gestão de pedidos personalizados', () => {
     expect(formulario.tapetes[0]).toMatchObject({ tapeteId: TAPETE, dimensao1Metros: '2,00', dimensao2Metros: '3,00', corIds: [COR] })
   })
 
+  it('valida antecipadamente os requisitos de cada transicao', () => {
+    const base = { destino: 'AGUARDANDO LAYOUT' as const, numeroPedidoCompra: '', dataPedidoFornecedor: '', comprador: '', dataEntrega: '', dataRecebimento: '', justificativa: '' }
+    expect(requisitosPendentesTransicao(detalhe, base)).toHaveLength(3)
+    expect(requisitosPendentesTransicao(detalhe, { ...base, numeroPedidoCompra: '00123', dataPedidoFornecedor: '2026-08-07', comprador: 'ANA' })).toEqual([])
+    expect(requisitosPendentesTransicao({ ...detalhe, status: 'AGUARDANDO LAYOUT' }, { ...base, destino: 'AGUARDANDO APROVAÇÃO DO CLIENTE' })).toHaveLength(1)
+    const comAnexo = { ...detalhe, status: 'AGUARDANDO APROVAÇÃO DO CLIENTE' as const, tapetes: [{ ...detalhe.tapetes[0], anexos: [{ anexoId: 'a', slot: 1 as const, nomeOriginal: 'a.pdf', mime: 'application/pdf', tamanho: 1, createdAt: null }] }] }
+    expect(requisitosPendentesTransicao(comAnexo, { ...base, destino: 'EM PRODUÇÃO' })).toHaveLength(1)
+    expect(requisitosPendentesTransicao(comAnexo, { ...base, destino: 'EM PRODUÇÃO', dataEntrega: '2026-08-20' })).toEqual([])
+    expect(requisitosPendentesTransicao({ ...detalhe, status: 'EM PRODUÇÃO' }, { ...base, destino: 'RECEBIDO' })).toHaveLength(1)
+  })
+
   it('monta atualização comercial com expectedVersion e IDs persistidos', () => {
     const payload = payloadAtualizacaoComercial(detalheParaFormulario(detalhe), 4, opcoes)
-    expect(payload).toMatchObject({ expectedVersion: 4, unidade: 'portao', telefone: '41999999999', tapetes: [{ id: TAPETE, ordem: 1 }] })
+    expect(payload).toMatchObject({ expectedVersion: 4, unidade: 'portao', telefone: '41999999999', numeroLancamento: '000001', tapetes: [{ id: TAPETE, ordem: 1 }] })
     expect(JSON.stringify(payload)).not.toMatch(/dataEntrega|comprador|status/)
   })
 
@@ -73,11 +86,13 @@ describe('modelo da gestão de pedidos personalizados', () => {
       cliente: 'Bebê', consultora: '', numeroLancamento: '000001', status: '', unidade: 'portao', dataInicial: '', dataFinal: '',
       dataPedidoFornecedorInicial: '2026-08-01', dataPedidoFornecedorFinal: '2026-08-15',
       dataEntregaInicial: '2026-08-20', dataEntregaFinal: '2026-08-31',
+      situacaoPrazo: 'PRESTES A VENCER',
     }, 2)
     expect(String(fetchMock.mock.calls[0][0])).toContain('page=2')
     expect(String(fetchMock.mock.calls[0][0])).toContain('numeroLancamento=000001')
     expect(String(fetchMock.mock.calls[0][0])).toContain('dataPedidoFornecedorInicial=2026-08-01')
     expect(String(fetchMock.mock.calls[0][0])).toContain('dataEntregaFinal=2026-08-31')
+    expect(String(fetchMock.mock.calls[0][0])).toContain('situacaoPrazo=PRESTES+A+VENCER')
     fetchMock.mockRestore()
   })
 
@@ -100,7 +115,6 @@ describe('modelo da gestão de pedidos personalizados', () => {
       comprador: 'ANA SILVA',
     })
     expect(estado).toEqual({
-      numeroLancamento: '000001',
       dataEntrega: '2026-08-20',
       dataPedidoFornecedor: '2026-08-07',
       numeroPedidoCompra: '00001',
@@ -112,18 +126,25 @@ describe('modelo da gestão de pedidos personalizados', () => {
 
   it('valida limites e datas reais do contrato administrativo atual', () => {
     expect(validarAdministrativo({
-      numeroLancamento: '000001', dataEntrega: '2028-02-29', dataPedidoFornecedor: '',
+      dataEntrega: '2028-02-29', dataPedidoFornecedor: '',
       numeroPedidoCompra: '00001', comprador: 'ANA MARIA',
     })).toEqual({})
     expect(validarAdministrativo({
-      numeroLancamento: '1234567', dataEntrega: '31/02/2026', dataPedidoFornecedor: '2026-08-07',
+      dataEntrega: '31/02/2026', dataPedidoFornecedor: '2026-08-07',
       numeroPedidoCompra: '1'.repeat(6), comprador: 'A1',
     })).toEqual({
-      numeroLancamento: expect.any(String),
       numeroPedidoCompra: expect.any(String),
       comprador: expect.any(String),
       dataEntrega: expect.any(String),
     })
+  })
+
+  it('rejeita data do pedido ao fornecedor futura na validação administrativa', () => {
+    const erros = validarAdministrativo({
+      dataEntrega: '2026-08-10', dataPedidoFornecedor: '2099-01-01',
+      numeroPedidoCompra: '00001', comprador: 'ANA MARIA',
+    })
+    expect(erros.dataPedidoFornecedor).toContain('não pode ser futura')
   })
 
   it('bloqueia intervalos de filtro invertidos antes da requisição', async () => {
@@ -132,6 +153,7 @@ describe('modelo da gestão de pedidos personalizados', () => {
       cliente: '', consultora: '', numeroLancamento: '', status: '', unidade: '', dataInicial: '', dataFinal: '',
       dataPedidoFornecedorInicial: '2026-08-10', dataPedidoFornecedorFinal: '2026-08-01',
       dataEntregaInicial: '', dataEntregaFinal: '',
+      situacaoPrazo: '',
     }, 1)).rejects.toThrow('pedido ao fornecedor')
     expect(fetchMock).not.toHaveBeenCalled()
     fetchMock.mockRestore()
@@ -139,18 +161,18 @@ describe('modelo da gestão de pedidos personalizados', () => {
 
   it('preserva zeros, status e layout atuais no payload administrativo atômico', () => {
     const payload = payloadAtualizacaoAdministrativa(detalhe, {
-      numeroLancamento: '000001', dataEntrega: '', dataPedidoFornecedor: '2026-08-07',
+      dataEntrega: '', dataPedidoFornecedor: '2026-08-07',
       numeroPedidoCompra: '00012', comprador: ' ana  silva ',
     })
     expect(payload).toMatchObject({
       expectedVersion: 4,
-      numeroLancamento: '000001',
       numeroPedidoCompra: '00012',
       comprador: 'ANA SILVA',
       status: 'CADASTRADO',
       layoutTapetes: [{ tapeteId: TAPETE, teveAlteracaoLayout: true, quantidadeAlteracoesLayout: 2 }],
     })
     expect(payload).not.toHaveProperty('numeroPedido')
+    expect(payload).not.toHaveProperty('numeroLancamento')
     expect(payload).not.toHaveProperty('dataPedido')
     expect(payload).not.toHaveProperty('createdAt')
   })
@@ -203,6 +225,12 @@ describe('modelo da gestão de pedidos personalizados', () => {
     expect(componente).not.toMatch(/label="Data do pedido"/)
     expect(anexos).toContain('CheckCircle2')
     expect(anexos).toContain('border-emerald-200')
+    expect(componente).toContain('id="gestao-lancamento"')
+    expect(componente).not.toContain('id="admin-lancamento"')
+    expect(componente).toContain('pendenciasTransicao.length > 0')
+    expect(componente).toContain('id="transicao-data-recebimento"')
+    expect(componente).toContain('setFiltrosAplicados({ ...filtros })')
+    expect(componente).toContain('sm:h-[90vh]')
   })
 
   it('protege a página de gestão sem adicionar item ao menu', () => {

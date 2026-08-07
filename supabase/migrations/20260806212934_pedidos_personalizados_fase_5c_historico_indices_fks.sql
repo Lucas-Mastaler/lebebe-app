@@ -1,0 +1,5 @@
+create index idx_pedidos_personalizados_status_historico_usuario_id
+  on public.pedidos_personalizados_status_historico (usuario_id);
+
+create index idx_pedidos_personalizados_status_historico_unidade_id
+  on public.pedidos_personalizados_status_historico (unidade_id);

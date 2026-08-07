@@ -4,10 +4,12 @@ import type {
   ParametrosAtualizarPedidoAdministrativoRpc,
   ParametrosAtualizarPedidoComercialMoriahRpc,
   ParametrosCriarPedidoPersonalizadoMoriahRpc,
+  ParametrosTransicionarPedidoPersonalizadoRpc,
   ProdutoCatalogoMoriah,
   StatusPedidoPersonalizado,
 } from '../tipos'
 import type { UnidadeEscopoPedido } from './contexto'
+import { adicionarDiasIso, dataOperacionalBrasil } from '../prazo'
 import type { DadosAdministrativosNormalizados, FiltrosPedidos } from './validacao-api'
 import { proximoDiaIso } from './validacao-api'
 
@@ -38,6 +40,12 @@ export type PedidoEscopoRow = {
   unidade_id: string
   status: StatusPedidoPersonalizado
   version: number
+  numero_lancamento: string | null
+  telefone_normalizado: string | null
+  data_entrega: string | null
+  data_pedido_fornecedor: string | null
+  numero_pedido_compra: string | null
+  comprador: string | null
 }
 
 export type TapeteCriadoRow = {
@@ -58,6 +66,12 @@ export type ResultadoAtualizacaoComercialRpc = {
 }
 
 export type ResultadoAtualizacaoAdministrativaRpc = {
+  version: number
+}
+
+export type ResultadoTransicaoStatusRpc = {
+  evento_id: string
+  status: StatusPedidoPersonalizado
   version: number
 }
 
@@ -124,13 +138,14 @@ export class RepositorioPedidosPersonalizados {
   async atualizarAdministrativo(params: {
     pedidoId: string
     usuarioId: string
+    numeroLancamentoAtual: string | null
     dados: DadosAdministrativosNormalizados
   }): Promise<ResultadoBanco<ResultadoAtualizacaoAdministrativaRpc>> {
     const parametros: ParametrosAtualizarPedidoAdministrativoRpc = {
       p_pedido_id: params.pedidoId,
       p_expected_version: params.dados.expectedVersion,
       p_usuario_id: params.usuarioId,
-      p_numero_lancamento: params.dados.numeroLancamento,
+      p_numero_lancamento: params.numeroLancamentoAtual,
       p_data_entrega: params.dados.dataEntrega,
       p_data_pedido_fornecedor: params.dados.dataPedidoFornecedor,
       p_numero_pedido_compra: params.dados.numeroPedidoCompra,
@@ -144,6 +159,15 @@ export class RepositorioPedidosPersonalizados {
     return retorno ? { data: retorno, error: null } : { data: null, error: { message: 'RETORNO_RPC_INVALIDO' } }
   }
 
+  async transicionarStatus(
+    parametros: ParametrosTransicionarPedidoPersonalizadoRpc
+  ): Promise<ResultadoBanco<ResultadoTransicaoStatusRpc>> {
+    const { data, error } = await this.supabase.rpc('transicionar_pedido_personalizado', parametros)
+    if (error) return { data: null, error }
+    const retorno = (Array.isArray(data) ? data[0] : data) as ResultadoTransicaoStatusRpc | null
+    return retorno ? { data: retorno, error: null } : { data: null, error: { message: 'RETORNO_RPC_INVALIDO' } }
+  }
+
   async buscarPedidoNoEscopo(
     pedidoId: string,
     unidadeIds: readonly string[]
@@ -151,7 +175,7 @@ export class RepositorioPedidosPersonalizados {
     if (unidadeIds.length === 0) return { data: null, error: null }
     const { data, error } = await this.supabase
       .from('pedidos_personalizados_pedidos')
-      .select('id, unidade_id, status, version')
+      .select('id, unidade_id, status, version, numero_lancamento, telefone_normalizado, data_entrega, data_pedido_fornecedor, numero_pedido_compra, comprador')
       .eq('id', pedidoId)
       .in('unidade_id', [...unidadeIds])
       .maybeSingle()
@@ -228,6 +252,15 @@ export class RepositorioPedidosPersonalizados {
     if (filtros.dataPedidoFornecedorFinal) query = query.lte('data_pedido_fornecedor', filtros.dataPedidoFornecedorFinal)
     if (filtros.dataEntregaInicial) query = query.gte('data_entrega', filtros.dataEntregaInicial)
     if (filtros.dataEntregaFinal) query = query.lte('data_entrega', filtros.dataEntregaFinal)
+    if (filtros.situacaoPrazo) {
+      const hoje = dataOperacionalBrasil()
+      query = query.not('status', 'in', '(RECEBIDO,CANCELADO)')
+      if (filtros.situacaoPrazo === 'ATRASADO') query = query.lt('data_entrega', hoje)
+      if (filtros.situacaoPrazo === 'PRESTES A VENCER') {
+        query = query.gte('data_entrega', hoje).lte('data_entrega', adicionarDiasIso(hoje, 7))
+      }
+      if (filtros.situacaoPrazo === 'NO PRAZO') query = query.gt('data_entrega', adicionarDiasIso(hoje, 7))
+    }
     if (pedidoIdsProduto) query = query.in('id', pedidoIdsProduto)
 
     const inicio = (filtros.pagina - 1) * 20
@@ -240,17 +273,33 @@ export class RepositorioPedidosPersonalizados {
     const rows = data ?? []
     const pedidoIds = rows.map((row) => row.id)
     const resumoPorPedido = new Map<string, { quantidade: number; codigos: Set<string> }>()
+    const recebidoEmPorPedido = new Map<string, string>()
     if (pedidoIds.length > 0) {
-      const { data: tapetesPagina, error: paginaError } = await this.supabase
-        .from('pedidos_personalizados_moriah_tapetes')
-        .select('pedido_id, produto:pedidos_personalizados_produtos!pedidos_personalizados_moriah_tapetes_produto_id_fkey(codigo)')
-        .in('pedido_id', pedidoIds)
-      if (paginaError) return { data: null, error: paginaError }
+      const [tapetesResultado, historicoResultado] = await Promise.all([
+        this.supabase
+          .from('pedidos_personalizados_moriah_tapetes')
+          .select('pedido_id, produto:pedidos_personalizados_produtos!pedidos_personalizados_moriah_tapetes_produto_id_fkey(codigo)')
+          .in('pedido_id', pedidoIds),
+        this.supabase
+          .from('pedidos_personalizados_status_historico')
+          .select('pedido_id, data_recebimento, created_at')
+          .in('pedido_id', pedidoIds)
+          .eq('status_novo', 'RECEBIDO')
+          .order('created_at', { ascending: false }),
+      ])
+      if (tapetesResultado.error) return { data: null, error: tapetesResultado.error }
+      if (historicoResultado.error) return { data: null, error: historicoResultado.error }
+      const tapetesPagina = tapetesResultado.data
       for (const tapete of (tapetesPagina ?? []) as unknown as Array<{ pedido_id: string; produto: { codigo: string } }>) {
         const resumo = resumoPorPedido.get(tapete.pedido_id) ?? { quantidade: 0, codigos: new Set<string>() }
         resumo.quantidade += 1
         resumo.codigos.add(tapete.produto.codigo)
         resumoPorPedido.set(tapete.pedido_id, resumo)
+      }
+      for (const evento of (historicoResultado.data ?? []) as Array<{ pedido_id: string; data_recebimento: string | null; created_at: string }>) {
+        if (!recebidoEmPorPedido.has(evento.pedido_id)) {
+          recebidoEmPorPedido.set(evento.pedido_id, evento.data_recebimento ?? dataOperacionalBrasil(new Date(evento.created_at)))
+        }
       }
     }
 
@@ -260,6 +309,7 @@ export class RepositorioPedidosPersonalizados {
           ...row,
           quantidade_tapetes: resumoPorPedido.get(row.id)?.quantidade ?? 0,
           codigos_produtos: Array.from(resumoPorPedido.get(row.id)?.codigos ?? []).sort(),
+          recebido_em: recebidoEmPorPedido.get(row.id) ?? null,
         })),
         total: count ?? rows.length,
       },
@@ -270,7 +320,7 @@ export class RepositorioPedidosPersonalizados {
   async carregarDetalhe(
     pedidoId: string,
     unidadeIds: readonly string[]
-  ): Promise<ResultadoBanco<{ pedido: unknown; tapetes: unknown[] } | null>> {
+  ): Promise<ResultadoBanco<{ pedido: unknown; tapetes: unknown[]; historico: unknown[] } | null>> {
     if (unidadeIds.length === 0) return { data: null, error: null }
     const { data: pedido, error: pedidoError } = await this.supabase
       .from('pedidos_personalizados_pedidos')
@@ -322,6 +372,18 @@ export class RepositorioPedidosPersonalizados {
       anexos = (anexosResult.data ?? []) as typeof anexos
     }
 
+    const { data: historico, error: historicoError } = await this.supabase
+      .from('pedidos_personalizados_status_historico')
+      .select(`
+        id, status_anterior, status_novo, version_anterior, version_nova,
+        justificativa, created_at,
+        usuario:usuarios_permitidos!pedidos_personalizados_status_historico_usuario_id_fkey(email),
+        unidade:app_unidades!pedidos_personalizados_status_historico_unidade_id_fkey(chave, nome)
+      `)
+      .eq('pedido_id', pedidoId)
+      .order('created_at', { ascending: false })
+    if (historicoError) return { data: null, error: historicoError }
+
     return {
       data: {
         pedido,
@@ -342,6 +404,7 @@ export class RepositorioPedidosPersonalizados {
               created_at: anexo.created_at,
             })),
         })),
+        historico: historico ?? [],
       },
       error: null,
     }

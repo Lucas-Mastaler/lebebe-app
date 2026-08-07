@@ -4,6 +4,8 @@ import { ehObjeto, ehUuid, jsonErro, lerJsonLimitado, registrarResultado, type C
 import { ErroArquivoAnexo, EXPIRACAO_URL_ASSINADA_SEGUNDOS, gerarCaminhoAnexo, lerMultipartAnexo } from './anexos-arquivo'
 import { verificarAcessoAnexoPedidoPersonalizado } from './anexos-autorizacao'
 import { RepositorioAnexos, StorageAnexos, type EscopoAnexo } from './anexos-repositorio'
+import { operacoesAnexoGestao } from '../status-fluxo'
+import type { StatusPedidoPersonalizado } from '../tipos'
 
 type Dependencias = {
   carregarContexto: typeof carregarContextoPedidosPersonalizados
@@ -89,6 +91,13 @@ export async function uploadAnexo(
     return jsonErro('TAPETE_NAO_ENCONTRADO', 'Recurso não encontrado.', 404)
   }
 
+  const regrasGestao = contextoMutacao === 'gestao'
+    ? operacoesAnexoGestao(escopo.data.pedido.status as StatusPedidoPersonalizado)
+    : null
+  if (regrasGestao && !regrasGestao.adicionar) {
+    return jsonErro('OPERACAO_ANEXO_BLOQUEADA', 'Esta operacao de anexo nao e permitida neste status.', 422)
+  }
+
   let form
   try { form = await lerMultipartAnexo(request, true) } catch (error) { return erroArquivo(error) ?? jsonErro('PAYLOAD_INVALIDO', 'Payload inválido.', 422) }
   if (escopo.data.pedido.version !== form.expectedVersion) return jsonErro('CONFLITO_VERSAO', 'O pedido foi alterado.', 409)
@@ -106,7 +115,7 @@ export async function uploadAnexo(
     p_slot: form.slot, p_caminho_objeto: caminho, p_nome_original: form.arquivo.nomeOriginal,
     p_mime_type: form.arquivo.mimeType, p_tamanho_bytes: form.arquivo.tamanhoBytes,
     p_usuario_id: acesso.contexto.allowedUser.id,
-    p_contabilizar_alteracao_layout: contextoMutacao === 'gestao',
+    p_contabilizar_alteracao_layout: regrasGestao?.contabilizar ?? false,
   })
   if (registrado.error) {
     await compensar(repo, storage, caminho)
@@ -170,6 +179,12 @@ export async function substituirAnexo(
     return jsonErro('ANEXO_NAO_ENCONTRADO', 'Recurso não encontrado.', 404)
   }
   const carregado = { acesso: acesso.contexto, repo, escopo: escopo.data as EscopoAnexo & { anexo: NonNullable<EscopoAnexo['anexo']> } }
+  const regrasGestao = contextoMutacao === 'gestao'
+    ? operacoesAnexoGestao(carregado.escopo.pedido.status as StatusPedidoPersonalizado)
+    : null
+  if (regrasGestao && !regrasGestao.substituir) {
+    return jsonErro('OPERACAO_ANEXO_BLOQUEADA', 'Esta operacao de anexo nao e permitida neste status.', 422)
+  }
   let form
   try { form = await lerMultipartAnexo(request, false) } catch (error) { return erroArquivo(error) ?? jsonErro('PAYLOAD_INVALIDO', 'Payload inválido.', 422) }
   if (carregado.escopo.pedido.version !== form.expectedVersion) return jsonErro('CONFLITO_VERSAO', 'O pedido foi alterado.', 409)
@@ -181,7 +196,7 @@ export async function substituirAnexo(
     p_pedido_id: carregado.escopo.pedido.id, p_anexo_id: anexoId, p_expected_version: form.expectedVersion,
     p_caminho_objeto: caminho, p_nome_original: form.arquivo.nomeOriginal, p_mime_type: form.arquivo.mimeType,
     p_tamanho_bytes: form.arquivo.tamanhoBytes, p_usuario_id: carregado.acesso.allowedUser.id,
-    p_contabilizar_alteracao_layout: contextoMutacao === 'gestao',
+    p_contabilizar_alteracao_layout: regrasGestao?.contabilizar ?? false,
   })
   if (resultado.error) { await compensar(carregado.repo, storage, caminho); return erroBanco(resultado.error) }
   registrarResultado({ ...log, tamanho: form.arquivo.tamanhoBytes, mime: form.arquivo.mimeType }, 'sucesso', 'ANEXO_SUBSTITUIDO')
@@ -207,13 +222,19 @@ export async function removerAnexo(
     return jsonErro('ANEXO_NAO_ENCONTRADO', 'Recurso não encontrado.', 404)
   }
   const carregado = { acesso: acesso.contexto, repo, escopo: escopo.data as EscopoAnexo & { anexo: NonNullable<EscopoAnexo['anexo']> } }
+  const regrasGestao = contextoMutacao === 'gestao'
+    ? operacoesAnexoGestao(carregado.escopo.pedido.status as StatusPedidoPersonalizado)
+    : null
+  if (regrasGestao && !regrasGestao.remover) {
+    return jsonErro('OPERACAO_ANEXO_BLOQUEADA', 'Esta operacao de anexo nao e permitida neste status.', 422)
+  }
   const corpo = await lerJsonLimitado(request)
   if (!corpo.ok) return corpo.response
   if (!ehObjeto(corpo.valor) || !Number.isInteger(corpo.valor.expectedVersion) || Number(corpo.valor.expectedVersion) < 1) return jsonErro('PAYLOAD_INVALIDO', 'Payload inválido.', 422)
   if (carregado.escopo.pedido.version !== corpo.valor.expectedVersion) {
     return jsonErro('CONFLITO_VERSAO', 'O pedido foi alterado.', 409)
   }
-  const resultado = await carregado.repo.remover({ p_pedido_id: carregado.escopo.pedido.id, p_anexo_id: anexoId, p_expected_version: corpo.valor.expectedVersion, p_usuario_id: carregado.acesso.allowedUser.id, p_contabilizar_alteracao_layout: contextoMutacao === 'gestao' })
+  const resultado = await carregado.repo.remover({ p_pedido_id: carregado.escopo.pedido.id, p_anexo_id: anexoId, p_expected_version: corpo.valor.expectedVersion, p_usuario_id: carregado.acesso.allowedUser.id, p_contabilizar_alteracao_layout: regrasGestao?.contabilizar ?? false })
   if (resultado.error) return erroBanco(resultado.error)
   const caminho = String(resultado.data.caminho_enfileirado)
   const removido = await deps.criarStorage(carregado.acesso).remover(caminho)

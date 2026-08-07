@@ -12,6 +12,8 @@ function builder(resultado: unknown, rastreio: { order: Array<[string, unknown]>
     gte: vi.fn(() => chain),
     lte: vi.fn(() => chain),
     lt: vi.fn(() => chain),
+    gt: vi.fn(() => chain),
+    not: vi.fn(() => chain),
     order: vi.fn((campo: string, opcoes?: unknown) => {
       rastreio.order.push([campo, opcoes])
       return chain
@@ -38,6 +40,7 @@ function filtros(overrides: Partial<FiltrosPedidos> = {}): FiltrosPedidos {
     dataPedidoFornecedorFinal: null,
     dataEntregaInicial: null,
     dataEntregaFinal: null,
+    situacaoPrazo: null,
     codigoProduto: null,
     ...overrides,
   }
@@ -74,7 +77,7 @@ describe('repositório server-only de pedidos personalizados', () => {
     expect(rastreio.order).toContainEqual(['ordem', { ascending: true }])
   })
 
-  it('lista com ordem estável, range de 20 e duas consultas fixas sem N+1', async () => {
+  it('lista com ordem estável e carrega resumo e recebimento em lote sem N+1', async () => {
     const rastreio = { order: [] as Array<[string, unknown]> }
     const filas: Record<string, unknown[]> = {
       pedidos_personalizados_pedidos: [{
@@ -89,6 +92,9 @@ describe('repositório server-only de pedidos personalizados', () => {
         ],
         error: null,
       }],
+      pedidos_personalizados_status_historico: [{
+        data: [{ pedido_id: 'pedido-1', data_recebimento: '2026-08-06', created_at: '2026-08-07T12:00:00Z' }], error: null,
+      }],
     }
     const from = vi.fn((tabela: string) => builder(filas[tabela].shift(), rastreio))
     const repo = new RepositorioPedidosPersonalizados({ from } as unknown as SupabaseClient)
@@ -96,12 +102,56 @@ describe('repositório server-only de pedidos personalizados', () => {
 
     expect(resultado.error).toBeNull()
     expect(resultado.data?.total).toBe(41)
-    expect(resultado.data?.itens[0]).toMatchObject({ quantidade_tapetes: 2, codigos_produtos: ['21158'] })
-    expect(from).toHaveBeenCalledTimes(2)
+    expect(resultado.data?.itens[0]).toMatchObject({ quantidade_tapetes: 2, codigos_produtos: ['21158'], recebido_em: '2026-08-06' })
+    expect(from).toHaveBeenCalledTimes(3)
     expect(rastreio.order.slice(0, 2)).toEqual([
       ['created_at', { ascending: false }],
       ['id', { ascending: false }],
     ])
+  })
+
+  it('usa data_recebimento do evento quando preenchida e fallback em created_at quando legado null', async () => {
+    const rastreio = { order: [] as Array<[string, unknown]> }
+    const filas: Record<string, unknown[]> = {
+      pedidos_personalizados_pedidos: [{
+        data: [
+          { id: 'pedido-1', unidade: { chave: 'bigorrilho' } },
+          { id: 'pedido-2', unidade: { chave: 'bigorrilho' } },
+        ],
+        error: null,
+        count: 2,
+      }],
+      pedidos_personalizados_moriah_tapetes: [{
+        data: [{ pedido_id: 'pedido-1', produto: { codigo: '21158' } }],
+        error: null,
+      }],
+      pedidos_personalizados_status_historico: [{
+        data: [
+          { pedido_id: 'pedido-1', data_recebimento: '2026-08-06', created_at: '2026-08-07T12:00:00Z' },
+          { pedido_id: 'pedido-2', data_recebimento: null, created_at: '2026-08-10T15:30:00Z' },
+        ],
+        error: null,
+      }],
+    }
+    const from = vi.fn((tabela: string) => builder(filas[tabela].shift(), rastreio))
+    const repo = new RepositorioPedidosPersonalizados({ from } as unknown as SupabaseClient)
+    const resultado = await repo.listar(filtros(), unidades)
+
+    expect(resultado.error).toBeNull()
+    const item1 = resultado.data?.itens.find((item) => item.id === 'pedido-1')
+    const item2 = resultado.data?.itens.find((item) => item.id === 'pedido-2')
+    expect(item1?.recebido_em).toBe('2026-08-06')
+    expect(item2?.recebido_em).toBe('2026-08-10')
+  })
+
+  it('aplica situação de prazo no banco e exclui estados finais', async () => {
+    const rastreio = { order: [] as Array<[string, unknown]> }
+    const pedidosBuilder = builder({ data: [], error: null, count: 0 }, rastreio)
+    const from = vi.fn(() => pedidosBuilder)
+    const repo = new RepositorioPedidosPersonalizados({ from } as unknown as SupabaseClient)
+    await repo.listar(filtros({ situacaoPrazo: 'ATRASADO' }), unidades)
+    expect(pedidosBuilder.not).toHaveBeenCalledWith('status', 'in', '(RECEBIDO,CANCELADO)')
+    expect(pedidosBuilder.lt).toHaveBeenCalledWith('data_entrega', expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/))
   })
 
   it('aplica filtros escapados, período semiaberto e produto sem SQL concatenado', async () => {
@@ -144,13 +194,14 @@ describe('repositório server-only de pedidos personalizados', () => {
     expect(pedidosBuilder.lte).toHaveBeenCalledWith('data_entrega', '2026-08-31')
   })
 
-  it('carrega detalhe em no máximo três consultas, com tapetes e cores ordenados', async () => {
+  it('carrega detalhe e historico, com tapetes e cores ordenados', async () => {
     const rastreio = { order: [] as Array<[string, unknown]> }
     const filas: Record<string, unknown[]> = {
       pedidos_personalizados_pedidos: [{ data: { id: 'pedido-1' }, error: null }],
       pedidos_personalizados_moriah_tapetes: [{ data: [{ id: 'tapete-1', ordem: 1 }], error: null }],
       pedidos_personalizados_tapete_cores: [{ data: [{ tapete_id: 'tapete-1', ordem: 1, cor: { id: 'cor-1' } }], error: null }],
       pedidos_personalizados_anexos: [{ data: [{ tapete_id: 'tapete-1', id: 'anexo-1', slot: 1, nome_original: 'arquivo.pdf', mime_type: 'application/pdf', tamanho_bytes: 10, created_at: '2026-08-05T10:00:00Z' }], error: null }],
+      pedidos_personalizados_status_historico: [{ data: [], error: null }],
     }
     const from = vi.fn((tabela: string) => builder(filas[tabela].shift(), rastreio))
     const repo = new RepositorioPedidosPersonalizados({ from } as unknown as SupabaseClient)
@@ -160,7 +211,7 @@ describe('repositório server-only de pedidos personalizados', () => {
       anexos: [{ id: 'anexo-1', slot: 1, nome_original: 'arquivo.pdf', mime_type: 'application/pdf', tamanho_bytes: 10 }],
     })
     expect(JSON.stringify(resultado.data)).not.toContain('caminho_objeto')
-    expect(from).toHaveBeenCalledTimes(4)
+    expect(from).toHaveBeenCalledTimes(5)
     expect(rastreio.order).toContainEqual(['ordem', { ascending: true }])
   })
 })

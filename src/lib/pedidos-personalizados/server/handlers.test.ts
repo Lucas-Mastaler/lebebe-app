@@ -66,7 +66,7 @@ function criarRepo(overrides: Record<string, unknown> = {}) {
       error: null,
     }),
     buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
-      data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'CADASTRADO', version: 1 },
+      data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'CADASTRADO', version: 1, numero_lancamento: '0001', telefone_normalizado: '41999999999', data_entrega: '2026-08-10', data_pedido_fornecedor: '2026-08-05', numero_pedido_compra: '0002', comprador: 'JOÃO SILVA' },
       error: null,
     }),
     listar: vi.fn().mockResolvedValue({ data: { itens: [], total: 0 }, error: null }),
@@ -299,6 +299,7 @@ describe('listagem de pedidos personalizados', () => {
             version: 1,
             quantidade_tapetes: 2,
             codigos_produtos: ['21157', '21158'],
+            recebido_em: null,
             observacoes: 'não deve sair',
           }],
         },
@@ -316,6 +317,8 @@ describe('listagem de pedidos personalizados', () => {
       numeroPedidoCompra: '00001',
       comprador: 'ANA SILVA',
       telefone: '41999999999',
+      situacaoPrazo: expect.stringMatching(/NO PRAZO|PRESTES A VENCER|ATRASADO/),
+      recebidoEm: null,
     })
     expect(body.itens[0]).not.toHaveProperty('observacoes')
   })
@@ -331,6 +334,7 @@ describe('listagem de pedidos personalizados', () => {
     ['codigoProduto=99999', 422],
     ['numeroLancamento=12A', 422],
     ['numeroLancamento=1234567', 422],
+    ['situacaoPrazo=VENCIDO', 422],
   ])('valida filtro %s', async (query, status) => {
     expect((await listarPedidos(new Request(`http://localhost/api?${query}`), deps())).status).toBe(status)
   })
@@ -341,7 +345,7 @@ describe('listagem de pedidos personalizados', () => {
 
   it('encaminha todos os filtros válidos ao repositório', async () => {
     const repo = criarRepo()
-    const url = 'http://localhost/api?page=3&unidade=bigorrilho&cliente=Maria&consultora=Ana&numeroLancamento=0001&status=CADASTRADO&dataInicial=2026-08-01&dataFinal=2026-08-05&dataPedidoFornecedorInicial=2026-08-02&dataPedidoFornecedorFinal=2026-08-06&dataEntregaInicial=2026-08-20&dataEntregaFinal=2026-08-31&codigoProduto=21158'
+    const url = 'http://localhost/api?page=3&unidade=bigorrilho&cliente=Maria&consultora=Ana&numeroLancamento=0001&status=CADASTRADO&dataInicial=2026-08-01&dataFinal=2026-08-05&dataPedidoFornecedorInicial=2026-08-02&dataPedidoFornecedorFinal=2026-08-06&dataEntregaInicial=2026-08-20&dataEntregaFinal=2026-08-31&situacaoPrazo=PRESTES%20A%20VENCER&codigoProduto=21158'
     expect((await listarPedidos(new Request(url), deps(repo))).status).toBe(200)
     expect(repo.listar).toHaveBeenCalledWith(expect.objectContaining({
       pagina: 3,
@@ -353,6 +357,7 @@ describe('listagem de pedidos personalizados', () => {
       dataPedidoFornecedorFinal: '2026-08-06',
       dataEntregaInicial: '2026-08-20',
       dataEntregaFinal: '2026-08-31',
+      situacaoPrazo: 'PRESTES A VENCER',
       codigoProduto: '21158',
     }), unidades)
   })
@@ -461,13 +466,32 @@ describe('atualização comercial', () => {
   it('nega nova unidade fora do escopo', async () => {
     expect((await atualizarComercial(requestJson(payloadComercial({ unidade: 'feira' }), 'PATCH'), PEDIDO_ID, deps())).status).toBe(403)
   })
+
+  it('permite editar comercial de pedido legado sem telefone em operação atômica única', async () => {
+    const repoLegacy = criarRepo({
+      buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
+        data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'CADASTRADO', version: 1, numero_lancamento: '0001', telefone_normalizado: null, data_entrega: null, data_pedido_fornecedor: null, numero_pedido_compra: null, comprador: null },
+        error: null,
+      }),
+    })
+    const response = await atualizarComercial(
+      requestJson(payloadComercial({ telefone: '', numeroLancamento: '0002' }), 'PATCH'),
+      PEDIDO_ID,
+      deps(repoLegacy),
+    )
+    expect(response.status).toBe(200)
+    expect(repoLegacy.atualizarComercial).toHaveBeenCalledTimes(1)
+    expect(repoLegacy.atualizarComercial).toHaveBeenCalledWith(expect.objectContaining({
+      p_telefone_normalizado: null,
+      p_numero_lancamento: '0002',
+    }))
+  })
 })
 
 describe('atualização administrativa', () => {
   function payloadAdministrativo(overrides: Record<string, unknown> = {}) {
     return {
       expectedVersion: 1,
-      numeroLancamento: '0001',
       dataEntrega: '10/08/2026',
       dataPedidoFornecedor: '05/08/2026',
       numeroPedidoCompra: '0002',
@@ -483,22 +507,45 @@ describe('atualização administrativa', () => {
     expect(response.status).toBe(422)
   })
 
-  it.each(['CADASTRADO', 'AGUARDANDO LAYOUT', 'AGUARDANDO APROVAÇÃO DO CLIENTE', 'EM PRODUÇÃO', 'RECEBIDO'])(
-    'preserva o status atual %s enquanto não há transições aprovadas',
+  it.each(['CADASTRADO', 'AGUARDANDO LAYOUT', 'AGUARDANDO APROVAÇÃO DO CLIENTE', 'EM PRODUÇÃO'])(
+    'preserva o status administrativo editavel %s',
     async (status) => {
       const repo = criarRepo({
         buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
-          data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status, version: 1 },
+          data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status, version: 1, numero_lancamento: '0001', data_entrega: '2026-08-10', data_pedido_fornecedor: '2026-08-05', numero_pedido_compra: '0002', comprador: 'JOÃO SILVA' },
           error: null,
         }),
       })
       const response = await atualizarAdministrativo(requestJson(payloadAdministrativo({ status }), 'PATCH'), PEDIDO_ID, deps(repo))
       expect(response.status).toBe(200)
       expect(repo.atualizarAdministrativo).toHaveBeenCalledWith(expect.objectContaining({
-        dados: expect.objectContaining({ status, dataEntrega: '2026-08-10', numeroLancamento: '0001' }),
+        numeroLancamentoAtual: '0001',
+        dados: expect.objectContaining({ status, dataEntrega: '2026-08-10' }),
       }))
     }
   )
+
+  it.each(['RECEBIDO', 'CANCELADO'])('bloqueia edicao administrativa em %s', async (status) => {
+    const repo = criarRepo({
+      buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
+        data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status, version: 1, numero_lancamento: '0001', data_entrega: '2026-08-10', data_pedido_fornecedor: '2026-08-05', numero_pedido_compra: '0002', comprador: 'JOÃO SILVA' },
+        error: null,
+      }),
+    })
+    const response = await atualizarAdministrativo(requestJson(payloadAdministrativo({ status }), 'PATCH'), PEDIDO_ID, deps(repo))
+    expect(response.status).toBe(422)
+    expect((await response.json()).erro).toBe('EDICAO_ADMINISTRATIVA_BLOQUEADA')
+    expect(repo.atualizarAdministrativo).not.toHaveBeenCalled()
+  })
+
+  it('em produção permite somente alterar a previsão de entrega', async () => {
+    const atual = { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'EM PRODUÇÃO', version: 1, numero_lancamento: '0001', data_entrega: '2026-08-10', data_pedido_fornecedor: '2026-08-05', numero_pedido_compra: '0002', comprador: 'JOÃO SILVA' }
+    const repo = criarRepo({ buscarPedidoNoEscopo: vi.fn().mockResolvedValue({ data: atual, error: null }) })
+    expect((await atualizarAdministrativo(requestJson(payloadAdministrativo({ status: 'EM PRODUÇÃO', dataEntrega: '11/08/2026' }), 'PATCH'), PEDIDO_ID, deps(repo))).status).toBe(200)
+    const bloqueado = await atualizarAdministrativo(requestJson(payloadAdministrativo({ status: 'EM PRODUÇÃO', numeroPedidoCompra: '0003' }), 'PATCH'), PEDIDO_ID, deps(repo))
+    expect(bloqueado.status).toBe(422)
+    expect((await bloqueado.json()).erro).toBe('CAMPOS_ADMINISTRATIVOS_BLOQUEADOS')
+  })
 
   it.each(['AGUARDANDO LAYOUT', 'AGUARDANDO APROVAÇÃO DO CLIENTE', 'EM PRODUÇÃO', 'RECEBIDO'])(
     'não inventa a transição de CADASTRADO para %s',
@@ -539,10 +586,25 @@ describe('atualização administrativa', () => {
     }
   })
 
-  it('aceita lançamento administrativo com 6 dígitos e rejeita 7', async () => {
-    const repo = criarRepo()
-    expect((await atualizarAdministrativo(requestJson(payloadAdministrativo({ numeroLancamento: '000001' }), 'PATCH'), PEDIDO_ID, deps(repo))).status).toBe(200)
-    expect((await atualizarAdministrativo(requestJson(payloadAdministrativo({ numeroLancamento: '0000001' }), 'PATCH'), PEDIDO_ID, deps())).status).toBe(422)
+  it('rejeita lançamento na rota administrativa', async () => {
+    const response = await atualizarAdministrativo(requestJson(payloadAdministrativo({ numeroLancamento: '000001' }), 'PATCH'), PEDIDO_ID, deps())
+    expect(response.status).toBe(422)
+    expect((await response.json()).erro).toBe('CAMPO_NAO_PERMITIDO')
+  })
+
+  it('rejeita data do pedido ao fornecedor futura na edição administrativa', async () => {
+    const response = await atualizarAdministrativo(
+      requestJson(payloadAdministrativo({ dataPedidoFornecedor: '2099-01-01' }), 'PATCH'),
+      PEDIDO_ID,
+      deps(),
+    )
+    expect(response.status).toBe(422)
+    const body = await response.json()
+    expect(body.problemas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ campo: 'dataPedidoFornecedor', mensagem: expect.stringContaining('não pode ser futura') }),
+      ])
+    )
   })
 })
 

@@ -13,11 +13,19 @@ import { AnexosTapete } from './AnexosTapete'
 import { PreviaMensagem } from './PreviaMensagem'
 import { aplicarMascaraTelefoneBR, formatarTelefone } from '@/lib/atendimento-presencial/telefone'
 import {
+  destinosPermitidosStatus,
+  operacoesAnexoGestao,
+  permiteEdicaoAdministrativa,
+  permiteEdicaoComercial,
+} from '@/lib/pedidos-personalizados/status-fluxo'
+import type { StatusPedidoPersonalizado } from '@/lib/pedidos-personalizados'
+import {
   adicionarTapete,
   avaliarFormulario,
   carregarOpcoesNovoPedido,
   enviarAnexoGestao,
   moverItem,
+  problemasPorCampo,
   removerAnexoGestaoApi,
   removerTapete,
   solicitarUrlAnexo,
@@ -37,11 +45,12 @@ import {
   mensagemErroGestao,
   payloadAtualizacaoAdministrativa,
   payloadAtualizacaoComercial,
+  requisitosPendentesTransicao,
+  transicionarStatusGestao,
   validarAdministrativo,
 } from './gestao-modelo'
-import type { ErrosAdministrativos, EstadoAdministrativo, FiltrosGestao, PaginaPedidos, PedidoDetalhe, TapeteDetalhe } from './gestao-modelo'
-
-const STATUS_BLOQUEADOS = new Set(['EM PRODUÇÃO', 'RECEBIDO'])
+import type { ErrosAdministrativos, EstadoAdministrativo, EstadoTransicaoGestao, FiltrosGestao, PaginaPedidos, PedidoDetalhe, TapeteDetalhe } from './gestao-modelo'
+import { dataOperacionalBrasil } from '@/lib/pedidos-personalizados/prazo'
 
 function formatarData(valor: string) {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(valor))
@@ -61,10 +70,25 @@ function erroStatus(error: unknown) {
 }
 
 function classeStatus(status: string) {
+  if (status === 'CANCELADO') return 'border-red-200 bg-red-50 text-red-700'
   if (status === 'RECEBIDO') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
   if (status === 'EM PRODUÇÃO') return 'border-violet-200 bg-violet-50 text-violet-700'
   if (status.includes('AGUARDANDO')) return 'border-amber-200 bg-amber-50 text-amber-800'
   return 'border-sky-200 bg-sky-50 text-sky-700'
+}
+
+function formatarDataRecebimento(valor: string) {
+  return dataIsoParaExibicao(valor)
+}
+
+function hojeIsoBrasil() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
+}
+
+function classePrazo(situacao: string) {
+  if (situacao === 'ATRASADO') return 'border-red-200 bg-red-50 text-red-700'
+  if (situacao === 'PRESTES A VENCER') return 'border-amber-200 bg-amber-50 text-amber-800'
+  return 'border-emerald-200 bg-emerald-50 text-emerald-700'
 }
 
 function CampoAdministrativo({
@@ -104,6 +128,10 @@ export function GestaoPedidosPersonalizados() {
   const [administrativo, setAdministrativo] = useState<EstadoAdministrativo | null>(null)
   const [errosAdministrativos, setErrosAdministrativos] = useState<ErrosAdministrativos>({})
   const [conflitoAdministrativo, setConflitoAdministrativo] = useState(false)
+  const [alterandoStatus, setAlterandoStatus] = useState(false)
+  const [transicao, setTransicao] = useState<EstadoTransicaoGestao>({
+    destino: '', numeroPedidoCompra: '', dataPedidoFornecedor: '', comprador: '', dataEntrega: '', dataRecebimento: '', justificativa: '',
+  })
   const [formulario, setFormulario] = useState<EstadoNovoPedido | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [resumoCopiado, setResumoCopiado] = useState(false)
@@ -136,21 +164,29 @@ export function GestaoPedidosPersonalizados() {
   }, [])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setPagina(1)
-      setFiltrosAplicados(filtros)
-    }, 400)
-    return () => window.clearTimeout(timer)
-  }, [filtros])
-
-  useEffect(() => {
     const controller = new AbortController()
     void carregarLista(controller.signal)
     return () => controller.abort()
   }, [carregarLista])
 
-  const avaliacaoEdicao = useMemo(() => formulario && opcoes ? avaliarFormulario(formulario, opcoes) : null, [formulario, opcoes])
+  const telefoneLegadoNulo = detalhe?.telefone === null || detalhe?.telefone === undefined
+  const avaliacaoEdicao = useMemo(() => {
+    if (!formulario || !opcoes) return null
+    const avaliacao = avaliarFormulario(formulario, opcoes)
+    if (!telefoneLegadoNulo || formulario.telefone.trim()) return avaliacao
+    const errosFiltrados = avaliacao.validacao.erros.filter(
+      (item) => !(item.campo === 'telefone' && (item.codigo === 'TELEFONE_OBRIGATORIO' || item.codigo === 'TELEFONE_INVALIDO'))
+    )
+    return {
+      validacao: { ...avaliacao.validacao, erros: errosFiltrados, valido: errosFiltrados.length === 0 },
+      mensagem: avaliacao.mensagem,
+    }
+  }, [formulario, opcoes, telefoneLegadoNulo])
   const resumoFornecedor = useMemo(() => detalhe ? gerarResumoFornecedorDetalhe(detalhe) : null, [detalhe])
+  const pendenciasTransicao = useMemo(
+    () => detalhe ? requisitosPendentesTransicao(detalhe, transicao) : ['Pedido não carregado.'],
+    [detalhe, transicao]
+  )
 
   async function copiarResumoFornecedor() {
     if (!resumoFornecedor) return
@@ -241,6 +277,46 @@ export function GestaoPedidosPersonalizados() {
     }
   }
 
+  function abrirTransicao() {
+    if (!detalhe) return
+    const destino = destinosPermitidosStatus(detalhe.status)[0] ?? ''
+    setTransicao({
+      destino,
+      numeroPedidoCompra: detalhe.numeroPedidoCompra ?? '',
+      dataPedidoFornecedor: detalhe.dataPedidoFornecedor ?? '',
+      comprador: detalhe.comprador ?? '',
+      dataEntrega: detalhe.dataEntrega ?? '',
+      dataRecebimento: hojeIsoBrasil(),
+      justificativa: '',
+    })
+    setAlterandoStatus(true)
+  }
+
+  async function confirmarTransicao() {
+    if (!detalhe || !transicao.destino || salvando || pendenciasTransicao.length > 0) return
+    setSalvando(true)
+    try {
+      await transicionarStatusGestao(detalhe.id, detalhe.version, {
+        statusDestino: transicao.destino,
+        numeroPedidoCompra: detalhe.status === 'CADASTRADO' && transicao.destino === 'AGUARDANDO LAYOUT' ? transicao.numeroPedidoCompra : null,
+        dataPedidoFornecedor: detalhe.status === 'CADASTRADO' && transicao.destino === 'AGUARDANDO LAYOUT' ? transicao.dataPedidoFornecedor : null,
+        comprador: detalhe.status === 'CADASTRADO' && transicao.destino === 'AGUARDANDO LAYOUT' ? transicao.comprador : null,
+        dataEntrega: transicao.destino === 'EM PRODU\u00c7\u00c3O' ? transicao.dataEntrega : null,
+        dataRecebimento: transicao.destino === 'RECEBIDO' ? transicao.dataRecebimento : null,
+        justificativa: transicao.destino === 'CANCELADO' ? transicao.justificativa : null,
+      })
+      await recarregarDetalhe()
+      await carregarLista()
+      setAlterandoStatus(false)
+      toast.success('Status atualizado.')
+    } catch (error) {
+      toast.error(mensagemErroGestao(error))
+      if (erroStatus(error) === 409) await recarregarDetalhe().catch(() => undefined)
+    } finally {
+      setSalvando(false)
+    }
+  }
+
   function atualizarCampoAdministrativo(
     campo: keyof EstadoAdministrativo,
     valor: string
@@ -321,20 +397,21 @@ export function GestaoPedidosPersonalizados() {
   return (
     <div className="space-y-5">
       <section className="rounded-2xl border border-sky-100 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-4 shadow-sm sm:p-5" aria-labelledby="filtros-pedidos">
-        <div className="mb-4 flex items-center justify-between gap-3"><div><h2 id="filtros-pedidos" className="font-bold text-slate-900">Filtros</h2><p className="text-sm text-slate-500">A busca textual é atualizada após uma breve pausa.</p></div><Button type="button" variant="ghost" onClick={() => setFiltros(FILTROS_VAZIOS)}><X />Limpar</Button></div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 id="filtros-pedidos" className="font-bold text-slate-900">Filtros</h2><p className="text-sm text-slate-500">Preencha os campos e clique em Atualizar para aplicar.</p></div><Button type="button" variant="ghost" onClick={() => { setFiltros(FILTROS_VAZIOS); setFiltrosAplicados(FILTROS_VAZIOS); setPagina(1) }}><X />Limpar</Button></div>
+        <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <Input aria-label="Filtrar por cliente" placeholder="Cliente" value={filtros.cliente} onChange={(e) => setFiltros({ ...filtros, cliente: e.target.value })} />
           <Input aria-label="Filtrar por consultora" placeholder="Consultora" value={filtros.consultora} onChange={(e) => setFiltros({ ...filtros, consultora: e.target.value })} />
           <Input aria-label="Filtrar por lançamento" placeholder="Nº lançamento" inputMode="numeric" value={filtros.numeroLancamento} onChange={(e) => setFiltros({ ...filtros, numeroLancamento: e.target.value.replace(/\D/g, '').slice(0, 6) })} />
           <Select value={filtros.unidade || 'TODAS'} onValueChange={(v) => setFiltros({ ...filtros, unidade: v === 'TODAS' ? '' : v as FiltrosGestao['unidade'] })}><SelectTrigger aria-label="Filtrar por unidade"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="TODAS">Todas as unidades</SelectItem>{opcoes?.unidades.map((u) => <SelectItem key={u.chave} value={u.chave}>{u.nome}</SelectItem>)}</SelectContent></Select>
           <Select value={filtros.status || 'TODOS'} onValueChange={(v) => setFiltros({ ...filtros, status: v === 'TODOS' ? '' : v as FiltrosGestao['status'] })}><SelectTrigger aria-label="Filtrar por status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="TODOS">Todos os status</SelectItem>{opcoes?.status?.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+          <Select value={filtros.situacaoPrazo || 'TODOS'} onValueChange={(v) => setFiltros({ ...filtros, situacaoPrazo: v === 'TODOS' ? '' : v as FiltrosGestao['situacaoPrazo'] })}><SelectTrigger aria-label="Filtrar por situação do prazo"><SelectValue placeholder="Situação do prazo" /></SelectTrigger><SelectContent><SelectItem value="TODOS">Todos os prazos</SelectItem><SelectItem value="NO PRAZO">No prazo</SelectItem><SelectItem value="PRESTES A VENCER">Prestes a vencer</SelectItem><SelectItem value="ATRASADO">Atrasado</SelectItem></SelectContent></Select>
           <div><label htmlFor="data-inicial" className="mb-1 block text-xs font-medium text-slate-600">Cadastro inicial</label><Input id="data-inicial" type="date" value={filtros.dataInicial} onChange={(e) => setFiltros({ ...filtros, dataInicial: e.target.value })} /></div>
           <div><label htmlFor="data-final" className="mb-1 block text-xs font-medium text-slate-600">Cadastro final</label><Input id="data-final" type="date" value={filtros.dataFinal} onChange={(e) => setFiltros({ ...filtros, dataFinal: e.target.value })} /></div>
           <div><label htmlFor="pedido-fornecedor-inicial" className="mb-1 block text-xs font-medium text-slate-600">Data do pedido ao fornecedor — início</label><Input id="pedido-fornecedor-inicial" type="date" value={filtros.dataPedidoFornecedorInicial} onChange={(e) => setFiltros({ ...filtros, dataPedidoFornecedorInicial: e.target.value })} /></div>
           <div><label htmlFor="pedido-fornecedor-final" className="mb-1 block text-xs font-medium text-slate-600">Data do pedido ao fornecedor — fim</label><Input id="pedido-fornecedor-final" type="date" value={filtros.dataPedidoFornecedorFinal} onChange={(e) => setFiltros({ ...filtros, dataPedidoFornecedorFinal: e.target.value })} /></div>
-          <div><label htmlFor="entrega-inicial" className="mb-1 block text-xs font-medium text-slate-600">Data de entrega — início</label><Input id="entrega-inicial" type="date" value={filtros.dataEntregaInicial} onChange={(e) => setFiltros({ ...filtros, dataEntregaInicial: e.target.value })} /></div>
-          <div><label htmlFor="entrega-final" className="mb-1 block text-xs font-medium text-slate-600">Data de entrega — fim</label><Input id="entrega-final" type="date" value={filtros.dataEntregaFinal} onChange={(e) => setFiltros({ ...filtros, dataEntregaFinal: e.target.value })} /></div>
-          <Button type="button" variant="outline" onClick={() => void carregarLista()}><Search />Atualizar</Button>
+          <div><label htmlFor="entrega-inicial" className="mb-1 block text-xs font-medium text-slate-600">Previsão de entrega — início</label><Input id="entrega-inicial" type="date" value={filtros.dataEntregaInicial} onChange={(e) => setFiltros({ ...filtros, dataEntregaInicial: e.target.value })} /></div>
+          <div><label htmlFor="entrega-final" className="mb-1 block text-xs font-medium text-slate-600">Previsão de entrega — fim</label><Input id="entrega-final" type="date" value={filtros.dataEntregaFinal} onChange={(e) => setFiltros({ ...filtros, dataEntregaFinal: e.target.value })} /></div>
+          <div className="flex sm:col-span-2 sm:justify-end lg:col-span-3 xl:col-span-4"><Button type="button" className="w-full sm:w-auto" onClick={() => { setPagina(1); setFiltrosAplicados({ ...filtros }) }}><Search />Atualizar</Button></div>
         </div>
       </section>
 
@@ -359,7 +436,9 @@ export function GestaoPedidosPersonalizados() {
                   <div><dt className="text-slate-500">Telefone</dt><dd className="font-semibold text-slate-900">{item.telefone ? formatarTelefone(item.telefone) : 'Não informado'}</dd></div>
                   <div><dt className="text-slate-500">Pedido de compra</dt><dd className="font-semibold text-slate-900">{item.numeroPedidoCompra ?? '—'}</dd></div>
                   <div><dt className="text-slate-500">Pedido ao fornecedor</dt><dd className="font-medium">{item.dataPedidoFornecedor ? dataIsoParaExibicao(item.dataPedidoFornecedor) : '—'}</dd></div>
-                  <div><dt className="text-slate-500">Data de entrega</dt><dd className="font-medium">{item.dataEntrega ? dataIsoParaExibicao(item.dataEntrega) : '—'}</dd></div>
+                  <div><dt className="text-slate-500">Previsão de Data de entrega do fornecedor</dt><dd className="font-medium">{item.dataEntrega ? dataIsoParaExibicao(item.dataEntrega) : '—'}</dd></div>
+                  {item.situacaoPrazo && <div><dt className="text-slate-500">Prazo</dt><dd><span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-bold ${classePrazo(item.situacaoPrazo)}`}>{item.situacaoPrazo}</span></dd></div>}
+                  {item.status === 'RECEBIDO' && item.recebidoEm && <div><dt className="text-slate-500">Recebido em</dt><dd className="font-medium">{formatarDataRecebimento(item.recebidoEm)}</dd></div>}
                   <div><dt className="text-slate-500">Comprador</dt><dd className="font-medium">{item.comprador ?? '—'}</dd></div>
                   <div><dt className="text-slate-500">Tapetes</dt><dd className="font-medium">{item.quantidadeTapetes}</dd></div>
                   <div><dt className="text-slate-500">Produtos</dt><dd className="font-medium">{item.codigosProdutos.join(', ') || '—'}</dd></div>
@@ -385,7 +464,7 @@ export function GestaoPedidosPersonalizados() {
           }
         }}
       >
-        <DialogContent className="flex max-h-[calc(100dvh-1rem)] !w-[calc(100vw-1rem)] !max-w-[1400px] flex-col gap-0 overflow-hidden p-0 sm:max-h-[90vh] sm:!w-[90vw] lg:!w-[80vw]">
+        <DialogContent className="flex h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] !w-[calc(100vw-1rem)] !max-w-[1400px] flex-col gap-0 overflow-hidden p-0 sm:h-[90vh] sm:max-h-[90vh] sm:!w-[90vw] lg:!w-[80vw]">
           <DialogHeader className="shrink-0 border-b bg-gradient-to-r from-sky-50 to-indigo-50 px-5 py-4 sm:px-6">
             <DialogTitle>{editando ? 'Editar dados comerciais' : 'Pedido personalizado'}</DialogTitle>
             <DialogDescription>
@@ -423,7 +502,7 @@ export function GestaoPedidosPersonalizados() {
                       <div><dt className="text-slate-500">Status</dt><dd className="font-medium">{detalhe.status}</dd></div>
                       <div><dt className="text-slate-500">Pedido de compra</dt><dd className="font-medium">{detalhe.numeroPedidoCompra ?? '—'}</dd></div>
                       <div><dt className="text-slate-500">Data do pedido ao fornecedor</dt><dd className="font-medium">{detalhe.dataPedidoFornecedor ? dataIsoParaExibicao(detalhe.dataPedidoFornecedor) : '—'}</dd></div>
-                      <div><dt className="text-slate-500">Data de entrega</dt><dd className="font-medium">{detalhe.dataEntrega ? dataIsoParaExibicao(detalhe.dataEntrega) : '—'}</dd></div>
+                      <div><dt className="text-slate-500">Previsão de Data de entrega do fornecedor</dt><dd className="font-medium">{detalhe.dataEntrega ? dataIsoParaExibicao(detalhe.dataEntrega) : '—'}</dd></div>
                       <div><dt className="text-slate-500">Comprador</dt><dd className="font-medium">{detalhe.comprador ?? '—'}</dd></div>
                     </dl>
                   </section>
@@ -440,17 +519,37 @@ export function GestaoPedidosPersonalizados() {
                 </div>
               )}
 
+              {!editando && (
+                <section className="rounded-xl border border-slate-200 bg-white p-4" aria-labelledby="historico-status-titulo">
+                  <h3 id="historico-status-titulo" className="font-semibold text-slate-900">Histórico de status</h3>
+                  {detalhe.historico.length === 0 ? (
+                    <p className="mt-2 text-sm text-slate-500">A trilha começa nas transições realizadas a partir desta funcionalidade.</p>
+                  ) : (
+                    <ol className="mt-4 space-y-3 border-l-2 border-slate-200 pl-4">
+                      {detalhe.historico.map((evento) => (
+                        <li key={evento.id} className="text-sm">
+                          <p className="font-semibold text-slate-900">{evento.statusAnterior} para {evento.statusNovo}</p>
+                          <p className="text-slate-500">{formatarData(evento.createdAt)} · {evento.usuario?.email ?? 'Usuário do sistema'}</p>
+                          {evento.justificativa && <p className="mt-1 whitespace-pre-wrap text-slate-700">{evento.justificativa}</p>}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </section>
+              )}
+
               {editando ? (
                 <div className="space-y-4">
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <div><label htmlFor="gestao-unidade" className="mb-1 block text-sm font-medium">Unidade</label><Select value={formulario.unidade} onValueChange={(v) => setFormulario({ ...formulario, unidade: v as EstadoNovoPedido['unidade'] })}><SelectTrigger id="gestao-unidade"><SelectValue /></SelectTrigger><SelectContent>{opcoes.unidades.map((u) => <SelectItem key={u.chave} value={u.chave}>{u.nome}</SelectItem>)}</SelectContent></Select></div>
-                    <div><label htmlFor="gestao-consultora" className="mb-1 block text-sm font-medium">Consultora</label><Input id="gestao-consultora" maxLength={20} value={formulario.consultora} onChange={(e) => setFormulario({ ...formulario, consultora: e.target.value })} /></div>
-                    <div><label htmlFor="gestao-cliente" className="mb-1 block text-sm font-medium">Cliente</label><Input id="gestao-cliente" maxLength={40} value={formulario.cliente} onChange={(e) => setFormulario({ ...formulario, cliente: e.target.value })} /></div>
-                    <div><label htmlFor="gestao-telefone" className="mb-1 block text-sm font-medium">Telefone do cliente</label><Input id="gestao-telefone" inputMode="tel" autoComplete="tel" placeholder="(41) 99999-9999" value={formulario.telefone} onChange={(e) => setFormulario({ ...formulario, telefone: aplicarMascaraTelefoneBR(e.target.value) })} /></div>
+                    <div><label htmlFor="gestao-unidade" className="mb-1 block text-sm font-medium">Unidade</label><Select value={formulario.unidade} onValueChange={(v) => setFormulario({ ...formulario, unidade: v as EstadoNovoPedido['unidade'] })}><SelectTrigger id="gestao-unidade" aria-invalid={problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'unidade').length > 0}><SelectValue /></SelectTrigger><SelectContent>{opcoes.unidades.map((u) => <SelectItem key={u.chave} value={u.chave}>{u.nome}</SelectItem>)}</SelectContent></Select>{problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'unidade')[0] && <p role="alert" className="mt-1 text-sm text-red-600">{problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'unidade')[0]}</p>}</div>
+                    <div><label htmlFor="gestao-consultora" className="mb-1 block text-sm font-medium">Consultora</label><Input id="gestao-consultora" maxLength={20} value={formulario.consultora} onChange={(e) => setFormulario({ ...formulario, consultora: e.target.value })} aria-invalid={problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'consultora').length > 0} />{problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'consultora')[0] && <p role="alert" className="mt-1 text-sm text-red-600">{problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'consultora')[0]}</p>}</div>
+                    <div><label htmlFor="gestao-cliente" className="mb-1 block text-sm font-medium">Cliente</label><Input id="gestao-cliente" maxLength={40} value={formulario.cliente} onChange={(e) => setFormulario({ ...formulario, cliente: e.target.value })} aria-invalid={problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'cliente').length > 0} />{problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'cliente')[0] && <p role="alert" className="mt-1 text-sm text-red-600">{problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'cliente')[0]}</p>}</div>
+                    <div><label htmlFor="gestao-telefone" className="mb-1 block text-sm font-medium">Telefone do cliente</label><Input id="gestao-telefone" inputMode="tel" autoComplete="tel" placeholder="(41) 99999-9999" value={formulario.telefone} onChange={(e) => setFormulario({ ...formulario, telefone: aplicarMascaraTelefoneBR(e.target.value) })} aria-invalid={problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'telefone').length > 0} />{problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'telefone')[0] && <p role="alert" className="mt-1 text-sm text-red-600">{problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'telefone')[0]}</p>}{telefoneLegadoNulo && !formulario.telefone.trim() && <p className="mt-1 text-xs text-amber-600">Telefone não cadastrado neste pedido legado. Preencha se quiser atualizar.</p>}</div>
+                    <div><label htmlFor="gestao-lancamento" className="mb-1 block text-sm font-medium">Lançamento</label><Input id="gestao-lancamento" inputMode="numeric" maxLength={6} value={formulario.numeroLancamento} onChange={(e) => setFormulario({ ...formulario, numeroLancamento: e.target.value.replace(/\D/g, '').slice(0, 6) })} aria-invalid={problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'numeroLancamento').length > 0} />{problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'numeroLancamento')[0] && <p role="alert" className="mt-1 text-sm text-red-600">{problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'numeroLancamento')[0]}</p>}</div>
                   </div>
                   {formulario.tapetes.map((tapete, indice) => <CardTapete key={tapete.chaveLocal} tapete={tapete} indice={indice} total={formulario.tapetes.length} produtos={opcoes.produtos} cores={opcoes.cores} erros={avaliacaoEdicao?.validacao.erros ?? []} camposTocados={new Set()} tentouSalvar disabled={salvando} onChange={(v) => atualizarTapete(indice, v)} onMover={(d) => setFormulario({ ...formulario, tapetes: moverItem(formulario.tapetes, indice, d) })} onRemover={() => setFormulario(removerTapete(formulario, tapete.chaveLocal))} onLimiteCores={() => toast.error('Máximo de 6 cores por tapete.')} onTocar={() => undefined} />)}
                   <Button type="button" variant="outline" disabled={formulario.tapetes.length >= 10} onClick={() => setFormulario(adicionarTapete(formulario, crypto.randomUUID()))}>Adicionar tapete</Button>
-                  {(avaliacaoEdicao?.validacao.erros.length ?? 0) > 0 && <div role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">Revise os campos marcados antes de salvar.</div>}
+                  {(avaliacaoEdicao?.validacao.erros.length ?? 0) > 0 && <div role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700"><ul className="list-disc space-y-1 pl-5">{avaliacaoEdicao?.validacao.erros.map((erro, indice) => <li key={`${erro.campo}-${erro.codigo}-${indice}`}>{erro.mensagem}</li>)}</ul></div>}
                 </div>
               ) : (
                 <section className="space-y-4" aria-labelledby="tapetes-titulo">
@@ -510,7 +609,7 @@ export function GestaoPedidosPersonalizados() {
                       </section>
 
                       <div className="mt-6 border-t border-slate-200 pt-5">
-                        <AnexosTapete tapete={{ ...detalheParaFormulario(detalhe).tapetes.find((item) => item.tapeteId === tapete.id)!, anexos: tapete.anexos }} ordem={tapete.ordem} bloqueado={operacaoAnexo !== null} operacao={operacaoAnexo} errosPorSlot={{}} onUpload={(slot, arquivo) => uploadGestao(tapete, slot, arquivo)} onAbrir={(anexo) => executarAnexo(tapete, anexo.slot, 'abertura', async () => { const { url } = await solicitarUrlAnexo(anexo.anexoId); window.open(url, '_blank', 'noopener,noreferrer') })} onSubstituir={(anexo, arquivo) => substituirGestao(tapete, anexo, arquivo)} onRemover={(anexo) => removerGestao(tapete, anexo)} />
+                        <AnexosTapete tapete={{ ...detalheParaFormulario(detalhe).tapetes.find((item) => item.tapeteId === tapete.id)!, anexos: tapete.anexos }} ordem={tapete.ordem} bloqueado={operacaoAnexo !== null} operacao={operacaoAnexo} errosPorSlot={{}} podeAdicionar={operacoesAnexoGestao(detalhe.status).adicionar} podeSubstituir={operacoesAnexoGestao(detalhe.status).substituir} podeRemover={operacoesAnexoGestao(detalhe.status).remover} onUpload={(slot, arquivo) => uploadGestao(tapete, slot, arquivo)} onAbrir={(anexo) => executarAnexo(tapete, anexo.slot, 'abertura', async () => { const { url } = await solicitarUrlAnexo(anexo.anexoId); window.open(url, '_blank', 'noopener,noreferrer') })} onSubstituir={(anexo, arquivo) => substituirGestao(tapete, anexo, arquivo)} onRemover={(anexo) => removerGestao(tapete, anexo)} />
                       </div>
                     </section>
                   ))}
@@ -539,8 +638,9 @@ export function GestaoPedidosPersonalizados() {
                 </>
               ) : (
                 <>
-                  <Button type="button" disabled={STATUS_BLOQUEADOS.has(detalhe.status)} onClick={() => setEditando(true)}><Pencil />Editar dados comerciais</Button>
-                  <Button type="button" variant="secondary" onClick={() => { setAdministrativo(detalheParaAdministrativo(detalhe)); setErrosAdministrativos({}); setConflitoAdministrativo(false); setEditandoAdministrativo(true) }}><Pencil />Editar dados administrativos</Button>
+                  <Button type="button" disabled={!permiteEdicaoComercial(detalhe.status)} onClick={() => setEditando(true)}><Pencil />Editar dados comerciais</Button>
+                  <Button type="button" variant="secondary" disabled={!permiteEdicaoAdministrativa(detalhe.status)} onClick={() => { setAdministrativo(detalheParaAdministrativo(detalhe)); setErrosAdministrativos({}); setConflitoAdministrativo(false); setEditandoAdministrativo(true) }}><Pencil />Editar dados administrativos</Button>
+                  {destinosPermitidosStatus(detalhe.status).length > 0 && <Button type="button" variant="outline" onClick={abrirTransicao}>ALTERAR STATUS</Button>}
                 </>
               )}
               <Button type="button" variant="ghost" disabled={salvando} onClick={() => void recarregarDetalhe()}><RefreshCw />Recarregar</Button>
@@ -558,24 +658,21 @@ export function GestaoPedidosPersonalizados() {
           {detalhe && administrativo && (
             <div className="min-h-0 flex-1 space-y-5 overflow-x-hidden overflow-y-auto px-4 py-5 sm:px-6">
               <div className="grid gap-4 sm:grid-cols-2">
-                <CampoAdministrativo id="admin-lancamento" label="Número de lançamento" erro={errosAdministrativos.numeroLancamento}>
-                  <Input id="admin-lancamento" inputMode="numeric" maxLength={6} value={administrativo.numeroLancamento} aria-invalid={Boolean(errosAdministrativos.numeroLancamento)} aria-describedby={errosAdministrativos.numeroLancamento ? 'admin-lancamento-erro' : undefined} onChange={(e) => atualizarCampoAdministrativo('numeroLancamento', e.target.value.replace(/\D/g, '').slice(0, 6))} />
-                </CampoAdministrativo>
                 <CampoAdministrativo id="admin-pedido-compra" label="Número do pedido de compra" erro={errosAdministrativos.numeroPedidoCompra}>
-                  <Input id="admin-pedido-compra" inputMode="numeric" maxLength={5} value={administrativo.numeroPedidoCompra} aria-invalid={Boolean(errosAdministrativos.numeroPedidoCompra)} aria-describedby={errosAdministrativos.numeroPedidoCompra ? 'admin-pedido-compra-erro' : undefined} onChange={(e) => atualizarCampoAdministrativo('numeroPedidoCompra', e.target.value.replace(/\D/g, '').slice(0, 5))} />
+                  <Input id="admin-pedido-compra" disabled={detalhe?.status === 'EM PRODUÇÃO'} inputMode="numeric" maxLength={5} value={administrativo.numeroPedidoCompra} aria-invalid={Boolean(errosAdministrativos.numeroPedidoCompra)} aria-describedby={errosAdministrativos.numeroPedidoCompra ? 'admin-pedido-compra-erro' : undefined} onChange={(e) => atualizarCampoAdministrativo('numeroPedidoCompra', e.target.value.replace(/\D/g, '').slice(0, 5))} />
                 </CampoAdministrativo>
                 <CampoAdministrativo id="admin-data-fornecedor" label="Data do pedido ao fornecedor" erro={errosAdministrativos.dataPedidoFornecedor}>
-                  <Input id="admin-data-fornecedor" type="date" value={administrativo.dataPedidoFornecedor} aria-invalid={Boolean(errosAdministrativos.dataPedidoFornecedor)} aria-describedby={errosAdministrativos.dataPedidoFornecedor ? 'admin-data-fornecedor-erro' : undefined} onChange={(e) => atualizarCampoAdministrativo('dataPedidoFornecedor', e.target.value)} />
+                  <Input id="admin-data-fornecedor" disabled={detalhe?.status === 'EM PRODUÇÃO'} type="date" max={dataOperacionalBrasil()} value={administrativo.dataPedidoFornecedor} aria-invalid={Boolean(errosAdministrativos.dataPedidoFornecedor)} aria-describedby={errosAdministrativos.dataPedidoFornecedor ? 'admin-data-fornecedor-erro' : undefined} onChange={(e) => atualizarCampoAdministrativo('dataPedidoFornecedor', e.target.value)} />
                 </CampoAdministrativo>
-                <CampoAdministrativo id="admin-data-entrega" label="Data de entrega" erro={errosAdministrativos.dataEntrega}>
+                <CampoAdministrativo id="admin-data-entrega" label="Previsão de Data de entrega do fornecedor" erro={errosAdministrativos.dataEntrega}>
                   <Input id="admin-data-entrega" type="date" value={administrativo.dataEntrega} aria-invalid={Boolean(errosAdministrativos.dataEntrega)} aria-describedby={errosAdministrativos.dataEntrega ? 'admin-data-entrega-erro' : undefined} onChange={(e) => atualizarCampoAdministrativo('dataEntrega', e.target.value)} />
                 </CampoAdministrativo>
                 <CampoAdministrativo id="admin-comprador" label="Comprador" erro={errosAdministrativos.comprador} className="sm:col-span-2">
-                  <Input id="admin-comprador" maxLength={40} value={administrativo.comprador} aria-invalid={Boolean(errosAdministrativos.comprador)} aria-describedby={errosAdministrativos.comprador ? 'admin-comprador-erro' : undefined} onChange={(e) => atualizarCampoAdministrativo('comprador', e.target.value)} />
+                  <Input id="admin-comprador" disabled={detalhe?.status === 'EM PRODUÇÃO'} maxLength={40} value={administrativo.comprador} aria-invalid={Boolean(errosAdministrativos.comprador)} aria-describedby={errosAdministrativos.comprador ? 'admin-comprador-erro' : undefined} onChange={(e) => atualizarCampoAdministrativo('comprador', e.target.value)} />
                 </CampoAdministrativo>
               </div>
               <div className="grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2">
-                <div><p className="text-slate-500">Status atual</p><p className="font-semibold">{detalhe.status}</p><p className="mt-1 text-xs text-slate-500">Somente leitura até existir uma regra aprovada de transições.</p></div>
+                <div><p className="text-slate-500">Status atual</p><p className="font-semibold">{detalhe.status}</p><p className="mt-1 text-xs text-slate-500">Use a ação Alterar status para seguir o fluxo aprovado.</p></div>
                 <div><p className="text-slate-500">Controle de versão</p><p className="font-semibold">Versão esperada: {detalhe.version}</p><p className="mt-1 text-xs text-slate-500">A atualização é atômica pela RPC administrativa.</p></div>
               </div>
               {conflitoAdministrativo && (
@@ -590,6 +687,29 @@ export function GestaoPedidosPersonalizados() {
             <Button type="button" variant="outline" disabled={salvando} onClick={() => setEditandoAdministrativo(false)}>Cancelar</Button>
             <Button type="button" disabled={salvando || conflitoAdministrativo || !detalhe || !administrativo} onClick={() => void salvarAdministrativo()}>{salvando ? <Loader2 className="animate-spin" /> : <Pencil />}Salvar dados administrativos</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={alterandoStatus} onOpenChange={(aberto) => { if (!aberto && !salvando) setAlterandoStatus(false) }}>
+        <DialogContent className="flex max-h-[calc(100dvh-1rem)] max-w-xl flex-col overflow-hidden p-0 sm:max-h-[90vh]">
+          <DialogHeader className="shrink-0 border-b px-6 py-5">
+            <DialogTitle>Alterar status</DialogTitle>
+            <DialogDescription>Confirme a transição. A versão e o histórico serão atualizados de forma atômica.</DialogDescription>
+          </DialogHeader>
+          {detalhe && <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+            <div className="rounded-lg bg-slate-50 p-3 text-sm"><span className="text-slate-500">Origem:</span> <strong>{detalhe.status}</strong></div>
+            <div><label htmlFor="status-destino" className="mb-1 block text-sm font-medium">Destino</label><Select value={transicao.destino} onValueChange={(destino) => setTransicao((atual) => ({ ...atual, destino: destino as StatusPedidoPersonalizado }))}><SelectTrigger id="status-destino"><SelectValue /></SelectTrigger><SelectContent>{destinosPermitidosStatus(detalhe.status).map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
+            {detalhe.status === 'CADASTRADO' && transicao.destino === 'AGUARDANDO LAYOUT' && <div className="grid gap-3 sm:grid-cols-2">
+              <div><label htmlFor="transicao-pedido" className="mb-1 block text-sm font-medium">Pedido de compra</label><Input id="transicao-pedido" inputMode="numeric" maxLength={5} value={transicao.numeroPedidoCompra} onChange={(e) => setTransicao({ ...transicao, numeroPedidoCompra: e.target.value.replace(/\D/g, '').slice(0, 5) })} /></div>
+              <div><label htmlFor="transicao-data-fornecedor" className="mb-1 block text-sm font-medium">Data do pedido ao fornecedor</label><Input id="transicao-data-fornecedor" type="date" max={dataOperacionalBrasil()} value={transicao.dataPedidoFornecedor} onChange={(e) => setTransicao({ ...transicao, dataPedidoFornecedor: e.target.value })} /></div>
+              <div className="sm:col-span-2"><label htmlFor="transicao-comprador" className="mb-1 block text-sm font-medium">Comprador</label><Input id="transicao-comprador" maxLength={40} value={transicao.comprador} onChange={(e) => setTransicao({ ...transicao, comprador: e.target.value })} /></div>
+            </div>}
+            {transicao.destino === 'EM PRODU\u00c7\u00c3O' && <div className="space-y-3"><div><label htmlFor="transicao-data-entrega" className="mb-1 block text-sm font-medium">Previsão de Data de entrega do fornecedor</label><Input id="transicao-data-entrega" type="date" value={transicao.dataEntrega} onChange={(e) => setTransicao({ ...transicao, dataEntrega: e.target.value })} /></div><p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Ao entrar em produção, os dados comerciais ficam bloqueados.</p></div>}
+            {transicao.destino === 'RECEBIDO' && <div><label htmlFor="transicao-data-recebimento" className="mb-1 block text-sm font-medium">Data de recebimento</label><Input id="transicao-data-recebimento" type="date" value={transicao.dataRecebimento} onChange={(e) => setTransicao({ ...transicao, dataRecebimento: e.target.value })} /><p className="mt-1 text-xs text-slate-500">A data de hoje é sugerida, mas pode ser alterada.</p></div>}
+            {transicao.destino === 'CANCELADO' && <div><label htmlFor="transicao-justificativa" className="mb-1 block text-sm font-medium">Justificativa</label><textarea id="transicao-justificativa" required maxLength={500} rows={4} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" value={transicao.justificativa} onChange={(e) => setTransicao({ ...transicao, justificativa: e.target.value })} /><p className="text-right text-xs text-slate-500">{transicao.justificativa.length}/500</p></div>}
+            {pendenciasTransicao.length > 0 && <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p className="font-semibold">Para confirmar, falta:</p><ul className="mt-2 list-disc space-y-1 pl-5">{pendenciasTransicao.map((pendencia) => <li key={pendencia}>{pendencia}</li>)}</ul></div>}
+          </div>}
+          <DialogFooter className="shrink-0 border-t bg-white px-6 py-4"><Button type="button" variant="outline" disabled={salvando} onClick={() => setAlterandoStatus(false)}>Cancelar</Button><Button type="button" disabled={salvando || pendenciasTransicao.length > 0} onClick={() => void confirmarTransicao()}>{salvando ? <Loader2 className="animate-spin" /> : null}Confirmar transição</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

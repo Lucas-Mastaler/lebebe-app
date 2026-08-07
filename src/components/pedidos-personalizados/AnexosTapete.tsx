@@ -33,6 +33,9 @@ type Props = {
   onAbrir: (anexo: AnexoFormulario) => Promise<void>
   onSubstituir: (anexo: AnexoFormulario, arquivo: File) => Promise<void>
   onRemover: (anexo: AnexoFormulario) => Promise<void>
+  podeAdicionar?: boolean
+  podeSubstituir?: boolean
+  podeRemover?: boolean
 }
 
 const ACCEPT = '.jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf'
@@ -53,6 +56,9 @@ export function AnexosTapete({
   onAbrir,
   onSubstituir,
   onRemover,
+  podeAdicionar = true,
+  podeSubstituir = true,
+  podeRemover = true,
 }: Props) {
   const [confirmacao, setConfirmacao] = useState<Confirmacao | null>(null)
 
@@ -105,12 +111,12 @@ export function AnexosTapete({
                       {processando && operacao?.tipo === 'abertura' ? <Loader2 className="animate-spin" /> : <ExternalLink />}
                       Abrir
                     </Button>
-                    <label className="inline-flex">
+                    <label className="relative inline-flex">
                       <input
                         className="sr-only"
                         type="file"
                         accept={ACCEPT}
-                        disabled={bloqueado}
+                        disabled={bloqueado || !podeSubstituir}
                         aria-label={`Substituir anexo do slot ${slot} do tapete ${ordem}`}
                         onChange={(event) => {
                           const arquivo = event.currentTarget.files?.[0]
@@ -118,25 +124,25 @@ export function AnexosTapete({
                           if (arquivo) setConfirmacao({ tipo: 'substituir', anexo, arquivo })
                         }}
                       />
-                      <span className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-100 aria-disabled:pointer-events-none aria-disabled:opacity-50" aria-disabled={bloqueado}>
+                      <span className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-100 aria-disabled:pointer-events-none aria-disabled:opacity-50" aria-disabled={bloqueado || !podeSubstituir}>
                         <RefreshCw className="size-4" />Substituir
                       </span>
                     </label>
-                    <Button type="button" size="sm" variant="destructive" disabled={bloqueado} onClick={() => setConfirmacao({ tipo: 'remover', anexo })}>
+                    <Button type="button" size="sm" variant="destructive" disabled={bloqueado || !podeRemover} onClick={() => setConfirmacao({ tipo: 'remover', anexo })}>
                       {processando && operacao?.tipo === 'remocao' ? <Loader2 className="animate-spin" /> : <Trash2 />}
                       Remover
                     </Button>
                   </div>
                 </div>
               ) : (
-                <label className="mt-3 flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white p-3 text-center text-sm font-medium text-slate-700 hover:border-sky-400 hover:bg-sky-50 has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50">
+                <label className="relative mt-3 flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white p-3 text-center text-sm font-medium text-slate-700 hover:border-sky-400 hover:bg-sky-50 has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50">
                   {processando ? <Loader2 className="mb-2 size-5 animate-spin" /> : <FileUp className="mb-2 size-5" />}
                   {processando ? 'Enviando...' : `Enviar arquivo no slot ${slot}`}
                   <input
                     className="sr-only"
                     type="file"
                     accept={ACCEPT}
-                    disabled={bloqueado}
+                    disabled={bloqueado || !podeAdicionar}
                     aria-label={`Enviar anexo no slot ${slot} do tapete ${ordem}`}
                     onChange={(event) => {
                       const arquivo = event.currentTarget.files?.[0]

@@ -198,6 +198,37 @@ describe('upload de anexo', () => {
   })
 })
 
+describe('regras de anexos por status na gestao', () => {
+  it('permite inclusao em producao contabilizando layout', async () => {
+    const r = repo({ buscarTapeteNoEscopo: vi.fn().mockResolvedValue({ data: escopo(false, { status: 'EM PRODUÇÃO' }), error: null }) })
+    expect((await uploadAnexo(multipart(), PEDIDO, TAPETE, deps(r), 'gestao')).status).toBe(201)
+    expect(r.registrar).toHaveBeenCalledWith(expect.objectContaining({ p_contabilizar_alteracao_layout: true }))
+  })
+
+  it('permite inclusao em recebido sem contabilizar layout', async () => {
+    const r = repo({ buscarTapeteNoEscopo: vi.fn().mockResolvedValue({ data: escopo(false, { status: 'RECEBIDO' }), error: null }) })
+    expect((await uploadAnexo(multipart(), PEDIDO, TAPETE, deps(r), 'gestao')).status).toBe(201)
+    expect(r.registrar).toHaveBeenCalledWith(expect.objectContaining({ p_contabilizar_alteracao_layout: false }))
+  })
+
+  it('bloqueia inclusao em cancelado antes do Storage', async () => {
+    const r = repo({ buscarTapeteNoEscopo: vi.fn().mockResolvedValue({ data: escopo(false, { status: 'CANCELADO' }), error: null }) })
+    const s = storage()
+    expect((await uploadAnexo(multipart(), PEDIDO, TAPETE, deps(r, s), 'gestao')).status).toBe(422)
+    expect(s.upload).not.toHaveBeenCalled()
+  })
+
+  it.each(['EM PRODUÇÃO', 'RECEBIDO', 'CANCELADO'])('bloqueia substituicao e remocao em %s antes da RPC', async (status) => {
+    const r = repo({ buscarAnexoNoEscopo: vi.fn().mockResolvedValue({ data: escopo(true, { status }), error: null }) })
+    const s = storage()
+    expect((await substituirAnexo(multipart(undefined), ANEXO, deps(r, s), 'gestao')).status).toBe(422)
+    expect((await removerAnexo(requisicaoRemocao(), ANEXO, deps(r, s), 'gestao')).status).toBe(422)
+    expect(s.upload).not.toHaveBeenCalled()
+    expect(r.substituir).not.toHaveBeenCalled()
+    expect(r.remover).not.toHaveBeenCalled()
+  })
+})
+
 describe('abertura, substituição e remoção', () => {
   it('gera URL curta sem caminho na resposta', async () => {
     const response = await abrirAnexo(new Request('http://localhost'), ANEXO, deps())

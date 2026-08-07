@@ -66,7 +66,7 @@ describe('constantes tipadas', () => {
     expect(ehFormatoTapeteMoriah('ORGANICO')).toBe(true)
     expect(ehFormatoTapeteMoriah('OVAL')).toBe(false)
     expect(ehStatusPedidoPersonalizado('EM PRODUÇÃO')).toBe(true)
-    expect(ehStatusPedidoPersonalizado('CANCELADO')).toBe(false)
+    expect(ehStatusPedidoPersonalizado('CANCELADO')).toBe(true)
     expect(ehUnidadePedidoPersonalizado('feira')).toBe(true)
     expect(ehUnidadePedidoPersonalizado('pos_venda')).toBe(false)
     expect(ehCodigoProdutoMoriah('21159')).toBe(true)

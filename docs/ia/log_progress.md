@@ -1,3 +1,15 @@
+## 2026-08-07 - Claude Code (Sonnet 5) - Auditoria do sistema de instrucoes e contexto para agentes de IA (fase de diagnostico, sem reorganizacao)
+
+- **Resumo:** Auditoria completa (fase de diagnostico, sem mover/renomear/apagar arquivos e sem alterar codigo) do sistema de regras/documentacao usado por agentes de IA neste repositorio. Leitura direta de todos os arquivos de instrucao, nao baseada em auditorias anteriores registradas neste log. Principais achados: (1) duas geracoes de regras globais coexistindo sem consolidacao - `.devin/rules/Agent.md` (509 linhas, criado em 06/08/2026 no mesmo commit que `AGENTS.md`) restabelece quase integralmente o conteudo de 5 arquivos `trigger: always_on` mais antigos (`gerais.md`, `supabase.md`, `recebimentos.md`, `continuidade-agente.md`, `resumo.md`, criados entre 05/2026 e 06/2026), somando 855 linhas de regra "sempre carregada"; (2) os dois documentos citados como "contrato de escopo" do motor `/procurar-datas` (`docs/procurar-datas-escopo-equivalencia-legado-v2.md`, 4018 linhas, e `docs/procurar-datas-motor-v2-progresso.md`, 5182 linhas) funcionam na pratica como logs cronologicos com ordem inconsistente (entrada mais recente do primeiro documento aparece no final do arquivo, nao no topo), nao como um contrato de estado atual; (3) corrupcao de encoding confirmada neste proprio arquivo - 2879 linhas com padrao de mojibake tipo `ÃƒÂ`/`Ã¢â‚¬â€` (UTF-8 recodificado incorretamente) ja existente ANTES desta tarefa, afetando 80 dos 405 titulos de secao `## `, incluindo entradas ja registradas em 06/08/2026 - ou seja, a corrupcao parece ativa/recorrente, nao apenas historica; mistura de quebra de linha (CRLF predominante e algumas linhas com LF solto), sem BOM; (4) duplicacao fisica byte-a-byte de 37 arquivos entre `.agents/skills/` e `.devin/skills/` (pacote externo `supabase/agent-skills`, confirmado por `skills-lock.json`); (5) `AGENTS.md` (raiz, 24 linhas) nao cumpre o papel de hub central que a convencao do ecossistema (Codex e ferramentas afins) espera dele, tratando apenas do calculo de frete/valor inicial em `/procurar-datas`; (6) `CONTEXTO DO PROJETO.MD` (498 linhas) e `RESUMO_STACK.MD` (53 linhas, contem narracao de agente de IA deixada por engano) estao orfaos - nenhuma regra atual os referencia. Relatorio completo (15 secoes: inventario, duplicacoes, contradicoes, maiores consumidores de tokens, regras criticas a preservar, classificacao das regras, proposta de arquitetura futura, roteamento por complexidade, plano de migracao em fases, riscos e perguntas pendentes) foi entregue ao usuario como artefato publicado fora do repositorio. Nenhuma decisao de reorganizacao foi tomada nesta tarefa.
+- **Arquivos lidos:** `.devin/rules/Agent.md`, `gerais.md`, `recebimentos.md`, `supabase.md`, `continuidade-agente.md`, `resumo.md`; `.devin/skills/supabase/SKILL.md`, `.devin/skills/supabase-postgres-best-practices/SKILL.md`, `.devin/skills/login/SKILL.md`, `.devin/workflows/login.md`; `AGENTS.md`; `docs/ia/log_progress.md` (amostragem - 24082 linhas, nao lido integralmente); `docs/ia/padrao-novas-telas-permissoes.md`; `docs/procurar-datas-escopo-equivalencia-legado-v2.md` (integral, 4018 linhas); `docs/procurar-datas-motor-v2-progresso.md` (amostragem); `CONTEXTO DO PROJETO.MD`; `RESUMO_STACK.MD`; `README.md`; `SUPABASE_SETUP.md`; `GOOGLE_OAUTH_SETUP.md`; `AUTO_LOGOUT_SETUP.md`; `skills-lock.json`; `package.json`. Um subagente de busca ampla (Explore) cobriu adicionalmente os ~39 arquivos restantes de `docs/` e `docs/ia/`, comentarios de codigo em `src/`, `scripts/`, `supabase/`, `appscript/`, e confirmou ausencia de `CLAUDE.md`, `.cursor/`, `.github/`, `.windsurf/`, `.mcp.json` e arquivos `*.mdc` no repositorio.
+- **Arquivos criados/alterados:** nenhum arquivo de codigo, regra ou documentacao de escopo. Apenas esta entrada em `docs/ia/log_progress.md`.
+- **Validacoes realizadas:** contagem de linhas (`wc -l`) de todos os documentos de instrucao; `diff -rq` entre `.agents/skills/` e `.devin/skills/` (confirmado identico, exceto a skill `login`, que so existe em `.devin/`); contagem e amostragem do padrao de mojibake em `log_progress.md` via `grep -c`/`grep -n`; verificacao de BOM e contagem de quebras de linha CRLF vs. LF via script Node.js; `grep` cruzado confirmando ausencia de referencias a `CONTEXTO DO PROJETO.MD` e `RESUMO_STACK.MD` em outros arquivos do repositorio; `git log`/`git show --stat` para datar criacao e ultima modificacao dos arquivos de regra; `grep -ri windsurf` no repositorio inteiro (unicas ocorrencias dentro deste log). IMPORTANTE (incidente durante esta propria tarefa): uma primeira tentativa de gravar esta entrada usando `fs.readFileSync(caminho, 'utf8')` sobre o arquivo fisico de trabalho corrompeu caracteres acentuados/travessoes em todo o arquivo (round-trip de encoding com efeito colateral nao esperado nesse arquivo especifico). O erro foi detectado por `git diff --stat` (~2895 linhas divergentes de HEAD) antes de qualquer commit, o arquivo foi restaurado byte-a-byte a partir de `git show HEAD:docs/ia/log_progress.md` (verificado identico por `Buffer.compare`), e esta entrada foi regravada concatenando Buffers UTF-8 (sem reler o arquivo fisico de trabalho), com verificacao byte-a-byte do restante do arquivo contra o HEAD antes de finalizar. Nenhuma alteracao chegou a ser commitada.
+- **Comandos executados e resultados:** apenas comandos de leitura/inspeccao e o incidente de escrita corrigido acima (`wc -l`, `diff -rq`, `grep`, `git log`, `git show --stat`, `git show HEAD:...`, `node -e` para checagem de encoding e para restaurar/regravar o arquivo). Nenhum comando de build, lint, teste ou typecheck foi executado; nao se aplica a uma tarefa somente de diagnostico documental, sem alteracao de codigo de aplicacao.
+- **Pendencias:** nenhuma decisao de reorganizacao foi tomada nesta fase, por instrucao explicita do usuario (diagnostico apenas - ler, mapear, comparar, recomendar).
+- **Riscos conhecidos:** corrupcao de encoding PRE-EXISTENTE em `log_progress.md` nao foi corrigida nesta tarefa (apenas documentada), conforme instrucao explicita de nao tentar consertar corrupcao historica fora do escopo; ha indicio de que essa corrupcao pre-existente e recorrente/ativa (aparece em entradas ja registradas em 06/08/2026), nao so historica - recomenda-se investigar qual ferramenta/fluxo de escrita a introduz. Alem disso, esta propria tarefa demonstrou que gravar esse arquivo especifico via `fs.readFileSync(caminho, 'utf8')` seguido de `fs.writeFileSync(..., 'utf8')` sobre o arquivo de trabalho pode introduzir corrupcao adicional (ver Validacoes acima); recomenda-se que futuras edicoes deste arquivo usem sempre `git show HEAD:...` como fonte e verifiquem o resultado por comparacao de bytes antes de finalizar. Duplicacao fisica de skills (`.agents/skills` x `.devin/skills`) pode gerar desatualizacao silenciosa se apenas uma copia for atualizada no futuro.
+- **Proximo passo recomendado:** decisao humana sobre as perguntas pendentes listadas no relatorio (destino de `CONTEXTO DO PROJETO.MD`/`RESUMO_STACK.MD`; se Devin segue arquivos-stub fora de `.devin/`; criterio de corte entre "estado atual" e "historico" nos dossies de `/procurar-datas`; se os 5 arquivos antigos de `.devin/rules/` devem virar stubs ou ser removidos apos consolidacao; se vale investigar a causa raiz da corrupcao de encoding recorrente, incluindo o comportamento observado nesta propria tarefa) antes de iniciar qualquer fase de reorganizacao. A reorganizacao em si deve ser tratada como tarefa separada, com plano proprio aprovado previamente pelo usuario.
+
+
 ## 2026-08-06 - Devin - Hub/Vendas: feedback visual nos botoes e botao de alerta de teste
 
 - **Resumo:** Ajustes pontuais na tela administrativa `/hub-vendas`: (1) feedback visual independente para os dois botoes de atualizacao (status geral e alertas/resumo) com spinner, texto "Atualizando...", horario da ultima consulta e mensagem de sucesso/erro; (2) botao "Enviar alerta de teste" exclusivo para superadmin com modal de confirmacao, que chama a rota protegida `POST /api/hub-vendas/alertas/teste` enviando apenas ao contato tecnico com autoria de bot, sem afetar filas, leads, limites ou pausas; (3) novo tipo `teste_manual` no modulo de alertas com deduplicacao curta por minuto. Nenhuma regra comercial ou operacional foi alterada.
@@ -24016,3 +24028,64 @@ Abrir `/procurar-datas/dev-v2` com sessao superadmin, auditar o run informado e 
 - **Pendências:** falhas pré-existentes em `agenda-real-helper.test.ts` (8 testes) e `hub-vendas/alertas/teste/route.test.ts` (10 erros de tipo) permanecem fora do escopo.
 - **Riscos conhecidos:** candidatos NORMAL com tolerância competem igualmente no ranking com candidatos sem tolerância (decisão aprovada). Um candidato com tolerância pode ser selecionado sobre outro sem tolerância na mesma data se tiver menor `kmAdicionalNaRotaM`.
 - **Próximo passo recomendado:** teste manual autenticado buscando datas para um serviço cuja duração exceda a disponibilidade em até 30 min, em dia não-quarta, com distância NORMAL. Confirmar que a data aparece como elegível. Repetir em quarta e confirmar que não aparece.
+
+
+---
+
+## 2026-08-07 — Devin (GLM-5.2 High) — Atomicidade da edição comercial de pedidos legados sem telefone
+
+### Resumo
+Correção da quebra de atomicidade na edição comercial de pedidos legados sem telefone. O caminho anterior usava RPC (1ª overload, sem telefone) + UPDATE separado de numero_lancamento, quebrando atomicidade. Agora uma única RPC atômica faz tudo.
+
+### Causa da quebra de atomicidade
+O handler atualizarComercial usava dois caminhos:
+- Pedidos com telefone: 3ª overload da RPC (atualiza telefone + lancamento + tapetes atomicamente).
+- Pedidos legados sem telefone: 1ª overload da RPC (sem telefone, sem lancamento) + UPDATE separado de numero_lancamento via supabase.from().update(). Se a RPC funcionasse e o UPDATE falhasse, o pedido ficava parcialmente alterado.
+
+### Solução aplicada
+Migration nova (20260807150000) que recria a 3ª overload aceitando p_telefone_normalizado nullable:
+- p_telefone_normalizado IS NULL: skip validação e update de telefone (legado).
+- p_telefone_normalizado IS NOT NULL: valida e atualiza telefone (fluxo normal).
+- Sempre valida e atualiza numero_lancamento.
+- Delega core (tapetes, consultora, cliente, version increment) à 1ª overload.
+- Tudo em uma única função plpgsql = atômico.
+
+TypeScript simplificado:
+- Tipo ParametrosAtualizarPedidoComercialMoriahRpc: p_telefone_normalizado agora é string | null.
+- Removido tipo ParametrosAtualizarPedidoComercialSemTelefoneRpc.
+- Removido método atualizarComercialSemTelefone do repositório.
+- Handler sempre usa atualizarComercial, passando null para telefone quando legado.
+
+### Migration criada
+- supabase/migrations/20260807150000_pedidos_personalizados_comercial_telefone_nullable.sql
+- NÃO modifica migrations antigas.
+- MCP em read-only: migration não foi aplicada via MCP. Docker não disponível para supabase CLI local. Arquivo criado localmente para aplicação manual.
+
+### Como ficou o fluxo legado sem telefone
+- Pedido legado com telefone_normalizado = null + usuário não preenche telefone: handler passa p_telefone_normalizado = null para a RPC. A RPC skip validação de telefone, não atualiza telefone, atualiza numero_lancamento e tapetes atomicamente. Version incrementa exatamente 1 (dentro da 1ª overload).
+- Pedido com telefone: comportamento idêntico ao anterior (telefone validado e atualizado).
+- Novo pedido: continua exigindo telefone (validação frontend e backend mantidas).
+
+### Testes rodados
+- npm test src/lib/pedidos-personalizados/server src/components/pedidos-personalizados: 266/266 passaram.
+- npm run build: sucesso.
+- git diff --check: apenas warnings CRLF/LF preexistentes.
+- Teste do legado agora verifica chamada única de atualizarComercial com p_telefone_normalizado: null e p_numero_lancamento: '0002'.
+
+### Confirmação de incremento único de versão
+O version increment acontece uma única vez dentro da 1ª overload (chamada pela 3ª overload). A 3ª overload não incrementa version novamente. Não há múltiplos increments.
+
+### Validação MCP
+- 3 overloads confirmadas via MCP antes da alteração.
+- Grants confirmados: apenas service_role tem EXECUTE.
+- Migration não aplicada via MCP (read-only). Pendente aplicação manual.
+
+### Pendências
+- Migration 20260807150000 precisa ser aplicada manualmente (MCP read-only, Docker indisponível).
+- Teste SQL transacional permanece não reexecutável via MCP.
+
+### Riscos
+- Se a migration não for aplicada antes do deploy, o handler passará null para a RPC antiga que ainda exige telefone válido, causando erro TELEFONE_INVALIDO. A migration deve ser aplicada antes do deploy do código.
+
+### Próximo passo recomendado
+Aplicar a migration 20260807150000 no banco remoto via supabase CLI ou painel. Teste manual em ambiente dev após aplicar a migration para confirmar atomicidade.

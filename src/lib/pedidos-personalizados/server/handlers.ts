@@ -16,6 +16,8 @@ import {
   montarPayloadTapetesMoriahRpc,
   validarPedidoPersonalizadoMoriah,
 } from '../validacao'
+import { permiteEdicaoAdministrativa } from '../status-fluxo'
+import { classificarSituacaoPrazo } from '../prazo'
 import {
   carregarContextoPedidosPersonalizados,
   type ContextoPedidosPersonalizados,
@@ -162,10 +164,15 @@ function serializarItemListagem(valor: unknown) {
     version: row.version,
     quantidadeTapetes: row.quantidade_tapetes,
     codigosProdutos: row.codigos_produtos,
+    situacaoPrazo: classificarSituacaoPrazo(
+      typeof row.data_entrega === 'string' ? row.data_entrega : null,
+      row.status as import('../tipos').StatusPedidoPersonalizado
+    ),
+    recebidoEm: row.recebido_em,
   }
 }
 
-function serializarDetalhe(valor: { pedido: unknown; tapetes: unknown[] }) {
+function serializarDetalhe(valor: { pedido: unknown; tapetes: unknown[]; historico: unknown[] }) {
   const pedido = valor.pedido as Record<string, unknown>
   const fornecedor = pedido.fornecedor as Record<string, unknown> | null
   const unidade = pedido.unidade as Record<string, unknown> | null
@@ -218,6 +225,24 @@ function serializarDetalhe(valor: { pedido: unknown; tapetes: unknown[] }) {
           tamanho: anexo.tamanho_bytes,
           createdAt: anexo.created_at,
         })),
+      }
+    }),
+    historico: (valor.historico ?? []).map((item) => {
+      const evento = item as Record<string, unknown>
+      const usuario = evento.usuario as Record<string, unknown> | null
+      const unidadeHistorico = evento.unidade as Record<string, unknown> | null
+      return {
+        id: evento.id,
+        statusAnterior: evento.status_anterior,
+        statusNovo: evento.status_novo,
+        versionAnterior: evento.version_anterior,
+        versionNova: evento.version_nova,
+        justificativa: evento.justificativa,
+        createdAt: evento.created_at,
+        usuario: typeof usuario?.email === 'string' ? { email: usuario.email } : null,
+        unidade: typeof unidadeHistorico?.chave === 'string' && typeof unidadeHistorico?.nome === 'string'
+          ? { chave: unidadeHistorico.chave, nome: unidadeHistorico.nome }
+          : null,
       }
     }),
   }
@@ -428,32 +453,40 @@ export async function atualizarComercial(
   const unidade = unidadeDoContexto(acesso.contexto, entrada.entrada.unidade)
   if (!unidade) return jsonErro('UNIDADE_NAO_PERMITIDA', 'Unidade não permitida.', 403)
   log.unidade = unidade.chave
-  const validacao = validarPedidoPersonalizadoMoriah(entrada.entrada)
-  if (!validacao.valido || !validacao.dados) return respostaProblemasDominio(validacao.erros)
+
+  const telefoneLegadoNulo = !atual.data.telefone_normalizado && !entrada.entrada.telefone.trim()
+  const validacaoCompleta = validarPedidoPersonalizadoMoriah(
+    telefoneLegadoNulo ? { ...entrada.entrada, telefone: '1100000000' } : entrada.entrada
+  )
+  const errosFiltrados = telefoneLegadoNulo
+    ? validacaoCompleta.erros.filter((item) => item.campo !== 'telefone')
+    : validacaoCompleta.erros
+  if (errosFiltrados.length > 0 || !validacaoCompleta.dados) return respostaProblemasDominio(errosFiltrados)
+  const dados = validacaoCompleta.dados
 
   const idsAtuais = await repo.listarTapeteIds(pedidoId)
   if (idsAtuais.error) return falhaBanco(log, idsAtuais.error)
   const conjuntoIds = new Set(idsAtuais.data)
-  if (validacao.dados.tapetes.some((tapete) => tapete.id && !conjuntoIds.has(tapete.id))) {
+  if (dados.tapetes.some((tapete) => tapete.id && !conjuntoIds.has(tapete.id))) {
     return jsonErro('PEDIDO_NAO_ENCONTRADO', 'Pedido não encontrado.', 404)
   }
 
   const catalogos = await repo.carregarCatalogos()
   if (catalogos.error) return falhaBanco(log, catalogos.error)
-  const tapetesRpc = validarRelacoesCatalogo(validacao.dados, catalogos.data)
+  const tapetesRpc = validarRelacoesCatalogo(dados, catalogos.data)
   if (tapetesRpc instanceof NextResponse) return tapetesRpc
 
-  const parametros: ParametrosAtualizarPedidoComercialMoriahRpc = {
+  const resultado = await repo.atualizarComercial({
     p_pedido_id: pedidoId,
     p_expected_version: entrada.expectedVersion,
     p_usuario_id: acesso.contexto.allowedUser.id,
     p_unidade_id: unidade.id,
-    p_consultora: validacao.dados.consultora,
-    p_cliente: validacao.dados.cliente,
-    p_telefone_normalizado: validacao.dados.telefoneNormalizado,
+    p_consultora: dados.consultora,
+    p_cliente: dados.cliente,
+    p_telefone_normalizado: telefoneLegadoNulo ? null : dados.telefoneNormalizado,
+    p_numero_lancamento: dados.numeroLancamento,
     p_tapetes: tapetesRpc,
-  }
-  const resultado = await repo.atualizarComercial(parametros)
+  } satisfies ParametrosAtualizarPedidoComercialMoriahRpc)
   if (resultado.error) return falhaBanco(log, resultado.error)
 
   registrarResultado(log, 'sucesso', 'PEDIDO_COMERCIAL_ATUALIZADO')
@@ -484,10 +517,28 @@ export async function atualizarAdministrativo(
   const atual = await repo.buscarPedidoNoEscopo(pedidoId, acesso.contexto.unidades.map((item) => item.id))
   if (atual.error) return falhaBanco(log, atual.error)
   if (!atual.data) return jsonErro('PEDIDO_NAO_ENCONTRADO', 'Pedido não encontrado.', 404)
+  if (!permiteEdicaoAdministrativa(atual.data.status)) {
+    return jsonErro(
+      'EDICAO_ADMINISTRATIVA_BLOQUEADA',
+      'Os dados administrativos nao podem ser alterados neste status.',
+      422
+    )
+  }
   if (validacao.dados.status !== atual.data.status) {
     return jsonErro(
       'TRANSICAO_STATUS_NAO_DEFINIDA',
       'A alteração de status ainda não está disponível.',
+      422
+    )
+  }
+  if (atual.data.status === 'EM PRODUÇÃO' && (
+    validacao.dados.numeroPedidoCompra !== atual.data.numero_pedido_compra
+    || validacao.dados.dataPedidoFornecedor !== atual.data.data_pedido_fornecedor
+    || validacao.dados.comprador !== atual.data.comprador
+  )) {
+    return jsonErro(
+      'CAMPOS_ADMINISTRATIVOS_BLOQUEADOS',
+      'Em produção, somente a previsão de entrega do fornecedor pode ser alterada.',
       422
     )
   }
@@ -502,6 +553,7 @@ export async function atualizarAdministrativo(
   const resultado = await repo.atualizarAdministrativo({
     pedidoId,
     usuarioId: acesso.contexto.allowedUser.id,
+    numeroLancamentoAtual: atual.data.numero_lancamento,
     dados: validacao.dados,
   })
   if (resultado.error) return falhaBanco(log, resultado.error)

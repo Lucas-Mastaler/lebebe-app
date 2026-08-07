@@ -6,6 +6,7 @@ export type StatusPedidoPersonalizado =
   | 'AGUARDANDO APROVAÇÃO DO CLIENTE'
   | 'EM PRODUÇÃO'
   | 'RECEBIDO'
+  | 'CANCELADO'
 
 export type UnidadePedidoPersonalizado = 'bigorrilho' | 'portao' | 'marechal' | 'feira'
 export type FornecedorPedidoPersonalizado = 'moriah_tapetes'
@@ -217,7 +218,8 @@ export type ParametrosAtualizarPedidoComercialMoriahRpc = {
   p_unidade_id: string
   p_consultora: string
   p_cliente: string
-  p_telefone_normalizado: string
+  p_telefone_normalizado: string | null
+  p_numero_lancamento: string | null
   p_tapetes: TapeteMoriahRpc[]
 }
 
@@ -232,4 +234,16 @@ export type ParametrosAtualizarPedidoAdministrativoRpc = {
   p_comprador: string | null
   p_status: StatusPedidoPersonalizado
   p_layout_tapetes: LayoutTapeteMoriahRpc[]
+}
+
+export type ParametrosTransicionarPedidoPersonalizadoRpc = {
+  p_pedido_id: string
+  p_expected_version: number
+  p_usuario_id: string
+  p_status_destino: StatusPedidoPersonalizado
+  p_numero_pedido_compra: string | null
+  p_data_pedido_fornecedor: string | null
+  p_comprador: string | null
+  p_data_entrega: string | null
+  p_justificativa: string | null
 }

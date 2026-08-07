@@ -5,7 +5,8 @@ import {
   normalizarNumeroLancamento,
   normalizarNumeroPedidoCompra,
 } from '@/lib/pedidos-personalizados'
-import type { CodigoProdutoMoriah, PedidoPersonalizadoMoriahNormalizado, StatusPedidoPersonalizado, UnidadePedidoPersonalizado } from '@/lib/pedidos-personalizados'
+import { dataOperacionalBrasil } from '@/lib/pedidos-personalizados/prazo'
+import type { CodigoProdutoMoriah, PedidoPersonalizadoMoriahNormalizado, SituacaoPrazoPedido, StatusPedidoPersonalizado, UnidadePedidoPersonalizado } from '@/lib/pedidos-personalizados'
 import type { AnexoFormulario, EstadoNovoPedido, OpcoesNovoPedido, TapeteFormulario } from './novo-pedido-modelo'
 import { ehErroHttpNovoPedido } from './novo-pedido-modelo'
 
@@ -21,6 +22,7 @@ export type FiltrosGestao = {
   dataPedidoFornecedorFinal: string
   dataEntregaInicial: string
   dataEntregaFinal: string
+  situacaoPrazo: '' | SituacaoPrazoPedido
 }
 
 export type ItemPedidoGestao = {
@@ -41,6 +43,8 @@ export type ItemPedidoGestao = {
   version: number
   quantidadeTapetes: number
   codigosProdutos: string[]
+  situacaoPrazo: SituacaoPrazoPedido | null
+  recebidoEm: string | null
 }
 
 export type CorDetalhe = { id: string; ordem: number; numero: string; codigo: string; nome: string }
@@ -61,6 +65,18 @@ export type TapeteDetalhe = {
   anexos: AnexoFormulario[]
 }
 
+export type HistoricoStatusDetalhe = {
+  id: string
+  statusAnterior: StatusPedidoPersonalizado
+  statusNovo: StatusPedidoPersonalizado
+  usuario: { email: string } | null
+  unidade: { chave: UnidadePedidoPersonalizado; nome: string } | null
+  versionAnterior: number
+  versionNova: number
+  justificativa: string | null
+  createdAt: string
+}
+
 export type PedidoDetalhe = {
   id: string
   fornecedor: { chave: string; nome: string } | null
@@ -78,6 +94,54 @@ export type PedidoDetalhe = {
   createdAt: string
   updatedAt: string
   tapetes: TapeteDetalhe[]
+  historico: HistoricoStatusDetalhe[]
+}
+
+export type DadosTransicaoGestao = {
+  statusDestino: StatusPedidoPersonalizado
+  numeroPedidoCompra?: string | null
+  dataPedidoFornecedor?: string | null
+  comprador?: string | null
+  dataEntrega?: string | null
+  dataRecebimento?: string | null
+  justificativa?: string | null
+}
+
+export type EstadoTransicaoGestao = {
+  destino: '' | StatusPedidoPersonalizado
+  numeroPedidoCompra: string
+  dataPedidoFornecedor: string
+  comprador: string
+  dataEntrega: string
+  dataRecebimento: string
+  justificativa: string
+}
+
+export function requisitosPendentesTransicao(
+  pedido: PedidoDetalhe,
+  transicao: EstadoTransicaoGestao
+): string[] {
+  if (!transicao.destino) return ['Selecione o status de destino.']
+  const pendencias: string[] = []
+  const temAnexo = pedido.tapetes.some((tapete) => tapete.anexos.length > 0)
+  if (pedido.status === 'CADASTRADO' && transicao.destino === 'AGUARDANDO LAYOUT') {
+    if (!/^\d{1,5}$/.test(transicao.numeroPedidoCompra.trim())) pendencias.push('Informe o pedido de compra.')
+    if (!transicao.dataPedidoFornecedor) pendencias.push('Informe a data do pedido ao fornecedor.')
+    if (!/^\p{L}+(?: \p{L}+)*$/u.test(transicao.comprador.trim()) || transicao.comprador.trim().length < 2) pendencias.push('Informe o comprador.')
+  }
+  if (['AGUARDANDO APROVAÇÃO DO CLIENTE', 'EM PRODUÇÃO'].includes(transicao.destino) && !temAnexo) {
+    pendencias.push('Adicione pelo menos um anexo ao pedido.')
+  }
+  if (transicao.destino === 'EM PRODUÇÃO' && !transicao.dataEntrega) {
+    pendencias.push('Informe a previsão de data de entrega do fornecedor.')
+  }
+  if (transicao.destino === 'RECEBIDO' && !transicao.dataRecebimento) {
+    pendencias.push('Informe a data de recebimento.')
+  }
+  if (transicao.destino === 'CANCELADO' && !transicao.justificativa.trim()) {
+    pendencias.push('Informe a justificativa do cancelamento.')
+  }
+  return pendencias
 }
 
 export type PaginaPedidos = {
@@ -89,7 +153,6 @@ export type PaginaPedidos = {
 }
 
 export type EstadoAdministrativo = {
-  numeroLancamento: string
   dataEntrega: string
   dataPedidoFornecedor: string
   numeroPedidoCompra: string
@@ -101,6 +164,7 @@ export type ErrosAdministrativos = Partial<Record<keyof EstadoAdministrativo, st
 export const FILTROS_VAZIOS: FiltrosGestao = {
   cliente: '', consultora: '', numeroLancamento: '', status: '', unidade: '', dataInicial: '', dataFinal: '',
   dataPedidoFornecedorInicial: '', dataPedidoFornecedorFinal: '', dataEntregaInicial: '', dataEntregaFinal: '',
+  situacaoPrazo: '',
 }
 
 async function erroResposta(response: Response): Promise<Error> {
@@ -174,7 +238,6 @@ export function detalheParaFormulario(pedido: PedidoDetalhe): EstadoNovoPedido {
 
 export function detalheParaAdministrativo(pedido: PedidoDetalhe): EstadoAdministrativo {
   return {
-    numeroLancamento: pedido.numeroLancamento ?? '',
     dataEntrega: pedido.dataEntrega ?? '',
     dataPedidoFornecedor: pedido.dataPedidoFornecedor ?? '',
     numeroPedidoCompra: pedido.numeroPedidoCompra ?? '',
@@ -224,13 +287,9 @@ export function gerarResumoFornecedorDetalhe(pedido: PedidoDetalhe) {
 
 export function validarAdministrativo(estado: EstadoAdministrativo): ErrosAdministrativos {
   const erros: ErrosAdministrativos = {}
-  const numeroLancamento = normalizarNumeroLancamento(estado.numeroLancamento)
   const numeroPedidoCompra = normalizarNumeroPedidoCompra(estado.numeroPedidoCompra)
   const comprador = normalizarComprador(estado.comprador)
 
-  if (numeroLancamento !== null && !/^\d{1,6}$/.test(numeroLancamento)) {
-    erros.numeroLancamento = 'O lançamento deve conter de 1 a 6 dígitos.'
-  }
   if (numeroPedidoCompra !== null && !/^\d+$/.test(numeroPedidoCompra)) {
     erros.numeroPedidoCompra = 'Use somente números no pedido de compra.'
   } else if (numeroPedidoCompra !== null && !/^\d{1,5}$/.test(numeroPedidoCompra)) {
@@ -240,10 +299,12 @@ export function validarAdministrativo(estado: EstadoAdministrativo): ErrosAdmini
     erros.comprador = 'O comprador deve ter de 2 a 40 letras e espaços.'
   }
   if (!converterDataAdministrativaParaISO(estado.dataEntrega).valido) {
-    erros.dataEntrega = 'Informe uma data de entrega válida.'
+    erros.dataEntrega = 'Informe uma previsão de data de entrega válida.'
   }
   if (!converterDataAdministrativaParaISO(estado.dataPedidoFornecedor).valido) {
     erros.dataPedidoFornecedor = 'Informe uma data do pedido ao fornecedor válida.'
+  } else if (estado.dataPedidoFornecedor.trim() && estado.dataPedidoFornecedor.trim() > dataOperacionalBrasil()) {
+    erros.dataPedidoFornecedor = 'A data do pedido ao fornecedor não pode ser futura.'
   }
   return erros
 }
@@ -254,7 +315,6 @@ export function payloadAtualizacaoAdministrativa(
 ) {
   return {
     expectedVersion: pedido.version,
-    numeroLancamento: normalizarNumeroLancamento(estado.numeroLancamento),
     dataEntrega: estado.dataEntrega.trim() || null,
     dataPedidoFornecedor: estado.dataPedidoFornecedor.trim() || null,
     numeroPedidoCompra: normalizarNumeroPedidoCompra(estado.numeroPedidoCompra),
@@ -276,6 +336,7 @@ export function payloadAtualizacaoComercial(estado: EstadoNovoPedido, expectedVe
     consultora: estado.consultora,
     cliente: estado.cliente,
     telefone: estado.telefone,
+    numeroLancamento: normalizarNumeroLancamento(estado.numeroLancamento),
     tapetes: estado.tapetes.map((tapete, indice) => ({
       id: tapete.tapeteId,
       ordem: indice + 1,
@@ -311,6 +372,29 @@ export async function atualizarAdministrativoGestao(
   const body = await response.json() as { ok?: boolean; version?: number }
   if (body.ok !== true || !Number.isInteger(body.version)) throw new Error('Resposta de atualização administrativa inválida.')
   return body.version as number
+}
+
+export async function transicionarStatusGestao(
+  id: string,
+  expectedVersion: number,
+  dados: DadosTransicaoGestao
+) {
+  const response = await fetch(`/api/pedidos-personalizados/pedidos/${id}/status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expectedVersion, ...dados }),
+  })
+  if (!response.ok) throw await erroResposta(response)
+  const body = await response.json() as {
+    ok?: boolean
+    eventoId?: string
+    status?: StatusPedidoPersonalizado
+    version?: number
+  }
+  if (body.ok !== true || !body.eventoId || !body.status || !Number.isInteger(body.version)) {
+    throw new Error('Resposta de transicao de status invalida.')
+  }
+  return { eventoId: body.eventoId, status: body.status, version: body.version as number }
 }
 
 export function mensagemErroGestao(error: unknown) {

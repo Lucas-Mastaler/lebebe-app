@@ -81,23 +81,25 @@ describe('modulos-app catalog', () => {
   const profileNavigationItems = navigationItems.filter((item) => item.access === 'profile')
 
   const expectedProfileMenuLabels = [
-    'DASHBOARD',
-    'AGENDAMENTOS',
-    'HORÁRIOS AGENDAMENTOS',
-    'CHAMADOS FINALIZADOS',
-    'INTELIGÊNCIA COMERCIAL',
-    'FINALIZAÇÕES DIGISAC',
-    'Ficha de Atendimento',
-    'Registros de Atendimentos',
+    'Dashboard',
+    'Agendamentos',
+    'Horários agendamentos',
+    'Chamados finalizados',
+    'Inteligência comercial',
+    'Finalizações automáticas',
+    'Novo pedido personalizado',
+    'Gestão de pedidos personalizados',
+    'Ficha de atendimento',
+    'Registros de atendimentos',
     'Clientes',
-    'PROCURAR DATAS',
-    'AUDITORIA DATAS',
-    'PERFORMANCE DATAS',
-    'CONFIG BUSCA',
-    'RECEBIMENTO',
-    'PÓS-VENDA',
-    'ATENDIMENTO AUTOMÁTICO',
-    'USUÁRIOS',
+    'Procurar datas',
+    'Auditoria datas',
+    'Performance datas',
+    'Configuração busca',
+    'Recebimento',
+    'Pós-venda',
+    'Atendimento automático',
+    'Usuários',
   ]
 
   it('mantem moduleKey unico no catalogo e no menu', () => {
@@ -155,12 +157,8 @@ describe('modulos-app catalog', () => {
   it('deriva a ordem da matriz de perfis da mesma ordem visual do menu', () => {
     const profileMenuKeys = profileNavigationItems.map((item) => item.moduleKey)
     const profileMenuLabels = profileNavigationItems.map((item) => item.label)
-    const hiddenPermissionKeys = [
-      'pedidos_personalizados_novo',
-      'pedidos_personalizados_gestao',
-    ]
 
-    expect(PROFILE_PERMISSION_MODULE_KEYS).toEqual([...profileMenuKeys, ...hiddenPermissionKeys])
+    expect(PROFILE_PERMISSION_MODULE_KEYS).toEqual(profileMenuKeys)
     expect(profileMenuLabels).toEqual(expectedProfileMenuLabels)
     expect(
       [...PROFILE_PERMISSION_MODULE_KEYS].sort(
@@ -173,7 +171,6 @@ describe('modulos-app catalog', () => {
       'PROCURAR DATAS',
       'OPERAÇÃO',
       'CONFIGURAÇÕES',
-      'PEDIDOS PERSONALIZADOS',
     ])
   })
 
@@ -186,8 +183,8 @@ describe('modulos-app catalog', () => {
       'atendimento_presencial_clientes',
     ])
     expect(atendimentoPresencial?.items.map((item) => item.label)).toEqual([
-      'Ficha de Atendimento',
-      'Registros de Atendimentos',
+      'Ficha de atendimento',
+      'Registros de atendimentos',
       'Clientes',
     ])
     expect(atendimentoPresencial?.items.map((item) => item.href)).toEqual([
@@ -211,22 +208,25 @@ describe('modulos-app catalog', () => {
     }
   })
 
-  it('cadastra Pedidos Personalizados na matriz de perfis sem expor links no menu', () => {
+  it('cadastra Pedidos Personalizados dentro do grupo Vendas, liberavel manualmente por perfil', () => {
     const moduleKeys = [
       'pedidos_personalizados_novo',
       'pedidos_personalizados_gestao',
     ] as const
-    const navigationKeys = navigationItems.map((item) => item.moduleKey)
-    const permissionGroup = PROFILE_PERMISSION_GROUPS.find(
-      (group) => group.label === 'PEDIDOS PERSONALIZADOS'
+    const vendasGroup = NAVIGATION_GROUPS.find((group) => group.label === 'VENDAS')
+    const permissionGroup = PROFILE_PERMISSION_GROUPS.find((group) => group.label === 'VENDAS')
+    const pedidosItems = vendasGroup?.items.filter((item) =>
+      (moduleKeys as readonly string[]).includes(item.moduleKey)
     )
 
-    expect(permissionGroup?.moduleKeys).toEqual(moduleKeys)
+    expect(pedidosItems?.map((item) => item.moduleKey)).toEqual(moduleKeys)
+    expect(permissionGroup?.moduleKeys).toEqual(
+      expect.arrayContaining([...moduleKeys])
+    )
 
     for (const moduleKey of moduleKeys) {
       const appModule = getAppModuleDefinition(moduleKey)
 
-      expect(navigationKeys).not.toContain(moduleKey)
       expect(appModule?.access).toBe('profile')
       expect(appModule?.ativo).toBe(true)
       expect(appModule?.publico).toBe(false)
@@ -235,6 +235,10 @@ describe('modulos-app catalog', () => {
       expect(MODULE_KEYS_WITHOUT_AUTOMATIC_PROFILE_GRANT).toContain(moduleKey)
     }
 
+    expect(pedidosItems?.map((item) => item.label)).toEqual([
+      'Novo pedido personalizado',
+      'Gestão de pedidos personalizados',
+    ])
     expect(getAppModuleDefinition('pedidos_personalizados_novo')?.rotaBase).toBe(
       '/pedidos-personalizados/novo'
     )
@@ -244,15 +248,15 @@ describe('modulos-app catalog', () => {
   })
 
   it('mantem Auditoria Acessos fora da matriz comum de perfis', () => {
-    const auditoriaAcessos = navigationItems.find((item) => item.label === 'AUDITORIA ACESSOS')
+    const auditoriaAcessos = navigationItems.find((item) => item.label === 'Auditoria acessos')
 
     expect(auditoriaAcessos?.moduleKey).toBe('superadmin')
     expect(auditoriaAcessos?.access).toBe('superadmin')
-    expect(profileNavigationItems.map((item) => item.label)).not.toContain('AUDITORIA ACESSOS')
+    expect(profileNavigationItems.map((item) => item.label)).not.toContain('Auditoria acessos')
   })
 
   it('mantem o item USUARIOS vinculado ao modulo superadmin_usuarios', () => {
-    const usuarios = navigationItems.find((item) => item.label === 'USUÁRIOS')
+    const usuarios = navigationItems.find((item) => item.label === 'Usuários')
 
     expect(usuarios?.moduleKey).toBe('superadmin_usuarios')
     expect(usuarios?.access).toBe('profile')
@@ -260,11 +264,11 @@ describe('modulos-app catalog', () => {
 
   it('inclui explicitamente as telas corrigidas como liberaveis por perfil', () => {
     const expectedModules = {
-      'HORÁRIOS AGENDAMENTOS': 'horarios_agendamentos',
-      'FINALIZAÇÕES DIGISAC': 'digisac_finalizacoes_automaticas',
-      'CONFIG BUSCA': 'configuracoes_procurar_datas',
-      'ATENDIMENTO AUTOMÁTICO': 'pos_venda_atendimento_automatico',
-      'USUÁRIOS': 'superadmin_usuarios',
+      'Horários agendamentos': 'horarios_agendamentos',
+      'Finalizações automáticas': 'digisac_finalizacoes_automaticas',
+      'Configuração busca': 'configuracoes_procurar_datas',
+      'Atendimento automático': 'pos_venda_atendimento_automatico',
+      'Usuários': 'superadmin_usuarios',
     }
 
     for (const [label, moduleKey] of Object.entries(expectedModules)) {

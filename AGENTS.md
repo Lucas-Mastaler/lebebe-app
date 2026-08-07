@@ -124,9 +124,12 @@ Trabalho que provavelmente atravessa várias sessões ou agentes (fases
 múltiplas, escopo que precisa ficar estável, troca provável de sessão ou
 ferramenta, vários módulos relacionados, várias decisões de negócio) usa o
 harness de **Projeto Multifase**: contexto persistido em
-`docs/projetos/<slug>/`, nunca só na conversa. Antes de planejar tarefa
-relevante, verifique `docs/projetos/README.md` — nunca crie um segundo
-projeto para o mesmo trabalho.
+`docs/projetos/<slug>/`, nunca só na conversa. Antes de iniciar tarefa
+média, grande/crítica, ou mudança em funcionalidade já existente com
+continuidade provável (checkpoint de estado, ver §9 passo 1), verifique
+`docs/projetos/README.md` — índice curto, não os quatro artefatos
+completos — para saber se já existe projeto correspondente. Nunca crie um
+segundo projeto para o mesmo trabalho.
 
 Quando os gatilhos baterem, leia e siga
 `.agents/skills/projeto-multifase/SKILL.md` (lista completa de gatilhos,
@@ -140,25 +143,50 @@ só em `docs/projetos/<slug>/` — nunca soltos em `docs/`, `.agents/` ou na
 raiz. Depois de um escopo aprovado, regra de negócio não muda por parecer
 melhor — só por decisão humana explícita, registrada em `DECISOES.md`.
 
-## 9. Skills operacionais
+## 9. Roteamento operacional (skills)
 
 Procedimentos reutilizáveis em `.agents/skills/` — catálogo completo,
 processo e esforço recomendado por skill em `.agents/skills/README.md`.
-Gatilhos curtos para descoberta automática:
 
-- pedido de investigação/auditoria antes de implementar → `auditar-tarefa`
-- tarefa média/grande/crítica pronta para virar plano → `criar-plano`
-- plano já aprovado, hora de implementar → `executar-plano`
-- entrega concluída, hora de revisar e produzir relatório → `validar-entrega`
-- fim de tarefa relevante → `atualizar-log-progress`
-- qualquer tarefa em `/procurar-datas` → rule (§7) + skill `procurar-datas`
-- trabalho que atravessa sessões/fases → `projeto-multifase` (§8)
+A skill a abrir depende do **estado da tarefa**, não das palavras usadas
+no pedido — "investigar", "planejar", "executar", "validar" não precisam
+aparecer no prompt para o passo correspondente se aplicar. Checkpoints,
+nesta ordem, cada um só se aplicável ao estado atual:
 
-Nenhuma tarefa é obrigada a passar pelas cinco primeiras skills em
-sequência — tarefa pequena e já clara pode ir direto para execução e,
-quando relevante, só `validar-entrega` + `atualizar-log-progress`. Cada
-skill decide sozinha quando pode ser pulada; não force o fluxo completo por
-padrão.
+1. **Antes de iniciar** tarefa média, grande/crítica, ou mudança em
+   funcionalidade existente com continuidade provável: verifique
+   `docs/projetos/README.md`. Se houver projeto correspondente, siga
+   `.agents/skills/projeto-multifase/SKILL.md`, começando pelo
+   `STATUS.md`. Tarefa pequena e claramente sem contexto multifase
+   dispensa esta consulta.
+2. **Sem investigação confiável suficiente** para tarefa média/grande/
+   crítica: abra `.agents/skills/auditar-tarefa/SKILL.md`.
+3. **Investigação pronta, mas sem plano executável**: abra
+   `.agents/skills/criar-plano/SKILL.md`. Não reinvestigar o que já está
+   confirmado.
+4. **Plano aprovado ou contexto já suficiente para executar**: abra
+   `.agents/skills/executar-plano/SKILL.md`. Tarefa pequena, objetiva e
+   evidente pode seguir direto para execução (§5), sem voltar a auditoria/
+   plano.
+5. **Depois de implementar, antes de declarar concluído**: abra
+   `.agents/skills/validar-entrega/SKILL.md`. Profundidade proporcional —
+   não é auditoria geral do módulo.
+6. **Antes da resposta final** de qualquer tarefa com alteração relevante
+   em código, configuração, arquitetura, rules, skills, documentação
+   operacional ou Projeto Multifase: abra
+   `.agents/skills/atualizar-log-progress/SKILL.md` e registre a entrada.
+   Não depende de o usuário pedir.
+7. Qualquer tarefa em `/procurar-datas` → rule (§7) +
+   `.agents/skills/procurar-datas/SKILL.md`.
+
+`auditar → planejar → executar → validar` é um fluxo **possível**, não
+obrigatório para toda tarefa — cada skill decide sozinha quando pode ser
+pulada (ver seu próprio `SKILL.md`). Exemplos: typo/texto simples →
+execução direta + validação proporcional; bug já diagnosticado com
+correção clara → executar + validar; feature média sem investigação →
+auditar + planejar + executar + validar; plano já aprovado → executar +
+validar; Projeto Multifase em andamento → retomar `STATUS.md`/fase atual,
+sem recomeçar auditoria; tarefa só investigativa → auditar e parar.
 
 ## 10. Onde encontrar o resto
 

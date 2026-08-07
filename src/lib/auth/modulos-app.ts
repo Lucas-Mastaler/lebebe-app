@@ -43,6 +43,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 10,
     access: 'profile',
+    menuLabel: 'Dashboard',
   },
   {
     moduleKey: 'digisac_finalizacoes_automaticas',
@@ -55,7 +56,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 60,
     access: 'profile',
-    menuLabel: 'FINALIZAÇÕES DIGISAC',
+    menuLabel: 'Finalizações automáticas',
   },
   {
     moduleKey: 'hub_vendas_recuperacao',
@@ -80,7 +81,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 64,
     access: 'superadmin',
-    menuLabel: 'GESTÃO HUB VENDAS',
+    menuLabel: 'Gestão Hub Vendas',
   },
   {
     moduleKey: 'atendimento_presencial_ficha',
@@ -93,6 +94,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 61,
     access: 'profile',
+    menuLabel: 'Ficha de atendimento',
   },
   {
     moduleKey: 'atendimento_presencial_registros',
@@ -105,6 +107,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 62,
     access: 'profile',
+    menuLabel: 'Registros de atendimentos',
   },
   {
     moduleKey: 'atendimento_presencial_clientes',
@@ -129,6 +132,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 66,
     access: 'profile',
+    menuLabel: 'Novo pedido personalizado',
   },
   {
     moduleKey: 'pedidos_personalizados_gestao',
@@ -141,6 +145,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 67,
     access: 'profile',
+    menuLabel: 'Gestão de pedidos personalizados',
   },
   {
     moduleKey: 'agendamentos',
@@ -153,6 +158,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 20,
     access: 'profile',
+    menuLabel: 'Agendamentos',
   },
   {
     moduleKey: 'procurar_datas',
@@ -165,6 +171,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 70,
     access: 'profile',
+    menuLabel: 'Procurar datas',
   },
   {
     moduleKey: 'procurar_datas_auditoria',
@@ -177,7 +184,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 80,
     access: 'profile',
-    menuLabel: 'AUDITORIA DATAS',
+    menuLabel: 'Auditoria datas',
   },
   {
     moduleKey: 'procurar_datas_performance',
@@ -190,6 +197,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 90,
     access: 'profile',
+    menuLabel: 'Performance datas',
   },
   {
     moduleKey: 'chamados_finalizados',
@@ -202,6 +210,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 40,
     access: 'profile',
+    menuLabel: 'Chamados finalizados',
   },
   {
     moduleKey: 'inteligencia_comercial',
@@ -214,7 +223,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 50,
     access: 'profile',
-    menuLabel: 'INTELIGÊNCIA COMERCIAL',
+    menuLabel: 'Inteligência comercial',
   },
   {
     moduleKey: 'pos_venda',
@@ -227,7 +236,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 120,
     access: 'profile',
-    menuLabel: 'PÓS-VENDA',
+    menuLabel: 'Pós-venda',
   },
   {
     moduleKey: 'pos_venda_atendimento_automatico',
@@ -240,7 +249,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 130,
     access: 'profile',
-    menuLabel: 'ATENDIMENTO AUTOMÁTICO',
+    menuLabel: 'Atendimento automático',
   },
   {
     moduleKey: 'recebimento',
@@ -253,6 +262,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 110,
     access: 'profile',
+    menuLabel: 'Recebimento',
   },
   {
     moduleKey: 'superadmin',
@@ -289,6 +299,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 100,
     access: 'profile',
+    menuLabel: 'Configuração busca',
   },
   {
     moduleKey: 'superadmin_usuarios',
@@ -301,7 +312,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 140,
     access: 'profile',
-    menuLabel: 'USUÁRIOS',
+    menuLabel: 'Usuários',
   },
   {
     moduleKey: 'horarios_agendamentos',
@@ -314,7 +325,7 @@ export const APP_MODULES = [
     ativo: true,
     ordem: 30,
     access: 'profile',
-    menuLabel: 'HORÁRIOS AGENDAMENTOS',
+    menuLabel: 'Horários agendamentos',
   },
 ] as const satisfies readonly AppModuleDefinition[]
 
@@ -365,6 +376,8 @@ export const NAVIGATION_GROUPS = [
       navigationItem('inteligencia_comercial', 'trendingUp'),
       navigationItem('digisac_finalizacoes_automaticas', 'bot'),
       navigationItem('hub_vendas_gestao', 'bot'),
+      navigationItem('pedidos_personalizados_novo', 'clipboardList'),
+      navigationItem('pedidos_personalizados_gestao', 'package'),
     ],
   },
   {
@@ -402,7 +415,7 @@ export const NAVIGATION_GROUPS = [
       navigationItem('superadmin_usuarios', 'users'),
       {
         ...navigationItem('superadmin', 'clipboardList'),
-        label: 'AUDITORIA ACESSOS',
+        label: 'Auditoria acessos',
         href: '/superadmin?tab=auditoria',
       },
     ],
@@ -413,30 +426,14 @@ export const PROFILE_CONTROLLED_MODULE_KEYS = APP_MODULES
   .filter((module) => module.access === 'profile')
   .map((module) => module.moduleKey)
 
-const PROFILE_PERMISSION_ONLY_GROUPS = [
-  {
-    label: 'PEDIDOS PERSONALIZADOS',
-    moduleKeys: [
-      'pedidos_personalizados_novo',
-      'pedidos_personalizados_gestao',
-    ],
-  },
-] as const satisfies readonly {
-  label: string
-  moduleKeys: readonly AppModuleKey[]
-}[]
-
-export const PROFILE_PERMISSION_GROUPS = [
-  ...NAVIGATION_GROUPS
-    .map((group) => ({
-      label: group.label,
-      moduleKeys: group.items
-        .filter((item) => item.access === 'profile')
-        .map((item) => item.moduleKey),
-    }))
-    .filter((group) => group.moduleKeys.length > 0),
-  ...PROFILE_PERMISSION_ONLY_GROUPS,
-]
+export const PROFILE_PERMISSION_GROUPS = NAVIGATION_GROUPS
+  .map((group) => ({
+    label: group.label,
+    moduleKeys: group.items
+      .filter((item) => item.access === 'profile')
+      .map((item) => item.moduleKey),
+  }))
+  .filter((group) => group.moduleKeys.length > 0)
 
 export const PROFILE_PERMISSION_MODULE_KEYS = PROFILE_PERMISSION_GROUPS.flatMap((group) => group.moduleKeys)
 

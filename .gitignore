@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# capturas de log de debug coladas manualmente (Apps Script / Cloud Logging)
+appscript/logs.md

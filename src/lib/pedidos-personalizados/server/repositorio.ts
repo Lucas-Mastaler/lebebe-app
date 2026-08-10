@@ -340,7 +340,7 @@ export class RepositorioPedidosPersonalizados {
     const { data: tapetes, error: tapetesError } = await this.supabase
       .from('pedidos_personalizados_moriah_tapetes')
       .select(`
-        id, ordem, formato, dimensao_1_cm, dimensao_2_cm,
+        id, ordem, formato, tipo, dimensao_1_cm, dimensao_2_cm,
         area_cobrada_centesimos_m2, nome_colecao_catalogo, referencia_catalogo,
         observacoes, teve_alteracao_layout, quantidade_alteracoes_layout,
         produto:pedidos_personalizados_produtos!pedidos_personalizados_moriah_tapetes_produto_id_fkey(id, codigo, descricao)

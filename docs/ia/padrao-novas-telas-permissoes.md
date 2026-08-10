@@ -96,7 +96,7 @@ Garantir que toda nova tela interna nasca integrada ao sistema de permissoes por
 
 ### 3.5 Documentacao e testes
 
-- [ ] Atualizar `docs/ia/log_progress.md`
+- [ ] Atualizar a documentacao canonica afetada, se houver; atualizar o Projeto Multifase (`docs/projetos/<slug>/`) se a tarefa pertencer a um — nenhuma entrada global automatica (`docs/ia/log_progress.md` esta congelado)
 - [ ] Testar com superadmin (acessa em qualquer horario)
 - [ ] Testar com perfil autorizado dentro da janela
 - [ ] Testar com perfil autorizado fora da janela
@@ -274,7 +274,7 @@ Qualquer agente de IA (Cascade, Copilot, etc) ao criar uma nova tela neste proje
 
 1. **Consultar este documento** antes de implementar
 2. **Seguir o checklist completo** da secao 3
-3. **Atualizar `docs/ia/log_progress.md`** ao finalizar
+3. **Atualizar a documentacao canonica afetada** ao finalizar, se houver; **atualizar o Projeto Multifase** quando a tarefa fizer parte de um (`docs/ia/log_progress.md` esta congelado — nenhuma entrada global automatica)
 4. **Testar** com pelo menos superadmin, perfil autorizado e perfil nao autorizado
 5. **Nao considerar a tela pronta** enquanto nao estiver cadastrada em `app_modulos`, protegida por wrapper e visivel na gestao de perfis
 

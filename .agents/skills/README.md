@@ -19,7 +19,7 @@ respectivo `SKILL.md` — não duplique aqui quando revisar.
 | `criar-plano/` | Implementada (Fase 3, 2026-08-07) | Investigação → plano executável | Nenhuma |
 | `executar-plano/` | Implementada (Fase 3, 2026-08-07) | Implementação de plano aprovado | Nenhuma |
 | `validar-entrega/` | Implementada (Fase 3, 2026-08-07) | Revisão de diff + relatório final | Nenhuma |
-| `atualizar-log-progress/` | Implementada (Fase 3, 2026-08-07) | Atualização segura de `docs/ia/log_progress.md` | Nenhuma |
+| `atualizar-log-progress/` | **Aposentada** (Fase B2, 2026-08-10) | Sem gatilho operacional — `docs/ia/log_progress.md` está congelado | Nenhuma |
 | `procurar-datas/` | Implementada (Fase 3, 2026-08-07) | Navegador dos dossiês da migração `/procurar-datas` | Nenhuma |
 
 A skill `login` existe só em `.devin/skills/login/` (21 bytes, só
@@ -57,8 +57,9 @@ complementam: a skill ensina *como* usar o Supabase; a regra contextual diz
 
 Nem toda regra vira skill, nem toda skill precisa de regra própria. As 6
 skills abaixo foram mantidas porque representam processos repetíveis reais
-(auditoria → plano → execução → validação → log), não porque a lista
-original foi aceita sem revisão.
+(auditoria → plano → execução → validação), não porque a lista original
+foi aceita sem revisão. `atualizar-log-progress` foi aposentada na Fase B2
+— ver subseção própria.
 
 ## Desenho da Fase 3 — skills de projeto (especificação original)
 
@@ -182,35 +183,13 @@ fonte vigente (é o que o agente realmente carrega em tarefa real).
   ATUALIZAR de `projeto-multifase`) — a validação de uma fase não fica só
   no relatório da conversa.
 
-### `atualizar-log-progress`
+### `atualizar-log-progress` (APOSENTADA — Fase B2, 2026-08-10)
 
-- **Finalidade:** padronizar a atualização segura de
-  `docs/ia/log_progress.md`.
-- **Gatilho:** fim de qualquer tarefa relevante.
-- **Inputs esperados:** resumo da tarefa (do relatório de `validar-entrega`
-  ou equivalente).
-- **Processo:** ler o arquivo ou usar `git show HEAD:...` como fonte segura
-  (lição da auditoria de 2026-08-07 — um round-trip de leitura/escrita
-  ingênuo já corrompeu o arquivo uma vez nesta sessão, revertido antes de
-  qualquer commit) → montar a entrada no formato padrão → gravar por
-  concatenação de Buffers UTF-8, nunca reescrevendo o arquivo inteiro →
-  verificar por comparação de bytes que o restante não mudou → nunca
-  registrar secrets.
-- **Outputs:** entrada adicionada + confirmação de verificação byte a byte.
-- **Arquivos auxiliares:** nenhum.
-- **Regras contextuais consultadas:** nenhuma além desta própria skill.
-- **Documentação consultada:** nenhuma.
-- **Nível de modelo recomendado:** baixo-médio — mecânico, mas o passo de
-  verificação de encoding não pode ser pulado.
-- **Como evita releitura desnecessária:** não lê o arquivo inteiro para
-  escrever — só as primeiras dezenas de linhas, para confirmar a convenção
-  de separador mais recente.
-- **Como validar a qualidade:** `git diff --stat` mostra só inserções, 0
-  remoções, no arquivo; nenhuma entrada antiga foi alterada.
-- **Integração com Projeto Multifase:** quando a tarefa pertence a um
-  projeto, a entrada no log global fica curta e aponta para
-  `docs/projetos/<slug>/STATUS.md` em vez de reproduzir o progresso
-  inteiro — o detalhe mora no projeto, não no log geral.
+Esta subseção descreve o desenho original (Fase 3), mantido só como
+registro histórico. `docs/ia/log_progress.md` foi congelado na Fase B2 —
+a skill não escreve mais nesse arquivo e não tem gatilho operacional. Ver
+`.agents/skills/atualizar-log-progress/SKILL.md` (versão vigente) e
+`docs/ia/log_progress_legacy.md` (regra de consulta histórica).
 
 ### `procurar-datas`
 

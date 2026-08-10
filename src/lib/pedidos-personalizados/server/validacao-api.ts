@@ -39,6 +39,7 @@ const CAMPOS_COMERCIAIS = [
   'telefone',
   'tapetes',
   'formato',
+  'tipo',
   'dimensao1Metros',
   'dimensao2Metros',
   'produto',
@@ -108,6 +109,7 @@ function montarTapete(
   if (
     typeof valor.ordem !== 'number'
     || typeof valor.formato !== 'string'
+    || typeof valor.tipo !== 'string'
     || typeof valor.dimensao1Metros !== 'string'
     || (valor.dimensao2Metros !== undefined && valor.dimensao2Metros !== null && typeof valor.dimensao2Metros !== 'string')
     || (valor.cores !== undefined && !Array.isArray(valor.cores))
@@ -141,6 +143,7 @@ function montarTapete(
     ...(id ? { id } : {}),
     ordem: valor.ordem,
     formato: valor.formato,
+    tipo: valor.tipo,
     dimensao1Metros: valor.dimensao1Metros,
     dimensao2Metros: stringOpcional(valor.dimensao2Metros),
     nomeColecaoCatalogo: stringOpcional(valor.nomeColecaoCatalogo),

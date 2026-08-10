@@ -1,5 +1,7 @@
 export type FormatoTapeteMoriah = 'REDONDO' | 'RETANGULAR' | 'ORGANICO'
 
+export type TipoTapeteMoriah = 'CATALOGO' | 'PERSONALIZADO'
+
 export type StatusPedidoPersonalizado =
   | 'CADASTRADO'
   | 'AGUARDANDO LAYOUT'
@@ -45,6 +47,9 @@ export type CodigoErroPedidoPersonalizado =
   | 'PRODUTO_CATALOGO_AUSENTE'
   | 'COR_CATALOGO_INCOMPLETA'
   | 'TAPETE_ID_INVALIDO'
+  | 'TIPO_TAPETE_INVALIDO'
+  | 'NOME_COLECAO_CATALOGO_OBRIGATORIO'
+  | 'REFERENCIA_CATALOGO_OBRIGATORIA'
 
 export type CodigoAvisoPedidoPersonalizado =
   | 'MEDIDA_FORA_INTERVALO_RECOMENDADO'
@@ -85,6 +90,7 @@ export type TapeteMoriahEntrada = {
   id?: string | null
   ordem: number
   formato: string
+  tipo: string
   dimensao1Metros: string
   dimensao2Metros?: string | null
   nomeColecaoCatalogo?: string | null
@@ -127,6 +133,7 @@ export type TapeteMoriahNormalizado = {
   id: string | null
   ordem: number
   formato: FormatoTapeteMoriah
+  tipo: TipoTapeteMoriah
   dimensao1Cm: number
   dimensao2Cm: number | null
   areaCobradaCentesimosM2: number
@@ -178,6 +185,7 @@ export type TapeteMoriahRpc = {
   id?: string
   ordem: number
   formato: FormatoTapeteMoriah
+  tipo: TipoTapeteMoriah
   dimensao_1_cm: number
   dimensao_2_cm: number | null
   area_cobrada_centesimos_m2: number

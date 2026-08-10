@@ -37,8 +37,9 @@ assunto/regra específica da tarefa em:
 - `docs/procurar-datas-escopo-equivalencia-legado-v2.md` — contrato de
   escopo da migração;
 - `docs/procurar-datas-motor-v2-progresso.md` — progresso técnico atual;
-- `docs/ia/log_progress.md` — busca dirigida por "procurar-datas"/módulo,
-  não leitura integral.
+- `docs/ia/log_progress.md` — histórico congelado; busca dirigida por
+  "procurar-datas"/módulo se necessário, nunca leitura integral (ver
+  `docs/ia/log_progress_legacy.md`).
 
 ## Passo 3 — aplicar o contrato fixo
 
@@ -68,10 +69,10 @@ assim não altere APIs `/api/procurar-datas/*` sem autorização.
 ## Atualização de documentação
 
 Quando uma regra da migração for validada ou uma pendência resolvida,
-atualize `docs/procurar-datas-escopo-equivalencia-legado-v2.md` e
-`docs/ia/log_progress.md` (via
-`.agents/skills/atualizar-log-progress/SKILL.md`) — preservando encoding,
-sem reformatar o documento inteiro.
+atualize a documentação canônica afetada — `docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+— preservando encoding, sem reformatar o documento inteiro. Se a tarefa
+pertence a um Projeto Multifase, atualize também os artefatos do projeto.
+Não crie registro global — `docs/ia/log_progress.md` está congelado.
 
 ## Output
 

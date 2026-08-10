@@ -1,70 +1,37 @@
 ---
 name: atualizar-log-progress
-description: "Use ao final de qualquer tarefa relevante para registrar uma entrada curta em docs/ia/log_progress.md, preservando encoding e sem reescrever o histórico. NÃO use para reler o arquivo inteiro (dezenas de milhares de linhas), nem para duplicar o progresso completo de um Projeto Multifase — nesse caso a entrada aponta para o STATUS.md do projeto."
+description: "APOSENTADA (Fase B2, 2026-08-10). docs/ia/log_progress.md está congelado — nenhum agente deve escrever nesse arquivo. Esta skill não tem mais gatilho operacional e não deve ser invocada para registrar continuidade. Para consulta histórica dirigida ao log congelado, ver docs/ia/log_progress_legacy.md. Para continuidade real entre sessões, ver .agents/skills/projeto-multifase/SKILL.md."
 metadata:
   author: le-bebe-app
-  version: "1.0.0"
+  version: "2.0.0"
+  status: aposentada
 ---
 
-# Atualizar Log Progress
+# Atualizar Log Progress (APOSENTADA)
 
-Padroniza a atualização segura de `docs/ia/log_progress.md` (continuidade
-global). As outras skills apontam para esta em vez de repetir estas regras.
+Esta skill padronizava a escrita em `docs/ia/log_progress.md`. Desde a
+Fase B2 (2026-08-10), a escrita global nesse arquivo foi aposentada —
+`docs/ia/log_progress.md` é histórico congelado (ver
+`docs/ia/log_progress_legacy.md`). Esta skill **não tem mais gatilho
+operacional** e não deve ser usada para registrar nada, em nenhuma
+circunstância.
 
-## Consulta (antes de escrever)
+## O que fazer em vez disso
 
-Nunca leia o arquivo inteiro. Leia só o necessário para confirmar o padrão
-de separador/formatação mais recente — as primeiras dezenas de linhas, ou
-uma busca dirigida por módulo/assunto/projeto se precisar de contexto
-específico.
+- **Tarefa normal:** nenhum registro global — código, worktree e o
+  relatório final ao usuário já bastam (`AGENTS.md` §11).
+- **Trabalho com continuidade real e estrutura substancial:**
+  `docs/projetos/<slug>/`, via `.agents/skills/projeto-multifase/SKILL.md`.
+- **Consulta ao histórico anterior ao congelamento:** busca dirigida em
+  `docs/ia/log_progress.md`, seguindo a regra descrita em
+  `docs/ia/log_progress_legacy.md` — nunca leitura integral, nunca
+  escrita.
 
-## Escrita seguinte — regra obrigatória de encoding
+## Contexto histórico
 
-Um round-trip de leitura/escrita ingênuo já corrompeu este arquivo uma vez
-nesta sessão (revertido antes de qualquer commit) — por isso o procedimento
-abaixo não é opcional:
-
-1. **Nunca** use `echo "texto com acento" >> arquivo` nem qualquer
-   redirecionamento de shell/PowerShell com texto acentuado.
-2. **Nunca** regrave o arquivo inteiro para adicionar uma entrada.
-3. Use Node.js com `fs.readFileSync`/`fs.writeFileSync` em `'utf8'`
-   explícito, adicionando **só** a entrada nova por concatenação — não
-   reformate o que já existe.
-4. Não corrija corrupção histórica encontrada no arquivo — fora de escopo
-   desta skill.
-5. Depois de escrever, confirme por comparação de bytes (ou `git diff
-   --stat` mostrando só inserções, 0 remoções) que nada além da entrada
-   nova mudou. Não confie só no round-trip de leitura.
-6. Nunca registre secrets, tokens, senhas ou dados sensíveis.
-
-## Conteúdo da entrada
-
-Formato padrão (`AGENTS.md` §11):
-
-```
-## <data> - <agente/ferramenta> - <resumo curto>
-
-- **Resumo:** ...
-- **Arquivos lidos:** ...
-- **Arquivos alterados/criados:** ...
-- **Validações:** ...
-- **Comandos/resultados:** ...
-- **Pendências:** ...
-- **Riscos:** ...
-- **Próximo passo:** ...
-```
-
-Entrada curta e proporcional à tarefa — não é o lugar para reproduzir o
-relatório inteiro de `.agents/skills/validar-entrega/SKILL.md`.
-
-## Projeto Multifase
-
-Se a tarefa pertence a um projeto em `docs/projetos/<slug>/`: a entrada
-aqui fica **curta** e aponta para `<slug>/STATUS.md` — não duplique o
-progresso detalhado, que já vive no projeto (ver
-`.agents/skills/projeto-multifase/SKILL.md`, seção "Log global").
-
-## Esforço recomendado
-
-Baixo-médio — mecânico, mas o passo de verificação de encoding não pode
-ser pulado.
+Esta skill existiu como skill de escrita entre 2026-06-12 e 2026-08-10.
+Durante esse período, um round-trip de leitura/escrita ingênuo chegou a
+corromper `docs/ia/log_progress.md` uma vez (revertido antes de qualquer
+commit), o que motivou um procedimento de escrita byte-safe. Esse
+procedimento perdeu efeito prático com o congelamento — está preservado
+aqui apenas como contexto histórico, não como instrução válida.

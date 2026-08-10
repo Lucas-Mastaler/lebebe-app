@@ -89,6 +89,7 @@ function tapete(overrides: Record<string, unknown> = {}) {
   return {
     ordem: 1,
     formato: 'RETANGULAR',
+    tipo: 'PERSONALIZADO',
     dimensao1Metros: '2,00',
     dimensao2Metros: '3,00',
     cores: [{ id: uuidCor(1), ordem: 1 }],
@@ -215,6 +216,30 @@ describe('criação de pedido personalizado', () => {
     const cores = (quantidade: number) => Array.from({ length: quantidade }, (_, indice) => ({ id: uuidCor(indice + 1), ordem: indice + 1 }))
     expect((await criarPedido(requestJson(pedido({ tapetes: [tapete({ cores: cores(6) })] })), deps())).status).toBe(201)
     expect((await criarPedido(requestJson(pedido({ tapetes: [tapete({ cores: cores(7) })] })), deps())).status).toBe(422)
+  })
+
+  it('bloqueia Catálogo sem nome/referência mesmo em chamada direta à API, ignorando o frontend', async () => {
+    const semNome = await criarPedido(requestJson(pedido({
+      tapetes: [tapete({ tipo: 'CATALOGO', nomeColecaoCatalogo: null, referenciaCatalogo: 'ABC-123', cores: [] })],
+    })), deps())
+    expect(semNome.status).toBe(422)
+    expect((await semNome.json()).problemas).toContainEqual(expect.objectContaining({ codigo: 'NOME_COLECAO_CATALOGO_OBRIGATORIO' }))
+
+    const semReferencia = await criarPedido(requestJson(pedido({
+      tapetes: [tapete({ tipo: 'CATALOGO', nomeColecaoCatalogo: 'Coleção Formas', referenciaCatalogo: null, cores: [] })],
+    })), deps())
+    expect(semReferencia.status).toBe(422)
+    expect((await semReferencia.json()).problemas).toContainEqual(expect.objectContaining({ codigo: 'REFERENCIA_CATALOGO_OBRIGATORIA' }))
+  })
+
+  it('aceita Catálogo completo e nunca envia cores no payload da RPC, mesmo enviadas pelo cliente', async () => {
+    const repo = criarRepo()
+    const response = await criarPedido(requestJson(pedido({
+      tapetes: [tapete({ tipo: 'CATALOGO', nomeColecaoCatalogo: 'Coleção Formas', referenciaCatalogo: 'ABC-123', cores: [{ id: uuidCor(1), ordem: 1 }] })],
+    })), deps(repo))
+    expect(response.status).toBe(201)
+    const chamada = vi.mocked(repo.criar).mock.calls[0][0] as { p_tapetes: Array<Record<string, unknown>> }
+    expect(chamada.p_tapetes[0]).toMatchObject({ tipo: 'CATALOGO', cores: [] })
   })
 
   it('resolve cores no catálogo ativo', async () => {
@@ -383,7 +408,7 @@ describe('detalhe de pedido personalizado', () => {
             version: 4, created_at: 'agora', updated_at: 'agora', caminho_objeto: 'privado',
           },
           tapetes: [{
-            id: TAPETE_ID, ordem: 1, formato: 'RETANGULAR', dimensao_1_cm: 200,
+            id: TAPETE_ID, ordem: 1, formato: 'RETANGULAR', tipo: 'PERSONALIZADO', dimensao_1_cm: 200,
             dimensao_2_cm: 300, area_cobrada_centesimos_m2: 600,
             produto: catalogos.produtos[1], nome_colecao_catalogo: null,
             referencia_catalogo: null, observacoes: 'OBS', teve_alteracao_layout: false,
@@ -397,6 +422,7 @@ describe('detalhe de pedido personalizado', () => {
     })
     const body = await (await obterDetalhePedido(new Request('http://localhost'), PEDIDO_ID, deps(repo))).json()
     expect(body.pedido).toMatchObject({ version: 4, telefone: '4133334444', dataEntrega: '2026-08-10', numeroPedidoCompra: '002' })
+    expect(body.pedido.tapetes[0].tipo).toBe('PERSONALIZADO')
     expect(body.pedido.tapetes[0].cores[0]).toMatchObject({ ordem: 1, codigo: 'K-1' })
     expect(body.pedido.tapetes[0].anexos[0]).toEqual({
       anexoId: '90000000-0000-4000-8000-000000000001', slot: 1,

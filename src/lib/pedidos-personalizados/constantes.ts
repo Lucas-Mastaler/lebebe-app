@@ -2,10 +2,15 @@ import type {
   CodigoProdutoMoriah,
   FormatoTapeteMoriah,
   StatusPedidoPersonalizado,
+  TipoTapeteMoriah,
   UnidadePedidoPersonalizado,
 } from './tipos'
 
 export const FORMATOS_TAPETE_MORIAH = ['REDONDO', 'RETANGULAR', 'ORGANICO'] as const
+
+export const TIPOS_TAPETE_MORIAH = ['CATALOGO', 'PERSONALIZADO'] as const
+
+export const TIPO_TAPETE_PADRAO: TipoTapeteMoriah = 'PERSONALIZADO'
 
 export const STATUS_PEDIDO_PERSONALIZADO = [
   'CADASTRADO',
@@ -50,8 +55,17 @@ export const FORMATO_PARA_EXIBICAO: Record<FormatoTapeteMoriah, string> = {
   ORGANICO: 'ORGÂNICO',
 }
 
+export const TIPO_TAPETE_PARA_EXIBICAO: Record<TipoTapeteMoriah, string> = {
+  CATALOGO: 'CATÁLOGO',
+  PERSONALIZADO: 'PERSONALIZADO',
+}
+
 export function ehFormatoTapeteMoriah(valor: string): valor is FormatoTapeteMoriah {
   return FORMATOS_TAPETE_MORIAH.includes(valor as FormatoTapeteMoriah)
+}
+
+export function ehTipoTapeteMoriah(valor: string): valor is TipoTapeteMoriah {
+  return TIPOS_TAPETE_MORIAH.includes(valor as TipoTapeteMoriah)
 }
 
 export function ehStatusPedidoPersonalizado(valor: string): valor is StatusPedidoPersonalizado {

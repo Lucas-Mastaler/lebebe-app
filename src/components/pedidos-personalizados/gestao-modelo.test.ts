@@ -29,7 +29,7 @@ const detalhe: PedidoDetalhe = {
   dataEntrega: null, dataPedidoFornecedor: null, numeroPedidoCompra: null, comprador: null,
   status: 'CADASTRADO', version: 4, createdAt: '2026-08-06T10:00:00Z', updatedAt: '2026-08-06T10:00:00Z',
   tapetes: [{
-    id: TAPETE, ordem: 1, formato: 'RETANGULAR', dimensao1Cm: 200, dimensao2Cm: 300,
+    id: TAPETE, ordem: 1, formato: 'RETANGULAR', tipo: 'PERSONALIZADO', dimensao1Cm: 200, dimensao2Cm: 300,
     areaCobradaCentesimosM2: 600, produto: { id: 'p', codigo: '21158', descricao: 'Produto' },
     nomeColecaoCatalogo: 'COLECAO', referenciaCatalogo: 'REF-1', observacoes: 'Teste',
     teveAlteracaoLayout: true, quantidadeAlteracoesLayout: 2,
@@ -51,6 +51,15 @@ describe('modelo da gestão de pedidos personalizados', () => {
     const formulario = detalheParaFormulario(detalhe)
     expect(formulario).toMatchObject({ unidade: 'portao', consultora: 'ANA', cliente: 'CLIENTE' })
     expect(formulario.tapetes[0]).toMatchObject({ tapeteId: TAPETE, dimensao1Metros: '2,00', dimensao2Metros: '3,00', corIds: [COR] })
+  })
+
+  it('reabre o pedido com o Tipo persistido como fonte de verdade, não com base em cores.length', () => {
+    const detalheCatalogo: PedidoDetalhe = {
+      ...detalhe,
+      tapetes: [{ ...detalhe.tapetes[0], tipo: 'CATALOGO', cores: [] }],
+    }
+    expect(detalheParaFormulario(detalheCatalogo).tapetes[0].tipo).toBe('CATALOGO')
+    expect(detalheParaFormulario(detalhe).tapetes[0].tipo).toBe('PERSONALIZADO')
   })
 
   it('valida antecipadamente os requisitos de cada transicao', () => {

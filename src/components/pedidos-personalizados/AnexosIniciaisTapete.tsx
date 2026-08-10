@@ -30,9 +30,17 @@ function estadoDoAnexo(anexo: AnexoLocalFormulario) {
 export function AnexosIniciaisTapete({ tapete, ordem, bloqueado, onSelecionar, onRemover, onReenviar }: Props) {
   return (
     <section className="mt-4 rounded-xl border border-dashed border-sky-200 bg-sky-50/50 p-4" aria-labelledby={`anexos-iniciais-${tapete.chaveLocal}`}>
-      <div className="mb-3">
-        <h4 id={`anexos-iniciais-${tapete.chaveLocal}`} className="font-semibold text-slate-900">Anexos iniciais do tapete {ordem}</h4>
-        <p className="text-sm text-slate-600">Selecione até dois arquivos antes de salvar. O envio ocorrerá em sequência após a criação do pedido.</p>
+      <div className="mb-3 space-y-2">
+        <h4 id={`anexos-iniciais-${tapete.chaveLocal}`} className="font-semibold text-slate-900">Layout fornecido pelo designer, arquiteto ou cliente</h4>
+        <p className="text-sm text-slate-600">
+          Envie, sempre que disponíveis: desenho, layout, croqui, referência visual, projeto feito por arquiteto ou designer,
+          imagem enviada pelo cliente, desenho feito pelo próprio cliente, ou qualquer outro arquivo que ajude a fábrica a
+          compreender exatamente o tapete solicitado. Selecione até dois arquivos antes de salvar — o envio ocorrerá em
+          sequência após a criação do pedido.
+        </p>
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Quanto mais detalhado for o desenho, layout ou referência enviada, menor será a chance de dúvidas ou divergências na produção.
+        </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         {([1, 2] as const).map((slot) => {
@@ -41,7 +49,7 @@ export function AnexosIniciaisTapete({ tapete, ordem, bloqueado, onSelecionar, o
           return (
             <div key={slot} className="rounded-lg border border-slate-200 bg-white p-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold text-slate-800">Slot {slot}</span>
+                <span className="text-sm font-semibold text-slate-800">Anexo {slot}</span>
                 <span className="text-xs text-slate-500" aria-live="polite">{enviado ? 'Concluído' : local ? estadoDoAnexo(local) : 'Opcional'}</span>
               </div>
               {local ? (

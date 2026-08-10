@@ -29,6 +29,7 @@ function tapete(overrides: Partial<TapeteMoriahEntrada> = {}): TapeteMoriahEntra
   return {
     ordem: 1,
     formato: 'RETANGULAR',
+    tipo: 'PERSONALIZADO',
     dimensao1Metros: '2,00',
     dimensao2Metros: '3,00',
     cores: [],
@@ -60,7 +61,7 @@ describe('mensagem comercial de Pedidos Personalizados', () => {
     expect(resultado.dados).toContain('UNIDADE: BIGORRILHO')
     expect(resultado.dados).toContain('CONSULTORA: NIÉGE SILVA')
     expect(resultado.dados).toContain('CLIENTE: CLIENTE BEBÊ')
-    expect(resultado.dados).toContain('TAPETE 1\nFORMATO: RETANGULAR\nMEDIDAS: 2,00 M X 3,00 M')
+    expect(resultado.dados).toContain('TAPETE 1\nTIPO: PERSONALIZADO\nFORMATO: RETANGULAR\nMEDIDAS: 2,00 M X 3,00 M')
     expect(resultado.dados).toContain('METRO QUADRADO: 6,00 M²')
     expect(resultado.dados).toContain(`PRODUTO: 21158 - ${PRODUTOS[1].descricao}`)
   })
@@ -72,9 +73,9 @@ describe('mensagem comercial de Pedidos Personalizados', () => {
       tapete({ ordem: 3, formato: 'ORGANICO', dimensao1Metros: '2,01', dimensao2Metros: '2,01' }),
     ])
     const mensagem = gerarMensagemPedidoPersonalizado(pedido, PRODUTOS).dados!
-    expect(mensagem).toContain('TAPETE 1\nFORMATO: REDONDO\nDIÂMETRO: 2,00 M')
-    expect(mensagem).toContain('TAPETE 2\nFORMATO: RETANGULAR')
-    expect(mensagem).toContain('TAPETE 3\nFORMATO: ORGÂNICO')
+    expect(mensagem).toContain('TAPETE 1\nTIPO: PERSONALIZADO\nFORMATO: REDONDO\nDIÂMETRO: 2,00 M')
+    expect(mensagem).toContain('TAPETE 2\nTIPO: PERSONALIZADO\nFORMATO: RETANGULAR')
+    expect(mensagem).toContain('TAPETE 3\nTIPO: PERSONALIZADO\nFORMATO: ORGÂNICO')
     expect(mensagem).toContain(`PRODUTO: 21159 - ${PRODUTOS[2].descricao}`)
   })
 
@@ -142,5 +143,18 @@ describe('mensagem comercial de Pedidos Personalizados', () => {
   it('rejeita cor sem dados de catálogo necessários à mensagem', () => {
     const pedido = normalizar([tapete({ cores: [{ id: 'cor-1', ordem: 1 }] })])
     expect(gerarMensagemPedidoPersonalizado(pedido, PRODUTOS).erros[0].codigo).toBe('COR_CATALOGO_INCOMPLETA')
+  })
+
+  it('identifica claramente um tapete Catálogo e nunca exibe seção de cores vazia', () => {
+    const pedido = normalizar([tapete({
+      tipo: 'CATALOGO',
+      nomeColecaoCatalogo: 'Coleção Formas',
+      referenciaCatalogo: 'ABC-123',
+    })])
+    const mensagem = gerarMensagemPedidoPersonalizado(pedido, PRODUTOS).dados!
+    expect(mensagem).toContain('TIPO: CATÁLOGO')
+    expect(mensagem).toContain('NOME DA COLEÇÃO CATÁLOGO: COLEÇÃO FORMAS')
+    expect(mensagem).toContain('REFERÊNCIA DO TAPETE DO CATÁLOGO: ABC-123')
+    expect(mensagem).not.toContain('CORES:')
   })
 })

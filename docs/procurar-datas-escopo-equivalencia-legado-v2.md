@@ -1606,7 +1606,10 @@ Arquivos legado disponíveis:
 1. Atualizar o status na tabela da seção 7 se alguma área foi implementada ou validada.
 2. Mover decisões de "pendentes" para "tomadas" (seção 11/12) se foram resolvidas.
 3. Atualizar critérios de aceite (seção 9) para `[x]` quando validados.
-4. Atualizar `docs/ia/log_progress.md` com resumo da tarefa.
+4. `docs/ia/log_progress.md` está congelado (Fase B2, 2026-08-10) — não
+   escrever nele. Se a tarefa pertence a um Projeto Multifase, atualizar os
+   artefatos correspondentes em `docs/projetos/<slug>/` (ver
+   `.agents/skills/projeto-multifase/SKILL.md`).
 
 ### Este documento não substitui
 

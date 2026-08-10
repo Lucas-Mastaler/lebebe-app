@@ -207,6 +207,7 @@ function serializarDetalhe(valor: { pedido: unknown; tapetes: unknown[]; histori
         id: tapete.id,
         ordem: tapete.ordem,
         formato: tapete.formato,
+        tipo: tapete.tipo,
         dimensao1Cm: tapete.dimensao_1_cm,
         dimensao2Cm: tapete.dimensao_2_cm,
         areaCobradaCentesimosM2: tapete.area_cobrada_centesimos_m2,

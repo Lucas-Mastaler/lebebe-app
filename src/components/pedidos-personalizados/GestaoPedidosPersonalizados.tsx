@@ -18,6 +18,7 @@ import {
   permiteEdicaoAdministrativa,
   permiteEdicaoComercial,
 } from '@/lib/pedidos-personalizados/status-fluxo'
+import { TIPO_TAPETE_PARA_EXIBICAO } from '@/lib/pedidos-personalizados'
 import type { StatusPedidoPersonalizado } from '@/lib/pedidos-personalizados'
 import {
   adicionarTapete,
@@ -558,10 +559,11 @@ export function GestaoPedidosPersonalizados() {
                     <section key={tapete.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                       <div className="border-b border-slate-100 pb-4">
                         <h4 className="font-bold text-slate-950">Tapete {tapete.ordem} · {tapete.formato}</h4>
+                        <p className="mt-1 text-xs font-bold uppercase tracking-wide text-sky-700">{TIPO_TAPETE_PARA_EXIBICAO[tapete.tipo]}</p>
                         <p className="mt-1 break-words text-sm text-slate-600">{tapete.produto.codigo} — {tapete.produto.descricao}</p>
                       </div>
 
-                      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                      <div className={`mt-4 grid gap-4 ${tapete.tipo === 'PERSONALIZADO' ? 'lg:grid-cols-2' : ''}`}>
                         <section className="rounded-xl border border-sky-100 bg-sky-50/60 p-4" aria-label={`Medidas do tapete ${tapete.ordem}`}>
                           <h5 className="text-xs font-bold uppercase tracking-wide text-sky-800">Medidas</h5>
                           <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
@@ -582,24 +584,26 @@ export function GestaoPedidosPersonalizados() {
                           </dl>
                         </section>
 
-                        <section className="rounded-xl border border-violet-100 bg-violet-50/50 p-4" aria-label={`Cores do tapete ${tapete.ordem}`}>
-                          <h5 className="text-xs font-bold uppercase tracking-wide text-violet-800">Cores</h5>
-                          {tapete.cores.length ? (
-                            <ul className="mt-3 space-y-2">
-                              {tapete.cores.map((cor) => (
-                                <li key={cor.id} className="flex min-w-0 items-start gap-2 text-sm text-slate-800">
-                                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-violet-600" aria-hidden="true" />
-                                  <span className="break-words">{cor.numero} — {cor.codigo} — {cor.nome}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : <p className="mt-3 text-sm text-slate-500">Nenhuma cor selecionada.</p>}
-                        </section>
+                        {tapete.tipo === 'PERSONALIZADO' && (
+                          <section className="rounded-xl border border-violet-100 bg-violet-50/50 p-4" aria-label={`Cores do tapete ${tapete.ordem}`}>
+                            <h5 className="text-xs font-bold uppercase tracking-wide text-violet-800">Cores</h5>
+                            {tapete.cores.length ? (
+                              <ul className="mt-3 space-y-2">
+                                {tapete.cores.map((cor) => (
+                                  <li key={cor.id} className="flex min-w-0 items-start gap-2 text-sm text-slate-800">
+                                    <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-violet-600" aria-hidden="true" />
+                                    <span className="break-words">{cor.numero} — {cor.codigo} — {cor.nome}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : <p className="mt-3 text-sm text-slate-500">Nenhuma cor selecionada.</p>}
+                          </section>
+                        )}
                       </div>
 
                       <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                         <div><dt className="text-slate-500">Coleção</dt><dd className="break-words font-medium">{tapete.nomeColecaoCatalogo || '—'}</dd></div>
-                        <div><dt className="text-slate-500">Referência</dt><dd className="break-words font-medium">{tapete.referenciaCatalogo || '—'}</dd></div>
+                        <div><dt className="text-slate-500">Cor/Referência</dt><dd className="break-words font-medium">{tapete.referenciaCatalogo || '—'}</dd></div>
                         <div className="sm:col-span-2"><dt className="text-slate-500">Observações</dt><dd className="whitespace-pre-wrap break-words">{tapete.observacoes || '—'}</dd></div>
                       </dl>
 

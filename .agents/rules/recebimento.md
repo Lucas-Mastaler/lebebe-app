@@ -17,14 +17,57 @@ simples (`AGENTS.md` §4).
 
 Lista **não exaustiva**, só para começar a navegar — não é inventário
 completo de arquivos/APIs do módulo, e o código real sempre vence se
-divergir dela (`AGENTS.md` §1):
+divergir dela (`AGENTS.md` §1). Existência confirmada contra o código em
+2026-08-10 (Fase C1, absorvido de `CONTEXTO DO PROJETO.MD` §6.2/§6.4, hoje
+congelado) — pode ficar desatualizada com o tempo; prefira sempre
+`Glob`/`Grep` para o estado real.
 
-- Listagem principal — `src/app/recebimento/page.tsx`
+Páginas:
+- Listagem — `src/app/recebimento/page.tsx`
 - Conferência — `src/app/recebimento/[id]/page.tsx`
-- Rota principal de API — `src/app/api/recebimento/[id]/route.ts`
-- Finalização — `src/app/api/recebimento/[id]/finalizar/route.ts`
-- Timer — `src/app/api/recebimento/[id]/timer/route.ts`
-- Importação de XML/NFe — `src/app/api/recebimento/importar-xml/route.ts`
+- Card de item OS — `src/app/recebimento/[id]/OSItemCard.tsx`
+
+APIs:
+- `src/app/api/recebimento/route.ts`
+- `src/app/api/recebimento/[id]/route.ts`
+- `src/app/api/recebimento/[id]/finalizar/route.ts`
+- `src/app/api/recebimento/[id]/cancelar/route.ts`
+- `src/app/api/recebimento/[id]/timer/route.ts`
+- `src/app/api/recebimento/[id]/check-inactivity/route.ts`
+- `src/app/api/recebimento/[id]/item/[itemId]/route.ts`
+- `src/app/api/recebimento/[id]/item/[itemId]/volume/[volumeNumero]/route.ts`
+- `src/app/api/recebimento/[id]/os/[osNumero]/route.ts`
+- `src/app/api/recebimento/[id]/recalcular/route.ts`
+- `src/app/api/recebimento/importar-xml/route.ts`
+- `src/app/api/recebimento/problemas-pendentes/route.ts`
+
+Helpers/autenticação do módulo:
+- `src/middleware.ts`
+- `src/lib/recebimento/timer-activity.ts`
+- `src/lib/google/sheets-service.ts`
+- `src/lib/auth/matic-auth.ts` / `src/lib/auth/matic-emails.ts` — whitelist
+  de acesso ao módulo
+
+Entidades (nomes confirmados nas migrations em 2026-08-10 — schema completo,
+colunas e relações sempre via MCP, conforme `.agents/rules/banco-supabase.md`):
+`recebimentos`, `recebimento_nfes`, `recebimento_itens`,
+`recebimento_item_volumes`, `recebimento_os`,
+`recebimento_problemas_pendentes`, `nfe`, `nfe_itens`, `nfe_assistencias`,
+`matic_sku`.
+
+## Pontos frágeis conhecidos
+
+Herdado de `CONTEXTO DO PROJETO.MD` §6.6 (hoje congelado) — merecem atenção
+extra sempre que forem mexidos, mas devem ser revalidados no código antes de
+qualquer decisão, não tratados como fato permanente:
+- whitelist de acesso hardcoded (`matic-emails.ts`)
+- risco de dessincronização de volumes
+- estado local complexo na tela de conferência
+- parser de XML/NFe possivelmente frágil
+- ausência de transações explícitas em fluxos multi-step
+- timer baseado em polling
+- risco de race condition em ações rápidas
+- falha de exportação para Google Sheets não bloqueia finalização
 
 ## Persistência
 

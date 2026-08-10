@@ -6,7 +6,7 @@ import {
   normalizarNumeroPedidoCompra,
 } from '@/lib/pedidos-personalizados'
 import { dataOperacionalBrasil } from '@/lib/pedidos-personalizados/prazo'
-import type { CodigoProdutoMoriah, PedidoPersonalizadoMoriahNormalizado, SituacaoPrazoPedido, StatusPedidoPersonalizado, UnidadePedidoPersonalizado } from '@/lib/pedidos-personalizados'
+import type { CodigoProdutoMoriah, PedidoPersonalizadoMoriahNormalizado, SituacaoPrazoPedido, StatusPedidoPersonalizado, TipoTapeteMoriah, UnidadePedidoPersonalizado } from '@/lib/pedidos-personalizados'
 import type { AnexoFormulario, EstadoNovoPedido, OpcoesNovoPedido, TapeteFormulario } from './novo-pedido-modelo'
 import { ehErroHttpNovoPedido } from './novo-pedido-modelo'
 
@@ -52,6 +52,7 @@ export type TapeteDetalhe = {
   id: string
   ordem: number
   formato: TapeteFormulario['formato']
+  tipo: TipoTapeteMoriah
   dimensao1Cm: number
   dimensao2Cm: number | null
   areaCobradaCentesimosM2: number
@@ -226,6 +227,7 @@ export function detalheParaFormulario(pedido: PedidoDetalhe): EstadoNovoPedido {
       anexos: tapete.anexos,
       anexosLocais: [],
       formato: tapete.formato,
+      tipo: tapete.tipo,
       dimensao1Metros: metros(tapete.dimensao1Cm),
       dimensao2Metros: metros(tapete.dimensao2Cm),
       corIds: tapete.cores.sort((a, b) => a.ordem - b.ordem).map((cor) => cor.id),
@@ -262,6 +264,7 @@ export function gerarResumoFornecedorDetalhe(pedido: PedidoDetalhe) {
       id: tapete.id,
       ordem: tapete.ordem,
       formato: tapete.formato,
+      tipo: tapete.tipo,
       dimensao1Cm: tapete.dimensao1Cm,
       dimensao2Cm: tapete.dimensao2Cm,
       areaCobradaCentesimosM2: tapete.areaCobradaCentesimosM2,
@@ -341,12 +344,13 @@ export function payloadAtualizacaoComercial(estado: EstadoNovoPedido, expectedVe
       id: tapete.tapeteId,
       ordem: indice + 1,
       formato: tapete.formato,
+      tipo: tapete.tipo,
       dimensao1Metros: tapete.dimensao1Metros,
       dimensao2Metros: tapete.formato === 'REDONDO' ? null : tapete.dimensao2Metros,
       nomeColecaoCatalogo: tapete.nomeColecaoCatalogo,
       referenciaCatalogo: tapete.referenciaCatalogo,
       observacoes: tapete.observacoes,
-      cores: tapete.corIds.map((id, ordem) => ({ id, ordem: ordem + 1, ...cores.get(id) })),
+      cores: tapete.tipo === 'CATALOGO' ? [] : tapete.corIds.map((id, ordem) => ({ id, ordem: ordem + 1, ...cores.get(id) })),
     })),
   }
 }

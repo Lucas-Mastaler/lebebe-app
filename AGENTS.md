@@ -18,7 +18,8 @@ Em ordem de prioridade, quando houver dúvida ou conflito:
    tenha sido criada lá deve ser buscada no arquivo legado equivalente em
    `.devin/rules/` (ver `.agents/rules/README.md` para o mapeamento).
 5. Documentação (`docs/`).
-6. Histórico (`docs/ia/log_progress.md`).
+6. Histórico (`docs/ia/log_progress.md`, congelado desde a Fase B2 — ver
+   `docs/ia/log_progress_legacy.md` para a regra de consulta).
 
 Documentação e histórico nunca substituem a leitura do código real. Em caso de
 divergência entre fontes, não escolha um lado no chute: informe a divergência
@@ -120,23 +121,38 @@ limpeza (não iniciada) — ver `.agents/rules/README.md`.
 
 ## 8. Projetos multifase
 
-Trabalho que provavelmente atravessa várias sessões ou agentes (fases
-múltiplas, escopo que precisa ficar estável, troca provável de sessão ou
-ferramenta, vários módulos relacionados, várias decisões de negócio) usa o
-harness de **Projeto Multifase**: contexto persistido em
-`docs/projetos/<slug>/`, nunca só na conversa. Antes de iniciar tarefa
-média, grande/crítica, ou mudança em funcionalidade já existente com
-continuidade provável (checkpoint de estado, ver §9 passo 1), verifique
-`docs/projetos/README.md` — índice curto, não os quatro artefatos
-completos — para saber se já existe projeto correspondente. Nunca crie um
-segundo projeto para o mesmo trabalho.
+O harness de **Projeto Multifase** (contexto persistido em
+`docs/projetos/<slug>/`, nunca só na conversa) só deve ser criado quando os
+dois grupos de sinais abaixo coexistirem — um sozinho não basta:
 
-Quando os gatilhos baterem, leia e siga
-`.agents/skills/projeto-multifase/SKILL.md` (lista completa de gatilhos,
+- **Continuidade real** — um ou mais destes: múltiplas sessões prováveis;
+  handoff entre agentes/ferramentas; interrupção e retomada esperadas;
+  decisão humana necessária entre etapas; trabalho que não deve depender só
+  da conversa atual.
+- **E estrutura substancial** — um ou mais destes: múltiplas fases
+  dependentes; vários entregáveis coordenados; gates entre etapas;
+  sequência de etapas importante; escopo que precisa ficar estável por
+  período longo; risco relevante combinado com duração.
+
+Tarefa ser média, ser grande, tocar banco, ter risco, já ter um plano, ou
+pertencer a um módulo crítico **não cria** Projeto Multifase sozinho — isso
+só eleva a investigação (§4-§5), não a necessidade de continuidade entre
+sessões. Pedido explícito do usuário para criar Projeto Multifase continua
+válido mesmo sem os dois sinais.
+
+Antes de iniciar tarefa média, grande/crítica, ou mudança em funcionalidade
+já existente com continuidade provável (checkpoint de estado, ver §9 passo
+1), verifique `docs/projetos/README.md` — índice curto, não os quatro
+artefatos completos — para saber se já existe projeto correspondente
+(checagem é sempre barata, independente do critério de criação acima).
+Nunca crie um segundo projeto para o mesmo trabalho.
+
+Quando os dois grupos de sinais baterem (ou o usuário pedir explicitamente),
+leia e siga `.agents/skills/projeto-multifase/SKILL.md` (critério completo,
 critérios de exclusão e as operações iniciar/continuar/atualizar/
 finalizar) — ela decide sozinha o que fazer, mesmo sem o pedido mencionar
-isso. Ajuste pontual (texto, log, bug simples, correção localizada) nunca
-precisa desse harness.
+isso. Ajuste pontual (texto, log, bug simples, correção localizada, feature
+média de sessão única) nunca precisa desse harness.
 
 Regra permanente: escopo/plano/status/decisões de um projeto grande vivem
 só em `docs/projetos/<slug>/` — nunca soltos em `docs/`, `.agents/` ou na
@@ -171,12 +187,7 @@ nesta ordem, cada um só se aplicável ao estado atual:
 5. **Depois de implementar, antes de declarar concluído**: abra
    `.agents/skills/validar-entrega/SKILL.md`. Profundidade proporcional —
    não é auditoria geral do módulo.
-6. **Antes da resposta final** de qualquer tarefa com alteração relevante
-   em código, configuração, arquitetura, rules, skills, documentação
-   operacional ou Projeto Multifase: abra
-   `.agents/skills/atualizar-log-progress/SKILL.md` e registre a entrada.
-   Não depende de o usuário pedir.
-7. Qualquer tarefa em `/procurar-datas` → rule (§7) +
+6. Qualquer tarefa em `/procurar-datas` → rule (§7) +
    `.agents/skills/procurar-datas/SKILL.md`.
 
 `auditar → planejar → executar → validar` é um fluxo **possível**, não
@@ -194,9 +205,11 @@ sem recomeçar auditoria; tarefa só investigativa → auditar e parar.
   README para o histórico do mapeamento).
 - `.agents/skills/` — procedimentos reutilizáveis (skills; ver §9).
 - `docs/` — documentação de negócio e de módulo.
-- `docs/ia/log_progress.md` — histórico de continuidade. **Consulta
-  dirigida**: busque por módulo/assunto e priorize entradas recentes. Não
-  leia o arquivo inteiro por padrão — tem dezenas de milhares de linhas.
+- `docs/ia/log_progress.md` — histórico de continuidade, **congelado**
+  (nenhuma escrita nova). Consulta dirigida apenas: busque por
+  módulo/assunto/data e priorize entradas recentes. Não leia o arquivo
+  inteiro por padrão — tem dezenas de milhares de linhas. Regra completa
+  em `docs/ia/log_progress_legacy.md`.
 - `.devin/` — regras/skills legadas. As regras globais já foram absorvidas
   por este arquivo e as 5 regras de módulo já migraram para
   `.agents/rules/` (§7); `.devin/` permanece intacto para
@@ -204,29 +217,24 @@ sem recomeçar auditoria; tarefa só investigativa → auditar e parar.
 
 ## 11. Continuidade e relatório final
 
-- Antes de tarefa relevante: consulta dirigida a `docs/ia/log_progress.md`.
-- Ao final: atualize o log (data, agente, resumo, arquivos, validações,
-  comandos, pendências, riscos, próximo passo) — use a skill
-  `atualizar-log-progress` (§9) para não repetir aqui o procedimento de
-  encoding que ela já padroniza. Resumo do procedimento: preserve encoding
-  — leia antes de editar, nunca use `echo >>` com acento, prefira Node.js
-  com `fs.readFileSync`/`fs.writeFileSync` em `'utf8'` explícito, e confira
-  o resultado por comparação de bytes antes de finalizar (não confie apenas
-  no round-trip de leitura/escrita).
+- **Tarefa normal:** sem persistência global automática — código, worktree
+  e o relatório final ao usuário já registram a execução.
+- **Trabalho dentro de Projeto Multifase:** atualize só os artefatos do
+  projeto que realmente mudaram (`STATUS.md`, `PLANO.md`, `DECISOES.md`,
+  `ESCOPO.md` — ver §8). Não crie nem alimente nenhum arquivo global.
+- **Histórico anterior à Fase B2:** `docs/ia/log_progress.md` está
+  congelado — consulte por busca dirigida quando for material, nunca por
+  leitura integral. Regra completa em `docs/ia/log_progress_legacy.md`.
 - Relatório final proporcional: compacto para tarefa pequena; completo
   (pedido, diagnóstico, arquivos, decisões, validações, riscos, pendências,
-  próximo passo) para tarefa média/grande ou com gatilho de risco.
-- Nunca registre secrets, tokens, senhas ou dados sensíveis no log.
+  próximo passo) para tarefa média/grande ou com gatilho de risco. O
+  relatório final não é copiado para nenhum histórico global.
+- Nunca registre secrets, tokens, senhas ou dados sensíveis em nenhum
+  artefato persistente.
 
-## 12. Estado desta arquitetura
+## 12. Estado vigente
 
-Fundação criada em 2026-08-07; harness de Projeto Multifase adicionado em
-2026-08-07 (Fase 1.5); Fase 2 (regras contextuais em `.agents/rules/`)
-concluída em 2026-08-07; Fase 3 (skills operacionais em `.agents/skills/`:
-`auditar-tarefa`, `criar-plano`, `executar-plano`, `validar-entrega`,
-`atualizar-log-progress`, `procurar-datas`, além de `projeto-multifase` já
-existente) concluída em 2026-08-07. `.devin/rules/`, `.devin/skills/`,
-`.devin/workflows/` e o pacote oficial Supabase em `.agents/skills/`
-continuam disponíveis como fonte legada/interina até a fase de limpeza (não
-iniciada) — nada foi removido. Mapa completo, plano de migração e decisões
-pendentes: `.agents/README.md`.
+As rules (§7) e skills (§9) referenciadas neste arquivo são a fonte vigente.
+`.devin/` permanece como legado/interino até a fase de limpeza (não
+iniciada) — nada foi removido. Histórico de evolução do harness, mapa
+completo e decisões pendentes: `.agents/README.md`.

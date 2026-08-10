@@ -11,8 +11,13 @@
 # URL do endpoint (ajuste conforme necessário)
 $API_URL = "https://lebebe.cloud/api/google/apps-script/executar"
 
-# Token de autenticação (pegue do .env.local: APPS_SCRIPT_API_TOKEN)
-$BEARER_TOKEN = "seu_token_aqui"
+# Token de autenticação — nunca hardcode. Defina antes de executar:
+#   $env:LEBEBE_APPS_SCRIPT_TEST_TOKEN = "<token>"
+$BEARER_TOKEN = $env:LEBEBE_APPS_SCRIPT_TEST_TOKEN
+if ([string]::IsNullOrWhiteSpace($BEARER_TOKEN)) {
+    Write-Error "Variavel de ambiente LEBEBE_APPS_SCRIPT_TEST_TOKEN nao definida. Defina o token antes de executar este script."
+    exit 1
+}
 
 # ─────────────────────────────────────────────────────────
 # TESTE 1: ENDEREÇO ESTRUTURADO (RECOMENDADO)
@@ -200,9 +205,8 @@ Write-Host ""
 
 
 
-# CONFIGURE ESTAS VARIÁVEIS PRIMEIRO
+# CONFIGURE ESTA VARIÁVEL PRIMEIRO
 $API_URL = "https://lebebe.cloud/api/google/apps-script/executar"
-$BEARER_TOKEN = "wV8qf0mM4nJ7sP1xK9rL2aB6uD3yT5cH8zQ1eR4tY2U="
 
 $payload = @{
     logradouro = "Rua Jose de Alencar" 
@@ -244,7 +248,6 @@ catch {
 # ========================================
 
 $API_URL = "https://lebebe.cloud/api/google/calendar/reagendar-cliente"
-$BEARER_TOKEN = "wV8qf0mM4nJ7sP1xK9rL2aB6uD3yT5cH8zQ1eR4tY2U="
 
 $payload = @{
     eventoId        = "fbrvcd4hahou61jrq3dgocj1ik"

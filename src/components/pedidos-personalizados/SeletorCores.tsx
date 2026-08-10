@@ -1,13 +1,12 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
-import { ArrowDown, ArrowUp, BookOpen, ExternalLink, Search, X } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { AlertCircle, Search, X } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { LIMITE_CORES_POR_TAPETE } from '@/lib/pedidos-personalizados'
-import { filtrarCores, moverItem } from './novo-pedido-modelo'
+import { filtrarCores } from './novo-pedido-modelo'
 import type { CorOpcao } from './novo-pedido-modelo'
 
 type Props = {
@@ -22,9 +21,12 @@ type Props = {
 export function SeletorCores({ tapeteNumero, cores, selecionadas, disabled, onChange, onLimite }: Props) {
   const [busca, setBusca] = useState('')
   const [zoom, setZoom] = useState(false)
-  const [catalogo, setCatalogo] = useState(false)
+  const [avisoLimite, setAvisoLimite] = useState(false)
   const filtradas = useMemo(() => filtrarCores(cores, busca), [cores, busca])
-  const porId = useMemo(() => new Map(cores.map((cor) => [cor.id, cor])), [cores])
+
+  useEffect(() => {
+    if (selecionadas.length < LIMITE_CORES_POR_TAPETE) setAvisoLimite(false)
+  }, [selecionadas.length])
 
   function alternar(id: string) {
     if (selecionadas.includes(id)) {
@@ -32,6 +34,7 @@ export function SeletorCores({ tapeteNumero, cores, selecionadas, disabled, onCh
       return
     }
     if (selecionadas.length >= LIMITE_CORES_POR_TAPETE) {
+      setAvisoLimite(true)
       onLimite()
       return
     }
@@ -40,22 +43,9 @@ export function SeletorCores({ tapeteNumero, cores, selecionadas, disabled, onCh
 
   return (
     <section aria-labelledby={`cores-tapete-${tapeteNumero}`} className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h4 id={`cores-tapete-${tapeteNumero}`} className="font-semibold text-slate-800">Cores</h4>
-          <p className="text-sm text-slate-500">Busque no catálogo e selecione até {LIMITE_CORES_POR_TAPETE} cores.</p>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setCatalogo(true)}
-          disabled={disabled}
-          aria-label="Ver catálogo de tapetes"
-        >
-          <BookOpen className="size-4" />
-          Ver Catálogo
-        </Button>
+      <div>
+        <h4 id={`cores-tapete-${tapeteNumero}`} className="font-semibold text-slate-800">Cores</h4>
+        <p className="text-sm text-slate-500">Busque no catálogo e selecione até {LIMITE_CORES_POR_TAPETE} cores.</p>
       </div>
 
       <div className="relative">
@@ -70,52 +60,31 @@ export function SeletorCores({ tapeteNumero, cores, selecionadas, disabled, onCh
         />
       </div>
 
-      <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2" role="group" aria-label="Catálogo de cores Moriah">
+      <div className="max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 sm:max-h-[30rem] lg:max-h-[36rem]" role="group" aria-label="Catálogo de cores Moriah">
         {filtradas.length === 0 ? (
           <p className="p-3 text-sm text-slate-500">Nenhuma cor encontrada.</p>
-        ) : filtradas.map((cor) => {
+        ) : <div className="columns-1 gap-1 sm:columns-2 lg:columns-3">{filtradas.map((cor) => {
           const marcada = selecionadas.includes(cor.id)
           const checkboxId = `tapete-${tapeteNumero}-cor-${cor.id}`
           return (
-            <label key={cor.id} htmlFor={checkboxId} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-3 py-2 hover:bg-slate-50">
+            <label key={cor.id} htmlFor={checkboxId} className="mb-1 flex min-h-11 cursor-pointer items-center gap-3 break-inside-avoid rounded-lg px-3 py-2 hover:bg-slate-50">
               <Checkbox
                 id={checkboxId}
                 checked={marcada}
                 disabled={disabled || (!marcada && selecionadas.length >= LIMITE_CORES_POR_TAPETE)}
                 onCheckedChange={() => alternar(cor.id)}
               />
-              <span className="text-sm text-slate-700">{cor.numero} — {cor.codigo} — {cor.nome}</span>
+              <span className="text-sm text-slate-700"><span className="font-semibold text-slate-900">{cor.numero} — {cor.nome}</span> — <span className="font-normal">{cor.codigo}</span></span>
             </label>
           )
-        })}
+        })}</div>}
       </div>
 
-      {selecionadas.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-sm font-semibold text-slate-700">Cores selecionadas</p>
-          <ol className="space-y-2" aria-label={`Ordem das cores do tapete ${tapeteNumero}`}>
-            {selecionadas.map((id, indice) => {
-              const cor = porId.get(id)
-              if (!cor) return null
-              return (
-                <li key={id} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
-                  <span className="min-w-0 flex-1 text-sm font-medium text-slate-700">
-                    {indice + 1}. {cor.numero} — {cor.codigo} — {cor.nome}
-                  </span>
-                  <Button type="button" variant="ghost" size="icon" className="size-11" disabled={disabled || indice === 0} aria-label={`Mover ${cor.nome} para cima`} onClick={() => onChange(moverItem(selecionadas, indice, -1))}>
-                    <ArrowUp />
-                  </Button>
-                  <Button type="button" variant="ghost" size="icon" className="size-11" disabled={disabled || indice === selecionadas.length - 1} aria-label={`Mover ${cor.nome} para baixo`} onClick={() => onChange(moverItem(selecionadas, indice, 1))}>
-                    <ArrowDown />
-                  </Button>
-                  <Button type="button" variant="ghost" size="icon" className="size-11 text-red-600 hover:text-red-700" disabled={disabled} aria-label={`Remover ${cor.nome}`} onClick={() => alternar(id)}>
-                    <X />
-                  </Button>
-                </li>
-              )
-            })}
-          </ol>
-        </div>
+      {avisoLimite && (
+        <p role="alert" className="flex items-center gap-1.5 text-sm font-medium text-red-600">
+          <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+          Máximo de 6 cores por tapete.
+        </p>
       )}
 
       <p className="text-sm text-slate-500">{selecionadas.length} de {LIMITE_CORES_POR_TAPETE} cores</p>
@@ -128,7 +97,7 @@ export function SeletorCores({ tapeteNumero, cores, selecionadas, disabled, onCh
           aria-label="Ampliar cartela de cores"
         >
           <Image
-            src="/amostras-de-cores-2026.jpg"
+            src="/amostras-de-cores-2026.png"
             alt="Cartela de cores Moriah"
             width={1024}
             height={726}
@@ -157,57 +126,13 @@ export function SeletorCores({ tapeteNumero, cores, selecionadas, disabled, onCh
             <X />
           </button>
           <Image
-            src="/amostras-de-cores-2026.jpg"
+            src="/amostras-de-cores-2026.png"
             alt="Cartela de cores Moriah"
             width={3072}
             height={2173}
             className="max-h-[90vh] max-w-[90vw] object-contain"
             onClick={(e) => e.stopPropagation()}
           />
-        </div>
-      )}
-
-      {catalogo && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Catálogo de tapetes"
-          className="fixed inset-0 z-50 flex flex-col bg-black/80 p-4 sm:p-6"
-          onClick={() => setCatalogo(false)}
-        >
-          <div
-            className="relative flex h-full w-full flex-col overflow-hidden rounded-xl bg-white"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-2">
-              <span className="text-sm font-semibold text-slate-800">Catálogo</span>
-              <div className="flex items-center gap-2">
-                <a
-                  href="https://book107992.publuu.com/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-slate-700 hover:bg-slate-100"
-                >
-                  <ExternalLink className="size-4" />
-                  Abrir em nova guia
-                </a>
-                <button
-                  type="button"
-                  className="inline-flex size-9 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100"
-                  aria-label="Fechar"
-                  onClick={() => setCatalogo(false)}
-                >
-                  <X />
-                </button>
-              </div>
-            </div>
-            <iframe
-              src="https://book107992.publuu.com/"
-              title="Catálogo de tapetes"
-              className="h-full w-full flex-1 border-0"
-              loading="lazy"
-            />
-          </div>
         </div>
       )}
     </section>

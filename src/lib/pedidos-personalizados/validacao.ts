@@ -6,6 +6,7 @@ import {
   LIMITE_TAPETES_POR_PEDIDO,
   ehFormatoTapeteMoriah,
   ehStatusPedidoPersonalizado,
+  ehTipoTapeteMoriah,
   ehUnidadePedidoPersonalizado,
 } from './constantes'
 import {
@@ -254,6 +255,11 @@ export function validarPedidoPersonalizadoMoriah(
     const base = `tapetes.${indice}`
     const errosAntes = erros.length
     const formato = tapete.formato.trim()
+    const tipo = tapete.tipo.trim()
+
+    if (!ehTipoTapeteMoriah(tipo)) {
+      erros.push(erro('TIPO_TAPETE_INVALIDO', `${base}.tipo`, 'Selecione o tipo do tapete: Catálogo ou Personalizado.'))
+    }
 
     if (!Number.isInteger(tapete.ordem) || tapete.ordem < 1 || tapete.ordem > LIMITE_TAPETES_POR_PEDIDO) {
       erros.push(erro('ORDEM_TAPETE_INVALIDA', `${base}.ordem`, 'A ordem do tapete deve estar entre 1 e 10.'))
@@ -297,7 +303,14 @@ export function validarPedidoPersonalizadoMoriah(
     }
     if (observacoes !== null && observacoes.length > 500) erros.push(erro('OBSERVACOES_EXCEDIDAS', `${base}.observacoes`, 'As observações devem ter no máximo 500 caracteres.'))
 
-    const cores = validarCoresSelecionadas(tapete.cores ?? [])
+    if (tipo === 'CATALOGO') {
+      if (!colecao) erros.push(erro('NOME_COLECAO_CATALOGO_OBRIGATORIO', `${base}.nomeColecaoCatalogo`, 'Informe o nome da coleção do catálogo.'))
+      if (!referencia) erros.push(erro('REFERENCIA_CATALOGO_OBRIGATORIA', `${base}.referenciaCatalogo`, 'Informe a referência do catálogo.'))
+    }
+
+    const cores = tipo === 'CATALOGO'
+      ? { valido: true, dados: [] as CorSelecionadaMoriahNormalizada[], erros: [] as Erro[], avisos: [] as Aviso[] }
+      : validarCoresSelecionadas(tapete.cores ?? [])
     erros.push(...cores.erros.map((item) => comCampo(item, `${base}.${item.campo}`)))
     avisos.push(...cores.avisos.map((item) => comCampo(item, `${base}.${item.campo}`)))
 
@@ -305,7 +318,7 @@ export function validarPedidoPersonalizadoMoriah(
     erros.push(...layout.erros.map((item) => comCampo(item, `${base}.${item.campo}`)))
     avisos.push(...layout.avisos.map((item) => comCampo(item, `${base}.${item.campo}`)))
 
-    if (erros.length !== errosAntes || !dimensao1.dados || !ehFormatoTapeteMoriah(formato)) return
+    if (erros.length !== errosAntes || !dimensao1.dados || !ehFormatoTapeteMoriah(formato) || !ehTipoTapeteMoriah(tipo)) return
 
     const dimensao2Cm = dimensao2.dados
     const area = calcularAreaCobradaCentesimosM2(formato, dimensao1.dados, dimensao2Cm)
@@ -328,6 +341,7 @@ export function validarPedidoPersonalizadoMoriah(
       id: tapete.id?.trim() || null,
       ordem: tapete.ordem,
       formato,
+      tipo,
       dimensao1Cm: dimensao1.dados,
       dimensao2Cm,
       areaCobradaCentesimosM2: area.dados.areaCobradaCentesimosM2,
@@ -375,6 +389,7 @@ export function montarPayloadTapetesMoriahRpc(
       ...(tapete.id ? { id: tapete.id } : {}),
       ordem: tapete.ordem,
       formato: tapete.formato,
+      tipo: tapete.tipo,
       dimensao_1_cm: tapete.dimensao1Cm,
       dimensao_2_cm: tapete.dimensao2Cm,
       area_cobrada_centesimos_m2: tapete.areaCobradaCentesimosM2,

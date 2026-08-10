@@ -380,7 +380,11 @@ Passo 3 — [Backend isolado] Confirmar coordenadas do depósito
 
 Passo 4 — [Backend isolado] Primeiro candidato elegível com disponibilidade real
   → Verificar se gerarCandidatosComDisponibilidadeRealV2 retorna ao menos 1 candidato elegível com dados reais
-  → Registrar resultado em log_progress.md
+  → docs/ia/log_progress.md está congelado — não escrever nele. Atualizar a
+    documentação canônica corrente (este documento ou
+    docs/procurar-datas-motor-v2-progresso.md) quando o estado realmente
+    mudar; se a tarefa pertencer a um Projeto Multifase, atualizar também
+    os artefatos do projeto
   → Não comparar com legado ainda — apenas confirmar fluxo puro
 
 Passo 5 — [Backend isolado] Comparação estrutural legado × v2 com disponibilidade real

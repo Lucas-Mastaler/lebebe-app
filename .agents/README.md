@@ -19,6 +19,8 @@ skills reutilizáveis.
   seis skills de projeto criadas na Fase 3 (`auditar-tarefa`, `criar-plano`,
   `executar-plano`, `validar-entrega`, `atualizar-log-progress`,
   `procurar-datas`) — ver o catálogo completo em `skills/README.md`.
+  `atualizar-log-progress` está **aposentada** desde a Fase B2
+  (2026-08-10, ver abaixo).
 
 ## Por que isso existe
 
@@ -28,6 +30,13 @@ Antes desta fundação, o mesmo conjunto de regras vivia duplicado em
 clara entre ferramentas. Diagnóstico completo na auditoria de 2026-08-07,
 registrada em `docs/ia/log_progress.md`.
 
+`CONTEXTO DO PROJETO.MD` (raiz do repositório) foi congelado como histórico
+na Fase C1 (2026-08-10): todo conteúdo único e ainda válido (mapa de
+rotas/APIs/entidades e pontos frágeis do Recebimento) foi absorvido em
+`.agents/rules/recebimento.md` (ver `rules/README.md`, item 2). O arquivo
+permanece no lugar, com aviso no topo, só para valor histórico — não é mais
+consultado como fonte operacional por nenhuma regra ou skill vigente.
+
 ## Estado da migração
 
 | Fase | Status | O que faz |
@@ -35,6 +44,8 @@ registrada em `docs/ia/log_progress.md`.
 | Fundação | Concluída em 2026-08-07 | `AGENTS.md` canônico + `.agents/rules/` e `.agents/skills/` com plano; adaptador `CLAUDE.md` para Claude Code |
 | Fase 2 — regras | Concluída em 2026-08-07 | 5 regras migradas de `.devin/rules/*` para `.agents/rules/*.md` sem perda de conteúdo; `AGENTS.md` §6/§7 apontam para elas |
 | Fase 3 — skills | Concluída em 2026-08-07 | 6 skills de projeto criadas em `.agents/skills/*/SKILL.md` (auditar-tarefa, criar-plano, executar-plano, validar-entrega, atualizar-log-progress, procurar-datas); `AGENTS.md` §9 aponta para elas |
+| Fase B/B2 — log global | Concluída em 2026-08-10 | `docs/ia/log_progress.md` congelado (histórico legado, byte-preservado, ver `docs/ia/log_progress_legacy.md`); escrita global aposentada; continuidade longa passa a ser exclusivamente `docs/projetos/<slug>/`; skill `atualizar-log-progress` aposentada |
+| Fase C1 — consolidação documental | Concluída em 2026-08-10 | `CONTEXTO DO PROJETO.MD` auditado seção a seção e congelado como histórico (mapa único de rotas/APIs/entidades do Recebimento absorvido em `.agents/rules/recebimento.md`); reconciliação de `/procurar-datas` × log congelado já estava resolvida pela Fase B/B2, só verificada |
 | Limpeza do legado | Não iniciada | Remover/desativar `.devin/*` e as duplicações só depois de validar as Fases 2 e 3 em tarefas reais |
 
 Nada em `.devin/` foi removido, movido ou desativado nesta fase. As 5 regras

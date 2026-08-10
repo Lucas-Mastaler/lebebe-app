@@ -4,6 +4,7 @@ import path from 'node:path'
 import {
   adicionarTapete,
   alterarFormatoTapete,
+  alterarTipoTapete,
   alternarCor,
   associarTapetesCriados,
   avaliarFormulario,
@@ -120,6 +121,59 @@ describe('estado do formulário de novo pedido', () => {
   it('limpa a segunda dimensão ao trocar para redondo', () => {
     const tapete = { ...criarEstadoInicial('x').tapetes[0], dimensao2Metros: '2,00' }
     expect(alterarFormatoTapete(tapete, 'REDONDO').dimensao2Metros).toBe('')
+  })
+
+  it('inicia sempre como Personalizado, preservando o comportamento anterior à funcionalidade', () => {
+    expect(criarEstadoInicial('x').tapetes[0].tipo).toBe('PERSONALIZADO')
+  })
+})
+
+describe('troca de Tipo do tapete', () => {
+  it('apaga as cores ao trocar de Personalizado para Catálogo (cenário 5)', () => {
+    let tapete = criarEstadoInicial('x').tapetes[0]
+    tapete = alternarCor(tapete, cores[0].id)
+    tapete = alternarCor(tapete, cores[1].id)
+    expect(tapete.corIds).toHaveLength(2)
+    const catalogo = alterarTipoTapete(tapete, 'CATALOGO')
+    expect(catalogo.tipo).toBe('CATALOGO')
+    expect(catalogo.corIds).toEqual([])
+  })
+
+  it('não restaura as cores apagadas ao voltar de Catálogo para Personalizado (cenário 6)', () => {
+    let tapete = criarEstadoInicial('x').tapetes[0]
+    tapete = alternarCor(tapete, cores[0].id)
+    const catalogo = alterarTipoTapete(tapete, 'CATALOGO')
+    const personalizadoDeNovo = alterarTipoTapete(catalogo, 'PERSONALIZADO')
+    expect(personalizadoDeNovo.tipo).toBe('PERSONALIZADO')
+    expect(personalizadoDeNovo.corIds).toEqual([])
+  })
+
+  it('mantém tipos independentes entre tapetes do mesmo pedido (cenário 7)', () => {
+    let estado = criarEstadoInicial('t1')
+    estado = adicionarTapete(estado, 't2')
+    estado = adicionarTapete(estado, 't3')
+    estado = {
+      ...estado,
+      tapetes: [
+        alterarTipoTapete(estado.tapetes[0], 'CATALOGO'),
+        alterarTipoTapete(estado.tapetes[1], 'PERSONALIZADO'),
+        alterarTipoTapete(estado.tapetes[2], 'CATALOGO'),
+      ],
+    }
+    expect(estado.tapetes.map((tapete) => tapete.tipo)).toEqual(['CATALOGO', 'PERSONALIZADO', 'CATALOGO'])
+  })
+
+  it('nunca envia cores no payload de um tapete Catálogo, mesmo se corIds ainda estivesse preenchido', () => {
+    const estado = estadoValido()
+    const tapeteCatalogo = {
+      ...estado.tapetes[0],
+      tipo: 'CATALOGO' as const,
+      nomeColecaoCatalogo: 'Coleção Formas',
+      referenciaCatalogo: 'ABC-123',
+      corIds: [cores[0].id],
+    }
+    const payload = montarPayloadCriacao({ ...estado, tapetes: [tapeteCatalogo] }, 'idem-key', opcoes)
+    expect(payload.tapetes[0]).toMatchObject({ tipo: 'CATALOGO', cores: [] })
   })
 })
 
@@ -422,7 +476,7 @@ describe('proteção, dados não salvos e bloqueio seguro de anexos', () => {
     expect(anexos).toContain('Até dois arquivos')
   })
 
-  it('aplica limites visuais e mantém a lista selecionada abaixo do catálogo de cores', () => {
+  it('aplica limites visuais e usa apenas o catálogo de cores para seleção', () => {
     const formulario = readFileSync(path.resolve('src/components/pedidos-personalizados/FormularioNovoPedido.tsx'), 'utf8')
     const card = readFileSync(path.resolve('src/components/pedidos-personalizados/CardTapete.tsx'), 'utf8')
     const seletor = readFileSync(path.resolve('src/components/pedidos-personalizados/SeletorCores.tsx'), 'utf8')
@@ -431,7 +485,9 @@ describe('proteção, dados não salvos e bloqueio seguro de anexos', () => {
     expect(card).toContain('maxLength={30}')
     expect(card).toContain('maxLength={20}')
     expect(card).toContain('mascararMedidaMetros')
-    expect(seletor.indexOf('Catálogo de cores Moriah')).toBeLessThan(seletor.indexOf('Cores selecionadas'))
+    expect(seletor).toContain('Catálogo de cores Moriah')
+    expect(seletor).not.toContain('Cores selecionadas')
+    expect(seletor).toContain('Máximo de 6 cores por tapete.')
   })
 
   it('exibe erros por campo tocado ou depois da tentativa de salvar', () => {

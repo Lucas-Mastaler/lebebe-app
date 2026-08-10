@@ -1,11 +1,12 @@
 'use client'
 
-import { ArrowDown, ArrowUp, Circle, RectangleHorizontal, Shapes, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowDown, ArrowUp, BookOpen, Circle, ExternalLink, RectangleHorizontal, Shapes, Trash2, Wand2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { mascararMedidaMetros } from '@/lib/pedidos-personalizados'
-import type { FormatoTapeteMoriah, ProblemaPedidoPersonalizado } from '@/lib/pedidos-personalizados'
-import { alterarFormatoTapete, resumirTapete } from './novo-pedido-modelo'
+import type { FormatoTapeteMoriah, ProblemaPedidoPersonalizado, TipoTapeteMoriah } from '@/lib/pedidos-personalizados'
+import { alterarFormatoTapete, alterarTipoTapete, resumirTapete } from './novo-pedido-modelo'
 import type { CorOpcao, ProdutoOpcao, TapeteFormulario } from './novo-pedido-modelo'
 import { SeletorCores } from './SeletorCores'
 
@@ -36,6 +37,15 @@ const formatos: Array<{
   { valor: 'ORGANICO', label: 'Orgânico', Icone: Shapes },
 ]
 
+const tipos: Array<{
+  valor: TipoTapeteMoriah
+  label: string
+  Icone: typeof BookOpen
+}> = [
+  { valor: 'CATALOGO', label: 'Catálogo', Icone: BookOpen },
+  { valor: 'PERSONALIZADO', label: 'Personalizado', Icone: Wand2 },
+]
+
 function ErroCampo({ mensagens, id }: { mensagens: string[]; id: string }) {
   if (mensagens.length === 0) return null
   return <p id={id} role="alert" className="mt-1 text-sm text-red-600">{mensagens[0]}</p>
@@ -60,6 +70,7 @@ export function CardTapete({
   const numero = indice + 1
   const base = `tapetes.${indice}`
   const resumo = resumirTapete(tapete, produtos)
+  const [catalogoAberto, setCatalogoAberto] = useState(false)
   const mensagens = (campo: string) => {
     const caminho = `${base}.${campo}`
     if (!tentouSalvar && !camposTocados.has(caminho)) return []
@@ -93,6 +104,77 @@ export function CardTapete({
 
       <div className="space-y-6">
         <fieldset disabled={disabled}>
+          <legend className="mb-3 font-semibold text-slate-800">Tipo</legend>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {tipos.map(({ valor, label, Icone }) => {
+              const ativo = tapete.tipo === valor
+              return (
+                <button
+                  key={valor}
+                  type="button"
+                  aria-pressed={ativo}
+                  onClick={() => onChange(alterarTipoTapete(tapete, valor))}
+                  className={`flex min-h-12 items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-[#00A5E6] ${
+                    ativo ? 'border-[#00A5E6] bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <Icone className="size-5" />
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+          <div
+            className={`mt-3 flex items-start gap-2.5 rounded-xl border px-4 py-3 text-base font-semibold ${
+              tapete.tipo === 'CATALOGO'
+                ? 'border-sky-200 bg-sky-50 text-sky-800'
+                : 'border-violet-200 bg-violet-50 text-violet-800'
+            }`}
+          >
+            {tapete.tipo === 'CATALOGO'
+              ? <BookOpen className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+              : <Wand2 className="mt-0.5 size-5 shrink-0" aria-hidden="true" />}
+            <p>
+              {tapete.tipo === 'CATALOGO'
+                ? 'O produto será produzido exatamente conforme a referência do catálogo, sem seleção manual de cores.'
+                : 'Produto fora do catálogo. Ou existe alguma personalização em relação à referência do catálogo, como alteração de cores.'}
+            </p>
+          </div>
+        </fieldset>
+
+        <hr className="border-t border-slate-200" />
+
+        <div>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <h4 className="font-semibold text-slate-800">Catálogo</h4>
+            <Button
+              type="button"
+              onClick={() => setCatalogoAberto(true)}
+              disabled={disabled}
+              aria-label="Ver catálogo de tapetes"
+              className="min-h-14 gap-2 rounded-xl border-2 border-sky-300 bg-sky-100 px-6 text-base font-bold text-sky-800 shadow-sm hover:bg-sky-200"
+            >
+              <BookOpen className="size-6" />
+              Ver Catálogo
+            </Button>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <div className="mb-1.5 flex items-center justify-between gap-2"><label htmlFor={`${tapete.chaveLocal}-colecao`} className="text-sm font-medium text-slate-700">Nome da Coleção do Catálogo{tapete.tipo === 'CATALOGO' ? ' *' : ''}</label><span className="text-xs text-slate-500">{tapete.nomeColecaoCatalogo.length}/30</span></div>
+              <Input id={`${tapete.chaveLocal}-colecao`} value={tapete.nomeColecaoCatalogo} onChange={(event) => campo('nomeColecaoCatalogo', event.target.value)} onBlur={() => onTocar(`${base}.nomeColecaoCatalogo`)} maxLength={30} disabled={disabled} aria-invalid={mensagens('nomeColecaoCatalogo').length > 0} aria-describedby={mensagens('nomeColecaoCatalogo').length > 0 ? `${tapete.chaveLocal}-colecao-erro` : undefined} className="h-11" />
+              <ErroCampo mensagens={mensagens('nomeColecaoCatalogo')} id={`${tapete.chaveLocal}-colecao-erro`} />
+            </div>
+            <div>
+              <div className="mb-1.5 flex items-center justify-between gap-2"><label htmlFor={`${tapete.chaveLocal}-referencia`} className="text-sm font-medium text-slate-700">Cor/Referência do Catálogo{tapete.tipo === 'CATALOGO' ? ' *' : ''}</label><span className="text-xs text-slate-500">{tapete.referenciaCatalogo.length}/20</span></div>
+              <Input id={`${tapete.chaveLocal}-referencia`} value={tapete.referenciaCatalogo} onChange={(event) => campo('referenciaCatalogo', event.target.value)} onBlur={() => onTocar(`${base}.referenciaCatalogo`)} maxLength={20} placeholder="Letras, números e hífen" disabled={disabled} aria-invalid={mensagens('referenciaCatalogo').length > 0} aria-describedby={mensagens('referenciaCatalogo').length > 0 ? `${tapete.chaveLocal}-referencia-erro` : undefined} className="h-11" />
+              <ErroCampo mensagens={mensagens('referenciaCatalogo')} id={`${tapete.chaveLocal}-referencia-erro`} />
+            </div>
+          </div>
+        </div>
+
+        <hr className="border-t border-slate-200" />
+
+        <fieldset disabled={disabled}>
           <legend className="mb-3 font-semibold text-slate-800">Formato</legend>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {formatos.map(({ valor, label, Icone }) => {
@@ -114,6 +196,10 @@ export function CardTapete({
             })}
           </div>
         </fieldset>
+
+        <p className="rounded-lg bg-sky-50 px-3 py-2 text-sm text-sky-800">
+          Sugestão: utilizando em uma das medidas o valor de 0,95 m ou 1,95 m, o tapete pode ficar em uma faixa de preço menor.
+        </p>
 
         <div className={`grid gap-4 ${tapete.formato === 'REDONDO' ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'}`}>
           <div>
@@ -172,27 +258,20 @@ export function CardTapete({
           )}
         </div>
 
-        <SeletorCores
-          tapeteNumero={numero}
-          cores={cores}
-          selecionadas={tapete.corIds}
-          disabled={disabled}
-          onChange={(corIds) => onChange({ ...tapete, corIds })}
-          onLimite={onLimiteCores}
-        />
+        {tapete.tipo === 'PERSONALIZADO' && (
+          <>
+            <hr className="border-t border-slate-200" />
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <div className="mb-1.5 flex items-center justify-between gap-2"><label htmlFor={`${tapete.chaveLocal}-colecao`} className="text-sm font-medium text-slate-700">Coleção</label><span className="text-xs text-slate-500">{tapete.nomeColecaoCatalogo.length}/30</span></div>
-            <Input id={`${tapete.chaveLocal}-colecao`} value={tapete.nomeColecaoCatalogo} onChange={(event) => campo('nomeColecaoCatalogo', event.target.value)} onBlur={() => onTocar(`${base}.nomeColecaoCatalogo`)} maxLength={30} disabled={disabled} aria-invalid={mensagens('nomeColecaoCatalogo').length > 0} aria-describedby={mensagens('nomeColecaoCatalogo').length > 0 ? `${tapete.chaveLocal}-colecao-erro` : undefined} className="h-11" />
-            <ErroCampo mensagens={mensagens('nomeColecaoCatalogo')} id={`${tapete.chaveLocal}-colecao-erro`} />
-          </div>
-          <div>
-            <div className="mb-1.5 flex items-center justify-between gap-2"><label htmlFor={`${tapete.chaveLocal}-referencia`} className="text-sm font-medium text-slate-700">Referência</label><span className="text-xs text-slate-500">{tapete.referenciaCatalogo.length}/20</span></div>
-            <Input id={`${tapete.chaveLocal}-referencia`} value={tapete.referenciaCatalogo} onChange={(event) => campo('referenciaCatalogo', event.target.value)} onBlur={() => onTocar(`${base}.referenciaCatalogo`)} maxLength={20} placeholder="Letras, números e hífen" disabled={disabled} aria-invalid={mensagens('referenciaCatalogo').length > 0} aria-describedby={mensagens('referenciaCatalogo').length > 0 ? `${tapete.chaveLocal}-referencia-erro` : undefined} className="h-11" />
-            <ErroCampo mensagens={mensagens('referenciaCatalogo')} id={`${tapete.chaveLocal}-referencia-erro`} />
-          </div>
-        </div>
+            <SeletorCores
+              tapeteNumero={numero}
+              cores={cores}
+              selecionadas={tapete.corIds}
+              disabled={disabled}
+              onChange={(corIds) => onChange({ ...tapete, corIds })}
+              onLimite={onLimiteCores}
+            />
+          </>
+        )}
 
         <div>
           <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -214,6 +293,50 @@ export function CardTapete({
           <ErroCampo mensagens={mensagens('observacoes')} id={`${tapete.chaveLocal}-observacoes-erro`} />
         </div>
       </div>
+
+      {catalogoAberto && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Catálogo de tapetes"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-3 sm:p-8"
+          onClick={() => setCatalogoAberto(false)}
+        >
+          <div
+            className="relative flex h-full w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:h-[80vh] sm:w-[80vw]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
+              <span className="text-sm font-semibold text-slate-800">Catálogo</span>
+              <div className="flex items-center gap-2">
+                <a
+                  href="https://book107992.publuu.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  <ExternalLink className="size-4" />
+                  Abrir em nova guia
+                </a>
+                <button
+                  type="button"
+                  className="inline-flex size-10 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 transition hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                  aria-label="Fechar catálogo"
+                  onClick={() => setCatalogoAberto(false)}
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
+            </div>
+            <iframe
+              src="https://book107992.publuu.com/"
+              title="Catálogo de tapetes"
+              className="h-full w-full flex-1 border-0"
+              loading="lazy"
+            />
+          </div>
+        </div>
+      )}
     </article>
   )
 }

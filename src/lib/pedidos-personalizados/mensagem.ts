@@ -1,4 +1,4 @@
-import { FORMATO_PARA_EXIBICAO, UNIDADE_PARA_EXIBICAO } from './constantes'
+import { FORMATO_PARA_EXIBICAO, TIPO_TAPETE_PARA_EXIBICAO, UNIDADE_PARA_EXIBICAO } from './constantes'
 import { formatarAreaMetrosQuadrados, formatarMedidaMetros } from './medidas'
 import type {
   CodigoErroPedidoPersonalizado,
@@ -32,7 +32,12 @@ export function gerarMensagemPedidoPersonalizado(
       })
     }
 
-    linhas.push('', `TAPETE ${indice + 1}`, `FORMATO: ${FORMATO_PARA_EXIBICAO[tapete.formato]}`)
+    linhas.push(
+      '',
+      `TAPETE ${indice + 1}`,
+      `TIPO: ${TIPO_TAPETE_PARA_EXIBICAO[tapete.tipo]}`,
+      `FORMATO: ${FORMATO_PARA_EXIBICAO[tapete.formato]}`
+    )
     if (tapete.formato === 'REDONDO') {
       linhas.push(`DIÂMETRO: ${formatarMedidaMetros(tapete.dimensao1Cm)} M`)
     } else if (tapete.dimensao2Cm === null) {

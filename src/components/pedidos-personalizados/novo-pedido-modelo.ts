@@ -2,6 +2,7 @@ import {
   FORNECEDOR_MORIAH,
   LIMITE_CORES_POR_TAPETE,
   LIMITE_TAPETES_POR_PEDIDO,
+  TIPO_TAPETE_PADRAO,
   UNIDADES_PEDIDO_PERSONALIZADO,
   calcularAreaCobradaCentesimosM2,
   classificarProdutoMoriah,
@@ -16,6 +17,7 @@ import type {
   PedidoPersonalizadoMoriahEntrada,
   ProblemaPedidoPersonalizado,
   StatusPedidoPersonalizado,
+  TipoTapeteMoriah,
   UnidadePedidoPersonalizado,
 } from '@/lib/pedidos-personalizados'
 
@@ -59,6 +61,7 @@ export type TapeteFormulario = {
   anexos: AnexoFormulario[]
   anexosLocais: AnexoLocalFormulario[]
   formato: FormatoTapeteMoriah
+  tipo: TipoTapeteMoriah
   dimensao1Metros: string
   dimensao2Metros: string
   corIds: string[]
@@ -130,6 +133,7 @@ export function criarTapeteVazio(chaveLocal: string): TapeteFormulario {
     anexos: [],
     anexosLocais: [],
     formato: 'RETANGULAR',
+    tipo: TIPO_TAPETE_PADRAO,
     dimensao1Metros: '',
     dimensao2Metros: '',
     corIds: [],
@@ -222,6 +226,14 @@ export function alterarFormatoTapete(
   }
 }
 
+export function alterarTipoTapete(tapete: TapeteFormulario, tipo: TipoTapeteMoriah): TapeteFormulario {
+  return {
+    ...tapete,
+    tipo,
+    corIds: tipo === 'CATALOGO' ? [] : tapete.corIds,
+  }
+}
+
 export function alternarCor(tapete: TapeteFormulario, corId: string): TapeteFormulario {
   if (tapete.corIds.includes(corId)) {
     return { ...tapete, corIds: tapete.corIds.filter((id) => id !== corId) }
@@ -258,12 +270,13 @@ export function montarEntradaDominio(
     tapetes: estado.tapetes.map((tapete, indice) => ({
       ordem: indice + 1,
       formato: tapete.formato,
+      tipo: tapete.tipo,
       dimensao1Metros: tapete.dimensao1Metros,
       dimensao2Metros: tapete.formato === 'REDONDO' ? null : tapete.dimensao2Metros,
       nomeColecaoCatalogo: tapete.nomeColecaoCatalogo,
       referenciaCatalogo: tapete.referenciaCatalogo,
       observacoes: tapete.observacoes,
-      cores: tapete.corIds.map((id, corIndice) => {
+      cores: tapete.tipo === 'CATALOGO' ? [] : tapete.corIds.map((id, corIndice) => {
         const cor = coresPorId.get(id)
         return {
           id,
@@ -339,6 +352,7 @@ export function montarPayloadCriacao(
     tapetes: entrada.tapetes.map((tapete) => ({
       ordem: tapete.ordem,
       formato: tapete.formato,
+      tipo: tapete.tipo,
       dimensao1Metros: tapete.dimensao1Metros,
       dimensao2Metros: tapete.dimensao2Metros,
       nomeColecaoCatalogo: tapete.nomeColecaoCatalogo,

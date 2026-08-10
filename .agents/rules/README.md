@@ -75,6 +75,13 @@ mudar, tratar como novo candidato na Fase 2).
 - **Validação necessária:** confirmar que o mapa de rotas/tabelas herdado de
   `CONTEXTO DO PROJETO.MD` ainda bate com o código real antes de migrar (o
   documento é de 2026-06-09; pode ter ficado desatualizado).
+- **Atualização (Fase C1, 2026-08-10):** validação concluída — todas as 3
+  páginas, 12 APIs e 10 entidades do mapa em `CONTEXTO DO PROJETO.MD`
+  §6.2/§6.4 foram confirmadas contra o código e migrations reais e
+  absorvidas em `.agents/rules/recebimento.md` (seção "Pontos de entrada
+  para investigação" + "Pontos frágeis conhecidos", que também herdou §6.6).
+  `CONTEXTO DO PROJETO.MD` foi congelado como histórico nesta mesma fase —
+  ver `.agents/README.md`.
 - **Quando o arquivo antigo pode ser desativado:** mesmo critério do item 1.
 
 ### 3. `.agents/rules/procurar-datas.md`

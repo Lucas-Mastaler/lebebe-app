@@ -40,6 +40,7 @@ function tapete(overrides: Partial<TapeteMoriahEntrada> = {}): TapeteMoriahEntra
   return {
     ordem: 1,
     formato: 'RETANGULAR',
+    tipo: 'PERSONALIZADO',
     dimensao1Metros: '2,00',
     dimensao2Metros: '3,00',
     cores: [],
@@ -333,6 +334,93 @@ describe('validação completa do pedido Moriah', () => {
   })
 })
 
+describe('tipo do tapete: Catálogo x Personalizado', () => {
+  it('aceita Personalizado com cores, mantendo o fluxo atual (cenário 1)', () => {
+    const resultado = validarPedidoPersonalizadoMoriah(pedido({
+      tapetes: [tapete({ tipo: 'PERSONALIZADO', cores: cores(3) })],
+    }))
+    expect(resultado.valido).toBe(true)
+    expect(resultado.dados?.tapetes[0]).toMatchObject({ tipo: 'PERSONALIZADO' })
+    expect(resultado.dados?.tapetes[0].cores).toHaveLength(3)
+  })
+
+  it('aceita Catálogo com nome e referência preenchidos e força cores vazias (cenário 2)', () => {
+    const resultado = validarPedidoPersonalizadoMoriah(pedido({
+      tapetes: [tapete({
+        tipo: 'CATALOGO',
+        nomeColecaoCatalogo: 'Coleção Formas',
+        referenciaCatalogo: 'ABC-123',
+        cores: cores(3),
+      })],
+    }))
+    expect(resultado.valido).toBe(true)
+    expect(resultado.dados?.tapetes[0]).toMatchObject({
+      tipo: 'CATALOGO',
+      nomeColecaoCatalogo: 'COLEÇÃO FORMAS',
+      referenciaCatalogo: 'ABC-123',
+      cores: [],
+    })
+  })
+
+  it('bloqueia Catálogo sem nome da coleção, com mensagem específica (cenário 3)', () => {
+    const resultado = validarPedidoPersonalizadoMoriah(pedido({
+      tapetes: [tapete({ tipo: 'CATALOGO', nomeColecaoCatalogo: null, referenciaCatalogo: 'ABC-123' })],
+    }))
+    expect(resultado.valido).toBe(false)
+    expect(resultado.erros).toContainEqual(expect.objectContaining({
+      codigo: 'NOME_COLECAO_CATALOGO_OBRIGATORIO',
+      campo: 'tapetes.0.nomeColecaoCatalogo',
+    }))
+  })
+
+  it('bloqueia Catálogo sem referência, com mensagem específica (cenário 4)', () => {
+    const resultado = validarPedidoPersonalizadoMoriah(pedido({
+      tapetes: [tapete({ tipo: 'CATALOGO', nomeColecaoCatalogo: 'Coleção Formas', referenciaCatalogo: null })],
+    }))
+    expect(resultado.valido).toBe(false)
+    expect(resultado.erros).toContainEqual(expect.objectContaining({
+      codigo: 'REFERENCIA_CATALOGO_OBRIGATORIA',
+      campo: 'tapetes.0.referenciaCatalogo',
+    }))
+  })
+
+  it('rejeita tipo desconhecido', () => {
+    const resultado = validarPedidoPersonalizadoMoriah(pedido({
+      tapetes: [tapete({ tipo: 'MISTO' })],
+    }))
+    expect(resultado.erros).toContainEqual(expect.objectContaining({ codigo: 'TIPO_TAPETE_INVALIDO' }))
+  })
+
+  it('mantém tipos independentes por tapete no mesmo pedido (cenário 7)', () => {
+    const resultado = validarPedidoPersonalizadoMoriah(pedido({
+      tapetes: [
+        tapete({ ordem: 1, tipo: 'CATALOGO', nomeColecaoCatalogo: 'Coleção A', referenciaCatalogo: 'A-1', cores: cores(2) }),
+        tapete({ ordem: 2, tipo: 'PERSONALIZADO', cores: cores(2) }),
+        tapete({ ordem: 3, tipo: 'CATALOGO', nomeColecaoCatalogo: 'Coleção C', referenciaCatalogo: 'C-1' }),
+      ],
+    }))
+    expect(resultado.valido).toBe(true)
+    expect(resultado.dados?.tapetes.map((item) => ({ tipo: item.tipo, cores: item.cores.length }))).toEqual([
+      { tipo: 'CATALOGO', cores: 0 },
+      { tipo: 'PERSONALIZADO', cores: 2 },
+      { tipo: 'CATALOGO', cores: 0 },
+    ])
+  })
+
+  it('nunca persiste cores de um tapete Catálogo no payload da RPC, mesmo enviado pelo cliente', () => {
+    const validacao = validarPedidoPersonalizadoMoriah(pedido({
+      tapetes: [tapete({
+        tipo: 'CATALOGO',
+        nomeColecaoCatalogo: 'Coleção Formas',
+        referenciaCatalogo: 'ABC-123',
+        cores: cores(3),
+      })],
+    }))
+    const payload = montarPayloadTapetesMoriahRpc(validacao.dados!.tapetes, PRODUTOS)
+    expect(payload.dados?.[0]).toMatchObject({ tipo: 'CATALOGO', cores: [] })
+  })
+})
+
 describe('adaptadores puros compatíveis com as RPCs da Fase 1B', () => {
   it('gera o JSONB comercial com nomes snake_case e sem layout', () => {
     const validacao = validarPedidoPersonalizadoMoriah(pedido({
@@ -343,6 +431,7 @@ describe('adaptadores puros compatíveis com as RPCs da Fase 1B', () => {
       id: 'tapete-1',
       ordem: 1,
       formato: 'RETANGULAR',
+      tipo: 'PERSONALIZADO',
       dimensao_1_cm: 200,
       dimensao_2_cm: 300,
       area_cobrada_centesimos_m2: 600,

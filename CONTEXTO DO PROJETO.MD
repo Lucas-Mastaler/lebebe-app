@@ -1,5 +1,24 @@
 # CONTEXTO DO PROJETO — LE BÉBÉ APP
 
+> **CONGELADO COMO HISTÓRICO (Fase C1, 2026-08-10).** Este documento não é
+> mais fonte operacional. A fonte canônica e neutra de regras do projeto é
+> `AGENTS.md` (raiz) + `.agents/rules/` + `.agents/skills/` — ver
+> `.agents/README.md` para o mapa completo. Em caso de qualquer divergência
+> entre este documento e `AGENTS.md`/`.agents/rules/`/código real, as fontes
+> atuais sempre vencem.
+>
+> O único conteúdo deste arquivo identificado como único e ainda válido — o
+> mapa de rotas/APIs/entidades do módulo de Recebimento (§6.2–§6.4) e os
+> pontos frágeis conhecidos (§6.6) — foi validado contra o código real em
+> 2026-08-10 e absorvido em `.agents/rules/recebimento.md`. O restante do
+> documento (stack, estrutura, diretrizes gerais, checklists, preferências
+> de resposta) está coberto por `AGENTS.md`/`.agents/rules/`, desatualizado,
+> ou é preferência de estilo não confirmada como ainda desejada — nada foi
+> apagado; o arquivo permanece só como referência histórica.
+>
+> Não use este documento para orientar decisão técnica atual. Não foi
+> removido fisicamente nesta fase; preservado para valor histórico.
+
 ## 1. Objetivo deste documento
 Este documento serve como contexto base do projeto para futuras análises, decisões técnicas, sugestões e alterações de código.
 

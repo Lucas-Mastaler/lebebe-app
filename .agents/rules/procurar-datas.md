@@ -26,7 +26,8 @@ por padrão (alguns têm milhares de linhas):
 - `docs/procurar-datas-escopo-equivalencia-legado-v2.md` — **contrato de
   escopo da migração**
 - `docs/procurar-datas-motor-v2-progresso.md` — progresso técnico atual
-- `docs/ia/log_progress.md` — continuidade entre agentes (busca dirigida)
+- `docs/ia/log_progress.md` — histórico congelado, só consulta dirigida
+  (ver `docs/ia/log_progress_legacy.md`)
 
 ## Fonte de verdade
 
@@ -61,9 +62,10 @@ registrar a pendência e informar exatamente o que precisa ser fornecido.
 ## Atualização de documentação
 
 Quando uma regra da migração for validada ou uma pendência resolvida,
-atualizar também `docs/procurar-datas-escopo-equivalencia-legado-v2.md` (e
-`docs/ia/log_progress.md`). Preservar encoding e não reformatar o documento
-inteiro.
+atualizar `docs/procurar-datas-escopo-equivalencia-legado-v2.md`. Se a
+tarefa pertence a um Projeto Multifase, atualizar também os artefatos do
+projeto. `docs/ia/log_progress.md` está congelado — não escrever nele.
+Preservar encoding e não reformatar o documento inteiro.
 
 ## Pendência técnica herdada — não confirmada como resolvida
 

@@ -1,7 +1,12 @@
 # Plano Vivo — Atendimento Automatico Pos-Venda (Mere)
 
-> **Documento de acompanhamento da feature.** Nao substitui `docs/ia/log_progress.md`.
-> Complementa o log geral com o acompanhamento especifico desta feature.
+> **Documento de acompanhamento da feature — continuidade corrente desta
+> feature (Fase 1B ainda pendente).** `docs/ia/log_progress.md` esta
+> congelado desde 2026-08-10 (historico legado, ver
+> `docs/ia/log_progress_legacy.md`) e nao recebe mais entradas novas. Este
+> documento e a fonte de continuidade vigente da feature; os itens
+> marcados `[x]` referentes ao log abaixo sao registro historico da Fase 1A
+> (concluida antes do congelamento), nao instrucao para novas entradas.
 
 ---
 

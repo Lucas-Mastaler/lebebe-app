@@ -7,7 +7,7 @@ detalhado de cada um vive em `<slug>/STATUS.md`; não duplique aqui.
 
 | Projeto | Status | Fase atual | Entrada |
 |---|---|---|---|
-| _(nenhum ainda)_ | — | — | — |
+| higiene-estrutural-repositorio | APROVADO | C2.1 — reconciliação concluída, pronto para Onda 1 | [STATUS.md](higiene-estrutural-repositorio/STATUS.md) |
 
 Estados possíveis: `PLANEJAMENTO` · `APROVADO` · `EM_EXECUCAO` ·
 `BLOQUEADO` · `CONCLUIDO` · `CANCELADO`.

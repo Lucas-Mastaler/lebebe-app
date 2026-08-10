@@ -1,6 +1,6 @@
 ---
 name: projeto-multifase
-description: "Use quando uma tarefa provavelmente atravessa múltiplas fases, sessões ou agentes: implementação dividida em fases, escopo funcional que precisa permanecer estável, troca provável de sessão/ferramenta/agente, vários módulos/arquivos relacionados, várias decisões de negócio, etapas dependentes, necessidade de checkpoints, trabalho que provavelmente não termina numa única tarefa, ou pedido explícito de desenvolvimento por fases / auditoria+plano+implementação em etapas. Use também no início de qualquer tarefa relevante só para checar se ela já pertence a um projeto existente em docs/projetos/. NÃO use para ajuste de texto, correção localizada, bug simples, erro de lint/typecheck já identificado, ou qualquer tarefa que claramente termina na mesma sessão."
+description: "Use quando a tarefa reunir os dois sinais ao mesmo tempo: (1) continuidade real — múltiplas sessões prováveis, handoff entre agentes/ferramentas, interrupção e retomada esperadas, decisão humana entre etapas, trabalho que não deve depender só da conversa atual; E (2) estrutura substancial — múltiplas fases dependentes, vários entregáveis coordenados, gates, sequência de etapas importante, escopo que precisa ficar estável por período longo, ou risco relevante combinado com duração. Use também no início de qualquer tarefa relevante só para checar se ela já pertence a um projeto existente em docs/projetos/ (checagem é sempre barata). Pedido explícito do usuário para criar Projeto Multifase continua válido mesmo sem os dois sinais. NÃO use — mesmo com só um dos sinais — para tarefa média/grande de sessão única, ajuste de texto, correção localizada, bug simples, erro de lint/typecheck já identificado, ou qualquer tarefa que claramente termina na mesma sessão sem necessidade real de handoff."
 metadata:
   author: le-bebe-app
   version: "1.0.0"
@@ -18,30 +18,37 @@ decisão importante é aprovada, ela precisa sobreviver ao fim da conversa,
 
 ## Quando usar (gatilhos)
 
-Considere um Projeto Multifase quando uma ou mais condições fortes
-aparecerem:
+Crie um Projeto Multifase só quando os dois grupos abaixo coexistirem — um
+sozinho não basta:
 
-- implementação dividida em várias fases;
-- escopo funcional relevante que precisa permanecer estável;
-- trabalho provavelmente continuará em outra sessão;
-- possibilidade real de troca de agente ou plataforma;
-- vários módulos/arquivos relacionados;
-- várias decisões de negócio;
-- etapas dependentes entre si;
-- necessidade de checkpoints;
-- desenvolvimento que provavelmente não termina numa única tarefa;
-- usuário pede explicitamente desenvolvimento por fases;
-- usuário pede auditoria + plano + implementação em etapas.
+**Continuidade real** (um ou mais):
+- múltiplas sessões prováveis;
+- handoff entre agentes/ferramentas;
+- interrupção e retomada esperadas;
+- decisão humana necessária entre etapas;
+- trabalho que não deve depender só da conversa atual.
 
-Use julgamento proporcional — a existência de um gatilho não obriga a criar
-projeto sozinho se a tarefa claramente é pequena.
+**E estrutura substancial** (um ou mais):
+- múltiplas fases dependentes;
+- vários entregáveis coordenados;
+- gates entre etapas;
+- sequência de etapas importante;
+- escopo que precisa ficar estável por período longo;
+- risco relevante combinado com duração.
+
+Pedido explícito do usuário para criar Projeto Multifase continua válido
+mesmo sem os dois sinais presentes.
 
 ## Quando NÃO usar
 
-Nunca crie projeto para: typo, texto, ajuste visual pequeno, log pontual,
-correção localizada, erro de lint/typecheck já identificado, bug simples,
-alteração pequena que termina na mesma tarefa, ou tarefa média simples sem
-necessidade real de continuidade. O harness existe para reduzir contexto e
+Nunca crie projeto só porque a tarefa é média, é grande, mexe em vários
+arquivos, toca banco, tem risco, já tem um plano, ou pertence a um módulo
+crítico — isso eleva a investigação (`AGENTS.md` §4-§5), não cria
+necessidade de continuidade entre sessões por si só. Nunca crie projeto
+para: typo, texto, ajuste visual pequeno, log pontual, correção localizada,
+erro de lint/typecheck já identificado, bug simples, alteração pequena que
+termina na mesma tarefa, ou tarefa média/grande de sessão única sem
+necessidade real de handoff. O harness existe para reduzir contexto e
 retrabalho — não para gerar documentação por si.
 
 Se o usuário ainda está só explorando uma ideia e não há escopo suficiente
@@ -145,8 +152,6 @@ validados:
 3. Atualizar `STATUS.md` com o resultado final.
 4. Registrar as validações finais.
 5. Atualizar `docs/projetos/README.md` (status `CONCLUIDO`).
-6. Registrar um resumo curto em `docs/ia/log_progress.md`, apontando para
-   `<slug>/STATUS.md` — não reproduza o projeto inteiro no log global.
 
 Depois de concluído, a pasta permanece como documentação, mas agentes
 futuros **não devem lê-la automaticamente** em tarefas não relacionadas.
@@ -166,11 +171,11 @@ abordagem mais elegante. Se surgir necessidade real de mudar o escopo:
 
 ## Log global
 
-`docs/ia/log_progress.md` continua existindo para continuidade global
-resumida. Para projeto multifase ativo, o detalhe fica na pasta do
-projeto — o log global registra só uma linha curta apontando para o
-`STATUS.md` (ver operação ATUALIZAR/FINALIZAR acima e a skill
-`atualizar-log-progress`, `.agents/skills/README.md`).
+`docs/ia/log_progress.md` é histórico legado congelado — Projeto Multifase
+não escreve nele, em nenhuma operação. Continuidade corrente vive só nos
+quatro artefatos do projeto (`STATUS.md`, `PLANO.md`, `ESCOPO.md`,
+`DECISOES.md`). Consulta histórica, quando realmente necessária, segue
+`docs/ia/log_progress_legacy.md`.
 
 ## Integração com as outras skills planejadas
 
@@ -178,6 +183,5 @@ Ver `.agents/skills/README.md` para o desenho completo — resumo aqui:
 `auditar-tarefa` detecta e usa o contexto de um projeto existente;
 `criar-plano` gera/atualiza `PLANO.md` quando há projeto; `executar-plano`
 executa a fase atual sem reiniciar planejamento aprovado; `validar-entrega`
-atualiza o resultado antes de fechar fase; `atualizar-log-progress` mantém
-o log global resumido apontando para `STATUS.md`; `procurar-datas` coexiste
+atualiza o resultado antes de fechar fase; `procurar-datas` coexiste
 normalmente, preservando suas regras especiais mesmo dentro de um projeto.

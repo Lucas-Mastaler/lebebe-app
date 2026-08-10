@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ClipboardList, History, Plus, RefreshCw, Save, Search, X } from 'lucide-react'
+import { ClipboardList, History, Loader2, Pencil, Plus, RefreshCw, Save, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { HistoricoClienteModal, type HistoricoClienteModalCliente } from '@/components/atendimento-presencial/HistoricoClienteModal'
 import {
@@ -127,6 +128,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   const [selecionado, setSelecionado] = useState<RegistroDetalhe | null>(null)
   const [carregando, setCarregando] = useState(false)
   const [carregandoDetalhe, setCarregandoDetalhe] = useState(false)
+  const [carregandoEdicaoId, setCarregandoEdicaoId] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [viradaCartaoDe, setViradaCartaoDe] = useState('')
   const [viradaCartaoAte, setViradaCartaoAte] = useState('')
@@ -182,25 +184,30 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     }
   }
 
+  async function buscarDetalhe(id: string): Promise<RegistroDetalhe> {
+    const response = await fetch(`/api/atendimento-presencial/atendimentos/${id}`, { cache: 'no-store' })
+    const data = (await response.json()) as ApiDetalheResponse
+    if (!response.ok || !data.ok || !data.atendimento) throw new Error(data.message ?? 'Erro ao carregar atendimento')
+    return {
+      atendimento: data.atendimento,
+      cliente: data.cliente ?? null,
+      criancas: data.criancas ?? [],
+      departamentos: data.departamentos ?? [],
+      produtosInteresse: data.produtosInteresse ?? [],
+      motivos: data.motivos ?? [],
+      historico: data.historico ?? [],
+      podeEditar: data.podeEditar ?? false,
+      motivoBloqueio: data.motivoBloqueio ?? null,
+      limiteEdicaoEm: data.limiteEdicaoEm ?? null,
+    }
+  }
+
   async function carregarDetalhe(id: string, options?: { preservarMensagemEdicao?: boolean }) {
     setCarregandoDetalhe(true)
     setErro(null)
     try {
-      const response = await fetch(`/api/atendimento-presencial/atendimentos/${id}`, { cache: 'no-store' })
-      const data = (await response.json()) as ApiDetalheResponse
-      if (!response.ok || !data.ok || !data.atendimento) throw new Error(data.message ?? 'Erro ao carregar atendimento')
-      setSelecionado({
-        atendimento: data.atendimento,
-        cliente: data.cliente ?? null,
-        criancas: data.criancas ?? [],
-        departamentos: data.departamentos ?? [],
-        produtosInteresse: data.produtosInteresse ?? [],
-        motivos: data.motivos ?? [],
-        historico: data.historico ?? [],
-        podeEditar: data.podeEditar ?? false,
-        motivoBloqueio: data.motivoBloqueio ?? null,
-        limiteEdicaoEm: data.limiteEdicaoEm ?? null,
-      })
+      const detalhe = await buscarDetalhe(id)
+      setSelecionado(detalhe)
       setEdicaoAberta(false)
       setFichaEdicao(null)
       if (!options?.preservarMensagemEdicao) setMensagemEdicao(null)
@@ -209,6 +216,20 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       setErro(error instanceof Error ? error.message : 'Erro ao carregar atendimento')
     } finally {
       setCarregandoDetalhe(false)
+    }
+  }
+
+  async function editarAtendimentoCard(id: string) {
+    setCarregandoEdicaoId(id)
+    setErro(null)
+    try {
+      const detalhe = await buscarDetalhe(id)
+      setSelecionado(detalhe)
+      abrirEdicao(detalhe)
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : 'Erro ao carregar atendimento')
+    } finally {
+      setCarregandoEdicaoId(null)
     }
   }
 
@@ -553,29 +574,51 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                 <p className="rounded-md border border-dashed border-slate-200 p-4 text-sm text-slate-500">Nenhum atendimento concluido encontrado.</p>
               )}
               {registros.map((registro) => (
-                <button
+                <article
                   key={registro.id}
-                  type="button"
-                  onClick={() => void carregarDetalhe(registro.id)}
-                  className="rounded-md border border-slate-200 bg-white p-4 text-left outline-none transition hover:border-sky-300 focus-visible:ring-2 focus-visible:ring-sky-500"
+                  className="rounded-md border border-slate-200 bg-white p-4 transition hover:border-sky-300"
                 >
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="font-semibold text-slate-950">{registro.clienteNome}</p>
-                      <p className="text-sm text-slate-600">{registro.unidadeNome} - {registro.consultoraEmail}</p>
-                      {registro.consultoraNomeManual && <p className="text-sm text-slate-600">Consultora: {registro.consultoraNomeManual}</p>}
+                  <button
+                    type="button"
+                    onClick={() => void carregarDetalhe(registro.id)}
+                    className="w-full rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="font-semibold text-slate-950">{registro.clienteNome}</p>
+                        <p className="text-sm text-slate-600">{registro.unidadeNome} - {registro.consultoraEmail}</p>
+                        {registro.consultoraNomeManual && <p className="text-sm text-slate-600">Consultora: {registro.consultoraNomeManual}</p>}
+                      </div>
+                      <span className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-right">
+                        <span className="block text-[10px] font-bold uppercase tracking-wide text-sky-700">Venda fechada?</span>
+                        <span className="block text-sm font-bold text-slate-900">{formatarVendaFechadaRegistro(registro.resultadoAtendimento)}</span>
+                      </span>
                     </div>
-                    <span className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-right">
-                      <span className="block text-[10px] font-bold uppercase tracking-wide text-sky-700">Venda fechada?</span>
-                      <span className="block text-sm font-bold text-slate-900">{formatarVendaFechadaRegistro(registro.resultadoAtendimento)}</span>
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm text-slate-600">Concluido em {formatarData(registro.concluidoEm)}</p>
-                  {registro.numeroLancamento && <p className="text-sm text-slate-600">Lancamento {registro.numeroLancamento}</p>}
-                  {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes) && (
-                    <p className="text-sm text-slate-600">Virada do cartao {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes)}</p>
-                  )}
-                </button>
+                    <p className="mt-2 text-sm text-slate-600">Concluido em {formatarData(registro.concluidoEm)}</p>
+                    {registro.numeroLancamento && <p className="text-sm text-slate-600">Lancamento {registro.numeroLancamento}</p>}
+                    {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes) && (
+                      <p className="text-sm text-slate-600">Virada do cartao {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes)}</p>
+                    )}
+                  </button>
+                  <Button
+                    type="button"
+                    onClick={() => void editarAtendimentoCard(registro.id)}
+                    disabled={carregandoEdicaoId === registro.id}
+                    className="mt-3 h-12 w-full rounded-md text-base font-semibold"
+                  >
+                    {carregandoEdicaoId === registro.id ? (
+                      <>
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
+                        Carregando...
+                      </>
+                    ) : (
+                      <>
+                        <Pencil className="mr-2 h-5 w-5" aria-hidden="true" />
+                        Editar atendimento
+                      </>
+                    )}
+                  </Button>
+                </article>
               ))}
             </div>
           </section>
@@ -676,249 +719,6 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                     </div>
                   </div>
                 )}
-                {edicaoAberta && fichaEdicao && (
-                  <div className="grid gap-4 rounded-md border border-sky-200 bg-sky-50/50 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-base font-semibold text-slate-950">Editar atendimento</p>
-                        <p className="mt-1 text-xs text-slate-600">Versao {selecionado.atendimento.version}</p>
-                      </div>
-                      <Button type="button" variant="outline" onClick={() => setEdicaoAberta(false)} className="h-9 rounded-md">
-                        <X className="h-4 w-4" aria-hidden="true" />
-                      </Button>
-                    </div>
-
-                    {mensagemEdicao && <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{mensagemEdicao}</p>}
-                    {erroEdicao && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{erroEdicao}</p>}
-
-                    <div className="grid gap-2 rounded-md border border-slate-200 bg-white p-3">
-                      <p className="text-xs font-bold uppercase text-slate-500">Somente leitura</p>
-                      <p>Cliente: {selecionado.cliente?.nome ?? 'Cliente nao localizada'}</p>
-                      <p>Unidade: {resumoSelecionado?.unidadeNome ?? selecionado.atendimento.unidadeId}</p>
-                      <p>Consultora: {resumoSelecionado?.consultoraEmail ?? selecionado.atendimento.consultoraUsuarioId}</p>
-                      <p>Nome da consultora: {selecionado.atendimento.consultoraNomeManual ?? 'Nao informado'}</p>
-                    </div>
-
-                    <div className="grid gap-3">
-                      <label className="text-sm font-semibold text-slate-800">
-                        Nome da consultora
-                        <input
-                          value={fichaEdicao.consultoraNome ?? ''}
-                          onChange={(event) => atualizarFichaEdicao((atual) => ({ ...atual, consultoraNome: event.target.value }))}
-                          onBlur={(event) => atualizarFichaEdicao((atual) => ({ ...atual, consultoraNome: normalizarNomeConsultora(event.target.value) }))}
-                          className="mt-2 min-h-11 w-full rounded-md border border-slate-200 px-3 text-base"
-                          maxLength={FICHA_CONSULTORA_NOME_MAX_CHARS}
-                          placeholder="Digite o nome da consultora"
-                        />
-                      </label>
-                    </div>
-
-                    <div className="grid gap-3">
-                      <p className="text-sm font-semibold text-slate-800">Criancas</p>
-                      {fichaEdicao.criancas.map((crianca) => (
-                        <div key={crianca.id} className="grid gap-3 rounded-md border border-slate-200 bg-white p-3">
-                          <select
-                            value={crianca.situacao}
-                            onChange={(event) => atualizarCriancaEdicao(crianca.id, {
-                              situacao: event.target.value as SituacaoCrianca,
-                              dataPrevistaNascimento: undefined,
-                              idadeUnidade: undefined,
-                              idadeValor: undefined,
-                            })}
-                            className="min-h-11 rounded-md border border-slate-200 bg-white px-3 text-base"
-                          >
-                            {SITUACOES_CRIANCA.map((item) => <option key={item.chave} value={item.chave}>{item.label}</option>)}
-                          </select>
-                          {crianca.situacao === 'gestacao' || crianca.situacao === 'presente_outra_pessoa' ? (
-                            <input
-                              value={dataPrevistaEdicaoInputs[crianca.id] ?? formatarDataISOParaInput(crianca.dataPrevistaNascimento)}
-                              onChange={(event) => atualizarDataPrevistaEdicao(crianca.id, event.target.value)}
-                              className="min-h-11 rounded-md border border-slate-200 px-3 text-base"
-                              placeholder="DD/MM/AAAA"
-                            />
-                          ) : null}
-                          {crianca.situacao === 'ja_nasceu' && (
-                            <div className="grid gap-2">
-                              <div className="grid grid-cols-2 gap-2">
-                                {(['meses', 'anos'] as UnidadeIdadeCrianca[]).map((unidade) => (
-                                  <Button key={unidade} type="button" variant={crianca.idadeUnidade === unidade ? 'default' : 'outline'} onClick={() => atualizarCriancaEdicao(crianca.id, { idadeUnidade: unidade, idadeValor: undefined })} className="h-10 rounded-md">
-                                    {unidade === 'meses' ? 'Meses' : 'Anos'}
-                                  </Button>
-                                ))}
-                              </div>
-                              {crianca.idadeUnidade && (
-                                <div className="grid grid-cols-4 gap-2">
-                                  {Array.from({ length: crianca.idadeUnidade === 'meses' ? 11 : 6 }, (_, i) => i + 1).map((valor) => (
-                                    <Button key={valor} type="button" variant={crianca.idadeValor === valor ? 'default' : 'outline'} onClick={() => atualizarCriancaEdicao(crianca.id, { idadeValor: valor })} className="h-10 rounded-md">
-                                      {valor}
-                                    </Button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          <input
-                            value={crianca.nome ?? ''}
-                            disabled={crianca.nomeNaoInformado}
-                            onChange={(event) => atualizarCriancaEdicao(crianca.id, { nome: limparNomeCriancaDigitacao(event.target.value), nomeNaoInformado: false })}
-                            className="min-h-11 rounded-md border border-slate-200 px-3 text-base disabled:bg-slate-100"
-                            placeholder="Nome da crianca"
-                          />
-                          <label className="flex min-h-10 items-center gap-3 text-sm font-semibold text-slate-700">
-                            <input
-                              type="checkbox"
-                              checked={crianca.nomeNaoInformado === true}
-                              onChange={(event) => atualizarCriancaEdicao(crianca.id, event.target.checked ? { nome: undefined, nomeNaoInformado: true } : { nomeNaoInformado: false })}
-                            />
-                            Nao sabe o nome ainda
-                          </label>
-                          <select
-                            value={crianca.sexo ?? ''}
-                            onChange={(event) => atualizarCriancaEdicao(crianca.id, { sexo: event.target.value ? event.target.value as SexoCrianca : undefined })}
-                            className="min-h-11 rounded-md border border-slate-200 bg-white px-3 text-base"
-                          >
-                            <option value="">Sexo nao informado</option>
-                            {SEXOS_CRIANCA.map((item) => <option key={item.chave} value={item.chave}>{item.label}</option>)}
-                          </select>
-                          {fichaEdicao.criancas.length > 1 && (
-                            <Button type="button" variant="outline" onClick={() => removerCriancaEdicao(crianca.id)} className="h-10 rounded-md">
-                              Remover crianca
-                            </Button>
-                          )}
-                        </div>
-                      ))}
-                      <Button type="button" variant="outline" onClick={adicionarCriancaEdicao} className="h-11 rounded-md">
-                        <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
-                        Adicionar crianca
-                      </Button>
-                    </div>
-
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">Departamentos</p>
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        {DEPARTAMENTOS_INTERESSE.map((item) => (
-                          <Button key={item.chave} type="button" variant={fichaEdicao.departamentos.includes(item.chave) ? 'default' : 'outline'} onClick={() => alternarDepartamentoEdicao(item.chave)} className="min-h-11 rounded-md">
-                            {item.label}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">Produtos de interesse</p>
-                      <div className="mt-2 flex gap-2">
-                        <input
-                          value={produtoEdicaoDigitado}
-                          onChange={(event) => setProdutoEdicaoDigitado(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault()
-                              adicionarProdutoEdicao()
-                            }
-                          }}
-                          className="min-h-11 flex-1 rounded-md border border-slate-200 px-3 text-base"
-                          maxLength={FICHA_PRODUTO_MAX_CHARS}
-                        />
-                        <Button type="button" onClick={adicionarProdutoEdicao} className="h-11 rounded-md">
-                          <Plus className="h-4 w-4" aria-hidden="true" />
-                        </Button>
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {fichaEdicao.produtosInteresse.map((produto) => (
-                          <button key={produto} type="button" onClick={() => atualizarFichaEdicao((atual) => ({ ...atual, produtosInteresse: atual.produtosInteresse.filter((item) => item !== produto) }))} className="inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold">
-                            {produto}
-                            <X className="h-4 w-4" aria-hidden="true" />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">Resultado</p>
-                      <div className="mt-2 grid gap-2">
-                        {RESULTADOS_ATENDIMENTO.map((item) => (
-                          <Button key={item.chave} type="button" variant={fichaEdicao.resultadoAtendimento === item.chave ? 'default' : 'outline'} onClick={() => {
-                            if (item.chave !== 'sim') setNumeroLancamentoEdicao('')
-                            atualizarFichaEdicao((atual) => ({ ...atual, resultadoAtendimento: item.chave as ResultadoAtendimento }))
-                          }} className="min-h-11 rounded-md">
-                            {item.label}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">Motivos</p>
-                      <div className="mt-3 grid gap-4">
-                        {MOTIVOS_RESULTADO_GRUPOS.map((grupo) => (
-                          <div key={grupo.chave}>
-                            <p className="mb-2 text-base font-semibold text-slate-800">{grupo.label}</p>
-                            <div className="grid gap-2">
-                              {grupo.motivos.map((motivo) => (
-                                <Button key={motivo.chave} type="button" variant={fichaEdicao.motivosResultado.includes(motivo.chave) ? 'default' : 'outline'} onClick={() => alternarMotivoEdicao(motivo.chave)} className="min-h-11 justify-start rounded-md">
-                                  {motivo.label}
-                                </Button>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {fichaEdicao.motivosResultado.includes('virada_cartao') && (
-                      <label className="text-sm font-semibold text-slate-800">
-                        Virada do cartao
-                        <input
-                          value={viradaCartaoEdicaoInput}
-                          onChange={(event) => atualizarViradaCartaoEdicao(event.target.value)}
-                          className="mt-2 min-h-11 w-full rounded-md border border-slate-200 px-3 text-base"
-                          inputMode="numeric"
-                          placeholder="DD/MM"
-                          maxLength={5}
-                        />
-                      </label>
-                    )}
-
-                    {fichaEdicao.motivosResultado.includes('outro') && (
-                      <label className="text-sm font-semibold text-slate-800">
-                        Complemento de Outro
-                        <input
-                          value={fichaEdicao.motivoOutro ?? ''}
-                          onChange={(event) => atualizarFichaEdicao((atual) => ({ ...atual, motivoOutro: event.target.value }))}
-                          className="mt-2 min-h-11 w-full rounded-md border border-slate-200 px-3 text-base"
-                          maxLength={120}
-                        />
-                      </label>
-                    )}
-
-                    <label className="text-sm font-semibold text-slate-800">
-                      Observacoes
-                      <textarea
-                        value={fichaEdicao.observacoes ?? ''}
-                        onChange={(event) => atualizarFichaEdicao((atual) => ({ ...atual, observacoes: event.target.value }))}
-                        className="mt-2 min-h-32 w-full rounded-md border border-slate-200 px-3 py-2 text-base"
-                        maxLength={FICHA_OBSERVACOES_MAX_CHARS}
-                      />
-                    </label>
-
-                    {fichaEdicao.resultadoAtendimento === 'sim' && (
-                      <label className="text-sm font-semibold text-slate-800">
-                        Numero do lancamento
-                        <input
-                          value={numeroLancamentoEdicao}
-                          onChange={(event) => setNumeroLancamentoEdicao(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                          className="mt-2 min-h-11 w-full rounded-md border border-slate-200 px-3 text-base"
-                          inputMode="numeric"
-                        />
-                      </label>
-                    )}
-
-                    <Button type="button" onClick={salvarEdicao} disabled={salvandoEdicao} className="h-11 rounded-md">
-                      <Save className="mr-2 h-4 w-4" aria-hidden="true" />
-                      {salvandoEdicao ? 'Salvando...' : 'Salvar edicao'}
-                    </Button>
-                  </div>
-                )}
               </div>
             )}
           </aside>
@@ -976,6 +776,265 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
         onOpenChange={setHistoricoAberto}
         cliente={historicoCliente}
       />
+      <Dialog open={edicaoAberta} onOpenChange={(open) => { if (!open) setEdicaoAberta(false) }}>
+        <DialogContent className="flex flex-col gap-0 overflow-hidden p-0 max-h-[calc(100dvh-32px)] sm:max-h-[90vh] sm:max-w-2xl">
+          <DialogHeader className="flex-none border-b border-slate-100 px-4 pb-3 pt-4 pr-10 sm:px-6 sm:pr-12 sm:pt-5">
+            <DialogTitle className="text-base">
+              Editar atendimento
+              {selecionado?.cliente?.nome && <span className="ml-2 font-normal text-slate-500">- {selecionado.cliente.nome}</span>}
+            </DialogTitle>
+            {selecionado && <p className="text-xs text-slate-600">Versao {selecionado.atendimento.version}</p>}
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+            <div className="grid gap-4 px-4 pb-6 pt-4 sm:px-6">
+              {(carregandoDetalhe || !selecionado) && (
+                <p className="text-sm text-slate-500">Carregando atendimento...</p>
+              )}
+
+              {!carregandoDetalhe && selecionado && !selecionado.podeEditar && (
+                <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  {selecionado.motivoBloqueio ?? 'Voce nao possui permissao para editar este atendimento.'}
+                </p>
+              )}
+
+              {!carregandoDetalhe && selecionado && selecionado.podeEditar && fichaEdicao && (
+                <>
+                  {mensagemEdicao && <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{mensagemEdicao}</p>}
+                  {erroEdicao && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{erroEdicao}</p>}
+
+                  <div className="grid gap-2 rounded-md border border-slate-200 bg-white p-3">
+                    <p className="text-xs font-bold uppercase text-slate-500">Somente leitura</p>
+                    <p>Cliente: {selecionado.cliente?.nome ?? 'Cliente nao localizada'}</p>
+                    <p>Unidade: {resumoSelecionado?.unidadeNome ?? selecionado.atendimento.unidadeId}</p>
+                    <p>Consultora: {resumoSelecionado?.consultoraEmail ?? selecionado.atendimento.consultoraUsuarioId}</p>
+                    <p>Nome da consultora: {selecionado.atendimento.consultoraNomeManual ?? 'Nao informado'}</p>
+                  </div>
+
+                  <div className="grid gap-3">
+                    <label className="text-sm font-semibold text-slate-800">
+                      Nome da consultora
+                      <input
+                        value={fichaEdicao.consultoraNome ?? ''}
+                        onChange={(event) => atualizarFichaEdicao((atual) => ({ ...atual, consultoraNome: event.target.value }))}
+                        onBlur={(event) => atualizarFichaEdicao((atual) => ({ ...atual, consultoraNome: normalizarNomeConsultora(event.target.value) }))}
+                        className="mt-2 min-h-11 w-full rounded-md border border-slate-200 px-3 text-base"
+                        maxLength={FICHA_CONSULTORA_NOME_MAX_CHARS}
+                        placeholder="Digite o nome da consultora"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid gap-3">
+                    <p className="text-sm font-semibold text-slate-800">Criancas</p>
+                    {fichaEdicao.criancas.map((crianca) => (
+                      <div key={crianca.id} className="grid gap-3 rounded-md border border-slate-200 bg-white p-3">
+                        <select
+                          value={crianca.situacao}
+                          onChange={(event) => atualizarCriancaEdicao(crianca.id, {
+                            situacao: event.target.value as SituacaoCrianca,
+                            dataPrevistaNascimento: undefined,
+                            idadeUnidade: undefined,
+                            idadeValor: undefined,
+                          })}
+                          className="min-h-11 rounded-md border border-slate-200 bg-white px-3 text-base"
+                        >
+                          {SITUACOES_CRIANCA.map((item) => <option key={item.chave} value={item.chave}>{item.label}</option>)}
+                        </select>
+                        {crianca.situacao === 'gestacao' || crianca.situacao === 'presente_outra_pessoa' ? (
+                          <input
+                            value={dataPrevistaEdicaoInputs[crianca.id] ?? formatarDataISOParaInput(crianca.dataPrevistaNascimento)}
+                            onChange={(event) => atualizarDataPrevistaEdicao(crianca.id, event.target.value)}
+                            className="min-h-11 rounded-md border border-slate-200 px-3 text-base"
+                            placeholder="DD/MM/AAAA"
+                          />
+                        ) : null}
+                        {crianca.situacao === 'ja_nasceu' && (
+                          <div className="grid gap-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              {(['meses', 'anos'] as UnidadeIdadeCrianca[]).map((unidade) => (
+                                <Button key={unidade} type="button" variant={crianca.idadeUnidade === unidade ? 'default' : 'outline'} onClick={() => atualizarCriancaEdicao(crianca.id, { idadeUnidade: unidade, idadeValor: undefined })} className="h-10 rounded-md">
+                                  {unidade === 'meses' ? 'Meses' : 'Anos'}
+                                </Button>
+                              ))}
+                            </div>
+                            {crianca.idadeUnidade && (
+                              <div className="grid grid-cols-4 gap-2">
+                                {Array.from({ length: crianca.idadeUnidade === 'meses' ? 11 : 6 }, (_, i) => i + 1).map((valor) => (
+                                  <Button key={valor} type="button" variant={crianca.idadeValor === valor ? 'default' : 'outline'} onClick={() => atualizarCriancaEdicao(crianca.id, { idadeValor: valor })} className="h-10 rounded-md">
+                                    {valor}
+                                  </Button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <input
+                          value={crianca.nome ?? ''}
+                          disabled={crianca.nomeNaoInformado}
+                          onChange={(event) => atualizarCriancaEdicao(crianca.id, { nome: limparNomeCriancaDigitacao(event.target.value), nomeNaoInformado: false })}
+                          className="min-h-11 rounded-md border border-slate-200 px-3 text-base disabled:bg-slate-100"
+                          placeholder="Nome da crianca"
+                        />
+                        <label className="flex min-h-10 items-center gap-3 text-sm font-semibold text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={crianca.nomeNaoInformado === true}
+                            onChange={(event) => atualizarCriancaEdicao(crianca.id, event.target.checked ? { nome: undefined, nomeNaoInformado: true } : { nomeNaoInformado: false })}
+                          />
+                          Nao sabe o nome ainda
+                        </label>
+                        <select
+                          value={crianca.sexo ?? ''}
+                          onChange={(event) => atualizarCriancaEdicao(crianca.id, { sexo: event.target.value ? event.target.value as SexoCrianca : undefined })}
+                          className="min-h-11 rounded-md border border-slate-200 bg-white px-3 text-base"
+                        >
+                          <option value="">Sexo nao informado</option>
+                          {SEXOS_CRIANCA.map((item) => <option key={item.chave} value={item.chave}>{item.label}</option>)}
+                        </select>
+                        {fichaEdicao.criancas.length > 1 && (
+                          <Button type="button" variant="outline" onClick={() => removerCriancaEdicao(crianca.id)} className="h-10 rounded-md">
+                            Remover crianca
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                    <Button type="button" variant="outline" onClick={adicionarCriancaEdicao} className="h-11 rounded-md">
+                      <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+                      Adicionar crianca
+                    </Button>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Departamentos</p>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {DEPARTAMENTOS_INTERESSE.map((item) => (
+                        <Button key={item.chave} type="button" variant={fichaEdicao.departamentos.includes(item.chave) ? 'default' : 'outline'} onClick={() => alternarDepartamentoEdicao(item.chave)} className="min-h-11 rounded-md">
+                          {item.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Produtos de interesse</p>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        value={produtoEdicaoDigitado}
+                        onChange={(event) => setProdutoEdicaoDigitado(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault()
+                            adicionarProdutoEdicao()
+                          }
+                        }}
+                        className="min-h-11 flex-1 rounded-md border border-slate-200 px-3 text-base"
+                        maxLength={FICHA_PRODUTO_MAX_CHARS}
+                      />
+                      <Button type="button" onClick={adicionarProdutoEdicao} className="h-11 rounded-md">
+                        <Plus className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {fichaEdicao.produtosInteresse.map((produto) => (
+                        <button key={produto} type="button" onClick={() => atualizarFichaEdicao((atual) => ({ ...atual, produtosInteresse: atual.produtosInteresse.filter((item) => item !== produto) }))} className="inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold">
+                          {produto}
+                          <X className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Resultado</p>
+                    <div className="mt-2 grid gap-2">
+                      {RESULTADOS_ATENDIMENTO.map((item) => (
+                        <Button key={item.chave} type="button" variant={fichaEdicao.resultadoAtendimento === item.chave ? 'default' : 'outline'} onClick={() => {
+                          if (item.chave !== 'sim') setNumeroLancamentoEdicao('')
+                          atualizarFichaEdicao((atual) => ({ ...atual, resultadoAtendimento: item.chave as ResultadoAtendimento }))
+                        }} className="min-h-11 rounded-md">
+                          {item.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Motivos</p>
+                    <div className="mt-3 grid gap-4">
+                      {MOTIVOS_RESULTADO_GRUPOS.map((grupo) => (
+                        <div key={grupo.chave}>
+                          <p className="mb-2 text-base font-semibold text-slate-800">{grupo.label}</p>
+                          <div className="grid gap-2">
+                            {grupo.motivos.map((motivo) => (
+                              <Button key={motivo.chave} type="button" variant={fichaEdicao.motivosResultado.includes(motivo.chave) ? 'default' : 'outline'} onClick={() => alternarMotivoEdicao(motivo.chave)} className="min-h-11 justify-start rounded-md">
+                                {motivo.label}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {fichaEdicao.motivosResultado.includes('virada_cartao') && (
+                    <label className="text-sm font-semibold text-slate-800">
+                      Virada do cartao
+                      <input
+                        value={viradaCartaoEdicaoInput}
+                        onChange={(event) => atualizarViradaCartaoEdicao(event.target.value)}
+                        className="mt-2 min-h-11 w-full rounded-md border border-slate-200 px-3 text-base"
+                        inputMode="numeric"
+                        placeholder="DD/MM"
+                        maxLength={5}
+                      />
+                    </label>
+                  )}
+
+                  {fichaEdicao.motivosResultado.includes('outro') && (
+                    <label className="text-sm font-semibold text-slate-800">
+                      Complemento de Outro
+                      <input
+                        value={fichaEdicao.motivoOutro ?? ''}
+                        onChange={(event) => atualizarFichaEdicao((atual) => ({ ...atual, motivoOutro: event.target.value }))}
+                        className="mt-2 min-h-11 w-full rounded-md border border-slate-200 px-3 text-base"
+                        maxLength={120}
+                      />
+                    </label>
+                  )}
+
+                  <label className="text-sm font-semibold text-slate-800">
+                    Observacoes
+                    <textarea
+                      value={fichaEdicao.observacoes ?? ''}
+                      onChange={(event) => atualizarFichaEdicao((atual) => ({ ...atual, observacoes: event.target.value }))}
+                      className="mt-2 min-h-32 w-full rounded-md border border-slate-200 px-3 py-2 text-base"
+                      maxLength={FICHA_OBSERVACOES_MAX_CHARS}
+                    />
+                  </label>
+
+                  {fichaEdicao.resultadoAtendimento === 'sim' && (
+                    <label className="text-sm font-semibold text-slate-800">
+                      Numero do lancamento
+                      <input
+                        value={numeroLancamentoEdicao}
+                        onChange={(event) => setNumeroLancamentoEdicao(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                        className="mt-2 min-h-11 w-full rounded-md border border-slate-200 px-3 text-base"
+                        inputMode="numeric"
+                      />
+                    </label>
+                  )}
+
+                  <Button type="button" onClick={salvarEdicao} disabled={salvandoEdicao} className="h-11 rounded-md">
+                    <Save className="mr-2 h-4 w-4" aria-hidden="true" />
+                    {salvandoEdicao ? 'Salvando...' : 'Salvar edicao'}
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </main>
   )
 }

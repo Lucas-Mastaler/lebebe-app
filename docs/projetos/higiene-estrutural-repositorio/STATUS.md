@@ -3,9 +3,91 @@
 Projeto: higiene-estrutural-repositorio
 Estado: APROVADO
 Fase atual: Onda 1 concluída (3/3 itens); Onda 2 concluída (1/1 item); Onda 3
-concluída (3/3 itens)
+concluída (3/3 itens); Onda 4 concluída (3/3 itens); Onda 5 — **auditoria
+concluída, decisão de ação segue PENDENTE de confirmação humana (gate)**
 
 ## Última etapa concluída
+
+Onda 5 — auditoria (2026-08-10, SOMENTE AUDITORIA, nenhuma remoção/edição em
+`.devin/`): inventário real confirmou 45 arquivos em `.devin/` (6 `rules/`,
+855 linhas somadas; `skills/login/SKILL.md` stub de 4 linhas; `skills/
+supabase-postgres-best-practices/` com 34 arquivos; `skills/supabase/` com 3
+arquivos; `workflows/login.md` vazio, 0 bytes). Matriz comparativa completa
+contra `.agents/rules/` e `.agents/skills/` registrada em D-005
+(`DECISOES.md`):
+- Os 6 `rules/*` classificados **C — legado superado** (conteúdo de negócio
+  100% absorvido no Harness atual, mapeamento documentado em
+  `.agents/rules/README.md`; nenhum conteúdo exclusivo encontrado). Achado
+  de risco: `Agent.md` §6-8, `gerais.md` §11 e todo `continuidade-agente.md`
+  ainda instruem escrever em `docs/ia/log_progress.md`, congelado desde a
+  Fase B2 (D-001) — instrução ativamente conflitante se o Devin ainda seguir
+  essas regras literalmente (ele não lê `AGENTS.md`).
+- `skills/login/SKILL.md` e `workflows/login.md` confirmados **E — stub/
+  artefato morto** (sem conteúdo funcional).
+- `skills/supabase/` e `skills/supabase-postgres-best-practices/` confirmados
+  **D — duplicado puro/vendor copy** (`diff -rq` = 0 diferenças contra
+  `.agents/skills/` equivalentes; cópia órfã, não rastreada em
+  `skills-lock.json`).
+- Dependência real: `git grep` não encontrou nenhum consumo por código de
+  aplicação. Porém `docs/ia/log_progress.md` (busca dirigida, congelado, não
+  alterado) contém evidência histórica forte — dezenas de sessões reais do
+  agente "Devin" (algumas de 2026-08-06, dias antes de hoje) listando
+  `.devin/rules/*`/`.devin/skills/*`/`.devin/workflows/login.md` como
+  arquivos efetivamente lidos. `.agents/README.md` também afirma (sem prova
+  verificável por este repositório) que o Devin "hoje só lê `.devin/rules/`,
+  `.devin/skills/` e `.devin/workflows/`". Nenhuma configuração de Devin
+  (`devin.yaml`, CI, etc.) foi encontrada no repositório.
+- **Gate humano necessário, D-005 permanece PENDENTE:** pergunta exata a
+  fazer ao usuário — "Você ainda usa o Devin neste repositório de forma que
+  ele dependa da pasta `.devin/`?" — ver D-005 para as três ramificações de
+  decisão (sim/não/incerto).
+`.devin/` permanece byte-intacta (confirmado por `git status --short` antes
+e depois — nenhuma entrada nova). `.agents/`, código, banco, migrations,
+`/procurar-datas`, LocationIQ e arquivos de ondas anteriores não tocados.
+Detalhamento completo em D-005 (`DECISOES.md`).
+
+## Etapa anterior
+
+Onda 4 (2026-08-10): inventário real da raiz confirmou exatamente os 5
+candidatos previstos (`procvlojas.md`, `desloc_backup.md`, `deslocamentos.gs`,
+`digisac_docs.md`, `scriptsreal.md`), nenhum adicional. Classificados os 5:
+- `deslocamentos.gs` — **A (fonte operacional atual / legado ativo)**.
+  Referenciado diretamente pelos dois documentos obrigatórios do módulo
+  `/procurar-datas` (`docs/procurar-datas-escopo-equivalencia-legado-v2.md`
+  linha 3968, `docs/procurar-datas-motor-v2-progresso.md` linha 5118 —
+  ajustes de segurança e integração backend OSRM recentes). **Mantido na
+  raiz, nenhuma ação** — protegido pela regra do módulo.
+- `desloc_backup.md` — **D (backup histórico superado)**. Comparação função
+  a função (normalizando CRLF→LF) confirmou zero função exclusiva do
+  backup — todas já existem, iguais ou evoluídas, em `deslocamentos.gs`
+  (que tem 32 funções a mais, incluindo a integração com backend OSRM
+  ausente do backup). Único commit (2026-07-30), nunca mais tocado; zero
+  consumidor (`git grep`). **Ação executada: arquivo removido (`git rm`).**
+- `scriptsreal.md` — **F (duplicado/superado)**. Diff normalizado contra
+  `scripts/appscript-importar-nfe-matic.js` mostrou conteúdo idêntico
+  exceto a função `doPost`, substituída por versão mais robusta um dia
+  depois no `.js` (`git log --follow` confirma). Zero consumidor.
+  **Ação executada: arquivo removido (`git rm`).**
+- `procvlojas.md` — **C (dado de entrada atual)**. Consumidor confirmado:
+  `scripts/converter-procvlojas-csv.py` lê via caminho hardcoded assumindo
+  raiz do repo. **Mantido na raiz** — separação atual já é o desenho
+  original do script; mover exigiria alterar a lógica do script para ganho
+  só estético.
+- `digisac_docs.md` — **C (dado de referência ativo)**. Sem consumidor de
+  código, mas referenciado por plano ativo não concluído
+  (`docs/ia/plano-dashboard-digisac-metricas.md`, linha 203) e citado
+  repetidamente no log congelado como apoio a implementações reais de
+  integração Digisac. **Mantido na raiz** — nenhum destino existente
+  claramente melhor (dump de API não é runbook em prosa como os de
+  `docs/tecnico/`).
+
+Nenhuma migration, schema, RLS, auth ou regra funcional alterada. Nenhuma
+regra de `/procurar-datas` alterada (Frente 2 não tocada, Haversine não
+promovido, OSRM não alterado — apenas leitura/comparação). `.devin/` e
+LocationIQ não tocados. Detalhamento completo em D-014 (`DECISOES.md`).
+**Onda 4 concluída nesta sessão (3/3 itens).**
+
+## Etapa anterior
 
 Onda 2 (2026-08-10): decidida a retenção de `appscript/logs.md` (D-006).
 Classificação **C — LOG GERADO/REPRODUZÍVEL**: captura manual de uma única
@@ -242,25 +324,33 @@ deste harness):
 
 ## Em andamento
 
-Nada em execução. Ondas 1, 2 e 3 concluídas (Onda 2 nesta sessão, 1/1 item
-— `appscript/logs.md` removido, D-006 resolvida). Nenhuma frente aberta e
-não bloqueada restante além das ondas ainda não iniciadas — ver "Próximo
-passo".
+Nada em execução. Ondas 1, 2, 3 e 4 concluídas. Onda 5: **auditoria de
+evidências concluída** nesta sessão (inventário + matriz comparativa
+completa, ver D-005) — a ação de limpeza em si (manter/arquivar/remover)
+está bloqueada pelo gate humano abaixo, ainda não respondido.
 
 ## Próximo passo
 
-**Ondas 1, 2 e 3 (`PLANO.md`) estão concluídas.** Nenhuma pendência aberta
-nelas. Próximas ondas disponíveis, ambas dependem de Ondas 1 e 3
-(satisfeitas) e não dependem uma da outra:
-- **Onda 4:** avaliar scripts/dados auxiliares soltos na raiz
-  (`procvlojas.md`, `desloc_backup.md`, `deslocamentos.gs`,
-  `digisac_docs.md`, `scriptsreal.md`) frente aos equivalentes já
-  organizados em `appscript/`/`scripts/`.
-- **Onda 5:** legado `.devin/` (D-005, PENDENTE) — requer confirmação
-  humana explícita se Devin (ou outra ferramenta) ainda depende desses
-  arquivos diretamente; nunca decidida só por evidência de código.
-Onda 6 (cosmética) só é detalhada depois de Ondas 4 e 5. Nenhum destes
-itens foi executado nesta sessão.
+**Ondas 1, 2, 3 e 4 (`PLANO.md`) estão concluídas.** Nenhuma pendência
+aberta nelas. Onda 5 (`.devin/`, D-005) teve sua auditoria de evidências
+concluída nesta sessão — **próximo passo é fazer a pergunta de gate ao
+usuário/proprietário, não investigar mais:**
+
+> "Você ainda usa o Devin neste repositório de forma que ele dependa da
+> pasta `.devin/`?"
+
+- Resposta **sim** → decidir entre manter tudo, remover só os 2 stubs
+  mortos (`skills/login/SKILL.md`, `workflows/login.md`), ou também corrigir
+  a instrução conflitante de escrita no log congelado — sem remover nada que
+  o Devin ainda leia.
+- Resposta **não** → D-005 pode autorizar remoção completa de `.devin/` (45
+  arquivos) — zero conteúdo exclusivo foi encontrado em qualquer item.
+- Resposta **incerta** → manter tudo intacto até nova confirmação.
+
+Onda 6 (cosmética) só é detalhada depois da Onda 5 estar de fato concluída
+(decisão executada, não só auditada). Nenhuma limpeza de `.devin/` deve ser
+executada sem essa resposta humana explícita — não decidir por evidência de
+código sozinha.
 
 ## Pendências
 
@@ -304,7 +394,8 @@ itens foi executado nesta sessão.
 
 ## Decisões aguardando aprovação
 
-Ver `DECISOES.md` — D-005 (`.devin/`) é a única PENDENTE. D-004
+Ver `DECISOES.md` — D-005 (`.devin/`) é a única PENDENTE (auditoria de
+evidências concluída nesta sessão; ação ainda depende do gate humano). D-004
 (`test-apps-script.ps1`), D-006 (`appscript/logs.md`), D-008, D-009, D-010,
 D-011, D-012 e D-013 foram decididas (classificação/ação aprovadas).
 
@@ -316,14 +407,15 @@ D-011, D-012 e D-013 foram decididas (classificação/ação aprovadas).
 `docs/inteligencia-comercial/inteligencia-comercial-*.md` (4 arquivos,
 movidos na Onda 3 item 2) ·
 `RESUMO_STACK.MD` · `supabase-migration-digisac-conexoes-automacao.sql` ·
-`appscript/*.sql` · `procvlojas.md` ·
-`desloc_backup.md` · `deslocamentos.gs` · `digisac_docs.md` ·
-`scriptsreal.md` · `.devin/` · `docs/` (raiz, 25 itens restantes após a
+`appscript/*.sql` · `procvlojas.md` (mantido, D-014) ·
+`deslocamentos.gs` (mantido, D-014) · `digisac_docs.md` (mantido, D-014) ·
+`.devin/` · `docs/` (raiz, 25 itens restantes após a
 Onda 3 item 2 — inventário real, ver D-012) · `CONTEXTO DO PROJETO.MD`
 (mantido na raiz, D-013 — Onda 3 item 3 concluído).
 `test-apps-script.ps1` não é mais um arquivo envolvido neste projeto
 (D-004: fora de escopo). `appscript/logs.md` removido (Onda 2, D-006);
 `.gitignore` ganhou entrada específica para esse caminho.
+`desloc_backup.md` e `scriptsreal.md` removidos (Onda 4, D-014).
 
 ## Validações já realizadas
 
@@ -364,11 +456,16 @@ Onda 3 item 2 — inventário real, ver D-012) · `CONTEXTO DO PROJETO.MD`
   sanitização do segredo/token desse script — decidido como fora de escopo
   (D-004, APROVADA). Segredo literal atual encontrado no futuro é questão
   de segurança independente, fora desta iniciativa.
+- Não reabrir a classificação dos 5 candidatos da Onda 4
+  (`procvlojas.md`, `desloc_backup.md`, `deslocamentos.gs`,
+  `digisac_docs.md`, `scriptsreal.md`) — decisão registrada em D-014,
+  APROVADA. Não investigar/rotacionar a chave LocationIQ (achado
+  independente do D-006, já registrado e fora de escopo).
 
 ## Consultar
 
 - ESCOPO.md — objetivo, dentro/fora de escopo, critérios de aceite (estado
   APROVADO).
-- PLANO.md — Ondas 1, 2 e 3 concluídas; Onda 4 e Onda 5 para as opções de
-  próximo passo.
-- DECISOES.md — D-001 a D-013.
+- PLANO.md — Ondas 1, 2, 3 e 4 concluídas; Onda 5 para a próxima ação
+  disponível (gate: confirmação humana sobre uso de Devin).
+- DECISOES.md — D-001 a D-014.

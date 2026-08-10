@@ -202,15 +202,42 @@ Objetivo: aproximar scripts/dados de seus consumidores ou registrar decisão
 de mantê-los separados.
 Dependências: Ondas 1 e 3 concluídas. Não depende da Onda 2.
 
-- [ ] Avaliar `procvlojas.md` (raiz, 683 linhas) frente a
+- [x] Avaliar `procvlojas.md` (raiz, 683 linhas) frente a
       `scripts/converter-procvlojas-csv.py` — mesmo tema, locais diferentes.
-- [ ] Avaliar `desloc_backup.md` (raiz, 1493 linhas, backup) e
+      **Resultado (2026-08-10):** classificação **C — dado de entrada
+      atual**. Consumidor confirmado (`converter-procvlojas-csv.py` lê o
+      arquivo via caminho hardcoded assumindo raiz do repo). Mantido na
+      raiz — separação atual já é o desenho original do script; mover
+      exigiria alterar `base_dir` no script para ganho só estético. Ver
+      D-014.
+- [x] Avaliar `desloc_backup.md` (raiz, 1493 linhas, backup) e
       `deslocamentos.gs` (raiz, 2597 linhas) frente aos `.gs` já
       organizados em `appscript/` (`CEP-APIBACK.gs`, `PublicAPI.gs`,
       `TEMPO SERVIÇOS.gs`, `recebimento-to-sheets.gs`) — por que um está em
       `appscript/` e o outro solto na raiz.
-- [ ] Avaliar `digisac_docs.md` e `scriptsreal.md` (raiz) — destino
+      **Resultado (2026-08-10):** `deslocamentos.gs` classificado **A —
+      fonte operacional atual / legado ativo**, referenciado diretamente
+      pelos dois documentos obrigatórios do módulo `/procurar-datas`
+      (integração backend OSRM, ajustes de segurança recentes) — mantido na
+      raiz, protegido pela regra do módulo, nenhuma ação. `desloc_backup.md`
+      classificado **D — backup histórico superado**: comparação função a
+      função confirmou zero função exclusiva (todas já existem, iguais ou
+      evoluídas, no arquivo atual), zero consumidor, único commit nunca mais
+      tocado, antecede a integração com backend OSRM — **removido**
+      (`git rm`). Ver D-014.
+- [x] Avaliar `digisac_docs.md` e `scriptsreal.md` (raiz) — destino
       (mover para `docs/` ou pasta de scripts, ou arquivar como histórico).
+      **Resultado (2026-08-10):** `digisac_docs.md` classificado **C — dado
+      de referência ativo**, referenciado por plano ativo não concluído
+      (`docs/ia/plano-dashboard-digisac-metricas.md`) e usado como apoio
+      recorrente em implementações reais de integração Digisac — mantido na
+      raiz, nenhum destino existente claramente melhor. `scriptsreal.md`
+      classificado **F — duplicado/superado**: diff normalizado contra
+      `scripts/appscript-importar-nfe-matic.js` mostrou conteúdo idêntico
+      exceto uma função (`doPost`) que foi substituída por versão mais
+      robusta um dia depois no `.js`; zero consumidor — **removido**
+      (`git rm`). Ver D-014.
+      **Onda 4 concluída (3/3 itens).**
 
 Critérios de conclusão: cada arquivo tem destino decidido e consumidores
 atualizados.
@@ -226,8 +253,21 @@ nem de Onda 4, mas deve ser a última onda antes da cosmética, por ser a
 mudança de maior impacto em compatibilidade (Devin ainda lê `.devin/`
 diretamente).
 
+- [x] Auditar `.devin/` (inventário + dependência + comparação semântica
+      com `.agents/`) para reunir evidência suficiente antes do gate humano.
+      **Resultado (2026-08-10, SOMENTE AUDITORIA — nenhuma remoção/edição em
+      `.devin/`):** 45 arquivos inventariados e classificados (6 `rules/` —
+      C, legado superado; 2 stubs — E, artefato morto; 2 pacotes de skill —
+      D, duplicado puro/vendor copy). Zero conteúdo exclusivo encontrado em
+      qualquer item. Zero consumo por código de aplicação (`git grep`).
+      Evidência histórica forte de leitura real passada pelo agente "Devin"
+      encontrada em `docs/ia/log_progress.md` (busca dirigida, congelado).
+      Achado de risco: 3 dos 6 `rules/` ainda instruem escrever no log
+      congelado (D-001) — conflito ativo se o Devin seguir isso
+      literalmente. Matriz completa em D-005 (`DECISOES.md`).
 - [ ] Confirmar com o usuário se Devin (ou outra ferramenta) ainda depende
-      de `.devin/` diretamente.
+      de `.devin/` diretamente. **Não respondida ainda — gate bloqueante,
+      próximo passo exato desta onda.**
 - [ ] Se confirmado obsoleto: decidir entre manter como histórico,
       arquivar fora do fluxo ativo, ou remover.
 - [ ] Se ainda necessário: registrar decisão de manter e critério de
@@ -235,9 +275,13 @@ diretamente).
 
 Critérios de conclusão: decisão registrada em `DECISOES.md` (D-005) com
 aprovação humana explícita — este item nunca é decidido só por evidência de
-código.
-Validações necessárias: nenhuma automática — depende de confirmação humana
-sobre uso real de Devin no projeto.
+código. Auditoria de evidências (primeiro item) concluída; onda **não**
+está concluída — os 3 itens de decisão seguem em aberto, bloqueados pelo
+gate humano.
+Validações necessárias: nenhuma automática para a decisão — depende de
+confirmação humana sobre uso real de Devin no projeto. A auditoria de
+evidências em si já usou `git grep`, `diff -rq` e busca dirigida no log
+congelado (concluídas).
 
 ## Onda 6 — Cosmética
 

@@ -64,16 +64,162 @@
 
 ## D-005 — Destino do legado .devin/
 
-- Data: 2026-08-10
-- Decisão: ainda não tomada.
-- Motivo/contexto: `.devin/rules/` (6 arquivos) e `.devin/workflows/login.md`
-  permanecem intactos como legado de compatibilidade desde a Fase 2
-  (`.agents/README.md`). Decisão de remover, arquivar ou manter depende de
-  confirmar se Devin (ou outra ferramenta) ainda lê esses arquivos
-  diretamente neste projeto.
+- Data: 2026-08-10 (aberta) · Auditoria de evidências: 2026-08-10 (Onda 5,
+  SOMENTE AUDITORIA — nenhuma remoção/movimentação/edição executada)
+- Decisão: **ainda não tomada — permanece PENDENTE.** Esta entrada registra
+  apenas a evidência levantada; a ação (manter/arquivar/remover) depende de
+  confirmação humana explícita (ver gate abaixo).
+
+### Inventário real (45 arquivos, `.devin/` byte-intacta)
+
+| Grupo | Arquivos | Linhas |
+|---|---|---|
+| `rules/` | 6 (`Agent.md`, `continuidade-agente.md`, `gerais.md`, `recebimentos.md`, `resumo.md`, `supabase.md`) | 509+39+132+95+16+64 = 855 |
+| `skills/login/SKILL.md` | 1 | 4 (só frontmatter `name: login`, corpo vazio) |
+| `skills/supabase-postgres-best-practices/` | 34 (`SKILL.md` + 33 `references/*.md`) | idêntico byte-a-byte a `.agents/skills/supabase-postgres-best-practices/` |
+| `skills/supabase/` | 3 (`SKILL.md` + `assets/feedback-issue-template.md` + `references/skill-feedback.md`) | idêntico byte-a-byte a `.agents/skills/supabase/` |
+| `workflows/login.md` | 1 | 0 (arquivo vazio) |
+
+### Matriz comparativa `.devin/` × `.agents/`
+
+| Item/grupo `.devin` | Equivalente `.agents` | Classificação | Conteúdo exclusivo | Dependência conhecida | Risco de remoção |
+|---|---|---|---|---|---|
+| `rules/Agent.md` (509 l.) | `AGENTS.md` completo + as 5 rules (mapeamento documentado em `.agents/rules/README.md`) | **C — legado superado** | Não (todo conteúdo de negócio já absorvido); contém instrução ativa (§6-8) de escrever em `docs/ia/log_progress.md`, hoje congelado — **instrução LEGADA/SUPERADA, não corrigida nesta auditoria** | Histórica confirmada (ver abaixo) + compatibilidade provável | Médio-alto |
+| `rules/gerais.md` (132 l.) | `AGENTS.md` §2/3/5/9 + `procurar-datas.md` §12 + `novas-telas-permissoes.md` §13 | **C — legado superado** | Não; §11 também instrui escrever no log congelado — LEGADA/SUPERADA | Histórica confirmada + compatibilidade provável | Médio-alto |
+| `rules/recebimentos.md` (95 l.) | `.agents/rules/recebimento.md` | **C — legado superado (equivalente, canônico tem mais conteúdo)** | Não — canônico herdou também o mapa de rotas/APIs de `CONTEXTO DO PROJETO.MD` | Histórica confirmada + compatibilidade provável | Médio-alto |
+| `rules/resumo.md` (16 l.) | Coberto por `AGENTS.md` (condensado sem arquivo próprio) | **C/D — legado superado, condensado, sem conteúdo exclusivo** | Não | Histórica confirmada + compatibilidade provável | Médio-alto |
+| `rules/supabase.md` (64 l.) | `.agents/rules/banco-supabase.md` | **C — equivalente com pequenas diferenças** (canônico adiciona pointer para skill oficial e nota de proporcionalidade que não existiam) | Não | Histórica confirmada + compatibilidade provável | Médio-alto |
+| `rules/continuidade-agente.md` (39 l.) | Nenhum — formato de escrita do log, hoje sem função | **C — legado superado, instrução ativamente conflitante** | Não; **100% do conteúdo instrui escrever em `docs/ia/log_progress.md`**, congelado desde a Fase B2 (D-001) | Histórica confirmada + compatibilidade provável | Médio-alto (maior risco de conflito ativo do grupo) |
+| `skills/login/SKILL.md` (4 l.) | Nenhum | **E — stub/artefato morto** | Não (só frontmatter `name: login`, sem corpo) | Nenhuma encontrada | Baixo |
+| `workflows/login.md` (0 l.) | Nenhum | **E — stub/artefato morto** | Não (arquivo vazio) | Nenhuma encontrada | Baixo |
+| `skills/supabase-postgres-best-practices/` (34 arq.) | `.agents/skills/supabase-postgres-best-practices/` | **D — duplicado puro / vendor copy** (`diff -rq` confirmou 0 diferenças) | Não; cópia órfã — `skills-lock.json` só rastreia a instalação em `.agents/skills/`, não referencia `.devin/` | Compatibilidade provável (se Devin só lê `.devin/skills/`) | Médio |
+| `skills/supabase/` (3 arq.) | `.agents/skills/supabase/` | **D — duplicado puro / vendor copy** (`diff -rq` confirmou 0 diferenças) | Não; mesma observação de cópia órfã do lock file | Compatibilidade provável | Médio |
+
+### Casos conhecidos (item 6 do prompt) — validados
+
+- `skills/login/SKILL.md`: confirmado stub quase vazio (4 linhas, só
+  frontmatter). ✅
+- `workflows/login.md`: confirmado stub vazio (0 bytes). ✅
+- Skills Supabase em `.devin/skills/`: confirmado, via `diff -rq`, serem
+  cópias byte-idênticas das versões canônicas em `.agents/skills/`. ✅
+- Rules `.devin/rules/*`: confirmado, via leitura integral dos 6 arquivos e
+  comparação semântica com `.agents/rules/*.md` e `AGENTS.md`, estarem
+  superadas pelo Harness atual — nenhum conteúdo de regra de negócio
+  exclusivo encontrado. ✅
+
+### Dependência real — o que o repositório mostra
+
+`git grep` (excluindo o próprio `.devin/`) por `.devin`/`devin` não encontrou
+**nenhuma** referência em código de aplicação (`src/`, `scripts/`,
+`supabase/`, `appscript/`) nem em configuração (não existe `devin.yaml`,
+`.devinrc`, workflow de CI, ou qualquer arquivo de config declarando
+integração com Devin). Todas as ocorrências estão em:
+1. Documentação do próprio Harness (`AGENTS.md` §1/§7/§12,
+   `.agents/README.md`, `.agents/rules/README.md`, `.agents/skills/README.md`)
+   — descrevem o histórico da migração e o estado do legado, não são
+   consumo operacional.
+2. Os quatro artefatos deste Projeto Multifase.
+3. `docs/ia/log_progress.md` (congelado, consultado só por busca dirigida
+   nesta auditoria) — contém **evidência histórica forte**: dezenas de
+   entradas de sessões reais anteriores do agente "Devin" (algumas datadas
+   de 2026-07 e 2026-08-06, poucos dias antes de hoje) que listam
+   explicitamente `.devin/rules/*`, `.devin/skills/supabase/SKILL.md`,
+   `.devin/skills/supabase-postgres-best-practices/SKILL.md` e
+   `.devin/workflows/login.md` como "Arquivos lidos" da própria tarefa —
+   ou seja, não é suposição: há registro real de que o Devin, quando usado
+   neste projeto, leu esses arquivos diretamente como parte da execução.
+   Uma auditoria anterior (registrada no mesmo log, ~2026-08-07) já havia
+   identificado a duplicação `.agents/skills/` × `.devin/skills/` via
+   `diff -rq` e listado exatamente a mesma pergunta de decisão humana que
+   esta auditoria reabre: "se os 5 arquivos antigos de `.devin/rules/`
+   devem virar stubs ou ser removidos após consolidação" — nunca
+   respondida.
+4. `.agents/README.md` (linha 73-76) faz uma **afirmação própria do
+   Harness** (não verificável pelo repositório): "Devin — hoje só lê
+   `.devin/rules/`, `.devin/skills/` e `.devin/workflows/`, que continuam
+   intactos como fonte legada." Essa é uma convenção declarada da
+   ferramenta externa, escrita por quem construiu o Harness em 2026-08-07 —
+   não uma prova obtida nesta sessão de que o Devin ainda está configurado
+   e ativo neste projeto **hoje** (2026-08-10).
+
+**Classificação da dependência:**
+- Operacional confirmada (por código do repositório): **inexistente**.
+- Histórica: **confirmada** (múltiplas sessões reais registradas no log
+  congelado).
+- Compatibilidade provável (convenção externa da ferramenta, hoje):
+  **não verificável por este repositório** — depende de como o Devin está
+  configurado atualmente, informação que só o usuário tem.
+- Externa/não verificável: se o Devin (enquanto produto/plataforma) ainda
+  lê `.devin/` por convenção própria independente deste repositório.
+
+Importante, conforme instrução da tarefa: a ausência de `git grep` apontando
+consumo por código **não prova** que a plataforma Devin não lê `.devin/`
+automaticamente — ela só prova que nenhum artefato deste repositório (fora
+do próprio `.devin/` e do log histórico) depende desses arquivos.
+
+### Achado de risco — instrução ativa conflitante
+
+`rules/Agent.md` (§6-8), `rules/gerais.md` (§11) e `rules/continuidade-agente.md`
+(integralmente) instruem o agente a **escrever** em `docs/ia/log_progress.md`
+ao final de toda tarefa relevante. Esse arquivo está congelado desde a Fase
+B2 (D-001, `AGENTS.md` §11) — nenhuma escrita nova é permitida, sem exceção,
+no Harness atual. Se o Devin ainda ler `.devin/rules/` diretamente (ele não
+lê `AGENTS.md` nem sabe do congelamento, conforme `.agents/README.md`), ele
+pode voltar a escrever no log congelado em uma tarefa futura, violando D-001.
+Este é o risco de maior gravidade encontrado nesta auditoria — não corrigido
+nesta sessão (proibido pelo protocolo de SOMENTE AUDITORIA), registrado aqui
+para decisão humana.
+
+### Avaliação de risco de remoção por grupo (item 8 do prompt)
+
+- **`rules/*` (6 arquivos):** repositório não depende; Devin pode depender
+  automaticamente (histórico confirma leitura real passada); equivalente
+  canônico existe para os 5 arquivos de conteúdo de negócio; sem conteúdo
+  exclusivo; remover pode degradar o Devin **se** ele ainda estiver
+  configurado e só ler `.devin/`; manter gera risco de conflito ativo
+  (escrita no log congelado). **Risco: médio-alto.**
+- **`skills/login/` + `workflows/login.md` (stubs):** nenhuma dependência
+  encontrada, nenhum conteúdo. **Risco: baixo.**
+- **`skills/supabase*/` (cópias vendor):** repositório não depende
+  (`skills-lock.json` não referencia `.devin/`); Devin pode depender se só
+  ler `.devin/skills/`; equivalente canônico byte-idêntico; sem conteúdo
+  exclusivo; risco de conflito de instrução é baixo (conteúdo idêntico), mas
+  há risco de desatualização silenciosa futura se só um lado for atualizado.
+  **Risco: médio.**
+
+### Estratégias possíveis por cenário (avaliadas, não executadas)
+
+- **Se o Devin não é mais usado:** remover `.devin/` inteira seria seguro
+  quanto a conteúdo (zero conteúdo exclusivo confirmado em todos os 45
+  arquivos) — mas ainda seria uma remoção, não uma decisão desta sessão.
+- **Se o Devin ainda é usado e lê `.devin/` diretamente:** manter os
+  adaptadores mínimos seria necessário; os únicos itens seguros para limpar
+  mesmo nesse cenário seriam os stubs mortos (`skills/login/`,
+  `workflows/login.md`, que não têm função) e, possivelmente, corrigir (não
+  remover) a instrução conflitante de `continuidade-agente.md`/`gerais.md`
+  §11/`Agent.md` §6-8 para parar de instruir escrita no log congelado.
+- **Se o uso é incerto:** preservar tudo até confirmação humana — nenhuma
+  ação definitiva deve ser tomada sem essa resposta.
+
+### Gate humano (obrigatório antes de qualquer ação)
+
+Pergunta exata a fazer ao usuário/proprietário: **"Você ainda usa o Devin
+neste repositório de forma que ele dependa da pasta `.devin/`?"**
+
+- Se **sim**: D-005 deve decidir entre manter tudo como está, manter só os
+  6 `rules/` + 2 `skills/` (removendo só os 2 stubs mortos), ou corrigir a
+  instrução conflitante de escrita no log — sem remover nada que o Devin
+  ainda leia.
+- Se **não**: D-005 pode autorizar remoção completa de `.devin/` (45
+  arquivos), já que nenhum conteúdo exclusivo foi encontrado em nenhum item.
+- Se **incerto**: manter tudo intacto até nova confirmação; não escolher por
+  suposição.
+
 - Impacto: bloqueia apenas a Onda 5 (`PLANO.md`) — não impede as ondas
-  anteriores.
-- Status: PENDENTE
+  anteriores, todas já concluídas.
+- Status: **PENDENTE** (auditoria de evidências concluída nesta sessão;
+  decisão de ação continua exigindo confirmação humana explícita, nunca só
+  por evidência de código, conforme protocolo desta onda).
 
 ## D-008 — supabase-migration-digisac-conexoes-automacao.sql mantido; gap de migration oficial
 
@@ -480,4 +626,67 @@
   nível superior de `docs/`, cada um com motivo registrado nesta decisão.
   Nenhum conteúdo reescrito, nenhuma referência operacional quebrada
   (confirmado via `git grep` pós-movimento).
+- Status: APROVADA
+
+## D-014 — Onda 4: classificação dos 5 scripts/dados auxiliares da raiz
+
+- Data: 2026-08-10
+- Decisão, arquivo a arquivo:
+  - **`deslocamentos.gs`** — classificação **A (fonte operacional atual /
+    legado ativo)**. Confirmado por referência direta e recente nos dois
+    documentos obrigatórios do módulo `/procurar-datas`
+    (`docs/procurar-datas-escopo-equivalencia-legado-v2.md` linha 3968,
+    `docs/procurar-datas-motor-v2-progresso.md` linha 5118 — descrevem
+    ajustes de segurança e integração com backend OSRM feitos diretamente
+    neste arquivo). **Mantido na raiz, nenhuma ação** — protegido pela regra
+    do módulo (`.agents/rules/procurar-datas.md`), prioridade é
+    descoberta/estabilidade, não estética.
+  - **`desloc_backup.md`** — classificação **D (backup histórico
+    superado)**. Comparação função a função contra `deslocamentos.gs`
+    (normalizando CRLF→LF antes do diff) mostrou que **toda** função
+    presente no backup já existe, idêntica ou evoluída, no arquivo atual
+    (nenhuma função exclusiva do backup); o arquivo atual tem 32 funções a
+    mais, incluindo a integração com backend OSRM (`PROP_DESLOC_BACKEND_URL`,
+    `DESLOC_BACKEND_ENDPOINT_PATH`) ausente do backup — confirmando que o
+    backup antecede essa integração (mtime 2026-07-29 vs. 2026-07-31 do
+    arquivo atual; único commit em 2026-07-30, nunca mais tocado). `git grep`
+    não encontrou nenhum consumidor operacional (só os artefatos deste
+    projeto). **Ação: removido (`git rm`).**
+  - **`scriptsreal.md`** — classificação **F (duplicado/superado)**.
+    Diff normalizado (CRLF→LF) contra `scripts/appscript-importar-nfe-matic.js`
+    mostrou uma única diferença: a função `doPost` do `.js` é uma versão mais
+    robusta (parsing de form-urlencoded bruto, tratamento de
+    `invalid_body`) da mesma função presente no `.md` — todo o restante do
+    arquivo é idêntico. `git log --follow` confirmou que `scriptsreal.md`
+    parou de ser tocado em 2026-02-26, um dia antes do commit que introduziu
+    essa versão mais robusta em `scripts/appscript-importar-nfe-matic.js`
+    (2026-02-27). `git grep` não encontrou nenhum consumidor operacional.
+    **Ação: removido (`git rm`).**
+  - **`procvlojas.md`** — classificação **C (dado de entrada atual)**.
+    Consumidor confirmado: `scripts/converter-procvlojas-csv.py` lê o
+    arquivo via caminho hardcoded (`base_dir` calculado como raiz do repo,
+    dois níveis acima do script). **Mantido na raiz, nenhuma ação** — a
+    separação atual (dado na raiz, script em `scripts/`) já é o desenho
+    original do próprio script; mover o dado exigiria alterar a lógica de
+    `base_dir` no script para ganho puramente estético, contrariando o
+    princípio de menor alteração (`AGENTS.md` §3).
+  - **`digisac_docs.md`** — classificação **C (dado de referência ativo)**.
+    Não tem consumidor de código (nenhum import/leitura programática), mas é
+    referenciado por um plano ativo e não concluído,
+    `docs/ia/plano-dashboard-digisac-metricas.md` (linha 203, tabela "Arquivo
+    | Papel": "Lista de departamentos e IDs"), e citado repetidamente em
+    entradas do log congelado como material de apoio a implementações reais
+    de integração Digisac (`src/lib/digisac/*`). **Mantido na raiz, nenhuma
+    ação** — nenhuma pasta existente (`docs/tecnico/` guarda runbooks em
+    prosa, não dumps de API) é claramente melhor destino; mover exigiria
+    reescrever a referência de caminho no plano ativo para ganho marginal.
+- Motivo/contexto: Onda 4 do `PLANO.md` — objetivo era aproximar
+  scripts/dados de seus consumidores ou registrar decisão de mantê-los
+  separados; inventário real confirmou exatamente os 5 candidatos previstos,
+  nenhum adicional.
+- Impacto: 2 arquivos removidos (`desloc_backup.md`, `scriptsreal.md`); 3
+  mantidos na raiz por evidência concreta de consumidor/proteção de módulo
+  (`deslocamentos.gs`, `procvlojas.md`, `digisac_docs.md`). Nenhuma
+  referência operacional quebrada. Nenhuma regra funcional de
+  `/procurar-datas` alterada.
 - Status: APROVADA

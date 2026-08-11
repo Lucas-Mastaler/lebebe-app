@@ -9,6 +9,7 @@ import {
   associarTapetesCriados,
   avaliarFormulario,
   carregarOpcoesNovoPedido,
+  classificacaoTapeteCompleta,
   criarEstadoInicial,
   deveAvisarDadosNaoSalvos,
   enviarNovoPedido,
@@ -21,6 +22,8 @@ import {
   removerTapete,
   removerAnexoApi,
   removerAnexoGestaoApi,
+  responderExisteNoCatalogo,
+  responderIdenticoReferencia,
   resumirTapete,
   solicitarUrlAnexo,
   substituirAnexo,
@@ -174,6 +177,80 @@ describe('troca de Tipo do tapete', () => {
     }
     const payload = montarPayloadCriacao({ ...estado, tapetes: [tapeteCatalogo] }, 'idem-key', opcoes)
     expect(payload.tapetes[0]).toMatchObject({ tipo: 'CATALOGO', cores: [] })
+  })
+})
+
+describe('classificação guiada Catálogo/Personalizado', () => {
+  it('cenário A: "Não" define Personalizado e não exige a 2ª pergunta', () => {
+    const tapete = responderExisteNoCatalogo(criarEstadoInicial('x').tapetes[0], false)
+    expect(tapete.tipo).toBe('PERSONALIZADO')
+    expect(tapete.existeNoCatalogo).toBe(false)
+    expect(tapete.identicoReferencia).toBeNull()
+    expect(classificacaoTapeteCompleta(tapete)).toBe(true)
+  })
+
+  it('cenário B: "Sim" + "exatamente igual" define Catálogo', () => {
+    let tapete = criarEstadoInicial('x').tapetes[0]
+    tapete = responderExisteNoCatalogo(tapete, true)
+    expect(classificacaoTapeteCompleta(tapete)).toBe(false)
+    tapete = responderIdenticoReferencia(tapete, true)
+    expect(tapete.tipo).toBe('CATALOGO')
+    expect(classificacaoTapeteCompleta(tapete)).toBe(true)
+  })
+
+  it('cenário C: "Sim" + "terá alterações" define Personalizado', () => {
+    let tapete = criarEstadoInicial('x').tapetes[0]
+    tapete = responderExisteNoCatalogo(tapete, true)
+    tapete = responderIdenticoReferencia(tapete, false)
+    expect(tapete.tipo).toBe('PERSONALIZADO')
+    expect(classificacaoTapeteCompleta(tapete)).toBe(true)
+  })
+
+  it('cenário D: mudar a 1ª resposta para "Não" depois de "Sim"/"Sim" limpa a 2ª resposta e vira Personalizado', () => {
+    let tapete = criarEstadoInicial('x').tapetes[0]
+    tapete = responderExisteNoCatalogo(tapete, true)
+    tapete = responderIdenticoReferencia(tapete, true)
+    expect(tapete.tipo).toBe('CATALOGO')
+    tapete = responderExisteNoCatalogo(tapete, false)
+    expect(tapete.identicoReferencia).toBeNull()
+    expect(tapete.tipo).toBe('PERSONALIZADO')
+    expect(classificacaoTapeteCompleta(tapete)).toBe(true)
+  })
+
+  it('cenário E: alternância repetida nunca deixa a classificação num estado contraditório', () => {
+    let tapete = criarEstadoInicial('x').tapetes[0]
+    tapete = responderExisteNoCatalogo(tapete, true)
+    tapete = responderIdenticoReferencia(tapete, true)
+    tapete = responderIdenticoReferencia(tapete, false)
+    tapete = responderExisteNoCatalogo(tapete, false)
+    tapete = responderExisteNoCatalogo(tapete, true)
+    expect(tapete.identicoReferencia).toBeNull()
+    expect(classificacaoTapeteCompleta(tapete)).toBe(false)
+    tapete = responderIdenticoReferencia(tapete, true)
+    expect(tapete.tipo).toBe('CATALOGO')
+    expect(classificacaoTapeteCompleta(tapete)).toBe(true)
+  })
+
+  it('bloqueia o formulário quando a 1ª pergunta não foi respondida', () => {
+    const resultado = avaliarFormulario(estadoValido(), opcoes).validacao
+    expect(resultado.valido).toBe(false)
+    expect(resultado.erros.map((item) => item.campo)).toContain('tapetes.0.existeNoCatalogo')
+  })
+
+  it('bloqueia o formulário quando "Sim" foi respondido mas a 2ª pergunta ainda não', () => {
+    const estado = estadoValido()
+    const tapete = responderExisteNoCatalogo(estado.tapetes[0], true)
+    const resultado = avaliarFormulario({ ...estado, tapetes: [tapete] }, opcoes).validacao
+    expect(resultado.valido).toBe(false)
+    expect(resultado.erros.map((item) => item.campo)).toContain('tapetes.0.identicoReferencia')
+  })
+
+  it('libera o formulário quando a classificação guiada está completa', () => {
+    const estado = estadoValido()
+    const tapete = responderExisteNoCatalogo(estado.tapetes[0], false)
+    const resultado = avaliarFormulario({ ...estado, tapetes: [tapete] }, opcoes).validacao
+    expect(resultado.erros.map((item) => item.campo)).not.toContain('tapetes.0.existeNoCatalogo')
+    expect(resultado.erros.map((item) => item.campo)).not.toContain('tapetes.0.identicoReferencia')
   })
 })
 

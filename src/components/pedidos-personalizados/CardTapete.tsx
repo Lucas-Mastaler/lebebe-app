@@ -4,9 +4,15 @@ import { useState } from 'react'
 import { ArrowDown, ArrowUp, BookOpen, Circle, ExternalLink, RectangleHorizontal, Shapes, Trash2, Wand2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { mascararMedidaMetros } from '@/lib/pedidos-personalizados'
-import type { FormatoTapeteMoriah, ProblemaPedidoPersonalizado, TipoTapeteMoriah } from '@/lib/pedidos-personalizados'
-import { alterarFormatoTapete, alterarTipoTapete, resumirTapete } from './novo-pedido-modelo'
+import { TIPO_TAPETE_PARA_EXIBICAO, mascararMedidaMetros } from '@/lib/pedidos-personalizados'
+import type { FormatoTapeteMoriah, ProblemaPedidoPersonalizado } from '@/lib/pedidos-personalizados'
+import {
+  alterarFormatoTapete,
+  classificacaoTapeteCompleta,
+  resumirTapete,
+  responderExisteNoCatalogo,
+  responderIdenticoReferencia,
+} from './novo-pedido-modelo'
 import type { CorOpcao, ProdutoOpcao, TapeteFormulario } from './novo-pedido-modelo'
 import { SeletorCores } from './SeletorCores'
 
@@ -37,14 +43,11 @@ const formatos: Array<{
   { valor: 'ORGANICO', label: 'Orgânico', Icone: Shapes },
 ]
 
-const tipos: Array<{
-  valor: TipoTapeteMoriah
-  label: string
-  Icone: typeof BookOpen
-}> = [
-  { valor: 'CATALOGO', label: 'Catálogo', Icone: BookOpen },
-  { valor: 'PERSONALIZADO', label: 'Personalizado', Icone: Wand2 },
-]
+function botaoRespostaClasse(ativo: boolean) {
+  return `flex min-h-14 items-center justify-center gap-2 rounded-xl border px-4 py-3 text-center text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-[#00A5E6] ${
+    ativo ? 'border-[#00A5E6] bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+  }`
+}
 
 function ErroCampo({ mensagens, id }: { mensagens: string[]; id: string }) {
   if (mensagens.length === 0) return null
@@ -70,6 +73,7 @@ export function CardTapete({
   const numero = indice + 1
   const base = `tapetes.${indice}`
   const resumo = resumirTapete(tapete, produtos)
+  const restanteBloqueado = !classificacaoTapeteCompleta(tapete)
   const [catalogoAberto, setCatalogoAberto] = useState(false)
   const mensagens = (campo: string) => {
     const caminho = `${base}.${campo}`
@@ -85,9 +89,21 @@ export function CardTapete({
   return (
     <article id={`tapete-${numero}`} className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
       <header className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#00A5E6]">Tapete</p>
-          <h3 className="text-xl font-bold text-slate-900">TAPETE {numero}</h3>
+        <div className="flex flex-wrap items-center gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#00A5E6]">Tapete</p>
+            <h3 className="text-xl font-bold text-slate-900">TAPETE {numero}</h3>
+          </div>
+          <Button
+            type="button"
+            onClick={() => setCatalogoAberto(true)}
+            disabled={disabled}
+            aria-label={`Ver catálogo de tapetes para o tapete ${numero}`}
+            className="min-h-11 gap-2 rounded-xl border-2 border-sky-300 bg-sky-100 px-4 text-sm font-bold text-sky-800 shadow-sm hover:bg-sky-200"
+          >
+            <BookOpen className="size-5" />
+            Ver Catálogo
+          </Button>
         </div>
         <div className="flex items-center gap-1">
           <Button type="button" variant="ghost" size="icon" className="size-11" disabled={disabled || indice === 0} onClick={() => onMover(-1)} aria-label={`Mover tapete ${numero} para cima`}>
@@ -104,28 +120,57 @@ export function CardTapete({
 
       <div className="space-y-6">
         <fieldset disabled={disabled}>
-          <legend className="mb-3 font-semibold text-slate-800">Tipo</legend>
+          <legend className="mb-3 font-semibold text-slate-800">Este produto existe no catálogo?</legend>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {tipos.map(({ valor, label, Icone }) => {
-              const ativo = tapete.tipo === valor
-              return (
-                <button
-                  key={valor}
-                  type="button"
-                  aria-pressed={ativo}
-                  onClick={() => onChange(alterarTipoTapete(tapete, valor))}
-                  className={`flex min-h-12 items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-[#00A5E6] ${
-                    ativo ? 'border-[#00A5E6] bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  <Icone className="size-5" />
-                  {label}
-                </button>
-              )
-            })}
+            <button
+              type="button"
+              aria-pressed={tapete.existeNoCatalogo === true}
+              onClick={() => { onChange(responderExisteNoCatalogo(tapete, true)); onTocar(`${base}.existeNoCatalogo`) }}
+              className={botaoRespostaClasse(tapete.existeNoCatalogo === true)}
+            >
+              Sim, está no catálogo
+            </button>
+            <button
+              type="button"
+              aria-pressed={tapete.existeNoCatalogo === false}
+              onClick={() => { onChange(responderExisteNoCatalogo(tapete, false)); onTocar(`${base}.existeNoCatalogo`) }}
+              className={botaoRespostaClasse(tapete.existeNoCatalogo === false)}
+            >
+              Não, é um produto fora do catálogo
+            </button>
           </div>
+          <ErroCampo mensagens={mensagens('existeNoCatalogo')} id={`${tapete.chaveLocal}-existe-catalogo-erro`} />
+        </fieldset>
+
+        {tapete.existeNoCatalogo === true && (
+          <fieldset disabled={disabled}>
+            <legend className="mb-3 font-semibold text-slate-800">O produto será exatamente igual à referência do catálogo?</legend>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                aria-pressed={tapete.identicoReferencia === true}
+                onClick={() => { onChange(responderIdenticoReferencia(tapete, true)); onTocar(`${base}.identicoReferencia`) }}
+                className={botaoRespostaClasse(tapete.identicoReferencia === true)}
+              >
+                Sim, exatamente igual
+              </button>
+              <button
+                type="button"
+                aria-pressed={tapete.identicoReferencia === false}
+                onClick={() => { onChange(responderIdenticoReferencia(tapete, false)); onTocar(`${base}.identicoReferencia`) }}
+                className={botaoRespostaClasse(tapete.identicoReferencia === false)}
+              >
+                Não, terá alterações
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-slate-900">Qualquer alteração, inclusive de cores, torna o produto Personalizado.</p>
+            <ErroCampo mensagens={mensagens('identicoReferencia')} id={`${tapete.chaveLocal}-identico-referencia-erro`} />
+          </fieldset>
+        )}
+
+        {classificacaoTapeteCompleta(tapete) ? (
           <div
-            className={`mt-3 flex items-start gap-2.5 rounded-xl border px-4 py-3 text-base font-semibold ${
+            className={`flex items-start gap-2.5 rounded-xl border px-4 py-3 text-base font-semibold ${
               tapete.tipo === 'CATALOGO'
                 ? 'border-sky-200 bg-sky-50 text-sky-800'
                 : 'border-violet-200 bg-violet-50 text-violet-800'
@@ -135,29 +180,34 @@ export function CardTapete({
               ? <BookOpen className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
               : <Wand2 className="mt-0.5 size-5 shrink-0" aria-hidden="true" />}
             <p>
+              <span className="mr-1 uppercase tracking-wide">Tipo: {TIPO_TAPETE_PARA_EXIBICAO[tapete.tipo]}.</span>
               {tapete.tipo === 'CATALOGO'
                 ? 'O produto será produzido exatamente conforme a referência do catálogo, sem seleção manual de cores.'
-                : 'Produto fora do catálogo. Ou existe alguma personalização em relação à referência do catálogo, como alteração de cores.'}
+                : 'Produto fora do catálogo, ou com alguma personalização em relação à referência do catálogo, como alteração de cores.'}
             </p>
           </div>
-        </fieldset>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+            Responda a pergunta acima para definir o Tipo deste tapete.
+          </div>
+        )}
 
+        <div className="relative">
+          {restanteBloqueado && (
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-white/80 p-4 text-center backdrop-blur-[1px]">
+              <p className="max-w-xs rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm">
+                Responda primeiro às perguntas acima para continuar.
+              </p>
+            </div>
+          )}
+          <div
+            className={`space-y-6 ${restanteBloqueado ? 'opacity-50 select-none' : ''}`}
+            inert={restanteBloqueado}
+          >
         <hr className="border-t border-slate-200" />
 
         <div>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <h4 className="font-semibold text-slate-800">Catálogo</h4>
-            <Button
-              type="button"
-              onClick={() => setCatalogoAberto(true)}
-              disabled={disabled}
-              aria-label="Ver catálogo de tapetes"
-              className="min-h-14 gap-2 rounded-xl border-2 border-sky-300 bg-sky-100 px-6 text-base font-bold text-sky-800 shadow-sm hover:bg-sky-200"
-            >
-              <BookOpen className="size-6" />
-              Ver Catálogo
-            </Button>
-          </div>
+          <h4 className="mb-3 font-semibold text-slate-800">Catálogo</h4>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <div className="mb-1.5 flex items-center justify-between gap-2"><label htmlFor={`${tapete.chaveLocal}-colecao`} className="text-sm font-medium text-slate-700">Nome da Coleção do Catálogo{tapete.tipo === 'CATALOGO' ? ' *' : ''}</label><span className="text-xs text-slate-500">{tapete.nomeColecaoCatalogo.length}/30</span></div>
@@ -291,6 +341,8 @@ export function CardTapete({
             className="w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-base outline-none transition focus-visible:border-[#00A5E6] focus-visible:ring-2 focus-visible:ring-[#00A5E6]/30 disabled:opacity-50 sm:text-sm"
           />
           <ErroCampo mensagens={mensagens('observacoes')} id={`${tapete.chaveLocal}-observacoes-erro`} />
+        </div>
+          </div>
         </div>
       </div>
 

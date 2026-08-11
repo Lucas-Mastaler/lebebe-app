@@ -230,6 +230,11 @@ export function detalheParaFormulario(pedido: PedidoDetalhe): EstadoNovoPedido {
       anexosLocais: [],
       formato: tapete.formato,
       tipo: tapete.tipo,
+      // Derivado do `tipo` já persistido: as respostas guiadas não são persistidas (ver AGENTS.md/novo-pedido-modelo.ts).
+      // CATALOGO só existe através de "existe" + "idêntico"; PERSONALIZADO fica pré-classificado como "não está no catálogo"
+      // para não bloquear a edição de pedidos já salvos exigindo uma re-resposta.
+      existeNoCatalogo: tapete.tipo === 'CATALOGO' ? true : false,
+      identicoReferencia: tapete.tipo === 'CATALOGO' ? true : null,
       dimensao1Metros: metros(tapete.dimensao1Cm),
       dimensao2Metros: metros(tapete.dimensao2Cm),
       corIds: tapete.cores.sort((a, b) => a.ordem - b.ordem).map((cor) => cor.id),

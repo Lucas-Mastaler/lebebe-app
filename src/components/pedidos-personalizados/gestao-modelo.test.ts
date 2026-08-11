@@ -62,6 +62,15 @@ describe('modelo da gestão de pedidos personalizados', () => {
     expect(detalheParaFormulario(detalhe).tapetes[0].tipo).toBe('PERSONALIZADO')
   })
 
+  it('deriva a classificação guiada do Tipo persistido, sem exigir nova resposta ao reabrir um pedido salvo', () => {
+    const detalheCatalogo: PedidoDetalhe = {
+      ...detalhe,
+      tapetes: [{ ...detalhe.tapetes[0], tipo: 'CATALOGO', cores: [] }],
+    }
+    expect(detalheParaFormulario(detalheCatalogo).tapetes[0]).toMatchObject({ existeNoCatalogo: true, identicoReferencia: true })
+    expect(detalheParaFormulario(detalhe).tapetes[0]).toMatchObject({ existeNoCatalogo: false, identicoReferencia: null })
+  })
+
   it('valida antecipadamente os requisitos de cada transicao', () => {
     const base = { destino: 'AGUARDANDO LAYOUT' as const, numeroPedidoCompra: '', dataPedidoFornecedor: '', comprador: '', dataEntrega: '', dataRecebimento: '', justificativa: '' }
     expect(requisitosPendentesTransicao(detalhe, base)).toHaveLength(3)

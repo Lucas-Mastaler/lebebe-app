@@ -63,6 +63,10 @@ export type TapeteFormulario = {
   anexosLocais: AnexoLocalFormulario[]
   formato: FormatoTapeteMoriah
   tipo: TipoTapeteMoriah
+  /** Resposta da 1ª pergunta guiada ("Este produto existe no catálogo?"). Só decide `tipo`; não é persistida. */
+  existeNoCatalogo: boolean | null
+  /** Resposta da 2ª pergunta guiada, só relevante quando `existeNoCatalogo` é true; não é persistida. */
+  identicoReferencia: boolean | null
   dimensao1Metros: string
   dimensao2Metros: string
   corIds: string[]
@@ -135,6 +139,8 @@ export function criarTapeteVazio(chaveLocal: string): TapeteFormulario {
     anexosLocais: [],
     formato: 'RETANGULAR',
     tipo: TIPO_TAPETE_PADRAO,
+    existeNoCatalogo: null,
+    identicoReferencia: null,
     dimensao1Metros: '',
     dimensao2Metros: '',
     corIds: [],
@@ -235,6 +241,41 @@ export function alterarTipoTapete(tapete: TapeteFormulario, tipo: TipoTapeteMori
   }
 }
 
+/** 1ª pergunta guiada. "Não" já determina Personalizado e esconde a 2ª pergunta. */
+export function responderExisteNoCatalogo(tapete: TapeteFormulario, existe: boolean): TapeteFormulario {
+  if (!existe) {
+    return { ...alterarTipoTapete(tapete, 'PERSONALIZADO'), existeNoCatalogo: false, identicoReferencia: null }
+  }
+  return { ...tapete, existeNoCatalogo: true, identicoReferencia: null }
+}
+
+/** 2ª pergunta guiada, só exibida quando `existeNoCatalogo` é true. */
+export function responderIdenticoReferencia(tapete: TapeteFormulario, identico: boolean): TapeteFormulario {
+  return { ...alterarTipoTapete(tapete, identico ? 'CATALOGO' : 'PERSONALIZADO'), identicoReferencia: identico }
+}
+
+/** Só fica completa (e o `tipo` só é confiável) quando as respostas guiadas definem a classificação. */
+export function classificacaoTapeteCompleta(tapete: TapeteFormulario): boolean {
+  if (tapete.existeNoCatalogo === null) return false
+  if (tapete.existeNoCatalogo === false) return true
+  return tapete.identicoReferencia !== null
+}
+
+function validarClassificacaoTapetes(estado: EstadoNovoPedido): ProblemaPedidoPersonalizado[] {
+  const problemas: ProblemaPedidoPersonalizado[] = []
+  estado.tapetes.forEach((tapete, indice) => {
+    const base = `tapetes.${indice}`
+    if (tapete.existeNoCatalogo === null) {
+      problemas.push({ codigo: 'CLASSIFICACAO_CATALOGO_OBRIGATORIA', campo: `${base}.existeNoCatalogo`, mensagem: 'Informe se este produto existe no catálogo.' })
+      return
+    }
+    if (tapete.existeNoCatalogo === true && tapete.identicoReferencia === null) {
+      problemas.push({ codigo: 'CLASSIFICACAO_IGUAL_REFERENCIA_OBRIGATORIA', campo: `${base}.identicoReferencia`, mensagem: 'Informe se o produto será exatamente igual à referência do catálogo.' })
+    }
+  })
+  return problemas
+}
+
 export function alternarCor(tapete: TapeteFormulario, corId: string): TapeteFormulario {
   if (tapete.corIds.includes(corId)) {
     return { ...tapete, corIds: tapete.corIds.filter((id) => id !== corId) }
@@ -295,7 +336,11 @@ export function avaliarFormulario(
   estado: EstadoNovoPedido,
   opcoes: Pick<OpcoesNovoPedido, 'cores' | 'produtos'>
 ) {
-  const validacao = validarPedidoPersonalizadoMoriah(montarEntradaDominio(estado, opcoes))
+  const validacaoDominio = validarPedidoPersonalizadoMoriah(montarEntradaDominio(estado, opcoes))
+  const errosClassificacao = validarClassificacaoTapetes(estado)
+  const validacao = errosClassificacao.length === 0
+    ? validacaoDominio
+    : { ...validacaoDominio, valido: false, erros: [...errosClassificacao, ...validacaoDominio.erros] }
   const mensagem = validacao.dados
     ? gerarMensagemPedidoPersonalizado(validacao.dados, opcoes.produtos)
     : null

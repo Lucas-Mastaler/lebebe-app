@@ -1,65 +1,25 @@
 ---
 trigger: always_on
 ---
-# REGRA OBRIGATÓRIA - SUPABASE / BANCO DE DADOS
 
-## 1. Validação obrigatória no MCP
-Sempre que a tarefa envolver banco de dados, você DEVE consultar o MCP do Supabase antes de propor ou aplicar mudanças.
+# BANCO / SUPABASE — ADAPTADOR
 
-## 2. Nunca assumir estrutura
-Nunca assuma:
-- nome de tabela
-- nome de coluna
-- tipo de coluna
-- foreign key
-- índice
-- enum
-- view
-- trigger
-- função SQL
-- policy RLS
-- relacionamento entre tabelas
+A regra completa vive em `.agents/rules/banco-supabase.md` — leia-a antes
+de qualquer tarefa que toque schema, tabela, coluna, tipo, migration,
+foreign key, join, view, índice, trigger, função SQL, constraint, RLS,
+policy ou persistência (insert/update/delete/select).
 
-Tudo isso deve ser validado no MCP do Supabase e no código que consome esses dados.
+Regra central, sem exceção: nunca assumir estrutura do banco a partir do
+código ou de migration antiga — validar sempre o estado real via MCP do
+Supabase antes de alterar ou concluir qualquer coisa sobre o schema.
 
-## 3. Antes de alterar query ou migration
-Validar no MCP:
-- tabelas reais envolvidas
-- colunas reais existentes
-- tipos reais
-- relacionamentos reais
-- constraints
-- índices
-- policies RLS
-- dados esperados pelo frontend/backend
+Ao operar o MCP, use o procedimento técnico da skill oficial `supabase`
+(`.devin/skills/supabase/SKILL.md`, idêntica a
+`.agents/skills/supabase/SKILL.md`) e, para otimização de query/índice/
+lock/schema, `supabase-postgres-best-practices`
+(`.devin/skills/supabase-postgres-best-practices/SKILL.md`).
 
-## 4. Antes de alterar persistência
-Para qualquer insert, update, delete, select, join ou filtro:
-- validar se os campos existem de fato
-- validar se o retorno continua compatível com a UI e os types
-- validar impacto em RLS e permissões
-
-## 5. Mudanças destrutivas
-Nunca propor ou aplicar mudança destrutiva sem avisar claramente:
-- drop
-- rename
-- alteração de tipo
-- quebra de compatibilidade
-- remoção de coluna
-- remoção de tabela
-- alteração de constraint
-- alteração de policy
-
-## 6. Divergência entre código e banco
-Se o código e o banco divergirem:
-- não escolher um lado no chute
-- apontar claramente a divergência
-- mostrar qual parte foi confirmada no MCP
-- mostrar qual parte foi confirmada no código
-- propor correção conservadora
-
-## 7. Se não consultou o MCP, não conclua
-Se você não conseguiu validar no MCP do Supabase, não trate estrutura de banco como fato.
-
-## 8. Usar skill do Supabase
-Sempre que utilizar o MCP do Supabase, você DEVE invocar a skill do Supabase para obter instruções específicas e melhores práticas. Use o comando `skill` com o parâmetro `SkillName: "supabase"` antes de realizar qualquer operação com o Supabase.
+Este arquivo não duplica o conteúdo completo da regra — leia
+`.agents/rules/banco-supabase.md` para o checklist inteiro (mudanças
+destrutivas, divergência código × banco, o que fazer se o MCP não estiver
+disponível).

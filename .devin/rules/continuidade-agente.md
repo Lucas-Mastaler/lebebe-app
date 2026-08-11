@@ -2,38 +2,46 @@
 trigger: always_on
 ---
 
-# Continuidade entre agentes — log_progress.md
+# Continuidade entre agentes — ADAPTADOR (regra corrigida)
 
-## Antes de iniciar qualquer tarefa relevante
+Esta regra substitui integralmente a versão anterior deste arquivo, que
+instruía escrever em `docs/ia/log_progress.md`. Essa instrução está
+SUPERADA e não deve mais ser seguida por nenhum motivo.
 
-O agente deve:
+## Regra atual
 
-1. Ler `docs/ia/log_progress.md`, se existir.
-2. Tratar esse arquivo como resumo de continuidade — **não como fonte absoluta da verdade**.
-3. Validar no código real qualquer informação necessária antes de alterar arquivos.
-4. Consultar o MCP Supabase quando a tarefa envolver banco, tabelas, colunas, migrations, RLS, policies, constraints, relações ou queries.
-5. Manter escopo mínimo e evitar refactors paralelos.
+`docs/ia/log_progress.md` está **congelado** desde a Fase B2 do Harness
+canônico (`AGENTS.md` §1/§11):
 
-## Ao finalizar qualquer tarefa relevante
+1. **Nunca escrever** nova entrada nele — nem ao final de tarefa, nem por
+   ela ser "pequena demais para justificar", nem por nenhum outro motivo.
+2. **Nunca ler o arquivo inteiro** por padrão.
+3. Consulta permitida apenas por **busca dirigida** (grep por termo, módulo
+   ou data), quando for material para a tarefa atual — nunca como destino
+   de escrita.
 
-O agente deve atualizar `docs/ia/log_progress.md` com:
+## Continuidade corrente
 
-1. Data e agente/ferramenta usada.
-2. Resumo curto do que foi feito.
-3. Arquivos lidos.
-4. Arquivos alterados/criados.
-5. Validações realizadas.
-6. Comandos rodados e resultados.
-7. Pendências.
-8. Riscos conhecidos.
-9. Próximo passo recomendado.
+1. Antes de iniciar tarefa relevante: se ela pertencer a um Projeto
+   Multifase (`docs/projetos/<slug>/`), leia `STATUS.md` desse projeto como
+   ponto de partida — ver `.agents/skills/projeto-multifase/SKILL.md`.
+2. Valide sempre no código real qualquer informação necessária antes de
+   alterar arquivos — nunca assuma que algo foi implementado só porque
+   aparece em documentação antiga.
+3. Consulte o MCP Supabase quando a tarefa envolver banco, tabelas,
+   colunas, migrations, RLS, policies, constraints, relações ou queries
+   (`.agents/rules/banco-supabase.md`).
+4. Ao finalizar tarefa relevante: se ela pertence a um Projeto Multifase,
+   atualize só os artefatos que mudaram (`STATUS.md`/`PLANO.md`/
+   `DECISOES.md`/`ESCOPO.md`). Caso contrário, o relatório final da tarefa
+   (`AGENTS.md` §11) já é suficiente — não existe mais persistência global
+   automática.
+5. Mantenha escopo mínimo e evite refactors paralelos (`AGENTS.md` §3).
 
-## Regras obrigatórias
+## Regras obrigatórias que continuam válidas
 
 - Não apagar histórico validado.
 - Não inventar validação que não foi realizada.
-- Não registrar secrets, tokens, senhas ou dados sensíveis.
-- Não transformar o log em cópia do chat.
-- Não tratar o log como substituto da leitura do código.
+- Não registrar secrets, tokens, senhas ou dados sensíveis em nenhum
+  artefato persistente.
 - Se algo não foi confirmado, escrever explicitamente "não confirmado".
-- Se a tarefa for pequena demais e não justificar atualização completa, pelo menos registrar um item curto no histórico resumido.

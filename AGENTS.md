@@ -210,10 +210,13 @@ sem recomeçar auditoria; tarefa só investigativa → auditar e parar.
   módulo/assunto/data e priorize entradas recentes. Não leia o arquivo
   inteiro por padrão — tem dezenas de milhares de linhas. Regra completa
   em `docs/ia/log_progress_legacy.md`.
-- `.devin/` — regras/skills legadas. As regras globais já foram absorvidas
-  por este arquivo e as 5 regras de módulo já migraram para
-  `.agents/rules/` (§7); `.devin/` permanece intacto para
-  comparação/compatibilidade até a fase de limpeza (não iniciada).
+- `.devin/` — adaptador de compatibilidade mínimo para o Devin (confirmado
+  em uso ativo pelo usuário). As regras globais já foram absorvidas por
+  este arquivo e as 5 regras de módulo já migraram para `.agents/rules/`
+  (§7); `.devin/rules/*` aponta para este Harness em vez de duplicar
+  conteúdo (Onda 5 do Projeto Multifase `higiene-estrutural-repositorio`,
+  D-005). As skills vendor Supabase permanecem como cópia intencional em
+  `.devin/skills/`.
 
 ## 11. Continuidade e relatório final
 
@@ -235,6 +238,9 @@ sem recomeçar auditoria; tarefa só investigativa → auditar e parar.
 ## 12. Estado vigente
 
 As rules (§7) e skills (§9) referenciadas neste arquivo são a fonte vigente.
-`.devin/` permanece como legado/interino até a fase de limpeza (não
-iniciada) — nada foi removido. Histórico de evolução do harness, mapa
-completo e decisões pendentes: `.agents/README.md`.
+`.devin/` permanece como adaptador de compatibilidade mínimo para o Devin
+(confirmado em uso ativo pelo usuário em 2026-08-10) — desde a Onda 5 do
+Projeto Multifase `higiene-estrutural-repositorio` (D-005), seus arquivos
+apontam para este Harness em vez de duplicar conteúdo; deixou de ser uma
+segunda fonte independente de regras. Histórico de evolução do harness,
+mapa completo e decisões pendentes: `.agents/README.md`.

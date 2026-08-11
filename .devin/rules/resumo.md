@@ -2,16 +2,23 @@
 trigger: always_on
 ---
 
-# REGRAS CURTAS DO PROJETO
+# RESUMO — ADAPTADOR (1 página)
 
-- Não invente comportamento, tabela, coluna, fluxo, payload ou regra.
-- Antes de alterar, leia os arquivos realmente envolvidos.
-- Trabalhe apenas no escopo pedido.
-- Não faça refactors paralelos.
-- Não altere layout, nomes, estrutura ou comportamento sem solicitação.
-- Sempre prefira a menor mudança possível.
-- Se envolver banco, query, migration, join, RLS, tipos ou persistência: consultar obrigatoriamente o MCP do Supabase antes.
-- Nunca assumir estrutura do banco sem validar no MCP.
-- Se houver dúvida, marcar explicitamente como não confirmado.
-- Em módulo de recebimento, validar sempre impacto em: conferência, volumes, OS, divergências, timer, finalização, matic_sku e Google Sheets.
-- Antes de editar, responder com: entendimento, arquivos envolvidos, diagnóstico confirmado, hipóteses, validação MCP, plano mínimo, impactos e o que não será alterado.
+- Leia `AGENTS.md` (raiz) primeiro — é a fonte canônica de processo deste
+  projeto. `.devin/rules/Agent.md` é o adaptador que explica como navegar
+  a partir daqui.
+- Regras contextuais por módulo: `.agents/rules/` (banco, recebimento,
+  procurar-datas, inteligência comercial, novas telas/permissões).
+- Procedimentos reutilizáveis: `.agents/skills/` (auditar-tarefa,
+  criar-plano, executar-plano, validar-entrega, procurar-datas,
+  projeto-multifase, mais as skills vendor Supabase).
+- Projeto Multifase ativo: `docs/projetos/<slug>/` — continuidade real vive
+  lá, não na conversa.
+- `docs/ia/log_progress.md`: **congelado**. Nunca escrever. Busca dirigida
+  só quando necessário.
+- Escopo mínimo, não inventar comportamento/tabela/função, validar banco
+  via MCP antes de assumir estrutura, classificar complexidade/risco antes
+  de investigar — regras completas em `AGENTS.md`.
+
+Este arquivo não substitui nenhuma das fontes acima — é só o índice mais
+curto possível para orientar por onde começar.

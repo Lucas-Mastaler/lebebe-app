@@ -46,13 +46,13 @@ consultado como fonte operacional por nenhuma regra ou skill vigente.
 | Fase 3 — skills | Concluída em 2026-08-07 | 6 skills de projeto criadas em `.agents/skills/*/SKILL.md` (auditar-tarefa, criar-plano, executar-plano, validar-entrega, atualizar-log-progress, procurar-datas); `AGENTS.md` §9 aponta para elas |
 | Fase B/B2 — log global | Concluída em 2026-08-10 | `docs/ia/log_progress.md` congelado (histórico legado, byte-preservado, ver `docs/ia/log_progress_legacy.md`); escrita global aposentada; continuidade longa passa a ser exclusivamente `docs/projetos/<slug>/`; skill `atualizar-log-progress` aposentada |
 | Fase C1 — consolidação documental | Concluída em 2026-08-10 | `CONTEXTO DO PROJETO.MD` auditado seção a seção e congelado como histórico (mapa único de rotas/APIs/entidades do Recebimento absorvido em `.agents/rules/recebimento.md`); reconciliação de `/procurar-datas` × log congelado já estava resolvida pela Fase B/B2, só verificada |
-| Limpeza do legado | Não iniciada | Remover/desativar `.devin/*` e as duplicações só depois de validar as Fases 2 e 3 em tarefas reais |
+| Onda 5 (Projeto Multifase `higiene-estrutural-repositorio`) | Concluída em 2026-08-10 | Usuário confirmou uso ativo do Devin dependente de `.devin/`; pasta mantida e transformada em **adaptador de compatibilidade mínimo** (não mais segunda fonte de regras) — os 6 `rules/` reescritos como pointers curtos para este Harness (855 → 244 linhas), 2 stubs mortos removidos (`skills/login/`, `workflows/login.md`), skills vendor preservadas intactas. Ver `docs/projetos/higiene-estrutural-repositorio/DECISOES.md` (D-005) |
 
-Nada em `.devin/` foi removido, movido ou desativado nesta fase. As 5 regras
-da Fase 2 já migraram para `.agents/rules/` e são a fonte vigente; os
-arquivos legados equivalentes em `.devin/rules/` permanecem intactos para
-comparação/compatibilidade até a fase de limpeza (não iniciada) — ver
-`AGENTS.md` §1 e §7.
+As 5 regras da Fase 2 já migraram para `.agents/rules/` e são a fonte
+vigente. Os arquivos legados equivalentes em `.devin/rules/` não são mais
+cópias completas: desde a Onda 5 (D-005) são pointers curtos para este
+Harness, mantidos como adaptador de compatibilidade porque o Devin ainda
+depende diretamente de `.devin/` — ver `AGENTS.md` §1 e §7.
 
 ## Compatibilidade por ferramenta
 
@@ -70,10 +70,14 @@ comparação/compatibilidade até a fase de limpeza (não iniciada) — ver
 - **Codex** — já lê `AGENTS.md` por convenção de mercado; nenhum adaptador
   extra deveria ser necessário. Não confirmado neste ambiente (não há como
   testar Codex a partir desta sessão).
-- **Devin** — hoje só lê `.devin/rules/`, `.devin/skills/` e
-  `.devin/workflows/`, que continuam intactos como fonte legada. Se/quando
-  o Devin passar a ler `AGENTS.md` ou aceitar um adaptador em `.devin/`, a
-  Fase 2 deve criar esse adaptador em vez de duplicar conteúdo.
+- **Devin** — confirmado pelo usuário (2026-08-10) que ainda lê
+  `.devin/rules/` e `.devin/skills/` diretamente e depende dessa pasta.
+  Desde a Onda 5 do Projeto Multifase `higiene-estrutural-repositorio`
+  (D-005), `.devin/rules/*` é um adaptador mínimo que aponta para este
+  Harness em vez de duplicar conteúdo — ver `.devin/rules/Agent.md`.
+  `.devin/workflows/` ficou vazia (o único arquivo, `login.md`, era um
+  stub sem conteúdo, removido). Se/quando o Devin passar a ler `AGENTS.md`
+  nativamente, o adaptador em `.devin/` pode ser reduzido ainda mais.
 - **Cursor, Windsurf, outros** — sem adaptador ainda; nenhum uso confirmado
   neste projeto no momento (ver histórico de migração Windsurf → Devin em
   `docs/ia/log_progress.md`).

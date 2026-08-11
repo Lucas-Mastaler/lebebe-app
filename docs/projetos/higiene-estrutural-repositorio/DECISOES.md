@@ -65,10 +65,14 @@
 ## D-005 — Destino do legado .devin/
 
 - Data: 2026-08-10 (aberta) · Auditoria de evidências: 2026-08-10 (Onda 5,
-  SOMENTE AUDITORIA — nenhuma remoção/movimentação/edição executada)
-- Decisão: **ainda não tomada — permanece PENDENTE.** Esta entrada registra
-  apenas a evidência levantada; a ação (manter/arquivar/remover) depende de
-  confirmação humana explícita (ver gate abaixo).
+  SOMENTE AUDITORIA) · **Resolvida: 2026-08-10 (Onda 5, execução — usuário
+  confirmou uso ativo do Devin)**
+- Decisão final: `.devin/` **permanece**, reduzida ao papel de **adaptador
+  de compatibilidade mínimo** do Harness canônico — nunca mais segunda
+  fonte independente de regras. Ver seção "Resolução" abaixo para o
+  detalhamento completo da execução. As subseções anteriores (inventário,
+  matriz, dependência, gate) permanecem como registro da evidência que
+  fundamentou a decisão.
 
 ### Inventário real (45 arquivos, `.devin/` byte-intacta)
 
@@ -215,11 +219,108 @@ neste repositório de forma que ele dependa da pasta `.devin/`?"**
 - Se **incerto**: manter tudo intacto até nova confirmação; não escolher por
   suposição.
 
-- Impacto: bloqueia apenas a Onda 5 (`PLANO.md`) — não impede as ondas
-  anteriores, todas já concluídas.
-- Status: **PENDENTE** (auditoria de evidências concluída nesta sessão;
-  decisão de ação continua exigindo confirmação humana explícita, nunca só
-  por evidência de código, conforme protocolo desta onda).
+### Resolução (2026-08-10, mesma sessão — execução)
+
+**O usuário confirmou explicitamente: Devin ainda é usado neste
+repositório e depende da pasta `.devin/`.** Gate respondido — decisão de
+ação tomada:
+
+- **`.devin/` permanece** — não removida, não desativada.
+- **Papel definido:** `.devin/` passa a ser explicitamente um **adaptador
+  de compatibilidade mínimo**, nunca mais uma segunda fonte independente de
+  regras. O Harness canônico (`AGENTS.md` + `.agents/rules/` +
+  `.agents/skills/` + Projeto Multifase) é sempre quem vence em caso de
+  divergência — essa precedência agora está escrita explicitamente dentro
+  de `.devin/rules/Agent.md` (novo §2).
+- **6 arquivos de `rules/` reescritos** (mesmos nomes preservados, para não
+  quebrar qualquer descoberta por filename que o Devin faça), de 855 para
+  244 linhas somadas (~71% de redução):
+  - `Agent.md`: 509 → 102 linhas. Deixou de ser um segundo `AGENTS.md`
+    completo e virou o adaptador principal — explica a hierarquia de
+    fontes, a precedência entre camadas (código > Harness > docs de
+    feature > Projeto Multifase > Git/histórico) e onde encontrar cada
+    regra contextual.
+  - `gerais.md`: 132 → 32 linhas — pointers para `AGENTS.md` §2-§5 e para
+    as rules de módulo (`procurar-datas.md`, `novas-telas-permissoes.md`).
+  - `recebimentos.md`: 95 → 14 linhas — pointer direto para
+    `.agents/rules/recebimento.md`, sem duplicar o checklist crítico.
+  - `supabase.md`: 64 → 25 linhas — pointer direto para
+    `.agents/rules/banco-supabase.md`, mantendo só a regra central
+    (validar sempre via MCP) e o apontamento para as skills vendor.
+  - `continuidade-agente.md`: 39 → 47 linhas — **reescrita obrigatória**:
+    a instrução antiga de escrever em `docs/ia/log_progress.md` foi
+    **removida por completo** e substituída pela regra atual (log
+    congelado, nunca escrever, busca dirigida só quando necessário,
+    continuidade real via Projeto Multifase).
+  - `resumo.md`: 16 → 24 linhas — condensado de uma página apontando para
+    todas as fontes acima, sem repetir conteúdo.
+- **Instruções conflitantes eliminadas:** as três únicas fontes ativas que
+  instruíam escrever no log congelado (`Agent.md` §6-8, `gerais.md` §11,
+  `continuidade-agente.md` integral) foram corrigidas. Validado por busca
+  (`grep -rn -i "log_progress" .devin/`) que nenhuma menção restante em
+  `.devin/` instrui escrita — todas as ocorrências restantes só explicam
+  que o arquivo está congelado.
+- **Stubs mortos removidos** (`git rm`), após busca dirigida final
+  confirmar zero consumidor funcional: `skills/login/SKILL.md` (só
+  frontmatter) e `workflows/login.md` (vazio). A busca dirigida em
+  `docs/ia/log_progress.md` mostrou que `workflows/login.md` era listado
+  mecanicamente como "arquivo lido" em quase toda sessão passada (porque a
+  regra antiga mandava sempre listar `workflows/`), mas sempre vazio ou
+  "(não aplicável)" — nunca consumido de fato. `skills/login/SKILL.md`
+  nunca apareceu como usado em nenhuma sessão real.
+- **Skills vendor preservadas integralmente, sem edição:**
+  `skills/supabase/` e `skills/supabase-postgres-best-practices/`
+  permanecem byte-idênticas às equivalentes em `.agents/skills/`
+  (`diff -rq` confirmado = 0 diferenças, revalidado após a ação). Mantidas
+  deliberadamente como duplicação intencional de compatibilidade — não são
+  mais tratadas como "duplicado a limpar", e sim como parte do adaptador.
+- Impacto: `.devin/` passou de 45 para 43 arquivos (2 stubs removidos); os
+  6 `rules/` foram reescritos como adaptadores curtos, sem perda de
+  nenhum conteúdo de negócio (tudo já vivia, de forma completa, no Harness
+  canônico); as 37 arquivos de skills vendor permanecem intocados.
+- Status: **APROVADA** — decisão executada nesta sessão, com autorização
+  explícita do usuário/proprietário.
+
+## D-015 — Onda 6: resíduos finais e fechamento do projeto
+
+- Data: 2026-08-11
+- Decisão: Onda 6 executada como "documentação/referências residuais",
+  não como cosmética de arquivos soltos (nenhum candidato novo de baixo
+  risco foi encontrado além do já tratado nas Ondas 1-5). Dois grupos de
+  ação, ambos de baixíssimo risco (correção de texto/documentação, zero
+  código, zero banco, zero regra de negócio):
+  1. **Conteúdo do D-011 corrigido:** `docs/tecnico/AUTO_LOGOUT_SETUP.md`
+     usava `auditoria_acesso` (singular) em 9 ocorrências nos exemplos
+     SQL/JSON; corrigido para `auditoria_acessos` (plural), nome real já
+     confirmado em D-011. Nenhuma mudança de comportamento — só o texto do
+     runbook.
+  2. **Referências obsoletas causadas pela própria execução aprovada da
+     Onda 5 (D-005) corrigidas** — documentos do Harness que ainda
+     descreviam `.devin/` como "legado intacto" ou "fase de limpeza não
+     iniciada", desatualizados após a Onda 5 transformar `.devin/rules/`
+     em adaptador mínimo: `AGENTS.md` (§10 e §12), `.agents/README.md`
+     (tabela "Estado da migração" + nota de compatibilidade Devin),
+     `.agents/rules/README.md` (nota de abertura), `.agents/skills/README.md`
+     (nota sobre a skill `login`, removida na Onda 5). Nenhuma regra nova
+     de negócio introduzida — só sincronização de descrição com o estado
+     real já decidido e executado.
+  Busca dirigida final (`git grep`) confirmou zero referência operacional
+  quebrada restante no repositório para todos os caminhos removidos/
+  movidos ao longo do projeto (`RESUMO_STACK.MD`, `desloc_backup.md`,
+  `scriptsreal.md`, `appscript/logs.md`, `.devin/skills/login/SKILL.md`,
+  `.devin/workflows/login.md`) — as únicas ocorrências restantes são
+  históricas/explicativas (nota em `.agents/README.md` sobre a origem do
+  Harness; entrada em `.gitignore` para `appscript/logs.md`, que é o
+  comportamento correto).
+- Motivo/contexto: fechamento do Projeto Multifase — nenhum item cosmético
+  de arquivo solto adicional foi identificado (Ondas 1-4 já trataram todos
+  os candidatos reais da raiz/`docs/`); os únicos resíduos genuínos
+  restantes eram os dois acima.
+- Impacto: `docs/tecnico/AUTO_LOGOUT_SETUP.md`, `AGENTS.md`,
+  `.agents/README.md`, `.agents/rules/README.md`,
+  `.agents/skills/README.md` alterados. Nenhum código, banco, migration ou
+  regra de negócio tocado.
+- Status: APROVADA
 
 ## D-008 — supabase-migration-digisac-conexoes-automacao.sql mantido; gap de migration oficial
 

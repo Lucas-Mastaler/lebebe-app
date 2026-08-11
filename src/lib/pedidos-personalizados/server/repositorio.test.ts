@@ -42,6 +42,7 @@ function filtros(overrides: Partial<FiltrosPedidos> = {}): FiltrosPedidos {
     dataEntregaFinal: null,
     situacaoPrazo: null,
     codigoProduto: null,
+    tipoTapete: null,
     ...overrides,
   }
 }

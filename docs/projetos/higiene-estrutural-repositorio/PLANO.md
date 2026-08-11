@@ -1,6 +1,8 @@
 # Plano — Higiene Estrutural do Repositório
 
-**Estado do planejamento:** DEFINIDO
+**Estado do planejamento:** CONCLUÍDO — Ondas 1 a 6 executadas
+(2026-08-10/11). Ver `STATUS.md` para o resumo final e `DECISOES.md`
+(D-001 a D-015) para o detalhamento de cada decisão.
 
 Ondas ordenadas por risco, mas sem bloqueio artificial entre frentes
 independentes: (1) fontes concorrentes e resíduos seguros, (2) dados/logs
@@ -244,14 +246,17 @@ atualizados.
 Validações necessárias: confirmar se cada script/arquivo ainda é executado
 ou apenas histórico, antes de mover ou remover.
 
-## Onda 5 — Legado `.devin` (gate tardio)
+## Onda 5 — Legado `.devin` (gate tardio) — CONCLUÍDA (2026-08-10)
 
 Objetivo: decidir o destino de `.devin/rules/` (6 arquivos) e
-`.devin/workflows/login.md` (~2.946 linhas no total).
+`.devin/workflows/login.md`.
 Dependências: Ondas 1 e 3 apenas — não depende de Onda 2 (`appscript/logs.md`)
-nem de Onda 4, mas deve ser a última onda antes da cosmética, por ser a
-mudança de maior impacto em compatibilidade (Devin ainda lê `.devin/`
-diretamente).
+nem de Onda 4.
+
+**Resultado final:** usuário confirmou uso ativo do Devin dependente de
+`.devin/`. Pasta mantida, transformada em adaptador de compatibilidade
+mínimo (não mais segunda fonte de regras). Ver checklist abaixo e D-005
+(`DECISOES.md`) para o detalhamento completo.
 
 - [x] Auditar `.devin/` (inventário + dependência + comparação semântica
       com `.agents/`) para reunir evidência suficiente antes do gate humano.
@@ -265,34 +270,57 @@ diretamente).
       Achado de risco: 3 dos 6 `rules/` ainda instruem escrever no log
       congelado (D-001) — conflito ativo se o Devin seguir isso
       literalmente. Matriz completa em D-005 (`DECISOES.md`).
-- [ ] Confirmar com o usuário se Devin (ou outra ferramenta) ainda depende
-      de `.devin/` diretamente. **Não respondida ainda — gate bloqueante,
-      próximo passo exato desta onda.**
-- [ ] Se confirmado obsoleto: decidir entre manter como histórico,
-      arquivar fora do fluxo ativo, ou remover.
-- [ ] Se ainda necessário: registrar decisão de manter e critério de
-      quando reavaliar.
+- [x] Confirmar com o usuário se Devin (ou outra ferramenta) ainda depende
+      de `.devin/` diretamente. **Respondida (2026-08-10): sim, Devin
+      continua em uso e depende da pasta.**
+- [x] Confirmado que o uso continua: `.devin/` transformada em adaptador de
+      compatibilidade mínimo, não removida.
+      **Resultado (2026-08-10):** os 6 `rules/` reescritos como pointers
+      curtos para o Harness canônico (855 → 244 linhas somadas), sem perda
+      de conteúdo de negócio (tudo já vivia em `AGENTS.md`/`.agents/rules/`).
+      Instrução de escrever em `docs/ia/log_progress.md` (congelado)
+      removida das 3 fontes que a continham (`Agent.md`, `gerais.md`,
+      `continuidade-agente.md`). Stubs mortos (`skills/login/SKILL.md`,
+      `workflows/login.md`) removidos após confirmação final de zero
+      consumidor. Skills vendor (`skills/supabase/`,
+      `skills/supabase-postgres-best-practices/`) preservadas intactas,
+      byte-idênticas às de `.agents/skills/`. Ver D-005 (`DECISOES.md`)
+      para o detalhamento completo.
 
 Critérios de conclusão: decisão registrada em `DECISOES.md` (D-005) com
-aprovação humana explícita — este item nunca é decidido só por evidência de
-código. Auditoria de evidências (primeiro item) concluída; onda **não**
-está concluída — os 3 itens de decisão seguem em aberto, bloqueados pelo
-gate humano.
-Validações necessárias: nenhuma automática para a decisão — depende de
-confirmação humana sobre uso real de Devin no projeto. A auditoria de
-evidências em si já usou `git grep`, `diff -rq` e busca dirigida no log
-congelado (concluídas).
+aprovação humana explícita — cumprido, decisão executada com autorização
+do usuário. **Onda 5 concluída (2026-08-10).**
+Validações necessárias: `git grep`/`diff -rq`/busca dirigida no log
+congelado (auditoria) + `grep -rn -i "log_progress" .devin/` pós-edição
+(confirmou zero instrução de escrita restante) + `diff -rq` revalidando as
+skills vendor intactas — todas executadas.
 
-## Onda 6 — Cosmética
+## Onda 6 — Cosmética / resíduos finais — CONCLUÍDA (2026-08-11)
 
-Objetivo: ajustes de nome/local de baixo risco que não se qualificaram para
-as ondas anteriores.
-Dependências: todas as ondas anteriores concluídas ou explicitamente
-adiadas por decisão humana.
+Objetivo: ajustes de nome/local/referência de baixo risco que não se
+qualificaram para as ondas anteriores, e fechamento do Projeto Multifase.
+Dependências: Ondas 1-5 concluídas — cumprido.
 
-- [ ] A definir no momento em que as Ondas 1–5 estiverem concluídas —
-      não antecipar itens cosméticos enquanto houver pendência de fonte
-      concorrente ou dado sensível.
+**Resultado:** revisão dirigida final não encontrou nenhum arquivo solto
+adicional elegível (Ondas 1-4 já esgotaram os candidatos reais da raiz e
+de `docs/`). Dois resíduos genuínos identificados e corrigidos — ver D-015
+(`DECISOES.md`):
 
-Critérios de conclusão: N/A até a onda ser detalhada.
-Validações necessárias: N/A até a onda ser detalhada.
+- [x] Corrigir conteúdo do D-011 (`auditoria_acesso` → `auditoria_acessos`
+      em `docs/tecnico/AUTO_LOGOUT_SETUP.md`, 9 ocorrências) — pendência de
+      conteúdo registrada na Onda 3, item 1, deixada para revisão dedicada.
+- [x] Corrigir referências obsoletas ao estado pré-Onda-5 de `.devin/`
+      criadas pela própria execução aprovada da Onda 5 (D-005):
+      `AGENTS.md` (§10, §12), `.agents/README.md`, `.agents/rules/README.md`,
+      `.agents/skills/README.md`.
+- [x] Busca dirigida final (`git grep`) por todos os caminhos removidos/
+      movidos no projeto inteiro — zero referência operacional quebrada
+      confirmada; ocorrências restantes são históricas/explicativas
+      legítimas (nota de proveniência em `.agents/README.md`, entrada em
+      `.gitignore`).
+
+Critérios de conclusão: nenhuma referência operacional quebrada;
+correções restritas a texto/documentação, sem código/banco/regra de
+negócio tocados — cumprido.
+Validações necessárias: `git grep` dirigido, `git diff --check`,
+`git status --short` — todas executadas (ver relatório final da sessão).

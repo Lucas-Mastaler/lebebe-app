@@ -3,6 +3,7 @@ import {
   FORNECEDOR_MORIAH,
   STATUS_PEDIDO_PERSONALIZADO,
   ehStatusPedidoPersonalizado,
+  ehTipoTapeteMoriah,
 } from '../constantes'
 import {
   normalizarComprador,
@@ -12,6 +13,7 @@ import type {
   PedidoPersonalizadoMoriahEntrada,
   StatusPedidoPersonalizado,
   TapeteMoriahEntrada,
+  TipoTapeteMoriah,
 } from '../tipos'
 import {
   converterDataAdministrativaParaISO,
@@ -67,6 +69,7 @@ export type FiltrosPedidos = {
   dataEntregaFinal: string | null
   situacaoPrazo: SituacaoPrazoFiltro | null
   codigoProduto: '21157' | '21158' | '21159' | null
+  tipoTapete: TipoTapeteMoriah | null
 }
 
 export type DadosAdministrativosNormalizados = {
@@ -362,6 +365,11 @@ export function validarFiltrosPedidos(url: URL):
     return { ok: false, mensagem: 'Código de produto inválido.' }
   }
 
+  const tipoTapeteTexto = url.searchParams.get('tipoTapete')?.trim() || null
+  if (tipoTapeteTexto && !ehTipoTapeteMoriah(tipoTapeteTexto)) {
+    return { ok: false, mensagem: 'Tipo de tapete inválido.' }
+  }
+
   return {
     ok: true,
     filtros: {
@@ -379,6 +387,7 @@ export function validarFiltrosPedidos(url: URL):
       dataEntregaFinal,
       situacaoPrazo: situacaoPrazoTexto as SituacaoPrazoFiltro | null,
       codigoProduto: codigoProdutoTexto as FiltrosPedidos['codigoProduto'],
+      tipoTapete: tipoTapeteTexto as TipoTapeteMoriah | null,
     },
   }
 }

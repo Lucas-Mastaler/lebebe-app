@@ -11,6 +11,7 @@ import {
   gerarMensagemPedidoPersonalizado,
   validarPedidoPersonalizadoMoriah,
 } from '@/lib/pedidos-personalizados'
+import { normalizarDigitosTelefoneNacionalVisual } from '@/lib/atendimento-presencial/telefone'
 import type {
   CodigoProdutoMoriah,
   FormatoTapeteMoriah,
@@ -327,6 +328,16 @@ export function resumirTapete(
     produto: produtos.find((item) => item.codigo === codigoProduto) ?? null,
     avisoMedida: dimensao1.dados % 5 !== 0 || (dimensao2.dados !== null && dimensao2.dados % 5 !== 0),
   }
+}
+
+// Checagem só de UI (não altera a regra canônica de telefone em `@/lib/pedidos-personalizados`,
+// que é compartilhada com o servidor e outros formulários): sinaliza números plausivelmente
+// forjados, como 99999-9999, sem mudar o contrato de validação existente.
+export function telefoneComVariedadeMinima(telefone: string): boolean {
+  const digitos = normalizarDigitosTelefoneNacionalVisual(telefone)
+  if (digitos.length < 10) return true
+  const numero = digitos.slice(2)
+  return new Set(numero).size >= 3
 }
 
 export function problemasPorCampo(

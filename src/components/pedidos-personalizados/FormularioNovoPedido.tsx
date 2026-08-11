@@ -43,6 +43,7 @@ import {
   solicitarUrlAnexo,
   substituirAnexo,
   deveAvisarDadosNaoSalvos,
+  telefoneComVariedadeMinima,
   validarArquivoAnexo,
 } from './novo-pedido-modelo'
 import type {
@@ -265,7 +266,16 @@ export default function FormularioNovoPedido() {
   }
 
   function mensagens(campo: string) {
-    return erros.filter((item) => item.campo === campo).map((item) => item.mensagem)
+    const base = erros.filter((item) => item.campo === campo).map((item) => item.mensagem)
+    if (
+      campo === 'telefone'
+      && base.length === 0
+      && (tentouSalvar || camposTocados.has('telefone'))
+      && !telefoneComVariedadeMinima(estado.telefone)
+    ) {
+      return ['Telefone inválido.']
+    }
+    return base
   }
 
   function marcarTocado(campo: string) {
@@ -310,7 +320,7 @@ export default function FormularioNovoPedido() {
     if (!opcoes || enviandoRef.current || salvo) return
     setTentouSalvar(true)
     setErroEnvio(null)
-    if (!avaliacao?.validacao.valido || !avaliacao.validacao.dados) {
+    if (!avaliacao?.validacao.valido || !avaliacao.validacao.dados || !telefoneComVariedadeMinima(estado.telefone)) {
       toast.error('Revise os campos indicados antes de salvar.')
       focarPrimeiroErro(errosTodos)
       return

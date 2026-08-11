@@ -22,9 +22,12 @@ respectivo `SKILL.md` — não duplique aqui quando revisar.
 | `atualizar-log-progress/` | **Aposentada** (Fase B2, 2026-08-10) | Sem gatilho operacional — `docs/ia/log_progress.md` está congelado | Nenhuma |
 | `procurar-datas/` | Implementada (Fase 3, 2026-08-07) | Navegador dos dossiês da migração `/procurar-datas` | Nenhuma |
 
-A skill `login` existe só em `.devin/skills/login/` (21 bytes, só
-frontmatter, sem corpo — abandonada) e não tem equivalente aqui. Nenhuma das
-duplicações acima foi removida nesta tarefa (fora do escopo da Fase 3).
+A skill `login` que existia só em `.devin/skills/login/` (21 bytes, só
+frontmatter, sem corpo — stub abandonado) foi removida na Onda 5 do Projeto
+Multifase `higiene-estrutural-repositorio` (2026-08-10, D-005), após busca
+dirigida confirmar zero consumidor funcional. As duplicações vendor
+(`supabase/`, `supabase-postgres-best-practices/`) permanecem intencionais
+— ver mesma decisão.
 
 **Ferramenta de criação de skill:** a skill `skill-creator`
 (`anthropic-skills:skill-creator`) está disponível no Claude Code usado

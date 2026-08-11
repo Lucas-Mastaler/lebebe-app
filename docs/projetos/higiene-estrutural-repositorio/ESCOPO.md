@@ -1,7 +1,8 @@
 # Escopo — Higiene Estrutural do Repositório
 
-**Estado:** APROVADO (2026-08-10, Fase C2.1 — contrato geral aprovado pelo
-proprietário)
+**Estado:** CONCLUÍDO (2026-08-11 — Ondas 1 a 6 executadas, todos os
+critérios de aceite abaixo satisfeitos; contrato geral aprovado pelo
+proprietário em 2026-08-10, Fase C2.1)
 
 ## Objetivo
 
@@ -95,6 +96,8 @@ alterar regra de negócio, schema, API ou comportamento do app.
 
 ## Decisões funcionais já aprovadas
 
-- Ver `DECISOES.md` — D-001 a D-003 e D-004 (`test-apps-script.ps1`, fora
-  de escopo) aprovadas. D-005 (`.devin/`) e D-006 (`appscript/logs.md`)
-  seguem pendentes; não bloqueiam o início da execução (Onda 1).
+- Ver `DECISOES.md` — D-001 a D-015, todas APROVADAS (nenhuma PENDENTE).
+  D-005 (`.devin/`) resolvida na Onda 5 (usuário confirmou uso ativo do
+  Devin; pasta mantida como adaptador de compatibilidade mínimo). D-006
+  (`appscript/logs.md`) resolvida na Onda 2 (arquivo removido). D-015
+  registra o fechamento da Onda 6.

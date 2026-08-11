@@ -10,7 +10,7 @@ Sistema de logout automático diário que desconecta todos os usuários não-sup
 
 ✅ **Superadmins não são desconectados**: Apenas usuários com `role !== 'superadmin'` são afetados
 
-✅ **Auditoria completa**: Cada logout é registrado na tabela `auditoria_acesso`
+✅ **Auditoria completa**: Cada logout é registrado na tabela `auditoria_acessos`
 
 ✅ **Sem bloqueio**: Usuários podem fazer login novamente imediatamente após o logout
 
@@ -116,7 +116,7 @@ git push
    - Busca sessão ativa no Supabase Auth
    - Executa `auth.admin.signOut(userId)` para invalidar token/sessão
    - Registra na tabela `sessoes_logout_automatico`
-   - Insere evento `AUTO_LOGOUT_19H` na `auditoria_acesso`
+   - Insere evento `AUTO_LOGOUT_19H` na `auditoria_acessos`
 5. **Logs detalhados** no console:
    ```
    [AUTO-LOGOUT] Iniciando processo às 19h BRT (05/02/2026, 19:00:00)
@@ -169,21 +169,21 @@ SELECT
   email,
   metadata->>'horario_brt' as horario_desconexao,
   created_at
-FROM auditoria_acesso
+FROM auditoria_acessos
 WHERE acao = 'AUTO_LOGOUT_19H'
   AND created_at::date = CURRENT_DATE
 ORDER BY created_at DESC;
 
 -- Usuários que acessaram hoje (fizeram login após logout)
 SELECT DISTINCT email, MAX(created_at) as ultimo_acesso
-FROM auditoria_acesso
+FROM auditoria_acessos
 WHERE acao = 'LOGIN_SUCESSO'
   AND created_at::date = CURRENT_DATE
   AND created_at > (
     SELECT MAX(created_at) 
-    FROM auditoria_acesso 
+    FROM auditoria_acessos
     WHERE acao = 'AUTO_LOGOUT_19H' 
-      AND auditoria_acesso.email = email
+      AND auditoria_acessos.email = email
   )
 GROUP BY email;
 ```
@@ -242,7 +242,7 @@ Para medir acessos diários reais:
 -- Usuários que acessaram após o logout automático (acessos reais do dia)
 WITH logouts_hoje AS (
   SELECT email, MAX(created_at) as horario_logout
-  FROM auditoria_acesso
+  FROM auditoria_acessos
   WHERE acao = 'AUTO_LOGOUT_19H'
     AND created_at::date = CURRENT_DATE
   GROUP BY email
@@ -253,7 +253,7 @@ SELECT
   a.created_at as acessou_as,
   EXTRACT(EPOCH FROM (a.created_at - l.horario_logout))/60 as minutos_depois
 FROM logouts_hoje l
-INNER JOIN auditoria_acesso a ON a.email = l.email
+INNER JOIN auditoria_acessos a ON a.email = l.email
 WHERE a.acao = 'LOGIN_SUCESSO'
   AND a.created_at > l.horario_logout
   AND a.created_at::date = CURRENT_DATE
@@ -299,4 +299,4 @@ Edite o schedule no `vercel.json` (formato cron UTC):
 Para dúvidas ou problemas, verifique:
 1. Logs da Vercel (Runtime Logs)
 2. Logs do Supabase (Dashboard → Logs)
-3. Tabela `auditoria_acesso` com filtro `acao = 'AUTO_LOGOUT_19H'`
+3. Tabela `auditoria_acessos` com filtro `acao = 'AUTO_LOGOUT_19H'`

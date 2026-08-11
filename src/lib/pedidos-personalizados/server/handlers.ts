@@ -164,6 +164,7 @@ function serializarItemListagem(valor: unknown) {
     version: row.version,
     quantidadeTapetes: row.quantidade_tapetes,
     codigosProdutos: row.codigos_produtos,
+    tiposTapetes: row.tipos_tapetes,
     situacaoPrazo: classificarSituacaoPrazo(
       typeof row.data_entrega === 'string' ? row.data_entrega : null,
       row.status as import('../tipos').StatusPedidoPersonalizado

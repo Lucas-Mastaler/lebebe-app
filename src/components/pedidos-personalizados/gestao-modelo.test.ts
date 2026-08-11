@@ -95,7 +95,7 @@ describe('modelo da gestão de pedidos personalizados', () => {
       cliente: 'Bebê', consultora: '', numeroLancamento: '000001', status: '', unidade: 'portao', dataInicial: '', dataFinal: '',
       dataPedidoFornecedorInicial: '2026-08-01', dataPedidoFornecedorFinal: '2026-08-15',
       dataEntregaInicial: '2026-08-20', dataEntregaFinal: '2026-08-31',
-      situacaoPrazo: 'PRESTES A VENCER',
+      situacaoPrazo: 'PRESTES A VENCER', tipoTapete: '',
     }, 2)
     expect(String(fetchMock.mock.calls[0][0])).toContain('page=2')
     expect(String(fetchMock.mock.calls[0][0])).toContain('numeroLancamento=000001')
@@ -162,7 +162,7 @@ describe('modelo da gestão de pedidos personalizados', () => {
       cliente: '', consultora: '', numeroLancamento: '', status: '', unidade: '', dataInicial: '', dataFinal: '',
       dataPedidoFornecedorInicial: '2026-08-10', dataPedidoFornecedorFinal: '2026-08-01',
       dataEntregaInicial: '', dataEntregaFinal: '',
-      situacaoPrazo: '',
+      situacaoPrazo: '', tipoTapete: '',
     }, 1)).rejects.toThrow('pedido ao fornecedor')
     expect(fetchMock).not.toHaveBeenCalled()
     fetchMock.mockRestore()

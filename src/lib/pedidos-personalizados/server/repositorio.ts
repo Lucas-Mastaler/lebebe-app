@@ -226,6 +226,17 @@ export class RepositorioPedidosPersonalizados {
       if (pedidoIdsProduto.length === 0) return { data: { itens: [], total: 0 }, error: null }
     }
 
+    let pedidoIdsTipo: string[] | null = null
+    if (filtros.tipoTapete) {
+      const { data: tapetesTipo, error: tapetesTipoError } = await this.supabase
+        .from('pedidos_personalizados_moriah_tapetes')
+        .select('pedido_id')
+        .eq('tipo', filtros.tipoTapete)
+      if (tapetesTipoError) return { data: null, error: tapetesTipoError }
+      pedidoIdsTipo = Array.from(new Set((tapetesTipo ?? []).map((tapete) => tapete.pedido_id)))
+      if (pedidoIdsTipo.length === 0) return { data: { itens: [], total: 0 }, error: null }
+    }
+
     let query = this.supabase
       .from('pedidos_personalizados_pedidos')
       .select(`
@@ -261,7 +272,13 @@ export class RepositorioPedidosPersonalizados {
       }
       if (filtros.situacaoPrazo === 'NO PRAZO') query = query.gt('data_entrega', adicionarDiasIso(hoje, 7))
     }
-    if (pedidoIdsProduto) query = query.in('id', pedidoIdsProduto)
+    const pedidoIdsFiltro = pedidoIdsProduto && pedidoIdsTipo
+      ? pedidoIdsProduto.filter((id) => pedidoIdsTipo!.includes(id))
+      : pedidoIdsProduto ?? pedidoIdsTipo
+    if (pedidoIdsFiltro) {
+      if (pedidoIdsFiltro.length === 0) return { data: { itens: [], total: 0 }, error: null }
+      query = query.in('id', pedidoIdsFiltro)
+    }
 
     const inicio = (filtros.pagina - 1) * 20
     const { data, error, count } = await query
@@ -272,13 +289,13 @@ export class RepositorioPedidosPersonalizados {
 
     const rows = data ?? []
     const pedidoIds = rows.map((row) => row.id)
-    const resumoPorPedido = new Map<string, { quantidade: number; codigos: Set<string> }>()
+    const resumoPorPedido = new Map<string, { quantidade: number; codigos: Set<string>; tipos: Set<string> }>()
     const recebidoEmPorPedido = new Map<string, string>()
     if (pedidoIds.length > 0) {
       const [tapetesResultado, historicoResultado] = await Promise.all([
         this.supabase
           .from('pedidos_personalizados_moriah_tapetes')
-          .select('pedido_id, produto:pedidos_personalizados_produtos!pedidos_personalizados_moriah_tapetes_produto_id_fkey(codigo)')
+          .select('pedido_id, tipo, produto:pedidos_personalizados_produtos!pedidos_personalizados_moriah_tapetes_produto_id_fkey(codigo)')
           .in('pedido_id', pedidoIds),
         this.supabase
           .from('pedidos_personalizados_status_historico')
@@ -290,10 +307,11 @@ export class RepositorioPedidosPersonalizados {
       if (tapetesResultado.error) return { data: null, error: tapetesResultado.error }
       if (historicoResultado.error) return { data: null, error: historicoResultado.error }
       const tapetesPagina = tapetesResultado.data
-      for (const tapete of (tapetesPagina ?? []) as unknown as Array<{ pedido_id: string; produto: { codigo: string } }>) {
-        const resumo = resumoPorPedido.get(tapete.pedido_id) ?? { quantidade: 0, codigos: new Set<string>() }
+      for (const tapete of (tapetesPagina ?? []) as unknown as Array<{ pedido_id: string; tipo: string; produto: { codigo: string } }>) {
+        const resumo = resumoPorPedido.get(tapete.pedido_id) ?? { quantidade: 0, codigos: new Set<string>(), tipos: new Set<string>() }
         resumo.quantidade += 1
         resumo.codigos.add(tapete.produto.codigo)
+        resumo.tipos.add(tapete.tipo)
         resumoPorPedido.set(tapete.pedido_id, resumo)
       }
       for (const evento of (historicoResultado.data ?? []) as Array<{ pedido_id: string; data_recebimento: string | null; created_at: string }>) {
@@ -309,6 +327,7 @@ export class RepositorioPedidosPersonalizados {
           ...row,
           quantidade_tapetes: resumoPorPedido.get(row.id)?.quantidade ?? 0,
           codigos_produtos: Array.from(resumoPorPedido.get(row.id)?.codigos ?? []).sort(),
+          tipos_tapetes: Array.from(resumoPorPedido.get(row.id)?.tipos ?? []).sort(),
           recebido_em: recebidoEmPorPedido.get(row.id) ?? null,
         })),
         total: count ?? rows.length,

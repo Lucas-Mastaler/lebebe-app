@@ -23,6 +23,7 @@ export type FiltrosGestao = {
   dataEntregaInicial: string
   dataEntregaFinal: string
   situacaoPrazo: '' | SituacaoPrazoPedido
+  tipoTapete: '' | TipoTapeteMoriah
 }
 
 export type ItemPedidoGestao = {
@@ -43,6 +44,7 @@ export type ItemPedidoGestao = {
   version: number
   quantidadeTapetes: number
   codigosProdutos: string[]
+  tiposTapetes: TipoTapeteMoriah[]
   situacaoPrazo: SituacaoPrazoPedido | null
   recebidoEm: string | null
 }
@@ -165,7 +167,7 @@ export type ErrosAdministrativos = Partial<Record<keyof EstadoAdministrativo, st
 export const FILTROS_VAZIOS: FiltrosGestao = {
   cliente: '', consultora: '', numeroLancamento: '', status: '', unidade: '', dataInicial: '', dataFinal: '',
   dataPedidoFornecedorInicial: '', dataPedidoFornecedorFinal: '', dataEntregaInicial: '', dataEntregaFinal: '',
-  situacaoPrazo: '',
+  situacaoPrazo: '', tipoTapete: '',
 }
 
 async function erroResposta(response: Response): Promise<Error> {

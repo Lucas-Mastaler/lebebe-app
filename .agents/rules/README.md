@@ -7,8 +7,12 @@
 > as rules, só para entender a origem de cada uma.
 
 Este arquivo era o plano da Fase 2 antes da execução. O conteúdo real das
-regras vivia em `.devin/rules/`, que continua disponível e intacto para
-comparação/compatibilidade até a fase de limpeza (não iniciada).
+regras vivia em `.devin/rules/`. Desde a Onda 5 do Projeto Multifase
+`higiene-estrutural-repositorio` (2026-08-10, D-005), esses arquivos não
+são mais cópias completas — foram reduzidos a um adaptador mínimo que
+aponta para este Harness, mantido porque o Devin ainda depende diretamente
+de `.devin/` (confirmado pelo usuário). O mapeamento arquivo a arquivo
+abaixo continua válido como registro de origem do conteúdo.
 
 ## Auditoria da lista candidata original
 

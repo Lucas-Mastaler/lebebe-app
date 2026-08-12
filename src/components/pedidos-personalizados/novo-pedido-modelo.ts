@@ -31,6 +31,8 @@ export type ProdutoOpcao = {
   id: string
   codigo: CodigoProdutoMoriah
   descricao: string
+  produtoIdSgi?: number | null
+  precoM2Centavos?: number | null
 }
 
 export type CorOpcao = {
@@ -112,6 +114,12 @@ export type ResumoTapete = {
   codigoProduto: CodigoProdutoMoriah | null
   produto: ProdutoOpcao | null
   avisoMedida: boolean
+  /** Área cobrada × preço oficial do SGI, já formatado em BRL. `null` quando não há preço válido. */
+  valorCobrado: string | null
+  /** Preço por m² vigente no SGI, formatado, para exibição auxiliar. `null` quando indisponível. */
+  precoM2: string | null
+  /** `true` quando o produto foi determinado mas não há preço SGI utilizável (sem vínculo, sem cache, nulo, inativo ou fora de linha). */
+  precoIndisponivel: boolean
 }
 
 export type RespostaCriacao = {
@@ -365,6 +373,21 @@ export function avaliarFormulario(
   }
 }
 
+function formatarCentavosBRL(centavos: number): string {
+  return (centavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+const resumoSemProduto = {
+  valido: false,
+  area: null,
+  codigoProduto: null,
+  produto: null,
+  avisoMedida: false,
+  valorCobrado: null,
+  precoM2: null,
+  precoIndisponivel: false,
+} as const
+
 export function resumirTapete(
   tapete: TapeteFormulario,
   produtos: readonly ProdutoOpcao[]
@@ -374,19 +397,29 @@ export function resumirTapete(
     ? { valido: true, dados: null as number | null }
     : converterMedidaMetrosParaCentimetros(tapete.dimensao2Metros)
   if (!dimensao1.valido || dimensao1.dados === null || !dimensao2.valido) {
-    return { valido: false, area: null, codigoProduto: null, produto: null, avisoMedida: false }
+    return resumoSemProduto
   }
   const area = calcularAreaCobradaCentesimosM2(tapete.formato, dimensao1.dados, dimensao2.dados)
   if (!area.valido || !area.dados) {
-    return { valido: false, area: null, codigoProduto: null, produto: null, avisoMedida: false }
+    return resumoSemProduto
   }
   const codigoProduto = classificarProdutoMoriah(tapete.formato, dimensao1.dados, dimensao2.dados).codigo
+  const produto = produtos.find((item) => item.codigo === codigoProduto) ?? null
+  const precoM2Centavos = produto?.precoM2Centavos ?? null
+  const areaCobradaCentesimosM2 = area.dados.areaCobradaCentesimosM2
+  const valorCobradoCentavos = precoM2Centavos !== null
+    ? Math.round((areaCobradaCentesimosM2 * precoM2Centavos) / 100)
+    : null
+
   return {
     valido: true,
-    area: formatarAreaMetrosQuadrados(area.dados.areaCobradaCentesimosM2),
+    area: formatarAreaMetrosQuadrados(areaCobradaCentesimosM2),
     codigoProduto,
-    produto: produtos.find((item) => item.codigo === codigoProduto) ?? null,
+    produto,
     avisoMedida: dimensao1.dados % 5 !== 0 || (dimensao2.dados !== null && dimensao2.dados % 5 !== 0),
+    valorCobrado: valorCobradoCentavos !== null ? formatarCentavosBRL(valorCobradoCentavos) : null,
+    precoM2: precoM2Centavos !== null ? `${formatarCentavosBRL(precoM2Centavos)}/m²` : null,
+    precoIndisponivel: produto !== null && precoM2Centavos === null,
   }
 }
 

@@ -170,6 +170,10 @@ export type ProdutoCatalogoMoriah = {
   id: string
   codigo: CodigoProdutoMoriah
   descricao: string
+  /** `produto_id_sgi` vinculado em `pedidos_personalizados_produtos`; `null` quando o produto não tem preço SGI vinculado. */
+  produtoIdSgi?: number | null
+  /** Preço oficial por m² (`sgi_produtos_cache.preco`), em centavos. `null` quando indisponível, inválido, inativo ou fora de linha no SGI. */
+  precoM2Centavos?: number | null
 }
 
 export type DadosMensagemPedidoPersonalizado = {

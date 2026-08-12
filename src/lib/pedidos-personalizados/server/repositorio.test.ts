@@ -78,6 +78,43 @@ describe('repositório server-only de pedidos personalizados', () => {
     expect(rastreio.order).toContainEqual(['ordem', { ascending: true }])
   })
 
+  it('carrega o preço SGI embutido na mesma consulta de produtos, sem preço quando ausente/inativo/fora de linha', async () => {
+    const rastreio = { order: [] as Array<[string, unknown]> }
+    const filas: Record<string, unknown[]> = {
+      pedidos_personalizados_fornecedores: [
+        { data: { id: 'fornecedor-1', chave: 'moriah_tapetes', nome: 'MORIAH TAPETES' }, error: null },
+      ],
+      pedidos_personalizados_produtos: [{
+        data: [
+          {
+            id: 'produto-1', codigo: '21157', descricao: 'Produto 21157', ordem: 1,
+            produto_id_sgi: 39744, sgi_produtos_cache: { preco: '1029.90', ativo: true, fora_linha: false },
+          },
+          {
+            id: 'produto-2', codigo: '21158', descricao: 'Produto 21158', ordem: 2,
+            produto_id_sgi: null, sgi_produtos_cache: null,
+          },
+          {
+            id: 'produto-3', codigo: '21159', descricao: 'Produto 21159', ordem: 3,
+            produto_id_sgi: 39746, sgi_produtos_cache: { preco: '1259.90', ativo: false, fora_linha: false },
+          },
+        ],
+        error: null,
+      }],
+      pedidos_personalizados_cores: [{ data: [], error: null }],
+    }
+    const from = vi.fn((tabela: string) => builder(filas[tabela].shift(), rastreio))
+    const repo = new RepositorioPedidosPersonalizados({ from } as unknown as SupabaseClient)
+    const resultado = await repo.carregarCatalogos()
+
+    expect(resultado.error).toBeNull()
+    expect(resultado.data?.produtos).toEqual([
+      { id: 'produto-1', codigo: '21157', descricao: 'Produto 21157', produtoIdSgi: 39744, precoM2Centavos: 102990 },
+      { id: 'produto-2', codigo: '21158', descricao: 'Produto 21158', produtoIdSgi: null, precoM2Centavos: null },
+      { id: 'produto-3', codigo: '21159', descricao: 'Produto 21159', produtoIdSgi: 39746, precoM2Centavos: null },
+    ])
+  })
+
   it('lista com ordem estável e carrega resumo e recebimento em lote sem N+1', async () => {
     const rastreio = { order: [] as Array<[string, unknown]> }
     const filas: Record<string, unknown[]> = {

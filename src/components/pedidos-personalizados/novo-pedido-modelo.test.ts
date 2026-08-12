@@ -359,6 +359,39 @@ describe('medidas, área e produto exibidos', () => {
   })
 })
 
+describe('valor cobrado (área cobrada × preço SGI)', () => {
+  const produtosComPreco: ProdutoOpcao[] = [
+    { ...produtos[0], precoM2Centavos: 102990 },
+    { ...produtos[1], precoM2Centavos: 114990 },
+    { ...produtos[2], precoM2Centavos: 125990 },
+  ]
+
+  it('calcula o valor cobrado com o exemplo oficial: 4,05 m² × R$ 1.029,90/m² = R$ 4.171,10', () => {
+    const tapete = { ...criarEstadoInicial('x').tapetes[0], dimensao1Metros: '0,95', dimensao2Metros: '4,26' }
+    const resumo = resumirTapete(tapete, produtosComPreco)
+    expect(resumo.area).toBe('4,05 m²')
+    expect(resumo.codigoProduto).toBe('21157')
+    expect(resumo.valorCobrado).toBe('R$ 4.171,10')
+    expect(resumo.precoM2).toBe('R$ 1.029,90/m²')
+    expect(resumo.precoIndisponivel).toBe(false)
+  })
+
+  it('sinaliza preço indisponível quando o produto não tem precoM2Centavos, sem inventar valor', () => {
+    const tapete = { ...criarEstadoInicial('x').tapetes[0], dimensao1Metros: '2,00', dimensao2Metros: '3,00' }
+    const resumo = resumirTapete(tapete, produtos)
+    expect(resumo.produto).not.toBeNull()
+    expect(resumo.valorCobrado).toBeNull()
+    expect(resumo.precoM2).toBeNull()
+    expect(resumo.precoIndisponivel).toBe(true)
+  })
+
+  it('não calcula valor cobrado quando as medidas ainda são inválidas', () => {
+    const resumo = resumirTapete(criarEstadoInicial('x').tapetes[0], produtosComPreco)
+    expect(resumo.valorCobrado).toBeNull()
+    expect(resumo.precoIndisponivel).toBe(false)
+  })
+})
+
 describe('validação, mensagem e payload', () => {
   it('usa o domínio para normalizar identificação e opcionais', () => {
     const avaliacao = avaliarFormulario(estadoValido(), opcoes)

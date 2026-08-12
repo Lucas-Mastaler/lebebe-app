@@ -15,6 +15,35 @@ import { proximoDiaIso } from './validacao-api'
 
 type ResultadoBanco<T> = { data: T; error: null } | { data: null; error: { code?: string; message?: string } }
 
+type ProdutoCatalogoRow = {
+  id: string
+  codigo: string
+  descricao: string
+  ordem: number
+  produto_id_sgi: number | null
+  sgi_produtos_cache: { preco: string | number | null; ativo: boolean | null; fora_linha: boolean | null } | null
+}
+
+/** Converte `sgi_produtos_cache.preco` (numeric do Postgres) para centavos inteiros, sem duplicar a regra de arredondamento monetário do cálculo de valor cobrado. */
+function precoM2ParaCentavos(preco: string | number): number | null {
+  const numero = typeof preco === 'number' ? preco : Number(preco)
+  if (!Number.isFinite(numero) || numero < 0) return null
+  return Math.round(numero * 100)
+}
+
+/** Preço só é considerado válido para cobrança quando o produto SGI está ativo, em linha e com preço definido. */
+function produtoParaCatalogo(row: ProdutoCatalogoRow): ProdutoCatalogoMoriah {
+  const sgi = row.sgi_produtos_cache
+  const precoValido = sgi !== null && sgi.ativo === true && sgi.fora_linha === false && sgi.preco !== null
+  return {
+    id: row.id,
+    codigo: row.codigo as ProdutoCatalogoMoriah['codigo'],
+    descricao: row.descricao,
+    produtoIdSgi: row.produto_id_sgi,
+    precoM2Centavos: precoValido ? precoM2ParaCentavos(sgi.preco as string | number) : null,
+  }
+}
+
 export type FornecedorCatalogo = {
   id: string
   chave: string
@@ -94,7 +123,7 @@ export class RepositorioPedidosPersonalizados {
     const [produtosResult, coresResult] = await Promise.all([
       this.supabase
         .from('pedidos_personalizados_produtos')
-        .select('id, codigo, descricao, ordem')
+        .select('id, codigo, descricao, ordem, produto_id_sgi, sgi_produtos_cache(preco, ativo, fora_linha)')
         .eq('fornecedor_id', fornecedor.id)
         .eq('ativo', true)
         .order('ordem', { ascending: true }),
@@ -112,7 +141,7 @@ export class RepositorioPedidosPersonalizados {
     return {
       data: {
         fornecedor,
-        produtos: (produtosResult.data ?? []) as unknown as ProdutoCatalogoMoriah[],
+        produtos: ((produtosResult.data ?? []) as unknown as ProdutoCatalogoRow[]).map(produtoParaCatalogo),
         cores: (coresResult.data ?? []) as CorCatalogo[],
       },
       error: null,

@@ -306,6 +306,14 @@ export function CardTapete({
             <p className="mt-0.5 text-xs text-slate-500">Arredondada para cima de 0,05 em 0,05 m².</p>
           </div>
           <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Valor cobrado</p>
+            <p className={`mt-1 font-semibold ${resumo.precoIndisponivel ? 'text-amber-700' : 'text-slate-900'}`}>
+              {resumo.valorCobrado
+                ?? (resumo.precoIndisponivel ? 'Preço indisponível' : 'Aguardando medidas válidas')}
+            </p>
+            {resumo.precoM2 && <p className="mt-0.5 text-xs text-slate-500">{resumo.precoM2}</p>}
+          </div>
+          <div className="sm:col-span-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Produto calculado</p>
             <p className="mt-1 text-sm font-semibold text-slate-900">
               {resumo.produto ? `${resumo.produto.codigo} — ${resumo.produto.descricao}` : 'Aguardando medidas válidas'}

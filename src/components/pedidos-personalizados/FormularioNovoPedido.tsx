@@ -580,7 +580,7 @@ export default function FormularioNovoPedido() {
 
         <section aria-labelledby="titulo-tapetes" className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
-            <div><h2 id="titulo-tapetes" className="text-xl font-bold text-slate-900">Tapetes</h2><p className="text-sm text-slate-500">Revise todos antes de salvar. {estado.tapetes.length} de {LIMITE_TAPETES_POR_PEDIDO}.</p></div>
+            <div><h2 id="titulo-tapetes" className="text-xl font-bold text-slate-900">Tapetes</h2><p className="text-sm text-slate-500">{estado.tapetes.length} de {LIMITE_TAPETES_POR_PEDIDO}.</p></div>
             <Button type="button" variant="outline" className="min-h-11" disabled={formularioBloqueado || estado.tapetes.length >= LIMITE_TAPETES_POR_PEDIDO} onClick={handleAdicionarTapete}><Plus />Adicionar tapete</Button>
           </div>
           {estado.tapetes.map((tapete, indice) => (

@@ -580,7 +580,7 @@ export function GestaoPedidosPersonalizados() {
                               </div>
                             )}
                             <div className="rounded-lg bg-white px-3 py-2 sm:col-span-2">
-                              <dt className="text-xs font-bold uppercase tracking-wide text-sky-700">Área calculada</dt>
+                              <dt className="text-xs font-bold uppercase tracking-wide text-sky-700">Área cobrada</dt>
                               <dd className="mt-1 text-lg font-bold text-slate-950">{formatarArea(tapete.areaCobradaCentesimosM2)}</dd>
                             </div>
                           </dl>

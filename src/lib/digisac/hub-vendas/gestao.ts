@@ -38,6 +38,11 @@ export type StatusGestaoHubVendas = {
   resumo: {
     leadsRegistrados: number
     candidatosElegiveis: number
+    perdidos: number
+    convertidos: number
+    convertidosPorLoja: ContagemPorLojaHubVendas[]
+    recuperacaoEnviadaTotal: number
+    recuperacaoEnviadaPorLoja: ContagemPorLojaHubVendas[]
     agendada: number
     reservada: number
     enviando: number
@@ -49,6 +54,12 @@ export type StatusGestaoHubVendas = {
     conexoesPausadas: number
   }
   lojas: ResumoLojaHubVendas[]
+}
+
+export type ContagemPorLojaHubVendas = {
+  loja: HubVendasLoja
+  nomeExibicao: string
+  total: number
 }
 
 export type ResumoLojaHubVendas = {
@@ -155,20 +166,22 @@ function asString(value: unknown): string | null {
 
 /**
  * Mascara telefone para exibição segura na UI administrativa.
- * Ex: "554184426528" -> "+55 41 8442-6528" -> "+55 41 ****-6528"
+ * Mantém sempre visíveis apenas os últimos 4 dígitos.
+ * Ex: "554184426528" -> "+55 41 ****-6528"
  */
 export function mascararTelefone(telefone: string | null): string | null {
   if (!telefone) return null
   const digitos = telefone.replace(/\D/g, '')
   if (digitos.length < 8) return '***'
+  const ultimosQuatro = digitos.slice(-4)
   // Preserva DDI + DDD, mascara o meio
   if (digitos.length >= 12) {
-    return `+${digitos.slice(0, 2)} ${digitos.slice(2, 4)} ****-****`
+    return `+${digitos.slice(0, 2)} ${digitos.slice(2, 4)} ****-${ultimosQuatro}`
   }
   if (digitos.length >= 10) {
-    return `+${digitos.slice(0, 2)} ** ****-${digitos.slice(-4)}`
+    return `+${digitos.slice(0, 2)} ** ****-${ultimosQuatro}`
   }
-  return `** ****-${digitos.slice(-4)}`
+  return `** ****-${ultimosQuatro}`
 }
 
 function mapearServiceIdParaLoja(serviceId: string): HubVendasLoja | null {
@@ -176,6 +189,36 @@ function mapearServiceIdParaLoja(serviceId: string): HubVendasLoja | null {
     if (config.serviceId === serviceId) return loja as HubVendasLoja
   }
   return null
+}
+
+/**
+ * Agrupa uma lista de valores (ex: loja_principal ou conexao_recuperacao_id) por loja,
+ * usando `resolverLoja` para converter cada valor bruto na chave da loja correspondente.
+ * Valores nulos ou sem loja correspondente são ignorados na contagem.
+ */
+export function contarPorLoja(
+  valores: Array<string | null>,
+  resolverLoja: (valor: string) => HubVendasLoja | null
+): { total: number; porLoja: ContagemPorLojaHubVendas[] } {
+  const contagem = new Map<HubVendasLoja, number>(
+    (Object.keys(HUB_VENDAS_LOJAS) as HubVendasLoja[]).map((loja) => [loja, 0])
+  )
+  let total = 0
+  for (const valor of valores) {
+    if (!valor) continue
+    const loja = resolverLoja(valor)
+    if (!loja) continue
+    contagem.set(loja, (contagem.get(loja) ?? 0) + 1)
+    total += 1
+  }
+
+  const porLoja = (Object.keys(HUB_VENDAS_LOJAS) as HubVendasLoja[]).map((loja) => ({
+    loja,
+    nomeExibicao: HUB_VENDAS_LOJAS[loja].nomeExibicao,
+    total: contagem.get(loja) ?? 0,
+  }))
+
+  return { total, porLoja }
 }
 
 // ---------------------------------------------------------------------------
@@ -189,6 +232,7 @@ type ConfigParametros = {
   modoAtivacaoGradual: boolean
   reservaTimeoutMinutos: number
   envioTimeoutMinutos: number
+  elegibilidadeHoras: number
 }
 
 type ConfigAutomacao = {
@@ -228,6 +272,7 @@ async function lerConfigHubVendas(supabase: SupabaseServiceClient) {
     modoAtivacaoGradual: asBoolean(parametrosValor.modo_ativacao_gradual, true),
     reservaTimeoutMinutos: asNumber(parametrosValor.reserva_timeout_minutos, 10),
     envioTimeoutMinutos: asNumber(parametrosValor.envio_timeout_minutos, 15),
+    elegibilidadeHoras: asNumber(parametrosValor.elegibilidade_horas, 48),
   }
 
   return {
@@ -260,12 +305,49 @@ export async function obterStatusGestaoHubVendas(
     .select('id', { count: 'exact', head: true })
   if (leadsError) throw leadsError
 
-  // Candidatos elegíveis (status = aguardando_conversao)
+  // Candidatos elegíveis: aguardando conversão e ainda dentro da janela de elegibilidade
+  // (mesmo prazo usado por preparar-fila.ts para decidir se o lead ainda pode entrar na fila de recuperação).
+  const limiteElegibilidade = new Date(Date.now() - parametros.elegibilidadeHoras * 60 * 60 * 1000)
+
   const { count: candidatosElegiveis, error: candidatosError } = await supabase
     .from('hub_vendas_leads')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'aguardando_conversao')
+    .gt('data_entrada_hub', limiteElegibilidade.toISOString())
   if (candidatosError) throw candidatosError
+
+  // Perdidos: aguardando conversão, mas já passou da janela de elegibilidade —
+  // não converteu organicamente e não vai mais entrar na fila de recuperação.
+  const { count: perdidos, error: perdidosError } = await supabase
+    .from('hub_vendas_leads')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'aguardando_conversao')
+    .lte('data_entrada_hub', limiteElegibilidade.toISOString())
+  if (perdidosError) throw perdidosError
+
+  // Convertidos organicamente, com quebra por loja (loja_principal)
+  const { data: convertidosRows, error: convertidosError } = await supabase
+    .from('hub_vendas_leads')
+    .select('loja_principal')
+    .eq('status', 'convertido_organicamente')
+  if (convertidosError) throw convertidosError
+
+  const convertidos = contarPorLoja(
+    (convertidosRows ?? []).map((row) => (row as { loja_principal: string | null }).loja_principal),
+    (valor) => (valor in HUB_VENDAS_LOJAS ? (valor as HubVendasLoja) : null)
+  )
+
+  // Recuperação enviada (nós chamamos), com quebra por loja de destino
+  const { data: recuperacaoRows, error: recuperacaoError } = await supabase
+    .from('hub_vendas_leads')
+    .select('conexao_recuperacao_id')
+    .eq('status', 'recuperacao_enviada')
+  if (recuperacaoError) throw recuperacaoError
+
+  const recuperacaoEnviada = contarPorLoja(
+    (recuperacaoRows ?? []).map((row) => (row as { conexao_recuperacao_id: string | null }).conexao_recuperacao_id),
+    mapearServiceIdParaLoja
+  )
 
   // Último processamento
   const { data: ultimo, error: ultimoError } = await supabase
@@ -358,6 +440,11 @@ export async function obterStatusGestaoHubVendas(
     resumo: {
       leadsRegistrados: leadsRegistrados ?? 0,
       candidatosElegiveis: candidatosElegiveis ?? 0,
+      perdidos: perdidos ?? 0,
+      convertidos: convertidos.total,
+      convertidosPorLoja: convertidos.porLoja,
+      recuperacaoEnviadaTotal: recuperacaoEnviada.total,
+      recuperacaoEnviadaPorLoja: recuperacaoEnviada.porLoja,
       agendada: countMap.get('agendado') ?? 0,
       reservada: countMap.get('reservado') ?? 0,
       enviando: countMap.get('enviando') ?? 0,

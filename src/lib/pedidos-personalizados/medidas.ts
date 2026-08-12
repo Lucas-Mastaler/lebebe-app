@@ -132,6 +132,21 @@ export function validarDimensoesPorFormato(
   }
 }
 
+const CM2_POR_CENTESIMO_M2 = 100 // 1 centésimo de m² = 100 cm²
+const PASSO_ARREDONDAMENTO_CENTESIMOS_M2 = 5 // Área cobrada é sempre múltiplo de 0,05 m² (5 centésimos)
+const PASSO_ARREDONDAMENTO_CM2 = PASSO_ARREDONDAMENTO_CENTESIMOS_M2 * CM2_POR_CENTESIMO_M2 // 500 cm²
+
+/**
+ * Arredonda a área cobrada SEMPRE para cima, para o próximo múltiplo de 0,05 m² — nunca para baixo,
+ * e mantém o valor quando já é um múltiplo exato. Opera inteiramente em cm² (inteiro, produto exato
+ * de duas medidas em centímetros) para não introduzir erro de ponto flutuante.
+ */
+export function arredondarAreaCobradaParaCimaCincoCentesimos(areaCm2: number): number {
+  const resto = areaCm2 % PASSO_ARREDONDAMENTO_CM2
+  const areaCm2Arredondada = resto === 0 ? areaCm2 : areaCm2 + (PASSO_ARREDONDAMENTO_CM2 - resto)
+  return areaCm2Arredondada / CM2_POR_CENTESIMO_M2
+}
+
 export function calcularAreaCobradaCentesimosM2(
   formato: string,
   dimensao1Cm: number | null,
@@ -163,7 +178,7 @@ export function calcularAreaCobradaCentesimosM2(
     valido: true,
     dados: {
       areaCm2,
-      areaCobradaCentesimosM2: Math.floor((areaCm2 + 50) / 100),
+      areaCobradaCentesimosM2: arredondarAreaCobradaParaCimaCincoCentesimos(areaCm2),
     },
     erros: [],
     avisos: [],

@@ -15,6 +15,7 @@ import {
   enviarNovoPedido,
   enviarAnexo,
   enviarAnexoGestao,
+  exibirSecaoCatalogo,
   filtrarCores,
   gerarIdempotencyKey,
   montarPayloadCriacao,
@@ -251,6 +252,57 @@ describe('classificação guiada Catálogo/Personalizado', () => {
     const resultado = avaliarFormulario({ ...estado, tapetes: [tapete] }, opcoes).validacao
     expect(resultado.erros.map((item) => item.campo)).not.toContain('tapetes.0.existeNoCatalogo')
     expect(resultado.erros.map((item) => item.campo)).not.toContain('tapetes.0.identicoReferencia')
+  })
+})
+
+describe('visibilidade e limpeza da seção Catálogo', () => {
+  it('cenário A: "Não" esconde a seção Catálogo', () => {
+    const tapete = responderExisteNoCatalogo(criarEstadoInicial('x').tapetes[0], false)
+    expect(exibirSecaoCatalogo(tapete)).toBe(false)
+  })
+
+  it('cenário B: "Sim" + "exatamente igual" mantém a seção Catálogo visível', () => {
+    let tapete = criarEstadoInicial('x').tapetes[0]
+    tapete = responderExisteNoCatalogo(tapete, true)
+    tapete = responderIdenticoReferencia(tapete, true)
+    expect(exibirSecaoCatalogo(tapete)).toBe(true)
+  })
+
+  it('cenário C: "Sim" + "terá alterações" mantém a seção Catálogo visível mesmo virando Personalizado', () => {
+    let tapete = criarEstadoInicial('x').tapetes[0]
+    tapete = responderExisteNoCatalogo(tapete, true)
+    tapete = responderIdenticoReferencia(tapete, false)
+    expect(tapete.tipo).toBe('PERSONALIZADO')
+    expect(exibirSecaoCatalogo(tapete)).toBe(true)
+  })
+
+  it('cenário D: responder "Não" depois de preencher a seção Catálogo limpa coleção e referência', () => {
+    let tapete = criarEstadoInicial('x').tapetes[0]
+    tapete = responderExisteNoCatalogo(tapete, true)
+    tapete = { ...tapete, nomeColecaoCatalogo: 'Coleção Bebê', referenciaCatalogo: 'REF-01' }
+    tapete = responderExisteNoCatalogo(tapete, false)
+    expect(exibirSecaoCatalogo(tapete)).toBe(false)
+    expect(tapete.nomeColecaoCatalogo).toBe('')
+    expect(tapete.referenciaCatalogo).toBe('')
+  })
+
+  it('cenário D (payload): dados de catálogo limpos não são enviados no salvamento', () => {
+    const estado = estadoValido()
+    let tapete = { ...estado.tapetes[0], nomeColecaoCatalogo: 'Coleção Bebê', referenciaCatalogo: 'REF-01' }
+    tapete = responderExisteNoCatalogo(tapete, false)
+    const payload = montarPayloadCriacao({ ...estado, tapetes: [tapete] }, 'idem-key', opcoes)
+    expect(payload.tapetes[0]).toMatchObject({ nomeColecaoCatalogo: '', referenciaCatalogo: '' })
+  })
+
+  it('cenário E: voltar para "Sim" reabre a seção Catálogo vazia, sem restaurar valores antigos', () => {
+    let tapete = criarEstadoInicial('x').tapetes[0]
+    tapete = responderExisteNoCatalogo(tapete, true)
+    tapete = { ...tapete, nomeColecaoCatalogo: 'Coleção Bebê', referenciaCatalogo: 'REF-01' }
+    tapete = responderExisteNoCatalogo(tapete, false)
+    tapete = responderExisteNoCatalogo(tapete, true)
+    expect(exibirSecaoCatalogo(tapete)).toBe(true)
+    expect(tapete.nomeColecaoCatalogo).toBe('')
+    expect(tapete.referenciaCatalogo).toBe('')
   })
 })
 

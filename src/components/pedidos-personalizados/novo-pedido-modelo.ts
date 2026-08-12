@@ -241,12 +241,27 @@ export function alterarTipoTapete(tapete: TapeteFormulario, tipo: TipoTapeteMori
   }
 }
 
-/** 1ª pergunta guiada. "Não" já determina Personalizado e esconde a 2ª pergunta. */
+/**
+ * 1ª pergunta guiada. "Não" já determina Personalizado, esconde a 2ª pergunta e limpa os dados
+ * de catálogo (a seção Catálogo some nesse caminho — ver `exibirSecaoCatalogo`), para não deixar
+ * coleção/referência residuais de uma resposta anterior.
+ */
 export function responderExisteNoCatalogo(tapete: TapeteFormulario, existe: boolean): TapeteFormulario {
   if (!existe) {
-    return { ...alterarTipoTapete(tapete, 'PERSONALIZADO'), existeNoCatalogo: false, identicoReferencia: null }
+    return {
+      ...alterarTipoTapete(tapete, 'PERSONALIZADO'),
+      existeNoCatalogo: false,
+      identicoReferencia: null,
+      nomeColecaoCatalogo: '',
+      referenciaCatalogo: '',
+    }
   }
   return { ...tapete, existeNoCatalogo: true, identicoReferencia: null }
+}
+
+/** Fonte única para exibir a seção Catálogo: dois caminhos levam a Personalizado, só um deles a esconde. */
+export function exibirSecaoCatalogo(tapete: TapeteFormulario): boolean {
+  return tapete.existeNoCatalogo !== false
 }
 
 /** 2ª pergunta guiada, só exibida quando `existeNoCatalogo` é true. */

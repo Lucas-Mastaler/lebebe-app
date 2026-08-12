@@ -6,7 +6,13 @@ import {
   Search, ChevronLeft, ChevronRight, X, Eye, AlertCircle,
   Bot, Clock, Hash, ShieldAlert, Loader2,
 } from 'lucide-react'
-import type { StatusGestaoHubVendas, ResumoLojaHubVendas, ListagemFilasHubVendas, DetalheFilaHubVendas } from '@/lib/digisac/hub-vendas/gestao'
+import type {
+  StatusGestaoHubVendas,
+  ResumoLojaHubVendas,
+  ListagemFilasHubVendas,
+  DetalheFilaHubVendas,
+  ContagemPorLojaHubVendas,
+} from '@/lib/digisac/hub-vendas/gestao'
 import { LIMITE_DIARIO_MAXIMO } from '@/lib/digisac/hub-vendas/gestao'
 
 const POLLING_INTERVAL_MS = 60_000
@@ -491,6 +497,19 @@ export default function PageClient() {
       <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <CardResumo label="Leads registrados" valor={status.resumo.leadsRegistrados} cor="slate" />
         <CardResumo label="Candidatos elegíveis" valor={status.resumo.candidatosElegiveis} cor="sky" />
+        <CardResumo label="Perdidos" valor={status.resumo.perdidos} cor="slate" />
+        <CardResumo
+          label="Convertidos"
+          valor={status.resumo.convertidos}
+          cor="green"
+          detalhe={formatarDetalhePorLoja(status.resumo.convertidosPorLoja)}
+        />
+        <CardResumo
+          label="Recuperação enviada"
+          valor={status.resumo.recuperacaoEnviadaTotal}
+          cor="cyan"
+          detalhe={formatarDetalhePorLoja(status.resumo.recuperacaoEnviadaPorLoja)}
+        />
         <CardResumo label="Enviados hoje" valor={status.resumo.enviadaHoje} cor="green" />
         <CardResumo label="Filas agendadas" valor={status.resumo.agendada} cor="blue" />
         <CardResumo label="Filas reservadas" valor={status.resumo.reservada} cor="indigo" />
@@ -950,7 +969,23 @@ function ParametroItem({ icon, label, valor }: { icon: React.ReactNode; label: s
   )
 }
 
-function CardResumo({ label, valor, cor, destaque }: { label: string; valor: number; cor: string; destaque?: boolean }) {
+function formatarDetalhePorLoja(porLoja: ContagemPorLojaHubVendas[]): string {
+  return porLoja.map((item) => `${item.nomeExibicao} ${item.total}`).join(' · ')
+}
+
+function CardResumo({
+  label,
+  valor,
+  cor,
+  destaque,
+  detalhe,
+}: {
+  label: string
+  valor: number
+  cor: string
+  destaque?: boolean
+  detalhe?: string
+}) {
   const cores: Record<string, string> = {
     slate: 'bg-slate-50 text-slate-700',
     sky: 'bg-sky-50 text-sky-700',
@@ -966,6 +1001,7 @@ function CardResumo({ label, valor, cor, destaque }: { label: string; valor: num
     <div className={`rounded-xl p-3 ${cores[cor] ?? cores.slate} ${destaque ? 'ring-2 ring-offset-1 ring-red-200' : ''}`}>
       <p className="text-xs opacity-70">{label}</p>
       <p className="text-2xl font-bold mt-0.5">{valor}</p>
+      {detalhe && <p className="text-[11px] opacity-60 mt-1 truncate" title={detalhe}>{detalhe}</p>}
     </div>
   )
 }

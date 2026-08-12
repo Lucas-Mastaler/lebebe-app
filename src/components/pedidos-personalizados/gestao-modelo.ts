@@ -223,25 +223,30 @@ export function detalheParaFormulario(pedido: PedidoDetalhe): EstadoNovoPedido {
     cliente: pedido.cliente,
     telefone: pedido.telefone ?? '',
     numeroLancamento: pedido.numeroLancamento ?? '',
-    tapetes: pedido.tapetes.map((tapete) => ({
-      chaveLocal: tapete.id,
-      tapeteId: tapete.id,
-      anexos: tapete.anexos,
-      anexosLocais: [],
-      formato: tapete.formato,
-      tipo: tapete.tipo,
-      // Derivado do `tipo` já persistido: as respostas guiadas não são persistidas (ver AGENTS.md/novo-pedido-modelo.ts).
-      // CATALOGO só existe através de "existe" + "idêntico"; PERSONALIZADO fica pré-classificado como "não está no catálogo"
-      // para não bloquear a edição de pedidos já salvos exigindo uma re-resposta.
-      existeNoCatalogo: tapete.tipo === 'CATALOGO' ? true : false,
-      identicoReferencia: tapete.tipo === 'CATALOGO' ? true : null,
-      dimensao1Metros: metros(tapete.dimensao1Cm),
-      dimensao2Metros: metros(tapete.dimensao2Cm),
-      corIds: tapete.cores.sort((a, b) => a.ordem - b.ordem).map((cor) => cor.id),
-      nomeColecaoCatalogo: tapete.nomeColecaoCatalogo ?? '',
-      referenciaCatalogo: tapete.referenciaCatalogo ?? '',
-      observacoes: tapete.observacoes ?? '',
-    })),
+    tapetes: pedido.tapetes.map((tapete) => {
+      // Um tapete PERSONALIZADO com coleção/referência já preenchidas é o cenário 3 (existe no catálogo,
+      // mas terá alterações) — mantém a seção Catálogo visível ao reabrir para não esconder dados legados.
+      const possuiDadosCatalogo = Boolean((tapete.nomeColecaoCatalogo ?? '').trim() || (tapete.referenciaCatalogo ?? '').trim())
+      return {
+        chaveLocal: tapete.id,
+        tapeteId: tapete.id,
+        anexos: tapete.anexos,
+        anexosLocais: [],
+        formato: tapete.formato,
+        tipo: tapete.tipo,
+        // Derivado do `tipo` (+ dados já preenchidos) já persistidos: as respostas guiadas não são
+        // persistidas (ver AGENTS.md/novo-pedido-modelo.ts). CATALOGO só existe através de "existe" +
+        // "idêntico"; para não bloquear a edição de pedidos já salvos exigindo uma re-resposta.
+        existeNoCatalogo: tapete.tipo === 'CATALOGO' ? true : possuiDadosCatalogo,
+        identicoReferencia: tapete.tipo === 'CATALOGO' ? true : (possuiDadosCatalogo ? false : null),
+        dimensao1Metros: metros(tapete.dimensao1Cm),
+        dimensao2Metros: metros(tapete.dimensao2Cm),
+        corIds: tapete.cores.sort((a, b) => a.ordem - b.ordem).map((cor) => cor.id),
+        nomeColecaoCatalogo: tapete.nomeColecaoCatalogo ?? '',
+        referenciaCatalogo: tapete.referenciaCatalogo ?? '',
+        observacoes: tapete.observacoes ?? '',
+      }
+    }),
   }
 }
 

@@ -9,6 +9,7 @@ import type { FormatoTapeteMoriah, ProblemaPedidoPersonalizado } from '@/lib/ped
 import {
   alterarFormatoTapete,
   classificacaoTapeteCompleta,
+  exibirSecaoCatalogo,
   resumirTapete,
   responderExisteNoCatalogo,
   responderIdenticoReferencia,
@@ -204,23 +205,27 @@ export function CardTapete({
             className={`space-y-6 ${restanteBloqueado ? 'opacity-50 select-none' : ''}`}
             inert={restanteBloqueado}
           >
-        <hr className="border-t border-slate-200" />
+        {exibirSecaoCatalogo(tapete) && (
+          <>
+            <hr className="border-t border-slate-200" />
 
-        <div>
-          <h4 className="mb-3 font-semibold text-slate-800">Catálogo</h4>
-          <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <div className="mb-1.5 flex items-center justify-between gap-2"><label htmlFor={`${tapete.chaveLocal}-colecao`} className="text-sm font-medium text-slate-700">Nome da Coleção do Catálogo{tapete.tipo === 'CATALOGO' ? ' *' : ''}</label><span className="text-xs text-slate-500">{tapete.nomeColecaoCatalogo.length}/30</span></div>
-              <Input id={`${tapete.chaveLocal}-colecao`} value={tapete.nomeColecaoCatalogo} onChange={(event) => campo('nomeColecaoCatalogo', event.target.value)} onBlur={() => onTocar(`${base}.nomeColecaoCatalogo`)} maxLength={30} disabled={disabled} aria-invalid={mensagens('nomeColecaoCatalogo').length > 0} aria-describedby={mensagens('nomeColecaoCatalogo').length > 0 ? `${tapete.chaveLocal}-colecao-erro` : undefined} className="h-11" />
-              <ErroCampo mensagens={mensagens('nomeColecaoCatalogo')} id={`${tapete.chaveLocal}-colecao-erro`} />
+              <h4 className="mb-3 font-semibold text-slate-800">Catálogo</h4>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between gap-2"><label htmlFor={`${tapete.chaveLocal}-colecao`} className="text-sm font-medium text-slate-700">Nome do Catálogo{tapete.tipo === 'CATALOGO' ? ' *' : ''}</label><span className="text-xs text-slate-500">{tapete.nomeColecaoCatalogo.length}/30</span></div>
+                  <Input id={`${tapete.chaveLocal}-colecao`} value={tapete.nomeColecaoCatalogo} onChange={(event) => campo('nomeColecaoCatalogo', event.target.value)} onBlur={() => onTocar(`${base}.nomeColecaoCatalogo`)} maxLength={30} disabled={disabled} aria-invalid={mensagens('nomeColecaoCatalogo').length > 0} aria-describedby={mensagens('nomeColecaoCatalogo').length > 0 ? `${tapete.chaveLocal}-colecao-erro` : undefined} className="h-11" />
+                  <ErroCampo mensagens={mensagens('nomeColecaoCatalogo')} id={`${tapete.chaveLocal}-colecao-erro`} />
+                </div>
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between gap-2"><label htmlFor={`${tapete.chaveLocal}-referencia`} className="text-sm font-medium text-slate-700">Cor/Referência do Catálogo{tapete.tipo === 'CATALOGO' ? ' *' : ''}</label><span className="text-xs text-slate-500">{tapete.referenciaCatalogo.length}/20</span></div>
+                  <Input id={`${tapete.chaveLocal}-referencia`} value={tapete.referenciaCatalogo} onChange={(event) => campo('referenciaCatalogo', event.target.value)} onBlur={() => onTocar(`${base}.referenciaCatalogo`)} maxLength={20} placeholder="Letras, números e hífen" disabled={disabled} aria-invalid={mensagens('referenciaCatalogo').length > 0} aria-describedby={mensagens('referenciaCatalogo').length > 0 ? `${tapete.chaveLocal}-referencia-erro` : undefined} className="h-11" />
+                  <ErroCampo mensagens={mensagens('referenciaCatalogo')} id={`${tapete.chaveLocal}-referencia-erro`} />
+                </div>
+              </div>
             </div>
-            <div>
-              <div className="mb-1.5 flex items-center justify-between gap-2"><label htmlFor={`${tapete.chaveLocal}-referencia`} className="text-sm font-medium text-slate-700">Cor/Referência do Catálogo{tapete.tipo === 'CATALOGO' ? ' *' : ''}</label><span className="text-xs text-slate-500">{tapete.referenciaCatalogo.length}/20</span></div>
-              <Input id={`${tapete.chaveLocal}-referencia`} value={tapete.referenciaCatalogo} onChange={(event) => campo('referenciaCatalogo', event.target.value)} onBlur={() => onTocar(`${base}.referenciaCatalogo`)} maxLength={20} placeholder="Letras, números e hífen" disabled={disabled} aria-invalid={mensagens('referenciaCatalogo').length > 0} aria-describedby={mensagens('referenciaCatalogo').length > 0 ? `${tapete.chaveLocal}-referencia-erro` : undefined} className="h-11" />
-              <ErroCampo mensagens={mensagens('referenciaCatalogo')} id={`${tapete.chaveLocal}-referencia-erro`} />
-            </div>
-          </div>
-        </div>
+          </>
+        )}
 
         <hr className="border-t border-slate-200" />
 
@@ -230,18 +235,22 @@ export function CardTapete({
             {formatos.map(({ valor, label, Icone }) => {
               const ativo = tapete.formato === valor
               return (
-                <button
-                  key={valor}
-                  type="button"
-                  aria-pressed={ativo}
-                  onClick={() => onChange(alterarFormatoTapete(tapete, valor))}
-                  className={`flex min-h-12 items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-[#00A5E6] ${
-                    ativo ? 'border-[#00A5E6] bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  <Icone className="size-5" />
-                  {label}
-                </button>
+                <div key={valor}>
+                  <button
+                    type="button"
+                    aria-pressed={ativo}
+                    onClick={() => onChange(alterarFormatoTapete(tapete, valor))}
+                    className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-[#00A5E6] ${
+                      ativo ? 'border-[#00A5E6] bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <Icone className="size-5" />
+                    {label}
+                  </button>
+                  {valor === 'ORGANICO' && (
+                    <p className="mt-2 text-xs text-slate-500">Orgânico: use apenas quando o formato não for redondo, quadrado ou retangular.</p>
+                  )}
+                </div>
               )
             })}
           </div>
@@ -292,8 +301,9 @@ export function CardTapete({
 
         <div aria-live="polite" className="grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-2">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Área calculada</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Área cobrada</p>
             <p className="mt-1 font-semibold text-slate-900">{resumo.area ?? 'Preencha medidas válidas'}</p>
+            <p className="mt-0.5 text-xs text-slate-500">Arredondada para cima de 0,05 em 0,05 m².</p>
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Produto calculado</p>

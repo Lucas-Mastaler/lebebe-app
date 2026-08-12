@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   validarLimiteDiario,
   mascararTelefone,
+  contarPorLoja,
   LIMITE_DIARIO_MAXIMO,
   alterarLimiteDiarioHubVendas,
   pausarAutomacaoHubVendas,
@@ -135,7 +136,7 @@ describe('mascararTelefone', () => {
 
   it('mascara telefone brasileiro com DDI + DDD (12+ dígitos)', () => {
     const r = mascararTelefone('554184426528')
-    expect(r).toBe('+55 41 ****-****')
+    expect(r).toBe('+55 41 ****-6528')
   })
 
   it('mascara telefone com 10 dígitos', () => {
@@ -150,12 +151,34 @@ describe('mascararTelefone', () => {
 
   it('preserva apenas dígitos, ignorando formatação', () => {
     const r = mascararTelefone('+55 (41) 8442-6528')
-    expect(r).toBe('+55 41 ****-****')
+    expect(r).toBe('+55 41 ****-6528')
   })
 
   it('retorna *** para telefone muito curto', () => {
     const r = mascararTelefone('123')
     expect(r).toBe('***')
+  })
+})
+
+describe('contarPorLoja', () => {
+  it('conta valores agrupando pela loja resolvida, ignorando nulos e desconhecidos', () => {
+    const r = contarPorLoja(
+      ['portao', 'portao', 'bigorrilho', null, 'loja_inexistente', 'hauer_marechal'],
+      (valor) => (['portao', 'bigorrilho', 'hauer_marechal'].includes(valor) ? (valor as 'portao') : null)
+    )
+    expect(r.total).toBe(4)
+    expect(r.porLoja).toEqual([
+      { loja: 'portao', nomeExibicao: 'Portão', total: 2 },
+      { loja: 'bigorrilho', nomeExibicao: 'Bigorrilho', total: 1 },
+      { loja: 'hauer_marechal', nomeExibicao: 'Hauer', total: 1 },
+    ])
+  })
+
+  it('retorna todas as lojas com total zero quando não há valores', () => {
+    const r = contarPorLoja([], () => null)
+    expect(r.total).toBe(0)
+    expect(r.porLoja.every((item) => item.total === 0)).toBe(true)
+    expect(r.porLoja).toHaveLength(3)
   })
 })
 

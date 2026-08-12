@@ -68,7 +68,19 @@ describe('modelo da gestão de pedidos personalizados', () => {
       tapetes: [{ ...detalhe.tapetes[0], tipo: 'CATALOGO', cores: [] }],
     }
     expect(detalheParaFormulario(detalheCatalogo).tapetes[0]).toMatchObject({ existeNoCatalogo: true, identicoReferencia: true })
-    expect(detalheParaFormulario(detalhe).tapetes[0]).toMatchObject({ existeNoCatalogo: false, identicoReferencia: null })
+  })
+
+  it('deriva "existe no catálogo = Sim, terá alterações" (cenário 3) para um Personalizado legado com coleção/referência já preenchidas', () => {
+    // `detalhe` já tem tipo PERSONALIZADO com nomeColecaoCatalogo/referenciaCatalogo preenchidos.
+    expect(detalheParaFormulario(detalhe).tapetes[0]).toMatchObject({ existeNoCatalogo: true, identicoReferencia: false })
+  })
+
+  it('deriva "não está no catálogo" para um Personalizado legado sem nenhum dado de catálogo', () => {
+    const detalheSemCatalogo: PedidoDetalhe = {
+      ...detalhe,
+      tapetes: [{ ...detalhe.tapetes[0], nomeColecaoCatalogo: null, referenciaCatalogo: null }],
+    }
+    expect(detalheParaFormulario(detalheSemCatalogo).tapetes[0]).toMatchObject({ existeNoCatalogo: false, identicoReferencia: null })
   })
 
   it('valida antecipadamente os requisitos de cada transicao', () => {

@@ -304,7 +304,7 @@ export function validarPedidoPersonalizadoMoriah(
     if (observacoes !== null && observacoes.length > 500) erros.push(erro('OBSERVACOES_EXCEDIDAS', `${base}.observacoes`, 'As observações devem ter no máximo 500 caracteres.'))
 
     if (tipo === 'CATALOGO') {
-      if (!colecao) erros.push(erro('NOME_COLECAO_CATALOGO_OBRIGATORIO', `${base}.nomeColecaoCatalogo`, 'Informe o nome da coleção do catálogo.'))
+      if (!colecao) erros.push(erro('NOME_COLECAO_CATALOGO_OBRIGATORIO', `${base}.nomeColecaoCatalogo`, 'Informe o nome do catálogo.'))
       if (!referencia) erros.push(erro('REFERENCIA_CATALOGO_OBRIGATORIA', `${base}.referenciaCatalogo`, 'Informe a referência do catálogo.'))
     }
 

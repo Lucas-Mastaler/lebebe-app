@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  arredondarAreaCobradaParaCimaCincoCentesimos,
   calcularAreaCobradaCentesimosM2,
   classificarProdutoMoriah,
   converterMedidaMetrosParaCentimetros,
@@ -93,15 +94,46 @@ describe('área cobrada Moriah', () => {
     ['RETANGULAR', 100, 380, 380],
     ['RETANGULAR', 195, 300, 585],
     ['ORGANICO', 200, 200, 400],
-    ['RETANGULAR', 10, 10, 1],
+    ['RETANGULAR', 10, 10, 5],
     ['RETANGULAR', 1500, 1500, 22500],
   ] as const)('calcula %s %i x %i como %i centésimos', (formato, d1, d2, esperado) => {
     expect(calcularAreaCobradaCentesimosM2(formato, d1, d2).dados?.areaCobradaCentesimosM2).toBe(esperado)
   })
 
-  it('arredonda meio centésimo positivo para cima usando inteiros', () => {
-    expect(calcularAreaCobradaCentesimosM2('RETANGULAR', 10, 15).dados?.areaCobradaCentesimosM2).toBe(2)
-    expect(calcularAreaCobradaCentesimosM2('RETANGULAR', 10, 14).dados?.areaCobradaCentesimosM2).toBe(1)
+  it.each([
+    ['RETANGULAR', 200, 100, 200], // 2,00 x 1,00 = 2,00 m² -> 2,00 m²
+    ['RETANGULAR', 200, 101, 205], // 2,00 x 1,01 = 2,02 m² -> 2,05 m²
+    ['RETANGULAR', 200, 104, 210], // 2,00 x 1,04 = 2,08 m² -> 2,10 m²
+    ['RETANGULAR', 200, 105, 210], // 2,00 x 1,05 = 2,10 m² -> 2,10 m² (já é múltiplo)
+    ['RETANGULAR', 200, 106, 215], // 2,00 x 1,06 = 2,12 m² -> 2,15 m²
+  ] as const)('área cobrada de %s %i x %i cm arredonda para %i centésimos (sempre para cima, múltiplo de 0,05 m²)', (formato, d1, d2, esperado) => {
+    expect(calcularAreaCobradaCentesimosM2(formato, d1, d2).dados?.areaCobradaCentesimosM2).toBe(esperado)
+  })
+
+  it.each([
+    [20000, 200], // 2,00 -> 2,00
+    [20100, 205], // 2,01 -> 2,05
+    [20200, 205], // 2,02 -> 2,05
+    [20490, 205], // 2,049 -> 2,05
+    [20500, 205], // 2,05 -> 2,05
+    [20510, 210], // 2,051 -> 2,10
+    [20800, 210], // 2,08 -> 2,10
+    [21000, 210], // 2,10 -> 2,10
+    [21200, 215], // 2,12 -> 2,15
+  ])('arredonda %i cm² para %i centésimos, sempre para cima e sem ruído de ponto flutuante', (areaCm2, esperado) => {
+    const resultado = arredondarAreaCobradaParaCimaCincoCentesimos(areaCm2)
+    expect(resultado).toBe(esperado)
+    expect(Number.isInteger(resultado)).toBe(true)
+  })
+
+  it('nunca arredonda para baixo', () => {
+    expect(arredondarAreaCobradaParaCimaCincoCentesimos(1)).toBe(5)
+    expect(arredondarAreaCobradaParaCimaCincoCentesimos(499)).toBe(5)
+  })
+
+  it('mantém o valor quando já é um múltiplo exato de 0,05 m²', () => {
+    expect(arredondarAreaCobradaParaCimaCincoCentesimos(500)).toBe(5)
+    expect(arredondarAreaCobradaParaCimaCincoCentesimos(2250000)).toBe(22500)
   })
 
   it('formata área e medida sempre com duas casas em português', () => {

@@ -4,8 +4,9 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   RefreshCw, AlertTriangle, CheckCircle, Pause, Play, Save,
   Search, ChevronLeft, ChevronRight, X, Eye, AlertCircle,
-  Bot, Clock, Hash, ShieldAlert, Loader2,
+  Bot, Clock, Hash, ShieldAlert, Loader2, Info,
 } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type {
   StatusGestaoHubVendas,
   ResumoLojaHubVendas,
@@ -390,7 +391,7 @@ export default function PageClient() {
   const automacaoAtiva = status.automacao.ativa && !status.automacao.pausada
 
   return (
-    <div className="space-y-6 p-4 md:p-6 max-w-7xl mx-auto">
+    <div className="flex flex-col space-y-6 p-4 md:p-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -423,7 +424,7 @@ export default function PageClient() {
       </div>
 
       {/* Estado geral da automação */}
-      <section className="bg-white border border-slate-200 rounded-xl p-5">
+      <section className="order-4 bg-white border border-slate-200 rounded-xl p-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className={`p-3 rounded-xl ${automacaoAtiva ? 'bg-green-50' : 'bg-amber-50'}`}>
@@ -494,41 +495,121 @@ export default function PageClient() {
       </section>
 
       {/* Resumo geral */}
-      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        <CardResumo label="Leads registrados" valor={status.resumo.leadsRegistrados} cor="slate" />
-        <CardResumo label="Candidatos elegíveis" valor={status.resumo.candidatosElegiveis} cor="sky" />
-        <CardResumo label="Perdidos" valor={status.resumo.perdidos} cor="slate" />
+      <section className="order-1 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <CardResumo
-          label="Convertidos"
+          label="Leads registrados"
+          valor={status.resumo.leadsRegistrados}
+          cor="slate"
+          tooltip="Total de clientes que já entraram em contato pela nossa Central de Atendimento."
+        />
+        <CardResumo
+          label="Candidatos elegíveis"
+          valor={status.resumo.candidatosElegiveis}
+          cor="sky"
+          tooltip="Clientes que ainda podem receber uma mensagem de recuperação."
+          percentual={formatarPercentualDoTotal(status.resumo.candidatosElegiveis, status.resumo.leadsRegistrados)}
+        />
+        <CardResumo
+          label="Convertidos organicamente"
           valor={status.resumo.convertidos}
           cor="green"
           detalhe={formatarDetalhePorLoja(status.resumo.convertidosPorLoja)}
+          tooltip="Clientes que procuraram uma das lojas por conta própria, antes de receber uma mensagem de recuperação."
+          percentual={formatarPercentualDoTotal(status.resumo.convertidos, status.resumo.leadsRegistrados)}
         />
         <CardResumo
-          label="Recuperação enviada"
+          label="Recuperação enviada / aguardando"
           valor={status.resumo.recuperacaoEnviadaTotal}
           cor="cyan"
           detalhe={formatarDetalhePorLoja(status.resumo.recuperacaoEnviadaPorLoja)}
+          tooltip="Clientes que receberam nossa mensagem de recuperação e ainda estão dentro do prazo para responder."
+          percentual={formatarPercentualDoTotal(status.resumo.recuperacaoEnviadaTotal, status.resumo.leadsRegistrados)}
         />
-        <CardResumo label="Enviados hoje" valor={status.resumo.enviadaHoje} cor="green" />
-        <CardResumo label="Filas agendadas" valor={status.resumo.agendada} cor="blue" />
-        <CardResumo label="Filas reservadas" valor={status.resumo.reservada} cor="indigo" />
-        <CardResumo label="Enviando" valor={status.resumo.enviando} cor="cyan" />
-        <CardResumo label="Canceladas" valor={status.resumo.cancelada} cor="slate" />
-        <CardResumo label="Erros" valor={status.resumo.erro} cor="red" destaque={status.resumo.erro > 0} />
-        <CardResumo label="Resultado incerto" valor={status.resumo.resultadoIncerto} cor="amber" destaque={status.resumo.resultadoIncerto > 0} />
-        <CardResumo label="Análise manual" valor={status.resumo.analiseManual} cor="violet" destaque={status.resumo.analiseManual > 0} />
+        <CardResumo
+          label="Recuperados"
+          valor={status.resumo.recuperados}
+          cor="green"
+          detalhe={formatarDetalhePorLoja(status.resumo.recuperadosPorLoja)}
+          tooltip="Clientes que responderam depois de receber nossa mensagem de recuperação."
+          percentual={formatarPercentualDoTotal(status.resumo.recuperados, status.resumo.leadsRegistrados)}
+        />
+        <CardResumo
+          label="Perdidos"
+          valor={status.resumo.perdidos}
+          cor="slate"
+          detalhe={formatarDetalhePorLoja(status.resumo.perdidosPorLoja)}
+          tooltip="Clientes que receberam a mensagem de recuperação, mas não responderam dentro do prazo."
+          percentual={formatarPercentualDoTotal(status.resumo.perdidos, status.resumo.leadsRegistrados)}
+        />
+        <CardResumo
+          label="Fila manual"
+          valor={status.resumo.filaManual}
+          cor="amber"
+          tooltip="Clientes que poderiam receber recuperação, mas não entraram na fila dentro do prazo."
+          percentual={formatarPercentualDoTotal(status.resumo.filaManual, status.resumo.leadsRegistrados)}
+        />
+        <CardResumo
+          label="Enviados hoje"
+          valor={status.resumo.enviadaHoje}
+          cor="green"
+          tooltip="Quantidade de mensagens de recuperação enviadas hoje."
+        />
+        <CardResumo
+          label="Filas agendadas"
+          valor={status.resumo.agendada}
+          cor="blue"
+          tooltip="Clientes com mensagem de recuperação programada, aguardando o horário de envio."
+        />
+        <CardResumo
+          label="Filas reservadas"
+          valor={status.resumo.reservada}
+          cor="indigo"
+          tooltip="Mensagens de recuperação que estão prestes a ser enviadas neste momento."
+        />
+        <CardResumo
+          label="Enviando"
+          valor={status.resumo.enviando}
+          cor="cyan"
+          tooltip="Mensagens de recuperação sendo enviadas agora."
+        />
+        <CardResumo
+          label="Canceladas"
+          valor={status.resumo.cancelada}
+          cor="slate"
+          tooltip="Envios de recuperação cancelados, geralmente porque o cliente já tinha sido atendido antes do envio."
+        />
+        <CardResumo
+          label="Erros"
+          valor={status.resumo.erro}
+          cor="red"
+          destaque={status.resumo.erro > 0}
+          tooltip="Envios de recuperação que falharam e precisam de atenção."
+        />
+        <CardResumo
+          label="Resultado incerto"
+          valor={status.resumo.resultadoIncerto}
+          cor="amber"
+          destaque={status.resumo.resultadoIncerto > 0}
+          tooltip="Envios de recuperação cujo resultado não pôde ser confirmado automaticamente."
+        />
+        <CardResumo
+          label="Análise manual"
+          valor={status.resumo.analiseManual}
+          cor="violet"
+          destaque={status.resumo.analiseManual > 0}
+          tooltip="Casos que precisam ser conferidos manualmente pela equipe."
+        />
       </section>
 
       {status.resumo.conexoesPausadas > 0 && (
-        <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
+        <div className="order-1 flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
           <ShieldAlert className="w-5 h-5 flex-shrink-0" />
           <span>{status.resumo.conexoesPausadas} conexão(ões) pausada(s) por erro automático.</span>
         </div>
       )}
 
       {/* Alertas e resumo operacional */}
-      <section className="bg-white border border-slate-200 rounded-xl p-5">
+      <section className="order-5 bg-white border border-slate-200 rounded-xl p-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
           <h2 className="text-sm font-semibold text-slate-700">Alertas e resumo operacional</h2>
           <div className="flex items-center gap-2">
@@ -662,7 +743,7 @@ export default function PageClient() {
       </section>
 
       {/* Cards por loja */}
-      <section>
+      <section className="order-2">
         <h2 className="text-sm font-semibold text-slate-700 mb-3">Por loja</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {status.lojas.map((loja) => (
@@ -672,7 +753,7 @@ export default function PageClient() {
       </section>
 
       {/* Configuração do limite */}
-      <section className="bg-white border border-slate-200 rounded-xl p-5">
+      <section className="order-6 bg-white border border-slate-200 rounded-xl p-5">
         <h2 className="text-sm font-semibold text-slate-700 mb-3">Limite diário por loja</h2>
         <div className="flex flex-col sm:flex-row sm:items-end gap-3">
           <div className="flex-1 max-w-xs">
@@ -707,7 +788,7 @@ export default function PageClient() {
       </section>
 
       {/* Filtros + Tabela de filas */}
-      <section className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <section className="order-3 bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-slate-100">
           <h2 className="text-sm font-semibold text-slate-700 mb-3">Filas e envios</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -973,18 +1054,33 @@ function formatarDetalhePorLoja(porLoja: ContagemPorLojaHubVendas[]): string {
   return porLoja.map((item) => `${item.nomeExibicao} ${item.total}`).join(' · ')
 }
 
+/**
+ * Formata "X% do total" para exibir dentro de um KPI, usando sempre o mesmo denominador
+ * (leadsRegistrados) já usado pelo card "Leads registrados" — garante numerador e
+ * denominador do mesmo universo. Uma casa decimal, vírgula (padrão pt-BR).
+ */
+function formatarPercentualDoTotal(valor: number, total: number): string {
+  if (total <= 0) return '0,0% do total'
+  const percentual = (valor / total) * 100
+  return `${percentual.toFixed(1).replace('.', ',')}% do total`
+}
+
 function CardResumo({
   label,
   valor,
   cor,
   destaque,
   detalhe,
+  tooltip,
+  percentual,
 }: {
   label: string
   valor: number
   cor: string
   destaque?: boolean
   detalhe?: string
+  percentual?: string
+  tooltip?: string
 }) {
   const cores: Record<string, string> = {
     slate: 'bg-slate-50 text-slate-700',
@@ -999,10 +1095,59 @@ function CardResumo({
   }
   return (
     <div className={`rounded-xl p-3 ${cores[cor] ?? cores.slate} ${destaque ? 'ring-2 ring-offset-1 ring-red-200' : ''}`}>
-      <p className="text-xs opacity-70">{label}</p>
+      <div className="flex items-center gap-1">
+        <p className="text-xs opacity-70">{label}</p>
+        {tooltip && <InfoTooltip label={label} texto={tooltip} />}
+      </div>
       <p className="text-2xl font-bold mt-0.5">{valor}</p>
+      {percentual && <p className="text-[11px] opacity-60 leading-tight">{percentual}</p>}
       {detalhe && <p className="text-[11px] opacity-60 mt-1 truncate" title={detalhe}>{detalhe}</p>}
     </div>
+  )
+}
+
+/**
+ * Ícone de ajuda com tooltip explicativo do KPI. O Radix Tooltip (ui/tooltip.tsx) é
+ * hover-first e ignora touch por design (fecha ao toque em vez de abrir). Para funcionar
+ * em mobile, o estado é controlado manualmente e o toque é interceptado na fase de captura
+ * (antes de chegar no botão do Radix), evitando que o pointerdown/click internos do Radix
+ * fechem o tooltip que acabamos de abrir. Mouse continua usando o hover nativo do Radix.
+ */
+function InfoTooltip({ label, texto }: { label: string; texto: string }) {
+  const [open, setOpen] = useState(false)
+  const vindoDeToqueRef = useRef(false)
+
+  return (
+    <span
+      className="inline-flex shrink-0"
+      onPointerDownCapture={(e) => {
+        if (e.pointerType === 'touch') {
+          vindoDeToqueRef.current = true
+          e.stopPropagation()
+          setOpen((atual) => !atual)
+        }
+      }}
+      onClickCapture={(e) => {
+        if (vindoDeToqueRef.current) {
+          vindoDeToqueRef.current = false
+          e.stopPropagation()
+        }
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <Tooltip open={open} onOpenChange={setOpen}>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="shrink-0 opacity-50 hover:opacity-90 focus-visible:opacity-90 outline-none"
+            aria-label={`O que significa ${label}`}
+          >
+            <Info className="w-3 h-3" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[220px] text-xs">{texto}</TooltipContent>
+      </Tooltip>
+    </span>
   )
 }
 

@@ -97,10 +97,13 @@ begin
     origem_atendimento_id = coalesce(apc.origem_atendimento_id, new.id)
   where apc.id = new.cliente_id
     and (
-      apc.origem_consultora_nome is null
-      or apc.origem_consultora_usuario_id is null
-      or apc.origem_unidade_id is null
-      or apc.origem_atendimento_id is null
+      apc.origem_atendimento_id = new.id
+      or (
+        apc.origem_atendimento_id is null
+        and apc.origem_consultora_nome is null
+        and apc.origem_consultora_usuario_id is null
+        and apc.origem_unidade_id is null
+      )
     );
 
   return new;

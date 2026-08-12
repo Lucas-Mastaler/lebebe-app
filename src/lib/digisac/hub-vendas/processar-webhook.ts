@@ -7,13 +7,17 @@ import {
 import { finalizarEventoHubVendas, reservarEventoHubVendas, type TipoProcessamentoHubVendas } from './eventos'
 import { pareceSaudacaoHubVendas, validarMensagemDigisac } from './payload'
 import { registrarConversaoHubVendas } from './registrar-conversao'
+import { registrarConversaoPosRecuperacaoHubVendas } from './registrar-conversao-pos-recuperacao'
 import { registrarEntradaHubVendas } from './registrar-entrada'
 import { registrarLogRespostaRecuperacaoHubVendas } from './resposta'
 
 export type ResultadoWebhookHubVendas =
   | { ok: true; ignored: true; reason: string }
-  | { ok: true; processed: true; kind: 'entrada_hub' | 'conversao_loja' }
+  | { ok: true; processed: true; kind: 'entrada_hub' | 'conversao_loja' | 'recuperacao_respondida' }
   | { ok: false; error: string }
+
+/** Motivos de "sem conversao organica" que justificam tentar o caminho pos-recuperacao. */
+const MOTIVOS_SEM_CONVERSAO_ORGANICA = new Set(['lead_compativel_nao_encontrado', 'fora_janela_conversao'])
 
 const TIPOS_ENTRADA_HUB_SUPORTADOS = new Set(['chat', 'interactive', 'button'])
 const TIPOS_CONVERSAO_LOJA_SUPORTADOS = new Set(['chat'])
@@ -155,6 +159,20 @@ export async function processarWebhookHubVendas(rawPayload: unknown): Promise<Re
 
   const resultado = await registrarConversaoHubVendas(mensagem, loja, supabase, { eventoId: reserva.eventoId })
   if (!resultado.ok) return resultado
-  if ('ignored' in resultado) return resultado
-  return { ok: true, processed: true, kind: 'conversao_loja' }
+  if ('processed' in resultado) return { ok: true, processed: true, kind: 'conversao_loja' }
+
+  // Nao houve conversao organica compativel (nenhum lead aguardando_conversao/convertido_organicamente
+  // dentro da janela de 24h a partir de data_entrada_hub). Antes de descartar o evento, tenta o caminho
+  // separado de conversao pos-recuperacao (lead em recuperacao_enviada, janela propria de 24h a partir
+  // de data_recuperacao_enviada). Nao altera em nada a logica/janela organica acima.
+  if (MOTIVOS_SEM_CONVERSAO_ORGANICA.has(resultado.reason)) {
+    const resultadoPosRecuperacao = await registrarConversaoPosRecuperacaoHubVendas(mensagem, loja, supabase, {
+      eventoId: reserva.eventoId,
+    })
+    if (!resultadoPosRecuperacao.ok) return resultadoPosRecuperacao
+    if ('processed' in resultadoPosRecuperacao) return { ok: true, processed: true, kind: 'recuperacao_respondida' }
+    return resultadoPosRecuperacao
+  }
+
+  return resultado
 }

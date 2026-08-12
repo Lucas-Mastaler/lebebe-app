@@ -99,6 +99,8 @@ export type ResultadoPreparacaoHubVendas = {
   totalFilaExistente: number
   totalSemCapacidade: number
   totalErros: number
+  totalRecuperacoesEncerradas: number
+  totalMovidosFilaManual: number
 }
 
 const CONFIG_PADRAO_PARAMETROS: ConfigParametros = {
@@ -614,6 +616,64 @@ async function simularPreparacaoLeadNaFila(
   }
 }
 
+/** Janela pos-recuperacao: mesma constante usada por registrar-conversao-pos-recuperacao.ts. */
+const JANELA_POS_RECUPERACAO_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Fecha (status='encerrado') leads que receberam recuperacao ha mais de 24h e nunca
+ * responderam. Idempotente: so afeta linhas ainda em 'recuperacao_enviada' sem
+ * data_recuperacao_respondida - uma segunda execucao sobre o mesmo lead nao encontra
+ * mais linhas (status ja mudou) e e um no-op. Nao depende da automacao estar ativa.
+ */
+async function encerrarRecuperacoesExpiradasHubVendas(supabase: SupabaseServiceClient, agora: Date): Promise<number> {
+  const limiteExpiracao = new Date(agora.getTime() - JANELA_POS_RECUPERACAO_MS).toISOString()
+
+  const { data, error } = await supabase
+    .from('hub_vendas_leads')
+    .update({ status: 'encerrado', updated_at: new Date().toISOString() })
+    .eq('status', 'recuperacao_enviada')
+    .lt('data_recuperacao_enviada', limiteExpiracao)
+    .is('data_recuperacao_respondida', null)
+    .select('id')
+
+  if (error) throw error
+
+  const total = data?.length ?? 0
+  if (total > 0) {
+    console.log(`[HUB VENDAS PREPARACAO] recuperacoes encerradas por expiracao total=${total}`)
+  }
+  return total
+}
+
+/**
+ * Fecha (status='fila_manual') leads que nunca chegaram a receber recuperacao: continuam
+ * 'aguardando_conversao' mas ja passaram da janela de elegibilidade (mesmo prazo usado por
+ * buscarLeadsCandidatos para decidir quem ainda pode entrar na fila). Distinto de
+ * 'encerrado' — este caso nunca teve mensagem de recuperacao enviada.
+ * A checagem de fila associada e feita atomicamente na RPC (NOT EXISTS), nao aqui.
+ * Idempotente: uma segunda execucao nao encontra mais leads em 'aguardando_conversao' para
+ * essas linhas (status ja mudou) e e um no-op.
+ */
+async function fecharLeadsAguardandoExpiradosHubVendas(
+  supabase: SupabaseServiceClient,
+  parametros: ConfigParametros,
+  agora: Date
+): Promise<number> {
+  const limiteElegibilidade = new Date(agora.getTime() - parametros.elegibilidade_horas * 60 * 60 * 1000)
+
+  const { data, error } = await supabase.rpc('hub_vendas_fechar_aguardando_expirados', {
+    p_limite_elegibilidade: limiteElegibilidade.toISOString(),
+  })
+
+  if (error) throw error
+
+  const total = Array.isArray(data) ? data.length : 0
+  if (total > 0) {
+    console.log(`[HUB VENDAS PREPARACAO] leads movidos para fila_manual por expiracao da elegibilidade total=${total}`)
+  }
+  return total
+}
+
 function incrementarResumo(resumo: ResultadoPreparacaoHubVendas, resultado: ResultadoPreparacaoLead) {
   if (resultado === 'convertido_reconciliacao') resumo.totalConvertidosReconciliacao += 1
   if (resultado === 'cliente_em_atendimento') resumo.totalClienteEmAtendimento += 1
@@ -659,12 +719,28 @@ export async function prepararFilaRecuperacaoHubVendas({
     totalFilaExistente: 0,
     totalSemCapacidade: 0,
     totalErros: 0,
+    totalRecuperacoesEncerradas: 0,
+    totalMovidosFilaManual: 0,
   }
 
   if (leadId && !modoTeste) {
     resumo.ok = false
     resumo.motivo = 'modo_teste_obrigatorio_para_lead'
     return resumo
+  }
+
+  // Fecha leads em recuperacao_enviada cuja janela propria de 24h (a partir de
+  // data_recuperacao_enviada) ja expirou sem resposta do cliente. Roda sempre que a rotina
+  // real for chamada (nao em modo teste/simulacao de um lead especifico), independente da
+  // automacao estar ativa/pausada: nao envia nada, so formaliza um estado que ja e verdade -
+  // o lead deixou de poder converter no instante em que completou 24h, o cron so materializa
+  // isso no status. E seguro rodar antes do gate de automacao abaixo.
+  // Fecha leads que nunca receberam recuperacao e ja passaram da janela de elegibilidade
+  // ('aguardando_conversao' -> 'fila_manual'). Mesmo raciocínio de independência da automação:
+  // não cria nada novo, só formaliza que esses leads não podem mais ser processados.
+  if (!leadId) {
+    resumo.totalRecuperacoesEncerradas = await encerrarRecuperacoesExpiradasHubVendas(supabase, agora)
+    resumo.totalMovidosFilaManual = await fecharLeadsAguardandoExpiradosHubVendas(supabase, config.parametros, agora)
   }
 
   if ((!config.automacao.ativa || config.automacao.pausada) && !modoTeste) {

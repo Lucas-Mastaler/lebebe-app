@@ -3,6 +3,7 @@ import { processarWebhookHubVendas } from './processar-webhook'
 
 const registrarEntradaHubVendasMock = vi.hoisted(() => vi.fn())
 const registrarConversaoHubVendasMock = vi.hoisted(() => vi.fn())
+const registrarConversaoPosRecuperacaoHubVendasMock = vi.hoisted(() => vi.fn())
 const createServiceClientMock = vi.hoisted(() => vi.fn())
 const reservarEventoHubVendasMock = vi.hoisted(() => vi.fn())
 const finalizarEventoHubVendasMock = vi.hoisted(() => vi.fn())
@@ -25,6 +26,10 @@ vi.mock('./registrar-entrada', () => ({
 
 vi.mock('./registrar-conversao', () => ({
   registrarConversaoHubVendas: registrarConversaoHubVendasMock,
+}))
+
+vi.mock('./registrar-conversao-pos-recuperacao', () => ({
+  registrarConversaoPosRecuperacaoHubVendas: registrarConversaoPosRecuperacaoHubVendasMock,
 }))
 
 vi.mock('./resposta', () => ({
@@ -68,9 +73,11 @@ describe('processarWebhookHubVendas', () => {
     finalizarEventoHubVendasMock.mockResolvedValue(undefined)
     registrarEntradaHubVendasMock.mockReset()
     registrarConversaoHubVendasMock.mockReset()
+    registrarConversaoPosRecuperacaoHubVendasMock.mockReset()
     registrarLogRespostaRecuperacaoHubVendasMock.mockReset()
     registrarEntradaHubVendasMock.mockResolvedValue({ ok: true, processed: true })
     registrarConversaoHubVendasMock.mockResolvedValue({ ok: true, processed: true })
+    registrarConversaoPosRecuperacaoHubVendasMock.mockResolvedValue({ ok: true, ignored: true, reason: 'lead_recuperacao_nao_encontrado' })
     registrarLogRespostaRecuperacaoHubVendasMock.mockResolvedValue({ encontrada: false })
   })
 
@@ -185,5 +192,74 @@ describe('processarWebhookHubVendas', () => {
       { reason: 'nao_e_conversao' }
     )
     expect(registrarConversaoHubVendasMock).not.toHaveBeenCalled()
+    expect(registrarConversaoPosRecuperacaoHubVendasMock).not.toHaveBeenCalled()
+  })
+
+  it('tenta conversao pos-recuperacao quando nao ha lead organico compativel e converte', async () => {
+    registrarConversaoHubVendasMock.mockResolvedValue({ ok: true, ignored: true, reason: 'lead_compativel_nao_encontrado' })
+    registrarConversaoPosRecuperacaoHubVendasMock.mockResolvedValue({
+      ok: true,
+      processed: true,
+      leadId: 'lead-1',
+      loja: 'bigorrilho',
+    })
+
+    const resultado = await processarWebhookHubVendas(
+      payload({ serviceId: '0973f84b-8294-4615-9657-ba95b6346246', isFromMe: false, text: 'Oi, ainda da tempo?' })
+    )
+
+    expect(resultado).toEqual({ ok: true, processed: true, kind: 'recuperacao_respondida' })
+    expect(registrarConversaoHubVendasMock).toHaveBeenCalledTimes(1)
+    expect(registrarConversaoPosRecuperacaoHubVendasMock).toHaveBeenCalledWith(
+      expect.any(Object),
+      'bigorrilho',
+      supabaseFake,
+      { eventoId: 'evento-1' }
+    )
+  })
+
+  it('tenta conversao pos-recuperacao quando organica esta fora da janela de 24h', async () => {
+    registrarConversaoHubVendasMock.mockResolvedValue({ ok: true, ignored: true, reason: 'fora_janela_conversao' })
+    registrarConversaoPosRecuperacaoHubVendasMock.mockResolvedValue({ ok: true, ignored: true, reason: 'fora_janela_pos_recuperacao' })
+
+    const resultado = await processarWebhookHubVendas(
+      payload({ serviceId: '0973f84b-8294-4615-9657-ba95b6346246', isFromMe: false, text: 'Oi' })
+    )
+
+    expect(resultado).toEqual({ ok: true, ignored: true, reason: 'fora_janela_pos_recuperacao' })
+    expect(registrarConversaoPosRecuperacaoHubVendasMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('nao tenta pos-recuperacao quando organica ja identificou loja ja registrada', async () => {
+    registrarConversaoHubVendasMock.mockResolvedValue({ ok: true, ignored: true, reason: 'loja_ja_registrada' })
+
+    const resultado = await processarWebhookHubVendas(
+      payload({ serviceId: '0973f84b-8294-4615-9657-ba95b6346246', isFromMe: false, text: 'Oi' })
+    )
+
+    expect(resultado).toEqual({ ok: true, ignored: true, reason: 'loja_ja_registrada' })
+    expect(registrarConversaoPosRecuperacaoHubVendasMock).not.toHaveBeenCalled()
+  })
+
+  it('nao tenta pos-recuperacao quando organica ja converteu', async () => {
+    registrarConversaoHubVendasMock.mockResolvedValue({ ok: true, processed: true, leadId: 'lead-1', loja: 'portao' })
+
+    const resultado = await processarWebhookHubVendas(
+      payload({ serviceId: '0973f84b-8294-4615-9657-ba95b6346246', isFromMe: false, text: 'Oi' })
+    )
+
+    expect(resultado).toEqual({ ok: true, processed: true, kind: 'conversao_loja' })
+    expect(registrarConversaoPosRecuperacaoHubVendasMock).not.toHaveBeenCalled()
+  })
+
+  it('propaga erro do caminho pos-recuperacao sem mascarar', async () => {
+    registrarConversaoHubVendasMock.mockResolvedValue({ ok: true, ignored: true, reason: 'lead_compativel_nao_encontrado' })
+    registrarConversaoPosRecuperacaoHubVendasMock.mockResolvedValue({ ok: false, error: 'erro_registro_conversao_pos_recuperacao' })
+
+    const resultado = await processarWebhookHubVendas(
+      payload({ serviceId: '0973f84b-8294-4615-9657-ba95b6346246', isFromMe: false, text: 'Oi' })
+    )
+
+    expect(resultado).toEqual({ ok: false, error: 'erro_registro_conversao_pos_recuperacao' })
   })
 })

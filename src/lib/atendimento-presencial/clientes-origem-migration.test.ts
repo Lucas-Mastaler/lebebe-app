@@ -39,6 +39,18 @@ describe('migration origem inicial de clientes presenciais', () => {
     expect(sql).toContain('when (new.cliente_id is not null)')
   })
 
+  it('permite completar somente o primeiro atendimento capturado como origem', () => {
+    const triggerSql = sql.split(
+      'create or replace function public.atendimento_presencial_clientes_preencher_origem()'
+    )[1]
+
+    expect(triggerSql).toContain('apc.origem_atendimento_id = new.id')
+    expect(triggerSql).toContain('apc.origem_atendimento_id is null')
+    expect(triggerSql).toContain('and apc.origem_consultora_nome is null')
+    expect(triggerSql).toContain('and apc.origem_consultora_usuario_id is null')
+    expect(triggerSql).toContain('and apc.origem_unidade_id is null')
+  })
+
   it('cria indices para filtros e ordenacao da listagem', () => {
     expect(sql).toContain('idx_atendimento_presencial_clientes_origem_consultora_nome')
     expect(sql).toContain('idx_atendimento_presencial_clientes_origem_unidade')

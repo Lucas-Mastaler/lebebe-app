@@ -183,7 +183,7 @@ export default function PageClient() {
           </p>
         </header>
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="grid gap-5 lg:items-start lg:grid-cols-[minmax(0,1fr)_420px]">
           <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
             <div className="mb-4 flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-50 text-sky-600">

@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
       modoSimulacao,
     })
     console.log(
-      `[HUB VENDAS CRON] preparacao concluida candidatos=${resultado.totalCandidatos} criadas=${resultado.totalFilaCriada} existentes=${resultado.totalFilaExistente} semCapacidade=${resultado.totalSemCapacidade} erros=${resultado.totalErros} duracaoMs=${Date.now() - inicio}`
+      `[HUB VENDAS CRON] preparacao concluida candidatos=${resultado.totalCandidatos} criadas=${resultado.totalFilaCriada} existentes=${resultado.totalFilaExistente} semCapacidade=${resultado.totalSemCapacidade} erros=${resultado.totalErros} recuperacoesEncerradas=${resultado.totalRecuperacoesEncerradas} movidosFilaManual=${resultado.totalMovidosFilaManual} duracaoMs=${Date.now() - inicio}`
     )
     if (resultado.totalSemCapacidade > 0) {
       console.warn(`[HUB VENDAS ALERTA] limite diario atingido ou sem capacidade total=${resultado.totalSemCapacidade}`)

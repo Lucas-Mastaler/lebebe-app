@@ -38,11 +38,19 @@ export type StatusGestaoHubVendas = {
   resumo: {
     leadsRegistrados: number
     candidatosElegiveis: number
+    /** status='encerrado' (recuperacao enviada, sem resposta do cliente em 24h). Exibido como "Perdidos". */
     perdidos: number
+    perdidosPorLoja: ContagemPorLojaHubVendas[]
     convertidos: number
     convertidosPorLoja: ContagemPorLojaHubVendas[]
+    /** status='recuperacao_enviada' e ainda dentro da janela pos-recuperacao de 24h ("aguardando resposta"). */
     recuperacaoEnviadaTotal: number
     recuperacaoEnviadaPorLoja: ContagemPorLojaHubVendas[]
+    /** status='recuperado' (respondeu dentro da janela pos-recuperacao de 24h). */
+    recuperados: number
+    recuperadosPorLoja: ContagemPorLojaHubVendas[]
+    /** status='fila_manual' (aguardando_conversao que expirou sem nunca receber recuperacao). */
+    filaManual: number
     agendada: number
     reservada: number
     enviando: number
@@ -316,14 +324,19 @@ export async function obterStatusGestaoHubVendas(
     .gt('data_entrada_hub', limiteElegibilidade.toISOString())
   if (candidatosError) throw candidatosError
 
-  // Perdidos: aguardando conversão, mas já passou da janela de elegibilidade —
-  // não converteu organicamente e não vai mais entrar na fila de recuperação.
-  const { count: perdidos, error: perdidosError } = await supabase
+  // Perdidos: status='encerrado' (recuperacao enviada, sem resposta do cliente dentro da
+  // janela de 24h pos-recuperacao). Quebra por loja via conexao_recuperacao_id, preservada
+  // pelo cron de expiracao (so o status muda, a conexao de destino permanece).
+  const { data: perdidosRows, error: perdidosError } = await supabase
     .from('hub_vendas_leads')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'aguardando_conversao')
-    .lte('data_entrada_hub', limiteElegibilidade.toISOString())
+    .select('conexao_recuperacao_id')
+    .eq('status', 'encerrado')
   if (perdidosError) throw perdidosError
+
+  const perdidos = contarPorLoja(
+    (perdidosRows ?? []).map((row) => (row as { conexao_recuperacao_id: string | null }).conexao_recuperacao_id),
+    mapearServiceIdParaLoja
+  )
 
   // Convertidos organicamente, com quebra por loja (loja_principal)
   const { data: convertidosRows, error: convertidosError } = await supabase
@@ -337,17 +350,41 @@ export async function obterStatusGestaoHubVendas(
     (valor) => (valor in HUB_VENDAS_LOJAS ? (valor as HubVendasLoja) : null)
   )
 
-  // Recuperação enviada (nós chamamos), com quebra por loja de destino
+  // Recuperação enviada / aguardando resposta: status='recuperacao_enviada' e ainda dentro
+  // da janela pos-recuperacao de 24h (exatamente 24h, independente de elegibilidade_horas).
+  const limitePosRecuperacao = new Date(Date.now() - 24 * 60 * 60 * 1000)
+
   const { data: recuperacaoRows, error: recuperacaoError } = await supabase
     .from('hub_vendas_leads')
     .select('conexao_recuperacao_id')
     .eq('status', 'recuperacao_enviada')
+    .gt('data_recuperacao_enviada', limitePosRecuperacao.toISOString())
   if (recuperacaoError) throw recuperacaoError
 
   const recuperacaoEnviada = contarPorLoja(
     (recuperacaoRows ?? []).map((row) => (row as { conexao_recuperacao_id: string | null }).conexao_recuperacao_id),
     mapearServiceIdParaLoja
   )
+
+  // Recuperados: status='recuperado' (respondeu dentro da janela pos-recuperacao de 24h)
+  const { data: recuperadosRows, error: recuperadosError } = await supabase
+    .from('hub_vendas_leads')
+    .select('conexao_recuperacao_id')
+    .eq('status', 'recuperado')
+  if (recuperadosError) throw recuperadosError
+
+  const recuperados = contarPorLoja(
+    (recuperadosRows ?? []).map((row) => (row as { conexao_recuperacao_id: string | null }).conexao_recuperacao_id),
+    mapearServiceIdParaLoja
+  )
+
+  // Fila manual: aguardando_conversao que expirou sem nunca receber recuperação (Gap A).
+  // Sem quebra por loja — esses leads nunca chegaram a ter uma conexão de recuperação associada.
+  const { count: filaManual, error: filaManualError } = await supabase
+    .from('hub_vendas_leads')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'fila_manual')
+  if (filaManualError) throw filaManualError
 
   // Último processamento
   const { data: ultimo, error: ultimoError } = await supabase
@@ -440,11 +477,15 @@ export async function obterStatusGestaoHubVendas(
     resumo: {
       leadsRegistrados: leadsRegistrados ?? 0,
       candidatosElegiveis: candidatosElegiveis ?? 0,
-      perdidos: perdidos ?? 0,
+      perdidos: perdidos.total,
+      perdidosPorLoja: perdidos.porLoja,
       convertidos: convertidos.total,
       convertidosPorLoja: convertidos.porLoja,
       recuperacaoEnviadaTotal: recuperacaoEnviada.total,
       recuperacaoEnviadaPorLoja: recuperacaoEnviada.porLoja,
+      recuperados: recuperados.total,
+      recuperadosPorLoja: recuperados.porLoja,
+      filaManual: filaManual ?? 0,
       agendada: countMap.get('agendado') ?? 0,
       reservada: countMap.get('reservado') ?? 0,
       enviando: countMap.get('enviando') ?? 0,

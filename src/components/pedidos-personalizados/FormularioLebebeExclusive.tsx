@@ -198,7 +198,7 @@ export function FormularioLebebeExclusive({
       const response = await fetch(`/api/pedidos-personalizados/catalogo/lebebe-exclusive?${params}`, { cache: 'no-store' })
       if (!response.ok) throw new Error(await lerErro(response))
       const body = await response.json() as { ok?: boolean; itens?: ProdutoCatalogoLebebeExclusive[]; pagina?: number; totalRegistros?: number; totalPaginas?: number }
-      if (body.ok !== true || !Array.isArray(body.itens) || !Number.isInteger(body.pagina) || !Number.isInteger(body.totalRegistros) || !Number.isInteger(body.totalPaginas)) throw new Error('A resposta do catálogo não pôde ser confirmada.')
+      if (body.ok !== true || !Array.isArray(body.itens) || typeof body.pagina !== 'number' || !Number.isInteger(body.pagina) || typeof body.totalRegistros !== 'number' || !Number.isInteger(body.totalRegistros) || typeof body.totalPaginas !== 'number' || !Number.isInteger(body.totalPaginas)) throw new Error('A resposta do catálogo não pôde ser confirmada.')
       setResultados(body.itens)
       setPaginacao({ pagina: body.pagina, totalRegistros: body.totalRegistros, totalPaginas: body.totalPaginas })
       setPesquisou(true)
@@ -380,7 +380,7 @@ export function FormularioLebebeExclusive({
 
         {!mostrarSelecionados && paginacao.totalPaginas > 1 && <nav className="mt-4 flex flex-wrap items-center justify-center gap-2" aria-label="Paginação dos resultados">
           <Button type="button" variant="outline" size="sm" disabled={buscando || paginacao.pagina === 1} onClick={() => void pesquisar(undefined, paginacao.pagina - 1)}><ChevronLeft />Anterior</Button>
-          {paginasVisiveisLebebeExclusive(paginacao.pagina, paginacao.totalPaginas).map((pagina, indice) => pagina === '…'
+          {paginasVisiveisLebebeExclusive(paginacao.pagina, paginacao.totalPaginas).map((pagina, indice) => typeof pagina === 'string'
             ? <span key={`reticencias-${indice}`} className="px-1 text-sm text-slate-500">…</span>
             : <Button key={pagina} type="button" size="sm" variant={pagina === paginacao.pagina ? 'default' : 'outline'} disabled={buscando} aria-current={pagina === paginacao.pagina ? 'page' : undefined} onClick={() => void pesquisar(undefined, pagina)}>{pagina}</Button>)}
           <Button type="button" variant="outline" size="sm" disabled={buscando || paginacao.pagina === paginacao.totalPaginas} onClick={() => void pesquisar(undefined, paginacao.pagina + 1)}>Próxima<ChevronRight /></Button>

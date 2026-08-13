@@ -408,13 +408,16 @@ async function criarPedidoLebebeExclusive(
   log: ContextoLogPedidos,
   repo: Repositorio
 ) {
+  log.fornecedor = 'lebebe_exclusive'
   const validacao = validarEntradaLebebeExclusive(corpo, { comercial: false })
   if (!validacao.ok) {
+    log.camposInvalidos = validacao.problemas.map((problema) => problema.campo)
+    registrarResultado(log, 'erro_validacao', validacao.codigo)
     return jsonErro(
       validacao.codigo,
-      validacao.mensagem,
+      'Não foi possível salvar o pedido. Revise os campos indicados.',
       422,
-      validacao.campo ? { campo: validacao.campo } : undefined
+      { campo: validacao.campo, problemas: validacao.problemas }
     )
   }
   const unidade = unidadeDoContexto(contexto, validacao.dados.unidade)

@@ -1,13 +1,15 @@
 'use client'
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { CheckCircle2, ChevronLeft, ChevronRight, Filter, Loader2, Save, Search, X } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Filter, ListChecks, Loader2, Package, PackageX, Save, Search, Sparkles, X } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { aplicarMascaraTelefoneBR } from '@/lib/atendimento-presencial/telefone'
 import type { ProdutoCatalogoLebebeExclusive, UnidadePedidoPersonalizado } from '@/lib/pedidos-personalizados'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import type { OpcoesNovoPedido } from './novo-pedido-modelo'
 import type { PedidoDetalhe } from './gestao-modelo'
 import { PreviaMensagem } from './PreviaMensagem'
@@ -61,15 +63,96 @@ export function paginasVisiveisLebebeExclusive(paginaAtual: number, totalPaginas
 }
 
 async function lerErro(response: Response) {
+  return (await lerErroDetalhado(response)).mensagem
+}
+
+type ProblemaRespostaApi = { codigo?: unknown; campo?: unknown; mensagem?: unknown }
+
+export async function lerErroDetalhado(response: Response) {
   try {
-    const body = await response.json() as { mensagem?: unknown }
-    if (typeof body.mensagem === 'string') return body.mensagem
+    const body = await response.json() as { mensagem?: unknown; problemas?: unknown }
+    const problemas = Array.isArray(body.problemas)
+      ? body.problemas.filter((item): item is ProblemaRespostaApi => typeof item === 'object' && item !== null)
+      : []
+    const primeiroProblema = problemas.find((item) => typeof item.mensagem === 'string')
+    const mensagem = typeof primeiroProblema?.mensagem === 'string'
+      ? primeiroProblema.mensagem
+      : typeof body.mensagem === 'string'
+        ? body.mensagem
+        : null
+    if (mensagem) {
+      return {
+        mensagem,
+        campo: typeof primeiroProblema?.campo === 'string' ? primeiroProblema.campo : null,
+      }
+    }
   } catch {
     // A resposta técnica não é exibida integralmente.
   }
-  if (response.status === 401) return 'Sua sessão expirou. Entre novamente.'
-  if (response.status === 403) return 'Você não possui acesso a esta operação.'
-  return 'Não foi possível concluir a operação agora.'
+  if (response.status === 401) return { mensagem: 'Sua sessão expirou. Entre novamente.', campo: null }
+  if (response.status === 403) return { mensagem: 'Você não possui acesso a esta operação.', campo: null }
+  return { mensagem: 'Não foi possível concluir a operação agora.', campo: null }
+}
+
+export function montarPayloadLebebeExclusive(params: {
+  identificacao: Identificacao
+  itens: readonly Pick<ItemSelecionado, 'id' | 'quantidade' | 'nomeOuLetra'>[]
+  idempotencyKey?: string
+  expectedVersion?: number
+}) {
+  return {
+    ...(params.expectedVersion === undefined
+      ? { idempotencyKey: params.idempotencyKey }
+      : { expectedVersion: params.expectedVersion }),
+    fornecedor: 'lebebe_exclusive' as const,
+    unidade: params.identificacao.unidade,
+    consultora: params.identificacao.consultora,
+    cliente: params.identificacao.cliente,
+    telefone: params.identificacao.telefone,
+    numeroLancamento: params.identificacao.numeroLancamento || null,
+    itens: params.itens.map((item, indice) => ({
+      produtoId: item.id,
+      ordem: indice + 1,
+      quantidade: item.quantidade,
+      nomeOuLetra: item.nomeOuLetra.trim() || null,
+    })),
+  }
+}
+
+function EstadoVazioCatalogo({ icone: Icone, texto }: { icone: LucideIcon; texto: string }) {
+  return (
+    <div className="mt-6 flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 p-6 text-center">
+      <Icone className="size-5 text-slate-400" aria-hidden="true" />
+      <p className="text-sm text-slate-500">{texto}</p>
+    </div>
+  )
+}
+
+function linhaProdutoClasse(selecionado: boolean) {
+  return `border-t align-top transition-colors ${selecionado ? 'border-l-4 border-l-emerald-400 bg-emerald-50/60 hover:bg-emerald-50' : 'hover:bg-slate-50'}`
+}
+
+function cardProdutoClasse(selecionado: boolean) {
+  return `rounded-lg border p-3 transition-colors ${selecionado ? 'border-l-4 border-emerald-300 bg-emerald-50/60' : 'border-slate-200'}`
+}
+
+function BotaoMostrarSelecionados({ ativo, quantidade, disabled, onClick }: { ativo: boolean; quantidade: number; disabled: boolean; onClick: () => void }) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      disabled={disabled}
+      aria-pressed={ativo}
+      onClick={onClick}
+      className={ativo ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : ''}
+    >
+      {ativo ? <ArrowLeft /> : <Search />}
+      {ativo ? 'Voltar aos resultados' : 'Mostrar selecionados'}
+      {!ativo && quantidade > 0 && (
+        <span className="ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full bg-emerald-100 px-1.5 text-xs font-semibold text-emerald-700">{quantidade}</span>
+      )}
+    </Button>
+  )
 }
 
 export function FormularioLebebeExclusive({
@@ -243,27 +326,34 @@ export function FormularioLebebeExclusive({
     setSalvando(true)
     setErro(null)
     try {
+      const itensSelecionados = [...selecionados.values()]
+      const payload = montarPayloadLebebeExclusive({
+        identificacao: identificacaoAtual,
+        itens: itensSelecionados,
+        ...(pedidoInicial
+          ? { expectedVersion: pedidoInicial.version }
+          : { idempotencyKey: idempotencyKey.current }),
+      })
       const response = await fetch(pedidoInicial
         ? `/api/pedidos-personalizados/pedidos/${pedidoInicial.id}/comercial`
         : '/api/pedidos-personalizados/pedidos', {
         method: pedidoInicial ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...(pedidoInicial
-            ? { expectedVersion: pedidoInicial.version }
-            : { idempotencyKey: idempotencyKey.current }),
-          fornecedor: 'lebebe_exclusive',
-          ...identificacaoAtual,
-          numeroLancamento: identificacaoAtual.numeroLancamento || null,
-          itens: [...selecionados.values()].map((item, indice) => ({
-            produtoId: item.id,
-            ordem: indice + 1,
-            quantidade: item.quantidade,
-            nomeOuLetra: item.nomeOuLetra.trim() || null,
-          })),
-        }),
+        body: JSON.stringify(payload),
       })
-      if (!response.ok) throw new Error(await lerErro(response))
+      if (!response.ok) {
+        const falhaApi = await lerErroDetalhado(response)
+        if (falhaApi.campo?.startsWith('itens.')) {
+          setMostrarSelecionados(true)
+          const indice = Number(falhaApi.campo.split('.')[1])
+          const produto = Number.isInteger(indice) ? itensSelecionados[indice] : null
+          throw new Error(produto ? `${falhaApi.mensagem} Produto: ${produto.descricao}.` : falhaApi.mensagem)
+        }
+        if (['unidade', 'consultora', 'cliente', 'telefone', 'numeroLancamento'].includes(falhaApi.campo ?? '')) {
+          onValidacaoIdentificacaoInvalida?.()
+        }
+        throw new Error(falhaApi.mensagem)
+      }
       const body = await response.json() as { ok?: boolean; pedidoId?: string; status?: string; version?: number; quantidadeItens?: number }
       const respostaValida = pedidoInicial
         ? body.ok === true && Number.isInteger(body.version)
@@ -316,13 +406,19 @@ export function FormularioLebebeExclusive({
 
   return (
     <form className="space-y-6" onSubmit={salvar} noValidate>
-      <section className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 sm:p-5">
-        <h2 className="font-bold">Como montar o orçamento Lebebe Exclusive</h2>
-        <p className="mt-1">Pesquise manualmente por coleção, descrição ou referência. Um produto entra no pedido quando a quantidade é maior que zero. O custo não é exibido nesta tela.</p>
-      </section>
+      <div className="flex items-center gap-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-[#00A5E6]"><Package className="size-5" aria-hidden="true" /></span>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[#00A5E6]">Lebebe Exclusive</p>
+          <h2 className="text-base font-bold text-slate-900 sm:text-lg">Produtos de catálogo</h2>
+        </div>
+      </div>
 
       {!ocultarIdentificacao && <section className="rounded-2xl border bg-white p-4 shadow-sm sm:p-6" aria-labelledby="identificacao-exclusive">
-        <h2 id="identificacao-exclusive" className="text-lg font-bold">Identificação</h2>
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-sky-50 text-[#00A5E6]"><Sparkles aria-hidden="true" /></span>
+          <div><h2 id="identificacao-exclusive" className="text-lg font-bold text-slate-900">Identificação</h2><p className="text-sm text-slate-500">Dados comerciais do pedido.</p></div>
+        </div>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div><label className="mb-1 block text-sm font-medium" htmlFor="unidade-exclusive">Unidade *</label><Select value={identificacao.unidade} disabled={bloqueado} onValueChange={(unidade) => setIdentificacao((atual) => ({ ...atual, unidade: unidade as UnidadePedidoPersonalizado }))}><SelectTrigger id="unidade-exclusive" className="h-11" aria-invalid={!identificacao.unidade}><SelectValue placeholder="Selecione" /></SelectTrigger><SelectContent>{opcoes.unidades.map((item) => <SelectItem key={item.chave} value={item.chave}>{item.nome}</SelectItem>)}</SelectContent></Select></div>
           <div><label className="mb-1 block text-sm font-medium" htmlFor="consultora-exclusive">Consultora *</label><Input id="consultora-exclusive" disabled={bloqueado} maxLength={20} aria-invalid={identificacao.consultora.trim().length < 2} value={identificacao.consultora} onChange={(event) => setIdentificacao((atual) => ({ ...atual, consultora: event.target.value }))} /></div>
@@ -333,48 +429,78 @@ export function FormularioLebebeExclusive({
       </section>}
 
       <section className="rounded-2xl border bg-white p-4 shadow-sm sm:p-6" aria-labelledby="catalogo-exclusive">
-        <h2 id="catalogo-exclusive" className="text-lg font-bold">Produtos</h2>
-        <p className="mt-1 text-sm text-slate-500">A busca só acontece ao pressionar Enter ou Filtrar. Cada filtro preenchido precisa ter 3 caracteres.</p>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <Input aria-label="Coleção" placeholder="Coleção" disabled={bloqueado} value={filtros.colecao} onChange={(event) => setFiltros({ ...filtros, colecao: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void pesquisar() } }} />
-          <Input aria-label="Descrição" placeholder="Descrição" disabled={bloqueado} value={filtros.descricao} onChange={(event) => setFiltros({ ...filtros, descricao: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void pesquisar() } }} />
-          <Input aria-label="Referência" placeholder="Referência" disabled={bloqueado} value={filtros.referencia} onChange={(event) => setFiltros({ ...filtros, referencia: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void pesquisar() } }} />
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button type="button" disabled={bloqueado || buscando} onClick={() => void pesquisar()}>{buscando ? <Loader2 className="animate-spin" /> : <Filter />}Filtrar</Button>
-          <Button type="button" variant="outline" disabled={bloqueado || buscando} onClick={() => { setFiltros({ colecao: '', descricao: '', referencia: '' }); setResultados([]); setPaginacao({ pagina: 1, totalRegistros: 0, totalPaginas: 0 }); setPesquisou(false); setErro(null) }}><X />Limpar filtros</Button>
-          <Button type="button" variant="outline" disabled={selecionados.size === 0} onClick={() => setMostrarSelecionados((atual) => !atual)}><Search />{mostrarSelecionados ? 'Voltar aos resultados' : `Mostrar selecionados (${selecionados.size})`}</Button>
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-sky-50 text-[#00A5E6]"><Package aria-hidden="true" /></span>
+          <div><h2 id="catalogo-exclusive" className="text-lg font-bold text-slate-900">Produtos</h2><p className="text-sm text-slate-500">Pesquise por coleção, descrição ou referência e informe a quantidade para adicionar ao pedido. O custo não é exibido nesta tela.</p></div>
         </div>
 
-        {!pesquisou && !mostrarSelecionados && <p className="mt-6 rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">Informe os filtros para pesquisar. O catálogo completo não é carregado automaticamente.</p>}
-        {pesquisou && resultados.length === 0 && !mostrarSelecionados && <p className="mt-6 rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">Nenhum produto encontrado.</p>}
-        {mostrarSelecionados && selecionados.size === 0 && <p className="mt-6 rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">Nenhum produto selecionado.</p>}
+        <div className="mt-5">
+          <div className="flex items-center gap-1.5">
+            <Search className="size-4 text-slate-400" aria-hidden="true" />
+            <h3 className="text-sm font-semibold text-slate-700">Pesquisar produtos</h3>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">A busca só acontece ao pressionar Enter ou Filtrar. Cada filtro preenchido precisa ter 3 caracteres.</p>
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <div>
+              <label htmlFor="filtro-colecao-exclusive" className="mb-1 block text-sm font-medium text-slate-700">Coleção</label>
+              <Input id="filtro-colecao-exclusive" placeholder="Coleção" disabled={bloqueado} value={filtros.colecao} onChange={(event) => setFiltros({ ...filtros, colecao: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void pesquisar() } }} />
+            </div>
+            <div>
+              <label htmlFor="filtro-descricao-exclusive" className="mb-1 block text-sm font-medium text-slate-700">Descrição</label>
+              <Input id="filtro-descricao-exclusive" placeholder="Descrição" disabled={bloqueado} value={filtros.descricao} onChange={(event) => setFiltros({ ...filtros, descricao: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void pesquisar() } }} />
+            </div>
+            <div>
+              <label htmlFor="filtro-referencia-exclusive" className="mb-1 block text-sm font-medium text-slate-700">Referência</label>
+              <Input id="filtro-referencia-exclusive" placeholder="Referência" disabled={bloqueado} value={filtros.referencia} onChange={(event) => setFiltros({ ...filtros, referencia: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); void pesquisar() } }} />
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button type="button" disabled={bloqueado || buscando} onClick={() => void pesquisar()}>{buscando ? <Loader2 className="animate-spin" /> : <Filter />}Filtrar</Button>
+            <Button type="button" variant="outline" disabled={bloqueado || buscando} onClick={() => { setFiltros({ colecao: '', descricao: '', referencia: '' }); setResultados([]); setPaginacao({ pagina: 1, totalRegistros: 0, totalPaginas: 0 }); setPesquisou(false); setErro(null) }}><X />Limpar filtros</Button>
+            <span className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" aria-hidden="true" />
+            <BotaoMostrarSelecionados ativo={mostrarSelecionados} quantidade={selecionados.size} disabled={selecionados.size === 0} onClick={() => setMostrarSelecionados((atual) => !atual)} />
+          </div>
+        </div>
 
-        {itensExibidos.length > 0 && <div className="mt-5 rounded-xl border">
+        {mostrarSelecionados && <p className="mt-4 flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800"><ListChecks className="size-4" aria-hidden="true" />Mostrando {selecionados.size} produto(s) selecionado(s).</p>}
+        {buscando && itensExibidos.length > 0 && <p className="mt-4 flex items-center gap-1.5 text-xs font-medium text-slate-500"><Loader2 className="size-3.5 animate-spin" aria-hidden="true" />Atualizando resultados…</p>}
+
+        {buscando && !pesquisou && !mostrarSelecionados && (
+          <div className="mt-6 space-y-2" aria-hidden="true">
+            <Skeleton className="h-11 w-full" />
+            <Skeleton className="h-11 w-full" />
+            <Skeleton className="h-11 w-full" />
+          </div>
+        )}
+        {!buscando && !pesquisou && !mostrarSelecionados && <EstadoVazioCatalogo icone={Search} texto="Pesquise por coleção, descrição ou referência para encontrar produtos." />}
+        {pesquisou && resultados.length === 0 && !mostrarSelecionados && <EstadoVazioCatalogo icone={PackageX} texto="Nenhum produto encontrado. Tente ajustar os filtros." />}
+        {mostrarSelecionados && selecionados.size === 0 && <EstadoVazioCatalogo icone={ListChecks} texto="Você ainda não selecionou produtos. Preencha uma quantidade para adicionar um item ao pedido." />}
+
+        {itensExibidos.length > 0 && <div className={`mt-5 rounded-xl border transition-opacity ${buscando ? 'opacity-60' : ''}`}>
           <table className="hidden w-full table-fixed text-left text-sm lg:table">
             <colgroup><col className="w-[15%]" /><col className="w-[25%]" /><col className="w-[10%]" /><col className="w-[12%]" /><col className="w-[10%]" /><col className="w-[16%]" /><col className="w-[12%]" /></colgroup>
-            <thead className="bg-slate-50 text-xs uppercase text-slate-600"><tr><th className="p-2.5">Coleção</th><th className="p-2.5">Descrição</th><th className="p-2.5">Referência</th><th className="p-2.5 text-right">Preço Unit.</th><th className="p-2.5">Quantidade</th><th className="p-2.5">Nome ou Letra</th><th className="p-2.5 text-right">Valor Total</th></tr></thead>
+            <thead className="border-b border-slate-200 bg-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-700"><tr><th className="p-2.5">Coleção</th><th className="p-2.5">Descrição</th><th className="p-2.5">Referência</th><th className="p-2.5 text-right">Preço Unit.</th><th className="p-2.5">Quantidade</th><th className="p-2.5">Nome ou Letra</th><th className="p-2.5 text-right">Valor Total</th></tr></thead>
             <tbody>{itensExibidos.map((produto) => {
               const selecionado = selecionados.get(produto.id)
               const rascunho = rascunhosItens.get(produto.id)
               const quantidade = rascunho?.quantidade ?? selecionado?.quantidade.toString() ?? ''
               const quantidadeInvalida = quantidade.trim() !== '' && !quantidadeValida(quantidade.trim())
               const nomeOuLetra = rascunho?.nomeOuLetra ?? selecionado?.nomeOuLetra ?? ''
-              return <tr key={produto.id} className="border-t align-top">
+              return <tr key={produto.id} className={linhaProdutoClasse(Boolean(selecionado))}>
                 <td className="break-words p-2.5 font-medium">{produto.colecao}</td><td className="break-words p-2.5">{produto.descricao}</td><td className="break-all p-2.5 font-mono">{produto.referencia}</td><td className="p-2.5 text-right font-medium whitespace-nowrap">{formatarMoeda(produto.precoUnitario)}</td>
                 <td className="p-2.5"><Input className="w-full min-w-0" inputMode="numeric" min={1} type="number" disabled={bloqueado} value={quantidade} aria-invalid={quantidadeInvalida} onChange={(event) => atualizarQuantidade(produto, event.target.value)} />{quantidadeInvalida && <p className="mt-1 text-xs text-red-600">Use um inteiro maior que zero.</p>}</td>
                 <td className="p-2.5"><Input className="w-full min-w-0" maxLength={200} disabled={bloqueado} value={nomeOuLetra} onChange={(event) => atualizarNomeOuLetra(produto, event.target.value)} /></td>
-                <td className="p-2.5 text-right font-bold whitespace-nowrap">{selecionado ? formatarMoeda(produto.precoUnitario * selecionado.quantidade) : '—'}</td>
+                <td className={`p-2.5 text-right font-bold whitespace-nowrap ${selecionado ? 'text-emerald-700' : ''}`}>{selecionado ? formatarMoeda(produto.precoUnitario * selecionado.quantidade) : '—'}</td>
               </tr>
             })}</tbody>
           </table>
-          <div className="space-y-3 p-3 lg:hidden">{itensExibidos.map((produto) => {
+          <div className="space-y-3 p-3 pb-24 lg:hidden lg:pb-3">{itensExibidos.map((produto) => {
             const selecionado = selecionados.get(produto.id)
             const rascunho = rascunhosItens.get(produto.id)
             const quantidade = rascunho?.quantidade ?? selecionado?.quantidade.toString() ?? ''
             const quantidadeInvalida = quantidade.trim() !== '' && !quantidadeValida(quantidade.trim())
             const nomeOuLetra = rascunho?.nomeOuLetra ?? selecionado?.nomeOuLetra ?? ''
-            return <article key={produto.id} className="rounded-lg border p-3"><div className="grid gap-2 text-sm"><p className="font-medium">{produto.descricao}</p><p><span className="text-slate-500">Coleção: </span>{produto.colecao}</p><p><span className="text-slate-500">Referência: </span>{produto.referencia}</p><p><span className="text-slate-500">Preço unitário: </span>{formatarMoeda(produto.precoUnitario)}</p></div><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm font-medium">Quantidade<Input inputMode="numeric" min={1} type="number" disabled={bloqueado} value={quantidade} aria-invalid={quantidadeInvalida} onChange={(event) => atualizarQuantidade(produto, event.target.value)} />{quantidadeInvalida && <span className="text-xs font-normal text-red-600">Use um inteiro maior que zero.</span>}</label><label className="grid gap-1 text-sm font-medium">Nome ou Letra<Input maxLength={200} disabled={bloqueado} value={nomeOuLetra} onChange={(event) => atualizarNomeOuLetra(produto, event.target.value)} /></label></div><p className="mt-3 text-right font-bold">Valor total: {selecionado ? formatarMoeda(produto.precoUnitario * selecionado.quantidade) : '—'}</p></article>
+            return <article key={produto.id} className={cardProdutoClasse(Boolean(selecionado))}><div className="grid gap-2 text-sm"><p className="font-medium">{produto.descricao}</p><p><span className="text-slate-500">Coleção: </span>{produto.colecao}</p><p><span className="text-slate-500">Referência: </span>{produto.referencia}</p><p><span className="text-slate-500">Preço unitário: </span>{formatarMoeda(produto.precoUnitario)}</p></div><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm font-medium">Quantidade<Input inputMode="numeric" min={1} type="number" disabled={bloqueado} value={quantidade} aria-invalid={quantidadeInvalida} onChange={(event) => atualizarQuantidade(produto, event.target.value)} />{quantidadeInvalida && <span className="text-xs font-normal text-red-600">Use um inteiro maior que zero.</span>}</label><label className="grid gap-1 text-sm font-medium">Nome ou Letra<Input maxLength={200} disabled={bloqueado} value={nomeOuLetra} onChange={(event) => atualizarNomeOuLetra(produto, event.target.value)} /></label></div><p className={`mt-3 text-right font-bold ${selecionado ? 'text-emerald-700' : ''}`}>Valor total: {selecionado ? formatarMoeda(produto.precoUnitario * selecionado.quantidade) : '—'}</p></article>
           })}</div>
         </div>}
 
@@ -387,9 +513,9 @@ export function FormularioLebebeExclusive({
           <p className="basis-full text-center text-sm text-slate-500">Página {paginacao.pagina} de {paginacao.totalPaginas} · {paginacao.totalRegistros} resultados</p>
         </nav>}
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          <Button type="button" variant="outline" disabled={selecionados.size === 0} onClick={() => setMostrarSelecionados((atual) => !atual)}><Search />{mostrarSelecionados ? 'Voltar aos resultados' : `Mostrar selecionados (${selecionados.size})`}</Button>
-          <p className="text-lg font-bold">Itens selecionados: {selecionados.size} | Total: {formatarMoeda(total)}</p>
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+          <BotaoMostrarSelecionados ativo={mostrarSelecionados} quantidade={selecionados.size} disabled={selecionados.size === 0} onClick={() => setMostrarSelecionados((atual) => !atual)} />
+          <p className="text-sm text-slate-500">{selecionados.size} produto(s) selecionado(s) · {formatarMoeda(total)}</p>
         </div>
       </section>
 
@@ -398,7 +524,7 @@ export function FormularioLebebeExclusive({
         : <PreviaMensagem mensagem={resumo || null} copiada={copiado} onCopiar={() => void copiarResumo()} orientacaoObservacoes />}
       {erro && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{erro}</div>}
       {pedidoSalvo && <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5"><div className="flex gap-3"><CheckCircle2 className="text-emerald-600" /><div><h2 className="font-bold text-emerald-900">{pedidoInicial ? 'Rascunho atualizado' : 'Orçamento salvo'}</h2><p className="text-sm text-emerald-800">Status {pedidoSalvo.status}; versão {pedidoSalvo.version}; {selecionados.size} produto(s). A venda ainda não foi fechada.</p></div></div></section>}
-      <div className="sticky bottom-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-white/95 p-3 shadow-lg backdrop-blur"><p className="text-sm font-bold text-slate-900 sm:text-base">Itens selecionados: {selecionados.size} | Total: {formatarMoeda(total)}</p><Button type="submit" className="min-h-12" disabled={bloqueado}>{salvando ? <Loader2 className="animate-spin" /> : <Save />}{salvando ? 'Salvando...' : pedidoSalvo ? 'Salvo' : pedidoInicial ? 'Salvar rascunho' : 'Salvar orçamento'}</Button></div>
+      <div className="sticky bottom-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-white/95 p-3 shadow-lg backdrop-blur"><p className="text-sm font-bold text-slate-900 sm:text-base">Itens selecionados: <span className="text-emerald-700">{selecionados.size}</span> | Total: {formatarMoeda(total)}</p><Button type="submit" className="min-h-12" disabled={bloqueado}>{salvando ? <Loader2 className="animate-spin" /> : <Save />}{salvando ? 'Salvando...' : pedidoSalvo ? 'Salvo' : pedidoInicial ? 'Salvar rascunho' : 'Salvar orçamento'}</Button></div>
     </form>
   )
 }

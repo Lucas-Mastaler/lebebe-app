@@ -150,6 +150,44 @@ frontend/API de produção ao banco já migrado.
 - Paginação do catálogo Exclusive: a API passou a retornar no máximo 30 itens,
   total exato e total de páginas; a interface permite navegar pelas páginas
   sem perder a seleção acumulada. Lint focado e 173 testes focados aprovados.
+- Auditoria de UI/UX da tela de Novo Pedido Personalizado (foco Exclusive) foi
+  produzida, aprovada com ajustes e implementada: cabeçalho de identidade
+  Lebebe Exclusive (ícone + eyebrow), cabeçalho da seção Produtos, rótulos
+  visíveis nos filtros, verde-esmeralda sutil como cor de apoio para item
+  selecionado (linha da tabela e card mobile, sem checkbox/coluna nova),
+  contraste e hover na tabela, diferenciação visual dos três estados vazios,
+  feedback de carregamento na área de resultados (incluindo `Skeleton` na
+  primeira busca), indicação clara do modo "Mostrar selecionados" (mantidos
+  os dois acessos, um no topo e um no fim da listagem), resumo inline
+  reduzido a informação auxiliar com a barra fixa como referência principal,
+  e ícone/subtítulo nos dois botões de escolha de fornecedor (compartilhado
+  com a Moriah, sem alterar seu comportamento). Nenhuma regra de negócio,
+  API, banco ou paginação foi alterada.
+- Implementação da auditoria de UI/UX: ESLint focado nos dois arquivos
+  alterados aprovado; `npm run test -- --run src/lib/pedidos-personalizados
+  src/components/pedidos-personalizados` com 21 arquivos e 474 testes
+  aprovados; `tsc --noEmit` sem novos erros (bloqueio remanescente é só o
+  preexistente em `hub-vendas/alertas/teste/route.test.ts`); `npm run build`
+  aprovado. Smoke visual autenticado não foi possível nesta sessão — o
+  usuário logado não possui permissão de módulo para
+  `/pedidos-personalizados` e as permissões não foram alteradas para
+  viabilizar o teste.
+- Correção do erro 422 ao salvar Exclusive: o frontend deixou de propagar o
+  estado completo do novo pedido e agora monta uma lista explícita dos campos
+  aceitos pela API, impedindo o envio indevido do campo Moriah `tapetes`.
+  Validações 422 passaram a retornar caminhos e mensagens por campo/item, com
+  log estruturado sem valores pessoais. O fluxo Moriah permaneceu separado.
+- Smoke autenticado completo da correção: pedido Exclusive criado como
+  `RASCUNHO`, versão 1, exibido na gestão com 1 item, snapshots de venda
+  (R$ 569,90) e custo (R$ 249,00) conferidos no banco e na interface. O pedido
+  de teste e seu item foram removidos em seguida; a reconciliação final
+  confirmou zero registros remanescentes para o identificador usado.
+- Validação focada da correção: ESLint aprovado e 177 testes aprovados. O
+  `tsc --noEmit` não apontou erro nos arquivos tocados e permaneceu bloqueado
+  somente pelos erros preexistentes de Hub/Vendas. O primeiro build ficou
+  bloqueado pela restrição de rede ao baixar as fontes Google; repetido com
+  acesso de rede, compilou, executou o TypeScript e gerou as 114 páginas com
+  sucesso.
 
 ## Não refazer
 

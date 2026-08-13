@@ -686,7 +686,8 @@ describe('proteção, dados não salvos e bloqueio seguro de anexos', () => {
     expect(exclusive).toContain('orientacaoObservacoes')
     expect(exclusive).toContain('pedidoInicial')
     expect(exclusive).toContain('Resumo para o fornecedor')
-    expect(exclusive).toContain('Itens selecionados: {selecionados.size} | Total: {formatarMoeda(total)}')
+    expect(exclusive).toContain('Itens selecionados: <span')
+    expect(exclusive).toContain('{selecionados.size}</span> | Total: {formatarMoeda(total)}')
   })
 
   it('impede envio simultâneo com uma trava síncrona antes do fetch', () => {

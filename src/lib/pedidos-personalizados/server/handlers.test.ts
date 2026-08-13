@@ -71,8 +71,16 @@ function criarRepo(overrides: Record<string, unknown> = {}) {
       data: { pedido_id: PEDIDO_ID, version: 1, reutilizado: false, tapetes: [{ id: TAPETE_ID }] },
       error: null,
     }),
+    criarLebebeExclusive: vi.fn().mockResolvedValue({
+      data: { pedido_id: PEDIDO_ID, version: 1, reutilizado: false, itens: [{ id: TAPETE_ID, ordem: 1 }] },
+      error: null,
+    }),
     buscarPedidoCriado: vi.fn().mockResolvedValue({
       data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'RASCUNHO', version: 1, tapetes: [{ id: TAPETE_ID, ordem: 1 }] },
+      error: null,
+    }),
+    buscarPedidoExclusiveCriado: vi.fn().mockResolvedValue({
+      data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'RASCUNHO', version: 1, itens: [{ id: TAPETE_ID, ordem: 1 }] },
       error: null,
     }),
     buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
@@ -115,6 +123,20 @@ function pedido(overrides: Record<string, unknown> = {}) {
     cliente: 'Cliente Teste',
     telefone: '(41) 99999-9999',
     tapetes: [tapete()],
+    ...overrides,
+  }
+}
+
+function pedidoExclusive(overrides: Record<string, unknown> = {}) {
+  return {
+    idempotencyKey: IDEMPOTENCY_KEY,
+    fornecedor: 'lebebe_exclusive',
+    unidade: 'bigorrilho',
+    consultora: 'Ana Silva',
+    cliente: 'Cliente Teste',
+    telefone: '(41) 99999-9999',
+    numeroLancamento: null,
+    itens: [{ produtoId: catalogos.produtos[0].id, ordem: 1, quantidade: 2, nomeOuLetra: null }],
     ...overrides,
   }
 }
@@ -209,6 +231,34 @@ describe('criação de pedido personalizado', () => {
     const response = await criarPedido(requestJson(pedido({ idempotencyKey: 'invalida' })), deps())
     expect(response.status).toBe(422)
     expect((await response.json()).erro).toBe('IDEMPOTENCY_KEY_INVALIDA')
+  })
+
+  it('aceita payload Exclusive próprio sem aplicar validações de tapete Moriah', async () => {
+    const repo = criarRepo()
+    const response = await criarPedido(requestJson(pedidoExclusive()), deps(repo))
+
+    expect(response.status).toBe(201)
+    expect(await response.json()).toMatchObject({ status: 'RASCUNHO', quantidadeItens: 1 })
+    expect(repo.criarLebebeExclusive).toHaveBeenCalledTimes(1)
+    expect(repo.criar).not.toHaveBeenCalled()
+  })
+
+  it('retorna 422 detalhado e log sem PII quando o Exclusive recebe campo Moriah', async () => {
+    const info = vi.mocked(console.info)
+    const response = await criarPedido(requestJson(pedidoExclusive({ tapetes: [] })), deps())
+    const body = await response.json()
+
+    expect(response.status).toBe(422)
+    expect(body).toMatchObject({
+      erro: 'CAMPO_NAO_PERMITIDO',
+      problemas: [{ codigo: 'CAMPO_NAO_PERMITIDO', campo: 'tapetes' }],
+    })
+    const logs = JSON.stringify(info.mock.calls)
+    expect(logs).toContain('erro_validacao')
+    expect(logs).toContain('lebebe_exclusive')
+    expect(logs).toContain('tapetes')
+    expect(logs).not.toContain('Cliente Teste')
+    expect(logs).not.toContain('Ana Silva')
   })
 
   it.each(['feira', 'pos_venda'])('nega unidade fora do escopo: %s', async (unidade) => {

@@ -21,6 +21,8 @@ export type ContextoLogPedidos = {
   mime?: string
   quantidade?: number
   unidade?: string
+  fornecedor?: string
+  camposInvalidos?: string[]
 }
 
 export function jsonErro(
@@ -152,7 +154,7 @@ export function mapearErroBanco(error: ErroBanco): NextResponse {
 
 export function registrarResultado(
   contexto: ContextoLogPedidos,
-  resultado: 'sucesso' | 'erro',
+  resultado: 'sucesso' | 'erro' | 'erro_validacao',
   codigo: string
 ) {
   console.info('[pedidos-personalizados]', {
@@ -167,6 +169,8 @@ export function registrarResultado(
     mime: contexto.mime ?? null,
     quantidade: contexto.quantidade ?? null,
     unidade: contexto.unidade ?? null,
+    fornecedor: contexto.fornecedor ?? null,
+    camposInvalidos: contexto.camposInvalidos ?? [],
     duracaoMs: Math.max(Date.now() - contexto.inicio, 0),
     resultado,
     codigo,

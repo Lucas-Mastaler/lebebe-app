@@ -1,7 +1,7 @@
 'use client'
 
 import { ClipboardEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, CheckCircle2, Loader2, Plus, RefreshCw, Save, Sparkles } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader2, Package, Plus, RefreshCw, Ruler, Save, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -142,14 +142,38 @@ function IdentificacaoPedido({
   )
 }
 
+const OPCOES_FORNECEDOR: ReadonlyArray<{ chave: FornecedorPedido; nome: string; descricao: string; Icone: typeof Sparkles }> = [
+  { chave: 'moriah_tapetes', nome: 'Moriah Tapetes', descricao: 'Tapetes personalizados', Icone: Ruler },
+  { chave: 'lebebe_exclusive', nome: 'Lebebe Exclusive', descricao: 'Produtos de catálogo', Icone: Package },
+]
+
 function EscolhaFornecedor({ fornecedorSelecionado, bloqueado, onEscolher }: { fornecedorSelecionado: FornecedorPedido | null; bloqueado: boolean; onEscolher: (fornecedor: FornecedorPedido) => void }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="titulo-fornecedor">
       <h2 id="titulo-fornecedor" className="text-lg font-bold text-slate-900">Escolha o fornecedor</h2>
       {fornecedorSelecionado === null && <p className="mt-1 text-sm text-slate-500">Selecione um fornecedor para continuar o preenchimento do pedido.</p>}
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <Button type="button" variant={fornecedorSelecionado === 'moriah_tapetes' ? 'default' : 'outline'} className="min-h-24 justify-start px-5 text-left text-base" aria-pressed={fornecedorSelecionado === 'moriah_tapetes'} disabled={bloqueado} onClick={() => onEscolher('moriah_tapetes')}>Moriah Tapetes</Button>
-        <Button type="button" variant={fornecedorSelecionado === 'lebebe_exclusive' ? 'default' : 'outline'} className="min-h-24 justify-start px-5 text-left text-base" aria-pressed={fornecedorSelecionado === 'lebebe_exclusive'} disabled={bloqueado} onClick={() => onEscolher('lebebe_exclusive')}>Lebebe Exclusive</Button>
+        {OPCOES_FORNECEDOR.map(({ chave, nome, descricao, Icone }) => {
+          const ativo = fornecedorSelecionado === chave
+          return (
+            <Button
+              key={chave}
+              type="button"
+              variant={ativo ? 'default' : 'outline'}
+              className="min-h-20 justify-start gap-3 px-4 py-3 text-left"
+              aria-pressed={ativo}
+              disabled={bloqueado}
+              onClick={() => onEscolher(chave)}
+            >
+              <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${ativo ? 'bg-white/15 text-white' : 'bg-sky-50 text-[#00A5E6]'}`}><Icone className="size-5" aria-hidden="true" /></span>
+              <span className="flex min-w-0 flex-col">
+                <span className="text-base font-semibold">{nome}</span>
+                <span className={`text-xs font-normal ${ativo ? 'text-white/80' : 'text-slate-500'}`}>{descricao}</span>
+              </span>
+              {ativo && <CheckCircle2 className="ml-auto size-5 shrink-0" aria-hidden="true" />}
+            </Button>
+          )
+        })}
       </div>
     </section>
   )

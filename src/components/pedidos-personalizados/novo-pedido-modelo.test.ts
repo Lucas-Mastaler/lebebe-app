@@ -624,6 +624,21 @@ describe('proteção, dados não salvos e bloqueio seguro de anexos', () => {
     expect(blocoMenu).toContain("navigationItem('pedidos_personalizados_novo'")
   })
 
+  it('exige a escolha explícita do fornecedor e mantém a identificação fora dos formulários específicos', () => {
+    const pagina = readFileSync(path.resolve('src/app/pedidos-personalizados/novo/PageClient.tsx'), 'utf8')
+    const formulario = readFileSync(path.resolve('src/components/pedidos-personalizados/FormularioNovoPedido.tsx'), 'utf8')
+    const exclusive = readFileSync(path.resolve('src/components/pedidos-personalizados/FormularioLebebeExclusive.tsx'), 'utf8')
+    expect(pagina).toContain('Novo pedido personalizado')
+    expect(formulario).toContain("useState<FornecedorPedido | null>(null)")
+    expect(formulario).toContain('Escolha o fornecedor')
+    expect(formulario).toContain('Moriah Tapetes')
+    expect(formulario).toContain('Lebebe Exclusive')
+    expect(formulario).toContain('Trocar o fornecedor limpará os dados específicos já preenchidos. Deseja continuar?')
+    expect(formulario).toContain('if (fornecedorSelecionado === null)')
+    expect(exclusive).toContain('ocultarIdentificacao')
+    expect(exclusive).not.toContain('fornecedor-exclusive')
+  })
+
   it('seleciona anexos antes do salvamento e só envia depois de associar os IDs reais', () => {
     const formulario = readFileSync(path.resolve('src/components/pedidos-personalizados/FormularioNovoPedido.tsx'), 'utf8')
     const anexos = readFileSync(path.resolve('src/components/pedidos-personalizados/AnexosTapete.tsx'), 'utf8')
@@ -644,7 +659,7 @@ describe('proteção, dados não salvos e bloqueio seguro de anexos', () => {
     const card = readFileSync(path.resolve('src/components/pedidos-personalizados/CardTapete.tsx'), 'utf8')
     const seletor = readFileSync(path.resolve('src/components/pedidos-personalizados/SeletorCores.tsx'), 'utf8')
     expect(formulario).toContain('maxLength={6}')
-    expect(formulario).toContain('onPaste={colarNumeroLancamento}')
+    expect(formulario).toContain('onPaste={onColarNumeroLancamento}')
     expect(card).toContain('maxLength={30}')
     expect(card).toContain('maxLength={20}')
     expect(card).toContain('mascararMedidaMetros')
@@ -655,10 +670,23 @@ describe('proteção, dados não salvos e bloqueio seguro de anexos', () => {
 
   it('exibe erros por campo tocado ou depois da tentativa de salvar', () => {
     const formulario = readFileSync(path.resolve('src/components/pedidos-personalizados/FormularioNovoPedido.tsx'), 'utf8')
+    const exclusive = readFileSync(path.resolve('src/components/pedidos-personalizados/FormularioLebebeExclusive.tsx'), 'utf8')
     expect(formulario).toContain('tentouSalvar || camposTocados.has(item.campo)')
-    expect(formulario).toContain("onBlur={() => marcarTocado('consultora')}")
-    expect(formulario).toContain("onBlur={() => marcarTocado('cliente')}")
+    expect(formulario).toContain('validarIdentificacaoLebebeExclusive')
+    expect(formulario).toContain('onValidacaoIdentificacaoInvalida')
+    expect(formulario).toContain("onBlur={() => onTocar('consultora')}")
+    expect(formulario).toContain("onBlur={() => onTocar('cliente')}")
     expect(formulario).toContain("focarPrimeiroErro(errosTodos)")
+    expect(exclusive).toContain('onValidacaoIdentificacaoInvalida?.()')
+  })
+
+  it('mantém a prévia Moriah no novo Exclusive e o resumo do fornecedor só na gestão', () => {
+    const exclusive = readFileSync(path.resolve('src/components/pedidos-personalizados/FormularioLebebeExclusive.tsx'), 'utf8')
+    expect(exclusive).toContain('<PreviaMensagem mensagem={resumo || null}')
+    expect(exclusive).toContain('orientacaoObservacoes')
+    expect(exclusive).toContain('pedidoInicial')
+    expect(exclusive).toContain('Resumo para o fornecedor')
+    expect(exclusive).toContain('Itens selecionados: {selecionados.size} | Total: {formatarMoeda(total)}')
   })
 
   it('impede envio simultâneo com uma trava síncrona antes do fetch', () => {

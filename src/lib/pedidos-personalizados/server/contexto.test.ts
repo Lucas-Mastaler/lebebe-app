@@ -80,6 +80,7 @@ describe('contexto e escopo de pedidos personalizados', () => {
     expect(resultado.ok).toBe(false)
     if (!resultado.ok) expect(resultado.response.status).toBe(403)
     expect(requireModuleAccess).toHaveBeenCalledTimes(2)
+    expect(requireAuthenticatedUser).toHaveBeenCalledTimes(1)
   })
 
   it('aceita usuário com apenas o módulo novo', async () => {
@@ -103,7 +104,15 @@ describe('contexto e escopo de pedidos personalizados', () => {
     const resultado = await carregarContextoPedidosPersonalizados(['pedidos_personalizados_novo', 'pedidos_personalizados_gestao'])
     expect(resultado.ok).toBe(true)
     if (resultado.ok) expect(resultado.contexto.moduloAutorizado).toBe('pedidos_personalizados_gestao')
-    expect(requireModuleAccess).toHaveBeenNthCalledWith(2, 'pedidos_personalizados_gestao')
+    expect(requireModuleAccess).toHaveBeenNthCalledWith(
+      2,
+      'pedidos_personalizados_gestao',
+      expect.objectContaining({
+        ok: true,
+        allowedUser: expect.objectContaining({ id: USUARIO_ID }),
+      }),
+    )
+    expect(requireAuthenticatedUser).toHaveBeenCalledTimes(1)
   })
 
   it('filtra pos_venda e mantém uma ou várias unidades do usuário', async () => {
@@ -143,6 +152,21 @@ describe('contexto e escopo de pedidos personalizados', () => {
     expect(resultado.ok).toBe(true)
     if (resultado.ok) expect(resultado.contexto.unidades).toHaveLength(4)
     expect(from).toHaveBeenCalledWith('app_unidades')
+  })
+
+  it('não consulta unidades quando a rota não precisa desse escopo', async () => {
+    vi.mocked(requireModuleAccess).mockResolvedValue(acesso('superadmin'))
+    const from = vi.fn()
+    vi.mocked(createServiceClient).mockReturnValue({ from } as never)
+
+    const resultado = await carregarContextoPedidosPersonalizados(
+      ['pedidos_personalizados_novo'],
+      { carregarUnidades: false },
+    )
+
+    expect(resultado.ok).toBe(true)
+    if (resultado.ok) expect(resultado.contexto.unidades).toEqual([])
+    expect(from).not.toHaveBeenCalled()
   })
 
   it('bloqueia fora da janela e não cria service role', async () => {

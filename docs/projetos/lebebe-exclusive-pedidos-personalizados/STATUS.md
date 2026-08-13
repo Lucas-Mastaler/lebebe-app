@@ -31,8 +31,20 @@ Fase atual: Smoke visual autenticado e entrega
   únicos; a duplicata integral `76029` ficou com uma ocorrência.
 - APIs, criação, edição de rascunho, busca manual, cards, detalhes, resumos e
   transições foram adaptados por fornecedor.
+- A criação passou a iniciar sem fornecedor selecionado: identificação comum
+  estável, escolha explícita por botões e troca confirmada que preserva os
+  dados comerciais e limpa apenas os dados específicos.
 - A regressão focada passou com 21 arquivos e 463 testes; ESLint focado e build
   de produção também passaram.
+- A pesquisa Exclusive foi medida em sessão autenticada: o gargalo estava em
+  autenticação repetida e consultas auxiliares, não no SQL do catálogo. A rota
+  deixou de repetir autenticação/permissão e de carregar unidades; `/opcoes`
+  deixou de duplicar a requisição sob Strict Mode.
+- Ajuste de UX do novo pedido Exclusive: a barra inferior agora exibe itens e
+  total; a identificação foi reordenada para Unidade, Consultora e Número de
+  lançamento; falhas de identificação ao salvar destacam todos os campos
+  pendentes e focam o primeiro. O novo pedido reutiliza a prévia comercial da
+  Moriah, enquanto a gestão preserva o resumo para o fornecedor.
 
 ## Diagnóstico vigente
 
@@ -46,8 +58,9 @@ Fase atual: Smoke visual autenticado e entrega
 - Reutilizar esse fluxo para Exclusive contrariaria a separação de regras do
   pedido; alterar o fluxo sem definição humana mudaria regra de negócio.
 - O legado confirma busca manual com mínimo de três caracteres, filtros
-  combinados, seleção acumulada, limite visual de 150 resultados, quantidade
-  em linha e total `preço × quantidade`.
+  combinados, seleção acumulada, quantidade em linha e total `preço ×
+  quantidade`; por decisão posterior, a interface vigente usa paginação de 30
+  resultados em vez do limite visual legado de 150.
 - O arquivo `salvarPedidos.gs` é uma variante antiga e foi mantido somente como
   evidência histórica.
 - A função remota ativa confirmou as dependências Moriah que precisam ser
@@ -58,16 +71,13 @@ Fase atual: Smoke visual autenticado e entrega
 
 ## Próximo passo
 
-Executar o smoke visual autenticado com um usuário que possua os módulos de
-novo pedido e Gestão; depois, publicar o código da aplicação pelo fluxo normal
-de deploy para alinhar o frontend/API de produção ao banco já migrado.
+Publicar o código da aplicação pelo fluxo normal de deploy para alinhar o
+frontend/API de produção ao banco já migrado.
 
 ## Pendências
 
 - A interface externa de cadastro de produto no SGI não foi encontrada; nenhum
   botão ou integração fictícia foi criado.
-- O smoke local foi redirecionado para `Acesso negado` nas duas sessões de
-  navegador disponíveis; a validação visual autenticada não foi concluída.
 - O código ainda não foi publicado. Como as migrations já estão no banco, o
   deploy da aplicação é a próxima operação recomendada.
 
@@ -115,6 +125,31 @@ de deploy para alinhar o frontend/API de produção ao banco já migrado.
 - ESLint focado nos arquivos alterados: aprovado.
 - `npm run build`: aprovado. O `tsc --noEmit` isolado continua bloqueado somente
   por erros preexistentes de tipos em `hub-vendas/alertas/teste/route.test.ts`.
+- Ajuste de UX da criação: 21 arquivos e 464 testes focados aprovados; ESLint e
+  build de produção aprovados. Nenhuma migration, RLS ou regra de negócio foi
+  alterada.
+- Smoke autenticado da pesquisa Exclusive concluído para coleção (144),
+  descrição com limite (150), referência (1), filtros combinados (58) e sem
+  resultado (0); Enter disparou uma única requisição.
+- MCP: plano SQL aquecido em 11,883 ms para coleção, sem evidência para criar
+  índice novo. No navegador, a busca quente caiu de 1.746 ms para 659–907 ms,
+  com autenticação/permissão repetida reduzida de 736,80 ms para cerca de
+  323–399 ms, unidades de 163,12 ms para 0 ms e permissão para menos de 1 ms.
+- Validação focada de performance: ESLint aprovado e 167 testes aprovados. O
+  `tsc --noEmit` permaneceu bloqueado apenas pelos erros preexistentes em
+  `hub-vendas/alertas/teste/route.test.ts`.
+- Ajuste da tabela Exclusive: checkbox e coluna `Selecionar` removidos. A
+  quantidade inteira maior que zero é a única fonte de seleção; apagar, zero
+  ou valor inválido remove o item imediatamente, preservando o texto de Nome
+  ou Letra para posterior preenchimento. Desktop usa sete colunas sem largura
+  mínima fixa e mobile usa cartões editáveis. Smoke autenticado confirmou
+  quantidade, remoção, total, Mostrar selecionados e responsividade.
+- Ajuste complementar de UX: lint focado aprovado e 114 testes focados
+  aprovados para a barra inferior, ordem da identificação, validação visual e
+  separação entre a prévia comercial do novo pedido e o resumo da gestão.
+- Paginação do catálogo Exclusive: a API passou a retornar no máximo 30 itens,
+  total exato e total de páginas; a interface permite navegar pelas páginas
+  sem perder a seleção acumulada. Lint focado e 173 testes focados aprovados.
 
 ## Não refazer
 

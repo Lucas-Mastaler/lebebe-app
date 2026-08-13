@@ -175,13 +175,16 @@ export class RepositorioPedidosPersonalizados {
     colecao: string | null
     descricao: string | null
     referencia: string | null
-  }): Promise<ResultadoBanco<ProdutoCatalogoLebebeExclusive[]>> {
+    pagina: number
+  }, registrarPerformance?: (metricas: { fornecedorMs: number; consultaMs: number; transformacaoMs: number }) => void): Promise<ResultadoBanco<{ itens: ProdutoCatalogoLebebeExclusive[]; total: number }>> {
+    const inicioFornecedor = performance.now()
     const fornecedor = await this.supabase
       .from('pedidos_personalizados_fornecedores')
       .select('id')
       .eq('chave', 'lebebe_exclusive')
       .eq('disponivel', true)
       .maybeSingle()
+    const fornecedorMs = performance.now() - inicioFornecedor
     if (fornecedor.error || !fornecedor.data) {
       return { data: null, error: fornecedor.error ?? { message: 'CATALOGO_INDISPONIVEL' } }
     }
@@ -194,7 +197,7 @@ export class RepositorioPedidosPersonalizados {
           colecao, referencia, preco_unitario,
           colecao_busca, descricao_busca, referencia_busca
         )
-      `)
+      `, { count: 'exact' })
       .eq('fornecedor_id', fornecedor.data.id)
       .eq('ativo', true)
 
@@ -208,23 +211,31 @@ export class RepositorioPedidosPersonalizados {
       query = query.ilike('catalogo.referencia_busca', `%${escaparTermoIlike(filtros.referencia)}%`)
     }
 
-    const { data, error } = await query.order('ordem', { ascending: true }).limit(150)
+    const inicioConsulta = performance.now()
+    const limite = 30
+    const inicioPagina = (filtros.pagina - 1) * limite
+    const { data, error, count } = await query.order('ordem', { ascending: true }).range(inicioPagina, inicioPagina + limite - 1)
+    const consultaMs = performance.now() - inicioConsulta
     if (error) return { data: null, error }
+    const inicioTransformacao = performance.now()
+    const itens = (data ?? []).map((row) => {
+      const catalogo = (Array.isArray(row.catalogo) ? row.catalogo[0] : row.catalogo) as {
+        colecao: string
+        referencia: string
+        preco_unitario: string | number
+      }
+      return {
+        id: row.id,
+        colecao: catalogo.colecao,
+        descricao: row.descricao,
+        referencia: catalogo.referencia,
+        precoUnitario: Number(catalogo.preco_unitario),
+      }
+    })
+    const transformacaoMs = performance.now() - inicioTransformacao
+    registrarPerformance?.({ fornecedorMs, consultaMs, transformacaoMs })
     return {
-      data: (data ?? []).map((row) => {
-        const catalogo = (Array.isArray(row.catalogo) ? row.catalogo[0] : row.catalogo) as {
-          colecao: string
-          referencia: string
-          preco_unitario: string | number
-        }
-        return {
-          id: row.id,
-          colecao: catalogo.colecao,
-          descricao: row.descricao,
-          referencia: catalogo.referencia,
-          precoUnitario: Number(catalogo.preco_unitario),
-        }
-      }),
+      data: { itens, total: count ?? 0 },
       error: null,
     }
   }

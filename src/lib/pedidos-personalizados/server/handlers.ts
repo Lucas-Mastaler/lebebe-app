@@ -74,9 +74,12 @@ function codigoPorStatus(status: number) {
 async function carregar(
   modulos: Parameters<typeof carregarContextoPedidosPersonalizados>[0],
   log: ContextoLogPedidos,
-  deps: DependenciasApiPedidos
+  deps: DependenciasApiPedidos,
+  opcoes?: Parameters<typeof carregarContextoPedidosPersonalizados>[1],
 ) {
-  const resultado = await deps.carregarContexto(modulos)
+  const resultado = opcoes === undefined
+    ? await deps.carregarContexto(modulos)
+    : await deps.carregarContexto(modulos, opcoes)
   if (!resultado.ok) {
     registrarResultado(log, 'erro', codigoPorStatus(resultado.response.status))
     return resultado
@@ -278,15 +281,18 @@ export async function obterOpcoes(
   _request: Request,
   deps: DependenciasApiPedidos = dependenciasPadrao
 ) {
+  const inicioPerformance = performance.now()
   const log: ContextoLogPedidos = { rota: '/api/pedidos-personalizados/opcoes', operacao: 'opcoes', inicio: Date.now() }
   const acesso = await carregar(['pedidos_personalizados_novo', 'pedidos_personalizados_gestao'], log, deps)
   if (!acesso.ok) return acesso.response
 
   const repo = deps.criarRepositorio(acesso.contexto)
+  const inicioConsultas = performance.now()
   const [catalogos, fornecedores] = await Promise.all([
     repo.carregarCatalogos(),
     repo.listarFornecedoresDisponiveis(),
   ])
+  const consultasMs = performance.now() - inicioConsultas
   if (catalogos.error) return falhaBanco(log, catalogos.error)
   if (fornecedores.error) return falhaBanco(log, fornecedores.error)
   if (catalogos.data.produtos.length !== 3 || catalogos.data.cores.length !== 31) {
@@ -294,7 +300,12 @@ export async function obterOpcoes(
   }
 
   registrarResultado(log, 'sucesso', 'OPCOES_CARREGADAS')
-  return NextResponse.json({
+  console.info('[pedidos-personalizados][opcoes][perf]', {
+    ...acesso.contexto.metricasPerformance,
+    consultasMs: Math.round(consultasMs * 100) / 100,
+    totalMs: Math.round((performance.now() - inicioPerformance) * 100) / 100,
+  })
+  const response = NextResponse.json({
     ok: true,
     fornecedor: catalogos.data.fornecedor,
     fornecedores: fornecedores.data,
@@ -316,26 +327,79 @@ export async function obterOpcoes(
       medidaMaximaCm: MEDIDA_MAXIMA_CM,
     },
   })
+  const metricas = acesso.contexto.metricasPerformance
+  if (metricas) response.headers.set('Server-Timing', [
+    `auth;dur=${metricas.autenticacaoMs.toFixed(2)}`,
+    `permission;dur=${metricas.permissaoMs.toFixed(2)}`,
+    `window;dur=${metricas.janelaMs.toFixed(2)}`,
+    `units;dur=${metricas.unidadesMs.toFixed(2)}`,
+    `queries;dur=${consultasMs.toFixed(2)}`,
+  ].join(', '))
+  return response
 }
 
 export async function pesquisarCatalogoLebebeExclusive(
   request: Request,
   deps: DependenciasApiPedidos = dependenciasPadrao
 ) {
+  const inicioPerformance = performance.now()
   const log: ContextoLogPedidos = {
     rota: '/api/pedidos-personalizados/catalogo/lebebe-exclusive',
     operacao: 'pesquisar_catalogo',
     inicio: Date.now(),
   }
-  const acesso = await carregar(['pedidos_personalizados_novo', 'pedidos_personalizados_gestao'], log, deps)
+  const acesso = await carregar(
+    ['pedidos_personalizados_novo', 'pedidos_personalizados_gestao'],
+    log,
+    deps,
+    { carregarUnidades: false },
+  )
   if (!acesso.ok) return acesso.response
+  const inicioNormalizacao = performance.now()
   const validacao = validarFiltrosCatalogoLebebeExclusive(new URL(request.url))
+  const normalizacaoMs = performance.now() - inicioNormalizacao
   if (!validacao.ok) return jsonErro('FILTRO_INSUFICIENTE', validacao.mensagem, 422)
-  const resultado = await deps.criarRepositorio(acesso.contexto)
-    .buscarCatalogoLebebeExclusive(validacao.filtros)
+  const inicioRepositorio = performance.now()
+  const repo = deps.criarRepositorio(acesso.contexto)
+  const repositorioMs = performance.now() - inicioRepositorio
+  let metricasConsulta = { fornecedorMs: 0, consultaMs: 0, transformacaoMs: 0 }
+  const resultado = await repo.buscarCatalogoLebebeExclusive(
+    validacao.filtros,
+    (metricas) => { metricasConsulta = metricas },
+  )
   if (resultado.error) return falhaBanco(log, resultado.error)
   registrarResultado(log, 'sucesso', 'CATALOGO_FILTRADO')
-  return NextResponse.json({ ok: true, itens: resultado.data, limite: 150 })
+  console.info('[pedidos-personalizados][catalogo-exclusive][perf]', {
+    ...acesso.contexto.metricasPerformance,
+    normalizacaoMs: Math.round(normalizacaoMs * 100) / 100,
+    repositorioMs: Math.round(repositorioMs * 100) / 100,
+    fornecedorMs: Math.round(metricasConsulta.fornecedorMs * 100) / 100,
+    consultaMs: Math.round(metricasConsulta.consultaMs * 100) / 100,
+    transformacaoMs: Math.round(metricasConsulta.transformacaoMs * 100) / 100,
+    quantidade: resultado.data.itens.length,
+    totalMs: Math.round((performance.now() - inicioPerformance) * 100) / 100,
+  })
+  const limite = 30
+  const totalPaginas = Math.ceil(resultado.data.total / limite)
+  const response = NextResponse.json({
+    ok: true,
+    itens: resultado.data.itens,
+    pagina: validacao.filtros.pagina,
+    totalRegistros: resultado.data.total,
+    totalPaginas,
+    limite,
+  })
+  const metricas = acesso.contexto.metricasPerformance
+  if (metricas) response.headers.set('Server-Timing', [
+    `auth;dur=${metricas.autenticacaoMs.toFixed(2)}`,
+    `permission;dur=${metricas.permissaoMs.toFixed(2)}`,
+    `window;dur=${metricas.janelaMs.toFixed(2)}`,
+    `units;dur=${metricas.unidadesMs.toFixed(2)}`,
+    `supplier;dur=${metricasConsulta.fornecedorMs.toFixed(2)}`,
+    `catalog;dur=${metricasConsulta.consultaMs.toFixed(2)}`,
+    `transform;dur=${metricasConsulta.transformacaoMs.toFixed(2)}`,
+  ].join(', '))
+  return response
 }
 
 async function criarPedidoLebebeExclusive(

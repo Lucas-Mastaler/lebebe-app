@@ -11,8 +11,8 @@ export default function NovoPedidoPersonalizadoPageClient() {
           <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[#00A5E6] text-white shadow-sm"><ClipboardPlus className="size-6" /></span>
           <div>
             <p className="text-sm font-semibold uppercase tracking-wider text-[#00A5E6]">Pedidos personalizados</p>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Novo pedido Moriah</h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-600 sm:text-base">Cadastre de um a dez tapetes, revise os cálculos e gere a mensagem comercial.</p>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Novo pedido personalizado</h1>
+            <p className="mt-1 max-w-2xl text-sm text-slate-600 sm:text-base">Preencha os dados comerciais e escolha o fornecedor para continuar.</p>
           </div>
         </div>
       </header>

@@ -549,7 +549,6 @@ export function GestaoPedidosPersonalizados() {
                 <FormularioLebebeExclusive
                   opcoes={opcoes}
                   pedidoInicial={detalhe}
-                  onFornecedorChange={() => undefined}
                   onAtualizado={async () => {
                     await recarregarDetalhe()
                     await carregarLista()

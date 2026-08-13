@@ -27,18 +27,23 @@ export function normalizarBuscaReferencia(valor: string) {
 }
 
 export function validarFiltrosCatalogoLebebeExclusive(url: URL):
-  | { ok: true; filtros: { colecao: string | null; descricao: string | null; referencia: string | null } }
+  | { ok: true; filtros: { colecao: string | null; descricao: string | null; referencia: string | null; pagina: number } }
   | { ok: false; mensagem: string } {
   const colecao = normalizarBuscaCatalogo(url.searchParams.get('colecao') ?? '') || null
   const descricao = normalizarBuscaCatalogo(url.searchParams.get('descricao') ?? '') || null
   const referencia = normalizarBuscaReferencia(url.searchParams.get('referencia') ?? '') || null
+  const paginaTexto = url.searchParams.get('pagina') ?? '1'
+  const pagina = Number(paginaTexto)
   if (![colecao, descricao, referencia].some((valor) => valor !== null && valor.length >= 3)) {
     return { ok: false, mensagem: 'Informe ao menos 3 caracteres em um dos filtros.' }
   }
   if ([colecao, descricao, referencia].some((valor) => valor !== null && valor.length < 3)) {
     return { ok: false, mensagem: 'Cada filtro preenchido deve ter ao menos 3 caracteres úteis.' }
   }
-  return { ok: true, filtros: { colecao, descricao, referencia } }
+  if (!Number.isSafeInteger(pagina) || pagina < 1) {
+    return { ok: false, mensagem: 'A página informada é inválida.' }
+  }
+  return { ok: true, filtros: { colecao, descricao, referencia, pagina } }
 }
 
 export type EntradaLebebeExclusiveNormalizada = {

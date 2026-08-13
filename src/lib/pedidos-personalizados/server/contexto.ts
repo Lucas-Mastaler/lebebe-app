@@ -22,6 +22,15 @@ export type ContextoPedidosPersonalizados = {
   allowedUser: AllowedUser
   moduloAutorizado: ModuleKey
   unidades: UnidadeEscopoPedido[]
+  metricasPerformance?: MetricasPerformanceContexto
+}
+
+export type MetricasPerformanceContexto = {
+  autenticacaoMs: number
+  permissaoMs: number
+  janelaMs: number
+  clienteSupabaseMs: number
+  unidadesMs: number
 }
 
 export type ResultadoContextoPedidos =
@@ -33,28 +42,42 @@ type AuthSucesso = RequireAuthenticatedUserSuccess & {
   moduleKey: ModuleKey
 }
 
+type AutenticacaoConfirmada = RequireAuthenticatedUserSuccess & {
+  allowedUser: AllowedUser
+}
+
 async function exigirUmDosModulos(modulos: readonly ModuleKey[]) {
+  const inicioAutenticacao = performance.now()
   const autenticacao = await requireAuthenticatedUser({
     requireAllowedUser: true,
     requireActive: true,
   })
-  if (!autenticacao.ok) return autenticacao
+  const autenticacaoMs = performance.now() - inicioAutenticacao
+  if (!autenticacao.ok) return { ...autenticacao, autenticacaoMs, permissaoMs: 0 }
 
   let primeiraResposta: Response | null = null
+  const inicioPermissao = performance.now()
 
   for (const modulo of modulos) {
-    const resultado = await requireModuleAccess(modulo)
-    if (resultado.ok) return { ok: true as const, auth: resultado as AuthSucesso }
+    const resultado = await requireModuleAccess(modulo, autenticacao as AutenticacaoConfirmada)
+    if (resultado.ok) return {
+      ok: true as const,
+      auth: resultado as AuthSucesso,
+      autenticacaoMs,
+      permissaoMs: performance.now() - inicioPermissao,
+    }
 
     primeiraResposta ??= resultado.response
     if (resultado.response.status !== 403) {
-      return { ok: false as const, response: resultado.response }
+      return { ok: false as const, response: resultado.response, autenticacaoMs, permissaoMs: performance.now() - inicioPermissao }
     }
   }
 
   return {
     ok: false as const,
     response: primeiraResposta ?? jsonErro('ACESSO_NEGADO', 'Acesso negado.', 403),
+    autenticacaoMs,
+    permissaoMs: performance.now() - inicioPermissao,
   }
 }
 
@@ -107,15 +130,18 @@ async function listarUnidadesPermitidas(
 }
 
 export async function carregarContextoPedidosPersonalizados(
-  modulos: readonly ModuleKey[]
+  modulos: readonly ModuleKey[],
+  opcoes: { carregarUnidades?: boolean } = {},
 ): Promise<ResultadoContextoPedidos> {
   const acesso = await exigirUmDosModulos(modulos)
   if (!acesso.ok) return acesso
 
+  const inicioJanela = performance.now()
   const janela = await checkAccessWindowForUser({
     usuarioId: acesso.auth.allowedUser.id,
     role: acesso.auth.allowedUser.role as 'user' | 'superadmin',
   })
+  const janelaMs = performance.now() - inicioJanela
   if (!janela.ok) {
     return {
       ok: false,
@@ -124,8 +150,14 @@ export async function carregarContextoPedidosPersonalizados(
   }
 
   try {
+    const inicioCliente = performance.now()
     const supabase = createServiceClient()
-    const unidades = await listarUnidadesPermitidas(supabase, acesso.auth.allowedUser)
+    const clienteSupabaseMs = performance.now() - inicioCliente
+    const inicioUnidades = performance.now()
+    const unidades = opcoes.carregarUnidades === false
+      ? []
+      : await listarUnidadesPermitidas(supabase, acesso.auth.allowedUser)
+    const unidadesMs = performance.now() - inicioUnidades
     return {
       ok: true,
       contexto: {
@@ -133,6 +165,13 @@ export async function carregarContextoPedidosPersonalizados(
         allowedUser: acesso.auth.allowedUser,
         moduloAutorizado: acesso.auth.moduleKey,
         unidades,
+        metricasPerformance: {
+          autenticacaoMs: acesso.autenticacaoMs,
+          permissaoMs: acesso.permissaoMs,
+          janelaMs,
+          clienteSupabaseMs,
+          unidadesMs,
+        },
       },
     }
   } catch {

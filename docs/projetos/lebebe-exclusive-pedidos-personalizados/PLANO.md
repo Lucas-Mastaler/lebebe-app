@@ -98,7 +98,7 @@ Dependência: Fases 2 a 5 concluídas.
   criação, card, detalhes, resumos, loading, erros e double submit.
 - [x] Executar a regressão focada da Moriah.
 - [x] Executar TypeScript, lint e build, separando falhas preexistentes.
-- [ ] Fazer smoke autenticado e registrar explicitamente qualquer gate visual
+- [x] Fazer smoke autenticado e registrar explicitamente qualquer gate visual
   ou de produção remanescente.
 
 ## Critérios de aceite
@@ -154,7 +154,8 @@ reutiliza a identidade por fornecedor já existente.
   `AND`.
 - Busca sem acento em coleção/descrição e busca de referência ignorando espaços,
   pontos e diferentes tipos de hífen.
-- Limite de 150 resultados, preservando o comportamento útil do legado.
+- Paginação server-side de 30 resultados por página, com total exato e
+  navegação compacta entre páginas.
 - Resposta da criação retorna preço, mas nunca custo.
 - Com apenas 3.078 linhas e pesquisa manual limitada, usar inicialmente a
   extensão `unaccent` já instalada e validar com `EXPLAIN`; `pg_trgm` só será

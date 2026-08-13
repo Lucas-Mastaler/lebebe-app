@@ -7,6 +7,7 @@ import {
   validarEntradaLebebeExclusive,
   validarFiltrosCatalogoLebebeExclusive,
 } from './lebebe-exclusive'
+import { paginasVisiveisLebebeExclusive, quantidadeItemLebebeExclusiveEhValida } from '@/components/pedidos-personalizados/FormularioLebebeExclusive'
 
 const PRODUTO = '10000000-0000-4000-8000-000000000001'
 
@@ -21,8 +22,9 @@ describe('Lebebe Exclusive', () => {
     expect(validarFiltrosCatalogoLebebeExclusive(new URL('http://local')).ok).toBe(false)
     expect(validarFiltrosCatalogoLebebeExclusive(new URL('http://local?colecao=Árvore&referencia=110.010'))).toEqual({
       ok: true,
-      filtros: { colecao: 'ARVORE', descricao: null, referencia: '110010' },
+      filtros: { colecao: 'ARVORE', descricao: null, referencia: '110010', pagina: 1 },
     })
+    expect(validarFiltrosCatalogoLebebeExclusive(new URL('http://local?colecao=Árvore&pagina=0')).ok).toBe(false)
   })
 
   it('aceita somente identidade e itens, sem preço ou custo enviados pelo navegador', () => {
@@ -55,5 +57,31 @@ describe('Lebebe Exclusive', () => {
     expect(fonte).toContain("if (event.key === 'Enter')")
     expect(fonte).not.toMatch(/useEffect\([^)]*pesquisar/)
     expect(fonte).not.toContain('custoUnitario')
+  })
+
+  it('seleciona exclusivamente por quantidade válida e mantém a tabela responsiva', () => {
+    const fonte = readFileSync(path.join(process.cwd(), 'src/components/pedidos-personalizados/FormularioLebebeExclusive.tsx'), 'utf8')
+    expect(fonte).toContain('function atualizarQuantidade')
+    expect(quantidadeItemLebebeExclusiveEhValida('1')).toBe(true)
+    expect(quantidadeItemLebebeExclusiveEhValida('12')).toBe(true)
+    expect(quantidadeItemLebebeExclusiveEhValida('')).toBe(false)
+    expect(quantidadeItemLebebeExclusiveEhValida('0')).toBe(false)
+    expect(quantidadeItemLebebeExclusiveEhValida('1.5')).toBe(false)
+    expect(quantidadeItemLebebeExclusiveEhValida('abc')).toBe(false)
+    expect(fonte).toContain('proximos.delete(produto.id)')
+    expect(fonte).toContain('function atualizarNomeOuLetra')
+    expect(fonte).toContain('rascunhosItens')
+    expect(fonte).not.toContain('alternarProduto')
+    expect(fonte).not.toContain('type="checkbox"')
+    expect(fonte).not.toContain('>Selecionar</th>')
+    expect(fonte).toContain('Itens selecionados: {selecionados.size}')
+    expect(fonte).not.toContain('min-w-[1050px]')
+    expect(fonte).toContain('table-fixed')
+    expect(fonte).toContain('lg:hidden')
+  })
+
+  it('mantém uma navegação compacta com a primeira, atual e última página', () => {
+    expect(paginasVisiveisLebebeExclusive(4, 4)).toEqual([1, 2, 3, 4])
+    expect(paginasVisiveisLebebeExclusive(52, 103)).toEqual([1, '…', 51, 52, 53, '…', 103])
   })
 })

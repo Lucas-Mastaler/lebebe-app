@@ -8,6 +8,7 @@ import {
   listarPedidos,
   obterDetalhePedido,
   obterOpcoes,
+  pesquisarCatalogoLebebeExclusive,
 } from './handlers'
 import type { RepositorioPedidosPersonalizados } from './repositorio'
 
@@ -65,6 +66,7 @@ function criarRepo(overrides: Record<string, unknown> = {}) {
       ],
       error: null,
     }),
+    buscarCatalogoLebebeExclusive: vi.fn().mockResolvedValue({ data: { itens: [], total: 0 }, error: null }),
     criar: vi.fn().mockResolvedValue({
       data: { pedido_id: PEDIDO_ID, version: 1, reutilizado: false, tapetes: [{ id: TAPETE_ID }] },
       error: null,
@@ -155,6 +157,39 @@ describe('opções de pedidos personalizados', () => {
     const d = deps(criarRepo(), contexto({ unidades: [unidades[0]] }))
     const body = await (await obterOpcoes(new Request('http://localhost'), d)).json()
     expect(body.unidades).toEqual([{ chave: 'bigorrilho', nome: 'BIGORRILHO' }])
+  })
+})
+
+describe('catálogo Lebebe Exclusive', () => {
+  it('carrega o contexto sem consultar unidades', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const d = deps()
+
+    const response = await pesquisarCatalogoLebebeExclusive(
+      new Request('http://localhost/api/pedidos-personalizados/catalogo/lebebe-exclusive?colecao=arvore'),
+      d,
+    )
+
+    expect(response.status).toBe(200)
+    expect(d.carregarContexto).toHaveBeenCalledWith(
+      ['pedidos_personalizados_novo', 'pedidos_personalizados_gestao'],
+      { carregarUnidades: false },
+    )
+  })
+
+  it('expõe paginação de 30 itens e encaminha a página solicitada', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const repo = criarRepo({ buscarCatalogoLebebeExclusive: vi.fn().mockResolvedValue({ data: { itens: [{ id: 'produto-1' }], total: 61 }, error: null }) })
+    const response = await pesquisarCatalogoLebebeExclusive(
+      new Request('http://localhost/api/pedidos-personalizados/catalogo/lebebe-exclusive?colecao=arvore&pagina=2'),
+      deps(repo),
+    )
+
+    expect(await response.json()).toMatchObject({ ok: true, pagina: 2, totalRegistros: 61, totalPaginas: 3, limite: 30 })
+    expect(repo.buscarCatalogoLebebeExclusive).toHaveBeenCalledWith(
+      { colecao: 'ARVORE', descricao: null, referencia: null, pagina: 2 },
+      expect.any(Function),
+    )
   })
 })
 

@@ -33,6 +33,7 @@ import {
   avaliarFormulario,
   carregarOpcoesNovoPedido,
   criarEstadoInicial,
+  criarTapeteVazio,
   ehErroHttpNovoPedido,
   enviarNovoPedido,
   enviarAnexo,
@@ -61,6 +62,19 @@ type OperacaoAnexo = {
   tipo: 'upload' | 'substituicao' | 'remocao' | 'abertura'
 }
 
+type FornecedorPedido = 'moriah_tapetes' | 'lebebe_exclusive'
+type DadosIdentificacao = Pick<EstadoNovoPedido, 'unidade' | 'numeroLancamento' | 'consultora' | 'cliente' | 'telefone'>
+
+function validarIdentificacaoLebebeExclusive(dados: DadosIdentificacao) {
+  const erros: Array<{ campo: keyof DadosIdentificacao; mensagem: string }> = []
+  if (!dados.unidade) erros.push({ campo: 'unidade', mensagem: 'Selecione a unidade.' })
+  if (dados.consultora.trim().length < 2) erros.push({ campo: 'consultora', mensagem: 'Informe a consultora.' })
+  if (!dados.cliente.trim()) erros.push({ campo: 'cliente', mensagem: 'Informe o cliente.' })
+  if (dados.telefone.replace(/\D/g, '').length < 10) erros.push({ campo: 'telefone', mensagem: 'Informe um telefone válido.' })
+  if (dados.numeroLancamento && !/^\d{1,6}$/.test(dados.numeroLancamento)) erros.push({ campo: 'numeroLancamento', mensagem: 'Use até 6 dígitos no lançamento.' })
+  return erros
+}
+
 function uuidSeguro() {
   return crypto.randomUUID()
 }
@@ -69,14 +83,90 @@ function CardEstado({ children }: { children: React.ReactNode }) {
   return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">{children}</div>
 }
 
+function IdentificacaoPedido({
+  opcoes,
+  dados,
+  bloqueado,
+  mensagens,
+  onChange,
+  onTocar,
+  onColarNumeroLancamento,
+  onColarTelefone,
+}: {
+  opcoes: OpcoesNovoPedido
+  dados: DadosIdentificacao
+  bloqueado: boolean
+  mensagens: (campo: string) => string[]
+  onChange: (proximos: DadosIdentificacao) => void
+  onTocar: (campo: string) => void
+  onColarNumeroLancamento: (event: ClipboardEvent<HTMLInputElement>) => void
+  onColarTelefone: (event: ClipboardEvent<HTMLInputElement>) => void
+}) {
+  return (
+    <section id="identificacao-pedido" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="titulo-identificacao">
+      <div className="mb-5 flex items-center gap-3">
+        <span className="flex size-10 items-center justify-center rounded-xl bg-sky-50 text-[#00A5E6]"><Sparkles /></span>
+        <div><h2 id="titulo-identificacao" className="text-lg font-bold text-slate-900">Identificação</h2><p className="text-sm text-slate-500">Dados comerciais do novo pedido.</p></div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div>
+          <label htmlFor="unidade" className="mb-1.5 block text-sm font-medium text-slate-700">Unidade *</label>
+          <Select disabled={bloqueado} value={dados.unidade} onValueChange={(valor) => { onChange({ ...dados, unidade: valor as EstadoNovoPedido['unidade'] }); onTocar('unidade') }}>
+            <SelectTrigger id="unidade" className="h-11 w-full" onBlur={() => onTocar('unidade')} aria-invalid={mensagens('unidade').length > 0} aria-describedby={mensagens('unidade').length > 0 ? 'unidade-erro' : undefined}><SelectValue placeholder="Selecione a unidade" /></SelectTrigger>
+            <SelectContent>{opcoes.unidades.map((unidade) => <SelectItem key={unidade.chave} value={unidade.chave}>{unidade.nome}</SelectItem>)}</SelectContent>
+          </Select>
+          {mensagens('unidade')[0] && <p id="unidade-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('unidade')[0]}</p>}
+        </div>
+        <div>
+          <label htmlFor="consultora" className="mb-1.5 block text-sm font-medium text-slate-700">Consultora *</label>
+          <Input id="consultora" value={dados.consultora} onChange={(event) => onChange({ ...dados, consultora: event.target.value })} onBlur={() => onTocar('consultora')} maxLength={20} disabled={bloqueado} aria-invalid={mensagens('consultora').length > 0} aria-describedby={mensagens('consultora').length > 0 ? 'consultora-erro' : undefined} className="h-11" />
+          {mensagens('consultora')[0] && <p id="consultora-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('consultora')[0]}</p>}
+        </div>
+        <div>
+          <label htmlFor="numero-lancamento" className="mb-1.5 block text-sm font-medium text-slate-700">Número de lançamento</label>
+          <Input id="numero-lancamento" value={dados.numeroLancamento} onChange={(event) => onChange({ ...dados, numeroLancamento: event.target.value })} onPaste={onColarNumeroLancamento} onBlur={() => onTocar('numeroLancamento')} inputMode="numeric" pattern="[0-9]*" maxLength={6} placeholder="Opcional" disabled={bloqueado} aria-invalid={mensagens('numeroLancamento').length > 0} aria-describedby={mensagens('numeroLancamento').length > 0 ? 'numero-lancamento-erro' : undefined} className="h-11" />
+          {mensagens('numeroLancamento')[0] && <p id="numero-lancamento-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('numeroLancamento')[0]}</p>}
+        </div>
+        <div>
+          <label htmlFor="cliente" className="mb-1.5 block text-sm font-medium text-slate-700">Cliente *</label>
+          <Input id="cliente" value={dados.cliente} onChange={(event) => onChange({ ...dados, cliente: event.target.value })} onBlur={() => onTocar('cliente')} maxLength={40} disabled={bloqueado} aria-invalid={mensagens('cliente').length > 0} aria-describedby={mensagens('cliente').length > 0 ? 'cliente-erro' : undefined} className="h-11" />
+          {mensagens('cliente')[0] && <p id="cliente-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('cliente')[0]}</p>}
+        </div>
+        <div>
+          <label htmlFor="telefone" className="mb-1.5 block text-sm font-medium text-slate-700">Telefone do cliente *</label>
+          <Input id="telefone" value={dados.telefone} onChange={(event) => onChange({ ...dados, telefone: aplicarMascaraTelefoneBR(event.target.value) })} onPaste={onColarTelefone} onBlur={() => onTocar('telefone')} inputMode="tel" autoComplete="tel" placeholder="(41) 99999-9999" disabled={bloqueado} aria-invalid={mensagens('telefone').length > 0} aria-describedby={mensagens('telefone').length > 0 ? 'telefone-erro' : undefined} className="h-11" />
+          {mensagens('telefone')[0] && <p id="telefone-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('telefone')[0]}</p>}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function EscolhaFornecedor({ fornecedorSelecionado, bloqueado, onEscolher }: { fornecedorSelecionado: FornecedorPedido | null; bloqueado: boolean; onEscolher: (fornecedor: FornecedorPedido) => void }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="titulo-fornecedor">
+      <h2 id="titulo-fornecedor" className="text-lg font-bold text-slate-900">Escolha o fornecedor</h2>
+      {fornecedorSelecionado === null && <p className="mt-1 text-sm text-slate-500">Selecione um fornecedor para continuar o preenchimento do pedido.</p>}
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <Button type="button" variant={fornecedorSelecionado === 'moriah_tapetes' ? 'default' : 'outline'} className="min-h-24 justify-start px-5 text-left text-base" aria-pressed={fornecedorSelecionado === 'moriah_tapetes'} disabled={bloqueado} onClick={() => onEscolher('moriah_tapetes')}>Moriah Tapetes</Button>
+        <Button type="button" variant={fornecedorSelecionado === 'lebebe_exclusive' ? 'default' : 'outline'} className="min-h-24 justify-start px-5 text-left text-base" aria-pressed={fornecedorSelecionado === 'lebebe_exclusive'} disabled={bloqueado} onClick={() => onEscolher('lebebe_exclusive')}>Lebebe Exclusive</Button>
+      </div>
+    </section>
+  )
+}
+
 export default function FormularioNovoPedido() {
   const [opcoes, setOpcoes] = useState<OpcoesNovoPedido | null>(null)
-  const [fornecedorSelecionado, setFornecedorSelecionado] = useState<'moriah_tapetes' | 'lebebe_exclusive'>('moriah_tapetes')
+  const [fornecedorSelecionado, setFornecedorSelecionado] = useState<FornecedorPedido | null>(null)
+  const [trocaFornecedorPendente, setTrocaFornecedorPendente] = useState<FornecedorPedido | null>(null)
+  const [exclusiveTemDadosEspecificos, setExclusiveTemDadosEspecificos] = useState(false)
+  const [exclusiveBloqueiaTroca, setExclusiveBloqueiaTroca] = useState(false)
   const [carregando, setCarregando] = useState(true)
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null)
   const [estado, setEstado] = useState<EstadoNovoPedido>(() => criarEstadoInicial('tapete-inicial'))
   const [alterado, setAlterado] = useState(false)
   const [tentouSalvar, setTentouSalvar] = useState(false)
+  const [tentouSalvarExclusive, setTentouSalvarExclusive] = useState(false)
   const [camposTocados, setCamposTocados] = useState<Set<string>>(() => new Set())
   const [enviando, setEnviando] = useState(false)
   const [erroEnvio, setErroEnvio] = useState<string | null>(null)
@@ -88,6 +178,7 @@ export default function FormularioNovoPedido() {
   const [confirmarNovo, setConfirmarNovo] = useState(false)
   const [copiada, setCopiada] = useState(false)
   const enviandoRef = useRef(false)
+  const carregamentoOpcoesIniciadoRef = useRef(false)
   const operacaoAnexoRef = useRef(false)
   const idempotencyKeyRef = useRef('')
   const urlsPreviewRef = useRef(new Set<string>())
@@ -114,7 +205,11 @@ export default function FormularioNovoPedido() {
     }
   }, [])
 
-  useEffect(() => { void carregar() }, [carregar])
+  useEffect(() => {
+    if (carregamentoOpcoesIniciadoRef.current) return
+    carregamentoOpcoesIniciadoRef.current = true
+    void carregar()
+  }, [carregar])
 
   const avaliacao = useMemo(
     () => opcoes ? avaliarFormulario(estado, opcoes) : null,
@@ -122,6 +217,9 @@ export default function FormularioNovoPedido() {
   )
   const errosTodos = avaliacao?.validacao.erros ?? []
   const erros = errosTodos.filter((item) => tentouSalvar || camposTocados.has(item.campo))
+  const errosIdentificacaoExclusive = fornecedorSelecionado === 'lebebe_exclusive' && tentouSalvarExclusive
+    ? validarIdentificacaoLebebeExclusive(estado)
+    : []
   const avisos = avaliacao?.validacao.avisos ?? []
   const possuiUploadPendente = operacaoAnexo !== null || estado.tapetes.some((tapete) => tapete.anexosLocais.length > 0)
   const deveAvisarSaida = deveAvisarDadosNaoSalvos(alterado, !!salvo, possuiUploadPendente)
@@ -269,6 +367,8 @@ export default function FormularioNovoPedido() {
 
   function mensagens(campo: string) {
     const base = erros.filter((item) => item.campo === campo).map((item) => item.mensagem)
+    const errosExclusive = errosIdentificacaoExclusive.filter((item) => item.campo === campo).map((item) => item.mensagem)
+    if (errosExclusive.length > 0) return [...base, ...errosExclusive]
     if (
       campo === 'telefone'
       && base.length === 0
@@ -520,6 +620,61 @@ export default function FormularioNovoPedido() {
     else iniciarNovoPedido()
   }
 
+  function possuiDadosEspecificosMoriah() {
+    const tapeteVazio = criarTapeteVazio('referencia')
+    return estado.tapetes.some((tapete) => (
+      tapete.tapeteId !== null
+      || tapete.anexos.length > 0
+      || tapete.anexosLocais.length > 0
+      || tapete.existeNoCatalogo !== null
+      || tapete.identicoReferencia !== null
+      || tapete.dimensao1Metros !== ''
+      || tapete.dimensao2Metros !== ''
+      || tapete.corIds.length > 0
+      || tapete.nomeColecaoCatalogo !== ''
+      || tapete.referenciaCatalogo !== ''
+      || tapete.observacoes !== ''
+      || tapete.formato !== tapeteVazio.formato
+      || tapete.tipo !== tapeteVazio.tipo
+    ))
+  }
+
+  function limparDadosEspecificosMoriah() {
+    for (const tapete of estado.tapetes) {
+      for (const anexo of tapete.anexosLocais) revogarPreview(anexo.previewUrl)
+    }
+    setEstado((atual) => ({ ...atual, tapetes: [criarTapeteVazio(uuidSeguro())] }))
+    setTentouSalvar(false)
+    setCamposTocados(new Set())
+    setErroEnvio(null)
+    setErrosAnexos({})
+    setFalhaParcialAnexos(false)
+    setConflitoVersionamento(false)
+  }
+
+  function efetivarTrocaFornecedor(proximoFornecedor: FornecedorPedido) {
+    if (fornecedorSelecionado === 'moriah_tapetes') limparDadosEspecificosMoriah()
+    setTentouSalvarExclusive(false)
+    setFornecedorSelecionado(proximoFornecedor)
+    setTrocaFornecedorPendente(null)
+  }
+
+  function solicitarTrocaFornecedor(proximoFornecedor: FornecedorPedido) {
+    if (proximoFornecedor === fornecedorSelecionado) return
+    if (fornecedorSelecionado === null) {
+      setFornecedorSelecionado(proximoFornecedor)
+      return
+    }
+    const possuiDadosEspecificos = fornecedorSelecionado === 'moriah_tapetes'
+      ? possuiDadosEspecificosMoriah()
+      : exclusiveTemDadosEspecificos
+    if (possuiDadosEspecificos) {
+      setTrocaFornecedorPendente(proximoFornecedor)
+      return
+    }
+    efetivarTrocaFornecedor(proximoFornecedor)
+  }
+
   if (carregando) {
     return <CardEstado><Loader2 className="mx-auto mb-3 size-8 animate-spin text-[#00A5E6]" /><p role="status" className="font-medium text-slate-700">Carregando opções do pedido...</p></CardEstado>
   }
@@ -538,59 +693,60 @@ export default function FormularioNovoPedido() {
     return <CardEstado><AlertCircle className="mx-auto mb-3 size-8 text-amber-500" /><p role="alert" className="font-semibold text-slate-800">Nenhuma unidade está disponível para seu usuário.</p></CardEstado>
   }
 
-  if (fornecedorSelecionado === 'lebebe_exclusive') {
-    return <FormularioLebebeExclusive opcoes={opcoes} onFornecedorChange={setFornecedorSelecionado} />
+  const formularioBloqueado = enviando || !!salvo
+
+  const identificacao = (
+    <IdentificacaoPedido
+      opcoes={opcoes}
+      dados={estado}
+      bloqueado={formularioBloqueado || exclusiveBloqueiaTroca}
+      mensagens={mensagens}
+      onChange={(dados) => atualizarEstado({ ...estado, ...dados })}
+      onTocar={marcarTocado}
+      onColarNumeroLancamento={colarNumeroLancamento}
+      onColarTelefone={colarTelefone}
+    />
+  )
+
+  const escolhaFornecedor = <EscolhaFornecedor fornecedorSelecionado={fornecedorSelecionado} bloqueado={formularioBloqueado || exclusiveBloqueiaTroca} onEscolher={solicitarTrocaFornecedor} />
+
+  if (fornecedorSelecionado === null) {
+    return <div className="space-y-6">{identificacao}{escolhaFornecedor}</div>
   }
 
-  const formularioBloqueado = enviando || !!salvo
+  if (fornecedorSelecionado === 'lebebe_exclusive') {
+    return (
+      <>
+        <div className="space-y-6">
+          {identificacao}
+          {escolhaFornecedor}
+          <FormularioLebebeExclusive
+            opcoes={opcoes}
+            identificacaoExterna={estado}
+            ocultarIdentificacao
+            onDadosEspecificosChange={setExclusiveTemDadosEspecificos}
+            onBloqueioTrocaFornecedorChange={setExclusiveBloqueiaTroca}
+            onValidacaoIdentificacaoInvalida={() => {
+              setTentouSalvarExclusive(true)
+              focarPrimeiroErro([])
+            }}
+          />
+        </div>
+        <Dialog open={trocaFornecedorPendente !== null} onOpenChange={(aberto) => { if (!aberto) setTrocaFornecedorPendente(null) }}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Trocar fornecedor?</DialogTitle><DialogDescription>Trocar o fornecedor limpará os dados específicos já preenchidos. Deseja continuar?</DialogDescription></DialogHeader>
+            <DialogFooter><Button type="button" variant="outline" onClick={() => setTrocaFornecedorPendente(null)}>Cancelar</Button><Button type="button" onClick={() => trocaFornecedorPendente && efetivarTrocaFornecedor(trocaFornecedorPendente)}>Continuar</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </>
+    )
+  }
 
   return (
     <>
       <form onSubmit={salvar} className="space-y-6" noValidate>
-        <section id="identificacao-pedido" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="titulo-identificacao">
-          <div className="mb-5 flex items-center gap-3">
-            <span className="flex size-10 items-center justify-center rounded-xl bg-sky-50 text-[#00A5E6]"><Sparkles /></span>
-            <div><h2 id="titulo-identificacao" className="text-lg font-bold text-slate-900">Identificação</h2><p className="text-sm text-slate-500">Dados comerciais do novo pedido.</p></div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="fornecedor" className="mb-1.5 block text-sm font-medium text-slate-700">Fornecedor *</label>
-              <Select disabled={formularioBloqueado} value={fornecedorSelecionado} onValueChange={(valor) => setFornecedorSelecionado(valor as 'moriah_tapetes' | 'lebebe_exclusive')}>
-                <SelectTrigger id="fornecedor" className="h-11 w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>{opcoes.fornecedores.map((fornecedor) => <SelectItem key={fornecedor.id} value={fornecedor.chave}>{fornecedor.nome}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label htmlFor="unidade" className="mb-1.5 block text-sm font-medium text-slate-700">Unidade *</label>
-              <Select disabled={formularioBloqueado} value={estado.unidade} onValueChange={(valor) => { atualizarEstado({ ...estado, unidade: valor as EstadoNovoPedido['unidade'] }); marcarTocado('unidade') }}>
-                <SelectTrigger id="unidade" className="h-11 w-full" onBlur={() => marcarTocado('unidade')} aria-invalid={mensagens('unidade').length > 0} aria-describedby={mensagens('unidade').length > 0 ? 'unidade-erro' : undefined}><SelectValue placeholder="Selecione a unidade" /></SelectTrigger>
-                <SelectContent>{opcoes.unidades.map((unidade) => <SelectItem key={unidade.chave} value={unidade.chave}>{unidade.nome}</SelectItem>)}</SelectContent>
-              </Select>
-              {mensagens('unidade')[0] && <p id="unidade-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('unidade')[0]}</p>}
-            </div>
-            <div>
-              <label htmlFor="numero-lancamento" className="mb-1.5 block text-sm font-medium text-slate-700">Número de lançamento</label>
-              <Input id="numero-lancamento" value={estado.numeroLancamento} onChange={(event) => atualizarEstado({ ...estado, numeroLancamento: event.target.value })} onPaste={colarNumeroLancamento} onBlur={() => marcarTocado('numeroLancamento')} inputMode="numeric" pattern="[0-9]*" maxLength={6} placeholder="Opcional" disabled={formularioBloqueado} aria-invalid={mensagens('numeroLancamento').length > 0} aria-describedby={mensagens('numeroLancamento').length > 0 ? 'numero-lancamento-erro' : undefined} className="h-11" />
-              {mensagens('numeroLancamento')[0] && <p id="numero-lancamento-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('numeroLancamento')[0]}</p>}
-            </div>
-            <div>
-              <label htmlFor="consultora" className="mb-1.5 block text-sm font-medium text-slate-700">Consultora *</label>
-              <Input id="consultora" value={estado.consultora} onChange={(event) => atualizarEstado({ ...estado, consultora: event.target.value })} onBlur={() => marcarTocado('consultora')} maxLength={20} disabled={formularioBloqueado} aria-invalid={mensagens('consultora').length > 0} aria-describedby={mensagens('consultora').length > 0 ? 'consultora-erro' : undefined} className="h-11" />
-              {mensagens('consultora')[0] && <p id="consultora-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('consultora')[0]}</p>}
-            </div>
-            <div>
-              <label htmlFor="cliente" className="mb-1.5 block text-sm font-medium text-slate-700">Cliente *</label>
-              <Input id="cliente" value={estado.cliente} onChange={(event) => atualizarEstado({ ...estado, cliente: event.target.value })} onBlur={() => marcarTocado('cliente')} maxLength={40} disabled={formularioBloqueado} aria-invalid={mensagens('cliente').length > 0} aria-describedby={mensagens('cliente').length > 0 ? 'cliente-erro' : undefined} className="h-11" />
-              {mensagens('cliente')[0] && <p id="cliente-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('cliente')[0]}</p>}
-            </div>
-            <div>
-              <label htmlFor="telefone" className="mb-1.5 block text-sm font-medium text-slate-700">Telefone do cliente *</label>
-              <Input id="telefone" value={estado.telefone} onChange={(event) => atualizarEstado({ ...estado, telefone: aplicarMascaraTelefoneBR(event.target.value) })} onPaste={colarTelefone} onBlur={() => marcarTocado('telefone')} inputMode="tel" autoComplete="tel" placeholder="(41) 99999-9999" disabled={formularioBloqueado} aria-invalid={mensagens('telefone').length > 0} aria-describedby={mensagens('telefone').length > 0 ? 'telefone-erro' : undefined} className="h-11" />
-              {mensagens('telefone')[0] && <p id="telefone-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('telefone')[0]}</p>}
-            </div>
-          </div>
-        </section>
-
+        {identificacao}
+        {escolhaFornecedor}
         <section aria-labelledby="titulo-tapetes" className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div><h2 id="titulo-tapetes" className="text-xl font-bold text-slate-900">Tapetes</h2><p className="text-sm text-slate-500">{estado.tapetes.length} de {LIMITE_TAPETES_POR_PEDIDO}.</p></div>
@@ -704,6 +860,13 @@ export default function FormularioNovoPedido() {
         <DialogContent>
           <DialogHeader><DialogTitle>Descartar dados não salvos?</DialogTitle><DialogDescription>Os campos preenchidos neste pedido serão apagados.</DialogDescription></DialogHeader>
           <DialogFooter><Button type="button" variant="outline" onClick={() => setConfirmarNovo(false)}>Continuar preenchendo</Button><Button type="button" variant="destructive" onClick={iniciarNovoPedido}>Descartar e iniciar novo</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={trocaFornecedorPendente !== null} onOpenChange={(aberto) => { if (!aberto) setTrocaFornecedorPendente(null) }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Trocar fornecedor?</DialogTitle><DialogDescription>Trocar o fornecedor limpará os dados específicos já preenchidos. Deseja continuar?</DialogDescription></DialogHeader>
+          <DialogFooter><Button type="button" variant="outline" onClick={() => setTrocaFornecedorPendente(null)}>Cancelar</Button><Button type="button" onClick={() => trocaFornecedorPendente && efetivarTrocaFornecedor(trocaFornecedorPendente)}>Continuar</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </>

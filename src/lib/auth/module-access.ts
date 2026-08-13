@@ -2,7 +2,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
 import { NextResponse } from 'next/server'
 import type { User } from '@supabase/supabase-js'
-import type { AllowedUser } from '@/lib/auth/api-auth'
+import type { AllowedUser, RequireAuthenticatedUserSuccess } from '@/lib/auth/api-auth'
 import { checkAccessWindowForUser } from '@/lib/auth/access-window'
 import type { AccessWindowCheckResult } from '@/lib/auth/access-window'
 import type { AppModuleKey } from '@/lib/auth/modulos-app'
@@ -31,6 +31,10 @@ export type RequireModuleAccessError = {
 }
 
 export type RequireModuleAccessResult = RequireModuleAccessSuccess | RequireModuleAccessError
+
+type AutenticacaoModuloConfirmada = RequireAuthenticatedUserSuccess & {
+  allowedUser: AllowedUser
+}
 
 // Resultado puro para uso em Server Components (sem NextResponse)
 export type CheckModuleAccessResult =
@@ -63,10 +67,11 @@ export type ModuleAccessDiagnostico = {
  * NOTA: Bloqueio por janela de horário NÃO está implementado nesta fase.
  */
 export async function checkModuleAccess(
-  moduleKey: ModuleKey
+  moduleKey: ModuleKey,
+  autenticacaoConfirmada?: AutenticacaoModuloConfirmada,
 ): Promise<CheckModuleAccessResult> {
   // --- 1. Autenticação base ---
-  const auth = await requireAuthenticatedUser({
+  const auth = autenticacaoConfirmada ?? await requireAuthenticatedUser({
     requireAllowedUser: true,
     requireActive: true,
   })
@@ -208,9 +213,10 @@ export async function checkModuleAccess(
  * NOTA: Bloqueio por janela de horário NÃO está implementado nesta fase.
  */
 export async function requireModuleAccess(
-  moduleKey: ModuleKey
+  moduleKey: ModuleKey,
+  autenticacaoConfirmada?: AutenticacaoModuloConfirmada,
 ): Promise<RequireModuleAccessResult> {
-  const result = await checkModuleAccess(moduleKey)
+  const result = await checkModuleAccess(moduleKey, autenticacaoConfirmada)
 
   if (result.ok) {
     return result

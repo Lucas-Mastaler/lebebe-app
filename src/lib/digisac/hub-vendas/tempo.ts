@@ -116,6 +116,47 @@ export function obterIntervaloDiaLocalUtc(data: Date, timezone: string): { inici
   return { inicioUtc, fimUtc }
 }
 
+export type IntervaloDatasLocaisUtc = {
+  inicioUtc: Date
+  fimUtc: Date
+}
+
+function parseDataLocalIso(data: string): Omit<PartesDataLocal, 'diaSemana'> {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(data)
+  if (!match) throw new Error('hub_vendas_data_invalida')
+
+  const ano = Number(match[1])
+  const mes = Number(match[2])
+  const dia = Number(match[3])
+  const validacao = new Date(Date.UTC(ano, mes - 1, dia))
+  if (
+    validacao.getUTCFullYear() !== ano
+    || validacao.getUTCMonth() + 1 !== mes
+    || validacao.getUTCDate() !== dia
+  ) {
+    throw new Error('hub_vendas_data_invalida')
+  }
+
+  return { ano, mes, dia, hora: 0, minuto: 0, segundo: 0 }
+}
+
+export function obterIntervaloDatasLocaisUtc(
+  dataInicio: string,
+  dataFim: string,
+  timezone: string
+): IntervaloDatasLocaisUtc {
+  const inicioLocal = parseDataLocalIso(dataInicio)
+  const fimLocal = parseDataLocalIso(dataFim)
+  const inicioNumerico = Date.UTC(inicioLocal.ano, inicioLocal.mes - 1, inicioLocal.dia)
+  const fimNumerico = Date.UTC(fimLocal.ano, fimLocal.mes - 1, fimLocal.dia)
+  if (inicioNumerico > fimNumerico) throw new Error('hub_vendas_periodo_invalido')
+
+  return {
+    inicioUtc: dataLocalParaUtc(inicioLocal, timezone),
+    fimUtc: dataLocalParaUtc(somarDiasLocais(fimLocal, 1), timezone),
+  }
+}
+
 export function ajustarParaHorarioOperacional(data: Date, horario: HubVendasHorarioOperacional): Date {
   const inicio = parseHorario(horario.inicio)
   const fim = parseHorario(horario.fim)

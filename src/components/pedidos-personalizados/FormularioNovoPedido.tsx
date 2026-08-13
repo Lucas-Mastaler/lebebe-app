@@ -26,6 +26,7 @@ import { CardTapete } from './CardTapete'
 import { AnexosTapete } from './AnexosTapete'
 import { AnexosIniciaisTapete } from './AnexosIniciaisTapete'
 import { PreviaMensagem } from './PreviaMensagem'
+import { FormularioLebebeExclusive } from './FormularioLebebeExclusive'
 import {
   adicionarTapete,
   associarTapetesCriados,
@@ -70,6 +71,7 @@ function CardEstado({ children }: { children: React.ReactNode }) {
 
 export default function FormularioNovoPedido() {
   const [opcoes, setOpcoes] = useState<OpcoesNovoPedido | null>(null)
+  const [fornecedorSelecionado, setFornecedorSelecionado] = useState<'moriah_tapetes' | 'lebebe_exclusive'>('moriah_tapetes')
   const [carregando, setCarregando] = useState(true)
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null)
   const [estado, setEstado] = useState<EstadoNovoPedido>(() => criarEstadoInicial('tapete-inicial'))
@@ -536,6 +538,10 @@ export default function FormularioNovoPedido() {
     return <CardEstado><AlertCircle className="mx-auto mb-3 size-8 text-amber-500" /><p role="alert" className="font-semibold text-slate-800">Nenhuma unidade está disponível para seu usuário.</p></CardEstado>
   }
 
+  if (fornecedorSelecionado === 'lebebe_exclusive') {
+    return <FormularioLebebeExclusive opcoes={opcoes} onFornecedorChange={setFornecedorSelecionado} />
+  }
+
   const formularioBloqueado = enviando || !!salvo
 
   return (
@@ -547,6 +553,13 @@ export default function FormularioNovoPedido() {
             <div><h2 id="titulo-identificacao" className="text-lg font-bold text-slate-900">Identificação</h2><p className="text-sm text-slate-500">Dados comerciais do novo pedido.</p></div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="fornecedor" className="mb-1.5 block text-sm font-medium text-slate-700">Fornecedor *</label>
+              <Select disabled={formularioBloqueado} value={fornecedorSelecionado} onValueChange={(valor) => setFornecedorSelecionado(valor as 'moriah_tapetes' | 'lebebe_exclusive')}>
+                <SelectTrigger id="fornecedor" className="h-11 w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>{opcoes.fornecedores.map((fornecedor) => <SelectItem key={fornecedor.id} value={fornecedor.chave}>{fornecedor.nome}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
             <div>
               <label htmlFor="unidade" className="mb-1.5 block text-sm font-medium text-slate-700">Unidade *</label>
               <Select disabled={formularioBloqueado} value={estado.unidade} onValueChange={(valor) => { atualizarEstado({ ...estado, unidade: valor as EstadoNovoPedido['unidade'] }); marcarTocado('unidade') }}>

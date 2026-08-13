@@ -12,7 +12,7 @@ describe('prazo de pedido personalizado', () => {
   })
 
   it('não classifica sem previsão ou em estado final', () => {
-    expect(classificarSituacaoPrazo(null, 'CADASTRADO', '2026-08-08')).toBeNull()
+    expect(classificarSituacaoPrazo(null, 'RASCUNHO', '2026-08-08')).toBeNull()
     expect(classificarSituacaoPrazo('2026-08-01', 'RECEBIDO', '2026-08-08')).toBeNull()
     expect(classificarSituacaoPrazo('2026-08-01', 'CANCELADO', '2026-08-08')).toBeNull()
   })

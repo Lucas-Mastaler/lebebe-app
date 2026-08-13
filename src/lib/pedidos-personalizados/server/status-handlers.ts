@@ -72,7 +72,8 @@ export async function transicionarStatus(
   const atual = await repo.buscarPedidoNoEscopo(pedidoId, acesso.contexto.unidades.map((item) => item.id))
   if (atual.error) return erroTransicao(atual.error)
   if (!atual.data) return jsonErro('PEDIDO_NAO_ENCONTRADO', 'Pedido nao encontrado.', 404)
-  if (!podeTransicionarStatus(atual.data.status, validacao.dados.statusDestino)) {
+  const fornecedor = atual.data.fornecedor?.chave
+  if (!fornecedor || !podeTransicionarStatus(atual.data.status, validacao.dados.statusDestino, fornecedor)) {
     return jsonErro('TRANSICAO_STATUS_INVALIDA', 'Esta transicao de status nao e permitida.', 422)
   }
 
@@ -80,7 +81,8 @@ export async function transicionarStatus(
   const dataPedidoFornecedor = validacao.dados.dataPedidoFornecedor ?? atual.data.data_pedido_fornecedor
   const comprador = validacao.dados.comprador ?? atual.data.comprador
   const dataEntrega = validacao.dados.dataEntrega ?? atual.data.data_entrega
-  if (atual.data.status === 'CADASTRADO' && validacao.dados.statusDestino === 'AGUARDANDO LAYOUT'
+  if (atual.data.status === 'VENDA FECHADA'
+      && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(validacao.dados.statusDestino)
       && (!numeroPedidoCompra || !dataPedidoFornecedor || !comprador)) {
     return jsonErro(
       'CAMPOS_LAYOUT_OBRIGATORIOS',
@@ -104,9 +106,9 @@ export async function transicionarStatus(
     p_expected_version: validacao.dados.expectedVersion,
     p_usuario_id: acesso.contexto.allowedUser.id,
     p_status_destino: validacao.dados.statusDestino,
-    p_numero_pedido_compra: validacao.dados.statusDestino === 'AGUARDANDO LAYOUT' ? numeroPedidoCompra : null,
-    p_data_pedido_fornecedor: validacao.dados.statusDestino === 'AGUARDANDO LAYOUT' ? dataPedidoFornecedor : null,
-    p_comprador: validacao.dados.statusDestino === 'AGUARDANDO LAYOUT' ? comprador : null,
+    p_numero_pedido_compra: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(validacao.dados.statusDestino) ? numeroPedidoCompra : null,
+    p_data_pedido_fornecedor: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(validacao.dados.statusDestino) ? dataPedidoFornecedor : null,
+    p_comprador: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(validacao.dados.statusDestino) ? comprador : null,
     p_data_entrega: validacao.dados.statusDestino === 'EM PRODUÇÃO'
       ? dataEntrega
       : validacao.dados.statusDestino === 'RECEBIDO'

@@ -13,6 +13,8 @@ type LeadRow = {
   conexao_recuperacao_id: string | null
   data_recuperacao_enviada?: string | null
   data_recuperacao_respondida?: string | null
+  data_encerrado?: string | null
+  data_fila_manual?: string | null
 }
 
 type FilaRow = {
@@ -240,7 +242,10 @@ function criarSupabaseFake(leadsIniciais: LeadRow[], filasIniciais: FilaRow[] = 
           if (!(lead.data_entrada_hub <= limite)) return false
           return !state.filas.some((fila) => fila.lead_id === lead.id)
         })
-        for (const lead of afetados) lead.status = 'fila_manual'
+        for (const lead of afetados) {
+          lead.status = 'fila_manual'
+          lead.data_fila_manual = lead.data_fila_manual ?? '2026-08-01T00:00:00.000Z'
+        }
         return Promise.resolve({ data: afetados.map((lead) => ({ lead_id: lead.id })), error: null })
       }
 
@@ -418,6 +423,11 @@ describe('encerrarRecuperacoesExpiradasHubVendas (via prepararFilaRecuperacaoHub
 
     expect(resultado.totalRecuperacoesEncerradas).toBe(1)
     expect(expirado.status).toBe('encerrado')
+    expect(expirado.data_encerrado).toBe(agora.toISOString())
+
+    const segundaExecucao = await prepararFilaRecuperacaoHubVendas({ supabase: supabase as never, agora: new Date('2026-07-31T20:00:00.000Z') })
+    expect(segundaExecucao.totalRecuperacoesEncerradas).toBe(0)
+    expect(expirado.data_encerrado).toBe(agora.toISOString())
   })
 
   it('nao encerra lead recuperacao_enviada ainda dentro das 24h', async () => {
@@ -487,6 +497,10 @@ describe('fecharLeadsAguardandoExpiradosHubVendas (via prepararFilaRecuperacaoHu
 
     expect(resultado.totalMovidosFilaManual).toBe(1)
     expect(expirado.status).toBe('fila_manual')
+    expect(expirado.data_fila_manual).toBe('2026-08-01T00:00:00.000Z')
+
+    await prepararFilaRecuperacaoHubVendas({ supabase: supabase as never, agora: new Date('2026-08-02T00:00:00.000Z') })
+    expect(expirado.data_fila_manual).toBe('2026-08-01T00:00:00.000Z')
   })
 
   it('lead expirado mas com fila associada nao vira fila_manual', async () => {

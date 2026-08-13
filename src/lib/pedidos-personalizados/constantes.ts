@@ -13,7 +13,8 @@ export const TIPOS_TAPETE_MORIAH = ['CATALOGO', 'PERSONALIZADO'] as const
 export const TIPO_TAPETE_PADRAO: TipoTapeteMoriah = 'PERSONALIZADO'
 
 export const STATUS_PEDIDO_PERSONALIZADO = [
-  'CADASTRADO',
+  'RASCUNHO',
+  'VENDA FECHADA',
   'AGUARDANDO LAYOUT',
   'AGUARDANDO APROVAÇÃO DO CLIENTE',
   'EM PRODUÇÃO',
@@ -29,6 +30,7 @@ export const UNIDADES_PEDIDO_PERSONALIZADO = [
 ] as const
 
 export const FORNECEDOR_MORIAH = 'moriah_tapetes' as const
+export const FORNECEDOR_LEBEBE_EXCLUSIVE = 'lebebe_exclusive' as const
 export const CODIGOS_PRODUTO_MORIAH = ['21157', '21158', '21159'] as const
 
 export const LIMITE_TAPETES_POR_PEDIDO = 10

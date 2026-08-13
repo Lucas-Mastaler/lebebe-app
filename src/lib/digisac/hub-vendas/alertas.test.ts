@@ -58,6 +58,7 @@ const {
   alertarResultadoIncerto,
   alertarAnaliseManual,
   alertarTesteManual,
+  alertarCronFalhou,
 } = await import('./alertas')
 
 describe('alertas Hub/Vendas', () => {
@@ -468,5 +469,36 @@ describe('alertas Hub/Vendas', () => {
       expect(resultado.deduplicado).toBe(true)
     }
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  describe('alertarCronFalhou', () => {
+    it('inclui a proxima execucao agendada para rota com schedule conhecido', async () => {
+      let capturedBody: Record<string, unknown> | null = null
+      vi.mocked(fetchDigisacRaw).mockImplementationOnce(async (_endpoint: string, options?: RequestInit) => {
+        capturedBody = JSON.parse(options!.body as string)
+        return { ok: true, text: () => Promise.resolve('{}') } as Response
+      })
+
+      await alertarCronFalhou({ rota: 'preparar-fila', erro: 'erro_desconhecido' })
+
+      const texto = capturedBody!.text as string
+      expect(texto).toContain('HUB/VENDAS — ⚠️ CRON FALHOU')
+      expect(texto).toContain('Rota: preparar-fila')
+      expect(texto).toMatch(/Próxima execução agendada: \d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/)
+      expect(texto).toContain('Ação recomendada:')
+    })
+
+    it('usa fallback honesto para rota sem schedule conhecido', async () => {
+      let capturedBody: Record<string, unknown> | null = null
+      vi.mocked(fetchDigisacRaw).mockImplementationOnce(async (_endpoint: string, options?: RequestInit) => {
+        capturedBody = JSON.parse(options!.body as string)
+        return { ok: true, text: () => Promise.resolve('{}') } as Response
+      })
+
+      await alertarCronFalhou({ rota: 'rota-sem-schedule-cadastrado', erro: 'erro_x' })
+
+      const texto = capturedBody!.text as string
+      expect(texto).toContain('Próxima execução agendada: não foi possível determinar automaticamente')
+    })
   })
 })

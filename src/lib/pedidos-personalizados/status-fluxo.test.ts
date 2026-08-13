@@ -9,13 +9,16 @@ import {
 
 describe('fluxo de status de pedidos personalizados', () => {
   it('expoe somente as transicoes aprovadas e nenhum atalho', () => {
-    expect(destinosPermitidosStatus('CADASTRADO')).toEqual(['AGUARDANDO LAYOUT', 'CANCELADO'])
+    expect(destinosPermitidosStatus('RASCUNHO')).toEqual(['VENDA FECHADA', 'CANCELADO'])
+    expect(destinosPermitidosStatus('VENDA FECHADA')).toEqual(['AGUARDANDO LAYOUT', 'CANCELADO'])
     expect(destinosPermitidosStatus('AGUARDANDO LAYOUT')).toEqual(['AGUARDANDO APROVAÇÃO DO CLIENTE', 'CANCELADO'])
     expect(destinosPermitidosStatus('AGUARDANDO APROVAÇÃO DO CLIENTE')).toEqual(['EM PRODUÇÃO', 'AGUARDANDO LAYOUT', 'CANCELADO'])
     expect(destinosPermitidosStatus('EM PRODUÇÃO')).toEqual(['RECEBIDO', 'CANCELADO'])
     expect(destinosPermitidosStatus('RECEBIDO')).toEqual([])
     expect(destinosPermitidosStatus('CANCELADO')).toEqual([])
-    expect(podeTransicionarStatus('CADASTRADO', 'EM PRODUÇÃO')).toBe(false)
+    expect(podeTransicionarStatus('RASCUNHO', 'EM PRODUÇÃO')).toBe(false)
+    expect(destinosPermitidosStatus('VENDA FECHADA', 'lebebe_exclusive')).toEqual(['EM PRODUÇÃO', 'CANCELADO'])
+    expect(destinosPermitidosStatus('VENDA FECHADA', 'lebebe_exclusive')).not.toContain('AGUARDANDO LAYOUT')
   })
 
   it('bloqueia comercial e administrativo nos estados definidos', () => {

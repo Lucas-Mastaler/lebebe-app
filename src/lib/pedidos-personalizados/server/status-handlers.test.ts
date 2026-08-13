@@ -16,9 +16,9 @@ function contexto(): ContextoPedidosPersonalizados {
   }
 }
 
-function deps(status = 'CADASTRADO', overrides: Record<string, unknown> = {}) {
+function deps(status = 'VENDA FECHADA', overrides: Record<string, unknown> = {}) {
   const repo = {
-    buscarPedidoNoEscopo: vi.fn().mockResolvedValue({ data: { id: PEDIDO, unidade_id: UNIDADE, status, version: 1, numero_lancamento: '0001', numero_pedido_compra: '123', data_pedido_fornecedor: '2026-08-06', comprador: 'ANA', data_entrega: '2026-08-20' }, error: null }),
+    buscarPedidoNoEscopo: vi.fn().mockResolvedValue({ data: { id: PEDIDO, unidade_id: UNIDADE, status, version: 1, fornecedor: { chave: 'moriah_tapetes' }, numero_lancamento: '0001', numero_pedido_compra: '123', data_pedido_fornecedor: '2026-08-06', comprador: 'ANA', data_entrega: '2026-08-20' }, error: null }),
     transicionarStatus: vi.fn().mockResolvedValue({ data: { evento_id: EVENTO, status: 'AGUARDANDO LAYOUT', version: 2 }, error: null }),
     ...overrides,
   }
@@ -52,19 +52,19 @@ describe('handler de transicao de status', () => {
   })
 
   it('nao revela pedido fora do escopo', async () => {
-    const cenario = deps('CADASTRADO', { buscarPedidoNoEscopo: vi.fn().mockResolvedValue({ data: null, error: null }) })
+    const cenario = deps('VENDA FECHADA', { buscarPedidoNoEscopo: vi.fn().mockResolvedValue({ data: null, error: null }) })
     expect((await transicionarStatus(request({ expectedVersion: 1, statusDestino: 'AGUARDANDO LAYOUT' }), PEDIDO, cenario.deps)).status).toBe(404)
   })
 
   it('mapeia conflito de versao sem alteracao parcial', async () => {
-    const cenario = deps('CADASTRADO', { transicionarStatus: vi.fn().mockResolvedValue({ data: null, error: { code: 'P0003', message: 'CONFLITO_VERSAO' } }) })
+    const cenario = deps('VENDA FECHADA', { transicionarStatus: vi.fn().mockResolvedValue({ data: null, error: { code: 'P0003', message: 'CONFLITO_VERSAO' } }) })
     const response = await transicionarStatus(request({ expectedVersion: 1, statusDestino: 'AGUARDANDO LAYOUT' }), PEDIDO, cenario.deps)
     expect(response.status).toBe(409)
     expect((await response.json()).erro).toBe('CONFLITO_VERSAO')
   })
 
   it('exige a previsão para produção e justificativa de cancelamento', async () => {
-    const producao = deps('AGUARDANDO APROVAÇÃO DO CLIENTE', { buscarPedidoNoEscopo: vi.fn().mockResolvedValue({ data: { id: PEDIDO, unidade_id: UNIDADE, status: 'AGUARDANDO APROVAÇÃO DO CLIENTE', version: 1, numero_pedido_compra: '123', data_pedido_fornecedor: '2026-08-06', comprador: 'ANA', data_entrega: null }, error: null }) })
+    const producao = deps('AGUARDANDO APROVAÇÃO DO CLIENTE', { buscarPedidoNoEscopo: vi.fn().mockResolvedValue({ data: { id: PEDIDO, unidade_id: UNIDADE, status: 'AGUARDANDO APROVAÇÃO DO CLIENTE', version: 1, fornecedor: { chave: 'moriah_tapetes' }, numero_pedido_compra: '123', data_pedido_fornecedor: '2026-08-06', comprador: 'ANA', data_entrega: null }, error: null }) })
     expect((await transicionarStatus(request({ expectedVersion: 1, statusDestino: 'EM PRODUÇÃO' }), PEDIDO, producao.deps)).status).toBe(422)
     const cancelamento = deps()
     expect((await transicionarStatus(request({ expectedVersion: 1, statusDestino: 'CANCELADO' }), PEDIDO, cancelamento.deps)).status).toBe(422)

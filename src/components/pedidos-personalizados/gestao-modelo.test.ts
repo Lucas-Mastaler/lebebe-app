@@ -27,7 +27,7 @@ const detalhe: PedidoDetalhe = {
   unidade: { chave: 'portao', nome: 'PORTÃO' },
   consultora: 'ANA', cliente: 'CLIENTE', telefone: '41999999999', numeroLancamento: '000001',
   dataEntrega: null, dataPedidoFornecedor: null, numeroPedidoCompra: null, comprador: null,
-  status: 'CADASTRADO', version: 4, createdAt: '2026-08-06T10:00:00Z', updatedAt: '2026-08-06T10:00:00Z',
+  status: 'VENDA FECHADA', version: 4, createdAt: '2026-08-06T10:00:00Z', updatedAt: '2026-08-06T10:00:00Z',
   tapetes: [{
     id: TAPETE, ordem: 1, formato: 'RETANGULAR', tipo: 'PERSONALIZADO', dimensao1Cm: 200, dimensao2Cm: 300,
     areaCobradaCentesimosM2: 600, produto: { id: 'p', codigo: '21158', descricao: 'Produto' },
@@ -35,14 +35,16 @@ const detalhe: PedidoDetalhe = {
     teveAlteracaoLayout: true, quantidadeAlteracoesLayout: 2,
     cores: [{ id: COR, ordem: 1, numero: '01', codigo: 'K-01', nome: 'Grafite' }], anexos: [],
   }],
+  itens: [],
 }
 
 const opcoes = {
   fornecedor: { id: 'f', chave: 'moriah_tapetes', nome: 'MORIAH TAPETES' },
+  fornecedores: [{ id: 'f', chave: 'moriah_tapetes', nome: 'MORIAH TAPETES' }],
   unidades: [{ chave: 'portao', nome: 'PORTÃO' }],
   produtos: [{ id: 'p', codigo: '21158', descricao: 'Produto' }],
   cores: [{ id: COR, numero: '01', codigo: 'K-01', nome: 'Grafite', ordem: 1 }],
-  formatos: ['RETANGULAR'], status: ['CADASTRADO'],
+  formatos: ['RETANGULAR'], status: ['RASCUNHO', 'VENDA FECHADA'],
   limites: { tapetesPorPedido: 10, coresPorTapete: 6, medidaMinimaCm: 10, medidaMaximaCm: 1500 },
 } as OpcoesNovoPedido
 
@@ -198,7 +200,7 @@ describe('modelo da gestão de pedidos personalizados', () => {
       expectedVersion: 4,
       numeroPedidoCompra: '00012',
       comprador: 'ANA SILVA',
-      status: 'CADASTRADO',
+      status: 'VENDA FECHADA',
       layoutTapetes: [{ tapeteId: TAPETE, teveAlteracaoLayout: true, quantidadeAlteracoesLayout: 2 }],
     })
     expect(payload).not.toHaveProperty('numeroPedido')
@@ -214,7 +216,7 @@ describe('modelo da gestão de pedidos personalizados', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock.mock.calls[0][0]).toBe(`/api/pedidos-personalizados/pedidos/${PEDIDO}/administrativo`)
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'PATCH' })
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ expectedVersion: 4, status: 'CADASTRADO' })
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ expectedVersion: 4, status: 'VENDA FECHADA' })
     fetchMock.mockRestore()
   })
 
@@ -263,11 +265,11 @@ describe('modelo da gestão de pedidos personalizados', () => {
     expect(componente).toContain('sm:h-[90vh]')
   })
 
-  it('protege a página de gestão sem adicionar item ao menu', () => {
+  it('protege a página de gestão e mantém o item no menu central', () => {
     const page = readFileSync(path.resolve('src/app/pedidos-personalizados/page.tsx'), 'utf8')
     const catalogo = readFileSync(path.resolve('src/lib/auth/modulos-app.ts'), 'utf8')
     const menu = catalogo.slice(catalogo.indexOf('export const NAVIGATION_GROUPS'), catalogo.indexOf('export const PROFILE_CONTROLLED_MODULE_KEYS'))
     expect(page).toContain("checkModuleAndWindowAccess('pedidos_personalizados_gestao')")
-    expect(menu).not.toContain("navigationItem('pedidos_personalizados_gestao'")
+    expect(menu).toContain("navigationItem('pedidos_personalizados_gestao'")
   })
 })

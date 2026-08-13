@@ -8,7 +8,7 @@ declare
 begin
   select p.* into v_pedido
   from public.pedidos_personalizados_pedidos p
-  where p.status = 'CADASTRADO'
+  where p.status = 'RASCUNHO'
   order by p.created_at
   limit 1;
   if v_pedido.id is null then raise exception 'FIXTURE_COMERCIAL_NAO_ENCONTRADA'; end if;
@@ -51,7 +51,7 @@ begin
   select p.id, p.created_by, p.version
     into v_pedido, v_usuario, v_version
     from public.pedidos_personalizados_pedidos p
-   where p.status = 'CADASTRADO'
+   where p.status = 'RASCUNHO'
      and exists (
        select 1
          from public.pedidos_personalizados_moriah_tapetes t
@@ -63,14 +63,15 @@ begin
 
   if v_pedido is null then raise exception 'FIXTURE_COM_ANEXO_NAO_ENCONTRADA'; end if;
 
-  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version, v_usuario, 'AGUARDANDO LAYOUT', '00123', current_date, 'ANA', null, null);
-  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 1, v_usuario, U&'AGUARDANDO APROVA\00C7\00C3O DO CLIENTE', null, null, null, null, null);
-  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 2, v_usuario, 'AGUARDANDO LAYOUT', null, null, null, null, null);
-  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 3, v_usuario, U&'AGUARDANDO APROVA\00C7\00C3O DO CLIENTE', null, null, null, null, null);
-  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 4, v_usuario, U&'EM PRODU\00C7\00C3O', null, null, null, current_date + 10, null);
-  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 5, v_usuario, 'RECEBIDO', null, null, null, current_date - 1, null);
+  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version, v_usuario, 'VENDA FECHADA', null, null, null, null, null);
+  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 1, v_usuario, 'AGUARDANDO LAYOUT', '00123', current_date, 'ANA', null, null);
+  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 2, v_usuario, U&'AGUARDANDO APROVA\00C7\00C3O DO CLIENTE', null, null, null, null, null);
+  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 3, v_usuario, 'AGUARDANDO LAYOUT', null, null, null, null, null);
+  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 4, v_usuario, U&'AGUARDANDO APROVA\00C7\00C3O DO CLIENTE', null, null, null, null, null);
+  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 5, v_usuario, U&'EM PRODU\00C7\00C3O', null, null, null, current_date + 10, null);
+  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 6, v_usuario, 'RECEBIDO', null, null, null, current_date - 1, null);
 
-  if v_result.version <> v_version + 6 then raise exception 'VERSION_FINAL_INCORRETA'; end if;
+  if v_result.version <> v_version + 7 then raise exception 'VERSION_FINAL_INCORRETA'; end if;
   if not exists (
     select 1 from public.pedidos_personalizados_pedidos p
     where p.id = v_pedido and p.numero_pedido_compra = '00123'
@@ -78,7 +79,7 @@ begin
       and p.data_entrega = current_date + 10
   ) then raise exception 'CAMPOS_DE_ETAPA_INCORRETOS'; end if;
   select count(*) into v_count from public.pedidos_personalizados_status_historico where pedido_id = v_pedido;
-  if v_count <> 6 then raise exception 'HISTORICO_INCORRETO:%', v_count; end if;
+  if v_count <> 7 then raise exception 'HISTORICO_INCORRETO:%', v_count; end if;
   if not exists (
     select 1 from public.pedidos_personalizados_status_historico h
     where h.pedido_id = v_pedido and h.status_novo = 'RECEBIDO'
@@ -94,7 +95,7 @@ begin
   select p.id, p.created_by, p.version
     into v_cancel, v_usuario, v_version
     from public.pedidos_personalizados_pedidos p
-   where p.status = 'CADASTRADO' and p.id <> v_pedido
+   where p.status = 'RASCUNHO' and p.id <> v_pedido
    order by p.created_at
    limit 1;
   if v_cancel is null then raise exception 'FIXTURE_CANCELAMENTO_NAO_ENCONTRADA'; end if;

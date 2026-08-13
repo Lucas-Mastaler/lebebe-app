@@ -2,10 +2,13 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { escaparTermoIlike } from '@/lib/atendimento-presencial/clientes'
 import type {
   ParametrosAtualizarPedidoAdministrativoRpc,
+  ParametrosAtualizarPedidoComercialLebebeExclusiveRpc,
   ParametrosAtualizarPedidoComercialMoriahRpc,
+  ParametrosCriarPedidoPersonalizadoLebebeExclusiveRpc,
   ParametrosCriarPedidoPersonalizadoMoriahRpc,
   ParametrosTransicionarPedidoPersonalizadoRpc,
   ProdutoCatalogoMoriah,
+  ProdutoCatalogoLebebeExclusive,
   StatusPedidoPersonalizado,
 } from '../tipos'
 import type { UnidadeEscopoPedido } from './contexto'
@@ -75,6 +78,7 @@ export type PedidoEscopoRow = {
   data_pedido_fornecedor: string | null
   numero_pedido_compra: string | null
   comprador: string | null
+  fornecedor: { chave: 'moriah_tapetes' | 'lebebe_exclusive' } | null
 }
 
 export type TapeteCriadoRow = {
@@ -87,6 +91,13 @@ export type ResultadoCriacaoRpc = {
   version: number
   reutilizado: boolean
   tapetes: unknown
+}
+
+export type ResultadoCriacaoExclusiveRpc = {
+  pedido_id: string
+  version: number
+  reutilizado: boolean
+  itens: unknown
 }
 
 export type ResultadoAtualizacaoComercialRpc = {
@@ -148,10 +159,101 @@ export class RepositorioPedidosPersonalizados {
     }
   }
 
+  async listarFornecedoresDisponiveis(): Promise<ResultadoBanco<FornecedorCatalogo[]>> {
+    const { data, error } = await this.supabase
+      .from('pedidos_personalizados_fornecedores')
+      .select('id, chave, nome')
+      .eq('disponivel', true)
+      .in('chave', ['moriah_tapetes', 'lebebe_exclusive'])
+      .order('ordem', { ascending: true })
+    return error
+      ? { data: null, error }
+      : { data: (data ?? []) as FornecedorCatalogo[], error: null }
+  }
+
+  async buscarCatalogoLebebeExclusive(filtros: {
+    colecao: string | null
+    descricao: string | null
+    referencia: string | null
+  }): Promise<ResultadoBanco<ProdutoCatalogoLebebeExclusive[]>> {
+    const fornecedor = await this.supabase
+      .from('pedidos_personalizados_fornecedores')
+      .select('id')
+      .eq('chave', 'lebebe_exclusive')
+      .eq('disponivel', true)
+      .maybeSingle()
+    if (fornecedor.error || !fornecedor.data) {
+      return { data: null, error: fornecedor.error ?? { message: 'CATALOGO_INDISPONIVEL' } }
+    }
+
+    let query = this.supabase
+      .from('pedidos_personalizados_produtos')
+      .select(`
+        id, descricao, ordem,
+        catalogo:pedidos_personalizados_lebebe_exclusive_catalogo!inner(
+          colecao, referencia, preco_unitario,
+          colecao_busca, descricao_busca, referencia_busca
+        )
+      `)
+      .eq('fornecedor_id', fornecedor.data.id)
+      .eq('ativo', true)
+
+    if (filtros.colecao) {
+      query = query.ilike('catalogo.colecao_busca', `%${escaparTermoIlike(filtros.colecao)}%`)
+    }
+    if (filtros.descricao) {
+      query = query.ilike('catalogo.descricao_busca', `%${escaparTermoIlike(filtros.descricao)}%`)
+    }
+    if (filtros.referencia) {
+      query = query.ilike('catalogo.referencia_busca', `%${escaparTermoIlike(filtros.referencia)}%`)
+    }
+
+    const { data, error } = await query.order('ordem', { ascending: true }).limit(150)
+    if (error) return { data: null, error }
+    return {
+      data: (data ?? []).map((row) => {
+        const catalogo = (Array.isArray(row.catalogo) ? row.catalogo[0] : row.catalogo) as {
+          colecao: string
+          referencia: string
+          preco_unitario: string | number
+        }
+        return {
+          id: row.id,
+          colecao: catalogo.colecao,
+          descricao: row.descricao,
+          referencia: catalogo.referencia,
+          precoUnitario: Number(catalogo.preco_unitario),
+        }
+      }),
+      error: null,
+    }
+  }
+
   async criar(parametros: ParametrosCriarPedidoPersonalizadoMoriahRpc): Promise<ResultadoBanco<ResultadoCriacaoRpc>> {
     const { data, error } = await this.supabase.rpc('criar_pedido_personalizado_moriah', parametros)
     if (error) return { data: null, error }
     const retorno = (Array.isArray(data) ? data[0] : data) as ResultadoCriacaoRpc | null
+    return retorno ? { data: retorno, error: null } : { data: null, error: { message: 'RETORNO_RPC_INVALIDO' } }
+  }
+
+  async criarLebebeExclusive(
+    parametros: ParametrosCriarPedidoPersonalizadoLebebeExclusiveRpc
+  ): Promise<ResultadoBanco<ResultadoCriacaoExclusiveRpc>> {
+    const { data, error } = await this.supabase.rpc('criar_pedido_personalizado_lebebe_exclusive', parametros)
+    if (error) return { data: null, error }
+    const retorno = (Array.isArray(data) ? data[0] : data) as ResultadoCriacaoExclusiveRpc | null
+    return retorno ? { data: retorno, error: null } : { data: null, error: { message: 'RETORNO_RPC_INVALIDO' } }
+  }
+
+  async atualizarComercialLebebeExclusive(
+    parametros: ParametrosAtualizarPedidoComercialLebebeExclusiveRpc
+  ): Promise<ResultadoBanco<{ version: number; itens: unknown }>> {
+    const { data, error } = await this.supabase.rpc(
+      'atualizar_pedido_personalizado_comercial_lebebe_exclusive',
+      parametros
+    )
+    if (error) return { data: null, error }
+    const retorno = (Array.isArray(data) ? data[0] : data) as { version: number; itens: unknown } | null
     return retorno ? { data: retorno, error: null } : { data: null, error: { message: 'RETORNO_RPC_INVALIDO' } }
   }
 
@@ -204,7 +306,7 @@ export class RepositorioPedidosPersonalizados {
     if (unidadeIds.length === 0) return { data: null, error: null }
     const { data, error } = await this.supabase
       .from('pedidos_personalizados_pedidos')
-      .select('id, unidade_id, status, version, numero_lancamento, telefone_normalizado, data_entrega, data_pedido_fornecedor, numero_pedido_compra, comprador')
+      .select('id, unidade_id, status, version, numero_lancamento, telefone_normalizado, data_entrega, data_pedido_fornecedor, numero_pedido_compra, comprador, fornecedor:pedidos_personalizados_fornecedores!pedidos_personalizados_pedidos_fornecedor_id_fkey(chave)')
       .eq('id', pedidoId)
       .in('unidade_id', [...unidadeIds])
       .maybeSingle()
@@ -225,6 +327,21 @@ export class RepositorioPedidosPersonalizados {
       .order('ordem', { ascending: true })
     if (error) return { data: null, error }
     return { data: { ...pedido.data, tapetes: (data ?? []) as TapeteCriadoRow[] }, error: null }
+  }
+
+  async buscarPedidoExclusiveCriado(
+    pedidoId: string,
+    unidadeIds: readonly string[]
+  ): Promise<ResultadoBanco<(PedidoEscopoRow & { itens: TapeteCriadoRow[] }) | null>> {
+    const pedido = await this.buscarPedidoNoEscopo(pedidoId, unidadeIds)
+    if (pedido.error || !pedido.data) return pedido as ResultadoBanco<null>
+    const { data, error } = await this.supabase
+      .from('pedidos_personalizados_lebebe_exclusive_itens')
+      .select('id, ordem')
+      .eq('pedido_id', pedidoId)
+      .order('ordem', { ascending: true })
+    if (error) return { data: null, error }
+    return { data: { ...pedido.data, itens: (data ?? []) as TapeteCriadoRow[] }, error: null }
   }
 
   async listar(
@@ -319,12 +436,17 @@ export class RepositorioPedidosPersonalizados {
     const rows = data ?? []
     const pedidoIds = rows.map((row) => row.id)
     const resumoPorPedido = new Map<string, { quantidade: number; codigos: Set<string>; tipos: Set<string> }>()
+    const resumoExclusivePorPedido = new Map<string, { quantidade: number; referencias: Set<string> }>()
     const recebidoEmPorPedido = new Map<string, string>()
     if (pedidoIds.length > 0) {
-      const [tapetesResultado, historicoResultado] = await Promise.all([
+      const [tapetesResultado, itensExclusiveResultado, historicoResultado] = await Promise.all([
         this.supabase
           .from('pedidos_personalizados_moriah_tapetes')
           .select('pedido_id, tipo, produto:pedidos_personalizados_produtos!pedidos_personalizados_moriah_tapetes_produto_id_fkey(codigo)')
+          .in('pedido_id', pedidoIds),
+        this.supabase
+          .from('pedidos_personalizados_lebebe_exclusive_itens')
+          .select('pedido_id, quantidade, referencia_snapshot')
           .in('pedido_id', pedidoIds),
         this.supabase
           .from('pedidos_personalizados_status_historico')
@@ -334,6 +456,7 @@ export class RepositorioPedidosPersonalizados {
           .order('created_at', { ascending: false }),
       ])
       if (tapetesResultado.error) return { data: null, error: tapetesResultado.error }
+      if (itensExclusiveResultado.error) return { data: null, error: itensExclusiveResultado.error }
       if (historicoResultado.error) return { data: null, error: historicoResultado.error }
       const tapetesPagina = tapetesResultado.data
       for (const tapete of (tapetesPagina ?? []) as unknown as Array<{ pedido_id: string; tipo: string; produto: { codigo: string } }>) {
@@ -342,6 +465,17 @@ export class RepositorioPedidosPersonalizados {
         resumo.codigos.add(tapete.produto.codigo)
         resumo.tipos.add(tapete.tipo)
         resumoPorPedido.set(tapete.pedido_id, resumo)
+      }
+      for (const item of (itensExclusiveResultado.data ?? []) as Array<{
+        pedido_id: string
+        quantidade: number
+        referencia_snapshot: string
+      }>) {
+        const resumo = resumoExclusivePorPedido.get(item.pedido_id)
+          ?? { quantidade: 0, referencias: new Set<string>() }
+        resumo.quantidade += item.quantidade
+        resumo.referencias.add(item.referencia_snapshot)
+        resumoExclusivePorPedido.set(item.pedido_id, resumo)
       }
       for (const evento of (historicoResultado.data ?? []) as Array<{ pedido_id: string; data_recebimento: string | null; created_at: string }>) {
         if (!recebidoEmPorPedido.has(evento.pedido_id)) {
@@ -357,6 +491,8 @@ export class RepositorioPedidosPersonalizados {
           quantidade_tapetes: resumoPorPedido.get(row.id)?.quantidade ?? 0,
           codigos_produtos: Array.from(resumoPorPedido.get(row.id)?.codigos ?? []).sort(),
           tipos_tapetes: Array.from(resumoPorPedido.get(row.id)?.tipos ?? []).sort(),
+          quantidade_itens: resumoExclusivePorPedido.get(row.id)?.quantidade ?? 0,
+          referencias_produtos: Array.from(resumoExclusivePorPedido.get(row.id)?.referencias ?? []).sort(),
           recebido_em: recebidoEmPorPedido.get(row.id) ?? null,
         })),
         total: count ?? rows.length,
@@ -368,7 +504,7 @@ export class RepositorioPedidosPersonalizados {
   async carregarDetalhe(
     pedidoId: string,
     unidadeIds: readonly string[]
-  ): Promise<ResultadoBanco<{ pedido: unknown; tapetes: unknown[]; historico: unknown[] } | null>> {
+  ): Promise<ResultadoBanco<{ pedido: unknown; tapetes: unknown[]; itens: unknown[]; historico: unknown[] } | null>> {
     if (unidadeIds.length === 0) return { data: null, error: null }
     const { data: pedido, error: pedidoError } = await this.supabase
       .from('pedidos_personalizados_pedidos')
@@ -396,6 +532,17 @@ export class RepositorioPedidosPersonalizados {
       .eq('pedido_id', pedidoId)
       .order('ordem', { ascending: true })
     if (tapetesError) return { data: null, error: tapetesError }
+
+    const { data: itens, error: itensError } = await this.supabase
+      .from('pedidos_personalizados_lebebe_exclusive_itens')
+      .select(`
+        id, ordem, quantidade, nome_ou_letra, colecao_snapshot,
+        descricao_snapshot, referencia_snapshot, preco_unitario_snapshot,
+        custo_unitario_snapshot, total_venda, total_custo, produto_id
+      `)
+      .eq('pedido_id', pedidoId)
+      .order('ordem', { ascending: true })
+    if (itensError) return { data: null, error: itensError }
 
     const tapeteIds = (tapetes ?? []).map((tapete) => tapete.id)
     let cores: Array<{ tapete_id: string; ordem: number; cor: unknown }> = []
@@ -452,6 +599,7 @@ export class RepositorioPedidosPersonalizados {
               created_at: anexo.created_at,
             })),
         })),
+        itens: itens ?? [],
         historico: historico ?? [],
       },
       error: null,

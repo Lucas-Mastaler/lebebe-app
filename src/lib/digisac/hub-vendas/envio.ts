@@ -23,6 +23,7 @@ export type ContatoResgate = {
 
 export type TicketResgate = {
   ticketId: string | null
+  protocolo: string | null
   transferido: boolean
 }
 
@@ -45,6 +46,12 @@ function extrairContato(resp: unknown): DigisacContact | null {
 function erroSeguro(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
   return sanitizarDigisacParaLog(message).slice(0, 500)
+}
+
+export function normalizarProtocoloDigi(valor: unknown): string | null {
+  if (typeof valor !== 'string' && typeof valor !== 'number') return null
+  const protocolo = String(valor).trim()
+  return protocolo || null
 }
 
 export function hashTextoHubVendas(texto: string): string {
@@ -172,6 +179,15 @@ export async function buscarTicketAbertoContato(contactId: string): Promise<Digi
   return tickets[0] ?? null
 }
 
+export async function buscarTicketResgatePorId(ticketId: string): Promise<TicketResgate> {
+  const ticket = await fetchDigisac(`/tickets/${encodeURIComponent(ticketId)}`) as DigisacTicket
+  return {
+    ticketId: ticket.id || ticketId,
+    protocolo: normalizarProtocoloDigi(ticket.protocol),
+    transferido: false,
+  }
+}
+
 export async function abrirTicketResgateHubVendas(params: {
   contactId: string
   serviceId: string
@@ -200,15 +216,26 @@ export async function abrirTicketResgateHubVendas(params: {
   }
 
   let ticketId: string | null = null
+  let protocolo: string | null = null
   try {
     const json = JSON.parse(bodyText || '{}') as Record<string, unknown>
     const ticket = json.ticket && typeof json.ticket === 'object' ? json.ticket as Record<string, unknown> : null
     ticketId = (json.ticketId as string | undefined) ?? (ticket?.id as string | undefined) ?? null
+    protocolo = normalizarProtocoloDigi(json.protocol ?? ticket?.protocol)
   } catch {
     ticketId = null
   }
 
-  return { ticketId, transferido: true }
+  if (ticketId && !protocolo) {
+    try {
+      const ticket = await buscarTicketResgatePorId(ticketId)
+      protocolo = ticket.protocolo
+    } catch (error) {
+      console.warn(`[HUB VENDAS ENVIO] protocolo nao obtido apos abertura ticketId=${ticketId} erro=${erroSeguro(error)}`)
+    }
+  }
+
+  return { ticketId, protocolo, transferido: true }
 }
 
 export async function enviarMensagemResgateHubVendas(params: {

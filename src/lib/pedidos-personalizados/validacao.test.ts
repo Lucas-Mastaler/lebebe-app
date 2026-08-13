@@ -158,7 +158,7 @@ describe('validação completa do pedido Moriah', () => {
     const resultado = validarPedidoPersonalizadoMoriah(pedido({
       fornecedor: ' moriah_tapetes ',
       unidade: ' bigorrilho ',
-      status: ' CADASTRADO ',
+      status: ' RASCUNHO ',
       tapetes: [tapete({ formato: ' RETANGULAR ' })],
     }))
     expect(resultado).toMatchObject({ valido: true, erros: [] })
@@ -168,7 +168,7 @@ describe('validação completa do pedido Moriah', () => {
       consultora: 'NIÉGE SILVA',
       cliente: 'CLIENTE 2',
       telefoneNormalizado: '41999999999',
-      status: 'CADASTRADO',
+      status: 'RASCUNHO',
       tapetes: [{ dimensao1Cm: 200, dimensao2Cm: 300, areaCobradaCentesimosM2: 600, codigoProduto: '21158' }],
     })
   })

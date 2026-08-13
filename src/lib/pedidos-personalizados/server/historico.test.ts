@@ -21,7 +21,7 @@ describe('histórico de pedidos personalizados por telefone', () => {
     const pedidos = consulta({
       data: [{
         id: 'pedido-1', created_at: '2026-08-06T12:00:00Z', unidade_id: 'unidade-1',
-        status: 'CADASTRADO', numero_lancamento: '000001', numero_pedido_compra: '00001',
+        status: 'RASCUNHO', numero_lancamento: '000001', numero_pedido_compra: '00001',
         data_pedido_fornecedor: '2026-08-06', data_entrega: '2026-08-20',
         unidade: { chave: 'portao', nome: 'PORTAO' },
       }],

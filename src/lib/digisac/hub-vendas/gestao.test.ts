@@ -10,7 +10,114 @@ import {
   cancelarFilaAgendadaHubVendas,
   reprocessarFilaErroHubVendas,
   liberarAnaliseManualHubVendas,
+  COLUNAS_TEMPORAIS_HUB_VENDAS,
+  formatarPercentualHubVendas,
+  calcularResumoCoorteLeadsHubVendas,
+  filtrarLeadsPorDataEntradaHubVendas,
 } from './gestao'
+
+describe('colunas temporais dos KPIs Hub/Vendas', () => {
+  it('usa data de entrada para a coorte de leads e mantém eventos das filas', () => {
+    expect(COLUNAS_TEMPORAIS_HUB_VENDAS).toEqual({
+      leadsRegistrados: 'data_entrada_hub',
+      candidatosElegiveis: 'data_entrada_hub',
+      convertidos: 'data_entrada_hub',
+      recuperacaoEnviada: 'data_entrada_hub',
+      recuperados: 'data_entrada_hub',
+      perdidos: 'data_entrada_hub',
+      filaManual: 'data_entrada_hub',
+      filas: 'programado_para',
+      enviados: 'enviado_em',
+    })
+    expect(Object.values(COLUNAS_TEMPORAIS_HUB_VENDAS)).not.toContain('updated_at')
+  })
+
+  it('calcula percentual com uma casa decimal e protege denominador zero', () => {
+    expect(formatarPercentualHubVendas(20, 50)).toBe('40,0% do total')
+    expect(formatarPercentualHubVendas(20, 0)).toBe('0,0% do total')
+  })
+})
+
+describe('resumo da coorte de leads Hub/Vendas', () => {
+  const periodo = {
+    inicioIso: '2026-08-09T03:00:00.000Z',
+    fimIso: '2026-08-14T03:00:00.000Z',
+  }
+  const opcoes = {
+    limiteElegibilidadeIso: '2026-08-01T00:00:00.000Z',
+    limitePosRecuperacaoIso: '2026-08-01T00:00:00.000Z',
+  }
+
+  it('seleciona somente pela entrada e classifica o status atual dos mesmos leads', () => {
+    const leads = filtrarLeadsPorDataEntradaHubVendas([
+      {
+        status: 'convertido_organicamente',
+        dataEntradaHub: '2026-08-10T10:00:00.000Z',
+        dataRecuperacaoEnviada: null,
+        lojaPrincipal: 'portao',
+        conexaoRecuperacaoId: null,
+      },
+      {
+        status: 'encerrado',
+        dataEntradaHub: '2026-08-12T10:00:00.000Z',
+        dataRecuperacaoEnviada: null,
+        lojaPrincipal: null,
+        conexaoRecuperacaoId: 'c60d720f-5ad5-4a1b-bedb-e51495dee686',
+      },
+      {
+        status: 'fila_manual',
+        dataEntradaHub: '2026-08-08T23:59:59.999Z',
+        dataRecuperacaoEnviada: null,
+        lojaPrincipal: null,
+        conexaoRecuperacaoId: null,
+      },
+    ], periodo)
+
+    const resumo = calcularResumoCoorteLeadsHubVendas(leads, opcoes)
+
+    expect(resumo.leadsRegistrados).toBe(2)
+    expect(resumo.convertidos.total).toBe(1)
+    expect(resumo.convertidos.porLoja.find((loja) => loja.loja === 'portao')?.total).toBe(1)
+    expect(resumo.perdidos.total).toBe(1)
+    expect(resumo.filaManual).toBe(0)
+  })
+
+  it('preserva todos os registros quando não há filtro e aplica as janelas de elegibilidade', () => {
+    const leads = [
+      {
+        status: 'aguardando_conversao',
+        dataEntradaHub: '2026-08-10T10:00:00.000Z',
+        dataRecuperacaoEnviada: null,
+        lojaPrincipal: null,
+        conexaoRecuperacaoId: null,
+      },
+      {
+        status: 'recuperacao_enviada',
+        dataEntradaHub: '2026-08-10T11:00:00.000Z',
+        dataRecuperacaoEnviada: '2026-08-10T11:30:00.000Z',
+        lojaPrincipal: null,
+        conexaoRecuperacaoId: 'c60d720f-5ad5-4a1b-bedb-e51495dee686',
+      },
+      {
+        status: 'recuperado',
+        dataEntradaHub: '2026-07-01T10:00:00.000Z',
+        dataRecuperacaoEnviada: null,
+        lojaPrincipal: null,
+        conexaoRecuperacaoId: 'c60d720f-5ad5-4a1b-bedb-e51495dee686',
+      },
+    ]
+
+    const resumo = calcularResumoCoorteLeadsHubVendas(
+      filtrarLeadsPorDataEntradaHubVendas(leads),
+      opcoes
+    )
+
+    expect(resumo.leadsRegistrados).toBe(3)
+    expect(resumo.candidatosElegiveis).toBe(1)
+    expect(resumo.recuperacaoEnviada.total).toBe(1)
+    expect(resumo.recuperados.total).toBe(1)
+  })
+})
 
 describe('validarLimiteDiario', () => {
   it('aceita valor inteiro positivo dentro do máximo', () => {

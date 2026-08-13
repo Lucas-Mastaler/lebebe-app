@@ -5,6 +5,7 @@ import {
   abrirTicketResgateHubVendas,
   buscarContatoResgatePorTelefone,
   buscarTicketAbertoContato,
+  buscarTicketResgatePorId,
   enviarMensagemResgateHubVendas,
   garantirContatoResgateHubVendas,
   hashTextoHubVendas,
@@ -49,6 +50,7 @@ type HubVendasFila = {
   digisac_message_id: string | null
   digisac_contact_id: string | null
   digisac_ticket_id: string | null
+  digisac_protocolo: string | null
   ultima_reconciliacao_em: string | null
   quantidade_reconciliacoes: number
   tentativas_envio?: number
@@ -425,6 +427,31 @@ async function marcarEnviando(params: {
   if (error) throw error
 }
 
+async function persistirDadosTicketFila(params: {
+  supabase: SupabaseServiceClient
+  fila: HubVendasFila
+  workerId: string
+  ticketId: string | null
+  protocolo: string | null
+}) {
+  if (!params.ticketId && !params.protocolo) return
+
+  const atualizacao: { digisac_ticket_id?: string; digisac_protocolo?: string } = {}
+  if (params.ticketId) atualizacao.digisac_ticket_id = params.ticketId
+  if (params.protocolo) atualizacao.digisac_protocolo = params.protocolo
+
+  const { data, error } = await params.supabase
+    .from('hub_vendas_recuperacao_fila')
+    .update(atualizacao)
+    .eq('id', params.fila.id)
+    .eq('reservado_por', params.workerId)
+    .in('status', ['reservado', 'enviando'])
+    .select('id')
+
+  if (error) throw error
+  if (!data?.length) throw new Error('hub_vendas_persistencia_ticket_invalida')
+}
+
 async function confirmarEnviado(params: {
   supabase: SupabaseServiceClient
   fila: HubVendasFila
@@ -645,6 +672,14 @@ async function processarFilaReservada(params: {
     serviceId: params.fila.conexao_destino_id,
   })
 
+  await persistirDadosTicketFila({
+    supabase: params.supabase,
+    fila: params.fila,
+    workerId: params.workerId,
+    ticketId: ticket.ticketId,
+    protocolo: ticket.protocolo,
+  })
+
   await marcarEnviando({
     supabase: params.supabase,
     fila: params.fila,
@@ -682,13 +717,30 @@ async function processarFilaReservada(params: {
     return { filaId: params.fila.id, leadId: lead.id, statusInicial: params.fila.status, acao: 'resultado_incerto', motivo: 'digisac_message_id_ausente' }
   }
 
+  const ticketIdFinal = envio.ticketId ?? ticket.ticketId
+  if (ticketIdFinal && (!ticket.protocolo || ticketIdFinal !== ticket.ticketId)) {
+    try {
+      const dadosTicket = await buscarTicketResgatePorId(ticketIdFinal)
+      await persistirDadosTicketFila({
+        supabase: params.supabase,
+        fila: params.fila,
+        workerId: params.workerId,
+        ticketId: ticketIdFinal,
+        protocolo: dadosTicket.protocolo,
+      })
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : String(error)
+      console.warn(`[HUB VENDAS ENVIO] protocolo nao persistido filaId=${params.fila.id} erro=${mensagem.slice(0, 200)}`)
+    }
+  }
+
   await confirmarEnviado({
     supabase: params.supabase,
     fila: params.fila,
     workerId: params.workerId,
     messageId: envio.messageId,
     contactId: envio.contactId,
-    ticketId: envio.ticketId ?? ticket.ticketId,
+    ticketId: ticketIdFinal,
   })
 
   return {

@@ -192,7 +192,7 @@ export function montarEntradaPedido(
     dataPedidoFornecedor: opcoes.comercial ? null : stringOpcional(valor.dataPedidoFornecedor),
     numeroPedidoCompra: opcoes.comercial ? null : stringOpcional(valor.numeroPedidoCompra),
     comprador: opcoes.comercial ? null : stringOpcional(valor.comprador),
-    status: 'CADASTRADO',
+    status: 'RASCUNHO',
     tapetes: tapetes as TapeteMoriahEntrada[],
   }
 
@@ -284,9 +284,9 @@ export function validarTransicaoStatus(valor: unknown):
     dados: {
       expectedVersion: Number(valor.expectedVersion),
       statusDestino: valor.statusDestino,
-      numeroPedidoCompra: valor.statusDestino === 'AGUARDANDO LAYOUT' ? numeroNormalizado : null,
-      dataPedidoFornecedor: valor.statusDestino === 'AGUARDANDO LAYOUT' ? dataFornecedorNormalizada : null,
-      comprador: valor.statusDestino === 'AGUARDANDO LAYOUT' ? compradorNormalizado : null,
+      numeroPedidoCompra: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(valor.statusDestino) ? numeroNormalizado : null,
+      dataPedidoFornecedor: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(valor.statusDestino) ? dataFornecedorNormalizada : null,
+      comprador: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(valor.statusDestino) ? compradorNormalizado : null,
       dataEntrega: valor.statusDestino === 'EM PRODUÇÃO' ? dataEntregaNormalizada : null,
       dataRecebimento: valor.statusDestino === 'RECEBIDO' ? dataRecebimentoNormalizada : null,
       justificativa: valor.statusDestino === 'CANCELADO' ? justificativaNormalizada : null,

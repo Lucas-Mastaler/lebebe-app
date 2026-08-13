@@ -5,6 +5,7 @@ import {
   RefreshCw, AlertTriangle, CheckCircle, Pause, Play, Save,
   Search, ChevronLeft, ChevronRight, X, Eye, AlertCircle,
   Bot, Clock, Hash, ShieldAlert, Loader2, Info,
+  ExternalLink,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type {
@@ -14,13 +15,95 @@ import type {
   DetalheFilaHubVendas,
   ContagemPorLojaHubVendas,
 } from '@/lib/digisac/hub-vendas/gestao'
-import { LIMITE_DIARIO_MAXIMO } from '@/lib/digisac/hub-vendas/gestao'
+import { formatarPercentualHubVendas, LIMITE_DIARIO_MAXIMO } from '@/lib/digisac/hub-vendas/gestao'
+import { montarUrlHistoricoTicket } from '@/lib/digisac/urls'
 
 const POLLING_INTERVAL_MS = 60_000
 
 type LojaFiltro = '' | 'portao' | 'bigorrilho' | 'hauer_marechal'
+type PeriodoHubVendas = { de: string; ate: string }
+type FiltrosFilasHubVendas = {
+  loja: LojaFiltro
+  status: string
+  cliente: string
+  telefoneParcial: string
+  somenteErros: boolean
+  somenteAnaliseManual: boolean
+  somenteResultadoIncerto: boolean
+}
+
+function adicionarPeriodo(params: URLSearchParams, periodo: PeriodoHubVendas | null) {
+  if (!periodo) return
+  params.set('dataInicio', periodo.de)
+  params.set('dataFim', periodo.ate)
+}
+
+async function buscarStatusHubVendas(
+  periodo: PeriodoHubVendas | null,
+  somenteHistorico = false
+): Promise<StatusGestaoHubVendas> {
+  const params = new URLSearchParams()
+  adicionarPeriodo(params, periodo)
+  if (somenteHistorico) params.set('somenteHistorico', 'true')
+  const sufixo = params.size > 0 ? `?${params.toString()}` : ''
+  const res = await fetch(`/api/hub-vendas/status${sufixo}`)
+  const data = await res.json()
+  if (!res.ok || !data.ok) throw new Error(data.message || data.error || 'Erro ao carregar status')
+  return data as StatusGestaoHubVendas
+}
+
+async function buscarFilasHubVendas(
+  pagina: number,
+  filtros: FiltrosFilasHubVendas,
+  periodo: PeriodoHubVendas | null
+): Promise<ListagemFilasHubVendas> {
+  const params = new URLSearchParams()
+  params.set('pagina', String(pagina))
+  params.set('porPagina', '20')
+  if (filtros.loja) params.set('loja', filtros.loja)
+  if (filtros.status) params.set('status', filtros.status)
+  if (filtros.cliente) params.set('cliente', filtros.cliente)
+  if (filtros.telefoneParcial) params.set('telefoneParcial', filtros.telefoneParcial)
+  if (filtros.somenteErros) params.set('somenteErros', 'true')
+  if (filtros.somenteAnaliseManual) params.set('somenteAnaliseManual', 'true')
+  if (filtros.somenteResultadoIncerto) params.set('somenteResultadoIncerto', 'true')
+  adicionarPeriodo(params, periodo)
+
+  const res = await fetch(`/api/hub-vendas/filas?${params.toString()}`)
+  const data = await res.json()
+  if (!res.ok || !data.ok) throw new Error(data.message || data.error || 'Erro ao carregar filas')
+  return data as ListagemFilasHubVendas
+}
+
+function mesclarResumoHistorico(
+  statusAtual: StatusGestaoHubVendas,
+  statusHistorico: StatusGestaoHubVendas
+): StatusGestaoHubVendas {
+  return {
+    ...statusAtual,
+    resumo: {
+      ...statusAtual.resumo,
+      leadsRegistrados: statusHistorico.resumo.leadsRegistrados,
+      candidatosElegiveis: statusHistorico.resumo.candidatosElegiveis,
+      convertidos: statusHistorico.resumo.convertidos,
+      convertidosPorLoja: statusHistorico.resumo.convertidosPorLoja,
+      recuperacaoEnviadaTotal: statusHistorico.resumo.recuperacaoEnviadaTotal,
+      recuperacaoEnviadaPorLoja: statusHistorico.resumo.recuperacaoEnviadaPorLoja,
+      recuperados: statusHistorico.resumo.recuperados,
+      recuperadosPorLoja: statusHistorico.resumo.recuperadosPorLoja,
+      perdidos: statusHistorico.resumo.perdidos,
+      perdidosPorLoja: statusHistorico.resumo.perdidosPorLoja,
+      filaManual: statusHistorico.resumo.filaManual,
+      enviadaHoje: statusHistorico.resumo.enviadaHoje,
+    },
+  }
+}
 
 export default function PageClient() {
+  const [periodoRascunho, setPeriodoRascunho] = useState({ de: '', ate: '' })
+  const [periodoAplicado, setPeriodoAplicado] = useState<PeriodoHubVendas | null>(null)
+  const [carregandoPeriodo, setCarregandoPeriodo] = useState(false)
+  const [erroPeriodo, setErroPeriodo] = useState<string | null>(null)
   const [status, setStatus] = useState<StatusGestaoHubVendas | null>(null)
   const [loadingStatus, setLoadingStatus] = useState(true)
   const [erroStatus, setErroStatus] = useState<string | null>(null)
@@ -42,7 +125,7 @@ export default function PageClient() {
   const [loadingFilas, setLoadingFilas] = useState(false)
   const [erroFilas, setErroFilas] = useState<string | null>(null)
   const [pagina, setPagina] = useState(1)
-  const [filtros, setFiltros] = useState({
+  const [filtros, setFiltros] = useState<FiltrosFilasHubVendas>({
     loja: '' as LojaFiltro,
     status: '',
     cliente: '',
@@ -52,6 +135,8 @@ export default function PageClient() {
     somenteResultadoIncerto: false,
   })
   const debounceCliente = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const consultaPeriodoEmAndamento = useRef(false)
+  const primeiraBuscaCliente = useRef(true)
 
   // Detalhe
   const [detalhe, setDetalhe] = useState<DetalheFilaHubVendas | null>(null)
@@ -82,68 +167,45 @@ export default function PageClient() {
   // Carregamento de status
   // ---------------------------------------------------------------------------
   const carregarStatus = useCallback(async (manual = false) => {
+    if (consultaPeriodoEmAndamento.current && !manual) return
     if (manual) {
       setAtualizandoStatus(true)
       setFeedbackStatus(null)
     }
     try {
       setErroStatus(null)
-      const res = await fetch('/api/hub-vendas/status')
-      const data = await res.json()
-      if (data.ok) {
-        setStatus(data)
-        if (novoLimite === '') {
-          setNovoLimite(String(data.parametros.limiteDiarioPorConexao))
-        }
-        if (manual) {
-          const agora = new Date()
-          setUltimaAtualizacaoStatus(agora.toLocaleTimeString('pt-BR'))
-          setFeedbackStatus({ tipo: 'sucesso', texto: 'Dados atualizados' })
-        }
-      } else {
-        setErroStatus(data.message || data.error || 'Erro ao carregar status')
-        if (manual) setFeedbackStatus({ tipo: 'erro', texto: 'Não foi possível atualizar os dados' })
+      const data = await buscarStatusHubVendas(periodoAplicado)
+      setStatus(data)
+      setNovoLimite((atual) => atual === '' ? String(data.parametros.limiteDiarioPorConexao) : atual)
+      if (manual) {
+        const agora = new Date()
+        setUltimaAtualizacaoStatus(agora.toLocaleTimeString('pt-BR'))
+        setFeedbackStatus({ tipo: 'sucesso', texto: 'Dados atualizados' })
       }
-    } catch {
-      setErroStatus('Erro de conexão ao carregar status')
+    } catch (error) {
+      setErroStatus(error instanceof Error ? error.message : 'Erro de conexão ao carregar status')
       if (manual) setFeedbackStatus({ tipo: 'erro', texto: 'Não foi possível atualizar os dados' })
     } finally {
       setLoadingStatus(false)
       if (manual) setAtualizandoStatus(false)
     }
-  }, [novoLimite])
+  }, [periodoAplicado])
 
   // ---------------------------------------------------------------------------
   // Carregamento de filas
   // ---------------------------------------------------------------------------
   const carregarFilas = useCallback(async (pag: number) => {
+    if (consultaPeriodoEmAndamento.current) return
     setLoadingFilas(true)
     setErroFilas(null)
     try {
-      const params = new URLSearchParams()
-      params.set('pagina', String(pag))
-      params.set('porPagina', '20')
-      if (filtros.loja) params.set('loja', filtros.loja)
-      if (filtros.status) params.set('status', filtros.status)
-      if (filtros.cliente) params.set('cliente', filtros.cliente)
-      if (filtros.telefoneParcial) params.set('telefoneParcial', filtros.telefoneParcial)
-      if (filtros.somenteErros) params.set('somenteErros', 'true')
-      if (filtros.somenteAnaliseManual) params.set('somenteAnaliseManual', 'true')
-      if (filtros.somenteResultadoIncerto) params.set('somenteResultadoIncerto', 'true')
-
-      const res = await fetch(`/api/hub-vendas/filas?${params.toString()}`)
-      const data = await res.json()
-      if (data.ok) {
-        setFilas(data)
-      } else {
-        setErroFilas(data.message || data.error || 'Erro ao carregar filas')
-      }
-    } catch {
-      setErroFilas('Erro de conexão ao carregar filas')
+      setFilas(await buscarFilasHubVendas(pag, filtros, periodoAplicado))
+    } catch (error) {
+      setErroFilas(error instanceof Error ? error.message : 'Erro de conexão ao carregar filas')
     } finally {
       setLoadingFilas(false)
     }
-  }, [filtros])
+  }, [filtros, periodoAplicado])
 
   // ---------------------------------------------------------------------------
   // Carregamento de alertas e resumo operacional
@@ -199,35 +261,106 @@ export default function PageClient() {
     }
   }, [])
 
+  const carregarStatusAtual = useRef(carregarStatus)
+  const carregarFilasAtual = useRef(carregarFilas)
+  useEffect(() => {
+    carregarStatusAtual.current = carregarStatus
+    carregarFilasAtual.current = carregarFilas
+  }, [carregarStatus, carregarFilas])
+
   // ---------------------------------------------------------------------------
   // Polling e carregamento inicial
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    carregarStatus()
-    carregarFilas(1)
+    carregarStatusAtual.current()
+    carregarFilasAtual.current(1)
     carregarAlertas()
     carregarResumo()
     const interval = setInterval(() => {
-      carregarStatus()
+      carregarStatusAtual.current()
     }, POLLING_INTERVAL_MS)
     return () => clearInterval(interval)
-  }, [carregarStatus, carregarFilas, carregarAlertas, carregarResumo])
+  }, [carregarAlertas, carregarResumo])
 
   // Debounce para filtro de cliente
   useEffect(() => {
+    if (primeiraBuscaCliente.current) {
+      primeiraBuscaCliente.current = false
+      return
+    }
     if (debounceCliente.current) clearTimeout(debounceCliente.current)
     debounceCliente.current = setTimeout(() => {
       setPagina(1)
-      carregarFilas(1)
+      carregarFilasAtual.current(1)
     }, 400)
     return () => {
       if (debounceCliente.current) clearTimeout(debounceCliente.current)
     }
-  }, [filtros.cliente, carregarFilas])
+  }, [filtros.cliente])
 
   // ---------------------------------------------------------------------------
   // Ações
   // ---------------------------------------------------------------------------
+  async function atualizarPeriodo(periodo: PeriodoHubVendas | null) {
+    if (consultaPeriodoEmAndamento.current) return false
+    consultaPeriodoEmAndamento.current = true
+    setCarregandoPeriodo(true)
+    setErroPeriodo(null)
+    try {
+      const [novoStatus, novasFilas] = await Promise.all([
+        buscarStatusHubVendas(periodo, true),
+        buscarFilasHubVendas(1, filtros, periodo),
+      ])
+      setStatus((atual) => atual ? mesclarResumoHistorico(atual, novoStatus) : novoStatus)
+      setNovoLimite((atual) => atual === '' ? String(novoStatus.parametros.limiteDiarioPorConexao) : atual)
+      setFilas(novasFilas)
+      setPagina(1)
+      setPeriodoAplicado(periodo)
+      return true
+    } catch (error) {
+      setErroPeriodo(error instanceof Error ? error.message : 'Não foi possível carregar os dados do período.')
+      return false
+    } finally {
+      consultaPeriodoEmAndamento.current = false
+      setCarregandoPeriodo(false)
+    }
+  }
+
+  function aplicarPeriodo() {
+    if (consultaPeriodoEmAndamento.current) return
+    if (!periodoRascunho.de || !periodoRascunho.ate) {
+      setErroPeriodo('Informe as datas De e Até.')
+      return
+    }
+    if (periodoRascunho.de > periodoRascunho.ate) {
+      setErroPeriodo('A data De não pode ser posterior à data Até.')
+      return
+    }
+    void atualizarPeriodo({ ...periodoRascunho })
+  }
+
+  function limparPeriodo() {
+    if (consultaPeriodoEmAndamento.current) return
+    void atualizarPeriodo(null).then((limpezaAplicada) => {
+      if (limpezaAplicada) setPeriodoRascunho({ de: '', ate: '' })
+    })
+  }
+
+  async function atualizarFiltrosFila(proximosFiltros: FiltrosFilasHubVendas) {
+    if (consultaPeriodoEmAndamento.current) return
+    setFiltros(proximosFiltros)
+    setPagina(1)
+    setLoadingFilas(true)
+    setErroFilas(null)
+    try {
+      setFilas(await buscarFilasHubVendas(1, proximosFiltros, periodoAplicado))
+    } catch (error) {
+      setErroFilas(error instanceof Error ? error.message : 'Erro de conexão ao carregar filas')
+    } finally {
+      setLoadingFilas(false)
+    }
+  }
+
   async function salvarLimite() {
     setSalvandoLimite(true)
     setFeedbackLimite(null)
@@ -423,6 +556,60 @@ export default function PageClient() {
         </div>
       </div>
 
+      {/* Filtro global de período — sem valor padrão para preservar o comportamento atual. */}
+      <section className="order-1 bg-white border border-slate-200 rounded-xl p-4">
+        <div className="flex flex-col md:flex-row md:items-end gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 max-w-xl">
+            <label className="text-xs text-slate-500">
+              <span className="block mb-1">De</span>
+              <input
+                type="date"
+                value={periodoRascunho.de}
+                onChange={(e) => setPeriodoRascunho((atual) => ({ ...atual, de: e.target.value }))}
+                disabled={carregandoPeriodo}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+            </label>
+            <label className="text-xs text-slate-500">
+              <span className="block mb-1">Até</span>
+              <input
+                type="date"
+                value={periodoRascunho.ate}
+                onChange={(e) => setPeriodoRascunho((atual) => ({ ...atual, ate: e.target.value }))}
+                disabled={carregandoPeriodo}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+            </label>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={aplicarPeriodo}
+              disabled={carregandoPeriodo}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {carregandoPeriodo && <Loader2 className="w-4 h-4 animate-spin" />}
+              {carregandoPeriodo ? 'Carregando...' : 'Aplicar'}
+            </button>
+            {periodoAplicado && (
+              <button
+                onClick={limparPeriodo}
+                disabled={carregandoPeriodo}
+                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Limpar
+              </button>
+            )}
+          </div>
+        </div>
+        {erroPeriodo && <p className="text-xs text-red-600 mt-2">{erroPeriodo}</p>}
+        {carregandoPeriodo && <p className="text-xs text-slate-500 mt-2" role="status">Carregando dados do período...</p>}
+        {periodoAplicado && !erroPeriodo && !carregandoPeriodo && (
+          <p className="text-xs text-sky-700 mt-2">
+            Período aplicado: {formatarDataBrasileira(periodoAplicado.de)} até {formatarDataBrasileira(periodoAplicado.ate)} · America/Sao_Paulo
+          </p>
+        )}
+      </section>
+
       {/* Estado geral da automação */}
       <section className="order-4 bg-white border border-slate-200 rounded-xl p-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -494,12 +681,23 @@ export default function PageClient() {
         </div>
       </section>
 
-      {/* Resumo geral */}
-      <section className="order-1 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* Resultados da coorte de leads */}
+      <section className="order-1">
+        <div className="mb-3">
+          <h2 className="text-sm font-semibold text-slate-700">
+            {periodoAplicado ? 'Resultados dos leads do período' : 'Resultados dos leads'}
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            {periodoAplicado
+              ? 'Considera quem entrou no Hub no período selecionado e mostra o estado atual desses mesmos leads.'
+              : 'Considera todos os leads registrados e mostra o estado atual de cada um.'}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <CardResumo
           label="Leads registrados"
           valor={status.resumo.leadsRegistrados}
-          cor="slate"
+          cor="neutro"
           tooltip="Total de clientes que já entraram em contato pela nossa Central de Atendimento."
         />
         <CardResumo
@@ -507,7 +705,7 @@ export default function PageClient() {
           valor={status.resumo.candidatosElegiveis}
           cor="sky"
           tooltip="Clientes que ainda podem receber uma mensagem de recuperação."
-          percentual={formatarPercentualDoTotal(status.resumo.candidatosElegiveis, status.resumo.leadsRegistrados)}
+          percentual={formatarPercentualHubVendas(status.resumo.candidatosElegiveis, status.resumo.leadsRegistrados)}
         />
         <CardResumo
           label="Convertidos organicamente"
@@ -515,7 +713,7 @@ export default function PageClient() {
           cor="green"
           detalhe={formatarDetalhePorLoja(status.resumo.convertidosPorLoja)}
           tooltip="Clientes que procuraram uma das lojas por conta própria, antes de receber uma mensagem de recuperação."
-          percentual={formatarPercentualDoTotal(status.resumo.convertidos, status.resumo.leadsRegistrados)}
+          percentual={formatarPercentualHubVendas(status.resumo.convertidos, status.resumo.leadsRegistrados)}
         />
         <CardResumo
           label="Recuperação enviada / aguardando"
@@ -523,7 +721,7 @@ export default function PageClient() {
           cor="cyan"
           detalhe={formatarDetalhePorLoja(status.resumo.recuperacaoEnviadaPorLoja)}
           tooltip="Clientes que receberam nossa mensagem de recuperação e ainda estão dentro do prazo para responder."
-          percentual={formatarPercentualDoTotal(status.resumo.recuperacaoEnviadaTotal, status.resumo.leadsRegistrados)}
+          percentual={formatarPercentualHubVendas(status.resumo.recuperacaoEnviadaTotal, status.resumo.leadsRegistrados)}
         />
         <CardResumo
           label="Recuperados"
@@ -531,29 +729,47 @@ export default function PageClient() {
           cor="green"
           detalhe={formatarDetalhePorLoja(status.resumo.recuperadosPorLoja)}
           tooltip="Clientes que responderam depois de receber nossa mensagem de recuperação."
-          percentual={formatarPercentualDoTotal(status.resumo.recuperados, status.resumo.leadsRegistrados)}
+          percentual={formatarPercentualHubVendas(status.resumo.recuperados, status.resumo.leadsRegistrados)}
         />
         <CardResumo
           label="Perdidos"
           valor={status.resumo.perdidos}
-          cor="slate"
+          cor="neutro"
           detalhe={formatarDetalhePorLoja(status.resumo.perdidosPorLoja)}
           tooltip="Clientes que receberam a mensagem de recuperação, mas não responderam dentro do prazo."
-          percentual={formatarPercentualDoTotal(status.resumo.perdidos, status.resumo.leadsRegistrados)}
+          percentual={formatarPercentualHubVendas(status.resumo.perdidos, status.resumo.leadsRegistrados)}
         />
         <CardResumo
           label="Fila manual"
           valor={status.resumo.filaManual}
           cor="amber"
           tooltip="Clientes que poderiam receber recuperação, mas não entraram na fila dentro do prazo."
-          percentual={formatarPercentualDoTotal(status.resumo.filaManual, status.resumo.leadsRegistrados)}
+          percentual={formatarPercentualHubVendas(status.resumo.filaManual, status.resumo.leadsRegistrados)}
         />
+        </div>
+      </section>
+
+      <section className="order-1">
+        <div className="mb-3">
+          <h2 className="text-sm font-semibold text-slate-700">{periodoAplicado ? 'Movimentação no período' : 'Movimentação atual'}</h2>
+          <p className="text-xs text-slate-500 mt-1">{periodoAplicado ? 'Envios e filas programados no período selecionado.' : 'Envios realizados hoje e filas programadas.'}</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <CardResumo
-          label="Enviados hoje"
+          label={periodoAplicado ? 'Enviados no período' : 'Enviados hoje'}
           valor={status.resumo.enviadaHoje}
           cor="green"
-          tooltip="Quantidade de mensagens de recuperação enviadas hoje."
+          tooltip={periodoAplicado ? 'Quantidade de mensagens de recuperação enviadas no período selecionado.' : 'Quantidade de mensagens de recuperação enviadas hoje.'}
         />
+        </div>
+      </section>
+
+      <section className="order-1">
+        <div className="mb-3">
+          <h2 className="text-sm font-semibold text-slate-700">Operação atual</h2>
+          <p className="text-xs text-slate-500 mt-1">Estado atual das filas, limites e alertas da automação, independente do período selecionado.</p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <CardResumo
           label="Filas agendadas"
           valor={status.resumo.agendada}
@@ -575,7 +791,7 @@ export default function PageClient() {
         <CardResumo
           label="Canceladas"
           valor={status.resumo.cancelada}
-          cor="slate"
+          cor="neutro"
           tooltip="Envios de recuperação cancelados, geralmente porque o cliente já tinha sido atendido antes do envio."
         />
         <CardResumo
@@ -599,6 +815,7 @@ export default function PageClient() {
           destaque={status.resumo.analiseManual > 0}
           tooltip="Casos que precisam ser conferidos manualmente pela equipe."
         />
+        </div>
       </section>
 
       {status.resumo.conexoesPausadas > 0 && (
@@ -790,11 +1007,12 @@ export default function PageClient() {
       {/* Filtros + Tabela de filas */}
       <section className="order-3 bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="p-4 border-b border-slate-100">
-          <h2 className="text-sm font-semibold text-slate-700 mb-3">Filas e envios</h2>
+          <h2 className="text-sm font-semibold text-slate-700 mb-1">{periodoAplicado ? 'Filas e envios do período' : 'Filas e envios'}</h2>
+          <p className="text-xs text-slate-500 mb-3">As filas usam a data programada; os envios usam a data de envio.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <select
               value={filtros.loja}
-              onChange={(e) => { setFiltros({ ...filtros, loja: e.target.value as LojaFiltro }); setPagina(1) }}
+              onChange={(e) => { void atualizarFiltrosFila({ ...filtros, loja: e.target.value as LojaFiltro }) }}
               className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
             >
               <option value="">Todas as lojas</option>
@@ -804,7 +1022,7 @@ export default function PageClient() {
             </select>
             <select
               value={filtros.status}
-              onChange={(e) => { setFiltros({ ...filtros, status: e.target.value }); setPagina(1) }}
+              onChange={(e) => { void atualizarFiltrosFila({ ...filtros, status: e.target.value }) }}
               className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
             >
               <option value="">Todos os status</option>
@@ -828,21 +1046,21 @@ export default function PageClient() {
               type="text"
               placeholder="Telefone parcial"
               value={filtros.telefoneParcial}
-              onChange={(e) => setFiltros({ ...filtros, telefoneParcial: e.target.value })}
+              onChange={(e) => { void atualizarFiltrosFila({ ...filtros, telefoneParcial: e.target.value }) }}
               className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
             />
           </div>
           <div className="flex flex-wrap gap-4 mt-3">
             <label className="flex items-center gap-2 text-sm text-slate-600">
-              <input type="checkbox" checked={filtros.somenteErros} onChange={(e) => { setFiltros({ ...filtros, somenteErros: e.target.checked }); setPagina(1) }} />
+              <input type="checkbox" checked={filtros.somenteErros} onChange={(e) => { void atualizarFiltrosFila({ ...filtros, somenteErros: e.target.checked }) }} />
               Somente erros
             </label>
             <label className="flex items-center gap-2 text-sm text-slate-600">
-              <input type="checkbox" checked={filtros.somenteAnaliseManual} onChange={(e) => { setFiltros({ ...filtros, somenteAnaliseManual: e.target.checked }); setPagina(1) }} />
+              <input type="checkbox" checked={filtros.somenteAnaliseManual} onChange={(e) => { void atualizarFiltrosFila({ ...filtros, somenteAnaliseManual: e.target.checked }) }} />
               Análise manual
             </label>
             <label className="flex items-center gap-2 text-sm text-slate-600">
-              <input type="checkbox" checked={filtros.somenteResultadoIncerto} onChange={(e) => { setFiltros({ ...filtros, somenteResultadoIncerto: e.target.checked }); setPagina(1) }} />
+              <input type="checkbox" checked={filtros.somenteResultadoIncerto} onChange={(e) => { void atualizarFiltrosFila({ ...filtros, somenteResultadoIncerto: e.target.checked }) }} />
               Resultado incerto
             </label>
           </div>
@@ -871,6 +1089,7 @@ export default function PageClient() {
                     <th className="px-3 py-2 text-left">Telefone</th>
                     <th className="px-3 py-2 text-left">Loja</th>
                     <th className="px-3 py-2 text-left">Status</th>
+                    <th className="px-3 py-2 text-left">Protocolo Digi</th>
                     <th className="px-3 py-2 text-left">Tent.</th>
                     <th className="px-3 py-2 text-left">Erro</th>
                     <th className="px-3 py-2 text-center">Ações</th>
@@ -884,6 +1103,19 @@ export default function PageClient() {
                       <td className="px-3 py-2 text-slate-600 text-xs font-mono">{fila.telefoneMascarado || '—'}</td>
                       <td className="px-3 py-2 text-slate-600">{fila.conexaoDestinoNome || fila.loja || '—'}</td>
                       <td className="px-3 py-2"><BadgeStatus status={fila.status} /></td>
+                      <td className="px-3 py-2 text-xs font-mono whitespace-nowrap">
+                        {fila.digisacProtocolo && fila.digisacTicketId ? (
+                          <a
+                            href={montarUrlHistoricoTicket(fila.digisacTicketId)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline"
+                          >
+                            {fila.digisacProtocolo}
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        ) : '—'}
+                      </td>
                       <td className="px-3 py-2 text-center text-slate-600">{fila.tentativasEnvio}</td>
                       <td className="px-3 py-2 text-xs text-red-600 max-w-[200px] truncate" title={fila.erro || ''}>{fila.erro || '—'}</td>
                       <td className="px-3 py-2 text-center">
@@ -1054,17 +1286,6 @@ function formatarDetalhePorLoja(porLoja: ContagemPorLojaHubVendas[]): string {
   return porLoja.map((item) => `${item.nomeExibicao} ${item.total}`).join(' · ')
 }
 
-/**
- * Formata "X% do total" para exibir dentro de um KPI, usando sempre o mesmo denominador
- * (leadsRegistrados) já usado pelo card "Leads registrados" — garante numerador e
- * denominador do mesmo universo. Uma casa decimal, vírgula (padrão pt-BR).
- */
-function formatarPercentualDoTotal(valor: number, total: number): string {
-  if (total <= 0) return '0,0% do total'
-  const percentual = (valor / total) * 100
-  return `${percentual.toFixed(1).replace('.', ',')}% do total`
-}
-
 function CardResumo({
   label,
   valor,
@@ -1083,6 +1304,7 @@ function CardResumo({
   tooltip?: string
 }) {
   const cores: Record<string, string> = {
+    neutro: 'bg-white border border-slate-200 text-slate-700',
     slate: 'bg-slate-50 text-slate-700',
     sky: 'bg-sky-50 text-sky-700',
     green: 'bg-green-50 text-green-700',
@@ -1360,4 +1582,9 @@ function formatarData(iso: string): string {
   } catch {
     return iso
   }
+}
+
+function formatarDataBrasileira(dataIso: string): string {
+  const [ano, mes, dia] = dataIso.split('-')
+  return ano && mes && dia ? `${dia}/${mes}/${ano}` : dataIso
 }

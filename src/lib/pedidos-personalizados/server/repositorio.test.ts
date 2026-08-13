@@ -54,7 +54,7 @@ describe('repositório server-only de pedidos personalizados', () => {
     const rastreio = { order: [] as Array<[string, unknown]> }
     const filas: Record<string, unknown[]> = {
       pedidos_personalizados_pedidos: [{
-        data: { id: 'pedido-1', unidade_id: 'unidade-1', status: 'CADASTRADO', version: 1 },
+        data: { id: 'pedido-1', unidade_id: 'unidade-1', status: 'RASCUNHO', version: 1 },
         error: null,
       }],
       pedidos_personalizados_moriah_tapetes: [{
@@ -130,6 +130,7 @@ describe('repositório server-only de pedidos personalizados', () => {
         ],
         error: null,
       }],
+      pedidos_personalizados_lebebe_exclusive_itens: [{ data: [], error: null }],
       pedidos_personalizados_status_historico: [{
         data: [{ pedido_id: 'pedido-1', data_recebimento: '2026-08-06', created_at: '2026-08-07T12:00:00Z' }], error: null,
       }],
@@ -141,7 +142,7 @@ describe('repositório server-only de pedidos personalizados', () => {
     expect(resultado.error).toBeNull()
     expect(resultado.data?.total).toBe(41)
     expect(resultado.data?.itens[0]).toMatchObject({ quantidade_tapetes: 2, codigos_produtos: ['21158'], recebido_em: '2026-08-06' })
-    expect(from).toHaveBeenCalledTimes(3)
+    expect(from).toHaveBeenCalledTimes(4)
     expect(rastreio.order.slice(0, 2)).toEqual([
       ['created_at', { ascending: false }],
       ['id', { ascending: false }],
@@ -163,6 +164,7 @@ describe('repositório server-only de pedidos personalizados', () => {
         data: [{ pedido_id: 'pedido-1', produto: { codigo: '21158' } }],
         error: null,
       }],
+      pedidos_personalizados_lebebe_exclusive_itens: [{ data: [], error: null }],
       pedidos_personalizados_status_historico: [{
         data: [
           { pedido_id: 'pedido-1', data_recebimento: '2026-08-06', created_at: '2026-08-07T12:00:00Z' },
@@ -176,8 +178,9 @@ describe('repositório server-only de pedidos personalizados', () => {
     const resultado = await repo.listar(filtros(), unidades)
 
     expect(resultado.error).toBeNull()
-    const item1 = resultado.data?.itens.find((item) => item.id === 'pedido-1')
-    const item2 = resultado.data?.itens.find((item) => item.id === 'pedido-2')
+    const itens = resultado.data?.itens as Array<Record<string, unknown>> | undefined
+    const item1 = itens?.find((item) => item.id === 'pedido-1')
+    const item2 = itens?.find((item) => item.id === 'pedido-2')
     expect(item1?.recebido_em).toBe('2026-08-06')
     expect(item2?.recebido_em).toBe('2026-08-10')
   })
@@ -209,7 +212,7 @@ describe('repositório server-only de pedidos personalizados', () => {
       cliente: 'A%_B',
       consultora: 'C_D',
       numeroLancamento: '0001',
-      status: 'CADASTRADO',
+      status: 'RASCUNHO',
       dataInicial: '2026-08-01',
       dataFinal: '2026-08-05',
       dataPedidoFornecedorInicial: '2026-08-02',
@@ -237,6 +240,7 @@ describe('repositório server-only de pedidos personalizados', () => {
     const filas: Record<string, unknown[]> = {
       pedidos_personalizados_pedidos: [{ data: { id: 'pedido-1' }, error: null }],
       pedidos_personalizados_moriah_tapetes: [{ data: [{ id: 'tapete-1', ordem: 1 }], error: null }],
+      pedidos_personalizados_lebebe_exclusive_itens: [{ data: [], error: null }],
       pedidos_personalizados_tapete_cores: [{ data: [{ tapete_id: 'tapete-1', ordem: 1, cor: { id: 'cor-1' } }], error: null }],
       pedidos_personalizados_anexos: [{ data: [{ tapete_id: 'tapete-1', id: 'anexo-1', slot: 1, nome_original: 'arquivo.pdf', mime_type: 'application/pdf', tamanho_bytes: 10, created_at: '2026-08-05T10:00:00Z' }], error: null }],
       pedidos_personalizados_status_historico: [{ data: [], error: null }],
@@ -249,7 +253,7 @@ describe('repositório server-only de pedidos personalizados', () => {
       anexos: [{ id: 'anexo-1', slot: 1, nome_original: 'arquivo.pdf', mime_type: 'application/pdf', tamanho_bytes: 10 }],
     })
     expect(JSON.stringify(resultado.data)).not.toContain('caminho_objeto')
-    expect(from).toHaveBeenCalledTimes(5)
+    expect(from).toHaveBeenCalledTimes(6)
     expect(rastreio.order).toContainEqual(['ordem', { ascending: true }])
   })
 })

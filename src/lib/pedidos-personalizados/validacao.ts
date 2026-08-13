@@ -233,7 +233,7 @@ export function validarPedidoPersonalizadoMoriah(
     erros.push(erro('UNIDADE_INVALIDA', 'unidade', 'A unidade informada não pertence ao módulo.'))
   }
 
-  const statusInformado = entrada.status?.trim() ?? 'CADASTRADO'
+  const statusInformado = entrada.status?.trim() ?? 'RASCUNHO'
   if (!ehStatusPedidoPersonalizado(statusInformado)) {
     erros.push(erro('STATUS_INVALIDO', 'status', 'Status de pedido personalizado inválido.'))
   }

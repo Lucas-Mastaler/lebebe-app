@@ -4,12 +4,35 @@ import { obterIntervaloDiaLocalUtc } from './tempo'
 
 type SupabaseServiceClient = ReturnType<typeof createServiceClient>
 
+export type PeriodoHubVendas = {
+  inicioIso: string
+  fimIso: string
+}
+
+export const COLUNAS_TEMPORAIS_HUB_VENDAS = {
+  // Os KPIs de leads representam a coorte de entrada; filas e envios seguem eventos.
+  leadsRegistrados: 'data_entrada_hub',
+  candidatosElegiveis: 'data_entrada_hub',
+  convertidos: 'data_entrada_hub',
+  recuperacaoEnviada: 'data_entrada_hub',
+  recuperados: 'data_entrada_hub',
+  perdidos: 'data_entrada_hub',
+  filaManual: 'data_entrada_hub',
+  filas: 'programado_para',
+  enviados: 'enviado_em',
+} as const
+
 // ---------------------------------------------------------------------------
 // Constantes de validação
 // ---------------------------------------------------------------------------
 
 /** Limite máximo seguro para o limite diário por loja/conexão. */
 export const LIMITE_DIARIO_MAXIMO = 50
+
+export function formatarPercentualHubVendas(valor: number, total: number): string {
+  if (total <= 0) return '0,0% do total'
+  return `${((valor / total) * 100).toFixed(1).replace('.', ',')}% do total`
+}
 
 /** Status de fila que contam como "enviado hoje" para fins de limite diário. */
 const STATUS_CONTAVEIS_LIMITE = ['agendado', 'reservado', 'enviando', 'enviado', 'resultado_incerto'] as const
@@ -102,6 +125,7 @@ export type FilaListadaHubVendas = {
   versaoMensagem: number | null
   digisacContactId: string | null
   digisacTicketId: string | null
+  digisacProtocolo: string | null
   digisacMessageId: string | null
   erro: string | null
   categoriaErro: string | null
@@ -229,6 +253,65 @@ export function contarPorLoja(
   return { total, porLoja }
 }
 
+export type LeadResumoCoorteHubVendas = {
+  status: string
+  dataEntradaHub: string | null
+  dataRecuperacaoEnviada: string | null
+  lojaPrincipal: string | null
+  conexaoRecuperacaoId: string | null
+}
+
+export function filtrarLeadsPorDataEntradaHubVendas(
+  leads: LeadResumoCoorteHubVendas[],
+  periodo?: PeriodoHubVendas
+): LeadResumoCoorteHubVendas[] {
+  if (!periodo) return leads
+  return leads.filter((lead) => Boolean(
+    lead.dataEntradaHub
+    && lead.dataEntradaHub >= periodo.inicioIso
+    && lead.dataEntradaHub < periodo.fimIso
+  ))
+}
+
+export function calcularResumoCoorteLeadsHubVendas(
+  leads: LeadResumoCoorteHubVendas[],
+  opcoes: { limiteElegibilidadeIso: string; limitePosRecuperacaoIso: string }
+) {
+  const candidatos = leads.filter((lead) => (
+    lead.status === 'aguardando_conversao'
+    && Boolean(lead.dataEntradaHub && lead.dataEntradaHub > opcoes.limiteElegibilidadeIso)
+  ))
+  const perdidos = contarPorLoja(
+    leads.filter((lead) => lead.status === 'encerrado').map((lead) => lead.conexaoRecuperacaoId),
+    mapearServiceIdParaLoja
+  )
+  const convertidos = contarPorLoja(
+    leads.filter((lead) => lead.status === 'convertido_organicamente').map((lead) => lead.lojaPrincipal),
+    (valor) => (valor in HUB_VENDAS_LOJAS ? (valor as HubVendasLoja) : null)
+  )
+  const recuperacaoEnviada = contarPorLoja(
+    leads.filter((lead) => (
+      lead.status === 'recuperacao_enviada'
+      && Boolean(lead.dataRecuperacaoEnviada && lead.dataRecuperacaoEnviada > opcoes.limitePosRecuperacaoIso)
+    )).map((lead) => lead.conexaoRecuperacaoId),
+    mapearServiceIdParaLoja
+  )
+  const recuperados = contarPorLoja(
+    leads.filter((lead) => lead.status === 'recuperado').map((lead) => lead.conexaoRecuperacaoId),
+    mapearServiceIdParaLoja
+  )
+
+  return {
+    leadsRegistrados: leads.length,
+    candidatosElegiveis: candidatos.length,
+    perdidos,
+    convertidos,
+    recuperacaoEnviada,
+    recuperados,
+    filaManual: leads.filter((lead) => lead.status === 'fila_manual').length,
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Leitura de configuração
 // ---------------------------------------------------------------------------
@@ -297,154 +380,95 @@ async function lerConfigHubVendas(supabase: SupabaseServiceClient) {
 // ---------------------------------------------------------------------------
 
 export async function obterStatusGestaoHubVendas(
+  periodo?: PeriodoHubVendas,
+  opcoes: { incluirOperacional?: boolean } = {},
   supabase: SupabaseServiceClient = createServiceClient()
 ): Promise<StatusGestaoHubVendas> {
-  const { automacao, parametros, pausas, automacaoAtualizadoEm } = await lerConfigHubVendas(supabase)
-
-  // Contadores gerais via RPC
-  const { data: counts, error: countsError } = await supabase.rpc('hub_vendas_status_contadores')
+  const incluirOperacional = opcoes.incluirOperacional ?? true
+  // A configuração e os contadores não dependem entre si. Mantê-los em paralelo
+  // evita uma ida adicional ao Supabase antes das consultas dos KPIs.
+  const [configuracao, contadoresResult] = await Promise.all([
+    lerConfigHubVendas(supabase),
+    incluirOperacional
+      ? supabase.rpc('hub_vendas_status_contadores')
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  const { automacao, parametros, pausas, automacaoAtualizadoEm } = configuracao
+  const { data: counts, error: countsError } = contadoresResult
   if (countsError) throw countsError
 
   const countMap = new Map<string, number>((counts ?? []).map((row: { status: string; total: number }) => [row.status, Number(row.total) || 0]))
 
-  // Leads registrados
-  const { count: leadsRegistrados, error: leadsError } = await supabase
+  // Cada KPI abaixo é uma leitura independente. As consultas eram aguardadas
+  // uma a uma, somando a latência de rede do Supabase mesmo quando o banco já
+  // respondia em milissegundos.
+  // Uma única leitura forma a coorte de leads. O período seleciona sempre pela
+  // entrada no Hub; os status atuais desses mesmos leads definem os KPIs.
+  let leadsCoorteQuery = supabase
     .from('hub_vendas_leads')
-    .select('id', { count: 'exact', head: true })
-  if (leadsError) throw leadsError
+    .select('status, data_entrada_hub, data_recuperacao_enviada, loja_principal, conexao_recuperacao_id')
+  if (periodo) leadsCoorteQuery = leadsCoorteQuery.gte(COLUNAS_TEMPORAIS_HUB_VENDAS.leadsRegistrados, periodo.inicioIso).lt(COLUNAS_TEMPORAIS_HUB_VENDAS.leadsRegistrados, periodo.fimIso)
 
-  // Candidatos elegíveis: aguardando conversão e ainda dentro da janela de elegibilidade
-  // (mesmo prazo usado por preparar-fila.ts para decidir se o lead ainda pode entrar na fila de recuperação).
   const limiteElegibilidade = new Date(Date.now() - parametros.elegibilidadeHoras * 60 * 60 * 1000)
-
-  const { count: candidatosElegiveis, error: candidatosError } = await supabase
-    .from('hub_vendas_leads')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'aguardando_conversao')
-    .gt('data_entrada_hub', limiteElegibilidade.toISOString())
-  if (candidatosError) throw candidatosError
-
-  // Perdidos: status='encerrado' (recuperacao enviada, sem resposta do cliente dentro da
-  // janela de 24h pos-recuperacao). Quebra por loja via conexao_recuperacao_id, preservada
-  // pelo cron de expiracao (so o status muda, a conexao de destino permanece).
-  const { data: perdidosRows, error: perdidosError } = await supabase
-    .from('hub_vendas_leads')
-    .select('conexao_recuperacao_id')
-    .eq('status', 'encerrado')
-  if (perdidosError) throw perdidosError
-
-  const perdidos = contarPorLoja(
-    (perdidosRows ?? []).map((row) => (row as { conexao_recuperacao_id: string | null }).conexao_recuperacao_id),
-    mapearServiceIdParaLoja
-  )
-
-  // Convertidos organicamente, com quebra por loja (loja_principal)
-  const { data: convertidosRows, error: convertidosError } = await supabase
-    .from('hub_vendas_leads')
-    .select('loja_principal')
-    .eq('status', 'convertido_organicamente')
-  if (convertidosError) throw convertidosError
-
-  const convertidos = contarPorLoja(
-    (convertidosRows ?? []).map((row) => (row as { loja_principal: string | null }).loja_principal),
-    (valor) => (valor in HUB_VENDAS_LOJAS ? (valor as HubVendasLoja) : null)
-  )
-
-  // Recuperação enviada / aguardando resposta: status='recuperacao_enviada' e ainda dentro
-  // da janela pos-recuperacao de 24h (exatamente 24h, independente de elegibilidade_horas).
   const limitePosRecuperacao = new Date(Date.now() - 24 * 60 * 60 * 1000)
 
-  const { data: recuperacaoRows, error: recuperacaoError } = await supabase
-    .from('hub_vendas_leads')
-    .select('conexao_recuperacao_id')
-    .eq('status', 'recuperacao_enviada')
-    .gt('data_recuperacao_enviada', limitePosRecuperacao.toISOString())
-  if (recuperacaoError) throw recuperacaoError
+  const ultimoQuery = incluirOperacional
+    ? supabase
+      .from('hub_vendas_recuperacao_fila')
+      .select('updated_at')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+    : Promise.resolve({ data: [], error: null })
+  const enviadosQuery = periodo
+    ? supabase
+      .from('hub_vendas_recuperacao_fila')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'enviado')
+      .gte(COLUNAS_TEMPORAIS_HUB_VENDAS.enviados, periodo.inicioIso)
+      .lt(COLUNAS_TEMPORAIS_HUB_VENDAS.enviados, periodo.fimIso)
+    : null
 
-  const recuperacaoEnviada = contarPorLoja(
-    (recuperacaoRows ?? []).map((row) => (row as { conexao_recuperacao_id: string | null }).conexao_recuperacao_id),
-    mapearServiceIdParaLoja
-  )
-
-  // Recuperados: status='recuperado' (respondeu dentro da janela pos-recuperacao de 24h)
-  const { data: recuperadosRows, error: recuperadosError } = await supabase
-    .from('hub_vendas_leads')
-    .select('conexao_recuperacao_id')
-    .eq('status', 'recuperado')
-  if (recuperadosError) throw recuperadosError
-
-  const recuperados = contarPorLoja(
-    (recuperadosRows ?? []).map((row) => (row as { conexao_recuperacao_id: string | null }).conexao_recuperacao_id),
-    mapearServiceIdParaLoja
-  )
-
-  // Fila manual: aguardando_conversao que expirou sem nunca receber recuperação (Gap A).
-  // Sem quebra por loja — esses leads nunca chegaram a ter uma conexão de recuperação associada.
-  const { count: filaManual, error: filaManualError } = await supabase
-    .from('hub_vendas_leads')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'fila_manual')
-  if (filaManualError) throw filaManualError
-
-  // Último processamento
-  const { data: ultimo, error: ultimoError } = await supabase
-    .from('hub_vendas_recuperacao_fila')
-    .select('updated_at')
-    .order('updated_at', { ascending: false })
-    .limit(1)
-  if (ultimoError) throw ultimoError
-
-  // Estatísticas por loja
   const { inicioUtc, fimUtc } = obterIntervaloDiaLocalUtc(new Date(), parametros.timezone)
   const inicioIso = inicioUtc.toISOString()
   const fimIso = fimUtc.toISOString()
-
-  const lojas: ResumoLojaHubVendas[] = []
-  let conexoesPausadas = 0
-
-  for (const [lojaKey, config] of Object.entries(HUB_VENDAS_LOJAS)) {
+  const lojasPromise = incluirOperacional
+    ? Promise.all(Object.entries(HUB_VENDAS_LOJAS).map(async ([lojaKey, config]) => {
     const loja = lojaKey as HubVendasLoja
     const serviceId = config.serviceId
-    const pausaInfo = pausas[serviceId]
-    const pausada = asBoolean(pausaInfo?.pausada, false)
-    const errosConsecutivos = asNumber(pausaInfo?.erros_consecutivos, 0)
-    if (pausada) conexoesPausadas += 1
-
-    // Enviados hoje (status enviado dentro do dia local)
-    const { count: enviadosHoje, error: enviadosError } = await supabase
-      .from('hub_vendas_recuperacao_fila')
-      .select('id', { count: 'exact', head: true })
-      .eq('conexao_destino_id', serviceId)
-      .in('status', [...STATUS_CONTAVEIS_LIMITE])
-      .gte('programado_para', inicioIso)
-      .lt('programado_para', fimIso)
-    if (enviadosError) throw enviadosError
-
-    const enviados = enviadosHoje ?? 0
-    const limite = parametros.limiteDiarioPorConexao
-    const saldoRestante = Math.max(0, limite - enviados)
-
-    // Contadores por status para esta loja
-    const { data: lojaCounts, error: lojaCountsError } = await supabase
-      .from('hub_vendas_recuperacao_fila')
-      .select('status')
-      .eq('conexao_destino_id', serviceId)
-    if (lojaCountsError) throw lojaCountsError
+    const [enviadosResult, lojaCountsResult] = await Promise.all([
+      supabase
+        .from('hub_vendas_recuperacao_fila')
+        .select('id', { count: 'exact', head: true })
+        .eq('conexao_destino_id', serviceId)
+        .in('status', [...STATUS_CONTAVEIS_LIMITE])
+        .gte('programado_para', inicioIso)
+        .lt('programado_para', fimIso),
+      supabase
+        .from('hub_vendas_recuperacao_fila')
+        .select('status')
+        .eq('conexao_destino_id', serviceId),
+    ])
+    if (enviadosResult.error) throw enviadosResult.error
+    if (lojaCountsResult.error) throw lojaCountsResult.error
 
     const statusCounts = new Map<string, number>()
-    for (const row of lojaCounts ?? []) {
-      const s = (row as { status: string }).status
-      statusCounts.set(s, (statusCounts.get(s) ?? 0) + 1)
+    for (const row of lojaCountsResult.data ?? []) {
+      const statusFila = (row as { status: string }).status
+      statusCounts.set(statusFila, (statusCounts.get(statusFila) ?? 0) + 1)
     }
+    const enviados = enviadosResult.count ?? 0
+    const pausaInfo = pausas[serviceId]
+    const pausada = asBoolean(pausaInfo?.pausada, false)
+    const limite = parametros.limiteDiarioPorConexao
 
-    lojas.push({
+    return {
       loja,
       nomeExibicao: config.nomeExibicao,
       serviceId,
       enviadosHoje: enviados,
       limiteDiario: limite,
-      saldoRestante,
-      errosConsecutivos,
+      saldoRestante: Math.max(0, limite - enviados),
+      errosConsecutivos: asNumber(pausaInfo?.erros_consecutivos, 0),
       pausada,
       filas: {
         agendada: statusCounts.get('agendado') ?? 0,
@@ -454,8 +478,43 @@ export async function obterStatusGestaoHubVendas(
         resultadoIncerto: statusCounts.get('resultado_incerto') ?? 0,
         analiseManual: statusCounts.get('analise_manual') ?? 0,
       },
-    })
-  }
+    } satisfies ResumoLojaHubVendas
+    }))
+    : Promise.resolve([] as ResumoLojaHubVendas[])
+
+  const [leadsCoorteResult, ultimoResult, enviadosResult, lojas] = await Promise.all([
+    leadsCoorteQuery,
+    ultimoQuery,
+    enviadosQuery ?? Promise.resolve({ count: countMap.get('enviado_hoje') ?? 0, error: null }),
+    lojasPromise,
+  ])
+  if (leadsCoorteResult.error) throw leadsCoorteResult.error
+  if (ultimoResult.error) throw ultimoResult.error
+  if (enviadosResult.error) throw enviadosResult.error
+
+  const resumoCoorte = calcularResumoCoorteLeadsHubVendas(
+    (leadsCoorteResult.data ?? []).map((row) => {
+      const lead = row as {
+        status: string
+        data_entrada_hub: string | null
+        data_recuperacao_enviada: string | null
+        loja_principal: string | null
+        conexao_recuperacao_id: string | null
+      }
+      return {
+        status: lead.status,
+        dataEntradaHub: lead.data_entrada_hub,
+        dataRecuperacaoEnviada: lead.data_recuperacao_enviada,
+        lojaPrincipal: lead.loja_principal,
+        conexaoRecuperacaoId: lead.conexao_recuperacao_id,
+      }
+    }),
+    {
+      limiteElegibilidadeIso: limiteElegibilidade.toISOString(),
+      limitePosRecuperacaoIso: limitePosRecuperacao.toISOString(),
+    }
+  )
+  const conexoesPausadas = lojas.filter((loja) => loja.pausada).length
 
   return {
     ok: true,
@@ -473,23 +532,23 @@ export async function obterStatusGestaoHubVendas(
       envioTimeoutMinutos: parametros.envioTimeoutMinutos,
       timezone: parametros.timezone,
     },
-    ultimoProcessamento: ((ultimo ?? []) as { updated_at: string | null }[])[0]?.updated_at ?? null,
+    ultimoProcessamento: ((ultimoResult.data ?? []) as { updated_at: string | null }[])[0]?.updated_at ?? null,
     resumo: {
-      leadsRegistrados: leadsRegistrados ?? 0,
-      candidatosElegiveis: candidatosElegiveis ?? 0,
-      perdidos: perdidos.total,
-      perdidosPorLoja: perdidos.porLoja,
-      convertidos: convertidos.total,
-      convertidosPorLoja: convertidos.porLoja,
-      recuperacaoEnviadaTotal: recuperacaoEnviada.total,
-      recuperacaoEnviadaPorLoja: recuperacaoEnviada.porLoja,
-      recuperados: recuperados.total,
-      recuperadosPorLoja: recuperados.porLoja,
-      filaManual: filaManual ?? 0,
+      leadsRegistrados: resumoCoorte.leadsRegistrados,
+      candidatosElegiveis: resumoCoorte.candidatosElegiveis,
+      perdidos: resumoCoorte.perdidos.total,
+      perdidosPorLoja: resumoCoorte.perdidos.porLoja,
+      convertidos: resumoCoorte.convertidos.total,
+      convertidosPorLoja: resumoCoorte.convertidos.porLoja,
+      recuperacaoEnviadaTotal: resumoCoorte.recuperacaoEnviada.total,
+      recuperacaoEnviadaPorLoja: resumoCoorte.recuperacaoEnviada.porLoja,
+      recuperados: resumoCoorte.recuperados.total,
+      recuperadosPorLoja: resumoCoorte.recuperados.porLoja,
+      filaManual: resumoCoorte.filaManual,
       agendada: countMap.get('agendado') ?? 0,
       reservada: countMap.get('reservado') ?? 0,
       enviando: countMap.get('enviando') ?? 0,
-      enviadaHoje: countMap.get('enviado_hoje') ?? 0,
+      enviadaHoje: enviadosResult.count ?? 0,
       cancelada: countMap.get('cancelado') ?? 0,
       erro: countMap.get('erro') ?? 0,
       resultadoIncerto: countMap.get('resultado_incerto') ?? 0,
@@ -542,6 +601,7 @@ export async function listarFilasHubVendas(
       versao_mensagem,
       digisac_contact_id,
       digisac_ticket_id,
+      digisac_protocolo,
       digisac_message_id,
       erro,
       categoria_erro,
@@ -554,10 +614,10 @@ export async function listarFilasHubVendas(
 
   // Filtros
   if (filtros.dataInicio) {
-    query = query.gte('programado_para', filtros.dataInicio)
+    query = query.gte(COLUNAS_TEMPORAIS_HUB_VENDAS.filas, filtros.dataInicio)
   }
   if (filtros.dataFim) {
-    query = query.lt('programado_para', filtros.dataFim)
+    query = query.lt(COLUNAS_TEMPORAIS_HUB_VENDAS.filas, filtros.dataFim)
   }
   if (filtros.loja) {
     const serviceId = HUB_VENDAS_LOJAS[filtros.loja].serviceId
@@ -613,6 +673,7 @@ export async function listarFilasHubVendas(
       versaoMensagem: typeof r.versao_mensagem === 'number' ? r.versao_mensagem : null,
       digisacContactId: asString(r.digisac_contact_id),
       digisacTicketId: asString(r.digisac_ticket_id),
+      digisacProtocolo: asString(r.digisac_protocolo),
       digisacMessageId: asString(r.digisac_message_id),
       erro: asString(r.erro),
       categoriaErro: asString(r.categoria_erro),
@@ -667,6 +728,7 @@ export async function obterDetalheFilaHubVendas(
       hash_texto_enviado,
       digisac_contact_id,
       digisac_ticket_id,
+      digisac_protocolo,
       digisac_message_id,
       erro,
       categoria_erro,
@@ -703,6 +765,7 @@ export async function obterDetalheFilaHubVendas(
       versaoMensagem: typeof r.versao_mensagem === 'number' ? r.versao_mensagem : null,
       digisacContactId: asString(r.digisac_contact_id),
       digisacTicketId: asString(r.digisac_ticket_id),
+      digisacProtocolo: asString(r.digisac_protocolo),
       digisacMessageId: asString(r.digisac_message_id),
       erro: asString(r.erro),
       categoriaErro: asString(r.categoria_erro),

@@ -8,6 +8,7 @@ import {
   obterAlertasServiceId,
 } from './constants'
 import { obterPartesDataLocal } from './tempo'
+import { obterProximaExecucaoHubVendasTexto } from './cron-schedule'
 
 type SupabaseServiceClient = ReturnType<typeof createServiceClient>
 
@@ -420,6 +421,7 @@ export async function alertarCronFalhou(params: {
     '',
     `Rota: ${params.rota}`,
     `Erro: ${sanitizarDigisacParaLog(params.erro).slice(0, 200)}`,
+    `Próxima execução agendada: ${obterProximaExecucaoHubVendasTexto(params.rota)}`,
     'Ação recomendada: verificar logs do servidor e retomar processamento.',
   ].join('\n')
 

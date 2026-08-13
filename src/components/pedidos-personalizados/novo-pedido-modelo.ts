@@ -45,6 +45,7 @@ export type CorOpcao = {
 
 export type OpcoesNovoPedido = {
   fornecedor: { id: string; chave: string; nome: string }
+  fornecedores: Array<{ id: string; chave: 'moriah_tapetes' | 'lebebe_exclusive'; nome: string }>
   unidades: UnidadeOpcao[]
   produtos: ProdutoOpcao[]
   cores: CorOpcao[]
@@ -331,7 +332,7 @@ export function montarEntradaDominio(
     cliente: estado.cliente,
     telefone: estado.telefone,
     numeroLancamento: estado.numeroLancamento,
-    status: 'CADASTRADO',
+    status: 'RASCUNHO',
     tapetes: estado.tapetes.map((tapete, indice) => ({
       ordem: indice + 1,
       formato: tapete.formato,
@@ -501,6 +502,8 @@ function opcoesValidas(valor: unknown): valor is OpcoesNovoPedido {
   const body = valor as Partial<OpcoesNovoPedido> & { ok?: unknown }
   return body.ok === true
     && body.fornecedor?.chave === FORNECEDOR_MORIAH
+    && Array.isArray(body.fornecedores)
+    && body.fornecedores.some((fornecedor) => fornecedor?.chave === FORNECEDOR_MORIAH)
     && Array.isArray(body.unidades)
     && body.unidades.every((unidade) =>
       !!unidade

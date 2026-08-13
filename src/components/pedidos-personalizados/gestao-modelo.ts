@@ -45,8 +45,25 @@ export type ItemPedidoGestao = {
   quantidadeTapetes: number
   codigosProdutos: string[]
   tiposTapetes: TipoTapeteMoriah[]
+  quantidadeItens: number
+  referenciasProdutos: string[]
   situacaoPrazo: SituacaoPrazoPedido | null
   recebidoEm: string | null
+}
+
+export type ProdutoExclusiveDetalhe = {
+  id: string
+  produtoId: string
+  ordem: number
+  quantidade: number
+  nomeOuLetra: string | null
+  colecao: string
+  descricao: string
+  referencia: string
+  precoUnitario: number
+  custoUnitario: number
+  totalVenda: number
+  totalCusto: number
 }
 
 export type CorDetalhe = { id: string; ordem: number; numero: string; codigo: string; nome: string }
@@ -97,6 +114,7 @@ export type PedidoDetalhe = {
   createdAt: string
   updatedAt: string
   tapetes: TapeteDetalhe[]
+  itens: ProdutoExclusiveDetalhe[]
   historico: HistoricoStatusDetalhe[]
 }
 
@@ -127,12 +145,15 @@ export function requisitosPendentesTransicao(
   if (!transicao.destino) return ['Selecione o status de destino.']
   const pendencias: string[] = []
   const temAnexo = pedido.tapetes.some((tapete) => tapete.anexos.length > 0)
-  if (pedido.status === 'CADASTRADO' && transicao.destino === 'AGUARDANDO LAYOUT') {
+  if (pedido.status === 'VENDA FECHADA'
+      && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(transicao.destino)) {
     if (!/^\d{1,5}$/.test(transicao.numeroPedidoCompra.trim())) pendencias.push('Informe o pedido de compra.')
     if (!transicao.dataPedidoFornecedor) pendencias.push('Informe a data do pedido ao fornecedor.')
     if (!/^\p{L}+(?: \p{L}+)*$/u.test(transicao.comprador.trim()) || transicao.comprador.trim().length < 2) pendencias.push('Informe o comprador.')
   }
-  if (['AGUARDANDO APROVAÇÃO DO CLIENTE', 'EM PRODUÇÃO'].includes(transicao.destino) && !temAnexo) {
+  if (pedido.fornecedor?.chave === 'moriah_tapetes'
+      && ['AGUARDANDO APROVAÇÃO DO CLIENTE', 'EM PRODUÇÃO'].includes(transicao.destino)
+      && !temAnexo) {
     pendencias.push('Adicione pelo menos um anexo ao pedido.')
   }
   if (transicao.destino === 'EM PRODUÇÃO' && !transicao.dataEntrega) {
@@ -260,6 +281,28 @@ export function detalheParaAdministrativo(pedido: PedidoDetalhe): EstadoAdminist
 }
 
 export function gerarResumoFornecedorDetalhe(pedido: PedidoDetalhe) {
+  if (pedido.fornecedor?.chave === 'lebebe_exclusive') {
+    const linhas = [
+      'FORNECEDOR: LEBEBE EXCLUSIVE',
+      `UNIDADE: ${pedido.unidade.nome}`,
+      `CONSULTORA: ${pedido.consultora}`,
+      `CLIENTE: ${pedido.cliente}`,
+      ...(pedido.numeroLancamento ? [`LANÇAMENTO: ${pedido.numeroLancamento}`] : []),
+    ]
+    for (const item of pedido.itens) {
+      linhas.push(
+        '',
+        `ITEM ${item.ordem}`,
+        `PRODUTO: ${item.descricao}`,
+        `REFERÊNCIA: ${item.referencia}`,
+        `QUANTIDADE: ${item.quantidade}`,
+        `CUSTO UNITÁRIO: ${item.custoUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
+        `CUSTO TOTAL: ${item.totalCusto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+      )
+      if (item.nomeOuLetra?.trim()) linhas.push(`NOME OU LETRA: ${item.nomeOuLetra.trim().toLocaleUpperCase('pt-BR')}`)
+    }
+    return linhas.join('\n')
+  }
   const normalizado: PedidoPersonalizadoMoriahNormalizado = {
     fornecedor: 'moriah_tapetes',
     unidade: pedido.unidade.chave,

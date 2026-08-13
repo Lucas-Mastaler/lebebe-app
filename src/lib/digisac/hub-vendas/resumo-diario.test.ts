@@ -47,6 +47,21 @@ function chainCount(count: number) {
   return obj
 }
 
+// hub_vendas_leads: usado tanto por contarLeadsRecebidosHoje (.gte().lt(), sem .eq() antes)
+// quanto por contarResultadoLeadsHubVendas (.eq() + .gte().lt() ou .gt(), ou só .eq()).
+// Encadeável em qualquer ordem/combinação, sempre resolve o mesmo count fixo.
+function chainCountLeads(count = 3) {
+  const obj: Record<string, unknown> = {}
+  obj.eq = () => obj
+  obj.gte = () => obj
+  obj.gt = () => obj
+  obj.lt = () => Promise.resolve({ count, error: null })
+  obj.then = (resolve: (v: unknown) => void) => {
+    Promise.resolve({ count, error: null }).then(resolve)
+  }
+  return obj
+}
+
 const mockSupabase = {
   from(table: string) {
     if (table === 'hub_vendas_config') {
@@ -67,11 +82,7 @@ const mockSupabase = {
     }
     if (table === 'hub_vendas_leads') {
       return {
-        select: () => ({
-          gte: () => ({
-            lt: () => Promise.resolve({ count: 3, error: null }),
-          }),
-        }),
+        select: () => chainCountLeads(),
       }
     }
     if (table === 'hub_vendas_alertas') {
@@ -147,15 +158,16 @@ describe('resumo diário Hub/Vendas', () => {
     expect(texto).toContain('Bigorrilho')
     expect(texto).toContain('Hauer')
     // Cada loja deve mostrar enviados/limite
-    expect(texto).toContain('/2 enviados')
+    expect(texto).toContain('ENVIOS')
+    expect(texto).toMatch(/\/2$/m)
     expect(texto).toContain('Total enviado:')
   })
 
   it('mostra saldo restante por loja', async () => {
     const texto = await gerarTextoResumoDiario(mockSupabase as never)
     // Com 1 enviado e limite 2, saldo = 1
-    // O formato mostra "X/2 enviados"
-    expect(texto).toMatch(/\d+\/2 enviados/)
+    // O formato mostra "X/2" por linha, sob o bloco ENVIOS
+    expect(texto).toMatch(/\d+\/2$/m)
   })
 
   it('mostra erros e pendências', async () => {
@@ -183,6 +195,59 @@ describe('resumo diário Hub/Vendas', () => {
 
     const texto = await gerarTextoResumoDiario(supabaseSemEnvio as never)
     expect(texto).toContain('Nenhuma mensagem de recuperação foi enviada hoje.')
+  })
+
+  it('mostra o bloco RESULTADO DOS LEADS com os novos indicadores do funil', async () => {
+    const texto = await gerarTextoResumoDiario(mockSupabase as never)
+    expect(texto).toContain('RESULTADO DOS LEADS')
+    expect(texto).toContain('Leads registrados hoje:')
+    expect(texto).toContain('Convertidos organicamente hoje:')
+    expect(texto).toContain('Recuperados hoje:')
+    expect(texto).toContain('Aguardando resposta agora:')
+    expect(texto).toContain('Perdidos até agora:')
+    expect(texto).toContain('Fila manual até agora:')
+    expect(texto).toContain('Candidatos elegíveis agora:')
+  })
+
+  it('separa os blocos ENVIOS, RESULTADO DOS LEADS e OPERAÇÃO na ordem esperada', async () => {
+    const texto = await gerarTextoResumoDiario(mockSupabase as never)
+    const posEnvios = texto.indexOf('ENVIOS')
+    const posResultado = texto.indexOf('RESULTADO DOS LEADS')
+    const posOperacao = texto.indexOf('OPERAÇÃO')
+    expect(posEnvios).toBeGreaterThan(-1)
+    expect(posResultado).toBeGreaterThan(posEnvios)
+    expect(posOperacao).toBeGreaterThan(posResultado)
+  })
+
+  it('marca status geral como "com atenção" quando há análise manual pendente', async () => {
+    const supabaseComAnaliseManual = {
+      ...mockSupabase,
+      rpc: (fn: string) => {
+        if (fn === 'hub_vendas_status_contadores') {
+          return Promise.resolve({
+            data: [
+              { status: 'agendado', total: 1 },
+              { status: 'enviado', total: 3 },
+              { status: 'erro', total: 0 },
+              { status: 'resultado_incerto', total: 0 },
+              { status: 'analise_manual', total: 2 },
+              { status: 'cancelado', total: 0 },
+            ],
+            error: null,
+          })
+        }
+        return mockSupabase.rpc(fn)
+      },
+    }
+
+    const texto = await gerarTextoResumoDiario(supabaseComAnaliseManual as never)
+    expect(texto).toContain('Análise manual: 2')
+    expect(texto).toContain('⚠️ com atenção')
+  })
+
+  it('mantem status geral saudavel quando nada precisa de atencao', async () => {
+    const texto = await gerarTextoResumoDiario(mockSupabase as never)
+    expect(texto).toContain('✅ saudável')
   })
 
   it('envia como bot com origin=bot', async () => {

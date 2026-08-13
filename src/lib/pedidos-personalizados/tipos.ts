@@ -3,7 +3,8 @@ export type FormatoTapeteMoriah = 'REDONDO' | 'RETANGULAR' | 'ORGANICO'
 export type TipoTapeteMoriah = 'CATALOGO' | 'PERSONALIZADO'
 
 export type StatusPedidoPersonalizado =
-  | 'CADASTRADO'
+  | 'RASCUNHO'
+  | 'VENDA FECHADA'
   | 'AGUARDANDO LAYOUT'
   | 'AGUARDANDO APROVAÇÃO DO CLIENTE'
   | 'EM PRODUÇÃO'
@@ -11,7 +12,7 @@ export type StatusPedidoPersonalizado =
   | 'CANCELADO'
 
 export type UnidadePedidoPersonalizado = 'bigorrilho' | 'portao' | 'marechal' | 'feira'
-export type FornecedorPedidoPersonalizado = 'moriah_tapetes'
+export type FornecedorPedidoPersonalizado = 'moriah_tapetes' | 'lebebe_exclusive'
 export type CodigoProdutoMoriah = '21157' | '21158' | '21159'
 
 export type CodigoErroPedidoPersonalizado =
@@ -260,4 +261,50 @@ export type ParametrosTransicionarPedidoPersonalizadoRpc = {
   p_comprador: string | null
   p_data_entrega: string | null
   p_justificativa: string | null
+}
+
+export type ProdutoCatalogoLebebeExclusive = {
+  id: string
+  colecao: string
+  descricao: string
+  referencia: string
+  precoUnitario: number
+}
+
+export type ItemPedidoLebebeExclusiveEntrada = {
+  produtoId: string
+  ordem: number
+  quantidade: number
+  nomeOuLetra?: string | null
+}
+
+export type ItemPedidoLebebeExclusiveRpc = {
+  produto_id: string
+  ordem: number
+  quantidade: number
+  nome_ou_letra: string | null
+}
+
+export type ParametrosCriarPedidoPersonalizadoLebebeExclusiveRpc = {
+  p_usuario_id: string
+  p_idempotency_key: string
+  p_fornecedor_id: string
+  p_unidade_id: string
+  p_consultora: string
+  p_cliente: string
+  p_telefone_normalizado: string
+  p_numero_lancamento: string | null
+  p_itens: ItemPedidoLebebeExclusiveRpc[]
+}
+
+export type ParametrosAtualizarPedidoComercialLebebeExclusiveRpc = {
+  p_pedido_id: string
+  p_expected_version: number
+  p_usuario_id: string
+  p_unidade_id: string
+  p_consultora: string
+  p_cliente: string
+  p_telefone_normalizado: string
+  p_numero_lancamento: string | null
+  p_itens: ItemPedidoLebebeExclusiveRpc[]
 }

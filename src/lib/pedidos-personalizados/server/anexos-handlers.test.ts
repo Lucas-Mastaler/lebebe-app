@@ -25,7 +25,7 @@ function escopo(comAnexo = false, pedidoOverrides: Record<string, unknown> = {})
     pedido: {
       id: PEDIDO,
       version: 1,
-      status: 'CADASTRADO',
+      status: 'RASCUNHO',
       created_by: USUARIO,
       fornecedor: { chave: 'moriah_tapetes' },
       ...pedidoOverrides,
@@ -113,7 +113,7 @@ describe('upload de anexo', () => {
     }))
   })
 
-  it('autoriza novo no próprio pedido CADASTRADO', async () => {
+  it('autoriza novo no próprio pedido RASCUNHO', async () => {
     const r = repo()
     const s = storage()
     expect((await uploadAnexo(
@@ -132,7 +132,7 @@ describe('upload de anexo', () => {
     ['AGUARDANDO LAYOUT', USUARIO],
     ['EM PRODUÇÃO', USUARIO],
     ['RECEBIDO', USUARIO],
-    ['CADASTRADO', OUTRO_USUARIO],
+    ['RASCUNHO', OUTRO_USUARIO],
   ])('nega novo antes de ler multipart ou enviar ao Storage: %s', async (status, createdBy) => {
     const r = repo({
       buscarTapeteNoEscopo: vi.fn().mockResolvedValue({
@@ -243,7 +243,7 @@ describe('abertura, substituição e remoção', () => {
     expect((await abrirAnexo(new Request('http://localhost'), ANEXO, deps(r))).status).toBe(404)
   })
 
-  it('novo abre anexo do próprio pedido CADASTRADO', async () => {
+  it('novo abre anexo do próprio pedido RASCUNHO', async () => {
     const s = storage()
     const response = await abrirAnexo(
       new Request('http://localhost'),
@@ -258,7 +258,7 @@ describe('abertura, substituição e remoção', () => {
     ['AGUARDANDO LAYOUT', USUARIO],
     ['EM PRODUÇÃO', USUARIO],
     ['RECEBIDO', USUARIO],
-    ['CADASTRADO', OUTRO_USUARIO],
+    ['RASCUNHO', OUTRO_USUARIO],
   ])('novo não gera URL para recurso negado: %s', async (status, createdBy) => {
     const r = repo({
       buscarAnexoNoEscopo: vi.fn().mockResolvedValue({

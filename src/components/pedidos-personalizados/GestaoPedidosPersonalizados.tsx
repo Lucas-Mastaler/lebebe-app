@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { CardTapete } from './CardTapete'
 import { AnexosTapete } from './AnexosTapete'
 import { PreviaMensagem } from './PreviaMensagem'
+import { FormularioLebebeExclusive } from './FormularioLebebeExclusive'
 import { aplicarMascaraTelefoneBR, formatarTelefone } from '@/lib/atendimento-presencial/telefone'
 import {
   destinosPermitidosStatus,
@@ -280,7 +281,10 @@ export function GestaoPedidosPersonalizados() {
 
   function abrirTransicao() {
     if (!detalhe) return
-    const destino = destinosPermitidosStatus(detalhe.status)[0] ?? ''
+    const destino = destinosPermitidosStatus(
+      detalhe.status,
+      detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes'
+    )[0] ?? ''
     setTransicao({
       destino,
       numeroPedidoCompra: detalhe.numeroPedidoCompra ?? '',
@@ -299,9 +303,9 @@ export function GestaoPedidosPersonalizados() {
     try {
       await transicionarStatusGestao(detalhe.id, detalhe.version, {
         statusDestino: transicao.destino,
-        numeroPedidoCompra: detalhe.status === 'CADASTRADO' && transicao.destino === 'AGUARDANDO LAYOUT' ? transicao.numeroPedidoCompra : null,
-        dataPedidoFornecedor: detalhe.status === 'CADASTRADO' && transicao.destino === 'AGUARDANDO LAYOUT' ? transicao.dataPedidoFornecedor : null,
-        comprador: detalhe.status === 'CADASTRADO' && transicao.destino === 'AGUARDANDO LAYOUT' ? transicao.comprador : null,
+        numeroPedidoCompra: detalhe.status === 'VENDA FECHADA' && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(transicao.destino) ? transicao.numeroPedidoCompra : null,
+        dataPedidoFornecedor: detalhe.status === 'VENDA FECHADA' && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(transicao.destino) ? transicao.dataPedidoFornecedor : null,
+        comprador: detalhe.status === 'VENDA FECHADA' && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(transicao.destino) ? transicao.comprador : null,
         dataEntrega: transicao.destino === 'EM PRODU\u00c7\u00c3O' ? transicao.dataEntrega : null,
         dataRecebimento: transicao.destino === 'RECEBIDO' ? transicao.dataRecebimento : null,
         justificativa: transicao.destino === 'CANCELADO' ? transicao.justificativa : null,
@@ -442,9 +446,9 @@ export function GestaoPedidosPersonalizados() {
                   {item.situacaoPrazo && <div><dt className="text-slate-500">Prazo</dt><dd><span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-bold ${classePrazo(item.situacaoPrazo)}`}>{item.situacaoPrazo}</span></dd></div>}
                   {item.status === 'RECEBIDO' && item.recebidoEm && <div><dt className="text-slate-500">Recebido em</dt><dd className="font-medium">{formatarDataRecebimento(item.recebidoEm)}</dd></div>}
                   <div><dt className="text-slate-500">Comprador</dt><dd className="font-medium">{item.comprador ?? '—'}</dd></div>
-                  <div><dt className="text-slate-500">Tapetes</dt><dd className="font-medium">{item.quantidadeTapetes}</dd></div>
-                  <div><dt className="text-slate-500">Tipo</dt><dd className="font-medium">{item.tiposTapetes.map((tipo) => TIPO_TAPETE_PARA_EXIBICAO[tipo]).join(' + ') || '—'}</dd></div>
-                  <div><dt className="text-slate-500">Produtos</dt><dd className="font-medium">{item.codigosProdutos.join(', ') || '—'}</dd></div>
+                  <div><dt className="text-slate-500">{item.fornecedor?.chave === 'lebebe_exclusive' ? 'Itens' : 'Tapetes'}</dt><dd className="font-medium">{item.fornecedor?.chave === 'lebebe_exclusive' ? item.quantidadeItens : item.quantidadeTapetes}</dd></div>
+                  {item.fornecedor?.chave !== 'lebebe_exclusive' && <div><dt className="text-slate-500">Tipo</dt><dd className="font-medium">{item.tiposTapetes.map((tipo) => TIPO_TAPETE_PARA_EXIBICAO[tipo]).join(' + ') || '—'}</dd></div>}
+                  <div><dt className="text-slate-500">Produtos</dt><dd className="font-medium">{item.fornecedor?.chave === 'lebebe_exclusive' ? item.referenciasProdutos.join(', ') || '—' : item.codigosProdutos.join(', ') || '—'}</dd></div>
                   <div><dt className="text-slate-500">Cadastro</dt><dd className="font-medium">{formatarData(item.createdAt)}</dd></div>
                 </dl>
                 <Button type="button" className="mt-5 min-h-11" variant="outline" onClick={() => void abrirDetalhe(item.id)}><Eye />Ver pedido</Button>
@@ -541,7 +545,18 @@ export function GestaoPedidosPersonalizados() {
                 </section>
               )}
 
-              {editando ? (
+              {editando ? detalhe.fornecedor?.chave === 'lebebe_exclusive' ? (
+                <FormularioLebebeExclusive
+                  opcoes={opcoes}
+                  pedidoInicial={detalhe}
+                  onFornecedorChange={() => undefined}
+                  onAtualizado={async () => {
+                    await recarregarDetalhe()
+                    await carregarLista()
+                    setEditando(false)
+                  }}
+                />
+              ) : (
                 <div className="space-y-4">
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <div><label htmlFor="gestao-unidade" className="mb-1 block text-sm font-medium">Unidade</label><Select value={formulario.unidade} onValueChange={(v) => setFormulario({ ...formulario, unidade: v as EstadoNovoPedido['unidade'] })}><SelectTrigger id="gestao-unidade" aria-invalid={problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'unidade').length > 0}><SelectValue /></SelectTrigger><SelectContent>{opcoes.unidades.map((u) => <SelectItem key={u.chave} value={u.chave}>{u.nome}</SelectItem>)}</SelectContent></Select>{problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'unidade')[0] && <p role="alert" className="mt-1 text-sm text-red-600">{problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'unidade')[0]}</p>}</div>
@@ -554,6 +569,13 @@ export function GestaoPedidosPersonalizados() {
                   <Button type="button" variant="outline" disabled={formulario.tapetes.length >= 10} onClick={() => setFormulario(adicionarTapete(formulario, crypto.randomUUID()))}>Adicionar tapete</Button>
                   {(avaliacaoEdicao?.validacao.erros.length ?? 0) > 0 && <div role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700"><ul className="list-disc space-y-1 pl-5">{avaliacaoEdicao?.validacao.erros.map((erro, indice) => <li key={`${erro.campo}-${erro.codigo}-${indice}`}>{erro.mensagem}</li>)}</ul></div>}
                 </div>
+              ) : detalhe.fornecedor?.chave === 'lebebe_exclusive' ? (
+                <section className="space-y-4" aria-labelledby="produtos-exclusive-titulo">
+                  <div className="flex flex-wrap items-center justify-between gap-3"><h3 id="produtos-exclusive-titulo" className="flex items-center gap-2 font-semibold text-slate-900"><PackageCheck className="size-5 text-violet-700" />Produtos do pedido</h3><p className="text-sm font-semibold">Venda: {detalhe.itens.reduce((soma, item) => soma + item.totalVenda, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} · Custo: {detalhe.itens.reduce((soma, item) => soma + item.totalCusto, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p></div>
+                  <div className="overflow-x-auto rounded-xl border">
+                    <table className="min-w-[920px] w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-600"><tr><th className="p-3">Coleção</th><th className="p-3">Descrição</th><th className="p-3">Referência</th><th className="p-3">Qtd.</th><th className="p-3">Nome ou letra</th><th className="p-3 text-right">Preço unit.</th><th className="p-3 text-right">Custo unit.</th><th className="p-3 text-right">Total</th></tr></thead><tbody>{detalhe.itens.map((item) => <tr key={item.id} className="border-t"><td className="p-3 font-medium">{item.colecao}</td><td className="p-3">{item.descricao}</td><td className="p-3 font-mono">{item.referencia}</td><td className="p-3">{item.quantidade}</td><td className="p-3">{item.nomeOuLetra || '—'}</td><td className="p-3 text-right">{item.precoUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td className="p-3 text-right">{item.custoUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td className="p-3 text-right font-bold">{item.totalVenda.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>)}</tbody></table>
+                  </div>
+                </section>
               ) : (
                 <section className="space-y-4" aria-labelledby="tapetes-titulo">
                   <h3 id="tapetes-titulo" className="flex items-center gap-2 font-semibold text-slate-900"><PackageCheck className="size-5 text-violet-700" />Tapetes, cores, anexos e alterações de layout</h3>
@@ -637,16 +659,16 @@ export function GestaoPedidosPersonalizados() {
           {detalhe && formulario && opcoes && (
             <DialogFooter className="shrink-0 border-t bg-white px-4 py-3 sm:px-6">
               <Button type="button" variant="outline" disabled={salvando || operacaoAnexo !== null} onClick={() => { setDetalhe(null); setFormulario(null); setAdministrativo(null) }}>Fechar</Button>
-              {editando ? (
+              {editando ? detalhe.fornecedor?.chave === 'lebebe_exclusive' ? null : (
                 <>
                   <Button type="button" variant="ghost" disabled={salvando} onClick={() => { setFormulario(detalheParaFormulario(detalhe)); setEditando(false) }}>Cancelar edição</Button>
                   <Button type="button" disabled={salvando} onClick={() => void salvarComercial()}>{salvando ? <Loader2 className="animate-spin" /> : <Pencil />}Salvar dados comerciais</Button>
                 </>
               ) : (
                 <>
-                  <Button type="button" disabled={!permiteEdicaoComercial(detalhe.status)} onClick={() => setEditando(true)}><Pencil />Editar dados comerciais</Button>
+                  <Button type="button" disabled={!permiteEdicaoComercial(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')} onClick={() => setEditando(true)}><Pencil />Editar dados comerciais</Button>
                   <Button type="button" variant="secondary" disabled={!permiteEdicaoAdministrativa(detalhe.status)} onClick={() => { setAdministrativo(detalheParaAdministrativo(detalhe)); setErrosAdministrativos({}); setConflitoAdministrativo(false); setEditandoAdministrativo(true) }}><Pencil />Editar dados administrativos</Button>
-                  {destinosPermitidosStatus(detalhe.status).length > 0 && <Button type="button" variant="outline" onClick={abrirTransicao}>ALTERAR STATUS</Button>}
+                  {destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes').length > 0 && <Button type="button" variant="outline" onClick={abrirTransicao}>ALTERAR STATUS</Button>}
                 </>
               )}
               <Button type="button" variant="ghost" disabled={salvando} onClick={() => void recarregarDetalhe()}><RefreshCw />Recarregar</Button>
@@ -700,12 +722,12 @@ export function GestaoPedidosPersonalizados() {
         <DialogContent className="flex max-h-[calc(100dvh-1rem)] max-w-xl flex-col overflow-hidden p-0 sm:max-h-[90vh]">
           <DialogHeader className="shrink-0 border-b px-6 py-5">
             <DialogTitle>Alterar status</DialogTitle>
-            <DialogDescription>Confirme a transição. A versão e o histórico serão atualizados de forma atômica.</DialogDescription>
+            <DialogDescription>{detalhe?.status === 'RASCUNHO' && transicao.destino === 'VENDA FECHADA' ? 'Confirma que esta venda foi fechada?' : 'Confirme a transição. A versão e o histórico serão atualizados de forma atômica.'}</DialogDescription>
           </DialogHeader>
           {detalhe && <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
             <div className="rounded-lg bg-slate-50 p-3 text-sm"><span className="text-slate-500">Origem:</span> <strong>{detalhe.status}</strong></div>
-            <div><label htmlFor="status-destino" className="mb-1 block text-sm font-medium">Destino</label><Select value={transicao.destino} onValueChange={(destino) => setTransicao((atual) => ({ ...atual, destino: destino as StatusPedidoPersonalizado }))}><SelectTrigger id="status-destino"><SelectValue /></SelectTrigger><SelectContent>{destinosPermitidosStatus(detalhe.status).map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
-            {detalhe.status === 'CADASTRADO' && transicao.destino === 'AGUARDANDO LAYOUT' && <div className="grid gap-3 sm:grid-cols-2">
+            <div><label htmlFor="status-destino" className="mb-1 block text-sm font-medium">Destino</label><Select value={transicao.destino} onValueChange={(destino) => setTransicao((atual) => ({ ...atual, destino: destino as StatusPedidoPersonalizado }))}><SelectTrigger id="status-destino"><SelectValue /></SelectTrigger><SelectContent>{destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes').map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
+            {detalhe.status === 'VENDA FECHADA' && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(transicao.destino) && <div className="grid gap-3 sm:grid-cols-2">
               <div><label htmlFor="transicao-pedido" className="mb-1 block text-sm font-medium">Pedido de compra</label><Input id="transicao-pedido" inputMode="numeric" maxLength={5} value={transicao.numeroPedidoCompra} onChange={(e) => setTransicao({ ...transicao, numeroPedidoCompra: e.target.value.replace(/\D/g, '').slice(0, 5) })} /></div>
               <div><label htmlFor="transicao-data-fornecedor" className="mb-1 block text-sm font-medium">Data do pedido ao fornecedor</label><Input id="transicao-data-fornecedor" type="date" max={dataOperacionalBrasil()} value={transicao.dataPedidoFornecedor} onChange={(e) => setTransicao({ ...transicao, dataPedidoFornecedor: e.target.value })} /></div>
               <div className="sm:col-span-2"><label htmlFor="transicao-comprador" className="mb-1 block text-sm font-medium">Comprador</label><Input id="transicao-comprador" maxLength={40} value={transicao.comprador} onChange={(e) => setTransicao({ ...transicao, comprador: e.target.value })} /></div>

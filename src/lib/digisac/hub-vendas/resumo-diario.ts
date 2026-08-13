@@ -71,7 +71,86 @@ async function buscarConfig(supabase: SupabaseServiceClient) {
     motivo: asString(automacao.motivo),
     timezone: asString(parametros.timezone) ?? 'America/Sao_Paulo',
     limiteDiarioPorConexao: asNumber(parametros.limite_diario_por_conexao ?? parametros.limite_diario, 15),
+    elegibilidadeHoras: asNumber(parametros.elegibilidade_horas, 48),
     pausas,
+  }
+}
+
+/** Janela pos-recuperacao: mesma constante de 24h usada em registrar-conversao-pos-recuperacao.ts. */
+const JANELA_POS_RECUPERACAO_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Resultado do funil de leads. Cada campo indica no proprio nome se é "hoje" (com
+ * timestamp dedicado e confiável — data_conversao / data_recuperacao_respondida /
+ * data_entrada_hub) ou "atual" (estoque no momento, sem timestamp dedicado de transição
+ * — apenas updated_at genérico, que não é seguro para filtrar "só hoje").
+ */
+type ResultadoLeadsHubVendas = {
+  convertidosHoje: number
+  recuperadosHoje: number
+  aguardandoRespostaAgora: number
+  perdidosAtual: number
+  filaManualAtual: number
+  candidatosElegiveisAgora: number
+}
+
+async function contarResultadoLeadsHubVendas(
+  supabase: SupabaseServiceClient,
+  elegibilidadeHoras: number,
+  timezone: string
+): Promise<ResultadoLeadsHubVendas> {
+  const { inicioUtc, fimUtc } = obterIntervaloDiaLocalUtc(new Date(), timezone)
+  const inicioIso = inicioUtc.toISOString()
+  const fimIso = fimUtc.toISOString()
+  const agora = Date.now()
+  const limiteElegibilidade = new Date(agora - elegibilidadeHoras * 60 * 60 * 1000).toISOString()
+  const limitePosRecuperacao = new Date(agora - JANELA_POS_RECUPERACAO_MS).toISOString()
+
+  const [
+    { count: convertidosHoje, error: convertidosError },
+    { count: recuperadosHoje, error: recuperadosError },
+    { count: aguardandoRespostaAgora, error: aguardandoError },
+    { count: perdidosAtual, error: perdidosError },
+    { count: filaManualAtual, error: filaManualError },
+    { count: candidatosElegiveisAgora, error: candidatosError },
+  ] = await Promise.all([
+    supabase
+      .from('hub_vendas_leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'convertido_organicamente')
+      .gte('data_conversao', inicioIso)
+      .lt('data_conversao', fimIso),
+    supabase
+      .from('hub_vendas_leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'recuperado')
+      .gte('data_recuperacao_respondida', inicioIso)
+      .lt('data_recuperacao_respondida', fimIso),
+    supabase
+      .from('hub_vendas_leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'recuperacao_enviada')
+      .gt('data_recuperacao_enviada', limitePosRecuperacao),
+    supabase.from('hub_vendas_leads').select('id', { count: 'exact', head: true }).eq('status', 'encerrado'),
+    supabase.from('hub_vendas_leads').select('id', { count: 'exact', head: true }).eq('status', 'fila_manual'),
+    supabase
+      .from('hub_vendas_leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'aguardando_conversao')
+      .gt('data_entrada_hub', limiteElegibilidade),
+  ])
+
+  const erro =
+    convertidosError ?? recuperadosError ?? aguardandoError ?? perdidosError ?? filaManualError ?? candidatosError
+  if (erro) throw erro
+
+  return {
+    convertidosHoje: convertidosHoje ?? 0,
+    recuperadosHoje: recuperadosHoje ?? 0,
+    aguardandoRespostaAgora: aguardandoRespostaAgora ?? 0,
+    perdidosAtual: perdidosAtual ?? 0,
+    filaManualAtual: filaManualAtual ?? 0,
+    candidatosElegiveisAgora: candidatosElegiveisAgora ?? 0,
   }
 }
 
@@ -189,21 +268,44 @@ export async function gerarTextoResumoDiario(
   const filas = await contarFilasPorStatusHoje(supabase, config.timezone)
   const enviadosPorLoja = await contarEnviadosPorLojaHoje(supabase, config.timezone)
   const leadsRecebidos = await contarLeadsRecebidosHoje(supabase, config.timezone)
+  const resultadoLeads = await contarResultadoLeadsHubVendas(supabase, config.elegibilidadeHoras, config.timezone)
 
   const linhas: string[] = []
   linhas.push('HUB/VENDAS — RESUMO DIÁRIO')
   linhas.push(formatarDataLocal(new Date(), config.timezone))
   linhas.push('')
 
+  // Bloco ENVIOS: mensagens de recuperação enviadas hoje, por loja.
+  linhas.push('ENVIOS')
   let totalEnviado = 0
   for (const [, loja] of Object.entries(HUB_VENDAS_LOJAS)) {
     const enviados = enviadosPorLoja[Object.keys(HUB_VENDAS_LOJAS).find((k) => HUB_VENDAS_LOJAS[k as keyof typeof HUB_VENDAS_LOJAS] === loja) as keyof typeof HUB_VENDAS_LOJAS] ?? 0
     totalEnviado += enviados
-    linhas.push(`${loja.nomeExibicao}: ${enviados}/${config.limiteDiarioPorConexao} enviados`)
+    linhas.push(`${loja.nomeExibicao}: ${enviados}/${config.limiteDiarioPorConexao}`)
   }
-
-  linhas.push('')
   linhas.push(`Total enviado: ${totalEnviado}`)
+
+  // Bloco RESULTADO DOS LEADS: onde os leads estão no funil.
+  // "hoje" = tem timestamp dedicado da transição (data_conversao / data_recuperacao_respondida
+  // / data_entrada_hub), filtrado pelo dia local. Os demais (aguardando resposta, perdidos,
+  // fila manual, candidatos elegíveis) são fotografia do momento atual, não do dia — esses
+  // status não têm uma coluna própria de "quando entrou nesse status" (só updated_at
+  // genérico, tocado por qualquer atualização da linha), então não é seguro tratá-los como
+  // "hoje". Ver relato da tarefa para o detalhamento dessa decisão.
+  linhas.push('')
+  linhas.push('RESULTADO DOS LEADS')
+  linhas.push(`Leads registrados hoje: ${leadsRecebidos}`)
+  linhas.push(`Convertidos organicamente hoje: ${resultadoLeads.convertidosHoje}`)
+  linhas.push(`Recuperados hoje: ${resultadoLeads.recuperadosHoje}`)
+  linhas.push(`Aguardando resposta agora: ${resultadoLeads.aguardandoRespostaAgora}`)
+  linhas.push(`Perdidos até agora: ${resultadoLeads.perdidosAtual}`)
+  linhas.push(`Fila manual até agora: ${resultadoLeads.filaManualAtual}`)
+  linhas.push(`Candidatos elegíveis agora: ${resultadoLeads.candidatosElegiveisAgora}`)
+
+  // Bloco OPERAÇÃO: saúde do processamento da fila (estoque atual, não "hoje").
+  linhas.push('')
+  linhas.push('OPERAÇÃO')
+  linhas.push(`Filas agendadas: ${filas.agendado}`)
   linhas.push(`Erros: ${filas.erro}`)
   linhas.push(`Retries: 0`)
   linhas.push(`Cancelados: ${filas.cancelado}`)
@@ -231,12 +333,15 @@ export async function gerarTextoResumoDiario(
     linhas.push(`Erros consecutivos: ${errosConsecutivos.join(', ')}`)
   }
 
-  linhas.push('')
-  linhas.push(`Leads recebidos: ${leadsRecebidos}`)
-  linhas.push(`Filas agendadas: ${filas.agendado}`)
-
-  // Status geral
-  const saudavel = !config.pausada && filas.erro === 0 && filas.resultado_incerto === 0 && conexoesPausadas === 0
+  // Status geral: além do que já valia antes (automação pausada, erro de envio, resultado
+  // incerto, conexão pausada), agora também considera análise manual pendente — sinal
+  // explícito pedido para reavaliar esse critério nesta tarefa.
+  const saudavel =
+    !config.pausada &&
+    filas.erro === 0 &&
+    filas.resultado_incerto === 0 &&
+    filas.analise_manual === 0 &&
+    conexoesPausadas === 0
   linhas.push('')
   linhas.push(`Status geral: ${saudavel ? '✅ saudável' : '⚠️ com atenção'}`)
   if (config.pausada) {

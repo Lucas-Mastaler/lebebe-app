@@ -627,10 +627,11 @@ const JANELA_POS_RECUPERACAO_MS = 24 * 60 * 60 * 1000
  */
 async function encerrarRecuperacoesExpiradasHubVendas(supabase: SupabaseServiceClient, agora: Date): Promise<number> {
   const limiteExpiracao = new Date(agora.getTime() - JANELA_POS_RECUPERACAO_MS).toISOString()
+  const momentoTransicao = agora.toISOString()
 
   const { data, error } = await supabase
     .from('hub_vendas_leads')
-    .update({ status: 'encerrado', updated_at: new Date().toISOString() })
+    .update({ status: 'encerrado', data_encerrado: momentoTransicao, updated_at: momentoTransicao })
     .eq('status', 'recuperacao_enviada')
     .lt('data_recuperacao_enviada', limiteExpiracao)
     .is('data_recuperacao_respondida', null)

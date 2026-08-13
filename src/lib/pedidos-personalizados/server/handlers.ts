@@ -8,6 +8,7 @@ import {
   UNIDADE_PARA_EXIBICAO,
 } from '../constantes'
 import type {
+  ParametrosCriarPedidoPersonalizadoLebebeExclusiveRpc,
   ParametrosAtualizarPedidoComercialMoriahRpc,
   ParametrosCriarPedidoPersonalizadoMoriahRpc,
   PedidoPersonalizadoMoriahNormalizado,
@@ -44,6 +45,10 @@ import {
   validarDadosAdministrativos,
   validarFiltrosPedidos,
 } from './validacao-api'
+import {
+  validarEntradaLebebeExclusive,
+  validarFiltrosCatalogoLebebeExclusive,
+} from './lebebe-exclusive'
 
 type Repositorio = RepositorioPedidosPersonalizados
 
@@ -90,7 +95,7 @@ function falhaConfirmacaoCriacao(log: ContextoLogPedidos) {
   registrarResultado(log, 'erro', 'CRIACAO_PARCIAL_NAO_CONFIRMADA')
   return jsonErro(
     'CRIACAO_PARCIAL_NAO_CONFIRMADA',
-    'O pedido foi salvo, mas os tapetes ainda não puderam ser confirmados. Tente novamente com a mesma chave de envio.',
+    'O pedido foi salvo, mas os itens ainda não puderam ser confirmados. Tente novamente com a mesma chave de envio.',
     503
   )
 }
@@ -165,6 +170,8 @@ function serializarItemListagem(valor: unknown) {
     quantidadeTapetes: row.quantidade_tapetes,
     codigosProdutos: row.codigos_produtos,
     tiposTapetes: row.tipos_tapetes,
+    quantidadeItens: row.quantidade_itens,
+    referenciasProdutos: row.referencias_produtos,
     situacaoPrazo: classificarSituacaoPrazo(
       typeof row.data_entrega === 'string' ? row.data_entrega : null,
       row.status as import('../tipos').StatusPedidoPersonalizado
@@ -173,7 +180,7 @@ function serializarItemListagem(valor: unknown) {
   }
 }
 
-function serializarDetalhe(valor: { pedido: unknown; tapetes: unknown[]; historico: unknown[] }) {
+function serializarDetalhe(valor: { pedido: unknown; tapetes: unknown[]; itens: unknown[]; historico: unknown[] }) {
   const pedido = valor.pedido as Record<string, unknown>
   const fornecedor = pedido.fornecedor as Record<string, unknown> | null
   const unidade = pedido.unidade as Record<string, unknown> | null
@@ -229,6 +236,23 @@ function serializarDetalhe(valor: { pedido: unknown; tapetes: unknown[]; histori
         })),
       }
     }),
+    itens: valor.itens.map((item) => {
+      const produto = item as Record<string, unknown>
+      return {
+        id: produto.id,
+        produtoId: produto.produto_id,
+        ordem: produto.ordem,
+        quantidade: produto.quantidade,
+        nomeOuLetra: produto.nome_ou_letra,
+        colecao: produto.colecao_snapshot,
+        descricao: produto.descricao_snapshot,
+        referencia: produto.referencia_snapshot,
+        precoUnitario: Number(produto.preco_unitario_snapshot),
+        custoUnitario: Number(produto.custo_unitario_snapshot),
+        totalVenda: Number(produto.total_venda),
+        totalCusto: Number(produto.total_custo),
+      }
+    }),
     historico: (valor.historico ?? []).map((item) => {
       const evento = item as Record<string, unknown>
       const usuario = evento.usuario as Record<string, unknown> | null
@@ -259,8 +283,12 @@ export async function obterOpcoes(
   if (!acesso.ok) return acesso.response
 
   const repo = deps.criarRepositorio(acesso.contexto)
-  const catalogos = await repo.carregarCatalogos()
+  const [catalogos, fornecedores] = await Promise.all([
+    repo.carregarCatalogos(),
+    repo.listarFornecedoresDisponiveis(),
+  ])
   if (catalogos.error) return falhaBanco(log, catalogos.error)
+  if (fornecedores.error) return falhaBanco(log, fornecedores.error)
   if (catalogos.data.produtos.length !== 3 || catalogos.data.cores.length !== 31) {
     return falhaBanco(log, { message: 'CATALOGO_INCOMPATIVEL' })
   }
@@ -269,6 +297,7 @@ export async function obterOpcoes(
   return NextResponse.json({
     ok: true,
     fornecedor: catalogos.data.fornecedor,
+    fornecedores: fornecedores.data,
     unidades: acesso.contexto.unidades.map(({ chave, nomeExibicao }) => ({ chave, nome: nomeExibicao })),
     produtos: catalogos.data.produtos.map(({ id, codigo, descricao, produtoIdSgi, precoM2Centavos }) => ({
       id,
@@ -289,6 +318,81 @@ export async function obterOpcoes(
   })
 }
 
+export async function pesquisarCatalogoLebebeExclusive(
+  request: Request,
+  deps: DependenciasApiPedidos = dependenciasPadrao
+) {
+  const log: ContextoLogPedidos = {
+    rota: '/api/pedidos-personalizados/catalogo/lebebe-exclusive',
+    operacao: 'pesquisar_catalogo',
+    inicio: Date.now(),
+  }
+  const acesso = await carregar(['pedidos_personalizados_novo', 'pedidos_personalizados_gestao'], log, deps)
+  if (!acesso.ok) return acesso.response
+  const validacao = validarFiltrosCatalogoLebebeExclusive(new URL(request.url))
+  if (!validacao.ok) return jsonErro('FILTRO_INSUFICIENTE', validacao.mensagem, 422)
+  const resultado = await deps.criarRepositorio(acesso.contexto)
+    .buscarCatalogoLebebeExclusive(validacao.filtros)
+  if (resultado.error) return falhaBanco(log, resultado.error)
+  registrarResultado(log, 'sucesso', 'CATALOGO_FILTRADO')
+  return NextResponse.json({ ok: true, itens: resultado.data, limite: 150 })
+}
+
+async function criarPedidoLebebeExclusive(
+  corpo: Record<string, unknown>,
+  contexto: ContextoPedidosPersonalizados,
+  log: ContextoLogPedidos,
+  repo: Repositorio
+) {
+  const validacao = validarEntradaLebebeExclusive(corpo, { comercial: false })
+  if (!validacao.ok) {
+    return jsonErro(
+      validacao.codigo,
+      validacao.mensagem,
+      422,
+      validacao.campo ? { campo: validacao.campo } : undefined
+    )
+  }
+  const unidade = unidadeDoContexto(contexto, validacao.dados.unidade)
+  if (!unidade) return jsonErro('UNIDADE_NAO_PERMITIDA', 'Unidade não permitida.', 403)
+  const fornecedores = await repo.listarFornecedoresDisponiveis()
+  if (fornecedores.error) return falhaBanco(log, fornecedores.error)
+  const fornecedor = fornecedores.data.find((item) => item.chave === 'lebebe_exclusive')
+  if (!fornecedor) return jsonErro('FORNECEDOR_INDISPONIVEL', 'Fornecedor indisponível.', 422)
+
+  const parametros: ParametrosCriarPedidoPersonalizadoLebebeExclusiveRpc = {
+    p_usuario_id: contexto.allowedUser.id,
+    p_idempotency_key: corpo.idempotencyKey as string,
+    p_fornecedor_id: fornecedor.id,
+    p_unidade_id: unidade.id,
+    p_consultora: validacao.dados.consultora,
+    p_cliente: validacao.dados.cliente,
+    p_telefone_normalizado: validacao.dados.telefoneNormalizado,
+    p_numero_lancamento: validacao.dados.numeroLancamento,
+    p_itens: validacao.dados.itens,
+  }
+  const criado = await repo.criarLebebeExclusive(parametros)
+  if (criado.error) return falhaBanco(log, criado.error)
+  log.pedidoId = criado.data.pedido_id
+  const confirmado = await repo.buscarPedidoExclusiveCriado(
+    criado.data.pedido_id,
+    contexto.unidades.map((item) => item.id)
+  )
+  if (confirmado.error || !confirmado.data) return falhaConfirmacaoCriacao(log)
+  const itens = validarTapetesCriados(confirmado.data.itens, validacao.dados.itens.length)
+  if (!itens) return falhaConfirmacaoCriacao(log)
+  registrarResultado(log, 'sucesso', criado.data.reutilizado ? 'PEDIDO_REUTILIZADO' : 'PEDIDO_CRIADO')
+  return NextResponse.json({
+    ok: true,
+    pedidoId: criado.data.pedido_id,
+    version: confirmado.data.version,
+    status: confirmado.data.status,
+    quantidadeItens: itens.length,
+    reutilizado: criado.data.reutilizado,
+    itens,
+  }, { status: criado.data.reutilizado ? 200 : 201 })
+}
+
 export async function criarPedido(
   request: Request,
   deps: DependenciasApiPedidos = dependenciasPadrao
@@ -305,6 +409,11 @@ export async function criarPedido(
   if (!ehObjeto(corpo.valor) || !ehUuid(corpo.valor.idempotencyKey)) {
     registrarResultado(log, 'erro', 'IDEMPOTENCY_KEY_INVALIDA')
     return jsonErro('IDEMPOTENCY_KEY_INVALIDA', 'A chave de idempotência deve ser um UUID válido.', 422)
+  }
+
+  const repo = deps.criarRepositorio(acesso.contexto)
+  if (corpo.valor.fornecedor === 'lebebe_exclusive') {
+    return criarPedidoLebebeExclusive(corpo.valor, acesso.contexto, log, repo)
   }
 
   const entrada = montarEntradaPedido(corpo.valor, { comercial: false })
@@ -325,7 +434,6 @@ export async function criarPedido(
     return respostaProblemasDominio(validacao.erros)
   }
 
-  const repo = deps.criarRepositorio(acesso.contexto)
   const catalogos = await repo.carregarCatalogos()
   if (catalogos.error) return falhaBanco(log, catalogos.error)
   const tapetesRpc = validarRelacoesCatalogo(validacao.dados, catalogos.data)
@@ -443,6 +551,39 @@ export async function atualizarComercial(
 
   const corpo = await lerJsonLimitado(request)
   if (!corpo.ok) return corpo.response
+  const repo = deps.criarRepositorio(acesso.contexto)
+  const atual = await repo.buscarPedidoNoEscopo(pedidoId, acesso.contexto.unidades.map((item) => item.id))
+  if (atual.error) return falhaBanco(log, atual.error)
+  if (!atual.data) return jsonErro('PEDIDO_NAO_ENCONTRADO', 'Pedido não encontrado.', 404)
+
+  if (atual.data.fornecedor?.chave === 'lebebe_exclusive') {
+    const validacao = validarEntradaLebebeExclusive(corpo.valor, { comercial: true })
+    if (!validacao.ok || validacao.dados.expectedVersion === undefined) {
+      return jsonErro(
+        validacao.ok ? 'VERSAO_INVALIDA' : validacao.codigo,
+        validacao.ok ? 'Versão do pedido inválida.' : validacao.mensagem,
+        422,
+        !validacao.ok && validacao.campo ? { campo: validacao.campo } : undefined
+      )
+    }
+    const unidadeExclusive = unidadeDoContexto(acesso.contexto, validacao.dados.unidade)
+    if (!unidadeExclusive) return jsonErro('UNIDADE_NAO_PERMITIDA', 'Unidade não permitida.', 403)
+    const resultadoExclusive = await repo.atualizarComercialLebebeExclusive({
+      p_pedido_id: pedidoId,
+      p_expected_version: validacao.dados.expectedVersion,
+      p_usuario_id: acesso.contexto.allowedUser.id,
+      p_unidade_id: unidadeExclusive.id,
+      p_consultora: validacao.dados.consultora,
+      p_cliente: validacao.dados.cliente,
+      p_telefone_normalizado: validacao.dados.telefoneNormalizado,
+      p_numero_lancamento: validacao.dados.numeroLancamento,
+      p_itens: validacao.dados.itens,
+    })
+    if (resultadoExclusive.error) return falhaBanco(log, resultadoExclusive.error)
+    registrarResultado(log, 'sucesso', 'PEDIDO_COMERCIAL_ATUALIZADO')
+    return NextResponse.json({ ok: true, pedidoId, version: resultadoExclusive.data.version })
+  }
+
   const entrada = montarEntradaPedido(corpo.valor, { comercial: true })
   if (!entrada.ok) {
     registrarResultado(log, 'erro', entrada.codigo)
@@ -452,11 +593,6 @@ export async function atualizarComercial(
     registrarResultado(log, 'erro', 'PAYLOAD_INVALIDO')
     return jsonErro('PAYLOAD_INVALIDO', 'Payload inválido.', 422)
   }
-
-  const repo = deps.criarRepositorio(acesso.contexto)
-  const atual = await repo.buscarPedidoNoEscopo(pedidoId, acesso.contexto.unidades.map((item) => item.id))
-  if (atual.error) return falhaBanco(log, atual.error)
-  if (!atual.data) return jsonErro('PEDIDO_NAO_ENCONTRADO', 'Pedido não encontrado.', 404)
 
   const unidade = unidadeDoContexto(acesso.contexto, entrada.entrada.unidade)
   if (!unidade) return jsonErro('UNIDADE_NAO_PERMITIDA', 'Unidade não permitida.', 403)

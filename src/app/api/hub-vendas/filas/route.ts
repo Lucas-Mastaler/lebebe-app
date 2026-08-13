@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/auth/module-access'
 import { listarFilasHubVendas, type FiltrosListagemFilas } from '@/lib/digisac/hub-vendas/gestao'
 import type { HubVendasLoja } from '@/lib/digisac/hub-vendas/constants'
+import { obterIntervaloDatasLocaisUtc } from '@/lib/digisac/hub-vendas/tempo'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,6 +23,21 @@ export async function GET(request: Request) {
     const porPagina = searchParams.get('porPagina') ? parseInt(searchParams.get('porPagina')!, 10) : 20
     const dataInicio = searchParams.get('dataInicio')
     const dataFim = searchParams.get('dataFim')
+    if (Boolean(dataInicio) !== Boolean(dataFim)) {
+      return NextResponse.json({ ok: false, error: 'periodo_incompleto', message: 'Informe as datas De e Até.' }, { status: 400 })
+    }
+
+    let inicioIso: string | undefined
+    let fimIso: string | undefined
+    if (dataInicio && dataFim) {
+      try {
+        const intervalo = obterIntervaloDatasLocaisUtc(dataInicio, dataFim, 'America/Sao_Paulo')
+        inicioIso = intervalo.inicioUtc.toISOString()
+        fimIso = intervalo.fimUtc.toISOString()
+      } catch {
+        return NextResponse.json({ ok: false, error: 'periodo_invalido', message: 'O período informado é inválido.' }, { status: 400 })
+      }
+    }
     const lojaParam = searchParams.get('loja')
     const status = searchParams.get('status')
     const cliente = searchParams.get('cliente')
@@ -37,8 +53,8 @@ export async function GET(request: Request) {
     const filtros: FiltrosListagemFilas = {
       pagina: isNaN(pagina) ? 1 : pagina,
       porPagina: isNaN(porPagina) ? 20 : porPagina,
-      dataInicio: dataInicio || undefined,
-      dataFim: dataFim || undefined,
+      dataInicio: inicioIso,
+      dataFim: fimIso,
       loja: loja ?? undefined,
       status: status || undefined,
       cliente: cliente || undefined,

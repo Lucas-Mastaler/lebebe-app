@@ -49,6 +49,7 @@ const cores: CorOpcao[] = Array.from({ length: 31 }, (_, indice) => ({
 
 const opcoes: OpcoesNovoPedido = {
   fornecedor: { id: '30000000-0000-4000-8000-000000000001', chave: 'moriah_tapetes', nome: 'MORIAH TAPETES' },
+  fornecedores: [{ id: '30000000-0000-4000-8000-000000000001', chave: 'moriah_tapetes', nome: 'MORIAH TAPETES' }],
   unidades: [
     { chave: 'bigorrilho', nome: 'BIGORRILHO' },
     { chave: 'portao', nome: 'PORTÃO' },
@@ -446,7 +447,7 @@ describe('cliente HTTP da tela', () => {
   })
 
   it('envia criação uma vez e interpreta sucesso', async () => {
-    const fetcher = vi.fn().mockResolvedValue(responseJson({ ok: true, pedidoId: PEDIDO_ID, version: 1, status: 'CADASTRADO', quantidadeTapetes: 1, reutilizado: false, tapetes: TAPETES_CRIADOS }, 201))
+    const fetcher = vi.fn().mockResolvedValue(responseJson({ ok: true, pedidoId: PEDIDO_ID, version: 1, status: 'RASCUNHO', quantidadeTapetes: 1, reutilizado: false, tapetes: TAPETES_CRIADOS }, 201))
     const payload = montarPayloadCriacao(estadoValido(), '40000000-0000-4000-8000-000000000001', opcoes)
     await expect(enviarNovoPedido(payload, fetcher)).resolves.toMatchObject({ pedidoId: PEDIDO_ID, version: 1, tapetes: TAPETES_CRIADOS })
     expect(fetcher).toHaveBeenCalledTimes(1)
@@ -455,7 +456,7 @@ describe('cliente HTTP da tela', () => {
   it('permite retry com a mesma idempotencyKey', async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(responseJson({ erro: 'TEMPORARIO' }, 503))
-      .mockResolvedValueOnce(responseJson({ ok: true, pedidoId: PEDIDO_ID, version: 1, status: 'CADASTRADO', quantidadeTapetes: 1, reutilizado: true, tapetes: TAPETES_CRIADOS }))
+      .mockResolvedValueOnce(responseJson({ ok: true, pedidoId: PEDIDO_ID, version: 1, status: 'RASCUNHO', quantidadeTapetes: 1, reutilizado: true, tapetes: TAPETES_CRIADOS }))
     const payload = montarPayloadCriacao(estadoValido(), '40000000-0000-4000-8000-000000000001', opcoes)
     await expect(enviarNovoPedido(payload, fetcher)).rejects.toMatchObject({ status: 503 })
     await enviarNovoPedido(payload, fetcher)
@@ -477,7 +478,7 @@ describe('cliente HTTP da tela', () => {
       ok: true,
       pedidoId: PEDIDO_ID,
       version: 1,
-      status: 'CADASTRADO',
+      status: 'RASCUNHO',
       quantidadeTapetes: 1,
       reutilizado: false,
       tapetes: [],
@@ -615,12 +616,12 @@ describe('proteção, dados não salvos e bloqueio seguro de anexos', () => {
     expect(deveAvisarDadosNaoSalvos(alterado, salvo, upload)).toBe(esperado)
   })
 
-  it('protege a página no servidor e não adiciona o módulo ao menu', () => {
+  it('protege a página no servidor e mantém o módulo no menu central', () => {
     const page = readFileSync(path.resolve('src/app/pedidos-personalizados/novo/page.tsx'), 'utf8')
     const catalogo = readFileSync(path.resolve('src/lib/auth/modulos-app.ts'), 'utf8')
     const blocoMenu = catalogo.slice(catalogo.indexOf('export const NAVIGATION_GROUPS'), catalogo.indexOf('export const PROFILE_CONTROLLED_MODULE_KEYS'))
     expect(page).toContain("checkModuleAndWindowAccess('pedidos_personalizados_novo')")
-    expect(blocoMenu).not.toContain("navigationItem('pedidos_personalizados_novo'")
+    expect(blocoMenu).toContain("navigationItem('pedidos_personalizados_novo'")
   })
 
   it('seleciona anexos antes do salvamento e só envia depois de associar os IDs reais', () => {

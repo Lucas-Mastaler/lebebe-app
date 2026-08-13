@@ -12,6 +12,6 @@ export function verificarAcessoAnexoPedidoPersonalizado(
 
   return contexto.moduloAutorizado === MODULO_NOVO
     && pedido.created_by === contexto.allowedUser.id
-    && pedido.status === 'CADASTRADO'
+    && pedido.status === 'RASCUNHO'
     && pedido.fornecedor?.chave === 'moriah_tapetes'
 }

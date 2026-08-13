@@ -1,0 +1,2090 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+
+    <style>
+      /**************************************************************
+       * 01. BASE
+       **************************************************************/
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: Arial, sans-serif;
+        background: #f5f5f5;
+        color: #222;
+      }
+
+      body {
+        display: flex;
+      }
+
+      .app {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+
+
+      /**************************************************************
+       * 02. CONTEÚDO PRINCIPAL
+       **************************************************************/
+      .content {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: grid;
+        grid-template-rows:
+          auto
+          auto
+          auto
+          minmax(0, 1fr);
+        gap: 5px;
+        padding: 8px 10px 0 10px;
+        overflow: hidden;
+      }
+
+      .card {
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        padding: 7px 9px;
+        min-width: 0;
+      }
+
+      .card-principal {
+        background: #eef4ff;
+        border-color: #c9dafc;
+      }
+
+      .card-filtro {
+        background: #f4f1ff;
+        border-color: #d9cdfc;
+      }
+
+
+      /**************************************************************
+       * 03. LINHAS SUPERIORES
+       **************************************************************/
+      .linha-principal {
+        display: grid;
+        grid-template-columns:
+          repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .linha-filtros {
+        display: grid;
+        grid-template-columns:
+          repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .campo label {
+        display: block;
+        margin-bottom: 4px;
+        color: #555;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+
+      .campo input,
+      .campo select {
+        width: 100%;
+        height: 32px;
+        padding: 6px 9px;
+        border: 1px solid #cfcfcf;
+        border-radius: 8px;
+        background: #fff;
+        font-size: 13px;
+      }
+
+      .campo input:focus,
+      .campo select:focus {
+        outline: none;
+        border-color: #1a73e8;
+        box-shadow:
+          0 0 0 2px rgba(26, 115, 232, 0.12);
+      }
+
+      .campo-erro input,
+      .campo-erro select {
+        border-color: #d9534f !important;
+        background: #fff5f5;
+        box-shadow:
+          0 0 0 2px rgba(217, 83, 79, 0.12);
+      }
+
+      .aviso-campo {
+        min-height: 11px;
+        margin-top: 3px;
+        color: #b42318;
+        font-size: 10px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+
+
+      /**************************************************************
+       * 04. BARRA DOS FILTROS
+       **************************************************************/
+      .barra-filtros {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .info-filtro {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 0 2px;
+        color: #666;
+        font-size: 11px;
+        line-height: 1.2;
+      }
+
+      .acoes-filtro {
+        display: flex;
+        flex: 0 0 auto;
+        gap: 6px;
+        align-items: center;
+      }
+
+
+      /**************************************************************
+       * 05. TABELA
+       **************************************************************/
+      .table-area {
+        min-height: 0;
+        overflow: auto;
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        background: #fff;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+
+      thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        padding: 7px 6px;
+        border-bottom: 1px solid #ddd;
+        background: #fafafa;
+        font-size: 12px;
+        font-weight: 700;
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      tbody td {
+        padding: 7px 6px;
+        border-bottom: 1px solid #eee;
+        font-size: 12px;
+        vertical-align: middle;
+      }
+
+      tbody tr:hover {
+        background: #fcfcfc;
+      }
+
+      .col-colecao {
+        width: 110px;
+      }
+
+      .col-descricao {
+        width: auto;
+      }
+
+      .col-referencia {
+        width: 80px;
+      }
+
+      .col-preco {
+        width: 92px;
+      }
+
+      .col-quantidade {
+        width: 105px;
+      }
+
+      .col-nome {
+        width: 125px;
+      }
+
+      .col-total {
+        width: 92px;
+      }
+
+      .texto-quebra {
+        word-break: break-word;
+        line-height: 1.2;
+      }
+
+      .item-input {
+        width: 100%;
+        height: 29px;
+        padding: 5px 7px;
+        border: 1px solid #cfcfcf;
+        border-radius: 7px;
+        background: #fff;
+        font-size: 12px;
+      }
+
+      .item-input:focus {
+        outline: none;
+        border-color: #1a73e8;
+        box-shadow:
+          0 0 0 2px rgba(26, 115, 232, 0.12);
+      }
+
+      .valor-total {
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .col-acoes {
+        width: 62px;
+        text-align: center;
+      }
+
+      .btn-remover-item {
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: #d9534f;
+        color: #fff;
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 30px;
+        text-align: center;
+        cursor: pointer;
+      }
+
+      .btn-remover-item:hover {
+        background: #c9302c;
+        opacity: 1;
+      }
+
+      .vazio {
+        padding: 24px 18px;
+        color: #666;
+        font-size: 13px;
+        line-height: 1.5;
+        text-align: center;
+      }
+
+      .vazio strong {
+        color: #333;
+      }
+
+
+      /**************************************************************
+       * 06. RODAPÉ FIXO
+       **************************************************************/
+      .footer {
+        flex: 0 0 auto;
+        padding: 7px 10px 9px 10px;
+        border-top: 1px solid #ddd;
+        background: #f5f5f5;
+      }
+
+      .footer-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .totais {
+        font-size: 13px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .botoes {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      button {
+        padding: 8px 11px;
+        border: 0;
+        border-radius: 8px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: 0.15s ease;
+        white-space: nowrap;
+      }
+
+      button:hover {
+        opacity: 0.94;
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .btn-secundario {
+        background: #e5e5e5;
+        color: #222;
+      }
+
+      .btn-perigo {
+        background: #d9534f;
+        color: #fff;
+      }
+
+      .btn-primario {
+        background: #1a73e8;
+        color: #fff;
+      }
+
+      .mensagem {
+        min-height: 14px;
+        margin-top: 5px;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.1;
+      }
+
+      .erro {
+        color: #b42318;
+      }
+
+      .sucesso {
+        color: #067647;
+      }
+
+      .loading {
+        padding: 12px 10px;
+        color: #555;
+        font-size: 13px;
+      }
+
+
+      /**************************************************************
+       * 07. AJUSTES POR ALTURA
+       **************************************************************/
+      @media (max-height: 720px) {
+        .content {
+          gap: 4px;
+          padding: 6px 8px 0 8px;
+        }
+
+        .card {
+          padding: 6px 8px;
+        }
+
+        .campo label {
+          margin-bottom: 3px;
+          font-size: 11px;
+        }
+
+        .campo input,
+        .campo select {
+          height: 29px;
+          padding: 5px 8px;
+          font-size: 12px;
+        }
+
+        .aviso-campo {
+          min-height: 10px;
+          font-size: 10px;
+        }
+
+        .info-filtro {
+          font-size: 10px;
+        }
+
+        thead th,
+        tbody td {
+          padding-top: 6px;
+          padding-bottom: 6px;
+        }
+
+        .item-input {
+          height: 27px;
+          font-size: 12px;
+        }
+
+        button {
+          padding: 7px 10px;
+        }
+      }
+
+
+      /**************************************************************
+       * 08. AJUSTES POR LARGURA
+       **************************************************************/
+      @media (max-width: 1100px) {
+        .linha-principal,
+        .linha-filtros {
+          gap: 6px;
+        }
+
+        .col-colecao {
+          width: 95px;
+        }
+
+        .col-referencia {
+          width: 72px;
+        }
+
+        .col-preco {
+          width: 82px;
+        }
+
+        .col-quantidade {
+          width: 90px;
+        }
+
+        .col-nome {
+          width: 110px;
+        }
+
+        .col-total {
+          width: 82px;
+        }
+      }
+
+      @media (max-width: 980px) {
+        .barra-filtros {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .acoes-filtro {
+          width: 100%;
+        }
+
+        .acoes-filtro button {
+          flex: 1 1 auto;
+        }
+
+        .totais {
+          white-space: normal;
+        }
+
+        .footer-row {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .botoes {
+          justify-content: stretch;
+        }
+
+        .botoes button {
+          flex: 1 1 auto;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="app">
+
+      <div
+        class="loading"
+        id="loading"
+      >
+        Carregando itens da aba DADOS...
+      </div>
+
+      <div
+        class="content"
+        id="areaPrincipal"
+        style="display:none;"
+      >
+
+        <!-- 01. CAMPOS OBRIGATÓRIOS -->
+        <div class="linha-principal">
+
+          <div
+            class="card card-principal campo"
+            id="blocoNumeroLancamento"
+          >
+            <label for="numeroLancamento">
+              Número de lançamento
+            </label>
+
+            <input
+              type="text"
+              id="numeroLancamento"
+              placeholder="Somente números"
+            >
+
+            <div
+              class="aviso-campo"
+              id="avisoNumeroLancamento"
+            ></div>
+          </div>
+
+          <div
+            class="card card-principal campo"
+            id="blocoFilial"
+          >
+            <label for="filial">
+              Filial de venda
+            </label>
+
+            <select id="filial">
+              <option value="">
+                Selecione
+              </option>
+            </select>
+
+            <div
+              class="aviso-campo"
+              id="avisoFilial"
+            ></div>
+          </div>
+
+          <div
+            class="card card-principal campo"
+            id="blocoConsultora"
+          >
+            <label for="consultora">
+              Consultora
+            </label>
+
+            <input
+              type="text"
+              id="consultora"
+              placeholder="Somente letras"
+            >
+
+            <div
+              class="aviso-campo"
+              id="avisoConsultora"
+            ></div>
+          </div>
+        </div>
+
+
+        <!-- 02. FILTROS -->
+        <div class="linha-filtros">
+
+          <div class="card card-filtro campo">
+            <label for="filtroColecao">
+              Filtro coleção
+            </label>
+
+            <input
+              type="text"
+              id="filtroColecao"
+              placeholder="Digite 3 letras ou mais"
+            >
+          </div>
+
+          <div class="card card-filtro campo">
+            <label for="filtroDescricao">
+              Filtro descrição
+            </label>
+
+            <input
+              type="text"
+              id="filtroDescricao"
+              placeholder="Digite 3 letras ou mais"
+            >
+          </div>
+
+          <div class="card card-filtro campo">
+            <label for="filtroReferencia">
+              Filtro referência
+            </label>
+
+            <input
+              type="text"
+              id="filtroReferencia"
+              placeholder="Digite 3 caracteres ou mais"
+            >
+          </div>
+        </div>
+
+
+        <!-- 03. AÇÕES DOS FILTROS -->
+        <div class="barra-filtros">
+
+          <div
+            class="info-filtro"
+            id="infoFiltro"
+          >
+            Digite pelo menos 3 caracteres em um dos filtros e clique em Filtrar.
+          </div>
+
+          <div class="acoes-filtro">
+
+            <button
+              type="button"
+              class="btn-primario"
+              id="btnFiltrar"
+              onclick="aplicarFiltros()"
+            >
+              Filtrar
+            </button>
+
+            <button
+              type="button"
+              class="btn-secundario"
+              onclick="limparFiltros()"
+            >
+              Limpar filtros
+            </button>
+
+            <button
+              type="button"
+              class="btn-secundario"
+              onclick="mostrarItensSelecionados()"
+            >
+              Mostrar selecionados
+            </button>
+          </div>
+        </div>
+
+
+        <!-- 04. TABELA -->
+        <div
+          class="table-area"
+          id="conteudoTabela"
+        ></div>
+      </div>
+
+
+      <!-- 05. RODAPÉ -->
+      <div
+        class="footer"
+        id="rodapeFixo"
+        style="display:none;"
+      >
+        <div class="footer-row">
+
+          <div
+            class="totais"
+            id="resumoTotais"
+          >
+            Itens selecionados: 0 | Total: R$ 0,00
+          </div>
+
+          <div class="botoes">
+
+            <button
+              type="button"
+              class="btn-secundario"
+              onclick="fecharModal()"
+            >
+              Fechar
+            </button>
+
+            <button
+              type="button"
+              class="btn-perigo"
+              onclick="descartarPedido()"
+            >
+              Descartar pedido
+            </button>
+
+            <button
+              type="button"
+              class="btn-primario"
+              onclick="salvarPedido()"
+            >
+              Salvar pedido
+            </button>
+          </div>
+        </div>
+
+        <div
+          class="mensagem"
+          id="mensagem"
+        ></div>
+      </div>
+    </div>
+
+
+    <script>
+      /**************************************************************
+       * 01. CONFIGURAÇÕES DO MODAL
+       **************************************************************/
+      const CONFIG_MODAL = {
+        MINIMO_CARACTERES_FILTRO: 3,
+        LIMITE_RESULTADOS: 150
+      };
+
+
+      /**************************************************************
+       * 02. ESTADO GLOBAL
+       **************************************************************/
+      let catalogo = [];
+
+      /*
+       * Permite encontrar um produto diretamente pela linha,
+       * sem percorrer o catálogo inteiro.
+       */
+      let catalogoPorLinha = new Map();
+
+
+      /**************************************************************
+       * 03. INICIAR MODAL
+       **************************************************************/
+      document.addEventListener(
+        'DOMContentLoaded',
+        function() {
+          console.log(
+            '[iniciarModal] Iniciando modal...'
+          );
+
+          configurarEventos();
+          carregarCatalogo();
+        }
+      );
+
+
+      /**************************************************************
+       * 04. CONFIGURAR EVENTOS
+       **************************************************************/
+      function configurarEventos() {
+        document
+          .getElementById('numeroLancamento')
+          .addEventListener(
+            'input',
+            limparErroCampoNumeroLancamento
+          );
+
+        document
+          .getElementById('filial')
+          .addEventListener(
+            'change',
+            limparErroCampoFilial
+          );
+
+        document
+          .getElementById('consultora')
+          .addEventListener(
+            'input',
+            limparErroCampoConsultora
+          );
+
+        /*
+         * Pressionar Enter em qualquer filtro executa a busca.
+         * Digitar normalmente não executa filtro automaticamente.
+         */
+        [
+          'filtroColecao',
+          'filtroDescricao',
+          'filtroReferencia'
+        ].forEach(function(idCampo) {
+          document
+            .getElementById(idCampo)
+            .addEventListener(
+              'keydown',
+              function(evento) {
+                if (evento.key === 'Enter') {
+                  evento.preventDefault();
+                  aplicarFiltros();
+                }
+              }
+            );
+        });
+
+        console.log(
+          '[configurarEventos] Eventos configurados.'
+        );
+      }
+
+
+      /**************************************************************
+       * 05. CARREGAR CATÁLOGO
+       **************************************************************/
+      function carregarCatalogo() {
+        limparMensagem();
+
+        console.log(
+          '[carregarCatalogo] Solicitando catálogo ao Apps Script...'
+        );
+
+        google.script.run
+          .withSuccessHandler(function(retorno) {
+            if (!retorno || !retorno.sucesso) {
+              exibirErroCarregamento(
+                retorno?.mensagem ||
+                'Erro ao carregar o catálogo.'
+              );
+
+              return;
+            }
+
+            /*
+             * Os textos usados na pesquisa são normalizados
+             * somente uma vez.
+             */
+            catalogo = (retorno.itens || []).map(
+              function(item) {
+                return {
+                  ...item,
+                  colecaoPesquisa:
+                    normalizarTexto(item.colecao),
+                  descricaoPesquisa:
+                    normalizarTexto(item.descricao),
+                  referenciaPesquisa:
+                    normalizarTexto(item.referencia)
+                };
+              }
+            );
+
+            catalogoPorLinha = new Map();
+
+            catalogo.forEach(function(item) {
+              catalogoPorLinha.set(
+                Number(item.linhaPlanilha),
+                item
+              );
+            });
+
+            preencherFiliais(
+              retorno.filiais || []
+            );
+
+            document
+              .getElementById('loading')
+              .style.display = 'none';
+
+            document
+              .getElementById('areaPrincipal')
+              .style.display = 'grid';
+
+            document
+              .getElementById('rodapeFixo')
+              .style.display = 'block';
+
+            mostrarMensagemPesquisaInicial();
+            atualizarResumo();
+
+            console.log(
+              '[carregarCatalogo] Catálogo carregado. Total de itens:',
+              catalogo.length
+            );
+          })
+          .withFailureHandler(function(erro) {
+            exibirErroCarregamento(
+              'Erro ao carregar o catálogo: ' +
+              erro.message
+            );
+
+            console.error(
+              '[carregarCatalogo] Erro:',
+              erro
+            );
+          })
+          .buscarCatalogoDADOS();
+      }
+
+
+      /**************************************************************
+       * 06. EXIBIR ERRO DE CARREGAMENTO
+       **************************************************************/
+      function exibirErroCarregamento(mensagem) {
+        const loading =
+          document.getElementById('loading');
+
+        loading.style.display = 'block';
+        loading.className = 'loading erro';
+        loading.textContent = mensagem;
+      }
+
+
+      /**************************************************************
+       * 07. PREENCHER FILIAIS
+       **************************************************************/
+      function preencherFiliais(filiais) {
+        const select =
+          document.getElementById('filial');
+
+        select.innerHTML =
+          '<option value="">Selecione</option>';
+
+        filiais.forEach(function(filial) {
+          const option =
+            document.createElement('option');
+
+          option.value = filial;
+          option.textContent = filial;
+
+          select.appendChild(option);
+        });
+      }
+
+
+      /**************************************************************
+       * 08. NORMALIZAR TEXTO
+       **************************************************************/
+      function normalizarTexto(texto) {
+        return String(texto || '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase()
+          .trim();
+      }
+
+
+      /**************************************************************
+       * 09. VERIFICAR SE FILTRO ESTÁ ATIVO
+       **************************************************************/
+      function filtroAtivo(texto) {
+        return normalizarTexto(texto).length >=
+          CONFIG_MODAL.MINIMO_CARACTERES_FILTRO;
+      }
+
+
+      /**************************************************************
+       * 10. APLICAR FILTROS
+       **************************************************************/
+      function aplicarFiltros() {
+        limparMensagem();
+
+        const filtroColecao =
+          document
+            .getElementById('filtroColecao')
+            .value;
+
+        const filtroDescricao =
+          document
+            .getElementById('filtroDescricao')
+            .value;
+
+        const filtroReferencia =
+          document
+            .getElementById('filtroReferencia')
+            .value;
+
+        const usarFiltroColecao =
+          filtroAtivo(filtroColecao);
+
+        const usarFiltroDescricao =
+          filtroAtivo(filtroDescricao);
+
+        const usarFiltroReferencia =
+          filtroAtivo(filtroReferencia);
+
+        /*
+         * Impede a renderização completa do catálogo.
+         */
+        if (
+          !usarFiltroColecao &&
+          !usarFiltroDescricao &&
+          !usarFiltroReferencia
+        ) {
+          mostrarErro(
+            '⚠ Digite pelo menos 3 caracteres em um dos filtros.'
+          );
+
+          document
+            .getElementById('conteudoTabela')
+            .innerHTML = `
+              <div class="vazio">
+                <strong>Filtro insuficiente.</strong><br>
+                Digite pelo menos 3 caracteres em coleção,
+                descrição ou referência.
+              </div>
+            `;
+
+          document
+            .getElementById('infoFiltro')
+            .textContent =
+              'Digite pelo menos 3 caracteres em um dos filtros.';
+
+          return;
+        }
+
+        const filtroColecaoNorm =
+          normalizarTexto(filtroColecao);
+
+        const filtroDescricaoNorm =
+          normalizarTexto(filtroDescricao);
+
+        const filtroReferenciaNorm =
+          normalizarTexto(filtroReferencia);
+
+        console.log(
+          '[aplicarFiltros] Iniciando filtro...',
+          {
+            colecao: filtroColecaoNorm,
+            descricao: filtroDescricaoNorm,
+            referencia: filtroReferenciaNorm
+          }
+        );
+
+        /*
+         * Usa os textos já normalizados no carregamento.
+         */
+        const itensFiltrados =
+          catalogo.filter(function(item) {
+            if (
+              usarFiltroColecao &&
+              !item.colecaoPesquisa.includes(
+                filtroColecaoNorm
+              )
+            ) {
+              return false;
+            }
+
+            if (
+              usarFiltroDescricao &&
+              !item.descricaoPesquisa.includes(
+                filtroDescricaoNorm
+              )
+            ) {
+              return false;
+            }
+
+            if (
+              usarFiltroReferencia &&
+              !item.referenciaPesquisa.includes(
+                filtroReferenciaNorm
+              )
+            ) {
+              return false;
+            }
+
+            return true;
+          });
+
+        const totalEncontrado =
+          itensFiltrados.length;
+
+        /*
+         * Limita a quantidade de elementos HTML criados.
+         */
+        const itensParaExibir =
+          itensFiltrados.slice(
+            0,
+            CONFIG_MODAL.LIMITE_RESULTADOS
+          );
+
+        renderizarTabela(
+          itensParaExibir,
+          totalEncontrado
+        );
+
+        atualizarInformacaoFiltro(
+          totalEncontrado,
+          itensParaExibir.length
+        );
+
+        console.log(
+          '[aplicarFiltros] Filtro concluído.',
+          {
+            encontrados: totalEncontrado,
+            exibidos: itensParaExibir.length
+          }
+        );
+      }
+
+
+      /**************************************************************
+       * 11. RENDERIZAR TABELA
+       **************************************************************/
+      function renderizarTabela(
+        itens,
+        totalEncontrado,
+        mostrarBotaoRemover
+      ) {
+        const container =
+          document.getElementById(
+            'conteudoTabela'
+          );
+
+        const exibirRemocao =
+          mostrarBotaoRemover === true;
+
+        if (!itens.length) {
+          container.innerHTML = `
+            <div class="vazio">
+              Nenhum item encontrado.
+            </div>
+          `;
+
+          atualizarResumo();
+          return;
+        }
+
+        let html = `
+          <table>
+            <thead>
+              <tr>
+                <th class="col-colecao">
+                  Coleção
+                </th>
+
+                <th class="col-descricao">
+                  Descrição
+                </th>
+
+                <th class="col-referencia">
+                  Referência
+                </th>
+
+                <th class="col-preco">
+                  Preço Unit.
+                </th>
+
+                <th class="col-quantidade">
+                  Quantidade
+                </th>
+
+                <th class="col-nome">
+                  Nome ou Letra
+                </th>
+
+                <th class="col-total">
+                  Valor Total
+                </th>
+
+                ${
+                  exibirRemocao
+                    ? `
+                      <th class="col-acoes">
+                        Excluir
+                      </th>
+                    `
+                    : ''
+                }
+              </tr>
+            </thead>
+
+            <tbody>
+        `;
+
+        itens.forEach(function(item) {
+          const linhaPlanilha =
+            Number(item.linhaPlanilha);
+
+          html += `
+            <tr
+              id="linha-item-${linhaPlanilha}"
+              data-linha="${linhaPlanilha}"
+            >
+
+              <td class="texto-quebra">
+                ${escaparHtml(item.colecao || '')}
+              </td>
+
+              <td class="texto-quebra">
+                ${escaparHtml(item.descricao || '')}
+              </td>
+
+              <td>
+                ${escaparHtml(item.referencia || '')}
+              </td>
+
+              <td>
+                ${formatarMoeda(item.precoUnit)}
+              </td>
+
+              <td>
+                <input
+                  class="item-input"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value="${escaparHtml(item.quantidade || '')}"
+                  oninput="alterarQuantidade(
+                    ${linhaPlanilha},
+                    this.value,
+                    this
+                  )"
+                >
+              </td>
+
+              <td>
+                <input
+                  class="item-input"
+                  type="text"
+                  value="${escaparHtml(item.letraNome || '')}"
+                  oninput="alterarLetraNome(
+                    ${linhaPlanilha},
+                    this.value
+                  )"
+                >
+              </td>
+
+              <td
+                class="valor-total"
+                id="total-item-${linhaPlanilha}"
+              >
+                ${formatarMoeda(
+                  calcularValorTotal(
+                    item.precoUnit,
+                    item.quantidade
+                  )
+                )}
+              </td>
+
+              ${
+                exibirRemocao
+                  ? `
+                    <td class="col-acoes">
+                      <button
+                        type="button"
+                        class="btn-remover-item"
+                        title="Remover este item do pedido"
+                        aria-label="Remover este item do pedido"
+                        onclick="removerItemSelecionado(
+                          ${linhaPlanilha}
+                        )"
+                      >
+                        ×
+                      </button>
+                    </td>
+                  `
+                  : ''
+              }
+            </tr>
+          `;
+        });
+
+        html += `
+            </tbody>
+          </table>
+        `;
+
+        container.innerHTML = html;
+
+        atualizarResumo();
+
+        console.log(
+          '[renderizarTabela] Tabela renderizada.',
+          {
+            itensExibidos: itens.length,
+            totalEncontrado: totalEncontrado,
+            modoSelecionados: exibirRemocao
+          }
+        );
+      }
+
+
+      /**************************************************************
+       * 12. ATUALIZAR INFORMAÇÃO DO FILTRO
+       **************************************************************/
+      function atualizarInformacaoFiltro(
+        totalEncontrado,
+        totalExibido
+      ) {
+        const info =
+          document.getElementById('infoFiltro');
+
+        if (
+          totalEncontrado >
+          CONFIG_MODAL.LIMITE_RESULTADOS
+        ) {
+          info.textContent =
+            'Foram encontrados ' +
+            totalEncontrado +
+            ' itens. Exibindo os primeiros ' +
+            totalExibido +
+            '. Refine o filtro para visualizar menos resultados.';
+
+          return;
+        }
+
+        info.textContent =
+          'Foram encontrados ' +
+          totalEncontrado +
+          ' itens.';
+      }
+
+
+      /**************************************************************
+       * 13. ALTERAR QUANTIDADE
+       *
+       * Não reconstrói a tabela.
+       **************************************************************/
+      function alterarQuantidade(
+        linhaPlanilha,
+        valor,
+        input
+      ) {
+        const item =
+          catalogoPorLinha.get(
+            Number(linhaPlanilha)
+          );
+
+        if (!item) {
+          console.warn(
+            '[alterarQuantidade] Item não encontrado:',
+            linhaPlanilha
+          );
+
+          return;
+        }
+
+        item.quantidade = valor;
+
+        const campoTotal =
+          document.getElementById(
+            'total-item-' + linhaPlanilha
+          );
+
+        if (campoTotal) {
+          campoTotal.textContent =
+            formatarMoeda(
+              calcularValorTotal(
+                item.precoUnit,
+                item.quantidade
+              )
+            );
+        }
+
+        atualizarResumo();
+
+        console.log(
+          '[alterarQuantidade] Quantidade atualizada.',
+          {
+            linhaPlanilha: linhaPlanilha,
+            quantidade: valor
+          }
+        );
+      }
+
+
+      /**************************************************************
+       * 14. ALTERAR LETRA OU NOME
+       *
+       * Não reconstrói a tabela.
+       **************************************************************/
+      function alterarLetraNome(
+        linhaPlanilha,
+        valor
+      ) {
+        const item =
+          catalogoPorLinha.get(
+            Number(linhaPlanilha)
+          );
+
+        if (!item) {
+          console.warn(
+            '[alterarLetraNome] Item não encontrado:',
+            linhaPlanilha
+          );
+
+          return;
+        }
+
+        item.letraNome = valor;
+      }
+
+
+      /**************************************************************
+       * 15. MOSTRAR ITENS SELECIONADOS
+       **************************************************************/
+      function mostrarItensSelecionados() {
+        limparMensagem();
+
+        const selecionados =
+          obterItensSelecionados();
+
+        if (!selecionados.length) {
+          document
+            .getElementById('conteudoTabela')
+            .innerHTML = `
+              <div class="vazio">
+                Nenhum item possui quantidade preenchida.
+              </div>
+            `;
+
+          document
+            .getElementById('infoFiltro')
+            .textContent =
+              'Nenhum item selecionado.';
+
+          atualizarResumo();
+
+          return;
+        }
+
+        /*
+        * O último parâmetro true habilita
+        * a coluna com o botão de excluir.
+        */
+        renderizarTabela(
+          selecionados,
+          selecionados.length,
+          true
+        );
+
+        document
+          .getElementById('infoFiltro')
+          .textContent =
+            'Exibindo ' +
+            selecionados.length +
+            ' itens selecionados. Clique no X para remover um item.';
+
+        console.log(
+          '[mostrarItensSelecionados] Itens selecionados:',
+          selecionados.length
+        );
+      }
+
+      /**************************************************************
+       * 15.1. REMOVER ITEM SELECIONADO
+       **************************************************************/
+      function removerItemSelecionado(
+        linhaPlanilha
+      ) {
+        const item =
+          catalogoPorLinha.get(
+            Number(linhaPlanilha)
+          );
+
+        if (!item) {
+          console.warn(
+            '[removerItemSelecionado] Item não encontrado:',
+            linhaPlanilha
+          );
+
+          return;
+        }
+
+        /*
+        * Limpa os dados que fazem o item
+        * ser considerado selecionado.
+        */
+        item.quantidade = '';
+        item.letraNome = '';
+
+        /*
+        * Remove visualmente a linha sem precisar
+        * reconstruir imediatamente toda a tabela.
+        */
+        const linhaTabela =
+          document.getElementById(
+            'linha-item-' + linhaPlanilha
+          );
+
+        if (linhaTabela) {
+          linhaTabela.remove();
+        }
+
+        atualizarResumo();
+
+        const selecionadosRestantes =
+          obterItensSelecionados();
+
+        if (!selecionadosRestantes.length) {
+          document
+            .getElementById('conteudoTabela')
+            .innerHTML = `
+              <div class="vazio">
+                Nenhum item possui quantidade preenchida.
+              </div>
+            `;
+
+          document
+            .getElementById('infoFiltro')
+            .textContent =
+              'Nenhum item selecionado.';
+        } else {
+          document
+            .getElementById('infoFiltro')
+            .textContent =
+              'Exibindo ' +
+              selecionadosRestantes.length +
+              ' itens selecionados. Clique no X para remover um item.';
+        }
+
+        console.log(
+          '[removerItemSelecionado] Item removido do pedido.',
+          {
+            linhaPlanilha: linhaPlanilha,
+            itensRestantes:
+              selecionadosRestantes.length
+          }
+        );
+      }
+
+      /**************************************************************
+       * 16. OBTER ITENS SELECIONADOS
+       **************************************************************/
+      function obterItensSelecionados() {
+        return catalogo.filter(function(item) {
+          return String(
+            item.quantidade || ''
+          ).trim() !== '';
+        });
+      }
+
+
+      /**************************************************************
+       * 17. ATUALIZAR RESUMO
+       **************************************************************/
+      function atualizarResumo() {
+        const selecionados =
+          obterItensSelecionados();
+
+        let total = 0;
+
+        selecionados.forEach(function(item) {
+          total += calcularValorTotal(
+            item.precoUnit,
+            item.quantidade
+          );
+        });
+
+        document
+          .getElementById('resumoTotais')
+          .textContent =
+            'Itens selecionados: ' +
+            selecionados.length +
+            ' | Total: ' +
+            formatarMoeda(total);
+      }
+
+
+      /**************************************************************
+       * 18. LIMPAR FILTROS
+       *
+       * Não apaga produtos selecionados.
+       **************************************************************/
+      function limparFiltros() {
+        document
+          .getElementById('filtroColecao')
+          .value = '';
+
+        document
+          .getElementById('filtroDescricao')
+          .value = '';
+
+        document
+          .getElementById('filtroReferencia')
+          .value = '';
+
+        limparMensagem();
+        mostrarMensagemPesquisaInicial();
+
+        console.log(
+          '[limparFiltros] Filtros limpos.'
+        );
+      }
+
+
+      /**************************************************************
+       * 19. MENSAGEM INICIAL DA PESQUISA
+       **************************************************************/
+      function mostrarMensagemPesquisaInicial() {
+        document
+          .getElementById('conteudoTabela')
+          .innerHTML = `
+            <div class="vazio">
+              <strong>Catálogo carregado.</strong><br>
+              Digite pelo menos 3 caracteres em um dos filtros
+              e clique em <strong>Filtrar</strong>.<br>
+              Também é possível pressionar Enter.
+            </div>
+          `;
+
+        document
+          .getElementById('infoFiltro')
+          .textContent =
+            'Digite pelo menos 3 caracteres em um dos filtros e clique em Filtrar.';
+      }
+
+
+      /**************************************************************
+       * 20. ERROS DO NÚMERO DE LANÇAMENTO
+       **************************************************************/
+      function marcarErroCampoNumeroLancamento(
+        mensagem
+      ) {
+        document
+          .getElementById(
+            'blocoNumeroLancamento'
+          )
+          .classList.add('campo-erro');
+
+        document
+          .getElementById(
+            'avisoNumeroLancamento'
+          )
+          .textContent =
+            mensagem ||
+            'Informe o Número de lançamento.';
+      }
+
+      function limparErroCampoNumeroLancamento() {
+        document
+          .getElementById(
+            'blocoNumeroLancamento'
+          )
+          .classList.remove('campo-erro');
+
+        document
+          .getElementById(
+            'avisoNumeroLancamento'
+          )
+          .textContent = '';
+      }
+
+
+      /**************************************************************
+       * 21. ERROS DA FILIAL
+       **************************************************************/
+      function marcarErroCampoFilial(
+        mensagem
+      ) {
+        document
+          .getElementById('blocoFilial')
+          .classList.add('campo-erro');
+
+        document
+          .getElementById('avisoFilial')
+          .textContent =
+            mensagem ||
+            'Selecione a Filial de venda.';
+      }
+
+      function limparErroCampoFilial() {
+        document
+          .getElementById('blocoFilial')
+          .classList.remove('campo-erro');
+
+        document
+          .getElementById('avisoFilial')
+          .textContent = '';
+      }
+
+
+      /**************************************************************
+       * 22. ERROS DA CONSULTORA
+       **************************************************************/
+      function marcarErroCampoConsultora(
+        mensagem
+      ) {
+        document
+          .getElementById('blocoConsultora')
+          .classList.add('campo-erro');
+
+        document
+          .getElementById('avisoConsultora')
+          .textContent =
+            mensagem ||
+            'Informe a Consultora.';
+      }
+
+      function limparErroCampoConsultora() {
+        document
+          .getElementById('blocoConsultora')
+          .classList.remove('campo-erro');
+
+        document
+          .getElementById('avisoConsultora')
+          .textContent = '';
+      }
+
+
+      /**************************************************************
+       * 23. SALVAR PEDIDO
+       **************************************************************/
+      function salvarPedido() {
+        limparMensagem();
+        limparErroCampoNumeroLancamento();
+        limparErroCampoFilial();
+        limparErroCampoConsultora();
+
+        const numeroLancamento =
+          document
+            .getElementById(
+              'numeroLancamento'
+            )
+            .value
+            .trim();
+
+        const filial =
+          document
+            .getElementById('filial')
+            .value;
+
+        const consultora =
+          document
+            .getElementById('consultora')
+            .value
+            .trim();
+
+        if (!numeroLancamento) {
+          marcarErroCampoNumeroLancamento(
+            '⚠ Informe o Número de lançamento.'
+          );
+
+          mostrarErro(
+            '⚠ Informe o "Número de lançamento" para continuar.'
+          );
+
+          document
+            .getElementById(
+              'numeroLancamento'
+            )
+            .focus();
+
+          return;
+        }
+
+        if (!/^\d+$/.test(numeroLancamento)) {
+          marcarErroCampoNumeroLancamento(
+            '⚠ Digite somente números.'
+          );
+
+          mostrarErro(
+            '⚠ O "Número de lançamento" deve conter somente números.'
+          );
+
+          document
+            .getElementById(
+              'numeroLancamento'
+            )
+            .focus();
+
+          return;
+        }
+
+        if (!filial) {
+          marcarErroCampoFilial(
+            '⚠ Selecione a Filial de venda.'
+          );
+
+          mostrarErro(
+            '⚠ Selecione a "Filial de venda" para continuar.'
+          );
+
+          document
+            .getElementById('filial')
+            .focus();
+
+          return;
+        }
+
+        if (!consultora) {
+          marcarErroCampoConsultora(
+            '⚠ Informe a Consultora.'
+          );
+
+          mostrarErro(
+            '⚠ Informe a "Consultora" para continuar.'
+          );
+
+          document
+            .getElementById('consultora')
+            .focus();
+
+          return;
+        }
+
+        if (
+          consultora.length < 4 ||
+          consultora.length > 15
+        ) {
+          marcarErroCampoConsultora(
+            '⚠ Use de 4 a 15 caracteres.'
+          );
+
+          mostrarErro(
+            '⚠ A "Consultora" deve ter entre 4 e 15 caracteres.'
+          );
+
+          document
+            .getElementById('consultora')
+            .focus();
+
+          return;
+        }
+
+        if (
+          !/^[A-Za-zÀ-ÿ\s]+$/.test(
+            consultora
+          )
+        ) {
+          marcarErroCampoConsultora(
+            '⚠ Use somente letras.'
+          );
+
+          mostrarErro(
+            '⚠ A "Consultora" deve conter somente letras.'
+          );
+
+          document
+            .getElementById('consultora')
+            .focus();
+
+          return;
+        }
+
+        /*
+         * Envia somente os produtos com quantidade preenchida.
+         * Não envia mais o catálogo completo.
+         */
+        const itensSelecionados =
+          obterItensSelecionados();
+
+        if (!itensSelecionados.length) {
+          mostrarErro(
+            '⚠ Preencha ao menos um item com quantidade.'
+          );
+
+          return;
+        }
+
+        bloquearBotoes(true);
+        mostrarSucesso('Salvando pedido...');
+
+        console.log(
+          '[salvarPedido] Enviando pedido.',
+          {
+            numeroLancamento: numeroLancamento,
+            filial: filial,
+            consultora: consultora,
+            quantidadeItens:
+              itensSelecionados.length
+          }
+        );
+
+        google.script.run
+          .withSuccessHandler(function(retorno) {
+            bloquearBotoes(false);
+
+            if (!retorno || !retorno.sucesso) {
+              mostrarErro(
+                retorno?.mensagem ||
+                'Erro ao salvar o pedido.'
+              );
+
+              return;
+            }
+
+            mostrarSucesso(
+              retorno.mensagem ||
+              'Pedido salvo com sucesso.'
+            );
+
+            console.log(
+              '[salvarPedido] Pedido salvo com sucesso.'
+            );
+
+            setTimeout(function() {
+              google.script.host.close();
+            }, 800);
+          })
+          .withFailureHandler(function(erro) {
+            bloquearBotoes(false);
+
+            mostrarErro(
+              'Erro ao salvar o pedido: ' +
+              erro.message
+            );
+
+            console.error(
+              '[salvarPedido] Erro:',
+              erro
+            );
+          })
+          .salvarNovoPedido({
+            numeroLancamento:
+              numeroLancamento,
+            filial:
+              filial,
+            consultora:
+              consultora,
+            itens:
+              itensSelecionados
+          });
+      }
+
+
+      /**************************************************************
+       * 24. DESCARTAR PEDIDO
+       **************************************************************/
+      function descartarPedido() {
+        const confirmou = confirm(
+          'Tem certeza que deseja descartar este pedido?'
+        );
+
+        if (!confirmou) {
+          return;
+        }
+
+        google.script.host.close();
+      }
+
+
+      /**************************************************************
+       * 25. FECHAR MODAL
+       **************************************************************/
+      function fecharModal() {
+        google.script.host.close();
+      }
+
+
+      /**************************************************************
+       * 26. BLOQUEAR BOTÕES
+       **************************************************************/
+      function bloquearBotoes(bloquear) {
+        const botoes =
+          document.querySelectorAll('button');
+
+        botoes.forEach(function(botao) {
+          botao.disabled = bloquear;
+        });
+      }
+
+
+      /**************************************************************
+       * 27. MENSAGENS
+       **************************************************************/
+      function mostrarErro(texto) {
+        const elemento =
+          document.getElementById('mensagem');
+
+        elemento.className =
+          'mensagem erro';
+
+        elemento.textContent = texto;
+      }
+
+      function mostrarSucesso(texto) {
+        const elemento =
+          document.getElementById('mensagem');
+
+        elemento.className =
+          'mensagem sucesso';
+
+        elemento.textContent = texto;
+      }
+
+      function limparMensagem() {
+        const elemento =
+          document.getElementById('mensagem');
+
+        elemento.className = 'mensagem';
+        elemento.textContent = '';
+      }
+
+
+      /**************************************************************
+       * 28. CONVERTER NÚMERO
+       **************************************************************/
+      function converterNumero(valor) {
+        if (typeof valor === 'number') {
+          return valor;
+        }
+
+        if (
+          valor === null ||
+          valor === undefined ||
+          valor === ''
+        ) {
+          return 0;
+        }
+
+        let texto = String(valor)
+          .replace(/\s/g, '')
+          .replace('R$', '')
+          .trim();
+
+        /*
+         * Trata valores brasileiros como:
+         * 1.234,56
+         */
+        if (texto.includes(',')) {
+          texto = texto
+            .replace(/\./g, '')
+            .replace(',', '.');
+        }
+
+        const numero = Number(texto);
+
+        return isNaN(numero)
+          ? 0
+          : numero;
+      }
+
+
+      /**************************************************************
+       * 29. CALCULAR TOTAL
+       **************************************************************/
+      function calcularValorTotal(
+        precoUnitario,
+        quantidade
+      ) {
+        const preco =
+          converterNumero(precoUnitario);
+
+        const quantidadeNumero =
+          converterNumero(quantidade);
+
+        if (!preco || !quantidadeNumero) {
+          return 0;
+        }
+
+        return preco * quantidadeNumero;
+      }
+
+
+      /**************************************************************
+       * 30. FORMATAR MOEDA
+       **************************************************************/
+      function formatarMoeda(valor) {
+        const numero =
+          converterNumero(valor);
+
+        return numero.toLocaleString(
+          'pt-BR',
+          {
+            style: 'currency',
+            currency: 'BRL'
+          }
+        );
+      }
+
+
+      /**************************************************************
+       * 31. ESCAPAR HTML
+       **************************************************************/
+      function escaparHtml(texto) {
+        if (
+          texto === null ||
+          texto === undefined
+        ) {
+          return '';
+        }
+
+        return String(texto)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+    </script>
+  </body>
+</html>

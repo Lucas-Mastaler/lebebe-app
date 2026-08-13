@@ -17,6 +17,7 @@ const TAPETE_ID = '30000000-0000-4000-8000-000000000001'
 const UNIDADE_BIGORRILHO_ID = '40000000-0000-4000-8000-000000000001'
 const UNIDADE_PORTAO_ID = '40000000-0000-4000-8000-000000000002'
 const FORNECEDOR_ID = '50000000-0000-4000-8000-000000000001'
+const FORNECEDOR_EXCLUSIVE_ID = '50000000-0000-4000-8000-000000000002'
 const IDEMPOTENCY_KEY = '60000000-0000-4000-8000-000000000001'
 
 function uuidCor(indice: number) {
@@ -57,16 +58,23 @@ function contexto(overrides: Partial<ContextoPedidosPersonalizados> = {}): Conte
 function criarRepo(overrides: Record<string, unknown> = {}) {
   return {
     carregarCatalogos: vi.fn().mockResolvedValue({ data: catalogos, error: null }),
+    listarFornecedoresDisponiveis: vi.fn().mockResolvedValue({
+      data: [
+        catalogos.fornecedor,
+        { id: FORNECEDOR_EXCLUSIVE_ID, chave: 'lebebe_exclusive', nome: 'LEBEBE EXCLUSIVE' },
+      ],
+      error: null,
+    }),
     criar: vi.fn().mockResolvedValue({
       data: { pedido_id: PEDIDO_ID, version: 1, reutilizado: false, tapetes: [{ id: TAPETE_ID }] },
       error: null,
     }),
     buscarPedidoCriado: vi.fn().mockResolvedValue({
-      data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'CADASTRADO', version: 1, tapetes: [{ id: TAPETE_ID, ordem: 1 }] },
+      data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'RASCUNHO', version: 1, tapetes: [{ id: TAPETE_ID, ordem: 1 }] },
       error: null,
     }),
     buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
-      data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'CADASTRADO', version: 1, numero_lancamento: '0001', telefone_normalizado: '41999999999', data_entrega: '2026-08-10', data_pedido_fornecedor: '2026-08-05', numero_pedido_compra: '0002', comprador: 'JOÃO SILVA' },
+      data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'RASCUNHO', version: 1, numero_lancamento: '0001', telefone_normalizado: '41999999999', data_entrega: '2026-08-10', data_pedido_fornecedor: '2026-08-05', numero_pedido_compra: '0002', comprador: 'JOÃO SILVA' },
       error: null,
     }),
     listar: vi.fn().mockResolvedValue({ data: { itens: [], total: 0 }, error: null }),
@@ -127,11 +135,15 @@ describe('opções de pedidos personalizados', () => {
     }
   })
 
-  it('retorna somente Moriah, três produtos, 31 cores e PORTÃO', async () => {
+  it('retorna os fornecedores disponíveis, o catálogo Moriah e as unidades permitidas', async () => {
     const response = await obterOpcoes(new Request('http://localhost'), deps())
     const body = await response.json()
     expect(response.status).toBe(200)
     expect(body.fornecedor.chave).toBe('moriah_tapetes')
+    expect(body.fornecedores).toEqual([
+      { id: FORNECEDOR_ID, chave: 'moriah_tapetes', nome: 'MORIAH TAPETES' },
+      { id: FORNECEDOR_EXCLUSIVE_ID, chave: 'lebebe_exclusive', nome: 'LEBEBE EXCLUSIVE' },
+    ])
     expect(body.produtos).toHaveLength(3)
     expect(body.cores).toHaveLength(31)
     expect(body.limites.coresPorTapete).toBe(6)
@@ -201,7 +213,7 @@ describe('criação de pedido personalizado', () => {
     }))
     const repo = criarRepo({
       buscarPedidoCriado: vi.fn().mockResolvedValue({
-        data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'CADASTRADO', version: 1, tapetes: tapetesCriados },
+        data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'RASCUNHO', version: 1, tapetes: tapetesCriados },
         error: null,
       }),
     })
@@ -251,7 +263,7 @@ describe('criação de pedido personalizado', () => {
   it('retorna 200 e reutilizado no retry com a mesma chave', async () => {
     const repo = criarRepo({
       criar: vi.fn().mockResolvedValue({ data: { pedido_id: PEDIDO_ID, version: 3, reutilizado: true, tapetes: [] }, error: null }),
-      buscarPedidoCriado: vi.fn().mockResolvedValue({ data: { id: PEDIDO_ID, status: 'CADASTRADO', version: 3, tapetes: [{ id: TAPETE_ID, ordem: 1 }] }, error: null }),
+      buscarPedidoCriado: vi.fn().mockResolvedValue({ data: { id: PEDIDO_ID, status: 'RASCUNHO', version: 3, tapetes: [{ id: TAPETE_ID, ordem: 1 }] }, error: null }),
     })
     const response = await criarPedido(requestJson(pedido()), deps(repo))
     expect(response.status).toBe(200)
@@ -265,7 +277,7 @@ describe('criação de pedido personalizado', () => {
   ])('não associa retorno de tapetes inconsistente: %j', async (tapetesCriados) => {
     const repo = criarRepo({
       buscarPedidoCriado: vi.fn().mockResolvedValue({
-        data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'CADASTRADO', version: 1, tapetes: tapetesCriados },
+        data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'RASCUNHO', version: 1, tapetes: tapetesCriados },
         error: null,
       }),
     })
@@ -320,7 +332,7 @@ describe('listagem de pedidos personalizados', () => {
             data_pedido_fornecedor: '2026-08-07',
             numero_pedido_compra: '00001',
             comprador: 'ANA SILVA',
-            status: 'CADASTRADO',
+            status: 'RASCUNHO',
             version: 1,
             quantidade_tapetes: 2,
             codigos_produtos: ['21157', '21158'],
@@ -370,7 +382,7 @@ describe('listagem de pedidos personalizados', () => {
 
   it('encaminha todos os filtros válidos ao repositório', async () => {
     const repo = criarRepo()
-    const url = 'http://localhost/api?page=3&unidade=bigorrilho&cliente=Maria&consultora=Ana&numeroLancamento=0001&status=CADASTRADO&dataInicial=2026-08-01&dataFinal=2026-08-05&dataPedidoFornecedorInicial=2026-08-02&dataPedidoFornecedorFinal=2026-08-06&dataEntregaInicial=2026-08-20&dataEntregaFinal=2026-08-31&situacaoPrazo=PRESTES%20A%20VENCER&codigoProduto=21158'
+    const url = 'http://localhost/api?page=3&unidade=bigorrilho&cliente=Maria&consultora=Ana&numeroLancamento=0001&status=RASCUNHO&dataInicial=2026-08-01&dataFinal=2026-08-05&dataPedidoFornecedorInicial=2026-08-02&dataPedidoFornecedorFinal=2026-08-06&dataEntregaInicial=2026-08-20&dataEntregaFinal=2026-08-31&situacaoPrazo=PRESTES%20A%20VENCER&codigoProduto=21158'
     expect((await listarPedidos(new Request(url), deps(repo))).status).toBe(200)
     expect(repo.listar).toHaveBeenCalledWith(expect.objectContaining({
       pagina: 3,
@@ -404,7 +416,7 @@ describe('detalhe de pedido personalizado', () => {
             unidade: { chave: 'bigorrilho', nome: 'BIGORRILHO' },
             consultora: 'ANA', cliente: 'CLIENTE', telefone_normalizado: '4133334444', numero_lancamento: '001',
             data_entrega: '2026-08-10', data_pedido_fornecedor: '2026-08-05',
-            numero_pedido_compra: '002', comprador: 'JOÃO', status: 'CADASTRADO',
+            numero_pedido_compra: '002', comprador: 'JOÃO', status: 'RASCUNHO',
             version: 4, created_at: 'agora', updated_at: 'agora', caminho_objeto: 'privado',
           },
           tapetes: [{
@@ -416,6 +428,8 @@ describe('detalhe de pedido personalizado', () => {
             cores: [{ id: uuidCor(1), ordem: 1, codigo: 'K-1' }],
             anexos: [{ id: '90000000-0000-4000-8000-000000000001', slot: 1, nome_original: 'layout.pdf', mime_type: 'application/pdf', tamanho_bytes: 123, created_at: 'agora', caminho_objeto: 'privado' }],
           }],
+          itens: [],
+          historico: [],
         },
         error: null,
       }),
@@ -466,7 +480,7 @@ describe('atualização comercial', () => {
   })
 
   it.each([
-    ['CADASTRADO', { code: 'P0003', message: 'CONFLITO_VERSAO' }, 409, 'CONFLITO_VERSAO'],
+    ['RASCUNHO', { code: 'P0003', message: 'CONFLITO_VERSAO' }, 409, 'CONFLITO_VERSAO'],
     ['EM PRODUÇÃO', { code: 'P0001', message: 'EDICAO_COMERCIAL_BLOQUEADA' }, 422, 'EDICAO_COMERCIAL_BLOQUEADA'],
     ['RECEBIDO', { code: 'P0001', message: 'EDICAO_COMERCIAL_BLOQUEADA' }, 422, 'EDICAO_COMERCIAL_BLOQUEADA'],
   ])('mapeia erro da RPC no status %s', async (statusAtual, error, status, codigo) => {
@@ -496,7 +510,7 @@ describe('atualização comercial', () => {
   it('permite editar comercial de pedido legado sem telefone em operação atômica única', async () => {
     const repoLegacy = criarRepo({
       buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
-        data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'CADASTRADO', version: 1, numero_lancamento: '0001', telefone_normalizado: null, data_entrega: null, data_pedido_fornecedor: null, numero_pedido_compra: null, comprador: null },
+        data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'RASCUNHO', version: 1, numero_lancamento: '0001', telefone_normalizado: null, data_entrega: null, data_pedido_fornecedor: null, numero_pedido_compra: null, comprador: null },
         error: null,
       }),
     })
@@ -522,7 +536,7 @@ describe('atualização administrativa', () => {
       dataPedidoFornecedor: '05/08/2026',
       numeroPedidoCompra: '0002',
       comprador: 'João Silva',
-      status: 'CADASTRADO',
+      status: 'RASCUNHO',
       layoutTapetes: [{ tapeteId: TAPETE_ID, teveAlteracaoLayout: true, quantidadeAlteracoesLayout: 2 }],
       ...overrides,
     }
@@ -533,7 +547,7 @@ describe('atualização administrativa', () => {
     expect(response.status).toBe(422)
   })
 
-  it.each(['CADASTRADO', 'AGUARDANDO LAYOUT', 'AGUARDANDO APROVAÇÃO DO CLIENTE', 'EM PRODUÇÃO'])(
+  it.each(['RASCUNHO', 'VENDA FECHADA', 'AGUARDANDO LAYOUT', 'AGUARDANDO APROVAÇÃO DO CLIENTE', 'EM PRODUÇÃO'])(
     'preserva o status administrativo editavel %s',
     async (status) => {
       const repo = criarRepo({
@@ -574,7 +588,7 @@ describe('atualização administrativa', () => {
   })
 
   it.each(['AGUARDANDO LAYOUT', 'AGUARDANDO APROVAÇÃO DO CLIENTE', 'EM PRODUÇÃO', 'RECEBIDO'])(
-    'não inventa a transição de CADASTRADO para %s',
+    'não inventa transição administrativa para %s',
     async (status) => {
       const repo = criarRepo()
       const response = await atualizarAdministrativo(requestJson(payloadAdministrativo({ status }), 'PATCH'), PEDIDO_ID, deps(repo))

@@ -5,6 +5,7 @@ const envioMocks = vi.hoisted(() => ({
   buscarContatoResgatePorTelefone: vi.fn(),
   garantirContatoResgateHubVendas: vi.fn(),
   buscarTicketAbertoContato: vi.fn(),
+  buscarTicketResgatePorId: vi.fn(),
   abrirTicketResgateHubVendas: vi.fn(),
   enviarMensagemResgateHubVendas: vi.fn(),
 }))
@@ -68,6 +69,7 @@ type FilaRow = {
   digisac_message_id: string | null
   digisac_contact_id: string | null
   digisac_ticket_id: string | null
+  digisac_protocolo: string | null
   ultima_reconciliacao_em: string | null
   quantidade_reconciliacoes: number
   tentativas_envio: number
@@ -98,6 +100,7 @@ function criarFila(overrides: Partial<FilaRow> = {}): FilaRow {
     digisac_message_id: null,
     digisac_contact_id: null,
     digisac_ticket_id: null,
+    digisac_protocolo: null,
     ultima_reconciliacao_em: null,
     quantidade_reconciliacoes: 1,
     tentativas_envio: 0,
@@ -298,7 +301,8 @@ describe('processarFilaRecuperacaoHubVendas', () => {
       origemNomeBruto: 'contato_destino_existente',
     })
     envioMocks.buscarTicketAbertoContato.mockResolvedValue(null)
-    envioMocks.abrirTicketResgateHubVendas.mockResolvedValue({ ticketId: 'ticket-1', transferido: true })
+    envioMocks.abrirTicketResgateHubVendas.mockResolvedValue({ ticketId: 'ticket-1', protocolo: '123456', transferido: true })
+    envioMocks.buscarTicketResgatePorId.mockResolvedValue({ ticketId: 'ticket-1', protocolo: '123456', transferido: false })
     envioMocks.enviarMensagemResgateHubVendas.mockResolvedValue({ ok: true, messageId: 'message-1', ticketId: 'ticket-1', contactId: 'contact-1' })
   })
 
@@ -354,6 +358,7 @@ describe('processarFilaRecuperacaoHubVendas', () => {
     expect(supabase.state.filas[0]).toMatchObject({
       status: 'enviado',
       digisac_message_id: 'message-1',
+      digisac_protocolo: '123456',
       versao_mensagem: 1,
       texto_enviado: 'Olá, Maria!\n\nAqui é da Le Bébé Portão.',
     })

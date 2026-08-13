@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ajustarParaHorarioOperacional, obterIntervaloDiaLocalUtc, somarSegundosAjustandoHorario } from './tempo'
+import { ajustarParaHorarioOperacional, obterIntervaloDatasLocaisUtc, obterIntervaloDiaLocalUtc, somarSegundosAjustandoHorario } from './tempo'
 
 const horario = {
   timezone: 'America/Sao_Paulo',
@@ -32,5 +32,24 @@ describe('tempo Hub/Vendas', () => {
     const resultado = somarSegundosAjustandoHorario(new Date('2026-07-28T20:59:00.000Z'), 180, horario)
 
     expect(resultado.toISOString()).toBe('2026-07-29T12:00:00.000Z')
+  })
+
+  it('converte periodo de um dia para intervalo UTC semiaberto de Sao Paulo', () => {
+    const intervalo = obterIntervaloDatasLocaisUtc('2026-08-10', '2026-08-10', 'America/Sao_Paulo')
+
+    expect(intervalo.inicioUtc.toISOString()).toBe('2026-08-10T03:00:00.000Z')
+    expect(intervalo.fimUtc.toISOString()).toBe('2026-08-11T03:00:00.000Z')
+  })
+
+  it('inclui integralmente a data final em periodos de varios dias', () => {
+    const intervalo = obterIntervaloDatasLocaisUtc('2026-08-10', '2026-08-12', 'America/Sao_Paulo')
+
+    expect(intervalo.inicioUtc.toISOString()).toBe('2026-08-10T03:00:00.000Z')
+    expect(intervalo.fimUtc.toISOString()).toBe('2026-08-13T03:00:00.000Z')
+  })
+
+  it('rejeita data inicial posterior a data final', () => {
+    expect(() => obterIntervaloDatasLocaisUtc('2026-08-12', '2026-08-10', 'America/Sao_Paulo'))
+      .toThrow('hub_vendas_periodo_invalido')
   })
 })

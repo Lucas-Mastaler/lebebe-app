@@ -21,7 +21,7 @@ function pedido(overrides: Partial<EscopoAnexo['pedido']> = {}): EscopoAnexo['pe
   return {
     id: '20000000-0000-4000-8000-000000000001',
     version: 1,
-    status: 'CADASTRADO',
+    status: 'RASCUNHO',
     created_by: USUARIO,
     fornecedor: { chave: 'moriah_tapetes' },
     ...overrides,
@@ -30,7 +30,7 @@ function pedido(overrides: Partial<EscopoAnexo['pedido']> = {}): EscopoAnexo['pe
 
 describe('autorização central de anexos personalizados', () => {
   it.each([
-    'CADASTRADO',
+    'RASCUNHO',
     'AGUARDANDO LAYOUT',
     'AGUARDANDO APROVAÇÃO DO CLIENTE',
     'EM PRODUÇÃO',
@@ -42,7 +42,7 @@ describe('autorização central de anexos personalizados', () => {
     )).toBe(true)
   })
 
-  it('novo autoriza somente o próprio pedido Moriah em CADASTRADO', () => {
+  it('novo autoriza somente o próprio pedido Moriah em RASCUNHO', () => {
     expect(verificarAcessoAnexoPedidoPersonalizado(
       contexto('pedidos_personalizados_novo'),
       pedido()
@@ -53,8 +53,8 @@ describe('autorização central de anexos personalizados', () => {
     ['AGUARDANDO LAYOUT', USUARIO, 'moriah_tapetes'],
     ['EM PRODUÇÃO', USUARIO, 'moriah_tapetes'],
     ['RECEBIDO', USUARIO, 'moriah_tapetes'],
-    ['CADASTRADO', OUTRO_USUARIO, 'moriah_tapetes'],
-    ['CADASTRADO', USUARIO, 'decorisi'],
+    ['RASCUNHO', OUTRO_USUARIO, 'moriah_tapetes'],
+    ['RASCUNHO', USUARIO, 'decorisi'],
   ])('novo nega status=%s, criador=%s e fornecedor=%s', (status, createdBy, fornecedor) => {
     expect(verificarAcessoAnexoPedidoPersonalizado(
       contexto('pedidos_personalizados_novo'),

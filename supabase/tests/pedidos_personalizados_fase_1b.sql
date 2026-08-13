@@ -509,7 +509,7 @@ BEGIN
   SELECT version INTO v_version
   FROM public.atualizar_pedido_personalizado_administrativo(
     v_pedido, v_version, v_usuario_1, NULL, NULL, NULL, NULL, NULL,
-    'CADASTRADO', '[]'::jsonb
+    'RASCUNHO', '[]'::jsonb
   );
   v_payload_comercial := jsonb_build_array(
     (v_payload_base->0) || jsonb_build_object('id', v_tapete, 'ordem', 2),

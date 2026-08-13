@@ -73,7 +73,7 @@ begin
       'nome_colecao_catalogo', null, 'referencia_catalogo', null,
       'observacoes', null, 'cores', '[]'::jsonb
     )),
-    null, null, null, null, null
+    '000001', null, null, null, null
   ) r;
 
   if v_version <> 1 or (select status from public.pedidos_personalizados_pedidos where id = v_pedido_moriah) <> 'RASCUNHO' then
@@ -108,7 +108,7 @@ begin
     into v_pedido_exclusive, v_version
   from public.criar_pedido_personalizado_lebebe_exclusive(
     v_usuario, gen_random_uuid(), v_exclusive, v_unidade,
-    'VALIDACAO SQL', 'CLIENTE SINTETICO', '41999999999', null,
+    'VALIDACAO SQL', 'CLIENTE SINTETICO', '41999999999', '000002',
     jsonb_build_array(jsonb_build_object(
       'produto_id', v_produto_exclusive, 'ordem', 1,
       'quantidade', 2, 'nome_ou_letra', 'TESTE'

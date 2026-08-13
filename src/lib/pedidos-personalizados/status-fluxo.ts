@@ -44,7 +44,7 @@ export function permiteEdicaoComercial(
   status: StatusPedidoPersonalizado,
   fornecedor: FornecedorPedidoPersonalizado = 'moriah_tapetes'
 ) {
-  if (fornecedor === 'lebebe_exclusive') return status === 'RASCUNHO'
+  if (fornecedor === 'lebebe_exclusive') return status === 'RASCUNHO' || status === 'VENDA FECHADA'
   return status === 'RASCUNHO' || status === 'VENDA FECHADA'
     || status === 'AGUARDANDO LAYOUT' || status === AGUARDANDO_APROVACAO
 }

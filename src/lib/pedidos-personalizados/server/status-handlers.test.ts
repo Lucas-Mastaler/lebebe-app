@@ -51,6 +51,21 @@ describe('handler de transicao de status', () => {
     expect(cenario.repo.transicionarStatus).not.toHaveBeenCalled()
   })
 
+  it('exige lançamento antes de fechar a venda para qualquer fornecedor', async () => {
+    for (const fornecedor of ['moriah_tapetes', 'lebebe_exclusive']) {
+      const cenario = deps('RASCUNHO', {
+        buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
+          data: { id: PEDIDO, unidade_id: UNIDADE, status: 'RASCUNHO', version: 1, fornecedor: { chave: fornecedor }, numero_lancamento: null },
+          error: null,
+        }),
+      })
+      const response = await transicionarStatus(request({ expectedVersion: 1, statusDestino: 'VENDA FECHADA' }), PEDIDO, cenario.deps)
+      expect(response.status).toBe(422)
+      expect((await response.json()).erro).toBe('NUMERO_LANCAMENTO_OBRIGATORIO')
+      expect(cenario.repo.transicionarStatus).not.toHaveBeenCalled()
+    }
+  })
+
   it('nao revela pedido fora do escopo', async () => {
     const cenario = deps('VENDA FECHADA', { buscarPedidoNoEscopo: vi.fn().mockResolvedValue({ data: null, error: null }) })
     expect((await transicionarStatus(request({ expectedVersion: 1, statusDestino: 'AGUARDANDO LAYOUT' }), PEDIDO, cenario.deps)).status).toBe(404)

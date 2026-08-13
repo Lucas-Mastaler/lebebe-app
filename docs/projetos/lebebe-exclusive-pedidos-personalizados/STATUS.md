@@ -188,6 +188,11 @@ frontend/API de produção ao banco já migrado.
   bloqueado pela restrição de rede ao baixar as fontes Google; repetido com
   acesso de rede, compilou, executou o TypeScript e gerou as 114 páginas com
   sucesso.
+- Regra de fechamento revisada: todo pedido exige número de lançamento válido
+  ao passar de `RASCUNHO` para `VENDA FECHADA`. A Lebebe Exclusive pode editar
+  os dados comerciais durante `VENDA FECHADA`, até entrar em produção. A
+  migration `20260813203717` foi ensaiada com `ROLLBACK`, aplicada no Supabase
+  e validada em transação sem deixar pedido de teste.
 
 ## Não refazer
 

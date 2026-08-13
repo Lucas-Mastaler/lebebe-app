@@ -145,6 +145,11 @@ export function requisitosPendentesTransicao(
   if (!transicao.destino) return ['Selecione o status de destino.']
   const pendencias: string[] = []
   const temAnexo = pedido.tapetes.some((tapete) => tapete.anexos.length > 0)
+  if (pedido.status === 'RASCUNHO'
+      && transicao.destino === 'VENDA FECHADA'
+      && !/^\d{1,6}$/.test(pedido.numeroLancamento ?? '')) {
+    pendencias.push('Informe um número de lançamento válido antes de fechar a venda.')
+  }
   if (pedido.status === 'VENDA FECHADA'
       && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(transicao.destino)) {
     if (!/^\d{1,5}$/.test(transicao.numeroPedidoCompra.trim())) pendencias.push('Informe o pedido de compra.')

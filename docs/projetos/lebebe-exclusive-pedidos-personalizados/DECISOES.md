@@ -72,3 +72,14 @@
 - Impacto: não há conversão semântica de testes antigos para `VENDA FECHADA` e
   a alteração de constraints pode partir de zero pedidos existentes.
 - Status: EXECUTADA
+
+## D-009 — Lançamento obrigatório ao fechar venda
+
+- Data: 2026-08-13
+- Decisão: a transição de `RASCUNHO` para `VENDA FECHADA` exige número de
+  lançamento numérico de até seis dígitos para qualquer fornecedor. Na Lebebe
+  Exclusive, os dados comerciais continuam editáveis em `VENDA FECHADA` até a
+  entrada em produção.
+- Impacto: a regra é validada na interface, API e função transacional do banco;
+  a Moriah preserva as regras posteriores de layout, anexos e produção.
+- Status: APROVADA E EXECUTADA

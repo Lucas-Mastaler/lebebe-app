@@ -96,6 +96,15 @@ describe('modelo da gestão de pedidos personalizados', () => {
     expect(requisitosPendentesTransicao({ ...detalhe, status: 'EM PRODUÇÃO' }, { ...base, destino: 'RECEBIDO' })).toHaveLength(1)
   })
 
+  it('exige lançamento antes de fechar uma venda', () => {
+    const transicao = { destino: 'VENDA FECHADA' as const, numeroPedidoCompra: '', dataPedidoFornecedor: '', comprador: '', dataEntrega: '', dataRecebimento: '', justificativa: '' }
+    const semLancamento = { ...detalhe, status: 'RASCUNHO' as const, numeroLancamento: null }
+    expect(requisitosPendentesTransicao(semLancamento, transicao)).toEqual([
+      'Informe um número de lançamento válido antes de fechar a venda.',
+    ])
+    expect(requisitosPendentesTransicao({ ...semLancamento, numeroLancamento: '000001' }, transicao)).toEqual([])
+  })
+
   it('monta atualização comercial com expectedVersion e IDs persistidos', () => {
     const payload = payloadAtualizacaoComercial(detalheParaFormulario(detalhe), 4, opcoes)
     expect(payload).toMatchObject({ expectedVersion: 4, unidade: 'portao', telefone: '41999999999', numeroLancamento: '000001', tapetes: [{ id: TAPETE, ordem: 1 }] })

@@ -23,6 +23,7 @@ describe('fluxo de status de pedidos personalizados', () => {
 
   it('bloqueia comercial e administrativo nos estados definidos', () => {
     expect(permiteEdicaoComercial('AGUARDANDO APROVAÇÃO DO CLIENTE')).toBe(true)
+    expect(permiteEdicaoComercial('VENDA FECHADA', 'lebebe_exclusive')).toBe(true)
     expect(permiteEdicaoComercial('EM PRODUÇÃO')).toBe(false)
     expect(permiteEdicaoAdministrativa('EM PRODUÇÃO')).toBe(true)
     expect(permiteEdicaoAdministrativa('RECEBIDO')).toBe(false)

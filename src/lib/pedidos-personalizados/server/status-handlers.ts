@@ -32,6 +32,9 @@ function erroTransicao(error: { code?: string; message?: string }) {
   if (detalhe.includes('CAMPOS_LAYOUT_OBRIGATORIOS')) {
     return jsonErro('CAMPOS_LAYOUT_OBRIGATORIOS', 'Informe pedido de compra, data do pedido ao fornecedor e comprador.', 422)
   }
+  if (detalhe.includes('NUMERO_LANCAMENTO_OBRIGATORIO')) {
+    return jsonErro('NUMERO_LANCAMENTO_OBRIGATORIO', 'Informe um número de lançamento válido antes de fechar a venda.', 422)
+  }
   if (detalhe.includes('DATA_ENTREGA_OBRIGATORIA')) {
     return jsonErro('DATA_ENTREGA_OBRIGATORIA', 'Informe a previsão de data de entrega do fornecedor.', 422)
   }
@@ -81,6 +84,15 @@ export async function transicionarStatus(
   const dataPedidoFornecedor = validacao.dados.dataPedidoFornecedor ?? atual.data.data_pedido_fornecedor
   const comprador = validacao.dados.comprador ?? atual.data.comprador
   const dataEntrega = validacao.dados.dataEntrega ?? atual.data.data_entrega
+  if (atual.data.status === 'RASCUNHO'
+      && validacao.dados.statusDestino === 'VENDA FECHADA'
+      && !/^\d{1,6}$/.test(atual.data.numero_lancamento ?? '')) {
+    return jsonErro(
+      'NUMERO_LANCAMENTO_OBRIGATORIO',
+      'Informe um número de lançamento válido antes de fechar a venda.',
+      422
+    )
+  }
   if (atual.data.status === 'VENDA FECHADA'
       && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(validacao.dados.statusDestino)
       && (!numeroPedidoCompra || !dataPedidoFornecedor || !comprador)) {

@@ -3,9 +3,14 @@ import { registrarEntradaHubVendas } from './registrar-entrada'
 import type { HubVendasMensagemValidada } from './payload'
 
 const buscarContatoCompletoMock = vi.hoisted(() => vi.fn())
+const buscarTicketResgatePorIdMock = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/digisac/contatos', () => ({
   buscarContatoCompleto: buscarContatoCompletoMock,
+}))
+
+vi.mock('./envio', () => ({
+  buscarTicketResgatePorId: buscarTicketResgatePorIdMock,
 }))
 
 type LeadRow = {
@@ -116,6 +121,8 @@ describe('registrarEntradaHubVendas', () => {
       name: 'Cliente Teste',
       data: { number: '+55 (41) 99624-6875' },
     })
+    buscarTicketResgatePorIdMock.mockReset()
+    buscarTicketResgatePorIdMock.mockResolvedValue({ ticketId: 'ticket-hub', protocolo: '654321', transferido: false })
   })
 
   it('cria ciclo 1 quando nao existe lead anterior', async () => {
@@ -128,8 +135,20 @@ describe('registrarEntradaHubVendas', () => {
       telefone_normalizado: '41996246875',
       ciclo_numero: 1,
       status: 'aguardando_conversao',
+      digisac_ticket_id_hub: 'ticket-hub',
+      digisac_protocolo_hub: '654321',
     })
     expect(supabase.eventos[0]).toMatchObject({ status: 'processado', lead_id: 'lead-1' })
+  })
+
+  it('persiste lead mesmo quando a busca do protocolo original falha', async () => {
+    buscarTicketResgatePorIdMock.mockRejectedValue(new Error('falha_digisac'))
+    const supabase = criarSupabaseFake()
+
+    const resultado = await registrarEntradaHubVendas(criarMensagem('msg-1'), supabase as never)
+
+    expect(resultado).toMatchObject({ ok: true, processed: true, cicloNumero: 1, repeated: false })
+    expect(supabase.leads[0]).toMatchObject({ digisac_protocolo_hub: null })
   })
 
   it('persiste nome valido do perfil recebido no webhook da entrada', async () => {

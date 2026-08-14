@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/service'
 import { buscarContatoCompleto } from '@/lib/digisac/contatos'
+import { buscarTicketResgatePorId } from './envio'
 import { HUB_VENDAS_CICLO_MS } from './constants'
 import { finalizarEventoHubVendas, reservarEventoHubVendas } from './eventos'
 import type { HubVendasMensagemValidada } from './payload'
@@ -88,6 +89,17 @@ export async function registrarEntradaHubVendas(
     }
 
     const cicloNumero = (leadAnterior?.ciclo_numero ?? 0) + 1
+
+    let protocoloHub: string | null = null
+    if (mensagem.ticketId) {
+      try {
+        protocoloHub = (await buscarTicketResgatePorId(mensagem.ticketId)).protocolo
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'erro_desconhecido'
+        console.warn(`[HUB VENDAS] protocolo original nao obtido ticketId=${mensagem.ticketId} erro=${message}`)
+      }
+    }
+
     const fontesNome: FonteNomeHubVendas[] = [
       ...extrairCandidatosNomeContatoDigisac(mensagem.data, 'contato_hub').map((candidato) => ({
         nomeBruto: candidato.nomeBruto,
@@ -115,6 +127,7 @@ export async function registrarEntradaHubVendas(
         digisac_message_id_saudacao: mensagem.messageId,
         digisac_contact_id_hub: mensagem.contactId,
         digisac_ticket_id_hub: mensagem.ticketId,
+        digisac_protocolo_hub: protocoloHub,
         nome_contato_hub: nomeContato,
         status: 'aguardando_conversao',
       })

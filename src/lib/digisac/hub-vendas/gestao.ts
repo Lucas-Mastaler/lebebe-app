@@ -126,6 +126,8 @@ export type FilaListadaHubVendas = {
   digisacContactId: string | null
   digisacTicketId: string | null
   digisacProtocolo: string | null
+  digisacTicketIdHub: string | null
+  digisacProtocoloHub: string | null
   digisacMessageId: string | null
   erro: string | null
   categoriaErro: string | null
@@ -609,7 +611,7 @@ export async function listarFilasHubVendas(
       resultado,
       created_at,
       updated_at,
-      lead:hub_vendas_leads!inner(telefone_normalizado_ddi,nome_contato_hub,status)
+      lead:hub_vendas_leads!inner(telefone_normalizado_ddi,nome_contato_hub,status,digisac_ticket_id_hub,digisac_protocolo_hub)
     `, { count: 'exact' })
 
   // Filtros
@@ -658,7 +660,7 @@ export async function listarFilasHubVendas(
 
   const filas: FilaListadaHubVendas[] = (data ?? []).map((row) => {
     const r = row as Record<string, unknown>
-    const lead = asRecord(r.lead) as { telefone_normalizado_ddi?: string; nome_contato_hub?: string; status?: string }
+    const lead = asRecord(r.lead) as { telefone_normalizado_ddi?: string; nome_contato_hub?: string; status?: string; digisac_ticket_id_hub?: string; digisac_protocolo_hub?: string }
     const serviceId = r.conexao_destino_id as string
     return {
       id: r.id as string,
@@ -674,6 +676,8 @@ export async function listarFilasHubVendas(
       digisacContactId: asString(r.digisac_contact_id),
       digisacTicketId: asString(r.digisac_ticket_id),
       digisacProtocolo: asString(r.digisac_protocolo),
+      digisacTicketIdHub: asString(lead.digisac_ticket_id_hub),
+      digisacProtocoloHub: asString(lead.digisac_protocolo_hub),
       digisacMessageId: asString(r.digisac_message_id),
       erro: asString(r.erro),
       categoriaErro: asString(r.categoria_erro),
@@ -738,7 +742,7 @@ export async function obterDetalheFilaHubVendas(
       quantidade_reconciliacoes,
       created_at,
       updated_at,
-      lead:hub_vendas_leads!inner(telefone_normalizado_ddi,nome_contato_hub,status)
+      lead:hub_vendas_leads!inner(telefone_normalizado_ddi,nome_contato_hub,status,digisac_ticket_id_hub,digisac_protocolo_hub)
     `)
     .eq('id', filaId)
     .maybeSingle()
@@ -747,7 +751,7 @@ export async function obterDetalheFilaHubVendas(
   if (!data) return null
 
   const r = data as Record<string, unknown>
-  const lead = asRecord(r.lead) as { telefone_normalizado_ddi?: string; nome_contato_hub?: string; status?: string }
+  const lead = asRecord(r.lead) as { telefone_normalizado_ddi?: string; nome_contato_hub?: string; status?: string; digisac_ticket_id_hub?: string; digisac_protocolo_hub?: string }
   const serviceId = r.conexao_destino_id as string
 
   return {
@@ -766,6 +770,8 @@ export async function obterDetalheFilaHubVendas(
       digisacContactId: asString(r.digisac_contact_id),
       digisacTicketId: asString(r.digisac_ticket_id),
       digisacProtocolo: asString(r.digisac_protocolo),
+      digisacTicketIdHub: asString(lead.digisac_ticket_id_hub),
+      digisacProtocoloHub: asString(lead.digisac_protocolo_hub),
       digisacMessageId: asString(r.digisac_message_id),
       erro: asString(r.erro),
       categoriaErro: asString(r.categoria_erro),

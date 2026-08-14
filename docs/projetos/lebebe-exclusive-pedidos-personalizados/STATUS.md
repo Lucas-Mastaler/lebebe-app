@@ -1,8 +1,8 @@
 # Status — Lebebe Exclusive em Pedidos Personalizados
 
 Projeto: lebebe-exclusive-pedidos-personalizados
-Estado: EM EXECUÇÃO
-Fase atual: Operação controlada da integração SGI — aguardando deploy e pedido elegível
+Estado: BLOQUEADO
+Fase atual: Ativação controlada do worker SGI — bloqueada pela imagem Docker configurada
 
 ## Última etapa concluída
 
@@ -85,6 +85,12 @@ FECHADA` e lançamento válido, executar exatamente um teste real controlado.
 
 ## Pendências
 
+- A tentativa autorizada de ativar uma réplica do serviço `lebebe_sgi_worker`
+  em 2026-08-14 foi revertida para zero réplicas: o Swarm rejeitou a tarefa
+  porque a imagem configurada `easypanel/automacoes/python:latest` não existe.
+  O serviço Python saudável da VPS usa `easypanel/automacoes/python`, sem essa
+  tag. Não alterar a imagem sem autorização explícita; nenhum processo do
+  worker chegou a iniciar.
 - O modelo `39879` foi validado por leitura com código `21187` e nome esperado.
 - Não existe hoje pedido Exclusive em `VENDA FECHADA`; o teste SGI real depende
   de surgir/criar de forma controlada um pedido elegível.

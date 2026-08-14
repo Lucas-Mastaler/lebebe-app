@@ -610,6 +610,10 @@ export default function PageClient() {
         )}
       </section>
 
+      <div className="order-1 px-4 py-2 bg-amber-50 border border-amber-100 rounded-xl text-xs font-medium text-amber-700">
+        Dados confiáveis a partir de 13/08/2026
+      </div>
+
       {/* Estado geral da automação */}
       <section className="order-4 bg-white border border-slate-200 rounded-xl p-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -1089,7 +1093,8 @@ export default function PageClient() {
                     <th className="px-3 py-2 text-left">Telefone</th>
                     <th className="px-3 py-2 text-left">Loja</th>
                     <th className="px-3 py-2 text-left">Status</th>
-                    <th className="px-3 py-2 text-left">Protocolo Digi</th>
+                    <th className="px-3 py-2 text-left">Protocolo Venda</th>
+                    <th className="px-3 py-2 text-left">Protocolo Recuperação</th>
                     <th className="px-3 py-2 text-left">Tent.</th>
                     <th className="px-3 py-2 text-left">Erro</th>
                     <th className="px-3 py-2 text-center">Ações</th>
@@ -1103,6 +1108,19 @@ export default function PageClient() {
                       <td className="px-3 py-2 text-slate-600 text-xs font-mono">{fila.telefoneMascarado || '—'}</td>
                       <td className="px-3 py-2 text-slate-600">{fila.conexaoDestinoNome || fila.loja || '—'}</td>
                       <td className="px-3 py-2"><BadgeStatus status={fila.status} /></td>
+                      <td className="px-3 py-2 text-xs font-mono whitespace-nowrap">
+                        {fila.digisacProtocoloHub && fila.digisacTicketIdHub ? (
+                          <a
+                            href={montarUrlHistoricoTicket(fila.digisacTicketIdHub)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline"
+                          >
+                            {fila.digisacProtocoloHub}
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        ) : '—'}
+                      </td>
                       <td className="px-3 py-2 text-xs font-mono whitespace-nowrap">
                         {fila.digisacProtocolo && fila.digisacTicketId ? (
                           <a

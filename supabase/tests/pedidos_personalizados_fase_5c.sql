@@ -14,7 +14,7 @@ begin
   if v_pedido.id is null then raise exception 'FIXTURE_COMERCIAL_NAO_ENCONTRADA'; end if;
 
   select jsonb_agg(jsonb_build_object(
-    'id', t.id, 'ordem', t.ordem, 'formato', t.formato,
+    'id', t.id, 'ordem', t.ordem, 'formato', t.formato, 'tipo', t.tipo,
     'dimensao_1_cm', t.dimensao_1_cm, 'dimensao_2_cm', t.dimensao_2_cm,
     'area_cobrada_centesimos_m2', t.area_cobrada_centesimos_m2,
     'produto_id', t.produto_id, 'nome_colecao_catalogo', t.nome_colecao_catalogo,
@@ -42,7 +42,6 @@ $comercial$;
 do $teste$
 declare
   v_pedido uuid;
-  v_cancel uuid;
   v_usuario uuid;
   v_version integer;
   v_result record;
@@ -63,13 +62,34 @@ begin
 
   if v_pedido is null then raise exception 'FIXTURE_COM_ANEXO_NAO_ENCONTRADA'; end if;
 
-  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version, v_usuario, 'VENDA FECHADA', null, null, null, null, null);
-  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 1, v_usuario, 'AGUARDANDO LAYOUT', '00123', current_date, 'ANA', null, null);
-  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 2, v_usuario, U&'AGUARDANDO APROVA\00C7\00C3O DO CLIENTE', null, null, null, null, null);
-  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 3, v_usuario, 'AGUARDANDO LAYOUT', null, null, null, null, null);
-  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 4, v_usuario, U&'AGUARDANDO APROVA\00C7\00C3O DO CLIENTE', null, null, null, null, null);
-  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 5, v_usuario, U&'EM PRODU\00C7\00C3O', null, null, null, current_date + 10, null);
-  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 6, v_usuario, 'RECEBIDO', null, null, null, current_date - 1, null);
+  -- Exercita cancelamento e proteção do estado terminal sem consumir uma
+  -- segunda fixture: a exceção controlada reverte apenas esta subtransação.
+  begin
+    select * into v_result from public.transicionar_pedido_personalizado(
+      v_pedido, v_version, v_usuario, 'CANCELADO',
+      null, null, null, null, null, 'Cancelamento transacional de teste'
+    );
+    begin
+      perform public.transicionar_pedido_personalizado(
+        v_pedido, v_version + 1, v_usuario, 'AGUARDANDO LAYOUT',
+        null, null, null, null, null, null
+      );
+      raise exception 'ESTADO_TERMINAL_NAO_PROTEGIDO';
+    exception when sqlstate 'P0001' then
+      if sqlerrm <> 'TRANSICAO_STATUS_INVALIDA' then raise; end if;
+    end;
+    raise exception 'CANCELAMENTO_TESTE_ROLLBACK' using errcode = 'P0004';
+  exception when sqlstate 'P0004' then
+    if sqlerrm <> 'CANCELAMENTO_TESTE_ROLLBACK' then raise; end if;
+  end;
+
+  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version, v_usuario, 'VENDA FECHADA', null, null, null, null, null, null);
+  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 1, v_usuario, 'AGUARDANDO LAYOUT', null, '00123', current_date, 'ANA', null, null);
+  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 2, v_usuario, U&'AGUARDANDO APROVA\00C7\00C3O DO CLIENTE', null, null, null, null, null, null);
+  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 3, v_usuario, 'AGUARDANDO LAYOUT', null, null, null, null, null, null);
+  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 4, v_usuario, U&'AGUARDANDO APROVA\00C7\00C3O DO CLIENTE', null, null, null, null, null, null);
+  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 5, v_usuario, U&'EM PRODU\00C7\00C3O', null, null, null, null, current_date + 10, null);
+  select * into v_result from public.transicionar_pedido_personalizado(v_pedido, v_version + 6, v_usuario, 'RECEBIDO', null, null, null, null, current_date - 1, null);
 
   if v_result.version <> v_version + 7 then raise exception 'VERSION_FINAL_INCORRETA'; end if;
   if not exists (
@@ -87,26 +107,11 @@ begin
   ) then raise exception 'DATA_REAL_RECEBIMENTO_AUSENTE'; end if;
 
   begin
-    perform public.transicionar_pedido_personalizado(v_pedido, v_version + 5, v_usuario, 'CANCELADO', null, null, null, null, 'teste');
+    perform public.transicionar_pedido_personalizado(v_pedido, v_version + 5, v_usuario, 'CANCELADO', null, null, null, null, null, 'teste');
     raise exception 'CONFLITO_NAO_REJEITADO';
   exception when sqlstate 'P0003' then null;
   end;
 
-  select p.id, p.created_by, p.version
-    into v_cancel, v_usuario, v_version
-    from public.pedidos_personalizados_pedidos p
-   where p.status = 'RASCUNHO' and p.id <> v_pedido
-   order by p.created_at
-   limit 1;
-  if v_cancel is null then raise exception 'FIXTURE_CANCELAMENTO_NAO_ENCONTRADA'; end if;
-
-  select * into v_result from public.transicionar_pedido_personalizado(v_cancel, v_version, v_usuario, 'CANCELADO', null, null, null, null, 'Cancelamento transacional de teste');
-  begin
-    perform public.transicionar_pedido_personalizado(v_cancel, v_version + 1, v_usuario, 'AGUARDANDO LAYOUT', null, null, null, null, null);
-    raise exception 'ESTADO_TERMINAL_NAO_PROTEGIDO';
-  exception when sqlstate 'P0001' then
-    if sqlerrm <> 'TRANSICAO_STATUS_INVALIDA' then raise; end if;
-  end;
 end
 $teste$;
 

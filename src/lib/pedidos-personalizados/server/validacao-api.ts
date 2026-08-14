@@ -89,6 +89,7 @@ export type DadosAdministrativosNormalizados = {
 export type DadosTransicaoStatus = {
   expectedVersion: number
   statusDestino: StatusPedidoPersonalizado
+  numeroLancamento: string | null
   numeroPedidoCompra: string | null
   dataPedidoFornecedor: string | null
   comprador: string | null
@@ -221,7 +222,7 @@ export function validarTransicaoStatus(valor: unknown):
   | { ok: false; codigo: string; mensagem: string } {
   if (!ehObjeto(valor)) return { ok: false, codigo: 'PAYLOAD_INVALIDO', mensagem: 'Payload inválido.' }
   const permitidos = new Set([
-    'expectedVersion', 'statusDestino', 'numeroPedidoCompra',
+    'expectedVersion', 'statusDestino', 'numeroLancamento', 'numeroPedidoCompra',
     'dataPedidoFornecedor', 'comprador', 'dataEntrega', 'dataRecebimento', 'justificativa',
   ])
   if (Object.keys(valor).some((campo) => !permitidos.has(campo))) {
@@ -233,11 +234,12 @@ export function validarTransicaoStatus(valor: unknown):
     return { ok: false, codigo: 'PAYLOAD_INVALIDO', mensagem: 'Revise a versão e o status de destino.' }
   }
 
-  for (const campo of ['numeroPedidoCompra', 'dataPedidoFornecedor', 'comprador', 'dataEntrega', 'dataRecebimento', 'justificativa'] as const) {
+  for (const campo of ['numeroLancamento', 'numeroPedidoCompra', 'dataPedidoFornecedor', 'comprador', 'dataEntrega', 'dataRecebimento', 'justificativa'] as const) {
     if (valor[campo] !== undefined && valor[campo] !== null && typeof valor[campo] !== 'string') {
       return { ok: false, codigo: 'PAYLOAD_INVALIDO', mensagem: 'Revise os campos da etapa.' }
     }
   }
+  const numeroLancamento = stringOpcional(valor.numeroLancamento)?.trim() || null
   const numeroPedidoCompra = stringOpcional(valor.numeroPedidoCompra) ?? null
   const dataPedidoFornecedor = stringOpcional(valor.dataPedidoFornecedor) ?? null
   const comprador = stringOpcional(valor.comprador) ?? null
@@ -252,6 +254,12 @@ export function validarTransicaoStatus(valor: unknown):
   const dataRecebimentoNormalizada = dataRecebimento?.trim() || null
   const justificativaNormalizada = justificativa?.trim() || null
 
+  if (numeroLancamento !== null && !NUMERO_LANCAMENTO.test(numeroLancamento)) {
+    return { ok: false, codigo: 'NUMERO_LANCAMENTO_OBRIGATORIO', mensagem: 'Informe um número de lançamento válido antes de fechar a venda.' }
+  }
+  if (valor.statusDestino !== 'VENDA FECHADA' && numeroLancamento !== null) {
+    return { ok: false, codigo: 'CAMPO_NAO_PERMITIDO', mensagem: 'O número de lançamento só pode ser informado ao fechar a venda.' }
+  }
   if (numeroNormalizado !== null && !NUMERO_PEDIDO_COMPRA.test(numeroNormalizado)) {
     return { ok: false, codigo: 'CAMPOS_PRODUCAO_OBRIGATORIOS', mensagem: 'Revise o pedido de compra.' }
   }
@@ -284,6 +292,7 @@ export function validarTransicaoStatus(valor: unknown):
     dados: {
       expectedVersion: Number(valor.expectedVersion),
       statusDestino: valor.statusDestino,
+      numeroLancamento: valor.statusDestino === 'VENDA FECHADA' ? numeroLancamento : null,
       numeroPedidoCompra: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(valor.statusDestino) ? numeroNormalizado : null,
       dataPedidoFornecedor: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(valor.statusDestino) ? dataFornecedorNormalizada : null,
       comprador: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(valor.statusDestino) ? compradorNormalizado : null,

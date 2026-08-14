@@ -73,7 +73,7 @@ begin
       'nome_colecao_catalogo', null, 'referencia_catalogo', null,
       'observacoes', null, 'cores', '[]'::jsonb
     )),
-    '000001', null, null, null, null
+    null, null, null, null, null
   ) r;
 
   if v_version <> 1 or (select status from public.pedidos_personalizados_pedidos where id = v_pedido_moriah) <> 'RASCUNHO' then
@@ -89,16 +89,36 @@ begin
     'layout.pdf', 'application/pdf', 1, v_usuario, v_usuario
   );
 
-  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_moriah, v_version, v_usuario, 'VENDA FECHADA', null, null, null, null, null) r;
-  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_moriah, v_version, v_usuario, 'AGUARDANDO LAYOUT', '123', current_date, 'VALIDADOR', null, null) r;
-  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_moriah, v_version, v_usuario, U&'AGUARDANDO APROVA\00C7\00C3O DO CLIENTE', null, null, null, null, null) r;
-  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_moriah, v_version, v_usuario, 'AGUARDANDO LAYOUT', null, null, null, null, null) r;
-  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_moriah, v_version, v_usuario, U&'AGUARDANDO APROVA\00C7\00C3O DO CLIENTE', null, null, null, null, null) r;
-  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_moriah, v_version, v_usuario, U&'EM PRODU\00C7\00C3O', null, null, null, current_date + 7, null) r;
-  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_moriah, v_version, v_usuario, 'RECEBIDO', null, null, null, current_date, null) r;
+  begin
+    perform public.transicionar_pedido_personalizado(
+      v_pedido_moriah, v_version, v_usuario, 'VENDA FECHADA',
+      null, null, null, null, null, null
+    );
+    raise exception 'LANCAMENTO_MORIAH_NAO_EXIGIDO';
+  exception when sqlstate '23514' then
+    if sqlerrm <> 'NUMERO_LANCAMENTO_OBRIGATORIO' then raise; end if;
+  end;
+
+  if (select status from public.pedidos_personalizados_pedidos where id = v_pedido_moriah) <> 'RASCUNHO'
+     or (select version from public.pedidos_personalizados_pedidos where id = v_pedido_moriah) <> v_version
+     or (select numero_lancamento from public.pedidos_personalizados_pedidos where id = v_pedido_moriah) is not null then
+    raise exception 'FALHA_LANCAMENTO_MORIAH_ALTEROU_PARCIALMENTE';
+  end if;
+
+  select r.version into v_version from public.transicionar_pedido_personalizado(
+    v_pedido_moriah, v_version, v_usuario, 'VENDA FECHADA',
+    '000001', null, null, null, null, null
+  ) r;
+  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_moriah, v_version, v_usuario, 'AGUARDANDO LAYOUT', null, '123', current_date, 'VALIDADOR', null, null) r;
+  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_moriah, v_version, v_usuario, U&'AGUARDANDO APROVA\00C7\00C3O DO CLIENTE', null, null, null, null, null, null) r;
+  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_moriah, v_version, v_usuario, 'AGUARDANDO LAYOUT', null, null, null, null, null, null) r;
+  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_moriah, v_version, v_usuario, U&'AGUARDANDO APROVA\00C7\00C3O DO CLIENTE', null, null, null, null, null, null) r;
+  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_moriah, v_version, v_usuario, U&'EM PRODU\00C7\00C3O', null, null, null, null, current_date + 7, null) r;
+  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_moriah, v_version, v_usuario, 'RECEBIDO', null, null, null, null, current_date, null) r;
 
   if v_version <> 8
      or (select status from public.pedidos_personalizados_pedidos where id = v_pedido_moriah) <> 'RECEBIDO'
+     or (select numero_lancamento from public.pedidos_personalizados_pedidos where id = v_pedido_moriah) <> '000001'
      or (select count(*) from public.pedidos_personalizados_status_historico where pedido_id = v_pedido_moriah) <> 7 then
     raise exception 'FLUXO_MORIAH_INVALIDO';
   end if;
@@ -108,7 +128,7 @@ begin
     into v_pedido_exclusive, v_version
   from public.criar_pedido_personalizado_lebebe_exclusive(
     v_usuario, gen_random_uuid(), v_exclusive, v_unidade,
-    'VALIDACAO SQL', 'CLIENTE SINTETICO', '41999999999', '000002',
+    'VALIDACAO SQL', 'CLIENTE SINTETICO', '41999999999', null,
     jsonb_build_array(jsonb_build_object(
       'produto_id', v_produto_exclusive, 'ordem', 1,
       'quantidade', 2, 'nome_ou_letra', 'TESTE'
@@ -133,20 +153,24 @@ begin
       and i.total_custo = v_custo * 2
   ) then raise exception 'SNAPSHOTS_EXCLUSIVE_INVALIDOS'; end if;
 
-  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_exclusive, v_version, v_usuario, 'VENDA FECHADA', null, null, null, null, null) r;
+  select r.version into v_version from public.transicionar_pedido_personalizado(
+    v_pedido_exclusive, v_version, v_usuario, 'VENDA FECHADA',
+    '000002', null, null, null, null, null
+  ) r;
 
   begin
-    perform public.transicionar_pedido_personalizado(v_pedido_exclusive, v_version, v_usuario, 'AGUARDANDO LAYOUT', null, null, null, null, null);
+    perform public.transicionar_pedido_personalizado(v_pedido_exclusive, v_version, v_usuario, 'AGUARDANDO LAYOUT', null, null, null, null, null, null);
     raise exception 'LAYOUT_EXCLUSIVE_NAO_REJEITADO';
   exception when sqlstate 'P0001' then
     if sqlerrm <> 'TRANSICAO_STATUS_INVALIDA' then raise; end if;
   end;
 
-  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_exclusive, v_version, v_usuario, U&'EM PRODU\00C7\00C3O', '456', current_date, 'VALIDADOR', current_date + 7, null) r;
-  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_exclusive, v_version, v_usuario, 'RECEBIDO', null, null, null, current_date, null) r;
+  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_exclusive, v_version, v_usuario, U&'EM PRODU\00C7\00C3O', null, '456', current_date, 'VALIDADOR', current_date + 7, null) r;
+  select r.version into v_version from public.transicionar_pedido_personalizado(v_pedido_exclusive, v_version, v_usuario, 'RECEBIDO', null, null, null, null, current_date, null) r;
   select status into v_status from public.pedidos_personalizados_pedidos where id = v_pedido_exclusive;
 
-  if v_status <> 'RECEBIDO' or v_version <> 4 then
+  if v_status <> 'RECEBIDO' or v_version <> 4
+     or (select numero_lancamento from public.pedidos_personalizados_pedidos where id = v_pedido_exclusive) <> '000002' then
     raise exception 'FLUXO_EXCLUSIVE_INVALIDO';
   end if;
 end

@@ -594,6 +594,40 @@ describe('atualização comercial', () => {
     }))
   })
 
+  it('registra fornecedor, código e campos quando a validação comercial falha', async () => {
+    const log = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const repo = criarRepo({
+      buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
+        data: {
+          id: PEDIDO_ID,
+          unidade_id: UNIDADE_BIGORRILHO_ID,
+          status: 'RASCUNHO',
+          version: 1,
+          fornecedor: { chave: 'moriah_tapetes' },
+          numero_lancamento: null,
+          telefone_normalizado: '41999999999',
+        },
+        error: null,
+      }),
+    })
+    const response = await atualizarComercial(
+      requestJson(payloadComercial({ tapetes: [tapete({ cores: [{ id: uuidCor(15), ordem: 15 }] })] }), 'PATCH'),
+      PEDIDO_ID,
+      deps(repo),
+    )
+
+    expect(response.status).toBe(422)
+    expect(log).toHaveBeenCalledWith('[pedidos-personalizados]', expect.objectContaining({
+      operacao: 'atualizar_comercial',
+      pedidoId: PEDIDO_ID,
+      fornecedor: 'moriah_tapetes',
+      resultado: 'erro_validacao',
+      codigo: 'DADOS_INVALIDOS',
+      camposInvalidos: ['tapetes.0.cores.0.ordem'],
+    }))
+    log.mockRestore()
+  })
+
   it.each([
     ['status', 'RECEBIDO'],
     ['comprador', 'JOÃO'],

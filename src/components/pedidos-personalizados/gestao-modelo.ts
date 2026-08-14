@@ -120,6 +120,7 @@ export type PedidoDetalhe = {
 
 export type DadosTransicaoGestao = {
   statusDestino: StatusPedidoPersonalizado
+  numeroLancamento?: string | null
   numeroPedidoCompra?: string | null
   dataPedidoFornecedor?: string | null
   comprador?: string | null
@@ -138,6 +139,20 @@ export type EstadoTransicaoGestao = {
   justificativa: string
 }
 
+/**
+ * Fonte única para saber quais campos oficiais dos dados comerciais (fora do payload de transição)
+ * uma transição de status exige. Hoje só `numeroLancamento` se encaixa nesse caso; os demais campos
+ * obrigatórios por transição (pedido de compra, data ao fornecedor, comprador, data de entrega, data de
+ * recebimento, justificativa) já fazem parte do próprio payload de transição e já têm campo no modal.
+ */
+export function camposComerciaisPendentesTransicao(
+  pedido: Pick<PedidoDetalhe, 'status'>,
+  destino: '' | StatusPedidoPersonalizado
+): Array<'numeroLancamento'> {
+  if (pedido.status === 'RASCUNHO' && destino === 'VENDA FECHADA') return ['numeroLancamento']
+  return []
+}
+
 export function requisitosPendentesTransicao(
   pedido: PedidoDetalhe,
   transicao: EstadoTransicaoGestao
@@ -145,8 +160,7 @@ export function requisitosPendentesTransicao(
   if (!transicao.destino) return ['Selecione o status de destino.']
   const pendencias: string[] = []
   const temAnexo = pedido.tapetes.some((tapete) => tapete.anexos.length > 0)
-  if (pedido.status === 'RASCUNHO'
-      && transicao.destino === 'VENDA FECHADA'
+  if (camposComerciaisPendentesTransicao(pedido, transicao.destino).includes('numeroLancamento')
       && !/^\d{1,6}$/.test(pedido.numeroLancamento ?? '')) {
     pendencias.push('Informe um número de lançamento válido antes de fechar a venda.')
   }
@@ -198,9 +212,28 @@ export const FILTROS_VAZIOS: FiltrosGestao = {
 
 async function erroResposta(response: Response): Promise<Error> {
   let mensagem = 'Não foi possível concluir a operação.'
+  let codigo: string | undefined
+  let campos: string[] = []
   try {
-    const body = await response.json() as { mensagem?: unknown }
+    const body = await response.json() as {
+      erro?: unknown
+      mensagem?: unknown
+      problemas?: unknown
+    }
+    if (typeof body.erro === 'string') codigo = body.erro
     if (typeof body.mensagem === 'string') mensagem = body.mensagem
+    if (Array.isArray(body.problemas)) {
+      const problemas = body.problemas.filter((problema): problema is { campo?: unknown; mensagem: string } => (
+        typeof problema === 'object'
+        && problema !== null
+        && typeof (problema as { mensagem?: unknown }).mensagem === 'string'
+      ))
+      const mensagens = [...new Set(problemas.map((problema) => problema.mensagem))]
+      campos = problemas
+        .map((problema) => problema.campo)
+        .filter((campo): campo is string => typeof campo === 'string')
+      if (mensagens.length > 0) mensagem = mensagens.join(' ')
+    }
   } catch {
     // Respostas técnicas não são exibidas integralmente.
   }
@@ -208,7 +241,7 @@ async function erroResposta(response: Response): Promise<Error> {
   if (response.status === 403) mensagem = 'Você não possui acesso à gestão de pedidos personalizados.'
   if (response.status === 404) mensagem = 'Pedido não encontrado ou fora do seu escopo.'
   if (response.status === 409) mensagem = 'Este pedido foi alterado por outra pessoa. Recarregue os dados antes de continuar.'
-  return Object.assign(new Error(mensagem), { status: response.status })
+  return Object.assign(new Error(mensagem), { status: response.status, codigo, campos })
 }
 
 export async function listarPedidosGestao(filtros: FiltrosGestao, pagina: number, signal?: AbortSignal): Promise<PaginaPedidos> {
@@ -406,8 +439,9 @@ export function payloadAtualizacaoAdministrativa(
   }
 }
 
-export function payloadAtualizacaoComercial(estado: EstadoNovoPedido, expectedVersion: number, opcoes: OpcoesNovoPedido) {
-  const cores = new Map(opcoes.cores.map((cor) => [cor.id, cor]))
+export function payloadAtualizacaoComercial(estado: EstadoNovoPedido, expectedVersion: number, _opcoes: OpcoesNovoPedido) {
+  void _opcoes
+
   return {
     expectedVersion,
     unidade: estado.unidade,
@@ -425,12 +459,14 @@ export function payloadAtualizacaoComercial(estado: EstadoNovoPedido, expectedVe
       nomeColecaoCatalogo: tapete.nomeColecaoCatalogo,
       referenciaCatalogo: tapete.referenciaCatalogo,
       observacoes: tapete.observacoes,
-      cores: tapete.tipo === 'CATALOGO' ? [] : tapete.corIds.map((id, ordem) => ({ id, ordem: ordem + 1, ...cores.get(id) })),
+      cores: tapete.tipo === 'CATALOGO'
+        ? []
+        : tapete.corIds.map((id, indice) => ({ id, ordem: indice + 1 })),
     })),
   }
 }
 
-export async function atualizarComercialGestao(id: string, payload: ReturnType<typeof payloadAtualizacaoComercial>) {
+export async function atualizarComercialGestao(id: string, payload: ReturnType<typeof payloadAtualizacaoComercial> | Record<string, unknown>) {
   const response = await fetch(`/api/pedidos-personalizados/pedidos/${id}/comercial`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
   })

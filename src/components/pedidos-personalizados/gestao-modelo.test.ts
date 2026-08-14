@@ -19,6 +19,8 @@ import type { PedidoDetalhe } from './gestao-modelo'
 const PEDIDO = '10000000-0000-4000-8000-000000000001'
 const TAPETE = '20000000-0000-4000-8000-000000000001'
 const COR = '30000000-0000-4000-8000-000000000001'
+const COR_15 = '30000000-0000-4000-8000-000000000015'
+const COR_29 = '30000000-0000-4000-8000-000000000029'
 
 const detalhe: PedidoDetalhe = {
   historico: [],
@@ -111,6 +113,39 @@ describe('modelo da gestão de pedidos personalizados', () => {
     expect(JSON.stringify(payload)).not.toMatch(/dataEntrega|comprador|status/)
   })
 
+  it('preserva a ordem da seleção quando a ordem global das cores é maior que o limite', () => {
+    const tresCores = {
+      ...detalhe,
+      tapetes: [{
+        ...detalhe.tapetes[0],
+        cores: [
+          detalhe.tapetes[0].cores[0],
+          { id: COR_15, ordem: 2, numero: '15', codigo: 'K-15', nome: 'Grafite' },
+          { id: COR_29, ordem: 3, numero: '29', codigo: 'K-29', nome: 'Marrom' },
+        ],
+      }],
+    }
+    const opcoesComOrdemGlobal = {
+      ...opcoes,
+      cores: [
+        opcoes.cores[0],
+        { id: COR_15, numero: '15', codigo: 'K-15', nome: 'Grafite', ordem: 15 },
+        { id: COR_29, numero: '29', codigo: 'K-29', nome: 'Marrom', ordem: 29 },
+      ],
+    }
+    const payload = payloadAtualizacaoComercial(
+      detalheParaFormulario(tresCores),
+      tresCores.version,
+      opcoesComOrdemGlobal,
+    )
+
+    expect(payload.tapetes[0].cores).toEqual([
+      { id: COR, ordem: 1 },
+      { id: COR_15, ordem: 2 },
+      { id: COR_29, ordem: 3 },
+    ])
+  })
+
   it('gera o resumo persistido pelo helper aprovado sem telefone, IDs, anexos ou controle técnico', () => {
     const resumo = gerarResumoFornecedorDetalhe(detalhe) ?? ''
     expect(resumo).toContain('UNIDADE: PORTÃO')
@@ -143,6 +178,25 @@ describe('modelo da gestão de pedidos personalizados', () => {
     await expect(atualizarComercialGestao(PEDIDO, payload)).resolves.toBe(5)
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'PATCH' })
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ expectedVersion: 4 })
+    fetchMock.mockRestore()
+  })
+
+  it('mostra a mensagem específica devolvida nos problemas de validação', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      ok: false,
+      erro: 'DADOS_INVALIDOS',
+      mensagem: 'Revise os dados informados.',
+      problemas: [{
+        codigo: 'ORDEM_COR_INVALIDA',
+        campo: 'tapetes.0.cores.1.ordem',
+        mensagem: 'A ordem da cor deve estar entre 1 e 6.',
+      }],
+    }), { status: 422 }))
+    const payload = payloadAtualizacaoComercial(detalheParaFormulario(detalhe), 4, opcoes)
+
+    await expect(atualizarComercialGestao(PEDIDO, payload)).rejects.toThrow(
+      'A ordem da cor deve estar entre 1 e 6.'
+    )
     fetchMock.mockRestore()
   })
 
@@ -250,7 +304,7 @@ describe('modelo da gestão de pedidos personalizados', () => {
     expect(componente).toContain('overflow-x-hidden')
     expect(componente).toContain('Editar dados administrativos')
     expect(componente).toContain('Salvar dados administrativos')
-    expect(componente).toContain('Pedido de compra')
+    expect(componente).toContain('pedido de compra')
     expect(componente).toContain('dataPedidoFornecedor')
     expect(componente).toContain('dataEntrega')
     expect(componente).toContain('type="date"')

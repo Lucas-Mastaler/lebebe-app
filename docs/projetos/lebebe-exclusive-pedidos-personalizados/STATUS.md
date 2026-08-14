@@ -2,7 +2,7 @@
 
 Projeto: lebebe-exclusive-pedidos-personalizados
 Estado: EM VALIDAÇÃO
-Fase atual: Smoke visual autenticado e entrega
+Fase atual: Migration aplicada; aguardando reteste real da transição na interface
 
 ## Última etapa concluída
 
@@ -71,15 +71,18 @@ Fase atual: Smoke visual autenticado e entrega
 
 ## Próximo passo
 
-Publicar o código da aplicação pelo fluxo normal de deploy para alinhar o
-frontend/API de produção ao banco já migrado.
+Repetir na interface a transição `RASCUNHO → VENDA FECHADA` do pedido Moriá
+`8c9e5a2b-6e89-4a9a-85f8-edfdf6c8f6ba`, usando um número de lançamento válido,
+e confirmar status, versão, lançamento e histórico. Depois, publicar o código
+da aplicação pelo fluxo normal de deploy.
 
 ## Pendências
 
 - A interface externa de cadastro de produto no SGI não foi encontrada; nenhum
   botão ou integração fictícia foi criado.
-- O código ainda não foi publicado. Como as migrations já estão no banco, o
-  deploy da aplicação é a próxima operação recomendada.
+- O código ainda não foi publicado. A migration específica desta correção já
+  está no banco; o reteste real pela interface e o deploy da aplicação seguem
+  pendentes.
 
 ## Decisões aguardando aprovação
 
@@ -226,6 +229,122 @@ frontend/API de produção ao banco já migrado.
   run build` aprovado, incluindo a nova rota na saída do build. Smoke visual
   autenticado não foi possível nesta sessão pelo mesmo motivo já registrado
   (sem permissão de módulo na sessão local; permissões não alteradas).
+
+- Ajustes de UI/UX pós-teste com usuários reais (2026-08-14): (1) coluna de
+  ação com botão X (ícone Lucide, tooltip + `aria-label` "Remover produto",
+  alvo de toque `size-11`) ao final de cada linha/card de produto selecionado
+  em `FormularioLebebeExclusive`, reaproveitando a remoção já existente
+  (limpar quantidade preservando Nome ou Letra); (2) destaque do botão
+  Filtrar quando há filtro pendente (anel de foco persistente + animação
+  `animate-in zoom-in-95` de um único disparo só na transição
+  nenhum→pendente, sem loop) com texto "Filtro preenchido — clique em
+  Filtrar" que some após buscar ou apagar os campos, e texto reforçando que
+  cada campo funciona sozinho; Enter já disparava a busca (nenhuma mudança
+  necessária). (3) e (4): modal "Alterar status" passou a mostrar a
+  transição Origem → Destino com ícone de seta, e o botão de confirmação
+  usa o rótulo contextual "Avançar para {destino}" quando o destino
+  selecionado é o primeiro da lista de `destinosPermitidosStatus` (o
+  caminho principal); outras transições (ex. Cancelado) mantêm "Confirmar
+  transição". Quando a transição é RASCUNHO → VENDA FECHADA, o modal exibe
+  o campo Número de lançamento (pré-preenchido se já existir) sem exigir
+  sair para editar dados comerciais.
+- Número de lançamento no modal de status foi resolvido só no frontend, sem
+  mudança de backend: ao confirmar, se o número informado no modal diverge
+  do já persistido, o componente reutiliza a mesma rota
+  `PATCH /pedidos/[id]/comercial` e os mesmos payloads já usados pela edição
+  de dados comerciais (`payloadAtualizacaoComercial` + `detalheParaFormulario`
+  para Moriah; `montarPayloadLebebeExclusive` reaproveitado de
+  `FormularioLebebeExclusive` para Exclusive, remontando os itens a partir de
+  `detalhe.itens`) — não existe um segundo campo nem uma segunda fonte de
+  verdade. Só depois de confirmar essa gravação (usando a nova `version`
+  retornada) o componente chama a transição de status existente. Se a
+  gravação do lançamento falhar, a transição não é tentada. Se a gravação
+  tiver sucesso mas a transição falhar depois, o detalhe é recarregado do
+  servidor (não só em 409) para refletir o lançamento já salvo sem duplicar
+  estado local desatualizado.
+- Validação: ESLint focado nos 3 arquivos alterados aprovado; `npm run test
+  -- --run src/lib/pedidos-personalizados src/components/pedidos-personalizados`
+  com 21 arquivos e 487 testes aprovados (sem teste novo — mudança reaproveitou
+  infraestrutura existente sem alterar contratos testados); `tsc --noEmit`
+  sem novos erros (bloqueio remanescente é só o preexistente em
+  `hub-vendas/alertas/teste/route.test.ts`); `npm run build` aprovado. Smoke
+  visual autenticado não foi possível nesta sessão pelo mesmo motivo já
+  registrado (sessão local sem permissão de módulo para
+  `/pedidos-personalizados`; permissões não foram alteradas).
+
+- Complemento de status na Gestão (2026-08-14): a regra de "campo obrigatório
+  ausente" deixou de ser hardcoded para RASCUNHO → VENDA FECHADA. Foi extraída
+  para `camposComerciaisPendentesTransicao(pedido, destino)` em
+  `gestao-modelo.ts` — fonte única usada tanto por `requisitosPendentesTransicao`
+  quanto pelo componente da Gestão para decidir quando mostrar o campo Número
+  de lançamento no modal. Investigação confirmou que, hoje, esse é o único
+  campo obrigatório que vive fora do payload de transição (dados comerciais);
+  os demais campos obrigatórios por transição (pedido de compra, data ao
+  fornecedor, comprador, data de entrega, data de recebimento, justificativa)
+  já fazem parte do próprio payload de `transicionarStatusGestao` e já tinham
+  campo no modal — não precisaram de mudança. Anexo (Moriah) continua fora
+  desse mecanismo por natureza (upload de arquivo, não campo de texto) e
+  mantém sua pendência informativa já existente.
+- Alteração de status ficou acessível direto do card da listagem, sem abrir
+  `Ver pedido`: novo botão `BotaoAvancoStatus` (reaproveitado também no botão
+  que já existia dentro do pedido, substituindo o rótulo genérico "ALTERAR
+  STATUS") mostra o rótulo contextual "Avançar para {destino}" com ícone de
+  seta (Lucide `ArrowRight`) quando existe um único caminho "para frente" além
+  de Cancelado, ou "Alterar status" quando há mais de um caminho possível (ex.
+  Aguardando aprovação do cliente). A progressão aparece no próprio botão-
+  gatilho, antes de abrir o modal — não só depois, dentro dele. O card usa o
+  botão em variante sólida (mais destaque que o outline "Ver pedido") e
+  posicionado acima dele.
+  Reutiliza o mesmo modal oficial (`alterandoStatus`/`transicao`): ao clicar
+  no atalho do card, o pedido é carregado (mesma `carregarDetalheGestao` já
+  usada por "Ver pedido") e o modal abre diretamente, sem abrir o diálogo
+  grande de detalhe — controlado por um novo estado `transicaoOrigemCard` que
+  suprime a abertura do diálogo de detalhe e, ao fechar (cancelar ou
+  confirmar), limpa o `detalhe` para voltar limpo à listagem. Quando aberto de
+  dentro de "Ver pedido" (fluxo já existente), o comportamento de fechamento
+  não mudou.
+- Validação do complemento: ESLint focado aprovado; `tsc --noEmit` sem novos
+  erros; `npm run test -- --run src/lib/pedidos-personalizados
+  src/components/pedidos-personalizados` com 21 arquivos e 487 testes
+  aprovados (nenhum teste quebrou; nenhum teste novo foi necessário porque a
+  mudança reaproveitou funções e payloads já cobertos); `npm run build`
+  aprovado. Smoke visual autenticado novamente não foi possível nesta sessão
+  pela mesma restrição de permissão de módulo já registrada; permissões não
+  foram alteradas.
+- Correção do `422` Moriá na transição `RASCUNHO → VENDA FECHADA`: a causa
+  confirmada foi a serialização da ordem global do catálogo (`1/15/29`) no
+  lugar da ordem da seleção (`1/2/3`). O payload comercial agora envia apenas
+  `id` e a ordem sequencial escolhida. A interface exibe os itens de
+  `problemas` retornados pela API e a rota registra fornecedor, código e campos
+  inválidos sem valores pessoais.
+- O fluxo intermediário `PATCH /comercial` seguido de `POST /status`, descrito
+  acima, foi substituído no código por uma única chamada de status. A migration
+  nova substitui a assinatura antiga da RPC por uma assinatura única com o
+  número de lançamento e preserva o corpo vigente da transição na mesma função,
+  evitando tanto persistência parcial quanto sobrecarga incompatível com o
+  PostgREST. O mesmo contrato é usado por Moriá e Lebebe Exclusive.
+- Validação desta correção: 21 arquivos e 491 testes passaram; ESLint focado
+  passou sem avisos; o teste SQL completo dos dois fornecedores passou no
+  Supabase dentro de `BEGIN/ROLLBACK` e confirmou ausência de persistência
+  parcial. `npm run build` passou após permitir o download das fontes Geist.
+  `npx tsc --noEmit` não apontou erro no fluxo e segue bloqueado somente pelos
+  erros preexistentes de Hub/Vendas. O pedido Moriá observado permaneceu em
+  `RASCUNHO`, versão 2 e sem lançamento após todos os ensaios.
+- Tentativa real do usuário em 2026-08-14 confirmou o gate: o endpoint Next
+  retornou `500`, enquanto os logs do Supabase registraram `POST 404` para
+  `/rest/v1/rpc/transicionar_pedido_personalizado`. O banco ainda expõe somente
+  a assinatura antiga de 9 parâmetros; o código já envia 10. A migration foi
+  refeita para `DROP/CREATE` transacional da assinatura única, sem dependências
+  registradas no catálogo. Os testes SQL `lebebe_exclusive` e `fase_5c`
+  passaram com `BEGIN/ROLLBACK`.
+- A substituição remota foi autorizada e aplicada em 2026-08-14 como migration
+  `20260814160620_pedidos_personalizados_transicao_lancamento_atomica`. O banco
+  expõe somente a nova assinatura de 10 parâmetros; `service_role` possui
+  `EXECUTE`, enquanto `anon` e `authenticated` não possuem. Um teste seguro
+  pelo PostgREST, com versão propositalmente inválida, encontrou a RPC e
+  retornou `P0003 / CONFLITO_VERSAO`, confirmando que o 404 de assinatura foi
+  removido sem alterar dados. O pedido permaneceu em `RASCUNHO`, versão 2 e
+  `numero_lancamento` nulo. O smoke real pela interface continua pendente.
 
 ## Não refazer
 

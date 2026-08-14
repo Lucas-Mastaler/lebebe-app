@@ -101,6 +101,26 @@ Dependência: Fases 2 a 5 concluídas.
 - [x] Fazer smoke autenticado e registrar explicitamente qualquer gate visual
   ou de produção remanescente.
 
+### Fase 7 — Correção da transição com lançamento
+
+Dependência: Fase 6 concluída e reprodução autenticada do `422` Moriá.
+
+- [x] Corrigir a serialização da ordem das cores no payload comercial Moriá.
+- [x] Persistir o número de lançamento e a mudança para `VENDA FECHADA` na
+  mesma transação do banco, para ambos os fornecedores.
+- [x] Expor mensagens estruturadas de validação no frontend e registrar na
+  rota comercial código, fornecedor e campos inválidos sem dados pessoais.
+- [x] Cobrir com testes o payload `1/15/29`, a atomicidade do lançamento e a
+  matriz vigente de transições Moriá/Lebebe Exclusive.
+- [ ] Reexecutar regressão focada, SQL transacional, lint, typecheck/build e
+  smoke autenticado proporcional.
+  - [x] Regressão focada, SQL transacional com `ROLLBACK`, lint e build.
+  - [x] Typecheck sem erro novo no fluxo; bloqueio global preexistente em
+    `hub-vendas/alertas/teste/route.test.ts`.
+  - [x] Aplicar a migration autorizada e confirmar a nova assinatura pelo
+    PostgREST sem mutação de dados.
+  - [ ] Concluir o smoke autenticado da transição real pela interface.
+
 ## Critérios de aceite
 
 Os 26 blocos do pedido original são obrigatórios. Em especial: nenhuma busca

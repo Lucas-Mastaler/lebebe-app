@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { AlertCircle, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Clock, Eye, Loader2, PackageCheck, Pencil, RefreshCw, Search, ShoppingBag, SlidersHorizontal, UserSearch, X } from 'lucide-react'
+import { AlertCircle, ArrowRight, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Clock, Eye, Loader2, PackageCheck, Pencil, RefreshCw, Search, ShoppingBag, SlidersHorizontal, UserSearch, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -48,6 +48,7 @@ import {
   mensagemErroGestao,
   payloadAtualizacaoAdministrativa,
   payloadAtualizacaoComercial,
+  camposComerciaisPendentesTransicao,
   requisitosPendentesTransicao,
   transicionarStatusGestao,
   validarAdministrativo,
@@ -140,6 +141,42 @@ function ChipStatus({
   )
 }
 
+/** Degradê compartilhado por todo botão de avanço de status (card, gatilho dentro do pedido e confirmação no modal). */
+const CLASSE_DEGRADE_AVANCO_STATUS = 'h-auto min-h-11 whitespace-normal border-0 bg-gradient-to-r from-[#00A5E6] to-emerald-500 bg-[length:135%_100%] bg-left py-2 text-center leading-snug text-white transition-[background-position] duration-300 hover:bg-right'
+
+/**
+ * Rótulo contextual reaproveitado tanto no atalho do card quanto no botão que abre o modal dentro do
+ * pedido: quando a lista de destinos tem só um caminho "para frente" (além de Cancelado), mostra a
+ * fase de destino diretamente no botão; quando há mais de um caminho possível (ex. Aguardando aprovação
+ * do cliente), não há uma única próxima fase óbvia e o rótulo fica genérico.
+ */
+function BotaoAvancoStatus({
+  status,
+  fornecedor,
+  onClick,
+  disabled,
+  className,
+  variant,
+}: {
+  status: StatusPedidoPersonalizado
+  fornecedor: { chave: string } | null | undefined
+  onClick: () => void
+  disabled?: boolean
+  className?: string
+  variant?: 'default' | 'outline'
+}) {
+  const destinos = destinosPermitidosStatus(status, fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')
+  if (destinos.length === 0) return null
+  const destinoUnico = destinos.length === 2 ? destinos[0] : null
+  const classeDegrade = variant === 'outline' ? '' : CLASSE_DEGRADE_AVANCO_STATUS
+  return (
+    <Button type="button" variant={variant} disabled={disabled} onClick={onClick} className={`${classeDegrade} ${className ?? ''}`}>
+      {destinoUnico ? `Avançar para ${destinoUnico}` : 'Alterar status'}
+      <ArrowRight aria-hidden="true" />
+    </Button>
+  )
+}
+
 function CampoAdministrativo({
   id,
   label,
@@ -183,6 +220,8 @@ export function GestaoPedidosPersonalizados() {
   const [transicao, setTransicao] = useState<EstadoTransicaoGestao>({
     destino: '', numeroPedidoCompra: '', dataPedidoFornecedor: '', comprador: '', dataEntrega: '', dataRecebimento: '', justificativa: '',
   })
+  const [numeroLancamentoTransicao, setNumeroLancamentoTransicao] = useState('')
+  const [transicaoOrigemCard, setTransicaoOrigemCard] = useState(false)
   const [formulario, setFormulario] = useState<EstadoNovoPedido | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [resumoCopiado, setResumoCopiado] = useState(false)
@@ -263,9 +302,17 @@ export function GestaoPedidosPersonalizados() {
     }
   }, [formulario, opcoes, telefoneLegadoNulo])
   const resumoFornecedor = useMemo(() => detalhe ? gerarResumoFornecedorDetalhe(detalhe) : null, [detalhe])
+  const exigeLancamentoNaTransicao = detalhe
+    ? camposComerciaisPendentesTransicao(detalhe, transicao.destino).includes('numeroLancamento')
+    : false
   const pendenciasTransicao = useMemo(
-    () => detalhe ? requisitosPendentesTransicao(detalhe, transicao) : ['Pedido não carregado.'],
-    [detalhe, transicao]
+    () => detalhe
+      ? requisitosPendentesTransicao(
+          exigeLancamentoNaTransicao ? { ...detalhe, numeroLancamento: numeroLancamentoTransicao || null } : detalhe,
+          transicao
+        )
+      : ['Pedido não carregado.'],
+    [detalhe, transicao, exigeLancamentoNaTransicao, numeroLancamentoTransicao]
   )
 
   async function copiarResumoFornecedor() {
@@ -297,6 +344,7 @@ export function GestaoPedidosPersonalizados() {
       setEditando(false)
       setEditandoAdministrativo(false)
       setConflitoAdministrativo(false)
+      setTransicaoOrigemCard(false)
     } catch (error) {
       toast.error(mensagemErroGestao(error))
     } finally {
@@ -363,22 +411,61 @@ export function GestaoPedidosPersonalizados() {
     }
   }
 
-  function abrirTransicao() {
-    if (!detalhe) return
+  function montarEstadoTransicao(pedido: PedidoDetalhe): EstadoTransicaoGestao {
     const destino = destinosPermitidosStatus(
-      detalhe.status,
-      detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes'
+      pedido.status,
+      pedido.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes'
     )[0] ?? ''
-    setTransicao({
+    return {
       destino,
-      numeroPedidoCompra: detalhe.numeroPedidoCompra ?? '',
-      dataPedidoFornecedor: detalhe.dataPedidoFornecedor ?? '',
-      comprador: detalhe.comprador ?? '',
-      dataEntrega: detalhe.dataEntrega ?? '',
+      numeroPedidoCompra: pedido.numeroPedidoCompra ?? '',
+      dataPedidoFornecedor: pedido.dataPedidoFornecedor ?? '',
+      comprador: pedido.comprador ?? '',
+      dataEntrega: pedido.dataEntrega ?? '',
       dataRecebimento: hojeIsoBrasil(),
       justificativa: '',
-    })
+    }
+  }
+
+  function abrirTransicao() {
+    if (!detalhe) return
+    setTransicao(montarEstadoTransicao(detalhe))
+    setNumeroLancamentoTransicao(detalhe.numeroLancamento ?? '')
     setAlterandoStatus(true)
+  }
+
+  async function abrirTransicaoPeloCard(id: string) {
+    if (carregandoDetalhe) return
+    setTransicaoOrigemCard(true)
+    setCarregandoDetalhe(true)
+    setErro(null)
+    try {
+      const pedido = await carregarDetalheGestao(id)
+      setDetalhe(pedido)
+      setFormulario(detalheParaFormulario(pedido))
+      setAdministrativo(detalheParaAdministrativo(pedido))
+      setEditando(false)
+      setEditandoAdministrativo(false)
+      setConflitoAdministrativo(false)
+      setTransicao(montarEstadoTransicao(pedido))
+      setNumeroLancamentoTransicao(pedido.numeroLancamento ?? '')
+      setAlterandoStatus(true)
+    } catch (error) {
+      toast.error(mensagemErroGestao(error))
+      setTransicaoOrigemCard(false)
+    } finally {
+      setCarregandoDetalhe(false)
+    }
+  }
+
+  function fecharTransicao() {
+    setAlterandoStatus(false)
+    if (transicaoOrigemCard) {
+      setDetalhe(null)
+      setFormulario(null)
+      setAdministrativo(null)
+      setTransicaoOrigemCard(false)
+    }
   }
 
   async function confirmarTransicao() {
@@ -387,6 +474,7 @@ export function GestaoPedidosPersonalizados() {
     try {
       await transicionarStatusGestao(detalhe.id, detalhe.version, {
         statusDestino: transicao.destino,
+        numeroLancamento: exigeLancamentoNaTransicao ? numeroLancamentoTransicao : null,
         numeroPedidoCompra: detalhe.status === 'VENDA FECHADA' && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(transicao.destino) ? transicao.numeroPedidoCompra : null,
         dataPedidoFornecedor: detalhe.status === 'VENDA FECHADA' && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(transicao.destino) ? transicao.dataPedidoFornecedor : null,
         comprador: detalhe.status === 'VENDA FECHADA' && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(transicao.destino) ? transicao.comprador : null,
@@ -396,7 +484,7 @@ export function GestaoPedidosPersonalizados() {
       })
       await recarregarDetalhe()
       await carregarLista()
-      setAlterandoStatus(false)
+      fecharTransicao()
       toast.success('Status atualizado.')
     } catch (error) {
       toast.error(mensagemErroGestao(error))
@@ -575,7 +663,7 @@ export function GestaoPedidosPersonalizados() {
                   <dl className="mb-5 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                     <div><dt className="text-slate-500">Nº de lançamento</dt><dd className="font-semibold text-slate-900">{item.numeroLancamento ?? '—'}</dd></div>
                     <div><dt className="text-slate-500">Telefone</dt><dd className="font-semibold text-slate-900">{item.telefone ? formatarTelefone(item.telefone) : 'Não informado'}</dd></div>
-                    <div><dt className="text-slate-500">Pedido de compra</dt><dd className="font-semibold text-slate-900">{item.numeroPedidoCompra ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">Nº do pedido de compra</dt><dd className="font-semibold text-slate-900">{item.numeroPedidoCompra ?? '—'}</dd></div>
                     <div><dt className="text-slate-500">Pedido ao fornecedor</dt><dd className="font-medium">{item.dataPedidoFornecedor ? dataIsoParaExibicao(item.dataPedidoFornecedor) : '—'}</dd></div>
                     {item.status === 'RECEBIDO' && item.recebidoEm && <div><dt className="text-slate-500">Recebido em</dt><dd className="font-medium">{formatarDataRecebimento(item.recebidoEm)}</dd></div>}
                     <div><dt className="text-slate-500">Comprador</dt><dd className="font-medium">{item.comprador ?? '—'}</dd></div>
@@ -584,7 +672,16 @@ export function GestaoPedidosPersonalizados() {
                     <div><dt className="text-slate-500">Produtos</dt><dd className="font-medium">{item.fornecedor?.chave === 'lebebe_exclusive' ? item.referenciasProdutos.join(', ') || '—' : item.codigosProdutos.join(', ') || '—'}</dd></div>
                     <div><dt className="text-slate-500">Cadastro</dt><dd className="font-medium">{formatarData(item.createdAt)}</dd></div>
                   </dl>
-                  <Button type="button" className="mt-auto min-h-11" variant="outline" onClick={() => void abrirDetalhe(item.id)}><Eye />Ver pedido</Button>
+                  <div className="mt-auto flex flex-col gap-2">
+                    <BotaoAvancoStatus
+                      status={item.status}
+                      fornecedor={item.fornecedor}
+                      disabled={carregandoDetalhe}
+                      className="min-h-11 font-semibold shadow-sm"
+                      onClick={() => void abrirTransicaoPeloCard(item.id)}
+                    />
+                    <Button type="button" className="min-h-11" variant="outline" onClick={() => void abrirDetalhe(item.id)}><Eye />Ver pedido</Button>
+                  </div>
                 </div>
               </article>
             ))}
@@ -612,7 +709,7 @@ export function GestaoPedidosPersonalizados() {
       )}
 
       <Dialog
-        open={(carregandoDetalhe || detalhe !== null) && !editandoAdministrativo}
+        open={(carregandoDetalhe || detalhe !== null) && !editandoAdministrativo && !transicaoOrigemCard}
         onOpenChange={(aberto) => {
           if (!aberto && !salvando && !operacaoAnexo) {
             setDetalhe(null)
@@ -658,7 +755,7 @@ export function GestaoPedidosPersonalizados() {
                     <h3 id="dados-administrativos-titulo" className="mb-3 flex items-center gap-2 font-semibold text-slate-900"><ClipboardList className="size-4 text-amber-700" />Dados administrativos</h3>
                     <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
                       <div><dt className="text-slate-500">Status</dt><dd className="font-medium">{detalhe.status}</dd></div>
-                      <div><dt className="text-slate-500">Pedido de compra</dt><dd className="font-medium">{detalhe.numeroPedidoCompra ?? '—'}</dd></div>
+                      <div><dt className="text-slate-500">Nº do pedido de compra</dt><dd className="font-medium">{detalhe.numeroPedidoCompra ?? '—'}</dd></div>
                       <div><dt className="text-slate-500">Data do pedido ao fornecedor</dt><dd className="font-medium">{detalhe.dataPedidoFornecedor ? dataIsoParaExibicao(detalhe.dataPedidoFornecedor) : '—'}</dd></div>
                       <div><dt className="text-slate-500">Previsão de Data de entrega do fornecedor</dt><dd className="font-medium">{detalhe.dataEntrega ? dataIsoParaExibicao(detalhe.dataEntrega) : '—'}</dd></div>
                       <div><dt className="text-slate-500">Comprador</dt><dd className="font-medium">{detalhe.comprador ?? '—'}</dd></div>
@@ -818,7 +915,7 @@ export function GestaoPedidosPersonalizados() {
                 <>
                   <Button type="button" disabled={!permiteEdicaoComercial(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')} onClick={() => setEditando(true)}><Pencil />Editar dados comerciais</Button>
                   <Button type="button" variant="secondary" disabled={!permiteEdicaoAdministrativa(detalhe.status)} onClick={() => { setAdministrativo(detalheParaAdministrativo(detalhe)); setErrosAdministrativos({}); setConflitoAdministrativo(false); setEditandoAdministrativo(true) }}><Pencil />Editar dados administrativos</Button>
-                  {destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes').length > 0 && <Button type="button" variant="outline" onClick={abrirTransicao}>ALTERAR STATUS</Button>}
+                  <BotaoAvancoStatus status={detalhe.status} fornecedor={detalhe.fornecedor} onClick={abrirTransicao} className="font-semibold shadow-sm" />
                 </>
               )}
               <Button type="button" variant="ghost" disabled={salvando} onClick={() => void recarregarDetalhe()}><RefreshCw />Recarregar</Button>
@@ -868,17 +965,26 @@ export function GestaoPedidosPersonalizados() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={alterandoStatus} onOpenChange={(aberto) => { if (!aberto && !salvando) setAlterandoStatus(false) }}>
+      <Dialog open={alterandoStatus} onOpenChange={(aberto) => { if (!aberto && !salvando) fecharTransicao() }}>
         <DialogContent className="flex max-h-[calc(100dvh-1rem)] max-w-xl flex-col overflow-hidden p-0 sm:max-h-[90vh]">
           <DialogHeader className="shrink-0 border-b px-6 py-5">
             <DialogTitle>Alterar status</DialogTitle>
             <DialogDescription>{detalhe?.status === 'RASCUNHO' && transicao.destino === 'VENDA FECHADA' ? 'Confirma que esta venda foi fechada?' : 'Confirme a transição. A versão e o histórico serão atualizados de forma atômica.'}</DialogDescription>
           </DialogHeader>
           {detalhe && <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
-            <div className="rounded-lg bg-slate-50 p-3 text-sm"><span className="text-slate-500">Origem:</span> <strong>{detalhe.status}</strong></div>
+            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-3 text-sm">
+              <span className="rounded-full border border-slate-300 bg-white px-2.5 py-1 font-semibold text-slate-700">{detalhe.status}</span>
+              <ArrowRight className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
+              <span className="rounded-full border border-sky-300 bg-sky-50 px-2.5 py-1 font-semibold text-sky-800">{transicao.destino || 'Selecione o destino'}</span>
+            </div>
             <div><label htmlFor="status-destino" className="mb-1 block text-sm font-medium">Destino</label><Select value={transicao.destino} onValueChange={(destino) => setTransicao((atual) => ({ ...atual, destino: destino as StatusPedidoPersonalizado }))}><SelectTrigger id="status-destino"><SelectValue /></SelectTrigger><SelectContent>{destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes').map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select></div>
+            {exigeLancamentoNaTransicao && <div>
+              <label htmlFor="transicao-numero-lancamento" className="mb-1 block text-sm font-medium">Número de lançamento</label>
+              <Input id="transicao-numero-lancamento" inputMode="numeric" maxLength={6} value={numeroLancamentoTransicao} onChange={(e) => setNumeroLancamentoTransicao(e.target.value.replace(/\D/g, '').slice(0, 6))} />
+              <p className="mt-1 text-xs text-slate-500">Necessário para fechar a venda. Fica salvo junto aos dados comerciais do pedido.</p>
+            </div>}
             {detalhe.status === 'VENDA FECHADA' && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(transicao.destino) && <div className="grid gap-3 sm:grid-cols-2">
-              <div><label htmlFor="transicao-pedido" className="mb-1 block text-sm font-medium">Pedido de compra</label><Input id="transicao-pedido" inputMode="numeric" maxLength={5} value={transicao.numeroPedidoCompra} onChange={(e) => setTransicao({ ...transicao, numeroPedidoCompra: e.target.value.replace(/\D/g, '').slice(0, 5) })} /></div>
+              <div><label htmlFor="transicao-pedido" className="mb-1 block text-sm font-medium">Nº do pedido de compra</label><Input id="transicao-pedido" inputMode="numeric" maxLength={5} value={transicao.numeroPedidoCompra} onChange={(e) => setTransicao({ ...transicao, numeroPedidoCompra: e.target.value.replace(/\D/g, '').slice(0, 5) })} /></div>
               <div><label htmlFor="transicao-data-fornecedor" className="mb-1 block text-sm font-medium">Data do pedido ao fornecedor</label><Input id="transicao-data-fornecedor" type="date" max={dataOperacionalBrasil()} value={transicao.dataPedidoFornecedor} onChange={(e) => setTransicao({ ...transicao, dataPedidoFornecedor: e.target.value })} /></div>
               <div className="sm:col-span-2"><label htmlFor="transicao-comprador" className="mb-1 block text-sm font-medium">Comprador</label><Input id="transicao-comprador" maxLength={40} value={transicao.comprador} onChange={(e) => setTransicao({ ...transicao, comprador: e.target.value })} /></div>
             </div>}
@@ -887,7 +993,20 @@ export function GestaoPedidosPersonalizados() {
             {transicao.destino === 'CANCELADO' && <div><label htmlFor="transicao-justificativa" className="mb-1 block text-sm font-medium">Justificativa</label><textarea id="transicao-justificativa" required maxLength={500} rows={4} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" value={transicao.justificativa} onChange={(e) => setTransicao({ ...transicao, justificativa: e.target.value })} /><p className="text-right text-xs text-slate-500">{transicao.justificativa.length}/500</p></div>}
             {pendenciasTransicao.length > 0 && <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p className="font-semibold">Para confirmar, falta:</p><ul className="mt-2 list-disc space-y-1 pl-5">{pendenciasTransicao.map((pendencia) => <li key={pendencia}>{pendencia}</li>)}</ul></div>}
           </div>}
-          <DialogFooter className="shrink-0 border-t bg-white px-6 py-4"><Button type="button" variant="outline" disabled={salvando} onClick={() => setAlterandoStatus(false)}>Cancelar</Button><Button type="button" disabled={salvando || pendenciasTransicao.length > 0} onClick={() => void confirmarTransicao()}>{salvando ? <Loader2 className="animate-spin" /> : null}Confirmar transição</Button></DialogFooter>
+          <DialogFooter className="shrink-0 border-t bg-white px-6 py-4">
+            <Button type="button" variant="outline" disabled={salvando} onClick={fecharTransicao}>Cancelar</Button>
+            <Button
+              type="button"
+              disabled={salvando || pendenciasTransicao.length > 0}
+              onClick={() => void confirmarTransicao()}
+              className={detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')[0] ?? '') ? CLASSE_DEGRADE_AVANCO_STATUS : ''}
+            >
+              {salvando ? <Loader2 className="animate-spin" /> : null}
+              {!salvando && detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')[0] ?? '')
+                ? <>Avançar para {transicao.destino}<ArrowRight /></>
+                : 'Confirmar transição'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

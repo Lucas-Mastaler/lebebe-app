@@ -648,10 +648,17 @@ export async function atualizarComercial(
   const atual = await repo.buscarPedidoNoEscopo(pedidoId, acesso.contexto.unidades.map((item) => item.id))
   if (atual.error) return falhaBanco(log, atual.error)
   if (!atual.data) return jsonErro('PEDIDO_NAO_ENCONTRADO', 'Pedido não encontrado.', 404)
+  log.fornecedor = atual.data.fornecedor?.chave
 
   if (atual.data.fornecedor?.chave === 'lebebe_exclusive') {
     const validacao = validarEntradaLebebeExclusive(corpo.valor, { comercial: true })
     if (!validacao.ok || validacao.dados.expectedVersion === undefined) {
+      if (!validacao.ok) {
+        log.camposInvalidos = validacao.problemas.map((problema) => problema.campo)
+        registrarResultado(log, 'erro_validacao', validacao.codigo)
+      } else {
+        registrarResultado(log, 'erro_validacao', 'VERSAO_INVALIDA')
+      }
       return jsonErro(
         validacao.ok ? 'VERSAO_INVALIDA' : validacao.codigo,
         validacao.ok ? 'Versão do pedido inválida.' : validacao.mensagem,
@@ -698,7 +705,11 @@ export async function atualizarComercial(
   const errosFiltrados = telefoneLegadoNulo
     ? validacaoCompleta.erros.filter((item) => item.campo !== 'telefone')
     : validacaoCompleta.erros
-  if (errosFiltrados.length > 0 || !validacaoCompleta.dados) return respostaProblemasDominio(errosFiltrados)
+  if (errosFiltrados.length > 0 || !validacaoCompleta.dados) {
+    log.camposInvalidos = errosFiltrados.map((item) => item.campo)
+    registrarResultado(log, 'erro_validacao', 'DADOS_INVALIDOS')
+    return respostaProblemasDominio(errosFiltrados)
+  }
   const dados = validacaoCompleta.dados
 
   const idsAtuais = await repo.listarTapeteIds(pedidoId)

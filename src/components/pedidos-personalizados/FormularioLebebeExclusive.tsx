@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { BarraResumoPedidoPersonalizado } from './BarraResumoPedidoPersonalizado'
 import type { OpcoesNovoPedido } from './novo-pedido-modelo'
 import type { PedidoDetalhe } from './gestao-modelo'
@@ -159,6 +160,27 @@ function BotaoMostrarSelecionados({ ativo, quantidade, disabled, onClick, classN
   )
 }
 
+function BotaoRemoverProduto({ nome, disabled, onClick, className = '' }: { nome: string; disabled: boolean; onClick: () => void; className?: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          disabled={disabled}
+          onClick={onClick}
+          aria-label={`Remover produto: ${nome}`}
+          className={`size-11 shrink-0 text-red-600 hover:bg-red-50 hover:text-red-700 ${className}`}
+        >
+          <X aria-hidden="true" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Remover produto</TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function FormularioLebebeExclusive({
   opcoes,
   pedidoInicial,
@@ -204,8 +226,26 @@ export function FormularioLebebeExclusive({
   const [erro, setErro] = useState<string | null>(null)
   const [pedidoSalvo, setPedidoSalvo] = useState<{ pedidoId: string; status: string; version: number } | null>(null)
   const [copiado, setCopiado] = useState(false)
+  const [pulsoFiltrar, setPulsoFiltrar] = useState(false)
   const idempotencyKey = useRef(crypto.randomUUID())
   const salvandoRef = useRef(false)
+  const filtroPreenchidoAnteriorRef = useRef(false)
+  const ultimaBuscaRef = useRef({ colecao: '', descricao: '', referencia: '' })
+
+  const algumFiltroPreenchido = Object.values(filtros).some((valor) => valor.trim() !== '')
+  const filtroPendente = algumFiltroPreenchido
+    && (filtros.colecao !== ultimaBuscaRef.current.colecao || filtros.descricao !== ultimaBuscaRef.current.descricao || filtros.referencia !== ultimaBuscaRef.current.referencia)
+
+  useEffect(() => {
+    if (!algumFiltroPreenchido || filtroPreenchidoAnteriorRef.current) return
+    setPulsoFiltrar(true)
+    const timer = setTimeout(() => setPulsoFiltrar(false), 500)
+    return () => clearTimeout(timer)
+  }, [algumFiltroPreenchido])
+
+  useEffect(() => {
+    filtroPreenchidoAnteriorRef.current = algumFiltroPreenchido
+  }, [algumFiltroPreenchido])
 
   const itensExibidos = useMemo(() => mostrarSelecionados ? [...selecionados.values()] : resultados, [mostrarSelecionados, resultados, selecionados])
   const total = useMemo(
@@ -252,6 +292,10 @@ export function FormularioLebebeExclusive({
     setErro(null)
   }
 
+  function removerProduto(produto: ProdutoCatalogoLebebeExclusive) {
+    atualizarQuantidade(produto, '')
+  }
+
   function atualizarNomeOuLetra(produto: ProdutoCatalogoLebebeExclusive, nomeOuLetra: string) {
     setRascunhosItens((atuais) => {
       const proximos = new Map(atuais)
@@ -290,6 +334,7 @@ export function FormularioLebebeExclusive({
       setResultados(body.itens)
       setPaginacao({ pagina: body.pagina, totalRegistros: body.totalRegistros, totalPaginas: body.totalPaginas })
       setPesquisou(true)
+      ultimaBuscaRef.current = { ...filtros }
     } catch (falha) {
       setErro(falha instanceof Error ? falha.message : 'Não foi possível pesquisar o catálogo.')
     } finally {
@@ -444,7 +489,7 @@ export function FormularioLebebeExclusive({
             <Search className="size-4 text-slate-400" aria-hidden="true" />
             <h3 className="text-sm font-semibold text-slate-700">Pesquisar produtos</h3>
           </div>
-          <p className="mt-1 text-xs text-slate-500">A busca só acontece ao pressionar Enter ou Filtrar. Cada filtro preenchido precisa ter 3 caracteres.</p>
+          <p className="mt-1 text-xs text-slate-500">Você pode pesquisar usando apenas um dos campos — cada filtro preenchido precisa ter 3 caracteres. A busca só acontece ao pressionar Enter ou Filtrar.</p>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <div>
               <label htmlFor="filtro-colecao-exclusive" className="mb-1 block text-sm font-medium text-slate-700">Coleção</label>
@@ -460,8 +505,16 @@ export function FormularioLebebeExclusive({
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button type="button" disabled={bloqueado || buscando} onClick={() => void pesquisar()}>{buscando ? <Loader2 className="animate-spin" /> : <Filter />}Filtrar</Button>
+            <Button
+              type="button"
+              disabled={bloqueado || buscando}
+              onClick={() => void pesquisar()}
+              className={`${filtroPendente ? 'ring-2 ring-offset-2 ring-[#00A5E6]' : ''} ${pulsoFiltrar ? 'animate-in zoom-in-95 duration-500' : ''}`}
+            >
+              {buscando ? <Loader2 className="animate-spin" /> : <Filter />}Filtrar
+            </Button>
             <Button type="button" variant="outline" disabled={bloqueado || buscando} onClick={() => { setFiltros({ colecao: '', descricao: '', referencia: '' }); setResultados([]); setPaginacao({ pagina: 1, totalRegistros: 0, totalPaginas: 0 }); setPesquisou(false); setErro(null) }}><X />Limpar filtros</Button>
+            {filtroPendente && <p className="text-xs font-medium text-[#00A5E6]">Filtro preenchido — clique em Filtrar</p>}
             <span className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" aria-hidden="true" />
             <BotaoMostrarSelecionados ativo={mostrarSelecionados} quantidade={selecionados.size} disabled={selecionados.size === 0} onClick={() => setMostrarSelecionados((atual) => !atual)} />
           </div>
@@ -483,8 +536,8 @@ export function FormularioLebebeExclusive({
 
         {itensExibidos.length > 0 && <div className={`mt-5 rounded-xl border transition-opacity ${buscando ? 'opacity-60' : ''}`}>
           <table className="hidden w-full table-fixed text-left text-sm lg:table">
-            <colgroup><col className="w-[15%]" /><col className="w-[25%]" /><col className="w-[10%]" /><col className="w-[12%]" /><col className="w-[10%]" /><col className="w-[16%]" /><col className="w-[12%]" /></colgroup>
-            <thead className="border-b border-slate-200 bg-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-700"><tr><th className="p-2.5">Coleção</th><th className="p-2.5">Descrição</th><th className="p-2.5">Referência</th><th className="p-2.5 text-right">Preço Unit.</th><th className="p-2.5">Quantidade</th><th className="p-2.5">Nome ou Letra</th><th className="p-2.5 text-right">Valor Total</th></tr></thead>
+            <colgroup><col className="w-[14%]" /><col className="w-[21%]" /><col className="w-[9%]" /><col className="w-[11%]" /><col className="w-[9%]" /><col className="w-[15%]" /><col className="w-[11%]" /><col className="w-[10%]" /></colgroup>
+            <thead className="border-b border-slate-200 bg-slate-100 text-xs font-semibold uppercase tracking-wide text-slate-700"><tr><th className="p-2.5">Coleção</th><th className="p-2.5">Descrição</th><th className="p-2.5">Referência</th><th className="p-2.5 text-right">Preço Unit.</th><th className="p-2.5">Quantidade</th><th className="p-2.5">Nome ou Letra</th><th className="p-2.5 text-right">Valor Total</th><th className="p-2.5 text-right"><span className="sr-only">Remover</span></th></tr></thead>
             <tbody>{itensExibidos.map((produto) => {
               const selecionado = selecionados.get(produto.id)
               const rascunho = rascunhosItens.get(produto.id)
@@ -496,6 +549,7 @@ export function FormularioLebebeExclusive({
                 <td className="p-2.5"><Input className="w-full min-w-0" inputMode="numeric" min={1} type="number" disabled={bloqueado} value={quantidade} aria-invalid={quantidadeInvalida} onChange={(event) => atualizarQuantidade(produto, event.target.value)} />{quantidadeInvalida && <p className="mt-1 text-xs text-red-600">Use um inteiro maior que zero.</p>}</td>
                 <td className="p-2.5"><Input className="w-full min-w-0" maxLength={200} disabled={bloqueado} value={nomeOuLetra} onChange={(event) => atualizarNomeOuLetra(produto, event.target.value)} /></td>
                 <td className={`p-2.5 text-right font-bold whitespace-nowrap ${selecionado ? 'text-emerald-700' : ''}`}>{selecionado ? formatarMoeda(produto.precoUnitario * selecionado.quantidade) : '—'}</td>
+                <td className="p-2.5 text-right">{selecionado && <BotaoRemoverProduto nome={produto.descricao} disabled={bloqueado} onClick={() => removerProduto(produto)} />}</td>
               </tr>
             })}</tbody>
           </table>
@@ -505,7 +559,7 @@ export function FormularioLebebeExclusive({
             const quantidade = rascunho?.quantidade ?? selecionado?.quantidade.toString() ?? ''
             const quantidadeInvalida = quantidade.trim() !== '' && !quantidadeValida(quantidade.trim())
             const nomeOuLetra = rascunho?.nomeOuLetra ?? selecionado?.nomeOuLetra ?? ''
-            return <article key={produto.id} className={cardProdutoClasse(Boolean(selecionado))}><div className="grid gap-2 text-sm"><p className="font-medium">{produto.descricao}</p><p><span className="text-slate-500">Coleção: </span>{produto.colecao}</p><p><span className="text-slate-500">Referência: </span>{produto.referencia}</p><p><span className="text-slate-500">Preço unitário: </span>{formatarMoeda(produto.precoUnitario)}</p></div><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm font-medium">Quantidade<Input inputMode="numeric" min={1} type="number" disabled={bloqueado} value={quantidade} aria-invalid={quantidadeInvalida} onChange={(event) => atualizarQuantidade(produto, event.target.value)} />{quantidadeInvalida && <span className="text-xs font-normal text-red-600">Use um inteiro maior que zero.</span>}</label><label className="grid gap-1 text-sm font-medium">Nome ou Letra<Input maxLength={200} disabled={bloqueado} value={nomeOuLetra} onChange={(event) => atualizarNomeOuLetra(produto, event.target.value)} /></label></div><p className={`mt-3 text-right font-bold ${selecionado ? 'text-emerald-700' : ''}`}>Valor total: {selecionado ? formatarMoeda(produto.precoUnitario * selecionado.quantidade) : '—'}</p></article>
+            return <article key={produto.id} className={cardProdutoClasse(Boolean(selecionado))}><div className="flex items-start justify-between gap-2"><div className="grid gap-2 text-sm"><p className="font-medium">{produto.descricao}</p><p><span className="text-slate-500">Coleção: </span>{produto.colecao}</p><p><span className="text-slate-500">Referência: </span>{produto.referencia}</p><p><span className="text-slate-500">Preço unitário: </span>{formatarMoeda(produto.precoUnitario)}</p></div>{selecionado && <BotaoRemoverProduto nome={produto.descricao} disabled={bloqueado} onClick={() => removerProduto(produto)} />}</div><div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-sm font-medium">Quantidade<Input inputMode="numeric" min={1} type="number" disabled={bloqueado} value={quantidade} aria-invalid={quantidadeInvalida} onChange={(event) => atualizarQuantidade(produto, event.target.value)} />{quantidadeInvalida && <span className="text-xs font-normal text-red-600">Use um inteiro maior que zero.</span>}</label><label className="grid gap-1 text-sm font-medium">Nome ou Letra<Input maxLength={200} disabled={bloqueado} value={nomeOuLetra} onChange={(event) => atualizarNomeOuLetra(produto, event.target.value)} /></label></div><p className={`mt-3 text-right font-bold ${selecionado ? 'text-emerald-700' : ''}`}>Valor total: {selecionado ? formatarMoeda(produto.precoUnitario * selecionado.quantidade) : '—'}</p></article>
           })}</div>
         </div>}
 

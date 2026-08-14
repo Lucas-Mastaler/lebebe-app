@@ -76,6 +76,7 @@ export async function transicionarStatus(
   if (atual.error) return erroTransicao(atual.error)
   if (!atual.data) return jsonErro('PEDIDO_NAO_ENCONTRADO', 'Pedido nao encontrado.', 404)
   const fornecedor = atual.data.fornecedor?.chave
+  log.fornecedor = fornecedor
   if (!fornecedor || !podeTransicionarStatus(atual.data.status, validacao.dados.statusDestino, fornecedor)) {
     return jsonErro('TRANSICAO_STATUS_INVALIDA', 'Esta transicao de status nao e permitida.', 422)
   }
@@ -84,9 +85,12 @@ export async function transicionarStatus(
   const dataPedidoFornecedor = validacao.dados.dataPedidoFornecedor ?? atual.data.data_pedido_fornecedor
   const comprador = validacao.dados.comprador ?? atual.data.comprador
   const dataEntrega = validacao.dados.dataEntrega ?? atual.data.data_entrega
+  const numeroLancamento = validacao.dados.numeroLancamento ?? atual.data.numero_lancamento
   if (atual.data.status === 'RASCUNHO'
       && validacao.dados.statusDestino === 'VENDA FECHADA'
-      && !/^\d{1,6}$/.test(atual.data.numero_lancamento ?? '')) {
+      && !/^\d{1,6}$/.test(numeroLancamento ?? '')) {
+    log.camposInvalidos = ['numeroLancamento']
+    registrarResultado(log, 'erro_validacao', 'NUMERO_LANCAMENTO_OBRIGATORIO')
     return jsonErro(
       'NUMERO_LANCAMENTO_OBRIGATORIO',
       'Informe um número de lançamento válido antes de fechar a venda.',
@@ -118,6 +122,7 @@ export async function transicionarStatus(
     p_expected_version: validacao.dados.expectedVersion,
     p_usuario_id: acesso.contexto.allowedUser.id,
     p_status_destino: validacao.dados.statusDestino,
+    p_numero_lancamento: validacao.dados.statusDestino === 'VENDA FECHADA' ? numeroLancamento : null,
     p_numero_pedido_compra: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(validacao.dados.statusDestino) ? numeroPedidoCompra : null,
     p_data_pedido_fornecedor: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(validacao.dados.statusDestino) ? dataPedidoFornecedor : null,
     p_comprador: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(validacao.dados.statusDestino) ? comprador : null,

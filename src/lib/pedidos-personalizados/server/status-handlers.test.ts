@@ -66,6 +66,33 @@ describe('handler de transicao de status', () => {
     }
   })
 
+  it('encaminha o lançamento na mesma operação de fechamento para qualquer fornecedor', async () => {
+    for (const fornecedor of ['moriah_tapetes', 'lebebe_exclusive']) {
+      const transicionarStatusRepo = vi.fn().mockResolvedValue({
+        data: { evento_id: EVENTO, status: 'VENDA FECHADA', version: 2 },
+        error: null,
+      })
+      const cenario = deps('RASCUNHO', {
+        buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
+          data: { id: PEDIDO, unidade_id: UNIDADE, status: 'RASCUNHO', version: 1, fornecedor: { chave: fornecedor }, numero_lancamento: null },
+          error: null,
+        }),
+        transicionarStatus: transicionarStatusRepo,
+      })
+      const response = await transicionarStatus(
+        request({ expectedVersion: 1, statusDestino: 'VENDA FECHADA', numeroLancamento: '000123' }),
+        PEDIDO,
+        cenario.deps,
+      )
+
+      expect(response.status).toBe(200)
+      expect(transicionarStatusRepo).toHaveBeenCalledWith(expect.objectContaining({
+        p_status_destino: 'VENDA FECHADA',
+        p_numero_lancamento: '000123',
+      }))
+    }
+  })
+
   it('nao revela pedido fora do escopo', async () => {
     const cenario = deps('VENDA FECHADA', { buscarPedidoNoEscopo: vi.fn().mockResolvedValue({ data: null, error: null }) })
     expect((await transicionarStatus(request({ expectedVersion: 1, statusDestino: 'AGUARDANDO LAYOUT' }), PEDIDO, cenario.deps)).status).toBe(404)

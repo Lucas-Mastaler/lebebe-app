@@ -256,6 +256,7 @@ export type ParametrosTransicionarPedidoPersonalizadoRpc = {
   p_expected_version: number
   p_usuario_id: string
   p_status_destino: StatusPedidoPersonalizado
+  p_numero_lancamento: string | null
   p_numero_pedido_compra: string | null
   p_data_pedido_fornecedor: string | null
   p_comprador: string | null

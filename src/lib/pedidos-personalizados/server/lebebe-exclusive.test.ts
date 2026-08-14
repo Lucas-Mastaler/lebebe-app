@@ -103,9 +103,9 @@ describe('Lebebe Exclusive', () => {
     expect(erro).toEqual({ mensagem: 'A quantidade do item 1 deve ser maior que zero.', campo: 'itens.0.quantidade' })
   })
 
-  it('mantém os dois acessos a Mostrar selecionados e não pesquisa ao digitar', () => {
+  it('mantém os três acessos a Mostrar selecionados e não pesquisa ao digitar', () => {
     const fonte = readFileSync(path.join(process.cwd(), 'src/components/pedidos-personalizados/FormularioLebebeExclusive.tsx'), 'utf8')
-    expect(fonte.match(/<BotaoMostrarSelecionados/g)).toHaveLength(2)
+    expect(fonte.match(/<BotaoMostrarSelecionados/g)).toHaveLength(3)
     expect(fonte).toContain("if (event.key === 'Enter')")
     expect(fonte).not.toMatch(/useEffect\([^)]*pesquisar/)
     expect(fonte).not.toContain('custoUnitario')

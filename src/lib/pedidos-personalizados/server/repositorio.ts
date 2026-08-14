@@ -11,6 +11,7 @@ import type {
   ProdutoCatalogoLebebeExclusive,
   StatusPedidoPersonalizado,
 } from '../tipos'
+import { STATUS_PEDIDO_PERSONALIZADO } from '../constantes'
 import type { UnidadeEscopoPedido } from './contexto'
 import { adicionarDiasIso, dataOperacionalBrasil } from '../prazo'
 import type { DadosAdministrativosNormalizados, FiltrosPedidos } from './validacao-api'
@@ -510,6 +511,103 @@ export class RepositorioPedidosPersonalizados {
       },
       error: null,
     }
+  }
+
+  /**
+   * Conta pedidos por status sob os mesmos filtros de `listar`, mas com
+   * consultas `head: true` (sem hidratar tapetes/itens/histórico) — cabe numa
+   * única requisição autenticada em vez de uma por status, evitando repetir
+   * autenticação/permissão e a hidratação cara por página.
+   */
+  async contarPorStatus(
+    filtros: Omit<FiltrosPedidos, 'pagina' | 'status'>,
+    unidades: readonly UnidadeEscopoPedido[]
+  ): Promise<ResultadoBanco<Record<StatusPedidoPersonalizado, number>>> {
+    const vazio = Object.fromEntries(
+      STATUS_PEDIDO_PERSONALIZADO.map((status) => [status, 0])
+    ) as Record<StatusPedidoPersonalizado, number>
+    const unidadeIds = unidades.map((unidade) => unidade.id)
+    if (unidadeIds.length === 0) return { data: vazio, error: null }
+
+    let pedidoIdsProduto: string[] | null = null
+    if (filtros.codigoProduto) {
+      const { data: produtos, error: produtoError } = await this.supabase
+        .from('pedidos_personalizados_produtos')
+        .select('id, fornecedor:pedidos_personalizados_fornecedores!inner(chave)')
+        .eq('codigo', filtros.codigoProduto)
+        .eq('ativo', true)
+        .eq('fornecedor.chave', 'moriah_tapetes')
+      if (produtoError) return { data: null, error: produtoError }
+      const produtoIds = (produtos ?? []).map((produto) => produto.id)
+      if (produtoIds.length === 0) return { data: vazio, error: null }
+      const { data: tapetes, error: tapetesError } = await this.supabase
+        .from('pedidos_personalizados_moriah_tapetes')
+        .select('pedido_id')
+        .in('produto_id', produtoIds)
+      if (tapetesError) return { data: null, error: tapetesError }
+      pedidoIdsProduto = Array.from(new Set((tapetes ?? []).map((tapete) => tapete.pedido_id)))
+      if (pedidoIdsProduto.length === 0) return { data: vazio, error: null }
+    }
+
+    let pedidoIdsTipo: string[] | null = null
+    if (filtros.tipoTapete) {
+      const { data: tapetesTipo, error: tapetesTipoError } = await this.supabase
+        .from('pedidos_personalizados_moriah_tapetes')
+        .select('pedido_id')
+        .eq('tipo', filtros.tipoTapete)
+      if (tapetesTipoError) return { data: null, error: tapetesTipoError }
+      pedidoIdsTipo = Array.from(new Set((tapetesTipo ?? []).map((tapete) => tapete.pedido_id)))
+      if (pedidoIdsTipo.length === 0) return { data: vazio, error: null }
+    }
+
+    const pedidoIdsFiltro = pedidoIdsProduto && pedidoIdsTipo
+      ? pedidoIdsProduto.filter((id) => pedidoIdsTipo!.includes(id))
+      : pedidoIdsProduto ?? pedidoIdsTipo
+    if (pedidoIdsFiltro && pedidoIdsFiltro.length === 0) return { data: vazio, error: null }
+
+    let unidadeIdFiltrado: string | null = null
+    if (filtros.unidade) {
+      const unidade = unidades.find((item) => item.chave === filtros.unidade)
+      if (!unidade) return { data: vazio, error: null }
+      unidadeIdFiltrado = unidade.id
+    }
+
+    const hoje = filtros.situacaoPrazo ? dataOperacionalBrasil() : null
+
+    const resultados = await Promise.all(STATUS_PEDIDO_PERSONALIZADO.map(async (status) => {
+      if (filtros.situacaoPrazo && (status === 'RECEBIDO' || status === 'CANCELADO')) {
+        return { status, count: 0, error: null as { code?: string; message?: string } | null }
+      }
+      let query = this.supabase
+        .from('pedidos_personalizados_pedidos')
+        .select('id', { count: 'exact', head: true })
+        .in('unidade_id', unidadeIdFiltrado ? [unidadeIdFiltrado] : unidadeIds)
+        .eq('status', status)
+      if (filtros.cliente) query = query.ilike('cliente', `%${escaparTermoIlike(filtros.cliente)}%`)
+      if (filtros.consultora) query = query.ilike('consultora', `%${escaparTermoIlike(filtros.consultora)}%`)
+      if (filtros.numeroLancamento) query = query.eq('numero_lancamento', filtros.numeroLancamento)
+      if (filtros.dataInicial) query = query.gte('created_at', `${filtros.dataInicial}T00:00:00-03:00`)
+      if (filtros.dataFinal) query = query.lt('created_at', `${proximoDiaIso(filtros.dataFinal)}T00:00:00-03:00`)
+      if (filtros.dataPedidoFornecedorInicial) query = query.gte('data_pedido_fornecedor', filtros.dataPedidoFornecedorInicial)
+      if (filtros.dataPedidoFornecedorFinal) query = query.lte('data_pedido_fornecedor', filtros.dataPedidoFornecedorFinal)
+      if (filtros.dataEntregaInicial) query = query.gte('data_entrega', filtros.dataEntregaInicial)
+      if (filtros.dataEntregaFinal) query = query.lte('data_entrega', filtros.dataEntregaFinal)
+      if (filtros.situacaoPrazo && hoje) {
+        if (filtros.situacaoPrazo === 'ATRASADO') query = query.lt('data_entrega', hoje)
+        if (filtros.situacaoPrazo === 'PRESTES A VENCER') query = query.gte('data_entrega', hoje).lte('data_entrega', adicionarDiasIso(hoje, 7))
+        if (filtros.situacaoPrazo === 'NO PRAZO') query = query.gt('data_entrega', adicionarDiasIso(hoje, 7))
+      }
+      if (pedidoIdsFiltro) query = query.in('id', pedidoIdsFiltro)
+      const { count, error } = await query
+      return { status, count: count ?? 0, error }
+    }))
+
+    const comErro = resultados.find((item) => item.error)
+    if (comErro?.error) return { data: null, error: comErro.error }
+
+    const contagens = { ...vazio }
+    for (const item of resultados) contagens[item.status] = item.count
+    return { data: contagens, error: null }
   }
 
   async carregarDetalhe(

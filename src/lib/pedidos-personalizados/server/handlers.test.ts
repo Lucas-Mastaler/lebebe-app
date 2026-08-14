@@ -4,6 +4,7 @@ import type { DependenciasApiPedidos } from './handlers'
 import {
   atualizarAdministrativo,
   atualizarComercial,
+  contarPedidosPorStatus,
   criarPedido,
   listarPedidos,
   obterDetalhePedido,
@@ -88,6 +89,7 @@ function criarRepo(overrides: Record<string, unknown> = {}) {
       error: null,
     }),
     listar: vi.fn().mockResolvedValue({ data: { itens: [], total: 0 }, error: null }),
+    contarPorStatus: vi.fn().mockResolvedValue({ data: {}, error: null }),
     carregarDetalhe: vi.fn().mockResolvedValue({ data: null, error: null }),
     listarTapeteIds: vi.fn().mockResolvedValue({ data: [TAPETE_ID], error: null }),
     atualizarComercial: vi.fn().mockResolvedValue({ data: { version: 2, tapetes: [] }, error: null }),
@@ -482,6 +484,45 @@ describe('listagem de pedidos personalizados', () => {
       situacaoPrazo: 'PRESTES A VENCER',
       codigoProduto: '21158',
     }), unidades)
+  })
+})
+
+describe('contagem de pedidos por status', () => {
+  it('devolve contagens e o total somado em uma única resposta', async () => {
+    const contagens = {
+      RASCUNHO: 3,
+      'VENDA FECHADA': 1,
+      'AGUARDANDO LAYOUT': 0,
+      'AGUARDANDO APROVAÇÃO DO CLIENTE': 2,
+      'EM PRODUÇÃO': 4,
+      RECEBIDO: 5,
+      CANCELADO: 0,
+    }
+    const repo = criarRepo({ contarPorStatus: vi.fn().mockResolvedValue({ data: contagens, error: null }) })
+    const response = await contarPedidosPorStatus(new Request('http://localhost/api'), deps(repo))
+    const body = await response.json()
+    expect(response.status).toBe(200)
+    expect(body).toEqual({ ok: true, contagens, total: 15 })
+  })
+
+  it('encaminha os filtros válidos ao repositório, ignorando status/page', async () => {
+    const repo = criarRepo({ contarPorStatus: vi.fn().mockResolvedValue({ data: {}, error: null }) })
+    const url = 'http://localhost/api?unidade=bigorrilho&cliente=Maria&status=RASCUNHO&page=3'
+    await contarPedidosPorStatus(new Request(url), deps(repo))
+    expect(repo.contarPorStatus).toHaveBeenCalledWith(expect.objectContaining({
+      unidade: 'bigorrilho',
+      cliente: 'Maria',
+    }), unidades)
+  })
+
+  it('rejeita filtro de unidade fora do escopo', async () => {
+    const response = await contarPedidosPorStatus(new Request('http://localhost/api?unidade=feira'), deps())
+    expect(response.status).toBe(403)
+  })
+
+  it('valida filtros como a listagem', async () => {
+    const response = await contarPedidosPorStatus(new Request('http://localhost/api?dataInicial=2026-02-30'), deps())
+    expect(response.status).toBe(422)
   })
 })
 

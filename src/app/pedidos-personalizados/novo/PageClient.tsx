@@ -5,7 +5,7 @@ import FormularioNovoPedido from '@/components/pedidos-personalizados/Formulario
 
 export default function NovoPedidoPersonalizadoPageClient() {
   return (
-    <main className="mx-auto w-full max-w-6xl px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
+    <main className="mx-auto w-full max-w-6xl px-3 pt-4 sm:px-6 sm:pt-6 lg:px-8">
       <header className="mb-6">
         <div className="flex items-start gap-3">
           <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[#00A5E6] text-white shadow-sm"><ClipboardPlus className="size-6" /></span>

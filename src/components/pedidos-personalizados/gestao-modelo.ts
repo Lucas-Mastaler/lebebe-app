@@ -230,6 +230,21 @@ export async function listarPedidosGestao(filtros: FiltrosGestao, pagina: number
   return body
 }
 
+export type ContagensStatusGestao = Record<StatusPedidoPersonalizado, number>
+
+export async function contarPedidosGestaoPorStatus(
+  filtros: FiltrosGestao,
+  signal?: AbortSignal
+): Promise<{ contagens: ContagensStatusGestao; total: number }> {
+  const params = new URLSearchParams()
+  for (const [chave, valor] of Object.entries(filtros)) if (valor && chave !== 'status') params.set(chave, valor)
+  const response = await fetch(`/api/pedidos-personalizados/pedidos/contagem-status?${params}`, { cache: 'no-store', signal })
+  if (!response.ok) throw await erroResposta(response)
+  const body = await response.json() as { ok?: boolean; contagens?: ContagensStatusGestao; total?: number }
+  if (body.ok !== true || !body.contagens) throw new Error('Resposta de contagem por status inválida.')
+  return { contagens: body.contagens, total: body.total ?? 0 }
+}
+
 export async function carregarDetalheGestao(id: string): Promise<PedidoDetalhe> {
   const response = await fetch(`/api/pedidos-personalizados/pedidos/${id}`, { cache: 'no-store' })
   if (!response.ok) throw await erroResposta(response)

@@ -193,6 +193,39 @@ frontend/API de produção ao banco já migrado.
   os dados comerciais durante `VENDA FECHADA`, até entrar em produção. A
   migration `20260813203717` foi ensaiada com `ROLLBACK`, aplicada no Supabase
   e validada em transação sem deixar pedido de teste.
+- Auditoria de UI/UX da tela de Gestão (`/pedidos-personalizados`) foi
+  produzida, aprovada com ajustes e implementada — Fase 1 (lista): chips de
+  contagem por status (fonte única `opcoes.status`, sincronizados com o
+  dropdown existente), reorganização visual dos 13 filtros em três grupos
+  (Busca/Classificação/Datas) sem remover nenhum campo, destaque de
+  previsão/prazo no card (borda lateral + linha própria, reaproveitando
+  `classePrazo`), paginação numerada reaproveitando
+  `paginasVisiveisLebebeExclusive`, e diferenciação dos estados vazios
+  (nenhum pedido cadastrado vs. nenhum resultado para os filtros) e do
+  carregamento (mantém a lista anterior visível e esmaecida durante
+  atualização, em vez de apagar a tela). Nenhuma regra de transição, validação
+  administrativa ou diálogo existente foi alterado.
+- Para os contadores, foi adicionado `GET
+  /api/pedidos-personalizados/pedidos/contagem-status`, que conta pedidos por
+  status em uma única requisição autenticada (consultas `head: true` por
+  status, sem hidratar tapetes/itens/histórico), evitando repetir
+  autenticação/permissão por status. Nenhuma migration, RLS ou tabela nova foi
+  criada; a mesma tabela e os mesmos filtros já usados pela listagem foram
+  reaproveitados.
+- Fase 2 (Kanban) não foi implementada nesta rodada: a infraestrutura de dados
+  (endpoint de contagem por status) já foi construída e é reaproveitável, mas
+  a view em colunas, os cards compactos e a integração com o diálogo
+  `Alterar status` ficaram para uma etapa futura, com recomendação técnica
+  registrada na entrega — decisão feita dentro da permissão explícita do
+  pedido para parar antes do Kanban se a complexidade não estivesse adequada
+  para a mesma rodada da Fase 1.
+- Validação: ESLint aprovado nos 7 arquivos alterados/criados; `npm run test
+  -- --run src/lib/pedidos-personalizados src/components/pedidos-personalizados`
+  com 21 arquivos e 484 testes aprovados (8 novos, cobrindo a contagem por
+  status no repositório e no handler); `tsc --noEmit` sem novos erros; `npm
+  run build` aprovado, incluindo a nova rota na saída do build. Smoke visual
+  autenticado não foi possível nesta sessão pelo mesmo motivo já registrado
+  (sem permissão de módulo na sessão local; permissões não alteradas).
 
 ## Não refazer
 

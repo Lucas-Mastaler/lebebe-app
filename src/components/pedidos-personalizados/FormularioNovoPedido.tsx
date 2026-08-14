@@ -1,7 +1,8 @@
 'use client'
 
 import { ClipboardEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, CheckCircle2, Loader2, Package, Plus, RefreshCw, Ruler, Save, Sparkles } from 'lucide-react'
+import Link from 'next/link'
+import { AlertCircle, ArrowRight, CheckCircle2, Loader2, Package, Plus, RefreshCw, Ruler, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,6 +28,7 @@ import { AnexosTapete } from './AnexosTapete'
 import { AnexosIniciaisTapete } from './AnexosIniciaisTapete'
 import { PreviaMensagem } from './PreviaMensagem'
 import { FormularioLebebeExclusive } from './FormularioLebebeExclusive'
+import { BarraResumoPedidoPersonalizado } from './BarraResumoPedidoPersonalizado'
 import {
   adicionarTapete,
   associarTapetesCriados,
@@ -47,6 +49,7 @@ import {
   deveAvisarDadosNaoSalvos,
   telefoneComVariedadeMinima,
   validarArquivoAnexo,
+  valorTotalTapetesFormatado,
 } from './novo-pedido-modelo'
 import type {
   AnexoFormulario,
@@ -185,6 +188,7 @@ export default function FormularioNovoPedido() {
   const [trocaFornecedorPendente, setTrocaFornecedorPendente] = useState<FornecedorPedido | null>(null)
   const [exclusiveTemDadosEspecificos, setExclusiveTemDadosEspecificos] = useState(false)
   const [exclusiveBloqueiaTroca, setExclusiveBloqueiaTroca] = useState(false)
+  const [exclusiveInstancia, setExclusiveInstancia] = useState(0)
   const [carregando, setCarregando] = useState(true)
   const [erroCarregamento, setErroCarregamento] = useState<string | null>(null)
   const [estado, setEstado] = useState<EstadoNovoPedido>(() => criarEstadoInicial('tapete-inicial'))
@@ -632,6 +636,7 @@ export default function FormularioNovoPedido() {
     setConflitoVersionamento(false)
     setCopiada(false)
     setConfirmarNovo(false)
+    setExclusiveInstancia((atual) => atual + 1)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -640,7 +645,8 @@ export default function FormularioNovoPedido() {
       toast.info('Aguarde a operação de anexo terminar antes de iniciar outro pedido.')
       return
     }
-    if (alterado && !salvo) setConfirmarNovo(true)
+    const exclusiveComAlteracaoNaoSalva = fornecedorSelecionado === 'lebebe_exclusive' && exclusiveTemDadosEspecificos && !exclusiveBloqueiaTroca
+    if ((alterado && !salvo) || exclusiveComAlteracaoNaoSalva) setConfirmarNovo(true)
     else iniciarNovoPedido()
   }
 
@@ -745,6 +751,7 @@ export default function FormularioNovoPedido() {
           {identificacao}
           {escolhaFornecedor}
           <FormularioLebebeExclusive
+            key={exclusiveInstancia}
             opcoes={opcoes}
             identificacaoExterna={estado}
             ocultarIdentificacao
@@ -754,8 +761,15 @@ export default function FormularioNovoPedido() {
               setTentouSalvarExclusive(true)
               focarPrimeiroErro([])
             }}
+            onNovoPedido={solicitarNovoPedido}
           />
         </div>
+        <Dialog open={confirmarNovo} onOpenChange={setConfirmarNovo}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Descartar dados não salvos?</DialogTitle><DialogDescription>Os campos preenchidos neste pedido serão apagados.</DialogDescription></DialogHeader>
+            <DialogFooter><Button type="button" variant="outline" onClick={() => setConfirmarNovo(false)}>Continuar preenchendo</Button><Button type="button" variant="destructive" onClick={iniciarNovoPedido}>Descartar e iniciar novo</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
         <Dialog open={trocaFornecedorPendente !== null} onOpenChange={(aberto) => { if (!aberto) setTrocaFornecedorPendente(null) }}>
           <DialogContent>
             <DialogHeader><DialogTitle>Trocar fornecedor?</DialogTitle><DialogDescription>Trocar o fornecedor limpará os dados específicos já preenchidos. Deseja continuar?</DialogDescription></DialogHeader>
@@ -771,11 +785,17 @@ export default function FormularioNovoPedido() {
       <form onSubmit={salvar} className="space-y-6" noValidate>
         {identificacao}
         {escolhaFornecedor}
-        <section aria-labelledby="titulo-tapetes" className="space-y-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div><h2 id="titulo-tapetes" className="text-xl font-bold text-slate-900">Tapetes</h2><p className="text-sm text-slate-500">{estado.tapetes.length} de {LIMITE_TAPETES_POR_PEDIDO}.</p></div>
-            <Button type="button" variant="outline" className="min-h-11" disabled={formularioBloqueado || estado.tapetes.length >= LIMITE_TAPETES_POR_PEDIDO} onClick={handleAdicionarTapete}><Plus />Adicionar tapete</Button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-[#00A5E6]"><Ruler className="size-5" aria-hidden="true" /></span>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-[#00A5E6]">Moriah Tapetes</p>
+              <h2 id="titulo-tapetes" className="text-base font-bold text-slate-900 sm:text-lg">Tapetes personalizados</h2>
+            </div>
           </div>
+          <Button type="button" variant="outline" className="min-h-11" disabled={formularioBloqueado || estado.tapetes.length >= LIMITE_TAPETES_POR_PEDIDO} onClick={handleAdicionarTapete}><Plus />Adicionar tapete</Button>
+        </div>
+        <section aria-labelledby="titulo-tapetes" className="space-y-4">
           {estado.tapetes.map((tapete, indice) => (
             <div key={tapete.chaveLocal}>
               <CardTapete
@@ -827,6 +847,9 @@ export default function FormularioNovoPedido() {
           <>
             <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5" aria-labelledby="pedido-salvo-titulo">
               <div className="flex gap-3"><CheckCircle2 className="mt-0.5 size-6 shrink-0 text-emerald-600" /><div><h2 id="pedido-salvo-titulo" className="font-bold text-emerald-900">Pedido salvo</h2><p className="mt-1 text-sm text-emerald-800">Status {salvo.status}; versão {salvo.version}; {salvo.quantidadeTapetes} tapete(s).</p><p className="mt-2 text-sm text-emerald-800">Os dados comerciais foram bloqueados. Agora você pode incluir até dois anexos por tapete.</p></div></div>
+              <Button asChild type="button" variant="outline" className="mt-4 min-h-10 border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100">
+                <Link href="/pedidos-personalizados">Ir para a gestão de pedidos<ArrowRight /></Link>
+              </Button>
             </section>
 
             {falhaParcialAnexos && (
@@ -871,13 +894,15 @@ export default function FormularioNovoPedido() {
           </>
         )}
 
-        <div className="sticky bottom-3 z-10 flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur sm:flex-row sm:justify-end">
-          <Button type="button" variant="outline" className="min-h-12" disabled={enviando || possuiUploadPendente} onClick={solicitarNovoPedido}><RefreshCw />Novo pedido</Button>
-          <Button type="submit" className="min-h-12" disabled={enviando || !!salvo}>
-            {enviando ? <Loader2 className="animate-spin" /> : <Save />}
-            {enviando ? 'Salvando...' : salvo ? 'Pedido salvo' : 'Salvar Orçamento'}
-          </Button>
-        </div>
+        <BarraResumoPedidoPersonalizado
+          quantidadeItens={estado.tapetes.length}
+          totalFormatado={valorTotalTapetesFormatado(estado.tapetes, opcoes.produtos)}
+          salvando={enviando}
+          podeSalvar={!enviando && !salvo}
+          rotuloSalvar={enviando ? 'Salvando...' : salvo ? 'Pedido salvo' : 'Salvar orçamento'}
+          onNovoPedido={solicitarNovoPedido}
+          bloqueadoNovoPedido={enviando || possuiUploadPendente}
+        />
       </form>
 
       <Dialog open={confirmarNovo} onOpenChange={setConfirmarNovo}>

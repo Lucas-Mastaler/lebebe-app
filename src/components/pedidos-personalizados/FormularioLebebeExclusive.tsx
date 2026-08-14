@@ -1,8 +1,9 @@
 'use client'
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Filter, ListChecks, Loader2, Package, PackageX, Save, Search, Sparkles, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Filter, ListChecks, Loader2, Package, PackageX, Save, Search, Sparkles, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import Link from 'next/link'
 import { toast } from 'sonner'
 import { aplicarMascaraTelefoneBR } from '@/lib/atendimento-presencial/telefone'
 import type { ProdutoCatalogoLebebeExclusive, UnidadePedidoPersonalizado } from '@/lib/pedidos-personalizados'
@@ -10,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { BarraResumoPedidoPersonalizado } from './BarraResumoPedidoPersonalizado'
 import type { OpcoesNovoPedido } from './novo-pedido-modelo'
 import type { PedidoDetalhe } from './gestao-modelo'
 import { PreviaMensagem } from './PreviaMensagem'
@@ -41,6 +43,8 @@ type Props = {
   onBloqueioTrocaFornecedorChange?: (bloqueado: boolean) => void
   onValidacaoIdentificacaoInvalida?: () => void
   ocultarIdentificacao?: boolean
+  /** Quando informado, a barra fixa passa a usar o padrão visual compartilhado com a Moriah e exibe o botão "Novo pedido" (fluxo de criação). Sem essa prop, mantém a barra própria já usada na edição pela Gestão. */
+  onNovoPedido?: () => void
 }
 
 const IDENTIFICACAO_INICIAL: Identificacao = {
@@ -136,7 +140,7 @@ function cardProdutoClasse(selecionado: boolean) {
   return `rounded-lg border p-3 transition-colors ${selecionado ? 'border-l-4 border-emerald-300 bg-emerald-50/60' : 'border-slate-200'}`
 }
 
-function BotaoMostrarSelecionados({ ativo, quantidade, disabled, onClick }: { ativo: boolean; quantidade: number; disabled: boolean; onClick: () => void }) {
+function BotaoMostrarSelecionados({ ativo, quantidade, disabled, onClick, className = '' }: { ativo: boolean; quantidade: number; disabled: boolean; onClick: () => void; className?: string }) {
   return (
     <Button
       type="button"
@@ -144,10 +148,10 @@ function BotaoMostrarSelecionados({ ativo, quantidade, disabled, onClick }: { at
       disabled={disabled}
       aria-pressed={ativo}
       onClick={onClick}
-      className={ativo ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : ''}
+      className={`${className} ${ativo ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100' : ''}`}
     >
       {ativo ? <ArrowLeft /> : <Search />}
-      {ativo ? 'Voltar aos resultados' : 'Mostrar selecionados'}
+      {ativo ? 'Voltar aos produtos' : 'Mostrar selecionados'}
       {!ativo && quantidade > 0 && (
         <span className="ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full bg-emerald-100 px-1.5 text-xs font-semibold text-emerald-700">{quantidade}</span>
       )}
@@ -164,6 +168,7 @@ export function FormularioLebebeExclusive({
   onBloqueioTrocaFornecedorChange,
   onValidacaoIdentificacaoInvalida,
   ocultarIdentificacao = false,
+  onNovoPedido,
 }: Props) {
   const [identificacao, setIdentificacao] = useState<Identificacao>(() => pedidoInicial ? {
     unidade: pedidoInicial.unidade.chave,
@@ -523,8 +528,29 @@ export function FormularioLebebeExclusive({
         ? resumo && <section className="rounded-2xl border bg-white p-4 sm:p-6"><div className="flex items-center justify-between gap-3"><h2 className="font-bold">Resumo para o fornecedor</h2><Button type="button" variant="outline" onClick={() => void copiarResumo()}>{copiado ? 'Copiado' : 'Copiar'}</Button></div><pre className="mt-4 whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-sm">{resumo}</pre></section>
         : <PreviaMensagem mensagem={resumo || null} copiada={copiado} onCopiar={() => void copiarResumo()} orientacaoObservacoes />}
       {erro && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{erro}</div>}
-      {pedidoSalvo && <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5"><div className="flex gap-3"><CheckCircle2 className="text-emerald-600" /><div><h2 className="font-bold text-emerald-900">{pedidoInicial ? 'Rascunho atualizado' : 'Orçamento salvo'}</h2><p className="text-sm text-emerald-800">Status {pedidoSalvo.status}; versão {pedidoSalvo.version}; {selecionados.size} produto(s). A venda ainda não foi fechada.</p></div></div></section>}
-      <div className="sticky bottom-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-white/95 p-3 shadow-lg backdrop-blur"><p className="text-sm font-bold text-slate-900 sm:text-base">Itens selecionados: <span className="text-emerald-700">{selecionados.size}</span> | Total: {formatarMoeda(total)}</p><Button type="submit" className="min-h-12" disabled={bloqueado}>{salvando ? <Loader2 className="animate-spin" /> : <Save />}{salvando ? 'Salvando...' : pedidoSalvo ? 'Salvo' : pedidoInicial ? 'Salvar rascunho' : 'Salvar orçamento'}</Button></div>
+      {pedidoSalvo && <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5"><div className="flex gap-3"><CheckCircle2 className="text-emerald-600" /><div><h2 className="font-bold text-emerald-900">{pedidoInicial ? 'Rascunho atualizado' : 'Orçamento salvo'}</h2><p className="text-sm text-emerald-800">Status {pedidoSalvo.status}; versão {pedidoSalvo.version}; {selecionados.size} produto(s). A venda ainda não foi fechada.</p></div></div>{!pedidoInicial && <Button asChild type="button" variant="outline" className="mt-4 min-h-10 border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100"><Link href="/pedidos-personalizados">Ir para a gestão de pedidos<ArrowRight /></Link></Button>}</section>}
+      {onNovoPedido ? (
+        <BarraResumoPedidoPersonalizado
+          quantidadeItens={selecionados.size}
+          totalFormatado={formatarMoeda(total)}
+          salvando={salvando}
+          podeSalvar={!bloqueado}
+          rotuloSalvar={salvando ? 'Salvando...' : pedidoSalvo ? 'Salvo' : pedidoInicial ? 'Salvar rascunho' : 'Salvar orçamento'}
+          onNovoPedido={onNovoPedido}
+          bloqueadoNovoPedido={salvando}
+          acaoSecundaria={
+            <BotaoMostrarSelecionados
+              ativo={mostrarSelecionados}
+              quantidade={selecionados.size}
+              disabled={selecionados.size === 0}
+              onClick={() => setMostrarSelecionados((atual) => !atual)}
+              className="min-h-12 flex-1 sm:flex-none"
+            />
+          }
+        />
+      ) : (
+        <div className="sticky bottom-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-white/95 p-3 shadow-lg backdrop-blur"><p className="text-sm font-bold text-slate-900 sm:text-base">Itens selecionados: <span className="text-emerald-700">{selecionados.size}</span> | Total: {formatarMoeda(total)}</p><Button type="submit" className="min-h-12" disabled={bloqueado}>{salvando ? <Loader2 className="animate-spin" /> : <Save />}{salvando ? 'Salvando...' : pedidoSalvo ? 'Salvo' : pedidoInicial ? 'Salvar rascunho' : 'Salvar orçamento'}</Button></div>
+      )}
     </form>
   )
 }

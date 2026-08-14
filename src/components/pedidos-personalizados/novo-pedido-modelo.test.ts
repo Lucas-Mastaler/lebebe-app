@@ -30,6 +30,7 @@ import {
   substituirAnexo,
   substituirAnexoGestao,
   validarArquivoAnexo,
+  valorTotalTapetesFormatado,
 } from './novo-pedido-modelo'
 import type { CorOpcao, EstadoNovoPedido, OpcoesNovoPedido, ProdutoOpcao } from './novo-pedido-modelo'
 
@@ -390,6 +391,26 @@ describe('valor cobrado (área cobrada × preço SGI)', () => {
     const resumo = resumirTapete(criarEstadoInicial('x').tapetes[0], produtosComPreco)
     expect(resumo.valorCobrado).toBeNull()
     expect(resumo.precoIndisponivel).toBe(false)
+  })
+
+  const formatarBRL = (valor: number) => valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+  it('soma o valor cobrado real de cada tapete, sem inventar cálculo novo (mesmo total da barra inferior Moriah)', () => {
+    const tapeteA = { ...criarEstadoInicial('a').tapetes[0], dimensao1Metros: '0,95', dimensao2Metros: '4,26' }
+    const tapeteB = { ...criarEstadoInicial('b').tapetes[0], dimensao1Metros: '2,00', dimensao2Metros: '3,00' }
+    const resumoA = resumirTapete(tapeteA, produtosComPreco)
+    const resumoB = resumirTapete(tapeteB, produtosComPreco)
+    const totalEsperado = formatarBRL(((resumoA.valorCobradoCentavos ?? 0) + (resumoB.valorCobradoCentavos ?? 0)) / 100)
+    expect(valorTotalTapetesFormatado([tapeteA, tapeteB], produtosComPreco)).toBe(totalEsperado)
+  })
+
+  it('trata tapete sem preço calculável como zero na soma, sem quebrar o total', () => {
+    const tapeteSemPreco = { ...criarEstadoInicial('x').tapetes[0], dimensao1Metros: '2,00', dimensao2Metros: '3,00' }
+    expect(valorTotalTapetesFormatado([tapeteSemPreco], produtos)).toBe(formatarBRL(0))
+  })
+
+  it('retorna zero para pedido sem tapetes', () => {
+    expect(valorTotalTapetesFormatado([], produtosComPreco)).toBe(formatarBRL(0))
   })
 })
 

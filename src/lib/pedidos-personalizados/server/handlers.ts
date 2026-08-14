@@ -581,6 +581,32 @@ export async function listarPedidos(
   })
 }
 
+export async function contarPedidosPorStatus(
+  request: Request,
+  deps: DependenciasApiPedidos = dependenciasPadrao
+) {
+  const log: ContextoLogPedidos = { rota: '/api/pedidos-personalizados/pedidos/contagem-status', operacao: 'contar_status', inicio: Date.now() }
+  const acesso = await carregar(['pedidos_personalizados_gestao'], log, deps)
+  if (!acesso.ok) return acesso.response
+
+  const validacao = validarFiltrosPedidos(new URL(request.url))
+  if (!validacao.ok) {
+    registrarResultado(log, 'erro', 'FILTROS_INVALIDOS')
+    return jsonErro('FILTROS_INVALIDOS', validacao.mensagem, 422)
+  }
+  if (validacao.filtros.unidade && !unidadeDoContexto(acesso.contexto, validacao.filtros.unidade)) {
+    registrarResultado(log, 'erro', 'UNIDADE_NAO_PERMITIDA')
+    return jsonErro('UNIDADE_NAO_PERMITIDA', 'Unidade não permitida.', 403)
+  }
+
+  const repo = deps.criarRepositorio(acesso.contexto)
+  const resultado = await repo.contarPorStatus(validacao.filtros, acesso.contexto.unidades)
+  if (resultado.error) return falhaBanco(log, resultado.error)
+  const total = Object.values(resultado.data).reduce((soma, valor) => soma + valor, 0)
+  registrarResultado(log, 'sucesso', 'CONTAGENS_STATUS_LISTADAS')
+  return NextResponse.json({ ok: true, contagens: resultado.data, total })
+}
+
 export async function obterDetalhePedido(
   _request: Request,
   pedidoId: string,

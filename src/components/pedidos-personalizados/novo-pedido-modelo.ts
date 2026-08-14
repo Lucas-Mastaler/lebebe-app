@@ -117,6 +117,8 @@ export type ResumoTapete = {
   avisoMedida: boolean
   /** Área cobrada × preço oficial do SGI, já formatado em BRL. `null` quando não há preço válido. */
   valorCobrado: string | null
+  /** Mesmo valor de `valorCobrado`, em centavos, para somar entre tapetes sem reparsear string. */
+  valorCobradoCentavos: number | null
   /** Preço por m² vigente no SGI, formatado, para exibição auxiliar. `null` quando indisponível. */
   precoM2: string | null
   /** `true` quando o produto foi determinado mas não há preço SGI utilizável (sem vínculo, sem cache, nulo, inativo ou fora de linha). */
@@ -385,6 +387,7 @@ const resumoSemProduto = {
   produto: null,
   avisoMedida: false,
   valorCobrado: null,
+  valorCobradoCentavos: null,
   precoM2: null,
   precoIndisponivel: false,
 } as const
@@ -419,9 +422,16 @@ export function resumirTapete(
     produto,
     avisoMedida: dimensao1.dados % 5 !== 0 || (dimensao2.dados !== null && dimensao2.dados % 5 !== 0),
     valorCobrado: valorCobradoCentavos !== null ? formatarCentavosBRL(valorCobradoCentavos) : null,
+    valorCobradoCentavos,
     precoM2: precoM2Centavos !== null ? `${formatarCentavosBRL(precoM2Centavos)}/m²` : null,
     precoIndisponivel: produto !== null && precoM2Centavos === null,
   }
+}
+
+/** Soma o valor cobrado de todos os tapetes (mesmo cálculo de `resumirTapete`, já usado nos cards), já formatado em BRL. Tapetes sem preço calculável entram como zero, sem alterar a regra existente de exibição individual. */
+export function valorTotalTapetesFormatado(tapetes: readonly TapeteFormulario[], produtos: readonly ProdutoOpcao[]): string {
+  const totalCentavos = tapetes.reduce((soma, tapete) => soma + (resumirTapete(tapete, produtos).valorCobradoCentavos ?? 0), 0)
+  return formatarCentavosBRL(totalCentavos)
 }
 
 // Checagem só de UI (não altera a regra canônica de telefone em `@/lib/pedidos-personalizados`,

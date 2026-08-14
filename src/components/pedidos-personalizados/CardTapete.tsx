@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowDown, ArrowUp, BookOpen, Circle, ExternalLink, RectangleHorizontal, Shapes, Trash2, Wand2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, BookOpen, Circle, ExternalLink, Ruler, RectangleHorizontal, Shapes, Trash2, Wand2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { TIPO_TAPETE_PARA_EXIBICAO, mascararMedidaMetros } from '@/lib/pedidos-personalizados'
@@ -90,11 +90,14 @@ export function CardTapete({
   return (
     <article id={`tapete-${numero}`} className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
       <header className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-[#00A5E6]"><Ruler className="size-5" aria-hidden="true" /></span>
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-[#00A5E6]">Tapete</p>
-            <h3 className="text-xl font-bold text-slate-900">TAPETE {numero}</h3>
+            <h3 className="text-lg font-bold text-slate-900">Tapete {numero}</h3>
           </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             onClick={() => setCatalogoAberto(true)}
@@ -105,17 +108,17 @@ export function CardTapete({
             <BookOpen className="size-5" />
             Ver Catálogo
           </Button>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button type="button" variant="ghost" size="icon" className="size-11" disabled={disabled || indice === 0} onClick={() => onMover(-1)} aria-label={`Mover tapete ${numero} para cima`}>
-            <ArrowUp />
-          </Button>
-          <Button type="button" variant="ghost" size="icon" className="size-11" disabled={disabled || indice === total - 1} onClick={() => onMover(1)} aria-label={`Mover tapete ${numero} para baixo`}>
-            <ArrowDown />
-          </Button>
-          <Button type="button" variant="ghost" size="icon" className="size-11 text-red-600 hover:text-red-700" disabled={disabled || total === 1} onClick={onRemover} aria-label={`Remover tapete ${numero}`}>
-            <Trash2 />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button type="button" variant="ghost" size="icon" className="size-11" disabled={disabled || indice === 0} onClick={() => onMover(-1)} aria-label={`Mover tapete ${numero} para cima`}>
+              <ArrowUp />
+            </Button>
+            <Button type="button" variant="ghost" size="icon" className="size-11" disabled={disabled || indice === total - 1} onClick={() => onMover(1)} aria-label={`Mover tapete ${numero} para baixo`}>
+              <ArrowDown />
+            </Button>
+            <Button type="button" variant="ghost" size="icon" className="size-11 text-red-600 hover:text-red-700" disabled={disabled || total === 1} onClick={onRemover} aria-label={`Remover tapete ${numero}`}>
+              <Trash2 />
+            </Button>
+          </div>
         </div>
       </header>
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Eye, Loader2, PackageCheck, Pencil, RefreshCw, Search, ShoppingBag, X } from 'lucide-react'
+import { AlertCircle, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Clock, Eye, Loader2, PackageCheck, Pencil, RefreshCw, Search, ShoppingBag, SlidersHorizontal, UserSearch, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { CardTapete } from './CardTapete'
 import { AnexosTapete } from './AnexosTapete'
 import { PreviaMensagem } from './PreviaMensagem'
-import { FormularioLebebeExclusive } from './FormularioLebebeExclusive'
+import { FormularioLebebeExclusive, paginasVisiveisLebebeExclusive } from './FormularioLebebeExclusive'
 import { aplicarMascaraTelefoneBR, formatarTelefone } from '@/lib/atendimento-presencial/telefone'
 import {
   destinosPermitidosStatus,
@@ -40,6 +40,7 @@ import {
   atualizarAdministrativoGestao,
   atualizarComercialGestao,
   carregarDetalheGestao,
+  contarPedidosGestaoPorStatus,
   detalheParaAdministrativo,
   detalheParaFormulario,
   gerarResumoFornecedorDetalhe,
@@ -51,7 +52,7 @@ import {
   transicionarStatusGestao,
   validarAdministrativo,
 } from './gestao-modelo'
-import type { ErrosAdministrativos, EstadoAdministrativo, EstadoTransicaoGestao, FiltrosGestao, PaginaPedidos, PedidoDetalhe, TapeteDetalhe } from './gestao-modelo'
+import type { ContagensStatusGestao, ErrosAdministrativos, EstadoAdministrativo, EstadoTransicaoGestao, FiltrosGestao, PaginaPedidos, PedidoDetalhe, TapeteDetalhe } from './gestao-modelo'
 import { dataOperacionalBrasil } from '@/lib/pedidos-personalizados/prazo'
 
 function formatarData(valor: string) {
@@ -75,8 +76,16 @@ function classeStatus(status: string) {
   if (status === 'CANCELADO') return 'border-red-200 bg-red-50 text-red-700'
   if (status === 'RECEBIDO') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
   if (status === 'EM PRODUÇÃO') return 'border-violet-200 bg-violet-50 text-violet-700'
-  if (status.includes('AGUARDANDO')) return 'border-amber-200 bg-amber-50 text-amber-800'
-  return 'border-sky-200 bg-sky-50 text-sky-700'
+  if (status === 'AGUARDANDO APROVAÇÃO DO CLIENTE') return 'border-orange-200 bg-orange-50 text-orange-800'
+  if (status === 'AGUARDANDO LAYOUT') return 'border-amber-200 bg-amber-50 text-amber-800'
+  if (status === 'VENDA FECHADA') return 'border-sky-200 bg-sky-50 text-sky-700'
+  return 'border-slate-300 bg-slate-100 text-slate-700'
+}
+
+/** Reaproveita as duas primeiras classes (borda/fundo) de classeStatus() para tingir o cabeçalho do card com a mesma cor do status, sem duplicar o mapeamento. */
+function tonsStatusCartao(status: string) {
+  const [borda, fundo] = classeStatus(status).split(' ')
+  return `${borda} ${fundo}`
 }
 
 function formatarDataRecebimento(valor: string) {
@@ -91,6 +100,44 @@ function classePrazo(situacao: string) {
   if (situacao === 'ATRASADO') return 'border-red-200 bg-red-50 text-red-700'
   if (situacao === 'PRESTES A VENCER') return 'border-amber-200 bg-amber-50 text-amber-800'
   return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+}
+
+function classePrazoBorda(situacao: string) {
+  if (situacao === 'ATRASADO') return 'border-l-4 border-l-red-400'
+  if (situacao === 'PRESTES A VENCER') return 'border-l-4 border-l-amber-400'
+  return ''
+}
+
+function filtrosVazios(filtros: FiltrosGestao) {
+  return Object.values(filtros).every((valor) => !valor)
+}
+
+function ChipStatus({
+  rotulo,
+  contagem,
+  ativo,
+  carregando,
+  classeCor,
+  onClick,
+}: {
+  rotulo: string
+  contagem: number
+  ativo: boolean
+  carregando: boolean
+  classeCor: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={ativo}
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${classeCor} ${ativo ? 'ring-2 ring-[#00A5E6] ring-offset-1 ring-offset-white' : 'opacity-70 hover:opacity-100'}`}
+    >
+      {rotulo}
+      <span className="font-mono text-[11px] font-bold tabular-nums">{carregando ? '···' : contagem}</span>
+    </button>
+  )
 }
 
 function CampoAdministrativo({
@@ -122,6 +169,8 @@ export function GestaoPedidosPersonalizados() {
   const [pagina, setPagina] = useState(1)
   const [resultado, setResultado] = useState<PaginaPedidos | null>(null)
   const [carregando, setCarregando] = useState(true)
+  const [contagens, setContagens] = useState<ContagensStatusGestao | null>(null)
+  const [carregandoContagens, setCarregandoContagens] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [detalhe, setDetalhe] = useState<PedidoDetalhe | null>(null)
   const [carregandoDetalhe, setCarregandoDetalhe] = useState(false)
@@ -171,6 +220,35 @@ export function GestaoPedidosPersonalizados() {
     return () => controller.abort()
   }, [carregarLista])
 
+  const carregarContagens = useCallback(async (signal?: AbortSignal) => {
+    setCarregandoContagens(true)
+    try {
+      const dados = await contarPedidosGestaoPorStatus(filtrosAplicados, signal)
+      setContagens(dados.contagens)
+    } catch {
+      if (signal?.aborted) return
+    } finally {
+      if (!signal?.aborted) setCarregandoContagens(false)
+    }
+    // Os contadores não dependem do status ativo (eles mostram todos os
+    // status ao mesmo tempo); a lista de dependências ignora
+    // filtrosAplicados.status de propósito, para não refazer a contagem só
+    // porque o usuário trocou de chip.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    filtrosAplicados.cliente, filtrosAplicados.consultora, filtrosAplicados.numeroLancamento,
+    filtrosAplicados.unidade, filtrosAplicados.dataInicial, filtrosAplicados.dataFinal,
+    filtrosAplicados.dataPedidoFornecedorInicial, filtrosAplicados.dataPedidoFornecedorFinal,
+    filtrosAplicados.dataEntregaInicial, filtrosAplicados.dataEntregaFinal,
+    filtrosAplicados.situacaoPrazo, filtrosAplicados.tipoTapete,
+  ])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void carregarContagens(controller.signal)
+    return () => controller.abort()
+  }, [carregarContagens])
+
   const telefoneLegadoNulo = detalhe?.telefone === null || detalhe?.telefone === undefined
   const avaliacaoEdicao = useMemo(() => {
     if (!formulario || !opcoes) return null
@@ -200,6 +278,12 @@ export function GestaoPedidosPersonalizados() {
     } catch {
       toast.error('Não foi possível copiar o resumo.')
     }
+  }
+
+  function aplicarFiltroStatusChip(status: '' | StatusPedidoPersonalizado) {
+    setFiltros((atual) => ({ ...atual, status }))
+    setFiltrosAplicados((atual) => ({ ...atual, status }))
+    setPagina(1)
   }
 
   async function abrirDetalhe(id: string) {
@@ -399,66 +483,133 @@ export function GestaoPedidosPersonalizados() {
     })
   }
 
+  const totalContagens = contagens ? Object.values(contagens).reduce((soma, valor) => soma + valor, 0) : 0
+
   return (
     <div className="space-y-5">
       <section className="rounded-2xl border border-sky-100 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-4 shadow-sm sm:p-5" aria-labelledby="filtros-pedidos">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 id="filtros-pedidos" className="font-bold text-slate-900">Filtros</h2><p className="text-sm text-slate-500">Preencha os campos e clique em Atualizar para aplicar.</p></div><Button type="button" variant="ghost" onClick={() => { setFiltros(FILTROS_VAZIOS); setFiltrosAplicados(FILTROS_VAZIOS); setPagina(1) }}><X />Limpar</Button></div>
-        <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          <Input aria-label="Filtrar por cliente" placeholder="Cliente" value={filtros.cliente} onChange={(e) => setFiltros({ ...filtros, cliente: e.target.value })} />
-          <Input aria-label="Filtrar por consultora" placeholder="Consultora" value={filtros.consultora} onChange={(e) => setFiltros({ ...filtros, consultora: e.target.value })} />
-          <Input aria-label="Filtrar por lançamento" placeholder="Nº lançamento" inputMode="numeric" value={filtros.numeroLancamento} onChange={(e) => setFiltros({ ...filtros, numeroLancamento: e.target.value.replace(/\D/g, '').slice(0, 6) })} />
-          <Select value={filtros.unidade || 'TODAS'} onValueChange={(v) => setFiltros({ ...filtros, unidade: v === 'TODAS' ? '' : v as FiltrosGestao['unidade'] })}><SelectTrigger aria-label="Filtrar por unidade"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="TODAS">Todas as unidades</SelectItem>{opcoes?.unidades.map((u) => <SelectItem key={u.chave} value={u.chave}>{u.nome}</SelectItem>)}</SelectContent></Select>
-          <Select value={filtros.status || 'TODOS'} onValueChange={(v) => setFiltros({ ...filtros, status: v === 'TODOS' ? '' : v as FiltrosGestao['status'] })}><SelectTrigger aria-label="Filtrar por status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="TODOS">Todos os status</SelectItem>{opcoes?.status?.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
-          <Select value={filtros.situacaoPrazo || 'TODOS'} onValueChange={(v) => setFiltros({ ...filtros, situacaoPrazo: v === 'TODOS' ? '' : v as FiltrosGestao['situacaoPrazo'] })}><SelectTrigger aria-label="Filtrar por situação do prazo"><SelectValue placeholder="Situação do prazo" /></SelectTrigger><SelectContent><SelectItem value="TODOS">Todos os prazos</SelectItem><SelectItem value="NO PRAZO">No prazo</SelectItem><SelectItem value="PRESTES A VENCER">Prestes a vencer</SelectItem><SelectItem value="ATRASADO">Atrasado</SelectItem></SelectContent></Select>
-          <Select value={filtros.tipoTapete || 'TODOS'} onValueChange={(v) => setFiltros({ ...filtros, tipoTapete: v === 'TODOS' ? '' : v as FiltrosGestao['tipoTapete'] })}><SelectTrigger aria-label="Filtrar por tipo de tapete"><SelectValue placeholder="Tipo" /></SelectTrigger><SelectContent><SelectItem value="TODOS">Todos os tipos</SelectItem><SelectItem value="CATALOGO">{TIPO_TAPETE_PARA_EXIBICAO.CATALOGO}</SelectItem><SelectItem value="PERSONALIZADO">{TIPO_TAPETE_PARA_EXIBICAO.PERSONALIZADO}</SelectItem></SelectContent></Select>
-          <div><label htmlFor="data-inicial" className="mb-1 block text-xs font-medium text-slate-600">Cadastro inicial</label><Input id="data-inicial" type="date" value={filtros.dataInicial} onChange={(e) => setFiltros({ ...filtros, dataInicial: e.target.value })} /></div>
-          <div><label htmlFor="data-final" className="mb-1 block text-xs font-medium text-slate-600">Cadastro final</label><Input id="data-final" type="date" value={filtros.dataFinal} onChange={(e) => setFiltros({ ...filtros, dataFinal: e.target.value })} /></div>
-          <div><label htmlFor="pedido-fornecedor-inicial" className="mb-1 block text-xs font-medium text-slate-600">Data do pedido ao fornecedor — início</label><Input id="pedido-fornecedor-inicial" type="date" value={filtros.dataPedidoFornecedorInicial} onChange={(e) => setFiltros({ ...filtros, dataPedidoFornecedorInicial: e.target.value })} /></div>
-          <div><label htmlFor="pedido-fornecedor-final" className="mb-1 block text-xs font-medium text-slate-600">Data do pedido ao fornecedor — fim</label><Input id="pedido-fornecedor-final" type="date" value={filtros.dataPedidoFornecedorFinal} onChange={(e) => setFiltros({ ...filtros, dataPedidoFornecedorFinal: e.target.value })} /></div>
-          <div><label htmlFor="entrega-inicial" className="mb-1 block text-xs font-medium text-slate-600">Previsão de entrega — início</label><Input id="entrega-inicial" type="date" value={filtros.dataEntregaInicial} onChange={(e) => setFiltros({ ...filtros, dataEntregaInicial: e.target.value })} /></div>
-          <div><label htmlFor="entrega-final" className="mb-1 block text-xs font-medium text-slate-600">Previsão de entrega — fim</label><Input id="entrega-final" type="date" value={filtros.dataEntregaFinal} onChange={(e) => setFiltros({ ...filtros, dataEntregaFinal: e.target.value })} /></div>
-          <div className="flex sm:col-span-2 sm:justify-end lg:col-span-3 xl:col-span-4"><Button type="button" className="w-full sm:w-auto" onClick={() => { setPagina(1); setFiltrosAplicados({ ...filtros }) }}><Search />Atualizar</Button></div>
+        <div className="space-y-5">
+          <div>
+            <div className="mb-2 flex items-center gap-1.5"><UserSearch className="size-4 text-slate-400" aria-hidden="true" /><h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Busca</h3></div>
+            <div className="grid items-end gap-3 sm:grid-cols-3">
+              <Input aria-label="Filtrar por cliente" placeholder="Cliente" value={filtros.cliente} onChange={(e) => setFiltros({ ...filtros, cliente: e.target.value })} />
+              <Input aria-label="Filtrar por consultora" placeholder="Consultora" value={filtros.consultora} onChange={(e) => setFiltros({ ...filtros, consultora: e.target.value })} />
+              <Input aria-label="Filtrar por lançamento" placeholder="Nº lançamento" inputMode="numeric" value={filtros.numeroLancamento} onChange={(e) => setFiltros({ ...filtros, numeroLancamento: e.target.value.replace(/\D/g, '').slice(0, 6) })} />
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 flex items-center gap-1.5"><CalendarRange className="size-4 text-slate-400" aria-hidden="true" /><h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Datas</h3></div>
+            <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div><label htmlFor="data-inicial" className="mb-1 block text-xs font-medium text-slate-600">Cadastro inicial</label><Input id="data-inicial" type="date" value={filtros.dataInicial} onChange={(e) => setFiltros({ ...filtros, dataInicial: e.target.value })} /></div>
+              <div><label htmlFor="data-final" className="mb-1 block text-xs font-medium text-slate-600">Cadastro final</label><Input id="data-final" type="date" value={filtros.dataFinal} onChange={(e) => setFiltros({ ...filtros, dataFinal: e.target.value })} /></div>
+              <div><label htmlFor="pedido-fornecedor-inicial" className="mb-1 block text-xs font-medium text-slate-600">Data do pedido ao fornecedor — início</label><Input id="pedido-fornecedor-inicial" type="date" value={filtros.dataPedidoFornecedorInicial} onChange={(e) => setFiltros({ ...filtros, dataPedidoFornecedorInicial: e.target.value })} /></div>
+              <div><label htmlFor="pedido-fornecedor-final" className="mb-1 block text-xs font-medium text-slate-600">Data do pedido ao fornecedor — fim</label><Input id="pedido-fornecedor-final" type="date" value={filtros.dataPedidoFornecedorFinal} onChange={(e) => setFiltros({ ...filtros, dataPedidoFornecedorFinal: e.target.value })} /></div>
+              <div><label htmlFor="entrega-inicial" className="mb-1 block text-xs font-medium text-slate-600">Previsão de entrega — início</label><Input id="entrega-inicial" type="date" value={filtros.dataEntregaInicial} onChange={(e) => setFiltros({ ...filtros, dataEntregaInicial: e.target.value })} /></div>
+              <div><label htmlFor="entrega-final" className="mb-1 block text-xs font-medium text-slate-600">Previsão de entrega — fim</label><Input id="entrega-final" type="date" value={filtros.dataEntregaFinal} onChange={(e) => setFiltros({ ...filtros, dataEntregaFinal: e.target.value })} /></div>
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 flex items-center gap-1.5"><SlidersHorizontal className="size-4 text-slate-400" aria-hidden="true" /><h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Classificação</h3></div>
+            <div className="grid items-end gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+              <Select value={filtros.unidade || 'TODAS'} onValueChange={(v) => setFiltros({ ...filtros, unidade: v === 'TODAS' ? '' : v as FiltrosGestao['unidade'] })}><SelectTrigger className="w-full" aria-label="Filtrar por unidade"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="TODAS">Todas as unidades</SelectItem>{opcoes?.unidades.map((u) => <SelectItem key={u.chave} value={u.chave}>{u.nome}</SelectItem>)}</SelectContent></Select>
+              <Select value={filtros.status || 'TODOS'} onValueChange={(v) => setFiltros({ ...filtros, status: v === 'TODOS' ? '' : v as FiltrosGestao['status'] })}><SelectTrigger className="w-full" aria-label="Filtrar por status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="TODOS">Todos os status</SelectItem>{opcoes?.status?.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
+              <Select value={filtros.situacaoPrazo || 'TODOS'} onValueChange={(v) => setFiltros({ ...filtros, situacaoPrazo: v === 'TODOS' ? '' : v as FiltrosGestao['situacaoPrazo'] })}><SelectTrigger className="w-full" aria-label="Filtrar por situação do prazo"><SelectValue placeholder="Situação do prazo" /></SelectTrigger><SelectContent><SelectItem value="TODOS">Todos os prazos</SelectItem><SelectItem value="NO PRAZO">No prazo</SelectItem><SelectItem value="PRESTES A VENCER">Prestes a vencer</SelectItem><SelectItem value="ATRASADO">Atrasado</SelectItem></SelectContent></Select>
+              <Select value={filtros.tipoTapete || 'TODOS'} onValueChange={(v) => setFiltros({ ...filtros, tipoTapete: v === 'TODOS' ? '' : v as FiltrosGestao['tipoTapete'] })}><SelectTrigger className="w-full" aria-label="Filtrar por tipo de tapete"><SelectValue placeholder="Tipo" /></SelectTrigger><SelectContent><SelectItem value="TODOS">Todos os tipos</SelectItem><SelectItem value="CATALOGO">{TIPO_TAPETE_PARA_EXIBICAO.CATALOGO}</SelectItem><SelectItem value="PERSONALIZADO">{TIPO_TAPETE_PARA_EXIBICAO.PERSONALIZADO}</SelectItem></SelectContent></Select>
+              <Button type="button" className="w-full" onClick={() => { setPagina(1); setFiltrosAplicados({ ...filtros }) }}><Search />Atualizar</Button>
+            </div>
+          </div>
         </div>
       </section>
 
-      {erro && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700"><AlertCircle className="mr-2 inline size-5" />{erro}</div>}
-      {carregando ? <div role="status" className="rounded-2xl border bg-white p-10 text-center"><Loader2 className="mx-auto mb-2 animate-spin" />Carregando pedidos...</div> : resultado?.itens.length ? (
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Pedidos encontrados">
-          {resultado.itens.map((item) => (
-            <article key={item.id} className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
-              <div className="border-b border-slate-100 bg-gradient-to-r from-sky-50 to-indigo-50 p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">{item.fornecedor?.nome ?? 'MORIAH TAPETES'}</p>
-                    <h2 className="mt-1 truncate text-lg font-bold text-slate-900">{item.cliente}</h2>
-                    <p className="text-sm text-slate-600">{item.unidade.nome} · {item.consultora}</p>
-                  </div>
-                  <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${classeStatus(item.status)}`}>{item.status}</span>
-                </div>
-              </div>
-              <div className="flex flex-1 flex-col p-5">
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                  <div><dt className="text-slate-500">Nº de lançamento</dt><dd className="font-semibold text-slate-900">{item.numeroLancamento ?? '—'}</dd></div>
-                  <div><dt className="text-slate-500">Telefone</dt><dd className="font-semibold text-slate-900">{item.telefone ? formatarTelefone(item.telefone) : 'Não informado'}</dd></div>
-                  <div><dt className="text-slate-500">Pedido de compra</dt><dd className="font-semibold text-slate-900">{item.numeroPedidoCompra ?? '—'}</dd></div>
-                  <div><dt className="text-slate-500">Pedido ao fornecedor</dt><dd className="font-medium">{item.dataPedidoFornecedor ? dataIsoParaExibicao(item.dataPedidoFornecedor) : '—'}</dd></div>
-                  <div><dt className="text-slate-500">Previsão de Data de entrega do fornecedor</dt><dd className="font-medium">{item.dataEntrega ? dataIsoParaExibicao(item.dataEntrega) : '—'}</dd></div>
-                  {item.situacaoPrazo && <div><dt className="text-slate-500">Prazo</dt><dd><span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-bold ${classePrazo(item.situacaoPrazo)}`}>{item.situacaoPrazo}</span></dd></div>}
-                  {item.status === 'RECEBIDO' && item.recebidoEm && <div><dt className="text-slate-500">Recebido em</dt><dd className="font-medium">{formatarDataRecebimento(item.recebidoEm)}</dd></div>}
-                  <div><dt className="text-slate-500">Comprador</dt><dd className="font-medium">{item.comprador ?? '—'}</dd></div>
-                  <div><dt className="text-slate-500">{item.fornecedor?.chave === 'lebebe_exclusive' ? 'Itens' : 'Tapetes'}</dt><dd className="font-medium">{item.fornecedor?.chave === 'lebebe_exclusive' ? item.quantidadeItens : item.quantidadeTapetes}</dd></div>
-                  {item.fornecedor?.chave !== 'lebebe_exclusive' && <div><dt className="text-slate-500">Tipo</dt><dd className="font-medium">{item.tiposTapetes.map((tipo) => TIPO_TAPETE_PARA_EXIBICAO[tipo]).join(' + ') || '—'}</dd></div>}
-                  <div><dt className="text-slate-500">Produtos</dt><dd className="font-medium">{item.fornecedor?.chave === 'lebebe_exclusive' ? item.referenciasProdutos.join(', ') || '—' : item.codigosProdutos.join(', ') || '—'}</dd></div>
-                  <div><dt className="text-slate-500">Cadastro</dt><dd className="font-medium">{formatarData(item.createdAt)}</dd></div>
-                </dl>
-                <Button type="button" className="mt-5 min-h-11" variant="outline" onClick={() => void abrirDetalhe(item.id)}><Eye />Ver pedido</Button>
-              </div>
-            </article>
-          ))}
-        </section>
-      ) : <div className="rounded-2xl border border-dashed bg-white p-10 text-center text-slate-600">Nenhum pedido encontrado com os filtros atuais.</div>}
+      <section aria-label="Pedidos por status" className="flex flex-wrap gap-2">
+        <ChipStatus
+          rotulo="Todos"
+          contagem={totalContagens}
+          ativo={!filtrosAplicados.status}
+          carregando={carregandoContagens}
+          classeCor="border-slate-300 bg-white text-slate-700"
+          onClick={() => aplicarFiltroStatusChip('')}
+        />
+        {(opcoes?.status ?? []).map((status) => (
+          <ChipStatus
+            key={status}
+            rotulo={status}
+            contagem={contagens?.[status] ?? 0}
+            ativo={filtrosAplicados.status === status}
+            carregando={carregandoContagens}
+            classeCor={classeStatus(status)}
+            onClick={() => aplicarFiltroStatusChip(status)}
+          />
+        ))}
+      </section>
 
-      {resultado && <nav className="flex items-center justify-center gap-3" aria-label="Paginação"><Button type="button" variant="outline" disabled={pagina <= 1 || carregando} onClick={() => setPagina((p) => p - 1)}><ChevronLeft />Anterior</Button><span className="text-sm text-slate-600">Página {resultado.pagina} de {resultado.totalPaginas} · {resultado.totalRegistros} registro(s)</span><Button type="button" variant="outline" disabled={pagina >= resultado.totalPaginas || carregando} onClick={() => setPagina((p) => p + 1)}>Próxima<ChevronRight /></Button></nav>}
+      {erro && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700"><AlertCircle className="mr-2 inline size-5" />{erro}</div>}
+
+      {carregando && !resultado && <div role="status" className="rounded-2xl border bg-white p-10 text-center"><Loader2 className="mx-auto mb-2 animate-spin" />Carregando pedidos...</div>}
+
+      {resultado && (resultado.itens.length > 0 ? (
+        <section className="space-y-3">
+          {carregando && <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500"><Loader2 className="size-3.5 animate-spin" aria-hidden="true" />Atualizando...</p>}
+          <div className={`grid gap-4 transition-opacity md:grid-cols-2 xl:grid-cols-3 ${carregando ? 'pointer-events-none opacity-60' : ''}`} aria-label="Pedidos encontrados">
+            {resultado.itens.map((item) => (
+              <article key={item.id} className={`flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md ${classePrazoBorda(item.situacaoPrazo ?? '')}`}>
+                <div className={`border-b p-5 ${tonsStatusCartao(item.status)}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold uppercase tracking-wide text-sky-700">{item.fornecedor?.nome ?? 'MORIAH TAPETES'}</p>
+                      <h2 className="mt-1 truncate text-lg font-bold text-slate-900">{item.cliente}</h2>
+                      <p className="text-sm text-slate-600">{item.unidade.nome} · {item.consultora}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${classeStatus(item.status)}`}>{item.status}</span>
+                  </div>
+                </div>
+                <div className="flex flex-1 flex-col p-5">
+                  {item.dataEntrega && (
+                    <div className="mb-4 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+                      <Clock className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
+                      <span className="text-slate-600">Previsão: <span className="font-semibold text-slate-900">{dataIsoParaExibicao(item.dataEntrega)}</span></span>
+                      {item.situacaoPrazo && <span className={`ml-auto shrink-0 rounded-full border px-2 py-0.5 text-xs font-bold ${classePrazo(item.situacaoPrazo)}`}>{item.situacaoPrazo}</span>}
+                    </div>
+                  )}
+                  <dl className="mb-5 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                    <div><dt className="text-slate-500">Nº de lançamento</dt><dd className="font-semibold text-slate-900">{item.numeroLancamento ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">Telefone</dt><dd className="font-semibold text-slate-900">{item.telefone ? formatarTelefone(item.telefone) : 'Não informado'}</dd></div>
+                    <div><dt className="text-slate-500">Pedido de compra</dt><dd className="font-semibold text-slate-900">{item.numeroPedidoCompra ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">Pedido ao fornecedor</dt><dd className="font-medium">{item.dataPedidoFornecedor ? dataIsoParaExibicao(item.dataPedidoFornecedor) : '—'}</dd></div>
+                    {item.status === 'RECEBIDO' && item.recebidoEm && <div><dt className="text-slate-500">Recebido em</dt><dd className="font-medium">{formatarDataRecebimento(item.recebidoEm)}</dd></div>}
+                    <div><dt className="text-slate-500">Comprador</dt><dd className="font-medium">{item.comprador ?? '—'}</dd></div>
+                    <div><dt className="text-slate-500">{item.fornecedor?.chave === 'lebebe_exclusive' ? 'Itens' : 'Tapetes'}</dt><dd className="font-medium">{item.fornecedor?.chave === 'lebebe_exclusive' ? item.quantidadeItens : item.quantidadeTapetes}</dd></div>
+                    {item.fornecedor?.chave !== 'lebebe_exclusive' && <div><dt className="text-slate-500">Tipo</dt><dd className="font-medium">{item.tiposTapetes.map((tipo) => TIPO_TAPETE_PARA_EXIBICAO[tipo]).join(' + ') || '—'}</dd></div>}
+                    <div><dt className="text-slate-500">Produtos</dt><dd className="font-medium">{item.fornecedor?.chave === 'lebebe_exclusive' ? item.referenciasProdutos.join(', ') || '—' : item.codigosProdutos.join(', ') || '—'}</dd></div>
+                    <div><dt className="text-slate-500">Cadastro</dt><dd className="font-medium">{formatarData(item.createdAt)}</dd></div>
+                  </dl>
+                  <Button type="button" className="mt-auto min-h-11" variant="outline" onClick={() => void abrirDetalhe(item.id)}><Eye />Ver pedido</Button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : carregando ? (
+        <div role="status" className="rounded-2xl border bg-white p-10 text-center text-slate-500"><Loader2 className="mx-auto mb-2 animate-spin" />Atualizando pedidos...</div>
+      ) : (
+        <div className="rounded-2xl border border-dashed bg-white p-10 text-center text-slate-600">
+          {filtrosVazios(filtrosAplicados)
+            ? 'Nenhum pedido personalizado foi cadastrado ainda para o seu escopo de unidades.'
+            : 'Nenhum pedido encontrado com os filtros atuais. Tente ajustar ou limpar os filtros.'}
+        </div>
+      ))}
+
+      {resultado && resultado.totalPaginas > 1 && (
+        <nav className="flex flex-wrap items-center justify-center gap-2" aria-label="Paginação">
+          <Button type="button" variant="outline" size="sm" disabled={pagina === 1 || carregando} onClick={() => setPagina((p) => p - 1)}><ChevronLeft />Anterior</Button>
+          {paginasVisiveisLebebeExclusive(pagina, resultado.totalPaginas).map((p, indice) => typeof p === 'string'
+            ? <span key={`reticencias-${indice}`} className="px-1 text-sm text-slate-500">…</span>
+            : <Button key={p} type="button" size="sm" variant={p === pagina ? 'default' : 'outline'} disabled={carregando} aria-current={p === pagina ? 'page' : undefined} onClick={() => setPagina(p)}>{p}</Button>)}
+          <Button type="button" variant="outline" size="sm" disabled={pagina === resultado.totalPaginas || carregando} onClick={() => setPagina((p) => p + 1)}>Próxima<ChevronRight /></Button>
+          <p className="basis-full text-center text-sm text-slate-500">Página {resultado.pagina} de {resultado.totalPaginas} · {resultado.totalRegistros} registro(s)</p>
+        </nav>
+      )}
 
       <Dialog
         open={(carregandoDetalhe || detalhe !== null) && !editandoAdministrativo}

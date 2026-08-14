@@ -256,4 +256,67 @@ describe('repositório server-only de pedidos personalizados', () => {
     expect(from).toHaveBeenCalledTimes(6)
     expect(rastreio.order).toContainEqual(['ordem', { ascending: true }])
   })
+
+  it('conta pedidos por status com uma consulta head por status, sem hidratar itens', async () => {
+    const rastreio = { order: [] as Array<[string, unknown]> }
+    const contagensEsperadas = [3, 1, 0, 2, 4, 5, 0]
+    const buildersPedidos = contagensEsperadas.map((count) => builder({ data: null, error: null, count }, rastreio))
+    const from = vi.fn((tabela: string) => {
+      if (tabela !== 'pedidos_personalizados_pedidos') throw new Error(`tabela inesperada: ${tabela}`)
+      return buildersPedidos.shift()
+    })
+    const repo = new RepositorioPedidosPersonalizados({ from } as unknown as SupabaseClient)
+    const resultado = await repo.contarPorStatus(filtros(), unidades)
+
+    expect(resultado.error).toBeNull()
+    expect(resultado.data).toEqual({
+      RASCUNHO: 3,
+      'VENDA FECHADA': 1,
+      'AGUARDANDO LAYOUT': 0,
+      'AGUARDANDO APROVAÇÃO DO CLIENTE': 2,
+      'EM PRODUÇÃO': 4,
+      RECEBIDO: 5,
+      CANCELADO: 0,
+    })
+    expect(from).toHaveBeenCalledTimes(7)
+  })
+
+  it('zera RECEBIDO e CANCELADO sem consultá-los quando há filtro de situação de prazo, como em listar', async () => {
+    const rastreio = { order: [] as Array<[string, unknown]> }
+    const buildersPedidos = [2, 0, 1, 3, 0].map((count) => builder({ data: null, error: null, count }, rastreio))
+    const from = vi.fn(() => buildersPedidos.shift())
+    const repo = new RepositorioPedidosPersonalizados({ from } as unknown as SupabaseClient)
+    const resultado = await repo.contarPorStatus(filtros({ situacaoPrazo: 'ATRASADO' }), unidades)
+
+    expect(resultado.error).toBeNull()
+    expect(resultado.data?.RECEBIDO).toBe(0)
+    expect(resultado.data?.CANCELADO).toBe(0)
+    expect(from).toHaveBeenCalledTimes(5)
+  })
+
+  it('propaga erro de qualquer consulta de status', async () => {
+    const rastreio = { order: [] as Array<[string, unknown]> }
+    const erro = { code: 'X', message: 'falhou' }
+    const buildersPedidos = [
+      builder({ data: null, error: null, count: 1 }, rastreio),
+      builder({ data: null, error: erro, count: null }, rastreio),
+      ...Array.from({ length: 5 }, () => builder({ data: null, error: null, count: 0 }, rastreio)),
+    ]
+    const from = vi.fn(() => buildersPedidos.shift())
+    const repo = new RepositorioPedidosPersonalizados({ from } as unknown as SupabaseClient)
+    const resultado = await repo.contarPorStatus(filtros(), unidades)
+
+    expect(resultado.data).toBeNull()
+    expect(resultado.error).toEqual(erro)
+  })
+
+  it('retorna contagens zeradas sem consultar o banco quando não há unidade no escopo', async () => {
+    const from = vi.fn()
+    const repo = new RepositorioPedidosPersonalizados({ from } as unknown as SupabaseClient)
+    const resultado = await repo.contarPorStatus(filtros(), [])
+
+    expect(from).not.toHaveBeenCalled()
+    expect(resultado.error).toBeNull()
+    expect(Object.values(resultado.data ?? {})).toEqual([0, 0, 0, 0, 0, 0, 0])
+  })
 })

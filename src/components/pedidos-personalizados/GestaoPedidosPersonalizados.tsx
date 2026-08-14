@@ -1099,24 +1099,21 @@ export function GestaoPedidosPersonalizados() {
       }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{detalhe?.produtoSgi?.status === 'ERRO' ? 'Retomar criação no SGI' : 'Criar produto no SGI'}</DialogTitle>
+            <DialogTitle>Criar produto no sistema?</DialogTitle>
             <DialogDescription>
-              Confirme os valores congelados para esta operação. O processamento continuará na VPS e poderá ser retomado do último checkpoint.
+              Será criado um novo produto no SGI para este pedido. Depois da criação, use o código gerado para lançar a venda no sistema.
             </DialogDescription>
           </DialogHeader>
           {detalhe && (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm">
-                <p className="text-xs font-bold uppercase tracking-wide text-sky-800">Nome que será usado</p>
-                <p className="mt-1 break-words font-semibold text-slate-950">
-                  {detalhe.produtoSgi?.nomeProduto ?? `LEBEBE EXCLUSIVE (${detalhe.unidade.nome} ${detalhe.numeroLancamento ?? '—'})`}
-                </p>
-                <dl className="mt-4 grid grid-cols-2 gap-3">
-                  <div><dt className="text-slate-500">Custo</dt><dd className="font-bold">{(detalhe.produtoSgi?.custo ?? detalhe.itens.reduce((soma, item) => soma + item.totalCusto, 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</dd></div>
-                  <div><dt className="text-slate-500">Preço</dt><dd className="font-bold">{(detalhe.produtoSgi?.preco ?? detalhe.itens.reduce((soma, item) => soma + item.totalVenda, 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</dd></div>
-                </dl>
-              </div>
-              <p className="text-sm text-slate-600">O modelo SGI 39879 será validado antes da duplicação. Repetir a solicitação não cria outro produto para este pedido.</p>
+            <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm">
+              <p className="text-xs font-bold uppercase tracking-wide text-sky-800">Produto que será criado</p>
+              <p className="mt-1 break-words font-semibold text-slate-950">
+                {detalhe.produtoSgi?.nomeProduto ?? `LEBEBE EXCLUSIVE (${detalhe.unidade.nome} ${detalhe.numeroLancamento ?? '—'})`}
+              </p>
+              <p className="mt-4 text-xs font-bold uppercase tracking-wide text-sky-800">Preço de venda</p>
+              <p className="mt-1 font-bold text-slate-950">
+                {(detalhe.produtoSgi?.preco ?? detalhe.itens.reduce((soma, item) => soma + item.totalVenda, 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </p>
             </div>
           )}
           <DialogFooter>

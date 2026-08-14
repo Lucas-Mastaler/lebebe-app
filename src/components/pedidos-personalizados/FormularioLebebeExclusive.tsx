@@ -16,6 +16,7 @@ import { BarraResumoPedidoPersonalizado } from './BarraResumoPedidoPersonalizado
 import type { OpcoesNovoPedido } from './novo-pedido-modelo'
 import type { PedidoDetalhe } from './gestao-modelo'
 import { PreviaMensagem } from './PreviaMensagem'
+import { AvisoPedidoSalvoFixo } from './AvisoPedidoSalvoFixo'
 
 type ItemSelecionado = ProdutoCatalogoLebebeExclusive & {
   quantidade: number
@@ -293,7 +294,17 @@ export function FormularioLebebeExclusive({
   }
 
   function removerProduto(produto: ProdutoCatalogoLebebeExclusive) {
-    atualizarQuantidade(produto, '')
+    setRascunhosItens((atuais) => {
+      const proximos = new Map(atuais)
+      proximos.delete(produto.id)
+      return proximos
+    })
+    setSelecionados((atuais) => {
+      const proximos = new Map(atuais)
+      proximos.delete(produto.id)
+      return proximos
+    })
+    setErro(null)
   }
 
   function atualizarNomeOuLetra(produto: ProdutoCatalogoLebebeExclusive, nomeOuLetra: string) {
@@ -584,24 +595,31 @@ export function FormularioLebebeExclusive({
       {erro && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{erro}</div>}
       {pedidoSalvo && <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5"><div className="flex gap-3"><CheckCircle2 className="text-emerald-600" /><div><h2 className="font-bold text-emerald-900">{pedidoInicial ? 'Rascunho atualizado' : 'Orçamento salvo'}</h2><p className="text-sm text-emerald-800">Status {pedidoSalvo.status}; versão {pedidoSalvo.version}; {selecionados.size} produto(s). A venda ainda não foi fechada.</p></div></div>{!pedidoInicial && <Button asChild type="button" variant="outline" className="mt-4 min-h-10 border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100"><Link href="/pedidos-personalizados">Ir para a gestão de pedidos<ArrowRight /></Link></Button>}</section>}
       {onNovoPedido ? (
-        <BarraResumoPedidoPersonalizado
-          quantidadeItens={selecionados.size}
-          totalFormatado={formatarMoeda(total)}
-          salvando={salvando}
-          podeSalvar={!bloqueado}
-          rotuloSalvar={salvando ? 'Salvando...' : pedidoSalvo ? 'Salvo' : pedidoInicial ? 'Salvar rascunho' : 'Salvar orçamento'}
-          onNovoPedido={onNovoPedido}
-          bloqueadoNovoPedido={salvando}
-          acaoSecundaria={
-            <BotaoMostrarSelecionados
-              ativo={mostrarSelecionados}
-              quantidade={selecionados.size}
-              disabled={selecionados.size === 0}
-              onClick={() => setMostrarSelecionados((atual) => !atual)}
-              className="min-h-12 flex-1 sm:flex-none"
-            />
-          }
-        />
+        <div className="sticky bottom-0 z-20 flex flex-col gap-2">
+          <AvisoPedidoSalvoFixo
+            disparo={Boolean(pedidoSalvo) && !pedidoInicial}
+            titulo="Pedido salvo"
+            mensagem="O pedido foi salvo com sucesso. Você pode ir para a gestão de pedidos personalizados."
+          />
+          <BarraResumoPedidoPersonalizado
+            quantidadeItens={selecionados.size}
+            totalFormatado={formatarMoeda(total)}
+            salvando={salvando}
+            podeSalvar={!bloqueado}
+            rotuloSalvar={salvando ? 'Salvando...' : pedidoSalvo ? 'Salvo' : pedidoInicial ? 'Salvar rascunho' : 'Salvar orçamento'}
+            onNovoPedido={onNovoPedido}
+            bloqueadoNovoPedido={salvando}
+            acaoSecundaria={
+              <BotaoMostrarSelecionados
+                ativo={mostrarSelecionados}
+                quantidade={selecionados.size}
+                disabled={selecionados.size === 0}
+                onClick={() => setMostrarSelecionados((atual) => !atual)}
+                className="min-h-12 flex-1 sm:flex-none"
+              />
+            }
+          />
+        </div>
       ) : (
         <div className="sticky bottom-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-white/95 p-3 shadow-lg backdrop-blur"><p className="text-sm font-bold text-slate-900 sm:text-base">Itens selecionados: <span className="text-emerald-700">{selecionados.size}</span> | Total: {formatarMoeda(total)}</p><Button type="submit" className="min-h-12" disabled={bloqueado}>{salvando ? <Loader2 className="animate-spin" /> : <Save />}{salvando ? 'Salvando...' : pedidoSalvo ? 'Salvo' : pedidoInicial ? 'Salvar rascunho' : 'Salvar orçamento'}</Button></div>
       )}

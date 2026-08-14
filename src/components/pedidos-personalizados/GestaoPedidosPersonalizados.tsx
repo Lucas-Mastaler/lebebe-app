@@ -45,6 +45,7 @@ import {
   detalheParaFormulario,
   deveExibirAcaoProdutoSgi,
   gerarResumoFornecedorDetalhe,
+  gerarResumoRascunhoDetalhe,
   listarPedidosGestao,
   mensagemErroGestao,
   payloadAtualizacaoAdministrativa,
@@ -347,7 +348,10 @@ export function GestaoPedidosPersonalizados() {
       mensagem: avaliacao.mensagem,
     }
   }, [formulario, opcoes, telefoneLegadoNulo])
-  const resumoFornecedor = useMemo(() => detalhe ? gerarResumoFornecedorDetalhe(detalhe) : null, [detalhe])
+  const resumoEmRascunho = detalhe?.status === 'RASCUNHO'
+  const resumoFornecedor = useMemo(() => detalhe
+    ? (resumoEmRascunho ? gerarResumoRascunhoDetalhe(detalhe) : gerarResumoFornecedorDetalhe(detalhe))
+    : null, [detalhe, resumoEmRascunho])
   const exigeLancamentoNaTransicao = detalhe
     ? camposComerciaisPendentesTransicao(detalhe, transicao.destino).includes('numeroLancamento')
     : false
@@ -1045,7 +1049,7 @@ export function GestaoPedidosPersonalizados() {
                   mensagem={resumoFornecedor}
                   copiada={resumoCopiado}
                   onCopiar={() => void copiarResumoFornecedor()}
-                  titulo="Resumo para o fornecedor"
+                  titulo={resumoEmRascunho ? 'Resumo pra por na venda' : 'Resumo para o fornecedor'}
                   subtitulo="Gerado a partir dos dados atuais deste pedido."
                   rotuloBotao="COPIAR RESUMO"
                 />

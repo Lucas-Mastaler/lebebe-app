@@ -11,6 +11,7 @@ import {
   payloadAtualizacaoAdministrativa,
   payloadAtualizacaoComercial,
   gerarResumoFornecedorDetalhe,
+  gerarResumoRascunhoDetalhe,
   requisitosPendentesTransicao,
   solicitarProdutoSgiGestao,
   validarAdministrativo,
@@ -204,6 +205,32 @@ describe('modelo da gestão de pedidos personalizados', () => {
     expect(resumo).not.toMatch(/ANEXO|VERSÃO|ALTERAÇÃO DE LAYOUT/i)
   })
 
+  it('resumo de rascunho da Exclusive traz produto/referência/quantidade sem nenhum custo ou preço de venda', () => {
+    const exclusive: PedidoDetalhe = {
+      ...detalhe,
+      fornecedor: { chave: 'lebebe_exclusive', nome: 'LEBEBE EXCLUSIVE' },
+      status: 'RASCUNHO',
+      itens: [{
+        id: 'item-1', produtoId: 'p', ordem: 1, quantidade: 2, nomeOuLetra: 'MARIA',
+        colecao: 'COLECAO', descricao: 'Produto Exclusive', referencia: 'REF-EXCLUSIVE-1',
+        precoUnitario: 199.9, custoUnitario: 89.5, totalVenda: 399.8, totalCusto: 179,
+      }],
+    }
+    const resumoRascunho = gerarResumoRascunhoDetalhe(exclusive) ?? ''
+    expect(resumoRascunho).toContain('UNIDADE: PORTÃO')
+    expect(resumoRascunho).toContain('CONSULTORA: ANA')
+    expect(resumoRascunho).toContain('CLIENTE: CLIENTE')
+    expect(resumoRascunho).toContain('PRODUTO: Produto Exclusive')
+    expect(resumoRascunho).toContain('REFERÊNCIA: REF-EXCLUSIVE-1')
+    expect(resumoRascunho).toContain('QUANTIDADE: 2')
+    expect(resumoRascunho).not.toMatch(/CUSTO|PREÇO|89,50|179,00|199,90|399,80|MARIA/)
+
+    const resumoCompleto = gerarResumoFornecedorDetalhe(exclusive) ?? ''
+    expect(resumoCompleto).toContain('CUSTO UNITÁRIO')
+    expect(resumoCompleto).toContain('CUSTO TOTAL')
+    expect(resumoCompleto).toContain('NOME OU LETRA: MARIA')
+  })
+
   it('serializa filtros e paginação na listagem', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true, itens: [], pagina: 2, totalPaginas: 2, totalRegistros: 21, limite: 20 }), { status: 200 }))
     await listarPedidosGestao({
@@ -360,6 +387,8 @@ describe('modelo da gestão de pedidos personalizados', () => {
     expect(componente).toContain('bg-gradient-to-r')
     expect(componente).toContain('classeStatus(item.status)')
     expect(componente).toContain('Resumo para o fornecedor')
+    expect(componente).toContain('Resumo pra por na venda')
+    expect(componente).toContain("resumoEmRascunho = detalhe?.status === 'RASCUNHO'")
     expect(componente).toContain('COPIAR RESUMO')
     expect(componente).toContain('CheckCircle2')
     expect(componente).toContain('mt-6 border-t border-slate-200 pt-5')

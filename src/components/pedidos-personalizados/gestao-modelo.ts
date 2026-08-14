@@ -373,7 +373,14 @@ export function detalheParaAdministrativo(pedido: PedidoDetalhe): EstadoAdminist
   }
 }
 
-export function gerarResumoFornecedorDetalhe(pedido: PedidoDetalhe) {
+/**
+ * Modo `completo` é o comportamento já existente do "Resumo para o fornecedor"
+ * (inclui custo). Modo `rascunho` gera o "Resumo pra por na venda", exibido só
+ * enquanto o pedido está em RASCUNHO: nunca inclui custo, preço de venda ou
+ * nome/letra — apenas os dados de identificação e produto/referência/quantidade
+ * necessários para a consultora colar nas observações da venda.
+ */
+function montarResumoDetalhe(pedido: PedidoDetalhe, modo: 'completo' | 'rascunho') {
   if (pedido.fornecedor?.chave === 'lebebe_exclusive') {
     const linhas = [
       'FORNECEDOR: LEBEBE EXCLUSIVE',
@@ -389,10 +396,14 @@ export function gerarResumoFornecedorDetalhe(pedido: PedidoDetalhe) {
         `PRODUTO: ${item.descricao}`,
         `REFERÊNCIA: ${item.referencia}`,
         `QUANTIDADE: ${item.quantidade}`,
-        `CUSTO UNITÁRIO: ${item.custoUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
-        `CUSTO TOTAL: ${item.totalCusto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
       )
-      if (item.nomeOuLetra?.trim()) linhas.push(`NOME OU LETRA: ${item.nomeOuLetra.trim().toLocaleUpperCase('pt-BR')}`)
+      if (modo === 'completo') {
+        linhas.push(
+          `CUSTO UNITÁRIO: ${item.custoUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
+          `CUSTO TOTAL: ${item.totalCusto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+        )
+        if (item.nomeOuLetra?.trim()) linhas.push(`NOME OU LETRA: ${item.nomeOuLetra.trim().toLocaleUpperCase('pt-BR')}`)
+      }
     }
     return linhas.join('\n')
   }
@@ -434,6 +445,15 @@ export function gerarResumoFornecedorDetalhe(pedido: PedidoDetalhe) {
     }))
   )
   return resultado.valido ? resultado.dados : null
+}
+
+export function gerarResumoFornecedorDetalhe(pedido: PedidoDetalhe) {
+  return montarResumoDetalhe(pedido, 'completo')
+}
+
+/** "Resumo pra por na venda": exibido só em RASCUNHO, sem custo/preço de venda. */
+export function gerarResumoRascunhoDetalhe(pedido: PedidoDetalhe) {
+  return montarResumoDetalhe(pedido, 'rascunho')
 }
 
 export function validarAdministrativo(estado: EstadoAdministrativo): ErrosAdministrativos {

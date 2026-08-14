@@ -27,6 +27,7 @@ import { CardTapete } from './CardTapete'
 import { AnexosTapete } from './AnexosTapete'
 import { AnexosIniciaisTapete } from './AnexosIniciaisTapete'
 import { PreviaMensagem } from './PreviaMensagem'
+import { AvisoPedidoSalvoFixo } from './AvisoPedidoSalvoFixo'
 import { FormularioLebebeExclusive } from './FormularioLebebeExclusive'
 import { BarraResumoPedidoPersonalizado } from './BarraResumoPedidoPersonalizado'
 import {
@@ -894,15 +895,23 @@ export default function FormularioNovoPedido() {
           </>
         )}
 
-        <BarraResumoPedidoPersonalizado
-          quantidadeItens={estado.tapetes.length}
-          totalFormatado={valorTotalTapetesFormatado(estado.tapetes, opcoes.produtos)}
-          salvando={enviando}
-          podeSalvar={!enviando && !salvo}
-          rotuloSalvar={enviando ? 'Salvando...' : salvo ? 'Pedido salvo' : 'Salvar orçamento'}
-          onNovoPedido={solicitarNovoPedido}
-          bloqueadoNovoPedido={enviando || possuiUploadPendente}
-        />
+        <div className="sticky bottom-0 z-20 flex flex-col gap-2">
+          <AvisoPedidoSalvoFixo
+            disparo={Boolean(salvo)}
+            titulo="Pedido salvo"
+            mensagem="O pedido foi salvo com sucesso. Você pode ir para a gestão de pedidos personalizados."
+          />
+
+          <BarraResumoPedidoPersonalizado
+            quantidadeItens={estado.tapetes.length}
+            totalFormatado={valorTotalTapetesFormatado(estado.tapetes, opcoes.produtos)}
+            salvando={enviando}
+            podeSalvar={!enviando && !salvo}
+            rotuloSalvar={enviando ? 'Salvando...' : salvo ? 'Pedido salvo' : 'Salvar orçamento'}
+            onNovoPedido={solicitarNovoPedido}
+            bloqueadoNovoPedido={enviando || possuiUploadPendente}
+          />
+        </div>
       </form>
 
       <Dialog open={confirmarNovo} onOpenChange={setConfirmarNovo}>

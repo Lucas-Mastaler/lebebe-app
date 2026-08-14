@@ -54,6 +54,38 @@ class EstadoRetomavelTest(unittest.TestCase):
             fluxo.carregar_estado(divergente, {'etapa': 'NAO_INICIADO'})
 
 
+class BuscaProdutosHtmlTest(unittest.TestCase):
+    def test_extrai_produtos_e_paginacao_sem_bs4(self):
+        class Resposta:
+            status_code = 200
+            text = '''
+                <a href="/produtos/39879/edit">Modelo</a>
+                <a class="link" href="/produtos/40000/edit">Destino</a>
+                <a href="/produtos/40001/edit">Outro</a>
+                <a href="/produtos?filtro=x&amp;page=3">3</a>
+            '''
+
+        class Sessao:
+            def get(self, *_args, **_kwargs):
+                return Resposta()
+
+        class Produto:
+            URL_BASE_SGI = 'https://sgi.exemplo'
+
+            @staticmethod
+            def abrir_produto(_sessao, produto_id):
+                return produto_id
+
+            @staticmethod
+            def extrair_nome_produto(html_produto):
+                return 'nome exato' if html_produto in {'39879', '40000'} else 'outro nome'
+
+        self.assertEqual(
+            fluxo._ids_produtos_por_nome(Sessao(), Produto(), 'nome exato'),
+            {'39879', '40000'},
+        )
+
+
 @unittest.skipUnless(os.environ.get('RUN_SGI_READONLY') == '1', 'consulta SGI opt-in')
 class ModeloSgiReadOnlyTest(unittest.TestCase):
     def test_modelo_39879_e_busca_exata(self):

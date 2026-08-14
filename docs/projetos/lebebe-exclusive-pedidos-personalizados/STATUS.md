@@ -2,7 +2,7 @@
 
 Projeto: lebebe-exclusive-pedidos-personalizados
 Estado: BLOQUEADO
-Fase atual: Ativação controlada do worker SGI — bloqueada pela imagem Docker configurada
+Fase atual: Ativação controlada do worker SGI — aguardando disponibilidade da aprovação remota
 
 ## Última etapa concluída
 
@@ -91,6 +91,14 @@ FECHADA` e lançamento válido, executar exatamente um teste real controlado.
   O serviço Python saudável da VPS usa `easypanel/automacoes/python`, sem essa
   tag. Não alterar a imagem sem autorização explícita; nenhum processo do
   worker chegou a iniciar.
+- Em 2026-08-14, `bs4` foi removido do parser novo e substituído por `re` e
+  `html.unescape`, como no fluxo SGI já validado. Os testes Linux passaram
+  (4, com 1 consulta SGI opt-in ignorada), e a imagem-base recebeu a tag
+  persistente `easypanel/automacoes/python:lebebe-sgi-worker-v1`, usada só
+  pelo serviço existente. URL, secret, portas e fila foram reconfirmados.
+  A escala final para uma réplica foi bloqueada pelo limite de uso do ambiente
+  de aprovação remota; o serviço permanece em zero réplicas até nova execução
+  autorizada/disponível.
 - O modelo `39879` foi validado por leitura com código `21187` e nome esperado.
 - Não existe hoje pedido Exclusive em `VENDA FECHADA`; o teste SGI real depende
   de surgir/criar de forma controlada um pedido elegível.

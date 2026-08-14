@@ -8,6 +8,7 @@ mutação externa e o checkpoint central.
 from __future__ import annotations
 
 import importlib.util
+import html
 import json
 import os
 import re
@@ -15,9 +16,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable
-
-from bs4 import BeautifulSoup
-
 
 BASE_MODULO = Path(os.environ.get('ERP_CAPTURADOR_BASE', '/workspace/erp-capturador'))
 PASTA_SCRIPTS = BASE_MODULO / 'scripts'
@@ -176,11 +174,14 @@ def _ids_produtos_por_nome(sessao, produto, nome_exato: str) -> set[str]:
         )
         if resposta.status_code != 200 or 'id="usuario"' in resposta.text:
             raise RuntimeError(f'BUSCA_PRODUTO_FALHOU:HTTP_{resposta.status_code}')
-        soup = BeautifulSoup(resposta.text, 'html.parser')
+        pagina_html = html.unescape(resposta.text)
         candidatos = {
             match.group(1)
-            for link in soup.find_all('a', href=True)
-            if (match := re.fullmatch(r'/produtos/(\d+)/edit', link.get('href', '')))
+            for match in re.finditer(
+                r'<a\b[^>]*\bhref\s*=\s*["\']/produtos/(\d+)/edit["\']',
+                pagina_html,
+                flags=re.IGNORECASE,
+            )
         }
         for produto_id in candidatos:
             html_produto = produto.abrir_produto(sessao, produto_id)
@@ -188,8 +189,7 @@ def _ids_produtos_por_nome(sessao, produto, nome_exato: str) -> set[str]:
                 ids.add(produto_id)
         paginas = [
             int(match.group(1))
-            for link in soup.find_all('a', href=True)
-            if (match := re.search(r'[?&]page=(\d+)', link.get('href', '')))
+            for match in re.finditer(r'[?&]page=(\d+)', pagina_html)
         ]
         total_paginas = max(paginas, default=1)
         pagina += 1

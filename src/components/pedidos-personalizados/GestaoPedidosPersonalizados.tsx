@@ -267,6 +267,21 @@ export function GestaoPedidosPersonalizados() {
   }, [carregarLista])
 
   useEffect(() => {
+    const pendente = resultado?.itens.some((item) => item.produtoSgi?.status === 'PENDENTE' || item.produtoSgi?.status === 'PROCESSANDO')
+    if (!pendente) return
+
+    const controller = new AbortController()
+    const intervalId = window.setInterval(() => {
+      void carregarLista(controller.signal)
+    }, 5000)
+
+    return () => {
+      controller.abort()
+      window.clearInterval(intervalId)
+    }
+  }, [resultado, carregarLista])
+
+  useEffect(() => {
     const pedidoId = detalhe?.id
     const status = detalhe?.produtoSgi?.status
     if (!pedidoId || (status !== 'PENDENTE' && status !== 'PROCESSANDO')) return

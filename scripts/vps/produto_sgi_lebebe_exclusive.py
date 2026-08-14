@@ -210,6 +210,7 @@ def _obter_ou_criar_produto(
     config: ConfiguracaoProdutoSgi,
     estado: dict[str, Any],
     checkpoint: Checkpoint,
+    logger: Logger,
 ) -> tuple[str, str]:
     produto_id = estado.get('produto_id_sgi')
     if not produto_id:
@@ -239,8 +240,7 @@ def _obter_ou_criar_produto(
     html_produto = produto.abrir_produto(sessao, str(produto_id))
     nome_atual = produto.extrair_nome_produto(html_produto)
     if nome_atual != config.nome_produto:
-        if nome_atual != config.modelo_nome_esperado:
-            raise RuntimeError('NOME_PRODUTO_INTERMEDIARIO_DIVERGENTE')
+        logger('INFO', 'NOME_PRODUTO_INTERMEDIARIO', {'nomeAtual': nome_atual})
         token = produto.extrair_authenticity_token(html_produto)
         produto.renomear_produto(sessao, str(produto_id), token)
         nome_atual = produto.validar_produto_criado(sessao, str(produto_id))
@@ -340,7 +340,7 @@ def executar_fluxo(
     _validar_modelo(sessao, produto, config)
 
     produto_id, codigo = _obter_ou_criar_produto(
-        sessao, produto, preco, config, estado, checkpoint,
+        sessao, produto, preco, config, estado, checkpoint, logger,
     )
     _cadastrar_custo(sessao, base, custo, produto_id, estado, checkpoint)
     _atualizar_preco(sessao, preco, produto_id, codigo, config, estado, checkpoint)

@@ -142,13 +142,15 @@ function ChipStatus({
 }
 
 /** Degradê compartilhado por todo botão de avanço de status (card, gatilho dentro do pedido e confirmação no modal). */
-const CLASSE_DEGRADE_AVANCO_STATUS = 'h-auto min-h-11 whitespace-normal border-0 bg-gradient-to-r from-[#00A5E6] to-emerald-500 bg-[length:135%_100%] bg-left py-2 text-center leading-snug text-white transition-[background-position] duration-300 hover:bg-right'
+const CLASSE_DEGRADE_AVANCO_STATUS = 'h-auto min-h-11 min-w-0 max-w-full whitespace-normal break-words border-0 bg-gradient-to-r from-[#00A5E6] to-emerald-500 bg-[length:135%_100%] bg-left py-2 text-center leading-snug text-white transition-[background-position] duration-300 hover:bg-right'
 
 /**
  * Rótulo contextual reaproveitado tanto no atalho do card quanto no botão que abre o modal dentro do
- * pedido: quando a lista de destinos tem só um caminho "para frente" (além de Cancelado), mostra a
- * fase de destino diretamente no botão; quando há mais de um caminho possível (ex. Aguardando aprovação
- * do cliente), não há uma única próxima fase óbvia e o rótulo fica genérico.
+ * pedido: `destinosPermitidosStatus` sempre lista o caminho "para frente" antes de Cancelado (ver
+ * `status-fluxo.ts`), então o primeiro item da lista é sempre a próxima fase — usado como sugestão
+ * padrão também dentro do modal (`montarEstadoTransicao`). O rótulo mostra sempre essa fase, nunca um
+ * texto genérico; se o usuário quiser outra transição (ex. Cancelado), troca pelo campo Destino já
+ * dentro do modal.
  */
 function BotaoAvancoStatus({
   status,
@@ -167,11 +169,11 @@ function BotaoAvancoStatus({
 }) {
   const destinos = destinosPermitidosStatus(status, fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')
   if (destinos.length === 0) return null
-  const destinoUnico = destinos.length === 2 ? destinos[0] : null
+  const proximaFase = destinos[0]
   const classeDegrade = variant === 'outline' ? '' : CLASSE_DEGRADE_AVANCO_STATUS
   return (
     <Button type="button" variant={variant} disabled={disabled} onClick={onClick} className={`${classeDegrade} ${className ?? ''}`}>
-      {destinoUnico ? `Avançar para ${destinoUnico}` : 'Alterar status'}
+      Avançar para {proximaFase}
       <ArrowRight aria-hidden="true" />
     </Button>
   )
@@ -993,13 +995,13 @@ export function GestaoPedidosPersonalizados() {
             {transicao.destino === 'CANCELADO' && <div><label htmlFor="transicao-justificativa" className="mb-1 block text-sm font-medium">Justificativa</label><textarea id="transicao-justificativa" required maxLength={500} rows={4} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" value={transicao.justificativa} onChange={(e) => setTransicao({ ...transicao, justificativa: e.target.value })} /><p className="text-right text-xs text-slate-500">{transicao.justificativa.length}/500</p></div>}
             {pendenciasTransicao.length > 0 && <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p className="font-semibold">Para confirmar, falta:</p><ul className="mt-2 list-disc space-y-1 pl-5">{pendenciasTransicao.map((pendencia) => <li key={pendencia}>{pendencia}</li>)}</ul></div>}
           </div>}
-          <DialogFooter className="shrink-0 border-t bg-white px-6 py-4">
-            <Button type="button" variant="outline" disabled={salvando} onClick={fecharTransicao}>Cancelar</Button>
+          <DialogFooter className="shrink-0 flex-col-reverse gap-2 border-t bg-white px-6 py-4 sm:flex-col sm:items-stretch">
+            <Button type="button" variant="outline" className="w-full" disabled={salvando} onClick={fecharTransicao}>Cancelar</Button>
             <Button
               type="button"
               disabled={salvando || pendenciasTransicao.length > 0}
               onClick={() => void confirmarTransicao()}
-              className={detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')[0] ?? '') ? CLASSE_DEGRADE_AVANCO_STATUS : ''}
+              className={`w-full ${detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')[0] ?? '') ? CLASSE_DEGRADE_AVANCO_STATUS : ''}`}
             >
               {salvando ? <Loader2 className="animate-spin" /> : null}
               {!salvando && detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')[0] ?? '')

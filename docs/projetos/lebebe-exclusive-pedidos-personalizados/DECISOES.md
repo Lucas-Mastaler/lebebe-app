@@ -83,3 +83,17 @@
 - Impacto: a regra é validada na interface, API e função transacional do banco;
   a Moriah preserva as regras posteriores de layout, anexos e produção.
 - Status: APROVADA E EXECUTADA
+
+## D-010 — Integração SGI manual e retomável
+
+- Data: 2026-08-14
+- Decisão: a interface HTTP real do SGI foi confirmada na VPS e a criação do
+  produto consolidado será manual, exclusiva da Lebebe Exclusive e acionável
+  somente em `VENDA FECHADA`. O App persistirá estado/IDs por etapa; um worker
+  outbound na VPS consultará rotas internas autenticadas do App, sem endpoint
+  público na VPS. Nome, custo e preço serão congelados na primeira tentativa e
+  não haverá sincronização depois da conclusão.
+- Impacto: exige persistência 1:1 por pedido, claim concorrente, checkpoints
+  autenticados, estado local de recuperação no worker e UI compartilhada entre
+  card e detalhe. O fluxo Moriah permanece intocado.
+- Status: APROVADA PELO PEDIDO ATUAL E EM EXECUÇÃO

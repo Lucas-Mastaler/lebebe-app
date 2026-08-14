@@ -1,8 +1,8 @@
 # Status — Lebebe Exclusive em Pedidos Personalizados
 
 Projeto: lebebe-exclusive-pedidos-personalizados
-Estado: EM VALIDAÇÃO
-Fase atual: Migration aplicada; aguardando reteste real da transição na interface
+Estado: EM EXECUÇÃO
+Fase atual: Operação controlada da integração SGI — aguardando deploy e pedido elegível
 
 ## Última etapa concluída
 
@@ -45,6 +45,14 @@ Fase atual: Migration aplicada; aguardando reteste real da transição na interf
   lançamento; falhas de identificação ao salvar destacam todos os campos
   pendentes e focam o primeiro. O novo pedido reutiliza a prévia comercial da
   Moriah, enquanto a gestão preserva o resumo para o fornecedor.
+- As migrations `20260814170000`, `20260814170100` e `20260814170200` foram
+  ensaiadas com `ROLLBACK`, aplicadas via MCP e confirmadas no Supabase: tabela
+  1:1 server-only, RPCs idempotentes de solicitação/claim/checkpoint e token do
+  worker armazenado somente como hash.
+- A Gestão ganhou ação SGI exclusiva para Lebebe Exclusive, no card e no
+  detalhe, com confirmação dos valores congelados, polling, erro seguro e retry.
+- O worker outbound foi instalado na VPS sem porta pública e com secret Docker;
+  permanece com zero réplicas até o App ser publicado e haver pedido elegível.
 
 ## Diagnóstico vigente
 
@@ -71,18 +79,18 @@ Fase atual: Migration aplicada; aguardando reteste real da transição na interf
 
 ## Próximo passo
 
-Repetir na interface a transição `RASCUNHO → VENDA FECHADA` do pedido Moriá
-`8c9e5a2b-6e89-4a9a-85f8-edfdf6c8f6ba`, usando um número de lançamento válido,
-e confirmar status, versão, lançamento e histórico. Depois, publicar o código
-da aplicação pelo fluxo normal de deploy.
+Publicar o App na aplicação Vercel existente, confirmar as novas rotas e então
+ativar uma única réplica do worker. Com um pedido Lebebe Exclusive em `VENDA
+FECHADA` e lançamento válido, executar exatamente um teste real controlado.
 
 ## Pendências
 
-- A interface externa de cadastro de produto no SGI não foi encontrada; nenhum
-  botão ou integração fictícia foi criado.
-- O código ainda não foi publicado. A migration específica desta correção já
-  está no banco; o reteste real pela interface e o deploy da aplicação seguem
-  pendentes.
+- O modelo `39879` foi validado por leitura com código `21187` e nome esperado.
+- Não existe hoje pedido Exclusive em `VENDA FECHADA`; o teste SGI real depende
+  de surgir/criar de forma controlada um pedido elegível.
+- O código ainda não foi publicado na aplicação Vercel existente. Por isso o
+  worker segue inativo e a confirmação visual autenticada das novas ações está
+  pendente.
 
 ## Decisões aguardando aprovação
 

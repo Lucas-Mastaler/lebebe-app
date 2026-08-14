@@ -116,6 +116,70 @@ export type ResultadoTransicaoStatusRpc = {
   version: number
 }
 
+export type StatusIntegracaoProdutoSgi = 'PENDENTE' | 'PROCESSANDO' | 'ERRO' | 'CONCLUIDO'
+
+export type EtapaIntegracaoProdutoSgi =
+  | 'NAO_INICIADO'
+  | 'PRODUTO_DUPLICADO'
+  | 'PRODUTO_RENOMEADO'
+  | 'CUSTO_CRIADO'
+  | 'CUSTO_FINALIZADO'
+  | 'PRECO_ATUALIZADO'
+  | 'CONCLUIDO'
+
+export type IntegracaoProdutoSgiRow = {
+  pedido_id: string
+  status_integracao: StatusIntegracaoProdutoSgi
+  etapa: EtapaIntegracaoProdutoSgi
+  modelo_produto_id_sgi: string
+  modelo_nome_esperado: string
+  unidade_snapshot: string
+  numero_lancamento_snapshot: string
+  nome_produto_sgi: string
+  custo_enviado: string | number
+  preco_enviado: string | number
+  produto_id_sgi: string | null
+  codigo_sgi: string | null
+  procedimento_custo_sgi: string | null
+  numero_lancamento_entrada_sgi: string | null
+  documento_entrada_id_sgi: string | null
+  procedimento_finalizacao_sgi: string | null
+  tabela_preco_id_sgi: string | null
+  item_tabela_preco_id_sgi: string | null
+  claim_token: string | null
+  claim_expira_em: string | null
+  tentativas: number
+  erro_codigo: string | null
+  erro_mensagem: string | null
+  eventos: unknown[]
+  solicitado_em: string
+  iniciado_em: string | null
+  concluido_em: string | null
+  updated_at: string
+}
+
+export type CheckpointProdutoSgi = {
+  pedidoId: string
+  claimToken: string
+  statusIntegracao: 'PROCESSANDO' | 'ERRO' | 'CONCLUIDO'
+  etapa: EtapaIntegracaoProdutoSgi
+  produtoIdSgi?: string | null
+  codigoSgi?: string | null
+  procedimentoCustoSgi?: string | null
+  numeroLancamentoEntradaSgi?: string | null
+  documentoEntradaIdSgi?: string | null
+  procedimentoFinalizacaoSgi?: string | null
+  tabelaPrecoIdSgi?: string | null
+  itemTabelaPrecoIdSgi?: string | null
+  erroCodigo?: string | null
+  erroMensagem?: string | null
+  eventoDetalhes?: Record<string, unknown>
+}
+
+function primeiraLinhaRpc<T>(data: unknown): T | null {
+  return Array.isArray(data) && data.length > 0 ? data[0] as T : null
+}
+
 export class RepositorioPedidosPersonalizados {
   constructor(private readonly supabase: SupabaseClient) {}
 
@@ -450,8 +514,9 @@ export class RepositorioPedidosPersonalizados {
     const resumoPorPedido = new Map<string, { quantidade: number; codigos: Set<string>; tipos: Set<string> }>()
     const resumoExclusivePorPedido = new Map<string, { quantidade: number; referencias: Set<string> }>()
     const recebidoEmPorPedido = new Map<string, string>()
+    const produtoSgiPorPedido = new Map<string, IntegracaoProdutoSgiRow>()
     if (pedidoIds.length > 0) {
-      const [tapetesResultado, itensExclusiveResultado, historicoResultado] = await Promise.all([
+      const [tapetesResultado, itensExclusiveResultado, historicoResultado, produtoSgiResultado] = await Promise.all([
         this.supabase
           .from('pedidos_personalizados_moriah_tapetes')
           .select('pedido_id, tipo, produto:pedidos_personalizados_produtos!pedidos_personalizados_moriah_tapetes_produto_id_fkey(codigo)')
@@ -466,10 +531,21 @@ export class RepositorioPedidosPersonalizados {
           .in('pedido_id', pedidoIds)
           .eq('status_novo', 'RECEBIDO')
           .order('created_at', { ascending: false }),
+        this.supabase
+          .from('pedidos_personalizados_lebebe_exclusive_sgi')
+          .select(`
+            pedido_id, status_integracao, etapa, unidade_snapshot,
+            numero_lancamento_snapshot, nome_produto_sgi, custo_enviado,
+            preco_enviado, produto_id_sgi, codigo_sgi, tentativas,
+            erro_codigo, erro_mensagem, solicitado_em, iniciado_em,
+            concluido_em, updated_at
+          `)
+          .in('pedido_id', pedidoIds),
       ])
       if (tapetesResultado.error) return { data: null, error: tapetesResultado.error }
       if (itensExclusiveResultado.error) return { data: null, error: itensExclusiveResultado.error }
       if (historicoResultado.error) return { data: null, error: historicoResultado.error }
+      if (produtoSgiResultado.error) return { data: null, error: produtoSgiResultado.error }
       const tapetesPagina = tapetesResultado.data
       for (const tapete of (tapetesPagina ?? []) as unknown as Array<{ pedido_id: string; tipo: string; produto: { codigo: string } }>) {
         const resumo = resumoPorPedido.get(tapete.pedido_id) ?? { quantidade: 0, codigos: new Set<string>(), tipos: new Set<string>() }
@@ -494,6 +570,9 @@ export class RepositorioPedidosPersonalizados {
           recebidoEmPorPedido.set(evento.pedido_id, evento.data_recebimento ?? dataOperacionalBrasil(new Date(evento.created_at)))
         }
       }
+      for (const produtoSgi of (produtoSgiResultado.data ?? []) as unknown as IntegracaoProdutoSgiRow[]) {
+        produtoSgiPorPedido.set(produtoSgi.pedido_id, produtoSgi)
+      }
     }
 
     return {
@@ -506,6 +585,7 @@ export class RepositorioPedidosPersonalizados {
           quantidade_itens: resumoExclusivePorPedido.get(row.id)?.quantidade ?? 0,
           referencias_produtos: Array.from(resumoExclusivePorPedido.get(row.id)?.referencias ?? []).sort(),
           recebido_em: recebidoEmPorPedido.get(row.id) ?? null,
+          produto_sgi: produtoSgiPorPedido.get(row.id) ?? null,
         })),
         total: count ?? rows.length,
       },
@@ -613,7 +693,7 @@ export class RepositorioPedidosPersonalizados {
   async carregarDetalhe(
     pedidoId: string,
     unidadeIds: readonly string[]
-  ): Promise<ResultadoBanco<{ pedido: unknown; tapetes: unknown[]; itens: unknown[]; historico: unknown[] } | null>> {
+  ): Promise<ResultadoBanco<{ pedido: unknown; tapetes: unknown[]; itens: unknown[]; historico: unknown[]; produtoSgi: IntegracaoProdutoSgiRow | null } | null>> {
     if (unidadeIds.length === 0) return { data: null, error: null }
     const { data: pedido, error: pedidoError } = await this.supabase
       .from('pedidos_personalizados_pedidos')
@@ -652,6 +732,21 @@ export class RepositorioPedidosPersonalizados {
       .eq('pedido_id', pedidoId)
       .order('ordem', { ascending: true })
     if (itensError) return { data: null, error: itensError }
+
+    const { data: produtoSgi, error: produtoSgiError } = await this.supabase
+      .from('pedidos_personalizados_lebebe_exclusive_sgi')
+      .select(`
+        pedido_id, status_integracao, etapa, modelo_produto_id_sgi, modelo_nome_esperado,
+        unidade_snapshot, numero_lancamento_snapshot, nome_produto_sgi,
+        custo_enviado, preco_enviado, produto_id_sgi, codigo_sgi,
+        procedimento_custo_sgi, numero_lancamento_entrada_sgi, documento_entrada_id_sgi,
+        procedimento_finalizacao_sgi, tabela_preco_id_sgi, item_tabela_preco_id_sgi,
+        tentativas, erro_codigo, erro_mensagem, eventos, solicitado_em,
+        iniciado_em, concluido_em, updated_at
+      `)
+      .eq('pedido_id', pedidoId)
+      .maybeSingle()
+    if (produtoSgiError) return { data: null, error: produtoSgiError }
 
     const tapeteIds = (tapetes ?? []).map((tapete) => tapete.id)
     let cores: Array<{ tapete_id: string; ordem: number; cor: unknown }> = []
@@ -710,6 +805,7 @@ export class RepositorioPedidosPersonalizados {
         })),
         itens: itens ?? [],
         historico: historico ?? [],
+        produtoSgi: produtoSgi as IntegracaoProdutoSgiRow | null,
       },
       error: null,
     }
@@ -722,5 +818,53 @@ export class RepositorioPedidosPersonalizados {
       .eq('pedido_id', pedidoId)
     if (error) return { data: null, error }
     return { data: (data ?? []).map((tapete) => tapete.id), error: null }
+  }
+
+  async solicitarProdutoSgi(
+    pedidoId: string,
+    usuarioId: string
+  ): Promise<ResultadoBanco<IntegracaoProdutoSgiRow>> {
+    const { data, error } = await this.supabase.rpc('solicitar_produto_sgi_lebebe_exclusive', {
+      p_pedido_id: pedidoId,
+      p_usuario_id: usuarioId,
+    })
+    if (error) return { data: null, error }
+    const row = primeiraLinhaRpc<IntegracaoProdutoSgiRow>(data)
+    return row
+      ? { data: row, error: null }
+      : { data: null, error: { message: 'INTEGRACAO_NAO_CONFIRMADA' } }
+  }
+
+  async reivindicarProdutoSgi(): Promise<ResultadoBanco<IntegracaoProdutoSgiRow | null>> {
+    const { data, error } = await this.supabase.rpc('reivindicar_produto_sgi_lebebe_exclusive')
+    if (error) return { data: null, error }
+    return { data: primeiraLinhaRpc<IntegracaoProdutoSgiRow>(data), error: null }
+  }
+
+  async registrarCheckpointProdutoSgi(
+    checkpoint: CheckpointProdutoSgi
+  ): Promise<ResultadoBanco<IntegracaoProdutoSgiRow>> {
+    const { data, error } = await this.supabase.rpc('registrar_checkpoint_produto_sgi_lebebe_exclusive', {
+      p_pedido_id: checkpoint.pedidoId,
+      p_claim_token: checkpoint.claimToken,
+      p_status_integracao: checkpoint.statusIntegracao,
+      p_etapa: checkpoint.etapa,
+      p_produto_id_sgi: checkpoint.produtoIdSgi ?? null,
+      p_codigo_sgi: checkpoint.codigoSgi ?? null,
+      p_procedimento_custo_sgi: checkpoint.procedimentoCustoSgi ?? null,
+      p_numero_lancamento_entrada_sgi: checkpoint.numeroLancamentoEntradaSgi ?? null,
+      p_documento_entrada_id_sgi: checkpoint.documentoEntradaIdSgi ?? null,
+      p_procedimento_finalizacao_sgi: checkpoint.procedimentoFinalizacaoSgi ?? null,
+      p_tabela_preco_id_sgi: checkpoint.tabelaPrecoIdSgi ?? null,
+      p_item_tabela_preco_id_sgi: checkpoint.itemTabelaPrecoIdSgi ?? null,
+      p_erro_codigo: checkpoint.erroCodigo ?? null,
+      p_erro_mensagem: checkpoint.erroMensagem ?? null,
+      p_evento_detalhes: checkpoint.eventoDetalhes ?? {},
+    })
+    if (error) return { data: null, error }
+    const row = primeiraLinhaRpc<IntegracaoProdutoSgiRow>(data)
+    return row
+      ? { data: row, error: null }
+      : { data: null, error: { message: 'CHECKPOINT_NAO_CONFIRMADO' } }
   }
 }

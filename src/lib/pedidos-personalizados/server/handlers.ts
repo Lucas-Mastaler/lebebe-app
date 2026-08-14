@@ -49,6 +49,8 @@ import {
   validarEntradaLebebeExclusive,
   validarFiltrosCatalogoLebebeExclusive,
 } from './lebebe-exclusive'
+import { serializarIntegracaoProdutoSgi } from './produto-sgi'
+import type { IntegracaoProdutoSgiRow } from './repositorio'
 
 type Repositorio = RepositorioPedidosPersonalizados
 
@@ -180,10 +182,19 @@ function serializarItemListagem(valor: unknown) {
       row.status as import('../tipos').StatusPedidoPersonalizado
     ),
     recebidoEm: row.recebido_em,
+    produtoSgi: serializarIntegracaoProdutoSgi(
+      (row.produto_sgi as IntegracaoProdutoSgiRow | null | undefined) ?? null
+    ),
   }
 }
 
-function serializarDetalhe(valor: { pedido: unknown; tapetes: unknown[]; itens: unknown[]; historico: unknown[] }) {
+function serializarDetalhe(valor: {
+  pedido: unknown
+  tapetes: unknown[]
+  itens: unknown[]
+  historico: unknown[]
+  produtoSgi: IntegracaoProdutoSgiRow | null
+}) {
   const pedido = valor.pedido as Record<string, unknown>
   const fornecedor = pedido.fornecedor as Record<string, unknown> | null
   const unidade = pedido.unidade as Record<string, unknown> | null
@@ -212,6 +223,7 @@ function serializarDetalhe(valor: { pedido: unknown; tapetes: unknown[]; itens: 
     version: pedido.version,
     createdAt: pedido.created_at,
     updatedAt: pedido.updated_at,
+    produtoSgi: serializarIntegracaoProdutoSgi(valor.produtoSgi),
     tapetes: valor.tapetes.map((item) => {
       const tapete = item as Record<string, unknown>
       return {

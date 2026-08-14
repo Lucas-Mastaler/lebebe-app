@@ -43,6 +43,7 @@ import {
   contarPedidosGestaoPorStatus,
   detalheParaAdministrativo,
   detalheParaFormulario,
+  deveExibirAcaoProdutoSgi,
   gerarResumoFornecedorDetalhe,
   listarPedidosGestao,
   mensagemErroGestao,
@@ -50,6 +51,7 @@ import {
   payloadAtualizacaoComercial,
   camposComerciaisPendentesTransicao,
   requisitosPendentesTransicao,
+  solicitarProdutoSgiGestao,
   transicionarStatusGestao,
   validarAdministrativo,
 } from './gestao-modelo'
@@ -224,8 +226,11 @@ export function GestaoPedidosPersonalizados() {
   })
   const [numeroLancamentoTransicao, setNumeroLancamentoTransicao] = useState('')
   const [transicaoOrigemCard, setTransicaoOrigemCard] = useState(false)
+  const [produtoSgiOrigemCard, setProdutoSgiOrigemCard] = useState(false)
   const [formulario, setFormulario] = useState<EstadoNovoPedido | null>(null)
   const [salvando, setSalvando] = useState(false)
+  const [confirmandoProdutoSgi, setConfirmandoProdutoSgi] = useState(false)
+  const [solicitandoProdutoSgi, setSolicitandoProdutoSgi] = useState(false)
   const [resumoCopiado, setResumoCopiado] = useState(false)
   const [operacaoAnexo, setOperacaoAnexo] = useState<{ chaveLocal: string; slot: 1 | 2; tipo: 'upload' | 'substituicao' | 'remocao' | 'abertura' } | null>(null)
   const mutacaoRef = useRef(false)
@@ -260,6 +265,30 @@ export function GestaoPedidosPersonalizados() {
     void carregarLista(controller.signal)
     return () => controller.abort()
   }, [carregarLista])
+
+  useEffect(() => {
+    const pedidoId = detalhe?.id
+    const status = detalhe?.produtoSgi?.status
+    if (!pedidoId || (status !== 'PENDENTE' && status !== 'PROCESSANDO')) return
+
+    let cancelado = false
+    const intervalId = window.setInterval(() => {
+      void carregarDetalheGestao(pedidoId).then((pedido) => {
+        if (cancelado) return
+        setDetalhe(pedido)
+        if (pedido.produtoSgi?.status === 'CONCLUIDO') {
+          toast.success('Produto criado no SGI.')
+          window.clearInterval(intervalId)
+        }
+        if (pedido.produtoSgi?.status === 'ERRO') window.clearInterval(intervalId)
+      }).catch(() => undefined)
+    }, 5000)
+
+    return () => {
+      cancelado = true
+      window.clearInterval(intervalId)
+    }
+  }, [detalhe])
 
   const carregarContagens = useCallback(async (signal?: AbortSignal) => {
     setCarregandoContagens(true)
@@ -496,6 +525,48 @@ export function GestaoPedidosPersonalizados() {
     }
   }
 
+  async function abrirProdutoSgiPeloCard(id: string) {
+    if (carregandoDetalhe) return
+    setProdutoSgiOrigemCard(true)
+    setCarregandoDetalhe(true)
+    try {
+      const pedido = await carregarDetalheGestao(id)
+      setDetalhe(pedido)
+      setFormulario(detalheParaFormulario(pedido))
+      setAdministrativo(detalheParaAdministrativo(pedido))
+      setConfirmandoProdutoSgi(true)
+    } catch (error) {
+      setProdutoSgiOrigemCard(false)
+      toast.error(mensagemErroGestao(error))
+    } finally {
+      setCarregandoDetalhe(false)
+    }
+  }
+
+  async function confirmarCriacaoProdutoSgi() {
+    if (!detalhe || solicitandoProdutoSgi) return
+    setSolicitandoProdutoSgi(true)
+    try {
+      const produtoSgi = await solicitarProdutoSgiGestao(detalhe.id)
+      setDetalhe((atual) => atual ? { ...atual, produtoSgi } : atual)
+      setConfirmandoProdutoSgi(false)
+      await carregarLista()
+      if (produtoSgiOrigemCard) {
+        setDetalhe(null)
+        setFormulario(null)
+        setAdministrativo(null)
+        setProdutoSgiOrigemCard(false)
+      }
+      toast.success(produtoSgi.status === 'CONCLUIDO'
+        ? 'Produto já estava criado no SGI.'
+        : produtoSgi.tentativas > 0 ? 'Retomada enviada para a fila.' : 'Criação enviada para a fila.')
+    } catch (error) {
+      toast.error(mensagemErroGestao(error))
+    } finally {
+      setSolicitandoProdutoSgi(false)
+    }
+  }
+
   function atualizarCampoAdministrativo(
     campo: keyof EstadoAdministrativo,
     valor: string
@@ -674,7 +745,33 @@ export function GestaoPedidosPersonalizados() {
                     <div><dt className="text-slate-500">Produtos</dt><dd className="font-medium">{item.fornecedor?.chave === 'lebebe_exclusive' ? item.referenciasProdutos.join(', ') || '—' : item.codigosProdutos.join(', ') || '—'}</dd></div>
                     <div><dt className="text-slate-500">Cadastro</dt><dd className="font-medium">{formatarData(item.createdAt)}</dd></div>
                   </dl>
+                  {item.fornecedor?.chave === 'lebebe_exclusive' && item.produtoSgi && (
+                    <div className={`mb-4 rounded-lg border px-3 py-2 text-sm ${
+                      item.produtoSgi.status === 'CONCLUIDO'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                        : item.produtoSgi.status === 'ERRO'
+                          ? 'border-red-200 bg-red-50 text-red-900'
+                          : 'border-sky-200 bg-sky-50 text-sky-900'
+                    }`}>
+                      <p className="font-bold">{item.produtoSgi.status === 'CONCLUIDO' ? 'Produto SGI criado' : item.produtoSgi.status === 'ERRO' ? 'Erro ao criar produto SGI' : 'Criando produto SGI...'}</p>
+                      <p className="mt-1 break-words">{item.produtoSgi.codigoSgi ? `${item.produtoSgi.codigoSgi} - ` : ''}{item.produtoSgi.nomeProduto}</p>
+                    </div>
+                  )}
                   <div className="mt-auto flex flex-col gap-2">
+                    {deveExibirAcaoProdutoSgi(item) && (
+                        <Button
+                          type="button"
+                          className="min-h-11"
+                          disabled={carregandoDetalhe || item.produtoSgi?.status === 'PENDENTE' || item.produtoSgi?.status === 'PROCESSANDO'}
+                          onClick={() => void abrirProdutoSgiPeloCard(item.id)}
+                        >
+                          {item.produtoSgi?.status === 'PENDENTE' || item.produtoSgi?.status === 'PROCESSANDO'
+                            ? <><Loader2 className="animate-spin" />Criando produto SGI...</>
+                            : item.produtoSgi?.status === 'ERRO'
+                              ? <><RefreshCw />Tentar novamente</>
+                              : <><ShoppingBag />Criar produto SGI</>}
+                        </Button>
+                      )}
                     <BotaoAvancoStatus
                       status={item.status}
                       fornecedor={item.fornecedor}
@@ -711,7 +808,7 @@ export function GestaoPedidosPersonalizados() {
       )}
 
       <Dialog
-        open={(carregandoDetalhe || detalhe !== null) && !editandoAdministrativo && !transicaoOrigemCard}
+        open={(carregandoDetalhe || detalhe !== null) && !editandoAdministrativo && !transicaoOrigemCard && !produtoSgiOrigemCard}
         onOpenChange={(aberto) => {
           if (!aberto && !salvando && !operacaoAnexo) {
             setDetalhe(null)
@@ -824,6 +921,41 @@ export function GestaoPedidosPersonalizados() {
                   <div className="overflow-x-auto rounded-xl border">
                     <table className="min-w-[920px] w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-600"><tr><th className="p-3">Coleção</th><th className="p-3">Descrição</th><th className="p-3">Referência</th><th className="p-3">Qtd.</th><th className="p-3">Nome ou letra</th><th className="p-3 text-right">Preço unit.</th><th className="p-3 text-right">Custo unit.</th><th className="p-3 text-right">Total</th></tr></thead><tbody>{detalhe.itens.map((item) => <tr key={item.id} className="border-t"><td className="p-3 font-medium">{item.colecao}</td><td className="p-3">{item.descricao}</td><td className="p-3 font-mono">{item.referencia}</td><td className="p-3">{item.quantidade}</td><td className="p-3">{item.nomeOuLetra || '—'}</td><td className="p-3 text-right">{item.precoUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td className="p-3 text-right">{item.custoUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td className="p-3 text-right font-bold">{item.totalVenda.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>)}</tbody></table>
                   </div>
+                  <section className={`rounded-xl border p-4 ${
+                    detalhe.produtoSgi?.status === 'CONCLUIDO'
+                      ? 'border-emerald-200 bg-emerald-50'
+                      : detalhe.produtoSgi?.status === 'ERRO'
+                        ? 'border-red-200 bg-red-50'
+                        : 'border-sky-200 bg-sky-50'
+                  }`} aria-labelledby="produto-sgi-titulo">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 id="produto-sgi-titulo" className="flex items-center gap-2 font-semibold text-slate-900">
+                          <ShoppingBag className="size-5" />Produto no SGI
+                        </h3>
+                        <p className="mt-1 break-words text-sm font-medium text-slate-800">
+                          {detalhe.produtoSgi?.nomeProduto ?? `LEBEBE EXCLUSIVE (${detalhe.unidade.nome} ${detalhe.numeroLancamento ?? '—'})`}
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-current/20 bg-white/70 px-3 py-1 text-xs font-bold">
+                        {detalhe.produtoSgi?.status ?? 'NÃO INICIADO'}
+                      </span>
+                    </div>
+                    <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                      <div><dt className="text-slate-500">Custo</dt><dd className="font-semibold">{(detalhe.produtoSgi?.custo ?? detalhe.itens.reduce((soma, item) => soma + item.totalCusto, 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</dd></div>
+                      <div><dt className="text-slate-500">Preço</dt><dd className="font-semibold">{(detalhe.produtoSgi?.preco ?? detalhe.itens.reduce((soma, item) => soma + item.totalVenda, 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</dd></div>
+                      <div><dt className="text-slate-500">Etapa</dt><dd className="font-semibold">{(detalhe.produtoSgi?.etapa ?? 'NAO_INICIADO').replaceAll('_', ' ')}</dd></div>
+                      <div><dt className="text-slate-500">Código SGI</dt><dd className="font-semibold">{detalhe.produtoSgi?.codigoSgi ?? '—'}</dd></div>
+                    </dl>
+                    {detalhe.produtoSgi?.status === 'ERRO' && (
+                      <p role="alert" className="mt-3 text-sm font-medium text-red-800">{detalhe.produtoSgi.erroMensagem ?? 'A criação não foi concluída. Tente retomar.'}</p>
+                    )}
+                    {detalhe.produtoSgi?.status === 'CONCLUIDO' && (
+                      <p className="mt-3 text-sm font-medium text-emerald-800">
+                        {detalhe.produtoSgi.codigoSgi} - {detalhe.produtoSgi.nomeProduto} · Produto {detalhe.produtoSgi.produtoIdSgi} criado e validado no SGI.
+                      </p>
+                    )}
+                  </section>
                 </section>
               ) : (
                 <section className="space-y-4" aria-labelledby="tapetes-titulo">
@@ -915,6 +1047,20 @@ export function GestaoPedidosPersonalizados() {
                 </>
               ) : (
                 <>
+                  {deveExibirAcaoProdutoSgi(detalhe) && (
+                      <Button
+                        type="button"
+                        variant={detalhe.produtoSgi?.status === 'ERRO' ? 'destructive' : 'default'}
+                        disabled={solicitandoProdutoSgi || detalhe.produtoSgi?.status === 'PENDENTE' || detalhe.produtoSgi?.status === 'PROCESSANDO'}
+                        onClick={() => setConfirmandoProdutoSgi(true)}
+                      >
+                        {detalhe.produtoSgi?.status === 'PENDENTE' || detalhe.produtoSgi?.status === 'PROCESSANDO'
+                          ? <><Loader2 className="animate-spin" />Criando no SGI</>
+                          : detalhe.produtoSgi?.status === 'ERRO'
+                            ? <><RefreshCw />Tentar novamente no SGI</>
+                            : <><ShoppingBag />Criar produto no SGI</>}
+                      </Button>
+                    )}
                   <Button type="button" disabled={!permiteEdicaoComercial(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')} onClick={() => setEditando(true)}><Pencil />Editar dados comerciais</Button>
                   <Button type="button" variant="secondary" disabled={!permiteEdicaoAdministrativa(detalhe.status)} onClick={() => { setAdministrativo(detalheParaAdministrativo(detalhe)); setErrosAdministrativos({}); setConflitoAdministrativo(false); setEditandoAdministrativo(true) }}><Pencil />Editar dados administrativos</Button>
                   <BotaoAvancoStatus status={detalhe.status} fornecedor={detalhe.fornecedor} onClick={abrirTransicao} className="font-semibold shadow-sm" />
@@ -923,6 +1069,47 @@ export function GestaoPedidosPersonalizados() {
               <Button type="button" variant="ghost" disabled={salvando} onClick={() => void recarregarDetalhe()}><RefreshCw />Recarregar</Button>
             </DialogFooter>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmandoProdutoSgi} onOpenChange={(aberto) => {
+        if (solicitandoProdutoSgi) return
+        setConfirmandoProdutoSgi(aberto)
+        if (!aberto && produtoSgiOrigemCard) {
+          setDetalhe(null)
+          setFormulario(null)
+          setAdministrativo(null)
+          setProdutoSgiOrigemCard(false)
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{detalhe?.produtoSgi?.status === 'ERRO' ? 'Retomar criação no SGI' : 'Criar produto no SGI'}</DialogTitle>
+            <DialogDescription>
+              Confirme os valores congelados para esta operação. O processamento continuará na VPS e poderá ser retomado do último checkpoint.
+            </DialogDescription>
+          </DialogHeader>
+          {detalhe && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm">
+                <p className="text-xs font-bold uppercase tracking-wide text-sky-800">Nome que será usado</p>
+                <p className="mt-1 break-words font-semibold text-slate-950">
+                  {detalhe.produtoSgi?.nomeProduto ?? `LEBEBE EXCLUSIVE (${detalhe.unidade.nome} ${detalhe.numeroLancamento ?? '—'})`}
+                </p>
+                <dl className="mt-4 grid grid-cols-2 gap-3">
+                  <div><dt className="text-slate-500">Custo</dt><dd className="font-bold">{(detalhe.produtoSgi?.custo ?? detalhe.itens.reduce((soma, item) => soma + item.totalCusto, 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</dd></div>
+                  <div><dt className="text-slate-500">Preço</dt><dd className="font-bold">{(detalhe.produtoSgi?.preco ?? detalhe.itens.reduce((soma, item) => soma + item.totalVenda, 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</dd></div>
+                </dl>
+              </div>
+              <p className="text-sm text-slate-600">O modelo SGI 39879 será validado antes da duplicação. Repetir a solicitação não cria outro produto para este pedido.</p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={solicitandoProdutoSgi} onClick={() => setConfirmandoProdutoSgi(false)}>Cancelar</Button>
+            <Button type="button" disabled={!detalhe || solicitandoProdutoSgi} onClick={() => void confirmarCriacaoProdutoSgi()}>
+              {solicitandoProdutoSgi ? <><Loader2 className="animate-spin" />Enviando</> : detalhe?.produtoSgi?.status === 'ERRO' ? 'Tentar novamente' : 'Criar produto SGI'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

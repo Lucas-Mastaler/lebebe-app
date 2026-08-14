@@ -6,11 +6,13 @@ import {
   atualizarComercialGestao,
   detalheParaAdministrativo,
   detalheParaFormulario,
+  deveExibirAcaoProdutoSgi,
   listarPedidosGestao,
   payloadAtualizacaoAdministrativa,
   payloadAtualizacaoComercial,
   gerarResumoFornecedorDetalhe,
   requisitosPendentesTransicao,
+  solicitarProdutoSgiGestao,
   validarAdministrativo,
 } from './gestao-modelo'
 import type { OpcoesNovoPedido } from './novo-pedido-modelo'
@@ -30,6 +32,7 @@ const detalhe: PedidoDetalhe = {
   consultora: 'ANA', cliente: 'CLIENTE', telefone: '41999999999', numeroLancamento: '000001',
   dataEntrega: null, dataPedidoFornecedor: null, numeroPedidoCompra: null, comprador: null,
   status: 'VENDA FECHADA', version: 4, createdAt: '2026-08-06T10:00:00Z', updatedAt: '2026-08-06T10:00:00Z',
+  produtoSgi: null,
   tapetes: [{
     id: TAPETE, ordem: 1, formato: 'RETANGULAR', tipo: 'PERSONALIZADO', dimensao1Cm: 200, dimensao2Cm: 300,
     areaCobradaCentesimosM2: 600, produto: { id: 'p', codigo: '21158', descricao: 'Produto' },
@@ -51,6 +54,51 @@ const opcoes = {
 } as OpcoesNovoPedido
 
 describe('modelo da gestão de pedidos personalizados', () => {
+  it('exibe a ação SGI só para Exclusive em Venda Fechada com lançamento e sem conclusão', () => {
+    const exclusive = { ...detalhe, fornecedor: { chave: 'lebebe_exclusive', nome: 'LEBEBE EXCLUSIVE' } }
+    expect(deveExibirAcaoProdutoSgi(exclusive)).toBe(true)
+    expect(deveExibirAcaoProdutoSgi({ ...exclusive, status: 'RASCUNHO' })).toBe(false)
+    expect(deveExibirAcaoProdutoSgi({ ...exclusive, numeroLancamento: null })).toBe(false)
+    expect(deveExibirAcaoProdutoSgi(detalhe)).toBe(false)
+    expect(deveExibirAcaoProdutoSgi({
+      ...exclusive,
+      produtoSgi: {
+        status: 'CONCLUIDO', etapa: 'CONCLUIDO', nomeProduto: 'Produto', custo: 1, preco: 2,
+        produtoIdSgi: '39880', codigoSgi: '21188', tentativas: 1, erroCodigo: null,
+        erroMensagem: null, solicitadoEm: '', iniciadoEm: '', concluidoEm: '', atualizadoEm: '',
+      },
+    })).toBe(false)
+  })
+  it('solicita a criação SGI na rota específica e devolve o estado assíncrono', async () => {
+    const produtoSgi = {
+      status: 'PENDENTE' as const,
+      etapa: 'NAO_INICIADO' as const,
+      nomeProduto: 'LEBEBE EXCLUSIVE (PORTÃO 123456)',
+      custo: 100,
+      preco: 200,
+      produtoIdSgi: null,
+      codigoSgi: null,
+      tentativas: 0,
+      erroCodigo: null,
+      erroMensagem: null,
+      solicitadoEm: '2026-08-14T10:00:00Z',
+      iniciadoEm: null,
+      concluidoEm: null,
+      atualizadoEm: '2026-08-14T10:00:00Z',
+    }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true, produtoSgi }), {
+      status: 202,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(solicitarProdutoSgiGestao(PEDIDO)).resolves.toEqual(produtoSgi)
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/pedidos-personalizados/pedidos/${PEDIDO}/produto-sgi`,
+      { method: 'POST' }
+    )
+    vi.unstubAllGlobals()
+  })
   it('converte detalhe sem perder IDs, ordem, medidas, cores e anexos', () => {
     const formulario = detalheParaFormulario(detalhe)
     expect(formulario).toMatchObject({ unidade: 'portao', consultora: 'ANA', cliente: 'CLIENTE' })

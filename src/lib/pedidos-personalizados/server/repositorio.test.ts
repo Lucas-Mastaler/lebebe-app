@@ -131,6 +131,7 @@ describe('repositório server-only de pedidos personalizados', () => {
         error: null,
       }],
       pedidos_personalizados_lebebe_exclusive_itens: [{ data: [], error: null }],
+      pedidos_personalizados_lebebe_exclusive_sgi: [{ data: [], error: null }],
       pedidos_personalizados_status_historico: [{
         data: [{ pedido_id: 'pedido-1', data_recebimento: '2026-08-06', created_at: '2026-08-07T12:00:00Z' }], error: null,
       }],
@@ -142,7 +143,7 @@ describe('repositório server-only de pedidos personalizados', () => {
     expect(resultado.error).toBeNull()
     expect(resultado.data?.total).toBe(41)
     expect(resultado.data?.itens[0]).toMatchObject({ quantidade_tapetes: 2, codigos_produtos: ['21158'], recebido_em: '2026-08-06' })
-    expect(from).toHaveBeenCalledTimes(4)
+    expect(from).toHaveBeenCalledTimes(5)
     expect(rastreio.order.slice(0, 2)).toEqual([
       ['created_at', { ascending: false }],
       ['id', { ascending: false }],
@@ -165,6 +166,7 @@ describe('repositório server-only de pedidos personalizados', () => {
         error: null,
       }],
       pedidos_personalizados_lebebe_exclusive_itens: [{ data: [], error: null }],
+      pedidos_personalizados_lebebe_exclusive_sgi: [{ data: [], error: null }],
       pedidos_personalizados_status_historico: [{
         data: [
           { pedido_id: 'pedido-1', data_recebimento: '2026-08-06', created_at: '2026-08-07T12:00:00Z' },
@@ -241,6 +243,7 @@ describe('repositório server-only de pedidos personalizados', () => {
       pedidos_personalizados_pedidos: [{ data: { id: 'pedido-1' }, error: null }],
       pedidos_personalizados_moriah_tapetes: [{ data: [{ id: 'tapete-1', ordem: 1 }], error: null }],
       pedidos_personalizados_lebebe_exclusive_itens: [{ data: [], error: null }],
+      pedidos_personalizados_lebebe_exclusive_sgi: [{ data: null, error: null }],
       pedidos_personalizados_tapete_cores: [{ data: [{ tapete_id: 'tapete-1', ordem: 1, cor: { id: 'cor-1' } }], error: null }],
       pedidos_personalizados_anexos: [{ data: [{ tapete_id: 'tapete-1', id: 'anexo-1', slot: 1, nome_original: 'arquivo.pdf', mime_type: 'application/pdf', tamanho_bytes: 10, created_at: '2026-08-05T10:00:00Z' }], error: null }],
       pedidos_personalizados_status_historico: [{ data: [], error: null }],
@@ -253,8 +256,41 @@ describe('repositório server-only de pedidos personalizados', () => {
       anexos: [{ id: 'anexo-1', slot: 1, nome_original: 'arquivo.pdf', mime_type: 'application/pdf', tamanho_bytes: 10 }],
     })
     expect(JSON.stringify(resultado.data)).not.toContain('caminho_objeto')
-    expect(from).toHaveBeenCalledTimes(6)
+    expect(from).toHaveBeenCalledTimes(7)
     expect(rastreio.order).toContainEqual(['ordem', { ascending: true }])
+  })
+
+  it('usa as RPCs de fila e envia todos os identificadores no checkpoint', async () => {
+    const row = {
+      pedido_id: 'pedido-1', status_integracao: 'PROCESSANDO', etapa: 'PRODUTO_RENOMEADO',
+      claim_token: 'claim-1', produto_id_sgi: '39880', codigo_sgi: '21188',
+    }
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: [row], error: null })
+      .mockResolvedValueOnce({ data: [row], error: null })
+      .mockResolvedValueOnce({ data: [row], error: null })
+    const repo = new RepositorioPedidosPersonalizados({ rpc } as unknown as SupabaseClient)
+
+    expect((await repo.solicitarProdutoSgi('pedido-1', 'usuario-1')).data).toBe(row)
+    expect((await repo.reivindicarProdutoSgi()).data).toBe(row)
+    expect((await repo.registrarCheckpointProdutoSgi({
+      pedidoId: 'pedido-1',
+      claimToken: 'claim-1',
+      statusIntegracao: 'PROCESSANDO',
+      etapa: 'PRODUTO_RENOMEADO',
+      produtoIdSgi: '39880',
+      codigoSgi: '21188',
+      eventoDetalhes: { recuperado: false },
+    })).data).toBe(row)
+
+    expect(rpc).toHaveBeenNthCalledWith(1, 'solicitar_produto_sgi_lebebe_exclusive', {
+      p_pedido_id: 'pedido-1', p_usuario_id: 'usuario-1',
+    })
+    expect(rpc).toHaveBeenNthCalledWith(2, 'reivindicar_produto_sgi_lebebe_exclusive')
+    expect(rpc).toHaveBeenNthCalledWith(3, 'registrar_checkpoint_produto_sgi_lebebe_exclusive', expect.objectContaining({
+      p_pedido_id: 'pedido-1', p_claim_token: 'claim-1', p_etapa: 'PRODUTO_RENOMEADO',
+      p_produto_id_sgi: '39880', p_codigo_sgi: '21188', p_evento_detalhes: { recuperado: false },
+    }))
   })
 
   it('conta pedidos por status com uma consulta head por status, sem hidratar itens', async () => {

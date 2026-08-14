@@ -49,6 +49,7 @@ export type ItemPedidoGestao = {
   referenciasProdutos: string[]
   situacaoPrazo: SituacaoPrazoPedido | null
   recebidoEm: string | null
+  produtoSgi: ProdutoSgiDetalhe | null
 }
 
 export type ProdutoExclusiveDetalhe = {
@@ -113,9 +114,38 @@ export type PedidoDetalhe = {
   version: number
   createdAt: string
   updatedAt: string
+  produtoSgi: ProdutoSgiDetalhe | null
   tapetes: TapeteDetalhe[]
   itens: ProdutoExclusiveDetalhe[]
   historico: HistoricoStatusDetalhe[]
+}
+
+export type ProdutoSgiDetalhe = {
+  status: 'PENDENTE' | 'PROCESSANDO' | 'ERRO' | 'CONCLUIDO'
+  etapa: 'NAO_INICIADO' | 'PRODUTO_DUPLICADO' | 'PRODUTO_RENOMEADO' | 'CUSTO_CRIADO' | 'CUSTO_FINALIZADO' | 'PRECO_ATUALIZADO' | 'CONCLUIDO'
+  nomeProduto: string
+  custo: number
+  preco: number
+  produtoIdSgi: string | null
+  codigoSgi: string | null
+  tentativas: number
+  erroCodigo: string | null
+  erroMensagem: string | null
+  solicitadoEm: string
+  iniciadoEm: string | null
+  concluidoEm: string | null
+  atualizadoEm: string
+}
+
+export function deveExibirAcaoProdutoSgi(pedido: Pick<
+  PedidoDetalhe,
+  'fornecedor' | 'status' | 'numeroLancamento' | 'produtoSgi'
+>): boolean {
+  return pedido.fornecedor?.chave === 'lebebe_exclusive'
+    && pedido.status === 'VENDA FECHADA'
+    && /^\d{1,6}$/.test(pedido.numeroLancamento ?? '')
+    && pedido.produtoSgi?.status !== 'CONCLUIDO'
+    && pedido.produtoSgi?.erroCodigo !== 'DUPLICACAO_INDETERMINADA'
 }
 
 export type DadosTransicaoGestao = {
@@ -284,6 +314,16 @@ export async function carregarDetalheGestao(id: string): Promise<PedidoDetalhe> 
   const body = await response.json() as { ok?: boolean; pedido?: PedidoDetalhe }
   if (body.ok !== true || !body.pedido) throw new Error('Resposta de detalhe inválida.')
   return body.pedido
+}
+
+export async function solicitarProdutoSgiGestao(id: string): Promise<ProdutoSgiDetalhe> {
+  const response = await fetch(`/api/pedidos-personalizados/pedidos/${id}/produto-sgi`, {
+    method: 'POST',
+  })
+  if (!response.ok) throw await erroResposta(response)
+  const body = await response.json() as { ok?: boolean; produtoSgi?: ProdutoSgiDetalhe }
+  if (body.ok !== true || !body.produtoSgi) throw new Error('Resposta da integração SGI inválida.')
+  return body.produtoSgi
 }
 
 function metros(cm: number | null) {

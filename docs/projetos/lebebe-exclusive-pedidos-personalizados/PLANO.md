@@ -214,3 +214,46 @@ Alterar preço/custo no catálogo não poderá modificar esses snapshots.
   sincronizações por planilha.
 - A automação externa de cadastro de produto no SGI não está conectada nem
   documentada no repositório atual.
+
+### Fase 8 — Integração SGI: banco e backend
+
+Dependência: fluxo Exclusive, snapshots e fechamento de venda vigentes.
+
+- [x] Auditar App, Supabase, VPS e validar por leitura o modelo SGI `39879`.
+- [x] Criar tabela 1:1 server-only de integração com estado, etapa, valores
+  congelados, IDs parciais, claim, erro e timestamps.
+- [x] Criar RPCs transacionais para iniciar/retry, claim do worker e checkpoint
+  condicional por token, sem manter lock durante HTTP externo.
+- [x] Ensaiar migration com `ROLLBACK`, aplicar via MCP e confirmar schema,
+  grants, RLS, constraints, índices e advisors.
+- [x] Criar rota autenticada da Gestão para iniciar/tentar novamente e rotas
+  internas Bearer específicas para claim/checkpoint do worker.
+- [x] Incluir o estado SGI nas respostas de listagem e detalhe sem expor custo
+  fora da Gestão.
+
+### Fase 9 — Integração SGI: worker e interface
+
+Dependência: Fase 8 concluída.
+
+- [x] Parametrizar somente o necessário do fluxo HTTP validado, mantendo o
+  modelo `39879` fixo server-side.
+- [x] Criar worker outbound sem porta pública, com polling autenticado do App,
+  estado local atômico, logs por pedido e callback após cada etapa.
+- [x] Validar nome do modelo antes de duplicar e recuperar produto existente
+  pelo nome exato antes de qualquer nova duplicação.
+- [x] Adicionar componente compartilhado no card e detalhe, modal de
+  confirmação, estados disponível/processando/erro/concluído e polling.
+- [x] Garantir que Moriah não receba ação, estado ou alteração funcional.
+
+### Fase 10 — Validação e operação controlada
+
+Dependência: Fases 8 e 9 concluídas.
+
+- [x] Cobrir elegibilidade, valores canônicos, nome, concorrência, double-click,
+  timeout, falhas parciais, retry e congelamento pós-sucesso.
+- [x] Executar regressão focada, SQL transacional, lint, typecheck e build.
+- [x] Instalar o worker na VPS sem expor porta nem secrets; mantê-lo inativo até o deploy do App.
+- [ ] Executar exatamente um teste SGI real com pedido Exclusive elegível,
+  preservando o mesmo produto em qualquer falha parcial.
+- [ ] Confirmar visualmente card/modal e registrar o gate se não houver pedido
+  elegível ou sessão autenticada adequada.

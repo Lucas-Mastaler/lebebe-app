@@ -18,7 +18,8 @@ skills reutilizáveis.
   registradas em `/skills-lock.json`), `projeto-multifase` (Fase 1.5) e as
   seis skills de projeto criadas na Fase 3 (`auditar-tarefa`, `criar-plano`,
   `executar-plano`, `validar-entrega`, `atualizar-log-progress`,
-  `procurar-datas`) — ver o catálogo completo em `skills/README.md`.
+  `procurar-datas`) e `autenticacao-tecnica-agentes` — ver o catálogo completo
+  em `skills/README.md`.
   `atualizar-log-progress` está **aposentada** desde a Fase B2
   (2026-08-10, ver abaixo).
 

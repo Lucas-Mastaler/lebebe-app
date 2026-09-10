@@ -15,7 +15,7 @@ export async function middleware(request: NextRequest) {
     },
   })
 
-  const publicRoutes = ['/login', '/recuperar-senha', '/resetar-senha', '/definir-senha', '/convite']
+  const publicRoutes = ['/login', '/agente', '/recuperar-senha', '/resetar-senha', '/definir-senha', '/convite']
   const isPublicRoute = publicRoutes.some(route => request.nextUrl.pathname.startsWith(route))
 
   // Se as variáveis de ambiente não estão configuradas, redireciona para login
@@ -141,6 +141,7 @@ export const config = {
     '/pos-venda/:path*',
     '/inicio',
     '/login',
+    '/agente',
     '/recuperar-senha',
     '/resetar-senha',
     '/definir-senha',

@@ -19,6 +19,7 @@ respectivo `SKILL.md` — não duplique aqui quando revisar.
 | `criar-plano/` | Implementada (Fase 3, 2026-08-07) | Investigação → plano executável | Nenhuma |
 | `executar-plano/` | Implementada (Fase 3, 2026-08-07) | Implementação de plano aprovado | Nenhuma |
 | `validar-entrega/` | Implementada (Fase 3, 2026-08-07) | Revisão de diff + relatório final | Nenhuma |
+| `autenticacao-tecnica-agentes/` | Implementada | Acesso técnico seguro ao Preview para validação visual e testes autenticados | Nenhuma |
 | `atualizar-log-progress/` | **Aposentada** (Fase B2, 2026-08-10) | Sem gatilho operacional — `docs/ia/log_progress.md` está congelado | Nenhuma |
 | `procurar-datas/` | Implementada (Fase 3, 2026-08-07) | Navegador dos dossiês da migração `/procurar-datas` | Nenhuma |
 
@@ -233,10 +234,10 @@ a skill não escreve mais nesse arquivo e não tem gatilho operacional. Ver
 
 ## Estado de implementação
 
-Todas as 7 skills de projeto estão implementadas: `projeto-multifase`
+Todas as 8 skills de projeto estão implementadas: `projeto-multifase`
 (Fase 1.5, 2026-08-07 — exceção deliberada porque o harness de
-continuidade precisava existir antes das demais) e as seis skills
-operacionais desta seção (Fase 3, 2026-08-07) —
+continuidade precisava existir antes das demais), as seis skills
+operacionais da Fase 3 e `autenticacao-tecnica-agentes` —
 `.agents/skills/<nome>/SKILL.md` para cada uma. Nenhuma foi deixada vazia
 ou como esqueleto.
 

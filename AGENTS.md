@@ -190,6 +190,10 @@ nesta ordem, cada um só se aplicável ao estado atual:
    não é auditoria geral do módulo.
 6. Qualquer tarefa em `/procurar-datas` → rule (§7) +
    `.agents/skills/procurar-datas/SKILL.md`.
+7. Qualquer validação visual, browser test/E2E, screenshot, rota protegida ou
+   teste autenticado no Preview →
+   `.agents/skills/autenticacao-tecnica-agentes/SKILL.md`. Não carregue essa
+   skill para tarefas que não precisam abrir a aplicação.
 
 `auditar → planejar → executar → validar` é um fluxo **possível**, não
 obrigatório para toda tarefa — cada skill decide sozinha quando pode ser

@@ -13,6 +13,8 @@ import {
   gerarResumoFornecedorDetalhe,
   gerarResumoRascunhoDetalhe,
   requisitosPendentesTransicao,
+  renomeacaoProdutoSgiEstaPendente,
+  renomeacaoProdutoSgiFoiConcluida,
   solicitarProdutoSgiGestao,
   validarAdministrativo,
 } from './gestao-modelo'
@@ -99,6 +101,52 @@ describe('modelo da gestão de pedidos personalizados', () => {
       { method: 'POST' }
     )
     vi.unstubAllGlobals()
+  })
+
+  it('identifica a renomeação pendente e a conclusão devolvida no refetch', () => {
+    const renomeacaoPendente = {
+      status: 'CONCLUIDO' as const,
+      etapa: 'CONCLUIDO' as const,
+      nomeProduto: 'LEBEBE EXCLUSIVE (FEIRA LUCAS)',
+      custo: 100,
+      preco: 200,
+      produtoIdSgi: '1',
+      codigoSgi: '21265',
+      operacaoPendente: 'RENOMEAR_PRODUTO' as const,
+      lancamentoAplicadoEm: null,
+      statusRenomeacao: 'PROCESSANDO' as const,
+      tentativas: 1,
+      erroCodigo: null,
+      erroMensagem: null,
+      solicitadoEm: '',
+      iniciadoEm: '',
+      concluidoEm: '',
+      atualizadoEm: '',
+    }
+    const concluida = {
+      ...renomeacaoPendente,
+      nomeProduto: 'LEBEBE EXCLUSIVE (FEIRA 65459 LUCAS)',
+      operacaoPendente: null,
+      lancamentoAplicadoEm: '2026-09-11T12:00:00Z',
+      statusRenomeacao: 'CONCLUIDO' as const,
+    }
+    const comErro = { ...renomeacaoPendente, statusRenomeacao: 'ERRO' as const }
+
+    expect(renomeacaoProdutoSgiEstaPendente(renomeacaoPendente)).toBe(true)
+    expect(renomeacaoProdutoSgiFoiConcluida(renomeacaoPendente)).toBe(false)
+    expect(renomeacaoProdutoSgiEstaPendente(concluida)).toBe(false)
+    expect(renomeacaoProdutoSgiFoiConcluida(concluida)).toBe(true)
+    expect(renomeacaoProdutoSgiEstaPendente(comErro)).toBe(false)
+    expect(concluida.nomeProduto).toBe('LEBEBE EXCLUSIVE (FEIRA 65459 LUCAS)')
+  })
+
+  it('mantém o polling da renomeação contido ao estado pendente e limpa o interval ao concluir ou falhar', () => {
+    const componente = readFileSync(path.resolve('src/components/pedidos-personalizados/GestaoPedidosPersonalizados.tsx'), 'utf8')
+    expect(componente).toContain('renomeacaoProdutoSgiEstaPendente(item.produtoSgi)')
+    expect(componente).toContain('renomeacoesPendentesRef.current.add(pedido.id)')
+    expect(componente).toContain("pedido.produtoSgi?.statusRenomeacao === 'ERRO'")
+    expect(componente).toContain('window.clearInterval(intervalId)')
+    expect(componente).toContain("produtosSgiAtualizadosNaSessao.has(item.id) ? 'Produto SGI atualizado' : 'Produto SGI criado'")
   })
   it('converte detalhe sem perder IDs, ordem, medidas, cores e anexos', () => {
     const formulario = detalheParaFormulario(detalhe)

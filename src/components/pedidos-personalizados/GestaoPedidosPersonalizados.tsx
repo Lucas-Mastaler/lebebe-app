@@ -52,6 +52,8 @@ import {
   payloadAtualizacaoComercial,
   camposComerciaisPendentesTransicao,
   requisitosPendentesTransicao,
+  renomeacaoProdutoSgiEstaPendente,
+  renomeacaoProdutoSgiFoiConcluida,
   solicitarProdutoSgiGestao,
   transicionarStatusGestao,
   validarAdministrativo,
@@ -236,19 +238,44 @@ export function GestaoPedidosPersonalizados() {
   const [operacaoAnexo, setOperacaoAnexo] = useState<{ chaveLocal: string; slot: 1 | 2; tipo: 'upload' | 'substituicao' | 'remocao' | 'abertura' } | null>(null)
   const mutacaoRef = useRef(false)
   const detalheInicialRef = useRef(false)
+  const renomeacoesPendentesRef = useRef(new Set<string>())
+  const [produtosSgiAtualizadosNaSessao, setProdutosSgiAtualizadosNaSessao] = useState<Set<string>>(() => new Set())
+
+  const registrarEstadoRenomeacao = useCallback((pedido: Pick<PedidoDetalhe, 'id' | 'fornecedor' | 'produtoSgi'>) => {
+    if (pedido.fornecedor?.chave !== 'lebebe_exclusive') return
+
+    if (renomeacaoProdutoSgiEstaPendente(pedido.produtoSgi)) {
+      renomeacoesPendentesRef.current.add(pedido.id)
+      return
+    }
+
+    if (pedido.produtoSgi?.statusRenomeacao === 'ERRO') {
+      renomeacoesPendentesRef.current.delete(pedido.id)
+      return
+    }
+
+    if (renomeacoesPendentesRef.current.delete(pedido.id) && renomeacaoProdutoSgiFoiConcluida(pedido.produtoSgi)) {
+      setProdutosSgiAtualizadosNaSessao((atual) => {
+        if (atual.has(pedido.id)) return atual
+        return new Set(atual).add(pedido.id)
+      })
+    }
+  }, [])
 
   const carregarLista = useCallback(async (signal?: AbortSignal) => {
     setCarregando(true)
     setErro(null)
     try {
-      setResultado(await listarPedidosGestao(filtrosAplicados, pagina, signal))
+      const proximoResultado = await listarPedidosGestao(filtrosAplicados, pagina, signal)
+      proximoResultado.itens.forEach(registrarEstadoRenomeacao)
+      setResultado(proximoResultado)
     } catch (error) {
       if (signal?.aborted) return
       setErro(mensagemErroGestao(error))
     } finally {
       if (!signal?.aborted) setCarregando(false)
     }
-  }, [filtrosAplicados, pagina])
+  }, [filtrosAplicados, pagina, registrarEstadoRenomeacao])
 
   useEffect(() => {
     void carregarOpcoesNovoPedido().then(setOpcoes).catch((error) => setErro(mensagemErroGestao(error)))
@@ -268,7 +295,11 @@ export function GestaoPedidosPersonalizados() {
   }, [carregarLista])
 
   useEffect(() => {
-    const pendente = resultado?.itens.some((item) => item.produtoSgi?.status === 'PENDENTE' || item.produtoSgi?.status === 'PROCESSANDO')
+    const pendente = resultado?.itens.some((item) => (
+      item.produtoSgi?.status === 'PENDENTE'
+      || item.produtoSgi?.status === 'PROCESSANDO'
+      || renomeacaoProdutoSgiEstaPendente(item.produtoSgi)
+    ))
     if (!pendente) return
 
     const controller = new AbortController()
@@ -285,18 +316,20 @@ export function GestaoPedidosPersonalizados() {
   useEffect(() => {
     const pedidoId = detalhe?.id
     const status = detalhe?.produtoSgi?.status
-    if (!pedidoId || (status !== 'PENDENTE' && status !== 'PROCESSANDO')) return
+    const renomeacaoPendente = renomeacaoProdutoSgiEstaPendente(detalhe?.produtoSgi)
+    if (!pedidoId || ((status !== 'PENDENTE' && status !== 'PROCESSANDO') && !renomeacaoPendente)) return
 
     let cancelado = false
     const intervalId = window.setInterval(() => {
       void carregarDetalheGestao(pedidoId).then((pedido) => {
         if (cancelado) return
+        registrarEstadoRenomeacao(pedido)
         setDetalhe(pedido)
-        if (pedido.produtoSgi?.status === 'CONCLUIDO') {
+        if (!renomeacaoPendente && pedido.produtoSgi?.status === 'CONCLUIDO') {
           toast.success('Produto criado no SGI.')
           window.clearInterval(intervalId)
         }
-        if (pedido.produtoSgi?.status === 'ERRO') window.clearInterval(intervalId)
+        if (pedido.produtoSgi?.status === 'ERRO' || !renomeacaoProdutoSgiEstaPendente(pedido.produtoSgi)) window.clearInterval(intervalId)
       }).catch(() => undefined)
     }, 5000)
 
@@ -304,7 +337,7 @@ export function GestaoPedidosPersonalizados() {
       cancelado = true
       window.clearInterval(intervalId)
     }
-  }, [detalhe])
+  }, [detalhe, registrarEstadoRenomeacao])
 
   const carregarContagens = useCallback(async (signal?: AbortSignal) => {
     setCarregandoContagens(true)
@@ -388,6 +421,7 @@ export function GestaoPedidosPersonalizados() {
     setErro(null)
     try {
       const pedido = await carregarDetalheGestao(id)
+      registrarEstadoRenomeacao(pedido)
       setDetalhe(pedido)
       setFormulario(detalheParaFormulario(pedido))
       setAdministrativo(detalheParaAdministrativo(pedido))
@@ -405,6 +439,7 @@ export function GestaoPedidosPersonalizados() {
   async function recarregarDetalhe() {
     if (!detalhe) return
     const pedido = await carregarDetalheGestao(detalhe.id)
+    registrarEstadoRenomeacao(pedido)
     setDetalhe(pedido)
     setFormulario(detalheParaFormulario(pedido))
     setAdministrativo(detalheParaAdministrativo(pedido))
@@ -772,7 +807,7 @@ export function GestaoPedidosPersonalizados() {
                           ? 'border-red-200 bg-red-50 text-red-900'
                           : 'border-sky-200 bg-sky-50 text-sky-900'
                     }`}>
-                      <p className="font-bold">{item.produtoSgi.statusRenomeacao === 'PENDENTE' || item.produtoSgi.statusRenomeacao === 'PROCESSANDO' ? 'Atualizando produto SGI...' : item.produtoSgi.statusRenomeacao === 'ERRO' ? 'Não foi possível atualizar o produto SGI.' : item.produtoSgi.status === 'CONCLUIDO' ? 'Produto SGI criado' : item.produtoSgi.status === 'ERRO' ? 'Erro ao criar produto SGI' : 'Criando produto SGI...'}</p>
+                      <p className="font-bold">{renomeacaoProdutoSgiEstaPendente(item.produtoSgi) ? 'Atualizando produto SGI...' : item.produtoSgi.statusRenomeacao === 'ERRO' ? 'Não foi possível atualizar o produto SGI.' : item.produtoSgi.status === 'CONCLUIDO' ? produtosSgiAtualizadosNaSessao.has(item.id) ? 'Produto SGI atualizado' : 'Produto SGI criado' : item.produtoSgi.status === 'ERRO' ? 'Erro ao criar produto SGI' : 'Criando produto SGI...'}</p>
                       <p className="mt-1 break-words">{item.produtoSgi.codigoSgi ? `${item.produtoSgi.codigoSgi} - ` : ''}{item.produtoSgi.nomeProduto}</p>
                     </div>
                   )}

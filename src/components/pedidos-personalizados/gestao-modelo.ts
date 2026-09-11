@@ -141,6 +141,16 @@ export type ProdutoSgiDetalhe = {
   atualizadoEm: string
 }
 
+export function renomeacaoProdutoSgiEstaPendente(produtoSgi: ProdutoSgiDetalhe | null | undefined) {
+  return produtoSgi?.operacaoPendente === 'RENOMEAR_PRODUTO'
+    && (produtoSgi.statusRenomeacao === 'PENDENTE' || produtoSgi.statusRenomeacao === 'PROCESSANDO')
+}
+
+export function renomeacaoProdutoSgiFoiConcluida(produtoSgi: ProdutoSgiDetalhe | null | undefined) {
+  return produtoSgi?.operacaoPendente !== 'RENOMEAR_PRODUTO'
+    && Boolean(produtoSgi?.lancamentoAplicadoEm)
+}
+
 export function deveExibirAcaoProdutoSgi(pedido: Pick<
   PedidoDetalhe,
   'fornecedor' | 'status' | 'numeroLancamento' | 'produtoSgi'

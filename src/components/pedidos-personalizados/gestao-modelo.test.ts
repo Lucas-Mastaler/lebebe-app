@@ -55,11 +55,11 @@ const opcoes = {
 } as OpcoesNovoPedido
 
 describe('modelo da gestão de pedidos personalizados', () => {
-  it('exibe a ação SGI só para Exclusive em Venda Fechada com lançamento e sem conclusão', () => {
+  it('exibe a criação SGI para Exclusive em Venda Fechada mesmo sem lançamento', () => {
     const exclusive = { ...detalhe, fornecedor: { chave: 'lebebe_exclusive', nome: 'LEBEBE EXCLUSIVE' } }
     expect(deveExibirAcaoProdutoSgi(exclusive)).toBe(true)
     expect(deveExibirAcaoProdutoSgi({ ...exclusive, status: 'RASCUNHO' })).toBe(false)
-    expect(deveExibirAcaoProdutoSgi({ ...exclusive, numeroLancamento: null })).toBe(false)
+    expect(deveExibirAcaoProdutoSgi({ ...exclusive, numeroLancamento: null })).toBe(true)
     expect(deveExibirAcaoProdutoSgi(detalhe)).toBe(false)
     expect(deveExibirAcaoProdutoSgi({
       ...exclusive,

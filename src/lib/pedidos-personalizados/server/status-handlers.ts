@@ -33,7 +33,10 @@ function erroTransicao(error: { code?: string; message?: string }) {
     return jsonErro('CAMPOS_LAYOUT_OBRIGATORIOS', 'Informe pedido de compra, data do pedido ao fornecedor e comprador.', 422)
   }
   if (detalhe.includes('NUMERO_LANCAMENTO_OBRIGATORIO')) {
-    return jsonErro('NUMERO_LANCAMENTO_OBRIGATORIO', 'Informe um número de lançamento válido antes de fechar a venda.', 422)
+    return jsonErro('NUMERO_LANCAMENTO_OBRIGATORIO', 'Informe o número de lançamento da venda antes de continuar.', 422)
+  }
+  if (detalhe.includes('PRODUTO_SGI_OBRIGATORIO')) {
+    return jsonErro('PRODUTO_SGI_OBRIGATORIO', 'Crie o produto SGI antes de continuar.', 422)
   }
   if (detalhe.includes('DATA_ENTREGA_OBRIGATORIA')) {
     return jsonErro('DATA_ENTREGA_OBRIGATORIA', 'Informe a previsão de data de entrega do fornecedor.', 422)
@@ -86,7 +89,7 @@ export async function transicionarStatus(
   const comprador = validacao.dados.comprador ?? atual.data.comprador
   const dataEntrega = validacao.dados.dataEntrega ?? atual.data.data_entrega
   const numeroLancamento = validacao.dados.numeroLancamento ?? atual.data.numero_lancamento
-  if (atual.data.status === 'RASCUNHO'
+  if (fornecedor !== 'lebebe_exclusive' && atual.data.status === 'RASCUNHO'
       && validacao.dados.statusDestino === 'VENDA FECHADA'
       && !/^\d{1,6}$/.test(numeroLancamento ?? '')) {
     log.camposInvalidos = ['numeroLancamento']
@@ -96,6 +99,10 @@ export async function transicionarStatus(
       'Informe um número de lançamento válido antes de fechar a venda.',
       422
     )
+  }
+  if (fornecedor === 'lebebe_exclusive' && atual.data.status === 'VENDA FECHADA'
+      && validacao.dados.statusDestino === 'EM PRODUÇÃO' && !/^\d{1,6}$/.test(numeroLancamento ?? '')) {
+    return jsonErro('NUMERO_LANCAMENTO_OBRIGATORIO', 'Informe o número de lançamento da venda antes de continuar.', 422)
   }
   if (atual.data.status === 'VENDA FECHADA'
       && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(validacao.dados.statusDestino)
@@ -122,7 +129,9 @@ export async function transicionarStatus(
     p_expected_version: validacao.dados.expectedVersion,
     p_usuario_id: acesso.contexto.allowedUser.id,
     p_status_destino: validacao.dados.statusDestino,
-    p_numero_lancamento: validacao.dados.statusDestino === 'VENDA FECHADA' ? numeroLancamento : null,
+    p_numero_lancamento: validacao.dados.statusDestino === 'VENDA FECHADA'
+      || (fornecedor === 'lebebe_exclusive' && validacao.dados.statusDestino === 'EM PRODUÇÃO')
+      ? numeroLancamento : null,
     p_numero_pedido_compra: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(validacao.dados.statusDestino) ? numeroPedidoCompra : null,
     p_data_pedido_fornecedor: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(validacao.dados.statusDestino) ? dataPedidoFornecedor : null,
     p_comprador: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(validacao.dados.statusDestino) ? comprador : null,

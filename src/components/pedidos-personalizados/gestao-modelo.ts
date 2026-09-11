@@ -128,6 +128,10 @@ export type ProdutoSgiDetalhe = {
   preco: number
   produtoIdSgi: string | null
   codigoSgi: string | null
+  operacaoPendente?: 'CRIAR_PRODUTO' | 'RENOMEAR_PRODUTO' | null
+  lancamentoAplicadoEm?: string | null
+  statusRenomeacao?: 'NAO_SOLICITADA' | 'PENDENTE' | 'PROCESSANDO' | 'ERRO' | 'CONCLUIDO'
+  erroRenomeacaoMensagem?: string | null
   tentativas: number
   erroCodigo: string | null
   erroMensagem: string | null
@@ -143,8 +147,7 @@ export function deveExibirAcaoProdutoSgi(pedido: Pick<
 >): boolean {
   return pedido.fornecedor?.chave === 'lebebe_exclusive'
     && pedido.status === 'VENDA FECHADA'
-    && /^\d{1,6}$/.test(pedido.numeroLancamento ?? '')
-    && pedido.produtoSgi?.status !== 'CONCLUIDO'
+    && (pedido.produtoSgi?.status !== 'CONCLUIDO' || pedido.produtoSgi.statusRenomeacao === 'ERRO')
     && pedido.produtoSgi?.erroCodigo !== 'DUPLICACAO_INDETERMINADA'
 }
 
@@ -176,10 +179,11 @@ export type EstadoTransicaoGestao = {
  * recebimento, justificativa) já fazem parte do próprio payload de transição e já têm campo no modal.
  */
 export function camposComerciaisPendentesTransicao(
-  pedido: Pick<PedidoDetalhe, 'status'>,
+  pedido: Pick<PedidoDetalhe, 'status' | 'fornecedor'>,
   destino: '' | StatusPedidoPersonalizado
 ): Array<'numeroLancamento'> {
-  if (pedido.status === 'RASCUNHO' && destino === 'VENDA FECHADA') return ['numeroLancamento']
+  if (pedido.fornecedor?.chave !== 'lebebe_exclusive' && pedido.status === 'RASCUNHO' && destino === 'VENDA FECHADA') return ['numeroLancamento']
+  if (pedido.fornecedor?.chave === 'lebebe_exclusive' && pedido.status === 'VENDA FECHADA' && destino === 'EM PRODUÇÃO') return ['numeroLancamento']
   return []
 }
 
@@ -192,7 +196,9 @@ export function requisitosPendentesTransicao(
   const temAnexo = pedido.tapetes.some((tapete) => tapete.anexos.length > 0)
   if (camposComerciaisPendentesTransicao(pedido, transicao.destino).includes('numeroLancamento')
       && !/^\d{1,6}$/.test(pedido.numeroLancamento ?? '')) {
-    pendencias.push('Informe um número de lançamento válido antes de fechar a venda.')
+    pendencias.push(pedido.fornecedor?.chave === 'lebebe_exclusive'
+      ? 'Informe o número de lançamento da venda antes de continuar.'
+      : 'Informe um número de lançamento válido antes de fechar a venda.')
   }
   if (pedido.status === 'VENDA FECHADA'
       && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(transicao.destino)) {

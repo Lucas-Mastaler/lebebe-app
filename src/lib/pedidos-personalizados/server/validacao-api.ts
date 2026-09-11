@@ -257,8 +257,8 @@ export function validarTransicaoStatus(valor: unknown):
   if (numeroLancamento !== null && !NUMERO_LANCAMENTO.test(numeroLancamento)) {
     return { ok: false, codigo: 'NUMERO_LANCAMENTO_OBRIGATORIO', mensagem: 'Informe um número de lançamento válido antes de fechar a venda.' }
   }
-  if (valor.statusDestino !== 'VENDA FECHADA' && numeroLancamento !== null) {
-    return { ok: false, codigo: 'CAMPO_NAO_PERMITIDO', mensagem: 'O número de lançamento só pode ser informado ao fechar a venda.' }
+  if (!['VENDA FECHADA', 'EM PRODUÇÃO'].includes(valor.statusDestino) && numeroLancamento !== null) {
+    return { ok: false, codigo: 'CAMPO_NAO_PERMITIDO', mensagem: 'O número de lançamento não pode ser informado nesta transição.' }
   }
   if (numeroNormalizado !== null && !NUMERO_PEDIDO_COMPRA.test(numeroNormalizado)) {
     return { ok: false, codigo: 'CAMPOS_PRODUCAO_OBRIGATORIOS', mensagem: 'Revise o pedido de compra.' }
@@ -292,7 +292,7 @@ export function validarTransicaoStatus(valor: unknown):
     dados: {
       expectedVersion: Number(valor.expectedVersion),
       statusDestino: valor.statusDestino,
-      numeroLancamento: valor.statusDestino === 'VENDA FECHADA' ? numeroLancamento : null,
+      numeroLancamento: ['VENDA FECHADA', 'EM PRODUÇÃO'].includes(valor.statusDestino) ? numeroLancamento : null,
       numeroPedidoCompra: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(valor.statusDestino) ? numeroNormalizado : null,
       dataPedidoFornecedor: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(valor.statusDestino) ? dataFornecedorNormalizada : null,
       comprador: ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(valor.statusDestino) ? compradorNormalizado : null,

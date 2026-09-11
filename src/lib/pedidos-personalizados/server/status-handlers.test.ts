@@ -51,8 +51,8 @@ describe('handler de transicao de status', () => {
     expect(cenario.repo.transicionarStatus).not.toHaveBeenCalled()
   })
 
-  it('exige lançamento antes de fechar a venda para qualquer fornecedor', async () => {
-    for (const fornecedor of ['moriah_tapetes', 'lebebe_exclusive']) {
+  it('exige lançamento antes de fechar a venda somente para Moriah', async () => {
+    for (const fornecedor of ['moriah_tapetes']) {
       const cenario = deps('RASCUNHO', {
         buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
           data: { id: PEDIDO, unidade_id: UNIDADE, status: 'RASCUNHO', version: 1, fornecedor: { chave: fornecedor }, numero_lancamento: null },
@@ -91,6 +91,23 @@ describe('handler de transicao de status', () => {
         p_numero_lancamento: '000123',
       }))
     }
+  })
+
+  it('bloqueia Exclusive em produção sem lançamento e encaminha o lançamento válido na mesma RPC', async () => {
+    const bloqueado = deps('VENDA FECHADA', {
+      buscarPedidoNoEscopo: vi.fn().mockResolvedValue({ data: { id: PEDIDO, unidade_id: UNIDADE, status: 'VENDA FECHADA', version: 1, fornecedor: { chave: 'lebebe_exclusive' }, numero_lancamento: null }, error: null }),
+    })
+    const respostaBloqueada = await transicionarStatus(request({ expectedVersion: 1, statusDestino: 'EM PRODUÇÃO', numeroPedidoCompra: '123', dataPedidoFornecedor: '2026-08-06', comprador: 'ANA', dataEntrega: '2026-08-20' }), PEDIDO, bloqueado.deps)
+    expect(respostaBloqueada.status).toBe(422)
+    expect((await respostaBloqueada.json()).mensagem).toBe('Informe o número de lançamento da venda antes de continuar.')
+    const transicionarStatusRepo = vi.fn().mockResolvedValue({ data: { evento_id: EVENTO, status: 'EM PRODUÇÃO', version: 2 }, error: null })
+    const valido = deps('VENDA FECHADA', {
+      buscarPedidoNoEscopo: vi.fn().mockResolvedValue({ data: { id: PEDIDO, unidade_id: UNIDADE, status: 'VENDA FECHADA', version: 1, fornecedor: { chave: 'lebebe_exclusive' }, numero_lancamento: null, numero_pedido_compra: '123', data_pedido_fornecedor: '2026-08-06', comprador: 'ANA', data_entrega: '2026-08-20' }, error: null }),
+      transicionarStatus: transicionarStatusRepo,
+    })
+    const respostaValida = await transicionarStatus(request({ expectedVersion: 1, statusDestino: 'EM PRODUÇÃO', numeroLancamento: '65459', numeroPedidoCompra: '123', dataPedidoFornecedor: '2026-08-06', comprador: 'ANA', dataEntrega: '2026-08-20' }), PEDIDO, valido.deps)
+    expect(respostaValida.status).toBe(200)
+    expect(transicionarStatusRepo).toHaveBeenCalledWith(expect.objectContaining({ p_numero_lancamento: '65459' }))
   })
 
   it('nao revela pedido fora do escopo', async () => {

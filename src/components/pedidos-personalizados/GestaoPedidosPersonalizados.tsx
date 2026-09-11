@@ -772,7 +772,7 @@ export function GestaoPedidosPersonalizados() {
                           ? 'border-red-200 bg-red-50 text-red-900'
                           : 'border-sky-200 bg-sky-50 text-sky-900'
                     }`}>
-                      <p className="font-bold">{item.produtoSgi.status === 'CONCLUIDO' ? 'Produto SGI criado' : item.produtoSgi.status === 'ERRO' ? 'Erro ao criar produto SGI' : 'Criando produto SGI...'}</p>
+                      <p className="font-bold">{item.produtoSgi.statusRenomeacao === 'PENDENTE' || item.produtoSgi.statusRenomeacao === 'PROCESSANDO' ? 'Atualizando produto SGI...' : item.produtoSgi.statusRenomeacao === 'ERRO' ? 'Não foi possível atualizar o produto SGI.' : item.produtoSgi.status === 'CONCLUIDO' ? 'Produto SGI criado' : item.produtoSgi.status === 'ERRO' ? 'Erro ao criar produto SGI' : 'Criando produto SGI...'}</p>
                       <p className="mt-1 break-words">{item.produtoSgi.codigoSgi ? `${item.produtoSgi.codigoSgi} - ` : ''}{item.produtoSgi.nomeProduto}</p>
                     </div>
                   )}
@@ -786,7 +786,7 @@ export function GestaoPedidosPersonalizados() {
                         >
                           {item.produtoSgi?.status === 'PENDENTE' || item.produtoSgi?.status === 'PROCESSANDO'
                             ? <><Loader2 className="animate-spin" />Criando produto SGI...</>
-                            : item.produtoSgi?.status === 'ERRO'
+                            : item.produtoSgi?.status === 'ERRO' || item.produtoSgi?.statusRenomeacao === 'ERRO'
                               ? <><RefreshCw />Tentar novamente</>
                               : <><ShoppingBag />Criar produto SGI</>}
                         </Button>
@@ -966,7 +966,11 @@ export function GestaoPedidosPersonalizados() {
                       <div><dt className="text-slate-500">Etapa</dt><dd className="font-semibold">{(detalhe.produtoSgi?.etapa ?? 'NAO_INICIADO').replaceAll('_', ' ')}</dd></div>
                       <div><dt className="text-slate-500">Código SGI</dt><dd className="font-semibold">{detalhe.produtoSgi?.codigoSgi ?? '—'}</dd></div>
                     </dl>
-                    {detalhe.produtoSgi?.status === 'ERRO' && (
+                    {detalhe.produtoSgi?.statusRenomeacao === 'PROCESSANDO' || detalhe.produtoSgi?.statusRenomeacao === 'PENDENTE' ? (
+                      <p className="mt-3 text-sm font-medium text-sky-800">Atualizando produto SGI...</p>
+                    ) : detalhe.produtoSgi?.statusRenomeacao === 'ERRO' ? (
+                      <p role="alert" className="mt-3 text-sm font-medium text-red-800">Não foi possível atualizar o produto SGI.</p>
+                    ) : detalhe.produtoSgi?.status === 'ERRO' && (
                       <p role="alert" className="mt-3 text-sm font-medium text-red-800">{detalhe.produtoSgi.erroMensagem ?? 'A criação não foi concluída. Tente retomar.'}</p>
                     )}
                     {detalhe.produtoSgi?.status === 'CONCLUIDO' && (
@@ -1069,14 +1073,14 @@ export function GestaoPedidosPersonalizados() {
                   {deveExibirAcaoProdutoSgi(detalhe) && (
                       <Button
                         type="button"
-                        variant={detalhe.produtoSgi?.status === 'ERRO' ? 'destructive' : 'default'}
+                        variant={detalhe.produtoSgi?.status === 'ERRO' || detalhe.produtoSgi?.statusRenomeacao === 'ERRO' ? 'destructive' : 'default'}
                         disabled={solicitandoProdutoSgi || detalhe.produtoSgi?.status === 'PENDENTE' || detalhe.produtoSgi?.status === 'PROCESSANDO'}
                         onClick={() => setConfirmandoProdutoSgi(true)}
                       >
                         {detalhe.produtoSgi?.status === 'PENDENTE' || detalhe.produtoSgi?.status === 'PROCESSANDO'
                           ? <><Loader2 className="animate-spin" />Criando no SGI</>
-                          : detalhe.produtoSgi?.status === 'ERRO'
-                            ? <><RefreshCw />Tentar novamente no SGI</>
+                          : detalhe.produtoSgi?.status === 'ERRO' || detalhe.produtoSgi?.statusRenomeacao === 'ERRO'
+                            ? <><RefreshCw />Tentar novamente</>
                             : <><ShoppingBag />Criar produto no SGI</>}
                       </Button>
                     )}

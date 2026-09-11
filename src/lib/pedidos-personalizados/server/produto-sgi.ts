@@ -37,6 +37,10 @@ export function serializarIntegracaoProdutoSgi(row: IntegracaoProdutoSgiRow | nu
     preco: Number(row.preco_enviado),
     produtoIdSgi: row.produto_id_sgi,
     codigoSgi: row.codigo_sgi,
+    operacaoPendente: row.operacao_pendente,
+    lancamentoAplicadoEm: row.lancamento_aplicado_em,
+    statusRenomeacao: row.status_renomeacao,
+    erroRenomeacaoMensagem: row.erro_renomeacao_mensagem,
     tentativas: row.tentativas,
     erroCodigo: row.erro_codigo,
     erroMensagem: row.erro_mensagem,
@@ -63,13 +67,9 @@ export async function solicitarProdutoSgi(_request: Request, pedidoId: string) {
   if (atual.data.fornecedor?.chave !== 'lebebe_exclusive') {
     return jsonErro('FORNECEDOR_NAO_SUPORTADO', 'A criação no SGI está disponível somente para Lebebe Exclusive.', 422)
   }
-  if (atual.data.status !== 'VENDA FECHADA') {
+  if (!['VENDA FECHADA', 'EM PRODUÇÃO'].includes(atual.data.status)) {
     return jsonErro('STATUS_NAO_ELEGIVEL', 'Feche a venda antes de criar o produto no SGI.', 422)
   }
-  if (!/^\d{1,6}$/.test(atual.data.numero_lancamento ?? '')) {
-    return jsonErro('NUMERO_LANCAMENTO_OBRIGATORIO', 'Informe o número de lançamento comercial antes de continuar.', 422)
-  }
-
   const resultado = await repositorio.solicitarProdutoSgi(pedidoId, acesso.contexto.allowedUser.id)
   if (resultado.error) {
     const mensagem = resultado.error.message ?? ''
@@ -126,17 +126,16 @@ async function exigirWorker(request: Request) {
 
 function serializarTrabalho(row: IntegracaoProdutoSgiRow) {
   return {
+    operacao: row.operacao_pendente,
     pedidoId: row.pedido_id,
     claimToken: row.claim_token,
     status: row.status_integracao,
     etapa: row.etapa,
-    modelo: {
-      produtoIdSgi: row.modelo_produto_id_sgi,
-      nomeEsperado: row.modelo_nome_esperado,
-    },
+    ...(row.operacao_pendente === 'CRIAR_PRODUTO' ? { modelo: {
+      produtoIdSgi: row.modelo_produto_id_sgi, nomeEsperado: row.modelo_nome_esperado,
+    } } : {}),
     nomeProduto: row.nome_produto_sgi,
-    custo: Number(row.custo_enviado),
-    preco: Number(row.preco_enviado),
+    ...(row.operacao_pendente === 'CRIAR_PRODUTO' ? { custo: Number(row.custo_enviado), preco: Number(row.preco_enviado) } : {}),
     produtoIdSgi: row.produto_id_sgi,
     codigoSgi: row.codigo_sgi,
     procedimentoCustoSgi: row.procedimento_custo_sgi,

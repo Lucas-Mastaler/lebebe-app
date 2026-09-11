@@ -117,6 +117,7 @@ export type ResultadoTransicaoStatusRpc = {
 }
 
 export type StatusIntegracaoProdutoSgi = 'PENDENTE' | 'PROCESSANDO' | 'ERRO' | 'CONCLUIDO'
+export type OperacaoProdutoSgi = 'CRIAR_PRODUTO' | 'RENOMEAR_PRODUTO'
 
 export type EtapaIntegracaoProdutoSgi =
   | 'NAO_INICIADO'
@@ -134,7 +135,13 @@ export type IntegracaoProdutoSgiRow = {
   modelo_produto_id_sgi: string
   modelo_nome_esperado: string
   unidade_snapshot: string
-  numero_lancamento_snapshot: string
+  cliente_snapshot: string | null
+  operacao_pendente: OperacaoProdutoSgi | null
+  lancamento_aplicado_em: string | null
+  numero_lancamento_snapshot: string | null
+  status_renomeacao: 'NAO_SOLICITADA' | 'PENDENTE' | 'PROCESSANDO' | 'ERRO' | 'CONCLUIDO'
+  erro_renomeacao_codigo: string | null
+  erro_renomeacao_mensagem: string | null
   nome_produto_sgi: string
   custo_enviado: string | number
   preco_enviado: string | number
@@ -535,7 +542,7 @@ export class RepositorioPedidosPersonalizados {
           .from('pedidos_personalizados_lebebe_exclusive_sgi')
           .select(`
             pedido_id, status_integracao, etapa, unidade_snapshot,
-            numero_lancamento_snapshot, nome_produto_sgi, custo_enviado,
+            numero_lancamento_snapshot, nome_produto_sgi, cliente_snapshot, operacao_pendente, lancamento_aplicado_em, status_renomeacao, erro_renomeacao_codigo, erro_renomeacao_mensagem, custo_enviado,
             preco_enviado, produto_id_sgi, codigo_sgi, tentativas,
             erro_codigo, erro_mensagem, solicitado_em, iniciado_em,
             concluido_em, updated_at
@@ -737,7 +744,7 @@ export class RepositorioPedidosPersonalizados {
       .from('pedidos_personalizados_lebebe_exclusive_sgi')
       .select(`
         pedido_id, status_integracao, etapa, modelo_produto_id_sgi, modelo_nome_esperado,
-        unidade_snapshot, numero_lancamento_snapshot, nome_produto_sgi,
+        unidade_snapshot, numero_lancamento_snapshot, nome_produto_sgi, cliente_snapshot, operacao_pendente, lancamento_aplicado_em, status_renomeacao, erro_renomeacao_codigo, erro_renomeacao_mensagem,
         custo_enviado, preco_enviado, produto_id_sgi, codigo_sgi,
         procedimento_custo_sgi, numero_lancamento_entrada_sgi, documento_entrada_id_sgi,
         procedimento_finalizacao_sgi, tabela_preco_id_sgi, item_tabela_preco_id_sgi,

@@ -953,7 +953,7 @@ export function GestaoPedidosPersonalizados() {
                           <ShoppingBag className="size-5" />Produto no SGI
                         </h3>
                         <p className="mt-1 break-words text-sm font-medium text-slate-800">
-                          {detalhe.produtoSgi?.nomeProduto ?? `LEBEBE EXCLUSIVE (${detalhe.unidade.nome} ${detalhe.numeroLancamento ?? '—'})`}
+                          {detalhe.produtoSgi?.nomeProduto ?? `LEBEBE EXCLUSIVE (${detalhe.unidade.nome} ${detalhe.cliente})`}
                         </p>
                       </div>
                       <span className="rounded-full border border-current/20 bg-white/70 px-3 py-1 text-xs font-bold">
@@ -1116,7 +1116,7 @@ export function GestaoPedidosPersonalizados() {
             <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm">
               <p className="text-xs font-bold uppercase tracking-wide text-sky-800">Produto que será criado</p>
               <p className="mt-1 break-words font-semibold text-slate-950">
-                {detalhe.produtoSgi?.nomeProduto ?? `LEBEBE EXCLUSIVE (${detalhe.unidade.nome} ${detalhe.numeroLancamento ?? '—'})`}
+                {detalhe.produtoSgi?.nomeProduto ?? `LEBEBE EXCLUSIVE (${detalhe.unidade.nome} ${detalhe.cliente})`}
               </p>
               <p className="mt-4 text-xs font-bold uppercase tracking-wide text-sky-800">Preço de venda</p>
               <p className="mt-1 font-bold text-slate-950">

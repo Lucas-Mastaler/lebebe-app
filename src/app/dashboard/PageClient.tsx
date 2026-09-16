@@ -3,7 +3,7 @@
 import { Cell } from 'recharts';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DashboardLinha, DashboardLinhaConsultora, DashboardResponse, EstatisticasDigisacResponse, VacuoAtivoResponse } from '@/types';
-import { FiltrosDashboard } from '@/components/dashboard/FiltrosDashboard';
+import { FiltrosDashboard, DashboardFilters } from '@/components/dashboard/FiltrosDashboard';
 import { CardsEstatisticasDigisac } from '@/components/dashboard/CardsEstatisticasDigisac';
 import { GraficoMensagensDigisac } from '@/components/dashboard/GraficoMensagensDigisac';
 import { CardVacuoAtivo } from '@/components/dashboard/CardVacuoAtivo';
@@ -32,7 +32,6 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 
-type FiltrosDashboardType = Record<string, unknown>;
 type DashboardFilialTableRow = Omit<DashboardLinha, 'ratioAgendamentosPorCliente' | 'ratioChamadosAtivosPorUnicoAtivo' | 'ratioChamadosReceptivosPorUnicoReceptivo'> & {
   ratioAgendamentosPorCliente?: number | string;
   ratioChamadosAtivosPorUnicoAtivo?: number | string;
@@ -50,7 +49,7 @@ export default function Page() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [currentFiltros, setCurrentFiltros] = useState<FiltrosDashboardType | null>(null);
+  const [currentFiltros, setCurrentFiltros] = useState<DashboardFilters | null>(null);
   const [activeTab, setActiveTab] = useState('filiais');
   const [estatisticasDigisac, setEstatisticasDigisac] = useState<EstatisticasDigisacResponse | null>(null);
   const [isLoadingEstatisticas, setIsLoadingEstatisticas] = useState(false);
@@ -59,7 +58,7 @@ export default function Page() {
   const [isLoadingVacuoAtivo, setIsLoadingVacuoAtivo] = useState(false);
   const [errorVacuoAtivo, setErrorVacuoAtivo] = useState<string | null>(null);
 
-  const handlePesquisar = useCallback(async (filtros: FiltrosDashboardType) => {
+  const handlePesquisar = useCallback(async (filtros: DashboardFilters) => {
     setIsLoading(true);
     setError(null);
     setCurrentFiltros(filtros);

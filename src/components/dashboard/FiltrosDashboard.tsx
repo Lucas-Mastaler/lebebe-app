@@ -16,7 +16,7 @@ import {
 import { Usuario, ServicoDigisacDashboard } from '@/types'
 import { DEPARTAMENTOS_FIXOS } from '@/lib/digisac/departamentosFixos'
 
-interface DashboardFilters {
+export interface DashboardFilters {
   dataInicio: string
   dataFim: string
   departmentIds: string[]

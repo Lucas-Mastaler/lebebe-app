@@ -2,7 +2,8 @@
 
 import { EstatisticasDigisacTotais } from '@/types';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, EmptyState, KpiCard, KpiSection } from '@/components/design-system';
+import { MessageCircle, MessagesSquare, Timer } from 'lucide-react';
 
 function formatarTempo(segundos: number): string {
   if (!segundos || segundos <= 0) return '—';
@@ -32,6 +33,7 @@ interface CardConfig {
   valor: string;
   cor?: string;
   tooltip: string;
+  icon: React.ReactNode;
 }
 
 interface CardsEstatisticasDigisacProps {
@@ -43,33 +45,31 @@ interface CardsEstatisticasDigisacProps {
 export function CardsEstatisticasDigisac({ totais, isLoading, error }: CardsEstatisticasDigisacProps) {
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+      <KpiSection kpis={
+        <>
         {[...Array(7)].map((_, i) => (
-          <div key={i} className="bg-white rounded-2xl border border-slate-200 p-4 card-shadow">
-            <Skeleton className="h-4 w-24 mb-2" />
-            <Skeleton className="h-8 w-16" />
-          </div>
+          <KpiCard key={i} label="Carregando estatística" loading />
         ))}
-      </div>
+        </>
+      } />
     );
   }
 
   if (error) {
     return (
-      <div className="bg-white rounded-2xl border border-red-200 p-4">
-        <div className="flex items-center gap-3 text-red-600">
-          <span className="text-lg">⚠️</span>
-          <p className="text-sm">Erro ao carregar estatísticas Digisac: {error}</p>
-        </div>
-      </div>
+      <Alert tone="danger" title="Não foi possível carregar as estatísticas Digisac">
+        {error}
+      </Alert>
     );
   }
 
   if (!totais) {
     return (
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 text-center">
-        <p className="text-slate-500 text-sm">Use os filtros acima para carregar as estatísticas Digisac.</p>
-      </div>
+      <EmptyState
+        icon={<MessagesSquare className="size-5" />}
+        title="Estatísticas Digisac ainda não carregadas"
+        description="Use os filtros acima para consultar as métricas do período."
+      />
     );
   }
 
@@ -78,75 +78,72 @@ export function CardsEstatisticasDigisac({ totais, isLoading, error }: CardsEsta
       titulo: 'Mensagens enviadas',
       valor: totais.mensagensEnviadas.toLocaleString('pt-BR'),
       tooltip: 'Quantidade total de mensagens enviadas pela plataforma conforme o período e filtros selecionados.',
+      icon: <MessageCircle className="size-4" />,
     },
     {
       titulo: 'Mensagens recebidas',
       valor: totais.mensagensRecebidas.toLocaleString('pt-BR'),
       tooltip: 'Quantidade total de mensagens recebidas conforme o período e filtros selecionados.',
+      icon: <MessagesSquare className="size-4" />,
     },
     {
       titulo: 'Relação envio x recebimento',
       valor: formatarRelacao(totais.relacaoEnvioRecebimento),
       cor: corRelacao(totais.relacaoEnvioRecebimento),
       tooltip: 'Índice calculado dividindo mensagens enviadas por mensagens recebidas. Valores mais altos indicam maior volume de mensagens enviadas em relação às recebidas.',
+      icon: <MessagesSquare className="size-4" />,
     },
     {
       titulo: 'Tempo médio de chamado',
       valor: formatarTempo(totais.tempoMedioChamadoSegundos),
       tooltip: 'Média do tempo de duração dos chamados, desde a abertura até o fechamento, conforme os filtros selecionados.',
+      icon: <Timer className="size-4" />,
     },
     {
       titulo: 'Média do 1º tempo de espera',
       valor: formatarTempo(totais.mediaPrimeiroTempoEsperaSegundos),
       tooltip: 'Tempo entre a primeira mensagem do cliente e a primeira resposta humana do atendente, sem contar respostas automáticas de bot.',
+      icon: <Timer className="size-4" />,
     },
     {
       titulo: 'Média do 1º tempo de espera após bot',
       valor: formatarTempo(totais.mediaPrimeiroTempoEsperaAposBotSegundos),
       tooltip: 'Tempo entre a finalização do atendimento pelo bot e a primeira mensagem humana enviada pelo atendente.',
+      icon: <Timer className="size-4" />,
     },
     {
       titulo: 'Tempo médio de espera',
       valor: formatarTempo(totais.tempoMedioEsperaSegundos),
       tooltip: 'Média do tempo de espera dos chamados considerando transferências, conforme os filtros selecionados.',
+      icon: <Timer className="size-4" />,
     },
   ];
 
   return (
     <TooltipProvider>
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+      <KpiSection kpis={
+        <>
         {cards.map((card, i) => (
-          <div
+          <KpiCard
             key={i}
-            className="bg-white rounded-2xl border border-slate-200 p-4 card-shadow flex flex-col gap-1"
-          >
-            <div className="flex items-center gap-1">
-              <h4 className="text-xs font-medium text-slate-500 leading-tight">{card.titulo}</h4>
+            label={card.titulo}
+            value={<span className={card.cor}>{card.valor}</span>}
+            icon={
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="text-slate-400 hover:text-slate-600 cursor-help"
-                    aria-label={`Informação sobre ${card.titulo}`}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10" />
-                      <path d="M12 16v-4" />
-                      <path d="M12 8h.01" />
-                    </svg>
-                  </button>
+                  <span tabIndex={0} aria-label={`Informação sobre ${card.titulo}`}>
+                    {card.icon}
+                  </span>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-[260px]">
                   <p>{card.tooltip}</p>
                 </TooltipContent>
               </Tooltip>
-            </div>
-            <span className={`text-2xl font-bold ${card.cor ?? 'text-slate-900'}`}>
-              {card.valor}
-            </span>
-          </div>
+            }
+          />
         ))}
-      </div>
+        </>
+      } />
     </TooltipProvider>
   );
 }

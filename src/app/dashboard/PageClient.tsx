@@ -8,7 +8,19 @@ import { CardsEstatisticasDigisac } from '@/components/dashboard/CardsEstatistic
 import { GraficoMensagensDigisac } from '@/components/dashboard/GraficoMensagensDigisac';
 import { CardVacuoAtivo } from '@/components/dashboard/CardVacuoAtivo';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  PageContainer,
+  PageHeader,
+  Card,
+  CardContent,
+  CardHeader,
+  ResponsiveTable,
+  SegmentedTabsList,
+  SegmentedTabsTrigger,
+  Tabs,
+  TabsContent,
+} from '@/components/design-system';
+import { ChartColumnIncreasing, LayoutDashboard } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -21,6 +33,18 @@ import {
 } from 'recharts';
 
 type FiltrosDashboardType = Record<string, unknown>;
+type DashboardFilialTableRow = Omit<DashboardLinha, 'ratioAgendamentosPorCliente' | 'ratioChamadosAtivosPorUnicoAtivo' | 'ratioChamadosReceptivosPorUnicoReceptivo'> & {
+  ratioAgendamentosPorCliente?: number | string;
+  ratioChamadosAtivosPorUnicoAtivo?: number | string;
+  ratioChamadosReceptivosPorUnicoReceptivo?: number | string;
+  isTotal?: boolean;
+};
+type DashboardConsultoraTableRow = Omit<DashboardLinhaConsultora, 'ratioAgendamentosPorCliente' | 'ratioChamadosAtivosPorUnicoAtivo' | 'ratioChamadosReceptivosPorUnicoReceptivo'> & {
+  ratioAgendamentosPorCliente?: number | string;
+  ratioChamadosAtivosPorUnicoAtivo?: number | string;
+  ratioChamadosReceptivosPorUnicoReceptivo?: number | string;
+  isTotal?: boolean;
+};
 
 export default function Page() {
   const [data, setData] = useState<DashboardResponse | null>(null);
@@ -140,15 +164,7 @@ export default function Page() {
     }));
   }, [data]);
 
-  const CORES_FILIAIS = [
-    '#0EA5E9', // azul
-    '#10B981', // verde
-    '#F59E0B', // amarelo
-    '#6366F1', // roxo
-    '#EF4444', // vermelho
-    '#14B8A6', // teal
-    '#8B5CF6', // violeta
-  ];
+  const CORES_FILIAIS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
 
   const mapaCorPorFilial = useMemo(() => {
     // ordena para a cor não mudar se vier em ordem diferente
@@ -232,6 +248,44 @@ export default function Page() {
     };
   }, [data]);
 
+  const filiaisTableRows = useMemo<DashboardFilialTableRow[]>(() => [
+    ...(data?.linhas ?? []),
+    {
+      departmentId: 'total',
+      filial: 'TOTAL',
+      totalClientesUnicos: totaisFiliais.totalClientesUnicos,
+      agendamentosCriadosNoPeriodo: totaisFiliais.agendamentosCriadosNoPeriodo,
+      ratioAgendamentosPorCliente: totaisFiliais.ratioAgendamentosPorCliente,
+      totalChamadosAtivosNoPeriodo: totaisFiliais.totalChamadosAtivosNoPeriodo,
+      totalClientesUnicosAtivo: totaisFiliais.totalClientesUnicosAtivo,
+      ratioChamadosAtivosPorUnicoAtivo: totaisFiliais.ratioChamadosAtivosPorUnicoAtivo,
+      totalChamadosReceptivosNoPeriodo: totaisFiliais.totalChamadosReceptivosNoPeriodo,
+      totalClientesUnicosReceptivo: totaisFiliais.totalClientesUnicosReceptivo,
+      ratioChamadosReceptivosPorUnicoReceptivo: totaisFiliais.ratioChamadosReceptivosPorUnicoReceptivo,
+      totalChamadosHistoricoSomadoFilial: totaisFiliais.totalChamadosHistoricoSomadoFilial,
+      isTotal: true,
+    },
+  ], [data?.linhas, totaisFiliais]);
+
+  const consultorasTableRows = useMemo<DashboardConsultoraTableRow[]>(() => [
+    ...(data?.linhasConsultoras ?? []),
+    {
+      userId: 'total',
+      consultora: 'TOTAL',
+      totalClientesUnicos: totaisConsultoras.totalClientesUnicos,
+      agendamentosCriadosNoPeriodo: totaisConsultoras.agendamentosCriadosNoPeriodo,
+      ratioAgendamentosPorCliente: totaisConsultoras.ratioAgendamentosPorCliente,
+      totalChamadosAtivosNoPeriodo: totaisConsultoras.totalChamadosAtivosNoPeriodo,
+      totalClientesUnicosAtivo: totaisConsultoras.totalClientesUnicosAtivo,
+      ratioChamadosAtivosPorUnicoAtivo: totaisConsultoras.ratioChamadosAtivosPorUnicoAtivo,
+      totalChamadosReceptivosNoPeriodo: totaisConsultoras.totalChamadosReceptivosNoPeriodo,
+      totalClientesUnicosReceptivo: totaisConsultoras.totalClientesUnicosReceptivo,
+      ratioChamadosReceptivosPorUnicoReceptivo: totaisConsultoras.ratioChamadosReceptivosPorUnicoReceptivo,
+      totalChamadosHistoricoSomadoConsultora: totaisConsultoras.totalChamadosHistoricoSomadoConsultora,
+      isTotal: true,
+    },
+  ], [data?.linhasConsultoras, totaisConsultoras]);
+
   const chartDataAtivoReceptivo = useMemo(() => {
     const linhas = data?.linhas || [];
     return linhas.map((l: DashboardLinha) => ({
@@ -251,11 +305,13 @@ export default function Page() {
   }, [data]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">DASHBOARD</h1>
-        <p className="text-slate-600 mt-1">Métricas agregadas por filial</p>
-      </div>
+    <PageContainer className="space-y-6">
+      <PageHeader
+        icon={<LayoutDashboard className="size-6" />}
+        eyebrow="Operação"
+        title="Dashboard"
+        description="Métricas agregadas por filial"
+      />
 
       <FiltrosDashboard onPesquisar={handlePesquisar} isLoading={isLoading} />
 
@@ -284,20 +340,14 @@ export default function Page() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="bg-slate-100 p-1 rounded-xl">
-          <TabsTrigger
-            value="filiais"
-            className="rounded-lg px-6 py-2 data-[state=active]:bg-[rgba(0,165,230,0.15)] data-[state=active]:text-[#00A5E6] data-[state=active]:font-semibold transition-all"
-          >
+        <SegmentedTabsList className="w-fit">
+          <SegmentedTabsTrigger value="filiais" className="min-w-32">
             FILIAIS
-          </TabsTrigger>
-          <TabsTrigger
-            value="consultoras"
-            className="rounded-lg px-6 py-2 data-[state=active]:bg-[rgba(0,165,230,0.15)] data-[state=active]:text-[#00A5E6] data-[state=active]:font-semibold transition-all"
-          >
+          </SegmentedTabsTrigger>
+          <SegmentedTabsTrigger value="consultoras" className="min-w-32">
             CONSULTORAS
-          </TabsTrigger>
-        </TabsList>
+          </SegmentedTabsTrigger>
+        </SegmentedTabsList>
 
         <TabsContent value="filiais" className="mt-6 space-y-6">
       {/* Tabela */}
@@ -325,87 +375,41 @@ export default function Page() {
           <p className="text-slate-500">Use os filtros acima para pesquisar.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-slate-200 card-shadow overflow-hidden">
-          <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-            <h3 className="font-semibold text-slate-900">Resultados</h3>
-            <span className="px-3 py-1 bg-slate-100 text-slate-600 text-sm rounded-full">
-              {data.linhas.length} {data.linhas.length === 1 ? 'filial' : 'filiais'}
-            </span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-[960px] w-full">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="text-left px-4 py-2 sticky left-0 top-0 bg-slate-50 z-10">Filial</th>
-                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Clientes únicos</th>
-                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Agendamentos criados</th>
-                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Agendamentos/Cliente</th>
-                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">
-                    Chamados ATIVOS<br />
-                    (Chamamos o cliente)
-                  </th>
-                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Cl. Únicos<br /> ATIVO</th>
-                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados ativos/<br></br>Cl. Únicos ativos</th>
-                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">
-                    Chamados RECEPTIVOS<br />
-                    (Cliente chamou)
-                  </th>
-                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Cl. Únicos<br /> RECEPTIVO</th>
-                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados RECEPTIVO/<br></br>Cl. Únicos RECEPTIVOS</th>
-                  <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados históricos (soma)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.linhas.map((l: DashboardLinha, index: number) => (
-                  <tr
-                    key={l.departmentId}
-                    className={`
-                      border-b last:border-0
-                      ${index % 2 === 0 ? 'bg-white' : 'bg-sky-50'}
-                    `}
-                  >
-                    <td className={`px-4 py-2 font-medium text-left sticky left-0 z-10 ${index % 2 === 0 ? 'bg-white' : 'bg-sky-50'}`}>{l.filial || '-'}</td>
-                    <td className="px-4 py-2 text-center">{l.totalClientesUnicos}</td>
-                    <td className="px-4 py-2 text-center">{l.agendamentosCriadosNoPeriodo}</td>
-                    <td className="px-4 py-2 text-center">{l.ratioAgendamentosPorCliente}</td>
-                    <td className="px-4 py-2 text-center">{l.totalChamadosAtivosNoPeriodo}</td>
-                    <td className="px-4 py-2 text-center">{l.totalClientesUnicosAtivo}</td>
-                    <td className="px-4 py-2 text-center">{l.ratioChamadosAtivosPorUnicoAtivo}</td>
-                    <td className="px-4 py-2 text-center">{l.totalChamadosReceptivosNoPeriodo}</td>
-                    <td className="px-4 py-2 text-center">{l.totalClientesUnicosReceptivo}</td>
-                    <td className="px-4 py-2 text-center">{l.ratioChamadosReceptivosPorUnicoReceptivo}</td>
-                    <td className="px-4 py-2 text-center font-semibold">{l.totalChamadosHistoricoSomadoFilial ?? '-'}</td>
-                  </tr>
-                ))}
-
-                {/* TOTAL */}
-                <tr className="border-t bg-slate-100 font-semibold">
-                  <td className="px-4 py-3 text-left sticky left-0 z-10 bg-slate-100">TOTAL</td>
-                  <td className="px-4 py-3 text-center">{totaisFiliais.totalClientesUnicos}</td>
-                  <td className="px-4 py-3 text-center">{totaisFiliais.agendamentosCriadosNoPeriodo}</td>
-                  <td className="px-4 py-3 text-center">{totaisFiliais.ratioAgendamentosPorCliente}</td>
-                  <td className="px-4 py-3 text-center">{totaisFiliais.totalChamadosAtivosNoPeriodo}</td>
-                  <td className="px-4 py-3 text-center">{totaisFiliais.totalClientesUnicosAtivo}</td>
-                  <td className="px-4 py-3 text-center">{totaisFiliais.ratioChamadosAtivosPorUnicoAtivo}</td>
-                  <td className="px-4 py-3 text-center">{totaisFiliais.totalChamadosReceptivosNoPeriodo}</td>
-                  <td className="px-4 py-3 text-center">{totaisFiliais.totalClientesUnicosReceptivo}</td>
-                  <td className="px-4 py-3 text-center">{totaisFiliais.ratioChamadosReceptivosPorUnicoReceptivo}</td>
-                  <td className="px-4 py-3 text-center">{totaisFiliais.totalChamadosHistoricoSomadoFilial}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <Card>
+          <CardHeader title="Resultados por filial" description={`${data.linhas.length} ${data.linhas.length === 1 ? 'filial' : 'filiais'}`} />
+          <CardContent>
+            <ResponsiveTable
+              columns={[
+                { key: 'filial', header: 'Filial', width: 'content', render: (row) => row.filial || '-' },
+                { key: 'clientes', header: 'Clientes únicos', width: 'compact', className: 'text-center', render: (row) => row.totalClientesUnicos },
+                { key: 'agendamentos', header: 'Agendamentos criados', width: 'compact', className: 'text-center', render: (row) => row.agendamentosCriadosNoPeriodo },
+                { key: 'agendamento-cliente', header: 'Agendamentos/Cliente', width: 'compact', className: 'text-center', render: (row) => row.ratioAgendamentosPorCliente },
+                { key: 'ativos', header: 'Chamados ativos', width: 'compact', className: 'text-center', render: (row) => row.totalChamadosAtivosNoPeriodo },
+                { key: 'unicos-ativo', header: 'Cl. únicos ativo', width: 'compact', className: 'text-center', render: (row) => row.totalClientesUnicosAtivo },
+                { key: 'ratio-ativo', header: 'Ativos/Cl. únicos', width: 'compact', className: 'text-center', render: (row) => row.ratioChamadosAtivosPorUnicoAtivo },
+                { key: 'receptivos', header: 'Chamados receptivos', width: 'compact', className: 'text-center', render: (row) => row.totalChamadosReceptivosNoPeriodo },
+                { key: 'unicos-receptivo', header: 'Cl. únicos receptivo', width: 'compact', className: 'text-center', render: (row) => row.totalClientesUnicosReceptivo },
+                { key: 'ratio-receptivo', header: 'Receptivos/Cl. únicos', width: 'compact', className: 'text-center', render: (row) => row.ratioChamadosReceptivosPorUnicoReceptivo },
+                { key: 'historico', header: 'Chamados históricos', width: 'compact', className: 'text-center font-semibold', render: (row) => row.totalChamadosHistoricoSomadoFilial ?? '-' },
+              ]}
+              rows={filiaisTableRows}
+              rowKey={(row) => row.departmentId}
+              firstColumnSticky
+              rowClassName={(row) => row.isTotal ? 'bg-slate-100 font-semibold hover:bg-slate-200' : undefined}
+              renderMobileCard={(row) => <DashboardMobileCard label={row.filial || '-'} row={row} />}
+            />
+          </CardContent>
+        </Card>
       )}
 
       {/* Gráficos */}
       {data && data.linhas.length > 0 && (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* 1) Barras: totalClientesUnicos por filial */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4 card-shadow h-[360px] flex flex-col">
-            <h3 className="font-semibold text-slate-900 mb-3">Clientes únicos por filial</h3>
+          <Card className="h-[360px]">
+            <CardHeader icon={<ChartColumnIncreasing className="size-4" />} title="Clientes únicos por filial" />
 
+            <CardContent className="flex h-[calc(100%-53px)] flex-col">
             <div className="flex-1">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
@@ -421,7 +425,7 @@ export default function Page() {
                     {chartDataFiliais.map((row, index) => (
                       <Cell
                         key={`cell-clientes-${index}`}
-                        fill={mapaCorPorFilial.get(row.filial) ?? '#94A3B8'}
+                        fill={mapaCorPorFilial.get(row.filial) ?? 'var(--muted-foreground)'}
                       />
                     ))}
                   </Bar>
@@ -436,19 +440,21 @@ export default function Page() {
                   <span
                     className="inline-block w-3 h-3 rounded-full"
                     style={{
-                      backgroundColor: mapaCorPorFilial.get(row.filial) ?? '#94A3B8',
+                      backgroundColor: mapaCorPorFilial.get(row.filial) ?? 'var(--muted-foreground)',
                     }}
                   />
                   <span>{row.filial}</span>
                 </div>
               ))}
             </div>
-          </div>
+            </CardContent>
+          </Card>
 
           {/* 2) Comparativo: Ativos vs Receptivos (mesma cor por filial) */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4 card-shadow h-[360px] flex flex-col">
-            <h3 className="font-semibold text-slate-900 mb-3">Chamados que Chamamos (ativo) vs Cliente chamou (receptivo)</h3>
+          <Card className="h-[360px]">
+            <CardHeader icon={<ChartColumnIncreasing className="size-4" />} title="Chamados: ativo vs. receptivo" />
 
+            <CardContent className="flex h-[calc(100%-53px)] flex-col">
             <div className="flex-1">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartDataAtivoReceptivo} margin={{ top: 10, right: 20, left: 0, bottom: 8 }}>
@@ -462,7 +468,7 @@ export default function Page() {
                     {chartDataAtivoReceptivo.map((row, index) => (
                       <Cell
                         key={`cell-ativos-${index}`}
-                        fill={mapaCorPorFilial.get(row.filial) ?? '#94A3B8'}
+                        fill={mapaCorPorFilial.get(row.filial) ?? 'var(--muted-foreground)'}
                       />
                     ))}
                   </Bar>
@@ -472,7 +478,7 @@ export default function Page() {
                     {chartDataAtivoReceptivo.map((row, index) => (
                       <Cell
                         key={`cell-receptivos-${index}`}
-                        fill={mapaCorPorFilial.get(row.filial) ?? '#94A3B8'}
+                        fill={mapaCorPorFilial.get(row.filial) ?? 'var(--muted-foreground)'}
                         fillOpacity={0.45}
                       />
                     ))}
@@ -484,20 +490,22 @@ export default function Page() {
             {/* Legenda visual: forte x apagado */}
             <div className="flex items-center justify-center gap-6 text-sm text-slate-600 mt-2">
               <div className="flex items-center gap-2">
-                <span className="inline-block w-4 h-4 rounded-sm bg-slate-700" />
+                <span className="inline-block size-4 rounded-sm bg-chart-1" />
                 <span>ATIVO</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="inline-block w-4 h-4 rounded-sm bg-slate-700 opacity-40" />
+                <span className="inline-block size-4 rounded-sm bg-chart-1 opacity-40" />
                 <span>RECEPTIVO</span>
               </div>
             </div>
-          </div>
+            </CardContent>
+          </Card>
 
           {/* 3) Comparativo: Únicos Ativo vs Receptivo (mesma cor por filial) */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4 card-shadow h-[360px] flex flex-col">
-            <h3 className="font-semibold text-slate-900 mb-3">Clientes únicos: ATIVO vs RECEPTIVO</h3>
+          <Card className="h-[360px]">
+            <CardHeader icon={<ChartColumnIncreasing className="size-4" />} title="Clientes únicos: ativo vs. receptivo" />
 
+            <CardContent className="flex h-[calc(100%-53px)] flex-col">
             <div className="flex-1">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartDataUnicosAtivoReceptivo} margin={{ top: 10, right: 20, left: 0, bottom: 8 }}>
@@ -511,7 +519,7 @@ export default function Page() {
                     {chartDataUnicosAtivoReceptivo.map((row, index) => (
                       <Cell
                         key={`cell-unico-ativo-${index}`}
-                        fill={mapaCorPorFilial.get(row.filial) ?? '#94A3B8'}
+                        fill={mapaCorPorFilial.get(row.filial) ?? 'var(--muted-foreground)'}
                       />
                     ))}
                   </Bar>
@@ -521,7 +529,7 @@ export default function Page() {
                     {chartDataUnicosAtivoReceptivo.map((row, index) => (
                       <Cell
                         key={`cell-unico-receptivo-${index}`}
-                        fill={mapaCorPorFilial.get(row.filial) ?? '#94A3B8'}
+                        fill={mapaCorPorFilial.get(row.filial) ?? 'var(--muted-foreground)'}
                         fillOpacity={0.45}
                       />
                     ))}
@@ -533,15 +541,16 @@ export default function Page() {
             {/* Legenda visual: forte x apagado */}
             <div className="flex items-center justify-center gap-6 text-sm text-slate-600 mt-2">
               <div className="flex items-center gap-2">
-                <span className="inline-block w-4 h-4 rounded-sm bg-slate-700" />
+                <span className="inline-block size-4 rounded-sm bg-chart-1" />
                 <span>ATIVO</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="inline-block w-4 h-4 rounded-sm bg-slate-700 opacity-40" />
+                <span className="inline-block size-4 rounded-sm bg-chart-1 opacity-40" />
                 <span>RECEPTIVO</span>
               </div>
             </div>
-          </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 
@@ -620,80 +629,31 @@ export default function Page() {
               <p className="text-slate-500">Nenhum resultado. Use os filtros acima para pesquisar.</p>
             </div>
           ) : (
-            <div className="bg-white rounded-2xl border border-slate-200 card-shadow overflow-hidden">
-              <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-                <h3 className="font-semibold text-slate-900">Resultados por consultora</h3>
-                <span className="px-3 py-1 bg-slate-100 text-slate-600 text-sm rounded-full">
-                  {data.linhasConsultoras.length} {data.linhasConsultoras.length === 1 ? 'consultora' : 'consultoras'}
-                </span>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="min-w-[960px] w-full">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      <th className="text-left px-4 py-2 sticky left-0 top-0 bg-slate-50 z-10">Consultora</th>
-                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Clientes únicos</th>
-                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Agendamentos criados</th>
-                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Agendamentos/<br></br>Cliente</th>
-                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados ATIVOS</th>
-                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Cl. Únicos ATIVO</th>
-                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados ativos/<br></br>Cl. Únicos ativos</th>
-                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados RECEPTIVOS</th>
-                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Cl. Únicos RECEPTIVO</th>
-                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados RECEPTIVO/<br></br>Cl. Únicos RECEPTIVOS</th>
-                      <th className="text-center px-4 py-2 sticky top-0 bg-slate-50 z-10">Chamados históricos (soma)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.linhasConsultoras.map((l: DashboardLinhaConsultora, index: number) => (
-                      <tr
-                        key={l.userId}
-                        className={`
-                          border-b last:border-0
-                          ${index % 2 === 0 ? 'bg-white' : 'bg-sky-50'}
-                        `}
-                      >
-                        <td className={`px-4 py-2 font-medium text-left sticky left-0 z-10 ${index % 2 === 0 ? 'bg-white' : 'bg-sky-50'}`}>{l.consultora || '-'}</td>
-
-                        <td className="px-4 py-2 text-center">{l.totalClientesUnicos}</td>
-                        <td className="px-4 py-2 text-center">{l.agendamentosCriadosNoPeriodo}</td>
-                        <td className="px-4 py-2 text-center">{l.ratioAgendamentosPorCliente}</td>
-
-                        <td className="px-4 py-2 text-center">{l.totalChamadosAtivosNoPeriodo}</td>
-                        <td className="px-4 py-2 text-center">{l.totalClientesUnicosAtivo}</td>
-                        <td className="px-4 py-2 text-center">{l.ratioChamadosAtivosPorUnicoAtivo}</td>
-
-                        <td className="px-4 py-2 text-center">{l.totalChamadosReceptivosNoPeriodo}</td>
-                        <td className="px-4 py-2 text-center">{l.totalClientesUnicosReceptivo}</td>
-                        <td className="px-4 py-2 text-center">{l.ratioChamadosReceptivosPorUnicoReceptivo}</td>
-
-                        <td className="px-4 py-2 text-center font-semibold">{l.totalChamadosHistoricoSomadoConsultora ?? '-'}</td>
-                      </tr>
-                    ))}
-
-                    {/* TOTAL */}
-                    <tr className="border-t bg-slate-100 font-semibold">
-                      <td className="px-4 py-3 text-left sticky left-0 z-10 bg-slate-100">TOTAL</td>
-
-                      <td className="px-4 py-3 text-center">{totaisConsultoras.totalClientesUnicos}</td>
-                      <td className="px-4 py-3 text-center">{totaisConsultoras.agendamentosCriadosNoPeriodo}</td>
-                      <td className="px-4 py-3 text-center">{totaisConsultoras.ratioAgendamentosPorCliente}</td>
-
-                      <td className="px-4 py-3 text-center">{totaisConsultoras.totalChamadosAtivosNoPeriodo}</td>
-                      <td className="px-4 py-3 text-center">{totaisConsultoras.totalClientesUnicosAtivo}</td>
-                      <td className="px-4 py-3 text-center">{totaisConsultoras.ratioChamadosAtivosPorUnicoAtivo}</td>
-
-                      <td className="px-4 py-3 text-center">{totaisConsultoras.totalChamadosReceptivosNoPeriodo}</td>
-                      <td className="px-4 py-3 text-center">{totaisConsultoras.totalClientesUnicosReceptivo}</td>
-                      <td className="px-4 py-3 text-center">{totaisConsultoras.ratioChamadosReceptivosPorUnicoReceptivo}</td>
-
-                      <td className="px-4 py-3 text-center">{totaisConsultoras.totalChamadosHistoricoSomadoConsultora}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <Card>
+              <CardHeader title="Resultados por consultora" description={`${data.linhasConsultoras.length} ${data.linhasConsultoras.length === 1 ? 'consultora' : 'consultoras'}`} />
+              <CardContent>
+                <ResponsiveTable
+                  columns={[
+                    { key: 'consultora', header: 'Consultora', width: 'content', render: (row) => row.consultora || '-' },
+                    { key: 'clientes', header: 'Clientes únicos', width: 'compact', className: 'text-center', render: (row) => row.totalClientesUnicos },
+                    { key: 'agendamentos', header: 'Agendamentos criados', width: 'compact', className: 'text-center', render: (row) => row.agendamentosCriadosNoPeriodo },
+                    { key: 'agendamento-cliente', header: 'Agendamentos/Cliente', width: 'compact', className: 'text-center', render: (row) => row.ratioAgendamentosPorCliente },
+                    { key: 'ativos', header: 'Chamados ativos', width: 'compact', className: 'text-center', render: (row) => row.totalChamadosAtivosNoPeriodo },
+                    { key: 'unicos-ativo', header: 'Cl. únicos ativo', width: 'compact', className: 'text-center', render: (row) => row.totalClientesUnicosAtivo },
+                    { key: 'ratio-ativo', header: 'Ativos/Cl. únicos', width: 'compact', className: 'text-center', render: (row) => row.ratioChamadosAtivosPorUnicoAtivo },
+                    { key: 'receptivos', header: 'Chamados receptivos', width: 'compact', className: 'text-center', render: (row) => row.totalChamadosReceptivosNoPeriodo },
+                    { key: 'unicos-receptivo', header: 'Cl. únicos receptivo', width: 'compact', className: 'text-center', render: (row) => row.totalClientesUnicosReceptivo },
+                    { key: 'ratio-receptivo', header: 'Receptivos/Cl. únicos', width: 'compact', className: 'text-center', render: (row) => row.ratioChamadosReceptivosPorUnicoReceptivo },
+                    { key: 'historico', header: 'Chamados históricos', width: 'compact', className: 'text-center font-semibold', render: (row) => row.totalChamadosHistoricoSomadoConsultora ?? '-' },
+                  ]}
+                  rows={consultorasTableRows}
+                  rowKey={(row) => row.userId}
+                  firstColumnSticky
+                  rowClassName={(row) => row.isTotal ? 'bg-slate-100 font-semibold hover:bg-slate-200' : undefined}
+                  renderMobileCard={(row) => <DashboardMobileCard label={row.consultora || '-'} row={row} />}
+                />
+              </CardContent>
+            </Card>
           )}
 
           {/* Legendas de cálculo (Consultoras) */}
@@ -755,7 +715,33 @@ export default function Page() {
         </TabsContent>
       </Tabs>
 
-    </div>
+    </PageContainer>
+  );
+}
+
+type DashboardMobileRow = {
+  totalClientesUnicos: number;
+  agendamentosCriadosNoPeriodo: number;
+  totalChamadosAtivosNoPeriodo: number;
+  totalChamadosReceptivosNoPeriodo: number;
+  totalChamadosHistoricoSomadoFilial?: number | null;
+  totalChamadosHistoricoSomadoConsultora?: number | null;
+};
+
+function DashboardMobileCard({ label, row }: { label: string; row: DashboardMobileRow }) {
+  const chamadosHistoricos = row.totalChamadosHistoricoSomadoFilial ?? row.totalChamadosHistoricoSomadoConsultora ?? '-';
+
+  return (
+    <article className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <p className="font-semibold text-slate-900">{label}</p>
+      <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+        <div><dt className="text-slate-500">Clientes únicos</dt><dd className="font-medium">{row.totalClientesUnicos}</dd></div>
+        <div><dt className="text-slate-500">Agendamentos</dt><dd className="font-medium">{row.agendamentosCriadosNoPeriodo}</dd></div>
+        <div><dt className="text-slate-500">Chamados ativos</dt><dd className="font-medium">{row.totalChamadosAtivosNoPeriodo}</dd></div>
+        <div><dt className="text-slate-500">Chamados receptivos</dt><dd className="font-medium">{row.totalChamadosReceptivosNoPeriodo}</dd></div>
+        <div className="col-span-2"><dt className="text-slate-500">Chamados históricos</dt><dd className="font-medium">{chamadosHistoricos}</dd></div>
+      </dl>
+    </article>
   );
 }
 

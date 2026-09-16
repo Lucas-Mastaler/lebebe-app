@@ -113,6 +113,7 @@ tabela/coluna/tipo a partir do código ou de migration antiga.
 | Inteligência Comercial | `.agents/rules/inteligencia-comercial.md` | SGI é a fonte operacional primária; bloco sem cliente é ignorado nos cálculos |
 | Novas telas / permissões | `.agents/rules/novas-telas-permissoes.md` (gatilho) → `docs/ia/padrao-novas-telas-permissoes.md` (checklist completo) | Checklist obrigatório: `app_modulos`, `checkModuleAndWindowAccess`, redirects, Sidebar via `NAVIGATION_GROUPS` |
 | Infraestrutura VPS / Workers | `.agents/rules/vps-acesso.md` | Acesso SSH à VPS de produção (workers Docker Swarm, cron) já autorizado para diagnóstico — não perguntar, não alegar falta de acesso |
+| Frontend / Design System | `.agents/rules/design-system.md` (gatilho) → `docs/design-system/` (documentação canônica) | Existe um Design System v1 oficial (`src/components/design-system/`) — reutilizar tokens/componentes/patterns/Interaction Standards antes de criar padrão visual ou de comportamento novo; nunca alterar `src/components/ui/*` para isso |
 
 Fase 2 concluída em 2026-08-07: as rules acima são a fonte canônica vigente.
 Os arquivos legados equivalentes em `.devin/rules/` (`supabase.md`,

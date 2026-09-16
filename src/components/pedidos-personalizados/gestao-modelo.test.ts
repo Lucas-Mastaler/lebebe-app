@@ -29,6 +29,7 @@ const COR_29 = '30000000-0000-4000-8000-000000000029'
 
 const detalhe: PedidoDetalhe = {
   historico: [],
+  observacoes: [],
   id: PEDIDO,
   fornecedor: { chave: 'moriah_tapetes', nome: 'MORIAH TAPETES' },
   unidade: { chave: 'portao', nome: 'PORTÃO' },
@@ -433,7 +434,7 @@ describe('modelo da gestão de pedidos personalizados', () => {
     expect(componente).toContain('type="date"')
     expect(componente).toContain('maxLength={5}')
     expect(componente).toContain('bg-gradient-to-r')
-    expect(componente).toContain('classeStatus(item.status)')
+    expect(componente).toContain('tomStatus(item.status)')
     expect(componente).toContain('Resumo para o fornecedor')
     expect(componente).toContain('Resumo pra por na venda')
     expect(componente).toContain("resumoEmRascunho = detalhe?.status === 'RASCUNHO'")

@@ -2,10 +2,36 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ClipboardList, History, Loader2, Pencil, Plus, RefreshCw, Save, Search, X } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ClipboardList, History, Loader2, Pencil, Plus, RefreshCw, Save, X } from 'lucide-react'
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  DateField,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogHeader,
+  EmptyState,
+  FilterFieldGroup,
+  FilterPanel,
+  FormField,
+  Input,
+  PageContainer,
+  PageHeader,
+  Section,
+  SegmentedTabsList,
+  SegmentedTabsTrigger,
+  Spinner,
+  Tabs,
+  TabsContent,
+  Textarea,
+  useFilterState,
+} from '@/components/design-system'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { HistoricoClienteModal, type HistoricoClienteModalCliente } from '@/components/atendimento-presencial/HistoricoClienteModal'
 import {
   DEPARTAMENTOS_INTERESSE,
@@ -52,6 +78,7 @@ import {
   type AtendimentoPresencialDTO,
   type ContextoAtendimento,
 } from '@/lib/atendimento-presencial/rascunhos-shared'
+import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
 
 type RegistroResumo = RegistroAtendimentoResumoDTO
 type RegistroDetalhe = RegistroAtendimentoDetalheDTO
@@ -69,6 +96,8 @@ type ApiListaResponse = {
   message?: string
   registros?: RegistroResumo[]
   consultoras?: Array<{ nome: string }>
+  page?: number
+  total?: number
 }
 
 type ApiDetalheResponse = {
@@ -116,6 +145,37 @@ function formatarVendaFechadaRegistro(resultado: ResultadoAtendimento | null | u
   return 'Nao informado'
 }
 
+function OpcaoButton(props: {
+  selected: boolean
+  children: React.ReactNode
+  onClick: () => void
+  className?: string
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={props.selected}
+      onClick={props.onClick}
+      disabled={props.disabled}
+      className={[
+        'min-h-11 rounded-md border px-4 py-2 text-left text-sm font-semibold outline-none transition focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-ring',
+        props.selected ? 'border-primary bg-primary/10 text-primary' : 'border-input bg-input-background text-slate-700',
+        props.className ?? '',
+      ].join(' ')}
+    >
+      {props.children}
+    </button>
+  )
+}
+
+const FILTROS_FINALIZADOS_INICIAL = {
+  clienteNome: '',
+  consultora: '',
+  viradaCartaoDe: '',
+  viradaCartaoAte: '',
+}
+
 type Props = {
   podeVerRegistros: boolean
   podeVerRascunhos: boolean
@@ -125,16 +185,14 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   const router = useRouter()
   const searchParams = useSearchParams()
   const [registros, setRegistros] = useState<RegistroResumo[]>([])
+  const [paginaRegistros, setPaginaRegistros] = useState(1)
+  const [totalRegistros, setTotalRegistros] = useState(0)
   const [selecionado, setSelecionado] = useState<RegistroDetalhe | null>(null)
   const [carregando, setCarregando] = useState(false)
   const [carregandoDetalhe, setCarregandoDetalhe] = useState(false)
   const [carregandoEdicaoId, setCarregandoEdicaoId] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
-  const [viradaCartaoDe, setViradaCartaoDe] = useState('')
-  const [viradaCartaoAte, setViradaCartaoAte] = useState('')
-  const [clienteNomeFiltro, setClienteNomeFiltro] = useState('')
-  const [clienteNomeAplicado, setClienteNomeAplicado] = useState('')
-  const [consultoraFiltro, setConsultoraFiltro] = useState('')
+  const filtrosFinalizados = useFilterState(FILTROS_FINALIZADOS_INICIAL)
   const [consultorasFinalizados, setConsultorasFinalizados] = useState<Array<{ nome: string }>>([])
   const [edicaoAberta, setEdicaoAberta] = useState(false)
   const [fichaEdicao, setFichaEdicao] = useState<FichaDadosRascunho | null>(null)
@@ -157,31 +215,51 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     ate?: string
     clienteNome?: string
     consultora?: string
+    page?: number
   }) {
     setCarregando(true)
     setErro(null)
     try {
       const params = new URLSearchParams()
-      const filtroDe = filtrosOverride?.de ?? viradaCartaoDe
-      const filtroAte = filtrosOverride?.ate ?? viradaCartaoAte
-      const filtroCliente = filtrosOverride?.clienteNome ?? clienteNomeAplicado
-      const filtroConsultora = filtrosOverride?.consultora ?? consultoraFiltro
+      const filtroDe = filtrosOverride?.de ?? filtrosFinalizados.applied.viradaCartaoDe
+      const filtroAte = filtrosOverride?.ate ?? filtrosFinalizados.applied.viradaCartaoAte
+      const filtroCliente = filtrosOverride?.clienteNome ?? filtrosFinalizados.applied.clienteNome
+      const filtroConsultora = filtrosOverride?.consultora ?? filtrosFinalizados.applied.consultora
+      const pagina = filtrosOverride?.page ?? paginaRegistros
       if (filtroDe.trim()) params.set('viradaCartaoDe', filtroDe.trim())
       if (filtroAte.trim()) params.set('viradaCartaoAte', filtroAte.trim())
       if (filtroCliente.trim()) params.set('clienteNome', filtroCliente.trim())
       if (filtroConsultora.trim()) params.set('consultora', filtroConsultora.trim())
+      params.set('page', String(pagina))
       const query = params.toString()
       const response = await fetch(`/api/atendimento-presencial/atendimentos${query ? `?${query}` : ''}`, { cache: 'no-store' })
       const data = (await response.json()) as ApiListaResponse
       if (!response.ok || !data.ok) throw new Error(data.message ?? 'Erro ao carregar registros')
       setRegistros(data.registros ?? [])
       setConsultorasFinalizados(data.consultoras ?? [])
-      setClienteNomeAplicado(filtroCliente)
+      setPaginaRegistros(data.page ?? pagina)
+      setTotalRegistros(data.total ?? 0)
     } catch (error) {
       setErro(error instanceof Error ? error.message : 'Erro ao carregar registros')
     } finally {
       setCarregando(false)
     }
+  }
+
+  function aplicarFiltrosFinalizados() {
+    filtrosFinalizados.apply()
+    void carregarRegistros({
+      de: filtrosFinalizados.draft.viradaCartaoDe,
+      ate: filtrosFinalizados.draft.viradaCartaoAte,
+      clienteNome: filtrosFinalizados.draft.clienteNome.trim().replace(/\s+/g, ' '),
+      consultora: filtrosFinalizados.draft.consultora,
+      page: 1,
+    })
+  }
+
+  function limparFiltrosFinalizados() {
+    filtrosFinalizados.clear()
+    void carregarRegistros({ de: '', ate: '', clienteNome: '', consultora: '', page: 1 })
   }
 
   async function buscarDetalhe(id: string): Promise<RegistroDetalhe> {
@@ -430,19 +508,6 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     router.push(`/atendimento-presencial/registros?tab=${valor}`, { scroll: false })
   }
 
-  function alterarConsultoraFiltro(valor: string) {
-    setConsultoraFiltro(valor)
-  }
-
-  function limparFiltrosFinalizados() {
-    setViradaCartaoDe('')
-    setViradaCartaoAte('')
-    setClienteNomeFiltro('')
-    setClienteNomeAplicado('')
-    setConsultoraFiltro('')
-    void carregarRegistros({ de: '', ate: '', clienteNome: '', consultora: '' })
-  }
-
   useEffect(() => {
     const param = searchParams?.get('tab') ?? ''
     if (param && abasPermitidas.includes(param)) return
@@ -466,575 +531,633 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   }, [tabAtual, podeVerRascunhos])
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6">
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-sm font-medium uppercase text-slate-500">ATENDIMENTO PRESENCIAL</p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-950 sm:text-3xl">Registros de Atendimentos</h1>
-          </div>
-          {podeVerRegistros && (
-            <Button type="button" variant="outline" onClick={() => void carregarRegistros()} disabled={carregando} className="h-11 rounded-md">
-              <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
-              Atualizar
-            </Button>
-          )}
-        </header>
+    <PageContainer className="space-y-6">
+      <PageHeader
+        icon={<ClipboardList className="size-6" aria-hidden="true" />}
+        eyebrow="Atendimento presencial"
+        title="Registros de atendimentos"
+        action={podeVerRegistros ? (
+          <Button type="button" variant="secondary" onClick={() => void carregarRegistros()} disabled={carregando}>
+            <RefreshCw className="size-4" aria-hidden="true" />
+            Atualizar
+          </Button>
+        ) : undefined}
+      />
 
-        {erro && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{erro}</p>}
+      {erro && <Alert tone="danger">{erro}</Alert>}
 
-        <Tabs value={tabAtual} onValueChange={navegarParaTab} className="gap-4">
-          <TabsList>
-            {podeVerRegistros && (
-              <TabsTrigger value="finalizados">Atendimentos finalizados</TabsTrigger>
-            )}
-            {podeVerRascunhos && (
-              <TabsTrigger value="rascunhos">Rascunhos</TabsTrigger>
-            )}
-          </TabsList>
-          <TabsContent value="finalizados">
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
-              <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-4 flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-md bg-sky-50 text-sky-600">
-                    <ClipboardList className="h-5 w-5" aria-hidden="true" />
-                  </div>
-                  <h2 className="text-lg font-semibold text-slate-950">Concluidos</h2>
-                </div>
+      <Tabs value={tabAtual} onValueChange={navegarParaTab} className="gap-4">
+        <SegmentedTabsList className="w-fit">
+          {podeVerRegistros && <SegmentedTabsTrigger value="finalizados">Atendimentos finalizados</SegmentedTabsTrigger>}
+          {podeVerRascunhos && <SegmentedTabsTrigger value="rascunhos">Rascunhos</SegmentedTabsTrigger>}
+        </SegmentedTabsList>
 
-            <div className="mb-4 grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
-              <div className="grid gap-3 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-                <label className="text-sm font-semibold text-slate-700" htmlFor="filtro-cliente-nome">
-                  Cliente
-                  <input
-                    id="filtro-cliente-nome"
-                    value={clienteNomeFiltro}
-                    onChange={(event) => setClienteNomeFiltro(event.target.value)}
-                    className="mt-1 min-h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-sky-500"
-                    inputMode="search"
-                    placeholder="Pesquisar por nome"
-                  />
-                </label>
-                <label className="text-sm font-semibold text-slate-700" htmlFor="filtro-consultora">
-                  Consultora
-                  <select
-                    id="filtro-consultora"
-                    value={consultoraFiltro}
-                    onChange={(event) => alterarConsultoraFiltro(event.target.value)}
-                    className="mt-1 min-h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-sky-500"
-                  >
-                    <option value="">Todas</option>
-                    {consultorasFinalizados.map((consultora) => (
-                      <option key={consultora.nome} value={consultora.nome}>{consultora.nome}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <label className="text-sm font-semibold text-slate-700" htmlFor="filtro-virada-cartao-de">
-                Virada do cartao
-              </label>
-              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
-                <input
-                  id="filtro-virada-cartao-de"
-                  value={viradaCartaoDe}
-                  onChange={(event) => setViradaCartaoDe(formatarViradaCartaoInput(event.target.value))}
-                  className="min-h-11 flex-1 rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-sky-500"
-                  inputMode="numeric"
-                  placeholder="De DD/MM"
-                  maxLength={5}
-                />
-                <input
-                  id="filtro-virada-cartao-ate"
-                  value={viradaCartaoAte}
-                  onChange={(event) => setViradaCartaoAte(formatarViradaCartaoInput(event.target.value))}
-                  className="min-h-11 flex-1 rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-sky-500"
-                  inputMode="numeric"
-                  placeholder="Ate DD/MM"
-                  maxLength={5}
-                />
-                <Button type="button" onClick={() => void carregarRegistros({ clienteNome: clienteNomeFiltro.trim().replace(/\s+/g, ' ') })} disabled={carregando} className="h-11 rounded-md">
-                  <Search className="h-4 w-4" aria-hidden="true" />
-                </Button>
-                {(viradaCartaoDe || viradaCartaoAte || clienteNomeFiltro || consultoraFiltro) && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={limparFiltrosFinalizados}
-                    className="h-11 rounded-md"
-                  >
-                    <X className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            <div className="grid gap-3">
-              {carregando && <p className="text-sm text-slate-500">Carregando...</p>}
-              {!carregando && registros.length === 0 && (
-                <p className="rounded-md border border-dashed border-slate-200 p-4 text-sm text-slate-500">Nenhum atendimento concluido encontrado.</p>
-              )}
-              {registros.map((registro) => (
-                <article
-                  key={registro.id}
-                  className="rounded-md border border-slate-200 bg-white p-4 transition hover:border-sky-300"
+        <TabsContent value="finalizados">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
+            <Card>
+              <CardHeader icon={<ClipboardList className="size-4" aria-hidden="true" />} title="Concluídos" />
+              <CardContent className="space-y-4">
+                <FilterPanel
+                  dirty={filtrosFinalizados.dirty}
+                  onApply={aplicarFiltrosFinalizados}
+                  onClear={limparFiltrosFinalizados}
+                  applyDisabled={carregando}
                 >
-                  <button
-                    type="button"
-                    onClick={() => void carregarDetalhe(registro.id)}
-                    className="w-full rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
-                  >
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <p className="font-semibold text-slate-950">{registro.clienteNome}</p>
-                        <p className="text-sm text-slate-600">{registro.unidadeNome} - {registro.consultoraEmail}</p>
-                        {registro.consultoraNomeManual && <p className="text-sm text-slate-600">Consultora: {registro.consultoraNomeManual}</p>}
-                      </div>
-                      <span className="rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-right">
-                        <span className="block text-[10px] font-bold uppercase tracking-wide text-sky-700">Venda fechada?</span>
-                        <span className="block text-sm font-bold text-slate-900">{formatarVendaFechadaRegistro(registro.resultadoAtendimento)}</span>
-                      </span>
-                    </div>
-                    <p className="mt-2 text-sm text-slate-600">Concluido em {formatarData(registro.concluidoEm)}</p>
-                    {registro.numeroLancamento && <p className="text-sm text-slate-600">Lancamento {registro.numeroLancamento}</p>}
-                    {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes) && (
-                      <p className="text-sm text-slate-600">Virada do cartao {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes)}</p>
-                    )}
-                  </button>
-                  <Button
-                    type="button"
-                    onClick={() => void editarAtendimentoCard(registro.id)}
-                    disabled={carregandoEdicaoId === registro.id}
-                    className="mt-3 h-12 w-full rounded-md text-base font-semibold"
-                  >
-                    {carregandoEdicaoId === registro.id ? (
-                      <>
-                        <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden="true" />
-                        Carregando...
-                      </>
-                    ) : (
-                      <>
-                        <Pencil className="mr-2 h-5 w-5" aria-hidden="true" />
-                        Editar atendimento
-                      </>
-                    )}
-                  </Button>
-                </article>
-              ))}
-            </div>
-          </section>
+                  <FilterFieldGroup label="Cliente e consultora">
+                    <FormField id="filtro-cliente-nome" label="Cliente">
+                      {(field) => (
+                        <Input
+                          {...field}
+                          value={filtrosFinalizados.draft.clienteNome}
+                          onChange={(event) => filtrosFinalizados.setField('clienteNome', event.target.value)}
+                          inputMode="search"
+                          placeholder="Pesquisar por nome"
+                        />
+                      )}
+                    </FormField>
+                    <FormField id="filtro-consultora" label="Consultora">
+                      {(field) => (
+                        <Select
+                          value={filtrosFinalizados.draft.consultora || 'all'}
+                          onValueChange={(value) => filtrosFinalizados.setField('consultora', value === 'all' ? '' : value)}
+                        >
+                          <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todas</SelectItem>
+                            {consultorasFinalizados.map((consultora) => (
+                              <SelectItem key={consultora.nome} value={consultora.nome}>{consultora.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </FormField>
+                  </FilterFieldGroup>
 
-          <aside className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-950">Detalhe</h2>
-            {carregandoDetalhe && <p className="mt-4 text-sm text-slate-500">Carregando atendimento...</p>}
-            {!carregandoDetalhe && !selecionado && (
-              <p className="mt-4 rounded-md border border-dashed border-slate-200 p-4 text-sm text-slate-500">Selecione um atendimento para consultar os dados salvos.</p>
-            )}
-            {!carregandoDetalhe && selecionado && (
-              <div className="mt-4 grid gap-4 text-sm text-slate-700">
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-500">Venda fechada?</p>
-                  <p className="font-semibold text-slate-950">{formatarVendaFechadaRegistro(selecionado.atendimento.resultadoAtendimento)}</p>
-                  {selecionado.atendimento.numeroLancamento && <p>Lancamento {selecionado.atendimento.numeroLancamento}</p>}
-                  {formatarViradaCartao(selecionado.atendimento.viradaCartaoDia, selecionado.atendimento.viradaCartaoMes) && (
-                    <p>Virada do cartao {formatarViradaCartao(selecionado.atendimento.viradaCartaoDia, selecionado.atendimento.viradaCartaoMes)}</p>
+                  <FilterFieldGroup label="Virada do cartão">
+                    <FormField id="filtro-virada-cartao-de" label="De" helper="DD/MM">
+                      {(field) => (
+                        <Input
+                          {...field}
+                          value={filtrosFinalizados.draft.viradaCartaoDe}
+                          onChange={(event) => filtrosFinalizados.setField('viradaCartaoDe', formatarViradaCartaoInput(event.target.value))}
+                          inputMode="numeric"
+                          placeholder="DD/MM"
+                          maxLength={5}
+                        />
+                      )}
+                    </FormField>
+                    <FormField id="filtro-virada-cartao-ate" label="Até" helper="DD/MM">
+                      {(field) => (
+                        <Input
+                          {...field}
+                          value={filtrosFinalizados.draft.viradaCartaoAte}
+                          onChange={(event) => filtrosFinalizados.setField('viradaCartaoAte', formatarViradaCartaoInput(event.target.value))}
+                          inputMode="numeric"
+                          placeholder="DD/MM"
+                          maxLength={5}
+                        />
+                      )}
+                    </FormField>
+                  </FilterFieldGroup>
+                </FilterPanel>
+
+                <div className="grid gap-3">
+                  {carregando && (
+                    <div role="status" className="rounded-md border border-dashed border-slate-200 p-8 text-center">
+                      <Spinner label="Carregando registros" />
+                    </div>
                   )}
-                  {selecionado.podeEditar ? (
-                    <Button type="button" variant="outline" className="mt-3 h-10 rounded-md" onClick={() => abrirEdicao(selecionado)}>
-                      Editar atendimento
-                    </Button>
-                  ) : (
-                    <p className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                      {selecionado.motivoBloqueio ?? 'Voce nao possui permissao para editar este atendimento.'}
-                    </p>
+                  {!carregando && registros.length === 0 && (
+                    <EmptyState
+                      icon={<ClipboardList className="size-5" aria-hidden="true" />}
+                      title="Nenhum atendimento concluído encontrado"
+                      description="Ajuste os filtros ou aguarde novos atendimentos serem concluídos."
+                    />
                   )}
-                  {mensagemEdicao && !edicaoAberta && (
-                    <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{mensagemEdicao}</p>
-                  )}
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-500">Cliente</p>
-                  {selecionado.cliente ? (
-                    <>
-                      <p className="font-semibold text-slate-950">{selecionado.cliente.nome}</p>
-                      {selecionado.cliente.telefone && <p>{selecionado.cliente.telefone}</p>}
-                      <Button type="button" variant="outline" onClick={abrirHistoricoClienteSelecionada} className="mt-3 h-10 rounded-md">
-                        <History className="mr-2 h-4 w-4" aria-hidden="true" />
-                        Ver historico
-                      </Button>
-                    </>
-                  ) : (
-                    <p>Cliente nao localizada</p>
-                  )}
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-500">Nome da consultora</p>
-                  <p>{selecionado.atendimento.consultoraNomeManual ?? 'Nao informado'}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-500">Departamentos</p>
-                  <p>{selecionado.departamentos.map((item) => getDepartamentoLabel(item.departamento as DepartamentoInteresse)).join(', ') || 'Nao informado'}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-500">Produtos</p>
-                  <p>{selecionado.produtosInteresse.map((item) => item.descricao).join(', ') || 'Nao informado'}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-500">Motivos</p>
-                  <p>{selecionado.motivos.map((item) => item.motivo === 'outro' && item.complemento ? `${getMotivoLabel(item.motivo)}: ${item.complemento}` : getMotivoLabel(item.motivo)).join(', ')}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-500">Criancas</p>
-                  {selecionado.criancas.length === 0 ? (
-                    <p>Nao informado</p>
-                  ) : (
-                    <div className="mt-2 grid gap-2">
-                      {selecionado.criancas.map((crianca) => (
-                        <div key={crianca.id} className="rounded-md border border-slate-200 p-3">
-                          <p className="font-semibold text-slate-950">{crianca.nome || (crianca.nome_nao_informado ? 'Nome nao informado' : crianca.situacao)}</p>
-                          <p>{crianca.idade_valor ? `${crianca.idade_valor} ${crianca.idade_unidade}` : crianca.data_prevista_nascimento || crianca.sexo || 'Sem detalhe adicional'}</p>
-                        </div>
-                      ))}
+                  {registros.map((registro) => (
+                    <Card key={registro.id}>
+                      <button
+                        type="button"
+                        onClick={() => void carregarDetalhe(registro.id)}
+                        className="w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                      >
+                        <CardHeader
+                          title={registro.clienteNome}
+                          description={`${registro.unidadeNome} - ${registro.consultoraEmail}`}
+                          action={<span className="shrink-0 rounded-md border border-sky-100 bg-white/70 px-3 py-2 text-right">
+                            <span className="block text-[10px] font-bold uppercase tracking-wide text-sky-700">Venda fechada?</span>
+                            <span className="block text-sm font-bold text-slate-900">{formatarVendaFechadaRegistro(registro.resultadoAtendimento)}</span>
+                          </span>}
+                        />
+                        <CardContent className="space-y-1">
+                          {registro.consultoraNomeManual && <p className="text-sm text-slate-600">Consultora: {registro.consultoraNomeManual}</p>}
+                          <p className="text-sm text-slate-600">Concluido em {formatarData(registro.concluidoEm)}</p>
+                          {registro.numeroLancamento && <p className="text-sm text-slate-600">Lancamento {registro.numeroLancamento}</p>}
+                          {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes) && <p className="text-sm text-slate-600">Virada do cartao {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes)}</p>}
+                        </CardContent>
+                      </button>
+                      <div className="px-4 pb-4">
+                        <Button
+                          type="button"
+                          onClick={() => void editarAtendimentoCard(registro.id)}
+                          disabled={carregandoEdicaoId === registro.id}
+                          size="lg"
+                          className="w-full"
+                        >
+                          {carregandoEdicaoId === registro.id ? (
+                            <>
+                              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                              Carregando...
+                            </>
+                          ) : (
+                            <>
+                              <Pencil className="size-4" aria-hidden="true" />
+                              Editar atendimento
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </Card>
+                  ))}
+                  {totalRegistros > TABLE_PAGE_SIZE && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 text-sm text-slate-600">
+                      <span>Página {paginaRegistros} de {Math.ceil(totalRegistros / TABLE_PAGE_SIZE)}</span>
+                      <div className="flex gap-2">
+                        <Button type="button" variant="secondary" size="sm" disabled={carregando || paginaRegistros === 1} onClick={() => void carregarRegistros({ page: paginaRegistros - 1 })}>Anterior</Button>
+                        <Button type="button" variant="secondary" size="sm" disabled={carregando || paginaRegistros >= Math.ceil(totalRegistros / TABLE_PAGE_SIZE)} onClick={() => void carregarRegistros({ page: paginaRegistros + 1 })}>Próxima</Button>
+                      </div>
                     </div>
                   )}
                 </div>
-                <div>
-                  <p className="text-xs font-bold uppercase text-slate-500">Observacoes</p>
-                  <p className="whitespace-pre-wrap">{normalizarObservacoesRegistro(selecionado.atendimento) ?? 'Sem observacoes'}</p>
-                </div>
-                {selecionado.historico.length > 0 && (
-                  <div>
-                    <p className="text-xs font-bold uppercase text-slate-500">Historico</p>
-                    <div className="mt-2 grid gap-2">
-                      {selecionado.historico.map((item) => {
-                        const campos = Array.isArray(item.snapshot?.camposAlterados) ? item.snapshot.camposAlterados.join(', ') : null
-                        return (
-                          <div key={item.id} className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                            <p className="font-semibold text-slate-900">{item.acao === 'editado_concluido' ? 'Atendimento editado' : 'Atendimento concluido'}</p>
-                            <p>{formatarData(item.created_at)}</p>
-                            <p>{item.perfil ?? item.role ?? 'Perfil nao informado'}</p>
-                            {campos && <p>Campos alterados: {campos}</p>}
-                          </div>
-                        )
-                      })}
-                    </div>
+              </CardContent>
+            </Card>
+
+            <Card className="h-fit">
+              <CardHeader icon={<ClipboardList className="size-4" aria-hidden="true" />} title="Detalhe" />
+              <CardContent className="space-y-4 text-sm text-slate-700">
+                {carregandoDetalhe && (
+                  <div role="status" className="p-4 text-center">
+                    <Spinner label="Carregando atendimento" />
                   </div>
                 )}
-              </div>
-            )}
-          </aside>
-        </div>
-      </TabsContent>
-      <TabsContent value="rascunhos">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-4 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-amber-50 text-amber-600">
-              <ClipboardList className="h-5 w-5" aria-hidden="true" />
-            </div>
-            <h2 className="text-lg font-semibold text-slate-950">Rascunhos em andamento</h2>
+                {!carregandoDetalhe && !selecionado && (
+                  <EmptyState
+                    icon={<ClipboardList className="size-5" aria-hidden="true" />}
+                    title="Nenhum atendimento selecionado"
+                    description="Selecione um atendimento para consultar os dados salvos."
+                  />
+                )}
+                {!carregandoDetalhe && selecionado && (
+                  <>
+                    <div>
+                      <p className="text-xs font-bold uppercase text-slate-500">Venda fechada?</p>
+                      <p className="font-semibold text-slate-950">{formatarVendaFechadaRegistro(selecionado.atendimento.resultadoAtendimento)}</p>
+                      {selecionado.atendimento.numeroLancamento && <p>Lancamento {selecionado.atendimento.numeroLancamento}</p>}
+                      {formatarViradaCartao(selecionado.atendimento.viradaCartaoDia, selecionado.atendimento.viradaCartaoMes) && (
+                        <p>Virada do cartao {formatarViradaCartao(selecionado.atendimento.viradaCartaoDia, selecionado.atendimento.viradaCartaoMes)}</p>
+                      )}
+                      {selecionado.podeEditar ? (
+                        <Button type="button" variant="secondary" className="mt-3" onClick={() => abrirEdicao(selecionado)}>
+                          Editar atendimento
+                        </Button>
+                      ) : (
+                        <Alert tone="info" className="mt-3">
+                          {selecionado.motivoBloqueio ?? 'Voce nao possui permissao para editar este atendimento.'}
+                        </Alert>
+                      )}
+                      {mensagemEdicao && !edicaoAberta && (
+                        <Alert tone="success" className="mt-3">{mensagemEdicao}</Alert>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase text-slate-500">Cliente</p>
+                      {selecionado.cliente ? (
+                        <>
+                          <p className="font-semibold text-slate-950">{selecionado.cliente.nome}</p>
+                          {selecionado.cliente.telefone && <p>{selecionado.cliente.telefone}</p>}
+                          <Button type="button" variant="secondary" onClick={abrirHistoricoClienteSelecionada} className="mt-3">
+                            <History className="size-4" aria-hidden="true" />
+                            Ver historico
+                          </Button>
+                        </>
+                      ) : (
+                        <p>Cliente nao localizada</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase text-slate-500">Nome da consultora</p>
+                      <p>{selecionado.atendimento.consultoraNomeManual ?? 'Nao informado'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase text-slate-500">Departamentos</p>
+                      <p>{selecionado.departamentos.map((item) => getDepartamentoLabel(item.departamento as DepartamentoInteresse)).join(', ') || 'Nao informado'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase text-slate-500">Produtos</p>
+                      <p>{selecionado.produtosInteresse.map((item) => item.descricao).join(', ') || 'Nao informado'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase text-slate-500">Motivos</p>
+                      <p>{selecionado.motivos.map((item) => item.motivo === 'outro' && item.complemento ? `${getMotivoLabel(item.motivo)}: ${item.complemento}` : getMotivoLabel(item.motivo)).join(', ')}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase text-slate-500">Criancas</p>
+                      {selecionado.criancas.length === 0 ? (
+                        <p>Nao informado</p>
+                      ) : (
+                        <div className="mt-2 grid gap-2">
+                          {selecionado.criancas.map((crianca) => (
+                            <div key={crianca.id} className="rounded-md border border-slate-200 p-3">
+                              <p className="font-semibold text-slate-950">{crianca.nome || (crianca.nome_nao_informado ? 'Nome nao informado' : crianca.situacao)}</p>
+                              <p>{crianca.idade_valor ? `${crianca.idade_valor} ${crianca.idade_unidade}` : crianca.data_prevista_nascimento || crianca.sexo || 'Sem detalhe adicional'}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold uppercase text-slate-500">Observacoes</p>
+                      <p className="whitespace-pre-wrap">{normalizarObservacoesRegistro(selecionado.atendimento) ?? 'Sem observacoes'}</p>
+                    </div>
+                    {selecionado.historico.length > 0 && (
+                      <div>
+                        <p className="text-xs font-bold uppercase text-slate-500">Historico</p>
+                        <div className="mt-2 grid gap-2">
+                          {selecionado.historico.map((item) => {
+                            const campos = Array.isArray(item.snapshot?.camposAlterados) ? item.snapshot.camposAlterados.join(', ') : null
+                            return (
+                              <div key={item.id} className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                                <p className="font-semibold text-slate-900">{item.acao === 'editado_concluido' ? 'Atendimento editado' : 'Atendimento concluido'}</p>
+                                <p>{formatarData(item.created_at)}</p>
+                                <p>{item.perfil ?? item.role ?? 'Perfil nao informado'}</p>
+                                {campos && <p>Campos alterados: {campos}</p>}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
           </div>
-          <div className="grid gap-3">
-            {carregandoRascunhos && <p className="text-sm text-slate-500">Carregando...</p>}
-            {erroRascunhos && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{erroRascunhos}</p>}
-            {!carregandoRascunhos && !erroRascunhos && rascunhos.length === 0 && (
-              <p className="rounded-md border border-dashed border-slate-200 p-4 text-sm text-slate-500">Nenhum rascunho ativo.</p>
-            )}
-            {rascunhos.map((rascunho) => {
-              const unidade = contextoRascunhos?.unidadesPermitidas.find((item) => item.id === rascunho.unidadeId)
-              return (
-                <article key={rascunho.id} className="min-w-0 rounded-lg border border-amber-300 bg-white/80 p-4">
-                  <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                    <p className="min-w-0 break-words text-base font-semibold text-slate-950">{nomeClienteRascunho(rascunho.clienteNome)}</p>
-                    <p className="shrink-0 text-xs font-bold uppercase tracking-wide text-amber-800">Rascunho</p>
-                  </div>
-                  <div className="mt-2 grid gap-1 text-sm text-slate-600">
-                    <p className="break-words">
-                      Consultora: <span className="font-medium text-slate-800">{nomeConsultoraRascunho(rascunho.consultoraNome)}</span>
-                    </p>
-                    <p className="break-words">
-                      Unidade: <span className="font-medium text-slate-800">{unidade?.nome ?? rascunho.unidadeId}</span>
-                    </p>
-                    <p>Ultima atualizacao: {formatarData(rascunho.ultimaAtividadeEm)}</p>
-                    <p>Expira em: {diasRestantes(rascunho.expiraEm)} dias</p>
-                  </div>
-                  <Button
-                    type="button"
-                    onClick={() => router.push(`/atendimento-presencial/ficha?rascunho=${rascunho.id}`)}
-                    className="mt-3 h-11 w-full rounded-md"
-                  >
-                    Continuar atendimento
-                  </Button>
-                </article>
-              )
-            })}
-          </div>
-        </section>
-      </TabsContent>
-    </Tabs>
-    </div>
+        </TabsContent>
+
+        <TabsContent value="rascunhos">
+          <Card>
+            <CardHeader icon={<ClipboardList className="size-4" aria-hidden="true" />} title="Rascunhos em andamento" />
+            <CardContent className="space-y-3">
+              {carregandoRascunhos && (
+                <div role="status" className="p-4 text-center">
+                  <Spinner label="Carregando rascunhos" />
+                </div>
+              )}
+              {erroRascunhos && <Alert tone="danger">{erroRascunhos}</Alert>}
+              {!carregandoRascunhos && !erroRascunhos && rascunhos.length === 0 && (
+                <EmptyState
+                  icon={<ClipboardList className="size-5" aria-hidden="true" />}
+                  title="Nenhum rascunho ativo"
+                />
+              )}
+              {rascunhos.map((rascunho) => {
+                const unidade = contextoRascunhos?.unidadesPermitidas.find((item) => item.id === rascunho.unidadeId)
+                return (
+                  <Card key={rascunho.id} className="min-w-0 border-amber-300 p-4">
+                    <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                      <p className="min-w-0 break-words text-base font-semibold text-slate-950">{nomeClienteRascunho(rascunho.clienteNome)}</p>
+                      <Badge tone="warning">Rascunho</Badge>
+                    </div>
+                    <div className="mt-2 grid gap-1 text-sm text-slate-600">
+                      <p className="break-words">
+                        Consultora: <span className="font-medium text-slate-800">{nomeConsultoraRascunho(rascunho.consultoraNome)}</span>
+                      </p>
+                      <p className="break-words">
+                        Unidade: <span className="font-medium text-slate-800">{unidade?.nome ?? rascunho.unidadeId}</span>
+                      </p>
+                      <p>Ultima atualizacao: {formatarData(rascunho.ultimaAtividadeEm)}</p>
+                      <p>Expira em: {diasRestantes(rascunho.expiraEm)} dias</p>
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={() => router.push(`/atendimento-presencial/ficha?rascunho=${rascunho.id}`)}
+                      size="lg"
+                      className="mt-3 w-full"
+                    >
+                      Continuar atendimento
+                    </Button>
+                  </Card>
+                )
+              })}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
       <HistoricoClienteModal
         open={historicoAberto}
         onOpenChange={setHistoricoAberto}
         cliente={historicoCliente}
       />
+
       <Dialog open={edicaoAberta} onOpenChange={(open) => { if (!open) setEdicaoAberta(false) }}>
-        <DialogContent className="flex flex-col gap-0 overflow-hidden p-0 max-h-[calc(100dvh-32px)] sm:max-h-[90vh] sm:max-w-2xl">
-          <DialogHeader className="flex-none border-b border-slate-100 px-4 pb-3 pt-4 pr-10 sm:px-6 sm:pr-12 sm:pt-5">
-            <DialogTitle className="text-base">
-              Editar atendimento
-              {selecionado?.cliente?.nome && <span className="ml-2 font-normal text-slate-500">- {selecionado.cliente.nome}</span>}
-            </DialogTitle>
-            {selecionado && <p className="text-xs text-slate-600">Versao {selecionado.atendimento.version}</p>}
-          </DialogHeader>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader
+            title={
+              <>
+                Editar atendimento
+                {selecionado?.cliente?.nome && <span className="ml-2 font-normal text-slate-500">- {selecionado.cliente.nome}</span>}
+              </>
+            }
+            description={selecionado ? `Versao ${selecionado.atendimento.version}` : undefined}
+          />
 
-          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-            <div className="grid gap-4 px-4 pb-6 pt-4 sm:px-6">
-              {(carregandoDetalhe || !selecionado) && (
-                <p className="text-sm text-slate-500">Carregando atendimento...</p>
-              )}
+          <DialogBody className="space-y-4">
+            {(carregandoDetalhe || !selecionado) && (
+              <div role="status" className="p-4 text-center">
+                <Spinner label="Carregando atendimento" />
+              </div>
+            )}
 
-              {!carregandoDetalhe && selecionado && !selecionado.podeEditar && (
-                <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                  {selecionado.motivoBloqueio ?? 'Voce nao possui permissao para editar este atendimento.'}
-                </p>
-              )}
+            {!carregandoDetalhe && selecionado && !selecionado.podeEditar && (
+              <Alert tone="info">
+                {selecionado.motivoBloqueio ?? 'Voce nao possui permissao para editar este atendimento.'}
+              </Alert>
+            )}
 
-              {!carregandoDetalhe && selecionado && selecionado.podeEditar && fichaEdicao && (
-                <>
-                  {mensagemEdicao && <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{mensagemEdicao}</p>}
-                  {erroEdicao && <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{erroEdicao}</p>}
+            {!carregandoDetalhe && selecionado && selecionado.podeEditar && fichaEdicao && (
+              <>
+                {mensagemEdicao && <Alert tone="success">{mensagemEdicao}</Alert>}
+                {erroEdicao && <Alert tone="danger">{erroEdicao}</Alert>}
 
-                  <div className="grid gap-2 rounded-md border border-slate-200 bg-white p-3">
-                    <p className="text-xs font-bold uppercase text-slate-500">Somente leitura</p>
-                    <p>Cliente: {selecionado.cliente?.nome ?? 'Cliente nao localizada'}</p>
-                    <p>Unidade: {resumoSelecionado?.unidadeNome ?? selecionado.atendimento.unidadeId}</p>
-                    <p>Consultora: {resumoSelecionado?.consultoraEmail ?? selecionado.atendimento.consultoraUsuarioId}</p>
-                    <p>Nome da consultora: {selecionado.atendimento.consultoraNomeManual ?? 'Nao informado'}</p>
-                  </div>
+                <div className="grid gap-1 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
+                  <p className="text-xs font-bold uppercase text-slate-500">Somente leitura</p>
+                  <p>Cliente: {selecionado.cliente?.nome ?? 'Cliente nao localizada'}</p>
+                  <p>Unidade: {resumoSelecionado?.unidadeNome ?? selecionado.atendimento.unidadeId}</p>
+                  <p>Consultora: {resumoSelecionado?.consultoraEmail ?? selecionado.atendimento.consultoraUsuarioId}</p>
+                  <p>Nome da consultora: {selecionado.atendimento.consultoraNomeManual ?? 'Nao informado'}</p>
+                </div>
 
-                  <div className="grid gap-3">
-                    <label className="text-sm font-semibold text-slate-800">
-                      Nome da consultora
-                      <input
-                        value={fichaEdicao.consultoraNome ?? ''}
-                        onChange={(event) => atualizarFichaEdicao((atual) => ({ ...atual, consultoraNome: event.target.value }))}
-                        onBlur={(event) => atualizarFichaEdicao((atual) => ({ ...atual, consultoraNome: normalizarNomeConsultora(event.target.value) }))}
-                        className="mt-2 min-h-11 w-full rounded-md border border-slate-200 px-3 text-base"
-                        maxLength={FICHA_CONSULTORA_NOME_MAX_CHARS}
-                        placeholder="Digite o nome da consultora"
-                      />
-                    </label>
-                  </div>
+                <Section title="Dados da ficha" tone="section-1" collapsible>
+                <Section title="Identificação e crianças" variant="subsection" collapsible>
+                <FormField id="edicao-consultora-nome" label="Nome da consultora">
+                  {(field) => (
+                    <Input
+                      {...field}
+                      value={fichaEdicao.consultoraNome ?? ''}
+                      onChange={(event) => atualizarFichaEdicao((atual) => ({ ...atual, consultoraNome: event.target.value }))}
+                      onBlur={(event) => atualizarFichaEdicao((atual) => ({ ...atual, consultoraNome: normalizarNomeConsultora(event.target.value) }))}
+                      maxLength={FICHA_CONSULTORA_NOME_MAX_CHARS}
+                      placeholder="Digite o nome da consultora"
+                    />
+                  )}
+                </FormField>
 
-                  <div className="grid gap-3">
-                    <p className="text-sm font-semibold text-slate-800">Criancas</p>
-                    {fichaEdicao.criancas.map((crianca) => (
-                      <div key={crianca.id} className="grid gap-3 rounded-md border border-slate-200 bg-white p-3">
-                        <select
-                          value={crianca.situacao}
-                          onChange={(event) => atualizarCriancaEdicao(crianca.id, {
-                            situacao: event.target.value as SituacaoCrianca,
-                            dataPrevistaNascimento: undefined,
-                            idadeUnidade: undefined,
-                            idadeValor: undefined,
-                          })}
-                          className="min-h-11 rounded-md border border-slate-200 bg-white px-3 text-base"
-                        >
-                          {SITUACOES_CRIANCA.map((item) => <option key={item.chave} value={item.chave}>{item.label}</option>)}
-                        </select>
-                        {crianca.situacao === 'gestacao' || crianca.situacao === 'presente_outra_pessoa' ? (
-                          <input
-                            value={dataPrevistaEdicaoInputs[crianca.id] ?? formatarDataISOParaInput(crianca.dataPrevistaNascimento)}
-                            onChange={(event) => atualizarDataPrevistaEdicao(crianca.id, event.target.value)}
-                            className="min-h-11 rounded-md border border-slate-200 px-3 text-base"
-                            placeholder="DD/MM/AAAA"
-                          />
-                        ) : null}
+                <div className="grid gap-3">
+                  <p className="text-sm font-semibold text-slate-800">Criancas</p>
+                  {fichaEdicao.criancas.map((crianca) => (
+                    <Card key={crianca.id} className="p-3">
+                      <div className="grid gap-3">
+                        <FormField id={`edicao-situacao-${crianca.id}`} label="Situacao">
+                          {(field) => (
+                            <Select
+                              value={crianca.situacao}
+                              onValueChange={(value) => atualizarCriancaEdicao(crianca.id, {
+                                situacao: value as SituacaoCrianca,
+                                dataPrevistaNascimento: undefined,
+                                idadeUnidade: undefined,
+                                idadeValor: undefined,
+                              })}
+                            >
+                              <SelectTrigger id={field.id}><SelectValue placeholder="Selecione a situacao" /></SelectTrigger>
+                              <SelectContent position="popper" className="max-h-60">
+                                {SITUACOES_CRIANCA.map((item) => <SelectItem key={item.chave} value={item.chave}>{item.label}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </FormField>
+                        {(crianca.situacao === 'gestacao' || crianca.situacao === 'presente_outra_pessoa') && (
+                          <FormField id={`edicao-data-prevista-${crianca.id}`} label="Data prevista de nascimento">
+                            {(field) => (
+                              <DateField
+                                {...field}
+                                value={dataPrevistaEdicaoInputs[crianca.id] ?? formatarDataISOParaInput(crianca.dataPrevistaNascimento)}
+                                onChange={(display) => atualizarDataPrevistaEdicao(crianca.id, display)}
+                              />
+                            )}
+                          </FormField>
+                        )}
                         {crianca.situacao === 'ja_nasceu' && (
                           <div className="grid gap-2">
                             <div className="grid grid-cols-2 gap-2">
                               {(['meses', 'anos'] as UnidadeIdadeCrianca[]).map((unidade) => (
-                                <Button key={unidade} type="button" variant={crianca.idadeUnidade === unidade ? 'default' : 'outline'} onClick={() => atualizarCriancaEdicao(crianca.id, { idadeUnidade: unidade, idadeValor: undefined })} className="h-10 rounded-md">
+                                <OpcaoButton key={unidade} selected={crianca.idadeUnidade === unidade} onClick={() => atualizarCriancaEdicao(crianca.id, { idadeUnidade: unidade, idadeValor: undefined })}>
                                   {unidade === 'meses' ? 'Meses' : 'Anos'}
-                                </Button>
+                                </OpcaoButton>
                               ))}
                             </div>
                             {crianca.idadeUnidade && (
                               <div className="grid grid-cols-4 gap-2">
                                 {Array.from({ length: crianca.idadeUnidade === 'meses' ? 11 : 6 }, (_, i) => i + 1).map((valor) => (
-                                  <Button key={valor} type="button" variant={crianca.idadeValor === valor ? 'default' : 'outline'} onClick={() => atualizarCriancaEdicao(crianca.id, { idadeValor: valor })} className="h-10 rounded-md">
+                                  <OpcaoButton key={valor} selected={crianca.idadeValor === valor} onClick={() => atualizarCriancaEdicao(crianca.id, { idadeValor: valor })} className="text-center">
                                     {valor}
-                                  </Button>
+                                  </OpcaoButton>
                                 ))}
                               </div>
                             )}
                           </div>
                         )}
-                        <input
-                          value={crianca.nome ?? ''}
-                          disabled={crianca.nomeNaoInformado}
-                          onChange={(event) => atualizarCriancaEdicao(crianca.id, { nome: limparNomeCriancaDigitacao(event.target.value), nomeNaoInformado: false })}
-                          className="min-h-11 rounded-md border border-slate-200 px-3 text-base disabled:bg-slate-100"
-                          placeholder="Nome da crianca"
-                        />
-                        <label className="flex min-h-10 items-center gap-3 text-sm font-semibold text-slate-700">
+                        <FormField id={`edicao-nome-crianca-${crianca.id}`} label="Nome da crianca" helper="Opcional">
+                          {(field) => (
+                            <Input
+                              {...field}
+                              value={crianca.nome ?? ''}
+                              disabled={crianca.nomeNaoInformado}
+                              onChange={(event) => atualizarCriancaEdicao(crianca.id, { nome: limparNomeCriancaDigitacao(event.target.value), nomeNaoInformado: false })}
+                              placeholder="Nome da crianca"
+                            />
+                          )}
+                        </FormField>
+                        <label className="flex min-h-10 items-center gap-3 rounded-md border border-input bg-input-background px-3 text-sm font-semibold text-slate-700">
                           <input
                             type="checkbox"
                             checked={crianca.nomeNaoInformado === true}
                             onChange={(event) => atualizarCriancaEdicao(crianca.id, event.target.checked ? { nome: undefined, nomeNaoInformado: true } : { nomeNaoInformado: false })}
+                            className="h-4 w-4"
                           />
                           Nao sabe o nome ainda
                         </label>
-                        <select
-                          value={crianca.sexo ?? ''}
-                          onChange={(event) => atualizarCriancaEdicao(crianca.id, { sexo: event.target.value ? event.target.value as SexoCrianca : undefined })}
-                          className="min-h-11 rounded-md border border-slate-200 bg-white px-3 text-base"
-                        >
-                          <option value="">Sexo nao informado</option>
-                          {SEXOS_CRIANCA.map((item) => <option key={item.chave} value={item.chave}>{item.label}</option>)}
-                        </select>
+                        <FormField id={`edicao-sexo-${crianca.id}`} label="Sexo" helper="Opcional">
+                          {(field) => (
+                            <Select
+                              value={crianca.sexo ?? 'nao_informado'}
+                              onValueChange={(value) => atualizarCriancaEdicao(crianca.id, { sexo: value === 'nao_informado' ? undefined : value as SexoCrianca })}
+                            >
+                              <SelectTrigger id={field.id}><SelectValue placeholder="Sexo nao informado" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="nao_informado">Sexo nao informado</SelectItem>
+                                {SEXOS_CRIANCA.map((item) => <SelectItem key={item.chave} value={item.chave}>{item.label}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </FormField>
                         {fichaEdicao.criancas.length > 1 && (
-                          <Button type="button" variant="outline" onClick={() => removerCriancaEdicao(crianca.id)} className="h-10 rounded-md">
+                          <Button type="button" variant="secondary" onClick={() => removerCriancaEdicao(crianca.id)}>
                             Remover crianca
                           </Button>
                         )}
                       </div>
+                    </Card>
+                  ))}
+                  <Button type="button" variant="secondary" onClick={adicionarCriancaEdicao}>
+                    <Plus className="size-4" aria-hidden="true" />
+                    Adicionar crianca
+                  </Button>
+                </div>
+                </Section>
+
+                <Section title="Necessidades" variant="subsection" collapsible>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">Departamentos</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    {DEPARTAMENTOS_INTERESSE.map((item) => (
+                      <OpcaoButton key={item.chave} selected={fichaEdicao.departamentos.includes(item.chave)} onClick={() => alternarDepartamentoEdicao(item.chave)}>
+                        {item.label}
+                      </OpcaoButton>
                     ))}
-                    <Button type="button" variant="outline" onClick={adicionarCriancaEdicao} className="h-11 rounded-md">
-                      <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
-                      Adicionar crianca
+                  </div>
+                </div>
+
+                </Section>
+
+                <Section title="Produtos" variant="subsection" collapsible>
+                  <p className="text-sm font-semibold text-slate-800">Produtos de interesse</p>
+                  <div className="mt-2 flex gap-2">
+                    <Input
+                      value={produtoEdicaoDigitado}
+                      onChange={(event) => setProdutoEdicaoDigitado(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          adicionarProdutoEdicao()
+                        }
+                      }}
+                      className="flex-1"
+                      maxLength={FICHA_PRODUTO_MAX_CHARS}
+                    />
+                    <Button type="button" onClick={adicionarProdutoEdicao}>
+                      <Plus className="size-4" aria-hidden="true" />
                     </Button>
                   </div>
-
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">Departamentos</p>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      {DEPARTAMENTOS_INTERESSE.map((item) => (
-                        <Button key={item.chave} type="button" variant={fichaEdicao.departamentos.includes(item.chave) ? 'default' : 'outline'} onClick={() => alternarDepartamentoEdicao(item.chave)} className="min-h-11 rounded-md">
-                          {item.label}
-                        </Button>
-                      ))}
-                    </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {fichaEdicao.produtosInteresse.map((produto) => (
+                      <button key={produto} type="button" onClick={() => atualizarFichaEdicao((atual) => ({ ...atual, produtosInteresse: atual.produtosInteresse.filter((item) => item !== produto) }))} className="inline-flex min-h-10 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700">
+                        {produto}
+                        <X className="size-4" aria-hidden="true" />
+                      </button>
+                    ))}
                   </div>
+                </Section>
 
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">Produtos de interesse</p>
-                    <div className="mt-2 flex gap-2">
-                      <input
-                        value={produtoEdicaoDigitado}
-                        onChange={(event) => setProdutoEdicaoDigitado(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault()
-                            adicionarProdutoEdicao()
-                          }
-                        }}
-                        className="min-h-11 flex-1 rounded-md border border-slate-200 px-3 text-base"
-                        maxLength={FICHA_PRODUTO_MAX_CHARS}
-                      />
-                      <Button type="button" onClick={adicionarProdutoEdicao} className="h-11 rounded-md">
-                        <Plus className="h-4 w-4" aria-hidden="true" />
-                      </Button>
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {fichaEdicao.produtosInteresse.map((produto) => (
-                        <button key={produto} type="button" onClick={() => atualizarFichaEdicao((atual) => ({ ...atual, produtosInteresse: atual.produtosInteresse.filter((item) => item !== produto) }))} className="inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold">
-                          {produto}
-                          <X className="h-4 w-4" aria-hidden="true" />
-                        </button>
-                      ))}
-                    </div>
+                <Section title="Resultado e condições" variant="subsection" collapsible>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">Resultado</p>
+                  <div className="mt-2 grid gap-2">
+                    {RESULTADOS_ATENDIMENTO.map((item) => (
+                      <OpcaoButton key={item.chave} selected={fichaEdicao.resultadoAtendimento === item.chave} onClick={() => {
+                        if (item.chave !== 'sim') setNumeroLancamentoEdicao('')
+                        atualizarFichaEdicao((atual) => ({ ...atual, resultadoAtendimento: item.chave as ResultadoAtendimento }))
+                      }}>
+                        {item.label}
+                      </OpcaoButton>
+                    ))}
                   </div>
+                </div>
 
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">Resultado</p>
-                    <div className="mt-2 grid gap-2">
-                      {RESULTADOS_ATENDIMENTO.map((item) => (
-                        <Button key={item.chave} type="button" variant={fichaEdicao.resultadoAtendimento === item.chave ? 'default' : 'outline'} onClick={() => {
-                          if (item.chave !== 'sim') setNumeroLancamentoEdicao('')
-                          atualizarFichaEdicao((atual) => ({ ...atual, resultadoAtendimento: item.chave as ResultadoAtendimento }))
-                        }} className="min-h-11 rounded-md">
-                          {item.label}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">Motivos</p>
-                    <div className="mt-3 grid gap-4">
-                      {MOTIVOS_RESULTADO_GRUPOS.map((grupo) => (
-                        <div key={grupo.chave}>
-                          <p className="mb-2 text-base font-semibold text-slate-800">{grupo.label}</p>
-                          <div className="grid gap-2">
-                            {grupo.motivos.map((motivo) => (
-                              <Button key={motivo.chave} type="button" variant={fichaEdicao.motivosResultado.includes(motivo.chave) ? 'default' : 'outline'} onClick={() => alternarMotivoEdicao(motivo.chave)} className="min-h-11 justify-start rounded-md">
-                                {motivo.label}
-                              </Button>
-                            ))}
-                          </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">Motivos</p>
+                  <div className="mt-3 grid gap-4">
+                    {MOTIVOS_RESULTADO_GRUPOS.map((grupo) => (
+                      <div key={grupo.chave}>
+                        <p className="mb-2 text-base font-semibold text-slate-800">{grupo.label}</p>
+                        <div className="grid gap-2">
+                          {grupo.motivos.map((motivo) => (
+                            <OpcaoButton key={motivo.chave} selected={fichaEdicao.motivosResultado.includes(motivo.chave)} onClick={() => alternarMotivoEdicao(motivo.chave)}>
+                              {motivo.label}
+                            </OpcaoButton>
+                          ))}
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ))}
                   </div>
+                </div>
 
-                  {fichaEdicao.motivosResultado.includes('virada_cartao') && (
-                    <label className="text-sm font-semibold text-slate-800">
-                      Virada do cartao
-                      <input
+                {fichaEdicao.motivosResultado.includes('virada_cartao') && (
+                  <FormField id="edicao-virada-cartao" label="Virada do cartao">
+                    {(field) => (
+                      <Input
+                        {...field}
                         value={viradaCartaoEdicaoInput}
                         onChange={(event) => atualizarViradaCartaoEdicao(event.target.value)}
-                        className="mt-2 min-h-11 w-full rounded-md border border-slate-200 px-3 text-base"
                         inputMode="numeric"
                         placeholder="DD/MM"
                         maxLength={5}
                       />
-                    </label>
-                  )}
+                    )}
+                  </FormField>
+                )}
 
-                  {fichaEdicao.motivosResultado.includes('outro') && (
-                    <label className="text-sm font-semibold text-slate-800">
-                      Complemento de Outro
-                      <input
+                {fichaEdicao.motivosResultado.includes('outro') && (
+                  <FormField id="edicao-motivo-outro" label="Complemento de Outro">
+                    {(field) => (
+                      <Input
+                        {...field}
                         value={fichaEdicao.motivoOutro ?? ''}
                         onChange={(event) => atualizarFichaEdicao((atual) => ({ ...atual, motivoOutro: event.target.value }))}
-                        className="mt-2 min-h-11 w-full rounded-md border border-slate-200 px-3 text-base"
                         maxLength={120}
                       />
-                    </label>
-                  )}
+                    )}
+                  </FormField>
+                )}
+                </Section>
 
-                  <label className="text-sm font-semibold text-slate-800">
-                    Observacoes
-                    <textarea
+                <Section title="Observações" variant="subsection" collapsible>
+                <FormField id="edicao-observacoes" label="Observacoes">
+                  {(field) => (
+                    <Textarea
+                      {...field}
                       value={fichaEdicao.observacoes ?? ''}
                       onChange={(event) => atualizarFichaEdicao((atual) => ({ ...atual, observacoes: event.target.value }))}
-                      className="mt-2 min-h-32 w-full rounded-md border border-slate-200 px-3 py-2 text-base"
+                      className="min-h-32"
                       maxLength={FICHA_OBSERVACOES_MAX_CHARS}
                     />
-                  </label>
+                  )}
+                </FormField>
 
-                  {fichaEdicao.resultadoAtendimento === 'sim' && (
-                    <label className="text-sm font-semibold text-slate-800">
-                      Numero do lancamento
-                      <input
+                {fichaEdicao.resultadoAtendimento === 'sim' && (
+                  <FormField id="edicao-numero-lancamento" label="Numero do lancamento">
+                    {(field) => (
+                      <Input
+                        {...field}
                         value={numeroLancamentoEdicao}
                         onChange={(event) => setNumeroLancamentoEdicao(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                        className="mt-2 min-h-11 w-full rounded-md border border-slate-200 px-3 text-base"
                         inputMode="numeric"
                       />
-                    </label>
-                  )}
+                    )}
+                  </FormField>
+                )}
+                </Section>
 
-                  <Button type="button" onClick={salvarEdicao} disabled={salvandoEdicao} className="h-11 rounded-md">
-                    <Save className="mr-2 h-4 w-4" aria-hidden="true" />
-                    {salvandoEdicao ? 'Salvando...' : 'Salvar edicao'}
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
+                </Section>
+                <Button type="button" onClick={salvarEdicao} loading={salvandoEdicao} className="w-full">
+                  <Save className="size-4" aria-hidden="true" />
+                  {salvandoEdicao ? 'Salvando...' : 'Salvar edicao'}
+                </Button>
+              </>
+            )}
+          </DialogBody>
         </DialogContent>
       </Dialog>
-    </main>
+    </PageContainer>
   )
 }

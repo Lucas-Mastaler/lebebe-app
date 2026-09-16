@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buscarAgendamentosFormatados } from '@/lib/digisac/agendamentos';
 import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
+import { TABLE_PAGE_SIZE, clampPageSize } from '@/lib/design-system/pagination';
 
 export async function POST(request: NextRequest) {
     try {
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
             dataUltimoChamadoFechadoInicio,
             dataUltimoChamadoFechadoFim,
             page = 1,
-            perPage = 30
+            perPage = TABLE_PAGE_SIZE
         } = body;
 
         const resultado = await buscarAgendamentosFormatados({
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
             dataUltimoChamadoFechadoInicio,
             dataUltimoChamadoFechadoFim,
             page,
-            perPage
+            perPage: clampPageSize(perPage)
         });
 
         return NextResponse.json(resultado);

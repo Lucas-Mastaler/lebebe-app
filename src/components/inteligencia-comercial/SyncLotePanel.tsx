@@ -1,7 +1,7 @@
 'use client'
 
 import { MessageCircle, Play, Square, RotateCcw, CheckCircle2, Clock, AlertCircle, Loader2, RefreshCw } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Badge, Button, Card, CardContent, CardFooter, CardHeader, Progress } from '@/components/design-system'
 import type { EstadoLote, LinhaLote, StatusLinha } from '@/hooks/useSyncLote'
 import type { SgiDocumento } from '@/types/sgi'
 
@@ -91,8 +91,8 @@ export function SyncLotePanel({
       <div className="flex items-center gap-2">
         <Button
           size="sm"
-          variant="outline"
-          className="gap-1.5 border-sky-200 text-sky-700 hover:bg-sky-50"
+          variant="secondary"
+          className="gap-1.5"
           onClick={() => onIniciar(false)}
           disabled={vendas.length === 0}
           title={vendas.length === 0 ? 'Pesquise vendas primeiro' : undefined}
@@ -100,9 +100,9 @@ export function SyncLotePanel({
           <MessageCircle className="w-3.5 h-3.5" />
           Sincronizar Digisac
           {vendas.length > 0 && (
-            <span className="ml-0.5 bg-sky-100 text-sky-600 rounded px-1 font-mono text-[10px]">
+            <Badge tone="info" className="ml-0.5 px-1 py-0 font-mono text-[10px]">
               {vendas.length}
-            </span>
+            </Badge>
           )}
         </Button>
       </div>
@@ -111,67 +111,49 @@ export function SyncLotePanel({
 
   // ── Em execução ou concluído: painel expandido ──
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+    <Card>
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 bg-slate-50">
-        <MessageCircle className="w-4 h-4 text-sky-600 shrink-0" />
-        <div className="flex-1 min-w-0">
-          {rodando ? (
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-slate-700">
-                Sincronizando Digisac: {processados}/{total}
-              </span>
-              {atualVenda && (
-                <span className="text-xs text-slate-500 truncate">
-                  — #{atualVenda.numeroLancamento} {atualVenda.cliente}
-                </span>
-              )}
-            </div>
+      <CardHeader
+        icon={<MessageCircle className="w-4 h-4" />}
+        title={rodando ? `Sincronizando Digisac: ${processados}/${total}` : `Sincronização concluída: ${processados}/${total}`}
+        description={rodando && atualVenda ? `#${atualVenda.numeroLancamento} ${atualVenda.cliente ?? ''}` : undefined}
+        action={
+          rodando ? (
+            <Button size="sm" variant="destructive" onClick={onCancelar}>
+              <Square className="w-3 h-3" />
+              Parar
+            </Button>
           ) : (
-            <span className="text-sm font-medium text-slate-700">
-              Sincronização concluída: {processados}/{total}
-            </span>
-          )}
-        </div>
-
-        {rodando ? (
-          <Button size="sm" variant="outline" className="gap-1 text-red-600 border-red-200 hover:bg-red-50 shrink-0" onClick={onCancelar}>
-            <Square className="w-3 h-3" />
-            Parar
-          </Button>
-        ) : (
-          <div className="flex gap-1.5 shrink-0">
-            <Button size="sm" variant="outline" className="gap-1 text-sky-600 border-sky-200 hover:bg-sky-50" onClick={() => onIniciar(false)}>
-              <Play className="w-3 h-3" />
-              Reprocessar
-            </Button>
-            <Button size="sm" variant="ghost" className="text-slate-500" onClick={onResetar}>
-              <RotateCcw className="w-3.5 h-3.5" />
-            </Button>
-          </div>
-        )}
-      </div>
+            <div className="flex gap-1.5">
+              <Button size="sm" variant="secondary" onClick={() => onIniciar(false)}>
+                <Play className="w-3 h-3" />
+                Reprocessar
+              </Button>
+              <Button size="sm" variant="ghost" onClick={onResetar} aria-label="Limpar resultado da sincronização">
+                <RotateCcw className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          )
+        }
+      />
 
       {/* Barra de progresso */}
-      <div className="h-1 bg-slate-100">
-        <div
-          className={`h-1 transition-all duration-300 ${concluido ? 'bg-emerald-400' : 'bg-sky-400'}`}
-          style={{ width: `${pct}%` }}
-        />
+      <div className="px-3 py-1.5">
+        <Progress value={pct} label="Sincronização Digisac em lote" />
       </div>
 
       {/* Lista de linhas */}
       {linhas.length > 0 && (
-        <div className="max-h-52 overflow-y-auto px-2 py-1.5 space-y-0.5">
+        <CardContent className="max-h-52 overflow-y-auto px-2 py-1.5 space-y-0.5">
           {linhas.map((linha, i) => (
             <LinhaStatus key={linha.numeroLancamento} linha={linha} isAtual={i === atualIndex} />
           ))}
-        </div>
+        </CardContent>
       )}
 
       {/* Sumário final */}
       {concluido && (
-        <div className="px-4 py-2 border-t border-slate-100 flex gap-4 text-xs text-slate-500">
+        <CardFooter className="justify-start gap-4 text-xs text-slate-500">
           <span className="text-emerald-600 font-medium">
             ✓ {linhas.filter((l) => l.status === 'sincronizado').length} sincronizados
           </span>
@@ -183,8 +165,8 @@ export function SyncLotePanel({
               ✕ {linhas.filter((l) => l.status === 'erro').length} erros
             </span>
           )}
-        </div>
+        </CardFooter>
       )}
-    </div>
+    </Card>
   )
 }

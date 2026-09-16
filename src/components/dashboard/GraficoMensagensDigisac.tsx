@@ -2,6 +2,8 @@
 
 import { EstatisticasDigisacDiario } from '@/types';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent, CardHeader } from '@/components/design-system';
+import { ChartColumnIncreasing } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -22,12 +24,15 @@ interface GraficoMensagensDigisacProps {
 export function GraficoMensagensDigisac({ diario, isLoading, error }: GraficoMensagensDigisacProps) {
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 card-shadow h-[360px] flex flex-col">
-        <Skeleton className="h-6 w-64 mb-3" />
-        <div className="flex-1">
+      <Card className="h-[360px]">
+        <CardHeader icon={<ChartColumnIncreasing className="size-4" />} title="Mensagens por dia" />
+        <CardContent className="flex h-[calc(100%-53px)] flex-col">
+          <Skeleton className="mb-3 h-6 w-64" />
+          <div className="flex-1">
           <Skeleton className="h-full w-full" />
         </div>
-      </div>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -46,9 +51,13 @@ export function GraficoMensagensDigisac({ diario, isLoading, error }: GraficoMen
   }));
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-4 card-shadow h-[360px] flex flex-col">
-      <h3 className="font-semibold text-slate-900 mb-3">Mensagens enviadas x recebidas por dia</h3>
+    <Card className="h-[360px]">
+      <CardHeader
+        icon={<ChartColumnIncreasing className="size-4" />}
+        title="Mensagens enviadas x recebidas por dia"
+      />
 
+      <CardContent className="flex h-[calc(100%-53px)] flex-col">
       <div className="flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 8 }}>
@@ -57,22 +66,23 @@ export function GraficoMensagensDigisac({ diario, isLoading, error }: GraficoMen
             <YAxis />
             <Tooltip />
             <Legend />
-            <Bar dataKey="enviadas" name="Enviadas" fill="#0EA5E9" radius={[6, 6, 0, 0]} />
-            <Bar dataKey="recebidas" name="Recebidas" fill="#10B981" radius={[6, 6, 0, 0]} />
+            <Bar dataKey="enviadas" name="Enviadas" fill="var(--chart-1)" radius={[6, 6, 0, 0]} />
+            <Bar dataKey="recebidas" name="Recebidas" fill="var(--chart-2)" radius={[6, 6, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
 
       <div className="flex items-center justify-center gap-6 text-sm text-slate-600 mt-2">
         <div className="flex items-center gap-2">
-          <span className="inline-block w-4 h-4 rounded-sm" style={{ backgroundColor: '#0EA5E9' }} />
+          <span className="inline-block size-4 rounded-sm bg-chart-1" />
           <span>ENVIADAS</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="inline-block w-4 h-4 rounded-sm" style={{ backgroundColor: '#10B981' }} />
+          <span className="inline-block size-4 rounded-sm bg-chart-2" />
           <span>RECEBIDAS</span>
         </div>
       </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

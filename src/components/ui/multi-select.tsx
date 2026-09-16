@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { Check, X, ChevronDown, Search } from 'lucide-react'
+import { useState } from 'react'
+import { Check, ChevronDown, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
 interface MultiSelectProps {
@@ -16,25 +17,20 @@ interface MultiSelectProps {
   enableSearch?: boolean
 }
 
+export function toggleMultiSelectValue(selected: string[], value: string) {
+  return selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value]
+}
+
 export function MultiSelect({ options, selected, onChange, placeholder = 'Selecione...', className, enableSearch = false }: MultiSelectProps) {
   const [open, setOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const containerRef = useRef<HTMLDivElement>(null)
 
   const filteredOptions = enableSearch
     ? options.filter(opt => opt.toLowerCase().includes(searchQuery.toLowerCase()))
     : options
 
   function toggleOption(value: string) {
-    if (selected.includes(value)) {
-      onChange(selected.filter(v => v !== value))
-    } else {
-      onChange([...selected, value])
-    }
-  }
-
-  function removeOption(value: string) {
-    onChange(selected.filter(v => v !== value))
+    onChange(toggleMultiSelectValue(selected, value))
   }
 
   function clearAll() {
@@ -42,74 +38,71 @@ export function MultiSelect({ options, selected, onChange, placeholder = 'Seleci
     setSearchQuery('')
   }
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setOpen(false)
-        setSearchQuery('')
-      }
-    }
-    if (open) {
-      document.addEventListener('mousedown', handleClickOutside)
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [open])
-
   return (
-    <div ref={containerRef} className={cn('relative', className)}>
-      {/* Trigger button with selected badges */}
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className={cn(
-          'w-full h-9 px-3 py-1.5 rounded-md border border-slate-200 bg-white',
-          'flex items-center gap-1.5 text-left text-sm',
-          'hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2',
-          'transition-colors'
-        )}
+    <Popover open={open} onOpenChange={(nextOpen) => {
+      setOpen(nextOpen)
+      if (!nextOpen) setSearchQuery('')
+    }}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={selected.length === 0 ? placeholder : `${selected.length} opções selecionadas`}
+          className={cn(
+            'flex h-9 w-full cursor-pointer items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-left text-sm transition-colors',
+            'hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2',
+            className
+          )}
+        >
+          {selected.length === 0 ? (
+            <span className="truncate text-slate-400">{placeholder}</span>
+          ) : (
+            <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+              {selected.slice(0, 3).map((value) => (
+                <span key={value} className="truncate rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
+                  {value}
+                </span>
+              ))}
+              {selected.length > 3 && <span className="shrink-0 text-xs text-slate-500">+{selected.length - 3}</span>}
+            </span>
+          )}
+          <ChevronDown className={cn('ml-auto size-4 shrink-0 text-slate-400 transition-transform', open && 'rotate-180')} aria-hidden="true" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={4}
+        collisionPadding={16}
+        className="flex w-[var(--radix-popover-trigger-width)] max-h-[min(24rem,var(--radix-popover-content-available-height))] min-h-0 flex-col overflow-hidden p-0"
       >
-        {selected.length === 0 ? (
-          <span className="text-slate-400">{placeholder}</span>
-        ) : (
-          <div className="flex flex-wrap gap-1 items-center">
-            {selected.slice(0, 3).map(value => (
-              <span
-                key={value}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs"
-              >
-                {value}
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); removeOption(value) }}
-                  className="hover:text-slate-900"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            ))}
-            {selected.length > 3 && (
-              <span className="text-xs text-slate-500">+{selected.length - 3}</span>
-            )}
-          </div>
-        )}
-        <ChevronDown className={cn('w-4 h-4 ml-auto text-slate-400 transition-transform', open && 'rotate-180')} />
-      </button>
-
-      {/* Dropdown */}
-      {open && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+        <div className="shrink-0">
           {selected.length > 0 && (
-            <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <span className="text-xs text-slate-500">{selected.length} selecionado{selected.length !== 1 ? 's' : ''}</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 text-xs"
-                onClick={(e) => { e.stopPropagation(); clearAll() }}
-              >
-                Limpar
-              </Button>
+            <div className="border-b border-slate-100 bg-slate-50 px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-slate-500">{selected.length} selecionado{selected.length !== 1 ? 's' : ''}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs"
+                  onClick={clearAll}
+                >
+                  Limpar
+                </Button>
+              </div>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {selected.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => toggleOption(value)}
+                    className="inline-flex max-w-full items-center gap-1 rounded-full bg-white px-2 py-0.5 text-xs text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
+                    aria-label={`Remover ${value}`}
+                  >
+                    <span className="truncate">{value}</span>
+                    <X className="size-3 shrink-0" aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           {enableSearch && (
@@ -121,41 +114,31 @@ export function MultiSelect({ options, selected, onChange, placeholder = 'Seleci
                   placeholder="Buscar..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
                   className="h-7 pl-8 text-xs"
                 />
               </div>
             </div>
           )}
-          {filteredOptions.length === 0 ? (
-            <div className="px-3 py-4 text-sm text-slate-400 text-center">
-              {searchQuery ? 'Nenhuma opção encontrada' : 'Nenhuma opção disponível'}
-            </div>
-          ) : (
-            <div className="p-1">
-              {filteredOptions.map(option => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); toggleOption(option) }}
-                  className={cn(
-                    'w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-left',
-                    'hover:bg-slate-50 transition-colors',
-                    selected.includes(option) && 'bg-slate-100'
-                  )}
-                >
-                  <Checkbox
-                    checked={selected.includes(option)}
-                    onCheckedChange={() => toggleOption(option)}
-                  />
-                  <span className="flex-1 truncate">{option}</span>
-                  {selected.includes(option) && <Check className="w-4 h-4 text-slate-500" />}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
-      )}
-    </div>
+        {filteredOptions.length === 0 ? (
+          <div className="px-3 py-4 text-center text-sm text-slate-400">
+            {searchQuery ? 'Nenhuma opção encontrada' : 'Nenhuma opção disponível'}
+          </div>
+        ) : (
+          <div className="min-h-0 overflow-y-auto p-1">
+            {filteredOptions.map((option) => {
+              const checked = selected.includes(option)
+              return (
+                <label key={option} className={cn('flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-slate-50', checked && 'bg-slate-100')}>
+                  <Checkbox checked={checked} onCheckedChange={() => toggleOption(option)} />
+                  <span className="min-w-0 flex-1 truncate">{option}</span>
+                  {checked && <Check className="size-4 shrink-0 text-slate-500" aria-hidden="true" />}
+                </label>
+              )
+            })}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   )
 }

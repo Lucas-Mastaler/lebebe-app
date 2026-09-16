@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from 'react'
 import { TrendingUp } from 'lucide-react'
+import { Alert, EmptyState, PageContainer, PageHeader } from '@/components/design-system'
 import { FiltrosSGI } from '@/components/inteligencia-comercial/FiltrosSGI'
 import { CardsSGI } from '@/components/inteligencia-comercial/CardsSGI'
 import { TabelaVendas } from '@/components/inteligencia-comercial/TabelaVendas'
@@ -85,26 +86,20 @@ export default function InteligenciaComercialPage() {
   }
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded-xl bg-sky-50">
-          <TrendingUp className="w-5 h-5 text-sky-600" />
-        </div>
-        <div>
-          <h1 className="text-lg font-semibold text-slate-800">Inteligência Comercial</h1>
-          <p className="text-xs text-slate-500">Vendas importadas do SGI Documentos de Saída</p>
-        </div>
-      </div>
+    <PageContainer className="space-y-5">
+      <PageHeader
+        icon={<TrendingUp className="size-5" />}
+        eyebrow="SGI"
+        title="Inteligência Comercial"
+        description="Vendas importadas do SGI Documentos de Saída"
+      />
 
       {/* Filtros */}
       <FiltrosSGI onPesquisar={buscar} isLoading={isLoading} />
 
       {/* Erro */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
+        <Alert tone="danger" title="Não foi possível buscar as vendas.">{error}</Alert>
       )}
 
       {/* Cards — só exibe após primeira busca */}
@@ -138,10 +133,7 @@ export default function InteligenciaComercialPage() {
 
       {/* Estado inicial */}
       {!buscouUmaVez && !isLoading && !error && (
-        <div className="bg-white border border-slate-200 rounded-xl py-16 flex flex-col items-center justify-center gap-3 text-slate-400">
-          <TrendingUp className="w-10 h-10 opacity-30" />
-          <p className="text-sm">Use os filtros acima e clique em Pesquisar para visualizar as vendas.</p>
-        </div>
+        <EmptyState icon={<TrendingUp />} title="Consulte as vendas" description="Use os filtros acima e clique em Filtrar para visualizar as vendas." />
       )}
 
       {/* Modal de detalhe */}
@@ -161,6 +153,6 @@ export default function InteligenciaComercialPage() {
           clienteNome={vendaObs.cliente ?? null}
         />
       )}
-    </div>
+    </PageContainer>
   )
 }

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import { AlertCircle, Search, X } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
+import { Input } from '@/components/design-system'
 import { LIMITE_CORES_POR_TAPETE } from '@/lib/pedidos-personalizados'
 import { filtrarCores } from './novo-pedido-modelo'
 import type { CorOpcao } from './novo-pedido-modelo'
@@ -81,7 +81,7 @@ export function SeletorCores({ tapeteNumero, cores, selecionadas, disabled, onCh
       </div>
 
       {avisoLimite && (
-        <p role="alert" className="flex items-center gap-1.5 text-sm font-medium text-red-600">
+        <p role="alert" className="flex items-center gap-1.5 text-sm font-medium text-destructive">
           <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
           Máximo de 6 cores por tapete.
         </p>

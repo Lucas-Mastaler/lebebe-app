@@ -8,7 +8,8 @@ detalhado de cada um vive em `<slug>/STATUS.md`; não duplique aqui.
 | Projeto | Status | Fase atual | Entrada |
 |---|---|---|---|
 | higiene-estrutural-repositorio | CONCLUIDO | Ondas 1-6 concluídas (2026-08-11) | [STATUS.md](higiene-estrutural-repositorio/STATUS.md) |
-| lebebe-exclusive-pedidos-personalizados | BLOQUEADO | Ativação do worker SGI aguarda disponibilidade da aprovação remota | [STATUS.md](lebebe-exclusive-pedidos-personalizados/STATUS.md) |
+| lebebe-exclusive-pedidos-personalizados | CONCLUIDO | Implementação, publicação e validação do fluxo Exclusive → SGI concluídas | [STATUS.md](lebebe-exclusive-pedidos-personalizados/STATUS.md) |
+| design-system | EM_EXECUCAO | Fase 5 (manual, uma tela por chat) — as 8 telas da fila operacional estão `PRONTA_PARA_VALIDACAO_MANUAL` (fila técnica encerrada em 2026-09-15, aguardando validação manual do usuário; nenhuma nova tela iniciada) | [STATUS.md](design-system/STATUS.md) |
 
 Estados possíveis: `PLANEJAMENTO` · `APROVADO` · `EM_EXECUCAO` ·
 `BLOQUEADO` · `CONCLUIDO` · `CANCELADO`.

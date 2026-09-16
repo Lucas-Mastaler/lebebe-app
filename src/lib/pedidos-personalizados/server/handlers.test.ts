@@ -575,6 +575,31 @@ describe('detalhe de pedido personalizado', () => {
   it('rejeita ID inválido', async () => {
     expect((await obterDetalhePedido(new Request('http://localhost'), 'invalido', deps())).status).toBe(400)
   })
+
+  it('inclui observações no detalhe, com autor por e-mail e na ordem retornada pelo repositório (mais recente primeiro)', async () => {
+    const repo = criarRepo({
+      carregarDetalhe: vi.fn().mockResolvedValue({
+        data: {
+          pedido: {
+            id: PEDIDO_ID, fornecedor: null, unidade: { chave: 'bigorrilho', nome: 'BIGORRILHO' },
+            consultora: 'ANA', cliente: 'CLIENTE', status: 'RASCUNHO', version: 1,
+            created_at: 'agora', updated_at: 'agora',
+          },
+          tapetes: [], itens: [], historico: [],
+          observacoes: [
+            { id: '90000000-0000-4000-8000-000000000002', texto: 'Segunda observação', created_at: '2026-09-15T13:00:00.000Z', usuario: { email: 'tecnico@example.com' } },
+            { id: '90000000-0000-4000-8000-000000000001', texto: 'Primeira observação', created_at: '2026-09-15T12:00:00.000Z', usuario: { email: 'tecnico@example.com' } },
+          ],
+        },
+        error: null,
+      }),
+    })
+    const body = await (await obterDetalhePedido(new Request('http://localhost'), PEDIDO_ID, deps(repo))).json()
+    expect(body.pedido.observacoes).toEqual([
+      { id: '90000000-0000-4000-8000-000000000002', texto: 'Segunda observação', createdAt: '2026-09-15T13:00:00.000Z', usuario: { email: 'tecnico@example.com' } },
+      { id: '90000000-0000-4000-8000-000000000001', texto: 'Primeira observação', createdAt: '2026-09-15T12:00:00.000Z', usuario: { email: 'tecnico@example.com' } },
+    ])
+  })
 })
 
 describe('atualização comercial', () => {

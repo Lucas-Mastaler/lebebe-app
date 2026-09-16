@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     // ─────────────────────────────────────────────────────────
     // 1.0 – Trocar code por sessão (captura completa)
     // ─────────────────────────────────────────────────────────
-    const { data: { user, session }, error } = await supabase.auth.exchangeCodeForSession(code)
+    const { data: { user }, error } = await supabase.auth.exchangeCodeForSession(code)
 
     if (error) {
       console.error('[OAuth Callback] Erro ao trocar código por sessão:', error)
@@ -27,41 +27,6 @@ export async function GET(request: Request) {
 
     const email = user.email.toLowerCase()
     console.log('[OAuth Callback] ✓ Usuário autenticado:', email)
-
-    // ─────────────────────────────────────────────────────────
-    // 2.0 – Captura do Google Refresh Token + Escopos
-    // ─────────────────────────────────────────────────────────
-    if (session) {
-      const providerRefreshToken = session.provider_refresh_token
-      const providerToken = session.provider_token
-
-      if (providerRefreshToken) {
-        try {
-          await supabase.from('google_oauth_setup').insert({
-            user_email: email,
-            provider_refresh_token: providerRefreshToken,
-            provider_token: providerToken || null,
-            notes: 'Token capturado com escopos completos (script.external_request + spreadsheets + drive + calendar + script.scriptapp) - ' + new Date().toISOString()
-          })
-        } catch (insertError) {
-          console.error('[OAuth Callback] Erro ao salvar token OAuth (tabela pode não existir):', insertError)
-        }
-      } else {
-        console.warn('[OAuth Callback] provider_refresh_token não retornado pelo Google')
-        try {
-          await supabase.from('google_oauth_setup').insert({
-            user_email: email,
-            provider_refresh_token: null,
-            provider_token: providerToken || null,
-            notes: 'REFRESH TOKEN AUSENTE - verificar configuração OAuth - ' + new Date().toISOString()
-          })
-        } catch (insertError) {
-          console.error('[OAuth Callback] Erro ao registrar ausência de token:', insertError)
-        }
-      }
-    } else {
-      console.warn('[OAuth Callback] Sessão não retornada pelo Supabase')
-    }
 
     const { data: usuarioPermitido, error: dbError } = await supabase
       .from('usuarios_permitidos')

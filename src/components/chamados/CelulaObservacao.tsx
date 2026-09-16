@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Check, X, Pencil } from "lucide-react";
+import { IconButton, Input } from "@/components/design-system";
 
 interface Props {
   contactId: string;
@@ -64,7 +65,7 @@ export function CelulaObservacao({ contactId, valor, onSalvar }: Props) {
 
   return (
     <div className="flex items-center gap-1 min-w-[160px] max-w-[220px]">
-      <input
+      <Input
         ref={inputRef}
         type="text"
         maxLength={100}
@@ -72,25 +73,29 @@ export function CelulaObservacao({ contactId, valor, onSalvar }: Props) {
         onChange={(e) => setTexto(e.target.value)}
         onKeyDown={handleKeyDown}
         disabled={salvando}
-        className="flex-1 text-sm border border-slate-300 rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400 min-w-0"
+        className="h-8 flex-1 min-w-0"
         placeholder="Observação..."
       />
-      <button
+      <IconButton
+        aria-label="Salvar observação"
+        variant="ghost"
+        size="sm"
         onClick={handleSalvar}
         disabled={salvando}
-        className="p-1 rounded hover:bg-green-100 text-green-600 transition-colors flex-shrink-0"
-        title="Salvar"
+        className="shrink-0 text-success hover:bg-success/10"
       >
-        <Check className="w-4 h-4" />
-      </button>
-      <button
+        <Check className="size-4" />
+      </IconButton>
+      <IconButton
+        aria-label="Cancelar edição"
+        variant="ghost"
+        size="sm"
         onClick={handleCancelar}
         disabled={salvando}
-        className="p-1 rounded hover:bg-red-100 text-red-600 transition-colors flex-shrink-0"
-        title="Cancelar"
+        className="shrink-0 text-destructive hover:bg-destructive/10"
       >
-        <X className="w-4 h-4" />
-      </button>
+        <X className="size-4" />
+      </IconButton>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateMaticUser } from '@/lib/auth/matic-auth'
+import { isDescricaoVolumeAvulso } from '@/lib/recebimento/volume-avulso'
 
 // Helper: remove leading zeros and trim spaces for matching (02685 -> 2685)
 function normalizeCode(code: string): string {
@@ -383,11 +384,21 @@ export async function POST(request: NextRequest) {
     refs_usadas: Set<string>
   }>()
 
+  let volumeAvulsoIgnorados = 0
   for (const item of nfeItensParaAgrupar) {
     const codigoNormalizado = normalizeCode(item.codigo_produto)
     const sku = skuMap.get(codigoNormalizado)
+
+    // Ref bate, mas a descrição da linha indica volume avulso (ex.: "VOLUME
+    // 01- OFF WHITE/FREIJO/ECO") — não é o produto completo, não deve virar
+    // item normal. Será tratado pelo fluxo de OS (ver GET /[id]).
+    if (sku && isDescricaoVolumeAvulso(item.descricao)) {
+      volumeAvulsoIgnorados++
+      continue
+    }
+
     const volumesPorItem = sku?.volumes_por_item || item.volumes_por_item || 1
-    
+
     // Group by internal SKU codigo_produto (if found), otherwise by normalized NF code
     const groupKey = sku?.codigo_produto || codigoNormalizado
     const existing = groupedItems.get(groupKey)
@@ -414,7 +425,10 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  console.log(`[LOG] Agrupados ${nfeItensParaAgrupar.length} itens de NFes normais em ${groupedItems.size} itens únicos`)
+  if (volumeAvulsoIgnorados > 0) {
+    console.log(`[LOG][AUDIT] Ignorados ${volumeAvulsoIgnorados} itens de volume avulso (ref bate mas descrição contém VOLUME) — serão tratados via OS`)
+  }
+  console.log(`[LOG] Agrupados ${nfeItensParaAgrupar.length - volumeAvulsoIgnorados} itens de NFes normais em ${groupedItems.size} itens únicos`)
   
   // Audit: log items that came from multiple NFs with NF numbers
   for (const [codigo, group] of groupedItems) {

@@ -1,6 +1,7 @@
 import { fetchDigisac } from './clienteDigisac';
 import { montarRangeUtcSaoPaulo } from './utilsDatas';
 import { formatarTags } from './formatadores';
+import { clampPageSize } from '@/lib/design-system/pagination';
 
 import { PesquisaChamadosResponse, ChamadoFinalizadoItem } from '@/types';
 
@@ -107,7 +108,7 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
     departmentIds: Array.isArray(filtros.departmentIds) ? filtros.departmentIds.length : 0,
     userIds: Array.isArray(filtros.userIds) ? filtros.userIds.length : 0,
     page: filtros.page || 1,
-    perPage: filtros.perPage || 30,
+    perPage: clampPageSize(filtros.perPage),
   });
   console.log('[DIGISAC][TICKETS] rangeUTC=', { inicioUtc, fimUtc });
 
@@ -128,8 +129,11 @@ export async function pesquisarChamadosFinalizados(filtros: FiltrosChamadosServi
 
   // Paginação: não repassar a página da UI para a API do Digisac.
   // Buscamos um lote grande (primeira página) e paginamos localmente após agregar por contato.
+  // TABLE-PAGE-SIZE (D-033): o limite de 20 é sobre o que ESTA função devolve
+  // ao frontend (`paged`, abaixo) — nunca sobre o lote bruto buscado do
+  // Digisac para poder agregar por contato antes de paginar.
   const requestedPage = filtros.page || 1;
-  const requestedPerPage = Math.min(filtros.perPage || 30, 100);
+  const requestedPerPage = clampPageSize(filtros.perPage);
   params.append('page', '1');
   params.append('perPage', '200');
 

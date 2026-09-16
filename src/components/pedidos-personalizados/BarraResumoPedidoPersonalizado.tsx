@@ -1,8 +1,8 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { Loader2, RefreshCw, Save } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { RefreshCw, Save } from 'lucide-react'
+import { Button } from '@/components/design-system'
 
 type Props = {
   quantidadeItens: number
@@ -41,10 +41,10 @@ export function BarraResumoPedidoPersonalizado({
   return (
     <div className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-t-2xl border-t border-slate-200 bg-slate-50/95 p-3 shadow-[0_-6px_16px_-8px_rgba(15,23,42,0.15)] backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:p-4">
       <p className="text-center text-sm font-bold text-slate-900 sm:text-left sm:text-base">Itens selecionados: {quantidadeItens} · Total: {totalFormatado}</p>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap justify-center gap-2 sm:flex-nowrap sm:justify-end">
         {acaoSecundaria}
         {onNovoPedido && (
-          <Button type="button" variant="outline" className="min-h-12 flex-1 sm:flex-none" disabled={bloqueadoNovoPedido} onClick={onNovoPedido}>
+          <Button type="button" variant="secondary" className="min-h-12 flex-1 sm:flex-none" disabled={bloqueadoNovoPedido} onClick={onNovoPedido}>
             <RefreshCw />Novo pedido
           </Button>
         )}
@@ -52,9 +52,10 @@ export function BarraResumoPedidoPersonalizado({
           type={tipoBotaoSalvar}
           className="min-h-12 flex-1 sm:flex-none"
           disabled={!podeSalvar}
+          loading={salvando}
           onClick={tipoBotaoSalvar === 'button' ? onSalvar : undefined}
         >
-          {salvando ? <Loader2 className="animate-spin" /> : <Save />}
+          <Save />
           {rotuloSalvar}
         </Button>
       </div>

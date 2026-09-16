@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { CalendarDays } from 'lucide-react';
+import { PageContainer, PageHeader } from '@/components/design-system';
 import { FiltrosHorariosAgendamentos } from './FiltrosHorariosAgendamentos';
 import { ListaHorariosDisponiveis } from './ListaHorariosDisponiveis';
 
@@ -66,14 +68,22 @@ export function HorariosAgendamentosPage() {
     }, []);
 
     return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-2xl font-bold text-slate-900">HORÁRIOS AGENDAMENTOS</h1>
-                <p className="text-slate-600 mt-1">Consulta de horários disponíveis</p>
-            </div>
+        <PageContainer className="space-y-6">
+            <PageHeader
+                icon={<CalendarDays className="size-5" />}
+                eyebrow="Digisac"
+                title="HORÁRIOS AGENDAMENTOS"
+                description="Consulta de horários disponíveis"
+            />
 
             <FiltrosHorariosAgendamentos
                 onPesquisar={handlePesquisar}
+                onLimpar={() => {
+                    setHorariosDisponiveis([]);
+                    setAgendamentosExistentes([]);
+                    setError(null);
+                    setUltimaPesquisa(null);
+                }}
                 isLoading={isLoading}
             />
 
@@ -89,7 +99,7 @@ export function HorariosAgendamentosPage() {
                     ultimaPesquisa.horaFim
                 ) : undefined}
             />
-        </div>
+        </PageContainer>
     );
 }
 

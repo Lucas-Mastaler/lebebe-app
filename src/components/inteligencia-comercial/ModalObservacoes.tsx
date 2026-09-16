@@ -1,11 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { MessageSquarePlus, Trash2, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog'
+import { MessageSquarePlus, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Button, Dialog, DialogBody, DialogContent, DialogHeader, Spinner, Textarea } from '@/components/design-system'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,13 +62,13 @@ function ObsItem({
       </div>
       <Button
         variant="ghost"
-        size="icon-sm"
+        size="icon"
         className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 shrink-0"
         onClick={handleDelete}
         disabled={deleting}
         title="Excluir"
       >
-        {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+        {deleting ? <Spinner size={16} label="Excluindo" /> : <Trash2 className="w-3 h-3" />}
       </Button>
     </div>
   )
@@ -139,22 +136,20 @@ export function ModalObservacoes({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="text-base flex items-center gap-2">
+      <DialogContent className="max-w-lg">
+        <DialogHeader title={<span className="flex min-w-0 items-center gap-2">
             <MessageSquarePlus className="w-4 h-4 text-sky-600" />
             Observações — #{numeroLancamento}
             {clienteNome && (
               <span className="text-sm font-normal text-slate-500 truncate">{clienteNome}</span>
             )}
-          </DialogTitle>
-        </DialogHeader>
+          </span>} />
 
-        <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+        <DialogBody className="space-y-4">
           {/* Nova observação */}
           <div className="space-y-2">
-            <textarea
-              className="w-full text-sm border border-slate-200 rounded-lg p-2.5 resize-none focus:outline-none focus:ring-2 focus:ring-sky-200 placeholder:text-slate-400"
+            <Textarea
+              className="resize-none"
               rows={3}
               placeholder="Escreva uma observação sobre esta venda..."
               value={texto}
@@ -170,7 +165,7 @@ export function ModalObservacoes({
               disabled={saving || !texto.trim()}
               className="gap-1"
             >
-              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <MessageSquarePlus className="w-3 h-3" />}
+              {saving ? <Spinner size={16} label="Salvando" /> : <MessageSquarePlus className="w-3 h-3" />}
               Salvar observação
             </Button>
           </div>
@@ -182,7 +177,7 @@ export function ModalObservacoes({
             </p>
             {loading ? (
               <div className="flex items-center gap-2 text-xs text-slate-400">
-                <Loader2 className="w-3 h-3 animate-spin" /> Carregando...
+                <Spinner size={16} label="Carregando observações" /> Carregando...
               </div>
             ) : obs.length === 0 ? (
               <p className="text-xs text-slate-400 italic">Nenhuma observação ainda.</p>
@@ -216,7 +211,7 @@ export function ModalObservacoes({
               )}
             </div>
           )}
-        </div>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   )

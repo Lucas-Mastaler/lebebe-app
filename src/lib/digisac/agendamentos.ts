@@ -7,6 +7,7 @@ import {
     formatarTags
 } from './formatadores';
 import { Agendamento, PesquisaResponse } from '@/types';
+import { TABLE_PAGE_SIZE, clampPageSize } from '@/lib/design-system/pagination';
 
 interface FiltrosService {
     dataAgendamentoInicio?: string;
@@ -152,7 +153,7 @@ export async function buscarAgendamentosFormatados(filtros: FiltrosService): Pro
 
     // Paginação da API request (busca inicial)
     const requestedPage = filtros.page || 1;
-    const requestedPerPage = Math.min(filtros.perPage || 30, 100);
+    const requestedPerPage = clampPageSize(filtros.perPage ?? TABLE_PAGE_SIZE);
 
     params.append('page', String(requestedPage));
     params.append('perPage', String(requestedPerPage));

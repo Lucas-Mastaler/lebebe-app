@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback, Fragment } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { Loader2, Phone, Package, CreditCard, User, MessageCircle, RefreshCw, CheckCircle2, AlertCircle, Clock, TrendingUp, Users, Activity, Tag, MessageSquarePlus, Eye, Store, Brain, ChevronDown, ChevronUp, HelpCircle, ExternalLink } from 'lucide-react'
 import { montarUrlHistoricoTicket } from '@/lib/digisac/urls'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle
-} from '@/components/ui/dialog'
+  Alert, Badge, Dialog, DialogBody, DialogContent, DialogHeader, Progress, ResponsiveTable,
+  Section as DsSection, Textarea,
+} from '@/components/design-system'
+import { getSectionToneAt } from '@/lib/design-system/section-tones'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import {
@@ -56,23 +58,48 @@ interface DigisacSyncStatus {
   solicitadoEm?: string | null
 }
 
-const DEPTO_CLS: Record<string, string> = {
-  'Móveis':           'bg-blue-50 text-blue-700 border-blue-100',
-  'P. Pesada':        'bg-orange-50 text-orange-700 border-orange-100',
-  'Roupas':           'bg-pink-50 text-pink-700 border-pink-100',
-  'Enxoval':          'bg-green-50 text-green-700 border-green-100',
-  'Puericultura leve':'bg-violet-50 text-violet-700 border-violet-100',
-  'Outros':           'bg-slate-100 text-slate-500 border-slate-200',
-  'Não classificado': 'bg-slate-50 text-slate-400 border-slate-100',
+function DeptoChip({ depto }: { depto: string }) {
+  const tone = ({
+    'Móveis': 'info',
+    'P. Pesada': 'warning',
+    Roupas: 'brand',
+    Enxoval: 'success',
+    'Puericultura leve': 'info',
+  } as const)[depto] ?? 'neutral'
+
+  return <Badge tone={tone}>{depto}</Badge>
 }
 
-function DeptoChip({ depto }: { depto: string }) {
-  const cls = DEPTO_CLS[depto] ?? 'bg-slate-50 text-slate-500 border-slate-100'
-  return (
-    <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded border ${cls}`}>
-      {depto}
-    </span>
-  )
+function VendaStatusBadge({ status }: { status: string | null | undefined }) {
+  const normalized = status?.toLowerCase() ?? ''
+  const tone = normalized.includes('conclu') ? 'success'
+    : normalized.includes('canc') ? 'danger'
+      : normalized.includes('pend') ? 'warning'
+        : 'neutral'
+
+  return <Badge tone={tone}>{status ?? '—'}</Badge>
+}
+
+function DigisacStatusBadge({ status }: { status: string | null | undefined }) {
+  const tone = status === 'concluido' || status === 'ignorado_cache_valido' ? 'success'
+    : status === 'erro' ? 'danger'
+      : status === 'processando' || status === 'pendente' ? 'info'
+        : 'neutral'
+  const label = status === 'concluido' ? 'Sincronizado'
+    : status === 'ignorado_cache_valido' ? 'Cache válido'
+      : status === 'erro' ? 'Erro'
+        : status === 'pendente' ? 'Pendente'
+          : status === 'processando' ? 'Processando'
+            : status ?? '—'
+
+  return <Badge tone={tone}>{label}</Badge>
+}
+
+function TipoChamadoBadge({ tipo }: { tipo: string | null | undefined }) {
+  const tone = tipo === 'ativo' ? 'info' : tipo === 'receptivo' ? 'success' : 'neutral'
+  const label = tipo === 'ativo' ? 'Ativo' : tipo === 'receptivo' ? 'Receptivo' : 'Indefinido'
+
+  return <Badge tone={tone}>{label}</Badge>
 }
 
 function formatDias(dias: number | null | undefined): string {
@@ -174,8 +201,8 @@ function ObservacoesInline({ numeroLancamento, open }: { numeroLancamento: strin
     <div className="space-y-2">
       {/* Campo nova observação */}
       <div className="flex gap-2">
-        <textarea
-          className="flex-1 text-sm border border-slate-200 rounded-lg p-2 resize-none focus:outline-none focus:ring-2 focus:ring-sky-200 placeholder:text-slate-400"
+        <Textarea
+          className="flex-1 resize-none"
           rows={2}
           placeholder="Adicionar observação..."
           value={novaObs}
@@ -735,31 +762,21 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
     ? iaChamados.filter(c => c.status === 'concluido' && (c.influencia_compra === 'Sim' || c.influencia_compra === 'Parcialmente')).length
     : null
 
-  function Section({ icon: Icon, title, children, variant = 'default' }: {
+  let sectionIndex = 0
+
+  function Section({ icon: Icon, title, children }: {
     icon: React.ElementType
     title: string
     children: React.ReactNode
-    variant?: 'default' | 'blue' | 'green' | 'amber' | 'brown' | 'purple' | 'rose' | 'indigo'
   }) {
-    const cfg = {
-      default: { bg: 'bg-white', border: 'border-slate-200', accent: 'border-l-slate-400', icon: 'text-slate-500', title: 'text-slate-700', divider: 'border-slate-100' },
-      blue:    { bg: 'bg-sky-50/60', border: 'border-sky-200', accent: 'border-l-sky-500', icon: 'text-sky-600', title: 'text-sky-800', divider: 'border-sky-100' },
-      green:   { bg: 'bg-emerald-50/60', border: 'border-emerald-200', accent: 'border-l-emerald-500', icon: 'text-emerald-600', title: 'text-emerald-800', divider: 'border-emerald-100' },
-      amber:   { bg: 'bg-amber-50/60', border: 'border-amber-200', accent: 'border-l-amber-500', icon: 'text-amber-600', title: 'text-amber-800', divider: 'border-amber-100' },
-      brown:   { bg: 'bg-orange-50/60', border: 'border-orange-200', accent: 'border-l-orange-600', icon: 'text-orange-700', title: 'text-orange-900', divider: 'border-orange-100' },
-      purple:  { bg: 'bg-violet-50/60', border: 'border-violet-200', accent: 'border-l-violet-500', icon: 'text-violet-600', title: 'text-violet-800', divider: 'border-violet-100' },
-      rose:    { bg: 'bg-rose-50/60', border: 'border-rose-200', accent: 'border-l-rose-500', icon: 'text-rose-600', title: 'text-rose-800', divider: 'border-rose-100' },
-      indigo:  { bg: 'bg-indigo-50/60', border: 'border-indigo-200', accent: 'border-l-indigo-500', icon: 'text-indigo-600', title: 'text-indigo-800', divider: 'border-indigo-100' },
-    }[variant]
-
     return (
-      <div className={`rounded-xl border border-l-4 p-4 space-y-3 ${cfg.bg} ${cfg.border} ${cfg.accent}`}>
-        <div className={`flex items-center gap-2 pb-2.5 border-b ${cfg.divider}`}>
-          <Icon className={`w-4 h-4 ${cfg.icon}`} />
-          <h4 className={`text-sm font-semibold ${cfg.title}`}>{title}</h4>
-        </div>
+      <DsSection
+        icon={<Icon className="h-4 w-4" />}
+        title={title}
+        tone={getSectionToneAt(sectionIndex++)}
+      >
         {children}
-      </div>
+      </DsSection>
     )
   }
 
@@ -789,17 +806,16 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="!w-[95vw] !sm:w-[85vw] !lg:w-[70vw] !max-w-none max-h-[90vh] overflow-y-auto"
+        className="!w-[95vw] !sm:w-[85vw] !lg:w-[70vw] !max-w-none"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <DialogHeader>
-          <DialogTitle className="text-base">
+        <DialogHeader title={<>
             Venda #{venda?.numero_lancamento}
             {venda?.cliente && (
               <span className="ml-2 text-slate-500 font-normal text-sm">— {venda.cliente}</span>
             )}
-          </DialogTitle>
-        </DialogHeader>
+          </>} />
+        <DialogBody>
 
         {loading && (
           <div className="space-y-4 py-2">
@@ -816,7 +832,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
         {!loading && !error && detalhe && (
           <div className="space-y-6 py-2">
             {/* Dados principais */}
-            <Section icon={User} title="Dados da Venda" variant="blue">
+            <Section icon={User} title="Dados da Venda">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-1.5">
                 <Row label="Nº Lançamento" value={detalhe.numero_lancamento} />
                 <Row label="Nº Documento" value={detalhe.numero_documento} />
@@ -857,7 +873,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
             </Section>
 
             {/* Contatos */}
-            <Section icon={Phone} title={`Contatos (${detalhe.contatos_lista.length})`} variant="green">
+            <Section icon={Phone} title={`Contatos (${detalhe.contatos_lista.length})`}>
               {detalhe.contatos_lista.length === 0 ? (
                 <p className="text-xs text-slate-400">Nenhum contato registrado.</p>
               ) : (
@@ -880,141 +896,58 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
             </Section>
 
             {/* Produtos */}
-            <Section icon={Package} title={`Produtos (${detalhe.produtos.length})`} variant="amber">
+            <Section icon={Package} title={`Produtos (${detalhe.produtos.length})`}>
               {detalhe.produtos.length === 0 ? (
                 <p className="text-xs text-slate-400">Nenhum produto registrado.</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-100 text-slate-500">
-                        <th className="text-left py-1.5 pr-4">Código</th>
-                        <th className="text-left py-1.5 pr-4">Produto</th>
-                        <th className="text-left py-1.5 pr-4">Depto.</th>
-                        <th className="text-left py-1.5 pr-4">Subgrupo</th>
-                        <th className="text-right py-1.5 pr-4">Qtd</th>
-                        <th className="text-right py-1.5">Valor</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detalhe.produtos.map(p => (
-                        <tr key={p.id} className="border-b border-slate-50">
-                          <td className="py-1.5 pr-4 font-mono text-slate-600">{p.codigo ?? '—'}</td>
-                          <td className="py-1.5 pr-4 max-w-[180px] truncate" title={p.produto ?? undefined}>{p.produto ?? '—'}</td>
-                          <td className="py-1.5 pr-4">
-                            {p.departamento_classificado && p.departamento_classificado !== 'Não classificado'
-                              ? <DeptoChip depto={p.departamento_classificado} />
-                              : <span className="text-slate-300 text-[10px]">—</span>}
-                          </td>
-                          <td className="py-1.5 pr-4 text-[10px] text-slate-500">{p.subgrupo_classificado && p.subgrupo_classificado !== 'Não classificado' ? p.subgrupo_classificado : '—'}</td>
-                          <td className="py-1.5 pr-4 text-right">{p.quantidade_texto ?? p.quantidade ?? '—'}</td>
-                          <td className="py-1.5 text-right font-medium">{brl(p.valor_total)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <ResponsiveTable
+                  columns={[
+                    { key: 'codigo', header: 'Código', width: 'compact', render: (p) => <span className="font-mono">{p.codigo ?? '—'}</span> },
+                    { key: 'produto', header: 'Produto', width: 'content', render: (p) => p.produto ?? '—' },
+                    { key: 'departamento', header: 'Depto.', width: 'compact', render: (p) => p.departamento_classificado && p.departamento_classificado !== 'Não classificado' ? <DeptoChip depto={p.departamento_classificado} /> : '—' },
+                    { key: 'subgrupo', header: 'Subgrupo', width: 'standard', render: (p) => p.subgrupo_classificado && p.subgrupo_classificado !== 'Não classificado' ? p.subgrupo_classificado : '—' },
+                    { key: 'quantidade', header: 'Qtd', width: 'compact', className: 'text-right', render: (p) => p.quantidade_texto ?? p.quantidade ?? '—' },
+                    { key: 'valor', header: 'Valor', width: 'compact', className: 'text-right', render: (p) => <span className="font-medium">{brl(p.valor_total)}</span> },
+                  ]}
+                  rows={detalhe.produtos}
+                  rowKey={(p) => p.id}
+                  firstColumnSticky
+                  emptyTitle="Nenhum produto registrado"
+                  renderMobileCard={(p) => <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="font-medium text-slate-900">{p.produto ?? '—'}</p><p className="mt-1 font-mono text-xs text-slate-500">{p.codigo ?? '—'}</p><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-slate-500">Departamento</p><div className="mt-1">{p.departamento_classificado && p.departamento_classificado !== 'Não classificado' ? <DeptoChip depto={p.departamento_classificado} /> : '—'}</div></div><div><p className="text-xs text-slate-500">Quantidade</p><p>{p.quantidade_texto ?? p.quantidade ?? '—'}</p></div><div><p className="text-xs text-slate-500">Subgrupo</p><p>{p.subgrupo_classificado && p.subgrupo_classificado !== 'Não classificado' ? p.subgrupo_classificado : '—'}</p></div><div><p className="text-xs text-slate-500">Valor</p><p className="font-medium">{brl(p.valor_total)}</p></div></div></article>}
+                />
               )}
             </Section>
 
             {/* Vendas do Cliente */}
-            <Section icon={Store} title={`Vendas do cliente (${detalhe.vendasCliente?.length ?? 0})`} variant="brown">
+            <Section icon={Store} title={`Vendas do cliente (${detalhe.vendasCliente?.length ?? 0})`}>
               {!detalhe.vendasCliente || detalhe.vendasCliente.length === 0 ? (
                 <p className="text-xs text-slate-400">Nenhuma venda encontrada para este cliente.</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-100 text-slate-500">
-                        <th className="text-left py-1.5 pr-3">Nº Lançamento</th>
-                        <th className="text-left py-1.5 pr-3">Data fechamento</th>
-                        <th className="text-left py-1.5 pr-3">Filial</th>
-                        <th className="text-left py-1.5 pr-3">Vendedor</th>
-                        <th className="text-left py-1.5 pr-3">Operação</th>
-                        <th className="text-left py-1.5 pr-3">Status</th>
-                        <th className="text-right py-1.5 pr-3">Valor total</th>
-                        <th className="text-center py-1.5 pr-3">Cham. ciclo</th>
-                        <th className="text-left py-1.5 pr-3">Digisac</th>
-                        <th className="text-center py-1.5">Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detalhe.vendasCliente.map((v) => (
-                        <tr key={v.numero_lancamento} className={`border-b border-slate-50 ${v.venda_atual ? 'bg-amber-50/50' : ''}`}>
-                          <td className="py-1.5 pr-3">
-                            <div className="flex items-center gap-1">
-                              <span className="font-mono font-semibold text-slate-700">#{v.numero_lancamento}</span>
-                              {v.venda_atual && (
-                                <span className="text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded-full font-medium">
-                                  Atual
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-1.5 pr-3 text-slate-600">{formatDataSimples(v.data_fechamento)}</td>
-                          <td className="py-1.5 pr-3 text-slate-600">{v.filial ?? '—'}</td>
-                          <td className="py-1.5 pr-3 text-slate-600">{v.vendedor ?? '—'}</td>
-                          <td className="py-1.5 pr-3 text-slate-600">{v.operacao ?? '—'}</td>
-                          <td className="py-1.5 pr-3">
-                            <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                              v.status?.toLowerCase().includes('conclu') ? 'bg-green-100 text-green-700' :
-                              v.status?.toLowerCase().includes('canc') ? 'bg-red-100 text-red-700' :
-                              v.status?.toLowerCase().includes('pend') ? 'bg-amber-100 text-amber-700' :
-                              'bg-slate-100 text-slate-600'
-                            }`}>
-                              {v.status ?? '—'}
-                            </span>
-                          </td>
-                          <td className="py-1.5 pr-3 text-right font-medium">{brl(v.valor_total)}</td>
-                          <td className="py-1.5 pr-3 text-center">
-                            {v.digisac_chamados_ciclo != null ? (
-                              <span className="text-emerald-600 font-medium">{v.digisac_chamados_ciclo}</span>
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
-                          </td>
-                          <td className="py-1.5 pr-3">
-                            {v.digisac_status ? (
-                              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                v.digisac_status === 'concluido' || v.digisac_status === 'ignorado_cache_valido' ? 'bg-emerald-100 text-emerald-700' :
-                                v.digisac_status === 'erro' ? 'bg-red-100 text-red-700' :
-                                v.digisac_status === 'processando' || v.digisac_status === 'pendente' ? 'bg-sky-100 text-sky-700' :
-                                'bg-slate-100 text-slate-600'
-                              }`}>
-                                {v.digisac_status === 'concluido' ? 'Sincronizado' :
-                                 v.digisac_status === 'ignorado_cache_valido' ? 'Cache válido' :
-                                 v.digisac_status === 'erro' ? 'Erro' :
-                                 v.digisac_status === 'pendente' ? 'Pendente' :
-                                 v.digisac_status === 'processando' ? 'Processando' :
-                                 v.digisac_status}
-                              </span>
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
-                          </td>
-                          <td className="py-1.5 text-center">
-                            {!v.venda_atual && (
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                className="h-6 w-6"
-                                onClick={() => abrirVendaCliente(v)}
-                                title="Ver detalhes da venda"
-                              >
-                                <Eye className="w-3.5 h-3.5 text-slate-500" />
-                              </Button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <ResponsiveTable
+                  columns={[
+                    { key: 'lancamento', header: 'Nº lançamento', width: 'content', render: (v) => <div className="flex items-center gap-1"><span className="font-mono font-semibold">#{v.numero_lancamento}</span>{v.venda_atual && <Badge tone="warning">Atual</Badge>}</div> },
+                    { key: 'data', header: 'Data fechamento', width: 'standard', render: (v) => formatDataSimples(v.data_fechamento) },
+                    { key: 'filial', header: 'Filial', width: 'standard', render: (v) => v.filial ?? '—' },
+                    { key: 'vendedor', header: 'Vendedor', width: 'wide', render: (v) => v.vendedor ?? '—' },
+                    { key: 'operacao', header: 'Operação', width: 'standard', render: (v) => v.operacao ?? '—' },
+                    { key: 'status', header: 'Status', width: 'content', render: (v) => <VendaStatusBadge status={v.status} /> },
+                    { key: 'valor', header: 'Valor total', width: 'compact', className: 'text-right', render: (v) => <span className="font-medium">{brl(v.valor_total)}</span> },
+                    { key: 'chamados', header: 'Cham. ciclo', width: 'compact', className: 'text-center', render: (v) => v.digisac_chamados_ciclo ?? '—' },
+                    { key: 'digisac', header: 'Digisac', width: 'content', render: (v) => <DigisacStatusBadge status={v.digisac_status} /> },
+                    { key: 'acoes', header: 'Ações', width: 'compact', className: 'text-center', render: (v) => !v.venda_atual && <Button variant="ghost" size="icon-sm" className="h-6 w-6" onClick={() => abrirVendaCliente(v)} title="Ver detalhes da venda"><Eye className="w-3.5 h-3.5" /></Button> },
+                  ]}
+                  rows={detalhe.vendasCliente}
+                  rowKey={(v) => v.numero_lancamento}
+                  firstColumnSticky
+                  rowTone={(v) => v.venda_atual ? 'warning' : undefined}
+                  emptyTitle="Nenhuma venda encontrada para este cliente"
+                  renderMobileCard={(v) => <article className="rounded-2xl border border-border bg-card p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><p className="font-mono font-semibold">#{v.numero_lancamento}</p>{v.venda_atual && <Badge tone="warning">Atual</Badge>}</div><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-muted-foreground">Fechamento</p><p>{formatDataSimples(v.data_fechamento)}</p></div><div><p className="text-xs text-muted-foreground">Valor</p><p className="font-medium">{brl(v.valor_total)}</p></div><div><p className="text-xs text-muted-foreground">Status</p><div className="mt-1"><VendaStatusBadge status={v.status} /></div></div><div><p className="text-xs text-muted-foreground">Digisac</p><div className="mt-1"><DigisacStatusBadge status={v.digisac_status} /></div></div></div>{!v.venda_atual && <Button variant="ghost" size="sm" className="mt-3" onClick={() => abrirVendaCliente(v)}><Eye className="mr-1 size-3.5" />Ver detalhes</Button>}</article>}
+                />
               )}
             </Section>
 
             {detalhe.pedidosPersonalizados && (
-              <Section icon={Package} title={`Pedidos personalizados (${detalhe.pedidosPersonalizados.length})`} variant="brown">
+              <Section icon={Package} title={`Pedidos personalizados (${detalhe.pedidosPersonalizados.length})`}>
                 {detalhe.pedidosPersonalizados.length === 0 ? (
                   <p className="text-xs text-slate-400">Nenhum pedido personalizado encontrado pelo telefone normalizado.</p>
                 ) : (
@@ -1045,7 +978,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
             )}
 
             {/* Digisac */}
-            <Section icon={MessageCircle} title="Digisac — Histórico de Chamados" variant="purple">
+            <Section icon={MessageCircle} title="Digisac — Histórico de Chamados">
               {venda?.digisac_dias_ate_fechamento != null && (
                 <div className="flex items-center gap-2 pb-2 border-b border-violet-100">
                   <span className="text-xs text-slate-500">Dias até fechamento</span>
@@ -1088,41 +1021,19 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                     ) : digisacChamadosCiclo.length === 0 ? (
                       <p className="text-xs text-slate-400 italic">Nenhum chamado considerado no ciclo desta venda.</p>
                     ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="border-b border-violet-100 text-slate-500">
-                              <th className="text-left py-1.5 pr-3">Data de início</th>
-                              <th className="text-left py-1.5 pr-3">Tipo</th>
-                              <th className="text-left py-1.5 pr-3">Telefone</th>
-                              <th className="text-left py-1.5">Protocolo</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {digisacChamadosCiclo.map((c) => (
-                              <tr key={c.digisac_ticket_id} className="border-b border-slate-50">
-                                <td className="py-1.5 pr-3 text-slate-600">{c.data_inicio ? new Date(c.data_inicio).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
-                                <td className="py-1.5 pr-3">
-                                  <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                    c.tipo_chamado === 'ativo' ? 'bg-blue-100 text-blue-700' :
-                                    c.tipo_chamado === 'receptivo' ? 'bg-emerald-100 text-emerald-700' :
-                                    'bg-slate-100 text-slate-500'
-                                  }`}>
-                                    {c.tipo_chamado === 'ativo' ? 'Ativo' : c.tipo_chamado === 'receptivo' ? 'Receptivo' : 'Indefinido'}
-                                  </span>
-                                </td>
-                                <td className="py-1.5 pr-3 font-mono text-slate-600">{c.telefone ?? c.telefone_ddi ?? '—'}</td>
-                                <td className="py-1.5 text-slate-500 font-mono">{c.protocolo ? (
-                                  <a href={montarUrlHistoricoTicket(c.digisac_ticket_id)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline">
-                                    {c.protocolo}
-                                    <ExternalLink className="w-3 h-3" />
-                                  </a>
-                                ) : '—'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      <ResponsiveTable
+                        columns={[
+                          { key: 'data', header: 'Data de início', width: 'content', render: (c) => c.data_inicio ? new Date(c.data_inicio).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—' },
+                          { key: 'tipo', header: 'Tipo', width: 'content', render: (c) => <TipoChamadoBadge tipo={c.tipo_chamado} /> },
+                          { key: 'telefone', header: 'Telefone', width: 'content', render: (c) => <span className="font-mono">{c.telefone ?? c.telefone_ddi ?? '—'}</span> },
+                          { key: 'protocolo', header: 'Protocolo', width: 'content', render: (c) => c.protocolo ? <a href={montarUrlHistoricoTicket(c.digisac_ticket_id)} target="_blank" rel="noopener noreferrer" className="inline-flex cursor-pointer items-center gap-1 text-primary hover:underline"><span className="font-mono">{c.protocolo}</span><ExternalLink className="size-3" /></a> : '—' },
+                        ]}
+                        rows={digisacChamadosCiclo}
+                        rowKey={(c) => c.digisac_ticket_id}
+                        firstColumnSticky
+                        emptyTitle="Nenhum chamado considerado no ciclo desta venda"
+                        renderMobileCard={(c) => <article className="rounded-2xl border border-border bg-card p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><TipoChamadoBadge tipo={c.tipo_chamado} /><span className="font-mono text-xs">{c.protocolo ?? '—'}</span></div><div className="mt-3 space-y-2 text-sm"><p><span className="text-xs text-muted-foreground">Início</span><br />{c.data_inicio ? new Date(c.data_inicio).toLocaleString('pt-BR') : '—'}</p><p><span className="text-xs text-muted-foreground">Telefone</span><br /><span className="font-mono">{c.telefone ?? c.telefone_ddi ?? '—'}</span></p></div></article>}
+                      />
                     )
                   )}
                 </div>
@@ -1154,91 +1065,36 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
                 )}
 
                 {!agendamentosLoading && agendamentosFuturos.length > 0 && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-violet-100 text-slate-500">
-                          <th className="text-left py-1.5 pr-2">Loja</th>
-                          <th className="text-left py-1.5 pr-2">Consultora</th>
-                          <th className="text-left py-1.5 pr-2">Nome Whatsapp</th>
-                          <th className="text-left py-1.5 pr-2">Nome Digisac</th>
-                          <th className="text-left py-1.5 pr-2 max-w-[160px]">Mensagem</th>
-                          <th className="text-left py-1.5 pr-2">Comentário</th>
-                          <th className="text-left py-1.5 pr-2">Tags</th>
-                          <th className="text-left py-1.5">Agendado</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {agendamentosFuturos.map((ag) => (
-                          <Fragment key={ag.id}>
-                            <tr
-                              key={ag.id}
-                              className="border-b border-slate-50 hover:bg-violet-50/40 cursor-pointer"
-                              onClick={() => setAgendamentoExpandido(agendamentoExpandido === ag.id ? null : ag.id)}
-                            >
-                              <td className="py-1.5 pr-2 text-slate-600">{ag.loja || '—'}</td>
-                              <td className="py-1.5 pr-2 text-slate-600">{ag.consultora || '—'}</td>
-                              <td className="py-1.5 pr-2 text-slate-600">{ag.nomeWhatsapp || '—'}</td>
-                              <td className="py-1.5 pr-2 text-slate-600">{ag.nomeDigisac || '—'}</td>
-                              <td className="py-1.5 pr-2 max-w-[160px]">
-                                <span
-                                  className="block truncate text-slate-600"
-                                  title={ag.mensagemAgendada || ''}
-                                >
-                                  {ag.mensagemAgendada || '—'}
-                                </span>
-                              </td>
-                              <td className="py-1.5 pr-2 text-slate-500">{ag.comentario || '—'}</td>
-                              <td className="py-1.5 pr-2 text-slate-500">
-                                {ag.tags
-                                  ? <span className="inline-block px-1 py-0.5 bg-violet-100 text-violet-700 rounded text-[10px]">{ag.tags}</span>
-                                  : '—'
-                                }
-                              </td>
-                              <td className="py-1.5 text-slate-600 whitespace-nowrap">{ag.agendadoDia || '—'}</td>
-                            </tr>
-                            {agendamentoExpandido === ag.id && (
-                              <tr key={`${ag.id}-detalhe`} className="bg-violet-50/60">
-                                <td colSpan={8} className="px-3 py-3">
-                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1.5 text-xs">
-                                    <div><span className="text-slate-500">Loja:</span> <span className="text-slate-800 font-medium">{ag.loja || '—'}</span></div>
-                                    <div><span className="text-slate-500">Consultora:</span> <span className="text-slate-800 font-medium">{ag.consultora || '—'}</span></div>
-                                    <div><span className="text-slate-500">Nome Whatsapp:</span> <span className="text-slate-800 font-medium">{ag.nomeWhatsapp || '—'}</span></div>
-                                    <div><span className="text-slate-500">Nome Digisac:</span> <span className="text-slate-800 font-medium">{ag.nomeDigisac || '—'}</span></div>
-                                    <div><span className="text-slate-500">Status:</span> <span className="text-slate-800 font-medium">{ag.statusLabel || '—'}</span></div>
-                                    <div><span className="text-slate-500">Status chamado:</span> <span className="text-slate-800 font-medium">{ag.statusChamado || '—'}</span></div>
-                                    <div><span className="text-slate-500">Último chamado fechado:</span> <span className="text-slate-800 font-medium">{ag.ultimoChamadoFechado || '—'}</span></div>
-                                    <div><span className="text-slate-500">Abrir ticket?</span> <span className="text-slate-800 font-medium">{ag.abrirTicketLabel || '—'}</span></div>
-                                    <div><span className="text-slate-500">Notificar?</span> <span className="text-slate-800 font-medium">{ag.notificarLabel || '—'}</span></div>
-                                    <div><span className="text-slate-500">Agendado (dia):</span> <span className="text-slate-800 font-medium">{ag.agendadoDia || '—'}</span></div>
-                                    <div><span className="text-slate-500">Agendado (hr):</span> <span className="text-slate-800 font-medium">{ag.agendadoHora || '—'}</span></div>
-                                    <div><span className="text-slate-500">Criado em:</span> <span className="text-slate-800 font-medium">{ag.criadoEm || '—'}</span></div>
-                                    <div><span className="text-slate-500">Atualizado em:</span> <span className="text-slate-800 font-medium">{ag.atualizadoEm || '—'}</span></div>
-                                    <div className="col-span-2 sm:col-span-3">
-                                      <span className="text-slate-500">Tags:</span> <span className="text-slate-800 font-medium">{ag.tags || '—'}</span>
-                                    </div>
-                                    <div className="col-span-2 sm:col-span-3">
-                                      <span className="text-slate-500">Comentário:</span> <span className="text-slate-800 font-medium">{ag.comentario || '—'}</span>
-                                    </div>
-                                    <div className="col-span-2 sm:col-span-3">
-                                      <span className="text-slate-500 block mb-1">Mensagem agendada:</span>
-                                      <span className="text-slate-800 font-medium whitespace-pre-wrap break-words">{ag.mensagemAgendada || '—'}</span>
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </Fragment>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="space-y-3">
+                    <ResponsiveTable
+                      columns={[
+                        { key: 'loja', header: 'Loja', width: 'standard', render: (ag) => ag.loja || '—' },
+                        { key: 'consultora', header: 'Consultora', width: 'standard', render: (ag) => ag.consultora || '—' },
+                        { key: 'whatsapp', header: 'Nome WhatsApp', width: 'content', render: (ag) => ag.nomeWhatsapp || '—' },
+                        { key: 'digisac', header: 'Nome Digisac', width: 'content', render: (ag) => ag.nomeDigisac || '—' },
+                        { key: 'mensagem', header: 'Mensagem', width: 'wide', render: (ag) => ag.mensagemAgendada || '—' },
+                        { key: 'comentario', header: 'Comentário', width: 'wide', render: (ag) => ag.comentario || '—' },
+                        { key: 'tags', header: 'Tags', width: 'content', render: (ag) => ag.tags ? <Badge tone="brand">{ag.tags}</Badge> : '—' },
+                        { key: 'agendado', header: 'Agendado', width: 'compact', render: (ag) => ag.agendadoDia || '—' },
+                      ]}
+                      rows={agendamentosFuturos}
+                      rowKey={(ag) => ag.id}
+                      firstColumnSticky
+                      rowActions={(ag) => <Button variant="ghost" size="sm" onClick={() => setAgendamentoExpandido(agendamentoExpandido === ag.id ? null : ag.id)}>{agendamentoExpandido === ag.id ? 'Fechar' : 'Detalhes'}</Button>}
+                      renderMobileCard={(ag) => <article><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{ag.nomeWhatsapp || ag.nomeDigisac || '—'}</p><p className="mt-1 text-xs text-muted-foreground">{ag.agendadoDia || '—'}</p></div>{ag.tags && <Badge tone="brand">{ag.tags}</Badge>}</div><div className="mt-3 space-y-2 text-sm"><p><span className="text-muted-foreground">Loja:</span> {ag.loja || '—'}</p><p><span className="text-muted-foreground">Consultora:</span> {ag.consultora || '—'}</p><p className="break-words"><span className="text-muted-foreground">Mensagem:</span> {ag.mensagemAgendada || '—'}</p></div></article>}
+                    />
+                    {agendamentoExpandido && (() => {
+                      const ag = agendamentosFuturos.find((item) => item.id === agendamentoExpandido)
+                      if (!ag) return null
+                      return <div className="grid grid-cols-1 gap-x-6 gap-y-1.5 rounded-xl border border-border bg-muted/30 p-3 text-xs sm:grid-cols-3"><div><span className="text-muted-foreground">Status:</span> <span className="font-medium">{ag.statusLabel || '—'}</span></div><div><span className="text-muted-foreground">Status chamado:</span> <span className="font-medium">{ag.statusChamado || '—'}</span></div><div><span className="text-muted-foreground">Último chamado fechado:</span> <span className="font-medium">{ag.ultimoChamadoFechado || '—'}</span></div><div><span className="text-muted-foreground">Abrir ticket?</span> <span className="font-medium">{ag.abrirTicketLabel || '—'}</span></div><div><span className="text-muted-foreground">Notificar?</span> <span className="font-medium">{ag.notificarLabel || '—'}</span></div><div><span className="text-muted-foreground">Agendado:</span> <span className="font-medium">{ag.agendadoHora || '—'}</span></div><div className="sm:col-span-3"><span className="text-muted-foreground">Comentário:</span> <span className="font-medium">{ag.comentario || '—'}</span></div><div className="sm:col-span-3"><span className="text-muted-foreground">Mensagem agendada:</span> <span className="font-medium whitespace-pre-wrap break-words">{ag.mensagemAgendada || '—'}</span></div></div>
+                    })()}
                   </div>
                 )}
               </div>
             </Section>
 
             {/* Análise IA dos Chamados */}
-            <Section icon={Brain} title="Análise IA dos Chamados" variant="indigo">
+            <Section icon={Brain} title="Análise IA dos Chamados">
               <IaAnalisePanel
                 job={iaJob}
                 chamados={iaChamados}
@@ -1257,59 +1113,48 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
             </Section>
 
             {/* Pagamentos */}
-            <Section icon={CreditCard} title={`Pagamentos (${detalhe.pagamentos.length})`} variant="rose">
+            <Section icon={CreditCard} title={`Pagamentos (${detalhe.pagamentos.length})`}>
               {detalhe.pagamentos.length === 0 ? (
                 <p className="text-xs text-slate-400">Nenhum pagamento registrado.</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-100 text-slate-500">
-                        <th className="text-left py-1.5 pr-4">Forma</th>
-                        <th className="text-right py-1.5 pr-4">Parcelas</th>
-                        <th className="text-right py-1.5 pr-4">%</th>
-                        <th className="text-right py-1.5 pr-4">Valor</th>
-                        <th className="text-left py-1.5 pr-4">NSU</th>
-                        <th className="text-left py-1.5">Autorização</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detalhe.pagamentos.map(p => (
-                        <tr key={p.id} className="border-b border-slate-50">
-                          <td className="py-1.5 pr-4 max-w-[180px] truncate" title={p.forma_pagamento ?? undefined}>{p.forma_pagamento ?? '—'}</td>
-                          <td className="py-1.5 pr-4 text-right">{p.numero_parcelas_texto ?? p.numero_parcelas ?? '—'}</td>
-                          <td className="py-1.5 pr-4 text-right">{p.percentual_texto ?? (p.percentual != null ? `${p.percentual}%` : '—')}</td>
-                          <td className="py-1.5 pr-4 text-right font-medium">{brl(p.valor)}</td>
-                          <td className="py-1.5 pr-4 font-mono text-slate-500">{p.nsu ?? '—'}</td>
-                          <td className="py-1.5 font-mono text-slate-500">{p.numero_autorizacao ?? '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <ResponsiveTable
+                  columns={[
+                    { key: 'forma', header: 'Forma', width: 'content', render: (p) => p.forma_pagamento ?? '—' },
+                    { key: 'parcelas', header: 'Parcelas', width: 'compact', className: 'text-right', render: (p) => p.numero_parcelas_texto ?? p.numero_parcelas ?? '—' },
+                    { key: 'percentual', header: '%', width: 'compact', className: 'text-right', render: (p) => p.percentual_texto ?? (p.percentual != null ? `${p.percentual}%` : '—') },
+                    { key: 'valor', header: 'Valor', width: 'compact', className: 'text-right', render: (p) => <span className="font-medium">{brl(p.valor)}</span> },
+                    { key: 'nsu', header: 'NSU', width: 'compact', render: (p) => <span className="font-mono">{p.nsu ?? '—'}</span> },
+                    { key: 'autorizacao', header: 'Autorização', width: 'compact', render: (p) => <span className="font-mono">{p.numero_autorizacao ?? '—'}</span> },
+                  ]}
+                  rows={detalhe.pagamentos}
+                  rowKey={(p) => p.id}
+                  firstColumnSticky
+                  emptyTitle="Nenhum pagamento registrado"
+                  renderMobileCard={(p) => <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="font-medium text-slate-900">{p.forma_pagamento ?? '—'}</p><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-slate-500">Parcelas</p><p>{p.numero_parcelas_texto ?? p.numero_parcelas ?? '—'}</p></div><div><p className="text-xs text-slate-500">Valor</p><p className="font-medium">{brl(p.valor)}</p></div><div><p className="text-xs text-slate-500">%</p><p>{p.percentual_texto ?? (p.percentual != null ? `${p.percentual}%` : '—')}</p></div><div><p className="text-xs text-slate-500">NSU</p><p className="font-mono">{p.nsu ?? '—'}</p></div></div></article>}
+                />
               )}
             </Section>
 
             {/* Observações Comerciais */}
-            <Section icon={MessageSquarePlus} title="Observações Comerciais" variant="default">
+            <Section icon={MessageSquarePlus} title="Observações Comerciais">
               <ObservacoesInline numeroLancamento={venda?.numero_lancamento ?? ''} open={open} />
             </Section>
 
           </div>
         )}
+        </DialogBody>
       </DialogContent>
 
       {/* Modal Secundário - Venda do Cliente */}
       <Dialog open={modalSecundarioAberto} onOpenChange={setModalSecundarioAberto}>
-        <DialogContent className="!w-[90vw] !sm:w-[80vw] !lg:w-[65vw] !max-w-none max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-base">
+        <DialogContent className="!w-[90vw] !sm:w-[80vw] !lg:w-[65vw] !max-w-none">
+          <DialogHeader title={<>
               Venda #{vendaSecundaria?.numero_lancamento}
               {vendaSecundaria?.cliente && (
                 <span className="ml-2 text-slate-500 font-normal text-sm">— {vendaSecundaria.cliente}</span>
               )}
-            </DialogTitle>
-          </DialogHeader>
+            </>} />
+          <DialogBody>
 
           {loadingSecundario && (
             <div className="space-y-4 py-2">
@@ -1339,39 +1184,19 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
               {detalheSecundario.produtos.length > 0 && (
                 <div className="rounded-xl border border-slate-200 p-3 space-y-2 bg-slate-50/50">
                   <h4 className="text-xs font-semibold text-slate-700">Produtos ({detalheSecundario.produtos.length})</h4>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-100 text-slate-500">
-                          <th className="text-left py-1 pr-2">Código</th>
-                          <th className="text-left py-1 pr-2">Produto</th>
-                          <th className="text-left py-1 pr-2">Depto.</th>
-                          <th className="text-right py-1">Valor</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {detalheSecundario.produtos.slice(0, 5).map((p) => (
-                          <tr key={p.id} className="border-b border-slate-50">
-                            <td className="py-1 pr-2 font-mono text-slate-600">{p.codigo ?? '—'}</td>
-                            <td className="py-1 pr-2 max-w-[150px] truncate" title={p.produto ?? undefined}>{p.produto ?? '—'}</td>
-                            <td className="py-1 pr-2">
-                              {p.departamento_classificado && p.departamento_classificado !== 'Não classificado'
-                                ? <DeptoChip depto={p.departamento_classificado} />
-                                : <span className="text-slate-300 text-[10px]">—</span>}
-                            </td>
-                            <td className="py-1 text-right font-medium">{brl(p.valor_total)}</td>
-                          </tr>
-                        ))}
-                        {detalheSecundario.produtos.length > 5 && (
-                          <tr>
-                            <td colSpan={4} className="py-1 text-center text-xs text-slate-400">
-                              +{detalheSecundario.produtos.length - 5} produtos...
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                  <ResponsiveTable
+                    columns={[
+                      { key: 'codigo', header: 'Código', width: 'compact', render: (p) => <span className="font-mono">{p.codigo ?? '—'}</span> },
+                      { key: 'produto', header: 'Produto', width: 'content', render: (p) => p.produto ?? '—' },
+                      { key: 'departamento', header: 'Depto.', width: 'content', render: (p) => p.departamento_classificado && p.departamento_classificado !== 'Não classificado' ? <DeptoChip depto={p.departamento_classificado} /> : '—' },
+                      { key: 'valor', header: 'Valor', width: 'compact', className: 'text-right', render: (p) => <span className="font-medium">{brl(p.valor_total)}</span> },
+                    ]}
+                    rows={detalheSecundario.produtos.slice(0, 5)}
+                    rowKey={(p) => p.id}
+                    firstColumnSticky
+                    renderMobileCard={(p) => <article><p className="font-medium">{p.produto ?? '—'}</p><p className="mt-1 font-mono text-xs text-muted-foreground">{p.codigo ?? '—'}</p><div className="mt-3 flex items-center justify-between gap-3"><div>{p.departamento_classificado && p.departamento_classificado !== 'Não classificado' ? <DeptoChip depto={p.departamento_classificado} /> : '—'}</div><span className="font-medium">{brl(p.valor_total)}</span></div></article>}
+                  />
+                  {detalheSecundario.produtos.length > 5 && <p className="text-center text-xs text-muted-foreground">+{detalheSecundario.produtos.length - 5} produtos...</p>}
                 </div>
               )}
 
@@ -1406,6 +1231,7 @@ export function ModalDetalheVenda({ venda, open, onOpenChange, onSyncCompleted }
               Fechar
             </Button>
           </div>
+          </DialogBody>
         </DialogContent>
       </Dialog>
     </Dialog>
@@ -1456,36 +1282,11 @@ function DigisacSyncPanel({
 
       {/* ── Linha de status ─────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
-        {isProcessando && (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-sky-100 text-sky-700">
-            <Loader2 className="w-3 h-3 animate-spin" />
-            Sincronizando...
-          </span>
-        )}
-        {temDados && !isProcessando && (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
-            <CheckCircle2 className="w-3 h-3" />
-            {isCacheValido ? 'Cache válido' : 'Sincronizado'}
-          </span>
-        )}
-        {semChamados && !isProcessando && (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
-            <MessageCircle className="w-3 h-3" />
-            Nenhum chamado encontrado
-          </span>
-        )}
-        {isErro && (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
-            <AlertCircle className="w-3 h-3" />
-            Erro na sincronização
-          </span>
-        )}
-        {naoEncontrado && !loading && (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-400">
-            <Clock className="w-3 h-3" />
-            Nunca sincronizado
-          </span>
-        )}
+        {isProcessando && <Badge tone="info"><Loader2 className="mr-1 size-3 animate-spin" />Sincronizando...</Badge>}
+        {temDados && !isProcessando && <Badge tone="success"><CheckCircle2 className="mr-1 size-3" />{isCacheValido ? 'Cache válido' : 'Sincronizado'}</Badge>}
+        {semChamados && !isProcessando && <Badge tone="neutral"><MessageCircle className="mr-1 size-3" />Nenhum chamado encontrado</Badge>}
+        {isErro && <Badge tone="danger"><AlertCircle className="mr-1 size-3" />Erro na sincronização</Badge>}
+        {naoEncontrado && !loading && <Badge tone="neutral"><Clock className="mr-1 size-3" />Nunca sincronizado</Badge>}
         {ultimaAtualizacao && (
           <span className="text-xs text-slate-400 ml-auto">
             {new Date(ultimaAtualizacao).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -1494,17 +1295,9 @@ function DigisacSyncPanel({
       </div>
 
       {/* ── Mensagens de erro ───────────────────────────────── */}
-      {error && (
-        <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
-      )}
-      {isErro && status?.erroMensagem && (
-        <p className="text-xs text-red-500 bg-red-50 border border-red-200 rounded-lg px-3 py-2 font-mono">{status.erroMensagem}</p>
-      )}
-      {filtroCampo === 'startedAt' && (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          ⚠ API Digisac não suporta filtro por <code className="font-mono">updatedAt</code>. Usando <code className="font-mono">startedAt</code> — alterações em chamados antigos podem não ter sido capturadas.
-        </p>
-      )}
+      {error && <Alert tone="danger" title="Não foi possível sincronizar o Digisac.">{error}</Alert>}
+      {isErro && status?.erroMensagem && <Alert tone="danger" title="Erro na sincronização"><span className="font-mono">{status.erroMensagem}</span></Alert>}
+      {filtroCampo === 'startedAt' && <Alert tone="warning" title="Filtro limitado pela API Digisac">A API não suporta <code className="font-mono">updatedAt</code>; está sendo usado <code className="font-mono">startedAt</code>, portanto alterações em chamados antigos podem não ter sido capturadas.</Alert>}
 
       {/* ── Blocos de dados ─────────────────────────────────── */}
       {temDados && (
@@ -1614,22 +1407,26 @@ function DigisacSyncPanel({
   )
 }
 
-// ── Helpers de cor para badges IA ───────────────────────────
+// ── Badges da análise IA ─────────────────────────────────────
 
-function badgeInfluencia(val: string | null) {
-  if (!val) return 'bg-slate-100 text-slate-400'
-  return val === 'Sim' ? 'bg-emerald-100 text-emerald-700'
-    : val === 'Parcialmente' ? 'bg-amber-100 text-amber-700'
-    : val === 'Não' ? 'bg-red-100 text-red-600'
-    : 'bg-slate-100 text-slate-500'
+function InfluenciaBadge({ influencia }: { influencia: string | null }) {
+  if (!influencia) return <span className="text-muted-foreground">—</span>
+
+  const tone = influencia === 'Sim' ? 'success'
+    : influencia === 'Parcialmente' ? 'warning'
+      : influencia === 'Não' ? 'danger'
+        : 'neutral'
+  return <Badge tone={tone}>{influencia}</Badge>
 }
 
-function badgeGrau(val: string | null) {
-  if (!val) return 'bg-slate-100 text-slate-400'
-  return val === 'Alto' ? 'bg-red-100 text-red-700'
-    : val === 'Médio' ? 'bg-amber-100 text-amber-700'
-    : val === 'Baixo' ? 'bg-sky-100 text-sky-700'
-    : 'bg-slate-100 text-slate-400'
+function GrauInfluenciaBadge({ grau }: { grau: string | null }) {
+  if (!grau) return <span className="text-muted-foreground">—</span>
+
+  const tone = grau === 'Alto' ? 'danger'
+    : grau === 'Médio' ? 'warning'
+      : grau === 'Baixo' ? 'info'
+        : 'neutral'
+  return <Badge tone={tone}>{grau}</Badge>
 }
 
 function IaAnalisePanel({
@@ -1745,54 +1542,20 @@ function IaAnalisePanel({
   const porcentagem = total > 0 ? (processados / total) * 100 : 0
   // Chamado sendo processado agora = próximo após os já concluídos, limitado ao total
   const chamadoAtual = Math.min(processados + 1, total)
+  const chamadoSelecionado = chamados.find((chamado) => chamado.id === chamadoExpandido)
 
   return (
     <div className="space-y-4">
 
       {/* ── Status unificado ── */}
       <div className="flex flex-wrap items-center gap-2">
-        {emAndamento && (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
-            <Loader2 className="w-3 h-3 animate-spin" />
-            Processando chamado {chamadoAtual} de {total}
-          </span>
-        )}
-        {pausado && !emAndamento && (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-            <Clock className="w-3 h-3" />
-            Análise pausada &mdash; {processados} de {total} processados
-          </span>
-        )}
-        {concluido && !temErros && (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
-            <CheckCircle2 className="w-3 h-3" />
-            Análise concluída &mdash; {job!.totalChamados} chamados analisados
-          </span>
-        )}
-        {concluido && temErros && (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-            <AlertCircle className="w-3 h-3" />
-            Análise concluída com {job!.chamadosComErro} erro{job!.chamadosComErro > 1 ? 's' : ''} &mdash; {job!.totalChamados - job!.chamadosComErro} de {job!.totalChamados} analisados
-          </span>
-        )}
-        {!emAndamento && !pausado && !concluido && job?.status === 'erro' && (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
-            <AlertCircle className="w-3 h-3" />
-            Erro na análise
-          </span>
-        )}
-        {!emAndamento && !pausado && !concluido && (job?.status === 'pendente' || job?.status === 'processando') && (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-            <AlertCircle className="w-3 h-3" />
-            Análise incompleta &mdash; reanalize para atualizar
-          </span>
-        )}
-        {nunca && !processando && !pausado && (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-400">
-            <Brain className="w-3 h-3" />
-            Nunca analisado
-          </span>
-        )}
+        {emAndamento && <Badge tone="info"><Loader2 className="mr-1 size-3 animate-spin" />Processando chamado {chamadoAtual} de {total}</Badge>}
+        {pausado && !emAndamento && <Badge tone="warning"><Clock className="mr-1 size-3" />Análise pausada — {processados} de {total} processados</Badge>}
+        {concluido && !temErros && <Badge tone="success"><CheckCircle2 className="mr-1 size-3" />Análise concluída — {job!.totalChamados} chamados analisados</Badge>}
+        {concluido && temErros && <Badge tone="warning"><AlertCircle className="mr-1 size-3" />Análise concluída com {job!.chamadosComErro} erro{job!.chamadosComErro > 1 ? 's' : ''}</Badge>}
+        {!emAndamento && !pausado && !concluido && job?.status === 'erro' && <Badge tone="danger"><AlertCircle className="mr-1 size-3" />Erro na análise</Badge>}
+        {!emAndamento && !pausado && !concluido && (job?.status === 'pendente' || job?.status === 'processando') && <Badge tone="warning"><AlertCircle className="mr-1 size-3" />Análise incompleta — reanalise para atualizar</Badge>}
+        {nunca && !processando && !pausado && <Badge tone="neutral"><Brain className="mr-1 size-3" />Nunca analisado</Badge>}
         {job?.finalizadoEm && concluido && (
           <span className="text-xs text-slate-400">
             {new Date(job.finalizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -1815,187 +1578,57 @@ function IaAnalisePanel({
 
       {/* ── Barra de progresso (só durante processamento) ── */}
       {emAndamento && job && (
-        <div className="w-full bg-indigo-100 rounded-full h-1.5">
-          <div
-            className="bg-indigo-500 h-1.5 rounded-full transition-all duration-500"
-            style={{ width: `${porcentagem}%` }}
-          />
-        </div>
+        <Progress value={porcentagem} label={`Processando chamado ${chamadoAtual} de ${total}`} />
       )}
 
       {/* ── Erro global ── */}
-      {erro && (
-        <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{erro}</p>
-      )}
+      {erro && <Alert tone="danger" title="Não foi possível concluir a análise.">{erro}</Alert>}
 
       {/* ── Alerta: não pode analisar ── */}
-      {!podeAnalisar && nunca && !processando && (
-        <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-          Sincronize o Digisac primeiro e certifique-se de que há chamados no ciclo da venda.
-        </p>
-      )}
+      {!podeAnalisar && nunca && !processando && <Alert tone="info">Sincronize o Digisac primeiro e certifique-se de que há chamados no ciclo da venda.</Alert>}
 
       {/* ── Tabela de chamados ── */}
       {chamados.length > 0 && (
         <div className="space-y-1.5">
-          <p className="text-xs font-semibold text-indigo-700">Chamados do ciclo</p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-indigo-100 text-slate-500 text-left">
-                  <th className="py-1.5 pr-3">Nº</th>
-                  <th className="py-1.5 pr-3">Protocolo</th>
-                  <th className="py-1.5 pr-3">Tipo</th>
-                  <th className="py-1.5 pr-3">Data</th>
-                  <th className="py-1.5 pr-3">Loja/Depto.</th>
-                  <th className="py-1.5 pr-3">Consultora</th>
-                  <th className="py-1.5 pr-3">Telefone</th>
-                  <th className="py-1.5 pr-3 max-w-[180px]">Resumo</th>
-                  <th className="py-1.5 pr-3">Influenciou?</th>
-                  <th className="py-1.5 pr-3">Grau</th>
-                  <th className="py-1.5">Detalhes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {chamados.map((c) => (
-                  <Fragment key={c.id}>
-                    <tr className="border-b border-slate-50 hover:bg-indigo-50/30">
-                      <td className="py-1.5 pr-3 text-center font-semibold text-indigo-600">
-                        {c.ordem_ciclo ?? '—'}
-                      </td>
-                      <td className="py-1.5 pr-3 font-mono text-slate-600">{renderProtocoloLink(c.protocolo, c.digisac_ticket_id)}</td>
-                      <td className="py-1.5 pr-3 whitespace-nowrap">
-                        <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                          c.tipo_chamado === 'ativo' ? 'bg-blue-100 text-blue-700' :
-                          c.tipo_chamado === 'receptivo' ? 'bg-emerald-100 text-emerald-700' :
-                          'bg-slate-100 text-slate-500'
-                        }`}>
-                          {c.tipo_chamado === 'ativo' ? 'Ativo' : c.tipo_chamado === 'receptivo' ? 'Receptivo' : 'Indefinido'}
-                        </span>
-                      </td>
-                      <td className="py-1.5 pr-3 text-slate-500 whitespace-nowrap">
-                        {c.data_chamado ? new Date(c.data_chamado).toLocaleDateString('pt-BR') : '—'}
-                      </td>
-                      <td className="py-1.5 pr-3 max-w-[120px] truncate" title={c.department_nome ?? undefined}>
-                        {c.department_nome ?? <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="py-1.5 pr-3 max-w-[120px] truncate" title={c.user_nome ?? undefined}>
-                        {c.user_nome ?? <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="py-1.5 pr-3 font-mono text-slate-600 whitespace-nowrap">
-                        {c.telefone ?? <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="py-1.5 pr-3 max-w-[180px]">
-                        {c.status === 'erro' ? (
-                          <span className="text-red-500 text-[10px]">Erro: {c.erro_mensagem?.slice(0, 60)}</span>
-                        ) : c.status === 'pendente' || c.status === 'processando' ? (
-                          <span className="text-slate-400 text-[10px] italic">
-                            {c.status === 'processando' ? 'Analisando...' : 'Aguardando...'}
-                          </span>
-                        ) : !c.resumo_chamado ? (
-                          <span className="text-slate-400 italic">Resumo não disponível.</span>
-                        ) : c.resumo_chamado.length > 160 ? (
-                          <div className="space-y-0.5">
-                            <span className="text-slate-700">
-                              {resumoExpandido === c.id
-                                ? c.resumo_chamado
-                                : <span className="line-clamp-2">{c.resumo_chamado}</span>}
-                            </span>
-                            <button
-                              onClick={() => setResumoExpandido(resumoExpandido === c.id ? null : c.id)}
-                              className="text-indigo-500 hover:text-indigo-700 text-[10px]"
-                            >
-                              {resumoExpandido === c.id ? 'Ocultar resumo' : 'Ver resumo completo'}
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-slate-700">{c.resumo_chamado}</span>
-                        )}
-                      </td>
-                      <td className="py-1.5 pr-3">
-                        {c.influencia_compra ? (
-                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${badgeInfluencia(c.influencia_compra)}`}>
-                            {c.influencia_compra}
-                          </span>
-                        ) : <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="py-1.5 pr-3">
-                        {c.grau_influencia ? (
-                          <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${badgeGrau(c.grau_influencia)}`}>
-                            {c.grau_influencia}
-                          </span>
-                        ) : <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="py-1.5">
-                        {c.status === 'concluido' && (
-                          <button
-                            onClick={() => onExpandirChamado(chamadoExpandido === c.id ? null : c.id)}
-                            className="text-indigo-500 hover:text-indigo-700 flex items-center gap-0.5 text-[10px]"
-                          >
-                            {chamadoExpandido === c.id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                            {chamadoExpandido === c.id ? 'Fechar' : 'Ver'}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                    {chamadoExpandido === c.id && (
-                      <tr className="bg-indigo-50/40">
-                        <td colSpan={11} className="px-3 py-3">
-                          <div className="space-y-2 text-sm">
-                            {/* Auditoria do chamado */}
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 bg-white border border-indigo-100 rounded-lg px-3 py-2">
-                              <p><span className="text-xs font-semibold text-slate-500">Data de início</span><br /><span className="text-slate-700">{c.data_chamado ? new Date(c.data_chamado).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</span></p>
-                              <p><span className="text-xs font-semibold text-slate-500">Tipo</span><br />
-                                <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium mt-0.5 ${
-                                  c.tipo_chamado === 'ativo' ? 'bg-blue-100 text-blue-700' :
-                                  c.tipo_chamado === 'receptivo' ? 'bg-emerald-100 text-emerald-700' :
-                                  'bg-slate-100 text-slate-500'
-                                }`}>
-                                  {c.tipo_chamado === 'ativo' ? 'Ativo' : c.tipo_chamado === 'receptivo' ? 'Receptivo' : 'Indefinido'}
-                                </span>
-                              </p>
-                              <p><span className="text-xs font-semibold text-slate-500">Telefone</span><br /><span className="font-mono text-slate-700">{c.telefone ?? '—'}</span></p>
-                            </div>
-                            {c.motivo_influencia && (
-                              <p><span className="font-semibold text-slate-600">Motivo: </span><span className="text-slate-700">{c.motivo_influencia}</span></p>
-                            )}
-                            {c.intencao_cliente && (
-                              <p><span className="font-semibold text-slate-600">Intenção: </span><span className="text-slate-700">{c.intencao_cliente}</span></p>
-                            )}
-                            {c.sentimento_cliente && (
-                              <p><span className="font-semibold text-slate-600">Sentimento: </span><span className="text-slate-700">{c.sentimento_cliente}</span></p>
-                            )}
-                            {c.produtos_mencionados.length > 0 && (
-                              <p><span className="font-semibold text-slate-600">Produtos: </span><span className="text-slate-700">{c.produtos_mencionados.join(', ')}</span></p>
-                            )}
-                            {c.objecoes_identificadas.length > 0 && (
-                              <p><span className="font-semibold text-slate-600">Objeções: </span><span className="text-slate-700">{c.objecoes_identificadas.join(', ')}</span></p>
-                            )}
-                            {c.pontos_de_atencao.length > 0 && (
-                              <p><span className="font-semibold text-slate-600">Pontos de atenção: </span><span className="text-slate-700">{c.pontos_de_atencao.join(', ')}</span></p>
-                            )}
-                            {(c.nome_bebe || c.previsao_nascimento_bebe) && (
-                              <div className="bg-pink-50 border border-pink-200 rounded px-2 py-1.5">
-                                <span className="text-xs font-semibold text-pink-700">Bebê: </span>
-                                {c.nome_bebe && <span className="text-slate-700 mr-2">Nome: {c.nome_bebe}</span>}
-                                {c.previsao_nascimento_bebe && <span className="text-slate-700">Previsão: {c.previsao_nascimento_bebe}</span>}
-                              </div>
-                            )}
-                            <div className="flex gap-3 text-xs text-slate-400 pt-1 border-t border-indigo-100">
-                              {c.confianca_analise && <span>Confiança: {c.confianca_analise}</span>}
-                              {c.total_mensagens != null && <span>{c.total_mensagens} mensagens</span>}
-                              {c.transcript_truncado && <span className="text-amber-500">transcript truncado</span>}
-                              {c.modelo_ia && <span>modelo: {c.modelo_ia}</span>}
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <p className="text-xs font-semibold text-foreground">Chamados do ciclo</p>
+          <ResponsiveTable
+            columns={[
+              { key: 'ordem', header: 'Nº', width: 'compact', render: (c) => <span className="font-semibold text-primary">{c.ordem_ciclo ?? '—'}</span> },
+              { key: 'protocolo', header: 'Protocolo', width: 'content', render: (c) => renderProtocoloLink(c.protocolo, c.digisac_ticket_id) },
+              { key: 'tipo', header: 'Tipo', width: 'content', render: (c) => <TipoChamadoBadge tipo={c.tipo_chamado} /> },
+              { key: 'data', header: 'Data', width: 'compact', render: (c) => c.data_chamado ? new Date(c.data_chamado).toLocaleDateString('pt-BR') : '—' },
+              { key: 'departamento', header: 'Loja/Depto.', width: 'content', render: (c) => c.department_nome ?? '—' },
+              { key: 'consultora', header: 'Consultora', width: 'content', render: (c) => c.user_nome ?? '—' },
+              { key: 'telefone', header: 'Telefone', width: 'content', render: (c) => <span className="font-mono">{c.telefone ?? '—'}</span> },
+              { key: 'resumo', header: 'Resumo', width: 'wide', render: (c) => {
+                if (c.status === 'erro') return <span className="text-destructive">Erro: {c.erro_mensagem?.slice(0, 60)}</span>
+                if (c.status === 'pendente' || c.status === 'processando') return <span className="italic text-muted-foreground">{c.status === 'processando' ? 'Analisando...' : 'Aguardando...'}</span>
+                if (!c.resumo_chamado) return <span className="italic text-muted-foreground">Resumo não disponível.</span>
+                if (c.resumo_chamado.length <= 160) return c.resumo_chamado
+                return <div className="space-y-1"><span>{resumoExpandido === c.id ? c.resumo_chamado : <span className="line-clamp-2">{c.resumo_chamado}</span>}</span><Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setResumoExpandido(resumoExpandido === c.id ? null : c.id)}>{resumoExpandido === c.id ? 'Ocultar resumo' : 'Ver resumo completo'}</Button></div>
+              } },
+              { key: 'influencia', header: 'Influenciou?', width: 'content', render: (c) => <InfluenciaBadge influencia={c.influencia_compra} /> },
+              { key: 'grau', header: 'Grau', width: 'content', render: (c) => <GrauInfluenciaBadge grau={c.grau_influencia} /> },
+            ]}
+            rows={chamados}
+            rowKey={(c) => c.id}
+            firstColumnSticky
+            renderMobileCard={(c) => <article><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-primary">Nº {c.ordem_ciclo ?? '—'}</p><p className="mt-1 font-mono text-xs text-muted-foreground">{renderProtocoloLink(c.protocolo, c.digisac_ticket_id)}</p></div><TipoChamadoBadge tipo={c.tipo_chamado} /></div><div className="mt-3 grid grid-cols-2 gap-3 text-sm"><p><span className="text-xs text-muted-foreground">Data</span><br />{c.data_chamado ? new Date(c.data_chamado).toLocaleDateString('pt-BR') : '—'}</p><p><span className="text-xs text-muted-foreground">Telefone</span><br /><span className="font-mono">{c.telefone ?? '—'}</span></p><p><span className="text-xs text-muted-foreground">Influenciou?</span><br /><span className="mt-1 inline-block"><InfluenciaBadge influencia={c.influencia_compra} /></span></p><p><span className="text-xs text-muted-foreground">Grau</span><br /><span className="mt-1 inline-block"><GrauInfluenciaBadge grau={c.grau_influencia} /></span></p></div><p className="mt-3 text-sm"><span className="text-xs text-muted-foreground">Resumo</span><br />{c.resumo_chamado ?? 'Resumo não disponível.'}</p></article>}
+            rowActions={(c) => c.status === 'concluido' ? <Button variant="ghost" size="sm" onClick={() => onExpandirChamado(chamadoExpandido === c.id ? null : c.id)}>{chamadoExpandido === c.id ? <ChevronUp className="mr-1 size-3.5" /> : <ChevronDown className="mr-1 size-3.5" />}{chamadoExpandido === c.id ? 'Fechar' : 'Ver detalhes'}</Button> : null}
+          />
+          {chamadoSelecionado && (
+            <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm space-y-3">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3"><p><span className="text-xs font-semibold text-muted-foreground">Data de início</span><br />{chamadoSelecionado.data_chamado ? new Date(chamadoSelecionado.data_chamado).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</p><p><span className="text-xs font-semibold text-muted-foreground">Tipo</span><br /><span className="mt-1 inline-block"><TipoChamadoBadge tipo={chamadoSelecionado.tipo_chamado} /></span></p><p><span className="text-xs font-semibold text-muted-foreground">Telefone</span><br /><span className="font-mono">{chamadoSelecionado.telefone ?? '—'}</span></p></div>
+              {chamadoSelecionado.motivo_influencia && <p><span className="font-semibold">Motivo: </span>{chamadoSelecionado.motivo_influencia}</p>}
+              {chamadoSelecionado.intencao_cliente && <p><span className="font-semibold">Intenção: </span>{chamadoSelecionado.intencao_cliente}</p>}
+              {chamadoSelecionado.sentimento_cliente && <p><span className="font-semibold">Sentimento: </span>{chamadoSelecionado.sentimento_cliente}</p>}
+              {chamadoSelecionado.produtos_mencionados.length > 0 && <p><span className="font-semibold">Produtos: </span>{chamadoSelecionado.produtos_mencionados.join(', ')}</p>}
+              {chamadoSelecionado.objecoes_identificadas.length > 0 && <p><span className="font-semibold">Objeções: </span>{chamadoSelecionado.objecoes_identificadas.join(', ')}</p>}
+              {chamadoSelecionado.pontos_de_atencao.length > 0 && <p><span className="font-semibold">Pontos de atenção: </span>{chamadoSelecionado.pontos_de_atencao.join(', ')}</p>}
+              {(chamadoSelecionado.nome_bebe || chamadoSelecionado.previsao_nascimento_bebe) && <div className="rounded-md border border-info/20 bg-info/10 p-3"><span className="text-xs font-semibold text-info">Bebê: </span>{chamadoSelecionado.nome_bebe && <span className="mr-2">Nome: {chamadoSelecionado.nome_bebe}</span>}{chamadoSelecionado.previsao_nascimento_bebe && <span>Previsão: {chamadoSelecionado.previsao_nascimento_bebe}</span>}</div>}
+              <div className="flex flex-wrap gap-3 border-t border-border pt-3 text-xs text-muted-foreground">{chamadoSelecionado.confianca_analise && <span>Confiança: {chamadoSelecionado.confianca_analise}</span>}{chamadoSelecionado.total_mensagens != null && <span>{chamadoSelecionado.total_mensagens} mensagens</span>}{chamadoSelecionado.transcript_truncado && <span className="text-warning">transcript truncado</span>}{chamadoSelecionado.modelo_ia && <span>modelo: {chamadoSelecionado.modelo_ia}</span>}</div>
+            </div>
+          )}
         </div>
       )}
 
@@ -2201,15 +1834,9 @@ function IaAnalisePanel({
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm text-slate-700 font-medium">{consolidado.tipo_fechamento}</span>
                 {consolidado.confianca_tipo_fechamento && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    consolidado.confianca_tipo_fechamento === 'Alta'
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : consolidado.confianca_tipo_fechamento === 'Média'
-                      ? 'bg-amber-100 text-amber-700'
-                      : 'bg-slate-200 text-slate-500'
-                  }`}>
+                  <Badge tone={consolidado.confianca_tipo_fechamento === 'Alta' ? 'success' : consolidado.confianca_tipo_fechamento === 'Média' ? 'warning' : 'neutral'}>
                     Confiança: {consolidado.confianca_tipo_fechamento}
-                  </span>
+                  </Badge>
                 )}
               </div>
               {(consolidado.evidencias_tipo_fechamento ?? []).length > 0 && (

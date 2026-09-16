@@ -1,12 +1,14 @@
 'use client';
 
 import { useCallback, useState, useRef } from 'react';
+import { Headset } from 'lucide-react';
 import { PesquisaChamadosResponse } from '@/types';
-import { FiltrosChamadosFinalizados } from '@/components/chamados/FiltrosChamadosFinalizados';
+import { FiltrosChamadosFinalizados, type FiltrosChamadosValores } from '@/components/chamados/FiltrosChamadosFinalizados';
 import { TabelaChamadosFinalizados } from '@/components/chamados/TabelaChamadosFinalizados';
 import { ModalAgendamentosCliente } from '@/components/chamados/ModalAgendamentosCliente';
+import { PageContainer, PageHeader } from '@/components/design-system';
 
-type FiltrosChamados = Record<string, unknown>;
+type FiltrosChamados = FiltrosChamadosValores;
 
 export default function Page() {
   const [data, setData] = useState<PesquisaChamadosResponse | null>(null);
@@ -84,14 +86,22 @@ export default function Page() {
     handlePesquisar({ ...currentFiltros, page });
   }, [currentFiltros, handlePesquisar]);
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">CHAMADOS FINALIZADOS</h1>
-        <p className="text-slate-600 mt-1">Consulta de tickets fechados agregados por cliente</p>
-      </div>
+  const handleLimpar = useCallback(() => {
+    setData(null);
+    setError(null);
+    setCurrentFiltros(null);
+  }, []);
 
-      <FiltrosChamadosFinalizados onPesquisar={handlePesquisar} isLoading={isLoading} />
+  return (
+    <PageContainer className="space-y-6">
+      <PageHeader
+        icon={<Headset className="size-5" />}
+        eyebrow="Digisac"
+        title="CHAMADOS FINALIZADOS"
+        description="Consulta de tickets fechados agregados por cliente"
+      />
+
+      <FiltrosChamadosFinalizados onPesquisar={handlePesquisar} onLimpar={handleLimpar} isLoading={isLoading} />
 
       <TabelaChamadosFinalizados
         data={data}
@@ -125,6 +135,6 @@ export default function Page() {
           setModalNomeDigisac(null);
         }}
       />
-    </div>
+    </PageContainer>
   );
 }

@@ -120,7 +120,10 @@ def salvar_estado(estado: dict[str, Any]) -> None:
         json.dumps(estado, ensure_ascii=False, sort_keys=True, indent=2) + '\n',
         encoding='utf-8',
     )
-    os.chmod(temporario, 0o600)
+    # O modo 0600 é necessário no Linux da VPS. No Windows ele pode marcar o
+    # arquivo temporário como somente leitura antes do replace atômico.
+    if os.name != 'nt':
+        os.chmod(temporario, 0o600)
     os.replace(temporario, caminho)
 
 
@@ -352,3 +355,37 @@ def executar_fluxo(
         raise RuntimeError('VALIDACAO_FINAL_CODIGO_DIVERGENTE')
     _emitir(estado, 'CONCLUIDO', {'validacaoFinal': True}, checkpoint)
     return estado
+
+
+def executar_renomeacao(
+    pedido_id: str,
+    produto_id_sgi: str,
+    nome_produto: str,
+    logger: Logger,
+) -> dict[str, Any]:
+    """Altera somente a descrição do produto já identificado pelo App.
+
+    Não chama o fluxo de duplicação, custo, finalização nem preço: o id
+    persistido é a identidade autoritativa desta operação.
+    """
+    if not produto_id_sgi or not str(produto_id_sgi).isdigit():
+        raise RuntimeError('PRODUTO_ID_SGI_OBRIGATORIO')
+    if not nome_produto or len(nome_produto) > 120:
+        raise RuntimeError('NOME_PRODUTO_INVALIDO')
+    base = _carregar_modulo('cadastro_produto_sgi_base_renomeacao', CAMINHO_ORQUESTRADOR_LEGADO)
+    base.log = lambda mensagem: logger('INFO', 'SGI_BASE', {'mensagem': mensagem})
+    produto, custo, _preco = base.carregar_fluxos_validados()
+    produto.log = base.log
+    custo.validar_credencial()
+    sessao = custo.carregar_sessao_sgi()
+    custo.validar_sessao_http(sessao)
+    html_produto = produto.abrir_produto(sessao, str(produto_id_sgi))
+    nome_atual = produto.extrair_nome_produto(html_produto)
+    if nome_atual != nome_produto:
+        token = produto.extrair_authenticity_token(html_produto)
+        produto.NOVO_NOME = nome_produto
+        produto.renomear_produto(sessao, str(produto_id_sgi), token)
+    validado = produto.validar_produto_criado(sessao, str(produto_id_sgi))
+    if validado != nome_produto:
+        raise RuntimeError('NOME_PRODUTO_FINAL_DIVERGENTE')
+    return {'pedido_id': pedido_id, 'produto_id_sgi': str(produto_id_sgi), 'etapa': 'CONCLUIDO'}

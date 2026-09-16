@@ -5,8 +5,9 @@ import {
   Dialog,
   DialogContent,
   DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  DialogBody,
+} from '@/components/design-system/Dialog';
+import { Badge, ResponsiveTable, type ResponsiveTableColumn } from '@/components/design-system';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AgendamentoContatoItem } from '@/types';
 
@@ -18,25 +19,22 @@ interface Props {
 }
 
 /**
- * =========================================================
- * 1) CLASSES DO BADGE (mais forte)
- * =========================================================
+ * Status do agendamento — mesmo mapeamento de tom já usado pela tabela
+ * principal da tela (`TabelaChamadosFinalizados`: aberto=success,
+ * finalizado=info, erro=danger), agora via `Badge` oficial em vez de
+ * classes de cor soltas.
  */
-function statusClasses(status: string) {
-  if (status === 'error' || status === 'canceled') return 'text-red-800 bg-red-100 border-red-300';
-  if (status === 'done') return 'text-blue-800 bg-blue-100 border-blue-300';
-  return 'text-green-800 bg-green-100 border-green-300';
+function statusTone(status: string): 'danger' | 'info' | 'success' {
+  if (status === 'error' || status === 'canceled') return 'danger';
+  if (status === 'done') return 'info';
+  return 'success';
 }
 
-/**
- * =========================================================
- * 2) FUNDO DA LINHA INTEIRA (mais forte)
- * =========================================================
- */
-function rowStatusBgClasses(status: string) {
-  if (status === 'error' || status === 'canceled') return 'bg-red-100 hover:bg-red-200';
-  if (status === 'done') return 'bg-blue-100 hover:bg-blue-200';
-  return 'bg-green-100 hover:bg-green-200';
+function statusLabel(item: AgendamentoContatoItem): string {
+  if (item.statusLabel) return item.statusLabel;
+  if (item.status === 'error' || item.status === 'canceled') return 'Erro';
+  if (item.status === 'done') return 'Finalizado';
+  return 'Agendado';
 }
 
 export function ModalAgendamentosCliente({ contactId, nomeDigisac, open, onClose }: Props) {
@@ -63,20 +61,26 @@ export function ModalAgendamentosCliente({ contactId, nomeDigisac, open, onClose
     })();
   }, [open, contactId]);
 
+  const columns: ResponsiveTableColumn<AgendamentoContatoItem>[] = [
+    { key: 'idx', header: '#', width: 'compact', render: (item) => items.indexOf(item) + 1 },
+    { key: 'message', header: 'Texto agendamento', width: 'fill', render: (item) => <div className="whitespace-pre-wrap break-words">{item.message || '-'}</div> },
+    { key: 'status', header: 'Status', width: 'compact', render: (item) => <Badge tone={statusTone(item.status)}>{statusLabel(item)}</Badge> },
+    { key: 'createdAt', header: 'Criado em', width: 'compact', render: (item) => item.createdAt || '-' },
+    { key: 'scheduledAt', header: 'Executado em', width: 'compact', render: (item) => item.scheduledAt || '-' },
+    { key: 'notes', header: 'Comentário', width: 'wide', render: (item) => item.notes || '-' },
+  ];
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent
-        className="max-w-[90vw] sm:max-w-[90vw] max-h-[80vh] rounded-2xl grid grid-rows-[auto,1fr] overflow-y-auto"
+        className="max-w-[90vw] sm:max-w-[90vw] max-h-[80vh] rounded-2xl"
         style={{ maxWidth: '90vw', width: '90vw', maxHeight: '80vh' }}
       >
-        {/* HEADER: fixo, sólido, sem “vazar”, e sem brigar com o X */}
-        <DialogHeader className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm pr-12">
-          <DialogTitle className="text-lg font-semibold text-slate-900 whitespace-pre-wrap break-words">
-            Agendamentos do cliente — {(nomeDigisac || '').trim() ? (nomeDigisac || '').trim() : '(Sem nome no Digisac)'}
-          </DialogTitle>
-        </DialogHeader>
+        <DialogHeader
+          title={`Agendamentos do cliente — ${(nomeDigisac || '').trim() ? (nomeDigisac || '').trim() : '(Sem nome no Digisac)'}`}
+        />
 
-        <div className="p-2">
+        <DialogBody className="p-2">
           {loading ? (
             <div className="space-y-3">
               {[...Array(6)].map((_, i) => (
@@ -86,67 +90,28 @@ export function ModalAgendamentosCliente({ contactId, nomeDigisac, open, onClose
           ) : items.length === 0 ? (
             <div className="py-8 text-center text-slate-500">Nenhum agendamento encontrado.</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm table-fixed border border-slate-200 border-collapse">
-                <thead>
-                  <tr className="text-left text-slate-700 bg-slate-100">
-                    <th className="px-3 py-2 w-12 border border-slate-200">#</th>
-                    <th className="px-3 py-2 w-[70%] border border-slate-200">Texto agendamento</th>
-                    <th className="px-3 py-2 w-28 border border-slate-200">Status</th>
-                    <th className="px-3 py-2 border border-slate-200">Criado em</th>
-                    <th className="px-3 py-2 border border-slate-200">Executado em</th>
-                    <th className="px-3 py-2 border border-slate-200">Comentário</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {items.map((it, idx) => (
-                    <tr
-                      key={it.id}
-                      className={`align-top transition-colors ${rowStatusBgClasses(it.status)}`}
-                    >
-                      {/* bg-transparent garante que o bg do TR apareça sempre */}
-                      <td className="px-3 py-2 text-slate-700 whitespace-nowrap border border-slate-200 bg-transparent">
-                        {idx + 1}
-                      </td>
-
-                      <td className="px-3 py-2 w-[70%] border border-slate-200 bg-transparent">
-                        <div className="whitespace-pre-wrap break-words">{it.message || '-'}</div>
-                      </td>
-
-                      <td className="px-3 py-2 whitespace-nowrap border border-slate-200 bg-transparent">
-                        <span className={`px-2 py-0.5 rounded border text-xs ${statusClasses(it.status)}`}>
-                          {(it.statusLabel || ((() => {
-                            const st = it.status || 'scheduled';
-                            if (st === 'error' || st === 'canceled') return 'Erro';
-                            if (st === 'done') return 'Finalizado';
-                            return 'Agendado';
-                          })()))}
-                        </span>
-                      </td>
-
-                      <td className="px-3 py-2 whitespace-nowrap border border-slate-200 bg-transparent">
-                        {it.createdAt || '-'}
-                      </td>
-
-                      <td className="px-3 py-2 whitespace-nowrap border border-slate-200 bg-transparent">
-                        {it.scheduledAt || '-'}
-                      </td>
-
-                      <td className="px-3 py-2 border border-slate-200 bg-transparent">
-                        {it.notes || '-'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
+            <div>
+              <ResponsiveTable
+                columns={columns}
+                rows={items}
+                rowKey={(item) => item.id}
+                renderMobileCard={(item) => (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <Badge tone={statusTone(item.status)}>{statusLabel(item)}</Badge>
+                    </div>
+                    <p className="whitespace-pre-wrap break-words text-sm text-slate-700">{item.message || '-'}</p>
+                    <p className="text-xs text-slate-500">Criado em {item.createdAt || '-'} · Executado em {item.scheduledAt || '-'}</p>
+                    {item.notes && <p className="text-xs text-slate-500">Comentário: {item.notes}</p>}
+                  </div>
+                )}
+              />
               <div className="mt-3 text-xs text-slate-500">
-                Legenda: erro = vermelho · agendado = verde · finalizado = azul
+                Legenda: erro = <Badge tone="danger">erro</Badge> · agendado = <Badge tone="success">agendado</Badge> · finalizado = <Badge tone="info">finalizado</Badge>
               </div>
             </div>
           )}
-        </div>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   );

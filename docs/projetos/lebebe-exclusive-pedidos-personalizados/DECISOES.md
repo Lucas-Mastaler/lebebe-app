@@ -77,9 +77,9 @@
 
 - Data: 2026-08-13
 - Decisão: a transição de `RASCUNHO` para `VENDA FECHADA` exige número de
-  lançamento numérico de até seis dígitos para qualquer fornecedor. Na Lebebe
-  Exclusive, os dados comerciais continuam editáveis em `VENDA FECHADA` até a
-  entrada em produção.
+  lançamento numérico de até seis dígitos para Moriah. Na Lebebe Exclusive, o
+  lançamento é exigido somente em `VENDA FECHADA → EM PRODUÇÃO`; os dados
+  comerciais continuam editáveis em `VENDA FECHADA` até a entrada em produção.
 - Impacto: a regra é validada na interface, API e função transacional do banco;
   a Moriah preserva as regras posteriores de layout, anexos e produção.
 - Status: APROVADA E EXECUTADA
@@ -96,4 +96,16 @@
 - Impacto: exige persistência 1:1 por pedido, claim concorrente, checkpoints
   autenticados, estado local de recuperação no worker e UI compartilhada entre
   card e detalhe. O fluxo Moriah permanece intocado.
-- Status: APROVADA PELO PEDIDO ATUAL E EM EXECUÇÃO
+- Status: APROVADA E EXECUTADA
+
+## D-011 — Produto SGI e lançamento posterior
+
+- Data: 2026-09-11
+- Decisão: a criação inicial da Lebebe Exclusive usa o nome
+  `LEBEBE EXCLUSIVE (FILIAL CLIENTE)` sem lançamento. O lançamento posterior
+  renomeia o mesmo `produto_id_sgi` para
+  `LEBEBE EXCLUSIVE (FILIAL LANÇAMENTO CLIENTE)`.
+- Impacto: `produto_id_sgi` é a identidade autoritativa; a renomeação é
+  idempotente e não repete custo nem preço. O worker usa `CRIAR_PRODUTO` e
+  `RENOMEAR_PRODUTO`.
+- Status: APROVADA E VALIDADA EM PRODUÇÃO

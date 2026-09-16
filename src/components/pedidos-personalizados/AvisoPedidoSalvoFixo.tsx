@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, CheckCircle2, X } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { ArrowRight, X } from 'lucide-react'
+import { Alert, Button } from '@/components/design-system'
 
 const DURACAO_MS = 10000
 
@@ -27,24 +27,26 @@ export function AvisoPedidoSalvoFixo({ disparo, titulo, mensagem }: { disparo: b
   if (!disparo || fechado) return null
 
   return (
-    <div className="flex w-full justify-center px-4" role="status">
-      <div className="flex w-full max-w-xl items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-xl">
-        <CheckCircle2 className="mt-0.5 size-6 shrink-0 text-emerald-600" aria-hidden="true" />
-        <div className="min-w-0 flex-1">
-          <p className="font-bold text-emerald-900">{titulo}</p>
-          <p className="mt-1 text-sm text-emerald-800">{mensagem}</p>
-          <Button asChild type="button" size="sm" variant="outline" className="mt-3 min-h-9 border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100">
-            <Link href="/pedidos-personalizados">Ir para a gestão de pedidos<ArrowRight /></Link>
-          </Button>
-        </div>
-        <button
-          type="button"
-          aria-label="Fechar aviso"
-          className="shrink-0 rounded-full p-1 text-emerald-700 hover:bg-emerald-100"
-          onClick={() => setFechado(true)}
-        >
-          <X className="size-4" aria-hidden="true" />
-        </button>
+    <div className="flex w-full justify-center px-4">
+      <div className="w-full max-w-xl shadow-xl">
+        <Alert tone="success" title={titulo} className="items-start rounded-2xl">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <p>{mensagem}</p>
+              <Button asChild type="button" size="sm" variant="secondary" className="mt-3">
+                <Link href="/pedidos-personalizados">Ir para a gestão de pedidos<ArrowRight /></Link>
+              </Button>
+            </div>
+            <button
+              type="button"
+              aria-label="Fechar aviso"
+              className="shrink-0 rounded-full p-1 text-emerald-700 hover:bg-emerald-100"
+              onClick={() => setFechado(true)}
+            >
+              <X className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+        </Alert>
       </div>
     </div>
   )

@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateComercialUser } from '@/lib/auth/sgi-auth'
+import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
 import type { SgiCards, SgiVendasResponse } from '@/types/sgi'
 
 export const runtime = 'nodejs'
-
-const PER_PAGE = 25
 
 function sumField(rows: Record<string, unknown>[], field: string): number {
   return rows.reduce((acc, r) => acc + (Number(r[field]) || 0), 0)
@@ -88,7 +87,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ vendas: [], total: 0, cards: emptyCards } satisfies SgiVendasResponse)
   }
 
-  const offset = (Math.max(1, page) - 1) * PER_PAGE
+  const offset = (Math.max(1, page) - 1) * TABLE_PAGE_SIZE
 
   // --- Query paginada (lista) ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -99,7 +98,7 @@ export async function POST(request: NextRequest) {
       { count: 'exact' }
     )
     .order('data_fechamento', { ascending: false, nullsFirst: false })
-    .range(offset, offset + PER_PAGE - 1)
+    .range(offset, offset + TABLE_PAGE_SIZE - 1)
 
   // --- Query de agregação (cards, sem paginação) ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

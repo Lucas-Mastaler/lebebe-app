@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireModuleAccess } from '@/lib/auth/module-access';
 import { createServiceClient } from '@/lib/supabase/service';
 import type { FiltrosListagemFechamentos, RegistroFechamentoAutomatico } from '@/lib/digisac/finalizacoesAutomaticas';
+import { clampPageSize } from '@/lib/design-system/pagination';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,11 +22,11 @@ export async function GET(request: NextRequest) {
     dataFim: searchParams.get('dataFim') ?? undefined,
     busca: searchParams.get('busca') ?? undefined,
     page: Number(searchParams.get('page') ?? 1),
-    pageSize: Math.min(Number(searchParams.get('pageSize') ?? 30), 100),
+    pageSize: clampPageSize(Number(searchParams.get('pageSize') ?? undefined)),
   };
 
   const page = Math.max(1, filtros.page ?? 1);
-  const pageSize = Math.max(1, filtros.pageSize ?? 30);
+  const pageSize = clampPageSize(filtros.pageSize);
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 

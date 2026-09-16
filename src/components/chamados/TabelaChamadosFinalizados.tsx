@@ -1,19 +1,8 @@
 "use client";
 
-import { useRef } from "react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Alert, Badge, Button, Card, CardContent, CardHeader, EmptyState, ResponsiveTable, type ResponsiveTableColumn } from "@/components/design-system";
+import { ChevronLeft, ChevronRight, Inbox, SearchX } from "lucide-react";
 import { PesquisaChamadosResponse, ChamadoFinalizadoItem } from "@/types";
-import { BarraScrollHorizontalFixa } from "@/components/BarraScrollHorizontalFixa";
 import { CelulaObservacao } from "@/components/chamados/CelulaObservacao";
 
 interface Props {
@@ -26,156 +15,147 @@ interface Props {
   onSalvarObservacao: (contactId: string, observacao: string) => Promise<void>;
 }
 
-function Badge({ color, children }: { color: "neutral" | "green" | "blue" | "red"; children: React.ReactNode }) {
-  const map: Record<string, string> = {
-    neutral: "bg-slate-100 text-slate-700 border-slate-200",
-    green: "bg-green-100 text-green-700 border-green-200",
-    blue: "bg-blue-100 text-blue-700 border-blue-200",
-    red: "bg-red-100 text-red-700 border-red-200",
-  };
+function statusTone(status: string): 'success' | 'neutral' {
+  return status === 'Aberta' ? 'success' : 'neutral';
+}
+
+function DesktopMobileValue({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <span className={`px-2.5 py-1 text-xs font-medium rounded-full border shadow-sm ${map[color]}`}>{children}</span>
+    <div>
+      <p className="text-[10px] uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="text-sm text-slate-700">{value}</div>
+    </div>
   );
 }
 
 export function TabelaChamadosFinalizados({ data, isLoading, error, onPageChange, onVerAgendamentos, observacoes, onSalvarObservacao }: Props) {
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  if (isLoading) {
-    return (
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 card-shadow">
-        <div className="flex items-center justify-between mb-4">
-          <Skeleton className="h-6 w-32" />
-          <Skeleton className="h-6 w-20" />
-        </div>
-        <div className="space-y-3">
-          {[...Array(5)].map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   if (error) {
     return (
-      <div className="bg-white rounded-2xl border border-red-200 p-6">
-        <div className="flex items-center gap-3 text-red-600">
-          <span className="text-lg">⚠️</span>
-          <p>{error}</p>
-        </div>
-      </div>
+      <Alert tone="danger" title="Não foi possível pesquisar os chamados.">
+        {error}
+      </Alert>
     );
   }
 
-  if (!data) {
-    return (
-      <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
-        <p className="text-slate-500">Use os filtros acima para pesquisar chamados.</p>
-      </div>
-    );
+  if (!isLoading && !data) {
+    return <EmptyState icon={<Inbox className="size-5" />} title="Nenhuma pesquisa realizada" description="Use os filtros acima para pesquisar chamados." />;
   }
 
-  if ((data.items?.length || 0) === 0) {
-    return (
-      <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
-        <p className="text-slate-500">Nenhum resultado para os filtros selecionados.</p>
-      </div>
-    );
+  if (!isLoading && data && (data.items?.length || 0) === 0) {
+    return <EmptyState icon={<SearchX className="size-5" />} title="Nenhum resultado" description="Nenhum resultado para os filtros selecionados." />;
   }
 
-  const { meta } = data;
+  const meta = data?.meta;
+
+  const columns: ResponsiveTableColumn<ChamadoFinalizadoItem>[] = [
+    { key: 'nomeDigisac', header: 'Nome Digisac', width: 'content', className: 'font-medium text-slate-700', render: (item) => item.nomeDigisac || '-' },
+    { key: 'loja', header: 'Loja', width: 'standard', render: (item) => item.loja || '-' },
+    { key: 'consultora', header: 'Consultora', width: 'standard', render: (item) => item.consultora || '-' },
+    {
+      key: 'mensagens',
+      header: 'Mensagens agendadas',
+      width: 'compact',
+      render: (item) => (
+        <Button variant="secondary" size="sm" onClick={() => onVerAgendamentos(item.contactId, item.nomeDigisac)}>
+          Ver agendamentos
+        </Button>
+      ),
+    },
+    {
+      key: 'statusConversa',
+      header: 'Status da conversa',
+      width: 'compact',
+      render: (item) => <Badge tone={statusTone(item.statusConversa)}>{item.statusConversa}</Badge>,
+    },
+    { key: 'tags', header: 'Tags', width: 'wide', render: (item) => <span title={item.tags}>{item.tags || '-'}</span> },
+    { key: 'total', header: 'Qtd (total)', width: 'compact', render: (item) => <Badge tone="neutral">{item.qtdAgendamentosTotal}</Badge> },
+    { key: 'abertos', header: 'Qtd (em aberto)', width: 'compact', render: (item) => <Badge tone="success">{item.qtdAgendamentosAbertos}</Badge> },
+    { key: 'finalizados', header: 'Qtd (finalizados)', width: 'compact', render: (item) => <Badge tone="info">{item.qtdAgendamentosFinalizados}</Badge> },
+    { key: 'erro', header: 'Qtd (erro)', width: 'compact', render: (item) => <Badge tone="danger">{item.qtdAgendamentosErro}</Badge> },
+    {
+      key: 'observacao',
+      header: 'Observação',
+      width: 'standard',
+      render: (item) => <CelulaObservacao contactId={item.contactId} valor={observacoes[item.contactId] || ''} onSalvar={onSalvarObservacao} />,
+    },
+  ];
 
   return (
-    <>
-      <div className="bg-white rounded-2xl border border-slate-200 card-shadow overflow-hidden flex flex-col mb-4">
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 flex-shrink-0">
-          <h3 className="font-semibold text-slate-900">Resultados</h3>
-          <span className="px-3 py-1 bg-slate-100 text-slate-600 text-sm rounded-full">
-            {meta.total} {meta.total === 1 ? "item" : "itens"}
-          </span>
-        </div>
-
-        <div ref={scrollContainerRef} className="flex-1 overflow-x-auto w-full relative scrollbar-hide">
-          <div className="min-w-[1200px]">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-slate-50 border-b border-slate-200 hover:bg-slate-50">
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[220px] sticky left-0 top-0 bg-slate-50 z-10">Nome Digisac</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[150px] sticky top-0 bg-slate-50 z-10">Loja</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px] sticky top-0 bg-slate-50 z-10">Consultora</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px] sticky top-0 bg-slate-50 z-10">Mensagens agendadas</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[160px] sticky top-0 bg-slate-50 z-10">Status da conversa</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[240px] sticky top-0 bg-slate-50 z-10">Tags</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[140px] sticky top-0 bg-slate-50 z-10">Qtd (total)</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[160px] sticky top-0 bg-slate-50 z-10">Qtd (em aberto)</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px] sticky top-0 bg-slate-50 z-10">Qtd (finalizados)</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[140px] sticky top-0 bg-slate-50 z-10">Qtd (erro)</TableHead>
-                  <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[220px] sticky top-0 bg-slate-50 z-10">Observação</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.items.map((item: ChamadoFinalizadoItem) => (
-                  <TableRow
-                    key={item.contactId}
-                    className={`transition-colors border-b last:border-0 ${item.qtdAgendamentosAbertos === 0 ? 'bg-red-50 hover:bg-red-50 border-red-100' : 'hover:bg-slate-50 border-slate-100'}`}
-                  >
-                    <TableCell className={`whitespace-nowrap font-medium text-slate-700 sticky left-0 z-10 ${item.qtdAgendamentosAbertos === 0 ? 'bg-red-50' : 'bg-white'}`}>
-                      {item.nomeDigisac || "-"}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">{item.loja || '-'}</TableCell>
-                    <TableCell className="whitespace-nowrap">{item.consultora || '-'}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      <Button variant="outline" size="sm" className="rounded-xl" onClick={() => onVerAgendamentos(item.contactId, item.nomeDigisac)}>
-                        Ver agendamentos
-                      </Button>
-                    </TableCell>
-                    <TableCell>
-                      <Badge color={item.statusConversa === 'Aberta' ? 'green' : 'neutral'}>
-                        {item.statusConversa}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="max-w-[240px] truncate" title={item.tags}>{item.tags || '-'}</TableCell>
-                    <TableCell>
-                      <Badge color="neutral">{item.qtdAgendamentosTotal}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge color="green">{item.qtdAgendamentosAbertos}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge color="blue">{item.qtdAgendamentosFinalizados}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge color="red">{item.qtdAgendamentosErro}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <CelulaObservacao
-                        contactId={item.contactId}
-                        valor={observacoes[item.contactId] || ''}
-                        onSalvar={onSalvarObservacao}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+    <div className="space-y-4">
+      <Card>
+        {!isLoading && meta && (
+          <CardHeader
+            title="Resultados"
+            action={
+              <Badge tone="neutral">
+                {meta.total} {meta.total === 1 ? 'item' : 'itens'}
+              </Badge>
+            }
+          />
+        )}
+        <CardContent className="p-0 sm:p-0">
+          <div className="p-3">
+            <ResponsiveTable<ChamadoFinalizadoItem>
+              columns={columns}
+              rows={data?.items ?? []}
+              rowKey={(item) => item.contactId}
+              rowTone={(item) => (item.qtdAgendamentosAbertos === 0 ? 'dangerSubtle' : undefined)}
+              stickyHeader
+              firstColumnSticky
+              loading={isLoading}
+              renderMobileCard={(item) => (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold text-slate-800">{item.nomeDigisac || '-'}</p>
+                    <Badge tone={statusTone(item.statusConversa)}>{item.statusConversa}</Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <DesktopMobileValue label="Loja" value={item.loja || '-'} />
+                    <DesktopMobileValue label="Consultora" value={item.consultora || '-'} />
+                    <DesktopMobileValue label="Tags" value={item.tags || '-'} />
+                    <DesktopMobileValue
+                      label="Agendamentos"
+                      value={
+                        <div className="flex flex-wrap gap-1">
+                          <Badge tone="neutral">total {item.qtdAgendamentosTotal}</Badge>
+                          <Badge tone="success">aberto {item.qtdAgendamentosAbertos}</Badge>
+                          <Badge tone="info">final. {item.qtdAgendamentosFinalizados}</Badge>
+                          <Badge tone="danger">erro {item.qtdAgendamentosErro}</Badge>
+                        </div>
+                      }
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-400">Observação</p>
+                    <CelulaObservacao contactId={item.contactId} valor={observacoes[item.contactId] || ''} onSalvar={onSalvarObservacao} />
+                  </div>
+                  <Button variant="secondary" size="sm" className="w-full" onClick={() => onVerAgendamentos(item.contactId, item.nomeDigisac)}>
+                    Ver agendamentos
+                  </Button>
+                </div>
+              )}
+            />
           </div>
-        </div>
+        </CardContent>
+      </Card>
 
-        <div className="flex items-center justify-between p-4 border-t border-slate-200">
-          <p className="text-sm text-slate-600">Página {meta.currentPage} de {meta.lastPage}</p>
+      {!isLoading && meta && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-slate-600">
+            Página {meta.currentPage} de {meta.lastPage}
+          </p>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => onPageChange(meta.currentPage - 1)} disabled={meta.currentPage <= 1} className="rounded-xl">
-              <ChevronLeft className="w-4 h-4 mr-1" /> Anterior
+            <Button variant="secondary" size="sm" onClick={() => onPageChange(meta.currentPage - 1)} disabled={meta.currentPage <= 1}>
+              <ChevronLeft className="size-4" />
+              Anterior
             </Button>
-            <Button variant="outline" size="sm" onClick={() => onPageChange(meta.currentPage + 1)} disabled={meta.currentPage >= meta.lastPage} className="rounded-xl">
-              Próxima <ChevronRight className="w-4 h-4 ml-1" />
+            <Button variant="secondary" size="sm" onClick={() => onPageChange(meta.currentPage + 1)} disabled={meta.currentPage >= meta.lastPage}>
+              Próxima
+              <ChevronRight className="size-4" />
             </Button>
           </div>
         </div>
-      </div>
-
-      <BarraScrollHorizontalFixa targetRef={scrollContainerRef} bottomOffset={0} />
-    </>
+      )}
+    </div>
   );
 }

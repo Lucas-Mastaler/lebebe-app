@@ -80,7 +80,7 @@ requisição chegou à aplicação**:
 ## Limites de permissão
 
 A conta técnica é `agente.teste@lebebe.cloud`, com role `user` e perfil
-`consultora`. Ela só recebe os módulos atuais desse perfil; não é
+`gestao`. Ela só recebe os módulos atuais desse perfil; não é
 superadmin. Se a rota ou a ação exigir módulo indisponível, informe o bloqueio
 e pare — nunca amplie permissões, troque perfil ou altere usuário para concluir
 um teste.

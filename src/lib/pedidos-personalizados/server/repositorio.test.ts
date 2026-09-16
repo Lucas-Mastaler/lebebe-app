@@ -247,6 +247,7 @@ describe('repositório server-only de pedidos personalizados', () => {
       pedidos_personalizados_tapete_cores: [{ data: [{ tapete_id: 'tapete-1', ordem: 1, cor: { id: 'cor-1' } }], error: null }],
       pedidos_personalizados_anexos: [{ data: [{ tapete_id: 'tapete-1', id: 'anexo-1', slot: 1, nome_original: 'arquivo.pdf', mime_type: 'application/pdf', tamanho_bytes: 10, created_at: '2026-08-05T10:00:00Z' }], error: null }],
       pedidos_personalizados_status_historico: [{ data: [], error: null }],
+      pedidos_personalizados_observacoes: [{ data: [], error: null }],
     }
     const from = vi.fn((tabela: string) => builder(filas[tabela].shift(), rastreio))
     const repo = new RepositorioPedidosPersonalizados({ from } as unknown as SupabaseClient)
@@ -255,8 +256,9 @@ describe('repositório server-only de pedidos personalizados', () => {
       cores: [{ ordem: 1, id: 'cor-1' }],
       anexos: [{ id: 'anexo-1', slot: 1, nome_original: 'arquivo.pdf', mime_type: 'application/pdf', tamanho_bytes: 10 }],
     })
+    expect(resultado.data?.observacoes).toEqual([])
     expect(JSON.stringify(resultado.data)).not.toContain('caminho_objeto')
-    expect(from).toHaveBeenCalledTimes(7)
+    expect(from).toHaveBeenCalledTimes(8)
     expect(rastreio.order).toContainEqual(['ordem', { ascending: true }])
   })
 

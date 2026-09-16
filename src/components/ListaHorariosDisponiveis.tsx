@@ -1,7 +1,7 @@
 'use client';
 
 import { Clock, RefreshCw, AlertCircle, Calendar } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Alert, Button, Card, CardContent, CardHeader, EmptyState, KpiCard, SkeletonRows } from '@/components/design-system';
 import { cn } from '@/lib/utils';
 
 function isHorarioNoturno(horario: string): boolean {
@@ -40,102 +40,36 @@ export function ListaHorariosDisponiveis({
 }: ListaHorariosDisponiveisProps) {
     if (isLoading) {
         return (
-            <div className="bg-white rounded-2xl border border-slate-200 card-shadow p-8">
-                <div className="flex flex-col items-center justify-center space-y-4">
-                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-slate-200 border-t-[#00A5E6]"></div>
-                    <p className="text-slate-600">Calculando horários disponíveis...</p>
-                </div>
-            </div>
+            <Card><CardContent><SkeletonRows rows={5} /><p className="mt-4 text-sm text-muted-foreground">Calculando horários disponíveis...</p></CardContent></Card>
         );
     }
 
     if (error) {
         return (
-            <div className="bg-white rounded-2xl border border-slate-200 card-shadow p-8">
-                <div className="flex flex-col items-center justify-center space-y-4">
-                    <AlertCircle className="w-12 h-12 text-red-500" />
-                    <p className="text-slate-900 font-semibold">Erro ao carregar horários</p>
-                    <p className="text-slate-600 text-sm">{error}</p>
-                    {onRecarregar && (
-                        <Button
-                            onClick={onRecarregar}
-                            className="rounded-xl bg-[#00A5E6] hover:bg-[#0090cc] text-white"
-                        >
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            Tentar novamente
-                        </Button>
-                    )}
-                </div>
-            </div>
+            <Card><CardContent className="space-y-4"><Alert tone="danger" title="Erro ao carregar horários">{error}</Alert>{onRecarregar && <Button onClick={onRecarregar}><RefreshCw className="size-4" />Tentar novamente</Button>}</CardContent></Card>
         );
     }
 
     if (horarios.length === 0 && !ultimaPesquisa) {
         return (
-            <div className="bg-white rounded-2xl border border-slate-200 card-shadow p-8">
-                <div className="flex flex-col items-center justify-center space-y-4">
-                    <Clock className="w-12 h-12 text-slate-300" />
-                    <p className="text-slate-600">Utilize os filtros acima para pesquisar horários disponíveis</p>
-                </div>
-            </div>
+            <Card><EmptyState icon={<Clock className="size-5" />} title="Consulte os horários disponíveis" description="Defina a data e o período, depois clique em Filtrar." /></Card>
         );
     }
 
     if (horarios.length === 0 && ultimaPesquisa) {
         return (
-            <div className="bg-white rounded-2xl border border-slate-200 card-shadow p-8">
-                <div className="flex flex-col items-center justify-center space-y-4">
-                    <AlertCircle className="w-12 h-12 text-amber-500" />
-                    <p className="text-slate-900 font-semibold">Nenhum horário disponível</p>
-                    <p className="text-slate-600 text-sm text-center">
-                        Não há horários disponíveis no intervalo selecionado.<br />
-                        Tente outro período ou data.
-                    </p>
-                </div>
-            </div>
+            <Card><EmptyState icon={<AlertCircle className="size-5" />} title="Nenhum horário disponível" description="Não há horários no intervalo selecionado. Tente outro período ou data." /></Card>
         );
     }
 
     return (
         <div className="space-y-4">
-            <div className="bg-white rounded-2xl border border-slate-200 card-shadow">
-                <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-[#00A5E6]/10 p-2 rounded-lg">
-                            <Calendar className="w-5 h-5 text-[#00A5E6]" />
-                        </div>
-                        <div>
-                            <h3 className="font-semibold text-slate-900">Horários Disponíveis</h3>
-                            <p className="text-sm text-slate-600">
-                                {horarios.length} horário{horarios.length !== 1 ? 's' : ''} disponível
-                                {horarios.length !== 1 ? 'eis' : ''}
-                                {ultimaPesquisa && ` • ${formatarData(ultimaPesquisa.dataPesquisar)}`}
-                            </p>
-                        </div>
-                    </div>
-                    {onRecarregar && (
-                        <Button
-                            onClick={onRecarregar}
-                            variant="outline"
-                            size="sm"
-                            className="rounded-lg border-slate-200 hover:bg-slate-50"
-                        >
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            Atualizar
-                        </Button>
-                    )}
-                </div>
-
-                <div className="p-4">
+            <Card>
+                <CardHeader icon={<Calendar className="size-5" />} title="Horários disponíveis" description={ultimaPesquisa ? formatarData(ultimaPesquisa.dataPesquisar) : undefined} action={onRecarregar && <Button onClick={onRecarregar} variant="secondary" size="sm"><RefreshCw className="size-4" />Atualizar</Button>} />
+                <CardContent className="space-y-4">
+                    <KpiCard className="w-fit min-w-36" label="Disponíveis" value={horarios.length} icon={<Clock className="size-4" />} />
                     {agendamentosExistentes.length > 0 && (
-                        <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-lg">
-                            <p className="text-sm text-blue-900">
-                                <strong>ℹ️ Intervalo mínimo:</strong> 7 minutos entre agendamentos.{' '}
-                                <span className="text-blue-700">
-                                    {agendamentosExistentes.length} agendamento{agendamentosExistentes.length !== 1 ? 's' : ''} existente{agendamentosExistentes.length !== 1 ? 's' : ''} no período.
-                                </span>
-                            </p>
-                        </div>
+                        <Alert tone="info" title="Intervalo mínimo">7 minutos entre agendamentos. {agendamentosExistentes.length} agendamento{agendamentosExistentes.length !== 1 ? 's' : ''} existente{agendamentosExistentes.length !== 1 ? 's' : ''} no período.</Alert>
                     )}
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
@@ -145,23 +79,23 @@ export function ListaHorariosDisponiveis({
                                 <div
                                     key={index}
                                     className={cn(
-                                        'flex items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all cursor-pointer group',
+                                        'flex items-center justify-center gap-2 rounded-md border p-3 transition-colors',
                                         noturno
-                                            ? 'border-red-200 bg-red-50 hover:border-red-400 hover:bg-red-100'
-                                            : 'border-slate-200 bg-slate-50 hover:border-[#00A5E6] hover:bg-[#00A5E6]/5'
+                                            ? 'border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/15'
+                                            : 'border-border bg-muted/40 hover:border-primary hover:bg-primary/5'
                                     )}
                                 >
                                     <Clock className={cn(
-                                        'w-4 h-4 transition-colors',
+                                        'size-4 transition-colors',
                                         noturno
-                                            ? 'text-red-400 group-hover:text-red-600'
-                                            : 'text-slate-400 group-hover:text-[#00A5E6]'
+                                            ? 'text-destructive'
+                                            : 'text-muted-foreground'
                                     )} />
                                     <span className={cn(
-                                        'font-mono font-semibold transition-colors',
+                                        'font-mono font-semibold',
                                         noturno
-                                            ? 'text-red-600 group-hover:text-red-700'
-                                            : 'text-slate-900 group-hover:text-[#00A5E6]'
+                                            ? 'text-destructive'
+                                            : 'text-foreground'
                                     )}>
                                         {horario}
                                     </span>
@@ -169,8 +103,8 @@ export function ListaHorariosDisponiveis({
                             );
                         })}
                     </div>
-                </div>
-            </div>
+                </CardContent>
+            </Card>
 
 
         </div>

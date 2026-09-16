@@ -2,12 +2,9 @@
 
 import {
   ShoppingCart, Banknote, CheckCircle2, ArrowLeftRight,
-  Clock, Truck, Percent, Receipt, BarChart3, HelpCircle
+  Clock, Truck, Percent, Receipt, BarChart3
 } from 'lucide-react'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Tooltip, TooltipTrigger, TooltipContent
-} from '@/components/ui/tooltip'
+import { KpiCard } from '@/components/design-system'
 import type { SgiCards } from '@/types/sgi'
 
 function brl(value: number): string {
@@ -93,48 +90,25 @@ export function CardsSGI({ cards, isLoading }: CardsSGIProps) {
       ]
     : []
 
-  if (isLoading) {
-    return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {Array.from({ length: 9 }).map((_, i) => (
-          <Skeleton key={i} className="h-20 rounded-xl" />
-        ))}
-      </div>
-    )
-  }
+  if (!cards && !isLoading) return null
 
-  if (!cards) return null
+  const displayItems: CardItem[] = isLoading
+    ? Array.from({ length: 9 }, (_, index) => ({ label: `Carregando ${index + 1}`, value: '', icon: ShoppingCart, color: '' }))
+    : items
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-      {items.map(item => {
+      {displayItems.map(item => {
         const Icon = item.icon
         return (
-          <div
+          <KpiCard
             key={item.label}
-            className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-1.5"
-            title={item.title}
-          >
-            <div className="flex items-center gap-2">
-              <span className={`p-1.5 rounded-lg ${item.color}`}>
-                <Icon className="w-3.5 h-3.5" />
-              </span>
-              <span className="text-xs text-slate-500 leading-tight">{item.label}</span>
-              {item.tooltip && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="ml-auto cursor-help text-slate-400 hover:text-slate-600">
-                      <HelpCircle className="w-3 h-3" />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs text-xs">
-                    {item.tooltip}
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </div>
-            <p className="text-sm font-semibold text-slate-800 leading-tight">{item.value}</p>
-          </div>
+            label={isLoading ? '' : item.label}
+            value={item.value}
+            loading={isLoading}
+            icon={<Icon className={`size-4 ${item.color.split(' ')[0]}`} />}
+            title={item.tooltip ?? item.title}
+          />
         )
       })}
     </div>

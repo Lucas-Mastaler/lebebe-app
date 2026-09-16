@@ -44,6 +44,7 @@ import {
   statusDisponiveis,
   validarDadosAdministrativos,
   validarFiltrosPedidos,
+  validarObservacao,
 } from './validacao-api'
 import {
   validarEntradaLebebeExclusive,
@@ -193,6 +194,7 @@ function serializarDetalhe(valor: {
   tapetes: unknown[]
   itens: unknown[]
   historico: unknown[]
+  observacoes?: unknown[]
   produtoSgi: IntegracaoProdutoSgiRow | null
 }) {
   const pedido = valor.pedido as Record<string, unknown>
@@ -284,6 +286,16 @@ function serializarDetalhe(valor: {
         unidade: typeof unidadeHistorico?.chave === 'string' && typeof unidadeHistorico?.nome === 'string'
           ? { chave: unidadeHistorico.chave, nome: unidadeHistorico.nome }
           : null,
+      }
+    }),
+    observacoes: (valor.observacoes ?? []).map((item) => {
+      const observacao = item as Record<string, unknown>
+      const usuario = observacao.usuario as Record<string, unknown> | null
+      return {
+        id: observacao.id,
+        texto: observacao.texto,
+        createdAt: observacao.created_at,
+        usuario: typeof usuario?.email === 'string' ? { email: usuario.email } : null,
       }
     }),
   }
@@ -642,6 +654,54 @@ export async function obterDetalhePedido(
 
   registrarResultado(log, 'sucesso', 'PEDIDO_CARREGADO')
   return NextResponse.json({ ok: true, pedido: serializarDetalhe(detalhe.data) })
+}
+
+export async function adicionarObservacao(
+  request: Request,
+  pedidoId: string,
+  deps: DependenciasApiPedidos = dependenciasPadrao
+) {
+  const log: ContextoLogPedidos = { rota: '/api/pedidos-personalizados/pedidos/[id]/observacoes', operacao: 'adicionar_observacao', inicio: Date.now(), pedidoId }
+  const acesso = await carregar(['pedidos_personalizados_gestao'], log, deps)
+  if (!acesso.ok) return acesso.response
+  if (!ehUuid(pedidoId)) {
+    registrarResultado(log, 'erro', 'ID_INVALIDO')
+    return jsonErro('ID_INVALIDO', 'ID do pedido inválido.', 400)
+  }
+
+  const corpo = await lerJsonLimitado(request)
+  if (!corpo.ok) return corpo.response
+  const validacao = validarObservacao(corpo.valor)
+  if (!validacao.ok) {
+    registrarResultado(log, 'erro_validacao', validacao.codigo)
+    return jsonErro(validacao.codigo, validacao.mensagem, 422)
+  }
+
+  const repo = deps.criarRepositorio(acesso.contexto)
+  const atual = await repo.buscarPedidoNoEscopo(pedidoId, acesso.contexto.unidades.map((item) => item.id))
+  if (atual.error) return falhaBanco(log, atual.error)
+  if (!atual.data) {
+    registrarResultado(log, 'erro', 'PEDIDO_NAO_ENCONTRADO')
+    return jsonErro('PEDIDO_NAO_ENCONTRADO', 'Pedido não encontrado.', 404)
+  }
+
+  const resultado = await repo.adicionarObservacao({
+    pedidoId,
+    usuarioId: acesso.contexto.allowedUser.id,
+    texto: validacao.texto,
+  })
+  if (resultado.error) return falhaBanco(log, resultado.error)
+
+  registrarResultado(log, 'sucesso', 'OBSERVACAO_ADICIONADA')
+  return NextResponse.json({
+    ok: true,
+    observacao: {
+      id: resultado.data.id,
+      texto: resultado.data.texto,
+      createdAt: resultado.data.created_at,
+      usuario: resultado.data.usuario ? { email: resultado.data.usuario.email } : null,
+    },
+  })
 }
 
 export async function atualizarComercial(

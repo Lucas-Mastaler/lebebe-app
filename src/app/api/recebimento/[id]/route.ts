@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateMaticUser } from '@/lib/auth/matic-auth'
+import { isDescricaoVolumeAvulso } from '@/lib/recebimento/volume-avulso'
 
 // Helper: remove leading zeros and trim spaces for matching (02685 -> 2685)
 function normalizeCode(code: string): string {
@@ -44,7 +45,7 @@ export async function GET(
         volumes_total,
         obs,
         is_os,
-        nfe_assistencias ( os_oc_numero )
+        nfe_assistencias ( id, os_oc_numero )
       )
     `)
     .eq('recebimento_id', id)
@@ -152,7 +153,7 @@ export async function GET(
   const allLinkedNfeIds = (nfeLinks || []).map((l: Record<string, unknown>) => l.nfe_id as string).filter(Boolean)
   const { data: allNfeItemsForRecebimento } = await supabase
     .from('nfe_itens')
-    .select('id, nfe_id, codigo_produto')
+    .select('id, nfe_id, codigo_produto, descricao, quantidade, volumes_por_item')
     .in('nfe_id', allLinkedNfeIds)
     .limit(10000)
 
@@ -174,9 +175,25 @@ export async function GET(
     }
   }
 
-  // Enrich normal items (NOT from OS)
+  // Mark items de volume avulso: ref bate com produto cadastrado, mas a
+  // descrição da própria linha da NFe indica "VOLUME" — não é o produto
+  // completo (ver POST /api/recebimento, mesma regra). Cobre também
+  // recebimento_itens já gravados no banco ANTES desta regra existir (ex.:
+  // recebimento 33, produto 00061714) — sem isso, a linha ficaria
+  // duplicada: uma vez aqui (errado) e outra na síntese de OS abaixo.
+  const itensVolumeAvulsoIds = new Set<string>()
+  for (const item of (itens || [])) {
+    const nfeItem = item.nfe_item as { codigo_produto?: string; descricao?: string } | null
+    if (!nfeItem?.codigo_produto) continue
+    const sku = skuMap.get(normalizeCode(nfeItem.codigo_produto))
+    if (sku && isDescricaoVolumeAvulso(nfeItem.descricao)) {
+      itensVolumeAvulsoIds.add(item.id as string)
+    }
+  }
+
+  // Enrich normal items (NOT from OS, NOT volume avulso)
   const enrichedItens = (itens || [])
-    .filter((item: Record<string, unknown>) => !itensOSIds.has(item.id as string))
+    .filter((item: Record<string, unknown>) => !itensOSIds.has(item.id as string) && !itensVolumeAvulsoIds.has(item.id as string))
     .map((item: Record<string, unknown>) => {
       const nfeItem = item.nfe_item as { codigo_produto: string; descricao: string; quantidade: number; volumes_por_item: number } | null
       const sku = nfeItem ? skuMap.get(normalizeCode(nfeItem.codigo_produto)) : null
@@ -245,7 +262,7 @@ export async function GET(
   // For OS NFes with no assistencias extracted, a fallback item is created so they're visible
   const osItems = []
   for (const nfeLink of nfesOS) {
-    const nfe = nfeLink.nfe as { volumes_total?: number; nfe_assistencias?: Array<{ os_oc_numero: string }>; numero_nf?: string }
+    const nfe = nfeLink.nfe as { volumes_total?: number; nfe_assistencias?: Array<{ id: string; os_oc_numero: string }>; numero_nf?: string }
     const assistencias = nfe?.nfe_assistencias || []
     const volumesTotal = nfe?.volumes_total || 0
     const numeroNfForOS = nfe?.numero_nf || (nfeIdToNumeroMap.get((nfeLink as { nfe_id: string }).nfe_id) || '')
@@ -286,7 +303,9 @@ export async function GET(
         const volumesPrevistos = tracking?.volumes_previstos || volumesTotal
         
         osItems.push({
-          id: `os-${ass.os_oc_numero}`,
+          // ass.id garante chave única por registro: o mesmo os_oc_numero pode
+          // se repetir legitimamente em mais de uma NFe/assistência (ex.: OS 4733).
+          id: `os-${ass.os_oc_numero}-${ass.id}`,
           recebimento_id: id,
           nfe_item_id: null,
           volumes_previstos_total: volumesPrevistos,
@@ -309,6 +328,54 @@ export async function GET(
         })
       }
     }
+  }
+
+  // Volume avulso: ref bate com um produto cadastrado (matic_sku), mas a
+  // descrição da própria linha da NFe indica "VOLUME" (ex.: "VOLUME 01- OFF
+  // WHITE/FREIJO/ECO") — não é o produto completo. Essas linhas nunca geram
+  // recebimento_itens (ver POST /api/recebimento), então são recalculadas
+  // aqui a partir da NFe crua e tratadas como OS, uma entrada virtual por
+  // nfe_item (mesmo padrão dos demais itens de OS acima).
+  for (const ni of (allNfeItemsForRecebimento || [])) {
+    if (nfeOSIds.has(ni.nfe_id)) continue // já tratado via nfe_assistencias acima
+
+    const sku = skuMap.get(normalizeCode(ni.codigo_produto))
+    if (!sku || !isDescricaoVolumeAvulso(ni.descricao)) continue
+
+    const osNumero = `os-vol-${ni.id}`
+    const tracking = osTrackingMap.get(osNumero)
+    // A própria linha já é um volume avulso (ex.: "VOLUME 01"): a quantidade
+    // da NFe já é a contagem de volumes físicos dessa linha. NÃO multiplicar
+    // por volumes_por_item do produto completo (isso duplicaria a conta —
+    // volumes_por_item descreve quantos volumes tem 1 unidade do produto
+    // INTEIRO, não quantos volumes existem de um único tipo de volume já
+    // identificado na descrição).
+    const volumesPrevistos = tracking?.volumes_previstos ?? ni.quantidade
+    const volumesRecebidos = tracking?.volumes_recebidos ?? 0
+    const numeroNf = nfeIdToNumeroMap.get(ni.nfe_id) || ''
+
+    osItems.push({
+      id: osNumero,
+      recebimento_id: id,
+      nfe_item_id: null,
+      volumes_previstos_total: volumesPrevistos,
+      volumes_recebidos_total: volumesRecebidos,
+      volumes_por_item: 1,
+      corredor_final: null,
+      nivel_final: null,
+      divergencia_tipo: null,
+      divergencia_obs: null,
+      avaria_foto_url: null,
+      is_os: true,
+      os_numero: osNumero,
+      numero_nf: numeroNf,
+      nfe_item: null,
+      recebimento_item_volumes: [],
+      status_calculado: volumesRecebidos >= volumesPrevistos ? 'concluido' : volumesRecebidos > 0 ? 'parcial' : 'pendente',
+      sku_descricao: `Volume avulso — ${sku.descricao || ni.descricao}`,
+      sku_corredor_sugerido: null,
+      sku_nivel_sugerido: null,
+    })
   }
 
   // Combine and sort

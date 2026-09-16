@@ -37,6 +37,13 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-input-background: var(--input-background);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -47,6 +54,7 @@
   
   /* Le Bébé Custom Colors */
   --color-brand: #00A5E6;
+  --color-brand-strong: #0080B3;
   --color-brand-secondary: #3BBAE8;
   --color-brand-accent: #FBF27B;
   --color-brand-light: rgba(0, 165, 230, 0.10);
@@ -70,6 +78,13 @@
   --accent: #FBF27B;
   --accent-foreground: #0F172A;
   --destructive: #EF4444;
+  --success: #10B981;
+  --success-foreground: #FFFFFF;
+  --warning: #F59E0B;
+  --warning-foreground: #FFFFFF;
+  --info: #0EA5E9;
+  --info-foreground: #FFFFFF;
+  --input-background: #FFFFFF;
   --border: #E2E8F0;
   --input: #E2E8F0;
   --ring: #00A5E6;
@@ -104,6 +119,13 @@
   --accent: #FBF27B;
   --accent-foreground: #0F172A;
   --destructive: #EF4444;
+  --success: #10B981;
+  --success-foreground: #FFFFFF;
+  --warning: #F59E0B;
+  --warning-foreground: #FFFFFF;
+  --info: #0EA5E9;
+  --info-foreground: #FFFFFF;
+  --input-background: #1E293B;
   --border: #334155;
   --input: #334155;
   --ring: #00A5E6;
@@ -136,7 +158,15 @@
   .card-shadow {
     box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
   }
-  
+
+  /* Elevação oficial do Design System v1 (SHD=C) — contorno/glow sutil da
+     cor de marca em vez de sombra tradicional. Usada pelo componente
+     Card em src/components/design-system/Card.tsx. */
+  .ds-elevation-glow {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 15%, transparent),
+      0 0 0 4px color-mix(in srgb, var(--primary) 6%, transparent);
+  }
+
   .sidebar-transition {
     transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
@@ -149,5 +179,72 @@
   .scrollbar-hide {
     -ms-overflow-style: none; /* IE and Edge */
     scrollbar-width: none; /* Firefox */
+  }
+
+  /* Loading de marca Le Bébé: SVG leve, sem imagem rasterizada ou JS por frame. */
+  .lb-loading-star {
+    display: inline-block;
+    overflow: visible;
+  }
+
+  .lb-loading-star-halo {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: lb-loading-star-halo 1.6s ease-in-out infinite;
+  }
+
+  .lb-loading-star-core {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: lb-loading-star-pulse 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  .lb-loading-star-sparkles {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: lb-loading-star-sparkles 1.6s ease-in-out infinite;
+  }
+
+  .lb-loading-star-sparkle {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
+  .lb-loading-star-sparkle-a { animation: lb-loading-star-sparkle 1.6s 0ms ease-in-out infinite; }
+  .lb-loading-star-sparkle-b { animation: lb-loading-star-sparkle 1.6s 220ms ease-in-out infinite; }
+  .lb-loading-star-sparkle-c { animation: lb-loading-star-sparkle 1.6s 440ms ease-in-out infinite; }
+
+  @keyframes lb-loading-star-pulse {
+    0%, 100% { transform: scale(0.93); }
+    50% { transform: scale(1.07); }
+  }
+
+  @keyframes lb-loading-star-halo {
+    0%, 100% { transform: scale(0.9); opacity: 0.08; }
+    50% { transform: scale(1.12); opacity: 0.35; }
+  }
+
+  @keyframes lb-loading-star-sparkles {
+    0%, 100% { transform: rotate(-4deg); }
+    50% { transform: rotate(4deg); }
+  }
+
+  @keyframes lb-loading-star-sparkle {
+    0%, 100% { transform: scale(0.65); opacity: 0.2; }
+    50% { transform: scale(1.15); opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lb-loading-star-halo,
+    .lb-loading-star-core,
+    .lb-loading-star-sparkles,
+    .lb-loading-star-sparkle {
+      animation: none;
+    }
+
+    .lb-loading-star-halo { transform: scale(1); opacity: 0.18; }
+    .lb-loading-star-core { transform: scale(1); }
+    .lb-loading-star-sparkles { transform: rotate(0deg); }
+    .lb-loading-star-sparkle { transform: scale(1); opacity: 0.75; }
   }
 }

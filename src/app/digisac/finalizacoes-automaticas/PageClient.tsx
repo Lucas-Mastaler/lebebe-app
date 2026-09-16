@@ -3,6 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ExternalLink, AlertCircle, Bot, CheckCircle2, Clock, XCircle, Loader2, FilePlus2, Lock, RefreshCw, Search, Wifi, WifiOff, ChevronDown, ChevronRight, Play, History } from 'lucide-react';
 import type { RegistroFechamentoAutomatico, StatusFechamento, TipoChamadoFechamento, UltimaMensagemPor } from '@/lib/digisac/finalizacoesAutomaticas';
+import { Alert, Badge, Button, Card, CardContent, CardHeader, ConfirmDialog, FilterFieldGroup, FilterPanel, Input, KpiCard, PageContainer, PageHeader, ResponsiveTable, type ResponsiveTableColumn, useFilterState } from '@/components/design-system';
+import { Checkbox } from '@/components/ui/checkbox';
+import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination';
 
 interface RegistroExecucaoResumo {
   id: string;
@@ -71,28 +74,36 @@ const MENSAGEM_POR_LABELS: Record<string, string> = {
   desconhecido: 'Desconhecido',
 };
 
+interface FiltrosDraft {
+  busca: string;
+  status: StatusFechamento | '';
+  tipo: TipoChamadoFechamento | '';
+  mensagemPor: UltimaMensagemPor | '';
+  conexao: string;
+}
+
+const FILTROS_VAZIOS: FiltrosDraft = {
+  busca: '',
+  status: '',
+  tipo: '',
+  mensagemPor: '',
+  conexao: '',
+};
+
 function BadgeStatus({ status }: { status: string }) {
-  const base = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium';
-  if (status === 'finalizado') return <span className={`${base} bg-green-100 text-green-700`}><CheckCircle2 className="w-3 h-3" />{STATUS_LABELS[status] ?? status}</span>;
-  if (status === 'erro') return <span className={`${base} bg-red-100 text-red-700`}><XCircle className="w-3 h-3" />{STATUS_LABELS[status] ?? status}</span>;
-  if (status === 'pendente') return <span className={`${base} bg-yellow-100 text-yellow-700`}><Clock className="w-3 h-3" />{STATUS_LABELS[status] ?? status}</span>;
-  return <span className={`${base} bg-slate-100 text-slate-600`}>{STATUS_LABELS[status] ?? status}</span>;
+  const tone = status === 'finalizado' ? 'success' : status === 'erro' ? 'danger' : status === 'pendente' ? 'warning' : 'neutral';
+  const Icon = status === 'finalizado' ? CheckCircle2 : status === 'erro' ? XCircle : status === 'pendente' ? Clock : undefined;
+  return <Badge tone={tone}>{Icon && <Icon className="size-3" />}{STATUS_LABELS[status] ?? status}</Badge>;
 }
 
 function BadgeTipo({ tipo }: { tipo: string | null }) {
-  if (!tipo) return <span className="text-slate-400 text-xs">—</span>;
-  const base = 'inline-block px-2 py-0.5 rounded text-xs font-medium';
-  if (tipo === 'ativo') return <span className={`${base} bg-blue-100 text-blue-700`}>{TIPO_LABELS[tipo]}</span>;
-  if (tipo === 'receptivo') return <span className={`${base} bg-purple-100 text-purple-700`}>{TIPO_LABELS[tipo]}</span>;
-  return <span className={`${base} bg-slate-100 text-slate-500`}>{TIPO_LABELS[tipo] ?? tipo}</span>;
+  if (!tipo) return <span className="text-xs text-muted-foreground">—</span>;
+  return <Badge tone={tipo === 'ativo' ? 'info' : tipo === 'receptivo' ? 'brand' : 'neutral'}>{TIPO_LABELS[tipo] ?? tipo}</Badge>;
 }
 
 function BadgePor({ por }: { por: string | null }) {
-  if (!por) return <span className="text-slate-400 text-xs">—</span>;
-  const base = 'inline-block px-2 py-0.5 rounded text-xs font-medium';
-  if (por === 'cliente') return <span className={`${base} bg-orange-100 text-orange-700`}>{MENSAGEM_POR_LABELS[por]}</span>;
-  if (por === 'nos') return <span className={`${base} bg-sky-100 text-sky-700`}>{MENSAGEM_POR_LABELS[por]}</span>;
-  return <span className={`${base} bg-slate-100 text-slate-500`}>{MENSAGEM_POR_LABELS[por] ?? por}</span>;
+  if (!por) return <span className="text-xs text-muted-foreground">—</span>;
+  return <Badge tone={por === 'cliente' ? 'warning' : por === 'nos' ? 'info' : 'neutral'}>{MENSAGEM_POR_LABELS[por] ?? por}</Badge>;
 }
 
 function formatarData(iso: string | null): string {
@@ -110,13 +121,7 @@ export default function FinalizacoesAutomaticasPageClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 30;
-
-  const [busca, setBusca] = useState('');
-  const [filtroStatus, setFiltroStatus] = useState<StatusFechamento | ''>('');
-  const [filtroTipo, setFiltroTipo] = useState<TipoChamadoFechamento | ''>('');
-  const [filtroMensagemPor, setFiltroMensagemPor] = useState<UltimaMensagemPor | ''>('');
-  const [filtroConexao, setFiltroConexao] = useState<string>('');
+  const filters = useFilterState<FiltrosDraft>(FILTROS_VAZIOS);
   const [conexoes, setConexoes] = useState<ConexaoDisponivel[]>([]);
   const [toggleConexaoId, setToggleConexaoId] = useState<string | null>(null);
   const [erroConexao, setErroConexao] = useState<string | null>(null);
@@ -154,6 +159,13 @@ export default function FinalizacoesAutomaticasPageClient() {
     totalIgnorados: number;
   } | null>(null);
   const [erroLote, setErroLote] = useState<string | null>(null);
+  const [confirmacao, setConfirmacao] = useState<{
+    title: string;
+    description: string;
+    confirmLabel: string;
+    destructive?: boolean;
+    onConfirm: () => void;
+  } | null>(null);
 
   const itensSeleccionaveis = (data?.items ?? []).filter(
     i => i.status === 'pendente' || i.status === 'erro'
@@ -180,13 +192,7 @@ export default function FinalizacoesAutomaticasPageClient() {
     }
   };
 
-  const handleFecharChamado = async (id: string, statusAtual: string) => {
-    const msg = statusAtual === 'erro'
-      ? 'Tentar novamente fechar este chamado no Digisac?'
-      : 'Confirmar fechamento deste chamado no Digisac? Essa ação fecha o chamado real.';
-    const confirmado = window.confirm(msg);
-    if (!confirmado) return;
-
+  const handleFecharChamado = async (id: string) => {
     setFechandoId(id);
     setErroFechar(null);
     setSucessoFechar(null);
@@ -236,11 +242,6 @@ export default function FinalizacoesAutomaticasPageClient() {
 
   const handleFecharSelecionados = async () => {
     if (selecionados.size === 0) return;
-    const confirmado = window.confirm(
-      `Confirmar fechamento dos chamados selecionados no Digisac? Essa ação fecha os chamados reais. (${selecionados.size} selecionados)`
-    );
-    if (!confirmado) return;
-
     setIsFechandoLote(true);
     setResultadoLote(null);
     setErroLote(null);
@@ -275,7 +276,7 @@ export default function FinalizacoesAutomaticasPageClient() {
       const res = await fetch('/api/digisac/finalizacoes-automaticas/registrar-pendentes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(filtroConexao ? { serviceId: filtroConexao } : {}),
+      body: JSON.stringify(filters.draft.conexao ? { serviceId: filters.draft.conexao } : {}),
       });
       if (!res.ok) throw new Error(`Erro ${res.status}`);
       const json = await res.json();
@@ -314,10 +315,6 @@ export default function FinalizacoesAutomaticasPageClient() {
   }, []);
 
   const handleExecutarManual = async () => {
-    const confirmado = window.confirm(
-      'Executar finalizacoes automaticas agora? Isso vai buscar chamados elegiveis no Digisac e finalizar os pendentes.'
-    );
-    if (!confirmado) return;
     setIsExecutandoManual(true);
     setResultadoExecucaoManual(null);
     setErroExecucaoManual(null);
@@ -377,8 +374,8 @@ export default function FinalizacoesAutomaticasPageClient() {
       }
       setSucessoConexao(`${serviceName} ${!ativoAtual ? 'ativada' : 'desativada'} com sucesso.`);
       await carregarConexoes();
-      if (filtroConexao === serviceId && ativoAtual) {
-        setFiltroConexao('');
+      if (filters.draft.conexao === serviceId && ativoAtual) {
+        filters.setField('conexao', '');
       }
     } catch (err) {
       setErroConexao(err instanceof Error ? err.message : 'Erro ao alterar conexao');
@@ -406,12 +403,12 @@ export default function FinalizacoesAutomaticasPageClient() {
     try {
       const params = new URLSearchParams();
       params.set('page', String(p));
-      params.set('pageSize', String(PAGE_SIZE));
-      if (busca.trim()) params.set('busca', busca.trim());
-      if (filtroStatus) params.set('status', filtroStatus);
-      if (filtroTipo) params.set('tipoChamado', filtroTipo);
-      if (filtroMensagemPor) params.set('ultimaMensagemPor', filtroMensagemPor);
-      if (filtroConexao) params.set('serviceId', filtroConexao);
+      params.set('pageSize', String(TABLE_PAGE_SIZE));
+      if (filters.applied.busca.trim()) params.set('busca', filters.applied.busca.trim());
+      if (filters.applied.status) params.set('status', filters.applied.status);
+      if (filters.applied.tipo) params.set('tipoChamado', filters.applied.tipo);
+      if (filters.applied.mensagemPor) params.set('ultimaMensagemPor', filters.applied.mensagemPor);
+      if (filters.applied.conexao) params.set('serviceId', filters.applied.conexao);
 
       const res = await fetch(`/api/digisac/finalizacoes-automaticas?${params.toString()}`);
       if (!res.ok) throw new Error(`Erro ${res.status}`);
@@ -426,98 +423,92 @@ export default function FinalizacoesAutomaticasPageClient() {
     } finally {
       setIsLoading(false);
     }
-  }, [busca, filtroStatus, filtroTipo, filtroMensagemPor, filtroConexao]);
+  }, [filters.applied]);
 
   useEffect(() => {
     buscarDados(1);
     setPage(1);
   }, [buscarDados]);
 
-  const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
+  const totalPages = data ? Math.ceil(data.total / TABLE_PAGE_SIZE) : 0;
+
+  const columns: ResponsiveTableColumn<RegistroFechamentoAutomatico>[] = [
+    { key: 'data', header: 'Data', width: 'compact', render: (item) => formatarData(item.finalizado_em ?? item.created_at) },
+    { key: 'contato', header: 'Contato', width: 'content', className: 'font-medium text-slate-800', render: (item) => <><div>{item.nome_contato ?? '—'}</div>{item.telefone_contato && <div className="text-xs font-normal text-muted-foreground">{item.telefone_contato}</div>}</> },
+    { key: 'conexao', header: 'Conexão', width: 'standard', render: (item) => item.service_name ?? conexoes.find(c => c.serviceId === item.service_id)?.serviceName ?? item.service_id?.slice(0, 8) ?? '—' },
+    { key: 'protocolo', header: 'Protocolo', width: 'content', render: (item) => item.protocolo && item.ticket_history_url ? <a href={item.ticket_history_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">{item.protocolo}<ExternalLink className="size-3" /></a> : item.protocolo ?? '—' },
+    { key: 'tipo', header: 'Tipo', width: 'compact', render: (item) => <BadgeTipo tipo={item.tipo_chamado} /> },
+    { key: 'mensagem', header: 'Última msg.', width: 'compact', render: (item) => <BadgePor por={item.ultima_mensagem_por} /> },
+    { key: 'ultima', header: 'Última msg. em', width: 'compact', render: (item) => formatarData(item.ultima_mensagem_em) },
+    { key: 'horas', header: 'Horas sem int.', width: 'compact', render: (item) => item.horas_sem_interacao != null ? `${item.horas_sem_interacao}h` : '—' },
+    { key: 'status', header: 'Status', width: 'compact', render: (item) => <BadgeStatus status={item.status} /> },
+    { key: 'erro', header: 'Erro', width: 'wide', className: 'text-destructive', render: (item) => item.erro ?? '—' },
+    { key: 'acao', header: 'Ação', width: 'compact', render: (item) => <div className="flex flex-col items-start gap-2">{(item.status === 'pendente' || item.status === 'erro') && <Checkbox checked={selecionados.has(item.id)} onCheckedChange={() => toggleSelecionado(item.id)} aria-label={`Selecionar ${item.protocolo ?? item.id}`} />}{item.status === 'pendente' ? <Button size="sm" variant="destructive" loading={fechandoId === item.id} disabled={isFechandoLote} onClick={() => setConfirmacao({ title: 'Fechar chamado?', description: 'Esta ação fecha o chamado real no Digisac.', confirmLabel: 'Fechar chamado', onConfirm: () => handleFecharChamado(item.id) })}><Lock className="size-3" />Fechar</Button> : item.status === 'erro' ? <div className="flex flex-col gap-1"><Button size="sm" variant="destructive" loading={fechandoId === item.id} disabled={isFechandoLote || verificandoId === item.id} onClick={() => setConfirmacao({ title: 'Tentar novamente?', description: 'Esta ação tenta fechar o chamado real no Digisac.', confirmLabel: 'Tentar fechar', onConfirm: () => handleFecharChamado(item.id) })}><RefreshCw className="size-3" />Tentar</Button><Button size="sm" variant="secondary" loading={verificandoId === item.id} disabled={isFechandoLote || fechandoId === item.id} onClick={() => handleVerificarStatus(item.id)}><Search className="size-3" />Verificar</Button></div> : '—'}</div> },
+  ];
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <PageContainer className="space-y-6">
 
         {/* Header */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Bot className="w-7 h-7 text-slate-600" />
-            <div>
-              <h1 className="text-xl font-semibold text-slate-800">Finalizações automáticas Digisac</h1>
-              <p className="text-sm text-slate-500">Acompanhamento dos chamados finalizados automaticamente após 24h sem interação.</p>
-            </div>
-          </div>
-          <div className="flex flex-col items-end gap-2 shrink-0">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleFecharSelecionados}
-                disabled={selecionados.size === 0 || isFechandoLote}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        <PageHeader
+          icon={<Bot className="size-6" />}
+          eyebrow="Digisac"
+          title="Finalizações automáticas"
+          description="Acompanhamento dos chamados finalizados automaticamente após 24h sem interação."
+          action={
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                variant="destructive"
+                loading={isFechandoLote}
+                disabled={selecionados.size === 0}
+                onClick={() => setConfirmacao({
+                  title: 'Fechar chamados selecionados?',
+                  description: `Esta ação fecha ${selecionados.size} chamado(s) real(is) no Digisac.`,
+                  confirmLabel: 'Fechar selecionados',
+                  onConfirm: handleFecharSelecionados,
+                })}
               >
-                {isFechandoLote ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-                Fechar selecionados
-                {selecionados.size > 0 && ` (${selecionados.size})`}
-              </button>
-              <button
-                onClick={handleRegistrarPendentes}
-                disabled={isRegistrando}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-md text-sm font-medium hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {isRegistrando ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                <Lock className="size-4" />
+                Fechar selecionados{selecionados.size > 0 && ` (${selecionados.size})`}
+              </Button>
+              <Button variant="secondary" loading={isRegistrando} onClick={handleRegistrarPendentes}>
+                <RefreshCw className="size-4" />
                 Atualizar chamados
-              </button>
+              </Button>
             </div>
-            <p className="text-xs text-slate-400 max-w-xs text-right">
-              Busca no Digisac novos chamados elegiveis e registra como pendentes. Nao finaliza chamados.
-            </p>
-          </div>
-        </div>
+          }
+        />
+        <p className="-mt-4 text-right text-xs text-muted-foreground">Busca no Digisac novos chamados elegíveis e registra como pendentes. Não finaliza chamados.</p>
 
         {/* Bloco de status da automacao */}
-        <div className="bg-white rounded-lg border border-slate-200 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <History className="w-4 h-4 text-slate-500" />
-              <h2 className="text-sm font-semibold text-slate-700">Status da automacao</h2>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleExecutarManual}
-                disabled={isExecutandoManual}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {isExecutandoManual ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-                Executar agora
-              </button>
-              <button
-                onClick={carregarExecucoes}
-                disabled={isCarregandoExecucoes}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 rounded text-xs font-medium hover:bg-slate-200 disabled:opacity-50 transition-colors"
-              >
-                {isCarregandoExecucoes ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                Atualizar
-              </button>
-            </div>
-          </div>
+        <Card className="p-4">
+          <CardHeader
+            icon={<History className="size-4" />}
+            title="Status da automação"
+            action={<div className="flex items-center gap-2">
+              <Button size="sm" loading={isExecutandoManual} onClick={() => setConfirmacao({
+                title: 'Executar finalizações automáticas?',
+                description: 'A ação busca chamados elegíveis no Digisac e finaliza os pendentes.',
+                confirmLabel: 'Executar agora',
+                destructive: false,
+                onConfirm: handleExecutarManual,
+              })}><Play className="size-3.5" />Executar agora</Button>
+              <Button variant="ghost" size="sm" loading={isCarregandoExecucoes} onClick={carregarExecucoes}><RefreshCw className="size-3.5" />Atualizar</Button>
+            </div>}
+          />
+          <CardContent className="space-y-3">
 
           {erroExecucaoManual && (
-            <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded p-3 text-xs mb-3">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>{erroExecucaoManual}</span>
-              <button onClick={() => setErroExecucaoManual(null)} className="ml-auto">×</button>
-            </div>
+            <Alert tone="danger" title="Não foi possível executar a automação.">{erroExecucaoManual}</Alert>
           )}
           {resultadoExecucaoManual && (
-            <div className="flex items-center gap-3 bg-green-50 border border-green-200 text-green-800 rounded p-3 text-xs mb-3 flex-wrap">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-green-600" />
+            <Alert tone="success" title="Execução manual concluída.">
               <span>Execucao manual concluida:</span>
               <span><strong>{resultadoExecucaoManual.totalFinalizados}</strong> finalizados</span>
-              {resultadoExecucaoManual.totalErros > 0 && <span className="text-red-600"><strong>{resultadoExecucaoManual.totalErros}</strong> erros</span>}
-              {resultadoExecucaoManual.totalIgnorados > 0 && <span className="text-slate-500"><strong>{resultadoExecucaoManual.totalIgnorados}</strong> ignorados</span>}
-              <span className="text-slate-500 italic">{resultadoExecucaoManual.mensagem}</span>
-              <button onClick={() => setResultadoExecucaoManual(null)} className="ml-auto">×</button>
-            </div>
+              {resultadoExecucaoManual.totalErros > 0 && <span><strong>{resultadoExecucaoManual.totalErros}</strong> erros</span>}
+              {resultadoExecucaoManual.totalIgnorados > 0 && <span><strong>{resultadoExecucaoManual.totalIgnorados}</strong> ignorados</span>}
+              <span className="italic">{resultadoExecucaoManual.mensagem}</span>
+            </Alert>
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -571,97 +562,31 @@ export default function FinalizacoesAutomaticasPageClient() {
               )}
             </div>
           </div>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Resultado de verificacao de status */}
-        {erroVerificar && (
-          <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 text-orange-700 rounded-lg p-4 text-sm">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{erroVerificar}</span>
-            <button onClick={() => setErroVerificar(null)} className="ml-auto text-orange-400 hover:text-orange-600 text-xs">Fechar</button>
-          </div>
-        )}
-        {sucessoVerificar && (
-          <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-lg p-4 text-sm">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>{sucessoVerificar}</span>
-            <button onClick={() => setSucessoVerificar(null)} className="ml-auto text-green-400 hover:text-green-600 text-xs">Fechar</button>
-          </div>
-        )}
+        {erroVerificar && <Alert tone="warning" title="O chamado segue aberto no Digisac.">{erroVerificar}</Alert>}
+        {sucessoVerificar && <Alert tone="success">{sucessoVerificar}</Alert>}
 
         {/* Resultado de fechamento em lote */}
-        {erroLote && (
-          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>Erro ao fechar selecionados: {erroLote}</span>
-            <button onClick={() => setErroLote(null)} className="ml-auto text-red-400 hover:text-red-600 text-xs">Fechar</button>
-          </div>
-        )}
-        {resultadoLote && (
-          <div className="flex items-center gap-4 bg-green-50 border border-green-200 text-green-800 rounded-lg p-4 text-sm flex-wrap">
-            <CheckCircle2 className="w-5 h-5 shrink-0 text-green-600" />
-            <span><strong>{resultadoLote.totalFinalizados}</strong> finalizados</span>
-            {resultadoLote.totalErros > 0 && <span className="text-red-600"><strong>{resultadoLote.totalErros}</strong> erros</span>}
-            {resultadoLote.totalIgnorados > 0 && <span className="text-slate-500"><strong>{resultadoLote.totalIgnorados}</strong> ignorados</span>}
-            <button onClick={() => setResultadoLote(null)} className="ml-auto text-green-400 hover:text-green-600 text-xs">Fechar</button>
-          </div>
-        )}
+        {erroLote && <Alert tone="danger" title="Erro ao fechar selecionados.">{erroLote}</Alert>}
+        {resultadoLote && <Alert tone="success"><strong>{resultadoLote.totalFinalizados}</strong> finalizados; {resultadoLote.totalErros} erros; {resultadoLote.totalIgnorados} ignorados.</Alert>}
 
         {/* Resultado de fechamento unitario */}
-        {erroFechar && (
-          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>Erro ao fechar: {erroFechar}</span>
-            <button onClick={() => setErroFechar(null)} className="ml-auto text-red-400 hover:text-red-600 text-xs">Fechar</button>
-          </div>
-        )}
-        {sucessoFechar && (
-          <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-lg p-4 text-sm">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>{sucessoFechar}</span>
-            <button onClick={() => setSucessoFechar(null)} className="ml-auto text-green-400 hover:text-green-600 text-xs">Fechar</button>
-          </div>
-        )}
+        {erroFechar && <Alert tone="danger" title="Erro ao fechar chamado.">{erroFechar}</Alert>}
+        {sucessoFechar && <Alert tone="success">{sucessoFechar}</Alert>}
 
         {/* Resultado do registro */}
-        {erroRegistro && (
-          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>Erro ao registrar: {erroRegistro}</span>
-          </div>
-        )}
-        {resultadoRegistro && (
-          <div className="flex items-center gap-4 bg-blue-50 border border-blue-200 text-blue-800 rounded-lg p-4 text-sm flex-wrap">
-            <CheckCircle2 className="w-5 h-5 shrink-0 text-blue-600" />
-            <span><strong>{resultadoRegistro.totalInseridos}</strong> inseridos</span>
-            <span><strong>{resultadoRegistro.totalJaExistentes}</strong> já existentes</span>
-            {resultadoRegistro.totalIgnorados > 0 && (
-              <span><strong>{resultadoRegistro.totalIgnorados}</strong> ignorados (outra conexão)</span>
-            )}
-            {resultadoRegistro.totalErros > 0 && (
-              <span className="text-red-600"><strong>{resultadoRegistro.totalErros}</strong> erros</span>
-            )}
-          </div>
-        )}
+        {erroRegistro && <Alert tone="danger" title="Erro ao registrar pendentes.">{erroRegistro}</Alert>}
+        {resultadoRegistro && <Alert tone="info"><strong>{resultadoRegistro.totalInseridos}</strong> inseridos; <strong>{resultadoRegistro.totalJaExistentes}</strong> já existentes; {resultadoRegistro.totalIgnorados} ignorados; {resultadoRegistro.totalErros} erros.</Alert>}
 
         {/* Resultado toggle conexao */}
-        {erroConexao && (
-          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{erroConexao}</span>
-            <button onClick={() => setErroConexao(null)} className="ml-auto text-red-400 hover:text-red-600 text-xs">Fechar</button>
-          </div>
-        )}
-        {sucessoConexao && (
-          <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-lg p-4 text-sm">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>{sucessoConexao}</span>
-            <button onClick={() => setSucessoConexao(null)} className="ml-auto text-green-400 hover:text-green-600 text-xs">Fechar</button>
-          </div>
-        )}
+        {erroConexao && <Alert tone="danger">{erroConexao}</Alert>}
+        {sucessoConexao && <Alert tone="success">{sucessoConexao}</Alert>}
 
         {/* Conexoes Digisac */}
-        <div className="bg-white rounded-lg border border-slate-200 p-4">
+        <Card className="p-4">
           <button
             onClick={() => setConexoesExpandido(v => !v)}
             className="flex items-center gap-2 w-full text-left"
@@ -705,44 +630,35 @@ export default function FinalizacoesAutomaticasPageClient() {
               ))}
             </div>
           )}
-        </div>
+        </Card>
 
         {/* Cards resumo */}
         {resumo && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <p className="text-xs text-slate-500 mb-1">Total registrado</p>
-              <p className="text-2xl font-bold text-slate-800">{resumo.total}</p>
-            </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <p className="text-xs text-slate-500 mb-1">Pendentes</p>
-              <p className="text-2xl font-bold text-yellow-600">{resumo.pendentes}</p>
-            </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <p className="text-xs text-slate-500 mb-1">Finalizados</p>
-              <p className="text-2xl font-bold text-green-600">{resumo.finalizados}</p>
-            </div>
-            <div className="bg-white rounded-lg border border-slate-200 p-4">
-              <p className="text-xs text-slate-500 mb-1">Erros</p>
-              <p className="text-2xl font-bold text-red-600">{resumo.erros}</p>
-            </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <KpiCard label="Total registrado" value={resumo.total} icon={<FilePlus2 className="size-4" />} />
+            <KpiCard label="Pendentes" value={resumo.pendentes} icon={<Clock className="size-4 text-warning" />} />
+            <KpiCard label="Finalizados" value={resumo.finalizados} icon={<CheckCircle2 className="size-4 text-success" />} />
+            <KpiCard label="Erros" value={resumo.erros} icon={<XCircle className="size-4 text-destructive" />} />
           </div>
         )}
 
         {/* Filtros */}
-        <div className="bg-white rounded-lg border border-slate-200 p-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            <input
+        <FilterPanel
+          dirty={filters.dirty}
+          onApply={() => { filters.apply(); setPage(1); }}
+          onClear={() => { filters.clear(); setPage(1); }}
+        >
+          <FilterFieldGroup label="Pesquisa e status">
+            <Input
               type="text"
               placeholder="Buscar por contato, telefone ou protocolo..."
-              value={busca}
-              onChange={e => setBusca(e.target.value)}
-              className="px-3 py-2 border border-slate-200 rounded-md text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              value={filters.draft.busca}
+              onChange={e => filters.setField('busca', e.target.value)}
             />
             <select
-              value={filtroStatus}
-              onChange={e => setFiltroStatus(e.target.value as StatusFechamento | '')}
-              className="px-3 py-2 border border-slate-200 rounded-md text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              value={filters.draft.status}
+              onChange={e => filters.setField('status', e.target.value as StatusFechamento | '')}
+              className="border-input bg-input-background h-9 w-full rounded-md border px-3 text-sm"
             >
               <option value="">Todos os status</option>
               <option value="pendente">Pendente</option>
@@ -751,9 +667,9 @@ export default function FinalizacoesAutomaticasPageClient() {
               <option value="ignorado">Ignorado</option>
             </select>
             <select
-              value={filtroTipo}
-              onChange={e => setFiltroTipo(e.target.value as TipoChamadoFechamento | '')}
-              className="px-3 py-2 border border-slate-200 rounded-md text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              value={filters.draft.tipo}
+              onChange={e => filters.setField('tipo', e.target.value as TipoChamadoFechamento | '')}
+              className="border-input bg-input-background h-9 w-full rounded-md border px-3 text-sm"
             >
               <option value="">Todos os tipos</option>
               <option value="ativo">Ativo</option>
@@ -761,9 +677,9 @@ export default function FinalizacoesAutomaticasPageClient() {
               <option value="indefinido">Indefinido</option>
             </select>
             <select
-              value={filtroMensagemPor}
-              onChange={e => setFiltroMensagemPor(e.target.value as UltimaMensagemPor | '')}
-              className="px-3 py-2 border border-slate-200 rounded-md text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              value={filters.draft.mensagemPor}
+              onChange={e => filters.setField('mensagemPor', e.target.value as UltimaMensagemPor | '')}
+              className="border-input bg-input-background h-9 w-full rounded-md border px-3 text-sm"
             >
               <option value="">Última msg: todos</option>
               <option value="cliente">Cliente</option>
@@ -771,17 +687,17 @@ export default function FinalizacoesAutomaticasPageClient() {
               <option value="desconhecido">Desconhecido</option>
             </select>
             <select
-              value={filtroConexao}
-              onChange={e => setFiltroConexao(e.target.value)}
-              className="px-3 py-2 border border-slate-200 rounded-md text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              value={filters.draft.conexao}
+              onChange={e => filters.setField('conexao', e.target.value)}
+              className="border-input bg-input-background h-9 w-full rounded-md border px-3 text-sm"
             >
               <option value="">Todas habilitadas</option>
               {conexoes.filter(c => c.habilitada).map(c => (
                 <option key={c.serviceId} value={c.serviceId}>{c.serviceName}</option>
               ))}
             </select>
-          </div>
-        </div>
+          </FilterFieldGroup>
+        </FilterPanel>
 
         {/* Estado de erro */}
         {error && (
@@ -816,13 +732,24 @@ export default function FinalizacoesAutomaticasPageClient() {
               </div>
             ) : (
               <>
-                {selecionados.size > 0 && (
-                  <div className="flex items-center gap-2 text-sm text-slate-600 mb-2">
-                    <span className="font-medium">{selecionados.size} selecionado{selecionados.size > 1 ? 's' : ''}</span>
-                    <button onClick={() => setSelecionados(new Set())} className="text-xs text-slate-400 hover:text-slate-600 underline">Limpar sele\u00e7\u00e3o</button>
-                  </div>
-                )}
-              <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+                <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600 mb-2">
+                  {itensSeleccionaveis.length > 0 && <Button variant="ghost" size="sm" onClick={toggleTodos}>{todosSeleccionados ? 'Desselecionar todos da página' : 'Selecionar todos da página'}</Button>}
+                  {selecionados.size > 0 && <><span className="font-medium">{selecionados.size} selecionado{selecionados.size > 1 ? 's' : ''}</span><Button variant="ghost" size="sm" onClick={() => setSelecionados(new Set())}>Limpar seleção</Button></>}
+                </div>
+                <ResponsiveTable
+                  columns={columns}
+                  rows={data.items}
+                  rowKey={(item) => item.id}
+                  firstColumnSticky
+                  renderMobileCard={(item) => (
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2"><div><p className="font-semibold text-slate-800">{item.nome_contato ?? '—'}</p>{item.telefone_contato && <p className="text-xs text-muted-foreground">{item.telefone_contato}</p>}</div><BadgeStatus status={item.status} /></div>
+                      <div className="grid grid-cols-2 gap-2 text-sm"><div><span className="text-xs text-muted-foreground">Protocolo</span><p>{item.protocolo ?? '—'}</p></div><div><span className="text-xs text-muted-foreground">Conexão</span><p>{item.service_name ?? '—'}</p></div><div><span className="text-xs text-muted-foreground">Última mensagem</span><p>{formatarData(item.ultima_mensagem_em)}</p></div><div><span className="text-xs text-muted-foreground">Sem interação</span><p>{item.horas_sem_interacao != null ? `${item.horas_sem_interacao}h` : '—'}</p></div></div>
+                      {item.erro && <Alert tone="danger" title="Erro registrado">{item.erro}</Alert>}
+                    </div>
+                  )}
+                />
+              <div className="hidden">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50">
@@ -901,7 +828,7 @@ export default function FinalizacoesAutomaticasPageClient() {
                         <td className="px-4 py-3 whitespace-nowrap">
                           {item.status === 'pendente' && (
                             <button
-                              onClick={() => handleFecharChamado(item.id, item.status)}
+                              onClick={() => handleFecharChamado(item.id)}
                               disabled={fechandoId === item.id || isFechandoLote}
                               className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                             >
@@ -912,7 +839,7 @@ export default function FinalizacoesAutomaticasPageClient() {
                           {item.status === 'erro' && (
                             <div className="flex flex-col gap-1">
                               <button
-                                onClick={() => handleFecharChamado(item.id, item.status)}
+                                onClick={() => handleFecharChamado(item.id)}
                                 disabled={fechandoId === item.id || isFechandoLote || verificandoId === item.id}
                                 className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-500 text-white rounded text-xs font-medium hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                               >
@@ -943,30 +870,42 @@ export default function FinalizacoesAutomaticasPageClient() {
 
             {/* Paginação */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between text-sm text-slate-500">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
                 <span>Total: {data.total} registros</span>
                 <div className="flex items-center gap-2">
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     onClick={() => { const p = page - 1; setPage(p); buscarDados(p); }}
                     disabled={page <= 1}
-                    className="px-3 py-1.5 border border-slate-200 rounded-md disabled:opacity-40 hover:bg-slate-100 transition-colors"
                   >
                     Anterior
-                  </button>
+                  </Button>
                   <span>Página {page} de {totalPages}</span>
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     onClick={() => { const p = page + 1; setPage(p); buscarDados(p); }}
                     disabled={page >= totalPages}
-                    className="px-3 py-1.5 border border-slate-200 rounded-md disabled:opacity-40 hover:bg-slate-100 transition-colors"
                   >
                     Próxima
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
           </>
         )}
-      </div>
-    </div>
+      {confirmacao && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => { if (!open) setConfirmacao(null); }}
+          title={confirmacao.title}
+          description={confirmacao.description}
+          confirmLabel={confirmacao.confirmLabel}
+          destructive={confirmacao.destructive}
+          onConfirm={() => { const action = confirmacao.onConfirm; setConfirmacao(null); action(); }}
+        />
+      )}
+    </PageContainer>
   );
 }

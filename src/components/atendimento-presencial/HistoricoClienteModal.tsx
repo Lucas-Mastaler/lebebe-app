@@ -4,8 +4,8 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { CreditCard, History, Package, RefreshCw, ShoppingBag, Tag } from 'lucide-react'
 import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Alert, Badge, Button, Dialog, DialogBody, DialogContent, DialogHeader } from '@/components/design-system'
+import type { BadgeProps } from '@/components/design-system'
 import type { HistoricoAtendimentoClienteDTO, HistoricoVendaSgiDTO } from '@/lib/atendimento-presencial/historico-cliente'
 import type { HistoricoPedidoPersonalizadoDTO } from '@/lib/pedidos-personalizados/server/historico'
 
@@ -96,18 +96,27 @@ function HistoricoInfoCard({ label, value, emphasis = false }: { label: string; 
   )
 }
 
-function HistoricoChip({ children, variant = 'slate' }: { children: ReactNode; variant?: 'blue' | 'amber' | 'green' | 'slate' }) {
-  const variants = {
-    blue: 'border-sky-100 bg-sky-50 text-sky-700',
-    amber: 'border-amber-100 bg-amber-50 text-amber-700',
-    green: 'border-emerald-100 bg-emerald-50 text-emerald-700',
-    slate: 'border-slate-200 bg-slate-50 text-slate-700',
-  } as const
+const HISTORICO_CHIP_TONE: Record<'blue' | 'amber' | 'green' | 'slate', BadgeProps['tone']> = {
+  blue: 'info',
+  amber: 'warning',
+  green: 'success',
+  slate: 'neutral',
+}
 
+function HistoricoChip({ children, variant = 'slate' }: { children: ReactNode; variant?: 'blue' | 'amber' | 'green' | 'slate' }) {
+  return <Badge tone={HISTORICO_CHIP_TONE[variant]}>{children}</Badge>
+}
+
+/**
+ * SCROLL-BOUNDED-LIST: somente coleções que podem crescer sem limite ganham
+ * rolagem própria. O DialogBody continua sendo o scroller que garante acesso
+ * ao restante do histórico.
+ */
+function HistoricoListaLonga({ children }: { children: ReactNode }) {
   return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-semibold ${variants[variant]}`}>
+    <div className="max-h-[min(24rem,45dvh)] overflow-y-auto overscroll-contain pr-2">
       {children}
-    </span>
+    </div>
   )
 }
 
@@ -175,21 +184,18 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex flex-col gap-0 overflow-hidden p-0 max-h-[calc(100dvh-32px)] sm:max-h-[90vh] sm:max-w-4xl">
-        <DialogHeader className="flex-none border-b border-slate-100 px-4 pb-3 pt-4 pr-10 sm:px-6 sm:pr-12 sm:pt-5">
-          <DialogTitle className="text-base">
-            Historico da cliente
-            {cliente?.nome && <span className="ml-2 font-normal text-slate-500">- {cliente.nome}</span>}
-          </DialogTitle>
-        </DialogHeader>
+      <DialogContent className="sm:max-w-4xl">
+        <DialogHeader
+          title={
+            <>
+              Historico da cliente
+              {cliente?.nome && <span className="ml-2 font-normal text-slate-500">- {cliente.nome}</span>}
+            </>
+          }
+        />
 
-        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-        <div className="grid gap-5 px-4 pb-6 pt-4 sm:px-6">
-          {!cliente && (
-            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Selecione uma cliente para consultar o historico.
-            </p>
-          )}
+        <DialogBody className="grid auto-rows-max content-start gap-5">
+          {!cliente && <Alert tone="warning">Selecione uma cliente para consultar o historico.</Alert>}
 
           {cliente && (
             <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
@@ -210,21 +216,21 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
 
           {historicoCarregando && <p className="text-sm text-slate-500">Carregando historico...</p>}
           {historicoErro && (
-            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <Alert tone="danger">
               <p>{historicoErro}</p>
               {cliente && (
-                <Button type="button" variant="outline" size="sm" onClick={() => setTentativa((valor) => valor + 1)} className="mt-2 h-9 rounded-md">
-                  <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+                <Button type="button" variant="secondary" size="sm" onClick={() => setTentativa((valor) => valor + 1)} className="mt-2">
+                  <RefreshCw className="size-4" aria-hidden="true" />
                   Tentar novamente
                 </Button>
               )}
-            </div>
+            </Alert>
           )}
 
           {historicoCarregado && historicoCarregado.telefoneDisponivel === false && (
-            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <Alert tone="warning">
               Cliente sem telefone normalizado. As compras do SGI nao foram consultadas.
-            </p>
+            </Alert>
           )}
 
           {historicoCarregado && (
@@ -236,9 +242,10 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
                 variant="slate"
               >
                 {historicoCarregado.atendimentos?.length ? (
-                  <div className="grid gap-3">
-                    {historicoCarregado.atendimentos.map((item) => (
-                      <article key={item.id} className="overflow-hidden rounded-md border border-slate-200 bg-white p-3 shadow-sm break-words">
+                  <HistoricoListaLonga>
+                    <div className="grid gap-3">
+                      {historicoCarregado.atendimentos.map((item) => (
+                        <article key={item.id} className="overflow-hidden rounded-md border border-slate-200 bg-white p-3 shadow-sm break-words">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <p className="font-semibold text-slate-950">{formatarDataCurta(item.data)}</p>
                           <div className="shrink-0 rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-right">
@@ -262,9 +269,10 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
                           </div>
                         </div>
                         {item.numeroLancamento && <p className="text-sm text-slate-700">Lancamento: {item.numeroLancamento}</p>}
-                      </article>
-                    ))}
-                  </div>
+                        </article>
+                      ))}
+                    </div>
+                  </HistoricoListaLonga>
                 ) : (
                   <p className="rounded-md border border-dashed border-slate-200 bg-white/80 p-3 text-sm text-slate-500">Nenhum atendimento anterior encontrado.</p>
                 )}
@@ -277,9 +285,10 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
                 variant="blue"
               >
                 {historicoCarregado.vendas?.length ? (
-                  <div className="grid gap-4">
-                    {historicoCarregado.vendas.map((item) => (
-                      <article key={item.numeroLancamento} className="overflow-hidden rounded-md border border-slate-200 bg-white p-3 sm:p-4 shadow-sm break-words">
+                  <HistoricoListaLonga>
+                    <div className="grid gap-4">
+                      {historicoCarregado.vendas.map((item) => (
+                        <article key={item.numeroLancamento} className="overflow-hidden rounded-md border border-slate-200 bg-white p-3 sm:p-4 shadow-sm break-words">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
                             <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Resumo da compra</p>
@@ -367,9 +376,10 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
                             <p className="text-sm text-slate-500">{item.itens.join(', ') || 'Nao informado'}</p>
                           )}
                         </div>
-                      </article>
-                    ))}
-                  </div>
+                        </article>
+                      ))}
+                    </div>
+                  </HistoricoListaLonga>
                 ) : (
                   <p className="rounded-md border border-dashed border-sky-200 bg-white/80 p-3 text-sm text-slate-500">Nenhuma compra anterior encontrada pelo telefone da cliente.</p>
                 )}
@@ -380,18 +390,19 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
                   icon={Package}
                   title="Pedidos personalizados"
                   subtitle="Pedidos Moriah encontrados pelo telefone normalizado da cliente."
-                  variant="amber"
-                >
+                variant="amber"
+              >
                   {historicoCarregado.pedidosPersonalizados.length ? (
-                    <div className="grid gap-3">
-                      {historicoCarregado.pedidosPersonalizados.map((pedido) => (
-                        <article key={pedido.id} className="rounded-md border border-amber-100 bg-white p-3 shadow-sm">
+                    <HistoricoListaLonga>
+                      <div className="grid gap-3">
+                        {historicoCarregado.pedidosPersonalizados.map((pedido) => (
+                          <article key={pedido.id} className="rounded-md border border-amber-100 bg-white p-3 shadow-sm">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                               <p className="font-bold text-slate-950">{formatarDataCurta(pedido.createdAt)} · {pedido.unidade}</p>
                               <p className="mt-1 text-sm text-slate-600">{pedido.status}</p>
                             </div>
-                            <Button asChild type="button" size="sm" variant="outline">
+                            <Button asChild type="button" size="sm" variant="secondary">
                               <Link href={`/pedidos-personalizados?pedidoId=${pedido.id}`}>Abrir detalhe</Link>
                             </Button>
                           </div>
@@ -402,9 +413,10 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
                             <HistoricoInfoCard label="Pedido ao fornecedor" value={formatarDataCurta(pedido.dataPedidoFornecedor)} />
                             <HistoricoInfoCard label="Data de entrega" value={formatarDataCurta(pedido.dataEntrega)} />
                           </div>
-                        </article>
-                      ))}
-                    </div>
+                          </article>
+                        ))}
+                      </div>
+                    </HistoricoListaLonga>
                   ) : (
                     <p className="rounded-md border border-dashed border-amber-200 bg-white/80 p-3 text-sm text-slate-500">Nenhum pedido personalizado encontrado pelo telefone da cliente.</p>
                   )}
@@ -412,8 +424,7 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
               )}
             </>
           )}
-        </div>
-        </div>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   )

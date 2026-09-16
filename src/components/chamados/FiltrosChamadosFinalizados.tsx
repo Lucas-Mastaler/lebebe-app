@@ -1,67 +1,101 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, Search } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Calendar } from '@/components/ui/calendar';
+import { Calendar, ChevronDown, Search, Store } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import { Button as UIButton } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Button, DateField, FilterFieldGroup, FilterPanel, FormField, Input, useFilterState } from '@/components/design-system';
 import { Usuario } from '@/types';
 import { DEPARTAMENTOS_FIXOS } from '@/lib/digisac/departamentosFixos';
+import { parseBrDate } from '@/lib/design-system/dates';
+import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination';
+
+export interface FiltrosChamadosValores {
+  dataUltimoChamadoFechadoInicio: string;
+  dataUltimoChamadoFechadoFim: string;
+  departmentIds: string[];
+  userIds: string[];
+  page: number;
+  perPage: number;
+}
 
 interface FiltrosProps {
-  onPesquisar: (filtros: {
-    dataUltimoChamadoFechadoInicio: string;
-    dataUltimoChamadoFechadoFim: string;
-    departmentIds: string[];
-    userIds: string[];
-    page: number;
-    perPage: number;
-  }) => void;
+  onPesquisar: (filtros: FiltrosChamadosValores) => void;
+  onLimpar: () => void;
   isLoading: boolean;
 }
 
-function formatDateInput(value: string): string {
-  const numbers = value.replace(/\D/g, '');
-  if (numbers.length <= 2) return numbers;
-  if (numbers.length <= 4) return `${numbers.slice(0, 2)}/${numbers.slice(2)}`;
-  return `${numbers.slice(0, 2)}/${numbers.slice(2, 4)}/${numbers.slice(4, 8)}`;
+interface FiltrosDraft {
+  dataInicio: string;
+  dataFim: string;
+  departmentIds: string[];
+  userIds: string[];
 }
 
-function parseDate(dateStr: string): Date | undefined {
-  const parts = dateStr.split('/');
-  if (parts.length !== 3) return undefined;
-  const [day, month, year] = parts.map(Number);
-  if (!day || !month || !year || year < 1900 || year > 2100) return undefined;
-  const date = new Date(year, month - 1, day);
-  if (isNaN(date.getTime())) return undefined;
-  return date;
+const FILTROS_VAZIOS: FiltrosDraft = { dataInicio: '', dataFim: '', departmentIds: [], userIds: [] };
+
+function MultiSelectPopover({
+  label,
+  query,
+  onQueryChange,
+  selectedCount,
+  options,
+  isChecked,
+  onToggle,
+  onClearAll,
+  placeholder,
+}: {
+  label: string;
+  query: string;
+  onQueryChange: (v: string) => void;
+  selectedCount: number;
+  options: Array<{ id: string; nome: string }>;
+  isChecked: (id: string) => boolean;
+  onToggle: (id: string, checked: boolean) => void;
+  onClearAll: () => void;
+  placeholder: string;
+}) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-sm font-medium text-slate-700">{label}</label>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button type="button" variant="secondary" className="w-full justify-between">
+            <span>{selectedCount === 0 ? 'Todas' : `${selectedCount} selecionada(s)`}</span>
+            <ChevronDown className="size-4 opacity-60" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[320px] p-0">
+          <div className="sticky top-0 border-b border-slate-100 bg-white p-2">
+            <Input
+              value={query}
+              onChange={(e) => onQueryChange(e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
+              onKeyUp={(e) => e.stopPropagation()}
+              placeholder={placeholder}
+            />
+          </div>
+          <div className="max-h-64 space-y-1 overflow-y-auto p-2">
+            <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-slate-50">
+              <Checkbox checked={selectedCount === 0} onCheckedChange={() => onClearAll()} />
+              <span>Todas</span>
+            </label>
+            {options.map((opt) => (
+              <label key={opt.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-slate-50">
+                <Checkbox checked={isChecked(opt.id)} onCheckedChange={(checked) => onToggle(opt.id, checked === true)} />
+                <span>{opt.nome}</span>
+              </label>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
 }
 
-function formatDateToInput(date: Date | undefined): string {
-  if (!date) return '';
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = date.getFullYear();
-  return `${day}/${month}/${year}`;
-}
+export function FiltrosChamadosFinalizados({ onPesquisar, onLimpar, isLoading }: FiltrosProps) {
+  const filters = useFilterState<FiltrosDraft>(FILTROS_VAZIOS);
 
-export function FiltrosChamadosFinalizados({ onPesquisar, isLoading }: FiltrosProps) {
-  const [isOpen, setIsOpen] = useState(true);
-
-  const [dataInicio, setDataInicio] = useState('');
-  const [dataFim, setDataFim] = useState('');
-  const [inicioOpen, setInicioOpen] = useState(false);
-  const [fimOpen, setFimOpen] = useState(false);
-
-  const [selectedDepartmentIds, setSelectedDepartmentIds] = useState<string[]>([]);
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [usersList, setUsersList] = useState<Usuario[]>([]);
   const [lojaQuery, setLojaQuery] = useState('');
   const [userQuery, setUserQuery] = useState('');
@@ -79,212 +113,77 @@ export function FiltrosChamadosFinalizados({ onPesquisar, isLoading }: FiltrosPr
   }, []);
 
   const isRangeValid =
-    dataInicio.length === 10 && parseDate(dataInicio) !== undefined &&
-    dataFim.length === 10 && parseDate(dataFim) !== undefined;
+    filters.draft.dataInicio.length === 10 &&
+    parseBrDate(filters.draft.dataInicio) !== null &&
+    filters.draft.dataFim.length === 10 &&
+    parseBrDate(filters.draft.dataFim) !== null;
 
-  const handlePesquisar = () => {
+  function handleFiltrar() {
     if (!isRangeValid) return;
-    const filtros = {
-      dataUltimoChamadoFechadoInicio: dataInicio,
-      dataUltimoChamadoFechadoFim: dataFim,
-      departmentIds: selectedDepartmentIds,
-      userIds: selectedUserIds,
+    filters.apply();
+    const valores: FiltrosChamadosValores = {
+      dataUltimoChamadoFechadoInicio: filters.draft.dataInicio,
+      dataUltimoChamadoFechadoFim: filters.draft.dataFim,
+      departmentIds: filters.draft.departmentIds,
+      userIds: filters.draft.userIds,
       page: 1,
-      perPage: 30,
+      perPage: TABLE_PAGE_SIZE,
     };
-    console.log('[UI][CHAMADOS] filtros=', filtros);
-    onPesquisar(filtros);
-  };
+    console.log('[UI][CHAMADOS] filtros=', valores);
+    onPesquisar(valores);
+  }
 
-  const makeHandleDateSelect = (setter: (v: string) => void, closer: (v: boolean) => void) => (date: Date | undefined) => {
-    setter(formatDateToInput(date));
-    closer(false);
-  };
+  function handleLimpar() {
+    filters.clear();
+    setLojaQuery('');
+    setUserQuery('');
+    onLimpar();
+  }
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 card-shadow">
-      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <div className="p-4 flex items-center justify-between border-b border-slate-200">
-          <div>
-            <h3 className="font-semibold text-slate-900">Filtros</h3>
-            <p className="text-slate-500 text-sm">Selecione os critérios para buscar</p>
-          </div>
-          <CollapsibleTrigger className="p-2 rounded-xl hover:bg-slate-100">
-            {isOpen ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-          </CollapsibleTrigger>
-        </div>
+    <FilterPanel dirty={filters.dirty} onApply={handleFiltrar} onClear={handleLimpar} applyDisabled={!isRangeValid || isLoading}>
+      <FilterFieldGroup label="Datas" icon={<Calendar className="size-4 text-slate-400" />}>
+        <FormField id="chamados-data-inicio" label="Data do último chamado fechado (início)" required>
+          {(f) => <DateField {...f} value={filters.draft.dataInicio} onChange={(v) => filters.setField('dataInicio', v)} />}
+        </FormField>
+        <FormField id="chamados-data-fim" label="Data do último chamado fechado (fim)" required>
+          {(f) => <DateField {...f} value={filters.draft.dataFim} onChange={(v) => filters.setField('dataFim', v)} />}
+        </FormField>
+      </FilterFieldGroup>
 
-        <CollapsibleContent>
-          <div className="p-4 space-y-4">
-            {/* Datas */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm text-slate-600 mb-1">Data do último chamado fechado (início)</label>
-                <div className="flex gap-2">
-                  <Popover open={inicioOpen} onOpenChange={setInicioOpen}>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-start">
-                        {dataInicio || 'dd/mm/aaaa'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="p-0">
-                      <Calendar
-                        mode="single"
-                        selected={parseDate(dataInicio)}
-                        onSelect={makeHandleDateSelect(setDataInicio, setInicioOpen)}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </div>
+      <FilterFieldGroup label="Loja e consultora" icon={<Store className="size-4 text-slate-400" />}>
+        <MultiSelectPopover
+          label="Loja (Filial)"
+          query={lojaQuery}
+          onQueryChange={setLojaQuery}
+          selectedCount={filters.draft.departmentIds.length}
+          options={DEPARTAMENTOS_FIXOS.filter((d) => d.name.toLowerCase().includes(lojaQuery.toLowerCase())).map((d) => ({ id: d.id, nome: d.name }))}
+          isChecked={(id) => filters.draft.departmentIds.includes(id)}
+          onToggle={(id, checked) =>
+            filters.setField('departmentIds', checked ? [...filters.draft.departmentIds, id] : filters.draft.departmentIds.filter((v) => v !== id))
+          }
+          onClearAll={() => filters.setField('departmentIds', [])}
+          placeholder="Filtrar lojas..."
+        />
+        <MultiSelectPopover
+          label="Consultora (Atendente)"
+          query={userQuery}
+          onQueryChange={setUserQuery}
+          selectedCount={filters.draft.userIds.length}
+          options={usersList}
+          isChecked={(id) => filters.draft.userIds.includes(id)}
+          onToggle={(id, checked) => filters.setField('userIds', checked ? [...filters.draft.userIds, id] : filters.draft.userIds.filter((v) => v !== id))}
+          onClearAll={() => filters.setField('userIds', [])}
+          placeholder="Filtrar consultoras..."
+        />
+      </FilterFieldGroup>
 
-              <div>
-                <label className="block text-sm text-slate-600 mb-1">Data do último chamado fechado (fim)</label>
-                <div className="flex gap-2">
-                  <Popover open={fimOpen} onOpenChange={setFimOpen}>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="w-full justify-start">
-                        {dataFim || 'dd/mm/aaaa'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="p-0">
-                      <Calendar
-                        mode="single"
-                        selected={parseDate(dataFim)}
-                        onSelect={makeHandleDateSelect(setDataFim, setFimOpen)}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </div>
-            </div>
-
-            {/* Linha única Loja e Consultora (multi-seleção) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm text-slate-600 mb-1">Loja (Filial)</label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <UIButton variant="outline" className="w-full justify-between rounded-xl">
-                      <span>
-                        {selectedDepartmentIds.length === 0 ? 'Todas' : `${selectedDepartmentIds.length} selecionada(s)`}
-                      </span>
-                      <ChevronDown className="w-4 h-4 opacity-60" />
-                    </UIButton>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[320px] p-0">
-                    <div className="p-2 border-b border-slate-100 sticky top-0 bg-white">
-                      <Input
-                        value={lojaQuery}
-                        onChange={(e) => setLojaQuery(e.target.value)}
-                        onKeyDown={(e) => e.stopPropagation()}
-                        onKeyUp={(e) => e.stopPropagation()}
-                        placeholder="Filtrar lojas..."
-                        className="rounded-xl border-slate-200 focus:ring-[#00A5E6] focus:ring-2"
-                      />
-                    </div>
-                    <div className="max-h-64 overflow-y-auto p-2 space-y-1">
-                      <label className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          className="accent-[#00A5E6]"
-                          checked={selectedDepartmentIds.length === 0}
-                          onChange={() => setSelectedDepartmentIds([])}
-                        />
-                        <span>Todas</span>
-                      </label>
-                      {DEPARTAMENTOS_FIXOS
-                        .filter(d => d.name.toLowerCase().includes(lojaQuery.toLowerCase()))
-                        .map((d) => {
-                          const checked = selectedDepartmentIds.includes(d.id);
-                          return (
-                            <label key={d.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                className="accent-[#00A5E6]"
-                                checked={checked}
-                                onChange={(e) => {
-                                  setSelectedDepartmentIds((prev) => {
-                                    if (e.target.checked) return [...prev, d.id];
-                                    return prev.filter((id) => id !== d.id);
-                                  });
-                                }}
-                              />
-                              <span>{d.name}</span>
-                            </label>
-                          );
-                        })}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              </div>
-              <div>
-                <label className="block text-sm text-slate-600 mb-1">Consultora (Atendente)</label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <UIButton variant="outline" className="w-full justify-between rounded-xl">
-                      <span>
-                        {selectedUserIds.length === 0 ? 'Todas' : `${selectedUserIds.length} selecionada(s)`}
-                      </span>
-                      <ChevronDown className="w-4 h-4 opacity-60" />
-                    </UIButton>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[320px] p-0">
-                    <div className="p-2 border-b border-slate-100 sticky top-0 bg-white">
-                      <Input
-                        value={userQuery}
-                        onChange={(e) => setUserQuery(e.target.value)}
-                        onKeyDown={(e) => e.stopPropagation()}
-                        onKeyUp={(e) => e.stopPropagation()}
-                        placeholder="Filtrar consultoras..."
-                        className="rounded-xl border-slate-200 focus:ring-[#00A5E6] focus:ring-2"
-                      />
-                    </div>
-                    <div className="max-h-64 overflow-y-auto p-2 space-y-1">
-                      <label className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          className="accent-[#00A5E6]"
-                          checked={selectedUserIds.length === 0}
-                          onChange={() => setSelectedUserIds([])}
-                        />
-                        <span>Todas</span>
-                      </label>
-                      {usersList
-                        .filter(u => (u.nome || '').toLowerCase().includes(userQuery.toLowerCase()))
-                        .map((u) => {
-                          const checked = selectedUserIds.includes(u.id);
-                          return (
-                            <label key={u.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                className="accent-[#00A5E6]"
-                                checked={checked}
-                                onChange={(e) => {
-                                  setSelectedUserIds((prev) => {
-                                    if (e.target.checked) return [...prev, u.id];
-                                    return prev.filter((id) => id !== u.id);
-                                  });
-                                }}
-                              />
-                              <span>{u.nome}</span>
-                            </label>
-                          );
-                        })}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              </div>
-            </div>
-
-            <Button onClick={handlePesquisar} disabled={!isRangeValid || isLoading} className="w-full rounded-xl">
-              <Search className="w-4 h-4 mr-2" /> PESQUISAR
-            </Button>
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-    </div>
+      {!isRangeValid && (filters.draft.dataInicio || filters.draft.dataFim) && (
+        <p className="text-xs text-slate-500">
+          <Search className="mr-1 inline size-3" />
+          Informe as duas datas (início e fim) para habilitar a pesquisa.
+        </p>
+      )}
+    </FilterPanel>
   );
 }

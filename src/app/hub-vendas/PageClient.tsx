@@ -3,17 +3,28 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   RefreshCw, AlertTriangle, CheckCircle, Pause, Play, Save,
-  Search, ChevronLeft, ChevronRight, X, Eye, AlertCircle,
-  Bot, Clock, Hash, ShieldAlert, Loader2, Info,
-  ExternalLink,
+  ChevronLeft, ChevronRight, Eye, AlertCircle,
+  Bot, Clock, Hash, ShieldAlert, Info, ExternalLink,
+  Users, UserCheck, Send, Undo2, XCircle, Phone, Store,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  PageContainer, PageHeader, FilterPanel, FilterFieldGroup, useFilterState, FormField,
+  Input, DateField, Button, IconButton, Card, CardHeader, CardContent, KpiCard, KpiSection,
+  Section, Badge, Alert, EmptyState, LoadingLeBebe, Spinner, ResponsiveTable, useDelayedVisibility,
+  Dialog, DialogContent, DialogHeader, DialogBody, DialogFooter, Textarea,
+} from '@/components/design-system'
+import { validateDateRange, parseBrDate, dateToIso } from '@/lib/design-system/dates'
+import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
 import type {
   StatusGestaoHubVendas,
   ResumoLojaHubVendas,
   ListagemFilasHubVendas,
   DetalheFilaHubVendas,
   ContagemPorLojaHubVendas,
+  FilaListadaHubVendas,
 } from '@/lib/digisac/hub-vendas/gestao'
 import { formatarPercentualHubVendas, LIMITE_DIARIO_MAXIMO } from '@/lib/digisac/hub-vendas/gestao'
 import { montarUrlHistoricoTicket } from '@/lib/digisac/urls'
@@ -22,6 +33,7 @@ const POLLING_INTERVAL_MS = 60_000
 
 type LojaFiltro = '' | 'portao' | 'bigorrilho' | 'hauer_marechal'
 type PeriodoHubVendas = { de: string; ate: string }
+type PeriodoRascunhoBr = { de: string; ate: string }
 type FiltrosFilasHubVendas = {
   loja: LojaFiltro
   status: string
@@ -30,6 +42,16 @@ type FiltrosFilasHubVendas = {
   somenteErros: boolean
   somenteAnaliseManual: boolean
   somenteResultadoIncerto: boolean
+}
+
+const FILTROS_FILAS_VAZIOS: FiltrosFilasHubVendas = {
+  loja: '',
+  status: '',
+  cliente: '',
+  telefoneParcial: '',
+  somenteErros: false,
+  somenteAnaliseManual: false,
+  somenteResultadoIncerto: false,
 }
 
 function adicionarPeriodo(params: URLSearchParams, periodo: PeriodoHubVendas | null) {
@@ -59,7 +81,7 @@ async function buscarFilasHubVendas(
 ): Promise<ListagemFilasHubVendas> {
   const params = new URLSearchParams()
   params.set('pagina', String(pagina))
-  params.set('porPagina', '20')
+  params.set('porPagina', String(TABLE_PAGE_SIZE))
   if (filtros.loja) params.set('loja', filtros.loja)
   if (filtros.status) params.set('status', filtros.status)
   if (filtros.cliente) params.set('cliente', filtros.cliente)
@@ -100,12 +122,13 @@ function mesclarResumoHistorico(
 }
 
 export default function PageClient() {
-  const [periodoRascunho, setPeriodoRascunho] = useState({ de: '', ate: '' })
-  const [periodoAplicado, setPeriodoAplicado] = useState<PeriodoHubVendas | null>(null)
+  const periodoFilters = useFilterState<PeriodoRascunhoBr>({ de: '', ate: '' })
   const [carregandoPeriodo, setCarregandoPeriodo] = useState(false)
   const [erroPeriodo, setErroPeriodo] = useState<string | null>(null)
+  const [periodoAplicado, setPeriodoAplicado] = useState<PeriodoHubVendas | null>(null)
   const [status, setStatus] = useState<StatusGestaoHubVendas | null>(null)
   const [loadingStatus, setLoadingStatus] = useState(true)
+  const mostrarLoadingInicial = useDelayedVisibility(loadingStatus && !status)
   const [erroStatus, setErroStatus] = useState<string | null>(null)
 
   // Limite
@@ -125,18 +148,8 @@ export default function PageClient() {
   const [loadingFilas, setLoadingFilas] = useState(false)
   const [erroFilas, setErroFilas] = useState<string | null>(null)
   const [pagina, setPagina] = useState(1)
-  const [filtros, setFiltros] = useState<FiltrosFilasHubVendas>({
-    loja: '' as LojaFiltro,
-    status: '',
-    cliente: '',
-    telefoneParcial: '',
-    somenteErros: false,
-    somenteAnaliseManual: false,
-    somenteResultadoIncerto: false,
-  })
-  const debounceCliente = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const filasFilters = useFilterState<FiltrosFilasHubVendas>(FILTROS_FILAS_VAZIOS)
   const consultaPeriodoEmAndamento = useRef(false)
-  const primeiraBuscaCliente = useRef(true)
 
   // Detalhe
   const [detalhe, setDetalhe] = useState<DetalheFilaHubVendas | null>(null)
@@ -194,18 +207,18 @@ export default function PageClient() {
   // ---------------------------------------------------------------------------
   // Carregamento de filas
   // ---------------------------------------------------------------------------
-  const carregarFilas = useCallback(async (pag: number) => {
+  async function executarBuscaFilas(pag: number, filtrosParam: FiltrosFilasHubVendas) {
     if (consultaPeriodoEmAndamento.current) return
     setLoadingFilas(true)
     setErroFilas(null)
     try {
-      setFilas(await buscarFilasHubVendas(pag, filtros, periodoAplicado))
+      setFilas(await buscarFilasHubVendas(pag, filtrosParam, periodoAplicado))
     } catch (error) {
       setErroFilas(error instanceof Error ? error.message : 'Erro de conexão ao carregar filas')
     } finally {
       setLoadingFilas(false)
     }
-  }, [filtros, periodoAplicado])
+  }
 
   // ---------------------------------------------------------------------------
   // Carregamento de alertas e resumo operacional
@@ -262,18 +275,18 @@ export default function PageClient() {
   }, [])
 
   const carregarStatusAtual = useRef(carregarStatus)
-  const carregarFilasAtual = useRef(carregarFilas)
+  const executarBuscaFilasAtual = useRef(executarBuscaFilas)
   useEffect(() => {
     carregarStatusAtual.current = carregarStatus
-    carregarFilasAtual.current = carregarFilas
-  }, [carregarStatus, carregarFilas])
+    executarBuscaFilasAtual.current = executarBuscaFilas
+  })
 
   // ---------------------------------------------------------------------------
   // Polling e carregamento inicial
   // ---------------------------------------------------------------------------
   useEffect(() => {
     carregarStatusAtual.current()
-    carregarFilasAtual.current(1)
+    void executarBuscaFilasAtual.current(1, FILTROS_FILAS_VAZIOS)
     carregarAlertas()
     carregarResumo()
     const interval = setInterval(() => {
@@ -281,22 +294,6 @@ export default function PageClient() {
     }, POLLING_INTERVAL_MS)
     return () => clearInterval(interval)
   }, [carregarAlertas, carregarResumo])
-
-  // Debounce para filtro de cliente
-  useEffect(() => {
-    if (primeiraBuscaCliente.current) {
-      primeiraBuscaCliente.current = false
-      return
-    }
-    if (debounceCliente.current) clearTimeout(debounceCliente.current)
-    debounceCliente.current = setTimeout(() => {
-      setPagina(1)
-      carregarFilasAtual.current(1)
-    }, 400)
-    return () => {
-      if (debounceCliente.current) clearTimeout(debounceCliente.current)
-    }
-  }, [filtros.cliente])
 
   // ---------------------------------------------------------------------------
   // Ações
@@ -309,7 +306,7 @@ export default function PageClient() {
     try {
       const [novoStatus, novasFilas] = await Promise.all([
         buscarStatusHubVendas(periodo, true),
-        buscarFilasHubVendas(1, filtros, periodo),
+        buscarFilasHubVendas(1, filasFilters.applied, periodo),
       ])
       setStatus((atual) => atual ? mesclarResumoHistorico(atual, novoStatus) : novoStatus)
       setNovoLimite((atual) => atual === '' ? String(novoStatus.parametros.limiteDiarioPorConexao) : atual)
@@ -328,37 +325,41 @@ export default function PageClient() {
 
   function aplicarPeriodo() {
     if (consultaPeriodoEmAndamento.current) return
-    if (!periodoRascunho.de || !periodoRascunho.ate) {
+    const { de, ate } = periodoFilters.draft
+    if (!de || !ate) {
       setErroPeriodo('Informe as datas De e Até.')
       return
     }
-    if (periodoRascunho.de > periodoRascunho.ate) {
-      setErroPeriodo('A data De não pode ser posterior à data Até.')
+    const validacao = validateDateRange(de, ate)
+    if (!validacao.ok) {
+      setErroPeriodo(validacao.message ?? 'Datas inválidas.')
       return
     }
-    void atualizarPeriodo({ ...periodoRascunho })
+    const deIso = dateToIso(parseBrDate(de)!)
+    const ateIso = dateToIso(parseBrDate(ate)!)
+    periodoFilters.apply()
+    void atualizarPeriodo({ de: deIso, ate: ateIso })
   }
 
   function limparPeriodo() {
     if (consultaPeriodoEmAndamento.current) return
     void atualizarPeriodo(null).then((limpezaAplicada) => {
-      if (limpezaAplicada) setPeriodoRascunho({ de: '', ate: '' })
+      if (limpezaAplicada) periodoFilters.clear()
     })
   }
 
-  async function atualizarFiltrosFila(proximosFiltros: FiltrosFilasHubVendas) {
+  function aplicarFiltrosFila() {
     if (consultaPeriodoEmAndamento.current) return
-    setFiltros(proximosFiltros)
+    filasFilters.apply()
     setPagina(1)
-    setLoadingFilas(true)
-    setErroFilas(null)
-    try {
-      setFilas(await buscarFilasHubVendas(1, proximosFiltros, periodoAplicado))
-    } catch (error) {
-      setErroFilas(error instanceof Error ? error.message : 'Erro de conexão ao carregar filas')
-    } finally {
-      setLoadingFilas(false)
-    }
+    void executarBuscaFilas(1, filasFilters.draft)
+  }
+
+  function limparFiltrosFila() {
+    if (consultaPeriodoEmAndamento.current) return
+    filasFilters.clear()
+    setPagina(1)
+    void executarBuscaFilas(1, FILTROS_FILAS_VAZIOS)
   }
 
   async function salvarLimite() {
@@ -456,7 +457,7 @@ export default function PageClient() {
         setModalAcao(null)
         setMotivoAcao('')
         if (detalhe) abrirDetalhe(detalhe.fila.id)
-        carregarFilas(pagina)
+        void executarBuscaFilas(pagina, filasFilters.applied)
         carregarStatus()
       }
     } catch {
@@ -501,21 +502,25 @@ export default function PageClient() {
   // ---------------------------------------------------------------------------
   if (loadingStatus && !status) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
-      </div>
+      <PageContainer>
+        <div className="flex min-h-[60vh] items-center justify-center">
+          {mostrarLoadingInicial && <LoadingLeBebe size={80} label="Carregando Gestão Hub/Vendas" />}
+        </div>
+      </PageContainer>
     )
   }
 
   if (erroStatus && !status) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
-        <AlertCircle className="w-10 h-10 text-red-500" />
-        <p className="text-slate-600">{erroStatus}</p>
-        <button onClick={() => carregarStatus()} className="px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 text-sm">
-          Tentar novamente
-        </button>
-      </div>
+      <PageContainer>
+        <EmptyState
+          icon={<AlertCircle className="size-5" />}
+          title="Não foi possível carregar a Gestão Hub/Vendas"
+          description={erroStatus}
+          action={<Button onClick={() => carregarStatus()}>Tentar novamente</Button>}
+          className="min-h-[60vh] justify-center"
+        />
+      </PageContainer>
     )
   }
 
@@ -524,449 +529,327 @@ export default function PageClient() {
   const automacaoAtiva = status.automacao.ativa && !status.automacao.pausada
 
   return (
-    <div className="flex flex-col space-y-6 p-4 md:p-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="bg-sky-50 p-2.5 rounded-xl">
-            <Bot className="w-6 h-6 text-sky-600" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-800">Gestão Hub/Vendas</h1>
-            <p className="text-sm text-slate-500">Monitoramento e configuração da automação</p>
-          </div>
-        </div>
-        <div className="flex flex-col items-end gap-1">
-          <button
-            onClick={() => { carregarStatus(true); carregarFilas(pagina) }}
-            disabled={atualizandoStatus}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 text-sm font-medium text-slate-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            <RefreshCw className={`w-4 h-4 ${atualizandoStatus ? 'animate-spin' : ''}`} />
-            {atualizandoStatus ? 'Atualizando...' : 'Atualizar agora'}
-          </button>
-          {ultimaAtualizacaoStatus && (
-            <span className="text-xs text-slate-400">Atualizado às {ultimaAtualizacaoStatus}</span>
-          )}
-          {feedbackStatus && (
-            <span className={`text-xs ${feedbackStatus.tipo === 'sucesso' ? 'text-green-600' : 'text-red-600'}`}>
-              {feedbackStatus.texto}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Filtro global de período — sem valor padrão para preservar o comportamento atual. */}
-      <section className="order-1 bg-white border border-slate-200 rounded-xl p-4">
-        <div className="flex flex-col md:flex-row md:items-end gap-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 max-w-xl">
-            <label className="text-xs text-slate-500">
-              <span className="block mb-1">De</span>
-              <input
-                type="date"
-                value={periodoRascunho.de}
-                onChange={(e) => setPeriodoRascunho((atual) => ({ ...atual, de: e.target.value }))}
-                disabled={carregandoPeriodo}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-              />
-            </label>
-            <label className="text-xs text-slate-500">
-              <span className="block mb-1">Até</span>
-              <input
-                type="date"
-                value={periodoRascunho.ate}
-                onChange={(e) => setPeriodoRascunho((atual) => ({ ...atual, ate: e.target.value }))}
-                disabled={carregandoPeriodo}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-              />
-            </label>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={aplicarPeriodo}
-              disabled={carregandoPeriodo}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+    <PageContainer className="space-y-6">
+      <PageHeader
+        icon={<Bot className="size-6" />}
+        title="Gestão Hub/Vendas"
+        description="Monitoramento e configuração da automação"
+        action={
+          <div className="flex flex-col items-end gap-1">
+            <Button
+              variant="secondary"
+              onClick={() => { carregarStatus(true); void executarBuscaFilas(pagina, filasFilters.applied) }}
+              loading={atualizandoStatus}
             >
-              {carregandoPeriodo && <Loader2 className="w-4 h-4 animate-spin" />}
-              {carregandoPeriodo ? 'Carregando...' : 'Aplicar'}
-            </button>
-            {periodoAplicado && (
-              <button
-                onClick={limparPeriodo}
-                disabled={carregandoPeriodo}
-                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                Limpar
-              </button>
-            )}
-          </div>
-        </div>
-        {erroPeriodo && <p className="text-xs text-red-600 mt-2">{erroPeriodo}</p>}
-        {carregandoPeriodo && <p className="text-xs text-slate-500 mt-2" role="status">Carregando dados do período...</p>}
-        {periodoAplicado && !erroPeriodo && !carregandoPeriodo && (
-          <p className="text-xs text-sky-700 mt-2">
-            Período aplicado: {formatarDataBrasileira(periodoAplicado.de)} até {formatarDataBrasileira(periodoAplicado.ate)} · America/Sao_Paulo
-          </p>
-        )}
-      </section>
-
-      <div className="order-1 px-4 py-2 bg-amber-50 border border-amber-100 rounded-xl text-xs font-medium text-amber-700">
-        Dados confiáveis a partir de 13/08/2026
-      </div>
-
-      {/* Estado geral da automação */}
-      <section className="order-4 bg-white border border-slate-200 rounded-xl p-5">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className={`p-3 rounded-xl ${automacaoAtiva ? 'bg-green-50' : 'bg-amber-50'}`}>
-              {automacaoAtiva ? (
-                <CheckCircle className="w-7 h-7 text-green-600" />
-              ) : (
-                <Pause className="w-7 h-7 text-amber-600" />
-              )}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold text-slate-800">
-                  {automacaoAtiva ? 'Automação ativa' : 'Automação pausada'}
-                </span>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${automacaoAtiva ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                  {automacaoAtiva ? 'EM EXECUÇÃO' : 'PAUSADA'}
-                </span>
-              </div>
-              {status.automacao.motivo && (
-                <p className="text-sm text-slate-500 mt-0.5">Motivo: {status.automacao.motivo}</p>
-              )}
-              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-xs text-slate-400">
-                {status.automacao.atualizadoEm && (
-                  <span>Atualizado: {formatarData(status.automacao.atualizadoEm)}</span>
-                )}
-                {status.ultimoProcessamento && (
-                  <span>Último processamento: {formatarData(status.ultimoProcessamento)}</span>
-                )}
-                <span>Timezone: {status.parametros.timezone}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex gap-2">
-            {automacaoAtiva ? (
-              <button
-                onClick={() => setModalPausa(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 text-sm font-medium text-amber-700 transition-colors"
-              >
-                <Pause className="w-4 h-4" />
-                Pausar automação
-              </button>
-            ) : (
-              <button
-                onClick={() => setModalReativar(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 text-sm font-medium text-green-700 transition-colors"
-              >
-                <Play className="w-4 h-4" />
-                Reativar automação
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Parâmetros */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mt-4 pt-4 border-t border-slate-100">
-          <ParametroItem icon={<Hash className="w-4 h-4" />} label="Limite por execução" valor={String(status.parametros.limitePorExecucao)} />
-          <ParametroItem icon={<Hash className="w-4 h-4" />} label="Limite diário/loja" valor={String(status.parametros.limiteDiarioPorConexao)} />
-          <ParametroItem icon={<Clock className="w-4 h-4" />} label="Timeout reserva" valor={`${status.parametros.reservaTimeoutMinutos}min`} />
-          <ParametroItem icon={<Clock className="w-4 h-4" />} label="Timeout envio" valor={`${status.parametros.envioTimeoutMinutos}min`} />
-          <ParametroItem
-            icon={<CheckCircle className="w-4 h-4" />}
-            label="Ativação gradual"
-            valor={status.parametros.modoAtivacaoGradual ? 'Sim' : 'Não'}
-          />
-          <ParametroItem icon={<Clock className="w-4 h-4" />} label="Timezone" valor={status.parametros.timezone} />
-        </div>
-      </section>
-
-      {/* Resultados da coorte de leads */}
-      <section className="order-1">
-        <div className="mb-3">
-          <h2 className="text-sm font-semibold text-slate-700">
-            {periodoAplicado ? 'Resultados dos leads do período' : 'Resultados dos leads'}
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            {periodoAplicado
-              ? 'Considera quem entrou no Hub no período selecionado e mostra o estado atual desses mesmos leads.'
-              : 'Considera todos os leads registrados e mostra o estado atual de cada um.'}
-          </p>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        <CardResumo
-          label="Leads registrados"
-          valor={status.resumo.leadsRegistrados}
-          cor="neutro"
-          tooltip="Total de clientes que já entraram em contato pela nossa Central de Atendimento."
-        />
-        <CardResumo
-          label="Candidatos elegíveis"
-          valor={status.resumo.candidatosElegiveis}
-          cor="sky"
-          tooltip="Clientes que ainda podem receber uma mensagem de recuperação."
-          percentual={formatarPercentualHubVendas(status.resumo.candidatosElegiveis, status.resumo.leadsRegistrados)}
-        />
-        <CardResumo
-          label="Convertidos organicamente"
-          valor={status.resumo.convertidos}
-          cor="green"
-          detalhe={formatarDetalhePorLoja(status.resumo.convertidosPorLoja)}
-          tooltip="Clientes que procuraram uma das lojas por conta própria, antes de receber uma mensagem de recuperação."
-          percentual={formatarPercentualHubVendas(status.resumo.convertidos, status.resumo.leadsRegistrados)}
-        />
-        <CardResumo
-          label="Recuperação enviada / aguardando"
-          valor={status.resumo.recuperacaoEnviadaTotal}
-          cor="cyan"
-          detalhe={formatarDetalhePorLoja(status.resumo.recuperacaoEnviadaPorLoja)}
-          tooltip="Clientes que receberam nossa mensagem de recuperação e ainda estão dentro do prazo para responder."
-          percentual={formatarPercentualHubVendas(status.resumo.recuperacaoEnviadaTotal, status.resumo.leadsRegistrados)}
-        />
-        <CardResumo
-          label="Recuperados"
-          valor={status.resumo.recuperados}
-          cor="green"
-          detalhe={formatarDetalhePorLoja(status.resumo.recuperadosPorLoja)}
-          tooltip="Clientes que responderam depois de receber nossa mensagem de recuperação."
-          percentual={formatarPercentualHubVendas(status.resumo.recuperados, status.resumo.leadsRegistrados)}
-        />
-        <CardResumo
-          label="Perdidos"
-          valor={status.resumo.perdidos}
-          cor="neutro"
-          detalhe={formatarDetalhePorLoja(status.resumo.perdidosPorLoja)}
-          tooltip="Clientes que receberam a mensagem de recuperação, mas não responderam dentro do prazo."
-          percentual={formatarPercentualHubVendas(status.resumo.perdidos, status.resumo.leadsRegistrados)}
-        />
-        <CardResumo
-          label="Fila manual"
-          valor={status.resumo.filaManual}
-          cor="amber"
-          tooltip="Clientes que poderiam receber recuperação, mas não entraram na fila dentro do prazo."
-          percentual={formatarPercentualHubVendas(status.resumo.filaManual, status.resumo.leadsRegistrados)}
-        />
-        </div>
-      </section>
-
-      <section className="order-1">
-        <div className="mb-3">
-          <h2 className="text-sm font-semibold text-slate-700">{periodoAplicado ? 'Movimentação no período' : 'Movimentação atual'}</h2>
-          <p className="text-xs text-slate-500 mt-1">{periodoAplicado ? 'Envios e filas programados no período selecionado.' : 'Envios realizados hoje e filas programadas.'}</p>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        <CardResumo
-          label={periodoAplicado ? 'Enviados no período' : 'Enviados hoje'}
-          valor={status.resumo.enviadaHoje}
-          cor="green"
-          tooltip={periodoAplicado ? 'Quantidade de mensagens de recuperação enviadas no período selecionado.' : 'Quantidade de mensagens de recuperação enviadas hoje.'}
-        />
-        </div>
-      </section>
-
-      <section className="order-1">
-        <div className="mb-3">
-          <h2 className="text-sm font-semibold text-slate-700">Operação atual</h2>
-          <p className="text-xs text-slate-500 mt-1">Estado atual das filas, limites e alertas da automação, independente do período selecionado.</p>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        <CardResumo
-          label="Filas agendadas"
-          valor={status.resumo.agendada}
-          cor="blue"
-          tooltip="Clientes com mensagem de recuperação programada, aguardando o horário de envio."
-        />
-        <CardResumo
-          label="Filas reservadas"
-          valor={status.resumo.reservada}
-          cor="indigo"
-          tooltip="Mensagens de recuperação que estão prestes a ser enviadas neste momento."
-        />
-        <CardResumo
-          label="Enviando"
-          valor={status.resumo.enviando}
-          cor="cyan"
-          tooltip="Mensagens de recuperação sendo enviadas agora."
-        />
-        <CardResumo
-          label="Canceladas"
-          valor={status.resumo.cancelada}
-          cor="neutro"
-          tooltip="Envios de recuperação cancelados, geralmente porque o cliente já tinha sido atendido antes do envio."
-        />
-        <CardResumo
-          label="Erros"
-          valor={status.resumo.erro}
-          cor="red"
-          destaque={status.resumo.erro > 0}
-          tooltip="Envios de recuperação que falharam e precisam de atenção."
-        />
-        <CardResumo
-          label="Resultado incerto"
-          valor={status.resumo.resultadoIncerto}
-          cor="amber"
-          destaque={status.resumo.resultadoIncerto > 0}
-          tooltip="Envios de recuperação cujo resultado não pôde ser confirmado automaticamente."
-        />
-        <CardResumo
-          label="Análise manual"
-          valor={status.resumo.analiseManual}
-          cor="violet"
-          destaque={status.resumo.analiseManual > 0}
-          tooltip="Casos que precisam ser conferidos manualmente pela equipe."
-        />
-        </div>
-      </section>
-
-      {status.resumo.conexoesPausadas > 0 && (
-        <div className="order-1 flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
-          <ShieldAlert className="w-5 h-5 flex-shrink-0" />
-          <span>{status.resumo.conexoesPausadas} conexão(ões) pausada(s) por erro automático.</span>
-        </div>
-      )}
-
-      {/* Alertas e resumo operacional */}
-      <section className="order-5 bg-white border border-slate-200 rounded-xl p-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-          <h2 className="text-sm font-semibold text-slate-700">Alertas e resumo operacional</h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => { carregarAlertas(true); carregarResumo(true) }}
-              disabled={atualizandoAlertas}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-lg hover:bg-slate-200 text-xs font-medium text-slate-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${atualizandoAlertas ? 'animate-spin' : ''}`} />
-              {atualizandoAlertas ? 'Atualizando...' : 'Atualizar'}
-            </button>
-            <button
-              onClick={() => { setFeedbackTeste(null); setModalTesteAlerta(true) }}
-              disabled={enviandoTeste}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 border border-sky-200 rounded-lg hover:bg-sky-100 text-xs font-medium text-sky-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              <ShieldAlert className="w-3.5 h-3.5" />
-              Enviar alerta de teste
-            </button>
-          </div>
-        </div>
-        {(ultimaAtualizacaoAlertas || feedbackAlertas) && (
-          <div className="flex items-center gap-3 mb-3 text-xs">
-            {ultimaAtualizacaoAlertas && (
-              <span className="text-slate-400">Atualizado às {ultimaAtualizacaoAlertas}</span>
-            )}
-            {feedbackAlertas && (
-              <span className={feedbackAlertas.tipo === 'sucesso' ? 'text-green-600' : 'text-red-600'}>
-                {feedbackAlertas.texto}
+              <RefreshCw className="size-4" />
+              {atualizandoStatus ? 'Atualizando...' : 'Atualizar agora'}
+            </Button>
+            {ultimaAtualizacaoStatus && <span className="text-xs text-slate-400">Atualizado às {ultimaAtualizacaoStatus}</span>}
+            {feedbackStatus && (
+              <span className={`text-xs ${feedbackStatus.tipo === 'sucesso' ? 'text-emerald-600' : 'text-destructive'}`}>
+                {feedbackStatus.texto}
               </span>
             )}
           </div>
-        )}
-        {feedbackTeste && (
-          <div className={`mb-3 px-3 py-2 rounded-lg text-xs ${feedbackTeste.tipo === 'sucesso' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-            {feedbackTeste.texto}
-          </div>
-        )}
+        }
+      />
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Resumo diário */}
-          <div className="border border-slate-200 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Clock className="w-4 h-4 text-slate-400" />
-              <span className="text-xs font-semibold text-slate-600">Resumo diário</span>
-            </div>
-            {loadingAlertas ? (
-              <div className="text-xs text-slate-400">Carregando...</div>
-            ) : statusResumo.ultimoResumoEm ? (
-              <div className="space-y-1 text-xs">
-                <div className="text-slate-700">
-                  <span className="text-slate-400">Data:</span> {statusResumo.ultimoResumoDataLocal ?? '—'}
-                </div>
-                <div className="text-slate-700">
-                  <span className="text-slate-400">Enviado:</span> {formatarData(statusResumo.ultimoResumoEm)}
-                </div>
-                <div className="text-slate-700">
-                  <span className="text-slate-400">Status:</span>{' '}
-                  <span className={statusResumo.ultimoResumoStatus === 'enviado' ? 'text-green-600' : 'text-red-600'}>
-                    {statusResumo.ultimoResumoStatus ?? '—'}
+      {/* Filtro global de período */}
+      <FilterPanel title="Período" dirty={periodoFilters.dirty} onApply={aplicarPeriodo} onClear={limparPeriodo} applyDisabled={carregandoPeriodo}>
+        <FilterFieldGroup label="Intervalo de datas" icon={<Clock className="size-4 text-slate-400" />}>
+          <FormField id="hub-vendas-periodo-de" label="De">
+            {(f) => <DateField {...f} value={periodoFilters.draft.de} onChange={(v) => periodoFilters.setField('de', v)} disabled={carregandoPeriodo} />}
+          </FormField>
+          <FormField id="hub-vendas-periodo-ate" label="Até">
+            {(f) => <DateField {...f} value={periodoFilters.draft.ate} onChange={(v) => periodoFilters.setField('ate', v)} disabled={carregandoPeriodo} />}
+          </FormField>
+        </FilterFieldGroup>
+        {erroPeriodo && <Alert tone="danger">{erroPeriodo}</Alert>}
+        {carregandoPeriodo && <p className="text-xs text-slate-500" role="status">Carregando dados do período...</p>}
+        {periodoAplicado && !erroPeriodo && !carregandoPeriodo && (
+          <p className="text-xs text-sky-700">
+            Período aplicado: {formatarDataBrasileira(periodoAplicado.de)} até {formatarDataBrasileira(periodoAplicado.ate)} · America/Sao_Paulo
+          </p>
+        )}
+      </FilterPanel>
+
+      <Alert tone="warning">Dados confiáveis a partir de 13/08/2026</Alert>
+
+      {/* Estado geral da automação */}
+      <Card>
+        <CardContent>
+          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+            <div className="flex items-center gap-4">
+              <div className={`rounded-xl p-3 ${automacaoAtiva ? 'bg-success/10' : 'bg-warning/10'}`}>
+                {automacaoAtiva ? <CheckCircle className="size-7 text-emerald-600" /> : <Pause className="size-7 text-amber-600" />}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-bold text-slate-800">
+                    {automacaoAtiva ? 'Automação ativa' : 'Automação pausada'}
                   </span>
+                  <Badge tone={automacaoAtiva ? 'success' : 'warning'}>{automacaoAtiva ? 'EM EXECUÇÃO' : 'PAUSADA'}</Badge>
+                </div>
+                {status.automacao.motivo && <p className="mt-0.5 text-sm text-slate-500">Motivo: {status.automacao.motivo}</p>}
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
+                  {status.automacao.atualizadoEm && <span>Atualizado: {formatarData(status.automacao.atualizadoEm)}</span>}
+                  {status.ultimoProcessamento && <span>Último processamento: {formatarData(status.ultimoProcessamento)}</span>}
+                  <span>Timezone: {status.parametros.timezone}</span>
                 </div>
               </div>
-            ) : (
-              <div className="text-xs text-slate-400">Nenhum resumo enviado ainda.</div>
-            )}
-          </div>
-
-          {/* Alertas 24h */}
-          <div className="border border-slate-200 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <AlertCircle className="w-4 h-4 text-slate-400" />
-              <span className="text-xs font-semibold text-slate-600">Alertas (24h)</span>
             </div>
-            {loadingAlertas ? (
-              <div className="text-xs text-slate-400">Carregando...</div>
-            ) : (
-              <div className="space-y-1 text-xs">
-                <div className="text-2xl font-bold text-slate-800">{alertas.total24h}</div>
-                {alertas.ultimoAlertaEm && (
-                  <div className="text-slate-500">
-                    Último: {formatarData(alertas.ultimoAlertaEm)}
-                  </div>
-                )}
-                {alertas.ultimoTipo && (
-                  <div className="text-slate-500">
-                    Tipo: {alertas.ultimoTipo}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
 
-          {/* Estado saudável */}
-          <div className="border border-slate-200 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <CheckCircle className="w-4 h-4 text-slate-400" />
-              <span className="text-xs font-semibold text-slate-600">Estado operacional</span>
-            </div>
-            <div className="text-xs">
-              {alertas.total24h === 0 && status.resumo.erro === 0 && status.resumo.resultadoIncerto === 0 ? (
-                <span className="text-green-600 font-medium">✅ Saudável</span>
+            <div className="flex gap-2">
+              {automacaoAtiva ? (
+                <Button variant="secondary" onClick={() => setModalPausa(true)}>
+                  <Pause className="size-4" />
+                  Pausar automação
+                </Button>
               ) : (
-                <span className="text-amber-600 font-medium">⚠️ Com atenção</span>
+                <Button variant="primary" onClick={() => setModalReativar(true)}>
+                  <Play className="size-4" />
+                  Reativar automação
+                </Button>
               )}
             </div>
           </div>
-        </div>
 
-        {/* Alertas recentes */}
-        {alertas.ultimos.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-slate-100">
-            <h3 className="text-xs font-semibold text-slate-600 mb-2">Alertas recentes</h3>
-            <div className="space-y-1.5 max-h-40 overflow-y-auto">
-              {alertas.ultimos.map((alerta, i) => (
-                <div key={i} className="flex items-center gap-2 text-xs text-slate-600">
-                  <span className={`px-1.5 py-0.5 rounded font-medium ${
-                    alerta.status === 'enviado' ? 'bg-green-50 text-green-700' :
-                    alerta.status === 'deduplicado' ? 'bg-slate-50 text-slate-500' :
-                    'bg-red-50 text-red-700'
-                  }`}>
-                    {alerta.status}
-                  </span>
-                  <span className="font-medium">{alerta.tipo}</span>
-                  <span className="text-slate-400">{formatarData(alerta.enviadoEm)}</span>
-                </div>
-              ))}
-            </div>
+          {/* Parâmetros */}
+          <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 md:grid-cols-3 lg:grid-cols-6">
+            <ParametroItem icon={<Hash className="size-4" />} label="Limite por execução" valor={String(status.parametros.limitePorExecucao)} />
+            <ParametroItem icon={<Hash className="size-4" />} label="Limite diário/loja" valor={String(status.parametros.limiteDiarioPorConexao)} />
+            <ParametroItem icon={<Clock className="size-4" />} label="Timeout reserva" valor={`${status.parametros.reservaTimeoutMinutos}min`} />
+            <ParametroItem icon={<Clock className="size-4" />} label="Timeout envio" valor={`${status.parametros.envioTimeoutMinutos}min`} />
+            <ParametroItem icon={<CheckCircle className="size-4" />} label="Ativação gradual" valor={status.parametros.modoAtivacaoGradual ? 'Sim' : 'Não'} />
+            <ParametroItem icon={<Clock className="size-4" />} label="Timezone" valor={status.parametros.timezone} />
           </div>
-        )}
-      </section>
+        </CardContent>
+      </Card>
+
+      {/* Resultados da coorte de leads */}
+      <KpiSection
+        kpis={
+          <>
+            <KpiCard
+              label="Leads registrados"
+              value={status.resumo.leadsRegistrados}
+              icon={<Users className="size-4" />}
+              labelAction={<KpiTooltip label="Leads registrados" texto="Total de clientes que já entraram em contato pela nossa Central de Atendimento." />}
+            />
+            <KpiCard
+              label="Candidatos elegíveis"
+              value={status.resumo.candidatosElegiveis}
+              icon={<UserCheck className="size-4" />}
+              tone="info"
+              detail={formatarPercentualHubVendas(status.resumo.candidatosElegiveis, status.resumo.leadsRegistrados)}
+              labelAction={<KpiTooltip label="Candidatos elegíveis" texto="Clientes que ainda podem receber uma mensagem de recuperação." />}
+            />
+            <KpiCard
+              label="Convertidos organicamente"
+              value={status.resumo.convertidos}
+              icon={<CheckCircle className="size-4" />}
+              tone="success"
+              detail={
+                <>
+                  <p>{formatarPercentualHubVendas(status.resumo.convertidos, status.resumo.leadsRegistrados)}</p>
+                  <p className="truncate" title={formatarDetalhePorLoja(status.resumo.convertidosPorLoja)}>{formatarDetalhePorLoja(status.resumo.convertidosPorLoja)}</p>
+                </>
+              }
+              labelAction={<KpiTooltip label="Convertidos organicamente" texto="Clientes que procuraram uma das lojas por conta própria, antes de receber uma mensagem de recuperação." />}
+            />
+            <KpiCard
+              label="Recuperação enviada / aguardando"
+              value={status.resumo.recuperacaoEnviadaTotal}
+              icon={<Send className="size-4" />}
+              tone="info"
+              detail={
+                <>
+                  <p>{formatarPercentualHubVendas(status.resumo.recuperacaoEnviadaTotal, status.resumo.leadsRegistrados)}</p>
+                  <p className="truncate" title={formatarDetalhePorLoja(status.resumo.recuperacaoEnviadaPorLoja)}>{formatarDetalhePorLoja(status.resumo.recuperacaoEnviadaPorLoja)}</p>
+                </>
+              }
+              labelAction={<KpiTooltip label="Recuperação enviada / aguardando" texto="Clientes que receberam nossa mensagem de recuperação e ainda estão dentro do prazo para responder." />}
+            />
+            <KpiCard
+              label="Recuperados"
+              value={status.resumo.recuperados}
+              icon={<Undo2 className="size-4" />}
+              tone="success"
+              detail={
+                <>
+                  <p>{formatarPercentualHubVendas(status.resumo.recuperados, status.resumo.leadsRegistrados)}</p>
+                  <p className="truncate" title={formatarDetalhePorLoja(status.resumo.recuperadosPorLoja)}>{formatarDetalhePorLoja(status.resumo.recuperadosPorLoja)}</p>
+                </>
+              }
+              labelAction={<KpiTooltip label="Recuperados" texto="Clientes que responderam depois de receber nossa mensagem de recuperação." />}
+            />
+            <KpiCard
+              label="Perdidos"
+              value={status.resumo.perdidos}
+              icon={<XCircle className="size-4" />}
+              detail={
+                <>
+                  <p>{formatarPercentualHubVendas(status.resumo.perdidos, status.resumo.leadsRegistrados)}</p>
+                  <p className="truncate" title={formatarDetalhePorLoja(status.resumo.perdidosPorLoja)}>{formatarDetalhePorLoja(status.resumo.perdidosPorLoja)}</p>
+                </>
+              }
+              labelAction={<KpiTooltip label="Perdidos" texto="Clientes que receberam a mensagem de recuperação, mas não responderam dentro do prazo." />}
+            />
+            <KpiCard
+              label="Fila manual"
+              value={status.resumo.filaManual}
+              icon={<Clock className="size-4" />}
+              tone="warning"
+              detail={formatarPercentualHubVendas(status.resumo.filaManual, status.resumo.leadsRegistrados)}
+              labelAction={<KpiTooltip label="Fila manual" texto="Clientes que poderiam receber recuperação, mas não entraram na fila dentro do prazo." />}
+            />
+          </>
+        }
+      >
+        <p className="-mt-2 text-xs text-slate-500">
+          {periodoAplicado
+            ? 'Considera quem entrou no Hub no período selecionado e mostra o estado atual desses mesmos leads.'
+            : 'Considera todos os leads registrados e mostra o estado atual de cada um.'}
+        </p>
+      </KpiSection>
+
+      {/* Movimentação */}
+      <KpiSection
+        kpis={
+          <KpiCard
+            label={periodoAplicado ? 'Enviados no período' : 'Enviados hoje'}
+            value={status.resumo.enviadaHoje}
+            icon={<Send className="size-4" />}
+            tone="success"
+          />
+        }
+      />
+
+      {/* Operação atual */}
+      <KpiSection
+        kpis={
+          <>
+            <KpiCard label="Filas agendadas" value={status.resumo.agendada} icon={<Clock className="size-4" />} tone="info" />
+            <KpiCard label="Filas reservadas" value={status.resumo.reservada} icon={<Hash className="size-4" />} tone="info" />
+            <KpiCard label="Enviando" value={status.resumo.enviando} icon={<Send className="size-4" />} tone="info" />
+            <KpiCard label="Canceladas" value={status.resumo.cancelada} icon={<XCircle className="size-4" />} />
+            <KpiCard label="Erros" value={status.resumo.erro} icon={<AlertCircle className="size-4" />} tone={status.resumo.erro > 0 ? 'danger' : 'neutral'} />
+            <KpiCard label="Resultado incerto" value={status.resumo.resultadoIncerto} icon={<AlertTriangle className="size-4" />} tone={status.resumo.resultadoIncerto > 0 ? 'warning' : 'neutral'} />
+            <KpiCard label="Análise manual" value={status.resumo.analiseManual} icon={<ShieldAlert className="size-4" />} tone={status.resumo.analiseManual > 0 ? 'warning' : 'neutral'} />
+          </>
+        }
+      >
+        <p className="-mt-2 text-xs text-slate-500">Estado atual das filas, limites e alertas da automação, independente do período selecionado.</p>
+      </KpiSection>
+
+      {status.resumo.conexoesPausadas > 0 && (
+        <Alert tone="warning">
+          <ShieldAlert className="mr-1 inline size-4" />
+          {status.resumo.conexoesPausadas} conexão(ões) pausada(s) por erro automático.
+        </Alert>
+      )}
+
+      {/* Alertas e resumo operacional */}
+      <Card>
+        <CardHeader
+          title="Alertas e resumo operacional"
+          action={
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => { carregarAlertas(true); carregarResumo(true) }}
+                loading={atualizandoAlertas}
+              >
+                <RefreshCw className="size-3.5" />
+                {atualizandoAlertas ? 'Atualizando...' : 'Atualizar'}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => { setFeedbackTeste(null); setModalTesteAlerta(true) }}
+                disabled={enviandoTeste}
+              >
+                <ShieldAlert className="size-3.5" />
+                Enviar alerta de teste
+              </Button>
+            </div>
+          }
+        />
+        <CardContent className="space-y-4">
+          {(ultimaAtualizacaoAlertas || feedbackAlertas) && (
+            <div className="flex items-center gap-3 text-xs">
+              {ultimaAtualizacaoAlertas && <span className="text-slate-400">Atualizado às {ultimaAtualizacaoAlertas}</span>}
+              {feedbackAlertas && (
+                <span className={feedbackAlertas.tipo === 'sucesso' ? 'text-emerald-600' : 'text-destructive'}>{feedbackAlertas.texto}</span>
+              )}
+            </div>
+          )}
+          {feedbackTeste && <Alert tone={feedbackTeste.tipo === 'sucesso' ? 'success' : 'danger'}>{feedbackTeste.texto}</Alert>}
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <Section title="Resumo diário" icon={<Clock className="size-4" />} tone="section-1">
+              {loadingAlertas ? (
+                <p className="text-xs text-slate-400">Carregando...</p>
+              ) : statusResumo.ultimoResumoEm ? (
+                <div className="space-y-1 text-xs">
+                  <p className="text-slate-700"><span className="text-slate-400">Data:</span> {statusResumo.ultimoResumoDataLocal ?? '—'}</p>
+                  <p className="text-slate-700"><span className="text-slate-400">Enviado:</span> {formatarData(statusResumo.ultimoResumoEm)}</p>
+                  <p className="text-slate-700">
+                    <span className="text-slate-400">Status:</span>{' '}
+                    <span className={statusResumo.ultimoResumoStatus === 'enviado' ? 'text-emerald-600' : 'text-destructive'}>{statusResumo.ultimoResumoStatus ?? '—'}</span>
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400">Nenhum resumo enviado ainda.</p>
+              )}
+            </Section>
+
+            <Section title="Alertas (24h)" icon={<AlertCircle className="size-4" />} tone="section-2">
+              {loadingAlertas ? (
+                <p className="text-xs text-slate-400">Carregando...</p>
+              ) : (
+                <div className="space-y-1 text-xs">
+                  <p className="text-2xl font-bold text-slate-800">{alertas.total24h}</p>
+                  {alertas.ultimoAlertaEm && <p className="text-slate-500">Último: {formatarData(alertas.ultimoAlertaEm)}</p>}
+                  {alertas.ultimoTipo && <p className="text-slate-500">Tipo: {alertas.ultimoTipo}</p>}
+                </div>
+              )}
+            </Section>
+
+            <Section title="Estado operacional" icon={<CheckCircle className="size-4" />} tone="section-3">
+              <div className="text-xs">
+                {alertas.total24h === 0 && status.resumo.erro === 0 && status.resumo.resultadoIncerto === 0 ? (
+                  <Badge tone="success">Saudável</Badge>
+                ) : (
+                  <Badge tone="warning">Com atenção</Badge>
+                )}
+              </div>
+            </Section>
+          </div>
+
+          {/* Alertas recentes */}
+          {alertas.ultimos.length > 0 && (
+            <div className="border-t border-slate-100 pt-4">
+              <h3 className="mb-2 text-xs font-semibold text-slate-600">Alertas recentes</h3>
+              <div className="max-h-40 space-y-1.5 overflow-y-auto">
+                {alertas.ultimos.map((alerta, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs text-slate-600">
+                    <Badge tone={alerta.status === 'enviado' ? 'success' : alerta.status === 'deduplicado' ? 'neutral' : 'danger'}>{alerta.status}</Badge>
+                    <span className="font-medium">{alerta.tipo}</span>
+                    <span className="text-slate-400">{formatarData(alerta.enviadoEm)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Cards por loja */}
-      <section className="order-2">
-        <h2 className="text-sm font-semibold text-slate-700 mb-3">Por loja</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-slate-700">Por loja</h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {status.lojas.map((loja) => (
             <CardLoja key={loja.loja} loja={loja} />
           ))}
@@ -974,276 +857,242 @@ export default function PageClient() {
       </section>
 
       {/* Configuração do limite */}
-      <section className="order-6 bg-white border border-slate-200 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-slate-700 mb-3">Limite diário por loja</h2>
-        <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-          <div className="flex-1 max-w-xs">
-            <label className="block text-xs text-slate-500 mb-1">Valor (aplicado a cada loja)</label>
-            <input
-              type="number"
-              min={0}
-              max={LIMITE_DIARIO_MAXIMO}
-              value={novoLimite}
-              onChange={(e) => setNovoLimite(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
-              placeholder="Ex: 10"
-            />
-            <p className="text-xs text-slate-400 mt-1">
-              Este limite é aplicado individualmente a cada loja. Exemplo: limite 10 permite até 10 envios em Portão, 10 em Bigorrilho e 10 em Hauer por dia. Máximo seguro: {LIMITE_DIARIO_MAXIMO}.
-            </p>
+      <Card>
+        <CardHeader title="Limite diário por loja" />
+        <CardContent>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <FormField id="hub-vendas-limite" label="Valor (aplicado a cada loja)" helper={`Este limite é aplicado individualmente a cada loja. Exemplo: limite 10 permite até 10 envios em Portão, 10 em Bigorrilho e 10 em Hauer por dia. Máximo seguro: ${LIMITE_DIARIO_MAXIMO}.`} className="max-w-xs flex-1">
+              {(f) => (
+                <Input
+                  {...f}
+                  type="number"
+                  min={0}
+                  max={LIMITE_DIARIO_MAXIMO}
+                  value={novoLimite}
+                  onChange={(e) => setNovoLimite(e.target.value)}
+                  placeholder="Ex: 10"
+                />
+              )}
+            </FormField>
+            <Button onClick={salvarLimite} loading={salvandoLimite} disabled={novoLimite === String(status.parametros.limiteDiarioPorConexao)}>
+              <Save className="size-4" />
+              Salvar limite
+            </Button>
           </div>
-          <button
-            onClick={salvarLimite}
-            disabled={salvandoLimite || novoLimite === String(status.parametros.limiteDiarioPorConexao)}
-            className="flex items-center gap-2 px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-colors"
-          >
-            {salvandoLimite ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Salvar limite
-          </button>
-        </div>
-        {feedbackLimite && (
-          <div className={`mt-3 px-3 py-2 rounded-lg text-sm ${feedbackLimite.tipo === 'sucesso' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-            {feedbackLimite.texto}
-          </div>
-        )}
-      </section>
+          {feedbackLimite && <Alert tone={feedbackLimite.tipo === 'sucesso' ? 'success' : 'danger'} className="mt-3">{feedbackLimite.texto}</Alert>}
+        </CardContent>
+      </Card>
 
       {/* Filtros + Tabela de filas */}
-      <section className="order-3 bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="p-4 border-b border-slate-100">
-          <h2 className="text-sm font-semibold text-slate-700 mb-1">{periodoAplicado ? 'Filas e envios do período' : 'Filas e envios'}</h2>
-          <p className="text-xs text-slate-500 mb-3">As filas usam a data programada; os envios usam a data de envio.</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <select
-              value={filtros.loja}
-              onChange={(e) => { void atualizarFiltrosFila({ ...filtros, loja: e.target.value as LojaFiltro }) }}
-              className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">Todas as lojas</option>
-              <option value="portao">Portão</option>
-              <option value="bigorrilho">Bigorrilho</option>
-              <option value="hauer_marechal">Hauer</option>
-            </select>
-            <select
-              value={filtros.status}
-              onChange={(e) => { void atualizarFiltrosFila({ ...filtros, status: e.target.value }) }}
-              className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            >
-              <option value="">Todos os status</option>
-              <option value="agendado">Agendado</option>
-              <option value="reservado">Reservado</option>
-              <option value="enviando">Enviando</option>
-              <option value="enviado">Enviado</option>
-              <option value="erro">Erro</option>
-              <option value="resultado_incerto">Resultado incerto</option>
-              <option value="analise_manual">Análise manual</option>
-              <option value="cancelado">Cancelado</option>
-            </select>
-            <input
-              type="text"
-              placeholder="Cliente (nome)"
-              value={filtros.cliente}
-              onChange={(e) => setFiltros({ ...filtros, cliente: e.target.value })}
-              className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            />
-            <input
-              type="text"
-              placeholder="Telefone parcial"
-              value={filtros.telefoneParcial}
-              onChange={(e) => { void atualizarFiltrosFila({ ...filtros, telefoneParcial: e.target.value }) }}
-              className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
-            />
-          </div>
-          <div className="flex flex-wrap gap-4 mt-3">
+      <section className="space-y-4">
+        <div>
+          <h2 className="mb-1 text-sm font-semibold text-slate-700">{periodoAplicado ? 'Filas e envios do período' : 'Filas e envios'}</h2>
+          <p className="text-xs text-slate-500">As filas usam a data programada; os envios usam a data de envio.</p>
+        </div>
+
+        <FilterPanel title="Filtros de filas e envios" dirty={filasFilters.dirty} onApply={aplicarFiltrosFila} onClear={limparFiltrosFila} applyDisabled={loadingFilas}>
+          <FilterFieldGroup label="Cliente e telefone" icon={<Phone className="size-4 text-slate-400" />}>
+            <FormField id="hub-vendas-filtro-cliente" label="Cliente">
+              {(f) => <Input {...f} value={filasFilters.draft.cliente} onChange={(e) => filasFilters.setField('cliente', e.target.value)} placeholder="Nome do cliente" />}
+            </FormField>
+            <FormField id="hub-vendas-filtro-telefone" label="Telefone parcial">
+              {(f) => <Input {...f} value={filasFilters.draft.telefoneParcial} onChange={(e) => filasFilters.setField('telefoneParcial', e.target.value)} placeholder="Telefone parcial" />}
+            </FormField>
+          </FilterFieldGroup>
+
+          <FilterFieldGroup label="Loja e status" icon={<Store className="size-4 text-slate-400" />}>
+            <FormField id="hub-vendas-filtro-loja" label="Loja">
+              {(f) => (
+                <Select value={filasFilters.draft.loja || 'all'} onValueChange={(v) => filasFilters.setField('loja', (v === 'all' ? '' : v) as LojaFiltro)}>
+                  <SelectTrigger id={f.id}><SelectValue placeholder="Todas as lojas" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as lojas</SelectItem>
+                    <SelectItem value="portao">Portão</SelectItem>
+                    <SelectItem value="bigorrilho">Bigorrilho</SelectItem>
+                    <SelectItem value="hauer_marechal">Hauer</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </FormField>
+            <FormField id="hub-vendas-filtro-status" label="Status">
+              {(f) => (
+                <Select value={filasFilters.draft.status || 'all'} onValueChange={(v) => filasFilters.setField('status', v === 'all' ? '' : v)}>
+                  <SelectTrigger id={f.id}><SelectValue placeholder="Todos os status" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os status</SelectItem>
+                    <SelectItem value="agendado">Agendado</SelectItem>
+                    <SelectItem value="reservado">Reservado</SelectItem>
+                    <SelectItem value="enviando">Enviando</SelectItem>
+                    <SelectItem value="enviado">Enviado</SelectItem>
+                    <SelectItem value="erro">Erro</SelectItem>
+                    <SelectItem value="resultado_incerto">Resultado incerto</SelectItem>
+                    <SelectItem value="analise_manual">Análise manual</SelectItem>
+                    <SelectItem value="cancelado">Cancelado</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </FormField>
+          </FilterFieldGroup>
+
+          <div className="flex flex-wrap gap-4">
             <label className="flex items-center gap-2 text-sm text-slate-600">
-              <input type="checkbox" checked={filtros.somenteErros} onChange={(e) => { void atualizarFiltrosFila({ ...filtros, somenteErros: e.target.checked }) }} />
+              <Checkbox checked={filasFilters.draft.somenteErros} onCheckedChange={(c) => filasFilters.setField('somenteErros', c === true)} />
               Somente erros
             </label>
             <label className="flex items-center gap-2 text-sm text-slate-600">
-              <input type="checkbox" checked={filtros.somenteAnaliseManual} onChange={(e) => { void atualizarFiltrosFila({ ...filtros, somenteAnaliseManual: e.target.checked }) }} />
+              <Checkbox checked={filasFilters.draft.somenteAnaliseManual} onCheckedChange={(c) => filasFilters.setField('somenteAnaliseManual', c === true)} />
               Análise manual
             </label>
             <label className="flex items-center gap-2 text-sm text-slate-600">
-              <input type="checkbox" checked={filtros.somenteResultadoIncerto} onChange={(e) => { void atualizarFiltrosFila({ ...filtros, somenteResultadoIncerto: e.target.checked }) }} />
+              <Checkbox checked={filasFilters.draft.somenteResultadoIncerto} onCheckedChange={(c) => filasFilters.setField('somenteResultadoIncerto', c === true)} />
               Resultado incerto
             </label>
           </div>
-        </div>
+        </FilterPanel>
 
-        {/* Tabela */}
-        {loadingFilas ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
-          </div>
-        ) : erroFilas ? (
-          <div className="flex items-center justify-center py-12 text-red-600 text-sm">{erroFilas}</div>
-        ) : !filas || filas.filas.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-            <Search className="w-8 h-8 mb-2" />
-            <p className="text-sm">Nenhuma fila encontrada</p>
-          </div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-slate-600 text-xs uppercase">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Data/hora</th>
-                    <th className="px-3 py-2 text-left">Cliente</th>
-                    <th className="px-3 py-2 text-left">Telefone</th>
-                    <th className="px-3 py-2 text-left">Loja</th>
-                    <th className="px-3 py-2 text-left">Status</th>
-                    <th className="px-3 py-2 text-left">Protocolo Venda</th>
-                    <th className="px-3 py-2 text-left">Protocolo Recuperação</th>
-                    <th className="px-3 py-2 text-left">Tent.</th>
-                    <th className="px-3 py-2 text-left">Erro</th>
-                    <th className="px-3 py-2 text-center">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filas.filas.map((fila) => (
-                    <tr key={fila.id} className="hover:bg-slate-50">
-                      <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">{formatarData(fila.programadoPara)}</td>
-                      <td className="px-3 py-2 text-slate-700">{fila.nomeContatoHub || '—'}</td>
-                      <td className="px-3 py-2 text-slate-600 text-xs font-mono">{fila.telefoneMascarado || '—'}</td>
-                      <td className="px-3 py-2 text-slate-600">{fila.conexaoDestinoNome || fila.loja || '—'}</td>
-                      <td className="px-3 py-2"><BadgeStatus status={fila.status} /></td>
-                      <td className="px-3 py-2 text-xs font-mono whitespace-nowrap">
-                        {fila.digisacProtocoloHub && fila.digisacTicketIdHub ? (
-                          <a
-                            href={montarUrlHistoricoTicket(fila.digisacTicketIdHub)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline"
-                          >
-                            {fila.digisacProtocoloHub}
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        ) : '—'}
-                      </td>
-                      <td className="px-3 py-2 text-xs font-mono whitespace-nowrap">
-                        {fila.digisacProtocolo && fila.digisacTicketId ? (
-                          <a
-                            href={montarUrlHistoricoTicket(fila.digisacTicketId)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline"
-                          >
-                            {fila.digisacProtocolo}
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        ) : '—'}
-                      </td>
-                      <td className="px-3 py-2 text-center text-slate-600">{fila.tentativasEnvio}</td>
-                      <td className="px-3 py-2 text-xs text-red-600 max-w-[200px] truncate" title={fila.erro || ''}>{fila.erro || '—'}</td>
-                      <td className="px-3 py-2 text-center">
-                        <button onClick={() => abrirDetalhe(fila.id)} className="p-1.5 hover:bg-slate-200 rounded-lg" title="Ver detalhes">
-                          <Eye className="w-4 h-4 text-slate-500" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Paginação */}
-            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm">
-              <span className="text-slate-500">
-                {filas.total} registro(s) — Página {filas.pagina} de {filas.totalPaginas}
-              </span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { const p = Math.max(1, pagina - 1); setPagina(p); carregarFilas(p) }}
-                  disabled={pagina <= 1}
-                  className="p-1.5 border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => { const p = Math.min(filas.totalPaginas, pagina + 1); setPagina(p); carregarFilas(p) }}
-                  disabled={pagina >= filas.totalPaginas}
-                  className="p-1.5 border border-slate-200 rounded-lg disabled:opacity-40 hover:bg-slate-50"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
+        <ResponsiveTable<FilaListadaHubVendas>
+          columns={[
+            { key: 'data', header: 'Data/hora', width: 'compact', render: (fila) => <span className="text-xs text-slate-600">{formatarData(fila.programadoPara)}</span> },
+            { key: 'cliente', header: 'Cliente', width: 'content', render: (fila) => fila.nomeContatoHub || '—' },
+            { key: 'telefone', header: 'Telefone', width: 'compact', className: 'font-mono text-xs text-slate-600', render: (fila) => fila.telefoneMascarado || '—' },
+            { key: 'loja', header: 'Loja', width: 'standard', render: (fila) => fila.conexaoDestinoNome || fila.loja || '—' },
+            { key: 'status', header: 'Status', width: 'compact', render: (fila) => <BadgeStatus status={fila.status} /> },
+            {
+              key: 'protocoloVenda',
+              header: 'Protocolo Venda',
+              width: 'compact',
+              className: 'font-mono text-xs',
+              render: (fila) => fila.digisacProtocoloHub && fila.digisacTicketIdHub ? (
+                <a href={montarUrlHistoricoTicket(fila.digisacTicketIdHub)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline">
+                  {fila.digisacProtocoloHub}
+                  <ExternalLink className="size-3" />
+                </a>
+              ) : '—',
+            },
+            {
+              key: 'protocoloRecuperacao',
+              header: 'Protocolo Recuperação',
+              width: 'compact',
+              className: 'font-mono text-xs',
+              render: (fila) => fila.digisacProtocolo && fila.digisacTicketId ? (
+                <a href={montarUrlHistoricoTicket(fila.digisacTicketId)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline">
+                  {fila.digisacProtocolo}
+                  <ExternalLink className="size-3" />
+                </a>
+              ) : '—',
+            },
+            { key: 'tentativas', header: 'Tent.', width: 'compact', className: 'text-center', render: (fila) => fila.tentativasEnvio },
+            { key: 'erro', header: 'Erro', className: 'max-w-[200px] truncate text-xs text-destructive', render: (fila) => <span title={fila.erro || ''}>{fila.erro || '—'}</span> },
+          ]}
+          rows={filas?.filas ?? []}
+          rowKey={(fila) => fila.id}
+          loading={loadingFilas}
+          error={erroFilas ?? undefined}
+          emptyTitle="Nenhuma fila encontrada"
+          rowActions={(fila) => (
+            <IconButton variant="ghost" aria-label="Ver detalhes" onClick={() => abrirDetalhe(fila.id)}>
+              <Eye className="size-4" />
+            </IconButton>
+          )}
+          renderMobileCard={(fila) => (
+            <div className="space-y-1 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-800">{fila.nomeContatoHub || '—'}</span>
+                <BadgeStatus status={fila.status} />
               </div>
+              <p className="text-xs text-slate-500">{formatarData(fila.programadoPara)} · {fila.conexaoDestinoNome || fila.loja || '—'}</p>
+              <p className="font-mono text-xs text-slate-500">{fila.telefoneMascarado || '—'}</p>
+              {fila.erro && <p className="text-xs text-destructive">{fila.erro}</p>}
             </div>
-          </>
+          )}
+        />
+
+        {filas && filas.filas.length > 0 && (
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-slate-500">{filas.total} registro(s) — Página {filas.pagina} de {filas.totalPaginas}</span>
+            <div className="flex gap-2">
+              <IconButton
+                variant="ghost"
+                aria-label="Página anterior"
+                onClick={() => { const p = Math.max(1, pagina - 1); setPagina(p); void executarBuscaFilas(p, filasFilters.applied) }}
+                disabled={pagina <= 1}
+              >
+                <ChevronLeft className="size-4" />
+              </IconButton>
+              <IconButton
+                variant="ghost"
+                aria-label="Próxima página"
+                onClick={() => { const p = Math.min(filas.totalPaginas, pagina + 1); setPagina(p); void executarBuscaFilas(p, filasFilters.applied) }}
+                disabled={pagina >= filas.totalPaginas}
+              >
+                <ChevronRight className="size-4" />
+              </IconButton>
+            </div>
+          </div>
         )}
       </section>
 
       {/* Modal Pausa */}
-      {modalPausa && (
-        <ModalConfirmacao
-          titulo="Pausar automação"
-          descricao="A automação será pausada. Os crons da VPS continuarão executando mas não processarão filas. Filas já agendadas não serão canceladas."
-          motivo={motivoPausa}
-          setMotivo={setMotivoPausa}
-          processando={processandoPausa}
-          onConfirmar={confirmarPausa}
-          onCancelar={() => { setModalPausa(false); setMotivoPausa('') }}
-          corBotao="amber"
-          textoBotao="Pausar"
-        />
-      )}
+      <ModalConfirmacao
+        open={modalPausa}
+        onOpenChange={(open) => { setModalPausa(open); if (!open) setMotivoPausa('') }}
+        titulo="Pausar automação"
+        descricao="A automação será pausada. Os crons da VPS continuarão executando mas não processarão filas. Filas já agendadas não serão canceladas."
+        motivo={motivoPausa}
+        setMotivo={setMotivoPausa}
+        processando={processandoPausa}
+        onConfirmar={confirmarPausa}
+        textoBotao="Pausar"
+      />
 
       {/* Modal Reativar */}
-      {modalReativar && (
-        <ModalConfirmacao
-          titulo="Reativar automação"
-          descricao="A automação será reativada. Os metadados de pausa serão limpos. Os próximos ciclos da VPS retomarão o processamento normalmente."
-          motivo={motivoReativar}
-          setMotivo={setMotivoReativar}
-          processando={processandoPausa}
-          onConfirmar={confirmarReativar}
-          onCancelar={() => { setModalReativar(false); setMotivoReativar('') }}
-          corBotao="green"
-          textoBotao="Reativar"
-        />
-      )}
+      <ModalConfirmacao
+        open={modalReativar}
+        onOpenChange={(open) => { setModalReativar(open); if (!open) setMotivoReativar('') }}
+        titulo="Reativar automação"
+        descricao="A automação será reativada. Os metadados de pausa serão limpos. Os próximos ciclos da VPS retomarão o processamento normalmente."
+        motivo={motivoReativar}
+        setMotivo={setMotivoReativar}
+        processando={processandoPausa}
+        onConfirmar={confirmarReativar}
+        textoBotao="Reativar"
+      />
 
       {/* Modal Detalhe */}
-      {detalhe && (
-        <ModalDetalhe detalhe={detalhe} onClose={() => setDetalhe(null)} onAcao={(acao, titulo) => { setModalAcao({ filaId: detalhe.fila.id, acao, titulo }); setMotivoAcao('') }} />
-      )}
+      <ModalDetalhe
+        detalhe={detalhe}
+        onClose={() => setDetalhe(null)}
+        onAcao={(acao, titulo) => { if (detalhe) { setModalAcao({ filaId: detalhe.fila.id, acao, titulo }); setMotivoAcao('') } }}
+      />
 
       {/* Loading detalhe */}
       {loadingDetalhe && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <Loader2 className="w-8 h-8 animate-spin text-white" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <Spinner className="size-8 text-white" label="Carregando detalhes" />
         </div>
       )}
 
       {/* Modal Ação Manual */}
-      {modalAcao && (
-        <ModalConfirmacao
-          titulo={modalAcao.titulo}
-          descricao="Confirme a ação manual. Esta operação será registrada na auditoria."
-          motivo={motivoAcao}
-          setMotivo={setMotivoAcao}
-          processando={processandoAcao}
-          onConfirmar={executarAcaoManual}
-          onCancelar={() => { setModalAcao(null); setMotivoAcao('') }}
-          corBotao="red"
-          textoBotao="Confirmar"
-        />
-      )}
+      <ModalConfirmacao
+        open={modalAcao !== null}
+        onOpenChange={(open) => { if (!open) { setModalAcao(null); setMotivoAcao('') } }}
+        titulo={modalAcao?.titulo ?? ''}
+        descricao="Confirme a ação manual. Esta operação será registrada na auditoria."
+        motivo={motivoAcao}
+        setMotivo={setMotivoAcao}
+        processando={processandoAcao}
+        onConfirmar={executarAcaoManual}
+        textoBotao="Confirmar"
+        destructive
+      />
 
       {/* Modal Teste de Alerta */}
-      {modalTesteAlerta && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="bg-sky-50 p-2 rounded-lg">
-                <ShieldAlert className="w-5 h-5 text-sky-600" />
-              </div>
-              <h3 className="text-base font-bold text-slate-800">Enviar alerta de teste</h3>
-            </div>
-            <p className="text-sm text-slate-600 mb-4">
-              Enviar um alerta de teste para o contato técnico do Hub/Vendas? Esta ação não afeta clientes ou filas.
-            </p>
-            <ul className="text-xs text-slate-500 space-y-1 mb-5">
+      <Dialog open={modalTesteAlerta} onOpenChange={setModalTesteAlerta}>
+        <DialogContent className="max-w-md">
+          <DialogHeader title="Enviar alerta de teste" />
+          <DialogBody>
+            <p className="text-sm text-slate-600">Enviar um alerta de teste para o contato técnico do Hub/Vendas? Esta ação não afeta clientes ou filas.</p>
+            <ul className="mt-4 space-y-1 text-xs text-slate-500">
               <li>• A mensagem será enviada apenas ao contato técnico</li>
               <li>• Não será enviada para cliente</li>
               <li>• Nenhuma fila será criada</li>
@@ -1251,36 +1100,19 @@ export default function PageClient() {
               <li>• Nenhum limite será alterado</li>
               <li>• A automação não será pausada</li>
             </ul>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => { setModalTesteAlerta(false) }}
-                disabled={enviandoTeste}
-                className="px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 text-sm font-medium text-slate-700 transition-colors disabled:opacity-60"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={enviarTesteAlerta}
-                disabled={enviandoTeste}
-                className="flex items-center gap-2 px-4 py-2 bg-sky-600 rounded-lg hover:bg-sky-700 text-sm font-medium text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {enviandoTeste ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Enviando teste...
-                  </>
-                ) : (
-                  <>
-                    <ShieldAlert className="w-4 h-4" />
-                    Enviar teste
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setModalTesteAlerta(false)} disabled={enviandoTeste}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={enviarTesteAlerta} loading={enviandoTeste}>
+              <ShieldAlert className="size-4" />
+              Enviar teste
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </PageContainer>
   )
 }
 
@@ -1304,48 +1136,6 @@ function formatarDetalhePorLoja(porLoja: ContagemPorLojaHubVendas[]): string {
   return porLoja.map((item) => `${item.nomeExibicao} ${item.total}`).join(' · ')
 }
 
-function CardResumo({
-  label,
-  valor,
-  cor,
-  destaque,
-  detalhe,
-  tooltip,
-  percentual,
-}: {
-  label: string
-  valor: number
-  cor: string
-  destaque?: boolean
-  detalhe?: string
-  percentual?: string
-  tooltip?: string
-}) {
-  const cores: Record<string, string> = {
-    neutro: 'bg-white border border-slate-200 text-slate-700',
-    slate: 'bg-slate-50 text-slate-700',
-    sky: 'bg-sky-50 text-sky-700',
-    green: 'bg-green-50 text-green-700',
-    blue: 'bg-blue-50 text-blue-700',
-    indigo: 'bg-indigo-50 text-indigo-700',
-    cyan: 'bg-cyan-50 text-cyan-700',
-    red: 'bg-red-50 text-red-700',
-    amber: 'bg-amber-50 text-amber-700',
-    violet: 'bg-violet-50 text-violet-700',
-  }
-  return (
-    <div className={`rounded-xl p-3 ${cores[cor] ?? cores.slate} ${destaque ? 'ring-2 ring-offset-1 ring-red-200' : ''}`}>
-      <div className="flex items-center gap-1">
-        <p className="text-xs opacity-70">{label}</p>
-        {tooltip && <InfoTooltip label={label} texto={tooltip} />}
-      </div>
-      <p className="text-2xl font-bold mt-0.5">{valor}</p>
-      {percentual && <p className="text-[11px] opacity-60 leading-tight">{percentual}</p>}
-      {detalhe && <p className="text-[11px] opacity-60 mt-1 truncate" title={detalhe}>{detalhe}</p>}
-    </div>
-  )
-}
-
 /**
  * Ícone de ajuda com tooltip explicativo do KPI. O Radix Tooltip (ui/tooltip.tsx) é
  * hover-first e ignora touch por design (fecha ao toque em vez de abrir). Para funcionar
@@ -1353,7 +1143,7 @@ function CardResumo({
  * (antes de chegar no botão do Radix), evitando que o pointerdown/click internos do Radix
  * fechem o tooltip que acabamos de abrir. Mouse continua usando o hover nativo do Radix.
  */
-function InfoTooltip({ label, texto }: { label: string; texto: string }) {
+function KpiTooltip({ label, texto }: { label: string; texto: string }) {
   const [open, setOpen] = useState(false)
   const vindoDeToqueRef = useRef(false)
 
@@ -1393,194 +1183,176 @@ function InfoTooltip({ label, texto }: { label: string; texto: string }) {
 
 function CardLoja({ loja }: { loja: ResumoLojaHubVendas }) {
   const saldo = loja.saldoRestante
-  const saldoCor = saldo > 0 ? 'text-green-600' : 'text-slate-400'
+  const saldoCor = saldo > 0 ? 'text-emerald-600' : 'text-slate-400'
   return (
-    <div className={`bg-white border rounded-xl p-4 ${loja.pausada ? 'border-amber-300 bg-amber-50/30' : 'border-slate-200'}`}>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-slate-800">{loja.nomeExibicao}</h3>
-        {loja.pausada ? (
-          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">PAUSADA</span>
-        ) : (
-          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">ATIVA</span>
+    <Card className={loja.pausada ? 'border-amber-200 bg-warning/5' : undefined}>
+      <CardContent>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="font-semibold text-slate-800">{loja.nomeExibicao}</h3>
+          <Badge tone={loja.pausada ? 'warning' : 'success'}>{loja.pausada ? 'PAUSADA' : 'ATIVA'}</Badge>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div>
+            <p className="text-xs text-slate-400">Enviados hoje</p>
+            <p className="text-lg font-bold text-slate-700">{loja.enviadosHoje}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-400">Limite</p>
+            <p className="text-lg font-bold text-slate-700">{loja.limiteDiario}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-400">Saldo</p>
+            <p className={`text-lg font-bold ${saldoCor}`}>{saldo}</p>
+          </div>
+        </div>
+        {loja.errosConsecutivos > 0 && (
+          <div className="mt-3 flex items-center gap-1.5 text-xs text-destructive">
+            <AlertTriangle className="size-3.5" />
+            {loja.errosConsecutivos} erro(s) consecutivo(s)
+          </div>
         )}
-      </div>
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <div>
-          <p className="text-xs text-slate-400">Enviados hoje</p>
-          <p className="text-lg font-bold text-slate-700">{loja.enviadosHoje}</p>
+        <div className="mt-3 grid grid-cols-3 gap-1 border-t border-slate-100 pt-3 text-xs">
+          <span className="text-slate-500">Agendada: <strong className="text-slate-700">{loja.filas.agendada}</strong></span>
+          <span className="text-slate-500">Reservada: <strong className="text-slate-700">{loja.filas.reservada}</strong></span>
+          <span className="text-slate-500">Enviando: <strong className="text-slate-700">{loja.filas.enviando}</strong></span>
+          <span className="text-slate-500">Erro: <strong className={loja.filas.erro > 0 ? 'text-destructive' : 'text-slate-700'}>{loja.filas.erro}</strong></span>
+          <span className="text-slate-500">Incerto: <strong className={loja.filas.resultadoIncerto > 0 ? 'text-amber-600' : 'text-slate-700'}>{loja.filas.resultadoIncerto}</strong></span>
+          <span className="text-slate-500">Manual: <strong className={loja.filas.analiseManual > 0 ? 'text-violet-600' : 'text-slate-700'}>{loja.filas.analiseManual}</strong></span>
         </div>
-        <div>
-          <p className="text-xs text-slate-400">Limite</p>
-          <p className="text-lg font-bold text-slate-700">{loja.limiteDiario}</p>
-        </div>
-        <div>
-          <p className="text-xs text-slate-400">Saldo</p>
-          <p className={`text-lg font-bold ${saldoCor}`}>{saldo}</p>
-        </div>
-      </div>
-      {loja.errosConsecutivos > 0 && (
-        <div className="flex items-center gap-1.5 mt-3 text-xs text-red-600">
-          <AlertTriangle className="w-3.5 h-3.5" />
-          {loja.errosConsecutivos} erro(s) consecutivo(s)
-        </div>
-      )}
-      <div className="grid grid-cols-3 gap-1 mt-3 pt-3 border-t border-slate-100 text-xs">
-        <span className="text-slate-500">Agendada: <strong className="text-slate-700">{loja.filas.agendada}</strong></span>
-        <span className="text-slate-500">Reservada: <strong className="text-slate-700">{loja.filas.reservada}</strong></span>
-        <span className="text-slate-500">Enviando: <strong className="text-slate-700">{loja.filas.enviando}</strong></span>
-        <span className="text-slate-500">Erro: <strong className={loja.filas.erro > 0 ? 'text-red-600' : 'text-slate-700'}>{loja.filas.erro}</strong></span>
-        <span className="text-slate-500">Incerto: <strong className={loja.filas.resultadoIncerto > 0 ? 'text-amber-600' : 'text-slate-700'}>{loja.filas.resultadoIncerto}</strong></span>
-        <span className="text-slate-500">Manual: <strong className={loja.filas.analiseManual > 0 ? 'text-violet-600' : 'text-slate-700'}>{loja.filas.analiseManual}</strong></span>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   )
 }
 
 function BadgeStatus({ status }: { status: string }) {
-  const map: Record<string, { label: string; cor: string }> = {
-    agendado: { label: 'Agendado', cor: 'bg-blue-100 text-blue-700' },
-    reservado: { label: 'Reservado', cor: 'bg-indigo-100 text-indigo-700' },
-    enviando: { label: 'Enviando', cor: 'bg-cyan-100 text-cyan-700' },
-    enviado: { label: 'Enviado', cor: 'bg-green-100 text-green-700' },
-    erro: { label: 'Erro', cor: 'bg-red-100 text-red-700' },
-    resultado_incerto: { label: 'Incerto', cor: 'bg-amber-100 text-amber-700' },
-    analise_manual: { label: 'Manual', cor: 'bg-violet-100 text-violet-700' },
-    cancelado: { label: 'Cancelado', cor: 'bg-slate-100 text-slate-600' },
+  const map: Record<string, { label: string; tone: 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'brand' }> = {
+    agendado: { label: 'Agendado', tone: 'info' },
+    reservado: { label: 'Reservado', tone: 'info' },
+    enviando: { label: 'Enviando', tone: 'info' },
+    enviado: { label: 'Enviado', tone: 'success' },
+    erro: { label: 'Erro', tone: 'danger' },
+    resultado_incerto: { label: 'Incerto', tone: 'warning' },
+    analise_manual: { label: 'Manual', tone: 'warning' },
+    cancelado: { label: 'Cancelado', tone: 'neutral' },
   }
-  const info = map[status] ?? { label: status, cor: 'bg-slate-100 text-slate-600' }
-  return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${info.cor}`}>{info.label}</span>
+  const info = map[status] ?? { label: status, tone: 'neutral' as const }
+  return <Badge tone={info.tone}>{info.label}</Badge>
 }
 
 function ModalConfirmacao({
-  titulo, descricao, motivo, setMotivo, processando, onConfirmar, onCancelar, corBotao, textoBotao,
+  open, onOpenChange, titulo, descricao, motivo, setMotivo, processando, onConfirmar, textoBotao, destructive = false,
 }: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
   titulo: string
   descricao: string
   motivo: string
   setMotivo: (v: string) => void
   processando: boolean
   onConfirmar: () => void
-  onCancelar: () => void
-  corBotao: string
   textoBotao: string
+  destructive?: boolean
 }) {
-  const cores: Record<string, string> = {
-    amber: 'bg-amber-600 hover:bg-amber-700',
-    green: 'bg-green-600 hover:bg-green-700',
-    red: 'bg-red-600 hover:bg-red-700',
-  }
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onCancelar}>
-      <div className="bg-white rounded-xl p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-bold text-slate-800 mb-2">{titulo}</h3>
-        <p className="text-sm text-slate-600 mb-4">{descricao}</p>
-        <label className="block text-xs text-slate-500 mb-1">Motivo (opcional)</label>
-        <textarea
-          value={motivo}
-          onChange={(e) => setMotivo(e.target.value)}
-          rows={3}
-          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 mb-4"
-          placeholder="Descreva o motivo..."
-        />
-        <div className="flex gap-2 justify-end">
-          <button onClick={onCancelar} className="px-4 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 text-sm font-medium text-slate-700">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader title={titulo} description={descricao} />
+        <DialogBody>
+          <FormField id="modal-confirmacao-motivo" label="Motivo (opcional)">
+            {(f) => <Textarea {...f} value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={3} placeholder="Descreva o motivo..." />}
+          </FormField>
+        </DialogBody>
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={processando}>
             Cancelar
-          </button>
-          <button
-            onClick={onConfirmar}
-            disabled={processando}
-            className={`px-4 py-2 text-white rounded-lg disabled:opacity-50 text-sm font-medium transition-colors ${cores[corBotao] ?? cores.amber}`}
-          >
-            {processando ? <Loader2 className="w-4 h-4 animate-spin" /> : textoBotao}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+          <Button type="button" variant={destructive ? 'destructive' : 'primary'} loading={processando} onClick={onConfirmar}>
+            {textoBotao}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
 function ModalDetalhe({
   detalhe, onClose, onAcao,
 }: {
-  detalhe: DetalheFilaHubVendas
+  detalhe: DetalheFilaHubVendas | null
   onClose: () => void
   onAcao: (acao: 'cancelar_agendada' | 'reprocessar_erro' | 'liberar_analise_manual', titulo: string) => void
 }) {
-  const f = detalhe.fila
+  const f = detalhe?.fila
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-slate-800">Detalhes da fila</h3>
-          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5 text-slate-500" /></button>
-        </div>
+    <Dialog open={detalhe !== null} onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader title="Detalhes da fila" />
+        <DialogBody>
+          {f && (
+            <>
+              <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                <CampoDetalhe label="ID" valor={f.id} mono />
+                <CampoDetalhe label="Lead ID" valor={f.leadId} mono />
+                <CampoDetalhe label="Status" valor={<BadgeStatus status={f.status} />} />
+                <CampoDetalhe label="Loja" valor={f.conexaoDestinoNome || f.loja || '—'} />
+                <CampoDetalhe label="Cliente" valor={f.nomeContatoHub || '—'} />
+                <CampoDetalhe label="Telefone" valor={f.telefoneMascarado || '—'} mono />
+                <CampoDetalhe label="Programado para" valor={formatarData(f.programadoPara)} />
+                <CampoDetalhe label="Enviado em" valor={f.enviadoEm ? formatarData(f.enviadoEm) : '—'} />
+                <CampoDetalhe label="Tentativas" valor={String(f.tentativasEnvio)} />
+                <CampoDetalhe label="Versão mensagem" valor={f.versaoMensagem ? String(f.versaoMensagem) : '—'} />
+                <CampoDetalhe label="Contact ID" valor={f.digisacContactId || '—'} mono />
+                <CampoDetalhe label="Ticket ID" valor={f.digisacTicketId || '—'} mono />
+                <CampoDetalhe label="Reservado em" valor={f.reservadoEm ? formatarData(f.reservadoEm) : '—'} />
+                <CampoDetalhe label="Reservado por" valor={f.reservadoPor || '—'} />
+                <CampoDetalhe label="Req. iniciada" valor={f.requisicaoIniciadaEm ? formatarData(f.requisicaoIniciadaEm) : '—'} />
+                <CampoDetalhe label="Req. finalizada" valor={f.requisicaoFinalizadaEm ? formatarData(f.requisicaoFinalizadaEm) : '—'} />
+                <CampoDetalhe label="Reconciliações" valor={String(f.quantidadeReconciliacoes)} />
+                <CampoDetalhe label="Última reconciliação" valor={f.ultimaReconciliacaoEm ? formatarData(f.ultimaReconciliacaoEm) : '—'} />
+                <CampoDetalhe label="Criado em" valor={formatarData(f.createdAt)} />
+                <CampoDetalhe label="Atualizado em" valor={formatarData(f.updatedAt)} />
+              </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-          <CampoDetalhe label="ID" valor={f.id} mono />
-          <CampoDetalhe label="Lead ID" valor={f.leadId} mono />
-          <CampoDetalhe label="Status" valor={<BadgeStatus status={f.status} />} />
-          <CampoDetalhe label="Loja" valor={f.conexaoDestinoNome || f.loja || '—'} />
-          <CampoDetalhe label="Cliente" valor={f.nomeContatoHub || '—'} />
-          <CampoDetalhe label="Telefone" valor={f.telefoneMascarado || '—'} mono />
-          <CampoDetalhe label="Programado para" valor={formatarData(f.programadoPara)} />
-          <CampoDetalhe label="Enviado em" valor={f.enviadoEm ? formatarData(f.enviadoEm) : '—'} />
-          <CampoDetalhe label="Tentativas" valor={String(f.tentativasEnvio)} />
-          <CampoDetalhe label="Versão mensagem" valor={f.versaoMensagem ? String(f.versaoMensagem) : '—'} />
-          <CampoDetalhe label="Contact ID" valor={f.digisacContactId || '—'} mono />
-          <CampoDetalhe label="Ticket ID" valor={f.digisacTicketId || '—'} mono />
-          <CampoDetalhe label="Reservado em" valor={f.reservadoEm ? formatarData(f.reservadoEm) : '—'} />
-          <CampoDetalhe label="Reservado por" valor={f.reservadoPor || '—'} />
-          <CampoDetalhe label="Req. iniciada" valor={f.requisicaoIniciadaEm ? formatarData(f.requisicaoIniciadaEm) : '—'} />
-          <CampoDetalhe label="Req. finalizada" valor={f.requisicaoFinalizadaEm ? formatarData(f.requisicaoFinalizadaEm) : '—'} />
-          <CampoDetalhe label="Reconciliações" valor={String(f.quantidadeReconciliacoes)} />
-          <CampoDetalhe label="Última reconciliação" valor={f.ultimaReconciliacaoEm ? formatarData(f.ultimaReconciliacaoEm) : '—'} />
-          <CampoDetalhe label="Criado em" valor={formatarData(f.createdAt)} />
-          <CampoDetalhe label="Atualizado em" valor={formatarData(f.updatedAt)} />
-        </div>
+              {f.erro && (
+                <Alert tone="danger" title="Erro" className="mt-3">
+                  {f.erro}
+                  {f.categoriaErro && <span className="mt-1 block text-xs">Categoria: {f.categoriaErro}</span>}
+                </Alert>
+              )}
+              {f.motivoCancelamento && (
+                <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
+                  <strong>Motivo cancelamento:</strong> {f.motivoCancelamento}
+                </div>
+              )}
+              {f.resultado && (
+                <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
+                  <strong>Resultado:</strong> {f.resultado}
+                </div>
+              )}
 
-        {f.erro && (
-          <div className="mt-3 p-3 bg-red-50 rounded-lg text-sm text-red-700">
-            <strong>Erro:</strong> {f.erro}
-            {f.categoriaErro && <span className="block text-xs mt-1">Categoria: {f.categoriaErro}</span>}
-          </div>
-        )}
-        {f.motivoCancelamento && (
-          <div className="mt-3 p-3 bg-slate-50 rounded-lg text-sm text-slate-700">
-            <strong>Motivo cancelamento:</strong> {f.motivoCancelamento}
-          </div>
-        )}
-        {f.resultado && (
-          <div className="mt-3 p-3 bg-slate-50 rounded-lg text-sm text-slate-700">
-            <strong>Resultado:</strong> {f.resultado}
-          </div>
-        )}
-
-        {/* Ações manuais */}
-        <div className="mt-5 pt-4 border-t border-slate-100">
-          <h4 className="text-sm font-semibold text-slate-700 mb-2">Ações manuais</h4>
-          <div className="flex flex-wrap gap-2">
-            {f.status === 'agendado' && (
-              <button onClick={() => onAcao('cancelar_agendada', 'Cancelar fila agendada')} className="px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg text-xs font-medium text-red-700 hover:bg-red-100">
-                Cancelar fila
-              </button>
-            )}
-            {f.status === 'erro' && (
-              <button onClick={() => onAcao('reprocessar_erro', 'Reprocessar fila com erro')} className="px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs font-medium text-amber-700 hover:bg-amber-100">
-                Reprocessar
-              </button>
-            )}
-            {f.status === 'analise_manual' && (
-              <button onClick={() => onAcao('liberar_analise_manual', 'Liberar análise manual')} className="px-3 py-1.5 bg-violet-50 border border-violet-200 rounded-lg text-xs font-medium text-violet-700 hover:bg-violet-100">
-                Liberar (cancelar)
-              </button>
-            )}
-            {!['agendado', 'erro', 'analise_manual'].includes(f.status) && (
-              <span className="text-xs text-slate-400">Nenhuma ação manual disponível para este status.</span>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+              {/* Ações manuais */}
+              <div className="mt-5 border-t border-slate-100 pt-4">
+                <h4 className="mb-2 text-sm font-semibold text-slate-700">Ações manuais</h4>
+                <div className="flex flex-wrap gap-2">
+                  {f.status === 'agendado' && (
+                    <Button variant="destructive" size="sm" onClick={() => onAcao('cancelar_agendada', 'Cancelar fila agendada')}>Cancelar fila</Button>
+                  )}
+                  {f.status === 'erro' && (
+                    <Button variant="secondary" size="sm" onClick={() => onAcao('reprocessar_erro', 'Reprocessar fila com erro')}>Reprocessar</Button>
+                  )}
+                  {f.status === 'analise_manual' && (
+                    <Button variant="secondary" size="sm" onClick={() => onAcao('liberar_analise_manual', 'Liberar análise manual')}>Liberar (cancelar)</Button>
+                  )}
+                  {!['agendado', 'erro', 'analise_manual'].includes(f.status) && (
+                    <span className="text-xs text-slate-400">Nenhuma ação manual disponível para este status.</span>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </DialogBody>
+      </DialogContent>
+    </Dialog>
   )
 }
 

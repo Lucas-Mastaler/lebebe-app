@@ -1,277 +1,101 @@
-'use client';
+'use client'
 
-import { useState, useMemo, useRef } from 'react';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { Agendamento, PesquisaResponse } from '@/types';
-import { ModalTextoLongo } from './ModalTextoLongo';
-import { cn } from '@/lib/utils';
-import { BarraScrollHorizontalFixa } from './BarraScrollHorizontalFixa';
+import { useMemo, useState } from 'react'
+import { Badge, Button, Dialog, DialogBody, DialogContent, DialogHeader, EmptyState, KpiCard, ResponsiveTable } from '@/components/design-system'
+import type { Agendamento, PesquisaResponse } from '@/types'
 
 interface TabelaAgendamentosProps {
-    data: PesquisaResponse | null;
-    isLoading: boolean;
-    error: string | null;
-    clienteNomeFiltro: string;
-    onPageChange: (page: number) => void;
+  data: PesquisaResponse | null
+  isLoading: boolean
+  error: string | null
+  clienteNomeFiltro: string
+  onPageChange: (page: number) => void
 }
 
-const statusColors = {
-    info: 'bg-blue-100 text-blue-700 border-blue-200',
-    success: 'bg-green-100 text-green-700 border-green-200',
-    destructive: 'bg-red-100 text-red-700 border-red-200',
-};
+const STATUS_TONES = {
+  info: 'info',
+  success: 'success',
+  destructive: 'danger',
+} as const
 
-function TruncatedCell({
-    text,
-    onViewFull,
-}: {
-    text: string;
-    onViewFull: (title: string, content: string) => void;
-}) {
-    if (!text) return <span className="text-slate-400">-</span>;
+function TextCell({ text, onViewFull }: { text: string; onViewFull: (content: string) => void }) {
+  if (!text) return <span className="text-muted-foreground">—</span>
 
-    return (
-        <div
-            onClick={() => onViewFull('Visualização completa', text)}
-            className="truncate max-w-full cursor-pointer hover:text-[#00A5E6] transition-colors"
-            title="Clique para ver o conteúdo completo"
-        >
-            {text}
+  return (
+    <Button type="button" variant="ghost" size="sm" className="h-auto max-w-full justify-start p-0 text-left font-normal whitespace-normal hover:text-primary" onClick={() => onViewFull(text)}>
+      <span className="line-clamp-2">{text}</span>
+    </Button>
+  )
+}
+
+function MobileAgendamentoCard({ item, onViewFull }: { item: Agendamento; onViewFull: (content: string) => void }) {
+  const statusTone = STATUS_TONES[item.statusBadgeVariant] ?? 'neutral'
+  return (
+    <div className="space-y-2 text-sm">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0"><p className="font-semibold text-foreground">{item.nomeWhatsapp || item.nomeDigisac || '—'}</p><p className="text-xs text-muted-foreground">{item.loja || '—'} · {item.consultora || '—'}</p></div>
+        <Badge tone={statusTone}>{item.statusLabel}</Badge>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs"><div><p className="text-muted-foreground">Agendado</p><p>{item.agendadoDia} {item.agendadoHora || ''}</p></div><div><p className="text-muted-foreground">Status chamado</p><Badge tone={item.statusChamado === 'Aberto' ? 'warning' : 'neutral'}>{item.statusChamado || '—'}</Badge></div><div><p className="text-muted-foreground">Abrir ticket?</p><p>{item.abrirTicketLabel}</p></div><div><p className="text-muted-foreground">Notificar?</p><p>{item.notificarLabel}</p></div></div>
+      {item.mensagemAgendada && <TextCell text={item.mensagemAgendada} onViewFull={onViewFull} />}
+    </div>
+  )
+}
+
+export function TabelaAgendamentos({ data, isLoading, error, clienteNomeFiltro, onPageChange }: TabelaAgendamentosProps) {
+  const [modalContent, setModalContent] = useState<string | null>(null)
+  const filteredItems = useMemo(() => {
+    const items = data?.items ?? []
+    if (!clienteNomeFiltro.trim()) return items
+    const searchTerm = clienteNomeFiltro.toLowerCase().trim()
+    return items.filter((item) => item.nomeWhatsapp?.toLowerCase().includes(searchTerm) || item.nomeDigisac?.toLowerCase().includes(searchTerm))
+  }, [data?.items, clienteNomeFiltro])
+
+  if (!data && !isLoading && !error) {
+    return <EmptyState title="Faça uma pesquisa para ver os agendamentos" description="Preencha ao menos um período completo e clique em Filtrar." />
+  }
+
+  const columns = [
+    { key: 'loja', header: 'Loja', width: 'content' as const, render: (item: Agendamento) => item.loja || '—' },
+    { key: 'consultora', header: 'Consultora', width: 'standard' as const, render: (item: Agendamento) => item.consultora || '—' },
+    { key: 'nomeWhatsapp', header: 'Nome WhatsApp', width: 'content' as const, render: (item: Agendamento) => item.nomeWhatsapp || '—' },
+    { key: 'nomeDigisac', header: 'Nome Digisac', width: 'content' as const, render: (item: Agendamento) => item.nomeDigisac || '—' },
+    { key: 'mensagem', header: 'Mensagem agendada', width: 'fill' as const, render: (item: Agendamento) => <TextCell text={item.mensagemAgendada} onViewFull={setModalContent} /> },
+    { key: 'comentario', header: 'Comentário', width: 'wide' as const, render: (item: Agendamento) => <TextCell text={item.comentario} onViewFull={setModalContent} /> },
+    { key: 'tags', header: 'Tags', width: 'wide' as const, render: (item: Agendamento) => <TextCell text={item.tags} onViewFull={setModalContent} /> },
+    { key: 'status', header: 'Status', width: 'compact' as const, render: (item: Agendamento) => <Badge tone={STATUS_TONES[item.statusBadgeVariant] ?? 'neutral'}>{item.statusLabel}</Badge> },
+    { key: 'statusChamado', header: 'Status chamado', width: 'compact' as const, render: (item: Agendamento) => <Badge tone={item.statusChamado === 'Aberto' ? 'warning' : 'neutral'}>{item.statusChamado || '—'}</Badge> },
+    { key: 'ultimoChamado', header: 'Último chamado fechado', width: 'compact' as const, render: (item: Agendamento) => item.ultimoChamadoFechado || '—' },
+    { key: 'abrirTicket', header: 'Abrir ticket?', width: 'compact' as const, render: (item: Agendamento) => item.abrirTicketLabel },
+    { key: 'notificar', header: 'Notificar?', width: 'compact' as const, render: (item: Agendamento) => item.notificarLabel },
+    { key: 'agendadoDia', header: 'Agendado (dia)', width: 'compact' as const, render: (item: Agendamento) => item.agendadoDia },
+    { key: 'agendadoHora', header: 'Agendado (hora)', width: 'compact' as const, render: (item: Agendamento) => item.agendadoHora || '—' },
+    { key: 'criadoEm', header: 'Criado em', width: 'compact' as const, render: (item: Agendamento) => item.criadoEm },
+    { key: 'atualizadoEm', header: 'Atualizado em', width: 'compact' as const, render: (item: Agendamento) => item.atualizadoEm },
+  ]
+
+  return (
+    <div className="space-y-4">
+      {data && <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold text-foreground">Resultados</h2><KpiCard className="w-36" label="Agendamentos" value={data.meta.total} /></div>}
+      <ResponsiveTable
+        columns={columns}
+        rows={filteredItems}
+        rowKey={(item) => item.id}
+        firstColumnSticky
+        loading={isLoading}
+        error={error ?? undefined}
+        emptyTitle={clienteNomeFiltro ? 'Nenhum resultado para o nome informado' : 'Nenhum resultado para os filtros selecionados'}
+        renderMobileCard={(item) => <MobileAgendamentoCard item={item} onViewFull={setModalContent} />}
+      />
+      {data && data.meta.lastPage > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+          <span>Página {data.meta.currentPage} de {data.meta.lastPage}</span>
+          <div className="flex items-center gap-2"><Button variant="secondary" size="sm" onClick={() => onPageChange(data.meta.currentPage - 1)} disabled={data.meta.currentPage <= 1}>Anterior</Button><Button variant="secondary" size="sm" onClick={() => onPageChange(data.meta.currentPage + 1)} disabled={data.meta.currentPage >= data.meta.lastPage}>Próxima</Button></div>
         </div>
-    );
-}
-
-export function TabelaAgendamentos({
-    data,
-    isLoading,
-    error,
-    clienteNomeFiltro,
-    onPageChange,
-}: TabelaAgendamentosProps) {
-    const [modalOpen, setModalOpen] = useState(false);
-    const [modalContent, setModalContent] = useState({ title: '', content: '' });
-
-    const handleViewFull = (title: string, content: string) => {
-        setModalContent({ title, content });
-        setModalOpen(true);
-    };
-
-    // Scroll container ref
-    const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-    // Filter by client name locally
-    const items = data?.items ?? [];
-
-    const filteredItems = useMemo(() => {
-        if (!items.length) return [];
-        if (!clienteNomeFiltro.trim()) return items;
-
-        const searchTerm = clienteNomeFiltro.toLowerCase().trim();
-        return items.filter((item) =>
-            item.nomeWhatsapp?.toLowerCase().includes(searchTerm) ||
-            item.nomeDigisac?.toLowerCase().includes(searchTerm)
-        );
-    }, [items, clienteNomeFiltro]);
-
-    // Loading state
-    if (isLoading) {
-        return (
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 card-shadow">
-                <div className="flex items-center justify-between mb-4">
-                    <Skeleton className="h-6 w-32" />
-                    <Skeleton className="h-6 w-20" />
-                </div>
-                <div className="space-y-3">
-                    {[...Array(5)].map((_, i) => (
-                        <Skeleton key={i} className="h-12 w-full" />
-                    ))}
-                </div>
-            </div>
-        );
-    }
-
-    // Error state
-    if (error) {
-        return (
-            <div className="bg-white rounded-2xl border border-red-200 p-6">
-                <div className="flex items-center gap-3 text-red-600">
-                    <span className="text-lg">⚠️</span>
-                    <p>{error}</p>
-                </div>
-            </div>
-        );
-    }
-
-    // No data state
-    if (!data) {
-        return (
-            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
-                <p className="text-slate-500">
-                    Use os filtros acima para pesquisar agendamentos.
-                </p>
-            </div>
-        );
-    }
-
-    // Empty results state
-    if (filteredItems.length === 0) {
-        return (
-            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
-                <p className="text-slate-500">
-                    Nenhum resultado para os filtros selecionados.
-                </p>
-            </div>
-        );
-    }
-
-    const { meta } = data;
-
-    return (
-        <>
-            <div className="bg-white rounded-2xl border border-slate-200 card-shadow overflow-hidden flex flex-col mb-4">
-                {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b border-slate-200 flex-shrink-0">
-                    <h3 className="font-semibold text-slate-900">Resultados</h3>
-                    <span className="px-3 py-1 bg-slate-100 text-slate-600 text-sm rounded-full">
-                        {meta.total} {meta.total === 1 ? 'item' : 'itens'}
-                    </span>
-                </div>
-
-                {/* Table Window - scrolling container */}
-                {/* min-w-[1400px] ensures horizontal scroll exists for small screens, pushing content out */}
-                <div
-                    ref={scrollContainerRef}
-                    className="flex-1 overflow-x-auto w-full relative scrollbar-hide"
-                >
-                    <div className="min-w-[1500px]">
-                        <Table>
-                            <TableHeader>
-                                <TableRow className="bg-slate-50 border-b border-slate-200 hover:bg-slate-50">
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[150px] sticky left-0 top-0 bg-slate-50 z-10">Loja</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px] sticky top-0 bg-slate-50 z-10">Consultora</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px] sticky top-0 bg-slate-50 z-10">Nome Whatsapp</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[180px] sticky top-0 bg-slate-50 z-10">Nome Digisac</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[250px] sticky top-0 bg-slate-50 z-10">Mensagem agendada</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[250px] sticky top-0 bg-slate-50 z-10">Comentário</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[200px] sticky top-0 bg-slate-50 z-10">Tags</TableHead>
-                                    {/* Campos Personalizados REMOVIDO */}
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[100px] sticky top-0 bg-slate-50 z-10">Status</TableHead>
-                                    {/* Novas Colunas */}
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[120px] sticky top-0 bg-slate-50 z-10">Status chamado</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[160px] sticky top-0 bg-slate-50 z-10">Último chamado fechado</TableHead>
-
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[100px] sticky top-0 bg-slate-50 z-10">Abrir ticket?</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[100px] sticky top-0 bg-slate-50 z-10">Notificar?</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[120px] sticky top-0 bg-slate-50 z-10">Agendado (dia)</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[100px] sticky top-0 bg-slate-50 z-10">Agendado (hr)</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[120px] sticky top-0 bg-slate-50 z-10">Criado em</TableHead>
-                                    <TableHead className="font-semibold text-slate-700 whitespace-nowrap w-[120px] sticky top-0 bg-slate-50 z-10">Atualizado em</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {filteredItems.map((item) => (
-                                    <TableRow key={item.id} className="hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0">
-                                        <TableCell className="whitespace-nowrap font-medium text-slate-700 sticky left-0 bg-white z-10">{item.loja || '-'}</TableCell>
-                                        <TableCell className="whitespace-nowrap">{item.consultora || '-'}</TableCell>
-                                        <TableCell className="whitespace-nowrap font-medium text-slate-800">{item.nomeWhatsapp || '-'}</TableCell>
-                                        <TableCell className="whitespace-nowrap text-slate-600">{item.nomeDigisac || '-'}</TableCell>
-                                        <TableCell className="max-w-[250px]">
-                                            <TruncatedCell text={item.mensagemAgendada} onViewFull={handleViewFull} />
-                                        </TableCell>
-                                        <TableCell className="max-w-[250px]">
-                                            <TruncatedCell text={item.comentario} onViewFull={handleViewFull} />
-                                        </TableCell>
-                                        <TableCell className="max-w-[200px]">
-                                            <TruncatedCell text={item.tags} onViewFull={handleViewFull} />
-                                        </TableCell>
-
-                                        <TableCell>
-                                            <span
-                                                className={cn(
-                                                    'px-2.5 py-1 text-xs font-medium rounded-full border shadow-sm',
-                                                    statusColors[item.statusBadgeVariant] || 'bg-slate-100 text-slate-600 border-slate-200'
-                                                )}
-                                            >
-                                                {item.statusLabel}
-                                            </span>
-                                        </TableCell>
-
-                                        {/* Novas Colunas Dados */}
-                                        <TableCell className="whitespace-nowrap">
-                                            <span className={cn(
-                                                "px-2 py-0.5 text-xs rounded-full font-medium",
-                                                item.statusChamado === 'Aberto'
-                                                    ? "bg-amber-100 text-amber-700 border border-amber-200"
-                                                    : "bg-slate-100 text-slate-500 border border-slate-200"
-                                            )}>
-                                                {item.statusChamado || '-'}
-                                            </span>
-                                        </TableCell>
-                                        <TableCell className="whitespace-nowrap text-slate-600 text-xs">{item.ultimoChamadoFechado || '-'}</TableCell>
-
-                                        <TableCell className="whitespace-nowrap">{item.abrirTicketLabel}</TableCell>
-                                        <TableCell className="whitespace-nowrap">{item.notificarLabel}</TableCell>
-                                        <TableCell className="whitespace-nowrap">{item.agendadoDia}</TableCell>
-                                        <TableCell className="whitespace-nowrap text-slate-500">{item.agendadoHora || '-'}</TableCell>
-                                        <TableCell className="whitespace-nowrap text-xs text-slate-400">{item.criadoEm}</TableCell>
-                                        <TableCell className="whitespace-nowrap text-xs text-slate-400">{item.atualizadoEm}</TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </div>
-                </div>
-
-                {/* Pagination */}
-                <div className="flex items-center justify-between p-4 border-t border-slate-200">
-                    <p className="text-sm text-slate-600">
-                        Página {meta.currentPage} de {meta.lastPage}
-                    </p>
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onPageChange(meta.currentPage - 1)}
-                            disabled={meta.currentPage <= 1}
-                            className="rounded-xl"
-                        >
-                            <ChevronLeft className="w-4 h-4 mr-1" />
-                            Anterior
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onPageChange(meta.currentPage + 1)}
-                            disabled={meta.currentPage >= meta.lastPage}
-                            className="rounded-xl"
-                        >
-                            Próxima
-                            <ChevronRight className="w-4 h-4 ml-1" />
-                        </Button>
-                    </div>
-                </div>
-            </div>
-
-            {/* Sticky Scrollbar */}
-            <BarraScrollHorizontalFixa targetRef={scrollContainerRef} bottomOffset={0} />
-
-            {/* Modal for long text */}
-            <ModalTextoLongo
-                isOpen={modalOpen}
-                onClose={() => setModalOpen(false)}
-                title={modalContent.title}
-                content={modalContent.content}
-            />
-        </>
-    );
+      )}
+      <Dialog open={modalContent !== null} onOpenChange={(open) => { if (!open) setModalContent(null) }}>
+        <DialogContent className="max-w-2xl"><DialogHeader title="Visualização completa" description="Conteúdo completo do agendamento" /><DialogBody><p className="leading-relaxed whitespace-pre-wrap text-foreground">{modalContent}</p></DialogBody></DialogContent>
+      </Dialog>
+    </div>
+  )
 }

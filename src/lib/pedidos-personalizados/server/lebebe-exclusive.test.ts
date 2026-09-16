@@ -129,8 +129,8 @@ describe('Lebebe Exclusive', () => {
     expect(fonte).toContain('Itens selecionados: <span')
     expect(fonte).toContain('{selecionados.size}</span> | Total: {formatarMoeda(total)}')
     expect(fonte).not.toContain('min-w-[1050px]')
-    expect(fonte).toContain('table-fixed')
-    expect(fonte).toContain('lg:hidden')
+    expect(fonte).toContain('ResponsiveTable')
+    expect(fonte).toContain('renderMobileCard')
   })
 
   it('mantém uma navegação compacta com a primeira, atual e última página', () => {

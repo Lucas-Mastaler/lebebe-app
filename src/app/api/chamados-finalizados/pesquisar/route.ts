@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuthenticatedUser } from '@/lib/auth/api-auth';
 import { pesquisarChamadosFinalizados } from '@/lib/digisac/chamadosFinalizados';
+import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination';
 
 export const runtime = 'nodejs';
 
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
       departmentIds = [],
       userIds = [],
       page = 1,
-      perPage = 30,
+      perPage = TABLE_PAGE_SIZE,
     } = body || {};
 
     console.log('[API][CHAMADOS][ROUTE] POST /api/chamados-finalizados/pesquisar bodySummary=', {

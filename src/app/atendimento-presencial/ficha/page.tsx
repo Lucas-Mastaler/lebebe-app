@@ -42,6 +42,7 @@ export default async function FichaAtendimentoPresencialPage({
       usuarioId={access.moduleAccess.allowedUser.id}
       contextoInicial={contextoInicial}
       unidadeIdInicial={unidadeIdInicial}
+      rascunhoIdInicial={rascunhoId}
     />
   )
 }

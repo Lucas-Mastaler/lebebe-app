@@ -1,7 +1,7 @@
 'use client'
 
 import { FileText, FileUp, ImageIcon, Loader2, RotateCcw, Trash2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Alert, Button, Section } from '@/components/design-system'
 import type { AnexoLocalFormulario, TapeteFormulario } from './novo-pedido-modelo'
 
 const ACCEPT = '.jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf'
@@ -29,19 +29,13 @@ function estadoDoAnexo(anexo: AnexoLocalFormulario) {
 
 export function AnexosIniciaisTapete({ tapete, ordem, bloqueado, onSelecionar, onRemover, onReenviar }: Props) {
   return (
-    <section className="mt-4 rounded-xl border border-dashed border-sky-200 bg-sky-50/50 p-4" aria-labelledby={`anexos-iniciais-${tapete.chaveLocal}`}>
-      <div className="mb-3 space-y-2">
-        <h4 id={`anexos-iniciais-${tapete.chaveLocal}`} className="font-semibold text-slate-900">Layout fornecido pelo designer, arquiteto ou cliente</h4>
-        <p className="text-sm text-slate-600">
-          Envie, sempre que disponíveis: desenho, layout, croqui, referência visual, projeto feito por arquiteto ou designer,
-          imagem enviada pelo cliente, desenho feito pelo próprio cliente, ou qualquer outro arquivo que ajude a fábrica a
-          compreender exatamente o tapete solicitado. Selecione até dois arquivos antes de salvar — o envio ocorrerá em
-          sequência após a criação do pedido.
-        </p>
-        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Quanto mais detalhado for o desenho, layout ou referência enviada, menor será a chance de dúvidas ou divergências na produção.
-        </p>
-      </div>
+    <Section
+      tone="section-2"
+      title="Layout fornecido pelo designer, arquiteto ou cliente"
+      description="Envie, sempre que disponíveis: desenho, layout, croqui, referência visual, projeto feito por arquiteto ou designer, imagem enviada pelo cliente, desenho feito pelo próprio cliente, ou qualquer outro arquivo que ajude a fábrica a compreender exatamente o tapete solicitado. Selecione até dois arquivos antes de salvar — o envio ocorrerá em sequência após a criação do pedido."
+      className="mt-4"
+    >
+      <Alert tone="warning">Quanto mais detalhado for o desenho, layout ou referência enviada, menor será a chance de dúvidas ou divergências na produção.</Alert>
       <div className="grid gap-3 sm:grid-cols-2">
         {([1, 2] as const).map((slot) => {
           const local = tapete.anexosLocais.find((item) => item.slot === slot)
@@ -75,7 +69,7 @@ export function AnexosIniciaisTapete({ tapete, ordem, bloqueado, onSelecionar, o
                       <span className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-100"><RotateCcw className="size-4" />Substituir</span>
                     </label>
                     {local.estado === 'falhou' && tapete.tapeteId && (
-                      <Button type="button" size="sm" variant="outline" disabled={bloqueado} onClick={() => onReenviar(slot)}><RotateCcw />Tentar novamente</Button>
+                      <Button type="button" size="sm" variant="secondary" disabled={bloqueado} onClick={() => onReenviar(slot)}><RotateCcw />Tentar novamente</Button>
                     )}
                     <Button type="button" size="sm" variant="ghost" disabled={bloqueado || local.estado === 'enviando'} onClick={() => onRemover(slot)}><Trash2 />Remover</Button>
                   </div>
@@ -97,6 +91,6 @@ export function AnexosIniciaisTapete({ tapete, ordem, bloqueado, onSelecionar, o
           )
         })}
       </div>
-    </section>
+    </Section>
   )
 }

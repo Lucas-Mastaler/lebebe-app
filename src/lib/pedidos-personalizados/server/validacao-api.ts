@@ -303,6 +303,28 @@ export function validarTransicaoStatus(valor: unknown):
   }
 }
 
+const LIMITE_CARACTERES_OBSERVACAO = 2000
+
+export function validarObservacao(valor: unknown):
+  | { ok: true; texto: string }
+  | { ok: false; codigo: string; mensagem: string } {
+  if (!ehObjeto(valor)) return { ok: false, codigo: 'PAYLOAD_INVALIDO', mensagem: 'Payload inválido.' }
+  if (Object.keys(valor).some((campo) => campo !== 'texto')) {
+    return { ok: false, codigo: 'CAMPO_NAO_PERMITIDO', mensagem: 'Campo não permitido nesta operação.' }
+  }
+  if (typeof valor.texto !== 'string') {
+    return { ok: false, codigo: 'PAYLOAD_INVALIDO', mensagem: 'Informe o texto da observação.' }
+  }
+  const texto = valor.texto.trim()
+  if (texto.length < 1) {
+    return { ok: false, codigo: 'OBSERVACAO_VAZIA', mensagem: 'Informe o texto da observação.' }
+  }
+  if (texto.length > LIMITE_CARACTERES_OBSERVACAO) {
+    return { ok: false, codigo: 'OBSERVACAO_MUITO_LONGA', mensagem: `A observação deve ter no máximo ${LIMITE_CARACTERES_OBSERVACAO} caracteres.` }
+  }
+  return { ok: true, texto }
+}
+
 export function proximoDiaIso(valor: string) {
   const [ano, mes, dia] = valor.split('-').map(Number)
   const data = new Date(Date.UTC(ano, mes - 1, dia + 1))

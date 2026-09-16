@@ -1,6 +1,6 @@
 # Plano — Lebebe Exclusive em Pedidos Personalizados
 
-**Estado do planejamento:** APROVADO E EM EXECUÇÃO
+**Estado do planejamento:** CONCLUIDO
 
 ## Objetivo
 
@@ -112,14 +112,14 @@ Dependência: Fase 6 concluída e reprodução autenticada do `422` Moriá.
   rota comercial código, fornecedor e campos inválidos sem dados pessoais.
 - [x] Cobrir com testes o payload `1/15/29`, a atomicidade do lançamento e a
   matriz vigente de transições Moriá/Lebebe Exclusive.
-- [ ] Reexecutar regressão focada, SQL transacional, lint, typecheck/build e
+- [x] Reexecutar regressão focada, SQL transacional, lint, typecheck/build e
   smoke autenticado proporcional.
   - [x] Regressão focada, SQL transacional com `ROLLBACK`, lint e build.
   - [x] Typecheck sem erro novo no fluxo; bloqueio global preexistente em
     `hub-vendas/alertas/teste/route.test.ts`.
   - [x] Aplicar a migration autorizada e confirmar a nova assinatura pelo
     PostgREST sem mutação de dados.
-  - [ ] Concluir o smoke autenticado da transição real pela interface.
+  - [x] Concluir o smoke autenticado da transição real pela interface.
 
 ## Critérios de aceite
 
@@ -244,6 +244,8 @@ Dependência: Fase 8 concluída.
 - [x] Adicionar componente compartilhado no card e detalhe, modal de
   confirmação, estados disponível/processando/erro/concluído e polling.
 - [x] Garantir que Moriah não receba ação, estado ou alteração funcional.
+- [x] Atualizar o card automaticamente após a conclusão da renomeação, sem
+  exigir refresh manual.
 
 ### Fase 10 — Validação e operação controlada
 
@@ -253,7 +255,7 @@ Dependência: Fases 8 e 9 concluídas.
   timeout, falhas parciais, retry e congelamento pós-sucesso.
 - [x] Executar regressão focada, SQL transacional, lint, typecheck e build.
 - [x] Instalar o worker na VPS sem expor porta nem secrets; mantê-lo inativo até o deploy do App.
-- [ ] Executar exatamente um teste SGI real com pedido Exclusive elegível,
+- [x] Executar exatamente um teste SGI real com pedido Exclusive elegível,
   preservando o mesmo produto em qualquer falha parcial.
-- [ ] Confirmar visualmente card/modal e registrar o gate se não houver pedido
-  elegível ou sessão autenticada adequada.
+- [x] Confirmar visualmente card/modal e validar a conclusão assíncrona da
+  renomeação na sessão atual.

@@ -1,10 +1,26 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { AlertCircle, Baby, Check, ChevronLeft, ChevronRight, ClipboardList, History, MessageSquareText, Plus, RefreshCw, Save, Search, ShoppingBag, UserRound, WifiOff, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  DateField,
+  FormField,
+  FormPageContent,
+  Input,
+  PageContainer,
+  PageHeader,
+  Section,
+  Spinner,
+  Textarea,
+} from '@/components/design-system'
+import type { SectionTone } from '@/lib/design-system/section-tones'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { HistoricoClienteModal } from '@/components/atendimento-presencial/HistoricoClienteModal'
 import { TelefoneClienteRapido } from '@/components/atendimento-presencial/TelefoneClienteRapido'
@@ -31,7 +47,6 @@ import {
   converterDataInputParaISO,
   criarCriancaRascunho,
   formatarDataISOParaInput,
-  formatarDataPrevistaInput,
   getDepartamentoLabel,
   getMotivoLabel,
   getResultadoLabel,
@@ -102,6 +117,7 @@ type Props = {
   usuarioId: string
   contextoInicial: ContextoAtendimento
   unidadeIdInicial: string
+  rascunhoIdInicial: string | null
 }
 
 const etapaLabels: Record<FichaEtapa, string> = {
@@ -166,12 +182,22 @@ function StatusSync({ status }: { status: SyncStatus }) {
     conflito: 'Conflito',
     erro: 'Erro',
   }
+  const tone: Record<SyncStatus, 'neutral' | 'warning' | 'info' | 'success' | 'danger'> = {
+    ocioso: 'neutral',
+    alterado: 'warning',
+    aguardando: 'warning',
+    salvando: 'info',
+    salvo: 'success',
+    offline: 'warning',
+    conflito: 'danger',
+    erro: 'danger',
+  }
 
   return (
-    <span className="inline-flex min-h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700">
-      {status === 'offline' ? <WifiOff className="h-4 w-4" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
+    <Badge tone={tone[status]} className="min-h-9 gap-1.5">
+      {status === 'offline' ? <WifiOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Save className="h-3.5 w-3.5" aria-hidden="true" />}
       {texto[status]}
-    </span>
+    </Badge>
   )
 }
 
@@ -189,8 +215,8 @@ function OpcaoButton(props: {
       onClick={props.onClick}
       disabled={props.disabled}
       className={[
-        'min-h-12 rounded-md border px-4 py-3 text-left text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-sky-500',
-        props.selected ? 'border-sky-600 bg-sky-50 text-sky-800' : 'border-slate-200 bg-white text-slate-700',
+        'min-h-12 rounded-md border px-4 py-3 text-left text-sm font-semibold outline-none transition focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-ring',
+        props.selected ? 'border-primary bg-primary/10 text-primary' : 'border-input bg-input-background text-slate-700',
         props.className ?? '',
       ].join(' ')}
     >
@@ -199,85 +225,39 @@ function OpcaoButton(props: {
   )
 }
 
-type VariantSecao = 'azul' | 'rosa' | 'amarelo' | 'lilas' | 'verde' | 'laranja'
-
-const variantSecaoClasses: Record<VariantSecao, { section: string; iconWrap: string; icon: string; title: string; descricao: string }> = {
-  azul: {
-    section: 'border-blue-200 bg-blue-50/60',
-    iconWrap: 'border-blue-200 bg-white',
-    icon: 'text-blue-700',
-    title: 'text-blue-950',
-    descricao: 'text-blue-600/70',
-  },
-  rosa: {
-    section: 'border-pink-200 bg-pink-50/60',
-    iconWrap: 'border-pink-200 bg-white',
-    icon: 'text-pink-700',
-    title: 'text-pink-950',
-    descricao: 'text-pink-600/70',
-  },
-  amarelo: {
-    section: 'border-amber-200 bg-amber-50/60',
-    iconWrap: 'border-amber-200 bg-white',
-    icon: 'text-amber-700',
-    title: 'text-amber-950',
-    descricao: 'text-amber-600/70',
-  },
-  lilas: {
-    section: 'border-violet-200 bg-violet-50/60',
-    iconWrap: 'border-violet-200 bg-white',
-    icon: 'text-violet-700',
-    title: 'text-violet-950',
-    descricao: 'text-violet-600/70',
-  },
-  verde: {
-    section: 'border-emerald-200 bg-emerald-50/60',
-    iconWrap: 'border-emerald-200 bg-white',
-    icon: 'text-emerald-700',
-    title: 'text-emerald-950',
-    descricao: 'text-emerald-600/70',
-  },
-  laranja: {
-    section: 'border-orange-200 bg-orange-50/60',
-    iconWrap: 'border-orange-200 bg-white',
-    icon: 'text-orange-700',
-    title: 'text-orange-950',
-    descricao: 'text-orange-600/70',
-  },
-}
-
+/**
+ * `Section` oficial (CLR=B/SEC=C) só tem 3 tons — esta ficha tinha 6 cores
+ * ad hoc por seção (LACUNA DE DESIGN SYSTEM: sem tom por seção suficiente
+ * para diferenciar todos os blocos). Cicla entre os 3 tons oficiais em vez
+ * de inventar cor nova (§13/§29).
+ */
 function SecaoFicha(props: {
   id?: string
   titulo: string
   descricao?: string
   icon: LucideIcon
-  variant?: VariantSecao
+  tone?: SectionTone
   erro?: string
   children: React.ReactNode
 }) {
-  const Icon = props.icon
-  const v = props.variant ? variantSecaoClasses[props.variant] : null
+  const Icon = props.erro ? AlertCircle : props.icon
   return (
-    <section
-      id={props.id}
-      className={`scroll-mt-28 rounded-md border p-4 sm:p-5 ${props.erro ? 'border-red-300 bg-red-50/70' : v ? v.section : 'border-slate-200 bg-slate-50/60'}`}
-    >
-      <div className="mb-4 flex items-start gap-3">
-        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border ${props.erro ? 'border-red-200 bg-white' : v ? v.iconWrap : 'border-slate-200 bg-white'}`}>
-          {props.erro ? (
-            <AlertCircle className="h-4 w-4 text-red-700" aria-hidden="true" />
-          ) : (
-            <Icon className={`h-4 w-4 ${v ? v.icon : 'text-sky-700'}`} aria-hidden="true" />
-          )}
-        </span>
-        <div>
-          <h2 className={`text-lg font-semibold ${props.erro ? 'text-red-950' : v ? v.title : 'text-slate-950'}`}>{props.titulo}</h2>
-          {props.descricao && <p className={`mt-1 text-sm ${props.erro ? 'text-red-700' : v ? v.descricao : 'text-slate-500'}`}>{props.descricao}</p>}
-          {props.erro && <p className="mt-2 text-sm font-semibold text-red-700">{props.erro}</p>}
-        </div>
-      </div>
-      <div className="grid gap-4">{props.children}</div>
-    </section>
+    <div id={props.id} className="scroll-mt-28">
+      <Section
+        title={props.titulo}
+        description={props.descricao}
+        icon={<Icon className={`size-4 ${props.erro ? 'text-destructive' : ''}`} aria-hidden="true" />}
+        tone={props.tone ?? 'section-1'}
+        className={props.erro ? 'border border-l-4 border-red-300 border-l-red-400 bg-red-50/70' : undefined}
+      >
+        {props.erro && (
+          <p role="alert" className="text-xs font-medium text-destructive">
+            {props.erro}
+          </p>
+        )}
+        {props.children}
+      </Section>
+    </div>
   )
 }
 
@@ -331,9 +311,8 @@ function primeiroErroPorSecao(erros: ErroValidacaoFicha[], sectionId: string) {
   return erros.find((erro) => erro.sectionId === sectionId)?.message
 }
 
-export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdInicial }: Props) {
+export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdInicial, rascunhoIdInicial }: Props) {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const [contexto] = useState<ContextoAtendimento>(contextoInicial)
   const [unidadeId, setUnidadeId] = useState(unidadeIdInicial)
   const [ativo, setAtivo] = useState<AtendimentoPresencialDTO | null>(null)
@@ -359,10 +338,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [numeroLancamento, setNumeroLancamento] = useState('')
   const [concluindo, setConcluindo] = useState(false)
   const [mensagemConclusao, setMensagemConclusao] = useState<string | null>(null)
-  const [carregandoRascunhoInicial, setCarregandoRascunhoInicial] = useState(() => {
-    if (typeof window === 'undefined') return false
-    return new URLSearchParams(window.location.search).has('rascunho')
-  })
+  const [carregandoRascunhoInicial, setCarregandoRascunhoInicial] = useState(false)
   const [erroRascunhoInicial, setErroRascunhoInicial] = useState<string | null>(null)
   const [iniciando, setIniciando] = useState(false)
   const [iniciandoNovoAtendimento, setIniciandoNovoAtendimento] = useState(false)
@@ -372,6 +348,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [erroTelefone, setErroTelefone] = useState<string | null>(null)
   const [salvandoTelefone, setSalvandoTelefone] = useState(false)
   const autosaveQueueRef = useRef<AutosaveSerialQueue | null>(null)
+  const formContentRef = useRef<HTMLDivElement | null>(null)
+  const actionBarRef = useRef<HTMLDivElement | null>(null)
+  const [actionBarHeight, setActionBarHeight] = useState(0)
   const fichaRef = useRef(ficha)
   const telefoneDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const telefoneRequestRef = useRef(0)
@@ -392,16 +371,18 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const etapaLabelAtual = etapaLabels[etapaAtual]
   const unidadesParaSelecao = useMemo(() => contexto?.unidadesPermitidas ?? [], [contexto])
 
-  const consultoraNomeNormalizado = useMemo(() => normalizarNomeConsultora(ficha.consultoraNome), [ficha.consultoraNome])
-  const paramRascunho = searchParams?.get('rascunho') ?? null
+  useEffect(() => {
+    const actionBar = actionBarRef.current
+    if (!actionBar) return
+    const updateHeight = () => setActionBarHeight(actionBar.getBoundingClientRect().height)
+    updateHeight()
+    const observer = new ResizeObserver(updateHeight)
+    observer.observe(actionBar)
+    return () => observer.disconnect()
+  }, [carregandoRascunhoInicial, erroRascunhoInicial])
 
-  const rascunhoIdParam = useMemo(() => {
-    if (paramRascunho) return paramRascunho
-    if (typeof window !== 'undefined') {
-      return new URLSearchParams(window.location.search).get('rascunho') ?? null
-    }
-    return null
-  }, [paramRascunho])
+  const consultoraNomeNormalizado = useMemo(() => normalizarNomeConsultora(ficha.consultoraNome), [ficha.consultoraNome])
+  const rascunhoIdParam = rascunhoIdInicial
 
   const podeCriarRascunho = useMemo(() => {
     if (!contexto || iniciando || ativo) return false
@@ -877,6 +858,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     setErroEtapa(null)
     setErrosValidacao([])
     atualizarFicha((atual) => ({ ...atual, etapaAtual: etapa }))
+    window.requestAnimationFrame(() => formContentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
 
   function scrollParaErro(erro: ErroValidacaoFicha) {
@@ -964,10 +946,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     })
   }
 
-  function atualizarDataPrevistaCrianca(id: string, valor: string) {
-    const formatada = formatarDataPrevistaInput(valor)
-    const dataISO = converterDataInputParaISO(formatada)
-    setDataPrevistaInputs((atual) => ({ ...atual, [id]: formatada }))
+  function atualizarDataPrevistaCrianca(id: string, valorFormatado: string) {
+    const dataISO = converterDataInputParaISO(valorFormatado)
+    setDataPrevistaInputs((atual) => ({ ...atual, [id]: valorFormatado }))
     atualizarCrianca(id, { dataPrevistaNascimento: dataISO || undefined })
   }
 
@@ -1230,92 +1211,95 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const unidadeAtual = contexto?.unidadesPermitidas.find((unidade) => unidade.id === unidadeId)
 
   return (
-    <main className="min-h-screen bg-slate-50 px-3 pb-28 pt-5 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-3xl flex-col gap-5">
-        <header className="flex flex-col gap-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Atendimento presencial</p>
-              <h1 className="mt-1 text-2xl font-semibold text-slate-950">Ficha de Atendimento</h1>
-            </div>
-            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+    <PageContainer>
+      <FormPageContent ref={formContentRef} className="max-w-3xl space-y-5" style={actionBarHeight ? { paddingBottom: `${actionBarHeight + 24}px` } : undefined}>
+        <PageHeader
+          eyebrow="Atendimento presencial"
+          title="Ficha de Atendimento"
+          action={
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <Button
                 type="button"
-                variant="outline"
+                variant="secondary"
                 onClick={novoAtendimento}
                 disabled={iniciandoNovoAtendimento || iniciando || concluindo || carregandoRascunhoInicial}
-                className="h-10 w-full shrink-0 rounded-md sm:w-auto"
+                loading={iniciandoNovoAtendimento}
+                className="w-full sm:w-auto"
               >
-                <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
-                {iniciandoNovoAtendimento ? 'Salvando...' : 'Novo Atendimento'}
+                <Plus className="size-4" aria-hidden="true" />
+                Novo Atendimento
               </Button>
-              <Button type="button" variant="outline" onClick={verRascunhos} className="h-10 shrink-0 rounded-md">
-                <ClipboardList className="mr-2 h-4 w-4" aria-hidden="true" />
+              <Button type="button" variant="ghost" onClick={verRascunhos} className="w-full sm:w-auto">
+                <ClipboardList className="size-4" aria-hidden="true" />
                 Ver rascunhos
               </Button>
             </div>
+          }
+        />
+
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-700">Etapa {etapaNumero} de {FICHA_TOTAL_ETAPAS}</p>
+            <p className="text-sm text-slate-500">{etapaLabelAtual}</p>
           </div>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-slate-700">Etapa {etapaNumero} de {FICHA_TOTAL_ETAPAS}</p>
-              <p className="text-sm text-slate-500">{etapaLabelAtual}</p>
-            </div>
-            <StatusSync status={statusSync} />
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
-            <div className="h-full rounded-full bg-sky-600" style={{ width: `${(etapaNumero / FICHA_TOTAL_ETAPAS) * 100}%` }} />
-          </div>
-        </header>
+          <StatusSync status={statusSync} />
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
+          <div className="h-full rounded-full bg-primary" style={{ width: `${(etapaNumero / FICHA_TOTAL_ETAPAS) * 100}%` }} />
+        </div>
 
         {(erro || erroCriacao) && (
-          <div className="grid gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <Alert tone="danger">
             <p>{erro ?? erroCriacao}</p>
             {erroCriacao && !iniciando && (
-              <Button type="button" variant="outline" onClick={() => void iniciarRascunho(draftClientIdRef.current ?? undefined)} className="h-10 justify-self-start rounded-md bg-white">
-                <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+              <Button type="button" variant="secondary" size="sm" onClick={() => void iniciarRascunho(draftClientIdRef.current ?? undefined)} className="mt-2">
+                <RefreshCw className="size-4" aria-hidden="true" />
                 Tentar novamente
               </Button>
             )}
             {statusSync === 'conflito' && (
-              <Button type="button" variant="outline" onClick={recarregarRascunhoDoServidor} className="h-10 justify-self-start rounded-md bg-white">
-                <RefreshCw className="mr-2 h-4 w-4" aria-hidden="true" />
+              <Button type="button" variant="secondary" size="sm" onClick={recarregarRascunhoDoServidor} className="mt-2">
+                <RefreshCw className="size-4" aria-hidden="true" />
                 Recarregar versao do servidor
               </Button>
             )}
-          </div>
+          </Alert>
         )}
-        {erroEtapa && <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{erroEtapa}</p>}
-        {mensagemConclusao && <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{mensagemConclusao}</p>}
+        {erroEtapa && <Alert tone="warning">{erroEtapa}</Alert>}
+        {mensagemConclusao && <Alert tone="success">{mensagemConclusao}</Alert>}
 
         {carregandoRascunhoInicial && (
-          <section className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 text-center shadow-sm">
-            <p className="text-sm font-semibold text-slate-700">Carregando rascunho...</p>
-          </section>
+          <Card className="p-6">
+            <div className="flex flex-col items-center gap-2 text-center">
+              <Spinner label="Carregando rascunho" />
+              <p className="text-sm font-semibold text-slate-700">Carregando rascunho...</p>
+            </div>
+          </Card>
         )}
 
         {erroRascunhoInicial && (
-          <section className="grid gap-4 rounded-lg border border-red-200 bg-red-50 p-4 shadow-sm sm:p-6">
-            <p className="text-sm text-red-700">{erroRascunhoInicial}</p>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => void novoAtendimento()} className="h-10 rounded-md bg-white">
+          <Alert tone="danger">
+            <p>{erroRascunhoInicial}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button type="button" variant="secondary" size="sm" onClick={() => void novoAtendimento()}>
                 Novo atendimento
               </Button>
-              <Button type="button" variant="outline" onClick={() => void verRascunhos()} className="h-10 rounded-md bg-white">
+              <Button type="button" variant="secondary" size="sm" onClick={() => void verRascunhos()}>
                 Ver rascunhos
               </Button>
             </div>
-          </section>
+          </Alert>
         )}
 
         {(etapaAtual === 'ficha' || ativo) && !carregandoRascunhoInicial && !erroRascunhoInicial && (
-          <section className="grid gap-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+          <div className="grid gap-5">
             {etapaAtual === 'ficha' && (
               <SecaoFicha
                 id="secao-unidade"
                 titulo="Unidade"
                 descricao={!ativo ? 'Selecione a unidade do atendimento.' : 'Unidade do atendimento. Para alterar, use o botao Novo atendimento.'}
                 icon={ClipboardList}
-                variant="azul"
+                tone="section-1"
               >
                 <div className="grid gap-2">
                   {unidadesParaSelecao.map((unidade) => (
@@ -1332,7 +1316,10 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                   ))}
                 </div>
                 {iniciando && !ativo && (
-                  <p className="text-sm font-semibold text-sky-700">Criando rascunho...</p>
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-primary">
+                    <Spinner label="Criando rascunho" />
+                    Criando rascunho...
+                  </p>
                 )}
               </SecaoFicha>
             )}
@@ -1343,21 +1330,22 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 titulo="Nome da consultora"
                 descricao="Informe o nome da consultora responsavel pelo atendimento."
                 icon={UserRound}
-                variant="azul"
+                tone="section-1"
                 erro={erroSecao('secao-consultora-nome')}
               >
-                <label className="text-sm font-semibold text-slate-700">
-                  Nome da consultora
-                  <input
-                    id="consultora-nome"
-                    value={ficha.consultoraNome ?? ''}
-                    onChange={(event) => atualizarFicha((atual) => ({ ...atual, consultoraNome: event.target.value }))}
-                    onBlur={(event) => atualizarFicha((atual) => ({ ...atual, consultoraNome: normalizarNomeConsultora(event.target.value) }))}
-                    className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
-                    maxLength={FICHA_CONSULTORA_NOME_MAX_CHARS}
-                    placeholder="Digite o nome da consultora"
-                  />
-                </label>
+                <FormField id="consultora-nome" label="Nome da consultora" required>
+                  {(f) => (
+                    <Input
+                      {...f}
+                      value={ficha.consultoraNome ?? ''}
+                      onChange={(event) => atualizarFicha((atual) => ({ ...atual, consultoraNome: event.target.value }))}
+                      onBlur={(event) => atualizarFicha((atual) => ({ ...atual, consultoraNome: normalizarNomeConsultora(event.target.value) }))}
+                      className="h-12 text-base"
+                      maxLength={FICHA_CONSULTORA_NOME_MAX_CHARS}
+                      placeholder="Digite o nome da consultora"
+                    />
+                  )}
+                </FormField>
               </SecaoFicha>
             )}
 
@@ -1367,25 +1355,27 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 titulo="Cliente"
                 descricao={!clienteSelecionada ? 'Busque por nome ou telefone, ou cadastre uma nova cliente.' : undefined}
                 icon={UserRound}
-                variant="azul"
+                tone="section-1"
                 erro={erroSecao('secao-cliente')}
               >
                 {clienteSelecionada && (
-                  <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
-                    <p className="text-xs font-bold uppercase text-sky-700">Cliente vinculada</p>
-                    <p className="mt-2 text-base font-semibold text-slate-950">{clienteSelecionada.nome}</p>
-                    {clienteSelecionada.telefoneFormatado && <p className="text-sm text-slate-700">{clienteSelecionada.telefoneFormatado}</p>}
-                    <p className="text-sm text-slate-700">{clienteSelecionada.parentescoLabel}</p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button type="button" variant="outline" onClick={trocarCliente} className="h-10 rounded-md">
-                        Trocar cliente
-                      </Button>
-                      <Button type="button" variant="outline" onClick={() => setHistoricoAberto(true)} className="h-10 rounded-md">
-                        <History className="mr-2 h-4 w-4" aria-hidden="true" />
-                        Ver historico
-                      </Button>
-                    </div>
-                  </div>
+                  <Card className="border-info/40 bg-info/10">
+                    <CardContent className="p-4">
+                      <p className="text-xs font-bold uppercase text-sky-700">Cliente vinculada</p>
+                      <p className="mt-2 text-base font-semibold text-slate-950">{clienteSelecionada.nome}</p>
+                      {clienteSelecionada.telefoneFormatado && <p className="text-sm text-slate-700">{clienteSelecionada.telefoneFormatado}</p>}
+                      <p className="text-sm text-slate-700">{clienteSelecionada.parentescoLabel}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button type="button" variant="secondary" size="sm" onClick={trocarCliente}>
+                          Trocar cliente
+                        </Button>
+                        <Button type="button" variant="secondary" size="sm" onClick={() => setHistoricoAberto(true)}>
+                          <History className="size-4" aria-hidden="true" />
+                          Ver historico
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
                 )}
 
                 {!clienteSelecionada && (
@@ -1393,7 +1383,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                     <div>
                       <label className="text-sm font-semibold text-slate-700" htmlFor="busca-cliente">Buscar por nome ou telefone</label>
                       <div className="mt-2 flex gap-2">
-                        <input
+                        <Input
                           id="busca-cliente"
                           value={buscaCliente}
                           onChange={(event) => setBuscaCliente(event.target.value)}
@@ -1403,11 +1393,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                               void buscarClientes()
                             }
                           }}
-                          className="min-h-12 flex-1 rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
+                          className="h-12 flex-1 text-base"
                           placeholder="Nome ou telefone"
                         />
-                        <Button type="button" onClick={buscarClientes} disabled={buscandoCliente} className="h-12 rounded-md">
-                          <Search className="h-4 w-4" aria-hidden="true" />
+                        <Button type="button" onClick={buscarClientes} disabled={buscandoCliente} loading={buscandoCliente} size="lg" className="px-4">
+                          <Search className="size-4" aria-hidden="true" />
                         </Button>
                       </div>
                     </div>
@@ -1419,7 +1409,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                             key={cliente.id}
                             type="button"
                             onClick={() => selecionarCliente(cliente)}
-                            className="rounded-md border border-slate-200 bg-white p-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                            className="rounded-md border border-input bg-input-background p-4 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-ring"
                           >
                             <p className="font-semibold text-slate-950">{cliente.nome}</p>
                             <p className="text-sm text-slate-600">{cliente.telefoneFormatado ?? 'Sem telefone'}</p>
@@ -1429,58 +1419,66 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                       </div>
                     )}
 
-                    <div className="rounded-lg border border-slate-200 p-4">
-                      <h3 className="text-base font-semibold text-slate-950">Nova cliente</h3>
-                      <div className="mt-4 grid gap-4">
-                        <label className="text-sm font-semibold text-slate-700">
-                          Nome
-                          <input
-                            value={novoCliente.nome}
-                            onChange={(event) => setNovoCliente((atual) => ({ ...atual, nome: event.target.value }))}
-                            className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
-                            maxLength={120}
-                          />
-                        </label>
-                        <label className="text-sm font-semibold text-slate-700">
-                          Telefone opcional
-                          <input
-                            value={novoCliente.telefone}
-                            onChange={(event) => atualizarTelefoneCliente(event.target.value)}
-                            className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
-                            inputMode="tel"
-                            placeholder="(41) 99999-9999"
-                          />
-                        </label>
-                        <div>
-                          <p className="text-sm font-semibold text-slate-700">Parentesco</p>
-                          <div className="mt-2 grid grid-cols-2 gap-2">
-                            {PARENTESCOS_CLIENTE.map((item) => (
-                              <OpcaoButton
-                                key={item.chave}
-                                selected={novoCliente.parentesco === item.chave}
-                                onClick={() => setNovoCliente((atual) => ({ ...atual, parentesco: item.chave }))}
-                              >
-                                {item.label}
-                              </OpcaoButton>
-                            ))}
+                    <Card>
+                      <CardContent className="p-4">
+                        <h3 className="text-base font-semibold text-slate-950">Nova cliente</h3>
+                        <div className="mt-4 grid gap-4">
+                          <FormField id="nova-cliente-nome" label="Nome">
+                            {(f) => (
+                              <Input
+                                {...f}
+                                value={novoCliente.nome}
+                                onChange={(event) => setNovoCliente((atual) => ({ ...atual, nome: event.target.value }))}
+                                className="h-12 text-base"
+                                maxLength={120}
+                              />
+                            )}
+                          </FormField>
+                          <FormField id="nova-cliente-telefone" label="Telefone" helper="Opcional">
+                            {(f) => (
+                              <Input
+                                {...f}
+                                value={novoCliente.telefone}
+                                onChange={(event) => atualizarTelefoneCliente(event.target.value)}
+                                className="h-12 text-base"
+                                inputMode="tel"
+                                placeholder="(41) 99999-9999"
+                              />
+                            )}
+                          </FormField>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-700">Parentesco</p>
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                              {PARENTESCOS_CLIENTE.map((item) => (
+                                <OpcaoButton
+                                  key={item.chave}
+                                  selected={novoCliente.parentesco === item.chave}
+                                  onClick={() => setNovoCliente((atual) => ({ ...atual, parentesco: item.chave }))}
+                                >
+                                  {item.label}
+                                </OpcaoButton>
+                              ))}
+                            </div>
                           </div>
+                          {novoCliente.parentesco === 'outro' && (
+                            <FormField id="nova-cliente-parentesco-outro" label="Complemento">
+                              {(f) => (
+                                <Input
+                                  {...f}
+                                  value={novoCliente.parentescoOutro}
+                                  onChange={(event) => setNovoCliente((atual) => ({ ...atual, parentescoOutro: event.target.value }))}
+                                  className="h-12 text-base"
+                                  maxLength={60}
+                                />
+                              )}
+                            </FormField>
+                          )}
+                          <Button type="button" onClick={cadastrarCliente} size="lg" className="h-12">
+                            Cadastrar e vincular
+                          </Button>
                         </div>
-                        {novoCliente.parentesco === 'outro' && (
-                          <label className="text-sm font-semibold text-slate-700">
-                            Complemento
-                            <input
-                              value={novoCliente.parentescoOutro}
-                              onChange={(event) => setNovoCliente((atual) => ({ ...atual, parentescoOutro: event.target.value }))}
-                              className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
-                              maxLength={60}
-                            />
-                          </label>
-                        )}
-                        <Button type="button" onClick={cadastrarCliente} className="h-12 rounded-md">
-                          Cadastrar e vincular
-                        </Button>
-                      </div>
-                    </div>
+                      </CardContent>
+                    </Card>
                   </>
                 )}
               </SecaoFicha>
@@ -1492,114 +1490,115 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 titulo="Dados da crianca"
                 descricao="Registre uma ou mais criancas quando a cliente informar."
                 icon={Baby}
-                variant="rosa"
+                tone="section-2"
                 erro={erroSecao('secao-crianca')}
               >
                 {ficha.criancas.map((crianca, index) => (
-                  <div key={crianca.id} className="rounded-lg border border-slate-200 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <h3 className="font-semibold text-slate-950">Crianca {index + 1}</h3>
-                      {ficha.criancas.length > 1 && (
-                        <Button type="button" variant="outline" onClick={() => removerCrianca(crianca.id)} className="h-9 rounded-md">
-                          <X className="h-4 w-4" aria-hidden="true" />
-                        </Button>
-                      )}
-                    </div>
-                    <div className="mt-4 grid gap-4">
-                      <div>
-                        <label className="text-sm font-semibold text-slate-700" htmlFor={`situacao-${crianca.id}`}>Situacao</label>
-                        <Select
-                          value={crianca.situacao}
-                          onValueChange={(value) => {
-                            setDataPrevistaInputs((atual) => ({ ...atual, [crianca.id]: '' }))
-                            atualizarCrianca(crianca.id, { situacao: value as SituacaoCrianca, idadeUnidade: undefined, idadeValor: undefined, dataPrevistaNascimento: undefined })
-                          }}
-                        >
-                          <SelectTrigger id={`situacao-${crianca.id}`} className="mt-2 min-h-12 w-full rounded-md border border-slate-200 text-base">
-                            <SelectValue placeholder="Selecione a situacao" />
-                          </SelectTrigger>
-                          <SelectContent position="popper" className="max-h-60">
-                            {SITUACOES_CRIANCA.map((item) => (
-                              <SelectItem key={item.chave} value={item.chave}>
-                                {item.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                  <Card key={crianca.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="font-semibold text-slate-950">Crianca {index + 1}</h3>
+                        {ficha.criancas.length > 1 && (
+                          <Button type="button" variant="ghost" size="icon" onClick={() => removerCrianca(crianca.id)} aria-label={`Remover crianca ${index + 1}`}>
+                            <X className="size-4" aria-hidden="true" />
+                          </Button>
+                        )}
                       </div>
-                      {(crianca.situacao === 'gestacao' || crianca.situacao === 'presente_outra_pessoa') && (
-                        <label className="text-sm font-semibold text-slate-700">
-                          Data prevista de nascimento
-                          <input
-                            id={`data-prevista-${crianca.id}`}
-                            type="text"
-                            inputMode="numeric"
-                            placeholder="DD/MM/AAAA"
-                            value={dataPrevistaInputs[crianca.id] ?? formatarDataISOParaInput(crianca.dataPrevistaNascimento)}
-                            onChange={(event) => atualizarDataPrevistaCrianca(crianca.id, event.target.value)}
-                            className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
-                          />
-                        </label>
-                      )}
-                      {crianca.situacao === 'ja_nasceu' && (
-                        <div className="grid gap-3">
-                          <p className="text-sm font-semibold text-slate-700">Idade</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            {(['meses', 'anos'] as UnidadeIdadeCrianca[]).map((unidade) => (
-                              <OpcaoButton key={unidade} selected={crianca.idadeUnidade === unidade} onClick={() => atualizarCrianca(crianca.id, { idadeUnidade: unidade, idadeValor: undefined })}>
-                                {unidade === 'meses' ? 'Meses' : 'Anos'}
-                              </OpcaoButton>
-                            ))}
-                          </div>
-                          {crianca.idadeUnidade && (
-                            <div className="grid grid-cols-4 gap-2">
-                              {Array.from({ length: crianca.idadeUnidade === 'meses' ? 11 : 6 }, (_, i) => i + 1).map((valor) => (
-                                <OpcaoButton key={valor} selected={crianca.idadeValor === valor} onClick={() => atualizarCrianca(crianca.id, { idadeValor: valor })} className="text-center">
-                                  {valor}
+                      <div className="mt-4 grid gap-4">
+                        <FormField id={`situacao-${crianca.id}`} label="Situacao" required>
+                          {(f) => (
+                            <Select
+                              value={crianca.situacao}
+                              onValueChange={(value) => {
+                                setDataPrevistaInputs((atual) => ({ ...atual, [crianca.id]: '' }))
+                                atualizarCrianca(crianca.id, { situacao: value as SituacaoCrianca, idadeUnidade: undefined, idadeValor: undefined, dataPrevistaNascimento: undefined })
+                              }}
+                            >
+                              <SelectTrigger id={f.id} className="h-12 w-full text-base" aria-invalid={f['aria-invalid']} aria-describedby={f['aria-describedby']}>
+                                <SelectValue placeholder="Selecione a situacao" />
+                              </SelectTrigger>
+                              <SelectContent position="popper" className="max-h-60">
+                                {SITUACOES_CRIANCA.map((item) => (
+                                  <SelectItem key={item.chave} value={item.chave}>
+                                    {item.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </FormField>
+                        {(crianca.situacao === 'gestacao' || crianca.situacao === 'presente_outra_pessoa') && (
+                          <FormField id={`data-prevista-${crianca.id}`} label="Data prevista de nascimento">
+                            {(f) => (
+                              <DateField
+                                {...f}
+                                value={dataPrevistaInputs[crianca.id] ?? formatarDataISOParaInput(crianca.dataPrevistaNascimento)}
+                                onChange={(display) => atualizarDataPrevistaCrianca(crianca.id, display)}
+                              />
+                            )}
+                          </FormField>
+                        )}
+                        {crianca.situacao === 'ja_nasceu' && (
+                          <div className="grid gap-3">
+                            <p className="text-sm font-semibold text-slate-700">Idade</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              {(['meses', 'anos'] as UnidadeIdadeCrianca[]).map((unidade) => (
+                                <OpcaoButton key={unidade} selected={crianca.idadeUnidade === unidade} onClick={() => atualizarCrianca(crianca.id, { idadeUnidade: unidade, idadeValor: undefined })}>
+                                  {unidade === 'meses' ? 'Meses' : 'Anos'}
                                 </OpcaoButton>
                               ))}
                             </div>
+                            {crianca.idadeUnidade && (
+                              <div className="grid grid-cols-4 gap-2">
+                                {Array.from({ length: crianca.idadeUnidade === 'meses' ? 11 : 6 }, (_, i) => i + 1).map((valor) => (
+                                  <OpcaoButton key={valor} selected={crianca.idadeValor === valor} onClick={() => atualizarCrianca(crianca.id, { idadeValor: valor })} className="text-center">
+                                    {valor}
+                                  </OpcaoButton>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <FormField id={`nome-crianca-${crianca.id}`} label="Nome da crianca" helper="Opcional">
+                          {(f) => (
+                            <Input
+                              {...f}
+                              value={crianca.nome ?? ''}
+                              disabled={crianca.nomeNaoInformado}
+                              onChange={(event) => atualizarNomeCrianca(crianca.id, event.target.value)}
+                              className="h-12 text-base"
+                              maxLength={80}
+                            />
                           )}
-                        </div>
-                      )}
-                      <label className="text-sm font-semibold text-slate-700">
-                        Nome da crianca
-                        <input
-                          id={`nome-crianca-${crianca.id}`}
-                          value={crianca.nome ?? ''}
-                          disabled={crianca.nomeNaoInformado}
-                          onChange={(event) => atualizarNomeCrianca(crianca.id, event.target.value)}
-                          className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500 disabled:bg-slate-100"
-                          maxLength={80}
-                        />
-                      </label>
-                      <label className="flex min-h-11 items-center gap-3 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={crianca.nomeNaoInformado === true}
-                          onChange={(event) => {
-                            if (event.target.checked) marcarNomeNaoInformado(crianca.id)
-                            else atualizarCrianca(crianca.id, { nomeNaoInformado: false })
-                          }}
-                          className="h-4 w-4"
-                        />
-                        Nao sabe o nome ainda
-                      </label>
-                      <div>
-                        <p className="text-sm font-semibold text-slate-700">Sexo</p>
-                        <div className="mt-2 grid gap-2">
-                          {SEXOS_CRIANCA.map((item) => (
-                            <OpcaoButton key={item.chave} selected={crianca.sexo === item.chave} onClick={() => atualizarCrianca(crianca.id, { sexo: item.chave as SexoCrianca })}>
-                              {item.label}
-                            </OpcaoButton>
-                          ))}
+                        </FormField>
+                        <label className="flex min-h-11 items-center gap-3 rounded-md border border-input bg-input-background px-3 text-sm font-semibold text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={crianca.nomeNaoInformado === true}
+                            onChange={(event) => {
+                              if (event.target.checked) marcarNomeNaoInformado(crianca.id)
+                              else atualizarCrianca(crianca.id, { nomeNaoInformado: false })
+                            }}
+                            className="h-4 w-4"
+                          />
+                          Nao sabe o nome ainda
+                        </label>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-700">Sexo</p>
+                          <div className="mt-2 grid gap-2">
+                            {SEXOS_CRIANCA.map((item) => (
+                              <OpcaoButton key={item.chave} selected={crianca.sexo === item.chave} onClick={() => atualizarCrianca(crianca.id, { sexo: item.chave as SexoCrianca })}>
+                                {item.label}
+                              </OpcaoButton>
+                            ))}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 ))}
-                <Button type="button" variant="outline" onClick={adicionarCrianca} className="h-12 rounded-md">
-                  <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+                <Button type="button" variant="secondary" onClick={adicionarCrianca} size="lg" className="h-12">
+                  <Plus className="size-4" aria-hidden="true" />
                   Adicionar outra crianca
                 </Button>
               </SecaoFicha>
@@ -1612,7 +1611,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                   titulo="Departamentos"
                   descricao="Selecione as areas de interesse informadas pela cliente."
                   icon={ClipboardList}
-                  variant="amarelo"
+                  tone="section-3"
                   erro={erroSecao('secao-departamentos')}
                 >
                   <p className="text-sm font-semibold text-slate-700">Departamentos</p>
@@ -1630,12 +1629,12 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                   titulo="Produtos de interesse"
                   descricao="Registre produtos em texto livre quando a cliente citar itens especificos."
                   icon={ShoppingBag}
-                  variant="lilas"
+                  tone="section-2"
                   erro={erroSecao('secao-produtos')}
                 >
                   <label className="text-sm font-semibold text-slate-700" htmlFor="produto-interesse">Produtos de interesse</label>
                   <div className="mt-2 flex gap-2">
-                    <input
+                    <Input
                       id="produto-interesse"
                       value={produtoDigitado}
                       onChange={(event) => setProdutoDigitado(event.target.value)}
@@ -1645,12 +1644,12 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                           adicionarProduto()
                         }
                       }}
-                      className="min-h-12 flex-1 rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
+                      className="h-12 flex-1 text-base"
                       maxLength={FICHA_PRODUTO_MAX_CHARS}
                       enterKeyHint="done"
                     />
-                    <Button type="button" onClick={adicionarProduto} className="h-12 rounded-md">
-                      <Plus className="h-4 w-4" aria-hidden="true" />
+                    <Button type="button" onClick={adicionarProduto} size="lg" className="px-4">
+                      <Plus className="size-4" aria-hidden="true" />
                     </Button>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -1677,7 +1676,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                   titulo="Fechamento"
                   descricao="Informe o desfecho comercial do atendimento."
                   icon={Check}
-                  variant="azul"
+                  tone="section-1"
                   erro={erroSecao('secao-resultado-fechamento')}
                 >
                   <div className="grid gap-2">
@@ -1701,7 +1700,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                   titulo="Motivos"
                   descricao="Selecione os fatores citados pela cliente."
                   icon={ClipboardList}
-                  variant="amarelo"
+                  tone="section-3"
                   erro={erroSecao('secao-resultado-produto')}
                 >
                   <p className="text-sm font-semibold text-slate-700">
@@ -1732,22 +1731,22 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                     titulo="Condicao comercial"
                     descricao="Registre a data de virada do cartao informada pela cliente."
                     icon={ShoppingBag}
-                    variant="laranja"
+                    tone="section-2"
                     erro={erroSecao('secao-resultado-condicao')}
                   >
-                    <label className="text-sm font-semibold text-slate-700">
-                      Virada do cartao
-                      <input
-                        id="virada-cartao"
-                        value={viradaCartaoInput}
-                        onChange={(event) => atualizarViradaCartao(event.target.value)}
-                        className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
-                        inputMode="numeric"
-                        placeholder="DD/MM"
-                        maxLength={5}
-                      />
-                    </label>
-                    <p className="text-xs text-slate-500">Use somente dia e mes, sem ano.</p>
+                    <FormField id="virada-cartao" label="Virada do cartao" required helper="Use somente dia e mes, sem ano.">
+                      {(f) => (
+                        <Input
+                          {...f}
+                          value={viradaCartaoInput}
+                          onChange={(event) => atualizarViradaCartao(event.target.value)}
+                          className="h-12 text-base"
+                          inputMode="numeric"
+                          placeholder="DD/MM"
+                          maxLength={5}
+                        />
+                      )}
+                    </FormField>
                   </SecaoFicha>
                 )}
 
@@ -1757,19 +1756,20 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                     titulo="Outro motivo"
                     descricao="Complemente o motivo quando Outro for selecionado."
                     icon={MessageSquareText}
-                    variant="verde"
+                    tone="section-1"
                     erro={erroSecao('secao-resultado-outro')}
                   >
-                    <label className="text-sm font-semibold text-slate-700">
-                      Complemento
-                      <input
-                        id="motivo-outro"
-                        value={ficha.motivoOutro ?? ''}
-                        onChange={(event) => atualizarFicha((atual) => ({ ...atual, motivoOutro: event.target.value }))}
-                        className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
-                        maxLength={120}
-                      />
-                    </label>
+                    <FormField id="motivo-outro" label="Complemento" required>
+                      {(f) => (
+                        <Input
+                          {...f}
+                          value={ficha.motivoOutro ?? ''}
+                          onChange={(event) => atualizarFicha((atual) => ({ ...atual, motivoOutro: event.target.value }))}
+                          className="h-12 text-base"
+                          maxLength={120}
+                        />
+                      )}
+                    </FormField>
                   </SecaoFicha>
                 )}
               </div>
@@ -1781,18 +1781,20 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 titulo="Observacoes sobre esse atendimento"
                 descricao="Registre preferencias, duvidas, objecoes ou informacoes importantes para um proximo contato."
                 icon={MessageSquareText}
-                variant="verde"
+                tone="section-2"
                 erro={erroSecao('secao-observacoes')}
               >
-                <label className="text-sm font-semibold text-slate-700">
-                  Observacoes
-                  <textarea
-                    value={ficha.observacoes ?? ''}
-                    onChange={(event) => atualizarFicha((atual) => ({ ...atual, observacoes: event.target.value }))}
-                    className="mt-2 min-h-44 w-full rounded-md border border-slate-200 px-3 py-3 text-base outline-none focus:border-sky-500"
-                    maxLength={FICHA_OBSERVACOES_MAX_CHARS}
-                  />
-                </label>
+                <FormField id="observacoes" label="Observacoes" helper="Opcional">
+                  {(f) => (
+                    <Textarea
+                      {...f}
+                      value={ficha.observacoes ?? ''}
+                      onChange={(event) => atualizarFicha((atual) => ({ ...atual, observacoes: event.target.value }))}
+                      className="min-h-44 text-base"
+                      maxLength={FICHA_OBSERVACOES_MAX_CHARS}
+                    />
+                  )}
+                </FormField>
                 <p className="text-right text-xs text-slate-500">{(ficha.observacoes ?? '').length}/{FICHA_OBSERVACOES_MAX_CHARS}</p>
               </SecaoFicha>
             )}
@@ -1817,35 +1819,37 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                   { titulo: 'Virada do cartao', valor: formatarViradaCartao(ficha.viradaCartaoDia, ficha.viradaCartaoMes) || 'Nao informado', etapa: 'resultado' as FichaEtapa },
                   { titulo: 'Observacoes', valor: ficha.observacoes || 'Sem observacoes', etapa: 'ficha' as FichaEtapa },
                 ].map((item) => (
-                  <div key={item.titulo} className="rounded-lg border border-slate-200 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-bold text-slate-700">{item.titulo}</p>
-                      <Button type="button" variant="outline" onClick={() => irParaEtapa(item.etapa)} className="h-9 rounded-md">
-                        Editar
-                      </Button>
-                    </div>
-                    <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">{item.valor}</p>
-                  </div>
+                  <Card key={item.titulo}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-bold text-slate-700">{item.titulo}</p>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => irParaEtapa(item.etapa)}>
+                          Editar
+                        </Button>
+                      </div>
+                      <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">{item.valor}</p>
+                    </CardContent>
+                  </Card>
                 ))}
-                <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
-                  Ao concluir, o rascunho sera convertido em registro definitivo.
-                </p>
+                <Alert tone="info">Ao concluir, o rascunho sera convertido em registro definitivo.</Alert>
                 {ficha.resultadoAtendimento === 'sim' && (
-                  <label id="secao-revisao-lancamento" className="scroll-mt-28 text-sm font-semibold text-slate-700">
-                    Numero do lancamento
-                    <input
-                      id="numero-lancamento"
-                      value={numeroLancamento}
-                      onChange={(event) => setNumeroLancamento(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                      className="mt-2 min-h-12 w-full rounded-md border border-slate-200 px-3 text-base outline-none focus:border-sky-500"
-                      inputMode="numeric"
-                      placeholder="Informe o lancamento"
-                    />
-                  </label>
+                  <div id="secao-revisao-lancamento" className="scroll-mt-28">
+                    <FormField id="numero-lancamento" label="Numero do lancamento" required>
+                      {(f) => (
+                        <Input
+                          {...f}
+                          value={numeroLancamento}
+                          onChange={(event) => setNumeroLancamento(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                          className="h-12 text-base"
+                          inputMode="numeric"
+                          placeholder="Informe o lancamento"
+                        />
+                      )}
+                    </FormField>
+                  </div>
                 )}
                 {errosValidacao.length > 0 && (
-                  <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                    <p className="font-semibold">Revise os campos abaixo antes de concluir:</p>
+                  <Alert tone="danger" title="Revise os campos abaixo antes de concluir:">
                     <div className="mt-3 grid gap-2">
                       {errosValidacao.map((item, index) => (
                         <button
@@ -1858,17 +1862,16 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                         </button>
                       ))}
                     </div>
-                  </div>
+                  </Alert>
                 )}
-                <Button type="button" onClick={concluirAtendimento} disabled={concluindo} className="h-12 rounded-md">
-                  {concluindo ? 'Concluindo...' : 'Concluir atendimento'}
+                <Button type="button" onClick={concluirAtendimento} disabled={concluindo} loading={concluindo} size="lg" className="h-12">
+                  Concluir atendimento
                 </Button>
               </div>
             )}
 
             {errosValidacao.length > 0 && etapaAtual !== 'revisao' && (
-              <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                <p className="font-semibold">Revise os campos abaixo.</p>
+              <Alert tone="danger" title="Revise os campos abaixo.">
                 <div className="mt-3 grid gap-2">
                   {errosValidacao.map((item, index) => (
                     <button
@@ -1881,7 +1884,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                     </button>
                   ))}
                 </div>
-              </div>
+              </Alert>
             )}
             <TelefoneClienteRapido
               value={clienteSelecionada ? telefoneClienteEdicao : novoCliente.telefone}
@@ -1890,35 +1893,37 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
               loading={salvandoTelefone}
               compact={etapaAtual === 'ficha' && !clienteSelecionada}
             />
-          </section>
+          </div>
         )}
-      </div>
+      </FormPageContent>
 
       {!carregandoRascunhoInicial && !erroRascunhoInicial && (
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-lg backdrop-blur">
+        <div ref={actionBarRef} className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-lg backdrop-blur">
           <div className="mx-auto flex max-w-3xl flex-col gap-2">
             {mensagemContinuar && (
               <p className="text-center text-xs font-medium text-slate-600">{mensagemContinuar}</p>
             )}
             <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={voltar} disabled={etapaAtual === 'ficha'} className="h-12 flex-1 rounded-md">
-                <ChevronLeft className="mr-2 h-4 w-4" aria-hidden="true" />
+              <Button type="button" variant="secondary" onClick={voltar} disabled={etapaAtual === 'ficha'} size="lg" className="h-12 flex-1">
+                <ChevronLeft className="size-4" aria-hidden="true" />
                 Voltar
               </Button>
               {etapaAtual === 'revisao' ? (
-                <Button type="button" onClick={concluirAtendimento} disabled={!ativo || concluindo || errosEtapaAtual.length > 0} className="h-12 flex-1 rounded-md">
-                  <Check className="mr-2 h-4 w-4" aria-hidden="true" />
-                  {concluindo ? 'Concluindo...' : 'Concluir'}
+                <Button type="button" onClick={concluirAtendimento} disabled={!ativo || concluindo || errosEtapaAtual.length > 0} loading={concluindo} size="lg" className="h-12 flex-1">
+                  <Check className="size-4" aria-hidden="true" />
+                  Concluir
                 </Button>
               ) : (
                 <Button
                   type="button"
                   onClick={avancar}
                   disabled={!ativo || iniciando || errosEtapaAtual.length > 0}
-                  className="h-12 flex-1 rounded-md"
+                  loading={iniciando}
+                  size="lg"
+                  className="h-12 flex-1"
                 >
-                  {iniciando ? 'Salvando...' : 'Continuar'}
-                  {!iniciando && <ChevronRight className="ml-2 h-4 w-4" aria-hidden="true" />}
+                  Continuar
+                  {!iniciando && <ChevronRight className="size-4" aria-hidden="true" />}
                 </Button>
               )}
             </div>
@@ -1936,6 +1941,6 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         } : null}
         atendimentoAtualId={ativo?.id ?? null}
       />
-    </main>
+    </PageContainer>
   )
 }

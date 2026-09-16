@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Package, Plus, Calendar, Truck, ChevronRight, Upload, FileText, Weight, X, Hash, Download, AlertCircle, Loader2, Search, Mail, Database, TrendingUp, BarChart3, Clock, Users, Eye, CheckCircle2, Edit } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/design-system'
 import { createClient } from '@/lib/supabase/client'
 import { isMaticEmail } from '@/lib/auth/matic-emails'
 import { toast } from 'sonner'
@@ -539,14 +540,11 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
         <span>{rec.total_itens} itens</span>
         <span>{rec.total_recebido}/{rec.total_previsto} volumes ({pct}%)</span>
       </div>
-      <div className="w-full bg-slate-100 rounded-full h-2">
-        <div
-          className={`h-2 rounded-full transition-all ${
-            pct >= 100 ? 'bg-green-500' : pct > 0 ? 'bg-amber-400' : 'bg-slate-200'
-          }`}
-          style={{ width: `${Math.min(pct, 100)}%` }}
-        />
-      </div>
+      <Progress
+        value={pct}
+        tone={pct >= 100 ? 'success' : pct > 0 ? 'warning' : 'neutral'}
+        label={`Progresso do recebimento: ${rec.total_recebido} de ${rec.total_previsto} volumes`}
+      />
 
       {/* Modal Detalhes NFes */}
       {showDetailsModal && (

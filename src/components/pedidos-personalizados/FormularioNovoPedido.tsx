@@ -2,18 +2,22 @@
 
 import { ClipboardEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { AlertCircle, ArrowRight, CheckCircle2, Loader2, Package, Plus, RefreshCw, Ruler, Sparkles } from 'lucide-react'
+import { AlertCircle, ArrowRight, CheckCircle2, Package, Plus, RefreshCw, Ruler, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
+  Alert,
+  Button,
+  Card,
+  CardContent,
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+  FormField,
+  Input,
+  Section,
+  Spinner,
+} from '@/components/design-system'
 import {
   Select,
   SelectContent,
@@ -84,7 +88,7 @@ function uuidSeguro() {
 }
 
 function CardEstado({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">{children}</div>
+  return <Card className="p-6 text-center">{children}</Card>
 }
 
 function IdentificacaoPedido({
@@ -107,42 +111,32 @@ function IdentificacaoPedido({
   onColarTelefone: (event: ClipboardEvent<HTMLInputElement>) => void
 }) {
   return (
-    <section id="identificacao-pedido" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="titulo-identificacao">
-      <div className="mb-5 flex items-center gap-3">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-sky-50 text-[#00A5E6]"><Sparkles /></span>
-        <div><h2 id="titulo-identificacao" className="text-lg font-bold text-slate-900">Identificação</h2><p className="text-sm text-slate-500">Dados comerciais do novo pedido.</p></div>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div>
-          <label htmlFor="unidade" className="mb-1.5 block text-sm font-medium text-slate-700">Unidade *</label>
-          <Select disabled={bloqueado} value={dados.unidade} onValueChange={(valor) => { onChange({ ...dados, unidade: valor as EstadoNovoPedido['unidade'] }); onTocar('unidade') }}>
-            <SelectTrigger id="unidade" className="h-11 w-full" onBlur={() => onTocar('unidade')} aria-invalid={mensagens('unidade').length > 0} aria-describedby={mensagens('unidade').length > 0 ? 'unidade-erro' : undefined}><SelectValue placeholder="Selecione a unidade" /></SelectTrigger>
-            <SelectContent>{opcoes.unidades.map((unidade) => <SelectItem key={unidade.chave} value={unidade.chave}>{unidade.nome}</SelectItem>)}</SelectContent>
-          </Select>
-          {mensagens('unidade')[0] && <p id="unidade-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('unidade')[0]}</p>}
+    <div id="identificacao-pedido" className="scroll-mt-6">
+      <Section tone="section-1" icon={<Sparkles className="size-4" />} title="Identificação" description="Dados comerciais do novo pedido.">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <FormField id="unidade" label="Unidade" required error={mensagens('unidade')[0]}>
+            {(f) => (
+              <Select disabled={bloqueado} value={dados.unidade} onValueChange={(valor) => { onChange({ ...dados, unidade: valor as EstadoNovoPedido['unidade'] }); onTocar('unidade') }}>
+                <SelectTrigger id={f.id} className="h-11 w-full" onBlur={() => onTocar('unidade')} aria-invalid={f['aria-invalid']} aria-describedby={f['aria-describedby']}><SelectValue placeholder="Selecione a unidade" /></SelectTrigger>
+                <SelectContent>{opcoes.unidades.map((unidade) => <SelectItem key={unidade.chave} value={unidade.chave}>{unidade.nome}</SelectItem>)}</SelectContent>
+              </Select>
+            )}
+          </FormField>
+          <FormField id="consultora" label="Consultora" required error={mensagens('consultora')[0]}>
+            {(f) => <Input {...f} value={dados.consultora} onChange={(event) => onChange({ ...dados, consultora: event.target.value })} onBlur={() => onTocar('consultora')} maxLength={20} disabled={bloqueado} className="h-11" />}
+          </FormField>
+          <FormField id="numero-lancamento" label="Número de lançamento" error={mensagens('numeroLancamento')[0]}>
+            {(f) => <Input {...f} value={dados.numeroLancamento} onChange={(event) => onChange({ ...dados, numeroLancamento: event.target.value })} onPaste={onColarNumeroLancamento} onBlur={() => onTocar('numeroLancamento')} inputMode="numeric" pattern="[0-9]*" maxLength={6} placeholder="Opcional" disabled={bloqueado} className="h-11" />}
+          </FormField>
+          <FormField id="cliente" label="Cliente" required error={mensagens('cliente')[0]}>
+            {(f) => <Input {...f} value={dados.cliente} onChange={(event) => onChange({ ...dados, cliente: event.target.value })} onBlur={() => onTocar('cliente')} maxLength={40} disabled={bloqueado} className="h-11" />}
+          </FormField>
+          <FormField id="telefone" label="Telefone do cliente" required error={mensagens('telefone')[0]}>
+            {(f) => <Input {...f} value={dados.telefone} onChange={(event) => onChange({ ...dados, telefone: aplicarMascaraTelefoneBR(event.target.value) })} onPaste={onColarTelefone} onBlur={() => onTocar('telefone')} inputMode="tel" autoComplete="tel" placeholder="(41) 99999-9999" disabled={bloqueado} className="h-11" />}
+          </FormField>
         </div>
-        <div>
-          <label htmlFor="consultora" className="mb-1.5 block text-sm font-medium text-slate-700">Consultora *</label>
-          <Input id="consultora" value={dados.consultora} onChange={(event) => onChange({ ...dados, consultora: event.target.value })} onBlur={() => onTocar('consultora')} maxLength={20} disabled={bloqueado} aria-invalid={mensagens('consultora').length > 0} aria-describedby={mensagens('consultora').length > 0 ? 'consultora-erro' : undefined} className="h-11" />
-          {mensagens('consultora')[0] && <p id="consultora-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('consultora')[0]}</p>}
-        </div>
-        <div>
-          <label htmlFor="numero-lancamento" className="mb-1.5 block text-sm font-medium text-slate-700">Número de lançamento</label>
-          <Input id="numero-lancamento" value={dados.numeroLancamento} onChange={(event) => onChange({ ...dados, numeroLancamento: event.target.value })} onPaste={onColarNumeroLancamento} onBlur={() => onTocar('numeroLancamento')} inputMode="numeric" pattern="[0-9]*" maxLength={6} placeholder="Opcional" disabled={bloqueado} aria-invalid={mensagens('numeroLancamento').length > 0} aria-describedby={mensagens('numeroLancamento').length > 0 ? 'numero-lancamento-erro' : undefined} className="h-11" />
-          {mensagens('numeroLancamento')[0] && <p id="numero-lancamento-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('numeroLancamento')[0]}</p>}
-        </div>
-        <div>
-          <label htmlFor="cliente" className="mb-1.5 block text-sm font-medium text-slate-700">Cliente *</label>
-          <Input id="cliente" value={dados.cliente} onChange={(event) => onChange({ ...dados, cliente: event.target.value })} onBlur={() => onTocar('cliente')} maxLength={40} disabled={bloqueado} aria-invalid={mensagens('cliente').length > 0} aria-describedby={mensagens('cliente').length > 0 ? 'cliente-erro' : undefined} className="h-11" />
-          {mensagens('cliente')[0] && <p id="cliente-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('cliente')[0]}</p>}
-        </div>
-        <div>
-          <label htmlFor="telefone" className="mb-1.5 block text-sm font-medium text-slate-700">Telefone do cliente *</label>
-          <Input id="telefone" value={dados.telefone} onChange={(event) => onChange({ ...dados, telefone: aplicarMascaraTelefoneBR(event.target.value) })} onPaste={onColarTelefone} onBlur={() => onTocar('telefone')} inputMode="tel" autoComplete="tel" placeholder="(41) 99999-9999" disabled={bloqueado} aria-invalid={mensagens('telefone').length > 0} aria-describedby={mensagens('telefone').length > 0 ? 'telefone-erro' : undefined} className="h-11" />
-          {mensagens('telefone')[0] && <p id="telefone-erro" role="alert" className="mt-1 text-sm text-red-600">{mensagens('telefone')[0]}</p>}
-        </div>
-      </div>
-    </section>
+      </Section>
+    </div>
   )
 }
 
@@ -153,33 +147,35 @@ const OPCOES_FORNECEDOR: ReadonlyArray<{ chave: FornecedorPedido; nome: string; 
 
 function EscolhaFornecedor({ fornecedorSelecionado, bloqueado, onEscolher }: { fornecedorSelecionado: FornecedorPedido | null; bloqueado: boolean; onEscolher: (fornecedor: FornecedorPedido) => void }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" aria-labelledby="titulo-fornecedor">
-      <h2 id="titulo-fornecedor" className="text-lg font-bold text-slate-900">Escolha o fornecedor</h2>
-      {fornecedorSelecionado === null && <p className="mt-1 text-sm text-slate-500">Selecione um fornecedor para continuar o preenchimento do pedido.</p>}
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        {OPCOES_FORNECEDOR.map(({ chave, nome, descricao, Icone }) => {
-          const ativo = fornecedorSelecionado === chave
-          return (
-            <Button
-              key={chave}
-              type="button"
-              variant={ativo ? 'default' : 'outline'}
-              className="min-h-20 justify-start gap-3 px-4 py-3 text-left"
-              aria-pressed={ativo}
-              disabled={bloqueado}
-              onClick={() => onEscolher(chave)}
-            >
-              <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${ativo ? 'bg-white/15 text-white' : 'bg-sky-50 text-[#00A5E6]'}`}><Icone className="size-5" aria-hidden="true" /></span>
-              <span className="flex min-w-0 flex-col">
-                <span className="text-base font-semibold">{nome}</span>
-                <span className={`text-xs font-normal ${ativo ? 'text-white/80' : 'text-slate-500'}`}>{descricao}</span>
-              </span>
-              {ativo && <CheckCircle2 className="ml-auto size-5 shrink-0" aria-hidden="true" />}
-            </Button>
-          )
-        })}
-      </div>
-    </section>
+    <Card>
+      <CardContent>
+        <h2 id="titulo-fornecedor" className="text-lg font-bold text-slate-900">Escolha o fornecedor</h2>
+        {fornecedorSelecionado === null && <p className="mt-1 text-sm text-slate-500">Selecione um fornecedor para continuar o preenchimento do pedido.</p>}
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {OPCOES_FORNECEDOR.map(({ chave, nome, descricao, Icone }) => {
+            const ativo = fornecedorSelecionado === chave
+            return (
+              <Button
+                key={chave}
+                type="button"
+                variant={ativo ? 'primary' : 'secondary'}
+                className="min-h-20 justify-start gap-3 px-4 py-3 text-left"
+                aria-pressed={ativo}
+                disabled={bloqueado}
+                onClick={() => onEscolher(chave)}
+              >
+                <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${ativo ? 'bg-white/15 text-white' : 'bg-primary/10 text-primary'}`}><Icone className="size-5" aria-hidden="true" /></span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="text-base font-semibold">{nome}</span>
+                  <span className={`text-xs font-normal ${ativo ? 'text-white/80' : 'text-slate-500'}`}>{descricao}</span>
+                </span>
+                {ativo && <CheckCircle2 className="ml-auto size-5 shrink-0" aria-hidden="true" />}
+              </Button>
+            )
+          })}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -707,15 +703,15 @@ export default function FormularioNovoPedido() {
   }
 
   if (carregando) {
-    return <CardEstado><Loader2 className="mx-auto mb-3 size-8 animate-spin text-[#00A5E6]" /><p role="status" className="font-medium text-slate-700">Carregando opções do pedido...</p></CardEstado>
+    return <CardEstado><div className="mb-3 flex justify-center"><Spinner label="Carregando opções do pedido" /></div><p role="status" className="font-medium text-slate-700">Carregando opções do pedido...</p></CardEstado>
   }
 
   if (erroCarregamento || !opcoes) {
     return (
       <CardEstado>
-        <AlertCircle className="mx-auto mb-3 size-8 text-red-500" />
+        <AlertCircle className="mx-auto mb-3 size-8 text-destructive" />
         <p role="alert" className="font-semibold text-slate-800">{erroCarregamento ?? 'Catálogo indisponível.'}</p>
-        <Button type="button" variant="outline" className="mt-4 min-h-11" onClick={() => void carregar()}><RefreshCw />Tentar novamente</Button>
+        <Button type="button" variant="secondary" className="mt-4 min-h-11" onClick={() => void carregar()}><RefreshCw />Tentar novamente</Button>
       </CardEstado>
     )
   }
@@ -767,14 +763,14 @@ export default function FormularioNovoPedido() {
         </div>
         <Dialog open={confirmarNovo} onOpenChange={setConfirmarNovo}>
           <DialogContent>
-            <DialogHeader><DialogTitle>Descartar dados não salvos?</DialogTitle><DialogDescription>Os campos preenchidos neste pedido serão apagados.</DialogDescription></DialogHeader>
-            <DialogFooter><Button type="button" variant="outline" onClick={() => setConfirmarNovo(false)}>Continuar preenchendo</Button><Button type="button" variant="destructive" onClick={iniciarNovoPedido}>Descartar e iniciar novo</Button></DialogFooter>
+            <DialogHeader title="Descartar dados não salvos?" description="Os campos preenchidos neste pedido serão apagados." />
+            <DialogFooter><Button type="button" variant="secondary" onClick={() => setConfirmarNovo(false)}>Continuar preenchendo</Button><Button type="button" variant="destructive" onClick={iniciarNovoPedido}>Descartar e iniciar novo</Button></DialogFooter>
           </DialogContent>
         </Dialog>
         <Dialog open={trocaFornecedorPendente !== null} onOpenChange={(aberto) => { if (!aberto) setTrocaFornecedorPendente(null) }}>
           <DialogContent>
-            <DialogHeader><DialogTitle>Trocar fornecedor?</DialogTitle><DialogDescription>Trocar o fornecedor limpará os dados específicos já preenchidos. Deseja continuar?</DialogDescription></DialogHeader>
-            <DialogFooter><Button type="button" variant="outline" onClick={() => setTrocaFornecedorPendente(null)}>Cancelar</Button><Button type="button" onClick={() => trocaFornecedorPendente && efetivarTrocaFornecedor(trocaFornecedorPendente)}>Continuar</Button></DialogFooter>
+            <DialogHeader title="Trocar fornecedor?" description="Trocar o fornecedor limpará os dados específicos já preenchidos. Deseja continuar?" />
+            <DialogFooter><Button type="button" variant="secondary" onClick={() => setTrocaFornecedorPendente(null)}>Cancelar</Button><Button type="button" onClick={() => trocaFornecedorPendente && efetivarTrocaFornecedor(trocaFornecedorPendente)}>Continuar</Button></DialogFooter>
           </DialogContent>
         </Dialog>
       </>
@@ -788,13 +784,13 @@ export default function FormularioNovoPedido() {
         {escolhaFornecedor}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-[#00A5E6]"><Ruler className="size-5" aria-hidden="true" /></span>
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Ruler className="size-5" aria-hidden="true" /></span>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-[#00A5E6]">Moriah Tapetes</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary">Moriah Tapetes</p>
               <h2 id="titulo-tapetes" className="text-base font-bold text-slate-900 sm:text-lg">Tapetes personalizados</h2>
             </div>
           </div>
-          <Button type="button" variant="outline" className="min-h-11" disabled={formularioBloqueado || estado.tapetes.length >= LIMITE_TAPETES_POR_PEDIDO} onClick={handleAdicionarTapete}><Plus />Adicionar tapete</Button>
+          <Button type="button" variant="secondary" className="min-h-11" disabled={formularioBloqueado || estado.tapetes.length >= LIMITE_TAPETES_POR_PEDIDO} onClick={handleAdicionarTapete}><Plus />Adicionar tapete</Button>
         </div>
         <section aria-labelledby="titulo-tapetes" className="space-y-4">
           {estado.tapetes.map((tapete, indice) => (
@@ -830,39 +826,36 @@ export default function FormularioNovoPedido() {
               )}
             </div>
           ))}
-          <Button type="button" variant="outline" className="min-h-11" disabled={formularioBloqueado || estado.tapetes.length >= LIMITE_TAPETES_POR_PEDIDO} onClick={handleAdicionarTapete}><Plus />Adicionar tapete</Button>
+          <Button type="button" variant="secondary" className="min-h-11" disabled={formularioBloqueado || estado.tapetes.length >= LIMITE_TAPETES_POR_PEDIDO} onClick={handleAdicionarTapete}><Plus />Adicionar tapete</Button>
         </section>
 
         {(erros.length > 0 || avisos.length > 0) && (
           <section aria-live="polite" className="grid gap-3 lg:grid-cols-2">
-            {erros.length > 0 && <div className="rounded-xl border border-red-200 bg-red-50 p-4"><h2 className="font-semibold text-red-800">Erros bloqueantes</h2><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-red-700">{erros.map((erro, indice) => <li key={`${erro.campo}-${erro.codigo}-${indice}`}>{erro.mensagem}</li>)}</ul></div>}
-            {avisos.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 p-4"><h2 className="font-semibold text-amber-900">Avisos</h2><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-800">{avisos.map((aviso, indice) => <li key={`${aviso.campo}-${aviso.codigo}-${indice}`}>{aviso.mensagem}</li>)}</ul></div>}
+            {erros.length > 0 && <Alert tone="danger" title="Erros bloqueantes"><ul className="list-disc space-y-1 pl-5">{erros.map((erro, indice) => <li key={`${erro.campo}-${erro.codigo}-${indice}`}>{erro.mensagem}</li>)}</ul></Alert>}
+            {avisos.length > 0 && <Alert tone="warning" title="Avisos"><ul className="list-disc space-y-1 pl-5">{avisos.map((aviso, indice) => <li key={`${aviso.campo}-${aviso.codigo}-${indice}`}>{aviso.mensagem}</li>)}</ul></Alert>}
           </section>
         )}
 
         <PreviaMensagem mensagem={avaliacao?.mensagem ?? null} copiada={copiada} onCopiar={() => void copiarMensagem()} orientacaoObservacoes />
 
-        {erroEnvio && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">{erroEnvio}</div>}
+        {erroEnvio && <Alert tone="danger">{erroEnvio}</Alert>}
 
         {salvo && (
           <>
-            <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5" aria-labelledby="pedido-salvo-titulo">
-              <div className="flex gap-3"><CheckCircle2 className="mt-0.5 size-6 shrink-0 text-emerald-600" /><div><h2 id="pedido-salvo-titulo" className="font-bold text-emerald-900">Pedido salvo</h2><p className="mt-1 text-sm text-emerald-800">Status {salvo.status}; versão {salvo.version}; {salvo.quantidadeTapetes} tapete(s).</p><p className="mt-2 text-sm text-emerald-800">Os dados comerciais foram bloqueados. Agora você pode incluir até dois anexos por tapete.</p></div></div>
-              <Button asChild type="button" variant="outline" className="mt-4 min-h-10 border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100">
+            <Alert tone="success" title="Pedido salvo">
+              <p>Status {salvo.status}; versão {salvo.version}; {salvo.quantidadeTapetes} tapete(s).</p>
+              <p className="mt-2">Os dados comerciais foram bloqueados. Agora você pode incluir até dois anexos por tapete.</p>
+              <Button asChild type="button" variant="secondary" className="mt-4 min-h-10">
                 <Link href="/pedidos-personalizados">Ir para a gestão de pedidos<ArrowRight /></Link>
               </Button>
-            </section>
+            </Alert>
 
             {falhaParcialAnexos && (
-              <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900">
-                Pedido salvo. Alguns anexos não foram enviados e podem ser reenviados.
-              </div>
+              <Alert tone="warning">Pedido salvo. Alguns anexos não foram enviados e podem ser reenviados.</Alert>
             )}
 
             {conflitoVersionamento && (
-              <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
-                Este pedido foi alterado por outra pessoa. Recarregue os dados antes de continuar.
-              </div>
+              <Alert tone="danger">Este pedido foi alterado por outra pessoa. Recarregue os dados antes de continuar.</Alert>
             )}
 
             <section className="space-y-4" aria-labelledby="titulo-anexos-pedido">
@@ -887,9 +880,7 @@ export default function FormularioNovoPedido() {
                   onRemover={(anexo) => fazerRemocao(tapete, anexo)}
                 />
               ) : (
-                <div key={tapete.chaveLocal} role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  Não foi possível associar o tapete {indice + 1} ao pedido. Nenhum anexo pode ser enviado.
-                </div>
+                <Alert key={tapete.chaveLocal} tone="danger">Não foi possível associar o tapete {indice + 1} ao pedido. Nenhum anexo pode ser enviado.</Alert>
               ))}
             </section>
           </>
@@ -916,15 +907,15 @@ export default function FormularioNovoPedido() {
 
       <Dialog open={confirmarNovo} onOpenChange={setConfirmarNovo}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Descartar dados não salvos?</DialogTitle><DialogDescription>Os campos preenchidos neste pedido serão apagados.</DialogDescription></DialogHeader>
-          <DialogFooter><Button type="button" variant="outline" onClick={() => setConfirmarNovo(false)}>Continuar preenchendo</Button><Button type="button" variant="destructive" onClick={iniciarNovoPedido}>Descartar e iniciar novo</Button></DialogFooter>
+          <DialogHeader title="Descartar dados não salvos?" description="Os campos preenchidos neste pedido serão apagados." />
+          <DialogFooter><Button type="button" variant="secondary" onClick={() => setConfirmarNovo(false)}>Continuar preenchendo</Button><Button type="button" variant="destructive" onClick={iniciarNovoPedido}>Descartar e iniciar novo</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={trocaFornecedorPendente !== null} onOpenChange={(aberto) => { if (!aberto) setTrocaFornecedorPendente(null) }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Trocar fornecedor?</DialogTitle><DialogDescription>Trocar o fornecedor limpará os dados específicos já preenchidos. Deseja continuar?</DialogDescription></DialogHeader>
-          <DialogFooter><Button type="button" variant="outline" onClick={() => setTrocaFornecedorPendente(null)}>Cancelar</Button><Button type="button" onClick={() => trocaFornecedorPendente && efetivarTrocaFornecedor(trocaFornecedorPendente)}>Continuar</Button></DialogFooter>
+          <DialogHeader title="Trocar fornecedor?" description="Trocar o fornecedor limpará os dados específicos já preenchidos. Deseja continuar?" />
+          <DialogFooter><Button type="button" variant="secondary" onClick={() => setTrocaFornecedorPendente(null)}>Cancelar</Button><Button type="button" onClick={() => trocaFornecedorPendente && efetivarTrocaFornecedor(trocaFornecedorPendente)}>Continuar</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </>

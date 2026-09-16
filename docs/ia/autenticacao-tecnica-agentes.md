@@ -16,7 +16,7 @@ tirar screenshot ou testar uma rota autenticada.
   de Production; em Production, a rota continua retornando 404.
 - Após o bootstrap, a aplicação usa a sessão Supabase normal em cookies.
 - A conta técnica é `agente.teste@lebebe.cloud`, com role `user` e perfil
-  `consultora`; não é superadmin e só possui os módulos do perfil.
+  `gestao`; não é superadmin e só possui os módulos do perfil.
 
 O Preview é o ambiente padrão de validação autenticada. Production não deve
 ser usada para bootstrap nem alterada para viabilizar um teste.

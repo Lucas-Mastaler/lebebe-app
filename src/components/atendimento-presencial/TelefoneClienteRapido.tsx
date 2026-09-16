@@ -1,4 +1,5 @@
-import { LoaderCircle, Phone } from 'lucide-react'
+import { Phone } from 'lucide-react'
+import { Input, Spinner } from '@/components/design-system'
 
 type Props = {
   value: string
@@ -26,7 +27,7 @@ export function TelefoneClienteRapido({
         </label>
         {loading && (
           <span className="flex items-center gap-1 text-xs text-slate-500">
-            <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            <Spinner label="Salvando" />
             Salvando...
           </span>
         )}
@@ -34,12 +35,12 @@ export function TelefoneClienteRapido({
       {!compact && (
         <p className="text-xs text-slate-500 sm:col-span-2">Você pode informar ou corrigir o telefone em qualquer etapa.</p>
       )}
-      <input
+      <Input
         id="telefone-cliente-rapido"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         disabled={disabled}
-        className={`min-h-11 w-full rounded-md border px-3 text-base outline-none focus:border-sky-500 ${erro ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'}`}
+        className="h-11 w-full text-base"
         inputMode="tel"
         placeholder="(41) 99999-9999"
         aria-invalid={Boolean(erro)}

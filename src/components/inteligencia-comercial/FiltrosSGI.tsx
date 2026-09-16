@@ -1,9 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Search, X, AlertCircle } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { AlertCircle } from 'lucide-react'
+import { Alert, FilterPanel, Input } from '@/components/design-system'
 import { MultiSelect } from '@/components/ui/multi-select'
 import type { SgiFiltros } from '@/types/sgi'
 
@@ -129,7 +128,6 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
   function handleLimpar() {
     setForm(EMPTY)
     setDateError(null)
-    onPesquisar({ ...EMPTY })
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -137,9 +135,12 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
   }
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Filtros</p>
-
+    <FilterPanel
+      dirty={JSON.stringify(form) !== JSON.stringify(EMPTY)}
+      onApply={handlePesquisar}
+      onClear={handleLimpar}
+      applyDisabled={isLoading || Boolean(dateError)}
+    >
       <div className="space-y-3">
         {/* First row: dates and simple inputs */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -265,23 +266,7 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
         </div>
       </div>
 
-      {dateError && (
-        <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">
-          <AlertCircle className="w-3.5 h-3.5" />
-          {dateError}
-        </div>
-      )}
-
-      <div className="flex items-center gap-2 pt-1">
-        <Button onClick={handlePesquisar} disabled={isLoading} size="sm">
-          <Search className="w-4 h-4" />
-          {isLoading ? 'Buscando...' : 'Pesquisar'}
-        </Button>
-        <Button variant="outline" onClick={handleLimpar} disabled={isLoading} size="sm">
-          <X className="w-4 h-4" />
-          Limpar
-        </Button>
-      </div>
-    </div>
+      {dateError && <Alert tone="danger" title="Período inválido"><AlertCircle className="size-4" />{dateError}</Alert>}
+    </FilterPanel>
   )
 }

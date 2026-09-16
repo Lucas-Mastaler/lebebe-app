@@ -87,6 +87,13 @@ export type TapeteCriadoRow = {
   ordem: number
 }
 
+export type ObservacaoRow = {
+  id: string
+  texto: string
+  created_at: string
+  usuario: { email: string } | null
+}
+
 export type ResultadoCriacaoRpc = {
   pedido_id: string
   version: number
@@ -427,6 +434,27 @@ export class RepositorioPedidosPersonalizados {
     return { data: { ...pedido.data, itens: (data ?? []) as TapeteCriadoRow[] }, error: null }
   }
 
+  async adicionarObservacao(parametros: {
+    pedidoId: string
+    usuarioId: string
+    texto: string
+  }): Promise<ResultadoBanco<ObservacaoRow>> {
+    const { data, error } = await this.supabase
+      .from('pedidos_personalizados_observacoes')
+      .insert({
+        pedido_id: parametros.pedidoId,
+        usuario_id: parametros.usuarioId,
+        texto: parametros.texto,
+      })
+      .select(`
+        id, texto, created_at,
+        usuario:usuarios_permitidos!pedidos_personalizados_observacoes_usuario_id_fkey(email)
+      `)
+      .single()
+    if (error) return { data: null, error }
+    return { data: data as unknown as ObservacaoRow, error: null }
+  }
+
   async listar(
     filtros: FiltrosPedidos,
     unidades: readonly UnidadeEscopoPedido[]
@@ -700,7 +728,7 @@ export class RepositorioPedidosPersonalizados {
   async carregarDetalhe(
     pedidoId: string,
     unidadeIds: readonly string[]
-  ): Promise<ResultadoBanco<{ pedido: unknown; tapetes: unknown[]; itens: unknown[]; historico: unknown[]; produtoSgi: IntegracaoProdutoSgiRow | null } | null>> {
+  ): Promise<ResultadoBanco<{ pedido: unknown; tapetes: unknown[]; itens: unknown[]; historico: unknown[]; observacoes: unknown[]; produtoSgi: IntegracaoProdutoSgiRow | null } | null>> {
     if (unidadeIds.length === 0) return { data: null, error: null }
     const { data: pedido, error: pedidoError } = await this.supabase
       .from('pedidos_personalizados_pedidos')
@@ -790,6 +818,17 @@ export class RepositorioPedidosPersonalizados {
       .order('created_at', { ascending: false })
     if (historicoError) return { data: null, error: historicoError }
 
+    const { data: observacoes, error: observacoesError } = await this.supabase
+      .from('pedidos_personalizados_observacoes')
+      .select(`
+        id, texto, created_at,
+        usuario:usuarios_permitidos!pedidos_personalizados_observacoes_usuario_id_fkey(email)
+      `)
+      .eq('pedido_id', pedidoId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+    if (observacoesError) return { data: null, error: observacoesError }
+
     return {
       data: {
         pedido,
@@ -812,6 +851,7 @@ export class RepositorioPedidosPersonalizados {
         })),
         itens: itens ?? [],
         historico: historico ?? [],
+        observacoes: observacoes ?? [],
         produtoSgi: produtoSgi as IntegracaoProdutoSgiRow | null,
       },
       error: null,

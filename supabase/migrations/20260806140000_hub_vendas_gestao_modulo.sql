@@ -1,7 +1,7 @@
 -- Novo módulo administrativo para a tela de gestão/monitoramento do Hub/Vendas.
 -- Acesso exclusivo de superadmin (somente_superadmin = true) para proteger
 -- a automação ativa em produção.
-INSERT INTO app_modulos (chave, nome, descricao, rota_base, categoria, publico, somente_superadmin, ativo, ordem)
+INSERT INTO public.app_modulos (chave, nome, descricao, rota_base, categoria, publico, somente_superadmin, ativo, ordem)
 VALUES (
   'hub_vendas_gestao',
   'GESTAO HUB VENDAS',

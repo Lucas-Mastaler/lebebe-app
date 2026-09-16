@@ -118,6 +118,14 @@ export type PedidoDetalhe = {
   tapetes: TapeteDetalhe[]
   itens: ProdutoExclusiveDetalhe[]
   historico: HistoricoStatusDetalhe[]
+  observacoes: ObservacaoDetalhe[]
+}
+
+export type ObservacaoDetalhe = {
+  id: string
+  texto: string
+  createdAt: string
+  usuario: { email: string } | null
 }
 
 export type ProdutoSgiDetalhe = {
@@ -330,6 +338,18 @@ export async function carregarDetalheGestao(id: string): Promise<PedidoDetalhe> 
   const body = await response.json() as { ok?: boolean; pedido?: PedidoDetalhe }
   if (body.ok !== true || !body.pedido) throw new Error('Resposta de detalhe inválida.')
   return body.pedido
+}
+
+export async function adicionarObservacaoGestao(id: string, texto: string): Promise<ObservacaoDetalhe> {
+  const response = await fetch(`/api/pedidos-personalizados/pedidos/${id}/observacoes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ texto }),
+  })
+  if (!response.ok) throw await erroResposta(response)
+  const body = await response.json() as { ok?: boolean; observacao?: ObservacaoDetalhe }
+  if (body.ok !== true || !body.observacao) throw new Error('Resposta de observação inválida.')
+  return body.observacao
 }
 
 export async function solicitarProdutoSgiGestao(id: string): Promise<ProdutoSgiDetalhe> {

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from decimal import Decimal
@@ -16,6 +17,7 @@ import requests
 from produto_sgi_lebebe_exclusive import (
     ConfiguracaoProdutoSgi,
     executar_fluxo,
+    executar_renomeacao,
 )
 
 
@@ -112,6 +114,19 @@ def _remoto_para_estado(trabalho: dict[str, Any]) -> dict[str, Any]:
 
 
 def processar(cliente: ClienteApp, trabalho: dict[str, Any]) -> None:
+    operacao = trabalho.get('operacao')
+    if operacao == 'RENOMEAR_PRODUTO':
+        try:
+            executar_renomeacao(
+                trabalho['pedidoId'], str(trabalho.get('produtoIdSgi') or ''), trabalho['nomeProduto'], log,
+            )
+            cliente.checkpoint(trabalho, _remoto_para_estado(trabalho), 'CONCLUIDO', {}, status='CONCLUIDO')
+        except Exception as erro:
+            estado = _remoto_para_estado(trabalho)
+            cliente.checkpoint(trabalho, estado, 'CONCLUIDO', {}, status='ERRO', erro_codigo=reter_codigo_erro(erro), erro_mensagem=mensagem_segura(reter_codigo_erro(erro)))
+        return
+    if operacao != 'CRIAR_PRODUTO':
+        raise RuntimeError('OPERACAO_DESCONHECIDA')
     config = ConfiguracaoProdutoSgi(
         pedido_id=trabalho['pedidoId'],
         modelo_produto_id_sgi=trabalho['modelo']['produtoIdSgi'],

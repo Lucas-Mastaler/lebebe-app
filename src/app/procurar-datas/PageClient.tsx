@@ -5,6 +5,7 @@ import { CalendarCheck, CheckCircle2, Edit, Loader2, RotateCcw, Search, Send, Ti
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { LoadingLeBebe, Spinner } from '@/components/design-system'
 import { calcularTempoServicoMinutos, formatarMinutosParaHHMM } from '@/lib/procurar-datas/tempo-servico'
 import { formatarDataBrasileira } from '@/lib/procurar-datas/formatar-apresentacao'
 import {
@@ -1490,7 +1491,7 @@ export default function ProcurarDatasPage() {
               onClick={pesquisarDatas}
               disabled={searching || validatingAddress || calculatingTime}
             >
-              {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              {searching ? <Spinner size={16} label="Pesquisando" className="text-primary-foreground" /> : <Search className="h-4 w-4" />}
               {searching ? 'Pesquisando...' : 'Pesquisar datas'}
             </Button>
           </div>
@@ -1502,18 +1503,16 @@ export default function ProcurarDatasPage() {
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-slate-900">Resultados</h2>
-            <p className="text-xs text-slate-500">
-              {candidates.length
-                ? `${normalCandidates.length} recomendada(s) e ${extraCandidates.length} outra(s) opcoes`
-                : 'Nenhuma busca finalizada.'}
-            </p>
-            {(searching || progressDone || searchError) && (
-              <p className={`mt-1 text-xs ${searchError ? 'text-red-700' : progressDone ? 'text-emerald-700' : 'text-slate-500'}`}>
-                {searchError
-                  ? searchError
-                  : progressDone
-                    ? `Pesquisa concluida em ${formatElapsed(elapsedSeconds)}`
-                    : `Tempo total da pesquisa: ${formatElapsed(elapsedSeconds)}`}
+            {!searching && (
+              <p className="text-xs text-slate-500">
+                {candidates.length
+                  ? `${normalCandidates.length} recomendada(s) e ${extraCandidates.length} outra(s) opcoes`
+                  : 'Nenhuma busca finalizada.'}
+              </p>
+            )}
+            {(progressDone || searchError) && (
+              <p className={`mt-1 text-xs ${searchError ? 'text-red-700' : 'text-emerald-700'}`}>
+                {searchError ? searchError : `Pesquisa concluida em ${formatElapsed(elapsedSeconds)}`}
               </p>
             )}
           </div>
@@ -1531,23 +1530,31 @@ export default function ProcurarDatasPage() {
           </div>
         </div>
 
-        <div className="space-y-5">
-          <div>
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-slate-900">Datas recomendadas</h3>
-              <span className="text-xs text-slate-500">Ate 3 normais</span>
-            </div>
-            {renderCandidatesTable(normalCandidates, 'As datas recomendadas aparecerao aqui.')}
+        {searching ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+            <LoadingLeBebe size={64} label="Pesquisando datas disponiveis" />
+            <p className="text-sm font-medium text-slate-700">Buscando as melhores datas...</p>
+            <p className="text-xs text-slate-500">Tempo da pesquisa: {formatElapsed(elapsedSeconds)}</p>
           </div>
+        ) : (
+          <div className="space-y-5">
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-slate-900">Datas recomendadas</h3>
+                <span className="text-xs text-slate-500">Ate 3 normais</span>
+              </div>
+              {renderCandidatesTable(normalCandidates, 'As datas recomendadas aparecerao aqui.')}
+            </div>
 
-          <div>
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-slate-900">Outras opcoes</h3>
-              <span className="text-xs text-slate-500">Especial, premium e hora marcada</span>
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-slate-900">Outras opcoes</h3>
+                <span className="text-xs text-slate-500">Especial, premium e hora marcada</span>
+              </div>
+              {renderCandidatesTable(extraCandidates, 'Nenhuma outra opcao retornada.', normalCandidates.length)}
             </div>
-            {renderCandidatesTable(extraCandidates, 'Nenhuma outra opcao retornada.', normalCandidates.length)}
           </div>
-        </div>
+        )}
       </section>
     </div>
   )

@@ -10,6 +10,7 @@ import {
 import { serializarClienteRegistro, type ClienteRegistroRow } from '@/lib/atendimento-presencial/registros'
 import { converterViradaCartaoInput, valorOrdenavelViradaCartao } from '@/lib/atendimento-presencial/ficha-schema'
 import { escaparTermoIlike, normalizarTermosBuscaNome, normalizarTermoBusca } from '@/lib/atendimento-presencial/clientes'
+import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
 
 export const runtime = 'nodejs'
 
@@ -138,6 +139,8 @@ export async function GET(request = new Request('http://localhost/api/atendiment
     const params = new URL(request.url).searchParams
     const viradaCartaoDe = params.get('viradaCartaoDe') ?? params.get('viradaCartao')
     const viradaCartaoAte = params.get('viradaCartaoAte')
+    const requestedPage = Number(params.get('page') ?? '1')
+    const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
     const nomeCliente = normalizarTermoBusca(params.get('clienteNome') ?? params.get('nomeCliente'))
     const consultora = normalizarFiltroConsultora(params.get('consultora'))
     const viradaDe = viradaCartaoDe ? converterViradaCartaoInput(viradaCartaoDe) : null
@@ -176,9 +179,7 @@ export async function GET(request = new Request('http://localhost/api/atendiment
       query = query.in('unidade_id', loaded.contexto.unidadesPermitidas.map((unidade) => unidade.id))
     }
 
-    const { data, error } = await query
-      .order('concluido_em', { ascending: false })
-      .limit(viradaDe || viradaAte ? 200 : 50)
+    const { data, error } = await query.order('concluido_em', { ascending: false })
 
     if (error) {
       console.error('[ATENDIMENTO PRESENCIAL REGISTROS] Erro ao listar:', error)
@@ -199,6 +200,11 @@ export async function GET(request = new Request('http://localhost/api/atendiment
         return true
       })
     }
+    const total = rows.length
+    const totalPages = Math.max(1, Math.ceil(total / TABLE_PAGE_SIZE))
+    const currentPage = Math.min(page, totalPages)
+    rows = rows.slice((currentPage - 1) * TABLE_PAGE_SIZE, currentPage * TABLE_PAGE_SIZE)
+
     const clienteIds = Array.from(new Set(rows.map((row) => row.cliente_id).filter((id): id is string => Boolean(id))))
     const consultoraIds = Array.from(new Set(rows.map((row) => row.consultora_usuario_id)))
     const unidadeIds = Array.from(new Set(rows.map((row) => row.unidade_id)))
@@ -231,6 +237,9 @@ export async function GET(request = new Request('http://localhost/api/atendiment
     return NextResponse.json({
       ok: true,
       consultoras,
+      page: currentPage,
+      pageSize: TABLE_PAGE_SIZE,
+      total,
       registros: rows.map((row) => ({
         id: row.id,
         clienteId: row.cliente_id,

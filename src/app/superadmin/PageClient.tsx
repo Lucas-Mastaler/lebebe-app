@@ -602,6 +602,11 @@ export default function SuperAdminPageClient({
                                     className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed min-w-[140px]"
                                   >
                                     <option value="">Sem perfil</option>
+                                    {usuario.perfil && !perfisDisponiveis.some((p) => p.id === usuario.perfil?.id) && (
+                                      <option value={usuario.perfil.id} disabled>
+                                        {usuario.perfil.nome}
+                                      </option>
+                                    )}
                                     {perfisDisponiveis.map((p) => (
                                       <option key={p.id} value={p.id}>
                                         {p.nome}

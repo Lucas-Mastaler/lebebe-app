@@ -5,6 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import produto_sgi_lebebe_exclusive as fluxo
+import worker_produto_sgi_lebebe_exclusive as worker
 
 
 def config() -> fluxo.ConfiguracaoProdutoSgi:
@@ -84,6 +85,71 @@ class BuscaProdutosHtmlTest(unittest.TestCase):
             fluxo._ids_produtos_por_nome(Sessao(), Produto(), 'nome exato'),
             {'39879', '40000'},
         )
+
+
+class RenomeacaoTest(unittest.TestCase):
+    def _modulo_falso(self, nome_inicial, nome_final, chamadas):
+        class Produto:
+            NOVO_NOME = ''
+            def abrir_produto(self, _sessao, produto_id):
+                chamadas.append(('abrir', produto_id)); return 'html'
+            def extrair_nome_produto(self, _html): return nome_inicial
+            def extrair_authenticity_token(self, _html): return 'csrf'
+            def renomear_produto(self, _sessao, produto_id, token): chamadas.append(('patch', produto_id, token))
+            def validar_produto_criado(self, _sessao, produto_id): chamadas.append(('validar', produto_id)); return nome_final
+        class Custo:
+            def validar_credencial(self): chamadas.append(('credencial',))
+            def carregar_sessao_sgi(self): return object()
+            def validar_sessao_http(self, _sessao): chamadas.append(('sessao',))
+        class Base:
+            def carregar_fluxos_validados(self): return Produto(), Custo(), object()
+        return Base()
+
+    def test_renomeia_mesmo_id_com_patch_parcial(self):
+        chamadas = []; anterior = fluxo._carregar_modulo
+        fluxo._carregar_modulo = lambda *_: self._modulo_falso('LEBEBE EXCLUSIVE (MARECHAL ANA SILVA)', 'LEBEBE EXCLUSIVE (MARECHAL 65459 ANA SILVA)', chamadas)
+        try:
+            fluxo.executar_renomeacao(config().pedido_id, '21187', 'LEBEBE EXCLUSIVE (MARECHAL 65459 ANA SILVA)', lambda *_: None)
+        finally: fluxo._carregar_modulo = anterior
+        self.assertIn(('patch', '21187', 'csrf'), chamadas)
+        self.assertIn(('validar', '21187'), chamadas)
+        self.assertFalse(any(chamada[0] in {'duplicar', 'custo', 'preco', 'finalizar'} for chamada in chamadas))
+
+    def test_nome_ja_correto_nao_faz_segundo_patch(self):
+        chamadas = []; anterior = fluxo._carregar_modulo
+        fluxo._carregar_modulo = lambda *_: self._modulo_falso('LEBEBE EXCLUSIVE (MARECHAL 65459 ANA SILVA)', 'LEBEBE EXCLUSIVE (MARECHAL 65459 ANA SILVA)', chamadas)
+        try:
+            fluxo.executar_renomeacao(config().pedido_id, '21187', 'LEBEBE EXCLUSIVE (MARECHAL 65459 ANA SILVA)', lambda *_: None)
+        finally: fluxo._carregar_modulo = anterior
+        self.assertNotIn(('patch', '21187', 'csrf'), chamadas)
+
+    def test_rejeita_id_ausente_sem_chamar_sgi(self):
+        with self.assertRaisesRegex(RuntimeError, 'PRODUTO_ID_SGI_OBRIGATORIO'):
+            fluxo.executar_renomeacao(config().pedido_id, '', 'NOME', lambda *_: None)
+
+
+class WorkerDispatchTest(unittest.TestCase):
+    def setUp(self):
+        self.trabalho = {'pedidoId': config().pedido_id, 'claimToken': 'claim', 'etapa': 'NAO_INICIADO', 'tentativa': 1, 'nomeProduto': 'LEBEBE EXCLUSIVE (MARECHAL ANA SILVA)', 'produtoIdSgi': '21187', 'operacao': 'RENOMEAR_PRODUTO'}
+        self.chamadas = []
+        class Cliente:
+            def checkpoint(_, *args, **kwargs): self.chamadas.append(('checkpoint', args, kwargs))
+        self.cliente = Cliente()
+
+    def test_dispatch_renomeacao_nao_chama_criacao(self):
+        renomear, criar = worker.executar_renomeacao, worker.executar_fluxo
+        worker.executar_renomeacao = lambda *args: self.chamadas.append(('renomear', args))
+        worker.executar_fluxo = lambda *args: self.chamadas.append(('criar', args))
+        try: worker.processar(self.cliente, self.trabalho)
+        finally: worker.executar_renomeacao, worker.executar_fluxo = renomear, criar
+        self.assertEqual([x[0] for x in self.chamadas].count('renomear'), 1)
+        self.assertNotIn('criar', [x[0] for x in self.chamadas])
+
+    def test_operacao_desconhecida_nao_executa_nada(self):
+        self.trabalho['operacao'] = 'DESCONHECIDA'
+        with self.assertRaisesRegex(RuntimeError, 'OPERACAO_DESCONHECIDA'):
+            worker.processar(self.cliente, self.trabalho)
+        self.assertEqual(self.chamadas, [])
 
 
 @unittest.skipUnless(os.environ.get('RUN_SGI_READONLY') == '1', 'consulta SGI opt-in')

@@ -2,12 +2,23 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Package, Plus, Calendar, Truck, ChevronRight, Upload, FileText, Weight, X, Hash, Download, AlertCircle, Loader2, Search, Mail, Database, TrendingUp, BarChart3, Clock, Users, Eye, CheckCircle2, Edit } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/design-system'
+import {
+  Package, Plus, Calendar, Truck, ChevronRight, Upload, FileText, Weight, X, Download,
+  Search, Mail, Database, TrendingUp, BarChart3, Clock, Users, Eye, CheckCircle2, Edit,
+  AlertCircle,
+} from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { isMaticEmail } from '@/lib/auth/matic-emails'
 import { toast } from 'sonner'
+import { dateToIso, parseBrDate } from '@/lib/design-system/dates'
+import {
+  PageContainer, PageHeader, Button, IconButton, Card, CardHeader, CardContent,
+  Badge, Alert, EmptyState, Spinner, SkeletonRows, Progress,
+  FilterPanel, FilterFieldGroup, useFilterState, FormField, Input, DateField, Textarea,
+  Dialog, DialogContent, DialogHeader, DialogBody, ConfirmDialog,
+  Tabs, TabsContent, SegmentedTabsList, SegmentedTabsTrigger,
+  KpiCard,
+} from '@/components/design-system'
 
 interface Recebimento {
   id: string
@@ -34,6 +45,14 @@ interface Recebimento {
 
 type TabType = 'recebimentos' | 'notas' | 'divergencias' | 'dashboard'
 
+type FiltrosRecebimento = {
+  dataInicio: string
+  dataFim: string
+  numeroNf: string
+}
+
+const FILTROS_VAZIOS: FiltrosRecebimento = { dataInicio: '', dataFim: '', numeroNf: '' }
+
 export default function RecebimentoPage() {
   const router = useRouter()
   const [recebimentos, setRecebimentos] = useState<Recebimento[]>([])
@@ -43,12 +62,10 @@ export default function RecebimentoPage() {
   const [showImport, setShowImport] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>('recebimentos')
   const [prefilledDates, setPrefilledDates] = useState<{ inicio: string; fim: string } | null>(null)
+  const filtros = useFilterState<FiltrosRecebimento>(FILTROS_VAZIOS)
 
-  // Pagination and filters
+  // Pagination
   const [currentPage, setCurrentPage] = useState(1)
-  const [filterDataInicio, setFilterDataInicio] = useState('')
-  const [filterDataFim, setFilterDataFim] = useState('')
-  const [filterNF, setFilterNF] = useState('')
   const [totalPages, setTotalPages] = useState(1)
   const [totalItems, setTotalItems] = useState(0)
   const itemsPerPage = 20
@@ -66,18 +83,20 @@ export default function RecebimentoPage() {
     checkAuth()
   }, [router])
 
-  const loadRecebimentos = useCallback(async (page = 1) => {
+  const loadRecebimentos = useCallback(async (page: number, valores: FiltrosRecebimento) => {
     setLoading(true)
     try {
       const params = new URLSearchParams({
         page: page.toString(),
         limit: itemsPerPage.toString(),
       })
-      
-      if (filterDataInicio) params.append('data_inicio', filterDataInicio)
-      if (filterDataFim) params.append('data_fim', filterDataFim)
-      if (filterNF) params.append('numero_nf', filterNF)
-      
+
+      const dataInicioDate = parseBrDate(valores.dataInicio)
+      const dataFimDate = parseBrDate(valores.dataFim)
+      if (dataInicioDate) params.append('data_inicio', dateToIso(dataInicioDate))
+      if (dataFimDate) params.append('data_fim', dateToIso(dataFimDate))
+      if (valores.numeroNf) params.append('numero_nf', valores.numeroNf)
+
       const res = await fetch(`/api/recebimento?${params.toString()}`)
       if (res.ok) {
         const response = await res.json()
@@ -94,236 +113,179 @@ export default function RecebimentoPage() {
     } finally {
       setLoading(false)
     }
-  }, [filterDataInicio, filterDataFim, filterNF])
+  }, [])
 
   useEffect(() => {
-    if (authorized) loadRecebimentos(1)
+    if (authorized) loadRecebimentos(1, FILTROS_VAZIOS)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authorized])
+
+  function aplicarFiltros() {
+    filtros.apply()
+    void loadRecebimentos(1, filtros.draft)
+  }
+
+  function limparFiltros() {
+    filtros.clear()
+    void loadRecebimentos(1, FILTROS_VAZIOS)
+  }
 
   if (!authorized) return null
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <Package className="w-7 h-7 text-[#00A5E6]" />
-          <h1 className="text-2xl font-bold text-slate-800">Recebimento Matic</h1>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => router.push('/recebimento/produtos')} className="gap-2">
-            <Edit className="w-4 h-4" />
-            <span className="hidden sm:inline">Produtos</span>
-          </Button>
-          <Button variant="outline" onClick={() => setShowImport(true)} className="gap-2">
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">Importar NFe</span>
-          </Button>
-          <Button onClick={() => setShowCreateModal(true)} className="gap-2">
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Novo Recebimento</span>
-          </Button>
-        </div>
-      </div>
+    <PageContainer>
+      <PageHeader
+        icon={<Package className="size-6" />}
+        title="Recebimento Matic"
+        action={
+          <>
+            <Button variant="secondary" onClick={() => router.push('/recebimento/produtos')}>
+              <Edit className="size-4" />
+              <span className="hidden sm:inline">Produtos</span>
+            </Button>
+            <Button variant="secondary" onClick={() => setShowImport(true)}>
+              <Download className="size-4" />
+              <span className="hidden sm:inline">Importar NFe</span>
+            </Button>
+            <Button onClick={() => setShowCreateModal(true)}>
+              <Plus className="size-4" />
+              <span className="hidden sm:inline">Novo Recebimento</span>
+            </Button>
+          </>
+        }
+      />
 
-      {/* Tabs */}
-      <div className="bg-white rounded-xl border border-slate-200 mb-6 overflow-hidden">
-        <div className="flex border-b border-slate-200 overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('recebimentos')}
-            className={`flex-shrink-0 px-3 sm:px-6 py-3 text-xs sm:text-sm font-medium transition-colors ${
-              activeTab === 'recebimentos'
-                ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
-                : 'text-slate-600 hover:text-slate-800'
-            }`}
-            title="Lista de todos os recebimentos (abertos, fechados e cancelados)"
-          >
-            <div className="flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap">
-              <Package className="w-4 h-4" />
-              <span className="hidden xs:inline">Recebimentos</span>
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('notas')}
-            className={`flex-shrink-0 px-3 sm:px-6 py-3 text-xs sm:text-sm font-medium transition-colors ${
-              activeTab === 'notas'
-                ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
-                : 'text-slate-600 hover:text-slate-800'
-            }`}
-            title="Notas fiscais importadas no sistema"
-          >
-            <div className="flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap">
-              <FileText className="w-4 h-4" />
-              <span className="hidden xs:inline">Notas Vinculadas</span>
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('divergencias')}
-            className={`flex-shrink-0 px-3 sm:px-6 py-3 text-xs sm:text-sm font-medium transition-colors ${
-              activeTab === 'divergencias'
-                ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
-                : 'text-slate-600 hover:text-slate-800'
-            }`}
-            title="Problemas anotados em recebimentos anteriores para resolver nos próximos carregamentos"
-          >
-            <div className="flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap">
-              <AlertCircle className="w-4 h-4" />
-              <span className="hidden xs:inline">Problemas Pendentes</span>
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`flex-shrink-0 px-3 sm:px-6 py-3 text-xs sm:text-sm font-medium transition-colors ${
-              activeTab === 'dashboard'
-                ? 'text-[#00A5E6] border-b-2 border-[#00A5E6]'
-                : 'text-slate-600 hover:text-slate-800'
-            }`}
-            title="Métricas e estatísticas dos recebimentos"
-          >
-            <div className="flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap">
-              <BarChart3 className="w-4 h-4" />
-              <span className="hidden xs:inline">Dashboard</span>
-            </div>
-          </button>
-        </div>
-      </div>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabType)} className="mt-6">
+        <SegmentedTabsList>
+          <SegmentedTabsTrigger value="recebimentos" title="Lista de todos os recebimentos (abertos, fechados e cancelados)">
+            <Package className="size-4" />
+            <span className="hidden xs:inline">Recebimentos</span>
+          </SegmentedTabsTrigger>
+          <SegmentedTabsTrigger value="notas" title="Notas fiscais importadas no sistema">
+            <FileText className="size-4" />
+            <span className="hidden xs:inline">Notas Vinculadas</span>
+          </SegmentedTabsTrigger>
+          <SegmentedTabsTrigger value="divergencias" title="Problemas anotados em recebimentos anteriores para resolver nos próximos carregamentos">
+            <AlertCircle className="size-4" />
+            <span className="hidden xs:inline">Problemas Pendentes</span>
+          </SegmentedTabsTrigger>
+          <SegmentedTabsTrigger value="dashboard" title="Métricas e estatísticas dos recebimentos">
+            <BarChart3 className="size-4" />
+            <span className="hidden xs:inline">Dashboard</span>
+          </SegmentedTabsTrigger>
+        </SegmentedTabsList>
 
-      {/* Tab Content */}
-      {activeTab === 'recebimentos' && (
-        <>
-          {/* Filters */}
-          <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div>
-                <label className="text-xs font-medium text-slate-600 block mb-1">Data Início</label>
-                <input
-                  type="date"
-                  value={filterDataInicio}
-                  onChange={e => { setFilterDataInicio(e.target.value); setCurrentPage(1) }}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-600 block mb-1">Data Fim</label>
-                <input
-                  type="date"
-                  value={filterDataFim}
-                  onChange={e => { setFilterDataFim(e.target.value); setCurrentPage(1) }}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-600 block mb-1">Número NF (busca dinâmica)</label>
-                <input
-                  type="text"
-                  value={filterNF}
-                  onChange={e => { setFilterNF(e.target.value); setCurrentPage(1) }}
-                  onKeyDown={e => { if (e.key === 'Enter') loadRecebimentos(1) }}
-                  placeholder="Ex: 12345"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30"
-                />
-              </div>
-              <div className="flex items-end gap-2">
-                <Button
-                  onClick={() => loadRecebimentos(1)}
-                  className="flex-1"
-                >
-                  Filtrar
-                </Button>
-                <Button
-                  onClick={() => {
-                    setFilterDataInicio('')
-                    setFilterDataFim('')
-                    setFilterNF('')
-                    setCurrentPage(1)
-                    // Reload without filters
-                    setTimeout(() => loadRecebimentos(1), 0)
-                  }}
-                  variant="outline"
-                  className="flex-1"
-                >
-                  Limpar
-                </Button>
-              </div>
-            </div>
-          </div>
+        <TabsContent value="recebimentos" className="mt-6 space-y-4">
+          <FilterPanel dirty={filtros.dirty} onApply={aplicarFiltros} onClear={limparFiltros}>
+            <FilterFieldGroup label="Filtros">
+              <FormField id="filtro-data-inicio" label="Data Início">
+                {(f) => (
+                  <DateField
+                    id={f.id}
+                    value={filtros.draft.dataInicio}
+                    onChange={(v) => filtros.setField('dataInicio', v)}
+                    aria-invalid={f['aria-invalid']}
+                  />
+                )}
+              </FormField>
+              <FormField id="filtro-data-fim" label="Data Fim">
+                {(f) => (
+                  <DateField
+                    id={f.id}
+                    value={filtros.draft.dataFim}
+                    onChange={(v) => filtros.setField('dataFim', v)}
+                    aria-invalid={f['aria-invalid']}
+                  />
+                )}
+              </FormField>
+              <FormField id="filtro-numero-nf" label="Número NF (busca dinâmica)">
+                {(f) => (
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      id={f.id}
+                      aria-invalid={f['aria-invalid']}
+                      value={filtros.draft.numeroNf}
+                      onChange={(e) => filtros.setField('numeroNf', e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') aplicarFiltros() }}
+                      placeholder="Ex: 12345"
+                      className="pl-9"
+                    />
+                  </div>
+                )}
+              </FormField>
+            </FilterFieldGroup>
+          </FilterPanel>
 
           {loading ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="bg-white rounded-xl border border-slate-200 p-4 animate-pulse">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex-1">
-                    <div className="h-5 bg-slate-200 rounded w-32 mb-2"></div>
-                    <div className="h-4 bg-slate-100 rounded w-48"></div>
-                  </div>
-                  <div className="h-8 w-20 bg-slate-200 rounded-full"></div>
-                </div>
-                <div className="grid grid-cols-4 gap-4">
-                  <div className="h-4 bg-slate-100 rounded"></div>
-                  <div className="h-4 bg-slate-100 rounded"></div>
-                  <div className="h-4 bg-slate-100 rounded"></div>
-                  <div className="h-4 bg-slate-100 rounded"></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : recebimentos.length === 0 ? (
-          <div className="text-center py-20 text-slate-500">
-            <Package className="w-16 h-16 mx-auto mb-4 text-slate-300" />
-            <p className="text-lg font-medium">Nenhum recebimento encontrado</p>
-            <p className="text-sm mt-1">Ajuste os filtros ou crie um novo recebimento</p>
-          </div>
-        ) : (
-          <>
             <div className="space-y-3">
-              {recebimentos.map((rec) => (
-                <RecebimentoCard key={rec.id} rec={rec} onReload={() => loadRecebimentos(currentPage)} />
+              {[1, 2, 3].map(i => (
+                <Card key={i} className="p-4">
+                  <SkeletonRows rows={3} />
+                </Card>
               ))}
             </div>
-            
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between mt-6 bg-white rounded-xl border border-slate-200 p-4">
-                <p className="text-sm text-slate-600">
-                  Mostrando {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, totalItems)} de {totalItems}
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => loadRecebimentos(currentPage - 1)}
-                    disabled={currentPage === 1}
-                    variant="outline"
-                    className="px-4"
-                  >
-                    Anterior
-                  </Button>
-                  <div className="flex items-center gap-2 px-3">
-                    <span className="text-sm font-medium text-slate-700">
-                      Página {currentPage} de {totalPages}
-                    </span>
-                  </div>
-                  <Button
-                    onClick={() => loadRecebimentos(currentPage + 1)}
-                    disabled={currentPage >= totalPages}
-                    variant="outline"
-                    className="px-4"
-                  >
-                    Próxima
-                  </Button>
-                </div>
+          ) : recebimentos.length === 0 ? (
+            <Card>
+              <EmptyState
+                icon={<Package className="size-5" />}
+                title="Nenhum recebimento encontrado"
+                description="Ajuste os filtros ou crie um novo recebimento"
+              />
+            </Card>
+          ) : (
+            <>
+              <div className="space-y-3">
+                {recebimentos.map((rec) => (
+                  <RecebimentoCard key={rec.id} rec={rec} onReload={() => loadRecebimentos(currentPage, filtros.applied)} />
+                ))}
               </div>
-            )}
-          </>
-        )}
-      </>
-    )}
 
-      {activeTab === 'notas' && <NotasVinculadasTab />}
+              {totalPages > 1 && (
+                <Card className="flex items-center justify-between p-4">
+                  <p className="text-sm text-slate-600">
+                    Mostrando {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, totalItems)} de {totalItems}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="secondary"
+                      onClick={() => loadRecebimentos(currentPage - 1, filtros.applied)}
+                      disabled={currentPage === 1}
+                    >
+                      Anterior
+                    </Button>
+                    <div className="flex items-center gap-2 px-3">
+                      <span className="text-sm font-medium text-slate-700">
+                        Página {currentPage} de {totalPages}
+                      </span>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      onClick={() => loadRecebimentos(currentPage + 1, filtros.applied)}
+                      disabled={currentPage >= totalPages}
+                    >
+                      Próxima
+                    </Button>
+                  </div>
+                </Card>
+              )}
+            </>
+          )}
+        </TabsContent>
 
-      {activeTab === 'divergencias' && <DivergenciasListagemTab />}
+        <TabsContent value="notas" className="mt-6">
+          <NotasVinculadasTab />
+        </TabsContent>
 
-      {activeTab === 'dashboard' && <DashboardTab recebimentos={recebimentos} />}
+        <TabsContent value="divergencias" className="mt-6">
+          <DivergenciasListagemTab />
+        </TabsContent>
 
-      {/* Modals */}
+        <TabsContent value="dashboard" className="mt-6">
+          <DashboardTab recebimentos={recebimentos} />
+        </TabsContent>
+      </Tabs>
+
       {showCreateModal && (
         <CreateRecebimentoModal
           onClose={() => setShowCreateModal(false)}
@@ -340,7 +302,7 @@ export default function RecebimentoPage() {
           onClose={() => setShowImport(false)}
           onSuccess={() => {
             setShowImport(false)
-            loadRecebimentos()
+            loadRecebimentos(currentPage, filtros.applied)
           }}
           onStartRecebimento={(dates) => {
             setPrefilledDates(dates)
@@ -349,7 +311,7 @@ export default function RecebimentoPage() {
           }}
         />
       )}
-    </div>
+    </PageContainer>
   )
 }
 
@@ -411,7 +373,7 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
               detalhesMap.set(nf, detalhes)
             }
           }
-          
+
           setDivergenciasPorNF(countMap)
           setDivergenciasDetalhes(detalhesMap)
         }
@@ -433,110 +395,111 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
         onReload()
       } else {
         const data = await res.json()
-        alert(data.error || 'Erro ao cancelar')
+        toast.error(data.error || 'Erro ao cancelar')
       }
     } catch (err) {
       console.error('Erro ao cancelar:', err)
-      alert('Erro de conexão')
+      toast.error('Erro de conexão')
     } finally {
       setCanceling(false)
     }
   }
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 hover:border-[#00A5E6]/40 hover:shadow-md transition-all">
-      <div className="flex items-start justify-between mb-3">
+    <Card className="p-4 transition-all hover:border-primary/40 hover:shadow-md">
+      <div className="mb-3 flex items-start justify-between">
         <div className="flex items-center gap-2">
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-            isFechado
-              ? 'bg-green-100 text-green-700'
-              : isCancelado
-              ? 'bg-red-100 text-red-700'
-              : 'bg-amber-100 text-amber-700'
-          }`}>
+          <Badge tone={isFechado ? 'success' : isCancelado ? 'danger' : 'warning'}>
             {isFechado ? 'FECHADO' : isCancelado ? 'CANCELADO' : 'ABERTO'}
-          </span>
+          </Badge>
           {rec.numero_recebimento && (
-            <span className="text-xs text-slate-400 font-mono">#{rec.numero_recebimento}</span>
+            <span className="font-mono text-xs text-slate-400">#{rec.numero_recebimento}</span>
           )}
           {qtdOS > 0 && (
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700" title={rec.numeros_os?.join(', ')}>
+            <Badge tone="info" title={rec.numeros_os?.join(', ')}>
               OS: {rec.numeros_os?.slice(0, 2).join(', ')}{rec.numeros_os && rec.numeros_os.length > 2 ? '...' : ''}
-            </span>
+            </Badge>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           {!isFechado && !isCancelado && (
-            <button
-              onClick={(e) => { e.stopPropagation(); setShowCancelarModal(true); }}
-              className="p-1.5 rounded-lg hover:bg-red-50 transition-colors"
+            <IconButton
+              variant="ghost"
+              aria-label="Cancelar recebimento"
               title="Cancelar recebimento"
+              className="text-red-500 hover:bg-red-50 hover:text-red-600"
+              onClick={(e) => { e.stopPropagation(); setShowCancelarModal(true) }}
             >
-              <X className="w-4 h-4 text-red-500" />
-            </button>
+              <X className="size-4" />
+            </IconButton>
           )}
-          <button onClick={() => router.push(`/recebimento/${rec.id}`)} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
-            <ChevronRight className="w-4 h-4 text-slate-400" />
-          </button>
+          <IconButton
+            variant="ghost"
+            aria-label="Ver recebimento"
+            onClick={() => router.push(`/recebimento/${rec.id}`)}
+          >
+            <ChevronRight className="size-4" />
+          </IconButton>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 text-sm text-slate-600 mb-2">
-        <Calendar className="w-4 h-4 text-slate-400" />
+      <div className="mb-2 flex items-center gap-2 text-sm text-slate-600">
+        <Calendar className="size-4 text-slate-400" />
         <span>{formatDate(rec.periodo_inicio)} — {formatDate(rec.periodo_fim)}</span>
       </div>
 
       {rec.motorista && (
-        <div className="flex items-center gap-2 text-sm text-slate-600 mb-2">
-          <Truck className="w-4 h-4 text-slate-400" />
+        <div className="mb-2 flex items-center gap-2 text-sm text-slate-600">
+          <Truck className="size-4 text-slate-400" />
           <span>{rec.motorista}</span>
         </div>
       )}
 
       {/* NFs e Peso */}
-      <div className="flex items-start gap-3 mb-3 text-xs">
+      <div className="mb-3 flex items-start gap-3 text-xs">
         <div className="flex-1">
-          <div className="flex items-center gap-1 text-slate-500 mb-1">
-            <FileText className="w-3.5 h-3.5" />
+          <div className="mb-1 flex items-center gap-1 text-slate-500">
+            <FileText className="size-3.5" />
             <span className="font-medium">NFs ({nfes.length})</span>
           </div>
           <div className="flex flex-wrap gap-1">
             {nfes.slice(0, 5).map((nfeLink, i) => (
-              <span key={i} className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded font-mono">
+              <span key={i} className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px]">
                 {nfeLink.nfe?.numero_nf || '?'}
               </span>
             ))}
             {nfes.length > 5 && (
-              <span className="text-[10px] text-slate-400 px-1">+{nfes.length - 5}</span>
+              <span className="px-1 text-[10px] text-slate-400">+{nfes.length - 5}</span>
             )}
           </div>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 text-slate-500">
-            <Weight className="w-3.5 h-3.5" />
+            <Weight className="size-3.5" />
             <span className="font-mono text-xs">{pesoTotal.toFixed(0)}kg</span>
           </div>
           {nfes.length > 0 && (
             <div className="flex items-center gap-1">
               {hasDivergencias && (
                 <div className="relative" title="Há divergências neste recebimento">
-                  <AlertCircle className="w-4 h-4 text-amber-500" />
+                  <AlertCircle className="size-4 text-amber-500" />
                 </div>
               )}
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowDetailsModal(true); }}
-                className="p-1 rounded-lg hover:bg-slate-100 transition-colors"
+              <IconButton
+                variant="ghost"
+                aria-label="Ver detalhes das NFs"
                 title="Ver detalhes das NFs"
+                onClick={(e) => { e.stopPropagation(); setShowDetailsModal(true) }}
               >
-                <Eye className="w-4 h-4 text-slate-400 hover:text-[#00A5E6]" />
-              </button>
+                <Eye className="size-4" />
+              </IconButton>
             </div>
           )}
         </div>
       </div>
 
       {/* Progress */}
-      <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+      <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
         <span>{rec.total_itens} itens</span>
         <span>{rec.total_recebido}/{rec.total_previsto} volumes ({pct}%)</span>
       </div>
@@ -547,115 +510,84 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
       />
 
       {/* Modal Detalhes NFes */}
-      {showDetailsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowDetailsModal(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-xl max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-[#00A5E6]" />
-                Notas Fiscais do Recebimento
-              </h3>
-              <button onClick={() => setShowDetailsModal(false)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
-                <X className="w-5 h-5 text-slate-400" />
-              </button>
-            </div>
+      <Dialog open={showDetailsModal} onOpenChange={setShowDetailsModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader title="Notas Fiscais do Recebimento" />
+          <DialogBody>
             <div className="space-y-3">
               {nfes.map((nfeLink, i) => {
                 const nfNumero = nfeLink.nfe?.numero_nf || '?'
                 const qtdDivergencias = divergenciasPorNF.get(nfNumero) || 0
                 return (
-                <div key={i} className={`border rounded-lg p-4 ${
-                  qtdDivergencias > 0 ? 'border-amber-300 bg-amber-50' : 'border-slate-200'
-                }`}>
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold text-slate-800">NF {nfNumero}</span>
-                      {nfeLink.nfe?.is_os && (
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                          OS
-                        </span>
-                      )}
-                      {qtdDivergencias > 0 && (
-                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-500 text-white flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" />
-                          {qtdDivergencias} diverg{qtdDivergencias > 1 ? 'ências' : 'ência'}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-sm text-slate-500">{formatDate(nfeLink.nfe?.data_emissao || '')}</span>
-                  </div>
-                  <div className="flex gap-4 text-sm text-slate-600 mb-3">
-                    <span className="flex items-center gap-1">
-                      <Weight className="w-4 h-4 text-slate-400" />
-                      {nfeLink.nfe?.peso_total ? `${nfeLink.nfe.peso_total.toFixed(0)} kg` : '-'}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Package className="w-4 h-4 text-slate-400" />
-                      {nfeLink.nfe?.volumes_total || 0} volumes
-                    </span>
-                  </div>
-                  
-                  {/* Detalhes das divergências */}
-                  {qtdDivergencias > 0 && divergenciasDetalhes.get(nfNumero) && (
-                    <div className="mt-3 pt-3 border-t border-amber-300">
-                      <h4 className="text-sm font-semibold text-amber-900 mb-2">Itens com divergência:</h4>
-                      <div className="space-y-2">
-                        {divergenciasDetalhes.get(nfNumero)!.map((div, idx) => (
-                          <div key={idx} className="bg-white rounded p-2 border border-amber-200 text-xs">
-                            <div className="font-medium text-slate-800 mb-1">
-                              {div.codigo_produto} - {div.descricao}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 bg-orange-100 text-orange-800 rounded font-medium">
-                                {div.tipo}
-                              </span>
-                              {div.obs && (
-                                <span className="text-slate-600">{div.obs}</span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+                  <div key={i} className={`rounded-lg border p-4 ${
+                    qtdDivergencias > 0 ? 'border-amber-300 bg-amber-50' : 'border-slate-200'
+                  }`}>
+                    <div className="mb-2 flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg font-bold text-slate-800">NF {nfNumero}</span>
+                        {nfeLink.nfe?.is_os && <Badge tone="info">OS</Badge>}
+                        {qtdDivergencias > 0 && (
+                          <Badge tone="warning">
+                            {qtdDivergencias} diverg{qtdDivergencias > 1 ? 'ências' : 'ência'}
+                          </Badge>
+                        )}
                       </div>
+                      <span className="text-sm text-slate-500">{formatDate(nfeLink.nfe?.data_emissao || '')}</span>
                     </div>
-                  )}
-                </div>
-              )
+                    <div className="mb-3 flex gap-4 text-sm text-slate-600">
+                      <span className="flex items-center gap-1">
+                        <Weight className="size-4 text-slate-400" />
+                        {nfeLink.nfe?.peso_total ? `${nfeLink.nfe.peso_total.toFixed(0)} kg` : '-'}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Package className="size-4 text-slate-400" />
+                        {nfeLink.nfe?.volumes_total || 0} volumes
+                      </span>
+                    </div>
+
+                    {qtdDivergencias > 0 && divergenciasDetalhes.get(nfNumero) && (
+                      <div className="mt-3 border-t border-amber-300 pt-3">
+                        <h4 className="mb-2 text-sm font-semibold text-amber-900">Itens com divergência:</h4>
+                        <div className="space-y-2">
+                          {divergenciasDetalhes.get(nfNumero)!.map((div, idx) => (
+                            <div key={idx} className="rounded border border-amber-200 bg-white p-2 text-xs">
+                              <div className="mb-1 font-medium text-slate-800">
+                                {div.codigo_produto} - {div.descricao}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge tone="warning">{div.tipo}</Badge>
+                                {div.obs && <span className="text-slate-600">{div.obs}</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
               })}
             </div>
-            <div className="mt-4">
-              <Button onClick={() => setShowDetailsModal(false)} className="w-full">
-                Fechar
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Cancelar */}
-      {showCancelarModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowCancelarModal(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                <X className="w-5 h-5 text-red-600" />
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-800">Cancelar Recebimento</h3>
-                <p className="text-xs text-slate-500">Esta ação não pode ser desfeita</p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={() => setShowCancelarModal(false)} className="flex-1" disabled={canceling}>Voltar</Button>
-              <Button onClick={handleCancelar} className="flex-1 bg-red-600 hover:bg-red-700" disabled={canceling}>
-                {canceling ? 'Cancelando...' : 'Confirmar'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      <ConfirmDialog
+        open={showCancelarModal}
+        onOpenChange={setShowCancelarModal}
+        title="Cancelar Recebimento"
+        description="Esta ação não pode ser desfeita"
+        confirmLabel={canceling ? 'Cancelando...' : 'Confirmar'}
+        cancelLabel="Voltar"
+        destructive
+        loading={canceling}
+        onConfirm={handleCancelar}
+      />
+    </Card>
   )
 }
+
+// =========================================================
 // Create Modal
 // =========================================================
 
@@ -678,22 +610,24 @@ function CreateRecebimentoModal({
   const [selectedNfes, setSelectedNfes] = useState<Set<string>>(new Set())
 
   async function handleBuscarNfes() {
-    if (!periodoInicio || !periodoFim) {
+    const inicioDate = parseBrDate(periodoInicio)
+    const fimDate = parseBrDate(periodoFim)
+    if (!inicioDate || !fimDate) {
       setError('Informe o período')
       return
     }
     setLoadingPreview(true)
     setError('')
-    
+
     try {
       const supabase = createClient()
       const { data, error } = await supabase
         .from('nfe')
         .select('id, numero_nf, data_emissao, volumes_total')
-        .gte('data_emissao', periodoInicio)
-        .lte('data_emissao', periodoFim)
+        .gte('data_emissao', dateToIso(inicioDate))
+        .lte('data_emissao', dateToIso(fimDate))
         .order('numero_nf', { ascending: false })
-      
+
       if (error) {
         toast.error('Erro ao buscar NFs: ' + error.message)
       } else if (!data || data.length === 0) {
@@ -726,24 +660,29 @@ function CreateRecebimentoModal({
     })
   }
 
-  // Auto-buscar NFes quando ambas as datas estiverem preenchidas
+  // Auto-buscar NFes quando ambas as datas estiverem completas
   useEffect(() => {
-    if (periodoInicio && periodoFim && nfesPreview.length === 0 && !loadingPreview) {
+    const inicioDate = parseBrDate(periodoInicio)
+    const fimDate = parseBrDate(periodoFim)
+    if (inicioDate && fimDate && nfesPreview.length === 0 && !loadingPreview) {
       handleBuscarNfes()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [periodoInicio, periodoFim])
 
   async function handleCreate() {
-    if (!periodoInicio || !periodoFim) {
+    const inicioDate = parseBrDate(periodoInicio)
+    const fimDate = parseBrDate(periodoFim)
+    if (!inicioDate || !fimDate) {
       setError('Informe o período')
       return
     }
-    
+
     if (nfesPreview.length > 0 && selectedNfes.size === 0) {
       setError('Selecione pelo menos uma NF')
       return
     }
-    
+
     setSaving(true)
     setError('')
 
@@ -752,8 +691,8 @@ function CreateRecebimentoModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          periodo_inicio: periodoInicio,
-          periodo_fim: periodoFim,
+          periodo_inicio: dateToIso(inicioDate),
+          periodo_fim: dateToIso(fimDate),
           obs: obs || null,
           nfe_ids: nfesPreview.length > 0 ? Array.from(selectedNfes) : undefined,
         }),
@@ -778,111 +717,106 @@ function CreateRecebimentoModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl" onClick={e => e.stopPropagation()}>
-        <h2 className="text-lg font-bold text-slate-800 mb-4">Novo Recebimento</h2>
-
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="min-w-0 overflow-hidden">
-              <label className="text-sm font-medium text-slate-600 block mb-1">Período Início</label>
-              <input
-                type="date"
-                value={periodoInicio}
-                onChange={e => setPeriodoInicio(e.target.value)}
-                className="w-full min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30 focus:border-[#00A5E6]"
-              />
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader title="Novo Recebimento" />
+        <DialogBody>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <FormField id="periodo-inicio" label="Período Início" required>
+                {(f) => (
+                  <DateField id={f.id} value={periodoInicio} onChange={setPeriodoInicio} aria-invalid={f['aria-invalid']} disabled={saving} />
+                )}
+              </FormField>
+              <FormField id="periodo-fim" label="Período Fim" required>
+                {(f) => (
+                  <DateField id={f.id} value={periodoFim} onChange={setPeriodoFim} aria-invalid={f['aria-invalid']} disabled={saving} />
+                )}
+              </FormField>
             </div>
-            <div className="min-w-0 overflow-hidden">
-              <label className="text-sm font-medium text-slate-600 block mb-1">Período Fim</label>
-              <input
-                type="date"
-                value={periodoFim}
-                onChange={e => setPeriodoFim(e.target.value)}
-                className="w-full min-w-0 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30 focus:border-[#00A5E6]"
-              />
-            </div>
-          </div>
 
-          <Button 
-            onClick={handleBuscarNfes} 
-            variant="outline" 
-            className="w-full"
-            disabled={loadingPreview || saving}
-          >
-            {loadingPreview ? 'Buscando...' : 'Buscar NFs no Período'}
-          </Button>
+            <Button
+              variant="secondary"
+              onClick={handleBuscarNfes}
+              className="w-full"
+              disabled={loadingPreview || saving}
+              loading={loadingPreview}
+            >
+              Buscar NFs no Período
+            </Button>
 
-          {/* Preview de NFs */}
-          {nfesPreview.length > 0 && (
-            <div className="border border-slate-200 rounded-lg p-3 max-h-60 overflow-y-auto">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-slate-700">
-                  {nfesPreview.length} NF(s) encontrada(s)
+            {/* Preview de NFs */}
+            {nfesPreview.length > 0 && (
+              <div className="max-h-60 overflow-y-auto rounded-lg border border-slate-200 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-slate-700">
+                    {nfesPreview.length} NF(s) encontrada(s)
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (selectedNfes.size === nfesPreview.length) {
+                        setSelectedNfes(new Set())
+                      } else {
+                        setSelectedNfes(new Set(nfesPreview.map(nf => nf.id)))
+                      }
+                    }}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    {selectedNfes.size === nfesPreview.length ? 'Desmarcar Todas' : 'Marcar Todas'}
+                  </button>
+                </div>
+                <div className="space-y-1">
+                  {nfesPreview.map(nf => (
+                    <label key={nf.id} className="flex cursor-pointer items-center gap-2 rounded p-2 hover:bg-slate-50">
+                      <input
+                        type="checkbox"
+                        checked={selectedNfes.has(nf.id)}
+                        onChange={() => toggleNfe(nf.id)}
+                        className="size-4 rounded border-slate-300 text-primary focus:ring-primary"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-slate-800">
+                          NF {nf.numero_nf}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {new Date(nf.data_emissao).toLocaleDateString('pt-BR')} • {nf.volumes_total} vol
+                        </p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  {selectedNfes.size} de {nfesPreview.length} selecionada(s)
                 </p>
-                <button
-                  onClick={() => {
-                    if (selectedNfes.size === nfesPreview.length) {
-                      setSelectedNfes(new Set())
-                    } else {
-                      setSelectedNfes(new Set(nfesPreview.map(nf => nf.id)))
-                    }
-                  }}
-                  className="text-xs text-[#00A5E6] hover:underline"
-                >
-                  {selectedNfes.size === nfesPreview.length ? 'Desmarcar Todas' : 'Marcar Todas'}
-                </button>
               </div>
-              <div className="space-y-1">
-                {nfesPreview.map(nf => (
-                  <label key={nf.id} className="flex items-center gap-2 p-2 hover:bg-slate-50 rounded cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedNfes.has(nf.id)}
-                      onChange={() => toggleNfe(nf.id)}
-                      className="w-4 h-4 text-[#00A5E6] rounded border-slate-300 focus:ring-[#00A5E6]"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800">
-                        NF {nf.numero_nf}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {new Date(nf.data_emissao).toLocaleDateString('pt-BR')} • {nf.volumes_total} vol
-                      </p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-              <p className="text-xs text-slate-500 mt-2">
-                {selectedNfes.size} de {nfesPreview.length} selecionada(s)
-              </p>
-            </div>
-          )}
+            )}
 
-          <div>
-            <label className="text-sm font-medium text-slate-600 block mb-1">Observações</label>
-            <textarea
-              value={obs}
-              onChange={e => setObs(e.target.value)}
-              rows={2}
-              placeholder="Observações opcionais..."
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#00A5E6]/30 focus:border-[#00A5E6] resize-none"
-            />
+            <FormField id="obs" label="Observações">
+              {(f) => (
+                <Textarea
+                  id={f.id}
+                  value={obs}
+                  onChange={e => setObs(e.target.value)}
+                  rows={2}
+                  placeholder="Observações opcionais..."
+                  aria-invalid={f['aria-invalid']}
+                />
+              )}
+            </FormField>
+
+            {error && <Alert tone="danger">{error}</Alert>}
           </div>
-
-          {error && <p className="text-sm text-red-500">{error}</p>}
-
-          <div className="flex gap-3 pt-2">
-            <Button variant="outline" onClick={onClose} className="flex-1" disabled={saving}>
-              Cancelar
-            </Button>
-            <Button onClick={handleCreate} className="flex-1" disabled={saving || loadingPreview}>
-              {saving ? 'Criando...' : 'Criar Recebimento'}
-            </Button>
-          </div>
+        </DialogBody>
+        <div className="flex shrink-0 gap-3 border-t border-slate-100 px-6 py-4">
+          <Button variant="secondary" onClick={onClose} className="flex-1" disabled={saving}>
+            Cancelar
+          </Button>
+          <Button onClick={handleCreate} className="flex-1" disabled={saving || loadingPreview} loading={saving}>
+            Criar Recebimento
+          </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -933,7 +867,7 @@ function ImportNFeModal({
   const [files, setFiles] = useState<FileList | null>(null)
   const [uploading, setUploading] = useState(false)
   const [xmlResults, setXmlResults] = useState<Array<{ file: string; status: string; numero_nf?: string; error?: string }> | null>(null)
-  
+
   const [inicio, setInicio] = useState('')
   const [fim, setFim] = useState('')
   const [importing, setImporting] = useState(false)
@@ -964,11 +898,11 @@ function ImportNFeModal({
   }
 
   function validateDates(): string | null {
-    if (!inicio || !fim) return 'Preencha as datas de início e fim.'
-    if (fim < inicio) return 'Data fim deve ser maior ou igual à data início.'
-    const dInicio = new Date(inicio + 'T00:00:00')
-    const dFim = new Date(fim + 'T00:00:00')
-    const diffDays = (dFim.getTime() - dInicio.getTime()) / (1000 * 60 * 60 * 24)
+    const inicioDate = parseBrDate(inicio)
+    const fimDate = parseBrDate(fim)
+    if (!inicioDate || !fimDate) return 'Preencha as datas de início e fim.'
+    if (fimDate < inicioDate) return 'Data fim deve ser maior ou igual à data início.'
+    const diffDays = (fimDate.getTime() - inicioDate.getTime()) / (1000 * 60 * 60 * 24)
     if (diffDays > 90) return 'Janela máxima de 90 dias.'
     return null
   }
@@ -983,10 +917,12 @@ function ImportNFeModal({
 
     setImporting(true)
     try {
+      const inicioDate = parseBrDate(inicio)!
+      const fimDate = parseBrDate(fim)!
       const res = await fetch('/api/nfe/importar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inicio, fim }),
+        body: JSON.stringify({ inicio: dateToIso(inicioDate), fim: dateToIso(fimDate) }),
       })
 
       const data: ImportResult = await res.json()
@@ -1006,224 +942,182 @@ function ImportNFeModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-          <Download className="w-5 h-5 text-[#00A5E6]" />
-          Importar NF-e
-        </h2>
-
-        {/* Mode Selector */}
-        <div className="flex gap-2 mb-6">
-          <button
-            onClick={() => setMode('data')}
-            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              mode === 'data'
-                ? 'bg-[#00A5E6] text-white'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <div className="flex items-center justify-center gap-2">
-              <Calendar className="w-4 h-4" />
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader title={<span className="flex items-center gap-2"><Download className="size-5 text-primary" />Importar NF-e</span>} />
+        <DialogBody>
+          {/* Mode Selector */}
+          <div className="mb-6 flex gap-2">
+            <Button
+              variant={mode === 'data' ? 'primary' : 'secondary'}
+              onClick={() => setMode('data')}
+              className="flex-1"
+            >
+              <Calendar className="size-4" />
               Buscar por Data
-            </div>
-          </button>
-          <button
-            onClick={() => setMode('xml')}
-            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              mode === 'xml'
-                ? 'bg-[#00A5E6] text-white'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <div className="flex items-center justify-center gap-2">
-              <Upload className="w-4 h-4" />
+            </Button>
+            <Button
+              variant={mode === 'xml' ? 'primary' : 'secondary'}
+              onClick={() => setMode('xml')}
+              className="flex-1"
+            >
+              <Upload className="size-4" />
               Upload XML
-            </div>
-          </button>
-        </div>
+            </Button>
+          </div>
 
-        {/* Mode: Buscar por Data */}
-        {mode === 'data' && !dateResult && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="min-w-0 overflow-hidden">
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Data Início
-                </label>
+          {/* Mode: Buscar por Data */}
+          {mode === 'data' && !dateResult && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <FormField id="import-data-inicio" label="Data Início" required>
+                  {(f) => <DateField id={f.id} value={inicio} onChange={setInicio} aria-invalid={f['aria-invalid']} disabled={importing} />}
+                </FormField>
+                <FormField id="import-data-fim" label="Data Fim" required>
+                  {(f) => <DateField id={f.id} value={fim} onChange={setFim} aria-invalid={f['aria-invalid']} disabled={importing} />}
+                </FormField>
+              </div>
+
+              {errorMsg && <Alert tone="danger">{errorMsg}</Alert>}
+            </div>
+          )}
+
+          {/* Mode: Date - Results */}
+          {mode === 'data' && dateResult && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="rounded-xl bg-slate-50 p-3 text-center">
+                  <p className="flex items-center justify-center gap-1 text-2xl font-bold text-slate-700">
+                    <Mail className="size-5 text-slate-400" />
+                    {dateResult.total_mensagens ?? 0}
+                  </p>
+                  <p className="text-xs text-slate-500">Mensagens</p>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-3 text-center">
+                  <p className="flex items-center justify-center gap-1 text-2xl font-bold text-slate-700">
+                    <FileText className="size-5 text-slate-400" />
+                    {dateResult.nfs?.length ?? 0}
+                  </p>
+                  <p className="text-xs text-slate-500">NFs</p>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-3 text-center">
+                  <p className="flex items-center justify-center gap-1 text-2xl font-bold text-emerald-600">
+                    <Database className="size-5 text-emerald-400" />
+                    {dateResult.total_salvas ?? 0}
+                  </p>
+                  <p className="text-xs text-slate-500">Salvas</p>
+                </div>
+              </div>
+
+              {dateResult.nfs && dateResult.nfs.length > 0 && (
+                <div className="max-h-60 space-y-2 overflow-y-auto">
+                  {dateResult.nfs.map((nf, idx) => (
+                    <div key={`${nf.numero_nf}-${idx}`} className="rounded-lg border border-slate-200 p-3 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-800">NF {nf.numero_nf}</span>
+                        <span className="text-xs text-slate-500">{nf.data_emissao.substring(0, 10)}</span>
+                      </div>
+                      <div className="mt-1 flex gap-3 text-xs text-slate-600">
+                        <span>{nf.volumes_total} volumes</span>
+                        <span>{parseFloat(nf.peso_total).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} kg</span>
+                        <span>{nf.itens?.length || 0} itens</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Mode: Upload XML */}
+          {mode === 'xml' && !xmlResults && (
+            <div className="space-y-4">
+              <div className="rounded-xl border-2 border-dashed border-slate-300 p-6 text-center">
+                <Upload className="mx-auto mb-2 size-8 text-slate-400" />
+                <p className="mb-3 text-sm text-slate-500">Selecione os arquivos XML das NF-e</p>
                 <input
-                  type="date"
-                  value={inicio}
-                  onChange={e => setInicio(e.target.value)}
-                  className="w-full min-w-0 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#00A5E6] focus:border-transparent outline-none"
-                  disabled={importing}
+                  type="file"
+                  accept=".xml"
+                  multiple
+                  onChange={e => setFiles(e.target.files)}
+                  className="block w-full text-sm text-slate-500 file:mr-4 file:rounded-lg file:border-0 file:bg-primary/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary hover:file:bg-primary/20"
                 />
               </div>
-              <div className="min-w-0 overflow-hidden">
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Data Fim
-                </label>
-                <input
-                  type="date"
-                  value={fim}
-                  onChange={e => setFim(e.target.value)}
-                  className="w-full min-w-0 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#00A5E6] focus:border-transparent outline-none"
-                  disabled={importing}
-                />
-              </div>
+
+              {files && files.length > 0 && (
+                <p className="text-sm text-slate-600">{files.length} arquivo(s) selecionado(s)</p>
+              )}
             </div>
+          )}
 
-            {errorMsg && (
-              <div className="flex items-start gap-2 text-red-600 text-sm bg-red-50 rounded-lg px-3 py-2">
-                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
+          {/* Mode: XML - Results */}
+          {mode === 'xml' && xmlResults && (
+            <div className="max-h-60 space-y-2 overflow-y-auto">
+              {xmlResults.map((r, i) => (
+                <div
+                  key={i}
+                  className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
+                    r.status === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                  }`}
+                >
+                  <span className="flex-1 truncate">{r.file}</span>
+                  <span className="ml-2 font-medium">
+                    {r.status === 'ok' ? `NF ${r.numero_nf}` : r.error}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogBody>
 
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={onClose} className="flex-1" disabled={importing}>
+        <div className="flex shrink-0 gap-3 border-t border-slate-100 px-6 py-4">
+          {mode === 'data' && !dateResult && (
+            <>
+              <Button variant="secondary" onClick={onClose} className="flex-1" disabled={importing}>
                 Cancelar
               </Button>
-              <Button onClick={handleImportByDate} className="flex-1" disabled={importing}>
-                {importing ? (
-                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Buscando...</>
-                ) : (
-                  <><Search className="w-4 h-4 mr-2" />Buscar NFs</>
-                )}
+              <Button onClick={handleImportByDate} className="flex-1" disabled={importing} loading={importing}>
+                <Search className="size-4" />
+                Buscar NFs
               </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Mode: Date - Results */}
-        {mode === 'data' && dateResult && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-4">
-              <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold text-slate-700 flex items-center justify-center gap-1">
-                  <Mail className="w-5 h-5 text-slate-400" />
-                  {dateResult.total_mensagens ?? 0}
-                </p>
-                <p className="text-xs text-slate-500">Mensagens</p>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold text-slate-700 flex items-center justify-center gap-1">
-                  <FileText className="w-5 h-5 text-slate-400" />
-                  {dateResult.nfs?.length ?? 0}
-                </p>
-                <p className="text-xs text-slate-500">NFs</p>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3 text-center">
-                <p className="text-2xl font-bold text-green-600 flex items-center justify-center gap-1">
-                  <Database className="w-5 h-5 text-green-400" />
-                  {dateResult.total_salvas ?? 0}
-                </p>
-                <p className="text-xs text-slate-500">Salvas</p>
-              </div>
-            </div>
-
-            {dateResult.nfs && dateResult.nfs.length > 0 && (
-              <div className="max-h-60 overflow-y-auto space-y-2">
-                {dateResult.nfs.map((nf, idx) => (
-                  <div key={`${nf.numero_nf}-${idx}`} className="border border-slate-200 rounded-lg p-3 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-800">NF {nf.numero_nf}</span>
-                      <span className="text-xs text-slate-500">{nf.data_emissao.substring(0, 10)}</span>
-                    </div>
-                    <div className="flex gap-3 text-xs text-slate-600 mt-1">
-                      <span>{nf.volumes_total} volumes</span>
-                      <span>{parseFloat(nf.peso_total).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} kg</span>
-                      <span>{nf.itens?.length || 0} itens</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="flex gap-3">
+            </>
+          )}
+          {mode === 'data' && dateResult && (
+            <>
               {dateResult.total_salvas && dateResult.total_salvas > 0 && (
-                <Button
-                  onClick={() => onStartRecebimento({ inicio, fim })}
-                  className="flex-1 bg-[#00A5E6] hover:bg-[#0090cc]"
-                >
-                  <Package className="w-4 h-4 mr-2" />
+                <Button onClick={() => onStartRecebimento({ inicio, fim })} className="flex-1">
+                  <Package className="size-4" />
                   Iniciar Recebimento das Notas
                 </Button>
               )}
-              <Button
-                onClick={onSuccess}
-                variant="outline"
-                className="flex-1 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
-              >
+              <Button onClick={onSuccess} variant="secondary" className="flex-1 text-red-600 hover:bg-red-50 hover:text-red-700">
                 Fechar
               </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Mode: Upload XML */}
-        {mode === 'xml' && !xmlResults && (
-          <div className="space-y-4">
-            <div className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center">
-              <Upload className="w-8 h-8 mx-auto text-slate-400 mb-2" />
-              <p className="text-sm text-slate-500 mb-3">Selecione os arquivos XML das NF-e</p>
-              <input
-                type="file"
-                accept=".xml"
-                multiple
-                onChange={e => setFiles(e.target.files)}
-                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-[#00A5E6]/10 file:text-[#00A5E6] hover:file:bg-[#00A5E6]/20"
-              />
-            </div>
-
-            {files && files.length > 0 && (
-              <p className="text-sm text-slate-600">{files.length} arquivo(s) selecionado(s)</p>
-            )}
-
-            <div className="flex gap-3">
-              <Button variant="outline" onClick={onClose} className="flex-1" disabled={uploading}>
+            </>
+          )}
+          {mode === 'xml' && !xmlResults && (
+            <>
+              <Button variant="secondary" onClick={onClose} className="flex-1" disabled={uploading}>
                 Cancelar
               </Button>
               <Button
                 onClick={handleUploadXML}
                 className="flex-1"
                 disabled={uploading || !files || files.length === 0}
+                loading={uploading}
               >
-                {uploading ? 'Importando...' : 'Importar'}
+                Importar
               </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Mode: XML - Results */}
-        {mode === 'xml' && xmlResults && (
-          <div className="space-y-4">
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {xmlResults.map((r, i) => (
-                <div
-                  key={i}
-                  className={`flex items-center justify-between text-sm px-3 py-2 rounded-lg ${
-                    r.status === 'ok' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                  }`}
-                >
-                  <span className="truncate flex-1">{r.file}</span>
-                  <span className="font-medium ml-2">
-                    {r.status === 'ok' ? `NF ${r.numero_nf}` : r.error}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <Button onClick={onSuccess} className="w-full">Fechar</Button>
-          </div>
-        )}
-      </div>
-    </div>
+            </>
+          )}
+          {mode === 'xml' && xmlResults && (
+            <Button onClick={onSuccess} className="flex-1">Fechar</Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
-
-// =========================================================
-// Helpers
-// =========================================================
 
 // =========================================================
 // Notas Vinculadas Tab
@@ -1257,18 +1151,18 @@ function NotasVinculadasTab() {
         const { data, error } = await supabase
           .from('nfe')
           .select(`
-            id, 
-            numero_nf, 
-            data_emissao, 
-            peso_total, 
-            volumes_total, 
-            is_os, 
+            id,
+            numero_nf,
+            data_emissao,
+            peso_total,
+            volumes_total,
+            is_os,
             created_at,
             recebimento_nfes(nfe_id)
           `)
           .order('numero_nf', { ascending: false })
           .limit(500)
-        
+
         if (!error && data) {
           // Marcar NFes vinculadas
           const nfesWithVinculo = data.map(nf => {
@@ -1293,14 +1187,6 @@ function NotasVinculadasTab() {
     loadNfes()
   }, [])
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="w-8 h-8 animate-spin text-[#00A5E6]" />
-      </div>
-    )
-  }
-
   async function loadNfeItens(nfeId: string) {
     setLoadingItens(true)
     try {
@@ -1310,7 +1196,7 @@ function NotasVinculadasTab() {
         .select('codigo_produto, descricao, quantidade')
         .eq('nfe_id', nfeId)
         .order('n_item', { ascending: true })
-      
+
       if (!error && data) {
         setNfeItens(data)
       }
@@ -1321,27 +1207,37 @@ function NotasVinculadasTab() {
     }
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Spinner size={32} />
+      </div>
+    )
+  }
+
   const selectedNfeData = nfes.find(n => n.id === selectedNfe)
 
   return (
     <div className="space-y-3">
       {nfes.length === 0 ? (
-        <div className="text-center py-20 text-slate-500">
-          <FileText className="w-16 h-16 mx-auto mb-4 text-slate-300" />
-          <p className="text-lg font-medium">Nenhuma NF-e importada</p>
-          <p className="text-sm mt-1">Importe NFs para começar</p>
-        </div>
+        <Card>
+          <EmptyState
+            icon={<FileText className="size-5" />}
+            title="Nenhuma NF-e importada"
+            description="Importe NFs para começar"
+          />
+        </Card>
       ) : (
         <>
-          <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4">
+          <Card className="mb-4 p-4">
             <p className="text-sm text-slate-600">
               Total: <span className="font-bold text-slate-800">{nfes.length}</span> NF-e(s) importadas
             </p>
-          </div>
+          </Card>
           {nfes.map((nfe) => (
-            <div
+            <Card
               key={nfe.id}
-              className="bg-white rounded-xl border border-slate-200 p-4 hover:border-[#00A5E6]/40 hover:shadow-md transition-all cursor-pointer"
+              className="cursor-pointer p-4 transition-all hover:border-primary/40 hover:shadow-md"
               onClick={() => {
                 setSelectedNfe(nfe.id)
                 loadNfeItens(nfe.id)
@@ -1349,82 +1245,60 @@ function NotasVinculadasTab() {
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="mb-2 flex items-center gap-2">
                     <span className="text-lg font-bold text-slate-800">NF {nfe.numero_nf}</span>
-                    {nfe.is_os && (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                        OS
-                      </span>
-                    )}
+                    {nfe.is_os && <Badge tone="info">OS</Badge>}
                     {nfe.is_vinculada ? (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700" title="Vinculada a um recebimento">
-                        ✓ Vinculada
-                      </span>
+                      <Badge tone="success" title="Vinculada a um recebimento">✓ Vinculada</Badge>
                     ) : (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" title="Não vinculada a nenhum recebimento">
-                        Não Vinculada
-                      </span>
+                      <Badge tone="neutral" title="Não vinculada a nenhum recebimento">Não Vinculada</Badge>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-4 text-sm text-slate-600">
                     <span className="flex items-center gap-1">
-                      <Calendar className="w-4 h-4 text-slate-400" />
+                      <Calendar className="size-4 text-slate-400" />
                       {formatDate(nfe.data_emissao)}
                     </span>
                     <span className="flex items-center gap-1">
-                      <Package className="w-4 h-4 text-slate-400" />
+                      <Package className="size-4 text-slate-400" />
                       {nfe.volumes_total} volumes
                     </span>
                     <span className="flex items-center gap-1">
-                      <Weight className="w-4 h-4 text-slate-400" />
+                      <Weight className="size-4 text-slate-400" />
                       {nfe.peso_total.toFixed(0)} kg
                     </span>
                   </div>
                 </div>
-                <ChevronRight className="w-5 h-5 text-slate-400" />
+                <ChevronRight className="size-5 text-slate-400" />
               </div>
-            </div>
+            </Card>
           ))}
         </>
       )}
 
       {/* Modal Itens da NFe */}
-      {selectedNfe && selectedNfeData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setSelectedNfe(null)}>
-          <div className="bg-white rounded-2xl w-full max-w-3xl p-6 shadow-xl max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-[#00A5E6]" />
-                  Itens da NF {selectedNfeData.numero_nf}
-                </h3>
-                <p className="text-sm text-slate-500 mt-1">
-                  {formatDate(selectedNfeData.data_emissao)} • {nfeItens.length} itens
-                </p>
-              </div>
-              <button onClick={() => setSelectedNfe(null)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
-                <X className="w-5 h-5 text-slate-400" />
-              </button>
-            </div>
-
+      <Dialog open={Boolean(selectedNfe && selectedNfeData)} onOpenChange={(open) => { if (!open) setSelectedNfe(null) }}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader
+            title={<span className="flex items-center gap-2"><FileText className="size-5 text-primary" />Itens da NF {selectedNfeData?.numero_nf}</span>}
+            description={selectedNfeData ? `${formatDate(selectedNfeData.data_emissao)} • ${nfeItens.length} itens` : undefined}
+          />
+          <DialogBody>
             {loadingItens ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-[#00A5E6]" />
+                <Spinner size={32} />
               </div>
             ) : nfeItens.length === 0 ? (
-              <div className="text-center py-12 text-slate-500">
-                <Package className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                <p className="text-sm">Nenhum item encontrado</p>
-              </div>
+              <EmptyState icon={<Package className="size-5" />} title="Nenhum item encontrado" />
             ) : (
               <div className="space-y-2">
                 {nfeItens.map((item, idx) => (
-                  <div key={idx} className="border border-slate-200 rounded-lg p-4">
+                  <div key={idx} className="rounded-lg border border-slate-200 p-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="mb-1 flex items-center gap-2">
                           <span className="font-mono text-sm font-bold text-slate-800">{item.codigo_produto}</span>
-                          <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded">#{idx + 1}</span>
+                          <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">#{idx + 1}</span>
                         </div>
                         <p className="text-sm text-slate-600">{item.descricao}</p>
                       </div>
@@ -1437,15 +1311,9 @@ function NotasVinculadasTab() {
                 ))}
               </div>
             )}
-
-            <div className="mt-4">
-              <Button onClick={() => setSelectedNfe(null)} className="w-full">
-                Fechar
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -1456,11 +1324,11 @@ function NotasVinculadasTab() {
 
 function DashboardTab({ recebimentos }: { recebimentos: Recebimento[] }) {
   const recebimentosFechados = recebimentos.filter(r => r.status === 'fechado')
-  
+
   const totalRecebimentos = recebimentosFechados.length
   const kgTotais = recebimentosFechados.reduce((sum, r) => sum + (r.peso_total || 0), 0)
   const volumesTotais = recebimentosFechados.reduce((sum, r) => sum + r.total_recebido, 0)
-  
+
   const temposMedios = recebimentosFechados
     .filter(r => r.data_inicio && r.data_fim)
     .map(r => {
@@ -1468,13 +1336,13 @@ function DashboardTab({ recebimentos }: { recebimentos: Recebimento[] }) {
       const fim = new Date(r.data_fim!).getTime()
       return (fim - inicio) / (1000 * 60 * 60)
     })
-  
+
   const tempoTotal = temposMedios.reduce((sum, t) => sum + t, 0)
   const tempoMedio = temposMedios.length > 0 ? tempoTotal / temposMedios.length : 0
-  
+
   const kgMedio = totalRecebimentos > 0 ? kgTotais / totalRecebimentos : 0
   const volumesMedio = totalRecebimentos > 0 ? volumesTotais / totalRecebimentos : 0
-  
+
   const chapasTotais = recebimentosFechados
     .filter(r => r.quantos_chapas)
     .reduce((sum, r) => sum + (r.quantos_chapas || 0), 0)
@@ -1484,99 +1352,54 @@ function DashboardTab({ recebimentos }: { recebimentos: Recebimento[] }) {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-xl border border-slate-200 p-6">
-        <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-          <TrendingUp className="w-5 h-5 text-[#00A5E6]" />
-          Métricas Gerais
-        </h3>
-        
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Package className="w-5 h-5 text-blue-600" />
-              <p className="text-xs font-medium text-blue-700">Recebimentos</p>
-            </div>
-            <p className="text-3xl font-bold text-blue-900">{totalRecebimentos}</p>
-            <p className="text-xs text-blue-600 mt-1">Fechados</p>
+      <Card>
+        <CardHeader icon={<TrendingUp className="size-4" />} title="Métricas Gerais" />
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <KpiCard tone="info" icon={<Package className="size-4" />} label="Recebimentos" value={totalRecebimentos} detail="Fechados" />
+            <KpiCard tone="success" icon={<Weight className="size-4" />} label="Peso Total" value={`${kgTotais.toFixed(0)} kg`} />
+            <KpiCard tone="brand" icon={<Clock className="size-4" />} label="Tempo Médio" value={`${tempoMedio.toFixed(1)} h`} />
+            <KpiCard tone="warning" icon={<Users className="size-4" />} label="Chapas Média" value={chapasMedia.toFixed(1)} detail="Por recebimento" />
           </div>
+        </CardContent>
+      </Card>
 
-          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Weight className="w-5 h-5 text-green-600" />
-              <p className="text-xs font-medium text-green-700">Peso Total</p>
-            </div>
-            <p className="text-3xl font-bold text-green-900">{kgTotais.toFixed(0)}</p>
-            <p className="text-xs text-green-600 mt-1">kg</p>
-          </div>
-
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Clock className="w-5 h-5 text-purple-600" />
-              <p className="text-xs font-medium text-purple-700">Tempo Médio</p>
-            </div>
-            <p className="text-3xl font-bold text-purple-900">{tempoMedio.toFixed(1)}</p>
-            <p className="text-xs text-purple-600 mt-1">horas</p>
-          </div>
-
-          <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Users className="w-5 h-5 text-orange-600" />
-              <p className="text-xs font-medium text-orange-700">Chapas Média</p>
-            </div>
-            <p className="text-3xl font-bold text-orange-900">{chapasMedia.toFixed(1)}</p>
-            <p className="text-xs text-orange-600 mt-1">por recebimento</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
-          <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-[#00A5E6]" />
-            Médias por Recebimento
-          </h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader icon={<BarChart3 className="size-4" />} title="Médias por Recebimento" />
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between rounded-lg bg-slate-50 p-3">
               <span className="text-sm text-slate-600">Peso Médio</span>
               <span className="text-lg font-bold text-slate-800">{kgMedio.toFixed(0)} kg</span>
             </div>
-            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+            <div className="flex items-center justify-between rounded-lg bg-slate-50 p-3">
               <span className="text-sm text-slate-600">Volumes Médios</span>
               <span className="text-lg font-bold text-slate-800">{volumesMedio.toFixed(0)}</span>
             </div>
-            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+            <div className="flex items-center justify-between rounded-lg bg-slate-50 p-3">
               <span className="text-sm text-slate-600">Tempo Total</span>
               <span className="text-lg font-bold text-slate-800">{tempoTotal.toFixed(1)} h</span>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
-          <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-[#00A5E6]" />
-            Status dos Recebimentos
-          </h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-              <span className="text-sm text-green-700 font-medium">Fechados</span>
-              <span className="text-lg font-bold text-green-800">
-                {recebimentos.filter(r => r.status === 'fechado').length}
-              </span>
+        <Card>
+          <CardHeader icon={<TrendingUp className="size-4" />} title="Status dos Recebimentos" />
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between rounded-lg bg-emerald-50 p-3">
+              <span className="text-sm font-medium text-emerald-700">Fechados</span>
+              <Badge tone="success">{recebimentos.filter(r => r.status === 'fechado').length}</Badge>
             </div>
-            <div className="flex items-center justify-between p-3 bg-amber-50 rounded-lg">
-              <span className="text-sm text-amber-700 font-medium">Abertos</span>
-              <span className="text-lg font-bold text-amber-800">
-                {recebimentos.filter(r => r.status === 'aberto').length}
-              </span>
+            <div className="flex items-center justify-between rounded-lg bg-amber-50 p-3">
+              <span className="text-sm font-medium text-amber-700">Abertos</span>
+              <Badge tone="warning">{recebimentos.filter(r => r.status === 'aberto').length}</Badge>
             </div>
-            <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-              <span className="text-sm text-red-700 font-medium">Cancelados</span>
-              <span className="text-lg font-bold text-red-800">
-                {recebimentos.filter(r => r.status === 'cancelado').length}
-              </span>
+            <div className="flex items-center justify-between rounded-lg bg-red-50 p-3">
+              <span className="text-sm font-medium text-red-700">Cancelados</span>
+              <Badge tone="danger">{recebimentos.filter(r => r.status === 'cancelado').length}</Badge>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
@@ -1649,7 +1472,7 @@ function DivergenciasListagemTab() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#00A5E6]" />
+        <Spinner size={32} />
       </div>
     )
   }
@@ -1659,13 +1482,13 @@ function DivergenciasListagemTab() {
 
   if (problemas.length === 0) {
     return (
-      <div className="text-center py-16 bg-white rounded-xl border border-slate-200">
-        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <Package className="w-8 h-8 text-green-600" />
-        </div>
-        <h3 className="text-lg font-semibold text-slate-800 mb-2">Nenhum problema registrado</h3>
-        <p className="text-sm text-slate-500">Nenhum problema foi reportado ainda.</p>
-      </div>
+      <Card>
+        <EmptyState
+          icon={<CheckCircle2 className="size-5" />}
+          title="Nenhum problema registrado"
+          description="Nenhum problema foi reportado ainda."
+        />
+      </Card>
     )
   }
 
@@ -1673,38 +1496,36 @@ function DivergenciasListagemTab() {
     <div className="space-y-6">
       {/* Problemas Pendentes */}
       {problemasPendentes.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <h3 className="font-semibold text-amber-900 mb-1 flex items-center gap-2">
-            <AlertCircle className="w-5 h-5" />
-            Problemas Pendentes
-          </h3>
-          <p className="text-sm text-amber-700 mb-4">
-            {problemasPendentes.length} problema{problemasPendentes.length !== 1 ? 's' : ''} aguardando resolução
-          </p>
-          <div className="space-y-3">
+        <Card>
+          <CardHeader
+            icon={<AlertCircle className="size-4" />}
+            title="Problemas Pendentes"
+            description={`${problemasPendentes.length} problema${problemasPendentes.length !== 1 ? 's' : ''} aguardando resolução`}
+          />
+          <CardContent className="space-y-3">
             {problemasPendentes.map(problema => {
               const nfs = problema.recebimento?.recebimento_nfes?.map(rn => rn.nfe?.numero_nf).filter(Boolean) || []
               return (
-                <div key={problema.id} className="bg-white rounded-lg p-4 border border-amber-200">
-                  <p className="text-sm font-medium text-slate-800 mb-2">{problema.descricao}</p>
-                  
+                <div key={problema.id} className="rounded-lg border border-amber-200 bg-white p-4">
+                  <p className="mb-2 text-sm font-medium text-slate-800">{problema.descricao}</p>
+
                   {problema.recebimento && (
-                    <div className="mb-3 p-2 bg-slate-50 rounded text-xs">
-                      <div className="flex items-center gap-2 text-slate-600 mb-1">
-                        <Calendar className="w-3 h-3" />
+                    <div className="mb-3 rounded bg-slate-50 p-2 text-xs">
+                      <div className="mb-1 flex items-center gap-2 text-slate-600">
+                        <Calendar className="size-3" />
                         <span>
                           Recebimento: {formatDate(problema.recebimento.periodo_inicio)} — {formatDate(problema.recebimento.periodo_fim)}
                         </span>
                       </div>
                       {nfs.length > 0 && (
                         <div className="flex items-center gap-2 text-slate-600">
-                          <FileText className="w-3 h-3" />
+                          <FileText className="size-3" />
                           <span>NFs: {nfs.join(', ')}</span>
                         </div>
                       )}
                     </div>
                   )}
-                  
+
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-500">
                       {new Date(problema.created_at).toLocaleDateString('pt-BR')} às{' '}
@@ -1714,58 +1535,57 @@ function DivergenciasListagemTab() {
                       size="sm"
                       onClick={() => marcarComoResolvido(problema.id)}
                       disabled={resolvendo.has(problema.id)}
-                      className="bg-green-600 hover:bg-green-700 text-xs h-8"
+                      loading={resolvendo.has(problema.id)}
+                      className="bg-emerald-600 text-white hover:bg-emerald-700"
                     >
-                      {resolvendo.has(problema.id) ? 'Marcando...' : 'Marcar como resolvido'}
+                      Marcar como resolvido
                     </Button>
                   </div>
                 </div>
               )
             })}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Problemas Resolvidos */}
       {problemasResolvidos.length > 0 && (
-        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-          <h3 className="font-semibold text-green-900 mb-1 flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5" />
-            Problemas Resolvidos
-          </h3>
-          <p className="text-sm text-green-700 mb-4">
-            {problemasResolvidos.length} problema{problemasResolvidos.length !== 1 ? 's' : ''} já resolvido{problemasResolvidos.length !== 1 ? 's' : ''}
-          </p>
-          <div className="space-y-3">
+        <Card>
+          <CardHeader
+            icon={<CheckCircle2 className="size-4" />}
+            title="Problemas Resolvidos"
+            description={`${problemasResolvidos.length} problema${problemasResolvidos.length !== 1 ? 's' : ''} já resolvido${problemasResolvidos.length !== 1 ? 's' : ''}`}
+          />
+          <CardContent className="space-y-3">
             {problemasResolvidos.map(problema => {
               const nfs = problema.recebimento?.recebimento_nfes?.map(rn => rn.nfe?.numero_nf).filter(Boolean) || []
               return (
-                <div key={problema.id} className="bg-white rounded-lg p-4 border border-green-200 opacity-75">
-                  <p className="text-sm font-medium text-slate-800 mb-2">{problema.descricao}</p>
-                  
+                <div key={problema.id} className="rounded-lg border border-emerald-200 bg-white p-4 opacity-75">
+                  <p className="mb-2 text-sm font-medium text-slate-800">{problema.descricao}</p>
+
                   {problema.recebimento && (
-                    <div className="mb-3 p-2 bg-slate-50 rounded text-xs">
-                      <div className="flex items-center gap-2 text-slate-600 mb-1">
-                        <Calendar className="w-3 h-3" />
+                    <div className="mb-3 rounded bg-slate-50 p-2 text-xs">
+                      <div className="mb-1 flex items-center gap-2 text-slate-600">
+                        <Calendar className="size-3" />
                         <span>
                           Recebimento: {formatDate(problema.recebimento.periodo_inicio)} — {formatDate(problema.recebimento.periodo_fim)}
                         </span>
                       </div>
                       {nfs.length > 0 && (
                         <div className="flex items-center gap-2 text-slate-600">
-                          <FileText className="w-3 h-3" />
+                          <FileText className="size-3" />
                           <span>NFs: {nfs.join(', ')}</span>
                         </div>
                       )}
                     </div>
                   )}
-                  
+
                   <div className="flex items-center justify-between text-xs text-slate-500">
                     <span>
                       Criado: {new Date(problema.created_at).toLocaleDateString('pt-BR')}
                     </span>
                     {problema.resolvido_em && (
-                      <span className="text-green-700 font-medium">
+                      <span className="font-medium text-emerald-700">
                         Resolvido: {new Date(problema.resolvido_em).toLocaleDateString('pt-BR')}
                       </span>
                     )}
@@ -1773,8 +1593,8 @@ function DivergenciasListagemTab() {
                 </div>
               )
             })}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   )

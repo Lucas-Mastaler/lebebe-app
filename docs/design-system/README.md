@@ -68,6 +68,46 @@ unilateral do agente. Para propor:
 2. Explique o motivo e o impacto nas telas que já usam o padrão atual.
 3. Aguarde decisão humana explícita antes de implementar — não altere um token ou componente do DS "porque parece melhor".
 
+## Checklist de migração — Tables e Filtros (2026-09-16)
+
+Dois padrões escaparam da validação técnica repetidamente em várias telas
+já migradas (auditoria transversal registrada em
+`docs/projetos/design-system/STATUS.md`). Confira estes pontos em TODA
+migração nova que use `ResponsiveTable` e/ou `FilterPanel`, mesmo quando
+nada nesta lista aparecer explicitamente pedido na tarefa:
+
+**Tables (`ResponsiveTable`):**
+
+- A tabela tem colunas suficientes para provavelmente exigir scroll
+  horizontal em telas comuns? Se sim, identifique a **primeira coluna de
+  dados real** (nunca um índice `#` ou espaçador decorativo) e declare
+  `firstColumnSticky` explicitamente — a prop não tem valor padrão e nada
+  no componente lembra a tela de usá-la (ver `components-e-patterns.md`).
+- Tabela pequena/sem overflow real? Não adicione `firstColumnSticky`
+  mecanicamente — é um no-op inofensivo, mas também não é sinal de
+  qualidade forçar em toda tabela.
+- Se a tela usa `rowClassName` para destacar linhas (seleção, estado),
+  confirme que a classe retornada inclui um `bg-*` sólido — `rowClassName`
+  sem background deixa a coluna sticky transparente durante o scroll
+  (bug real, ver "TABLE-STICKY-OPAQUE" em `foundations.md`). Prefira
+  `rowTone` (já resolve isso sozinho) quando o estado for um dos tons
+  semânticos existentes.
+- Existe alguma tabela HTML local (`<table>` crua) que deveria ser
+  `ResponsiveTable`?
+
+**Filtros (`FilterPanel`/`FilterFieldGroup`):**
+
+- Todo `SelectTrigger` dentro do painel tem `className="w-full"`
+  explícito? A base (`ui/select.tsx`) é `w-fit` por padrão — sem o
+  override, o campo fica visualmente estreito ao lado de `Input`/
+  `DateField` (que já são `w-full` por padrão). Já corrigido pontualmente
+  em várias telas; continue conferindo em toda tela nova.
+- O botão "Filtrar" fica ancorado à direita do rodapé, não esticado
+  (`FILTER-ACTION-ALIGN=A`, comportamento intencional — não é um bug a
+  "corrigir" para `w-full`).
+- Nenhum wrapper local (`w-fit`, `flex` sem `flex-1`) está encolhendo um
+  campo que deveria preencher o slot do `FilterFieldGroup`.
+
 ## Responsividade e acessibilidade — princípios gerais
 
 - **Não existe um Design System mobile separado.** Todo componente aqui é

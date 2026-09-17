@@ -233,6 +233,18 @@ externa, controlada pela tela (ver "Paginação" abaixo). Ver pendências em
   2026-09-14**: a célula sticky agora é sempre 100% opaca e acompanha a
   superfície real da linha (zebra ou `rowClassName`) — ver
   "TABLE-STICKY-OPAQUE" em `foundations.md`.
+  **Achado real (auditoria transversal, 2026-09-16):** a prop é opcional e
+  sem valor padrão — várias telas migradas (`/hub-vendas`,
+  `/pos-venda/atendimento-automatico`, `/procurar-datas/auditoria`, entre
+  outras) usavam `ResponsiveTable` com colunas suficientes para exigir
+  scroll horizontal, mas esqueceram de declarar `firstColumnSticky`, porque
+  nada no componente lembra a tela disso. Corrigido tela por tela (não é um
+  default seguro para o componente: quando a primeira coluna declarada NÃO
+  é um dado real — ex. um índice `#` meramente decorativo, ver
+  `ModalAgendamentosCliente`, deliberadamente sem `firstColumnSticky` — ativar
+  a prop fixaria a coluna errada). Toda tela com tabela larga deve decidir
+  isso explicitamente na migração, nunca por omissão — ver checklist em
+  `README.md`.
 - `zebra?: boolean` (default `true`) — alternância sutil de superfícies
   entre linhas consecutivas (TABLE-ZEBRA=ON, ver `foundations.md`).
   Desative só quando realmente necessário.
@@ -718,6 +730,21 @@ tintadas como o `FilterPanel` ou blocos de `Section`. `Combobox`
 criação — não precisou de ajuste, mas confirma que `Input`, `DateField`,
 `Select` e `Combobox` já compartilham a mesma superfície/borda/focus/
 disabled: a família `FORM-CONTROL-SURFACE`.
+
+**Achado real — `SelectTrigger` não preenche a largura por padrão (auditoria
+transversal, 2026-09-16):** a classe base de `SelectTrigger`
+(`ui/select.tsx`) inclui `w-fit` — sem um `className="w-full"` explícito em
+CADA uso, o campo encolhe ao tamanho do texto selecionado em vez de ocupar
+o slot que `FilterFieldGroup`/`FormField` reservam para ele (o wrapper
+`flex-1` do slot não força a largura do filho). Esse exato bug já havia
+sido corrigido pontualmente, tela por tela, em `/agendamentos`,
+`/atendimento-presencial/clientes` e `/hub-vendas` — não é um caso único.
+`ui/select.tsx` não deve virar `w-full` por padrão (mudaria o layout de
+todo consumidor existente, inclusive casos fora de `FilterPanel` onde o
+tamanho natural é intencional — ver `README.md`, "Compatibilidade"); a
+regra é: **todo `SelectTrigger` dentro de `FilterPanel`/`FilterFieldGroup`
+leva `className="w-full"` explícito**, sempre, sem exceção. Ver checklist
+em `README.md`.
 
 ## Consolidação pós-validação
 

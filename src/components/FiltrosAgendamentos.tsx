@@ -123,7 +123,7 @@ export function FiltrosAgendamentos({
         <FormField id="filial" label="Filial">
           {(field) => (
             <Select value={filters.draft.departmentId} onValueChange={(value) => filters.setField('departmentId', value)}>
-              <SelectTrigger id={field.id}><SelectValue placeholder="Selecione..." /></SelectTrigger>
+              <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Selecione..." /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas</SelectItem>
                 {DEPARTAMENTOS_FIXOS.map((department) => <SelectItem key={department.id} value={department.id}>{department.name}</SelectItem>)}
@@ -134,7 +134,7 @@ export function FiltrosAgendamentos({
         <FormField id="atendente" label="Atendente">
           {(field) => (
             <Select value={filters.draft.userId} onValueChange={(value) => filters.setField('userId', value)}>
-              <SelectTrigger id={field.id}><SelectValue placeholder="Selecione..." /></SelectTrigger>
+              <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Selecione..." /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
                 {usersList.length > 0 ? usersList.map((user) => <SelectItem key={user.id} value={user.id}>{user.nome}</SelectItem>) : <SelectItem value="loading" disabled>Carregando...</SelectItem>}
@@ -145,7 +145,7 @@ export function FiltrosAgendamentos({
         <FormField id="status" label="Status">
           {(field) => (
             <Select value={filters.draft.status} onValueChange={(value) => filters.setField('status', value)}>
-              <SelectTrigger id={field.id}><SelectValue placeholder="Selecione..." /></SelectTrigger>
+              <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Selecione..." /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
                 {statusOptions.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}
@@ -156,7 +156,7 @@ export function FiltrosAgendamentos({
         <FormField id="conversa-aberta" label="Possui conversa aberta?">
           {(field) => (
             <Select value={filters.draft.conversaAberta} onValueChange={(value) => filters.setField('conversaAberta', value)}>
-              <SelectTrigger id={field.id}><SelectValue placeholder="Selecione..." /></SelectTrigger>
+              <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Selecione..." /></SelectTrigger>
               <SelectContent><SelectItem value="all">Todos</SelectItem><SelectItem value="yes">Sim</SelectItem><SelectItem value="no">Não</SelectItem></SelectContent>
             </Select>
           )}

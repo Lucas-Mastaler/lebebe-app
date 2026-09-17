@@ -2,6 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Bot, Ban, Unlock, Square, RefreshCw, Search } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  PageContainer, PageHeader, FilterPanel, FilterFieldGroup, useFilterState, FormField,
+  Input, Button, IconButton, Badge, Alert, ResponsiveTable,
+} from '@/components/design-system'
 
 function mascararMensagem(msg: string | null): string {
   if (!msg) return '-'
@@ -163,32 +168,57 @@ function resumoSituacao(metadata: Record<string, unknown> | null): string {
   return partes.join(' • ')
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  ativa: 'bg-green-100 text-green-800',
-  pausado_humano: 'bg-yellow-100 text-yellow-800',
-  transferido_humano: 'bg-purple-100 text-purple-800',
-  bloqueado_24h: 'bg-orange-100 text-orange-800',
-  bloqueado_permanente: 'bg-red-100 text-red-800',
-  finalizado: 'bg-slate-100 text-slate-600',
+/**
+ * Mapeamento para os tons semânticos do Badge oficial (STA=A) — o DS tem 6
+ * tons (`neutral`/`success`/`warning`/`danger`/`info`/`brand`), a tela
+ * original tinha 6 cores ad hoc distintas (incluindo laranja e roxo, que o
+ * DS não tem). `pausado_humano` e `bloqueado_24h` acabam dividindo o tom
+ * `warning` — lacuna registrada, mesmo padrão já aceito para `Section` (só
+ * 3 tons) em `/atendimento-presencial/ficha`.
+ */
+const STATUS_TONE: Record<string, 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'brand'> = {
+  ativa: 'success',
+  pausado_humano: 'warning',
+  transferido_humano: 'info',
+  bloqueado_24h: 'warning',
+  bloqueado_permanente: 'danger',
+  finalizado: 'neutral',
+}
+
+type FiltrosAtendimentoAutomatico = {
+  status: string
+  tipoSolicitacao: string
+  busca: string
+}
+
+const FILTROS_VAZIOS: FiltrosAtendimentoAutomatico = { status: '', tipoSolicitacao: '', busca: '' }
+
+function formatarData(data: string | null): string {
+  if (!data) return '-'
+  return new Date(data).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 export function PageClient() {
   const [sessoes, setSessoes] = useState<Sessao[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [filtroStatus, setFiltroStatus] = useState('')
-  const [filtroSolicitacao, setFiltroSolicitacao] = useState('')
-  const [busca, setBusca] = useState('')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const filtros = useFilterState<FiltrosAtendimentoAutomatico>(FILTROS_VAZIOS)
 
-  const carregar = useCallback(async () => {
+  const buscar = useCallback(async (valores: FiltrosAtendimentoAutomatico) => {
     setLoading(true)
     setError(null)
     try {
       const params = new URLSearchParams()
-      if (filtroStatus) params.set('status', filtroStatus)
-      if (filtroSolicitacao) params.set('tipo_solicitacao', filtroSolicitacao)
-      if (busca) params.set('busca', busca)
+      if (valores.status) params.set('status', valores.status)
+      if (valores.tipoSolicitacao) params.set('tipo_solicitacao', valores.tipoSolicitacao)
+      if (valores.busca) params.set('busca', valores.busca)
 
       const res = await fetch(`/api/pos-venda/atendimento-automatico/listar?${params.toString()}`)
       if (!res.ok) throw new Error('Erro ao carregar sessoes')
@@ -199,11 +229,24 @@ export function PageClient() {
     } finally {
       setLoading(false)
     }
-  }, [filtroStatus, filtroSolicitacao, busca])
+  }, [])
+
+  const carregar = useCallback(() => buscar(filtros.applied), [buscar, filtros.applied])
 
   useEffect(() => {
     carregar()
-  }, [carregar])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function aplicarFiltros() {
+    filtros.apply()
+    void buscar(filtros.draft)
+  }
+
+  function limparFiltros() {
+    filtros.clear()
+    void buscar(FILTROS_VAZIOS)
+  }
 
   async function executarAcao(sessaoId: string, acao: string) {
     setActionLoading(`${sessaoId}-${acao}`)
@@ -223,225 +266,234 @@ export function PageClient() {
     }
   }
 
-  function formatarData(data: string | null): string {
-    if (!data) return '-'
-    return new Date(data).toLocaleString('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      day: '2-digit',
-      month: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  }
-
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="w-[95vw] max-w-none mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <Bot className="w-7 h-7 text-[#00A5E6]" />
-            <div>
-              <h1 className="text-xl font-bold text-slate-800">Atendimento Automatico Pos-Venda</h1>
-              <p className="text-sm text-slate-500">Bot Mere - Fase 1A (sem resposta automatica)</p>
-            </div>
-          </div>
-          <button
-            onClick={carregar}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors text-sm font-medium disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+    <PageContainer>
+      <PageHeader
+        icon={<Bot className="size-6" />}
+        eyebrow="Pós-venda"
+        title="Atendimento Automático Pós-Venda"
+        description="Bot Mere — Fase 1A (sem resposta automática)"
+        action={
+          <Button variant="secondary" onClick={carregar} loading={loading}>
+            <RefreshCw className="size-4" />
             Atualizar
-          </button>
-        </div>
+          </Button>
+        }
+      />
 
-        {/* Filtros */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6">
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-slate-500">Status</label>
-              <select
-                value={filtroStatus}
-                onChange={(e) => setFiltroStatus(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white"
-              >
-                <option value="">Todos</option>
-                <option value="ativa">Ativa</option>
-                <option value="pausado_humano">Pausado (Humano)</option>
-                <option value="transferido_humano">Transferido Humano</option>
-                <option value="bloqueado_24h">Bloqueado 24h</option>
-                <option value="bloqueado_permanente">Bloqueado Permanente</option>
-                <option value="finalizado">Finalizado</option>
-              </select>
-            </div>
+      <div className="mt-6">
+        <FilterPanel dirty={filtros.dirty} onApply={aplicarFiltros} onClear={limparFiltros}>
+          <FilterFieldGroup label="Filtros">
+            <FormField id="filtro-status" label="Status">
+              {(f) => (
+                <Select value={filtros.draft.status || 'TODOS'} onValueChange={(v) => filtros.setField('status', v === 'TODOS' ? '' : v)}>
+                  <SelectTrigger id={f.id} className="w-full" aria-invalid={f['aria-invalid']}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="TODOS">Todos</SelectItem>
+                    <SelectItem value="ativa">Ativa</SelectItem>
+                    <SelectItem value="pausado_humano">Pausado (Humano)</SelectItem>
+                    <SelectItem value="transferido_humano">Transferido Humano</SelectItem>
+                    <SelectItem value="bloqueado_24h">Bloqueado 24h</SelectItem>
+                    <SelectItem value="bloqueado_permanente">Bloqueado Permanente</SelectItem>
+                    <SelectItem value="finalizado">Finalizado</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </FormField>
 
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-slate-500">Solicitacao</label>
-              <select
-                value={filtroSolicitacao}
-                onChange={(e) => setFiltroSolicitacao(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white"
-              >
-                <option value="">Todas</option>
-                <option value="confirmar_entrega">Confirmar Entrega</option>
-                <option value="alterar_entrega">Alterar Entrega</option>
-              </select>
-            </div>
+            <FormField id="filtro-solicitacao" label="Solicitação">
+              {(f) => (
+                <Select value={filtros.draft.tipoSolicitacao || 'TODAS'} onValueChange={(v) => filtros.setField('tipoSolicitacao', v === 'TODAS' ? '' : v)}>
+                  <SelectTrigger id={f.id} className="w-full" aria-invalid={f['aria-invalid']}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="TODAS">Todas</SelectItem>
+                    <SelectItem value="confirmar_entrega">Confirmar Entrega</SelectItem>
+                    <SelectItem value="alterar_entrega">Alterar Entrega</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </FormField>
 
-            <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
-              <label className="text-xs font-medium text-slate-500">Busca (telefone/ticket)</label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  value={busca}
-                  onChange={(e) => setBusca(e.target.value)}
-                  placeholder="Buscar por telefone ou ticket..."
-                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-700 bg-white"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
+            <FormField id="busca" label="Busca (telefone/ticket)">
+              {(f) => (
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    id={f.id}
+                    aria-invalid={f['aria-invalid']}
+                    value={filtros.draft.busca}
+                    onChange={(e) => filtros.setField('busca', e.target.value)}
+                    placeholder="Buscar por telefone ou ticket..."
+                    className="pl-9"
+                  />
+                </div>
+              )}
+            </FormField>
+          </FilterFieldGroup>
+        </FilterPanel>
+      </div>
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-sm text-red-700">
-            {error}
-          </div>
-        )}
+      {error && (
+        <Alert tone="danger" className="mt-4">
+          {error}
+        </Alert>
+      )}
 
-        {/* Tabela */}
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          {loading ? (
-            <div className="p-8 text-center text-slate-400 text-sm">Carregando...</div>
-          ) : sessoes.length === 0 ? (
-            <div className="p-8 text-center text-slate-400 text-sm">Nenhuma sessao encontrada</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50">
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Status</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Estado</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Solicitacao</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Telefone</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Ticket</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Pedido</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Situação</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Resposta Sugerida</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Ult. Msg Cliente</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Documento</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Pausa Ate</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Criado</th>
-                    <th className="text-left px-4 py-3 font-medium text-slate-600">Acoes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessoes.map((s) => (
-                    <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="px-4 py-3">
-                        <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLORS[s.status] ?? 'bg-slate-100 text-slate-600'}`}>
-                          {s.status}
-                        </span>
-                        {s.bloqueio_permanente && (
-                          <span className="ml-1 inline-block px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                            bloqueado
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">{s.estado}</td>
-                      <td className="px-4 py-3 text-slate-600">{s.tipo_solicitacao ?? '-'}</td>
-                      <td className="px-4 py-3 text-slate-600">{s.telefone ?? '-'}</td>
-                      <td className="px-4 py-3 text-slate-400 text-xs font-mono">{s.digisac_ticket_id?.substring(0, 12) ?? '-'}</td>
-                      <td className="px-4 py-3 text-slate-600 max-w-[220px] truncate whitespace-pre-line" title={detalhesPedido(s.metadata)}>
-                        {resumoPedido(s.metadata)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600 max-w-[180px] truncate" title={resumoSituacao(s.metadata)}>
-                        {resumoSituacao(s.metadata) || '-'}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600 max-w-[220px]">
-                        <div className="truncate" title={String(s.metadata?.resposta_sugerida ?? '')}>
-                          {String(s.metadata?.resposta_sugerida ?? '-')}
-                        </div>
-                        <div className="flex items-center gap-1 mt-1">
-                          <span className="text-[10px] uppercase tracking-wide text-slate-400">
-                            {String(s.metadata?.resposta_sugerida_tipo ?? '-')}
-                          </span>
-                          {s.metadata?.resposta_automatica_enviada === true && (
-                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700">
-                              auto
-                            </span>
-                          )}
-                          {s.metadata?.resposta_automatica_enviada === false && (
-                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500">
-                              sugerida
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate" title={mascararMensagem(s.ultima_mensagem_cliente)}>
-                        {mascararMensagem(s.ultima_mensagem_cliente)}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {s.documento_informado
-                          ? `${s.documento_informado.substring(0, 3)}***`
-                          : '-'}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">{formatarData(s.pausa_ate)}</td>
-                      <td className="px-4 py-3 text-slate-600">{formatarData(s.created_at)}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1">
-                          {s.status !== 'finalizado' && (
-                            <button
-                              onClick={() => executarAcao(s.id, 'parar')}
-                              disabled={actionLoading === `${s.id}-parar`}
-                              title="Parar atendimento"
-                              className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-500 disabled:opacity-50"
-                            >
-                              <Square className="w-4 h-4" />
-                            </button>
-                          )}
-                          {s.status !== 'bloqueado_24h' && s.status !== 'bloqueado_permanente' && s.status !== 'finalizado' && (
-                            <button
-                              onClick={() => executarAcao(s.id, 'bloquear-24h')}
-                              disabled={actionLoading === `${s.id}-bloquear-24h`}
-                              title="Bloquear 24h"
-                              className="p-1.5 rounded-lg hover:bg-orange-100 text-orange-600 disabled:opacity-50"
-                            >
-                              <Ban className="w-4 h-4" />
-                            </button>
-                          )}
-                          {!s.bloqueio_permanente && s.status !== 'finalizado' && (
-                            <button
-                              onClick={() => executarAcao(s.id, 'bloquear-cliente')}
-                              disabled={actionLoading === `${s.id}-bloquear-cliente`}
-                              title="Bloquear cliente permanentemente"
-                              className="p-1.5 rounded-lg hover:bg-red-100 text-red-600 disabled:opacity-50"
-                            >
-                              <Ban className="w-4 h-4" />
-                            </button>
-                          )}
-                          {(s.bloqueio_permanente || s.status === 'bloqueado_24h') && (
-                            <button
-                              onClick={() => executarAcao(s.id, 'desbloquear-cliente')}
-                              disabled={actionLoading === `${s.id}-desbloquear-cliente`}
-                              title="Desbloquear cliente"
-                              className="p-1.5 rounded-lg hover:bg-green-100 text-green-600 disabled:opacity-50"
-                            >
-                              <Unlock className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      <div className="mt-6">
+        <ResponsiveTable<Sessao>
+          columns={[
+            {
+              key: 'status',
+              header: 'Status',
+              width: 'compact',
+              render: (s) => (
+                <div className="flex flex-wrap items-center gap-1">
+                  <Badge tone={STATUS_TONE[s.status] ?? 'neutral'}>{s.status}</Badge>
+                  {s.bloqueio_permanente && <Badge tone="danger">bloqueado</Badge>}
+                </div>
+              ),
+            },
+            { key: 'estado', header: 'Estado', width: 'compact', render: (s) => s.estado },
+            { key: 'tipo_solicitacao', header: 'Solicitação', width: 'compact', render: (s) => s.tipo_solicitacao ?? '-' },
+            { key: 'telefone', header: 'Telefone', width: 'compact', render: (s) => s.telefone ?? '-' },
+            {
+              key: 'ticket',
+              header: 'Ticket',
+              width: 'compact',
+              className: 'font-mono text-xs text-slate-400',
+              render: (s) => s.digisac_ticket_id?.substring(0, 12) ?? '-',
+            },
+            {
+              key: 'pedido',
+              header: 'Pedido',
+              className: 'max-w-[220px] truncate whitespace-pre-line',
+              render: (s) => <span title={detalhesPedido(s.metadata)}>{resumoPedido(s.metadata)}</span>,
+            },
+            {
+              key: 'situacao',
+              header: 'Situação',
+              className: 'max-w-[180px] truncate',
+              render: (s) => <span title={resumoSituacao(s.metadata)}>{resumoSituacao(s.metadata) || '-'}</span>,
+            },
+            {
+              key: 'resposta_sugerida',
+              header: 'Resposta Sugerida',
+              className: 'max-w-[220px]',
+              render: (s) => (
+                <div>
+                  <div className="truncate" title={String(s.metadata?.resposta_sugerida ?? '')}>
+                    {String(s.metadata?.resposta_sugerida ?? '-')}
+                  </div>
+                  <div className="mt-1 flex items-center gap-1">
+                    <span className="text-[10px] uppercase tracking-wide text-slate-400">
+                      {String(s.metadata?.resposta_sugerida_tipo ?? '-')}
+                    </span>
+                    {s.metadata?.resposta_automatica_enviada === true && <Badge tone="success">auto</Badge>}
+                    {s.metadata?.resposta_automatica_enviada === false && <Badge tone="neutral">sugerida</Badge>}
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: 'ultima_mensagem_cliente',
+              header: 'Ult. Msg Cliente',
+              className: 'max-w-[200px] truncate',
+              render: (s) => <span title={mascararMensagem(s.ultima_mensagem_cliente)}>{mascararMensagem(s.ultima_mensagem_cliente)}</span>,
+            },
+            {
+              key: 'documento',
+              header: 'Documento',
+              width: 'compact',
+              render: (s) => (s.documento_informado ? `${s.documento_informado.substring(0, 3)}***` : '-'),
+            },
+            { key: 'pausa_ate', header: 'Pausa Até', width: 'compact', render: (s) => formatarData(s.pausa_ate) },
+            { key: 'criado', header: 'Criado', width: 'compact', render: (s) => formatarData(s.created_at) },
+          ]}
+          rows={sessoes}
+          rowKey={(s) => s.id}
+          firstColumnSticky
+          loading={loading}
+          emptyTitle="Nenhuma sessão encontrada"
+          rowActions={(s) => (
+            <div className="flex items-center justify-end gap-1">
+              {s.status !== 'finalizado' && (
+                <IconButton
+                  variant="ghost"
+                  aria-label="Parar atendimento"
+                  title="Parar atendimento"
+                  loading={actionLoading === `${s.id}-parar`}
+                  onClick={() => executarAcao(s.id, 'parar')}
+                >
+                  <Square className="size-4" />
+                </IconButton>
+              )}
+              {s.status !== 'bloqueado_24h' && s.status !== 'bloqueado_permanente' && s.status !== 'finalizado' && (
+                <IconButton
+                  variant="ghost"
+                  aria-label="Bloquear 24h"
+                  title="Bloquear 24h"
+                  loading={actionLoading === `${s.id}-bloquear-24h`}
+                  className="text-orange-600 hover:bg-orange-100"
+                  onClick={() => executarAcao(s.id, 'bloquear-24h')}
+                >
+                  <Ban className="size-4" />
+                </IconButton>
+              )}
+              {!s.bloqueio_permanente && s.status !== 'finalizado' && (
+                <IconButton
+                  variant="ghost"
+                  aria-label="Bloquear cliente permanentemente"
+                  title="Bloquear cliente permanentemente"
+                  loading={actionLoading === `${s.id}-bloquear-cliente`}
+                  className="text-red-600 hover:bg-red-100"
+                  onClick={() => executarAcao(s.id, 'bloquear-cliente')}
+                >
+                  <Ban className="size-4" />
+                </IconButton>
+              )}
+              {(s.bloqueio_permanente || s.status === 'bloqueado_24h') && (
+                <IconButton
+                  variant="ghost"
+                  aria-label="Desbloquear cliente"
+                  title="Desbloquear cliente"
+                  loading={actionLoading === `${s.id}-desbloquear-cliente`}
+                  className="text-green-600 hover:bg-green-100"
+                  onClick={() => executarAcao(s.id, 'desbloquear-cliente')}
+                >
+                  <Unlock className="size-4" />
+                </IconButton>
+              )}
             </div>
           )}
-        </div>
+          renderMobileCard={(s) => (
+            <div className="space-y-1.5 text-sm">
+              <div className="flex flex-wrap items-center gap-1">
+                <Badge tone={STATUS_TONE[s.status] ?? 'neutral'}>{s.status}</Badge>
+                {s.bloqueio_permanente && <Badge tone="danger">bloqueado</Badge>}
+              </div>
+              <p className="font-medium text-slate-800">{s.telefone ?? '-'}</p>
+              <p className="text-xs text-slate-500">
+                {s.estado} • {s.tipo_solicitacao ?? '-'}
+              </p>
+              <p className="text-xs text-slate-500" title={detalhesPedido(s.metadata)}>
+                {resumoPedido(s.metadata)}
+              </p>
+              {resumoSituacao(s.metadata) && <p className="text-xs text-slate-500">{resumoSituacao(s.metadata)}</p>}
+              <p className="text-xs text-slate-500" title={mascararMensagem(s.ultima_mensagem_cliente)}>
+                Msg: {mascararMensagem(s.ultima_mensagem_cliente)}
+              </p>
+              <p className="text-xs text-slate-400">
+                Criado: {formatarData(s.created_at)} • Pausa até: {formatarData(s.pausa_ate)}
+              </p>
+            </div>
+          )}
+        />
       </div>
-    </div>
+    </PageContainer>
   )
 }
 

@@ -1079,6 +1079,7 @@ export function GestaoPedidosPersonalizados() {
                     ]}
                     rows={detalhe.itens}
                     rowKey={(r) => r.id}
+                    firstColumnSticky
                     renderMobileCard={(r) => (
                       <div className="space-y-1 text-sm">
                         <p className="font-semibold text-slate-900">{r.descricao}</p>

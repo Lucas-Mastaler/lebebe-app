@@ -42,3 +42,7 @@ next-env.d.ts
 
 # capturas de log de debug coladas manualmente (Apps Script / Cloud Logging)
 appscript/logs.md
+
+# log operacional local do controlador da Fila 2 do Design System (auditoria
+# local, não é histórico de projeto — não deve poluir o repositório)
+scripts/ia/logs/

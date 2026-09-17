@@ -563,7 +563,8 @@ export function FormularioLebebeExclusive({
               ]}
               rows={itensExibidos}
               rowKey={(produto) => produto.id}
-              rowClassName={(produto) => selecionados.has(produto.id) ? 'border-l-4 border-l-emerald-400' : undefined}
+              firstColumnSticky
+              rowClassName={(produto) => selecionados.has(produto.id) ? 'border-l-4 border-l-emerald-400 bg-emerald-50' : undefined}
               rowActions={(produto) => selecionados.has(produto.id) ? <BotaoRemoverProduto nome={produto.descricao} disabled={bloqueado} onClick={() => removerProduto(produto)} /> : null}
               renderMobileCard={(produto) => {
                 const selecionado = selecionados.get(produto.id)

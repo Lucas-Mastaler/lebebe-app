@@ -904,7 +904,7 @@ export default function PageClient() {
             <FormField id="hub-vendas-filtro-loja" label="Loja">
               {(f) => (
                 <Select value={filasFilters.draft.loja || 'all'} onValueChange={(v) => filasFilters.setField('loja', (v === 'all' ? '' : v) as LojaFiltro)}>
-                  <SelectTrigger id={f.id}><SelectValue placeholder="Todas as lojas" /></SelectTrigger>
+                  <SelectTrigger id={f.id} className="w-full"><SelectValue placeholder="Todas as lojas" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todas as lojas</SelectItem>
                     <SelectItem value="portao">Portão</SelectItem>
@@ -917,7 +917,7 @@ export default function PageClient() {
             <FormField id="hub-vendas-filtro-status" label="Status">
               {(f) => (
                 <Select value={filasFilters.draft.status || 'all'} onValueChange={(v) => filasFilters.setField('status', v === 'all' ? '' : v)}>
-                  <SelectTrigger id={f.id}><SelectValue placeholder="Todos os status" /></SelectTrigger>
+                  <SelectTrigger id={f.id} className="w-full"><SelectValue placeholder="Todos os status" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todos os status</SelectItem>
                     <SelectItem value="agendado">Agendado</SelectItem>
@@ -986,6 +986,7 @@ export default function PageClient() {
           ]}
           rows={filas?.filas ?? []}
           rowKey={(fila) => fila.id}
+          firstColumnSticky
           loading={loadingFilas}
           error={erroFilas ?? undefined}
           emptyTitle="Nenhuma fila encontrada"

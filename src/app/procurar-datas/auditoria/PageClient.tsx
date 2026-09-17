@@ -1,18 +1,31 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
-import { Eye, RefreshCcw, Search, Clock, MapPin, Settings, ListChecks, CalendarCheck, CheckCircle2, AlertCircle, Cpu, Hash } from 'lucide-react'
+import { Eye, Search, MapPin, Settings, ListChecks, CalendarCheck, CheckCircle2, AlertCircle, Cpu, Hash } from 'lucide-react'
 import { formatarDataBrasileira, formatarDiasAteData, extrairResumoPreAgendamento } from '@/lib/procurar-datas/formatar-apresentacao'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
+  PageContainer,
+  PageHeader,
+  FilterPanel,
+  FilterFieldGroup,
+  useFilterState,
+  FormField,
+  DateField,
+  Input,
+  Button,
+  Card,
+  CardContent,
+  Section,
+  Badge,
+  Alert,
+  ResponsiveTable,
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+  DialogBody,
+} from '@/components/design-system'
+import { parseBrDate, dateToIso, dateToBr } from '@/lib/design-system/dates'
 
 type PreAgendamentoResumo = {
   id: string
@@ -100,6 +113,13 @@ type DetalheResponse = {
   preAgendamentos: PreAgendamentoDetalhe[]
 }
 
+/**
+ * Datas ficam em exibição `dd/mm/aaaa` (mesma convenção do `DateField`
+ * oficial, DAT=A) — a conversão para `YYYY-MM-DD` (formato exigido pela
+ * API `/api/procurar-datas/auditoria`) acontece só no momento do fetch,
+ * mesmo padrão já usado em `/pos-venda/importar-nfe` e
+ * `/procurar-datas/performance`.
+ */
 type Filtros = {
   dataInicial: string
   dataFinal: string
@@ -114,13 +134,7 @@ type Filtros = {
 }
 
 const LIMIT = 20
-
-function dataIsoLocal(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
+const DATE_FIELDS = ['dataInicial', 'dataFinal', 'dataPreAgendada'] as const
 
 function filtrosIniciais(): Filtros {
   const hoje = new Date()
@@ -128,8 +142,8 @@ function filtrosIniciais(): Filtros {
   inicio.setDate(hoje.getDate() - 7)
 
   return {
-    dataInicial: dataIsoLocal(inicio),
-    dataFinal: dataIsoLocal(hoje),
+    dataInicial: dateToBr(inicio),
+    dataFinal: dateToBr(hoje),
     email: '',
     cep: '',
     cidade: '',
@@ -191,32 +205,37 @@ function formatValorInicialMinimo(value: unknown): string {
   return '-'
 }
 
+/** Converte um filtro de data (`dd/mm/aaaa`) para `YYYY-MM-DD`; ignora valor incompleto/inválido. */
+function paramData(display: string): string | null {
+  if (!display) return null
+  const parsed = parseBrDate(display)
+  return parsed ? dateToIso(parsed) : null
+}
+
+function montarParams(pagina: number, filtrosAtuais: Filtros): URLSearchParams {
+  const params = new URLSearchParams()
+  params.set('page', String(pagina))
+  params.set('limit', String(LIMIT))
+
+  for (const campo of DATE_FIELDS) {
+    const iso = paramData(filtrosAtuais[campo])
+    if (iso) params.set(campo, iso)
+  }
+
+  Object.entries(filtrosAtuais).forEach(([key, value]) => {
+    if ((DATE_FIELDS as readonly string[]).includes(key)) return
+    if (value && value !== 'todos') params.set(key, value)
+  })
+
+  return params
+}
+
 function Campo({ label, value }: { label: string; value: unknown }) {
   return (
     <div className="rounded-lg border border-slate-100 bg-white px-3 py-2">
       <dt className="text-xs font-medium uppercase text-slate-500">{label}</dt>
       <dd className="mt-1 break-words text-sm text-slate-900">{texto(value)}</dd>
     </div>
-  )
-}
-
-function Secao({ title, icon, children, accent = 'slate' }: { title: string; icon?: ReactNode; children: ReactNode; accent?: 'slate' | 'sky' | 'emerald' | 'amber' | 'violet' }) {
-  const accents: Record<string, { border: string; bg: string; text: string }> = {
-    slate: { border: 'border-slate-200', bg: 'bg-slate-50/40', text: 'text-slate-700' },
-    sky: { border: 'border-sky-200', bg: 'bg-sky-50/40', text: 'text-sky-700' },
-    emerald: { border: 'border-emerald-200', bg: 'bg-emerald-50/40', text: 'text-emerald-700' },
-    amber: { border: 'border-amber-200', bg: 'bg-amber-50/40', text: 'text-amber-700' },
-    violet: { border: 'border-violet-200', bg: 'bg-violet-50/40', text: 'text-violet-700' },
-  }
-  const a = accents[accent] ?? accents.slate
-  return (
-    <section className={`space-y-3 rounded-xl border ${a.border} ${a.bg} p-4`}>
-      <h3 className={`flex items-center gap-2 text-sm font-semibold uppercase tracking-wide ${a.text}`}>
-        {icon}
-        {title}
-      </h3>
-      {children}
-    </section>
   )
 }
 
@@ -265,7 +284,7 @@ function PreAgendamentoResumo({ payload }: { payload: unknown }) {
 }
 
 export default function PageClient() {
-  const [filtros, setFiltros] = useState<Filtros>(() => filtrosIniciais())
+  const filtros = useFilterState<Filtros>(filtrosIniciais())
   const [items, setItems] = useState<AuditoriaItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -281,12 +300,7 @@ export default function PageClient() {
     setLoading(true)
     setError(null)
 
-    const params = new URLSearchParams()
-    params.set('page', String(pagina))
-    params.set('limit', String(LIMIT))
-    Object.entries(filtrosAtuais).forEach(([key, value]) => {
-      if (value && value !== 'todos') params.set(key, value)
-    })
+    const params = montarParams(pagina, filtrosAtuais)
 
     try {
       const res = await fetch(`/api/procurar-datas/auditoria?${params.toString()}`)
@@ -305,8 +319,9 @@ export default function PageClient() {
   }, [])
 
   useEffect(() => {
-    carregar(1, filtros)
-  }, [carregar])
+    carregar(1, filtros.applied)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function abrirDetalhe(id: string) {
     setDetalheOpen(true)
@@ -325,190 +340,218 @@ export default function PageClient() {
     }
   }
 
-  function atualizarFiltro<K extends keyof Filtros>(key: K, value: Filtros[K]) {
-    setFiltros((current) => ({ ...current, [key]: value }))
-  }
-
   const ruaDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function pesquisar() {
-    carregar(1, filtros)
+    filtros.apply()
+    carregar(1, filtros.draft)
   }
 
   function limpar() {
     const novos = filtrosIniciais()
-    setFiltros(novos)
+    filtros.clear()
     carregar(1, novos)
   }
 
+  /** Rua pesquisada preserva a busca ao vivo (debounce 250ms) já existente antes da migração — os demais campos continuam manuais (FLT-EXEC=MANUAL). */
+  function alterarRua(value: string) {
+    filtros.setField('rua', value)
+    if (ruaDebounceRef.current) clearTimeout(ruaDebounceRef.current)
+    ruaDebounceRef.current = setTimeout(() => {
+      const atualizados = { ...filtros.draft, rua: value }
+      filtros.apply()
+      carregar(1, atualizados)
+    }, 250)
+  }
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">AUDITORIA PROCURAR DATAS</h1>
-        <p className="mt-1 text-sm text-slate-600">Consulta operacional read-only de pesquisas e pré-agendamentos.</p>
+    <PageContainer>
+      <PageHeader
+        icon={<Search className="size-6" />}
+        eyebrow="Procurar datas"
+        title="Auditoria Procurar Datas"
+        description="Consulta operacional read-only de pesquisas e pré-agendamentos."
+      />
+
+      <div className="mt-6">
+        <FilterPanel dirty={filtros.dirty} onApply={pesquisar} onClear={limpar}>
+          <FilterFieldGroup label="Período">
+            <FormField id="filtro-data-inicial" label="Data inicial">
+              {(f) => <DateField {...f} value={filtros.draft.dataInicial} onChange={(v) => filtros.setField('dataInicial', v)} />}
+            </FormField>
+            <FormField id="filtro-data-final" label="Data final">
+              {(f) => <DateField {...f} value={filtros.draft.dataFinal} onChange={(v) => filtros.setField('dataFinal', v)} />}
+            </FormField>
+          </FilterFieldGroup>
+
+          <FilterFieldGroup label="Busca">
+            <FormField id="filtro-email" label="Usuário/email">
+              {(f) => <Input {...f} value={filtros.draft.email} onChange={(e) => filtros.setField('email', e.target.value)} placeholder="email" />}
+            </FormField>
+            <FormField id="filtro-cep" label="CEP">
+              {(f) => <Input {...f} value={filtros.draft.cep} onChange={(e) => filtros.setField('cep', e.target.value)} placeholder="00000000" />}
+            </FormField>
+            <FormField id="filtro-cidade" label="Cidade">
+              {(f) => <Input {...f} value={filtros.draft.cidade} onChange={(e) => filtros.setField('cidade', e.target.value)} placeholder="Cidade" />}
+            </FormField>
+            <FormField id="filtro-uf" label="UF">
+              {(f) => (
+                <Input
+                  {...f}
+                  value={filtros.draft.uf}
+                  onChange={(e) => filtros.setField('uf', e.target.value.toUpperCase().slice(0, 2))}
+                  placeholder="PR"
+                />
+              )}
+            </FormField>
+            <FormField id="filtro-rua" label="Rua pesquisada" helper="Busca automática ao digitar.">
+              {(f) => <Input {...f} value={filtros.draft.rua} onChange={(e) => alterarRua(e.target.value)} placeholder="Ex: Rua Raul" />}
+            </FormField>
+          </FilterFieldGroup>
+
+          <FilterFieldGroup label="Status e pré-agendamento">
+            <FormField id="filtro-status" label="Status">
+              {(f) => (
+                <Select value={filtros.draft.status || 'TODOS'} onValueChange={(v) => filtros.setField('status', v === 'TODOS' ? '' : v)}>
+                  <SelectTrigger id={f.id} className="w-full" aria-invalid={f['aria-invalid']}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="TODOS">Todos</SelectItem>
+                    <SelectItem value="success">success</SelectItem>
+                    <SelectItem value="error">error</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </FormField>
+            <FormField id="filtro-pre-agendamento" label="Pré-agendamento">
+              {(f) => (
+                <Select value={filtros.draft.tevePreAgendamento} onValueChange={(v) => filtros.setField('tevePreAgendamento', v)}>
+                  <SelectTrigger id={f.id} className="w-full" aria-invalid={f['aria-invalid']}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    <SelectItem value="sim">Sim</SelectItem>
+                    <SelectItem value="nao">Não</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </FormField>
+            <FormField id="filtro-data-pre-agendada" label="Data pré-agendada">
+              {(f) => <DateField {...f} value={filtros.draft.dataPreAgendada} onChange={(v) => filtros.setField('dataPreAgendada', v)} />}
+            </FormField>
+          </FilterFieldGroup>
+        </FilterPanel>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 card-shadow">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4 xl:grid-cols-8">
-          <label className="space-y-1">
-            <span className="text-xs font-medium text-slate-600">Data inicial</span>
-            <Input type="date" value={filtros.dataInicial} onChange={(e) => atualizarFiltro('dataInicial', e.target.value)} />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs font-medium text-slate-600">Data final</span>
-            <Input type="date" value={filtros.dataFinal} onChange={(e) => atualizarFiltro('dataFinal', e.target.value)} />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs font-medium text-slate-600">Usuário/email</span>
-            <Input value={filtros.email} onChange={(e) => atualizarFiltro('email', e.target.value)} placeholder="email" />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs font-medium text-slate-600">CEP</span>
-            <Input value={filtros.cep} onChange={(e) => atualizarFiltro('cep', e.target.value)} placeholder="00000000" />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs font-medium text-slate-600">Cidade</span>
-            <Input value={filtros.cidade} onChange={(e) => atualizarFiltro('cidade', e.target.value)} placeholder="Cidade" />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs font-medium text-slate-600">UF</span>
-            <Input value={filtros.uf} onChange={(e) => atualizarFiltro('uf', e.target.value.toUpperCase().slice(0, 2))} placeholder="PR" />
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs font-medium text-slate-600">Status</span>
-            <select className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={filtros.status} onChange={(e) => atualizarFiltro('status', e.target.value)}>
-              <option value="">Todos</option>
-              <option value="success">success</option>
-              <option value="error">error</option>
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className="text-xs font-medium text-slate-600">Pré-agendamento</span>
-            <select className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm" value={filtros.tevePreAgendamento} onChange={(e) => atualizarFiltro('tevePreAgendamento', e.target.value)}>
-              <option value="todos">Todos</option>
-              <option value="sim">Sim</option>
-              <option value="nao">Não</option>
-            </select>
-          </label>
-          <label className="space-y-1 md:col-span-2">
-            <span className="text-xs font-medium text-slate-600">Data pré-agendada</span>
-            <Input type="date" value={filtros.dataPreAgendada} onChange={(e) => atualizarFiltro('dataPreAgendada', e.target.value)} />
-          </label>
-          <label className="space-y-1 md:col-span-2">
-            <span className="text-xs font-medium text-slate-600">Rua pesquisada</span>
-            <Input value={filtros.rua} onChange={(e) => {
-              const value = e.target.value
-              atualizarFiltro('rua', value)
-              if (ruaDebounceRef.current) clearTimeout(ruaDebounceRef.current)
-              ruaDebounceRef.current = setTimeout(() => {
-                carregar(1, { ...filtros, rua: value })
-              }, 250)
-            }} placeholder="Ex: Rua Raul" />
-          </label>
-        </div>
+      {error && (
+        <Alert tone="danger" className="mt-4">
+          {error}
+        </Alert>
+      )}
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button onClick={pesquisar} disabled={loading}>
-            <Search className="h-4 w-4" />
-            Pesquisar
-          </Button>
-          <Button variant="outline" onClick={limpar} disabled={loading}>
-            <RefreshCcw className="h-4 w-4" />
-            Limpar
-          </Button>
-        </div>
-      </div>
+      <div className="mt-6">
+        <ResponsiveTable<AuditoriaItem>
+          columns={[
+            { key: 'dataHora', header: 'Data/hora', width: 'compact', render: (item) => formatDateTime(item.createdAt) },
+            { key: 'usuario', header: 'Usuário', width: 'content', render: (item) => item.usuarioEmail },
+            { key: 'cep', header: 'CEP', width: 'compact', render: (item) => item.cep ?? '-' },
+            { key: 'numero', header: 'Número', width: 'compact', render: (item) => item.numeroResidencia ?? '-' },
+            { key: 'rua', header: 'Rua pesquisada', width: 'wide', render: (item) => item.logradouro ?? '-' },
+            { key: 'bairro', header: 'Bairro', width: 'compact', render: (item) => item.bairro ?? '-' },
+            { key: 'cidadeUf', header: 'Cidade/UF', width: 'compact', render: (item) => `${item.cidade ?? '-'} / ${item.uf ?? '-'}` },
+            { key: 'tempo', header: 'Tempo', width: 'compact', render: (item) => item.tempoNecessario ?? '-' },
+            {
+              key: 'valores',
+              header: 'Valores',
+              width: 'content',
+              render: (item) => (item.fretesResultados.length > 0 ? item.fretesResultados.join(', ') : texto(item.valorInicialMinimo)),
+            },
+            { key: 'resultados', header: 'Resultados', width: 'compact', className: 'text-center', render: (item) => item.resultadosQuantidade },
+            { key: 'status', header: 'Status', width: 'compact', render: (item) => item.status },
+            {
+              key: 'preAgendamento',
+              header: 'Pré-agendamento',
+              width: 'content',
+              render: (item) =>
+                item.preAgendamento
+                  ? `${formatDate(item.preAgendamento.dataPreAgendada)} · ${item.preAgendamento.tipoResultado ?? '-'}`
+                  : 'Não',
+            },
+          ]}
+          rows={items}
+          rowKey={(item) => item.id}
+          firstColumnSticky
+          loading={loading}
+          emptyTitle="Nenhum registro encontrado."
+          rowActions={(item) => (
+            <Button variant="secondary" size="sm" onClick={() => abrirDetalhe(item.id)}>
+              <Eye className="size-4" />
+              Ver
+            </Button>
+          )}
+          renderMobileCard={(item) => (
+            <div className="space-y-1.5 text-sm">
+              <p className="font-medium text-slate-800">{item.usuarioEmail}</p>
+              <p className="text-xs text-slate-500">
+                {formatDateTime(item.createdAt)} • {item.status}
+              </p>
+              <p className="text-xs text-slate-500">
+                {item.cep ?? '-'}, {item.numeroResidencia ?? '-'} — {item.logradouro ?? '-'}
+              </p>
+              <p className="text-xs text-slate-500">{item.bairro ?? '-'} — {item.cidade ?? '-'}/{item.uf ?? '-'}</p>
+              <p className="text-xs text-slate-500">
+                {item.fretesResultados.length > 0 ? item.fretesResultados.join(', ') : texto(item.valorInicialMinimo)}
+              </p>
+              <p className="text-xs text-slate-500">
+                Pré-agendamento:{' '}
+                {item.preAgendamento
+                  ? `${formatDate(item.preAgendamento.dataPreAgendada)} · ${item.preAgendamento.tipoResultado ?? '-'}`
+                  : 'Não'}
+              </p>
+            </div>
+          )}
+        />
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white card-shadow">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
-          <h2 className="font-semibold text-slate-900">Resultados</h2>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">{total} registros</span>
-        </div>
-
-        {error ? (
-          <div className="p-6 text-sm text-red-600">{error}</div>
-        ) : loading ? (
-          <div className="p-6 text-sm text-slate-500">Carregando...</div>
-        ) : items.length === 0 ? (
-          <div className="p-6 text-sm text-slate-500">Nenhum registro encontrado.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-[1280px] w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className="px-3 py-2 text-left">Data/hora</th>
-                  <th className="px-3 py-2 text-left">Usuário</th>
-                  <th className="px-3 py-2 text-left">CEP</th>
-                  <th className="px-3 py-2 text-left">Número</th>
-                  <th className="px-3 py-2 text-left">Rua pesquisada</th>
-                  <th className="px-3 py-2 text-left">Bairro</th>
-                  <th className="px-3 py-2 text-left">Cidade/UF</th>
-                  <th className="px-3 py-2 text-left">Tempo</th>
-                  <th className="px-3 py-2 text-left">Valores</th>
-                  <th className="px-3 py-2 text-center">Resultados</th>
-                  <th className="px-3 py-2 text-left">Status</th>
-                  <th className="px-3 py-2 text-left">Pré-agendamento</th>
-                  <th className="px-3 py-2 text-right">Detalhe</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item, index) => (
-                  <tr key={item.id} className={`border-b last:border-0 ${index % 2 === 0 ? 'bg-white' : 'bg-sky-50/40'}`}>
-                    <td className="px-3 py-2 whitespace-nowrap">{formatDateTime(item.createdAt)}</td>
-                    <td className="px-3 py-2">{item.usuarioEmail}</td>
-                    <td className="px-3 py-2">{item.cep ?? '-'}</td>
-                    <td className="px-3 py-2">{item.numeroResidencia ?? '-'}</td>
-                    <td className="px-3 py-2 max-w-[200px] truncate" title={item.logradouro ?? undefined}>{item.logradouro ?? '—'}</td>
-                    <td className="px-3 py-2">{item.bairro ?? '-'}</td>
-                    <td className="px-3 py-2">{item.cidade ?? '-'} / {item.uf ?? '-'}</td>
-                    <td className="px-3 py-2">{item.tempoNecessario ?? '-'}</td>
-                    <td className="px-3 py-2">{item.fretesResultados.length > 0 ? item.fretesResultados.join(', ') : texto(item.valorInicialMinimo)}</td>
-                    <td className="px-3 py-2 text-center">{item.resultadosQuantidade}</td>
-                    <td className="px-3 py-2">{item.status}</td>
-                    <td className="px-3 py-2">
-                      {item.preAgendamento
-                        ? `${formatDate(item.preAgendamento.dataPreAgendada)} · ${item.preAgendamento.tipoResultado ?? '-'}`
-                        : 'Não'}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <Button variant="outline" size="sm" onClick={() => abrirDetalhe(item.id)}>
-                        <Eye className="h-4 w-4" />
-                        Ver
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div className="flex items-center justify-between border-t border-slate-200 p-4 text-sm text-slate-600">
-          <span>Página {page} de {totalPages}</span>
+        <div className="mt-3 flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+          <span>{total} registros · Página {page} de {totalPages}</span>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={loading || page <= 1} onClick={() => carregar(page - 1, filtros)}>Anterior</Button>
-            <Button variant="outline" size="sm" disabled={loading || page >= totalPages} onClick={() => carregar(page + 1, filtros)}>Próxima</Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={loading || page <= 1}
+              onClick={() => carregar(page - 1, filtros.applied)}
+            >
+              Anterior
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={loading || page >= totalPages}
+              onClick={() => carregar(page + 1, filtros.applied)}
+            >
+              Próxima
+            </Button>
           </div>
         </div>
       </div>
 
       <Dialog open={detalheOpen} onOpenChange={setDetalheOpen}>
-        <DialogContent className="!w-[94vw] !max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Detalhe da pesquisa</DialogTitle>
-            <DialogDescription>Resumo visual dos dados operacionais salvos na auditoria da busca.</DialogDescription>
-          </DialogHeader>
-
-          {detalheLoading ? (
-            <p className="text-sm text-slate-500">Carregando detalhe...</p>
-          ) : detalhe?.pesquisa ? (
-            <DetalhePesquisa detalhe={detalhe} />
-          ) : (
-            <p className="text-sm text-red-600">Não foi possível carregar o detalhe.</p>
-          )}
+        <DialogContent className="!w-[94vw] !max-w-4xl">
+          <DialogHeader title="Detalhe da pesquisa" description="Resumo visual dos dados operacionais salvos na auditoria da busca." />
+          <DialogBody>
+            {detalheLoading ? (
+              <p className="text-sm text-slate-500">Carregando detalhe...</p>
+            ) : detalhe?.pesquisa ? (
+              <DetalhePesquisa detalhe={detalhe} />
+            ) : (
+              <p className="text-sm text-red-600">Não foi possível carregar o detalhe.</p>
+            )}
+          </DialogBody>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   )
 }
 
@@ -520,22 +563,20 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${pesquisa.status === 'success' ? 'bg-green-50 text-green-700 border-green-200' : pesquisa.status === 'error' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-slate-50 text-slate-700 border-slate-200'}`}>
-          {pesquisa.status === 'success' ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+        <Badge tone={pesquisa.status === 'success' ? 'success' : pesquisa.status === 'error' ? 'danger' : 'neutral'}>
+          {pesquisa.status === 'success' ? <CheckCircle2 className="mr-1 inline size-3.5" /> : <AlertCircle className="mr-1 inline size-3.5" />}
           {pesquisa.status === 'success' ? 'Sucesso' : pesquisa.status === 'error' ? 'Erro' : pesquisa.status}
-        </span>
-        <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${pesquisa.motor_versao === 'v2' ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-          <Cpu className="w-3.5 h-3.5" />
+        </Badge>
+        <Badge tone={pesquisa.motor_versao === 'v2' ? 'info' : 'neutral'}>
+          <Cpu className="mr-1 inline size-3.5" />
           Motor {pesquisa.motor_versao}
-        </span>
+        </Badge>
         {pesquisa.duracao_ms !== null && (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
-            <Clock className="w-3.5 h-3.5" />
-            {(pesquisa.duracao_ms / 1000).toFixed(1)}s
-          </span>
+          <Badge tone="neutral">{(pesquisa.duracao_ms / 1000).toFixed(1)}s</Badge>
         )}
       </div>
-      <Secao title="Dados gerais" icon={<Hash className="w-4 h-4 text-slate-400" />} accent="slate">
+
+      <Section title="Dados gerais" icon={<Hash className="size-4" />} tone="section-1">
         <dl className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <Campo label="ID da pesquisa" value={pesquisa.id} />
           <Campo label="Timestamp" value={formatDateTime(pesquisa.created_at)} />
@@ -547,9 +588,9 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
           <Campo label="Motor" value={pesquisa.motor_versao} />
           <Campo label="Origem" value={pesquisa.origem} />
         </dl>
-      </Secao>
+      </Section>
 
-      <Secao title="Endereço" icon={<MapPin className="w-4 h-4 text-sky-400" />} accent="sky">
+      <Section title="Endereço" icon={<MapPin className="size-4" />} tone="section-2">
         <dl className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <Campo label="CEP" value={pesquisa.cep} />
           <Campo label="Número" value={pesquisa.numero_residencia} />
@@ -561,9 +602,9 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
           <Campo label="Latitude" value={pesquisa.latitude} />
           <Campo label="Longitude" value={pesquisa.longitude} />
         </dl>
-      </Secao>
+      </Section>
 
-      <Secao title="Parâmetros usados" icon={<Settings className="w-4 h-4 text-violet-400" />} accent="violet">
+      <Section title="Parâmetros usados" icon={<Settings className="size-4" />} tone="section-3">
         <dl className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <Campo label="Data inicial" value={parametros.dataInicial} />
           <Campo label="Encomenda" value={parametros.encomenda} />
@@ -577,90 +618,82 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
           <Campo label="Tempo necessário" value={parametros.tempoNecessario} />
           <Campo label="Valor inicial mínimo" value={formatValorInicialMinimo(parametros.valorInicialMinimo)} />
         </dl>
-      </Secao>
+      </Section>
 
-      <Secao title="Resultados exibidos" icon={<ListChecks className="w-4 h-4 text-emerald-400" />} accent="emerald">
+      <Section title="Resultados exibidos" icon={<ListChecks className="size-4" />} tone="section-1">
         {resultados.length === 0 ? (
           <p className="text-sm text-slate-500">Nenhum resultado salvo.</p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-slate-200">
-            <table className="min-w-[820px] w-full text-sm">
-              <thead>
-                <tr className="bg-slate-100 border-b border-slate-200">
-                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Data</th>
-                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Dia</th>
-                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Equipe</th>
-                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Tipo</th>
-                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Frete/valor</th>
-                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Faltam</th>
-                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Encomenda</th>
-                  <th className="px-3 py-2.5 text-left font-semibold text-slate-600">Rank</th>
-                </tr>
-              </thead>
-              <tbody>
-                {resultados.map((resultado, index) => (
-                  <tr key={`${texto(resultado.date)}-${index}`} className={`border-t border-slate-100 ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}`}>
-                    <td className="px-3 py-2 text-slate-900">{formatarDataBrasileira(resultado.date ?? resultado.dateISO ?? resultado.dateDM)}</td>
-                    <td className="px-3 py-2 text-slate-700">{texto(resultado.weekday)}</td>
-                    <td className="px-3 py-2 text-slate-700">{texto(resultado.team)}</td>
-                    <td className="px-3 py-2">
-                      <span className="inline-flex items-center rounded-md bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">
-                        {texto(resultado.tipo)}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 font-medium text-slate-900">{texto(resultado.frete ?? resultado.valor)}</td>
-                    <td className="px-3 py-2 text-slate-700">{formatarDiasAteData(resultado.date ?? resultado.dateISO, pesquisa.created_at)}</td>
-                    <td className="px-3 py-2 text-slate-700">{texto(resultado.encomenda)}</td>
-                    <td className="px-3 py-2 text-center">
-                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">
-                        {texto(resultado.rank)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ResponsiveTable
+            columns={[
+              { key: 'data', header: 'Data', width: 'compact', render: (r) => formatarDataBrasileira(r.date ?? r.dateISO ?? r.dateDM) },
+              { key: 'dia', header: 'Dia', width: 'compact', render: (r) => texto(r.weekday) },
+              { key: 'equipe', header: 'Equipe', width: 'compact', render: (r) => texto(r.team) },
+              {
+                key: 'tipo',
+                header: 'Tipo',
+                width: 'compact',
+                render: (r) => <Badge tone="info">{texto(r.tipo)}</Badge>,
+              },
+              { key: 'frete', header: 'Frete/valor', width: 'content', render: (r) => texto(r.frete ?? r.valor) },
+              {
+                key: 'faltam',
+                header: 'Faltam',
+                width: 'compact',
+                render: (r) => formatarDiasAteData(r.date ?? r.dateISO, pesquisa.created_at),
+              },
+              { key: 'encomenda', header: 'Encomenda', width: 'compact', render: (r) => texto(r.encomenda) },
+              { key: 'rank', header: 'Rank', width: 'compact', className: 'text-center', render: (r) => texto(r.rank) },
+            ]}
+            rows={resultados}
+            rowKey={(r) => `${texto(r.date)}-${texto(r.team)}-${texto(r.rank)}`}
+            firstColumnSticky
+            renderMobileCard={(r) => (
+              <div className="space-y-1 text-sm">
+                <p className="font-medium text-slate-800">{formatarDataBrasileira(r.date ?? r.dateISO ?? r.dateDM)} — {texto(r.weekday)}</p>
+                <p className="text-xs text-slate-500">Equipe: {texto(r.team)} • Tipo: {texto(r.tipo)}</p>
+                <p className="text-xs text-slate-500">Frete: {texto(r.frete ?? r.valor)} • Rank: {texto(r.rank)}</p>
+              </div>
+            )}
+            emptyTitle="Nenhum resultado salvo."
+          />
         )}
-      </Secao>
+      </Section>
 
-      <Secao title="Pré-agendamento vinculado" icon={<CalendarCheck className="w-4 h-4 text-amber-400" />} accent="amber">
+      <Section title="Pré-agendamento vinculado" icon={<CalendarCheck className="size-4" />} tone="section-2">
         {detalhe.preAgendamentos.length === 0 ? (
-          <div className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-100 px-4 py-3">
-            <CheckCircle2 className="w-4 h-4 text-green-500" />
-            <p className="text-sm text-green-700">Sem pré-agendamento vinculado.</p>
-          </div>
+          <Alert tone="success">Sem pré-agendamento vinculado.</Alert>
         ) : (
           <div className="space-y-4">
             {detalhe.preAgendamentos.map((pre) => (
-              <div key={pre.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center gap-2">
-                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${pre.status === 'done' || pre.status === 'success' ? 'bg-green-50 text-green-700 border-green-200' : pre.status === 'error' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
-                    {pre.status}
-                  </span>
-                  <span className="text-xs text-slate-400">{formatDateTime(pre.created_at)}</span>
-                </div>
-                <dl className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                  <Campo label="Data escolhida" value={formatDate(pre.data_pre_agendada)} />
-                  <Campo label="Tipo" value={pre.tipo_resultado} />
-                  <Campo label="Status" value={pre.status} />
-                  <Campo label="Criado em" value={formatDateTime(pre.created_at)} />
-                </dl>
-                <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
-                    <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Resultado escolhido</h4>
-                    <JsonResumo value={pre.resultado_escolhido_json} />
+              <Card key={pre.id}>
+                <CardContent>
+                  <div className="mb-3 flex items-center gap-2">
+                    <Badge tone={pre.status === 'done' || pre.status === 'success' ? 'success' : pre.status === 'error' ? 'danger' : 'warning'}>
+                      {pre.status}
+                    </Badge>
+                    <span className="text-xs text-slate-400">{formatDateTime(pre.created_at)}</span>
                   </div>
-                  <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
-                    <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Payload resumido</h4>
-                    <PreAgendamentoResumo payload={pre.payload_pre_agendamento_json} />
+                  <dl className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                    <Campo label="Data escolhida" value={formatDate(pre.data_pre_agendada)} />
+                    <Campo label="Tipo" value={pre.tipo_resultado} />
+                    <Campo label="Status" value={pre.status} />
+                    <Campo label="Criado em" value={formatDateTime(pre.created_at)} />
+                  </dl>
+                  <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <Section title="Resultado escolhido" variant="subsection">
+                      <JsonResumo value={pre.resultado_escolhido_json} />
+                    </Section>
+                    <Section title="Payload resumido" variant="subsection">
+                      <PreAgendamentoResumo payload={pre.payload_pre_agendamento_json} />
+                    </Section>
                   </div>
-                </div>
-              </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
         )}
-      </Secao>
+      </Section>
     </div>
   )
 }

@@ -1,11 +1,27 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarCheck, CheckCircle2, Edit, Loader2, RotateCcw, Search, Send, TimerReset, XCircle } from 'lucide-react'
+import { CalendarCheck, CheckCircle2, Edit, RotateCcw, Search, Send, TimerReset, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { LoadingLeBebe, Spinner } from '@/components/design-system'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  PageContainer,
+  PageHeader,
+  Card,
+  CardHeader,
+  CardContent,
+  FormField,
+  Input,
+  Button,
+  Badge,
+  Alert,
+  ResponsiveTable,
+  DateField,
+  Spinner,
+  LoadingLeBebe,
+  type ResponsiveTableColumn,
+} from '@/components/design-system'
+import { dateToBr, dateToIso, parseBrDate } from '@/lib/design-system/dates'
 import { calcularTempoServicoMinutos, formatarMinutosParaHHMM } from '@/lib/procurar-datas/tempo-servico'
 import { formatarDataBrasileira } from '@/lib/procurar-datas/formatar-apresentacao'
 import {
@@ -137,6 +153,8 @@ const initialForm: FormState = {
   painel: '',
 }
 
+const SELECT_VAZIO = '__NONE__'
+
 function isoDatePlus(days: number) {
   const d = new Date()
   d.setHours(0, 0, 0, 0)
@@ -180,19 +198,29 @@ function getTipoLabel(tipo?: string) {
   }
 }
 
-function getTipoBadgeClass(tipo?: string) {
+/**
+ * Mapeamento para os 6 tons semânticos do Badge oficial — a tela original
+ * tinha 4 cores ad hoc (violeta/âmbar/laranja/esmeralda), o DS não tem
+ * violeta nem laranja. Lacuna registrada, mesmo padrão já aceito em
+ * `/pos-venda/atendimento-automatico` (`STATUS_TONE`).
+ */
+function getTipoBadgeTone(tipo?: string): 'success' | 'warning' | 'info' | 'brand' {
   switch (tipo) {
     case 'especial':
-      return 'border-violet-200 bg-violet-50 text-violet-700'
+      return 'brand'
     case 'premium':
-      return 'border-amber-200 bg-amber-50 text-amber-700'
+      return 'warning'
     case 'hora-marcada':
     case 'hora marcada':
-      return 'border-orange-200 bg-orange-50 text-orange-700'
+      return 'info'
     case 'normal':
     default:
-      return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      return 'success'
   }
+}
+
+function isoParaDate(iso: string): Date {
+  return new Date(`${iso}T00:00:00`)
 }
 
 function formatElapsed(totalSeconds: number) {
@@ -273,6 +301,7 @@ export default function ProcurarDatasPage() {
   const [schedulingIndex, setSchedulingIndex] = useState<number | null>(null)
   const [pesquisaAuditoriaId, setPesquisaAuditoriaId] = useState<string | null>(null)
   const [addressDivergencia, setAddressDivergencia] = useState<ResultadoComparacaoEndereco | null>(null)
+  const [dataInicialDisplay, setDataInicialDisplay] = useState('')
   const cepInputRef = useRef<HTMLInputElement | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -330,6 +359,10 @@ export default function ProcurarDatasPage() {
       return { ...current, dataInicial: minDate }
     })
   }, [minDate, maxDate])
+
+  useEffect(() => {
+    setDataInicialDisplay(form.dataInicial ? dateToBr(isoParaDate(form.dataInicial)) : '')
+  }, [form.dataInicial])
 
   useEffect(() => {
     let active = true
@@ -957,7 +990,7 @@ export default function ProcurarDatasPage() {
       if (activeSearchTokenRef.current !== token) return
       const startedToken = data.clientToken || token
       activeSearchTokenRef.current = startedToken
-      
+
       // Guardar ID da auditoria operacional e runId se retornados
       if (data.pesquisaAuditoriaId) {
         setPesquisaAuditoriaId(data.pesquisaAuditoriaId)
@@ -965,7 +998,7 @@ export default function ProcurarDatasPage() {
       if (data.runId) {
         currentRunIdRef.current = data.runId
       }
-      
+
       setProgressStatus('queued')
       setPhase('Buscando datas')
       startPolling(startedToken, endpoints.progresso)
@@ -1039,523 +1072,522 @@ export default function ProcurarDatasPage() {
   }
 
   function renderCandidatesTable(data: Candidate[], emptyText: string, indexOffset = 0) {
+    const columns: ResponsiveTableColumn<Candidate>[] = [
+      {
+        key: 'data',
+        header: 'Data',
+        width: 'compact',
+        render: (candidate) => <span className="font-medium text-slate-900">{formatarDataBrasileira(candidate.date || candidate.dateISO)}</span>,
+      },
+      { key: 'dia', header: 'Dia', width: 'compact', render: (candidate) => candidate.weekday || '-' },
+      { key: 'faltam', header: 'Faltam', width: 'compact', render: (candidate) => formatDaysLeftFromToday(candidate) },
+      { key: 'equipe', header: 'Equipe', width: 'compact', render: (candidate) => candidate.team },
+      { key: 'frete', header: 'Frete', width: 'compact', render: (candidate) => candidate.frete || '-' },
+      {
+        key: 'tipo',
+        header: 'Tipo',
+        width: 'content',
+        render: (candidate) => (
+          <div>
+            <Badge tone={getTipoBadgeTone(candidate.tipo)}>{getTipoLabel(candidate.tipo)}</Badge>
+            {candidate.avisoHoraMarcada && <div className="mt-1 text-xs text-orange-700">{candidate.avisoHoraMarcada}</div>}
+          </div>
+        ),
+      },
+      { key: 'encomenda', header: 'Encomenda', width: 'compact', render: (candidate) => candidate.encomenda || '-' },
+    ]
+
     return (
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase text-slate-500">
-              <th className="px-3 py-2">Data</th>
-              <th className="px-3 py-2">Dia</th>
-              <th className="px-3 py-2">Faltam</th>
-              <th className="px-3 py-2">Equipe</th>
-              <th className="px-3 py-2">Frete</th>
-              <th className="px-3 py-2">Tipo</th>
-              <th className="px-3 py-2">Encomenda</th>
-              <th className="px-3 py-2 text-right">Acao</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((candidate, index) => {
-              const actionIndex = indexOffset + index
-              return (
-                <tr key={`${candidate.dateISO}-${candidate.team}-${candidate.tipo || 'normal'}-${index}`} className="border-b border-slate-100">
-                  <td className="px-3 py-3 font-medium text-slate-900">{formatarDataBrasileira(candidate.date || candidate.dateISO)}</td>
-                  <td className="px-3 py-3 text-slate-600">{candidate.weekday || '-'}</td>
-                  <td className="px-3 py-3 text-slate-600">{formatDaysLeftFromToday(candidate)}</td>
-                  <td className="px-3 py-3 text-slate-600">{candidate.team}</td>
-                  <td className="px-3 py-3 text-slate-600">{candidate.frete || '-'}</td>
-                  <td className="px-3 py-3 text-slate-600">
-                    <span className={`inline-flex items-center border px-2 py-0.5 text-xs font-medium ${getTipoBadgeClass(candidate.tipo)}`}>
-                      {getTipoLabel(candidate.tipo)}
-                    </span>
-                    {candidate.avisoHoraMarcada && (
-                      <div className="mt-1 text-xs text-orange-700">{candidate.avisoHoraMarcada}</div>
-                    )}
-                  </td>
-                  <td className="px-3 py-3 text-slate-600">{candidate.encomenda || '-'}</td>
-                  <td className="px-3 py-3 text-right">
-                    <Button type="button" size="sm" onClick={() => preAgendar(candidate, actionIndex)} disabled={schedulingIndex !== null}>
-                      {schedulingIndex === actionIndex ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                      Pre-agendar
-                    </Button>
-                  </td>
-                </tr>
-              )
-            })}
-            {!data.length && (
-              <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">
-                  {emptyText}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <ResponsiveTable<Candidate>
+        columns={columns}
+        rows={data}
+        rowKey={(candidate) => `${candidate.dateISO}-${candidate.team}-${candidate.tipo || 'normal'}-${data.indexOf(candidate)}`}
+        firstColumnSticky
+        emptyTitle={emptyText}
+        rowActions={(candidate) => {
+          const actionIndex = indexOffset + data.indexOf(candidate)
+          return (
+            <Button type="button" size="sm" onClick={() => preAgendar(candidate, actionIndex)} disabled={schedulingIndex !== null} loading={schedulingIndex === actionIndex}>
+              {schedulingIndex !== actionIndex && <Send className="h-4 w-4" />}
+              Pre-agendar
+            </Button>
+          )
+        }}
+        renderMobileCard={(candidate) => (
+          <div className="space-y-1.5 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium text-slate-900">{formatarDataBrasileira(candidate.date || candidate.dateISO)}</span>
+              <Badge tone={getTipoBadgeTone(candidate.tipo)}>{getTipoLabel(candidate.tipo)}</Badge>
+            </div>
+            <p className="text-xs text-slate-500">{candidate.weekday || '-'} • Faltam {formatDaysLeftFromToday(candidate)}</p>
+            <p className="text-xs text-slate-600">Equipe: {candidate.team} • Frete: {candidate.frete || '-'}</p>
+            {candidate.encomenda && <p className="text-xs text-slate-500">Encomenda: {candidate.encomenda}</p>}
+            {candidate.avisoHoraMarcada && <p className="text-xs text-orange-700">{candidate.avisoHoraMarcada}</p>}
+          </div>
+        )}
+      />
     )
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-4">
-      <div className="flex flex-col gap-2 border-b border-slate-200 pb-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-[#00A5E6]">
-            <CalendarCheck className="h-5 w-5" />
-            <h1 className="text-xl font-semibold text-slate-900">Procurar Datas</h1>
-          </div>
-          <Button type="button" variant="outline" size="sm" onClick={iniciarNovaConsulta}>
+    <PageContainer>
+      <PageHeader
+        icon={<CalendarCheck className="size-6" />}
+        title="Procurar Datas"
+        description="Fluxo operacional para pesquisa de datas disponiveis."
+        action={
+          <Button type="button" variant="secondary" onClick={iniciarNovaConsulta}>
             <RotateCcw className="h-4 w-4" />
             Nova consulta
           </Button>
-        </div>
-        <p className="text-sm text-slate-500">Fluxo operacional para pesquisa de datas disponiveis.</p>
-      </div>
+        }
+      />
 
-      <div className="space-y-4">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900">Dados da busca</h2>
-              <p className="text-xs text-slate-500">Status: {phase}</p>
-            </div>
-            {loadingOptions && <Loader2 className="h-5 w-5 animate-spin text-[#00A5E6]" />}
-          </div>
+      <div className="mt-6 space-y-4">
+        <Card>
+          <CardHeader title="Dados da busca" description={`Status: ${phase}`} action={loadingOptions && <Spinner size={20} label="Carregando opções" />} />
+          <CardContent>
+            <Alert tone="warning" className="mb-4">
+              <p>AVISO: SE FOR ENCOMENDA, UTILIZAR 42 DIAS OU MAIS ({formatDatePlusDays(42)}).</p>
+              <p className="mt-1">AVISO: SE FOR VENDA SHOWROOM FALAR COM PÓS VENDA SOBRE DATA PRA DESMONTAR E MONTAR.</p>
+            </Alert>
 
-          <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-900">
-            <p>AVISO: SE FOR ENCOMENDA, UTILIZAR 42 DIAS OU MAIS ({formatDatePlusDays(42)}).</p>
-            <p className="mt-1">AVISO: SE FOR VENDA SHOWROOM FALAR COM PÓS VENDA SOBRE DATA PRA DESMONTAR E MONTAR.</p>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-6">
-            <label className="md:col-span-2">
-              <span className="mb-1 block text-xs font-medium text-slate-600">CEP</span>
-              <Input
-                ref={cepInputRef}
-                disabled={cepBloqueado}
-                value={cepInput}
-                onChange={(e) => {
-                  const raw = e.target.value.replace(/\D/g, '').slice(0, 8)
-                  const fmt = raw.length > 5 ? raw.slice(0, 5) + '-' + raw.slice(5) : raw
-                  setCepInput(fmt)
-                  if (addressValidationReviewMode) {
-                    setAddressValidationError(null)
-                    limparEstadosDependentesDeCoordenada()
-                    setEstadoCep('aguardando_input')
-                    setPhase('CEP alterado')
-                    return
-                  }
-                  if (estadoCep !== 'aguardando_input') {
-                    rejeitarEnderecoCep()
-                  }
-                }}
-                placeholder="00000-000"
-                maxLength={9}
-              />
-            </label>
-            <label>
-              <span className="mb-1 block text-xs font-medium text-slate-600">Numero</span>
-              <Input
-                disabled={numeroBloqueado}
-                value={form.numero}
-                onChange={(e) => updateForm('numero', e.target.value)}
-                placeholder="Apenas numeros"
-              />
-              {formErrors.numero && <span className="mt-1 block text-xs text-red-600">{formErrors.numero}</span>}
-            </label>
-            <div className="md:col-span-2 flex items-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={buscarCepHandler}
-                disabled={loadingCep || searching || (!addressRevisionUnlocked && (estadoCep === 'encontrado' || estadoCep === 'confirmado')) || cepInput.replace(/\D/g, '').length !== 8 || !form.numero.trim()}
-                className="w-full"
-              >
-                {loadingCep ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                Pesquisar CEP
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-3 grid gap-3 md:grid-cols-6">
-            <label className="md:col-span-3">
-              <span className="mb-1 block text-xs font-medium text-slate-600">Logradouro</span>
-              <Input
-                disabled={logradouroBloqueado}
-                readOnly={logradouroBloqueado}
-                value={form.logradouro}
-                onChange={(e) => updateForm('logradouro', e.target.value)}
-                className={`${formErrors.logradouro ? 'border-red-500 focus:border-red-500' : ''} ${logradouroBloqueado ? 'bg-slate-50/50' : ''}`}
-              />
-              {formErrors.logradouro && <span className="mt-1 block text-xs text-red-600">{formErrors.logradouro}</span>}
-            </label>
-            <label className="md:col-span-2">
-              <span className="mb-1 block text-xs font-medium text-slate-600">Bairro</span>
-              <Input
-                disabled={bairroBloqueado}
-                readOnly={bairroBloqueado}
-                value={form.bairro}
-                onChange={(e) => updateForm('bairro', e.target.value)}
-                className={`${formErrors.bairro ? 'border-red-500 focus:border-red-500' : ''} ${bairroBloqueado ? 'bg-slate-50/50' : ''}`}
-              />
-              {formErrors.bairro && <span className="mt-1 block text-xs text-red-600">{formErrors.bairro}</span>}
-            </label>
-            <label className="md:col-span-3">
-              <span className="mb-1 block text-xs font-medium text-slate-600">Cidade</span>
-              <Input
-                disabled={cidadeUfBloqueado}
-                readOnly={cidadeUfBloqueado}
-                value={form.cidade}
-                onChange={(e) => updateForm('cidade', e.target.value)}
-                className={`${formErrors.cidade ? 'border-red-500 focus:border-red-500' : ''} ${cidadeUfBloqueado ? 'bg-slate-50/50' : ''}`}
-              />
-              {formErrors.cidade && <span className="mt-1 block text-xs text-red-600">{formErrors.cidade}</span>}
-            </label>
-            <label>
-              <span className="mb-1 block text-xs font-medium text-slate-600">UF</span>
-              <Input
-                disabled={cidadeUfBloqueado}
-                readOnly={cidadeUfBloqueado}
-                maxLength={2}
-                value={form.uf}
-                onChange={(e) => updateForm('uf', e.target.value)}
-                className={`${formErrors.uf ? 'border-red-500 focus:border-red-500' : ''} ${cidadeUfBloqueado ? 'bg-slate-50/50' : ''}`}
-              />
-              {formErrors.uf && <span className="mt-1 block text-xs text-red-600">{formErrors.uf}</span>}
-            </label>
-            <div className="md:col-span-2 flex items-end">
-              {addressResult?.ok ? (
+            <div className="grid gap-3 md:grid-cols-6">
+              <FormField id="cepInput" label="CEP" required className="md:col-span-2">
+                {(f) => (
+                  <Input
+                    {...f}
+                    ref={cepInputRef}
+                    disabled={cepBloqueado}
+                    value={cepInput}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/\D/g, '').slice(0, 8)
+                      const fmt = raw.length > 5 ? raw.slice(0, 5) + '-' + raw.slice(5) : raw
+                      setCepInput(fmt)
+                      if (addressValidationReviewMode) {
+                        setAddressValidationError(null)
+                        limparEstadosDependentesDeCoordenada()
+                        setEstadoCep('aguardando_input')
+                        setPhase('CEP alterado')
+                        return
+                      }
+                      if (estadoCep !== 'aguardando_input') {
+                        rejeitarEnderecoCep()
+                      }
+                    }}
+                    placeholder="00000-000"
+                    maxLength={9}
+                  />
+                )}
+              </FormField>
+              <FormField id="numero" label="Numero" required error={formErrors.numero} className="md:col-span-2">
+                {(f) => (
+                  <Input
+                    {...f}
+                    disabled={numeroBloqueado}
+                    value={form.numero}
+                    onChange={(e) => updateForm('numero', e.target.value)}
+                    placeholder="Apenas numeros"
+                  />
+                )}
+              </FormField>
+              <div className="md:col-span-2 flex items-end">
                 <Button
                   type="button"
-                  variant="outline"
-                  onClick={ajustarEndereco}
-                  disabled={searching}
+                  variant="secondary"
+                  onClick={buscarCepHandler}
+                  disabled={loadingCep || searching || (!addressRevisionUnlocked && (estadoCep === 'encontrado' || estadoCep === 'confirmado')) || cepInput.replace(/\D/g, '').length !== 8 || !form.numero.trim()}
+                  loading={loadingCep}
                   className="w-full"
                 >
-                  <Edit className="h-4 w-4" />
-                  Ajustar endereco
-                </Button>
-              ) : null}
-            </div>
-          </div>
-
-          {estadoCep === 'encontrado' && (cepSemLogradouro || cepSemBairro) && (
-            <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-              {cepSemLogradouro && cepSemBairro
-                ? 'Este CEP é geral da cidade. Preencha logradouro e bairro para continuar.'
-                : cepSemLogradouro
-                  ? 'Este CEP não trouxe o logradouro. Preencha o logradouro para continuar.'
-                  : 'Este CEP não trouxe o bairro. Preencha o bairro para continuar.'}
-            </div>
-          )}
-
-          {estadoCep === 'nao_encontrado' && (
-            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              CEP nao encontrado. Confira o CEP digitado ou tente outro CEP.
-            </div>
-          )}
-
-          {estadoCep === 'encontrado' && (
-            <div className="mt-3 rounded-md border border-sky-200 bg-sky-50 p-3">
-              <p className="text-sm font-medium text-slate-800">O CEP é desse endereço?</p>
-              <p className="mt-1 text-sm font-medium text-slate-900">
-                {form.logradouro && form.numero ? `${form.logradouro}, ${form.numero}` : form.logradouro || form.numero || ''}
-              </p>
-              <p className="text-xs text-slate-600">
-                {[form.bairro, `${form.cidade}/${form.uf}`].filter(Boolean).join(' — ')}
-              </p>
-              <div className="mt-3 flex gap-2">
-                <Button type="button" size="sm" onClick={confirmarEnderecoCep} disabled={validatingAddress || searching}>
-                  {validatingAddress ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Endereço correto
-                </Button>
-                <Button type="button" size="sm" variant="outline" onClick={rejeitarEnderecoCep} disabled={validatingAddress || searching}>
-                  <XCircle className="h-4 w-4" />
-                  Não é esse endereço
+                  {!loadingCep && <Search className="h-4 w-4" />}
+                  Pesquisar CEP
                 </Button>
               </div>
             </div>
-          )}
 
-          {addressValidationError && (
-            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900">
-              <div className="font-semibold">{addressValidationError.title}</div>
-              <p className="mt-1 text-red-800">{addressValidationError.description}</p>
-              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={revisarEnderecoAposErro}
-                  disabled={searching || validatingAddress}
-                  className="bg-red-700 text-white hover:bg-red-800"
-                >
-                  <Edit className="h-4 w-4" />
-                  Revisar CEP e endereco
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={pesquisarOutroCepAposErro}
-                  disabled={searching || validatingAddress}
-                  className="border-red-200 bg-white text-red-800 hover:bg-red-50"
-                >
-                  <Search className="h-4 w-4" />
-                  Pesquisar outro CEP
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {estadoCep === 'confirmado' && !addressResult?.ok && !addressValidationError && !addressValidationReviewMode && (
-            <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-              {validatingAddress ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Validando localização...
-                </span>
-              ) : (
-                <span className="font-medium">Endereco textual confirmado.</span>
+            <div className="mt-3 grid gap-3 md:grid-cols-6">
+              <FormField id="logradouro" label="Logradouro" required error={formErrors.logradouro} className="md:col-span-3">
+                {(f) => (
+                  <Input
+                    {...f}
+                    disabled={logradouroBloqueado}
+                    readOnly={logradouroBloqueado}
+                    value={form.logradouro}
+                    onChange={(e) => updateForm('logradouro', e.target.value)}
+                  />
+                )}
+              </FormField>
+              <FormField id="bairro" label="Bairro" required error={formErrors.bairro} className="md:col-span-3">
+                {(f) => (
+                  <Input
+                    {...f}
+                    disabled={bairroBloqueado}
+                    readOnly={bairroBloqueado}
+                    value={form.bairro}
+                    onChange={(e) => updateForm('bairro', e.target.value)}
+                  />
+                )}
+              </FormField>
+              <FormField id="cidade" label="Cidade" required error={formErrors.cidade} className="md:col-span-3">
+                {(f) => (
+                  <Input
+                    {...f}
+                    disabled={cidadeUfBloqueado}
+                    readOnly={cidadeUfBloqueado}
+                    value={form.cidade}
+                    onChange={(e) => updateForm('cidade', e.target.value)}
+                  />
+                )}
+              </FormField>
+              <FormField id="uf" label="UF" required error={formErrors.uf} className={addressResult?.ok ? undefined : 'md:col-span-3'}>
+                {(f) => (
+                  <Input
+                    {...f}
+                    disabled={cidadeUfBloqueado}
+                    readOnly={cidadeUfBloqueado}
+                    maxLength={2}
+                    value={form.uf}
+                    onChange={(e) => updateForm('uf', e.target.value)}
+                  />
+                )}
+              </FormField>
+              {addressResult?.ok && (
+                <div className="md:col-span-2 flex items-end">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={ajustarEndereco}
+                    disabled={searching}
+                    className="w-full"
+                  >
+                    <Edit className="h-4 w-4" />
+                    Ajustar endereco
+                  </Button>
+                </div>
               )}
             </div>
-          )}
 
-          {formErrors.endereco && !addressResult?.ok && (
-            <div className="mt-3 text-xs font-semibold text-red-600">{formErrors.endereco}</div>
-          )}
+            {estadoCep === 'encontrado' && (cepSemLogradouro || cepSemBairro) && (
+              <Alert tone="warning" className="mt-3">
+                {cepSemLogradouro && cepSemBairro
+                  ? 'Este CEP é geral da cidade. Preencha logradouro e bairro para continuar.'
+                  : cepSemLogradouro
+                    ? 'Este CEP não trouxe o logradouro. Preencha o logradouro para continuar.'
+                    : 'Este CEP não trouxe o bairro. Preencha o bairro para continuar.'}
+              </Alert>
+            )}
 
-          {addressResult?.ok && (
-            <div className="mt-4 rounded-lg border border-sky-100 bg-sky-50 p-4 text-sm text-slate-700">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div className="flex-1">
-                  <div className="text-xs font-semibold text-slate-500 uppercase">Endereco localizado</div>
-                  <div className="mt-1 font-medium text-slate-900">
-                    {form.logradouro && form.numero ? `${form.logradouro}, ${form.numero}` : form.logradouro || form.numero || ''}
-                  </div>
-                  <div className="mt-1 text-xs text-slate-600">
-                    {form.bairro} — {form.cidade}/{form.uf}
-                  </div>
-                  <div className="mt-2 text-xs text-slate-500">Coordenada validada com sucesso.</div>
-                  {addressConfirmed && addressConfirmedResult?.ok && (
-                    <div className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
-                      <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-                      Local confirmado
+            {estadoCep === 'nao_encontrado' && (
+              <Alert tone="warning" className="mt-3">
+                CEP nao encontrado. Confira o CEP digitado ou tente outro CEP.
+              </Alert>
+            )}
+
+            {estadoCep === 'encontrado' && (
+              <Alert tone="info" className="mt-3">
+                <p className="font-medium text-slate-800">O CEP é desse endereço?</p>
+                <p className="mt-1 font-medium text-slate-900">
+                  {form.logradouro && form.numero ? `${form.logradouro}, ${form.numero}` : form.logradouro || form.numero || ''}
+                </p>
+                <p className="text-xs text-slate-600">
+                  {[form.bairro, `${form.cidade}/${form.uf}`].filter(Boolean).join(' — ')}
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <Button type="button" size="sm" onClick={confirmarEnderecoCep} disabled={validatingAddress || searching} loading={validatingAddress}>
+                    {!validatingAddress && <CheckCircle2 className="h-4 w-4" />}
+                    Endereço correto
+                  </Button>
+                  <Button type="button" size="sm" variant="secondary" onClick={rejeitarEnderecoCep} disabled={validatingAddress || searching}>
+                    <XCircle className="h-4 w-4" />
+                    Não é esse endereço
+                  </Button>
+                </div>
+              </Alert>
+            )}
+
+            {addressValidationError && (
+              <Alert tone="danger" title={addressValidationError.title} className="mt-3">
+                <p>{addressValidationError.description}</p>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    onClick={revisarEnderecoAposErro}
+                    disabled={searching || validatingAddress}
+                  >
+                    <Edit className="h-4 w-4" />
+                    Revisar CEP e endereco
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={pesquisarOutroCepAposErro}
+                    disabled={searching || validatingAddress}
+                  >
+                    <Search className="h-4 w-4" />
+                    Pesquisar outro CEP
+                  </Button>
+                </div>
+              </Alert>
+            )}
+
+            {estadoCep === 'confirmado' && !addressResult?.ok && !addressValidationError && !addressValidationReviewMode && (
+              <Alert tone="success" className="mt-3">
+                {validatingAddress ? (
+                  <span className="flex items-center gap-2">
+                    <Spinner size={16} label="Validando localização" />
+                    Validando localização...
+                  </span>
+                ) : (
+                  <span className="font-medium">Endereco textual confirmado.</span>
+                )}
+              </Alert>
+            )}
+
+            {formErrors.endereco && !addressResult?.ok && (
+              <p className="mt-3 text-xs font-semibold text-red-600">{formErrors.endereco}</p>
+            )}
+
+            {addressResult?.ok && (
+              <Alert tone="info" className="mt-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="flex-1">
+                    <div className="text-xs font-semibold text-slate-500 uppercase">Endereco localizado</div>
+                    <div className="mt-1 font-medium text-slate-900">
+                      {form.logradouro && form.numero ? `${form.logradouro}, ${form.numero}` : form.logradouro || form.numero || ''}
                     </div>
-                  )}
+                    <div className="mt-1 text-xs text-slate-600">
+                      {form.bairro} — {form.cidade}/{form.uf}
+                    </div>
+                    <div className="mt-2 text-xs text-slate-500">Coordenada validada com sucesso.</div>
+                    {addressConfirmed && addressConfirmedResult?.ok && (
+                      <div className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                        Local confirmado
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {addressResult.lat && addressResult.lng && (
+                      <a
+                        href={montarLinkComparacaoGoogleMaps(addressResult.lat, addressResult.lng, montarEnderecoFormatadoParaMaps(form, addressResult.cep))}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-medium text-sky-700 hover:text-sky-900 hover:underline"
+                      >
+                        Comparar no Google Maps
+                      </a>
+                    )}
+                    {!addressConfirmed && addressDivergencia && (
+                      <Button type="button" size="sm" onClick={confirmarEndereco} disabled={validatingAddress || searching}>
+                        Confirmar este local
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-col gap-2">
-                  {addressResult.lat && addressResult.lng && (
-                    <a
-                      href={montarLinkComparacaoGoogleMaps(addressResult.lat, addressResult.lng, montarEnderecoFormatadoParaMaps(form, addressResult.cep))}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs font-medium text-sky-700 hover:text-sky-900 hover:underline"
-                    >
-                      Comparar no Google Maps
-                    </a>
-                  )}
-                  {!addressConfirmed && addressDivergencia && (
-                    <Button type="button" size="sm" onClick={confirmarEndereco} disabled={validatingAddress || searching}>
-                      Confirmar este local
-                    </Button>
-                  )}
+              </Alert>
+            )}
+
+            {addressDivergencia && !addressConfirmed && (
+              <Alert tone="warning" className="mt-3">
+                {addressDivergencia.divergencia === 'bairro' && (
+                  <p>
+                    O bairro pesquisado foi <strong>{form.bairro}</strong>, mas a localizacao encontrada retornou <strong>{addressDivergencia.bairroProvider}</strong>. Este local esta correto?
+                  </p>
+                )}
+                {addressDivergencia.divergencia === 'cidade' && (
+                  <p className="font-medium">
+                    A cidade pesquisada foi <strong>{form.cidade}</strong>, mas a localizacao encontrada retornou <strong>{addressDivergencia.cidadeProvider}</strong>. Este local esta correto?
+                  </p>
+                )}
+                {addressDivergencia.divergencia === 'uf' && (
+                  <p className="font-medium">
+                    A UF pesquisada foi <strong>{form.uf}</strong>, mas a localizacao encontrada retornou <strong>{addressDivergencia.ufProvider}</strong>. Este local esta correto?
+                  </p>
+                )}
+                <div className="mt-3 flex gap-2">
+                  <Button type="button" size="sm" onClick={confirmarEndereco} disabled={validatingAddress || searching}>
+                    <CheckCircle2 className="h-4 w-4" />
+                    Sim, confirmar local
+                  </Button>
+                  <Button type="button" size="sm" variant="secondary" onClick={revisarEnderecoDivergente} disabled={validatingAddress || searching}>
+                    <XCircle className="h-4 w-4" />
+                    Nao, revisar endereco
+                  </Button>
                 </div>
+              </Alert>
+            )}
+
+            {serviceLocked && (
+              <Alert tone="info" className="mt-4">
+                Valide e confirme o endereco para liberar data inicial, valor inicial, opcoes de servico e pesquisa de datas.
+              </Alert>
+            )}
+
+            <fieldset
+              disabled={formLocked || validatingAddress}
+              aria-disabled={formLocked || validatingAddress}
+              className={`mt-5 rounded-lg border border-slate-200 p-4 transition ${formLocked ? 'bg-slate-50 opacity-60' : 'bg-white'}`}
+            >
+              <div className="grid gap-3 md:grid-cols-6">
+                <FormField id="dataInicial" label="Data inicial" required error={formErrors.dataInicial} className="md:col-span-2">
+                  {(f) => (
+                    <DateField
+                      {...f}
+                      value={dataInicialDisplay}
+                      min={isoParaDate(minDate)}
+                      max={isoParaDate(maxDate)}
+                      onChange={(display) => {
+                        setDataInicialDisplay(display)
+                        const parsed = parseBrDate(display)
+                        if (parsed) {
+                          updateForm('dataInicial', dateToIso(parsed))
+                        }
+                      }}
+                    />
+                  )}
+                </FormField>
+                <label className="flex items-center gap-2 pt-6 text-sm text-slate-700">
+                  <input type="checkbox" checked={form.isEncomenda} onChange={(e) => updateForm('isEncomenda', e.target.checked)} />
+                  Encomenda
+                </label>
+                <label className="flex items-center gap-2 pt-6 text-sm text-slate-700">
+                  <input type="checkbox" checked={form.isRural} onChange={(e) => updateForm('isRural', e.target.checked)} />
+                  Area rural
+                </label>
+                <label className="flex items-center gap-2 pt-6 text-sm text-slate-700 md:col-span-2">
+                  <input type="checkbox" checked={form.isCondominio} onChange={(e) => updateForm('isCondominio', e.target.checked)} />
+                  Condominio
+                </label>
               </div>
-            </div>
-          )}
 
-          {addressDivergencia && !addressConfirmed && (
-            <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-              {addressDivergencia.divergencia === 'bairro' && (
-                <p>
-                  O bairro pesquisado foi <strong>{form.bairro}</strong>, mas a localizacao encontrada retornou <strong>{addressDivergencia.bairroProvider}</strong>. Este local esta correto?
-                </p>
-              )}
-              {addressDivergencia.divergencia === 'cidade' && (
-                <p className="font-medium">
-                  A cidade pesquisada foi <strong>{form.cidade}</strong>, mas a localizacao encontrada retornou <strong>{addressDivergencia.cidadeProvider}</strong>. Este local esta correto?
-                </p>
-              )}
-              {addressDivergencia.divergencia === 'uf' && (
-                <p className="font-medium">
-                  A UF pesquisada foi <strong>{form.uf}</strong>, mas a localizacao encontrada retornou <strong>{addressDivergencia.ufProvider}</strong>. Este local esta correto?
-                </p>
-              )}
-              <div className="mt-3 flex gap-2">
-                <Button type="button" size="sm" onClick={confirmarEndereco} disabled={validatingAddress || searching}>
-                  <CheckCircle2 className="h-4 w-4" />
-                  Sim, confirmar local
-                </Button>
-                <Button type="button" size="sm" variant="outline" onClick={revisarEnderecoDivergente} disabled={validatingAddress || searching}>
-                  <XCircle className="h-4 w-4" />
-                  Nao, revisar endereco
-                </Button>
+              <div className="mt-4 grid gap-3 md:grid-cols-5">
+                {(['tipoBerco', 'comoda', 'roupeiro', 'poltrona', 'painel'] as const).map((key) => (
+                  <FormField key={key} id={key} label={key === 'tipoBerco' ? 'Berco / cama' : key.charAt(0).toUpperCase() + key.slice(1)}>
+                    {(f) => (
+                      <Select
+                        value={normalizeSelectValue(form[key]) || SELECT_VAZIO}
+                        onValueChange={(value) => updateForm(key, value === SELECT_VAZIO ? '' : value)}
+                      >
+                        <SelectTrigger id={f.id} className="w-full" aria-invalid={f['aria-invalid']}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={SELECT_VAZIO}>Selecione</SelectItem>
+                          {(opcoes[key] || []).map((option) => (
+                            <SelectItem key={option} value={normalizeSelectValue(option) || SELECT_VAZIO}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </FormField>
+                ))}
               </div>
-            </div>
-          )}
 
-          {serviceLocked && (
-            <div className="mt-4 rounded-lg border border-dashed border-sky-200 bg-sky-50/70 p-4 text-sm text-sky-800">
-              Valide e confirme o endereco para liberar data inicial, valor inicial, opcoes de servico e pesquisa de datas.
-            </div>
-          )}
-
-          <fieldset
-            disabled={formLocked || validatingAddress}
-            aria-disabled={formLocked || validatingAddress}
-            className={`mt-5 rounded-lg border border-slate-200 p-4 transition ${formLocked ? 'bg-slate-50 opacity-60' : 'bg-white'}`}
-          >
-          <div className="grid gap-3 md:grid-cols-6">
-            <label className="md:col-span-2">
-              <span className="mb-1 block text-xs font-medium text-slate-600">Data inicial</span>
-              <Input
-                id="dataInicial"
-                type="date"
-                min={minDate}
-                max={maxDate}
-                value={form.dataInicial}
-                onChange={(e) => {
-                  updateForm('dataInicial', e.target.value)
-                  setFormErrors((current) => {
-                    const next = { ...current }
-                    delete next.dataInicial
-                    return next
-                  })
-                }}
-                className={formErrors.dataInicial ? 'border-red-500 focus:border-red-500' : ''}
-              />
-              {formErrors.dataInicial && <span className="mt-1 block text-xs text-red-600">{formErrors.dataInicial}</span>}
-            </label>
-            <label className="flex items-center gap-2 pt-6 text-sm text-slate-700">
-              <input type="checkbox" checked={form.isEncomenda} onChange={(e) => updateForm('isEncomenda', e.target.checked)} />
-              Encomenda
-            </label>
-            <label className="flex items-center gap-2 pt-6 text-sm text-slate-700">
-              <input type="checkbox" checked={form.isRural} onChange={(e) => updateForm('isRural', e.target.checked)} />
-              Area rural
-            </label>
-            <label className="flex items-center gap-2 pt-6 text-sm text-slate-700 md:col-span-2">
-              <input type="checkbox" checked={form.isCondominio} onChange={(e) => updateForm('isCondominio', e.target.checked)} />
-              Condominio
-            </label>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-5">
-            {(['tipoBerco', 'comoda', 'roupeiro', 'poltrona', 'painel'] as const).map((key) => (
-              <label key={key}>
-                <span className="mb-1 block text-xs font-medium text-slate-600">
-                  {key === 'tipoBerco' ? 'Berco / cama' : key.charAt(0).toUpperCase() + key.slice(1)}
-                </span>
-                <select
-                  value={form[key]}
-                  onChange={(e) => updateForm(key, e.target.value)}
-                  className="h-9 w-full border border-slate-200 bg-white px-3 text-sm outline-none focus:border-[#00A5E6]"
+              <div className="mt-5 flex flex-col gap-3 border-t border-slate-200 pt-4 lg:flex-row lg:items-end lg:justify-between">
+                <div className="grid flex-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <span className="mb-1 block text-xs font-medium text-slate-600">Tempo necessario</span>
+                    <div className="flex h-10 items-center gap-2 border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700">
+                      <TimerReset className="h-4 w-4 text-primary" />
+                      <strong className="text-slate-900">{calculatingTime ? 'calculando...' : tempoNecessario || '-'}</strong>
+                    </div>
+                    {formErrors.tempo && (
+                      <div className="mt-2 text-xs font-semibold text-red-700">{formErrors.tempo}</div>
+                    )}
+                  </div>
+                  <div>
+                    <span className="mb-1 block text-xs font-medium text-slate-600">Valor inicial (minimo)</span>
+                    <Input
+                      readOnly
+                      tabIndex={-1}
+                      aria-readonly="true"
+                      value={calculatingValorInicial ? 'Calculando...' : valorInicial}
+                      placeholder="-"
+                      className="bg-slate-50 font-semibold text-slate-700"
+                    />
+                    <div className="mt-1 text-xs text-slate-500">Estimativa minima para dia de semana. Pode variar conforme data/equipe.</div>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  onClick={pesquisarDatas}
+                  disabled={searching || validatingAddress || calculatingTime}
+                  loading={searching}
                 >
-                  <option value="">Selecione</option>
-                  {(opcoes[key] || []).map((option) => (
-                    <option key={option} value={normalizeSelectValue(option)}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-          </div>
+                  {!searching && <Search className="h-4 w-4" />}
+                  {searching ? 'Pesquisando...' : 'Pesquisar datas'}
+                </Button>
+              </div>
+            </fieldset>
+          </CardContent>
+        </Card>
 
-          <div className="mt-5 flex flex-col gap-3 border-t border-slate-200 pt-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="grid flex-1 gap-3 sm:grid-cols-2">
+        <Card>
+          <CardHeader title="Resultados" />
+          <CardContent>
+            <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <span className="mb-1 block text-xs font-medium text-slate-600">Tempo necessario</span>
-                <div className="flex h-10 items-center gap-2 border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700">
-                  <TimerReset className="h-4 w-4 text-[#00A5E6]" />
-                  <strong className="text-slate-900">{calculatingTime ? 'calculando...' : tempoNecessario || '-'}</strong>
-                </div>
-                {formErrors.tempo && (
-                  <div className="mt-2 text-xs font-semibold text-red-700">{formErrors.tempo}</div>
+                {!searching && (
+                  <p className="text-xs text-slate-500">
+                    {candidates.length
+                      ? `${normalCandidates.length} recomendada(s) e ${extraCandidates.length} outra(s) opcoes`
+                      : 'Nenhuma busca finalizada.'}
+                  </p>
+                )}
+                {(progressDone || searchError) && (
+                  <p className={`mt-1 text-xs ${searchError ? 'text-red-700' : 'text-emerald-700'}`}>
+                    {searchError ? searchError : `Pesquisa concluida em ${formatElapsed(elapsedSeconds)}`}
+                  </p>
                 )}
               </div>
-              <div>
-                <span className="mb-1 block text-xs font-medium text-slate-600">Valor inicial (minimo)</span>
-                <Input
-                  readOnly
-                  tabIndex={-1}
-                  aria-readonly="true"
-                  value={calculatingValorInicial ? 'Calculando...' : valorInicial}
-                  placeholder="-"
-                  className="bg-slate-50 font-semibold text-slate-700"
-                />
-                <div className="mt-1 text-xs text-slate-500">Estimativa minima para dia de semana. Pode variar conforme data/equipe.</div>
+              <div className="flex gap-2">
+                {(searching || progressStatus === 'error') && (
+                  <Button type="button" variant="secondary" size="sm" onClick={editarFiltros}>
+                    Editar filtros
+                  </Button>
+                )}
+                {progressDone && (
+                  <Button type="button" variant="secondary" size="sm" onClick={novaBusca}>
+                    Nova busca
+                  </Button>
+                )}
               </div>
             </div>
-            <Button
-              type="button"
-              onClick={pesquisarDatas}
-              disabled={searching || validatingAddress || calculatingTime}
-            >
-              {searching ? <Spinner size={16} label="Pesquisando" className="text-primary-foreground" /> : <Search className="h-4 w-4" />}
-              {searching ? 'Pesquisando...' : 'Pesquisar datas'}
-            </Button>
-          </div>
-          </fieldset>
-        </section>
+
+            {searching ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+                <LoadingLeBebe size={64} label="Pesquisando datas disponiveis" />
+                <p className="text-sm font-medium text-slate-700">Buscando as melhores datas...</p>
+                <p className="text-xs text-slate-500">Tempo da pesquisa: {formatElapsed(elapsedSeconds)}</p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-slate-900">Datas recomendadas</h3>
+                    <span className="text-xs text-slate-500">Ate 3 normais</span>
+                  </div>
+                  {renderCandidatesTable(normalCandidates, 'As datas recomendadas aparecerao aqui.')}
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-slate-900">Outras opcoes</h3>
+                    <span className="text-xs text-slate-500">Especial, premium e hora marcada</span>
+                  </div>
+                  {renderCandidatesTable(extraCandidates, 'Nenhuma outra opcao retornada.', normalCandidates.length)}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">Resultados</h2>
-            {!searching && (
-              <p className="text-xs text-slate-500">
-                {candidates.length
-                  ? `${normalCandidates.length} recomendada(s) e ${extraCandidates.length} outra(s) opcoes`
-                  : 'Nenhuma busca finalizada.'}
-              </p>
-            )}
-            {(progressDone || searchError) && (
-              <p className={`mt-1 text-xs ${searchError ? 'text-red-700' : 'text-emerald-700'}`}>
-                {searchError ? searchError : `Pesquisa concluida em ${formatElapsed(elapsedSeconds)}`}
-              </p>
-            )}
-          </div>
-          <div className="flex gap-2">
-            {(searching || progressStatus === 'error') && (
-              <Button type="button" variant="outline" size="sm" onClick={editarFiltros}>
-                Editar filtros
-              </Button>
-            )}
-            {progressDone && (
-              <Button type="button" variant="outline" size="sm" onClick={novaBusca}>
-                Nova busca
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {searching ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-            <LoadingLeBebe size={64} label="Pesquisando datas disponiveis" />
-            <p className="text-sm font-medium text-slate-700">Buscando as melhores datas...</p>
-            <p className="text-xs text-slate-500">Tempo da pesquisa: {formatElapsed(elapsedSeconds)}</p>
-          </div>
-        ) : (
-          <div className="space-y-5">
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold text-slate-900">Datas recomendadas</h3>
-                <span className="text-xs text-slate-500">Ate 3 normais</span>
-              </div>
-              {renderCandidatesTable(normalCandidates, 'As datas recomendadas aparecerao aqui.')}
-            </div>
-
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold text-slate-900">Outras opcoes</h3>
-                <span className="text-xs text-slate-500">Especial, premium e hora marcada</span>
-              </div>
-              {renderCandidatesTable(extraCandidates, 'Nenhuma outra opcao retornada.', normalCandidates.length)}
-            </div>
-          </div>
-        )}
-      </section>
-    </div>
+    </PageContainer>
   )
 }

@@ -2,13 +2,20 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { ShieldCheck, Ban, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { AuditoriaAcesso } from '@/types/supabase'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import PerfilEditor from './_components/PerfilEditor'
+import {
+  PageContainer, PageHeader, Card, CardHeader, CardContent, Button, IconButton,
+  FormField, Input, Badge, Alert, Spinner, ResponsiveTable,
+  FilterPanel, FilterFieldGroup, useFilterState,
+  Dialog, DialogTrigger, DialogContent, DialogHeader, DialogBody,
+  Tabs, TabsContent, SegmentedTabsList, SegmentedTabsTrigger,
+} from '@/components/design-system'
 
 type PerfilResumido = {
   id: string
@@ -37,6 +44,19 @@ type UsuarioComPerfil = {
 
 const EMAILS_PROTEGIDOS = ['lucas@lebebe.com.br', 'robyson@lebebe.com.br']
 type SuperAdminTab = 'usuarios' | 'perfis' | 'auditoria'
+
+/** Sentinela para "Sem perfil" — Radix Select não aceita `SelectItem value=""` (mesmo padrão já usado em `/procurar-datas` e `/pos-venda/atendimento-automatico`). */
+const SEM_PERFIL = '__SEM_PERFIL__'
+
+/** Mapeamento de tom registrado (lacuna: `Badge` tem só 6 tons; "Acesso total" era roxo ad hoc, sem equivalente direto — `brand` foi o tom mais próximo de um indicador de privilégio elevado, mesmo padrão de mapeamento já aceito em outras telas da fila). */
+const ACAO_TONE = (acao: string): 'success' | 'danger' | 'info' => {
+  if (acao.includes('SUCESSO') || acao.includes('CRIADO') || acao.includes('DESBLOQUEADO')) return 'success'
+  if (acao.includes('FALHA') || acao.includes('BLOQUEADO')) return 'danger'
+  return 'info'
+}
+
+type FiltrosAuditoria = { email: string; acao: string }
+const FILTROS_AUDITORIA_VAZIOS: FiltrosAuditoria = { email: '', acao: '' }
 
 export default function SuperAdminPageClient({
   initialTab,
@@ -68,8 +88,7 @@ export default function SuperAdminPageClient({
   const [unidadesSelecionadas, setUnidadesSelecionadas] = useState<string[]>([])
   const [savingUnidades, setSavingUnidades] = useState(false)
 
-  const [filtroEmail, setFiltroEmail] = useState('')
-  const [filtroAcao, setFiltroAcao] = useState('')
+  const filtrosAuditoria = useFilterState<FiltrosAuditoria>(FILTROS_AUDITORIA_VAZIOS)
 
   useEffect(() => {
     const tab = searchParams.get('tab')
@@ -89,7 +108,7 @@ export default function SuperAdminPageClient({
     if (activeTab === 'usuarios') {
       await Promise.all([loadUsuarios(), loadPerfisDisponiveis(), loadUnidades()])
     } else if (activeTab === 'auditoria' && acessoTotal) {
-      await loadAuditoria()
+      await loadAuditoria(filtrosAuditoria.applied)
     } else {
       setLoading(false)
     }
@@ -143,7 +162,7 @@ export default function SuperAdminPageClient({
     }
   }
 
-  async function loadAuditoria() {
+  async function loadAuditoria(valores: FiltrosAuditoria) {
     setLoading(true)
     const supabase = createClient()
     let query = supabase
@@ -152,11 +171,11 @@ export default function SuperAdminPageClient({
       .order('created_at', { ascending: false })
       .limit(100)
 
-    if (filtroEmail) {
-      query = query.ilike('email', `%${filtroEmail}%`)
+    if (valores.email) {
+      query = query.ilike('email', `%${valores.email}%`)
     }
-    if (filtroAcao) {
-      query = query.eq('acao', filtroAcao)
+    if (valores.acao) {
+      query = query.eq('acao', valores.acao)
     }
 
     const { data, error } = await query
@@ -165,6 +184,16 @@ export default function SuperAdminPageClient({
       setAuditoria(data)
     }
     setLoading(false)
+  }
+
+  function aplicarFiltrosAuditoria() {
+    filtrosAuditoria.apply()
+    void loadAuditoria(filtrosAuditoria.draft)
+  }
+
+  function limparFiltrosAuditoria() {
+    filtrosAuditoria.clear()
+    void loadAuditoria(FILTROS_AUDITORIA_VAZIOS)
   }
 
   async function handleAdicionarUsuario() {
@@ -397,296 +426,275 @@ export default function SuperAdminPageClient({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Superadmin</h1>
-          <p className="text-gray-600 mt-2">Gestão de usuários e auditoria do sistema</p>
-        </div>
+    <PageContainer>
+      <PageHeader
+        icon={<ShieldCheck className="size-6" />}
+        eyebrow="Superadmin"
+        title="Superadmin"
+        description="Gestão de usuários e auditoria do sistema"
+      />
 
+      <div className="mt-6">
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-          <TabsList className="mb-6">
-            <TabsTrigger value="usuarios">Usuários</TabsTrigger>
-            {acessoTotal && <TabsTrigger value="perfis">Perfis</TabsTrigger>}
-            {acessoTotal && <TabsTrigger value="auditoria">Auditoria</TabsTrigger>}
-          </TabsList>
+          <SegmentedTabsList className="mb-6">
+            <SegmentedTabsTrigger value="usuarios">Usuários</SegmentedTabsTrigger>
+            {acessoTotal && <SegmentedTabsTrigger value="perfis">Perfis</SegmentedTabsTrigger>}
+            {acessoTotal && <SegmentedTabsTrigger value="auditoria">Auditoria</SegmentedTabsTrigger>}
+          </SegmentedTabsList>
 
           <TabsContent value="usuarios">
-            <div className="bg-white rounded-lg shadow">
-              <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-                <h2 className="text-xl font-semibold">Usuários Permitidos</h2>
-                <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                  <DialogTrigger asChild>
-                    <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition">
-                      Adicionar Usuário
-                    </button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Adicionar Novo Usuário</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 pt-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          E-mail
-                        </label>
-                        <input
-                          type="email"
-                          value={novoEmail}
-                          onChange={(e) => setNovoEmail(e.target.value)}
-                          disabled={addingUser}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
-                          placeholder="usuario@exemplo.com"
-                        />
-                      </div>
-                      {acessoTotal && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Role
-                        </label>
-                        <select
-                          value={novaRole}
-                          onChange={(e) => setNovaRole(e.target.value as 'user' | 'superadmin')}
-                          disabled={addingUser}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        >
-                          <option value="user">User</option>
-                          <option value="superadmin">Superadmin</option>
-                        </select>
-                      </div>
-                      )}
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Perfil
-                        </label>
-                        <select
-                          value={novoPerfilId}
-                          onChange={(e) => setNovoPerfilId(e.target.value)}
-                          disabled={addingUser}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
-                        >
-                          <option value="">Sem perfil</option>
-                          {perfisDisponiveis.map((perfil) => (
-                            <option key={perfil.id} value={perfil.id}>
-                              {perfil.nome}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Unidades
-                        </label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {unidadesDisponiveis.map((unidade) => (
-                            <label key={unidade.id} className="flex items-center gap-2 text-sm text-gray-700">
-                              <input
-                                type="checkbox"
-                                checked={novasUnidadesIds.includes(unidade.id)}
-                                onChange={() => toggleNovaUnidade(unidade.id)}
+            <Card>
+              <CardHeader
+                title="Usuários Permitidos"
+                action={
+                  <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button>Adicionar Usuário</Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader title="Adicionar Novo Usuário" />
+                      <DialogBody>
+                        <div className="space-y-4">
+                          <FormField id="novo-email" label="E-mail">
+                            {(f) => (
+                              <Input
+                                id={f.id}
+                                type="email"
+                                value={novoEmail}
+                                onChange={(e) => setNovoEmail(e.target.value)}
                                 disabled={addingUser}
-                                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                placeholder="usuario@exemplo.com"
                               />
-                              {unidade.nome}
-                            </label>
-                          ))}
-                        </div>
-                      </div>
+                            )}
+                          </FormField>
 
-                      {addUserError && (
-                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-                          {addUserError}
-                        </div>
-                      )}
+                          {acessoTotal && (
+                            <FormField id="nova-role" label="Role">
+                              {(f) => (
+                                <Select value={novaRole} onValueChange={(v) => setNovaRole(v as 'user' | 'superadmin')} disabled={addingUser}>
+                                  <SelectTrigger id={f.id} className="w-full">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="user">User</SelectItem>
+                                    <SelectItem value="superadmin">Superadmin</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </FormField>
+                          )}
 
-                      {addUserSuccess && (
-                        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
-                          {addUserSuccess}
-                        </div>
-                      )}
+                          <FormField id="novo-perfil" label="Perfil">
+                            {(f) => (
+                              <Select
+                                value={novoPerfilId || SEM_PERFIL}
+                                onValueChange={(v) => setNovoPerfilId(v === SEM_PERFIL ? '' : v)}
+                                disabled={addingUser}
+                              >
+                                <SelectTrigger id={f.id} className="w-full">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value={SEM_PERFIL}>Sem perfil</SelectItem>
+                                  {perfisDisponiveis.map((perfil) => (
+                                    <SelectItem key={perfil.id} value={perfil.id}>
+                                      {perfil.nome}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </FormField>
 
-                      <button
-                        onClick={handleAdicionarUsuario}
-                        disabled={addingUser || !novoEmail}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                      >
-                        {addingUser ? (
-                          <>
-                            <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                            </svg>
-                            Enviando...
-                          </>
+                          <div>
+                            <p className="mb-2 text-sm font-medium text-slate-700">Unidades</p>
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              {unidadesDisponiveis.map((unidade) => (
+                                <label key={unidade.id} className="flex items-center gap-2 text-sm text-slate-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={novasUnidadesIds.includes(unidade.id)}
+                                    onChange={() => toggleNovaUnidade(unidade.id)}
+                                    disabled={addingUser}
+                                    className="rounded border-slate-300 text-primary focus:ring-primary/40"
+                                  />
+                                  {unidade.nome}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+
+                          {addUserError && <Alert tone="danger">{addUserError}</Alert>}
+                          {addUserSuccess && <Alert tone="success">{addUserSuccess}</Alert>}
+
+                          <Button
+                            onClick={handleAdicionarUsuario}
+                            disabled={!novoEmail}
+                            loading={addingUser}
+                            className="w-full"
+                          >
+                            Adicionar
+                          </Button>
+                        </div>
+                      </DialogBody>
+                    </DialogContent>
+                  </Dialog>
+                }
+              />
+              <CardContent>
+                <ResponsiveTable<UsuarioComPerfil>
+                  columns={[
+                    { key: 'email', header: 'Email', render: (u) => u.email },
+                    {
+                      key: 'role',
+                      header: 'Role',
+                      width: 'compact',
+                      render: (u) => {
+                        const isProtegido = EMAILS_PROTEGIDOS.includes(u.email)
+                        return acessoTotal ? (
+                          <Select value={u.role} onValueChange={(v) => handleAlterarRole(u, v as 'user' | 'superadmin')} disabled={isProtegido}>
+                            <SelectTrigger className="h-8 w-full min-w-[130px] text-sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="user">User</SelectItem>
+                              <SelectItem value="superadmin">Superadmin</SelectItem>
+                            </SelectContent>
+                          </Select>
                         ) : (
-                          'Adicionar'
-                        )}
-                      </button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </div>
-              <div className="overflow-x-auto">
-                {loading ? (
-                  <div className="p-8 text-center text-gray-500">Carregando...</div>
-                ) : (
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Email
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Role
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Perfil
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Unidades
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Status
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Data de Criação
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Ações
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {usuarios.map((usuario) => {
-                        const isProtegido = EMAILS_PROTEGIDOS.includes(usuario.email)
-                        const isPerfilLoading = perfilLoadingId === usuario.id
-                        return (
-                          <tr key={usuario.id}>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {usuario.email}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm">
-                              {acessoTotal ? (
-                                <select
-                                  value={usuario.role}
-                                  onChange={(e) => handleAlterarRole(usuario, e.target.value as 'user' | 'superadmin')}
-                                  className="px-3 py-1 border border-gray-300 rounded-md text-sm"
-                                  disabled={isProtegido}
-                                >
-                                  <option value="user">User</option>
-                                  <option value="superadmin">Superadmin</option>
-                                </select>
-                              ) : (
-                                <span className="text-gray-700">
-                                  {usuario.role === 'superadmin' ? 'Superadmin' : 'User'}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm">
-                              {usuario.role === 'superadmin' ? (
-                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                  Acesso total
-                                </span>
-                              ) : (
-                                <div className="flex items-center gap-2">
-                                  <select
-                                    value={usuario.perfil?.id ?? ''}
-                                    onChange={(e) => {
-                                      const val = e.target.value
-                                      if (val === '') return
-                                      handleAtribuirPerfil(usuario, val)
-                                    }}
-                                    disabled={isPerfilLoading}
-                                    className="px-3 py-1 border border-gray-300 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed min-w-[140px]"
-                                  >
-                                    <option value="">Sem perfil</option>
-                                    {usuario.perfil && !perfisDisponiveis.some((p) => p.id === usuario.perfil?.id) && (
-                                      <option value={usuario.perfil.id} disabled>
-                                        {usuario.perfil.nome}
-                                      </option>
-                                    )}
-                                    {perfisDisponiveis.map((p) => (
-                                      <option key={p.id} value={p.id}>
-                                        {p.nome}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  {usuario.perfil && (
-                                    <button
-                                      onClick={() => handleRemoverPerfil(usuario)}
-                                      disabled={isPerfilLoading}
-                                      title="Remover perfil"
-                                      className="text-gray-400 hover:text-red-600 disabled:opacity-50 disabled:cursor-not-allowed text-xs"
-                                    >
-                                      ✕
-                                    </button>
-                                  )}
-                                  {isPerfilLoading && (
-                                    <svg className="animate-spin h-4 w-4 text-indigo-500" fill="none" viewBox="0 0 24 24">
-                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                                    </svg>
-                                  )}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-700 min-w-[180px]">
-                              <div className="flex items-center gap-2">
-                                <span className="max-w-[220px] truncate">
-                                  {usuario.unidades.length > 0
-                                    ? usuario.unidades.map((u) => u.nome).join(', ')
-                                    : 'Sem unidade'}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => abrirDialogUnidades(usuario)}
-                                  disabled={!acessoTotal && usuario.role === 'superadmin'}
-                                  className="text-indigo-600 hover:text-indigo-900 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                  Editar
-                                </button>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                usuario.ativo
-                                  ? 'bg-green-100 text-green-800'
-                                  : 'bg-red-100 text-red-800'
-                              }`}>
-                                {usuario.ativo ? 'Ativo' : 'Bloqueado'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {format(new Date(usuario.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                              {usuario.ativo ? (
-                                <button
-                                  onClick={() => handleBloquearUsuario(usuario)}
-                                  disabled={isProtegido}
-                                  className="text-red-600 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                  Bloquear
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => handleDesbloquearUsuario(usuario)}
-                                  className="text-green-600 hover:text-green-900"
-                                >
-                                  Desbloquear
-                                </button>
-                              )}
-                            </td>
-                          </tr>
+                          <span className="text-slate-700">{u.role === 'superadmin' ? 'Superadmin' : 'User'}</span>
                         )
-                      })}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
+                      },
+                    },
+                    {
+                      key: 'perfil',
+                      header: 'Perfil',
+                      render: (u) => {
+                        if (u.role === 'superadmin') {
+                          return <Badge tone="brand">Acesso total</Badge>
+                        }
+                        const isPerfilLoading = perfilLoadingId === u.id
+                        const perfilOrfao = u.perfil && !perfisDisponiveis.some((p) => p.id === u.perfil?.id)
+                        return (
+                          <div className="flex items-center gap-2">
+                            <Select
+                              value={u.perfil?.id ?? SEM_PERFIL}
+                              onValueChange={(v) => {
+                                if (v === SEM_PERFIL) return
+                                handleAtribuirPerfil(u, v)
+                              }}
+                              disabled={isPerfilLoading}
+                            >
+                              <SelectTrigger className="h-8 w-full min-w-[140px] text-sm">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={SEM_PERFIL}>Sem perfil</SelectItem>
+                                {perfilOrfao && u.perfil && (
+                                  <SelectItem value={u.perfil.id} disabled>
+                                    {u.perfil.nome}
+                                  </SelectItem>
+                                )}
+                                {perfisDisponiveis.map((p) => (
+                                  <SelectItem key={p.id} value={p.id}>
+                                    {p.nome}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {u.perfil && (
+                              <IconButton
+                                variant="ghost"
+                                aria-label="Remover perfil"
+                                title="Remover perfil"
+                                disabled={isPerfilLoading}
+                                onClick={() => handleRemoverPerfil(u)}
+                              >
+                                <X className="size-3.5" />
+                              </IconButton>
+                            )}
+                            {isPerfilLoading && <Spinner size={14} />}
+                          </div>
+                        )
+                      },
+                    },
+                    {
+                      key: 'unidades',
+                      header: 'Unidades',
+                      render: (u) => (
+                        <div className="flex items-center gap-2">
+                          <span className="max-w-[220px] truncate">
+                            {u.unidades.length > 0 ? u.unidades.map((un) => un.nome).join(', ') : 'Sem unidade'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => abrirDialogUnidades(u)}
+                            disabled={!acessoTotal && u.role === 'superadmin'}
+                            className="text-xs font-medium text-primary hover:text-primary/80 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Editar
+                          </button>
+                        </div>
+                      ),
+                    },
+                    {
+                      key: 'status',
+                      header: 'Status',
+                      width: 'compact',
+                      render: (u) => <Badge tone={u.ativo ? 'success' : 'danger'}>{u.ativo ? 'Ativo' : 'Bloqueado'}</Badge>,
+                    },
+                    {
+                      key: 'criado',
+                      header: 'Data de Criação',
+                      width: 'compact',
+                      render: (u) => format(new Date(u.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }),
+                    },
+                  ]}
+                  rows={usuarios}
+                  rowKey={(u) => u.id}
+                  firstColumnSticky
+                  loading={loading}
+                  emptyTitle="Nenhum usuário encontrado"
+                  rowActions={(u) => {
+                    const isProtegido = EMAILS_PROTEGIDOS.includes(u.email)
+                    return u.ativo ? (
+                      <IconButton
+                        variant="ghost"
+                        aria-label="Bloquear usuário"
+                        title="Bloquear"
+                        disabled={isProtegido}
+                        className="text-red-600 hover:bg-red-100"
+                        onClick={() => handleBloquearUsuario(u)}
+                      >
+                        <Ban className="size-4" />
+                      </IconButton>
+                    ) : (
+                      <Button variant="secondary" size="sm" onClick={() => handleDesbloquearUsuario(u)}>
+                        Desbloquear
+                      </Button>
+                    )
+                  }}
+                  renderMobileCard={(u) => (
+                    <div className="space-y-1.5 text-sm">
+                      <p className="font-medium text-slate-800">{u.email}</p>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Badge tone={u.ativo ? 'success' : 'danger'}>{u.ativo ? 'Ativo' : 'Bloqueado'}</Badge>
+                        {u.role === 'superadmin' && <Badge tone="brand">Acesso total</Badge>}
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        {u.role === 'superadmin' ? 'Superadmin' : (u.perfil?.nome ?? 'Sem perfil')}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {u.unidades.length > 0 ? u.unidades.map((un) => un.nome).join(', ') : 'Sem unidade'}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        Criado: {format(new Date(u.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                      </p>
+                    </div>
+                  )}
+                />
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <Dialog
@@ -699,36 +707,29 @@ export default function SuperAdminPageClient({
             }}
           >
             <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Editar Unidades</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 pt-4">
-                <div className="text-sm text-gray-600">
-                  {unidadesDialogUsuario?.email}
+              <DialogHeader title="Editar Unidades" />
+              <DialogBody>
+                <div className="space-y-4">
+                  <p className="text-sm text-slate-600">{unidadesDialogUsuario?.email}</p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {unidadesDisponiveis.map((unidade) => (
+                      <label key={unidade.id} className="flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={unidadesSelecionadas.includes(unidade.id)}
+                          onChange={() => toggleUnidadeSelecionada(unidade.id)}
+                          disabled={savingUnidades}
+                          className="rounded border-slate-300 text-primary focus:ring-primary/40"
+                        />
+                        {unidade.nome}
+                      </label>
+                    ))}
+                  </div>
+                  <Button onClick={handleSalvarUnidades} loading={savingUnidades} className="w-full">
+                    Salvar unidades
+                  </Button>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {unidadesDisponiveis.map((unidade) => (
-                    <label key={unidade.id} className="flex items-center gap-2 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={unidadesSelecionadas.includes(unidade.id)}
-                        onChange={() => toggleUnidadeSelecionada(unidade.id)}
-                        disabled={savingUnidades}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      {unidade.nome}
-                    </label>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleSalvarUnidades}
-                  disabled={savingUnidades}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {savingUnidades ? 'Salvando...' : 'Salvar unidades'}
-                </button>
-              </div>
+              </DialogBody>
             </DialogContent>
           </Dialog>
 
@@ -737,92 +738,81 @@ export default function SuperAdminPageClient({
           </TabsContent>
 
           <TabsContent value="auditoria">
-            <div className="bg-white rounded-lg shadow">
-              <div className="p-6 border-b border-gray-200">
-                <h2 className="text-xl font-semibold mb-4">Auditoria de Acessos</h2>
-                <div className="flex gap-4">
-                  <input
-                    type="text"
-                    placeholder="Filtrar por email"
-                    value={filtroEmail}
-                    onChange={(e) => setFiltroEmail(e.target.value)}
-                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
+            <Card>
+              <CardHeader title="Auditoria de Acessos" />
+              <CardContent>
+                <FilterPanel dirty={filtrosAuditoria.dirty} onApply={aplicarFiltrosAuditoria} onClear={limparFiltrosAuditoria}>
+                  <FilterFieldGroup label="Filtros">
+                    <FormField id="filtro-email" label="Email">
+                      {(f) => (
+                        <Input
+                          id={f.id}
+                          placeholder="Filtrar por email"
+                          value={filtrosAuditoria.draft.email}
+                          onChange={(e) => filtrosAuditoria.setField('email', e.target.value)}
+                        />
+                      )}
+                    </FormField>
+                    <FormField id="filtro-acao" label="Ação">
+                      {(f) => (
+                        <Input
+                          id={f.id}
+                          placeholder="Filtrar por ação"
+                          value={filtrosAuditoria.draft.acao}
+                          onChange={(e) => filtrosAuditoria.setField('acao', e.target.value)}
+                        />
+                      )}
+                    </FormField>
+                  </FilterFieldGroup>
+                </FilterPanel>
+
+                <div className="mt-6">
+                  <ResponsiveTable<AuditoriaAcesso>
+                    columns={[
+                      {
+                        key: 'acao',
+                        header: 'Ação',
+                        width: 'compact',
+                        render: (registro) => <Badge tone={ACAO_TONE(registro.acao)}>{registro.acao}</Badge>,
+                      },
+                      { key: 'email', header: 'Email', render: (registro) => registro.email || '-' },
+                      { key: 'ip', header: 'IP', width: 'compact', render: (registro) => registro.ip || '-' },
+                      {
+                        key: 'data',
+                        header: 'Data e Hora',
+                        width: 'compact',
+                        render: (registro) => format(new Date(registro.created_at), "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR }),
+                      },
+                      {
+                        key: 'metadata',
+                        header: 'Metadata',
+                        className: 'max-w-xs truncate',
+                        render: (registro) => (registro.metadata ? JSON.stringify(registro.metadata) : '-'),
+                      },
+                    ]}
+                    rows={auditoria}
+                    rowKey={(registro) => registro.id}
+                    loading={loading}
+                    emptyTitle="Nenhum registro de auditoria encontrado"
+                    renderMobileCard={(registro) => (
+                      <div className="space-y-1.5 text-sm">
+                        <Badge tone={ACAO_TONE(registro.acao)}>{registro.acao}</Badge>
+                        <p className="font-medium text-slate-800">{registro.email || '-'}</p>
+                        <p className="text-xs text-slate-500">
+                          {registro.ip || '-'} • {format(new Date(registro.created_at), "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR })}
+                        </p>
+                        {registro.metadata && (
+                          <p className="truncate text-xs text-slate-400">{JSON.stringify(registro.metadata)}</p>
+                        )}
+                      </div>
+                    )}
                   />
-                  <input
-                    type="text"
-                    placeholder="Filtrar por ação"
-                    value={filtroAcao}
-                    onChange={(e) => setFiltroAcao(e.target.value)}
-                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
-                  />
-                  <button
-                    onClick={loadAuditoria}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-medium transition"
-                  >
-                    Filtrar
-                  </button>
                 </div>
-              </div>
-              <div className="overflow-x-auto">
-                {loading ? (
-                  <div className="p-8 text-center text-gray-500">Carregando...</div>
-                ) : (
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Ação
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Email
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          IP
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Data e Hora
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Metadata
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {auditoria.map((registro) => (
-                        <tr key={registro.id}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              registro.acao.includes('SUCESSO') || registro.acao.includes('CRIADO') || registro.acao.includes('DESBLOQUEADO')
-                                ? 'bg-green-100 text-green-800'
-                                : registro.acao.includes('FALHA') || registro.acao.includes('BLOQUEADO')
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-blue-100 text-blue-800'
-                            }`}>
-                              {registro.acao}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {registro.email || '-'}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {registro.ip || '-'}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {format(new Date(registro.created_at), "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR })}
-                          </td>
-                          <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
-                            {registro.metadata ? JSON.stringify(registro.metadata) : '-'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
-    </div>
+    </PageContainer>
   )
 }

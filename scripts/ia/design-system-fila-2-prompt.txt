@@ -1,0 +1,150 @@
+Você está numa sessão NOVA e autônoma do Claude Code, sem memória de sessões
+anteriores. Este prompt é sua única fonte de instrução operacional para esta
+execução — o repositório é a fonte de verdade para tudo o mais.
+
+## 0. Leitura obrigatória, nesta ordem
+
+1. Leia `AGENTS.md` (raiz do repositório) por completo. Ele é a fonte
+   canônica de regras deste projeto e tem prioridade sobre qualquer
+   suposição sua. Siga a hierarquia de fontes definida nele (§1), a regra
+   de não inventar (§2), escopo mínimo (§3) e classificação de
+   complexidade/risco (§4).
+2. Localize o Projeto Multifase do Design System em
+   `docs/projetos/design-system/` e leia `STATUS.md` por completo,
+   especialmente a seção "Fila 2 — auditoria inicial" e qualquer seção mais
+   recente que a atualize. `STATUS.md` é a fonte do estado vigente da fila
+   — não confie em memória de execuções anteriores nem neste prompt para
+   saber qual tela está pendente.
+3. Se `STATUS.md` referenciar `PLANO.md`, `DECISOES.md` ou `ESCOPO.md` do
+   mesmo projeto para contexto adicional da Fila 2, leia também.
+
+## 1. Seleção da tela desta sessão
+
+Trabalhe em exatamente UMA tela/unidade da Fila 2, seguindo esta ordem de
+decisão:
+
+1. Se existir algum item da Fila 2 em estado `EM_ANDAMENTO`, retome
+   exatamente esse item (não inicie um novo).
+2. Caso contrário, escolha o primeiro item em estado `PENDENTE`, respeitando
+   a ordem registrada em `STATUS.md` (campo "Ordem" da tabela da Fila 2).
+3. Ignore itens `BLOQUEADA` na seleção automática — não tente desbloqueá-los
+   nem trabalhar neles nesta sessão.
+4. Se não houver nenhum item `EM_ANDAMENTO` nem `PENDENTE` (todos
+   `PRONTA_PARA_VALIDACAO_MANUAL`, `APROVADA` ou `BLOQUEADA`), não inicie
+   trabalho novo — vá direto para a seção "4. Encerramento" abaixo.
+
+## 2. Regras do trabalho nesta tela
+
+- Escopo: somente migração VISUAL para os componentes/tokens do Design
+  System já consolidados (ver `STATUS.md`, "Design System consolidado", e
+  `docs/design-system/`). Nunca altere regra de negócio, cálculo,
+  query, contrato de API, schema, autenticação/permissões ou payload.
+- Preserve integralmente as regras especiais já documentadas para estas
+  rotas, se a tela escolhida for uma delas:
+  - `/atendimento-presencial/clientes`
+  - `/recebimento` (rota raiz) — nunca altere `/recebimento/[id]`, mesmo
+    que compartilhem utilitários.
+  - `/procurar-datas` (qualquer rota do módulo) — siga
+    `.agents/rules/procurar-datas.md` e os documentos obrigatórios que ele
+    apontar. Qualquer divergência funcional encontrada (cálculo, ranking,
+    OSRM/Haversine, equivalência com o legado) deve ser só registrada, nunca
+    corrigida nesta sessão.
+  - `/superadmin` — gatilho de risco elevado por padrão (autenticação/
+    permissões, `AGENTS.md` §4); redobre o cuidado de investigação nesse
+    ponto específico antes de tocar no arquivo.
+- Siga o roteamento de skills do `AGENTS.md` §9 normalmente (auditoria →
+  plano → execução → validação, ou o caminho direto quando a própria skill
+  permitir). Não pule a investigação proporcional ao risco real da tela.
+- Execute QA técnico proporcional ao final (lint/typecheck/testes
+  relevantes; validação visual local quando o ambiente permitir). QA visual
+  manual do usuário não é necessária nem possível nesta sessão autônoma —
+  apenas documente com precisão o que falta validar manualmente.
+- Não escreva em `docs/ia/log_progress.md` (congelado).
+- Não crie um novo Projeto Multifase nem altere `ESCOPO.md`/`DECISOES.md`
+  além do estritamente necessário para registrar uma decisão pontual já
+  coberta pelas regras existentes.
+
+## 3. Bloqueio local (de uma tela só)
+
+Se encontrar um impedimento técnico real (decisão indispensável, requisito
+ambíguo, acesso obrigatório sem alternativa segura, conflito de código ou
+dependência externa que impeça continuar com segurança):
+
+1. Marque essa tela como `BLOQUEADA` em `STATUS.md`, na tabela da Fila 2.
+2. Registre o motivo exato e o requisito necessário para retomar.
+3. Não tente contornar o bloqueio nem trabalhar em outra tela nesta mesma
+   sessão — encerre a sessão normalmente (ela ainda deve retornar
+   `acao: CONTINUE`, ver seção 5, pois a rotina como um todo pode
+   continuar na próxima tela `PENDENTE`).
+
+QA pendente, validação manual pendente ou indisponibilidade temporária de
+ambiente/sessão NUNCA justificam `BLOQUEADA` nem `EM_ANDAMENTO` sem trabalho
+real faltando — isso é estado normal de fila, não bloqueio.
+
+## 4. Bloqueio crítico da rotina (interrompe o loop inteiro)
+
+Interrompa a rotina inteira — não só esta tela — apenas diante de um
+problema realmente sistêmico que torne insegura qualquer continuação
+automática, por exemplo: regressão ampla em componente central do Design
+System usado por múltiplas telas, o próprio Harness (`AGENTS.md`/regras
+contextuais) inconsistente com o código real, conflito grave de arquivos
+que impeça git operar normalmente, necessidade inesperada de alterar
+banco/auth/RLS/regra de negócio compartilhada para resolver algo que
+deveria ser só visual, ou risco concreto de espalhar uma regressão para
+outras telas se a rotina continuar sem supervisão humana.
+
+Isso é exceção, não padrão — um bloqueio local de uma tela (seção 3) é
+sempre preferível quando o problema é específico daquela tela.
+
+## 5. Atualização do STATUS.md
+
+Antes de encerrar, atualize `STATUS.md` (tabela da Fila 2 e/ou o corpo do
+documento conforme o padrão já usado nele) refletindo com precisão:
+
+- O novo estado da tela trabalhada (`PRONTA_PARA_VALIDACAO_MANUAL`,
+  `EM_ANDAMENTO` só se a tela for grande demais para uma sessão e ainda
+  assim retomável com segurança, ou `BLOQUEADA`).
+- Um resumo técnico do que foi feito, no mesmo estilo das entradas
+  existentes ("Última tela concluída — ...").
+- Os pontos exatos que o usuário precisa validar manualmente (QA visual,
+  fluxos que dependem de dado real, permissões de conta técnica, etc.).
+
+Não registre secrets, tokens, senhas ou dados sensíveis em `STATUS.md` nem
+em nenhum outro artefato.
+
+## 6. Encerramento — saída estruturada obrigatória
+
+Encerre sua resposta final com um bloco de código JSON contendo, e somente
+contendo, um objeto com exatamente estes campos (mesmo que a saída
+estruturada do CLI também seja validada por um JSON Schema externo — repita
+o mesmo conteúdo aqui como garantia):
+
+```json
+{
+  "acao": "CONTINUE | DONE | CRITICAL",
+  "tela": "rota da tela trabalhada, ou vazio se nenhuma",
+  "estado": "estado final da tela em STATUS.md, ou vazio se nenhuma",
+  "resumo": "resumo curto (poucas frases) do que foi feito ou por que não",
+  "qa_manual": "pontos que o usuário precisa validar manualmente, ou vazio",
+  "motivo": "obrigatório se acao=CRITICAL ou se a tela ficou BLOQUEADA; caso contrário pode ser vazio"
+}
+```
+
+Significado de `acao`:
+
+- `CONTINUE`: a sessão terminou normalmente — tela concluída, tela marcada
+  como bloqueio local, ou tela `EM_ANDAMENTO` de forma segura para
+  retomada. Uma próxima sessão NOVA pode continuar a fila.
+- `DONE`: não havia nenhum item `EM_ANDAMENTO` nem `PENDENTE` na Fila 2 no
+  início desta sessão (ver seção 1, passo 4) — não existe mais trabalho
+  automático autorizado nesta fila.
+- `CRITICAL`: existe um `BLOQUEIO CRÍTICO DA ROTINA` (seção 4) — a rotina
+  inteira deve parar imediatamente, sem iniciar nova sessão.
+
+Se `DONE`, registre em `STATUS.md` a frase exata correspondente ao estado
+final:
+- Se restarem itens `BLOQUEADA`: `FILA 2 — TRABALHO AUTOMÁTICO CONCLUÍDO,
+  EXISTEM ITENS BLOQUEADOS PARA REVISÃO`.
+- Se todos os itens da Fila 2 estiverem `PRONTA_PARA_VALIDACAO_MANUAL` ou
+  `APROVADA`: `FILA 2 TECNICAMENTE CONCLUÍDA — AGUARDANDO VALIDAÇÃO
+  MANUAL`.

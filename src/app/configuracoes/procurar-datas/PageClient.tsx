@@ -4,8 +4,12 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   Lock, RefreshCw, AlertTriangle, Globe, Hash, MapPin, DollarSign,
   ToggleLeft, Link as LinkIcon, FileText, Download, CheckCircle, Database,
-  Pencil, X, Save,
+  Pencil, X, Save, Settings,
 } from 'lucide-react'
+import {
+  PageContainer, FormPageContent, PageHeader, Card, CardHeader, CardContent,
+  Badge, Alert, Button, Input, LoadingLeBebe,
+} from '@/components/design-system'
 import type { ConfigItem } from '@/lib/procurar-datas/sheets-config'
 import type { SnapshotInfo } from '@/lib/procurar-datas/config-db'
 import type { StatusComparacao, ConfigSecoesComparadas, ResumoComparacao } from '@/app/api/configuracoes/procurar-datas/route'
@@ -127,10 +131,10 @@ function ValorItem({ item, valorAtivo }: { item: ConfigItem; valorAtivo?: string
   switch (tipo) {
     case 'secret':
       return (
-        <span className="inline-flex items-center gap-1.5 font-mono text-sm bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded">
+        <Badge tone="warning" className="inline-flex items-center gap-1.5 font-mono">
           <Lock className="w-3 h-3 flex-shrink-0" />
           {valor}
-        </span>
+        </Badge>
       )
     case 'url':
       return (
@@ -138,7 +142,7 @@ function ValorItem({ item, valorAtivo }: { item: ConfigItem; valorAtivo?: string
           href={valor}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-sm text-[#00A5E6] hover:underline font-mono break-all"
+          className="inline-flex items-center gap-1 text-sm text-primary hover:underline font-mono break-all"
         >
           <LinkIcon className="w-3 h-3 flex-shrink-0" />
           {valor}
@@ -147,12 +151,10 @@ function ValorItem({ item, valorAtivo }: { item: ConfigItem; valorAtivo?: string
     case 'boolean': {
       const sim = ['sim', 'yes', 'true', '1', 'ativo', 'ativa'].includes(valor.toLowerCase())
       return (
-        <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
-          sim ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700'
-        }`}>
+        <Badge tone={sim ? 'success' : 'danger'} className="inline-flex items-center gap-1">
           <ToggleLeft className="w-3 h-3" />
           {valor.toUpperCase()}
-        </span>
+        </Badge>
       )
     }
     case 'currency': {
@@ -220,22 +222,20 @@ function BadgeComparacao({
 }) {
   if (status === 'igual' || status === 'secret') return null
 
-  const cfg: Record<Exclude<StatusComparacao, 'igual' | 'secret'>, { label: string; classes: string }> = {
+  // Mapeamento para o vocabulário de 6 tons do Badge oficial (lacuna: a tela
+  // original tinha uma cor ad hoc — violeta — sem equivalente direto; "brand"
+  // foi o tom mais próximo disponível, mesmo padrão de mapeamento documentado
+  // em STATUS_TONE de /pos-venda/atendimento-automatico).
+  const cfg: Record<Exclude<StatusComparacao, 'igual' | 'secret'>, { label: string; tone: 'brand' | 'warning' | 'info' | 'neutral' }> = {
     diferente: {
       label: editavel ? 'editado no banco' : 'diferente',
-      classes: editavel
-        ? 'bg-violet-50 text-violet-700 border-violet-200'
-        : 'bg-amber-50 text-amber-700 border-amber-200',
+      tone: editavel ? 'brand' : 'warning',
     },
-    ausente_no_banco: { label: 'ausente no banco', classes: 'bg-blue-50 text-blue-700 border-blue-200' },
-    ausente_na_planilha: { label: 'ausente na planilha', classes: 'bg-slate-100 text-slate-500 border-slate-200' },
+    ausente_no_banco: { label: 'ausente no banco', tone: 'info' },
+    ausente_na_planilha: { label: 'ausente na planilha', tone: 'neutral' },
   }
-  const { label, classes } = cfg[status]
-  return (
-    <span className={`inline-flex text-[10px] font-semibold px-1.5 py-0.5 rounded border ${classes}`}>
-      {label}
-    </span>
-  )
+  const { label, tone } = cfg[status]
+  return <Badge tone={tone} className="text-[10px]">{label}</Badge>
 }
 
 // ─────────────────────────────────────────────────────────
@@ -279,12 +279,12 @@ function InputEdicao({
   // Input de texto para endereço
   if (tipo === 'address') {
     return (
-      <input
+      <Input
         type="text"
         value={valor}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Endereço completo"
-        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#00A5E6] focus:border-transparent"
+        className="w-full"
       />
     )
   }
@@ -292,13 +292,13 @@ function InputEdicao({
   // HH:MM para TEMPO MAXIMO DE VIAGEM SÁBADO
   if (isTempoSabado) {
     return (
-      <input
+      <Input
         type="text"
         value={valor}
         onChange={(e) => onChange(e.target.value)}
         placeholder="HH:MM"
         maxLength={5}
-        className="w-24 text-sm font-mono border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#00A5E6] focus:border-transparent"
+        className="w-24 font-mono"
       />
     )
   }
@@ -315,13 +315,13 @@ function InputEdicao({
 
   return (
     <div className="flex items-center gap-1.5">
-      <input
+      <Input
         type="text"
         inputMode="decimal"
         value={valor}
         onChange={(e) => onChange(e.target.value)}
         placeholder="0"
-        className="w-28 text-sm font-mono border border-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#00A5E6] focus:border-transparent"
+        className="w-28 font-mono"
       />
       {suffix && <span className="text-xs text-slate-400">{suffix}</span>}
     </div>
@@ -454,7 +454,7 @@ function LinhaConfig({
             {editavel && !editando && (
               <button
                 onClick={iniciarEdicao}
-                className="p-1 rounded text-slate-400 hover:text-[#00A5E6] hover:bg-slate-100 transition-colors"
+                className="p-1 rounded text-slate-400 hover:text-primary hover:bg-slate-100 transition-colors"
                 title="Editar"
               >
                 <Pencil className="w-3.5 h-3.5" />
@@ -473,22 +473,14 @@ function LinhaConfig({
         <div className="mt-2 flex flex-col gap-2">
           <InputEdicao item={item} valor={inputValor} onChange={setInputValor} />
           <div className="flex items-center gap-2">
-            <button
-              onClick={salvar}
-              disabled={salvando}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#00A5E6] rounded-lg hover:bg-[#0090cc] disabled:opacity-50 transition-colors"
-            >
+            <Button size="sm" onClick={salvar} loading={salvando}>
               <Save className="w-3.5 h-3.5" />
-              {salvando ? 'Salvando...' : 'Salvar'}
-            </button>
-            <button
-              onClick={cancelar}
-              disabled={salvando}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
-            >
+              Salvar
+            </Button>
+            <Button size="sm" variant="secondary" onClick={cancelar} disabled={salvando}>
               <X className="w-3.5 h-3.5" />
               Cancelar
-            </button>
+            </Button>
             {erroEdicao && (
               <span className="text-xs text-red-600 flex items-center gap-1">
                 <AlertTriangle className="w-3.5 h-3.5" />
@@ -501,10 +493,9 @@ function LinhaConfig({
 
       {/* Toast de sucesso */}
       {sucessoMsg && (
-        <div className="mt-1 flex items-center gap-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-1.5">
-          <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" />
+        <Alert tone="success" className="mt-1">
           {sucessoMsg}
-        </div>
+        </Alert>
       )}
     </div>
   )
@@ -527,10 +518,8 @@ function SecaoCard({
   if (itens.length === 0) return null
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-      <div className="px-5 py-3 bg-slate-50 border-b border-slate-200">
-        <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">{titulo}</h2>
-      </div>
+    <Card>
+      <CardHeader title={titulo} />
       <div className="divide-y divide-slate-100">
         {itens.map((item) => (
           <LinhaConfig
@@ -541,7 +530,7 @@ function SecaoCard({
           />
         ))}
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -667,203 +656,180 @@ export default function ConfiguracoesProcurarDatasPage() {
   }, [])
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">Configurações — Procurar Datas</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Banco de dados (fonte oficial) com planilha como referência.
-            Valores editados no banco são usados pelo motor. Importe da planilha quando quiser sincronizar.
-          </p>
-        </div>
-        <button
-          onClick={carregarConfiguracoes}
-          disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          {loading ? 'Carregando...' : 'Recarregar'}
-        </button>
-      </div>
+    <PageContainer>
+      <FormPageContent className="max-w-4xl space-y-6">
+        <PageHeader
+          icon={<Settings className="size-6" />}
+          title="Configurações — Procurar Datas"
+          description="Banco de dados (fonte oficial) com planilha como referência. Valores editados no banco são usados pelo motor. Importe da planilha quando quiser sincronizar."
+          action={
+            <Button variant="secondary" onClick={carregarConfiguracoes} loading={loading}>
+              <RefreshCw className="size-4" />
+              Recarregar
+            </Button>
+          }
+        />
 
-      {/* Meta: origem + timestamp */}
-      {dados && (
-        <div className="flex items-center gap-2 text-xs text-slate-400 bg-slate-50 border border-slate-100 rounded-lg px-4 py-2">
-          <Globe className="w-3.5 h-3.5" />
-          <span>Origem: <strong className="text-slate-600">banco de dados interno</strong> (fonte oficial)</span>
-          <span className="text-slate-300">·</span>
-          <span>
-            Lido em:{' '}
-            <strong className="text-slate-600">
-              {new Date(dados.lido_em).toLocaleString('pt-BR', {
-                day: '2-digit', month: '2-digit', year: 'numeric',
-                hour: '2-digit', minute: '2-digit', second: '2-digit',
-              })}
-            </strong>
-          </span>
-        </div>
-      )}
-
-      {/* Resumo de comparação banco vs planilha */}
-      {dados && !dados.comparacao.banco_vazio && (
-        <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
-          <span className="text-slate-500 font-medium">Banco vs planilha:</span>
-          <span className="inline-flex items-center gap-1.5 text-green-700 font-semibold">
-            <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
-            {dados.comparacao.iguais} iguais
-          </span>
-          {dados.comparacao.diferentes > 0 && (
-            <span className="inline-flex items-center gap-1.5 text-violet-700 font-semibold">
-              <span className="w-2 h-2 rounded-full bg-violet-400 inline-block" />
-              {dados.comparacao.diferentes} editados no banco
+        {/* Meta: origem + timestamp */}
+        {dados && (
+          <div className="flex items-center gap-2 text-xs text-slate-400 bg-slate-50 border border-slate-100 rounded-lg px-4 py-2">
+            <Globe className="w-3.5 h-3.5" />
+            <span>Origem: <strong className="text-slate-600">banco de dados interno</strong> (fonte oficial)</span>
+            <span className="text-slate-300">·</span>
+            <span>
+              Lido em:{' '}
+              <strong className="text-slate-600">
+                {new Date(dados.lido_em).toLocaleString('pt-BR', {
+                  day: '2-digit', month: '2-digit', year: 'numeric',
+                  hour: '2-digit', minute: '2-digit', second: '2-digit',
+                })}
+              </strong>
             </span>
-          )}
-          {dados.comparacao.ausentes_no_banco > 0 && (
-            <span className="inline-flex items-center gap-1.5 text-blue-700 font-semibold">
-              <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
-              {dados.comparacao.ausentes_no_banco} ausentes no banco
-            </span>
-          )}
-          {dados.comparacao.ausentes_na_planilha > 0 && (
-            <span className="inline-flex items-center gap-1.5 text-slate-500 font-semibold">
-              <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" />
-              {dados.comparacao.ausentes_na_planilha} ausentes na planilha
-            </span>
-          )}
-          {dados.comparacao.diferentes === 0 &&
-           dados.comparacao.ausentes_no_banco === 0 &&
-           dados.comparacao.ausentes_na_planilha === 0 && (
-            <span className="text-slate-400 text-xs">sincronizado com a planilha</span>
-          )}
-        </div>
-      )}
-      {dados && dados.comparacao.banco_vazio && (
-        <div className="flex items-center gap-2 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-700">
-          <Database className="w-4 h-4 flex-shrink-0" />
-          Banco ainda sem dados — importe para ativar a comparação e edição.
-        </div>
-      )}
+          </div>
+        )}
 
-      {/* Painel Supabase: snapshot + botão de importação */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
-          <Database className="w-4 h-4 text-slate-500" />
-          <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Banco de dados interno</h2>
-        </div>
-        <div className="px-5 py-4 space-y-4">
+        {/* Resumo de comparação banco vs planilha */}
+        {dados && !dados.comparacao.banco_vazio && (
+          <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+            <span className="text-slate-500 font-medium">Banco vs planilha:</span>
+            <span className="inline-flex items-center gap-1.5 text-green-700 font-semibold">
+              <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+              {dados.comparacao.iguais} iguais
+            </span>
+            {dados.comparacao.diferentes > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-violet-700 font-semibold">
+                <span className="w-2 h-2 rounded-full bg-violet-400 inline-block" />
+                {dados.comparacao.diferentes} editados no banco
+              </span>
+            )}
+            {dados.comparacao.ausentes_no_banco > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-blue-700 font-semibold">
+                <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
+                {dados.comparacao.ausentes_no_banco} ausentes no banco
+              </span>
+            )}
+            {dados.comparacao.ausentes_na_planilha > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-slate-500 font-semibold">
+                <span className="w-2 h-2 rounded-full bg-slate-400 inline-block" />
+                {dados.comparacao.ausentes_na_planilha} ausentes na planilha
+              </span>
+            )}
+            {dados.comparacao.diferentes === 0 &&
+             dados.comparacao.ausentes_no_banco === 0 &&
+             dados.comparacao.ausentes_na_planilha === 0 && (
+              <span className="text-slate-400 text-xs">sincronizado com a planilha</span>
+            )}
+          </div>
+        )}
+        {dados && dados.comparacao.banco_vazio && (
+          <Alert tone="info">
+            Banco ainda sem dados — importe para ativar a comparação e edição.
+          </Alert>
+        )}
 
-          {/* Último snapshot */}
-          {bancoVazio === true && (
-            <p className="text-sm text-slate-500">
-              Nenhuma importação registrada ainda. Use o botão abaixo para importar as configurações da planilha para o banco.
-            </p>
-          )}
-          {snapshot && (
-            <div className="text-sm text-slate-600 space-y-1">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-                <span>
-                  Último snapshot salvo em{' '}
-                  <strong>
-                    {new Date(snapshot.created_at).toLocaleString('pt-BR', {
-                      day: '2-digit', month: '2-digit', year: 'numeric',
-                      hour: '2-digit', minute: '2-digit', second: '2-digit',
-                    })}
-                  </strong>
-                  {snapshot.criado_por && (
-                    <span className="text-slate-400"> · por {snapshot.criado_por}</span>
-                  )}
-                </span>
-              </div>
-              <p className="text-xs text-slate-400 pl-6">
-                {snapshot.chaves_ok} chaves salvas
-                {snapshot.chaves_vazias > 0 && `, ${snapshot.chaves_vazias} sem valor`}
-                {' '}· status: {snapshot.status}
+        {/* Painel Supabase: snapshot + botão de importação */}
+        <Card>
+          <CardHeader icon={<Database className="w-4 h-4" />} title="Banco de dados interno" />
+          <CardContent className="space-y-4">
+
+            {/* Último snapshot */}
+            {bancoVazio === true && (
+              <p className="text-sm text-slate-500">
+                Nenhuma importação registrada ainda. Use o botão abaixo para importar as configurações da planilha para o banco.
               </p>
-            </div>
-          )}
+            )}
+            {snapshot && (
+              <div className="text-sm text-slate-600 space-y-1">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                  <span>
+                    Último snapshot salvo em{' '}
+                    <strong>
+                      {new Date(snapshot.created_at).toLocaleString('pt-BR', {
+                        day: '2-digit', month: '2-digit', year: 'numeric',
+                        hour: '2-digit', minute: '2-digit', second: '2-digit',
+                      })}
+                    </strong>
+                    {snapshot.criado_por && (
+                      <span className="text-slate-400"> · por {snapshot.criado_por}</span>
+                    )}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 pl-6">
+                  {snapshot.chaves_ok} chaves salvas
+                  {snapshot.chaves_vazias > 0 && `, ${snapshot.chaves_vazias} sem valor`}
+                  {' '}· status: {snapshot.status}
+                </p>
+              </div>
+            )}
 
-          {/* Feedback da última importação */}
-          {importacaoResultado && (
-            <div className="flex items-start gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-800">
-              <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
-              <span>
+            {/* Feedback da última importação */}
+            {importacaoResultado && (
+              <Alert tone="success">
                 Importação para o banco concluída:{' '}
                 <strong>{importacaoResultado.criados}</strong> criadas,{' '}
                 <strong>{importacaoResultado.alterados}</strong> alteradas,{' '}
                 <strong>{importacaoResultado.inalterados}</strong> inalteradas.
-              </span>
-            </div>
-          )}
+              </Alert>
+            )}
 
-          {/* Erro da importação */}
-          {importacaoErro && (
-            <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-              <span>{importacaoErro}</span>
-            </div>
-          )}
+            {/* Erro da importação */}
+            {importacaoErro && (
+              <Alert tone="danger">{importacaoErro}</Alert>
+            )}
 
-          {/* Botão de importação */}
-          <button
-            onClick={executarImportacao}
-            disabled={importando || loading}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-[#00A5E6] rounded-lg hover:bg-[#0090cc] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <Download className={`w-4 h-4 ${importando ? 'animate-bounce' : ''}`} />
-            {importando ? 'Importando...' : 'Importar configuração da planilha'}
-          </button>
-          <p className="text-xs text-slate-400">
-            Ação manual e controlada. Cada clique gera um snapshot imutável no banco.
-            Secrets nunca são salvos.
-          </p>
-        </div>
-      </div>
+            {/* Botão de importação */}
+            <Button onClick={executarImportacao} loading={importando} disabled={loading}>
+              <Download className="w-4 h-4" />
+              Importar configuração da planilha
+            </Button>
+            <p className="text-xs text-slate-400">
+              Ação manual e controlada. Cada clique gera um snapshot imutável no banco.
+              Secrets nunca são salvos.
+            </p>
+          </CardContent>
+        </Card>
 
-      {/* Estado de loading */}
-      {loading && (
-        <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
-          <div className="w-8 h-8 border-2 border-[#00A5E6] border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm">Lendo configurações...</span>
-        </div>
-      )}
+        {/* Estado de loading */}
+        {loading && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
+            <LoadingLeBebe size={48} label="Lendo configurações" />
+            <span className="text-sm">Lendo configurações...</span>
+          </div>
+        )}
 
-      {/* Estado de erro */}
-      {!loading && erro && (
-        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-5 py-4">
-          <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-red-800">Erro ao carregar configurações</p>
-            <p className="text-sm text-red-600 mt-1 break-words">{erro}</p>
+        {/* Estado de erro */}
+        {!loading && erro && (
+          <Alert tone="danger" title="Erro ao carregar configurações">
+            <p className="break-words">{erro}</p>
             <button
               onClick={carregarConfiguracoes}
-              className="mt-3 text-xs font-medium text-red-700 hover:text-red-900 underline"
+              className="mt-2 text-xs font-medium text-red-700 hover:text-red-900 underline"
             >
               Tentar novamente
             </button>
-          </div>
-        </div>
-      )}
+          </Alert>
+        )}
 
-      {/* Seções de configuração */}
-      {!loading && dados && (
-        <div className="space-y-4">
-          {ORDEM_SECOES.map((secao) => {
-            const itens = dados.secoes[secao] as ConfigItemComparado[]
-            if (secao === 'outros' && itens.length === 0) return null
-            return (
-              <SecaoCard
-                key={secao}
-                titulo={TITULOS_SECOES[secao]}
-                itens={itens}
-                bancovazio={bancoVazio ?? true}
-                onSalvo={handleSalvo}
-              />
-            )
-          })}
-        </div>
-      )}
-    </div>
+        {/* Seções de configuração */}
+        {!loading && dados && (
+          <div className="space-y-4">
+            {ORDEM_SECOES.map((secao) => {
+              const itens = dados.secoes[secao] as ConfigItemComparado[]
+              if (secao === 'outros' && itens.length === 0) return null
+              return (
+                <SecaoCard
+                  key={secao}
+                  titulo={TITULOS_SECOES[secao]}
+                  itens={itens}
+                  bancovazio={bancoVazio ?? true}
+                  onSalvo={handleSalvo}
+                />
+              )
+            })}
+          </div>
+        )}
+      </FormPageContent>
+    </PageContainer>
   )
 }

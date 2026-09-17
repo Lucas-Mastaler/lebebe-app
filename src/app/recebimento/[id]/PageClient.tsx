@@ -58,6 +58,7 @@ interface RecebimentoItem {
   is_os: boolean
   os_numero: string | null
   numero_nf: string | null
+  pedido_numero?: string | null
   nf_sources?: string[]
   nfe_item: NfeItem | null
   recebimento_item_volumes: Volume[]
@@ -1517,7 +1518,7 @@ function FinalizarModal({
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
               <h4 className="text-sm font-semibold text-amber-900 mb-2 flex items-center gap-2">
                 <AlertCircle className="w-4 h-4" />
-                Problemas do último recebimento
+                Problemas pendentes
               </h4>
               <div className="space-y-2">
                 {problemasPendentes.map((problema) => (

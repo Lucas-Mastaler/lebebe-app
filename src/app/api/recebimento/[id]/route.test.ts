@@ -34,12 +34,178 @@ function mockSupabase(queues: Record<string, unknown[]>) {
   } as never)
 }
 
+function mockDetalheComNfesOs(nfes: Array<{
+  nfe_id: string
+  nfe: {
+    numero_nf: string
+    is_os: boolean
+    volumes_total: number
+    obs: string
+    nfe_assistencias: Array<{ id: string; os_oc_numero: string }>
+  }
+}>) {
+  mockSupabase({
+    recebimentos: [
+      {
+        data: { id: recebimentoId, status: 'aberto', timer_segundos_totais: 0, timer_rodando: false },
+        error: null,
+      },
+    ],
+    recebimento_nfes: [{ data: nfes }],
+    recebimento_itens: [{ data: [] }],
+    matic_sku: [{ data: [] }],
+    nfe_itens: [{ data: [] }, { data: [] }],
+    recebimento_os: [{ data: [] }],
+  })
+}
+
+async function obterItensOs() {
+  const response = await GET(
+    new Request(`https://example.com/api/recebimento/${recebimentoId}`) as never,
+    { params: Promise.resolve({ id: recebimentoId }) }
+  )
+  const body = await response.json()
+  return body.itens.filter((item: { is_os: boolean }) => item.is_os)
+}
+
 const recebimentoId = '123e4567-e89b-12d3-a456-426614174000'
 
 describe('GET /api/recebimento/[id]', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(validateMaticUser).mockResolvedValue({ authorized: true } as never)
+  })
+
+  it('associa o pedido ao par explícito N/PEDIDO e S/PEDIDO: OS', async () => {
+    mockDetalheComNfesOs([
+      {
+        nfe_id: 'nfe-explicita',
+        nfe: {
+          numero_nf: '297769',
+          is_os: true,
+          volumes_total: 1,
+          obs: 'N/PEDIDO: R0113428 S/PEDIDO: OS 4789',
+          nfe_assistencias: [{ id: 'assist-4789', os_oc_numero: '4789' }],
+        },
+      },
+    ])
+
+    const itensOs = await obterItensOs()
+
+    expect(itensOs).toHaveLength(1)
+    expect(itensOs[0]).toMatchObject({ os_numero: '4789', pedido_numero: 'R0113428' })
+  })
+
+  it('associa um único pedido à única OS relevante da mesma NF', async () => {
+    mockDetalheComNfesOs([
+      {
+        nfe_id: 'nfe-unica',
+        nfe: {
+          numero_nf: '297770',
+          is_os: true,
+          volumes_total: 1,
+          obs: 'ASSIST.TECNICA N/PEDIDO: R0113429 OS 4790',
+          nfe_assistencias: [{ id: 'assist-4790', os_oc_numero: '4790' }],
+        },
+      },
+    ])
+
+    const itensOs = await obterItensOs()
+
+    expect(itensOs[0]).toMatchObject({ os_numero: '4790', pedido_numero: 'R0113429' })
+  })
+
+  it('preenche o fallback da NF OS com seu único pedido', async () => {
+    mockDetalheComNfesOs([
+      {
+        nfe_id: 'nfe-fallback',
+        nfe: {
+          numero_nf: '297771',
+          is_os: true,
+          volumes_total: 1,
+          obs: 'ASSIST.TECNICA N/PEDIDO: R0113430',
+          nfe_assistencias: [],
+        },
+      },
+    ])
+
+    const itensOs = await obterItensOs()
+
+    expect(itensOs[0]).toMatchObject({ os_numero: 'os-nf-297771', pedido_numero: 'R0113430' })
+  })
+
+  it('não associa pedido quando múltiplos pedidos e OS não têm pares explícitos', async () => {
+    mockDetalheComNfesOs([
+      {
+        nfe_id: 'nfe-ambigua',
+        nfe: {
+          numero_nf: '297772',
+          is_os: true,
+          volumes_total: 1,
+          obs: 'N/PEDIDO: R0113431 OS 4791 N/PEDIDO: R0113432 OS 4792',
+          nfe_assistencias: [
+            { id: 'assist-4791', os_oc_numero: '4791' },
+            { id: 'assist-4792', os_oc_numero: '4792' },
+          ],
+        },
+      },
+    ])
+
+    const itensOs = await obterItensOs()
+
+    expect(itensOs).toHaveLength(2)
+    expect(itensOs.every((item: { pedido_numero?: string | null }) => item.pedido_numero == null)).toBe(true)
+  })
+
+  it('isola o pedido pela NF quando a mesma OS aparece em NFs distintas', async () => {
+    mockDetalheComNfesOs([
+      {
+        nfe_id: 'nfe-os-repetida-1',
+        nfe: {
+          numero_nf: '297773',
+          is_os: true,
+          volumes_total: 1,
+          obs: 'N/PEDIDO: R0113433 S/PEDIDO: OS 4793',
+          nfe_assistencias: [{ id: 'assist-4793-a', os_oc_numero: '4793' }],
+        },
+      },
+      {
+        nfe_id: 'nfe-os-repetida-2',
+        nfe: {
+          numero_nf: '297774',
+          is_os: true,
+          volumes_total: 1,
+          obs: 'N/PEDIDO: R0113434 S/PEDIDO: OS 4793',
+          nfe_assistencias: [{ id: 'assist-4793-b', os_oc_numero: '4793' }],
+        },
+      },
+    ])
+
+    const itensOs = await obterItensOs()
+
+    expect(itensOs).toHaveLength(2)
+    expect(itensOs.find((item: { numero_nf: string }) => item.numero_nf === '297773')).toMatchObject({ pedido_numero: 'R0113433' })
+    expect(itensOs.find((item: { numero_nf: string }) => item.numero_nf === '297774')).toMatchObject({ pedido_numero: 'R0113434' })
+  })
+
+  it('mantém o card de OS sem pedido quando nfe.obs não tem padrão reconhecido', async () => {
+    mockDetalheComNfesOs([
+      {
+        nfe_id: 'nfe-sem-pedido',
+        nfe: {
+          numero_nf: '297775',
+          is_os: true,
+          volumes_total: 1,
+          obs: 'ASSIST.TECNICA S/PEDIDO: OS 4794',
+          nfe_assistencias: [{ id: 'assist-4794', os_oc_numero: '4794' }],
+        },
+      },
+    ])
+
+    const itensOs = await obterItensOs()
+
+    expect(itensOs[0]).toMatchObject({ os_numero: '4794' })
+    expect(itensOs[0].pedido_numero).toBeNull()
   })
 
   it('gera ids únicos para OS com o mesmo os_oc_numero vindo de NFes diferentes (regressão da OS 4733 duplicada)', async () => {

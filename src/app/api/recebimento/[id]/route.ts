@@ -9,6 +9,51 @@ function normalizeCode(code: string): string {
   return code.trim().replace(/^0+/, '') || '0'
 }
 
+function extrairPedidoNumero(
+  obs: string | null | undefined,
+  osNumero: string | null,
+  quantidadeAssistencias: number
+): string | null {
+  const texto = obs || ''
+  const pedidos = [...texto.matchAll(/N\s*\/\s*PEDIDO\s*:\s*(R\d{7})\b/gi)]
+    .map(match => match[1].toUpperCase())
+  const pedidosUnicos = [...new Set(pedidos)]
+
+  if (pedidosUnicos.length === 0) return null
+
+  if (osNumero) {
+    const pedidosExplicitamenteAssociados = new Set<string>()
+    const blocosPedido = texto.matchAll(
+      /N\s*\/\s*PEDIDO\s*:\s*(R\d{7})\b([\s\S]*?)(?=N\s*\/\s*PEDIDO\s*:|$)/gi
+    )
+
+    for (const bloco of blocosPedido) {
+      const pedido = bloco[1].toUpperCase()
+      const osDoBloco = bloco[2].matchAll(
+        /S\s*\/\s*PEDIDO\s*:\s*O\.?\s*S\.?\s*[:\-]?\s*(\d+)\b/gi
+      )
+
+      for (const osMatch of osDoBloco) {
+        if (osMatch[1] === osNumero) {
+          pedidosExplicitamenteAssociados.add(pedido)
+        }
+      }
+    }
+
+    if (pedidosExplicitamenteAssociados.size === 1) {
+      return [...pedidosExplicitamenteAssociados][0]
+    }
+
+    if (pedidosExplicitamenteAssociados.size > 1) return null
+  }
+
+  if (pedidosUnicos.length === 1 && quantidadeAssistencias <= 1) {
+    return pedidosUnicos[0]
+  }
+
+  return null
+}
+
 // GET /api/recebimento/[id] — get full recebimento detail with items and volumes
 export async function GET(
   _request: NextRequest,
@@ -262,7 +307,7 @@ export async function GET(
   // For OS NFes with no assistencias extracted, a fallback item is created so they're visible
   const osItems = []
   for (const nfeLink of nfesOS) {
-    const nfe = nfeLink.nfe as { volumes_total?: number; nfe_assistencias?: Array<{ id: string; os_oc_numero: string }>; numero_nf?: string }
+    const nfe = nfeLink.nfe as { volumes_total?: number; nfe_assistencias?: Array<{ id: string; os_oc_numero: string }>; numero_nf?: string; obs?: string | null }
     const assistencias = nfe?.nfe_assistencias || []
     const volumesTotal = nfe?.volumes_total || 0
     const numeroNfForOS = nfe?.numero_nf || (nfeIdToNumeroMap.get((nfeLink as { nfe_id: string }).nfe_id) || '')
@@ -289,6 +334,7 @@ export async function GET(
         is_os: true,
         os_numero: itemId,
         numero_nf: numeroNfForOS,
+        pedido_numero: extrairPedidoNumero(nfe?.obs, null, 0),
         nfe_item: null,
         recebimento_item_volumes: [],
         status_calculado: volumesRecebidos >= volumesPrevistos ? 'concluido' : volumesRecebidos > 0 ? 'parcial' : 'pendente',
@@ -319,6 +365,7 @@ export async function GET(
           is_os: true,
           os_numero: ass.os_oc_numero,
           numero_nf: numeroNfForOS,
+          pedido_numero: extrairPedidoNumero(nfe?.obs, ass.os_oc_numero, assistencias.length),
           nfe_item: null,
           recebimento_item_volumes: [],
           status_calculado: volumesRecebidos >= volumesPrevistos ? 'concluido' : volumesRecebidos > 0 ? 'parcial' : 'pendente',

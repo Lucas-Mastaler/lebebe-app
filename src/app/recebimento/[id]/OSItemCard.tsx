@@ -7,6 +7,7 @@ interface RecebimentoItem {
   id: string
   os_numero: string | null
   numero_nf: string | null
+  pedido_numero?: string | null
   volumes_previstos_total: number
   volumes_recebidos_total: number
   sku_descricao: string
@@ -116,6 +117,11 @@ export function OSItemCard({
                 </span>
               )}
             </div>
+            {item.pedido_numero && (
+              <p className="text-xs text-slate-500 mt-0.5">
+                Pedido {item.pedido_numero}
+              </p>
+            )}
             {item.divergencia_tipo && (
               <span className="mt-1 inline-flex px-2 py-0.5 rounded-full bg-red-100 text-red-600 text-xs font-medium">
                 {item.divergencia_tipo}
@@ -185,7 +191,7 @@ export function OSItemCard({
       {!isFechado && (
         <button
           onClick={onDivClick}
-          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+          className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
         >
           <AlertTriangle className="w-3.5 h-3.5" />
           Divergência

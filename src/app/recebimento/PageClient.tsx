@@ -13,7 +13,7 @@ import { toast } from 'sonner'
 import { dateToIso, parseBrDate } from '@/lib/design-system/dates'
 import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
 import {
-  PageContainer, PageHeader, Button, IconButton, Card, CardHeader, CardContent,
+  PageContainer, PageHeader, Button, IconButton, Card, CardHeader, CardContent, CardFooter,
   Badge, Alert, EmptyState, Spinner, SkeletonRows, Progress,
   FilterPanel, FilterFieldGroup, useFilterState, FormField, Input, DateField, Textarea,
   Dialog, DialogContent, DialogHeader, DialogBody, ConfirmDialog,
@@ -1549,10 +1549,10 @@ function DashboardTab({ recebimentos }: { recebimentos: Recebimento[] }) {
 // =========================================================
 
 function DivergenciasListagemTab() {
-  const [problemas, setProblemas] = useState<Array<{
+  type Problema = {
     id: string
     descricao: string
-    recebimento_id: string
+    recebimento_id: string | null
     created_at: string
     resolvido: boolean
     resolvido_em: string | null
@@ -1563,26 +1563,85 @@ function DivergenciasListagemTab() {
         nfe: { numero_nf: string } | null
       }>
     } | null
-  }>>([])
-  const [loading, setLoading] = useState(true)
+  }
+  type Paginacao = { page: number; limit: number; total: number; totalPages: number }
+  type RespostaPaginada = { data: Problema[]; pagination: Paginacao }
+
+  const [problemasPendentes, setProblemasPendentes] = useState<Problema[]>([])
+  const [problemasResolvidos, setProblemasResolvidos] = useState<Problema[]>([])
+  const [paginacaoPendentes, setPaginacaoPendentes] = useState<Paginacao>({ page: 1, limit: TABLE_PAGE_SIZE, total: 0, totalPages: 0 })
+  const [paginacaoResolvidos, setPaginacaoResolvidos] = useState<Paginacao>({ page: 1, limit: TABLE_PAGE_SIZE, total: 0, totalPages: 0 })
+  const [loadingPendentes, setLoadingPendentes] = useState(true)
+  const [loadingResolvidos, setLoadingResolvidos] = useState(true)
   const [resolvendo, setResolvendo] = useState<Set<string>>(new Set())
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [descricao, setDescricao] = useState('')
+  const [createError, setCreateError] = useState('')
+  const [creating, setCreating] = useState(false)
 
   useEffect(() => {
-    loadProblemas()
+    void loadPendentes(1)
+    void loadResolvidos(1)
+    // As buscas iniciais devem ocorrer uma vez ao montar a aba; as funções
+    // também são usadas pelos controles independentes de paginação.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function loadProblemas() {
-    setLoading(true)
+  async function carregarPagina(resolvido: boolean, pagina: number): Promise<RespostaPaginada | null> {
     try {
-      const res = await fetch('/api/recebimento/problemas-pendentes')
-      if (res.ok) {
-        const data = await res.json()
-        setProblemas(data)
+      const params = new URLSearchParams({ resolvido: String(resolvido), page: String(pagina) })
+      const res = await fetch(`/api/recebimento/problemas-pendentes?${params.toString()}`)
+      if (!res.ok) {
+        toast.error('Não foi possível carregar os problemas')
+        return null
       }
+      return await res.json()
     } catch (err) {
       console.error('Erro ao carregar problemas:', err)
+      toast.error('Erro de conexão ao carregar problemas')
+      return null
+    }
+  }
+
+  async function loadPendentes(pagina: number) {
+    setLoadingPendentes(true)
+    try {
+      const result = await carregarPagina(false, pagina)
+      if (!result) return
+
+      const paginaValida = result.pagination.totalPages > 0
+        ? Math.min(pagina, result.pagination.totalPages)
+        : 1
+      if (paginaValida !== pagina) {
+        await loadPendentes(paginaValida)
+        return
+      }
+
+      setProblemasPendentes(result.data)
+      setPaginacaoPendentes(result.pagination)
     } finally {
-      setLoading(false)
+      setLoadingPendentes(false)
+    }
+  }
+
+  async function loadResolvidos(pagina: number) {
+    setLoadingResolvidos(true)
+    try {
+      const result = await carregarPagina(true, pagina)
+      if (!result) return
+
+      const paginaValida = result.pagination.totalPages > 0
+        ? Math.min(pagina, result.pagination.totalPages)
+        : 1
+      if (paginaValida !== pagina) {
+        await loadResolvidos(paginaValida)
+        return
+      }
+
+      setProblemasResolvidos(result.data)
+      setPaginacaoResolvidos(result.pagination)
+    } finally {
+      setLoadingResolvidos(false)
     }
   }
 
@@ -1595,10 +1654,16 @@ function DivergenciasListagemTab() {
         body: JSON.stringify({ problema_ids: [problemaId] }),
       })
       if (res.ok) {
-        await loadProblemas()
+        await Promise.all([
+          loadPendentes(paginacaoPendentes.page),
+          loadResolvidos(paginacaoResolvidos.page),
+        ])
+      } else {
+        toast.error('Não foi possível marcar o problema como resolvido')
       }
     } catch (err) {
       console.error('Erro ao resolver problema:', err)
+      toast.error('Erro de conexão ao marcar problema como resolvido')
     } finally {
       setResolvendo(prev => {
         const newSet = new Set(prev)
@@ -1608,33 +1673,70 @@ function DivergenciasListagemTab() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Spinner size={32} />
-      </div>
-    )
-  }
+  async function criarDivergencia() {
+    const descricaoNormalizada = descricao.trim()
+    if (!descricaoNormalizada) {
+      setCreateError('Descrição é obrigatória')
+      return
+    }
 
-  const problemasPendentes = problemas.filter(p => !p.resolvido)
-  const problemasResolvidos = problemas.filter(p => p.resolvido)
+    setCreating(true)
+    setCreateError('')
+    try {
+      const res = await fetch('/api/recebimento/problemas-pendentes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ descricao: descricaoNormalizada }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setCreateError(data.error || 'Não foi possível cadastrar a divergência')
+        return
+      }
 
-  if (problemas.length === 0) {
-    return (
-      <Card>
-        <EmptyState
-          icon={<CheckCircle2 className="size-5" />}
-          title="Nenhum problema registrado"
-          description="Nenhum problema foi reportado ainda."
-        />
-      </Card>
-    )
+      setDescricao('')
+      setShowCreateDialog(false)
+      toast.success('Divergência cadastrada com sucesso')
+      await loadPendentes(1)
+    } catch (err) {
+      console.error('Erro ao criar divergência:', err)
+      setCreateError('Erro de conexão ao cadastrar a divergência')
+    } finally {
+      setCreating(false)
+    }
   }
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">Divergências</h2>
+          <p className="text-sm text-slate-600">Pendências operacionais registradas para acompanhamento.</p>
+        </div>
+        <Button onClick={() => { setCreateError(''); setShowCreateDialog(true) }}>
+          <Plus className="size-4" />
+          Adicionar divergência
+        </Button>
+      </div>
+
+      {(loadingPendentes || loadingResolvidos) && (
+        <div className="flex items-center justify-center py-12">
+          <Spinner size={32} />
+        </div>
+      )}
+
+      {!loadingPendentes && !loadingResolvidos && paginacaoPendentes.total + paginacaoResolvidos.total === 0 && (
+        <Card>
+          <EmptyState
+            icon={<CheckCircle2 className="size-5" />}
+            title="Nenhum problema registrado"
+            description="Nenhum problema foi reportado ainda."
+          />
+        </Card>
+      )}
+
       {/* Problemas Pendentes */}
-      {problemasPendentes.length > 0 && (
+      {!loadingPendentes && paginacaoPendentes.total > 0 && (
         <Card>
           <CardHeader
             icon={<AlertCircle className="size-4" />}
@@ -1684,11 +1786,23 @@ function DivergenciasListagemTab() {
               )
             })}
           </CardContent>
+          {paginacaoPendentes.totalPages > 1 && (
+            <CardFooter className="items-center justify-between">
+              <p className="text-sm text-slate-600">
+                Mostrando {((paginacaoPendentes.page - 1) * TABLE_PAGE_SIZE) + 1}-{Math.min(paginacaoPendentes.page * TABLE_PAGE_SIZE, paginacaoPendentes.total)} de {paginacaoPendentes.total}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="secondary" onClick={() => void loadPendentes(paginacaoPendentes.page - 1)} disabled={paginacaoPendentes.page === 1}>Anterior</Button>
+                <span className="text-sm font-medium text-slate-700">Página {paginacaoPendentes.page} de {paginacaoPendentes.totalPages}</span>
+                <Button size="sm" variant="secondary" onClick={() => void loadPendentes(paginacaoPendentes.page + 1)} disabled={paginacaoPendentes.page >= paginacaoPendentes.totalPages}>Próxima</Button>
+              </div>
+            </CardFooter>
+          )}
         </Card>
       )}
 
       {/* Problemas Resolvidos */}
-      {problemasResolvidos.length > 0 && (
+      {!loadingResolvidos && paginacaoResolvidos.total > 0 && (
         <Card>
           <CardHeader
             icon={<CheckCircle2 className="size-4" />}
@@ -1733,8 +1847,46 @@ function DivergenciasListagemTab() {
               )
             })}
           </CardContent>
+          {paginacaoResolvidos.totalPages > 1 && (
+            <CardFooter className="items-center justify-between">
+              <p className="text-sm text-slate-600">
+                Mostrando {((paginacaoResolvidos.page - 1) * TABLE_PAGE_SIZE) + 1}-{Math.min(paginacaoResolvidos.page * TABLE_PAGE_SIZE, paginacaoResolvidos.total)} de {paginacaoResolvidos.total}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="secondary" onClick={() => void loadResolvidos(paginacaoResolvidos.page - 1)} disabled={paginacaoResolvidos.page === 1}>Anterior</Button>
+                <span className="text-sm font-medium text-slate-700">Página {paginacaoResolvidos.page} de {paginacaoResolvidos.totalPages}</span>
+                <Button size="sm" variant="secondary" onClick={() => void loadResolvidos(paginacaoResolvidos.page + 1)} disabled={paginacaoResolvidos.page >= paginacaoResolvidos.totalPages}>Próxima</Button>
+              </div>
+            </CardFooter>
+          )}
         </Card>
       )}
+
+      <Dialog open={showCreateDialog} onOpenChange={(open) => { if (!open && !creating) setShowCreateDialog(false) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader title="Adicionar divergência" description="Registre uma pendência operacional para acompanhar nos próximos recebimentos." />
+          <DialogBody className="space-y-4">
+            <FormField id="descricao-divergencia" label="Descrição" required error={createError || undefined}>
+              {(field) => (
+                <Textarea
+                  id={field.id}
+                  value={descricao}
+                  onChange={(event) => setDescricao(event.target.value)}
+                  placeholder="Descreva a pendência operacional"
+                  rows={4}
+                  disabled={creating}
+                  aria-invalid={field['aria-invalid']}
+                  aria-describedby={field['aria-describedby']}
+                />
+              )}
+            </FormField>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setShowCreateDialog(false)} disabled={creating}>Cancelar</Button>
+              <Button onClick={() => void criarDivergencia()} loading={creating}>Salvar</Button>
+            </div>
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

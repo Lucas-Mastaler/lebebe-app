@@ -11,6 +11,7 @@ import { createClient } from '@/lib/supabase/client'
 import { isMaticEmail } from '@/lib/auth/matic-emails'
 import { toast } from 'sonner'
 import { dateToIso, parseBrDate } from '@/lib/design-system/dates'
+import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
 import {
   PageContainer, PageHeader, Button, IconButton, Card, CardHeader, CardContent,
   Badge, Alert, EmptyState, Spinner, SkeletonRows, Progress,
@@ -45,6 +46,28 @@ interface Recebimento {
 
 type TabType = 'recebimentos' | 'notas' | 'divergencias' | 'dashboard'
 
+const HASH_POR_ABA: Record<TabType, string> = {
+  recebimentos: '',
+  notas: '#nfs',
+  divergencias: '#divergencias',
+  dashboard: '#metricas',
+}
+
+const ABA_POR_HASH: Record<string, TabType> = {
+  '#nfs': 'notas',
+  '#divergencias': 'divergencias',
+  '#metricas': 'dashboard',
+}
+
+function abaDoHash(hash: string): TabType | null {
+  if (!hash) return 'recebimentos'
+  return ABA_POR_HASH[hash] ?? null
+}
+
+function urlDaAba(aba: TabType): string {
+  return `${window.location.pathname}${window.location.search}${HASH_POR_ABA[aba]}`
+}
+
 type FiltrosRecebimento = {
   dataInicio: string
   dataFim: string
@@ -52,6 +75,14 @@ type FiltrosRecebimento = {
 }
 
 const FILTROS_VAZIOS: FiltrosRecebimento = { dataInicio: '', dataFim: '', numeroNf: '' }
+
+type FiltrosNotasVinculadas = {
+  dataInicio: string
+  dataFim: string
+  numeroNf: string
+}
+
+const FILTROS_NOTAS_VAZIOS: FiltrosNotasVinculadas = { dataInicio: '', dataFim: '', numeroNf: '' }
 
 export default function RecebimentoPage() {
   const router = useRouter()
@@ -69,6 +100,46 @@ export default function RecebimentoPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [totalItems, setTotalItems] = useState(0)
   const itemsPerPage = 20
+
+  const sincronizarAbaComHash = useCallback(() => {
+    const aba = abaDoHash(window.location.hash)
+
+    if (aba) {
+      setActiveTab(aba)
+
+      if (!window.location.hash && window.location.href.includes('#')) {
+        window.history.replaceState(null, '', urlDaAba(aba))
+      }
+      return
+    }
+
+    setActiveTab('recebimentos')
+    window.history.replaceState(null, '', urlDaAba('recebimentos'))
+  }, [])
+
+  const alterarAba = useCallback((value: string) => {
+    const aba = value as TabType
+    if (!(aba in HASH_POR_ABA)) return
+
+    setActiveTab(aba)
+
+    const proximaUrl = urlDaAba(aba)
+    const urlAtual = `${window.location.pathname}${window.location.search}${window.location.hash}`
+    if (urlAtual !== proximaUrl) {
+      window.history.pushState(null, '', proximaUrl)
+    }
+  }, [])
+
+  useEffect(() => {
+    sincronizarAbaComHash()
+    window.addEventListener('hashchange', sincronizarAbaComHash)
+    window.addEventListener('popstate', sincronizarAbaComHash)
+
+    return () => {
+      window.removeEventListener('hashchange', sincronizarAbaComHash)
+      window.removeEventListener('popstate', sincronizarAbaComHash)
+    }
+  }, [sincronizarAbaComHash])
 
   useEffect(() => {
     async function checkAuth() {
@@ -155,7 +226,7 @@ export default function RecebimentoPage() {
         }
       />
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabType)} className="mt-6">
+      <Tabs value={activeTab} onValueChange={alterarAba} className="mt-6">
         <SegmentedTabsList>
           <SegmentedTabsTrigger value="recebimentos" title="Lista de todos os recebimentos (abertos, fechados e cancelados)">
             <Package className="size-4" />
@@ -167,7 +238,7 @@ export default function RecebimentoPage() {
           </SegmentedTabsTrigger>
           <SegmentedTabsTrigger value="divergencias" title="Problemas anotados em recebimentos anteriores para resolver nos próximos carregamentos">
             <AlertCircle className="size-4" />
-            <span className="hidden xs:inline">Problemas Pendentes</span>
+            <span className="hidden xs:inline">Divergências</span>
           </SegmentedTabsTrigger>
           <SegmentedTabsTrigger value="dashboard" title="Métricas e estatísticas dos recebimentos">
             <BarChart3 className="size-4" />
@@ -1142,50 +1213,59 @@ function NotasVinculadasTab() {
     quantidade: number
   }>>([])
   const [loadingItens, setLoadingItens] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalItems, setTotalItems] = useState(0)
+  const filtros = useFilterState<FiltrosNotasVinculadas>(FILTROS_NOTAS_VAZIOS)
+
+  const loadNfes = useCallback(async (page: number, valores: FiltrosNotasVinculadas) => {
+    setLoading(true)
+    setNfes([])
+    try {
+      const params = new URLSearchParams({ page: page.toString() })
+      const dataInicio = parseBrDate(valores.dataInicio)
+      const dataFim = parseBrDate(valores.dataFim)
+
+      if (dataInicio) params.set('data_inicio', dateToIso(dataInicio))
+      if (dataFim) params.set('data_fim', dateToIso(dataFim))
+      if (valores.numeroNf) params.set('numero_nf', valores.numeroNf)
+
+      const response = await fetch(`/api/recebimento/notas-vinculadas?${params.toString()}`)
+      if (!response.ok) {
+        toast.error('Erro ao carregar notas fiscais')
+        setTotalItems(0)
+        setTotalPages(1)
+        return
+      }
+
+      const result = await response.json()
+      setNfes(result.data || [])
+      setCurrentPage(result.pagination?.page || page)
+      setTotalItems(result.pagination?.total || 0)
+      setTotalPages(result.pagination?.totalPages || 1)
+    } catch (err) {
+      console.error('Erro ao carregar NFes:', err)
+      toast.error('Erro de conexão ao carregar notas fiscais')
+      setTotalItems(0)
+      setTotalPages(1)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    async function loadNfes() {
-      setLoading(true)
-      try {
-        const supabase = createClient()
-        const { data, error } = await supabase
-          .from('nfe')
-          .select(`
-            id,
-            numero_nf,
-            data_emissao,
-            peso_total,
-            volumes_total,
-            is_os,
-            created_at,
-            recebimento_nfes(nfe_id)
-          `)
-          .order('numero_nf', { ascending: false })
-          .limit(500)
+    void loadNfes(1, FILTROS_NOTAS_VAZIOS)
+  }, [loadNfes])
 
-        if (!error && data) {
-          // Marcar NFes vinculadas
-          const nfesWithVinculo = data.map(nf => {
-            const nfWithRecebimento = nf as { recebimento_nfes?: unknown[] };
-            return {
-              ...nf,
-              is_vinculada: (nfWithRecebimento.recebimento_nfes?.length ?? 0) > 0,
-              recebimento_nfes: undefined // Remove do objeto final
-            };
-          });
-          setNfes(nfesWithVinculo);
-        } else if (error) {
-          toast.error('Erro ao carregar notas fiscais')
-        }
-      } catch (err) {
-        console.error('Erro ao carregar NFes:', err)
-        toast.error('Erro de conexão ao carregar notas fiscais')
-      } finally {
-        setLoading(false)
-      }
-    }
-    loadNfes()
-  }, [])
+  function aplicarFiltros() {
+    filtros.apply()
+    void loadNfes(1, filtros.draft)
+  }
+
+  function limparFiltros() {
+    filtros.clear()
+    void loadNfes(1, FILTROS_NOTAS_VAZIOS)
+  }
 
   async function loadNfeItens(nfeId: string) {
     setLoadingItens(true)
@@ -1207,19 +1287,52 @@ function NotasVinculadasTab() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Spinner size={32} />
-      </div>
-    )
-  }
-
   const selectedNfeData = nfes.find(n => n.id === selectedNfe)
 
   return (
-    <div className="space-y-3">
-      {nfes.length === 0 ? (
+    <div className="space-y-4">
+      <FilterPanel dirty={filtros.dirty} onApply={aplicarFiltros} onClear={limparFiltros}>
+        <FilterFieldGroup label="Filtros">
+          <FormField id="filtro-notas-data-inicio" label="Data de">
+            {(f) => (
+              <DateField
+                id={f.id}
+                value={filtros.draft.dataInicio}
+                onChange={(value) => filtros.setField('dataInicio', value)}
+                aria-invalid={f['aria-invalid']}
+              />
+            )}
+          </FormField>
+          <FormField id="filtro-notas-data-fim" label="Data até">
+            {(f) => (
+              <DateField
+                id={f.id}
+                value={filtros.draft.dataFim}
+                onChange={(value) => filtros.setField('dataFim', value)}
+                aria-invalid={f['aria-invalid']}
+              />
+            )}
+          </FormField>
+          <FormField id="filtro-notas-numero-nf" label="Número da NF">
+            {(f) => (
+              <Input
+                id={f.id}
+                value={filtros.draft.numeroNf}
+                onChange={(event) => filtros.setField('numeroNf', event.target.value.replace(/\D/g, ''))}
+                onKeyDown={(event) => { if (event.key === 'Enter') aplicarFiltros() }}
+                aria-invalid={f['aria-invalid']}
+                placeholder="Ex: 12345"
+              />
+            )}
+          </FormField>
+        </FilterFieldGroup>
+      </FilterPanel>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Spinner size={32} />
+        </div>
+      ) : nfes.length === 0 ? (
         <Card>
           <EmptyState
             icon={<FileText className="size-5" />}
@@ -1231,7 +1344,7 @@ function NotasVinculadasTab() {
         <>
           <Card className="mb-4 p-4">
             <p className="text-sm text-slate-600">
-              Total: <span className="font-bold text-slate-800">{nfes.length}</span> NF-e(s) importadas
+              Total: <span className="font-bold text-slate-800">{totalItems}</span> NF-e(s) importadas
             </p>
           </Card>
           {nfes.map((nfe) => (
@@ -1273,6 +1386,32 @@ function NotasVinculadasTab() {
               </div>
             </Card>
           ))}
+          {totalPages > 1 && (
+            <Card className="flex items-center justify-between p-4">
+              <p className="text-sm text-slate-600">
+                Mostrando {((currentPage - 1) * TABLE_PAGE_SIZE) + 1}-{Math.min(currentPage * TABLE_PAGE_SIZE, totalItems)} de {totalItems}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={() => loadNfes(currentPage - 1, filtros.applied)}
+                  disabled={currentPage === 1}
+                >
+                  Anterior
+                </Button>
+                <div className="flex items-center gap-2 px-3">
+                  <span className="text-sm font-medium text-slate-700">Página {currentPage} de {totalPages}</span>
+                </div>
+                <Button
+                  variant="secondary"
+                  onClick={() => loadNfes(currentPage + 1, filtros.applied)}
+                  disabled={currentPage >= totalPages}
+                >
+                  Próxima
+                </Button>
+              </div>
+            </Card>
+          )}
         </>
       )}
 

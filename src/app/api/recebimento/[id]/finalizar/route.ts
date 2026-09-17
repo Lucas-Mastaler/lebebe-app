@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { validateMaticUser } from '@/lib/auth/matic-auth'
 import { enviarRecebimentoParaPlanilha } from '@/lib/google/sheets-service'
 import { dispararAutomacaoBaixaEncomendas } from '@/lib/integracoes/automacao-vps'
+import { isDescricaoVolumeAvulso } from '@/lib/recebimento/volume-avulso'
+import { registroPodeFinalizar } from '@/lib/recebimento/finalizacao'
 
 // Helper: remove leading zeros and trim spaces for matching (02685 -> 2685)
 function normalizeCode(code: string): string {
@@ -42,7 +44,7 @@ export async function POST(
   // Identify which NFs are OS type (to exclude their items from validation)
   const { data: nfeLinks } = await supabase
     .from('recebimento_nfes')
-    .select('nfe_id, nfe:nfe_id(is_os)')
+    .select('nfe_id, nfe:nfe_id(is_os, numero_nf, volumes_total, nfe_assistencias(id, os_oc_numero))')
     .eq('recebimento_id', id)
 
   const nfeOSIds = new Set(
@@ -102,9 +104,7 @@ export async function POST(
 
   // Validate: all normal items must be complete OR have divergência
   const pendentesItens = itensNormais.filter(item => {
-    const incompleto = item.volumes_recebidos_total < item.volumes_previstos_total
-    const semDivergencia = !item.divergencia_tipo
-    return incompleto && semDivergencia
+    return !registroPodeFinalizar(item.volumes_recebidos_total, item.volumes_previstos_total, item.divergencia_tipo)
   })
 
   if (pendentesItens.length > 0) {
@@ -117,6 +117,85 @@ export async function POST(
     return NextResponse.json({
       error: `Existem ${pendentesItens.length} item(ns) incompleto(s) sem divergência registrada`,
       itens_pendentes: pendentesItens.map(p => p.id),
+    }, { status: 400 })
+  }
+
+  // OS are virtual records in the conference UI. Rebuild their current keys
+  // from linked NFes and validate their persisted tracking explicitly here.
+  const { data: osTracking } = await supabase
+    .from('recebimento_os')
+    .select('os_numero, volumes_previstos, volumes_recebidos, divergencia_tipo, divergencia_obs')
+    .eq('recebimento_id', id)
+  const osTrackingMap = new Map((osTracking || []).map(os => [os.os_numero, os]))
+  const osRegistros = new Map<string, {
+    os_numero: string
+    volumes_previstos: number
+    volumes_recebidos: number
+    divergencia_tipo: string | null
+    divergencia_obs: string | null
+  }>()
+
+  const adicionarOS = (osNumero: string, volumesPrevistosPadrao: number) => {
+    if (osRegistros.has(osNumero)) return
+    const tracking = osTrackingMap.get(osNumero)
+    osRegistros.set(osNumero, {
+      os_numero: osNumero,
+      volumes_previstos: tracking?.volumes_previstos ?? volumesPrevistosPadrao,
+      volumes_recebidos: tracking?.volumes_recebidos ?? 0,
+      divergencia_tipo: tracking?.divergencia_tipo ?? null,
+      divergencia_obs: tracking?.divergencia_obs ?? null,
+    })
+  }
+
+  for (const link of (nfeLinks || [])) {
+    const nfe = link.nfe as {
+      is_os?: boolean
+      numero_nf?: string
+      volumes_total?: number
+      nfe_assistencias?: Array<{ id: string; os_oc_numero: string }>
+    } | null
+    if (!nfe?.is_os) continue
+
+    const assistencias = nfe.nfe_assistencias || []
+    if (assistencias.length === 0) {
+      adicionarOS(`os-nf-${nfe.numero_nf || link.nfe_id}`, nfe.volumes_total || 0)
+      continue
+    }
+    for (const assistencia of assistencias) {
+      adicionarOS(assistencia.os_oc_numero, nfe.volumes_total || 0)
+    }
+  }
+
+  const nfeNormaisIds = (nfeLinks || [])
+    .filter(link => !(link.nfe as { is_os?: boolean } | null)?.is_os)
+    .map(link => link.nfe_id)
+  if (nfeNormaisIds.length > 0) {
+    const [{ data: nfeItensNormais }, { data: skus }] = await Promise.all([
+      supabase
+        .from('nfe_itens')
+        .select('id, nfe_id, codigo_produto, descricao, quantidade')
+        .in('nfe_id', nfeNormaisIds)
+        .limit(10000),
+      supabase
+        .from('matic_sku')
+        .select('ref_meia, ref_inteira')
+        .or('ref_meia.not.is.null,ref_inteira.not.is.null'),
+    ])
+    const refsSku = new Set((skus || []).flatMap(sku => [sku.ref_meia, sku.ref_inteira]).filter(Boolean).map(ref => normalizeCode(ref as string)))
+    for (const item of (nfeItensNormais || [])) {
+      if (refsSku.has(normalizeCode(item.codigo_produto)) && isDescricaoVolumeAvulso(item.descricao)) {
+        adicionarOS(`os-vol-${item.id}`, item.quantidade)
+      }
+    }
+  }
+
+  const pendentesOS = Array.from(osRegistros.values()).filter(os =>
+    !registroPodeFinalizar(os.volumes_recebidos, os.volumes_previstos, os.divergencia_tipo)
+  )
+  if (pendentesOS.length > 0) {
+    return NextResponse.json({
+      error: `Existem ${pendentesOS.length} OS incompleta(s) sem divergência registrada`,
+      os_pendentes: pendentesOS.map(os => os.os_numero),
     }, { status: 400 })
   }
 
@@ -205,6 +284,11 @@ export async function POST(
     const tipo = item.divergencia_tipo
     const obs = item.divergencia_obs || ''
     problemasList.push(`${codigo} (tipo: ${tipo}, observação: ${obs})`)
+  }
+  for (const os of osRegistros.values()) {
+    if (os.divergencia_tipo) {
+      problemasList.push(`OS ${os.os_numero} (tipo: ${os.divergencia_tipo}, observação: ${os.divergencia_obs || ''})`)
+    }
   }
   const problemasRecebimento = problemasList.join('; ')
 

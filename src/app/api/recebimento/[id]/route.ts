@@ -253,7 +253,7 @@ export async function GET(
   // Fetch OS tracking data
   const { data: osTracking } = await supabase
     .from('recebimento_os')
-    .select('os_numero, volumes_previstos, volumes_recebidos')
+    .select('os_numero, volumes_previstos, volumes_recebidos, divergencia_tipo, divergencia_obs')
     .eq('recebimento_id', id)
   
   const osTrackingMap = new Map((osTracking || []).map(ot => [ot.os_numero, ot]))
@@ -283,8 +283,8 @@ export async function GET(
         volumes_por_item: 1,
         corredor_final: null,
         nivel_final: null,
-        divergencia_tipo: null,
-        divergencia_obs: null,
+        divergencia_tipo: tracking?.divergencia_tipo || null,
+        divergencia_obs: tracking?.divergencia_obs || null,
         avaria_foto_url: null,
         is_os: true,
         os_numero: itemId,
@@ -313,8 +313,8 @@ export async function GET(
           volumes_por_item: 1,
           corredor_final: null,
           nivel_final: null,
-          divergencia_tipo: null,
-          divergencia_obs: null,
+          divergencia_tipo: tracking?.divergencia_tipo || null,
+          divergencia_obs: tracking?.divergencia_obs || null,
           avaria_foto_url: null,
           is_os: true,
           os_numero: ass.os_oc_numero,
@@ -363,8 +363,8 @@ export async function GET(
       volumes_por_item: 1,
       corredor_final: null,
       nivel_final: null,
-      divergencia_tipo: null,
-      divergencia_obs: null,
+      divergencia_tipo: tracking?.divergencia_tipo || null,
+      divergencia_obs: tracking?.divergencia_obs || null,
       avaria_foto_url: null,
       is_os: true,
       os_numero: osNumero,

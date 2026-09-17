@@ -3,8 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { validateMaticUser } from '@/lib/auth/matic-auth'
 import { registrarAtividadeConferencia } from '@/lib/recebimento/timer-activity'
 
-// POST /api/recebimento/[id]/os/[osNumero] — update OS volumes
-export async function POST(
+// PATCH /api/recebimento/[id]/os/[osNumero] — update OS volumes and divergência
+export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; osNumero: string }> }
 ) {
@@ -34,6 +34,10 @@ export async function POST(
     return NextResponse.json({ error: 'Recebimento não está aberto' }, { status: 400 })
   }
 
+  const divergenciaFields: Record<string, string | null> = {}
+  if (body.divergencia_tipo !== undefined) divergenciaFields.divergencia_tipo = body.divergencia_tipo || null
+  if (body.divergencia_obs !== undefined) divergenciaFields.divergencia_obs = body.divergencia_obs || null
+
   // Upsert OS tracking
   const { data, error } = await supabase
     .from('recebimento_os')
@@ -43,6 +47,7 @@ export async function POST(
       volumes_previstos: volumes_previstos || 0,
       volumes_recebidos: Math.max(0, volumes_recebidos),
       updated_at: new Date().toISOString(),
+      ...divergenciaFields,
     }, {
       onConflict: 'recebimento_id,os_numero'
     })
@@ -59,3 +64,5 @@ export async function POST(
 
   return NextResponse.json(data)
 }
+
+export { PATCH as POST }

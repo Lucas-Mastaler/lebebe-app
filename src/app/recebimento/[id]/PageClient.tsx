@@ -22,6 +22,7 @@ import { isMaticEmail } from '@/lib/auth/matic-emails'
 import { OSItemCard } from './OSItemCard'
 import { toast } from 'sonner'
 import { fetchWithRetry } from '@/lib/fetch-with-retry'
+import { registroPodeFinalizar } from '@/lib/recebimento/finalizacao'
 
 // =========================================================
 // Types
@@ -364,10 +365,9 @@ export default function ConferenciaPage() {
     })
 
   // Check if can finalize
-  const canFinalize = recebimento.itens.every(item => {
-    const complete = item.volumes_recebidos_total >= item.volumes_previstos_total
-    return complete || !!item.divergencia_tipo
-  })
+  const canFinalize = recebimento.itens.every(item =>
+    registroPodeFinalizar(item.volumes_recebidos_total, item.volumes_previstos_total, item.divergencia_tipo)
+  )
 
   // Format timer display
   const formatTime = (seconds: number) => {
@@ -622,6 +622,7 @@ export default function ConferenciaPage() {
                 item={item}
                 recebimentoId={recebimentoId}
                 isFechado={isFechado || isCancelado}
+                onDivClick={() => setDivModal(item)}
                 onVolumeUpdate={(itemId: string, newRecebido: number, _newTotal: number) => {
                   setRecebimento(prev => {
                     if (!prev) return prev
@@ -1290,13 +1291,24 @@ function DivergenciaModal({
   async function handleSave() {
     setSaving(true)
     try {
-      const res = await fetch(`/api/recebimento/${recebimentoId}/item/${item.id}`, {
+      const endpoint = item.is_os && item.os_numero
+        ? `/api/recebimento/${recebimentoId}/os/${encodeURIComponent(item.os_numero)}`
+        : `/api/recebimento/${recebimentoId}/item/${item.id}`
+      const payload = item.is_os
+        ? {
+            volumes_recebidos: item.volumes_recebidos_total,
+            volumes_previstos: item.volumes_previstos_total,
+            divergencia_tipo: tipo || null,
+            divergencia_obs: obs || null,
+          }
+        : {
+            divergencia_tipo: tipo || null,
+            divergencia_obs: obs || null,
+          }
+      const res = await fetch(endpoint, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          divergencia_tipo: tipo || null,
-          divergencia_obs: obs || null,
-        }),
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
         toast.success(tipo ? 'Divergência registrada' : 'Divergência removida')
@@ -1321,7 +1333,9 @@ function DivergenciaModal({
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40" onClick={onClose}>
       <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-md p-6 shadow-xl" onClick={e => e.stopPropagation()}>
         <h3 className="font-bold text-slate-800 mb-1">Registrar Divergência</h3>
-        <p className="text-xs text-slate-500 mb-4">{item.nfe_item?.codigo_produto} — {item.sku_descricao}</p>
+        <p className="text-xs text-slate-500 mb-4">
+          {item.is_os ? `OS ${item.os_numero}` : item.nfe_item?.codigo_produto} — {item.sku_descricao}
+        </p>
 
         <div className="mb-4">
           <label className="text-sm font-medium text-slate-600 block mb-2">Tipo</label>
@@ -1808,7 +1822,7 @@ function DivergenciasTab({
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1">
                     <p className="font-medium text-slate-800 text-sm">
-                      {item.nfe_item?.codigo_produto} - {item.sku_descricao || item.nfe_item?.descricao}
+                      {item.is_os ? `OS ${item.os_numero}` : item.nfe_item?.codigo_produto} - {item.sku_descricao || item.nfe_item?.descricao}
                     </p>
                     {item.numero_nf && (
                       <p className="text-xs text-slate-500">NF: {item.numero_nf}</p>

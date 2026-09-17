@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Package, Plus, Minus, CheckCircle2 } from 'lucide-react'
+import { Package, Plus, Minus, CheckCircle2, AlertTriangle } from 'lucide-react'
 
 interface RecebimentoItem {
   id: string
@@ -10,6 +10,7 @@ interface RecebimentoItem {
   volumes_previstos_total: number
   volumes_recebidos_total: number
   sku_descricao: string
+  divergencia_tipo: string | null
 }
 
 export function OSItemCard({
@@ -17,11 +18,13 @@ export function OSItemCard({
   recebimentoId,
   isFechado,
   onVolumeUpdate,
+  onDivClick,
 }: {
   item: RecebimentoItem
   recebimentoId: string
   isFechado: boolean
   onVolumeUpdate: (itemId: string, newRecebido: number, newTotal: number) => void
+  onDivClick: () => void
 }) {
   const [loading, setLoading] = useState(false)
   const [localVolumes, setLocalVolumes] = useState(item.volumes_recebidos_total)
@@ -47,7 +50,7 @@ export function OSItemCard({
     saveInProgress.current = true
     try {
       const res = await fetch(`/api/recebimento/${recebimentoId}/os/${item.os_numero}`, {
-        method: 'POST',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           volumes_recebidos: newValue,
@@ -113,6 +116,11 @@ export function OSItemCard({
                 </span>
               )}
             </div>
+            {item.divergencia_tipo && (
+              <span className="mt-1 inline-flex px-2 py-0.5 rounded-full bg-red-100 text-red-600 text-xs font-medium">
+                {item.divergencia_tipo}
+              </span>
+            )}
           </div>
         </div>
         {isComplete && (
@@ -173,6 +181,16 @@ export function OSItemCard({
           </div>
         )}
       </div>
+
+      {!isFechado && (
+        <button
+          onClick={onDivClick}
+          className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+        >
+          <AlertTriangle className="w-3.5 h-3.5" />
+          Divergência
+        </button>
+      )}
     </div>
   )
 }

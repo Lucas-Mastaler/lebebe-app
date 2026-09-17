@@ -82,7 +82,7 @@ describe('GET /api/recebimento/[id]', () => {
       recebimento_itens: [{ data: [] }],
       matic_sku: [{ data: [] }],
       nfe_itens: [{ data: [] }, { data: [] }],
-      recebimento_os: [{ data: [] }],
+      recebimento_os: [{ data: [{ os_numero: '4733', volumes_previstos: 2, volumes_recebidos: 0, divergencia_tipo: 'faltou', divergencia_obs: 'Volume ausente' }] }],
     })
 
     const response = await GET(
@@ -98,6 +98,7 @@ describe('GET /api/recebimento/[id]', () => {
     // Raiz do bug: os dois registros da OS 4733 não podem compartilhar o mesmo id/key.
     const ids = osItens.map((item: { id: string }) => item.id)
     expect(new Set(ids).size).toBe(2)
+    expect(osItens.every((item: { divergencia_tipo: string; divergencia_obs: string }) => item.divergencia_tipo === 'faltou' && item.divergencia_obs === 'Volume ausente')).toBe(true)
   })
 
   it('trata linha de NFe com ref batendo em produto cadastrado, mas descrição contendo VOLUME, como OS e não como Item (caso real do recebimento 33)', async () => {

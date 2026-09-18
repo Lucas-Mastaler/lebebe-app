@@ -93,7 +93,7 @@ export async function POST(
   }
 
   // Register activity and auto-resume timer if needed
-  await registrarAtividadeConferencia(supabase, id)
+  const { pausaCriada } = await registrarAtividadeConferencia(supabase, id)
 
   // Determine status
   let status = 'pendente'
@@ -110,5 +110,6 @@ export async function POST(
     item_total_recebido: totalRecebido,
     item_total_previsto: recItem?.volumes_previstos_total || 0,
     item_status: status,
+    pausa_criada: pausaCriada,
   })
 }

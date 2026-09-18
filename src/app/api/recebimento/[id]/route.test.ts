@@ -17,6 +17,7 @@ function builder(result: unknown) {
     eq: vi.fn(() => chain),
     in: vi.fn(() => chain),
     limit: vi.fn(() => chain),
+    order: vi.fn(() => chain),
     single: vi.fn(() => Promise.resolve(result)),
     then: (resolve: (value: unknown) => unknown, reject: (reason?: unknown) => unknown) =>
       Promise.resolve(result).then(resolve, reject),
@@ -56,6 +57,7 @@ function mockDetalheComNfesOs(nfes: Array<{
     matic_sku: [{ data: [] }],
     nfe_itens: [{ data: [] }, { data: [] }],
     recebimento_os: [{ data: [] }],
+    recebimento_pausas: [{ data: [] }],
   })
 }
 
@@ -249,6 +251,7 @@ describe('GET /api/recebimento/[id]', () => {
       matic_sku: [{ data: [] }],
       nfe_itens: [{ data: [] }, { data: [] }],
       recebimento_os: [{ data: [{ os_numero: '4733', volumes_previstos: 2, volumes_recebidos: 0, divergencia_tipo: 'faltou', divergencia_obs: 'Volume ausente' }] }],
+      recebimento_pausas: [{ data: [] }],
     })
 
     const response = await GET(
@@ -325,6 +328,7 @@ describe('GET /api/recebimento/[id]', () => {
         },
       ],
       recebimento_os: [{ data: [] }],
+      recebimento_pausas: [{ data: [] }],
     })
 
     const response = await GET(
@@ -404,6 +408,7 @@ describe('GET /api/recebimento/[id]', () => {
         { data: [{ id: 'ni-vol-1', nfe_id: 'nfe-vol', codigo_produto: '00061714', descricao: 'VOLUME 01- OFF WHITE/FREIJO/ECO', quantidade: 2, volumes_por_item: 2 }] },
       ],
       recebimento_os: [{ data: [] }],
+      recebimento_pausas: [{ data: [] }],
     })
 
     const response = await GET(

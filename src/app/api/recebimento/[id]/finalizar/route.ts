@@ -5,6 +5,9 @@ import { enviarRecebimentoParaPlanilha } from '@/lib/google/sheets-service'
 import { dispararAutomacaoBaixaEncomendas } from '@/lib/integracoes/automacao-vps'
 import { isDescricaoVolumeAvulso } from '@/lib/recebimento/volume-avulso'
 import { registroPodeFinalizar } from '@/lib/recebimento/finalizacao'
+import { encerrarTimerParaFinalizacao } from '@/lib/recebimento/timer-activity'
+import { precisaCorrecaoManual, validarCorrecaoManual } from '@/lib/recebimento/correcao-manual-tempo'
+import { existePausaPendente, listarPausas, somarSegundosReintegrados } from '@/lib/recebimento/pausas-revisao'
 
 // Helper: remove leading zeros and trim spaces for matching (02685 -> 2685)
 function normalizeCode(code: string): string {
@@ -340,12 +343,77 @@ export async function POST(
   
   const totalVolumes = (itensRecebidos || []).reduce((sum, item) => sum + (item.volumes_recebidos_total || 0), 0)
 
-  // Finalize
+  // Pausas revisáveis (>15min sem interação, ver pausas-revisao.ts) precisam
+  // estar todas decididas ANTES de qualquer cálculo de tempo — nunca confiar
+  // só no frontend para bloquear isso.
+  const pausas = await listarPausas(supabase, id)
+  if (existePausaPendente(pausas)) {
+    return NextResponse.json({
+      error: 'Existem períodos de pausa que precisam ser revisados antes de finalizar o recebimento.',
+      requer_revisao_pausas: true,
+    }, { status: 400 })
+  }
+
+  // Encerra o timer usando a mesma regra central de inatividade (ver
+  // src/lib/recebimento/timer-activity.ts): se ainda estava legitimamente
+  // ativo, soma até agora; se já estava parado há mais de 5min, soma só até
+  // o limite correto.
+  const tempoAutomaticoSegundos = await encerrarTimerParaFinalizacao(supabase, id, dataFim)
+
+  // Soma a contribuição das pausas já revisadas — sempre recalculada a
+  // partir dos registros persistidos (nunca de um valor acumulado à parte).
+  // Como o gate acima já garante zero pendentes, esta soma é definitiva.
+  const segundosReintegradosPausas = somarSegundosReintegrados(pausas)
+  const tempoEfetivoSegundos = tempoAutomaticoSegundos + segundosReintegradosPausas
+
+  if (segundosReintegradosPausas > 0) {
+    console.log(`[LOG][PAUSA] Recebimento ${id}: ${segundosReintegradosPausas}s reintegrados de ${pausas.length} pausa(s) na finalização`)
+  }
+
+  // Fallback manual: se o tempo automático + pausas revisadas ultrapassa
+  // 12h, exigimos confirmação do operador com início/fim reais antes de
+  // finalizar — nunca confiamos só no frontend para essa decisão. A duração
+  // manual, quando válida, passa a ser a oficial deste recebimento (ver
+  // obterDuracaoFinalDoRecebimento em metricas-tempo.ts) e tem prioridade
+  // máxima sobre tudo mais, inclusive sobre as pausas.
+  let duracaoOficialSegundos = tempoEfetivoSegundos
+  let correcaoManualAplicada = false
+  let manualInicioIso: string | null = null
+  let manualFimIso: string | null = null
+
+  if (precisaCorrecaoManual(tempoEfetivoSegundos)) {
+    const validacao = validarCorrecaoManual({
+      inicio: body.correcao_manual_inicio,
+      fim: body.correcao_manual_fim,
+    })
+
+    if (!validacao.valido) {
+      return NextResponse.json({
+        error: validacao.erro,
+        requer_correcao_manual: true,
+        tempo_calculado_segundos: tempoEfetivoSegundos,
+      }, { status: 400 })
+    }
+
+    duracaoOficialSegundos = validacao.segundos
+    correcaoManualAplicada = true
+    manualInicioIso = validacao.inicioIso
+    manualFimIso = validacao.fimIso
+  }
+
+  // Finalize — uma única escrita com todo o estado final (timer + correção
+  // manual, se houver) para nunca deixar a correção salva pela metade.
   const { error } = await supabase
     .from('recebimentos')
     .update({
       status: 'fechado',
       data_fim: dataFim.toISOString(),
+      timer_rodando: false,
+      timer_segundos_totais: duracaoOficialSegundos,
+      timer_ultima_acao: dataFim.toISOString(),
+      tempo_correcao_manual: correcaoManualAplicada,
+      tempo_manual_inicio: manualInicioIso,
+      tempo_manual_fim: manualFimIso,
     })
     .eq('id', id)
 
@@ -374,7 +442,7 @@ export async function POST(
       quem_finalizou: body.quem_finalizou || auth.email,
       horario_inicio: formatTime(dataInicio),
       horario_fim: formatTime(dataFim),
-      tempo_total_formatado: formatarTempo(Math.floor((dataFim.getTime() - dataInicio.getTime()) / 1000)),
+      tempo_total_formatado: formatarTempo(duracaoOficialSegundos),
       quantidade_chapas: body.quantidade_chapas || 0,
       motorista_ajudou: body.motorista_ajudou || 'Não informado',
       quantos_kilos: Math.round(totalKilos),

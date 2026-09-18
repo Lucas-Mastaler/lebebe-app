@@ -139,8 +139,8 @@ export async function PATCH(
   }
 
   // Register activity and auto-resume timer if needed
-  await registrarAtividadeConferencia(supabase, id)
+  const { pausaCriada } = await registrarAtividadeConferencia(supabase, id)
 
   console.log('[LOG] Item atualizado com sucesso:', data.id)
-  return NextResponse.json(data)
+  return NextResponse.json({ ...data, pausa_criada: pausaCriada })
 }

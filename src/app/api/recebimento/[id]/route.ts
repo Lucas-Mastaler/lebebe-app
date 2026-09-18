@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateMaticUser } from '@/lib/auth/matic-auth'
 import { isDescricaoVolumeAvulso } from '@/lib/recebimento/volume-avulso'
+import { listarPausas } from '@/lib/recebimento/pausas-revisao'
 
 // Helper: remove leading zeros and trim spaces for matching (02685 -> 2685)
 function normalizeCode(code: string): string {
@@ -439,11 +440,16 @@ export async function GET(
     totalRecebido += (item as unknown as { volumes_recebidos_total: number }).volumes_recebidos_total || 0
   }
 
+  // Pausas revisáveis (>15min sem interação) — para o modal e a revisão na
+  // finalização. Leitura pontual, sem efeito colateral.
+  const pausas = await listarPausas(supabase, id)
+
   return NextResponse.json({
     ...recebimento,
     nfes: nfeLinks || [],
     itens: allItems,
     total_previsto: totalPrevisto,
     total_recebido: totalRecebido,
+    pausas,
   })
 }

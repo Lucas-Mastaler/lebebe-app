@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Package, Plus, Minus, CheckCircle2, AlertTriangle } from 'lucide-react'
+import type { PausaRevisavel } from '@/lib/recebimento/pausas-revisao'
 
 interface RecebimentoItem {
   id: string
@@ -20,12 +21,14 @@ export function OSItemCard({
   isFechado,
   onVolumeUpdate,
   onDivClick,
+  onPausaCriada,
 }: {
   item: RecebimentoItem
   recebimentoId: string
   isFechado: boolean
   onVolumeUpdate: (itemId: string, newRecebido: number, newTotal: number) => void
   onDivClick: () => void
+  onPausaCriada?: (pausa: PausaRevisavel | null | undefined) => void
 }) {
   const [loading, setLoading] = useState(false)
   const [localVolumes, setLocalVolumes] = useState(item.volumes_recebidos_total)
@@ -60,7 +63,9 @@ export function OSItemCard({
       })
       
       if (res.ok) {
+        const data = await res.json().catch(() => null)
         onVolumeUpdate(item.id, newValue, newValue)
+        onPausaCriada?.(data?.pausa_criada)
       }
     } catch (err) {
       console.error('Erro ao salvar OS:', err)

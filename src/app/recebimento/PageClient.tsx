@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  Package, Plus, Calendar, Truck, ChevronRight, Upload, FileText, Weight, X, Download,
-  Search, Mail, Database, TrendingUp, BarChart3, Clock, Users, Eye, CheckCircle2, Edit,
+  Package, Plus, Calendar, Truck, ChevronRight, FileText, Weight, X,
+  Search, TrendingUp, BarChart3, Clock, Users, Eye, CheckCircle2, Edit,
   AlertCircle,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -12,6 +12,7 @@ import { isMaticEmail } from '@/lib/auth/matic-emails'
 import { toast } from 'sonner'
 import { dateToIso, parseBrDate } from '@/lib/design-system/dates'
 import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
+import { calcularMetricasDeTempo } from '@/lib/recebimento/metricas-tempo'
 import {
   PageContainer, PageHeader, Button, IconButton, Card, CardHeader, CardContent, CardFooter,
   Badge, Alert, EmptyState, Spinner, SkeletonRows, Progress,
@@ -27,6 +28,8 @@ interface Recebimento {
   periodo_fim: string
   data_inicio: string
   data_fim: string | null
+  timer_segundos_totais: number | null
+  tempo_correcao_manual: boolean | null
   motorista: string | null
   quantos_chapas: number | null
   obs: string | null
@@ -90,9 +93,7 @@ export default function RecebimentoPage() {
   const [loading, setLoading] = useState(false)
   const [authorized, setAuthorized] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [showImport, setShowImport] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>('recebimentos')
-  const [prefilledDates, setPrefilledDates] = useState<{ inicio: string; fim: string } | null>(null)
   const filtros = useFilterState<FiltrosRecebimento>(FILTROS_VAZIOS)
 
   // Pagination
@@ -213,10 +214,6 @@ export default function RecebimentoPage() {
             <Button variant="secondary" onClick={() => router.push('/recebimento/produtos')}>
               <Edit className="size-4" />
               <span className="hidden sm:inline">Produtos</span>
-            </Button>
-            <Button variant="secondary" onClick={() => setShowImport(true)}>
-              <Download className="size-4" />
-              <span className="hidden sm:inline">Importar NFe</span>
             </Button>
             <Button onClick={() => setShowCreateModal(true)}>
               <Plus className="size-4" />
@@ -363,22 +360,6 @@ export default function RecebimentoPage() {
           onSuccess={(id) => {
             setShowCreateModal(false)
             router.push(`/recebimento/${id}`)
-          }}
-          initialDates={prefilledDates}
-        />
-      )}
-
-      {showImport && (
-        <ImportNFeModal
-          onClose={() => setShowImport(false)}
-          onSuccess={() => {
-            setShowImport(false)
-            loadRecebimentos(currentPage, filtros.applied)
-          }}
-          onStartRecebimento={(dates) => {
-            setPrefilledDates(dates)
-            setShowImport(false)
-            setShowCreateModal(true)
           }}
         />
       )}
@@ -662,17 +643,23 @@ function RecebimentoCard({ rec, onReload }: { rec: Recebimento; onReload: () => 
 // Create Modal
 // =========================================================
 
+interface ImportarNfePeriodoResponse {
+  ok: boolean
+  total_mensagens?: number
+  total_salvas?: number
+  erros?: Array<{ message_id: string; erro: string }>
+  erro?: string
+}
+
 function CreateRecebimentoModal({
   onClose,
   onSuccess,
-  initialDates,
 }: {
   onClose: () => void
   onSuccess: (id: string) => void
-  initialDates?: { inicio: string; fim: string } | null
 }) {
-  const [periodoInicio, setPeriodoInicio] = useState(initialDates?.inicio || '')
-  const [periodoFim, setPeriodoFim] = useState(initialDates?.fim || '')
+  const [periodoInicio, setPeriodoInicio] = useState('')
+  const [periodoFim, setPeriodoFim] = useState('')
   const [obs, setObs] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -687,32 +674,67 @@ function CreateRecebimentoModal({
       setError('Informe o período')
       return
     }
+    if (loadingPreview) return
+
     setLoadingPreview(true)
     setError('')
+    setNfesPreview([])
+    setSelectedNfes(new Set())
+
+    const inicioIso = dateToIso(inicioDate)
+    const fimIso = dateToIso(fimDate)
 
     try {
+      // 1) Reaproveita o mecanismo de importação já existente (busca no Gmail,
+      // parseia e faz upsert idempotente em nfe/nfe_itens/nfe_assistencias).
+      const importRes = await fetch('/api/nfe/importar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inicio: inicioIso, fim: fimIso }),
+      })
+      const importData = await importRes.json().catch(() => null) as ImportarNfePeriodoResponse | null
+
+      if (!importRes.ok || !importData?.ok) {
+        const msg = importData?.erro || `Erro ao importar NFs do período (HTTP ${importRes.status})`
+        setError(msg)
+        toast.error(msg)
+        return
+      }
+
+      if (importData.erros && importData.erros.length > 0) {
+        toast.warning(`${importData.erros.length} nota(s) não puderam ser importadas. As demais NFs do período continuam disponíveis abaixo.`)
+      }
+
+      // 2) A lista exibida vem sempre da consulta à tabela nfe (fonte de
+      // verdade), não do array `nfs` retornado pelo import — isso garante que
+      // NFes importadas anteriormente por outra via (ex.: upload manual de
+      // XML) também apareçam.
       const supabase = createClient()
-      const { data, error } = await supabase
+      const { data, error: nfeError } = await supabase
         .from('nfe')
         .select('id, numero_nf, data_emissao, volumes_total')
-        .gte('data_emissao', dateToIso(inicioDate))
-        .lte('data_emissao', dateToIso(fimDate))
+        .gte('data_emissao', inicioIso)
+        .lte('data_emissao', fimIso)
         .order('numero_nf', { ascending: false })
 
-      if (error) {
-        toast.error('Erro ao buscar NFs: ' + error.message)
-      } else if (!data || data.length === 0) {
-        toast.warning('Nenhuma NF encontrada no período selecionado')
-        setNfesPreview([])
-        setSelectedNfes(new Set())
-      } else {
-        setNfesPreview(data)
-        // Selecionar todas por padrão
-        setSelectedNfes(new Set(data.map(nf => nf.id)))
-        toast.success(`${data.length} NF(s) encontrada(s)`)
+      if (nfeError) {
+        setError('Erro ao buscar NFs: ' + nfeError.message)
+        toast.error('Erro ao buscar NFs: ' + nfeError.message)
+        return
       }
+
+      if (!data || data.length === 0) {
+        toast.warning('Nenhuma NF encontrada no período selecionado')
+        return
+      }
+
+      setNfesPreview(data)
+      // Selecionar todas por padrão
+      setSelectedNfes(new Set(data.map(nf => nf.id)))
+      toast.success(`${data.length} NF(s) encontrada(s)`)
     } catch (err) {
-      console.error('Erro ao buscar NFes:', err)
+      console.error('Erro ao buscar/importar NFes:', err)
+      setError('Erro de conexão ao buscar NFs')
       toast.error('Erro de conexão ao buscar NFs')
     } finally {
       setLoadingPreview(false)
@@ -731,17 +753,9 @@ function CreateRecebimentoModal({
     })
   }
 
-  // Auto-buscar NFes quando ambas as datas estiverem completas
-  useEffect(() => {
-    const inicioDate = parseBrDate(periodoInicio)
-    const fimDate = parseBrDate(periodoFim)
-    if (inicioDate && fimDate && nfesPreview.length === 0 && !loadingPreview) {
-      handleBuscarNfes()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [periodoInicio, periodoFim])
-
   async function handleCreate() {
+    if (saving) return
+
     const inicioDate = parseBrDate(periodoInicio)
     const fimDate = parseBrDate(periodoFim)
     if (!inicioDate || !fimDate) {
@@ -862,18 +876,20 @@ function CreateRecebimentoModal({
               </div>
             )}
 
-            <FormField id="obs" label="Observações">
-              {(f) => (
-                <Textarea
-                  id={f.id}
-                  value={obs}
-                  onChange={e => setObs(e.target.value)}
-                  rows={2}
-                  placeholder="Observações opcionais..."
-                  aria-invalid={f['aria-invalid']}
-                />
-              )}
-            </FormField>
+            {nfesPreview.length > 0 && (
+              <FormField id="obs" label="Observações">
+                {(f) => (
+                  <Textarea
+                    id={f.id}
+                    value={obs}
+                    onChange={e => setObs(e.target.value)}
+                    rows={2}
+                    placeholder="Observações opcionais..."
+                    aria-invalid={f['aria-invalid']}
+                  />
+                )}
+              </FormField>
+            )}
 
             {error && <Alert tone="danger">{error}</Alert>}
           </div>
@@ -882,307 +898,10 @@ function CreateRecebimentoModal({
           <Button variant="secondary" onClick={onClose} className="flex-1" disabled={saving}>
             Cancelar
           </Button>
-          <Button onClick={handleCreate} className="flex-1" disabled={saving || loadingPreview} loading={saving}>
-            Criar Recebimento
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// =========================================================
-// Import NFe Modal (XML ou Busca por Data)
-// =========================================================
-
-type ImportMode = 'xml' | 'data'
-
-interface NfItem {
-  n_item: string
-  codigo_produto: string
-  descricao: string
-  quantidade: string
-  ncm: string
-  cfop: string
-}
-
-interface Nf {
-  message_id: string
-  numero_nf: string
-  data_emissao: string
-  peso_total: string
-  volumes_total: string
-  itens: NfItem[]
-}
-
-interface ImportResult {
-  ok: boolean
-  query?: string
-  total_mensagens?: number
-  total_salvas?: number
-  nfs?: Nf[]
-  erros?: Array<{ message_id: string; erro: string }>
-  erro?: string
-}
-
-function ImportNFeModal({
-  onClose,
-  onSuccess,
-  onStartRecebimento,
-}: {
-  onClose: () => void
-  onSuccess: () => void
-  onStartRecebimento: (dates: { inicio: string; fim: string }) => void
-}) {
-  const [mode, setMode] = useState<ImportMode>('data')
-  const [files, setFiles] = useState<FileList | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const [xmlResults, setXmlResults] = useState<Array<{ file: string; status: string; numero_nf?: string; error?: string }> | null>(null)
-
-  const [inicio, setInicio] = useState('')
-  const [fim, setFim] = useState('')
-  const [importing, setImporting] = useState(false)
-  const [dateResult, setDateResult] = useState<ImportResult | null>(null)
-  const [errorMsg, setErrorMsg] = useState('')
-
-  async function handleUploadXML() {
-    if (!files || files.length === 0) return
-
-    setUploading(true)
-    const formData = new FormData()
-    for (let i = 0; i < files.length; i++) {
-      formData.append('xml', files[i])
-    }
-
-    try {
-      const res = await fetch('/api/recebimento/importar-xml', {
-        method: 'POST',
-        body: formData,
-      })
-      const data = await res.json()
-      setXmlResults(data.results || [])
-    } catch {
-      setXmlResults([{ file: 'erro', status: 'erro', error: 'Falha na conexão' }])
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  function validateDates(): string | null {
-    const inicioDate = parseBrDate(inicio)
-    const fimDate = parseBrDate(fim)
-    if (!inicioDate || !fimDate) return 'Preencha as datas de início e fim.'
-    if (fimDate < inicioDate) return 'Data fim deve ser maior ou igual à data início.'
-    const diffDays = (fimDate.getTime() - inicioDate.getTime()) / (1000 * 60 * 60 * 24)
-    if (diffDays > 90) return 'Janela máxima de 90 dias.'
-    return null
-  }
-
-  async function handleImportByDate() {
-    setErrorMsg('')
-    const validationError = validateDates()
-    if (validationError) {
-      setErrorMsg(validationError)
-      return
-    }
-
-    setImporting(true)
-    try {
-      const inicioDate = parseBrDate(inicio)!
-      const fimDate = parseBrDate(fim)!
-      const res = await fetch('/api/nfe/importar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inicio: dateToIso(inicioDate), fim: dateToIso(fimDate) }),
-      })
-
-      const data: ImportResult = await res.json()
-
-      if (res.status !== 200 || !data.ok) {
-        setErrorMsg(data.erro || `Erro HTTP ${res.status}`)
-        return
-      }
-
-      setDateResult(data)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      setErrorMsg(`Erro de conexão: ${msg}`)
-    } finally {
-      setImporting(false)
-    }
-  }
-
-  return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader title={<span className="flex items-center gap-2"><Download className="size-5 text-primary" />Importar NF-e</span>} />
-        <DialogBody>
-          {/* Mode Selector */}
-          <div className="mb-6 flex gap-2">
-            <Button
-              variant={mode === 'data' ? 'primary' : 'secondary'}
-              onClick={() => setMode('data')}
-              className="flex-1"
-            >
-              <Calendar className="size-4" />
-              Buscar por Data
+          {nfesPreview.length > 0 && (
+            <Button onClick={handleCreate} className="flex-1" disabled={saving || loadingPreview} loading={saving}>
+              Criar Recebimento
             </Button>
-            <Button
-              variant={mode === 'xml' ? 'primary' : 'secondary'}
-              onClick={() => setMode('xml')}
-              className="flex-1"
-            >
-              <Upload className="size-4" />
-              Upload XML
-            </Button>
-          </div>
-
-          {/* Mode: Buscar por Data */}
-          {mode === 'data' && !dateResult && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <FormField id="import-data-inicio" label="Data Início" required>
-                  {(f) => <DateField id={f.id} value={inicio} onChange={setInicio} aria-invalid={f['aria-invalid']} disabled={importing} />}
-                </FormField>
-                <FormField id="import-data-fim" label="Data Fim" required>
-                  {(f) => <DateField id={f.id} value={fim} onChange={setFim} aria-invalid={f['aria-invalid']} disabled={importing} />}
-                </FormField>
-              </div>
-
-              {errorMsg && <Alert tone="danger">{errorMsg}</Alert>}
-            </div>
-          )}
-
-          {/* Mode: Date - Results */}
-          {mode === 'data' && dateResult && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="rounded-xl bg-slate-50 p-3 text-center">
-                  <p className="flex items-center justify-center gap-1 text-2xl font-bold text-slate-700">
-                    <Mail className="size-5 text-slate-400" />
-                    {dateResult.total_mensagens ?? 0}
-                  </p>
-                  <p className="text-xs text-slate-500">Mensagens</p>
-                </div>
-                <div className="rounded-xl bg-slate-50 p-3 text-center">
-                  <p className="flex items-center justify-center gap-1 text-2xl font-bold text-slate-700">
-                    <FileText className="size-5 text-slate-400" />
-                    {dateResult.nfs?.length ?? 0}
-                  </p>
-                  <p className="text-xs text-slate-500">NFs</p>
-                </div>
-                <div className="rounded-xl bg-slate-50 p-3 text-center">
-                  <p className="flex items-center justify-center gap-1 text-2xl font-bold text-emerald-600">
-                    <Database className="size-5 text-emerald-400" />
-                    {dateResult.total_salvas ?? 0}
-                  </p>
-                  <p className="text-xs text-slate-500">Salvas</p>
-                </div>
-              </div>
-
-              {dateResult.nfs && dateResult.nfs.length > 0 && (
-                <div className="max-h-60 space-y-2 overflow-y-auto">
-                  {dateResult.nfs.map((nf, idx) => (
-                    <div key={`${nf.numero_nf}-${idx}`} className="rounded-lg border border-slate-200 p-3 text-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-800">NF {nf.numero_nf}</span>
-                        <span className="text-xs text-slate-500">{nf.data_emissao.substring(0, 10)}</span>
-                      </div>
-                      <div className="mt-1 flex gap-3 text-xs text-slate-600">
-                        <span>{nf.volumes_total} volumes</span>
-                        <span>{parseFloat(nf.peso_total).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} kg</span>
-                        <span>{nf.itens?.length || 0} itens</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Mode: Upload XML */}
-          {mode === 'xml' && !xmlResults && (
-            <div className="space-y-4">
-              <div className="rounded-xl border-2 border-dashed border-slate-300 p-6 text-center">
-                <Upload className="mx-auto mb-2 size-8 text-slate-400" />
-                <p className="mb-3 text-sm text-slate-500">Selecione os arquivos XML das NF-e</p>
-                <input
-                  type="file"
-                  accept=".xml"
-                  multiple
-                  onChange={e => setFiles(e.target.files)}
-                  className="block w-full text-sm text-slate-500 file:mr-4 file:rounded-lg file:border-0 file:bg-primary/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary hover:file:bg-primary/20"
-                />
-              </div>
-
-              {files && files.length > 0 && (
-                <p className="text-sm text-slate-600">{files.length} arquivo(s) selecionado(s)</p>
-              )}
-            </div>
-          )}
-
-          {/* Mode: XML - Results */}
-          {mode === 'xml' && xmlResults && (
-            <div className="max-h-60 space-y-2 overflow-y-auto">
-              {xmlResults.map((r, i) => (
-                <div
-                  key={i}
-                  className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
-                    r.status === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                  }`}
-                >
-                  <span className="flex-1 truncate">{r.file}</span>
-                  <span className="ml-2 font-medium">
-                    {r.status === 'ok' ? `NF ${r.numero_nf}` : r.error}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </DialogBody>
-
-        <div className="flex shrink-0 gap-3 border-t border-slate-100 px-6 py-4">
-          {mode === 'data' && !dateResult && (
-            <>
-              <Button variant="secondary" onClick={onClose} className="flex-1" disabled={importing}>
-                Cancelar
-              </Button>
-              <Button onClick={handleImportByDate} className="flex-1" disabled={importing} loading={importing}>
-                <Search className="size-4" />
-                Buscar NFs
-              </Button>
-            </>
-          )}
-          {mode === 'data' && dateResult && (
-            <>
-              {dateResult.total_salvas && dateResult.total_salvas > 0 && (
-                <Button onClick={() => onStartRecebimento({ inicio, fim })} className="flex-1">
-                  <Package className="size-4" />
-                  Iniciar Recebimento das Notas
-                </Button>
-              )}
-              <Button onClick={onSuccess} variant="secondary" className="flex-1 text-red-600 hover:bg-red-50 hover:text-red-700">
-                Fechar
-              </Button>
-            </>
-          )}
-          {mode === 'xml' && !xmlResults && (
-            <>
-              <Button variant="secondary" onClick={onClose} className="flex-1" disabled={uploading}>
-                Cancelar
-              </Button>
-              <Button
-                onClick={handleUploadXML}
-                className="flex-1"
-                disabled={uploading || !files || files.length === 0}
-                loading={uploading}
-              >
-                Importar
-              </Button>
-            </>
-          )}
-          {mode === 'xml' && xmlResults && (
-            <Button onClick={onSuccess} className="flex-1">Fechar</Button>
           )}
         </div>
       </DialogContent>
@@ -1468,16 +1187,16 @@ function DashboardTab({ recebimentos }: { recebimentos: Recebimento[] }) {
   const kgTotais = recebimentosFechados.reduce((sum, r) => sum + (r.peso_total || 0), 0)
   const volumesTotais = recebimentosFechados.reduce((sum, r) => sum + r.total_recebido, 0)
 
-  const temposMedios = recebimentosFechados
-    .filter(r => r.data_inicio && r.data_fim)
-    .map(r => {
-      const inicio = new Date(r.data_inicio).getTime()
-      const fim = new Date(r.data_fim!).getTime()
-      return (fim - inicio) / (1000 * 60 * 60)
-    })
-
-  const tempoTotal = temposMedios.reduce((sum, t) => sum + t, 0)
-  const tempoMedio = temposMedios.length > 0 ? tempoTotal / temposMedios.length : 0
+  // A duração de cada recebimento vem de obterDuracaoFinalDoRecebimento (fonte
+  // única, ver src/lib/recebimento/metricas-tempo.ts): histórico usa
+  // data_fim - data_inicio; recebimentos CRIADOS após o timer corrigido
+  // (data_inicio >= corte — não data_fim, para não classificar errado um
+  // recebimento aberto antes do deploy e fechado depois) usam o tempo
+  // efetivo já consolidado (timer_segundos_totais) — a mesma definição
+  // usada em tempo_total_formatado na planilha. Em qualquer caso,
+  // duração > 12h é ignorada por completo (não recortada). Não afeta as
+  // demais métricas (quantidade, peso, volumes, chapas) desta tela.
+  const { tempoMedio, tempoTotal } = calcularMetricasDeTempo(recebimentosFechados)
 
   const kgMedio = totalRecebimentos > 0 ? kgTotais / totalRecebimentos : 0
   const volumesMedio = totalRecebimentos > 0 ? volumesTotais / totalRecebimentos : 0

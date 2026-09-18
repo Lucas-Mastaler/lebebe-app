@@ -6,7 +6,7 @@ import { registrarAtividadeConferencia } from '@/lib/recebimento/timer-activity'
 
 vi.mock('@/lib/auth/matic-auth', () => ({ validateMaticUser: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
-vi.mock('@/lib/recebimento/timer-activity', () => ({ registrarAtividadeConferencia: vi.fn() }))
+vi.mock('@/lib/recebimento/timer-activity', () => ({ registrarAtividadeConferencia: vi.fn().mockResolvedValue({ pausaCriada: null }) }))
 
 function builder(result: unknown, onUpsert: (payload: unknown) => void) {
   const chain = {

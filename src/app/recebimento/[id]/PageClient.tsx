@@ -23,6 +23,14 @@ import { OSItemCard } from './OSItemCard'
 import { toast } from 'sonner'
 import { fetchWithRetry } from '@/lib/fetch-with-retry'
 import { registroPodeFinalizar } from '@/lib/recebimento/finalizacao'
+import { validarCorrecaoManual } from '@/lib/recebimento/correcao-manual-tempo'
+import {
+  calcularSegundosReintegrados,
+  calcularTempoExibido,
+  validarPeriodoTrabalhadoEditado,
+  type DecisaoPausa,
+  type PausaRevisavel,
+} from '@/lib/recebimento/pausas-revisao'
 
 // =========================================================
 // Types
@@ -90,6 +98,7 @@ interface RecebimentoDetail {
   numero_recebimento?: number
   itens: RecebimentoItem[]
   nfes: Array<{ nfe_id: string; nfe: { numero_nf: string } | null }>
+  pausas: PausaRevisavel[]
 }
 
 // =========================================================
@@ -114,6 +123,73 @@ export default function ConferenciaPage() {
   const [showCancelar, setShowCancelar] = useState(false)
   const [localModal, setLocalModal] = useState<RecebimentoItem | null>(null)
   const [divModal, setDivModal] = useState<RecebimentoItem | null>(null)
+
+  // Pausas revisáveis (>15min sem interação). O modal mostra sempre a mais
+  // antiga entre as pendentes; fechar sem responder (X/Esc) só esconde
+  // nesta sessão — a pausa continua "pendente" no banco e reaparece no
+  // próximo carregamento e na revisão da finalização (ver §13 da tarefa).
+  const [pausaEmRevisao, setPausaEmRevisao] = useState<PausaRevisavel | null>(null)
+  const [pausasIgnoradasNaSessao, setPausasIgnoradasNaSessao] = useState<Set<string>>(new Set())
+
+  const notificarPausaCriada = useCallback((pausa: PausaRevisavel | null | undefined) => {
+    if (!pausa) return
+    setPausaEmRevisao(atual => atual ?? pausa)
+  }, [])
+
+  // Sempre que a lista de pausas mudar (reload, nova pausa criada, etc.),
+  // se não houver modal aberto, mostra a pendente mais antiga que ainda não
+  // foi ignorada nesta sessão. Uma por vez — nunca várias simultâneas.
+  useEffect(() => {
+    if (!recebimento || pausaEmRevisao) return
+
+    const pendentes = (recebimento.pausas || [])
+      .filter(p => p.status === 'pendente' && !pausasIgnoradasNaSessao.has(p.id))
+      .sort((a, b) => new Date(a.inicio_pausa).getTime() - new Date(b.inicio_pausa).getTime())
+
+    if (pendentes.length > 0) setPausaEmRevisao(pendentes[0])
+  }, [recebimento, pausaEmRevisao, pausasIgnoradasNaSessao])
+
+  function fecharPausaSemResponder() {
+    if (pausaEmRevisao) {
+      setPausasIgnoradasNaSessao(prev => new Set(prev).add(pausaEmRevisao.id))
+    }
+    setPausaEmRevisao(null)
+  }
+
+  async function responderPausa(
+    pausaId: string,
+    decisao: DecisaoPausa,
+    periodoTrabalhadoInicio?: string,
+    periodoTrabalhadoFim?: string
+  ): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/recebimento/${recebimentoId}/pausas/${pausaId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          decisao,
+          periodo_trabalhado_inicio: periodoTrabalhadoInicio,
+          periodo_trabalhado_fim: periodoTrabalhadoFim,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error || 'Não foi possível salvar a decisão')
+        return false
+      }
+      // Recarrega ANTES de fechar o modal: se fechássemos primeiro, o
+      // efeito que auto-seleciona a pausa pendente mais antiga rodaria com
+      // o `recebimento` ainda desatualizado (a pausa recém-respondida ainda
+      // apareceria como "pendente") e reabriria o mesmo modal na hora.
+      await loadRecebimento()
+      if (pausaEmRevisao?.id === pausaId) setPausaEmRevisao(null)
+      return true
+    } catch (err) {
+      console.error('Erro ao responder pausa:', err)
+      toast.error('Erro de conexão ao salvar a decisão')
+      return false
+    }
+  }
 
   useEffect(() => {
     async function checkAuth() {
@@ -161,22 +237,14 @@ export default function ConferenciaPage() {
     return () => clearInterval(interval)
   }, [recebimento, loadRecebimento, localModal, divModal])
 
-  // Calculate elapsed seconds from database
+  // Calcula o tempo mostrado na tela. Fonte única: calcularTempoExibido em
+  // pausas-revisao.ts — aberto soma automático + pausas revisadas + trecho
+  // ativo; fechado usa timer_segundos_totais direto (já é o bake-in final
+  // da finalização, nunca soma pausas de novo por cima dele).
   useEffect(() => {
     if (!recebimento) return
-    
-    const calculateElapsed = () => {
-      const base = recebimento.timer_segundos_totais || 0
-      
-      if (recebimento.timer_rodando && recebimento.timer_ultima_acao) {
-        const lastAction = new Date(recebimento.timer_ultima_acao)
-        const now = new Date()
-        const elapsed = Math.floor((now.getTime() - lastAction.getTime()) / 1000)
-        return base + elapsed
-      }
-      
-      return base
-    }
+
+    const calculateElapsed = () => calcularTempoExibido(recebimento)
     
     // Initial calculation
     setElapsedSeconds(calculateElapsed())
@@ -209,16 +277,24 @@ export default function ConferenciaPage() {
     }
   }, [timerRunning, recebimentoId, loadRecebimento])
   
-  // Check for inactivity and auto-pause timer (every minute)
+  // Check for inactivity and auto-pause timer (every minute).
+  // IMPORTANTE: a dependência é `recebimento?.status` (valor estável), não o
+  // objeto `recebimento` inteiro — este muda de referência a cada poll de
+  // 30s e a cada ação otimista de quantidade, o que recriava este efeito
+  // (e o setInterval de 60s) antes de completar um ciclo, impedindo a
+  // verificação de inatividade de rodar de fato. Ver auditoria do timer.
+  const recebimentoStatus = recebimento?.status
   useEffect(() => {
-    if (!recebimento || recebimento.status !== 'aberto') return
-    
+    if (recebimentoStatus !== 'aberto') return
+
+    let cancelado = false
+
     const checkInactivity = async () => {
       try {
         const res = await fetch(`/api/recebimento/${recebimentoId}/check-inactivity`, {
           method: 'POST'
         })
-        if (res.ok) {
+        if (res.ok && !cancelado) {
           const data = await res.json()
           // If timer was auto-paused, reload to update UI
           if (data.auto_paused) {
@@ -230,11 +306,18 @@ export default function ConferenciaPage() {
         console.error('Erro ao verificar inatividade:', err)
       }
     }
-    
-    // Check every minute
+
+    // Primeira verificação imediata ao entrar/recarregar a tela, depois a
+    // cada minuto — não depende de esperar 60s após montar para reconciliar
+    // um recebimento que já estava abandonado.
+    checkInactivity()
     const interval = setInterval(checkInactivity, 60000)
-    return () => clearInterval(interval)
-  }, [recebimento, recebimentoId, loadRecebimento])
+
+    return () => {
+      cancelado = true
+      clearInterval(interval)
+    }
+  }, [recebimentoStatus, recebimentoId, loadRecebimento])
 
   if (!authorized || loading) {
     return (
@@ -612,6 +695,7 @@ export default function ConferenciaPage() {
                 }}
                 onLocalClick={() => setLocalModal(item)}
                 onDivClick={() => setDivModal(item)}
+                onPausaCriada={notificarPausaCriada}
               />
             ))}
           </>
@@ -624,6 +708,7 @@ export default function ConferenciaPage() {
                 recebimentoId={recebimentoId}
                 isFechado={isFechado || isCancelado}
                 onDivClick={() => setDivModal(item)}
+                onPausaCriada={notificarPausaCriada}
                 onVolumeUpdate={(itemId: string, newRecebido: number, _newTotal: number) => {
                   setRecebimento(prev => {
                     if (!prev) return prev
@@ -647,9 +732,19 @@ export default function ConferenciaPage() {
       </div>
 
       {/* Finalizar Modal */}
+      {/* Pausa revisável pendente (>15min sem interação) */}
+      {pausaEmRevisao && (
+        <PausaRevisavelModal
+          pausa={pausaEmRevisao}
+          onFechar={fecharPausaSemResponder}
+          onResponder={(decisao, inicio, fim) => responderPausa(pausaEmRevisao.id, decisao, inicio, fim)}
+        />
+      )}
+
       {showFinalizar && (
         <FinalizarModal
           recebimentoId={recebimentoId}
+          pausasIniciais={recebimento?.pausas || []}
           onClose={() => setShowFinalizar(false)}
           onSuccess={() => router.push('/recebimento')}
         />
@@ -687,7 +782,7 @@ export default function ConferenciaPage() {
           item={divModal}
           recebimentoId={recebimentoId}
           onClose={() => setDivModal(null)}
-          onSave={(tipo, obs) => {
+          onSave={(tipo, obs, pausaCriada) => {
             setRecebimento(prev => {
               if (!prev) return prev
               return {
@@ -700,6 +795,7 @@ export default function ConferenciaPage() {
               }
             })
             setDivModal(null)
+            notificarPausaCriada(pausaCriada)
           }}
         />
       )}
@@ -718,6 +814,7 @@ function ItemCard({
   onVolumeUpdate,
   onLocalClick,
   onDivClick,
+  onPausaCriada,
 }: {
   item: RecebimentoItem
   recebimentoId: string
@@ -725,6 +822,7 @@ function ItemCard({
   onVolumeUpdate: (itemId: string, volumeNumero: number, newQtd: number, newTotal: number) => void
   onLocalClick: () => void
   onDivClick: () => void
+  onPausaCriada?: (pausa: PausaRevisavel | null | undefined) => void
 }) {
   const [loadingVolume, setLoadingVolume] = useState<number | null>(null)
 
@@ -768,6 +866,7 @@ function ItemCard({
         const data = await res.json()
         // Update with server response to ensure consistency
         onVolumeUpdate(item.id, volumeNumero, data.qtd_recebida, data.item_total_recebido)
+        onPausaCriada?.(data.pausa_criada)
       } else {
         // Rollback on error
         onVolumeUpdate(item.id, volumeNumero, prevQtdRecebida, prevTotalRecebido)
@@ -1277,7 +1376,7 @@ function DivergenciaModal({
   item: RecebimentoItem
   recebimentoId: string
   onClose: () => void
-  onSave: (tipo: string | null, obs: string | null) => void
+  onSave: (tipo: string | null, obs: string | null, pausaCriada?: PausaRevisavel | null) => void
 }) {
   const [tipo, setTipo] = useState(item.divergencia_tipo || '')
   const [obs, setObs] = useState(item.divergencia_obs || '')
@@ -1312,8 +1411,9 @@ function DivergenciaModal({
         body: JSON.stringify(payload),
       })
       if (res.ok) {
+        const data = await res.json().catch(() => null)
         toast.success(tipo ? 'Divergência registrada' : 'Divergência removida')
-        onSave(tipo || null, obs || null)
+        onSave(tipo || null, obs || null, data?.pausa_criada)
       } else {
         toast.error('Não foi possível salvar a divergência')
       }
@@ -1394,12 +1494,201 @@ interface ProblemaPendente {
   created_at: string
 }
 
+/** Formata um Date para o valor esperado por <input type="datetime-local"> (hora local do navegador). */
+function paraDatetimeLocal(data: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${data.getFullYear()}-${pad(data.getMonth() + 1)}-${pad(data.getDate())}T${pad(data.getHours())}:${pad(data.getMinutes())}`
+}
+
+/** Formata segundos como "XXh XXmin" para exibição breve ao operador. */
+function formatarDuracaoBreve(segundos: number): string {
+  const horas = Math.floor(segundos / 3600)
+  const minutos = Math.floor((segundos % 3600) / 60)
+  return `${horas}h ${String(minutos).padStart(2, '0')}min`
+}
+
+// =========================================================
+// Modal de pausa revisável (>15min sem interação)
+// =========================================================
+
+function PausaRevisavelModal({
+  pausa,
+  onFechar,
+  onResponder,
+}: {
+  pausa: PausaRevisavel
+  onFechar: () => void
+  onResponder: (decisao: DecisaoPausa, inicioIso?: string, fimIso?: string) => Promise<boolean>
+}) {
+  const [view, setView] = useState<'principal' | 'editar'>('principal')
+  const [salvando, setSalvando] = useState<DecisaoPausa | null>(null)
+  const [erro, setErro] = useState('')
+
+  const inicioPausa = new Date(pausa.inicio_pausa)
+  const fimPausa = new Date(pausa.fim_pausa)
+  const ultimaAtividade = new Date(pausa.ultima_atividade)
+
+  const totalSemInteracaoMin = Math.round((fimPausa.getTime() - ultimaAtividade.getTime()) / 60000)
+  const tempoPausadoMin = Math.round(pausa.duracao_pausa_segundos / 60)
+
+  // A pausa quase sempre cabe no mesmo dia — nesse caso só pede horário
+  // (sem pedir data completa desnecessariamente). Só usa datetime-local
+  // completo quando a pausa atravessa a meia-noite.
+  const mesmoDia = inicioPausa.toDateString() === fimPausa.toDateString()
+
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const paraHora = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`
+
+  const [horaInicio, setHoraInicio] = useState(mesmoDia ? paraHora(inicioPausa) : paraDatetimeLocal(inicioPausa))
+  const [horaFim, setHoraFim] = useState(mesmoDia ? paraHora(fimPausa) : paraDatetimeLocal(fimPausa))
+
+  async function decidir(decisao: DecisaoPausa) {
+    setSalvando(decisao)
+    await onResponder(decisao)
+    setSalvando(null)
+  }
+
+  async function confirmarEdicao() {
+    setErro('')
+    let inicioIso: string
+    let fimIso: string
+
+    if (mesmoDia) {
+      const [hI, mI] = horaInicio.split(':').map(Number)
+      const [hF, mF] = horaFim.split(':').map(Number)
+      const dIni = new Date(inicioPausa)
+      dIni.setHours(hI, mI, 0, 0)
+      const dFim = new Date(inicioPausa)
+      dFim.setHours(hF, mF, 0, 0)
+      inicioIso = dIni.toISOString()
+      fimIso = dFim.toISOString()
+    } else {
+      inicioIso = new Date(horaInicio).toISOString()
+      fimIso = new Date(horaFim).toISOString()
+    }
+
+    const validacao = validarPeriodoTrabalhadoEditado(pausa, { inicio: inicioIso, fim: fimIso })
+    if (!validacao.valido) {
+      setErro(validacao.erro)
+      return
+    }
+
+    setSalvando('editado')
+    const ok = await onResponder('editado', validacao.inicioIso, validacao.fimIso)
+    setSalvando(null)
+    if (!ok) setErro('Não foi possível salvar. Tente novamente.')
+  }
+
+  const formatarHorario = (d: Date) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl">
+        <div className="flex items-start justify-between mb-4">
+          <h3 className="font-bold text-lg text-slate-800">Recebimento pausado</h3>
+          <button onClick={onFechar} className="text-slate-400 hover:text-slate-600 p-1" aria-label="Fechar">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {view === 'principal' ? (
+          <>
+            <p className="text-sm text-slate-700 mb-2">
+              Você ficou <strong>{totalSemInteracaoMin} minutos</strong> sem interação com o sistema.
+            </p>
+            <p className="text-sm text-slate-700 mb-4">
+              O timer ficou pausado por <strong>{tempoPausadoMin} minutos</strong>.
+            </p>
+            <p className="text-sm text-slate-800 font-medium mb-4">
+              Durante esse período pausado, você continuou trabalhando neste recebimento?
+            </p>
+
+            <div className="space-y-2">
+              <button
+                onClick={() => decidir('trabalhando')}
+                disabled={salvando !== null}
+                className="w-full py-4 rounded-xl bg-green-600 hover:bg-green-700 text-white font-bold text-base disabled:opacity-60"
+              >
+                {salvando === 'trabalhando' ? 'Salvando...' : 'SIM, ESTAVA RECEBENDO'}
+              </button>
+              <button
+                onClick={() => decidir('pausado')}
+                disabled={salvando !== null}
+                className="w-full py-4 rounded-xl bg-slate-600 hover:bg-slate-700 text-white font-bold text-base disabled:opacity-60"
+              >
+                {salvando === 'pausado' ? 'Salvando...' : 'NÃO, ESTAVA PAUSADO'}
+              </button>
+              <button
+                onClick={() => setView('editar')}
+                disabled={salvando !== null}
+                className="w-full py-3 rounded-xl border border-slate-300 text-slate-700 font-medium text-sm hover:bg-slate-50 disabled:opacity-60"
+              >
+                EDITAR PERÍODO DE PAUSA
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-slate-600 mb-3">
+              Período pausado: <strong>{formatarHorario(inicioPausa)} → {formatarHorario(fimPausa)}</strong>
+            </p>
+            <p className="text-xs text-slate-500 mb-4">
+              Indique a parte desse período em que você estava efetivamente recebendo.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Início do trabalho</label>
+                <input
+                  type={mesmoDia ? 'time' : 'datetime-local'}
+                  value={horaInicio}
+                  onChange={(e) => setHoraInicio(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Fim do trabalho</label>
+                <input
+                  type={mesmoDia ? 'time' : 'datetime-local'}
+                  value={horaFim}
+                  onChange={(e) => setHoraFim(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500"
+                />
+              </div>
+            </div>
+
+            {erro && <p className="text-sm text-red-500 mb-4 p-3 bg-red-50 rounded-lg">{erro}</p>}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setView('principal')}
+                className="flex-1 py-3 rounded-xl border border-slate-300 text-slate-700 font-medium text-sm hover:bg-slate-50"
+              >
+                Voltar
+              </button>
+              <button
+                onClick={confirmarEdicao}
+                disabled={salvando !== null}
+                className="flex-1 py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white font-bold text-sm disabled:opacity-60"
+              >
+                {salvando === 'editado' ? 'Salvando...' : 'Confirmar'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function FinalizarModal({
   recebimentoId,
+  pausasIniciais,
   onClose,
   onSuccess,
 }: {
   recebimentoId: string
+  pausasIniciais: PausaRevisavel[]
   onClose: () => void
   onSuccess: () => void
 }) {
@@ -1414,6 +1703,55 @@ function FinalizarModal({
     problemaProximosCarregamentos: '',
     outrosProblemas: '',
   })
+
+  // Seção "Períodos de pausa" — permite rever/alterar decisões antes de
+  // finalizar. Mantém cópia local para refletir mudanças sem precisar
+  // recarregar o recebimento inteiro a cada decisão.
+  const [pausas, setPausas] = useState<PausaRevisavel[]>(pausasIniciais)
+  const [pausaEditando, setPausaEditando] = useState<PausaRevisavel | null>(null)
+  const pausasOrdenadas = [...pausas].sort((a, b) => new Date(a.inicio_pausa).getTime() - new Date(b.inicio_pausa).getTime())
+  const existePendente = pausas.some(p => p.status === 'pendente')
+
+  async function responderPausaNaFinalizacao(
+    pausaId: string,
+    decisao: DecisaoPausa,
+    inicioIso?: string,
+    fimIso?: string
+  ): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/recebimento/${recebimentoId}/pausas/${pausaId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decisao, periodo_trabalhado_inicio: inicioIso, periodo_trabalhado_fim: fimIso }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error || 'Não foi possível salvar a decisão')
+        return false
+      }
+      const pausaAtualizada = await res.json()
+      setPausas(prev => prev.map(p => (p.id === pausaId ? pausaAtualizada : p)))
+      if (pausaEditando?.id === pausaId) setPausaEditando(null)
+      return true
+    } catch (err) {
+      console.error('Erro ao responder pausa na finalização:', err)
+      toast.error('Erro de conexão ao salvar a decisão')
+      return false
+    }
+  }
+
+  // Fallback manual de duração — só aparece quando o backend detecta que o
+  // tempo automático (já reconciliado pelo timer) ultrapassou 12h. Ver
+  // src/lib/recebimento/correcao-manual-tempo.ts (mesma validação usada
+  // aqui e no servidor — o servidor sempre valida de novo, este é só feedback
+  // imediato ao operador).
+  const [correcaoManual, setCorrecaoManual] = useState<{
+    tempoCalculadoSegundos: number
+    inicio: string
+    fim: string
+  } | null>(null)
+
+  const precisaCorrecao = correcaoManual !== null
 
   // Buscar problemas pendentes de recebimentos anteriores
   useEffect(() => {
@@ -1437,7 +1775,29 @@ function FinalizarModal({
       setError('Por favor, preencha quem está finalizando o recebimento')
       return
     }
-    
+
+    // Pausas pendentes bloqueiam a finalização — o backend também valida
+    // isso (nunca confiar só no frontend), mas aqui evitamos uma requisição
+    // inútil e já guiamos o operador para a seção de revisão.
+    if (existePendente) {
+      setError('Existem períodos de pausa que precisam ser revisados antes de finalizar o recebimento.')
+      return
+    }
+
+    // Quando o fallback de >12h está visível, valida no cliente com a MESMA
+    // regra do servidor antes de gastar uma requisição — mas quem decide de
+    // verdade é sempre o backend (ver finalizar/route.ts).
+    if (precisaCorrecao) {
+      const validacao = validarCorrecaoManual({
+        inicio: correcaoManual.inicio ? new Date(correcaoManual.inicio).toISOString() : null,
+        fim: correcaoManual.fim ? new Date(correcaoManual.fim).toISOString() : null,
+      })
+      if (!validacao.valido) {
+        setError(validacao.erro)
+        return
+      }
+    }
+
     setSaving(true)
     setError('')
     try {
@@ -1451,15 +1811,30 @@ function FinalizarModal({
           motorista_ajudou: formData.motoristaAjudou,
           problema_proximos_carregamentos: formData.problemaProximosCarregamentos,
           outros_problemas: formData.outrosProblemas,
+          ...(precisaCorrecao && correcaoManual.inicio && correcaoManual.fim
+            ? {
+                correcao_manual_inicio: new Date(correcaoManual.inicio).toISOString(),
+                correcao_manual_fim: new Date(correcaoManual.fim).toISOString(),
+              }
+            : {}),
         }),
       })
       const data = await res.json()
       if (!res.ok) {
+        if (data.requer_correcao_manual) {
+          // Primeira tentativa (ou correção ainda inválida): mostra o aviso
+          // e os campos de início/fim reais em vez de só um erro genérico.
+          setCorrecaoManual(prev => ({
+            tempoCalculadoSegundos: data.tempo_calculado_segundos,
+            inicio: prev?.inicio || '',
+            fim: prev?.fim || paraDatetimeLocal(new Date()),
+          }))
+        }
         setError(data.error || 'Erro ao finalizar')
         setSaving(false)
         return
       }
-      
+
       // Feedback sobre envio para planilha via toast
       const sheetsStatus = data.sheets_status || 'not_configured'
       const sheetsError = data.sheets_error || null
@@ -1511,6 +1886,101 @@ function FinalizarModal({
         </div>
 
         {error && <p className="text-sm text-red-500 mb-4 p-3 bg-red-50 rounded-lg">{error}</p>}
+
+        {pausasOrdenadas.length > 0 && (
+          <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+            <h4 className="text-sm font-semibold text-slate-800 mb-1">Períodos de pausa</h4>
+            {pausasOrdenadas.map(pausa => {
+              const inicio = new Date(pausa.inicio_pausa)
+              const fim = new Date(pausa.fim_pausa)
+              const horario = (d: Date) => d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+              const duracaoMin = Math.round(pausa.duracao_pausa_segundos / 60)
+              const reintegradoMin = Math.round(calcularSegundosReintegrados(pausa) / 60)
+
+              let descricao: string
+              if (pausa.status === 'pendente') {
+                descricao = 'Pendente de revisão'
+              } else if (pausa.decisao === 'trabalhando') {
+                descricao = `Estava recebendo — ${reintegradoMin} min considerados`
+              } else if (pausa.decisao === 'pausado') {
+                descricao = 'Pausa — não considerado'
+              } else {
+                descricao = `${reintegradoMin} min considerados`
+              }
+
+              return (
+                <div
+                  key={pausa.id}
+                  className={`flex items-center justify-between gap-3 rounded-lg p-2.5 text-sm ${
+                    pausa.status === 'pendente' ? 'bg-amber-50 border border-amber-200' : 'bg-white border border-slate-200'
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-800">{horario(inicio)}–{horario(fim)} <span className="text-slate-400 font-normal">({duracaoMin} min)</span></p>
+                    <p className={pausa.status === 'pendente' ? 'text-amber-700' : 'text-slate-500'}>{descricao}</p>
+                  </div>
+                  <button
+                    onClick={() => setPausaEditando(pausa)}
+                    className="shrink-0 text-xs font-medium text-primary hover:underline px-2 py-1"
+                  >
+                    {pausa.status === 'pendente' ? 'Revisar' : 'Editar'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {precisaCorrecao && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-300 rounded-lg space-y-3">
+            <h4 className="text-sm font-semibold text-amber-900 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              Duração acima do esperado
+            </h4>
+            <p className="text-sm text-amber-800">
+              Este recebimento está com duração superior a 12 horas, o que foge do padrão esperado.
+              Confirme a data e o horário reais de início e de término da conferência.
+            </p>
+            <p className="text-xs text-amber-700">
+              Tempo calculado pelo sistema: <strong>{formatarDuracaoBreve(correcaoManual.tempoCalculadoSegundos)}</strong>
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Início real *</label>
+                <input
+                  type="datetime-local"
+                  value={correcaoManual.inicio}
+                  onChange={(e) => setCorrecaoManual({ ...correcaoManual, inicio: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                  disabled={saving}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Término real *</label>
+                <input
+                  type="datetime-local"
+                  value={correcaoManual.fim}
+                  onChange={(e) => setCorrecaoManual({ ...correcaoManual, fim: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                  disabled={saving}
+                />
+              </div>
+            </div>
+
+            {correcaoManual.inicio && correcaoManual.fim && (() => {
+              const validacao = validarCorrecaoManual({
+                inicio: new Date(correcaoManual.inicio).toISOString(),
+                fim: new Date(correcaoManual.fim).toISOString(),
+              })
+              return validacao.valido ? (
+                <p className="text-xs text-amber-800">
+                  Duração corrigida: <strong>{formatarDuracaoBreve(validacao.segundos)}</strong>
+                </p>
+              ) : null
+            })()}
+          </div>
+        )}
 
         <div className="space-y-4 mb-6">
           {/* Problemas pendentes de recebimentos anteriores */}
@@ -1636,11 +2106,23 @@ function FinalizarModal({
 
         <div className="flex gap-3">
           <Button variant="outline" onClick={onClose} className="flex-1" disabled={saving}>Cancelar</Button>
-          <Button onClick={handleFinalizar} className="flex-1 bg-green-600 hover:bg-green-700" disabled={saving}>
+          <Button
+            onClick={handleFinalizar}
+            className="flex-1 bg-green-600 hover:bg-green-700"
+            disabled={saving || existePendente || (precisaCorrecao && (!correcaoManual.inicio || !correcaoManual.fim))}
+          >
             {saving ? 'Finalizando...' : 'Finalizar'}
           </Button>
         </div>
       </div>
+
+      {pausaEditando && (
+        <PausaRevisavelModal
+          pausa={pausaEditando}
+          onFechar={() => setPausaEditando(null)}
+          onResponder={(decisao, inicio, fim) => responderPausaNaFinalizacao(pausaEditando.id, decisao, inicio, fim)}
+        />
+      )}
     </div>
   )
 }

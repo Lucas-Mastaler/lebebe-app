@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Activity, Bot, Calendar, ChevronDown, ChevronLeft, ChevronRight, CheckCircle, BarChart3, LogOut, Users, ClipboardList, Clock, Package, TrendingUp, Search, Settings, ShoppingBag, ShieldCheck } from 'lucide-react';
+import { BrandLogo } from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { usePermissoes } from '@/lib/hooks/usePermissoes';
 import { NAVIGATION_GROUPS, type NavigationIconKey, type NavigationItemDefinition } from '@/lib/auth/modulos-app';
@@ -113,16 +113,13 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 collapsed ? 'justify-center px-2' : 'justify-between px-4'
             )}>
                 {!collapsed && (
-                    <div className="flex items-center gap-2 px-2">
-                        <Image
-                            src="/logo.png"
-                            alt="le bébé"
-                            width={120}
-                            height={40}
-                            className="object-contain h-10 w-auto"
-                            priority
-                        />
-                    </div>
+                    <Link
+                        href="/inicio"
+                        aria-label="Le Bébé — ir para o início"
+                        className="rounded-xl px-1 transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                        <BrandLogo className="w-[140px]" sizes="140px" priority />
+                    </Link>
                 )}
                 <button
                     onClick={onToggle}

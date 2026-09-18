@@ -18,8 +18,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "le bébé - Agendamentos",
-  description: "Sistema de gestão de agendamentos le bébé",
+  title: "Le Bébé App",
+  description: "Ferramentas e operações da Le Bébé em um só lugar",
   icons: {
     icon: "/le-bebe-favicon.png",
   },

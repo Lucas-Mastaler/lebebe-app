@@ -141,6 +141,17 @@ describe('registrarEntradaHubVendas', () => {
     expect(supabase.eventos[0]).toMatchObject({ status: 'processado', lead_id: 'lead-1' })
   })
 
+  it('nao cria lead para numero estrangeiro (34 6...) em vez de converte-lo para 55 34 6...', async () => {
+    buscarContatoCompletoMock.mockResolvedValue({ name: 'Cliente Estrangeiro', data: { number: '34612345678' } })
+    const supabase = criarSupabaseFake()
+
+    const resultado = await registrarEntradaHubVendas(criarMensagem('msg-1'), supabase as never)
+
+    expect(resultado).toMatchObject({ ok: false, error: 'telefone_invalido' })
+    expect(supabase.leads).toHaveLength(0)
+    expect(supabase.eventos[0]).toMatchObject({ status: 'erro' })
+  })
+
   it('persiste lead mesmo quando a busca do protocolo original falha', async () => {
     buscarTicketResgatePorIdMock.mockRejectedValue(new Error('falha_digisac'))
     const supabase = criarSupabaseFake()

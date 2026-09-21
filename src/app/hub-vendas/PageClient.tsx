@@ -701,7 +701,7 @@ export default function PageClient() {
               icon={<Clock className="size-4" />}
               tone="warning"
               detail={formatarPercentualHubVendas(status.resumo.filaManual, status.resumo.leadsRegistrados)}
-              labelAction={<KpiTooltip label="Fila manual" texto="Clientes que poderiam receber recuperação, mas não entraram na fila dentro do prazo." />}
+              labelAction={<KpiTooltip label="Fila manual" texto="Clientes que poderiam receber recuperação, mas não entraram na fila ou não tiveram a recuperação concluída dentro do prazo." />}
             />
           </>
         }
@@ -733,7 +733,16 @@ export default function PageClient() {
             <KpiCard label="Filas reservadas" value={status.resumo.reservada} icon={<Hash className="size-4" />} tone="info" />
             <KpiCard label="Enviando" value={status.resumo.enviando} icon={<Send className="size-4" />} tone="info" />
             <KpiCard label="Canceladas" value={status.resumo.cancelada} icon={<XCircle className="size-4" />} />
-            <KpiCard label="Erros" value={status.resumo.erro} icon={<AlertCircle className="size-4" />} tone={status.resumo.erro > 0 ? 'danger' : 'neutral'} />
+            <KpiCard
+              label="Erros hoje"
+              value={status.resumo.erroHoje}
+              icon={<AlertCircle className="size-4" />}
+              tone={status.resumo.erroHoje > 0 ? 'danger' : 'neutral'}
+              detail={status.resumo.erro > status.resumo.erroHoje
+                ? `${status.resumo.erro - status.resumo.erroHoje} erro(s) anterior(es) pendente(s)`
+                : undefined}
+              labelAction={<KpiTooltip label="Erros hoje" texto="Filas em erro programadas para hoje. Erros de dias anteriores que ainda estão pendentes aparecem à parte e podem ser reprocessados na lista de filas." />}
+            />
             <KpiCard label="Resultado incerto" value={status.resumo.resultadoIncerto} icon={<AlertTriangle className="size-4" />} tone={status.resumo.resultadoIncerto > 0 ? 'warning' : 'neutral'} />
             <KpiCard label="Análise manual" value={status.resumo.analiseManual} icon={<ShieldAlert className="size-4" />} tone={status.resumo.analiseManual > 0 ? 'warning' : 'neutral'} />
           </>
@@ -819,7 +828,7 @@ export default function PageClient() {
 
             <Section title="Estado operacional" icon={<CheckCircle className="size-4" />} tone="section-3">
               <div className="text-xs">
-                {alertas.total24h === 0 && status.resumo.erro === 0 && status.resumo.resultadoIncerto === 0 ? (
+                {alertas.total24h === 0 && status.resumo.erroHoje === 0 && status.resumo.resultadoIncerto === 0 ? (
                   <Badge tone="success">Saudável</Badge>
                 ) : (
                   <Badge tone="warning">Com atenção</Badge>
@@ -1216,10 +1225,15 @@ function CardLoja({ loja }: { loja: ResumoLojaHubVendas }) {
           <span className="text-slate-500">Agendada: <strong className="text-slate-700">{loja.filas.agendada}</strong></span>
           <span className="text-slate-500">Reservada: <strong className="text-slate-700">{loja.filas.reservada}</strong></span>
           <span className="text-slate-500">Enviando: <strong className="text-slate-700">{loja.filas.enviando}</strong></span>
-          <span className="text-slate-500">Erro: <strong className={loja.filas.erro > 0 ? 'text-destructive' : 'text-slate-700'}>{loja.filas.erro}</strong></span>
+          <span className="text-slate-500">Erro hoje: <strong className={loja.filas.erroHoje > 0 ? 'text-destructive' : 'text-slate-700'}>{loja.filas.erroHoje}</strong></span>
           <span className="text-slate-500">Incerto: <strong className={loja.filas.resultadoIncerto > 0 ? 'text-amber-600' : 'text-slate-700'}>{loja.filas.resultadoIncerto}</strong></span>
           <span className="text-slate-500">Manual: <strong className={loja.filas.analiseManual > 0 ? 'text-violet-600' : 'text-slate-700'}>{loja.filas.analiseManual}</strong></span>
         </div>
+        {loja.filas.erro > loja.filas.erroHoje && (
+          <p className="mt-2 text-xs text-slate-500">
+            {loja.filas.erro - loja.filas.erroHoje} erro(s) anterior(es) pendente(s)
+          </p>
+        )}
       </CardContent>
     </Card>
   )
@@ -1235,6 +1249,7 @@ function BadgeStatus({ status }: { status: string }) {
     resultado_incerto: { label: 'Incerto', tone: 'warning' },
     analise_manual: { label: 'Manual', tone: 'warning' },
     cancelado: { label: 'Cancelado', tone: 'neutral' },
+    expirado: { label: 'Expirado', tone: 'neutral' },
   }
   const info = map[status] ?? { label: status, tone: 'neutral' as const }
   return <Badge tone={info.tone}>{info.label}</Badge>

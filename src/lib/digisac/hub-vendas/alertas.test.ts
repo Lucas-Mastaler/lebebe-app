@@ -204,6 +204,57 @@ describe('alertas Hub/Vendas', () => {
     expect(texto).toContain('ERRO DE ENVIO')
   })
 
+  describe('alertarErroEnvio — linha de retry reflete o estado real', () => {
+    async function textoAlertaErro(params: { retryAgendado: boolean; proximoRetry?: string | null }): Promise<string> {
+      let capturedBody: Record<string, unknown> | null = null
+      vi.mocked(fetchDigisacRaw).mockImplementationOnce(async (_endpoint: string, options?: RequestInit) => {
+        capturedBody = JSON.parse(options!.body as string)
+        return { ok: true, text: () => Promise.resolve('{}') } as Response
+      })
+      await alertarErroEnvio({
+        filaId: 'f12ea6f2-a318-4592-8b02-1c8e966a5c93',
+        serviceId: '1352c41b-80a9-4e74-b9d9-4c5e7aed060e',
+        tentativa: 1,
+        erro: 'mensagem_api_erro status=500',
+        ...params,
+      })
+      return String(capturedBody!.text)
+    }
+
+    it('retry agendado com horario: informa retry e mostra o proximo horario', async () => {
+      // 14:23:04 UTC = 11:23 em America/Sao_Paulo
+      const texto = await textoAlertaErro({ retryAgendado: true, proximoRetry: '2026-09-19T14:23:04.369Z' })
+      expect(texto).toContain('Retry automático agendado')
+      expect(texto).toContain('Próximo retry: 19/09/2026 11:23')
+      expect(texto).not.toContain('Sem retry automático')
+    })
+
+    it('retry agendado sem horario: ainda informa que havera nova tentativa', async () => {
+      const texto = await textoAlertaErro({ retryAgendado: true })
+      expect(texto).toContain('Retry automático agendado (nova tentativa em breve).')
+      expect(texto).not.toContain('Sem retry automático')
+    })
+
+    it('retry agendado com horario invalido nao quebra e nao afirma ausencia de retry', async () => {
+      const texto = await textoAlertaErro({ retryAgendado: true, proximoRetry: 'nao-e-data' })
+      expect(texto).toContain('Retry automático agendado (nova tentativa em breve).')
+      expect(texto).not.toContain('Sem retry automático')
+      expect(texto).not.toContain('NaN')
+    })
+
+    it('sem retry: mantem a mensagem de erro definitivo', async () => {
+      const texto = await textoAlertaErro({ retryAgendado: false })
+      expect(texto).toContain('Sem retry automático (erro definitivo ou limite de tentativas atingido).')
+      expect(texto).not.toContain('Retry automático agendado')
+    })
+
+    it('sem retry: horario recebido e ignorado (nao mostra proximo retry)', async () => {
+      const texto = await textoAlertaErro({ retryAgendado: false, proximoRetry: '2026-09-19T14:23:04.369Z' })
+      expect(texto).toContain('Sem retry automático')
+      expect(texto).not.toContain('Próximo retry')
+    })
+  })
+
   it('alertarResultadoIncerto envia com tipo correto', async () => {
     let capturedBody: Record<string, unknown> | null = null
     vi.mocked(fetchDigisacRaw).mockImplementationOnce(async (_endpoint: string, options?: RequestInit) => {

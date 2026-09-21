@@ -281,8 +281,11 @@ export async function alertarErroEnvio(params: {
     `Tentativa: ${params.tentativa}`,
     `Erro: ${sanitizarDigisacParaLog(params.erro).slice(0, 200)}`,
   ]
-  if (params.retryAgendado && params.proximoRetry) {
-    linhas.push(`Próximo retry: ${formatarDataHoraLocal(new Date(params.proximoRetry), tz)}`)
+  const proximoRetry = params.proximoRetry ? new Date(params.proximoRetry) : null
+  if (params.retryAgendado && proximoRetry && !Number.isNaN(proximoRetry.getTime())) {
+    linhas.push(`Retry automático agendado. Próximo retry: ${formatarDataHoraLocal(proximoRetry, tz)}`)
+  } else if (params.retryAgendado) {
+    linhas.push('Retry automático agendado (nova tentativa em breve).')
   } else {
     linhas.push('Sem retry automático (erro definitivo ou limite de tentativas atingido).')
   }
@@ -299,6 +302,7 @@ export async function alertarErroEnvio(params: {
       loja,
       tentativa: params.tentativa,
       retryAgendado: params.retryAgendado,
+      proximoRetry: proximoRetry && !Number.isNaN(proximoRetry.getTime()) ? proximoRetry.toISOString() : null,
     },
   })
 }

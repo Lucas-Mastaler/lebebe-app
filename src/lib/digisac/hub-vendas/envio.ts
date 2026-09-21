@@ -188,6 +188,149 @@ export async function buscarTicketResgatePorId(ticketId: string): Promise<Ticket
   }
 }
 
+type TicketBrutoDigisac = {
+  id?: string
+  isOpen?: boolean
+  contactId?: string | null
+  departmentId?: string | null
+  userId?: string | null
+  endedAt?: string | null
+  protocol?: string | number | null
+}
+
+async function buscarTicketBrutoPorId(ticketId: string): Promise<TicketBrutoDigisac> {
+  return await fetchDigisac(`/tickets/${encodeURIComponent(ticketId)}`) as TicketBrutoDigisac
+}
+
+/**
+ * O `ticket/transfer` nem sempre devolve o ID do ticket criado. Como `buscarTicketAbertoContato` ja
+ * garantiu, imediatamente antes, que o contato nao tinha ticket aberto, o ticket aberto agora e o do
+ * envio automatico — desde que contato, departamento de resgate e ausencia de atendente confirmem.
+ */
+async function resolverTicketAbertoPeloRobo(params: {
+  contactId: string
+  departmentId: string
+}): Promise<{ ticketId: string; protocolo: string | null } | null> {
+  try {
+    const aberto = await buscarTicketAbertoContato(params.contactId)
+    if (!aberto?.id) return null
+    const ticket = await buscarTicketBrutoPorId(aberto.id)
+    if (
+      ticket.id === aberto.id
+      && ticket.isOpen === true
+      && !ticket.endedAt
+      && ticket.contactId === params.contactId
+      && ticket.departmentId === params.departmentId
+      && !ticket.userId
+    ) {
+      return { ticketId: aberto.id, protocolo: normalizarProtocoloDigi(ticket.protocol) }
+    }
+  } catch (error) {
+    console.warn(`[HUB VENDAS ENVIO] ticket do envio automatico nao resolvido apos transfer contactId=${params.contactId} erro=${erroSeguro(error)}`)
+  }
+  return null
+}
+
+/** Mensagens do ticket. `type: 'ticket'` sao eventos de sistema (abertura/transferencia), nao mensagens de chat. */
+async function buscarMensagensDoTicket(ticketId: string): Promise<{ mensagens: Array<{ type?: string }>; truncado: boolean }> {
+  const query = new URLSearchParams()
+  query.set('where[ticketId]', ticketId)
+  query.set('page', '1')
+  query.set('perPage', '50')
+  const resp = await fetchDigisac(`/messages?${query.toString()}`)
+  const mensagens = asRows<{ type?: string }>(resp)
+  const totalInformado = resp && typeof resp === 'object' ? (resp as Record<string, unknown>).total : undefined
+  return { mensagens, truncado: typeof totalInformado === 'number' && totalInformado > mensagens.length }
+}
+
+/**
+ * Evidencia objetiva de contato nao entregavel: o proprio DigiSac marcou o contato com `data.valid === false`
+ * (numero sem WhatsApp/formato invalido). SO `false` explicito conta; ausente, `true` ou falha na consulta
+ * devolvem `false` (nao ha prova). Nao depende do texto do erro do envio.
+ */
+export async function contatoDigisacMarcadoInvalido(contactId: string): Promise<boolean> {
+  try {
+    const contato = await fetchDigisac(`/contacts/${encodeURIComponent(contactId)}`) as { data?: { valid?: unknown } | null }
+    return contato?.data?.valid === false
+  } catch {
+    return false
+  }
+}
+
+export type ConsultaEntregaAposFalhaHttp = 'ausente' | 'presente' | 'desconhecida'
+
+/**
+ * Apos um HTTP 500 no `POST /messages`, verifica no DigiSac se ALGUMA mensagem de chat existe no ticket
+ * aberto pelo proprio envio automatico.
+ *  - `ausente`: ticket so tem eventos de sistema => nada foi gravado/entregue (falha confirmada, retry seguro);
+ *  - `presente`: ja existe mensagem de chat (nossa, mesmo com erro no POST, ou do cliente) => nao repetir;
+ *  - `desconhecida`: sem ticket para consultar, lista truncada ou consulta falhou => tratar como incerto.
+ */
+export async function consultarEntregaAposFalhaHttp(params: { ticketId: string | null }): Promise<ConsultaEntregaAposFalhaHttp> {
+  if (!params.ticketId) return 'desconhecida'
+  try {
+    const { mensagens, truncado } = await buscarMensagensDoTicket(params.ticketId)
+    if (mensagens.some((mensagem) => mensagem.type !== 'ticket')) return 'presente'
+    return truncado ? 'desconhecida' : 'ausente'
+  } catch {
+    return 'desconhecida'
+  }
+}
+
+/**
+ * Status HTTP em que o DigiSac pode ter aceito/processado a mensagem apesar do erro devolvido:
+ * 5xx (falha do servidor ou de proxy/gateway) e 408. 4xx (exceto 408) significa requisicao rejeitada
+ * antes de qualquer processamento (auth, validacao, rate limit).
+ */
+export function statusHttpPodeTerProcessadoMensagem(status: number): boolean {
+  return status >= 500 || status === 408
+}
+
+export type VerificacaoTicketRoboRetry =
+  | { reutilizavel: true; ticket: TicketResgate }
+  | { reutilizavel: false; motivo: string }
+
+/**
+ * Decide se, num retry, o ticket aberto pela tentativa anterior do PROPRIO envio automatico pode ser
+ * reaproveitado em vez de ser tratado como "cliente em atendimento".
+ *
+ * So e reutilizavel quando TODAS as provas objetivas abaixo batem; qualquer duvida ou falha de consulta
+ * devolve `reutilizavel: false` (comportamento conservador anterior: o ticket continua bloqueando).
+ *  - o ID e o que a propria fila gravou (nunca "qualquer ticket aberto");
+ *  - ticket aberto, do mesmo contato, no departamento de resgate da loja e sem atendente;
+ *  - nenhuma mensagem de chat: so eventos de sistema (`type: 'ticket'`). Se o cliente escreveu, se houve
+ *    mensagem nossa (mesmo com erro no POST) ou qualquer interacao, NAO reutiliza — evita duplicidade.
+ */
+export async function verificarTicketRoboReutilizavel(params: {
+  ticketId: string
+  contactId: string
+  serviceId: string
+}): Promise<VerificacaoTicketRoboRetry> {
+  const naoReutilizavel = (motivo: string): VerificacaoTicketRoboRetry => ({ reutilizavel: false, motivo })
+  try {
+    const loja = HUB_VENDAS_SERVICE_ID_PARA_LOJA.get(params.serviceId)
+    if (!loja) return naoReutilizavel('conexao_destino_invalida')
+
+    const ticket = await buscarTicketBrutoPorId(params.ticketId)
+    if (ticket.id !== params.ticketId) return naoReutilizavel('ticket_nao_encontrado')
+    if (ticket.isOpen !== true || ticket.endedAt) return naoReutilizavel('ticket_fechado')
+    if (ticket.contactId !== params.contactId) return naoReutilizavel('contato_diferente')
+    if (ticket.departmentId !== HUB_VENDAS_DEPARTAMENTOS_RESGATE[loja]) return naoReutilizavel('departamento_diferente')
+    if (ticket.userId) return naoReutilizavel('ticket_com_atendente')
+
+    const { mensagens, truncado } = await buscarMensagensDoTicket(params.ticketId)
+    if (truncado) return naoReutilizavel('mensagens_truncadas')
+    if (mensagens.some((mensagem) => mensagem.type !== 'ticket')) return naoReutilizavel('ticket_com_mensagens')
+
+    return {
+      reutilizavel: true,
+      ticket: { ticketId: ticket.id, protocolo: normalizarProtocoloDigi(ticket.protocol), transferido: false },
+    }
+  } catch (error) {
+    return naoReutilizavel(`consulta_falhou:${erroSeguro(error)}`)
+  }
+}
+
 export async function abrirTicketResgateHubVendas(params: {
   contactId: string
   serviceId: string
@@ -224,6 +367,14 @@ export async function abrirTicketResgateHubVendas(params: {
     protocolo = normalizarProtocoloDigi(json.protocol ?? ticket?.protocol)
   } catch {
     ticketId = null
+  }
+
+  if (!ticketId) {
+    const resolvido = await resolverTicketAbertoPeloRobo({ contactId: params.contactId, departmentId })
+    if (resolvido) {
+      ticketId = resolvido.ticketId
+      protocolo = protocolo ?? resolvido.protocolo
+    }
   }
 
   if (ticketId && !protocolo) {
@@ -275,7 +426,7 @@ export async function enviarMensagemResgateHubVendas(params: {
         ok: false,
         status: response.status,
         erro: `mensagem_api_erro status=${response.status} body=${sanitizarDigisacParaLog(bodyText).slice(0, 200)}`,
-        resultadoIncerto: false,
+        resultadoIncerto: statusHttpPodeTerProcessadoMensagem(response.status),
       }
     }
 

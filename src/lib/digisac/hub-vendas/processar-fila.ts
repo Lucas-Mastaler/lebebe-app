@@ -10,6 +10,11 @@ import {
   garantirContatoResgateHubVendas,
   hashTextoHubVendas,
   mascararTextoParaResposta,
+  verificarTicketRoboReutilizavel,
+  consultarEntregaAposFalhaHttp,
+  contatoDigisacMarcadoInvalido,
+  type ConsultaEntregaAposFalhaHttp,
+  type TicketResgate,
 } from './envio'
 import {
   montarMensagemRecuperacaoHubVendas,
@@ -19,7 +24,7 @@ import {
   type FonteNomeHubVendas,
   type ResultadoNomeHubVendas,
 } from './mensagem'
-import { extrairCandidatosNomeContatoDigisac } from './telefone'
+import { extrairCandidatosNomeContatoDigisac, normalizarTelefoneBrasilHubVendas } from './telefone'
 import {
   alertarAnaliseManual,
   alertarErroEnvio,
@@ -137,6 +142,7 @@ type CategoriaErro =
   | 'erro_interno'
   | 'configuracao'
   | 'placeholder_nao_resolvido'
+  | 'contato_invalido'
 
 const LIMITE_PADRAO = 1
 const LIMITE_MAXIMO = 5
@@ -202,33 +208,70 @@ function gerarWorkerId(): string {
   return `hub-vendas-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
-function classificarErro(error: unknown): { categoria: CategoriaErro; retentavel: boolean; incrementaInfra: boolean; resultadoIncerto: boolean; mensagem: string } {
-  const mensagem = (error instanceof Error ? error.message : String(error)).slice(0, 500)
-  if (/sem_mensagem_ativa|configuracao|configura/i.test(mensagem)) {
-    return { categoria: 'configuracao', retentavel: false, incrementaInfra: false, resultadoIncerto: false, mensagem }
+/**
+ * Etapa em que a falha ocorreu, sempre em relacao ao POST da mensagem:
+ *  - `pre_envio`: antes de `marcarEnviando` (fila `reservado`). Nada foi enviado: qualquer falha e certa;
+ *  - `envio`: depois de `marcarEnviando` e ate a resposta do POST (fila `enviando`);
+ *  - `pos_envio`: o POST devolveu 2xx; uma falha a partir daqui NAO desfaz uma mensagem possivelmente entregue.
+ */
+type EtapaEnvio = 'pre_envio' | 'envio' | 'pos_envio'
+type EstadoEnvio = { etapa: EtapaEnvio; messageId: string | null }
+
+type ErroClassificado = {
+  categoria: CategoriaErro
+  retentavel: boolean
+  incrementaInfra: boolean
+  resultadoIncerto: boolean
+  mensagem: string
+}
+
+function extrairStatusHttp(mensagem: string): number | null {
+  const status = /\bstatus=(\d{3})\b/.exec(mensagem)?.[1]
+  return status ? Number(status) : null
+}
+
+/**
+ * Matriz de classificacao (ordem importa):
+ *  - definitivo (sem retry): contato explicitamente invalido, configuracao, placeholder, autenticacao;
+ *  - incerto (sem retry): falha apos POST aceito (`pos_envio`) ou rede/timeout durante o envio;
+ *  - transitorio (retry com backoff): indisponibilidade/`serverPod is not set`, rede antes do envio, rate limit,
+ *    falhas de contato/ticket/mensagem sem evidencia de entrega.
+ * `incrementaInfra` so e true para sinais de problema da CONEXAO (autenticacao, rate limit, falha de mensagem
+ * generica); contato invalido e problemas de rede nunca pausam uma conexao saudavel.
+ */
+export function classificarErro(error: unknown, estado: EstadoEnvio = { etapa: 'pre_envio', messageId: null }): ErroClassificado {
+  // Erros do Supabase/PostgREST chegam como objeto ({ message }), nao como Error.
+  const textoBruto = error instanceof Error
+    ? error.message
+    : typeof asRecord(error).message === 'string' ? String(asRecord(error).message) : String(error)
+  const mensagem = textoBruto.slice(0, 500)
+  const definitivo = (categoria: CategoriaErro, incrementaInfra = false): ErroClassificado =>
+    ({ categoria, retentavel: false, incrementaInfra, resultadoIncerto: false, mensagem })
+  const transitorio = (categoria: CategoriaErro, incrementaInfra = false): ErroClassificado =>
+    ({ categoria, retentavel: true, incrementaInfra, resultadoIncerto: false, mensagem })
+  const incerto = (detalhe = mensagem): ErroClassificado =>
+    ({ categoria: 'timeout_resultado_incerto', retentavel: false, incrementaInfra: false, resultadoIncerto: true, mensagem: detalhe.slice(0, 500) })
+
+  if (/contato_invalido_digisac/.test(mensagem)) return definitivo('contato_invalido')
+  if (/sem_mensagem_ativa|configuracao|configura/i.test(mensagem)) return definitivo('configuracao')
+  if (/placeholder_nao_resolvido/i.test(mensagem)) return definitivo('placeholder_nao_resolvido')
+
+  if (estado.etapa === 'pos_envio') {
+    return incerto(`pos_envio_ok messageId=${estado.messageId ?? 'ausente'} causa=${mensagem}`)
   }
-  if (/placeholder_nao_resolvido/i.test(mensagem)) {
-    return { categoria: 'placeholder_nao_resolvido', retentavel: false, incrementaInfra: false, resultadoIncerto: false, mensagem }
-  }
+
+  const status = extrairStatusHttp(mensagem)
+  if (/serverPod is not set/i.test(mensagem)) return transitorio('indisponibilidade')
   if (/timeout|aborted|network|fetch|econnreset|terminated/i.test(mensagem)) {
-    return { categoria: 'timeout_resultado_incerto', retentavel: false, incrementaInfra: false, resultadoIncerto: true, mensagem }
+    // Antes do POST nada foi enviado (retry seguro); durante o envio nao ha como saber.
+    return estado.etapa === 'envio' ? incerto() : transitorio('indisponibilidade')
   }
-  if (/autentica|401|403/i.test(mensagem)) {
-    return { categoria: 'autenticacao', retentavel: false, incrementaInfra: true, resultadoIncerto: false, mensagem }
-  }
-  if (/rate limit|429/i.test(mensagem)) {
-    return { categoria: 'rate_limit', retentavel: true, incrementaInfra: true, resultadoIncerto: false, mensagem }
-  }
-  if (/contato/i.test(mensagem)) {
-    return { categoria: 'contato', retentavel: true, incrementaInfra: false, resultadoIncerto: false, mensagem }
-  }
-  if (/ticket|transfer/i.test(mensagem)) {
-    return { categoria: 'ticket', retentavel: true, incrementaInfra: false, resultadoIncerto: false, mensagem }
-  }
-  if (/mensagem|messages/i.test(mensagem)) {
-    return { categoria: 'mensagem', retentavel: true, incrementaInfra: true, resultadoIncerto: false, mensagem }
-  }
-  return { categoria: 'erro_interno', retentavel: true, incrementaInfra: false, resultadoIncerto: false, mensagem }
+  if (status === 401 || status === 403 || /autentica/i.test(mensagem)) return definitivo('autenticacao', true)
+  if (status === 429 || /rate limit/i.test(mensagem)) return transitorio('rate_limit', true)
+  if (/contato/i.test(mensagem)) return transitorio('contato')
+  if (/ticket|transfer/i.test(mensagem)) return transitorio('ticket')
+  if (/mensagem|messages/i.test(mensagem)) return transitorio('mensagem', true)
+  return transitorio('erro_interno')
 }
 
 function escolherMensagem(mensagens: MensagemRecuperacao[], fila: HubVendasFila): MensagemRecuperacao | null {
@@ -514,10 +557,15 @@ async function registrarAnaliseManual(params: {
   if (error) throw error
 }
 
-async function registrarErro(supabase: SupabaseServiceClient, fila: HubVendasFila, workerId: string, erro: ReturnType<typeof classificarErro>) {
+async function registrarErro(
+  supabase: SupabaseServiceClient,
+  fila: HubVendasFila,
+  workerId: string,
+  erro: ReturnType<typeof classificarErro>
+): Promise<{ status: string | null; programadoPara: string | null }> {
   const tentativaAtual = fila.tentativas_envio ?? 0
   const backoff = BACKOFF_MINUTOS[Math.min(tentativaAtual, BACKOFF_MINUTOS.length - 1)]
-  const { error } = await supabase.rpc('hub_vendas_registrar_erro_fila', {
+  const { data, error } = await supabase.rpc('hub_vendas_registrar_erro_fila', {
     p_fila_id: fila.id,
     p_worker: workerId,
     p_categoria: erro.categoria,
@@ -527,6 +575,8 @@ async function registrarErro(supabase: SupabaseServiceClient, fila: HubVendasFil
     p_incrementa_erro_conexao: erro.incrementaInfra,
   })
   if (error) throw error
+  const linha = asRecord(Array.isArray(data) ? data[0] : data)
+  return { status: asString(linha.status), programadoPara: asString(linha.programado_para) }
 }
 
 async function processarFilaReservada(params: {
@@ -535,6 +585,7 @@ async function processarFilaReservada(params: {
   config: ConfigHubVendas
   workerId: string
   agora: Date
+  estado: EstadoEnvio
 }): Promise<DetalheProcessamento> {
   const lead = await buscarLead(params.supabase, params.fila.lead_id)
   if (!lead) {
@@ -542,7 +593,36 @@ async function processarFilaReservada(params: {
     return { filaId: params.fila.id, leadId: params.fila.lead_id, statusInicial: params.fila.status, acao: 'cancelado', motivo: 'lead_nao_encontrado' }
   }
 
-  const analise = await analisarReconciliacaoLead(lead, params.agora)
+  const telefoneBrasil = normalizarTelefoneBrasilHubVendas(lead.telefone_normalizado_ddi)
+  if (!telefoneBrasil.ddi || telefoneBrasil.ddi !== lead.telefone_normalizado_ddi) {
+    // Lead registrado antes da validacao de entrada (ex.: numero estrangeiro prefixado com 55).
+    // Cancela antes de qualquer chamada ao DigiSac: sem contato, sem ticket, sem retry, sem erro de conexao.
+    console.warn(`[HUB VENDAS ENVIO] telefone do lead invalido para o Brasil; envio cancelado antes de consultar o DigiSac filaId=${params.fila.id} motivo=${telefoneBrasil.motivo ?? 'formato_divergente'}`)
+    await cancelarFila(params.supabase, params.fila, params.workerId, 'telefone_invalido')
+    return { filaId: params.fila.id, leadId: lead.id, statusInicial: params.fila.status, acao: 'cancelado', motivo: 'telefone_invalido' }
+  }
+
+  // Retry apos falha depois do transfer: o ticket aberto na tentativa anterior e do PROPRIO robo e nao pode
+  // contar como "cliente em atendimento". So e reaproveitado com prova objetiva (ver verificarTicketRoboReutilizavel).
+  let ticketRoboReutilizavel: TicketResgate | null = null
+  if (params.fila.digisac_ticket_id && params.fila.digisac_contact_id) {
+    const verificacao = await verificarTicketRoboReutilizavel({
+      ticketId: params.fila.digisac_ticket_id,
+      contactId: params.fila.digisac_contact_id,
+      serviceId: params.fila.conexao_destino_id,
+    })
+    if (verificacao.reutilizavel) {
+      ticketRoboReutilizavel = verificacao.ticket
+    } else {
+      console.log(`[HUB VENDAS ENVIO] ticket da tentativa anterior nao reutilizavel; mantendo bloqueio de atendimento filaId=${params.fila.id} motivo=${verificacao.motivo}`)
+    }
+  }
+
+  const analise = await analisarReconciliacaoLead(
+    lead,
+    params.agora,
+    ticketRoboReutilizavel?.ticketId ? { ignorarTicketIds: [ticketRoboReutilizavel.ticketId] } : undefined
+  )
   if (analise.resultado === 'convertido_reconciliacao' || analise.resultado === 'cliente_em_atendimento') {
     await cancelarFila(params.supabase, params.fila, params.workerId, analise.resultado)
     return { filaId: params.fila.id, leadId: lead.id, statusInicial: params.fila.status, acao: 'cancelado', motivo: analise.resultado }
@@ -648,7 +728,14 @@ async function processarFilaReservada(params: {
   }
 
   const ticketAberto = await buscarTicketAbertoContato(contato.contactId)
-  if (ticketAberto) {
+  const reaproveitaTicketRobo = Boolean(
+    ticketRoboReutilizavel && contato.contactId === params.fila.digisac_contact_id
+  )
+  if (ticketRoboReutilizavel && !reaproveitaTicketRobo) {
+    console.warn(`[HUB VENDAS ENVIO] contato do retry diferente do contato do ticket anterior; ticket nao reaproveitado filaId=${params.fila.id}`)
+  }
+  // Outro ticket aberto (que nao seja o do proprio robo) continua bloqueando o envio.
+  if (ticketAberto && !(reaproveitaTicketRobo && ticketAberto.id === ticketRoboReutilizavel?.ticketId)) {
     await cancelarFila(params.supabase, params.fila, params.workerId, 'chamado_aberto_na_conexao_destino')
     return {
       filaId: params.fila.id,
@@ -667,10 +754,16 @@ async function processarFilaReservada(params: {
     }
   }
 
-  const ticket = await abrirTicketResgateHubVendas({
-    contactId: contato.contactId,
-    serviceId: params.fila.conexao_destino_id,
-  })
+  let ticket: TicketResgate
+  if (reaproveitaTicketRobo && ticketRoboReutilizavel) {
+    console.log(`[HUB VENDAS ENVIO] retry reutilizando ticket aberto pelo proprio envio automatico (sem mensagens e sem atendente) filaId=${params.fila.id}`)
+    ticket = ticketRoboReutilizavel
+  } else {
+    ticket = await abrirTicketResgateHubVendas({
+      contactId: contato.contactId,
+      serviceId: params.fila.conexao_destino_id,
+    })
+  }
 
   await persistirDadosTicketFila({
     supabase: params.supabase,
@@ -690,10 +783,33 @@ async function processarFilaReservada(params: {
     texto: textoMensagem.texto,
     hash: textoMensagem.hash,
   })
+  params.estado.etapa = 'envio'
 
   const envio = await enviarMensagemResgateHubVendas({ contactId: contato.contactId, texto: textoMensagem.texto })
   if (!envio.ok) {
-    if (envio.resultadoIncerto) {
+    let resultadoIncerto = envio.resultadoIncerto
+    let entrega: ConsultaEntregaAposFalhaHttp | null = null
+    // HTTP 500: o DigiSac terminou de processar e respondeu erro. So e falha confirmada (retry seguro) se o
+    // ticket continua sem NENHUMA mensagem de chat; com mensagem presente ou sem como consultar, e incerto.
+    // 502/503/504/408 e timeouts permanecem incertos: o backend pode ainda estar processando.
+    if (resultadoIncerto && envio.status === 500) {
+      entrega = await consultarEntregaAposFalhaHttp({ ticketId: ticket.ticketId })
+      if (entrega === 'ausente') {
+        resultadoIncerto = false
+        console.log(`[HUB VENDAS ENVIO] HTTP 500 no envio; ticket sem mensagem de chat, falha confirmada filaId=${params.fila.id}`)
+      } else {
+        console.warn(`[HUB VENDAS ENVIO] HTTP 500 no envio; nao foi possivel confirmar ausencia de mensagem, resultado incerto filaId=${params.fila.id} consulta=${entrega}`)
+      }
+    }
+    // Evidencia OBJETIVA de contato nao entregavel: o DigiSac marcou o contato com data.valid=false. Nao depende do
+    // texto do erro ("Message came out falsy" sozinho nao prova contato invalido). Vale tambem quando a entrega
+    // ficou "desconhecida" (contato invalido nao recebe mensagem); nunca se ja ha mensagem de chat no ticket.
+    const respostaHttpDeErro = envio.status !== null && (envio.status === 500 || (envio.status >= 400 && envio.status < 500))
+    if (respostaHttpDeErro && entrega !== 'presente' && await contatoDigisacMarcadoInvalido(contato.contactId)) {
+      console.warn(`[HUB VENDAS ENVIO] Contato invalido no DigiSac (data.valid=false). Envio nao sera repetido nem contara como erro da conexao filaId=${params.fila.id} status=${envio.status}`)
+      throw new Error(`contato_invalido_digisac (data.valid=false) origem=${envio.erro}`)
+    }
+    if (resultadoIncerto) {
       await registrarResultadoIncerto(params.supabase, params.fila, params.workerId, envio.erro)
       await alertarResultadoIncerto({
         supabase: params.supabase,
@@ -705,6 +821,9 @@ async function processarFilaReservada(params: {
     }
     throw new Error(envio.erro)
   }
+  // POST aceito (2xx): a partir daqui uma falha nao desfaz uma mensagem possivelmente entregue.
+  params.estado.etapa = 'pos_envio'
+  params.estado.messageId = envio.messageId
 
   if (!envio.messageId?.trim()) {
     await registrarResultadoIncerto(params.supabase, params.fila, params.workerId, 'digisac_message_id_ausente_apos_post')
@@ -895,13 +1014,14 @@ export async function processarFilaRecuperacaoHubVendas({
       continue
     }
 
+    const estado: EstadoEnvio = { etapa: 'pre_envio', messageId: null }
     try {
       console.log(`[HUB VENDAS ENVIO] fila reservada filaId=${fila.id} leadId=${fila.lead_id} conexao=${fila.conexao_destino_id}`)
-      const detalhe = await processarFilaReservada({ supabase, fila, config, workerId, agora })
+      const detalhe = await processarFilaReservada({ supabase, fila, config, workerId, agora, estado })
       resultado.detalhes.push(detalhe)
       incrementar(resultado, detalhe)
     } catch (error) {
-      const erro = classificarErro(error)
+      const erro = classificarErro(error, estado)
       if (erro.resultadoIncerto) {
         await registrarResultadoIncerto(supabase, fila, workerId, erro.mensagem)
         await alertarResultadoIncerto({
@@ -916,7 +1036,7 @@ export async function processarFilaRecuperacaoHubVendas({
         continue
       }
 
-      await registrarErro(supabase, fila, workerId, erro)
+      const registro = await registrarErro(supabase, fila, workerId, erro)
       const acao = erro.retentavel && (fila.tentativas_envio ?? 0) < 3 ? 'retry_agendado' : 'erro'
       const detalhe = { filaId: fila.id, leadId: fila.lead_id, statusInicial: fila.status, acao, motivo: erro.categoria }
       resultado.detalhes.push(detalhe)
@@ -929,6 +1049,7 @@ export async function processarFilaRecuperacaoHubVendas({
         tentativa: (fila.tentativas_envio ?? 0) + 1,
         erro: erro.mensagem,
         retryAgendado: acao === 'retry_agendado',
+        proximoRetry: registro.status === 'agendado' ? registro.programadoPara : null,
       })
     }
   }

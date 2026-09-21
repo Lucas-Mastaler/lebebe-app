@@ -566,3 +566,81 @@ describe('fecharLeadsAguardandoExpiradosHubVendas (via prepararFilaRecuperacaoHu
     expect(expirado.status).toBe('aguardando_conversao')
   })
 })
+
+describe('leads presos em encaminhado_recuperacao (via prepararFilaRecuperacaoHubVendas)', () => {
+  const agora = new Date('2026-08-01T00:00:00.000Z')
+
+  function criarLeadPreso(id: string): LeadRow {
+    return {
+      id,
+      telefone_normalizado_ddi: '5541999999161',
+      data_entrada_hub: '2026-07-20T10:00:00.000Z', // bem fora da janela de 48h
+      status: 'encaminhado_recuperacao',
+      conexao_recuperacao_id: PORTAO_ID,
+    }
+  }
+
+  function criarFilaEmErro(leadId: string): FilaRow & { erro: string; categoria_erro: string; tentativas_envio: number } {
+    return {
+      id: 'fila-em-erro',
+      lead_id: leadId,
+      conexao_destino_id: PORTAO_ID,
+      conexao_destino_nome: 'Portao',
+      status: 'erro',
+      programado_para: '2026-07-21T13:00:00.000Z',
+      quantidade_reconciliacoes: 1,
+      erro: 'contato_criacao_falhou status=500 body={"message":"serverPod is not set."}',
+      categoria_erro: 'contato',
+      tentativas_envio: 4,
+    }
+  }
+
+  it('fluxo real do cron: encerra o lead preso mesmo com a automacao pausada e preserva o historico da fila', async () => {
+    const preso = criarLeadPreso(LEAD_TESTE_ID)
+    const fila = criarFilaEmErro(LEAD_TESTE_ID)
+    const supabase = criarSupabaseFake([preso], [fila])
+
+    const resultado = await prepararFilaRecuperacaoHubVendas({ supabase: supabase as never, agora })
+
+    expect(resultado.totalLeadsSemAcaoEncerrados).toBe(1)
+    expect(preso.status).toBe('fila_manual')
+    expect(preso.data_fila_manual).toBe(agora.toISOString())
+    expect(fila).toMatchObject({ status: 'expirado', categoria_erro: 'contato', tentativas_envio: 4 })
+    expect(supabase.state.filas).toHaveLength(1)
+  })
+
+  it('lead encerrado nao volta para a selecao automatica e leads novos seguem normalmente na mesma execucao', async () => {
+    const preso = criarLeadPreso(LEAD_TESTE_ID)
+    const fila = criarFilaEmErro(LEAD_TESTE_ID)
+    const novo = criarLead(OUTRO_LEAD_ID, '2026-07-30T20:00:00.000Z') // 28h antes de `agora`: elegivel (24h a 48h)
+    const supabase = criarSupabaseFake([preso, novo], [fila])
+    supabase.state.config[0].valor = { ativa: true, pausada: false, motivo: 'teste' }
+
+    const resultado = await prepararFilaRecuperacaoHubVendas({ supabase: supabase as never, agora })
+
+    // O lead preso foi encerrado e NAO foi selecionado como candidato; so o lead novo virou fila.
+    expect(resultado.totalLeadsSemAcaoEncerrados).toBe(1)
+    expect(resultado.totalCandidatos).toBe(1)
+    expect(resultado.totalFilaCriada).toBe(1)
+    const rpcPreparar = supabase.state.rpcCalls.filter((call) => call.fn === 'hub_vendas_preparar_fila_recuperacao')
+    expect(rpcPreparar).toHaveLength(1)
+    expect(rpcPreparar[0].params.p_lead_id).toBe(OUTRO_LEAD_ID)
+    expect(preso.status).toBe('fila_manual')
+    expect(novo.status).toBe('encaminhado_recuperacao')
+
+    // Segunda execucao: nada volta ao estado intermediario e nada e reprocessado.
+    const segunda = await prepararFilaRecuperacaoHubVendas({ supabase: supabase as never, agora })
+    expect(segunda.totalLeadsSemAcaoEncerrados).toBe(0)
+    expect(preso.status).toBe('fila_manual')
+  })
+
+  it('nao encerra em modo simulacao e nem quando um leadId especifico e informado', async () => {
+    const preso = criarLeadPreso(LEAD_TESTE_ID)
+    const supabase = criarSupabaseFake([preso], [criarFilaEmErro(LEAD_TESTE_ID)])
+
+    await prepararFilaRecuperacaoHubVendas({ supabase: supabase as never, agora, modoTeste: true, modoSimulacao: true })
+    await prepararFilaRecuperacaoHubVendas({ supabase: supabase as never, agora, leadId: OUTRO_LEAD_ID, modoTeste: true })
+
+    expect(preso.status).toBe('encaminhado_recuperacao')
+  })
+})

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { processarFilaRecuperacaoHubVendas } from './processar-fila'
+import { alertarErroEnvio, alertarResultadoIncerto } from './alertas'
+import { analisarReconciliacaoLead } from './preparar-fila'
 
 const envioMocks = vi.hoisted(() => ({
   buscarContatoResgatePorTelefone: vi.fn(),
@@ -8,6 +10,9 @@ const envioMocks = vi.hoisted(() => ({
   buscarTicketResgatePorId: vi.fn(),
   abrirTicketResgateHubVendas: vi.fn(),
   enviarMensagemResgateHubVendas: vi.fn(),
+  verificarTicketRoboReutilizavel: vi.fn(),
+  consultarEntregaAposFalhaHttp: vi.fn(),
+  contatoDigisacMarcadoInvalido: vi.fn(),
 }))
 const buscarContatoCompletoMock = vi.hoisted(() => vi.fn())
 
@@ -301,6 +306,9 @@ describe('processarFilaRecuperacaoHubVendas', () => {
       origemNomeBruto: 'contato_destino_existente',
     })
     envioMocks.buscarTicketAbertoContato.mockResolvedValue(null)
+    envioMocks.verificarTicketRoboReutilizavel.mockResolvedValue({ reutilizavel: false, motivo: 'nao_configurado_no_teste' })
+    envioMocks.consultarEntregaAposFalhaHttp.mockResolvedValue('desconhecida')
+    envioMocks.contatoDigisacMarcadoInvalido.mockResolvedValue(false)
     envioMocks.abrirTicketResgateHubVendas.mockResolvedValue({ ticketId: 'ticket-1', protocolo: '123456', transferido: true })
     envioMocks.buscarTicketResgatePorId.mockResolvedValue({ ticketId: 'ticket-1', protocolo: '123456', transferido: false })
     envioMocks.enviarMensagemResgateHubVendas.mockResolvedValue({ ok: true, messageId: 'message-1', ticketId: 'ticket-1', contactId: 'contact-1' })
@@ -619,6 +627,443 @@ describe('processarFilaRecuperacaoHubVendas', () => {
 
     expect(resultado.totalRetryAgendado).toBe(1)
     expect(supabase.state.filas[0]).toMatchObject({ status: 'agendado', categoria_erro: 'rate_limit' })
+  })
+
+  it('cancela antes de qualquer chamada ao DigiSac quando o telefone do lead nao e brasileiro valido (caso 55 34 6...)', async () => {
+    const supabase = criarSupabaseFake({ mensagensAtivas: true })
+    supabase.state.leads[0].telefone_normalizado_ddi = '5534612345678'
+
+    const resultado = await processarFilaRecuperacaoHubVendas({
+      supabase: supabase as never,
+      filaId: FILA_ID,
+      modoTeste: true,
+      workerId: 'worker-teste',
+    })
+
+    expect(resultado.totalCancelado).toBe(1)
+    expect(resultado.totalErro).toBe(0)
+    expect(resultado.detalhes[0]).toMatchObject({ acao: 'cancelado', motivo: 'telefone_invalido' })
+    expect(supabase.state.filas[0]).toMatchObject({ status: 'cancelado', motivo_cancelamento: 'telefone_invalido' })
+    // Sem contato, sem ticket, sem envio, sem retry, sem erro de conexao, sem alerta de erro.
+    expect(envioMocks.garantirContatoResgateHubVendas).not.toHaveBeenCalled()
+    expect(envioMocks.abrirTicketResgateHubVendas).not.toHaveBeenCalled()
+    expect(envioMocks.enviarMensagemResgateHubVendas).not.toHaveBeenCalled()
+    expect(supabase.state.rpcCalls.map((call) => call.fn)).not.toContain('hub_vendas_registrar_erro_fila')
+    expect(alertarErroEnvio).not.toHaveBeenCalled()
+  })
+
+  it('telefone brasileiro valido do lead segue o fluxo normal de envio', async () => {
+    const supabase = criarSupabaseFake({ mensagensAtivas: true })
+
+    const resultado = await processarFilaRecuperacaoHubVendas({
+      supabase: supabase as never,
+      filaId: FILA_ID,
+      modoTeste: true,
+      workerId: 'worker-teste',
+    })
+
+    expect(resultado.totalEnviado).toBe(1)
+    expect(supabase.state.filas[0].status).toBe('enviado')
+  })
+
+  describe('retry apos falha depois do transfer (ticket aberto pelo proprio robo)', () => {
+    const TICKET_ROBO = { ticketId: 'ticket-robo', protocolo: '2026091976548', transferido: false }
+
+    function criarFilaDeRetry(supabase: ReturnType<typeof criarSupabaseFake>) {
+      supabase.state.filas[0] = criarFila({
+        digisac_ticket_id: 'ticket-robo',
+        digisac_contact_id: 'contact-1',
+        tentativas_envio: 1,
+        versao_mensagem: 1,
+        texto_enviado: 'Olá, Ana!\n\nAqui é da Le Bébé Portão.',
+        hash_texto_enviado: 'c'.repeat(64),
+      })
+    }
+
+    async function processar(supabase: ReturnType<typeof criarSupabaseFake>) {
+      return processarFilaRecuperacaoHubVendas({
+        supabase: supabase as never,
+        filaId: FILA_ID,
+        modoTeste: true,
+        workerId: 'worker-teste',
+      })
+    }
+
+    it('reaproveita o ticket do robo (aberto, sem mensagens, sem atendente): nao vira cliente em atendimento e nao abre outro ticket', async () => {
+      const supabase = criarSupabaseFake({ mensagensAtivas: false })
+      criarFilaDeRetry(supabase)
+      envioMocks.verificarTicketRoboReutilizavel.mockResolvedValue({ reutilizavel: true, ticket: TICKET_ROBO })
+      envioMocks.buscarTicketAbertoContato.mockResolvedValue({ id: 'ticket-robo' })
+      envioMocks.enviarMensagemResgateHubVendas.mockResolvedValue({ ok: true, messageId: 'message-1', ticketId: 'ticket-robo', contactId: 'contact-1' })
+
+      const resultado = await processar(supabase)
+
+      expect(envioMocks.verificarTicketRoboReutilizavel).toHaveBeenCalledWith({
+        ticketId: 'ticket-robo',
+        contactId: 'contact-1',
+        serviceId: PORTAO_ID,
+      })
+      // O ticket do robo fica fora da reconciliacao (nem "atendimento", nem "conversao").
+      expect(vi.mocked(analisarReconciliacaoLead).mock.calls[0][2]).toEqual({ ignorarTicketIds: ['ticket-robo'] })
+      expect(envioMocks.abrirTicketResgateHubVendas).not.toHaveBeenCalled()
+      expect(envioMocks.enviarMensagemResgateHubVendas).toHaveBeenCalledTimes(1)
+      expect(resultado.totalEnviado).toBe(1)
+      expect(supabase.state.filas[0]).toMatchObject({ status: 'enviado', digisac_ticket_id: 'ticket-robo', digisac_message_id: 'message-1' })
+    })
+
+    it('ticket com mensagem do cliente (nao reutilizavel): continua bloqueando como cliente em atendimento, sem envio', async () => {
+      const supabase = criarSupabaseFake({ mensagensAtivas: false })
+      criarFilaDeRetry(supabase)
+      envioMocks.verificarTicketRoboReutilizavel.mockResolvedValue({ reutilizavel: false, motivo: 'ticket_com_mensagens' })
+      vi.mocked(analisarReconciliacaoLead).mockResolvedValueOnce({ resultado: 'cliente_em_atendimento', conversoes: [] })
+
+      const resultado = await processar(supabase)
+
+      expect(vi.mocked(analisarReconciliacaoLead).mock.calls[0][2]).toBeUndefined()
+      expect(resultado.totalCancelado).toBe(1)
+      expect(supabase.state.filas[0]).toMatchObject({ status: 'cancelado', motivo_cancelamento: 'cliente_em_atendimento' })
+      expect(envioMocks.abrirTicketResgateHubVendas).not.toHaveBeenCalled()
+      expect(envioMocks.enviarMensagemResgateHubVendas).not.toHaveBeenCalled()
+    })
+
+    it('ticket assumido por atendente (nao reutilizavel): continua bloqueando', async () => {
+      const supabase = criarSupabaseFake({ mensagensAtivas: false })
+      criarFilaDeRetry(supabase)
+      envioMocks.verificarTicketRoboReutilizavel.mockResolvedValue({ reutilizavel: false, motivo: 'ticket_com_atendente' })
+      vi.mocked(analisarReconciliacaoLead).mockResolvedValueOnce({ resultado: 'cliente_em_atendimento', conversoes: [] })
+
+      const resultado = await processar(supabase)
+
+      expect(resultado.totalCancelado).toBe(1)
+      expect(envioMocks.enviarMensagemResgateHubVendas).not.toHaveBeenCalled()
+    })
+
+    it('cliente com OUTRO ticket aberto na loja mesmo havendo ticket reutilizavel do robo: cancela e nao envia', async () => {
+      const supabase = criarSupabaseFake({ mensagensAtivas: false })
+      criarFilaDeRetry(supabase)
+      envioMocks.verificarTicketRoboReutilizavel.mockResolvedValue({ reutilizavel: true, ticket: TICKET_ROBO })
+      envioMocks.buscarTicketAbertoContato.mockResolvedValue({ id: 'ticket-aberto-pelo-cliente' })
+
+      const resultado = await processar(supabase)
+
+      expect(resultado.totalCancelado).toBe(1)
+      expect(supabase.state.filas[0]).toMatchObject({ status: 'cancelado', motivo_cancelamento: 'chamado_aberto_na_conexao_destino' })
+      expect(envioMocks.enviarMensagemResgateHubVendas).not.toHaveBeenCalled()
+    })
+
+    it('contato do retry diferente do contato do ticket anterior: nao reaproveita, abre ticket proprio para o contato atual', async () => {
+      const supabase = criarSupabaseFake({ mensagensAtivas: false })
+      criarFilaDeRetry(supabase)
+      supabase.state.filas[0].digisac_contact_id = 'contact-antigo'
+      envioMocks.verificarTicketRoboReutilizavel.mockResolvedValue({ reutilizavel: true, ticket: TICKET_ROBO })
+
+      await processar(supabase)
+
+      expect(envioMocks.abrirTicketResgateHubVendas).toHaveBeenCalledTimes(1)
+    })
+
+    it('primeira tentativa (sem ticket gravado) nao consulta ticket anterior e abre o ticket normalmente', async () => {
+      const supabase = criarSupabaseFake({ mensagensAtivas: true })
+
+      await processar(supabase)
+
+      expect(envioMocks.verificarTicketRoboReutilizavel).not.toHaveBeenCalled()
+      expect(envioMocks.abrirTicketResgateHubVendas).toHaveBeenCalledTimes(1)
+    })
+
+    it('fluxo completo do caso Hauer: falha no envio (500) agenda retry com ticket gravado; o retry reaproveita o ticket e envia UMA vez', async () => {
+      const supabase = criarSupabaseFake({ mensagensAtivas: true })
+      envioMocks.abrirTicketResgateHubVendas.mockResolvedValue({ ticketId: 'ticket-robo', protocolo: '2026091976548', transferido: true })
+      envioMocks.enviarMensagemResgateHubVendas.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        erro: 'mensagem_api_erro status=500 body={"error":"HttpError","message":"[sendMessageToId] Message came out falsy"}',
+        resultadoIncerto: true,
+      })
+      // Ticket do robo so com eventos de sistema: falha confirmada (nada foi entregue).
+      envioMocks.consultarEntregaAposFalhaHttp.mockResolvedValueOnce('ausente')
+
+      const primeira = await processar(supabase)
+
+      expect(primeira.totalRetryAgendado).toBe(1)
+      // O ID do ticket ficou gravado na fila (antes da correcao ficava nulo e o retry nao o reconhecia).
+      expect(supabase.state.filas[0]).toMatchObject({ status: 'agendado', digisac_ticket_id: 'ticket-robo', digisac_contact_id: 'contact-1' })
+
+      envioMocks.verificarTicketRoboReutilizavel.mockResolvedValue({ reutilizavel: true, ticket: { ...TICKET_ROBO } })
+      envioMocks.buscarTicketAbertoContato.mockResolvedValue({ id: 'ticket-robo' })
+      const segunda = await processar(supabase)
+
+      expect(segunda.totalEnviado).toBe(1)
+      expect(segunda.totalCancelado).toBe(0)
+      expect(supabase.state.filas[0].status).toBe('enviado')
+      // Um unico ticket aberto; a mensagem so foi entregue na 2a chamada (a 1a falhou antes da entrega).
+      expect(envioMocks.abrirTicketResgateHubVendas).toHaveBeenCalledTimes(1)
+      expect(envioMocks.enviarMensagemResgateHubVendas).toHaveBeenCalledTimes(2)
+      expect(supabase.state.rpcCalls.filter((call) => call.fn === 'hub_vendas_confirmar_fila_enviada')).toHaveLength(1)
+    })
+  })
+
+  describe('classificacao no fluxo: contato invalido, pre-envio e pos-envio', () => {
+    const ERRO_FALSY = 'mensagem_api_erro status=500 body={"error":"HttpError","message":"[sendMessageToId] Message came out falsy for contact"}'
+
+    async function processar(supabase: ReturnType<typeof criarSupabaseFake>) {
+      return processarFilaRecuperacaoHubVendas({
+        supabase: supabase as never,
+        filaId: FILA_ID,
+        modoTeste: true,
+        workerId: 'worker-teste',
+      })
+    }
+
+    function chamadaRegistroErro(supabase: ReturnType<typeof criarSupabaseFake>) {
+      return supabase.state.rpcCalls.find((call) => call.fn === 'hub_vendas_registrar_erro_fila')
+    }
+
+    it('caso Hauer: 500 + contato com valid=false + ticket sem mensagens => erro DEFINITIVO contato_invalido, sem retry e sem afetar a conexao', async () => {
+      envioMocks.enviarMensagemResgateHubVendas.mockResolvedValue({ ok: false, status: 500, erro: ERRO_FALSY, resultadoIncerto: true })
+      envioMocks.consultarEntregaAposFalhaHttp.mockResolvedValue('ausente')
+      envioMocks.contatoDigisacMarcadoInvalido.mockResolvedValue(true)
+      const supabase = criarSupabaseFake({ mensagensAtivas: true })
+
+      const resultado = await processar(supabase)
+
+      expect(envioMocks.contatoDigisacMarcadoInvalido).toHaveBeenCalledWith('contact-1')
+      expect(resultado).toMatchObject({ totalErro: 1, totalRetryAgendado: 0, totalResultadoIncerto: 0 })
+      expect(supabase.state.filas[0]).toMatchObject({ status: 'erro', categoria_erro: 'contato_invalido' })
+      expect(chamadaRegistroErro(supabase)?.params).toMatchObject({
+        p_categoria: 'contato_invalido',
+        p_retentavel: false,
+        p_incrementa_erro_conexao: false,
+      })
+      expect(alertarErroEnvio).toHaveBeenCalledWith(expect.objectContaining({ retryAgendado: false, proximoRetry: null }))
+      expect(envioMocks.enviarMensagemResgateHubVendas).toHaveBeenCalledTimes(1)
+    })
+
+    it('contato com valid=false tambem e definitivo quando a entrega ficou desconhecida (nao vira incerto)', async () => {
+      envioMocks.enviarMensagemResgateHubVendas.mockResolvedValue({ ok: false, status: 500, erro: ERRO_FALSY, resultadoIncerto: true })
+      envioMocks.consultarEntregaAposFalhaHttp.mockResolvedValue('desconhecida')
+      envioMocks.contatoDigisacMarcadoInvalido.mockResolvedValue(true)
+      const supabase = criarSupabaseFake({ mensagensAtivas: true })
+
+      const resultado = await processar(supabase)
+
+      expect(resultado).toMatchObject({ totalErro: 1, totalResultadoIncerto: 0 })
+      expect(supabase.state.filas[0].categoria_erro).toBe('contato_invalido')
+    })
+
+    it('HTTP 4xx com contato valid=false: definitivo contato_invalido', async () => {
+      envioMocks.enviarMensagemResgateHubVendas.mockResolvedValue({ ok: false, status: 422, erro: 'mensagem_api_erro status=422', resultadoIncerto: false })
+      envioMocks.contatoDigisacMarcadoInvalido.mockResolvedValue(true)
+      const supabase = criarSupabaseFake({ mensagensAtivas: true })
+
+      await processar(supabase)
+
+      expect(supabase.state.filas[0]).toMatchObject({ status: 'erro', categoria_erro: 'contato_invalido' })
+    })
+
+    it('mensagem de chat ja presente no ticket: continua INCERTO mesmo com contato valid=false (nunca afirma nao-entrega)', async () => {
+      envioMocks.enviarMensagemResgateHubVendas.mockResolvedValue({ ok: false, status: 500, erro: ERRO_FALSY, resultadoIncerto: true })
+      envioMocks.consultarEntregaAposFalhaHttp.mockResolvedValue('presente')
+      envioMocks.contatoDigisacMarcadoInvalido.mockResolvedValue(true)
+      const supabase = criarSupabaseFake({ mensagensAtivas: true })
+
+      const resultado = await processar(supabase)
+
+      expect(envioMocks.contatoDigisacMarcadoInvalido).not.toHaveBeenCalled()
+      expect(resultado.totalResultadoIncerto).toBe(1)
+      expect(supabase.state.filas[0].status).toBe('resultado_incerto')
+    })
+
+    it('mesmo erro 500 SEM evidencia de contato invalido (valid ausente/true): nao e contato_invalido; retry como erro de mensagem', async () => {
+      envioMocks.enviarMensagemResgateHubVendas.mockResolvedValue({ ok: false, status: 500, erro: ERRO_FALSY, resultadoIncerto: true })
+      envioMocks.consultarEntregaAposFalhaHttp.mockResolvedValue('ausente')
+      envioMocks.contatoDigisacMarcadoInvalido.mockResolvedValue(false)
+      const supabase = criarSupabaseFake({ mensagensAtivas: true })
+
+      const resultado = await processar(supabase)
+
+      expect(resultado.totalRetryAgendado).toBe(1)
+      expect(supabase.state.filas[0]).toMatchObject({ status: 'agendado', categoria_erro: 'mensagem' })
+      expect(chamadaRegistroErro(supabase)?.params).toMatchObject({ p_retentavel: true, p_incrementa_erro_conexao: true })
+    })
+
+    it('502/503/504 nao consultam validade do contato (resultado incerto direto)', async () => {
+      envioMocks.enviarMensagemResgateHubVendas.mockResolvedValue({ ok: false, status: 503, erro: 'mensagem_api_erro status=503', resultadoIncerto: true })
+      envioMocks.contatoDigisacMarcadoInvalido.mockResolvedValue(true)
+      const supabase = criarSupabaseFake({ mensagensAtivas: true })
+
+      const resultado = await processar(supabase)
+
+      expect(envioMocks.contatoDigisacMarcadoInvalido).not.toHaveBeenCalled()
+      expect(resultado.totalResultadoIncerto).toBe(1)
+    })
+
+    it('serverPod is not set na criacao do contato continua com retry (caso Bigorrilho 07/09)', async () => {
+      envioMocks.garantirContatoResgateHubVendas.mockRejectedValue(
+        new Error('contato_criacao_falhou status=500 body={"error":"HttpError","message":"[0973f84b] serverPod is not set.","status":500}'),
+      )
+      const supabase = criarSupabaseFake({ mensagensAtivas: true })
+
+      const resultado = await processar(supabase)
+
+      expect(resultado).toMatchObject({ totalRetryAgendado: 1, totalErro: 0 })
+      expect(supabase.state.filas[0]).toMatchObject({ status: 'agendado', categoria_erro: 'indisponibilidade' })
+      expect(chamadaRegistroErro(supabase)?.params).toMatchObject({ p_retentavel: true, p_incrementa_erro_conexao: false })
+      expect(envioMocks.abrirTicketResgateHubVendas).not.toHaveBeenCalled()
+    })
+
+    it('rede/timeout ANTES do envio agenda retry e nao tenta gravar resultado incerto (o RPC so aceita fila em enviando)', async () => {
+      envioMocks.garantirContatoResgateHubVendas.mockRejectedValue(new Error('fetch failed'))
+      const supabase = criarSupabaseFake({ mensagensAtivas: true })
+
+      const resultado = await processar(supabase)
+
+      expect(resultado).toMatchObject({ totalRetryAgendado: 1, totalResultadoIncerto: 0 })
+      expect(supabase.state.rpcCalls.map((call) => call.fn)).not.toContain('hub_vendas_registrar_resultado_incerto')
+      expect(supabase.state.filas[0].status).toBe('agendado')
+    })
+
+    it('falha ao gravar a confirmacao DEPOIS de o POST ter sido aceito: resultado incerto (sem retry), com o messageId no registro', async () => {
+      const supabase = criarSupabaseFake({ mensagensAtivas: true })
+      const rpcOriginal = supabase.rpc.bind(supabase)
+      supabase.rpc = ((fn: string, params: Record<string, unknown>) => (
+        fn === 'hub_vendas_confirmar_fila_enviada'
+          ? Promise.resolve({ data: null, error: { message: 'connection terminated unexpectedly' } })
+          : rpcOriginal(fn, params)
+      )) as typeof supabase.rpc
+
+      const resultado = await processar(supabase)
+
+      expect(resultado).toMatchObject({ totalResultadoIncerto: 1, totalRetryAgendado: 0, totalEnviado: 0 })
+      expect(supabase.state.filas[0].status).toBe('resultado_incerto')
+      expect(alertarResultadoIncerto).toHaveBeenCalledWith(expect.objectContaining({ erro: expect.stringContaining('message-1') }))
+      expect(supabase.state.rpcCalls.map((call) => call.fn)).not.toContain('hub_vendas_registrar_erro_fila')
+    })
+
+    it('autenticacao invalida no envio: definitivo (sem retry) e conta contra a conexao', async () => {
+      envioMocks.enviarMensagemResgateHubVendas.mockResolvedValue({ ok: false, status: 401, erro: 'mensagem_api_erro status=401', resultadoIncerto: false })
+      const supabase = criarSupabaseFake({ mensagensAtivas: true })
+
+      const resultado = await processar(supabase)
+
+      expect(resultado).toMatchObject({ totalErro: 1, totalRetryAgendado: 0 })
+      expect(chamadaRegistroErro(supabase)?.params).toMatchObject({ p_categoria: 'autenticacao', p_retentavel: false, p_incrementa_erro_conexao: true })
+    })
+  })
+
+  describe('POST /messages com erro HTTP: falha confirmada x resultado incerto', () => {
+    async function processarComEnvio(envio: Record<string, unknown>) {
+      envioMocks.enviarMensagemResgateHubVendas.mockResolvedValue(envio)
+      const supabase = criarSupabaseFake({ mensagensAtivas: true })
+      const resultado = await processarFilaRecuperacaoHubVendas({
+        supabase: supabase as never,
+        filaId: FILA_ID,
+        modoTeste: true,
+        workerId: 'worker-teste',
+      })
+      return { supabase, resultado }
+    }
+
+    const erro500 = { ok: false, status: 500, erro: 'mensagem_api_erro status=500', resultadoIncerto: true }
+
+    it('500 com ticket sem nenhuma mensagem de chat: falha CONFIRMADA (retry permitido), nunca incerto', async () => {
+      envioMocks.consultarEntregaAposFalhaHttp.mockResolvedValue('ausente')
+
+      const { supabase, resultado } = await processarComEnvio(erro500)
+
+      expect(envioMocks.consultarEntregaAposFalhaHttp).toHaveBeenCalledWith({ ticketId: 'ticket-1' })
+      expect(resultado.totalResultadoIncerto).toBe(0)
+      expect(resultado.totalRetryAgendado).toBe(1)
+      expect(supabase.state.filas[0].status).toBe('agendado')
+    })
+
+    it('500 com mensagem de chat ja presente no ticket: resultado INCERTO, sem retry, com alerta', async () => {
+      envioMocks.consultarEntregaAposFalhaHttp.mockResolvedValue('presente')
+
+      const { supabase, resultado } = await processarComEnvio(erro500)
+
+      expect(resultado.totalResultadoIncerto).toBe(1)
+      expect(resultado.totalRetryAgendado).toBe(0)
+      expect(supabase.state.filas[0].status).toBe('resultado_incerto')
+      expect(alertarResultadoIncerto).toHaveBeenCalledTimes(1)
+      expect(alertarErroEnvio).not.toHaveBeenCalled()
+    })
+
+    it('500 sem como confirmar (consulta falhou/ticket desconhecido): resultado INCERTO', async () => {
+      envioMocks.consultarEntregaAposFalhaHttp.mockResolvedValue('desconhecida')
+
+      const { supabase, resultado } = await processarComEnvio(erro500)
+
+      expect(resultado.totalResultadoIncerto).toBe(1)
+      expect(supabase.state.filas[0].status).toBe('resultado_incerto')
+    })
+
+    it.each([502, 503, 504, 408])('HTTP %i: resultado INCERTO direto, sem consultar (o backend pode ainda estar processando)', async (status) => {
+      const { supabase, resultado } = await processarComEnvio({ ok: false, status, erro: `mensagem_api_erro status=${status}`, resultadoIncerto: true })
+
+      expect(envioMocks.consultarEntregaAposFalhaHttp).not.toHaveBeenCalled()
+      expect(resultado.totalResultadoIncerto).toBe(1)
+      expect(supabase.state.filas[0].status).toBe('resultado_incerto')
+    })
+
+    it.each([400, 401, 403, 404, 422, 429])('HTTP %i (requisicao rejeitada): falha confirmada, nao e incerto e nao consulta', async (status) => {
+      const { resultado } = await processarComEnvio({ ok: false, status, erro: `mensagem_api_erro status=${status}`, resultadoIncerto: false })
+
+      expect(envioMocks.consultarEntregaAposFalhaHttp).not.toHaveBeenCalled()
+      expect(resultado.totalResultadoIncerto).toBe(0)
+      expect(alertarResultadoIncerto).not.toHaveBeenCalled()
+    })
+
+    it('fila em resultado_incerto nao e reservada de novo: sem 2o envio (sem duplicidade)', async () => {
+      envioMocks.consultarEntregaAposFalhaHttp.mockResolvedValue('presente')
+      const { supabase } = await processarComEnvio(erro500)
+      expect(supabase.state.filas[0].status).toBe('resultado_incerto')
+
+      const segunda = await processarFilaRecuperacaoHubVendas({
+        supabase: supabase as never,
+        filaId: FILA_ID,
+        modoTeste: true,
+        workerId: 'worker-teste-2',
+      })
+
+      expect(segunda.totalReservado).toBe(0)
+      expect(envioMocks.enviarMensagemResgateHubVendas).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('alerta de erro informa retry agendado com o horario gravado pelo banco', async () => {
+    envioMocks.garantirContatoResgateHubVendas.mockRejectedValue(new Error('contato_criacao_falhou status=429'))
+    const supabase = criarSupabaseFake({ mensagensAtivas: true })
+
+    await processarFilaRecuperacaoHubVendas({
+      supabase: supabase as never,
+      filaId: FILA_ID,
+      modoTeste: true,
+      workerId: 'worker-teste',
+    })
+
+    expect(alertarErroEnvio).toHaveBeenCalledWith(expect.objectContaining({
+      filaId: FILA_ID,
+      retryAgendado: true,
+      proximoRetry: supabase.state.filas[0].programado_para,
+    }))
+  })
+
+  it('alerta de erro definitivo nao informa retry nem horario', async () => {
+    const supabase = criarSupabaseFake({ mensagensAtivas: false })
+
+    await processarFilaRecuperacaoHubVendas({
+      supabase: supabase as never,
+      filaId: FILA_ID,
+      modoTeste: true,
+      workerId: 'worker-teste',
+    })
+
+    expect(alertarErroEnvio).toHaveBeenCalledWith(expect.objectContaining({
+      filaId: FILA_ID,
+      retryAgendado: false,
+      proximoRetry: null,
+    }))
   })
 
   it('bloqueia envio quando nenhuma mensagem esta ativa', async () => {

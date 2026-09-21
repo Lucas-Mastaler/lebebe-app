@@ -1,6 +1,7 @@
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac'
 import { gerarVariacoesTelefone, type DigisacTicket } from '@/lib/digisac/sgi-sync'
 import { createServiceClient } from '@/lib/supabase/service'
+import { verificarTicketRoboReutilizavel } from './envio'
 import {
   HUB_VENDAS_JANELA_CONVERSAO_MS,
   HUB_VENDAS_LOJAS,
@@ -101,6 +102,7 @@ export type ResultadoPreparacaoHubVendas = {
   totalErros: number
   totalRecuperacoesEncerradas: number
   totalMovidosFilaManual: number
+  totalLeadsSemAcaoEncerrados: number
 }
 
 const CONFIG_PADRAO_PARAMETROS: ConfigParametros = {
@@ -306,24 +308,34 @@ async function marcarClienteEmAtendimento(
 
 export async function analisarReconciliacaoLead(
   lead: HubVendasLeadPendente,
-  agora: Date
+  agora: Date,
+  /**
+   * `ignorarTicketIds`: tickets ja comprovados como do proprio envio automatico (ver
+   * `verificarTicketRoboReutilizavel`). Ficam fora tanto de "cliente em atendimento" quanto de
+   * "conversao": um ticket do robo nao e interacao do cliente com a loja.
+   */
+  opcoes: { ignorarTicketIds?: readonly string[] } = {}
 ): Promise<{
   resultado: ResultadoPreparacaoLead
   chamadoAberto?: { ticket: DigisacTicket; loja: HubVendasLoja; data: Date | null }
   conversoes: Array<{ ticket: DigisacTicket; loja: HubVendasLoja; data: Date }>
+  /** Tickets das lojas atualizados desde a entrada (abertos ou fechados), sem os ignorados. */
+  totalTicketsLojas?: number
 }> {
   const tickets = await buscarTicketsLojasPorTelefone(lead.telefone_normalizado_ddi, lead.data_entrada_hub)
   const entradaMs = new Date(lead.data_entrada_hub).getTime()
   const limiteConversaoMs = entradaMs + HUB_VENDAS_JANELA_CONVERSAO_MS
+  const ignorar = new Set(opcoes.ignorarTicketIds ?? [])
 
   const ticketsMonitorados = tickets
+    .filter((ticket) => !ignorar.has(ticket.id))
     .map((ticket) => ({ ticket, loja: lojaDoTicket(ticket), data: timestampTicket(ticket) }))
     .filter((item): item is { ticket: DigisacTicket; loja: HubVendasLoja; data: Date | null } => Boolean(item.loja))
     .sort((a, b) => (a.data?.getTime() ?? agora.getTime()) - (b.data?.getTime() ?? agora.getTime()))
 
   const chamadoAberto = ticketsMonitorados.find((item) => item.ticket.isOpen === true)
   if (chamadoAberto) {
-    return { resultado: 'cliente_em_atendimento', chamadoAberto, conversoes: [] }
+    return { resultado: 'cliente_em_atendimento', chamadoAberto, conversoes: [], totalTicketsLojas: ticketsMonitorados.length }
   }
 
   const conversoes = ticketsMonitorados.filter((item) => {
@@ -331,9 +343,9 @@ export async function analisarReconciliacaoLead(
     return typeof dataMs === 'number' && dataMs >= entradaMs && dataMs < limiteConversaoMs
   }) as Array<{ ticket: DigisacTicket; loja: HubVendasLoja; data: Date }>
 
-  if (conversoes.length > 0) return { resultado: 'convertido_reconciliacao', conversoes }
+  if (conversoes.length > 0) return { resultado: 'convertido_reconciliacao', conversoes, totalTicketsLojas: ticketsMonitorados.length }
 
-  return { resultado: 'ignorado', conversoes: [] }
+  return { resultado: 'ignorado', conversoes: [], totalTicketsLojas: ticketsMonitorados.length }
 }
 
 async function reconciliarLead(
@@ -675,6 +687,146 @@ async function fecharLeadsAguardandoExpiradosHubVendas(
   return total
 }
 
+/** Status de fila que terminaram SEM envio e sem nenhuma acao automatica futura. */
+const STATUS_FILA_TERMINAL_SEM_ENVIO = ['erro', 'cancelado', 'expirado'] as const
+const LIMITE_LEADS_SEM_ACAO_POR_EXECUCAO = 10
+
+type FilaDoLeadSemAcao = {
+  id: string
+  lead_id: string
+  status: string
+  digisac_message_id: string | null
+  digisac_ticket_id: string | null
+  digisac_contact_id: string | null
+  conexao_destino_id: string
+}
+
+function filasSemAcaoFutura(filas: Array<Pick<FilaDoLeadSemAcao, 'status' | 'digisac_message_id'>>): boolean {
+  return filas.length > 0 && filas.every((fila) => (
+    (STATUS_FILA_TERMINAL_SEM_ENVIO as readonly string[]).includes(fila.status) && !fila.digisac_message_id
+  ))
+}
+
+/**
+ * Encerra leads presos em 'encaminhado_recuperacao' cuja recuperacao terminou sem envio e ja nao pode mais
+ * acontecer. Estado final: 'fila_manual' (mesmo terminal de "nunca recebeu recuperacao e o prazo passou"),
+ * com `data_fila_manual` e o motivo em `motivo_bloqueio_recuperacao`. Nao apaga nada; a fila e preservada.
+ * O lead so e encerrado quando TODAS as condicoes abaixo valem:
+ *  - fora da janela de recuperacao: entrada ha mais de `elegibilidade_horas` (mesma regra de
+ *    `fecharLeadsAguardandoExpiradosHubVendas` e da selecao de candidatos);
+ *  - todas as filas do lead terminaram sem envio (erro/cancelado/expirado) e nenhuma tem message id
+ *    (nada de agendado, reservado, enviando, resultado_incerto, analise_manual ou enviado);
+ *  - nenhuma atividade real nas lojas: nenhum ticket (aberto ou fechado) do telefone nas 3 lojas desde a
+ *    entrada. Ticket do PROPRIO robo, comprovadamente intacto (ver `verificarTicketRoboReutilizavel`), nao conta.
+ * Qualquer duvida ou falha de consulta ao DigiSac mantem o lead como esta (tenta de novo na proxima execucao).
+ * Filas em 'erro' do lead encerrado viram 'expirado' (historico preservado) para nao serem reprocessadas
+ * manualmente e nem contarem como erro pendente.
+ */
+export async function encerrarLeadsSemAcaoValidaHubVendas(
+  supabase: SupabaseServiceClient,
+  parametros: Pick<ConfigParametros, 'elegibilidade_horas'>,
+  agora: Date
+): Promise<number> {
+  const limiteJanela = new Date(agora.getTime() - parametros.elegibilidade_horas * 60 * 60 * 1000)
+
+  const { data: leadsData, error: leadsError } = await supabase
+    .from('hub_vendas_leads')
+    .select('id, telefone_normalizado_ddi, data_entrada_hub, status')
+    .eq('status', 'encaminhado_recuperacao')
+    .lte('data_entrada_hub', limiteJanela.toISOString())
+    .order('data_entrada_hub', { ascending: true })
+  if (leadsError) throw leadsError
+
+  const leads = (leadsData ?? []) as HubVendasLeadPendente[]
+  if (leads.length === 0) return 0
+
+  const { data: filasData, error: filasError } = await supabase
+    .from('hub_vendas_recuperacao_fila')
+    .select('id, lead_id, status, digisac_message_id, digisac_ticket_id, digisac_contact_id, conexao_destino_id')
+    .in('lead_id', leads.map((lead) => lead.id))
+  if (filasError) throw filasError
+
+  const filasPorLead = new Map<string, FilaDoLeadSemAcao[]>()
+  for (const fila of (filasData ?? []) as FilaDoLeadSemAcao[]) {
+    filasPorLead.set(fila.lead_id, [...(filasPorLead.get(fila.lead_id) ?? []), fila])
+  }
+
+  const candidatos = leads
+    .filter((lead) => filasSemAcaoFutura(filasPorLead.get(lead.id) ?? []))
+    .slice(0, LIMITE_LEADS_SEM_ACAO_POR_EXECUCAO)
+
+  let encerrados = 0
+  for (const lead of candidatos) {
+    const filas = filasPorLead.get(lead.id) ?? []
+    try {
+      const ticketsDoRobo: string[] = []
+      for (const fila of filas) {
+        if (!fila.digisac_ticket_id || !fila.digisac_contact_id) continue
+        const verificacao = await verificarTicketRoboReutilizavel({
+          ticketId: fila.digisac_ticket_id,
+          contactId: fila.digisac_contact_id,
+          serviceId: fila.conexao_destino_id,
+        })
+        if (verificacao.reutilizavel) ticketsDoRobo.push(fila.digisac_ticket_id)
+      }
+
+      const analise = await analisarReconciliacaoLead(lead, agora, { ignorarTicketIds: ticketsDoRobo })
+      if (analise.resultado !== 'ignorado' || analise.totalTicketsLojas !== 0) {
+        console.log(`[HUB VENDAS PREPARACAO] lead fora da janela mantido: ha atividade nas lojas leadId=${lead.id} resultado=${analise.resultado} tickets=${analise.totalTicketsLojas ?? 'desconhecido'}`)
+        continue
+      }
+
+      const filasEmErro = filas.filter((fila) => fila.status === 'erro').map((fila) => fila.id)
+      if (filasEmErro.length > 0) {
+        const { error: expirarError } = await supabase
+          .from('hub_vendas_recuperacao_fila')
+          .update({ status: 'expirado', motivo_cancelamento: 'recuperacao_expirada', updated_at: agora.toISOString() })
+          .in('id', filasEmErro)
+          .eq('status', 'erro')
+        if (expirarError) throw expirarError
+      }
+
+      // Rele as filas: se alguma voltou a ter acao valida (ex.: reprocessada entre a leitura e agora), nao encerra.
+      const { data: filasAtuais, error: releituraError } = await supabase
+        .from('hub_vendas_recuperacao_fila')
+        .select('id, lead_id, status, digisac_message_id')
+        .eq('lead_id', lead.id)
+      if (releituraError) throw releituraError
+      const filasDoLead = ((filasAtuais ?? []) as FilaDoLeadSemAcao[]).filter((fila) => fila.lead_id === lead.id)
+      if (!filasSemAcaoFutura(filasDoLead)) {
+        console.log(`[HUB VENDAS PREPARACAO] lead fora da janela mantido: fila voltou a ter acao valida leadId=${lead.id}`)
+        continue
+      }
+
+      const motivo = filas.some((fila) => fila.status === 'erro')
+        ? 'recuperacao_expirada_erro_definitivo'
+        : 'recuperacao_expirada_fila_cancelada'
+      const momento = agora.toISOString()
+      const { data: atualizados, error: leadError } = await supabase
+        .from('hub_vendas_leads')
+        .update({
+          status: 'fila_manual',
+          data_fila_manual: momento,
+          motivo_bloqueio_recuperacao: motivo,
+          updated_at: momento,
+        })
+        .eq('id', lead.id)
+        .eq('status', 'encaminhado_recuperacao')
+        .select('id')
+      if (leadError) throw leadError
+      if ((atualizados ?? []).length > 0) {
+        encerrados += 1
+        console.log(`[HUB VENDAS PREPARACAO] lead encerrado sem recuperacao: fora da janela e sem acao valida leadId=${lead.id} motivo=${motivo}`)
+      }
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : String((error as { message?: unknown })?.message ?? error)
+      console.warn(`[HUB VENDAS PREPARACAO] falha ao avaliar lead preso; sera reavaliado leadId=${lead.id} erro=${mensagem.slice(0, 200)}`)
+    }
+  }
+
+  return encerrados
+}
+
 function incrementarResumo(resumo: ResultadoPreparacaoHubVendas, resultado: ResultadoPreparacaoLead) {
   if (resultado === 'convertido_reconciliacao') resumo.totalConvertidosReconciliacao += 1
   if (resultado === 'cliente_em_atendimento') resumo.totalClienteEmAtendimento += 1
@@ -722,6 +874,7 @@ export async function prepararFilaRecuperacaoHubVendas({
     totalErros: 0,
     totalRecuperacoesEncerradas: 0,
     totalMovidosFilaManual: 0,
+    totalLeadsSemAcaoEncerrados: 0,
   }
 
   if (leadId && !modoTeste) {
@@ -742,6 +895,15 @@ export async function prepararFilaRecuperacaoHubVendas({
   if (!leadId) {
     resumo.totalRecuperacoesEncerradas = await encerrarRecuperacoesExpiradasHubVendas(supabase, agora)
     resumo.totalMovidosFilaManual = await fecharLeadsAguardandoExpiradosHubVendas(supabase, config.parametros, agora)
+    // Limpeza acessoria: nunca impede a preparacao da fila se falhar.
+    if (!modoSimulacao) {
+      try {
+        resumo.totalLeadsSemAcaoEncerrados = await encerrarLeadsSemAcaoValidaHubVendas(supabase, config.parametros, agora)
+      } catch (error) {
+        const mensagem = error instanceof Error ? error.message : String((error as { message?: unknown })?.message ?? error)
+        console.warn(`[HUB VENDAS PREPARACAO] encerramento de leads sem acao valida falhou erro=${mensagem.slice(0, 200)}`)
+      }
+    }
   }
 
   if ((!config.automacao.ativa || config.automacao.pausada) && !modoTeste) {

@@ -72,14 +72,17 @@ export type StatusGestaoHubVendas = {
     /** status='recuperado' (respondeu dentro da janela pos-recuperacao de 24h). */
     recuperados: number
     recuperadosPorLoja: ContagemPorLojaHubVendas[]
-    /** status='fila_manual' (aguardando_conversao que expirou sem nunca receber recuperacao). */
+    /** status='fila_manual' (expirou sem nunca receber recuperacao: nao entrou na fila ou a fila terminou sem envio dentro do prazo). */
     filaManual: number
     agendada: number
     reservada: number
     enviando: number
     enviadaHoje: number
     cancelada: number
+    /** Acumulado: filas em status='erro' de qualquer data (pendentes de reprocesso). Nao e "erro de hoje". */
     erro: number
+    /** Filas em status='erro' cujo programado_para cai no dia local atual (mesma janela de "Enviados hoje"). */
+    erroHoje: number
     resultadoIncerto: number
     analiseManual: number
     conexoesPausadas: number
@@ -106,7 +109,10 @@ export type ResumoLojaHubVendas = {
     agendada: number
     reservada: number
     enviando: number
+    /** Acumulado: filas em status='erro' de qualquer data. */
     erro: number
+    /** Filas em status='erro' programadas no dia local atual. */
+    erroHoje: number
     resultadoIncerto: number
     analiseManual: number
   }
@@ -437,7 +443,7 @@ export async function obterStatusGestaoHubVendas(
     ? Promise.all(Object.entries(HUB_VENDAS_LOJAS).map(async ([lojaKey, config]) => {
     const loja = lojaKey as HubVendasLoja
     const serviceId = config.serviceId
-    const [enviadosResult, lojaCountsResult] = await Promise.all([
+    const [enviadosResult, lojaCountsResult, erroHojeResult] = await Promise.all([
       supabase
         .from('hub_vendas_recuperacao_fila')
         .select('id', { count: 'exact', head: true })
@@ -449,9 +455,18 @@ export async function obterStatusGestaoHubVendas(
         .from('hub_vendas_recuperacao_fila')
         .select('status')
         .eq('conexao_destino_id', serviceId),
+      // Mesma janela diaria (programado_para) de "Enviados hoje"/"Saldo".
+      supabase
+        .from('hub_vendas_recuperacao_fila')
+        .select('id', { count: 'exact', head: true })
+        .eq('conexao_destino_id', serviceId)
+        .eq('status', 'erro')
+        .gte('programado_para', inicioIso)
+        .lt('programado_para', fimIso),
     ])
     if (enviadosResult.error) throw enviadosResult.error
     if (lojaCountsResult.error) throw lojaCountsResult.error
+    if (erroHojeResult.error) throw erroHojeResult.error
 
     const statusCounts = new Map<string, number>()
     for (const row of lojaCountsResult.data ?? []) {
@@ -477,6 +492,7 @@ export async function obterStatusGestaoHubVendas(
         reservada: statusCounts.get('reservado') ?? 0,
         enviando: statusCounts.get('enviando') ?? 0,
         erro: statusCounts.get('erro') ?? 0,
+        erroHoje: erroHojeResult.count ?? 0,
         resultadoIncerto: statusCounts.get('resultado_incerto') ?? 0,
         analiseManual: statusCounts.get('analise_manual') ?? 0,
       },
@@ -553,6 +569,7 @@ export async function obterStatusGestaoHubVendas(
       enviadaHoje: enviadosResult.count ?? 0,
       cancelada: countMap.get('cancelado') ?? 0,
       erro: countMap.get('erro') ?? 0,
+      erroHoje: lojas.reduce((total, loja) => total + loja.filas.erroHoje, 0),
       resultadoIncerto: countMap.get('resultado_incerto') ?? 0,
       analiseManual: countMap.get('analise_manual') ?? 0,
       conexoesPausadas,

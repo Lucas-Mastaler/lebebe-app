@@ -289,20 +289,22 @@ async function marcarClienteEmAtendimento(
   loja: HubVendasLoja,
   dataAtendimento: Date
 ) {
+  // Somente colunas que existem em hub_vendas_leads. Contato/ticket da loja NAO tem coluna no lead
+  // (digisac_contact_id/digisac_ticket_id existem apenas em hub_vendas_recuperacao_fila; as colunas
+  // *_hub do lead sao do contato/ticket do Hub e nao devem receber o ticket da loja).
   const { error } = await supabase
     .from('hub_vendas_leads')
     .update({
       status: 'cliente_em_atendimento',
       data_cliente_em_atendimento: dataAtendimento.toISOString(),
       motivo_bloqueio_recuperacao: `chamado_aberto_${loja}`,
-      digisac_contact_id: ticket.contact?.id ?? null,
-      digisac_ticket_id: ticket.id,
       updated_at: new Date().toISOString(),
     })
     .eq('id', lead.id)
     .eq('status', 'aguardando_conversao')
 
   if (error) throw error
+  console.log(`[HUB VENDAS PREPARACAO] cliente em atendimento leadId=${lead.id} loja=${loja} ticketId=${ticket.id}`)
   await cancelarFilaPendente(supabase, lead.id, 'cliente_em_atendimento')
 }
 

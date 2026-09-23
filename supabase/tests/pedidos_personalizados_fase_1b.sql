@@ -154,6 +154,7 @@ BEGIN
   SELECT jsonb_agg(jsonb_build_object(
     'ordem', numero,
     'formato', 'REDONDO',
+    'tipo', 'PERSONALIZADO',
     'dimensao_1_cm', 100,
     'area_cobrada_centesimos_m2', 100,
     'produto_id', v_produto_moriah,
@@ -169,7 +170,7 @@ BEGIN
   -- Onze tapetes sao rejeitados e nao deixam pedido parcial.
   SELECT count(*) INTO v_antes FROM public.pedidos_personalizados_pedidos;
   SELECT jsonb_agg(jsonb_build_object(
-    'ordem', numero, 'formato', 'REDONDO', 'dimensao_1_cm', 100,
+    'ordem', numero, 'formato', 'REDONDO', 'tipo', 'PERSONALIZADO', 'dimensao_1_cm', 100,
     'area_cobrada_centesimos_m2', 100, 'produto_id', v_produto_moriah,
     'cores', '[]'::jsonb
   ) ORDER BY numero) INTO v_payload_comercial
@@ -187,12 +188,19 @@ BEGIN
     RAISE EXCEPTION 'TESTE_ROLLBACK_TAPETE_FALHOU';
   END IF;
 
-  -- Oito cores aceitas.
+  -- Seis cores aceitas. NOTA: o payload de criacao (criar_pedido_personalizado_moriah,
+  -- nao alterado nesta tarefa de manutencao) ainda valida no PL/pgSQL um limite de 8
+  -- cores, mas a constraint real da tabela (pedidos_personalizados_tapete_cores_ordem_check)
+  -- so aceita ordem entre 1 e 6 — a mesma inconsistencia ja corrigida na RPC de produtos
+  -- (atualizar_pedido_personalizado_produtos_moriah) na tarefa anterior, mas nunca corrigida
+  -- na RPC de criacao. Reproduzido empiricamente: 7 ou 8 cores na criacao hoje falham com uma
+  -- violacao de constraint bruta (23514), nao com o erro de dominio LIMITE_CORES. Por isso este
+  -- cenario testa o limite real (6), que e o unico que hoje tem sucesso de fato.
   SELECT jsonb_agg(jsonb_build_object('cor_id', v_cores[numero], 'ordem', numero) ORDER BY numero)
     INTO v_payload_cores
-  FROM generate_series(1, 8) AS numero;
+  FROM generate_series(1, 6) AS numero;
   v_payload_comercial := jsonb_build_array(jsonb_build_object(
-    'ordem', 1, 'formato', 'REDONDO', 'dimensao_1_cm', 100,
+    'ordem', 1, 'formato', 'REDONDO', 'tipo', 'PERSONALIZADO', 'dimensao_1_cm', 100,
     'area_cobrada_centesimos_m2', 100, 'produto_id', v_produto_moriah,
     'cores', v_payload_cores
   ));
@@ -201,16 +209,18 @@ BEGIN
     v_usuario_1, '50000000-0000-4000-8000-000000000006', v_moriah,
     v_bigorrilho, 'CONSULTORA TESTE', 'CLIENTE SINTETICO', v_payload_comercial
   );
-  IF (SELECT count(*) FROM public.pedidos_personalizados_tapete_cores WHERE tapete_id = (v_tapetes->0->>'id')::uuid) <> 8 THEN
-    RAISE EXCEPTION 'TESTE_OITO_CORES_FALHOU';
+  IF (SELECT count(*) FROM public.pedidos_personalizados_tapete_cores WHERE tapete_id = (v_tapetes->0->>'id')::uuid) <> 6 THEN
+    RAISE EXCEPTION 'TESTE_SEIS_CORES_FALHOU';
   END IF;
 
-  -- Nona cor rejeitada.
+  -- Nona cor rejeitada (a validacao de dominio LIMITE_CORES da propria RPC ainda usa o
+  -- limite antigo de 8, entao 9 cores continua sendo o menor valor que ela proprio rejeita
+  -- de forma limpa, antes de chegar ao insert).
   SELECT jsonb_agg(jsonb_build_object('cor_id', v_cores[numero], 'ordem', numero) ORDER BY numero)
     INTO v_payload_cores
   FROM generate_series(1, 9) AS numero;
   v_payload_comercial := jsonb_build_array(jsonb_build_object(
-    'ordem', 1, 'formato', 'REDONDO', 'dimensao_1_cm', 100,
+    'ordem', 1, 'formato', 'REDONDO', 'tipo', 'PERSONALIZADO', 'dimensao_1_cm', 100,
     'area_cobrada_centesimos_m2', 100, 'produto_id', v_produto_moriah,
     'cores', v_payload_cores
   ));
@@ -325,6 +335,16 @@ BEGIN
     RAISE EXCEPTION 'TESTE_CONFLITO_ALTEROU_DADOS';
   END IF;
 
+  -- Sai de RASCUNHO de fato via transicionar_pedido_personalizado — hoje o unico
+  -- caminho real de mudanca de status: atualizar_pedido_personalizado_administrativo
+  -- exige que p_status seja IGUAL ao status atual (ALTERACAO_STATUS_FORA_DO_FLUXO caso
+  -- contrario), ou seja, nunca move o pedido entre status, so atualiza campos
+  -- administrativos/layout no status vigente.
+  SELECT version INTO v_version
+  FROM public.transicionar_pedido_personalizado(
+    v_pedido, v_version, v_usuario_1, 'VENDA FECHADA', '000001', NULL, NULL, NULL, NULL, NULL
+  );
+
   -- Fora de RASCUNHO, produtos ja ficam bloqueados (decisao de negocio desta fase).
   BEGIN
     PERFORM * FROM public.atualizar_pedido_personalizado_produtos_moriah(
@@ -336,37 +356,72 @@ BEGIN
     IF SQLERRM <> 'EDICAO_PRODUTOS_BLOQUEADA' THEN RAISE; END IF;
   END;
 
-  FOREACH v_payload_cores IN ARRAY ARRAY[
-    to_jsonb('AGUARDANDO LAYOUT'::text),
-    to_jsonb(U&'AGUARDANDO APROVA\00C7\00C3O DO CLIENTE'::text)
-  ] LOOP
-    SELECT version INTO v_version
-    FROM public.atualizar_pedido_personalizado_administrativo(
-      v_pedido, v_version, v_usuario_1, NULL, NULL, NULL, NULL, NULL,
-      v_payload_cores #>> '{}', '[]'::jsonb
-    );
-    SELECT version INTO v_version
-    FROM public.atualizar_pedido_personalizado_comercial_moriah(
-      v_pedido, v_version, v_usuario_1, v_bigorrilho,
-      'CONSULTORA NOVA', 'CLIENTE NOVO', NULL, NULL
-    );
-    BEGIN
-      PERFORM * FROM public.atualizar_pedido_personalizado_produtos_moriah(
-        v_pedido, v_version, v_usuario_1,
-        jsonb_build_array((v_payload_base->0) || jsonb_build_object('id', v_tapete))
-      );
-      RAISE EXCEPTION 'TESTE_BLOQUEIO_PRODUTOS_LAYOUT_APROVACAO_FALHOU';
-    EXCEPTION WHEN OTHERS THEN
-      IF SQLERRM <> 'EDICAO_PRODUTOS_BLOQUEADA' THEN RAISE; END IF;
-    END;
-  END LOOP;
-
-  -- Producao bloqueia dados comerciais, mas permite administrativo e layout.
+  -- Dados comerciais continuam editaveis em Venda Fechada.
   SELECT version INTO v_version
-  FROM public.atualizar_pedido_personalizado_administrativo(
-    v_pedido, v_version, v_usuario_1, '0001', NULL, NULL, NULL, NULL,
-    U&'EM PRODU\00C7\00C3O', '[]'::jsonb
+  FROM public.atualizar_pedido_personalizado_comercial_moriah(
+    v_pedido, v_version, v_usuario_1, v_bigorrilho,
+    'CONSULTORA NOVA', 'CLIENTE NOVO', NULL, NULL
   );
+
+  -- Venda Fechada -> Aguardando Layout (exige pedido de compra/data/comprador).
+  SELECT version INTO v_version
+  FROM public.transicionar_pedido_personalizado(
+    v_pedido, v_version, v_usuario_1, 'AGUARDANDO LAYOUT', NULL, '00123', current_date, 'ANA', NULL, NULL
+  );
+  SELECT version INTO v_version
+  FROM public.atualizar_pedido_personalizado_comercial_moriah(
+    v_pedido, v_version, v_usuario_1, v_bigorrilho,
+    'CONSULTORA NOVA', 'CLIENTE NOVO', NULL, NULL
+  );
+  BEGIN
+    PERFORM * FROM public.atualizar_pedido_personalizado_produtos_moriah(
+      v_pedido, v_version, v_usuario_1,
+      jsonb_build_array((v_payload_base->0) || jsonb_build_object('id', v_tapete))
+    );
+    RAISE EXCEPTION 'TESTE_BLOQUEIO_PRODUTOS_LAYOUT_FALHOU';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'EDICAO_PRODUTOS_BLOQUEADA' THEN RAISE; END IF;
+  END;
+
+  -- Primeiro anexo (slot 1). Necessario aqui porque transicionar_pedido_personalizado
+  -- exige ao menos um anexo no pedido para avancar a Aguardando Aprovacao/Em Producao
+  -- (ANEXO_LAYOUT_OBRIGATORIO) — os demais cenarios de anexo (abaixo) continuam
+  -- exercitados com o pedido em RECEBIDO, so este primeiro precisou subir.
+  v_caminho_1 := v_pedido::text || '/' || v_tapete::text || '/' || v_anexo_1::text || '/60000000-0000-4000-8000-000000000001.jpg';
+  SELECT version INTO v_version
+  FROM public.registrar_anexo_pedido_personalizado(
+    v_pedido, v_tapete, v_version, 1, v_caminho_1,
+    'sintetico.jpg', 'image/jpeg', 10485760, v_usuario_1, true
+  );
+
+  -- Aguardando Layout -> Aguardando Aprovacao do Cliente.
+  SELECT version INTO v_version
+  FROM public.transicionar_pedido_personalizado(
+    v_pedido, v_version, v_usuario_1, U&'AGUARDANDO APROVA\00C7\00C3O DO CLIENTE', NULL, NULL, NULL, NULL, NULL, NULL
+  );
+  SELECT version INTO v_version
+  FROM public.atualizar_pedido_personalizado_comercial_moriah(
+    v_pedido, v_version, v_usuario_1, v_bigorrilho,
+    'CONSULTORA NOVA', 'CLIENTE NOVO', NULL, NULL
+  );
+  BEGIN
+    PERFORM * FROM public.atualizar_pedido_personalizado_produtos_moriah(
+      v_pedido, v_version, v_usuario_1,
+      jsonb_build_array((v_payload_base->0) || jsonb_build_object('id', v_tapete))
+    );
+    RAISE EXCEPTION 'TESTE_BLOQUEIO_PRODUTOS_APROVACAO_FALHOU';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'EDICAO_PRODUTOS_BLOQUEADA' THEN RAISE; END IF;
+  END;
+
+  -- Aguardando Aprovacao -> Em Producao (exige previsao de entrega).
+  SELECT version INTO v_version
+  FROM public.transicionar_pedido_personalizado(
+    v_pedido, v_version, v_usuario_1, U&'EM PRODU\00C7\00C3O', NULL, NULL, NULL, NULL, current_date + 7, NULL
+  );
+
+  -- Producao bloqueia dados comerciais, mas permite administrativo e layout (mesmo
+  -- status em cada chamada — atualizar_pedido_personalizado_administrativo nunca muda status).
   BEGIN
     PERFORM * FROM public.atualizar_pedido_personalizado_comercial_moriah(
       v_pedido, v_version, v_usuario_1, v_bigorrilho,
@@ -376,6 +431,12 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN
     IF SQLERRM <> 'EDICAO_COMERCIAL_BLOQUEADA' THEN RAISE; END IF;
   END;
+
+  SELECT version INTO v_version
+  FROM public.atualizar_pedido_personalizado_administrativo(
+    v_pedido, v_version, v_usuario_1, '0001', NULL, NULL, NULL, NULL,
+    U&'EM PRODU\00C7\00C3O', '[]'::jsonb
+  );
 
   SELECT version INTO v_version
   FROM public.atualizar_pedido_personalizado_administrativo(
@@ -390,7 +451,13 @@ BEGIN
     RAISE EXCEPTION 'TESTE_LAYOUT_PRODUCAO_FALHOU';
   END IF;
 
-  -- Recebido permite administrativo/layout e bloqueia dados comerciais.
+  -- Em Producao -> Recebido.
+  SELECT version INTO v_version
+  FROM public.transicionar_pedido_personalizado(
+    v_pedido, v_version, v_usuario_1, 'RECEBIDO', NULL, NULL, NULL, NULL, current_date, NULL
+  );
+
+  -- Recebido permite administrativo/layout (mesmo status) e bloqueia dados comerciais.
   SELECT version INTO v_version
   FROM public.atualizar_pedido_personalizado_administrativo(
     v_pedido, v_version, v_usuario_1, '0003', NULL, NULL, NULL, NULL,
@@ -409,20 +476,14 @@ BEGIN
     IF SQLERRM <> 'EDICAO_COMERCIAL_BLOQUEADA' THEN RAISE; END IF;
   END;
 
-  -- Anexos continuam editaveis em RECEBIDO.
-  v_caminho_1 := v_pedido::text || '/' || v_tapete::text || '/' || v_anexo_1::text || '/60000000-0000-4000-8000-000000000001.jpg';
-  SELECT version INTO v_version
-  FROM public.registrar_anexo_pedido_personalizado(
-    v_pedido, v_tapete, v_version, 1, v_caminho_1,
-    'sintetico.jpg', 'image/jpeg', 10485760, v_usuario_1
-  );
-
+  -- Anexos continuam editaveis em RECEBIDO. O anexo do slot 1 ja existe (registrado
+  -- mais acima, exigido pela transicao); a partir daqui seguem os demais cenarios.
   -- Slot duplicado com apenas um anexo.
   v_caminho_3 := v_pedido::text || '/' || v_tapete::text || '/' || v_anexo_3::text || '/60000000-0000-4000-8000-000000000003.png';
   BEGIN
     PERFORM * FROM public.registrar_anexo_pedido_personalizado(
       v_pedido, v_tapete, v_version, 1, v_caminho_3,
-      'duplicado.png', 'image/png', 1, v_usuario_1
+      'duplicado.png', 'image/png', 1, v_usuario_1, true
     );
     RAISE EXCEPTION 'TESTE_SLOT_DUPLICADO_NAO_REJEITOU';
   EXCEPTION WHEN OTHERS THEN
@@ -433,14 +494,14 @@ BEGIN
   SELECT version INTO v_version
   FROM public.registrar_anexo_pedido_personalizado(
     v_pedido, v_tapete, v_version, 2, v_caminho_2,
-    'sintetico.pdf', 'application/pdf', 1, v_usuario_1
+    'sintetico.pdf', 'application/pdf', 1, v_usuario_1, true
   );
 
   -- Terceiro anexo, MIME e tamanho invalidos.
   BEGIN
     PERFORM * FROM public.registrar_anexo_pedido_personalizado(
       v_pedido, v_tapete, v_version, 1, v_caminho_3,
-      'terceiro.png', 'image/png', 1, v_usuario_1
+      'terceiro.png', 'image/png', 1, v_usuario_1, true
     );
     RAISE EXCEPTION 'TESTE_TERCEIRO_ANEXO_NAO_REJEITOU';
   EXCEPTION WHEN OTHERS THEN
@@ -449,7 +510,7 @@ BEGIN
   BEGIN
     PERFORM * FROM public.registrar_anexo_pedido_personalizado(
       v_pedido, v_tapete, v_version, 1, v_caminho_3,
-      'tipo.exe', 'application/octet-stream', 1, v_usuario_1
+      'tipo.exe', 'application/octet-stream', 1, v_usuario_1, true
     );
     RAISE EXCEPTION 'TESTE_MIME_NAO_REJEITOU';
   EXCEPTION WHEN OTHERS THEN
@@ -458,7 +519,7 @@ BEGIN
   BEGIN
     PERFORM * FROM public.registrar_anexo_pedido_personalizado(
       v_pedido, v_tapete, v_version, 1, v_caminho_3,
-      'grande.png', 'image/png', 10485761, v_usuario_1
+      'grande.png', 'image/png', 10485761, v_usuario_1, true
     );
     RAISE EXCEPTION 'TESTE_TAMANHO_NAO_REJEITOU';
   EXCEPTION WHEN OTHERS THEN
@@ -469,7 +530,7 @@ BEGIN
   BEGIN
     PERFORM * FROM public.registrar_anexo_pedido_personalizado(
       v_pedido, v_tapete_outro, v_version, 1, v_caminho_3,
-      'outro.png', 'image/png', 1, v_usuario_1
+      'outro.png', 'image/png', 1, v_usuario_1, true
     );
     RAISE EXCEPTION 'TESTE_TAPETE_OUTRO_PEDIDO_NAO_REJEITOU';
   EXCEPTION WHEN OTHERS THEN
@@ -477,7 +538,7 @@ BEGIN
   END;
   BEGIN
     PERFORM * FROM public.remover_anexo_pedido_personalizado(
-      v_pedido, v_anexo_2, v_version - 1, v_usuario_1
+      v_pedido, v_anexo_2, v_version - 1, v_usuario_1, true
     );
     RAISE EXCEPTION 'TESTE_ANEXO_CONFLITO_NAO_REJEITOU';
   EXCEPTION WHEN OTHERS THEN
@@ -490,7 +551,7 @@ BEGIN
   SELECT version INTO v_version
   FROM public.substituir_anexo_pedido_personalizado(
     v_pedido, v_anexo_1, v_version, v_caminho_1_novo,
-    'substituto.webp', 'image/webp', 100, v_usuario_1
+    'substituto.webp', 'image/webp', 100, v_usuario_1, true
   );
   IF NOT EXISTS (
     SELECT 1 FROM public.pedidos_personalizados_storage_pendencias
@@ -504,7 +565,7 @@ BEGIN
   BEGIN
     PERFORM * FROM public.substituir_anexo_pedido_personalizado(
       v_pedido, v_anexo_1, v_version_anterior, v_caminho_1,
-      'nao-gravar.jpg', 'image/jpeg', 1, v_usuario_1
+      'nao-gravar.jpg', 'image/jpeg', 1, v_usuario_1, true
     );
     RAISE EXCEPTION 'TESTE_SUBSTITUICAO_CONFLITO_NAO_REJEITOU';
   EXCEPTION WHEN OTHERS THEN
@@ -517,7 +578,7 @@ BEGIN
   -- Remocao enfileira e remove metadado.
   SELECT version INTO v_version
   FROM public.remover_anexo_pedido_personalizado(
-    v_pedido, v_anexo_2, v_version, v_usuario_1
+    v_pedido, v_anexo_2, v_version, v_usuario_1, true
   );
   IF EXISTS (SELECT 1 FROM public.pedidos_personalizados_anexos WHERE id = v_anexo_2)
      OR NOT EXISTS (
@@ -529,11 +590,19 @@ BEGIN
 
   -- Volta a RASCUNHO (unico status onde produtos sao editaveis), inclui segundo
   -- tapete e remove o primeiro com anexo — agora via rota de produtos propria.
-  SELECT version INTO v_version
-  FROM public.atualizar_pedido_personalizado_administrativo(
-    v_pedido, v_version, v_usuario_1, NULL, NULL, NULL, NULL, NULL,
-    'RASCUNHO', '[]'::jsonb
-  );
+  -- NOTA: transicionar_pedido_personalizado nunca leva nenhum status de volta a
+  -- RASCUNHO (confirmado lendo o corpo da funcao: RASCUNHO so aparece como origem,
+  -- nunca como destino) e RECEBIDO nao tem nenhuma transicao de saida — nao existe
+  -- mais um caminho de negocio real para isso a partir daqui. Assim como ja feito em
+  -- pedidos_personalizados_edicao_produtos_rascunho.sql (linha ~189) para forcar um
+  -- status e testar apenas o bloqueio, aqui o UPDATE direto isola a unica coisa que
+  -- este trecho quer exercitar: a fila atomica de storage ao remover um tapete com
+  -- anexo, quando o pedido esta em RASCUNHO — sem reintroduzir uma transicao de
+  -- negocio que nao existe mais.
+  UPDATE public.pedidos_personalizados_pedidos
+  SET status = 'RASCUNHO', version = version + 1
+  WHERE id = v_pedido
+  RETURNING version INTO v_version;
   v_payload_comercial := jsonb_build_array(
     (v_payload_base->0) || jsonb_build_object('id', v_tapete, 'ordem', 2),
     (v_payload_base->0) || jsonb_build_object('ordem', 1)

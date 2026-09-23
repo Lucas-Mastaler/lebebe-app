@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ArrowRight, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Clock, Eye, Loader2, PackageCheck, Pencil, RefreshCw, ShoppingBag, SlidersHorizontal, UserSearch } from 'lucide-react'
+import { ArrowRight, Ban, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Clock, Eye, Loader2, PackageCheck, Pencil, RefreshCw, ShoppingBag, SlidersHorizontal, UserSearch } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   Alert,
@@ -37,7 +37,10 @@ import {
   permiteEdicaoAdministrativa,
   permiteEdicaoComercial,
   permiteEdicaoProdutos,
+  permiteVerAvancoStatus,
+  podeCancelarPedido,
 } from '@/lib/pedidos-personalizados/status-fluxo'
+import { usePermissoes } from '@/lib/hooks/usePermissoes'
 import { TIPO_TAPETE_PARA_EXIBICAO } from '@/lib/pedidos-personalizados'
 import type { StatusPedidoPersonalizado } from '@/lib/pedidos-personalizados'
 import {
@@ -203,6 +206,7 @@ function BotaoAvancoStatus({
   disabled,
   className,
   variant,
+  podeVer = true,
 }: {
   status: StatusPedidoPersonalizado
   fornecedor: { chave: string } | null | undefined
@@ -210,15 +214,40 @@ function BotaoAvancoStatus({
   disabled?: boolean
   className?: string
   variant?: 'primary' | 'secondary'
+  /** Regra de UI (não de acesso): esconde o botão para perfis que não operam as etapas pós-Venda Fechada — ver `permiteVerAvancoStatus`. A API/RPC não muda. */
+  podeVer?: boolean
 }) {
   const destinos = destinosPermitidosStatus(status, fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')
-  if (destinos.length === 0) return null
+    .filter((destino) => destino !== 'CANCELADO')
+  if (destinos.length === 0 || !podeVer) return null
   const proximaFase = destinos[0]
   const classeDegrade = variant === 'secondary' ? '' : CLASSE_DEGRADE_AVANCO_STATUS
   return (
     <Button type="button" variant={variant ?? 'primary'} disabled={disabled} onClick={onClick} className={`${classeDegrade} ${className ?? ''}`}>
       Avançar para {proximaFase}
       <ArrowRight aria-hidden="true" />
+    </Button>
+  )
+}
+
+/** Ação de encerramento, separada do avanço normal — mesma regra/RPC/histórico de `CANCELADO` (ver `podeCancelarPedido`). */
+function BotaoCancelarPedido({
+  status,
+  fornecedor,
+  onClick,
+  disabled,
+  className,
+}: {
+  status: StatusPedidoPersonalizado
+  fornecedor: { chave: string } | null | undefined
+  onClick: () => void
+  disabled?: boolean
+  className?: string
+}) {
+  if (!podeCancelarPedido(status, fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')) return null
+  return (
+    <Button type="button" variant="destructive" disabled={disabled} onClick={onClick} className={className}>
+      <Ban aria-hidden="true" />Cancelar pedido
     </Button>
   )
 }
@@ -244,6 +273,11 @@ function CampoAdministrativo({
 }
 
 export function GestaoPedidosPersonalizados() {
+  const { acessoTotal: acessoTotalPermissoes, perfilChave } = usePermissoes()
+  const podeVerAvancoStatus = useCallback(
+    (status: StatusPedidoPersonalizado) => permiteVerAvancoStatus(status, perfilChave, acessoTotalPermissoes),
+    [perfilChave, acessoTotalPermissoes]
+  )
   const [opcoes, setOpcoes] = useState<OpcoesNovoPedido | null>(null)
   const [filtros, setFiltros] = useState<FiltrosGestao>(FILTROS_VAZIOS)
   const [filtrosAplicados, setFiltrosAplicados] = useState<FiltrosGestao>(FILTROS_VAZIOS)
@@ -267,6 +301,7 @@ export function GestaoPedidosPersonalizados() {
   })
   const [numeroLancamentoTransicao, setNumeroLancamentoTransicao] = useState('')
   const [transicaoOrigemCard, setTransicaoOrigemCard] = useState(false)
+  const [modoCancelamento, setModoCancelamento] = useState(false)
   const [produtoSgiOrigemCard, setProdutoSgiOrigemCard] = useState(false)
   const [formulario, setFormulario] = useState<EstadoNovoPedido | null>(null)
   const [salvando, setSalvando] = useState(false)
@@ -598,16 +633,24 @@ export function GestaoPedidosPersonalizados() {
     }
   }
 
-  function abrirTransicao() {
+  /**
+   * `destinoForcado` sustenta o botão dedicado "Cancelar pedido" (ver `BotaoCancelarPedido`): reaproveita
+   * 100% do fluxo/estado/RPC de `transicionarStatusGestao` já usado pelo seletor genérico, só pré-seleciona
+   * CANCELADO e liga `modoCancelamento` para o modal renderizar a confirmação enxuta (sem o seletor Destino).
+   */
+  function abrirTransicao(destinoForcado?: 'CANCELADO') {
     if (!detalhe) return
-    setTransicao(montarEstadoTransicao(detalhe))
+    const estado = montarEstadoTransicao(detalhe)
+    setTransicao(destinoForcado ? { ...estado, destino: destinoForcado, justificativa: '' } : estado)
     setNumeroLancamentoTransicao(detalhe.numeroLancamento ?? '')
+    setModoCancelamento(Boolean(destinoForcado))
     setAlterandoStatus(true)
   }
 
-  async function abrirTransicaoPeloCard(id: string) {
+  async function abrirTransicaoPeloCard(id: string, destinoForcado?: 'CANCELADO') {
     if (carregandoDetalhe) return
     setTransicaoOrigemCard(true)
+    setModoCancelamento(Boolean(destinoForcado))
     setCarregandoDetalhe(true)
     setErro(null)
     try {
@@ -619,12 +662,14 @@ export function GestaoPedidosPersonalizados() {
       setEditandoProdutos(false)
       setEditandoAdministrativo(false)
       setConflitoAdministrativo(false)
-      setTransicao(montarEstadoTransicao(pedido))
+      const estado = montarEstadoTransicao(pedido)
+      setTransicao(destinoForcado ? { ...estado, destino: destinoForcado, justificativa: '' } : estado)
       setNumeroLancamentoTransicao(pedido.numeroLancamento ?? '')
       setAlterandoStatus(true)
     } catch (error) {
       toast.error(mensagemErroGestao(error))
       setTransicaoOrigemCard(false)
+      setModoCancelamento(false)
     } finally {
       setCarregandoDetalhe(false)
     }
@@ -632,6 +677,7 @@ export function GestaoPedidosPersonalizados() {
 
   function fecharTransicao() {
     setAlterandoStatus(false)
+    setModoCancelamento(false)
     if (transicaoOrigemCard) {
       setDetalhe(null)
       setFormulario(null)
@@ -924,6 +970,14 @@ export function GestaoPedidosPersonalizados() {
                       disabled={carregandoDetalhe}
                       className="min-h-11 font-semibold shadow-sm"
                       onClick={() => void abrirTransicaoPeloCard(item.id)}
+                      podeVer={podeVerAvancoStatus(item.status)}
+                    />
+                    <BotaoCancelarPedido
+                      status={item.status}
+                      fornecedor={item.fornecedor}
+                      disabled={carregandoDetalhe}
+                      className="min-h-11"
+                      onClick={() => void abrirTransicaoPeloCard(item.id, 'CANCELADO')}
                     />
                     <Button type="button" className="min-h-11" variant="secondary" onClick={() => void abrirDetalhe(item.id)}><Eye />Ver pedido</Button>
                   </div>
@@ -1299,7 +1353,8 @@ export function GestaoPedidosPersonalizados() {
                   )}
                   <Button type="button" disabled={!permiteEdicaoComercial(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')} onClick={() => setEditando(true)}><Pencil />Editar dados comerciais</Button>
                   <Button type="button" variant="secondary" disabled={!permiteEdicaoAdministrativa(detalhe.status)} onClick={() => { setAdministrativo(detalheParaAdministrativo(detalhe)); setErrosAdministrativos({}); setConflitoAdministrativo(false); setEditandoAdministrativo(true) }}><Pencil />Editar dados administrativos</Button>
-                  <BotaoAvancoStatus status={detalhe.status} fornecedor={detalhe.fornecedor} onClick={abrirTransicao} className="font-semibold shadow-sm" />
+                  <BotaoCancelarPedido status={detalhe.status} fornecedor={detalhe.fornecedor} onClick={() => abrirTransicao('CANCELADO')} />
+                  <BotaoAvancoStatus status={detalhe.status} fornecedor={detalhe.fornecedor} onClick={() => abrirTransicao()} className="font-semibold shadow-sm" podeVer={podeVerAvancoStatus(detalhe.status)} />
                 </>
               )}
               <Button type="button" variant="ghost" disabled={salvando} onClick={() => void recarregarDetalhe()}><RefreshCw />Recarregar</Button>
@@ -1390,59 +1445,82 @@ export function GestaoPedidosPersonalizados() {
 
       <Dialog open={alterandoStatus} onOpenChange={(aberto) => { if (!aberto && !salvando) fecharTransicao() }}>
         <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-xl sm:max-h-[90vh]">
-          <DialogHeader
-            title="Alterar status"
-            description={detalhe?.status === 'RASCUNHO' && transicao.destino === 'VENDA FECHADA' ? 'Confirma que esta venda foi fechada?' : 'Confirme a transição. A versão e o histórico serão atualizados de forma atômica.'}
-          />
-          {detalhe && <DialogBody className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-3 text-sm">
-              <Badge tone="neutral" className="border border-slate-300 bg-white">{detalhe.status}</Badge>
-              <ArrowRight className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
-              <Badge tone="info">{transicao.destino || 'Selecione o destino'}</Badge>
-            </div>
-            <FormField id="status-destino" label="Destino" required>
-              {(f) => <Select value={transicao.destino} onValueChange={(destino) => setTransicao((atual) => ({ ...atual, destino: destino as StatusPedidoPersonalizado }))}><SelectTrigger id={f.id}><SelectValue /></SelectTrigger><SelectContent>{destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes').map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select>}
-            </FormField>
-            {detalhe.status === 'RASCUNHO' && transicao.destino === 'VENDA FECHADA' && (
-              <Alert tone="warning" title="Fechar venda?">
-                <p>Ao avançar este pedido para Venda Fechada, os produtos e personalizações do pedido não poderão mais ser editados.</p>
-                <p className="mt-2">Confira produtos, quantidades, medidas, cores, letras e demais personalizações antes de continuar. Depois desta etapa, apenas os campos permitidos nas etapas seguintes poderão ser alterados.</p>
-              </Alert>
-            )}
-            {exigeLancamentoNaTransicao && (
-              <FormField id="transicao-numero-lancamento" label="Número de lançamento" required helper="Necessário para fechar a venda. Fica salvo junto aos dados comerciais do pedido.">
-                {(f) => <Input {...f} inputMode="numeric" maxLength={6} value={numeroLancamentoTransicao} onChange={(e) => setNumeroLancamentoTransicao(e.target.value.replace(/\D/g, '').slice(0, 6))} />}
-              </FormField>
-            )}
-            {detalhe.status === 'VENDA FECHADA' && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(transicao.destino) && <div className="grid gap-3 sm:grid-cols-2">
-              <FormField id="transicao-pedido" label="Nº do pedido de compra">{(f) => <Input {...f} inputMode="numeric" maxLength={5} value={transicao.numeroPedidoCompra} onChange={(e) => setTransicao({ ...transicao, numeroPedidoCompra: e.target.value.replace(/\D/g, '').slice(0, 5) })} />}</FormField>
-              <FormField id="transicao-data-fornecedor" label="Data do pedido ao fornecedor">{(f) => <Input {...f} type="date" max={dataOperacionalBrasil()} value={transicao.dataPedidoFornecedor} onChange={(e) => setTransicao({ ...transicao, dataPedidoFornecedor: e.target.value })} />}</FormField>
-              <FormField id="transicao-comprador" label="Comprador" className="sm:col-span-2">{(f) => <Input {...f} maxLength={40} value={transicao.comprador} onChange={(e) => setTransicao({ ...transicao, comprador: e.target.value })} />}</FormField>
-            </div>}
-            {transicao.destino === 'EM PRODUÇÃO' && <div className="space-y-3">
-              <FormField id="transicao-data-entrega" label="Previsão de Data de entrega do fornecedor">{(f) => <Input {...f} type="date" value={transicao.dataEntrega} onChange={(e) => setTransicao({ ...transicao, dataEntrega: e.target.value })} />}</FormField>
-              <Alert tone="warning">Ao entrar em produção, os dados comerciais ficam bloqueados.</Alert>
-            </div>}
-            {transicao.destino === 'RECEBIDO' && <FormField id="transicao-data-recebimento" label="Data de recebimento" helper="A data de hoje é sugerida, mas pode ser alterada.">{(f) => <Input {...f} type="date" value={transicao.dataRecebimento} onChange={(e) => setTransicao({ ...transicao, dataRecebimento: e.target.value })} />}</FormField>}
-            {transicao.destino === 'CANCELADO' && <FormField id="transicao-justificativa" label="Justificativa" required>{(f) => <div><textarea {...f} required maxLength={500} rows={4} className="w-full rounded-md border border-slate-300 bg-input-background px-3 py-2 text-sm" value={transicao.justificativa} onChange={(e) => setTransicao({ ...transicao, justificativa: e.target.value })} /><p className="text-right text-xs text-slate-500">{transicao.justificativa.length}/500</p></div>}</FormField>}
-            {pendenciasTransicao.length > 0 && <Alert tone="warning" title="Para confirmar, falta:"><ul className="list-disc space-y-1 pl-5">{pendenciasTransicao.map((pendencia) => <li key={pendencia}>{pendencia}</li>)}</ul></Alert>}
-          </DialogBody>}
-          <DialogFooter className="shrink-0 flex-col-reverse gap-2 border-t bg-white px-6 py-4 sm:flex-col sm:items-stretch">
-            <Button type="button" variant="secondary" className="w-full" disabled={salvando} onClick={fecharTransicao}>Cancelar</Button>
-            <Button
-              type="button"
-              disabled={pendenciasTransicao.length > 0}
-              loading={salvando}
-              onClick={() => void confirmarTransicao()}
-              className={`w-full ${!salvando && detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')[0] ?? '') ? CLASSE_DEGRADE_AVANCO_STATUS : ''}`}
-            >
-              {detalhe?.status === 'RASCUNHO' && transicao.destino === 'VENDA FECHADA'
-                ? <>Confirmar e fechar venda<ArrowRight /></>
-                : !salvando && detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')[0] ?? '')
-                  ? <>Avançar para {transicao.destino}<ArrowRight /></>
-                  : 'Confirmar transição'}
-            </Button>
-          </DialogFooter>
+          {modoCancelamento ? (
+            <>
+              <DialogHeader
+                title="Cancelar pedido?"
+                description="Este pedido será marcado como cancelado. Confirme somente se realmente deseja encerrar este pedido."
+              />
+              {detalhe && <DialogBody className="space-y-4">
+                <FormField id="transicao-justificativa" label="Justificativa" required>
+                  {(f) => <div><textarea {...f} required maxLength={500} rows={4} className="w-full rounded-md border border-slate-300 bg-input-background px-3 py-2 text-sm" value={transicao.justificativa} onChange={(e) => setTransicao({ ...transicao, justificativa: e.target.value })} /><p className="text-right text-xs text-slate-500">{transicao.justificativa.length}/500</p></div>}
+                </FormField>
+                {pendenciasTransicao.length > 0 && <Alert tone="warning" title="Para confirmar, falta:"><ul className="list-disc space-y-1 pl-5">{pendenciasTransicao.map((pendencia) => <li key={pendencia}>{pendencia}</li>)}</ul></Alert>}
+              </DialogBody>}
+              <DialogFooter className="shrink-0 flex-col-reverse gap-2 border-t bg-white px-6 py-4 sm:flex-col sm:items-stretch">
+                <Button type="button" variant="secondary" className="w-full" disabled={salvando} onClick={fecharTransicao}>Voltar</Button>
+                <Button type="button" variant="destructive" className="w-full" disabled={pendenciasTransicao.length > 0} loading={salvando} onClick={() => void confirmarTransicao()}>
+                  <Ban />Cancelar pedido
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader
+                title="Alterar status"
+                description={detalhe?.status === 'RASCUNHO' && transicao.destino === 'VENDA FECHADA' ? 'Confirma que esta venda foi fechada?' : 'Confirme a transição. A versão e o histórico serão atualizados de forma atômica.'}
+              />
+              {detalhe && <DialogBody className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-3 text-sm">
+                  <Badge tone="neutral" className="border border-slate-300 bg-white">{detalhe.status}</Badge>
+                  <ArrowRight className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
+                  <Badge tone="info">{transicao.destino || 'Selecione o destino'}</Badge>
+                </div>
+                <FormField id="status-destino" label="Destino" required>
+                  {/* CANCELADO some daqui de propósito: o botão dedicado "Cancelar pedido" (mesma regra `podeCancelarPedido`) cobre esse caso com uma confirmação mais direta — ver §6 do pedido. */}
+                  {(f) => <Select value={transicao.destino} onValueChange={(destino) => setTransicao((atual) => ({ ...atual, destino: destino as StatusPedidoPersonalizado }))}><SelectTrigger id={f.id}><SelectValue /></SelectTrigger><SelectContent>{destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes').filter((status) => status !== 'CANCELADO').map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select>}
+                </FormField>
+                {detalhe.status === 'RASCUNHO' && transicao.destino === 'VENDA FECHADA' && (
+                  <Alert tone="warning" title="Fechar venda?">
+                    <p>Ao avançar este pedido para Venda Fechada, os produtos e personalizações do pedido não poderão mais ser editados.</p>
+                    <p className="mt-2">Confira produtos, quantidades, medidas, cores, letras e demais personalizações antes de continuar. Depois desta etapa, apenas os campos permitidos nas etapas seguintes poderão ser alterados.</p>
+                  </Alert>
+                )}
+                {exigeLancamentoNaTransicao && (
+                  <FormField id="transicao-numero-lancamento" label="Número de lançamento" required helper="Necessário para fechar a venda. Fica salvo junto aos dados comerciais do pedido.">
+                    {(f) => <Input {...f} inputMode="numeric" maxLength={6} value={numeroLancamentoTransicao} onChange={(e) => setNumeroLancamentoTransicao(e.target.value.replace(/\D/g, '').slice(0, 6))} />}
+                  </FormField>
+                )}
+                {detalhe.status === 'VENDA FECHADA' && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(transicao.destino) && <div className="grid gap-3 sm:grid-cols-2">
+                  <FormField id="transicao-pedido" label="Nº do pedido de compra">{(f) => <Input {...f} inputMode="numeric" maxLength={5} value={transicao.numeroPedidoCompra} onChange={(e) => setTransicao({ ...transicao, numeroPedidoCompra: e.target.value.replace(/\D/g, '').slice(0, 5) })} />}</FormField>
+                  <FormField id="transicao-data-fornecedor" label="Data do pedido ao fornecedor">{(f) => <Input {...f} type="date" max={dataOperacionalBrasil()} value={transicao.dataPedidoFornecedor} onChange={(e) => setTransicao({ ...transicao, dataPedidoFornecedor: e.target.value })} />}</FormField>
+                  <FormField id="transicao-comprador" label="Comprador" className="sm:col-span-2">{(f) => <Input {...f} maxLength={40} value={transicao.comprador} onChange={(e) => setTransicao({ ...transicao, comprador: e.target.value })} />}</FormField>
+                </div>}
+                {transicao.destino === 'EM PRODUÇÃO' && <div className="space-y-3">
+                  <FormField id="transicao-data-entrega" label="Previsão de Data de entrega do fornecedor">{(f) => <Input {...f} type="date" value={transicao.dataEntrega} onChange={(e) => setTransicao({ ...transicao, dataEntrega: e.target.value })} />}</FormField>
+                  <Alert tone="warning">Ao entrar em produção, os dados comerciais ficam bloqueados.</Alert>
+                </div>}
+                {transicao.destino === 'RECEBIDO' && <FormField id="transicao-data-recebimento" label="Data de recebimento" helper="A data de hoje é sugerida, mas pode ser alterada.">{(f) => <Input {...f} type="date" value={transicao.dataRecebimento} onChange={(e) => setTransicao({ ...transicao, dataRecebimento: e.target.value })} />}</FormField>}
+                {pendenciasTransicao.length > 0 && <Alert tone="warning" title="Para confirmar, falta:"><ul className="list-disc space-y-1 pl-5">{pendenciasTransicao.map((pendencia) => <li key={pendencia}>{pendencia}</li>)}</ul></Alert>}
+              </DialogBody>}
+              <DialogFooter className="shrink-0 flex-col-reverse gap-2 border-t bg-white px-6 py-4 sm:flex-col sm:items-stretch">
+                <Button type="button" variant="secondary" className="w-full" disabled={salvando} onClick={fecharTransicao}>Cancelar</Button>
+                <Button
+                  type="button"
+                  disabled={pendenciasTransicao.length > 0}
+                  loading={salvando}
+                  onClick={() => void confirmarTransicao()}
+                  className={`w-full ${!salvando && detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')[0] ?? '') ? CLASSE_DEGRADE_AVANCO_STATUS : ''}`}
+                >
+                  {detalhe?.status === 'RASCUNHO' && transicao.destino === 'VENDA FECHADA'
+                    ? <>Confirmar e fechar venda<ArrowRight /></>
+                    : !salvando && detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')[0] ?? '')
+                      ? <>Avançar para {transicao.destino}<ArrowRight /></>
+                      : 'Confirmar transição'}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

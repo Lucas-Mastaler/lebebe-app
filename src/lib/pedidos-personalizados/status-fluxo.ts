@@ -63,6 +63,36 @@ export function permiteEdicaoAdministrativa(status: StatusPedidoPersonalizado) {
   return status !== 'RECEBIDO' && status !== 'CANCELADO'
 }
 
+/** Fonte única de UI para "este status pode ir para CANCELADO" — mesma regra de `TRANSICOES_STATUS_PEDIDO`/`_EXCLUSIVE`, sem lista paralela. */
+export function podeCancelarPedido(
+  status: StatusPedidoPersonalizado,
+  fornecedor: FornecedorPedidoPersonalizado = 'moriah_tapetes'
+) {
+  return podeTransicionarStatus(status, 'CANCELADO', fornecedor)
+}
+
+/**
+ * Chaves de `app_perfis_acesso` (ver AGENTS.md/módulo permissões) cujos usuários operam as etapas
+ * pós-Venda Fechada. Regra apenas de UI/UX: perfis fora desta lista continuam podendo chamar a API
+ * normalmente (nenhum bloqueio novo de backend) — só deixam de ver o botão de avanço para reduzir
+ * confusão sobre quem realmente opera essas etapas.
+ */
+export const PERFIS_OPERACIONAIS_AVANCO_STATUS = ['gestao', 'pos_venda'] as const
+
+/**
+ * Enquanto RASCUNHO, todo perfil que já pode acessar a tela continua vendo o avanço para Venda
+ * Fechada (regra inalterada). A partir de Venda Fechada (inclusive), só perfis operacionais
+ * (`PERFIS_OPERACIONAIS_AVANCO_STATUS`) ou acesso total (superadmin) veem o botão.
+ */
+export function permiteVerAvancoStatus(
+  status: StatusPedidoPersonalizado,
+  perfilChave: string | null,
+  acessoTotal: boolean
+) {
+  if (status === 'RASCUNHO') return true
+  return acessoTotal || (perfilChave !== null && (PERFIS_OPERACIONAIS_AVANCO_STATUS as readonly string[]).includes(perfilChave))
+}
+
 export function operacoesAnexoGestao(status: StatusPedidoPersonalizado) {
   if (status === 'CANCELADO') return { abrir: true, adicionar: false, substituir: false, remover: false, contabilizar: false }
   if (status === 'RECEBIDO') return { abrir: true, adicionar: true, substituir: false, remover: false, contabilizar: false }

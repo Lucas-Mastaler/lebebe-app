@@ -5,6 +5,8 @@ import {
   permiteEdicaoAdministrativa,
   permiteEdicaoComercial,
   permiteEdicaoProdutos,
+  permiteVerAvancoStatus,
+  podeCancelarPedido,
   podeTransicionarStatus,
 } from './status-fluxo'
 
@@ -45,5 +47,40 @@ describe('fluxo de status de pedidos personalizados', () => {
     expect(operacoesAnexoGestao('EM PRODUÇÃO')).toEqual({ abrir: true, adicionar: true, substituir: false, remover: false, contabilizar: true })
     expect(operacoesAnexoGestao('RECEBIDO')).toEqual({ abrir: true, adicionar: true, substituir: false, remover: false, contabilizar: false })
     expect(operacoesAnexoGestao('CANCELADO')).toEqual({ abrir: true, adicionar: false, substituir: false, remover: false, contabilizar: false })
+  })
+
+  it('podeCancelarPedido reaproveita exatamente a mesma regra de transicoes (sem lista paralela)', () => {
+    expect(podeCancelarPedido('RASCUNHO')).toBe(true)
+    expect(podeCancelarPedido('VENDA FECHADA')).toBe(true)
+    expect(podeCancelarPedido('AGUARDANDO LAYOUT')).toBe(true)
+    expect(podeCancelarPedido('AGUARDANDO APROVAÇÃO DO CLIENTE')).toBe(true)
+    expect(podeCancelarPedido('EM PRODUÇÃO')).toBe(true)
+    expect(podeCancelarPedido('RECEBIDO')).toBe(false)
+    expect(podeCancelarPedido('CANCELADO')).toBe(false)
+    // Lebebe Exclusive não passa por AGUARDANDO LAYOUT/AGUARDANDO APROVAÇÃO — permanece sem transição (nunca "true" por engano).
+    expect(podeCancelarPedido('AGUARDANDO LAYOUT', 'lebebe_exclusive')).toBe(false)
+    expect(podeCancelarPedido('VENDA FECHADA', 'lebebe_exclusive')).toBe(true)
+    expect(podeCancelarPedido('EM PRODUÇÃO', 'lebebe_exclusive')).toBe(true)
+    expect(podeCancelarPedido('RECEBIDO', 'lebebe_exclusive')).toBe(false)
+  })
+
+  it('permiteVerAvancoStatus mostra o avanco em RASCUNHO para qualquer perfil, e restringe a partir de Venda Fechada', () => {
+    // RASCUNHO: regra inalterada, nenhuma restrição por perfil.
+    expect(permiteVerAvancoStatus('RASCUNHO', 'consultora', false)).toBe(true)
+    expect(permiteVerAvancoStatus('RASCUNHO', 'supervisora_loja', false)).toBe(true)
+    expect(permiteVerAvancoStatus('RASCUNHO', null, false)).toBe(true)
+
+    // A partir de Venda Fechada (inclusive): só perfis operacionais reais (gestao/pos_venda) ou acesso total.
+    expect(permiteVerAvancoStatus('VENDA FECHADA', 'gestao', false)).toBe(true)
+    expect(permiteVerAvancoStatus('VENDA FECHADA', 'pos_venda', false)).toBe(true)
+    expect(permiteVerAvancoStatus('VENDA FECHADA', 'consultora', false)).toBe(false)
+    expect(permiteVerAvancoStatus('VENDA FECHADA', 'supervisora_loja', false)).toBe(false)
+    expect(permiteVerAvancoStatus('VENDA FECHADA', null, false)).toBe(false)
+    expect(permiteVerAvancoStatus('VENDA FECHADA', null, true)).toBe(true)
+
+    expect(permiteVerAvancoStatus('AGUARDANDO LAYOUT', 'consultora', false)).toBe(false)
+    expect(permiteVerAvancoStatus('AGUARDANDO APROVAÇÃO DO CLIENTE', 'gestao', false)).toBe(true)
+    expect(permiteVerAvancoStatus('EM PRODUÇÃO', 'pos_venda', false)).toBe(true)
+    expect(permiteVerAvancoStatus('EM PRODUÇÃO', 'consultora', false)).toBe(false)
   })
 })

@@ -1,9 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { escaparTermoIlike } from '@/lib/atendimento-presencial/clientes'
 import type {
+  ParametrosAtualizarDadosComerciaisLebebeExclusiveRpc,
+  ParametrosAtualizarDadosComerciaisMoriahRpc,
   ParametrosAtualizarPedidoAdministrativoRpc,
-  ParametrosAtualizarPedidoComercialLebebeExclusiveRpc,
-  ParametrosAtualizarPedidoComercialMoriahRpc,
+  ParametrosAtualizarProdutosLebebeExclusiveRpc,
+  ParametrosAtualizarProdutosMoriahRpc,
   ParametrosCriarPedidoPersonalizadoLebebeExclusiveRpc,
   ParametrosCriarPedidoPersonalizadoMoriahRpc,
   ParametrosTransicionarPedidoPersonalizadoRpc,
@@ -108,9 +110,18 @@ export type ResultadoCriacaoExclusiveRpc = {
   itens: unknown
 }
 
-export type ResultadoAtualizacaoComercialRpc = {
+export type ResultadoAtualizacaoDadosComerciaisRpc = {
+  version: number
+}
+
+export type ResultadoAtualizacaoProdutosMoriahRpc = {
   version: number
   tapetes: unknown
+}
+
+export type ResultadoAtualizacaoProdutosLebebeExclusiveRpc = {
+  version: number
+  itens: unknown
 }
 
 export type ResultadoAtualizacaoAdministrativaRpc = {
@@ -335,24 +346,45 @@ export class RepositorioPedidosPersonalizados {
     return retorno ? { data: retorno, error: null } : { data: null, error: { message: 'RETORNO_RPC_INVALIDO' } }
   }
 
-  async atualizarComercialLebebeExclusive(
-    parametros: ParametrosAtualizarPedidoComercialLebebeExclusiveRpc
-  ): Promise<ResultadoBanco<{ version: number; itens: unknown }>> {
+  async atualizarDadosComerciaisLebebeExclusive(
+    parametros: ParametrosAtualizarDadosComerciaisLebebeExclusiveRpc
+  ): Promise<ResultadoBanco<ResultadoAtualizacaoDadosComerciaisRpc>> {
     const { data, error } = await this.supabase.rpc(
       'atualizar_pedido_personalizado_comercial_lebebe_exclusive',
       parametros
     )
     if (error) return { data: null, error }
-    const retorno = (Array.isArray(data) ? data[0] : data) as { version: number; itens: unknown } | null
+    const retorno = (Array.isArray(data) ? data[0] : data) as ResultadoAtualizacaoDadosComerciaisRpc | null
     return retorno ? { data: retorno, error: null } : { data: null, error: { message: 'RETORNO_RPC_INVALIDO' } }
   }
 
-  async atualizarComercial(
-    parametros: ParametrosAtualizarPedidoComercialMoriahRpc
-  ): Promise<ResultadoBanco<ResultadoAtualizacaoComercialRpc>> {
+  async atualizarDadosComerciais(
+    parametros: ParametrosAtualizarDadosComerciaisMoriahRpc
+  ): Promise<ResultadoBanco<ResultadoAtualizacaoDadosComerciaisRpc>> {
     const { data, error } = await this.supabase.rpc('atualizar_pedido_personalizado_comercial_moriah', parametros)
     if (error) return { data: null, error }
-    const retorno = (Array.isArray(data) ? data[0] : data) as ResultadoAtualizacaoComercialRpc | null
+    const retorno = (Array.isArray(data) ? data[0] : data) as ResultadoAtualizacaoDadosComerciaisRpc | null
+    return retorno ? { data: retorno, error: null } : { data: null, error: { message: 'RETORNO_RPC_INVALIDO' } }
+  }
+
+  async atualizarProdutosLebebeExclusive(
+    parametros: ParametrosAtualizarProdutosLebebeExclusiveRpc
+  ): Promise<ResultadoBanco<ResultadoAtualizacaoProdutosLebebeExclusiveRpc>> {
+    const { data, error } = await this.supabase.rpc(
+      'atualizar_pedido_personalizado_produtos_lebebe_exclusive',
+      parametros
+    )
+    if (error) return { data: null, error }
+    const retorno = (Array.isArray(data) ? data[0] : data) as ResultadoAtualizacaoProdutosLebebeExclusiveRpc | null
+    return retorno ? { data: retorno, error: null } : { data: null, error: { message: 'RETORNO_RPC_INVALIDO' } }
+  }
+
+  async atualizarProdutos(
+    parametros: ParametrosAtualizarProdutosMoriahRpc
+  ): Promise<ResultadoBanco<ResultadoAtualizacaoProdutosMoriahRpc>> {
+    const { data, error } = await this.supabase.rpc('atualizar_pedido_personalizado_produtos_moriah', parametros)
+    if (error) return { data: null, error }
+    const retorno = (Array.isArray(data) ? data[0] : data) as ResultadoAtualizacaoProdutosMoriahRpc | null
     return retorno ? { data: retorno, error: null } : { data: null, error: { message: 'RETORNO_RPC_INVALIDO' } }
   }
 

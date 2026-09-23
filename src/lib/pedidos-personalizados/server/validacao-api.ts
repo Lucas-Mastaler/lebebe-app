@@ -51,6 +51,8 @@ const CAMPOS_COMERCIAIS = [
   'observacoes',
   'numeroLancamento',
 ] as const
+const CAMPOS_IDENTIFICACAO_COMERCIAL = ['unidade', 'consultora', 'cliente', 'telefone', 'numeroLancamento'] as const
+const CAMPOS_PRODUTOS_MORIAH = ['tapetes'] as const
 
 export type SituacaoPrazoFiltro = 'NO PRAZO' | 'PRESTES A VENCER' | 'ATRASADO'
 
@@ -203,6 +205,65 @@ export function montarEntradaPedido(
     return { ok: false, codigo: 'PAYLOAD_INVALIDO' }
   }
   return { ok: true, entrada, expectedVersion: expectedVersion as number }
+}
+
+export type EntradaDadosComerciaisMoriah = {
+  unidade: string
+  consultora: string
+  cliente: string
+  telefone: string
+  numeroLancamento: string | undefined
+}
+
+/** Payload da rota `/comercial`: só identificação/dados da venda — nunca tapetes. */
+export function montarEntradaDadosComerciaisMoriah(valor: unknown):
+  | { ok: true; entrada: EntradaDadosComerciaisMoriah; expectedVersion: number }
+  | { ok: false; codigo: 'PAYLOAD_INVALIDO' | 'CAMPO_NAO_PERMITIDO' } {
+  if (!ehObjeto(valor)) return { ok: false, codigo: 'PAYLOAD_INVALIDO' }
+  if (possuiAlgumCampo(valor, [...CAMPOS_ADMINISTRATIVOS, ...CAMPOS_PRODUTOS_MORIAH])) {
+    return { ok: false, codigo: 'CAMPO_NAO_PERMITIDO' }
+  }
+  if (
+    typeof valor.unidade !== 'string'
+    || typeof valor.consultora !== 'string'
+    || typeof valor.cliente !== 'string'
+    || typeof valor.telefone !== 'string'
+  ) return { ok: false, codigo: 'PAYLOAD_INVALIDO' }
+  const expectedVersion = valor.expectedVersion
+  if (!Number.isInteger(expectedVersion) || (expectedVersion as number) < 1) {
+    return { ok: false, codigo: 'PAYLOAD_INVALIDO' }
+  }
+  return {
+    ok: true,
+    entrada: {
+      unidade: valor.unidade,
+      consultora: valor.consultora,
+      cliente: valor.cliente,
+      telefone: valor.telefone,
+      numeroLancamento: stringOpcional(valor.numeroLancamento) ?? undefined,
+    },
+    expectedVersion: expectedVersion as number,
+  }
+}
+
+/** Payload da rota `/produtos`: só a composição (tapetes) — nunca unidade/consultora/cliente/telefone/lançamento. */
+export function montarEntradaProdutosMoriah(valor: unknown):
+  | { ok: true; tapetes: TapeteMoriahEntrada[]; expectedVersion: number }
+  | { ok: false; codigo: 'PAYLOAD_INVALIDO' | 'CAMPO_NAO_PERMITIDO' } {
+  if (!ehObjeto(valor)) return { ok: false, codigo: 'PAYLOAD_INVALIDO' }
+  if (possuiAlgumCampo(valor, [...CAMPOS_ADMINISTRATIVOS, ...CAMPOS_IDENTIFICACAO_COMERCIAL])) {
+    return { ok: false, codigo: 'CAMPO_NAO_PERMITIDO' }
+  }
+  if (!Array.isArray(valor.tapetes)) return { ok: false, codigo: 'PAYLOAD_INVALIDO' }
+  const expectedVersion = valor.expectedVersion
+  if (!Number.isInteger(expectedVersion) || (expectedVersion as number) < 1) {
+    return { ok: false, codigo: 'PAYLOAD_INVALIDO' }
+  }
+  const tapetes = valor.tapetes.map((tapete) => montarTapete(tapete, true, false))
+  if (tapetes.some((tapete) => tapete === null)) {
+    return { ok: false, codigo: 'CAMPO_NAO_PERMITIDO' }
+  }
+  return { ok: true, tapetes: tapetes as TapeteMoriahEntrada[], expectedVersion: expectedVersion as number }
 }
 
 function dataIsoReal(valor: string): boolean {

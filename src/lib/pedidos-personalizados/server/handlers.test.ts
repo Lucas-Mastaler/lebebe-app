@@ -3,7 +3,8 @@ import type { ContextoPedidosPersonalizados } from './contexto'
 import type { DependenciasApiPedidos } from './handlers'
 import {
   atualizarAdministrativo,
-  atualizarComercial,
+  atualizarDadosComerciais,
+  atualizarProdutos,
   contarPedidosPorStatus,
   criarPedido,
   listarPedidos,
@@ -92,7 +93,10 @@ function criarRepo(overrides: Record<string, unknown> = {}) {
     contarPorStatus: vi.fn().mockResolvedValue({ data: {}, error: null }),
     carregarDetalhe: vi.fn().mockResolvedValue({ data: null, error: null }),
     listarTapeteIds: vi.fn().mockResolvedValue({ data: [TAPETE_ID], error: null }),
-    atualizarComercial: vi.fn().mockResolvedValue({ data: { version: 2, tapetes: [] }, error: null }),
+    atualizarDadosComerciais: vi.fn().mockResolvedValue({ data: { version: 2 }, error: null }),
+    atualizarProdutos: vi.fn().mockResolvedValue({ data: { version: 2, tapetes: [] }, error: null }),
+    atualizarDadosComerciaisLebebeExclusive: vi.fn().mockResolvedValue({ data: { version: 2 }, error: null }),
+    atualizarProdutosLebebeExclusive: vi.fn().mockResolvedValue({ data: { version: 2, itens: [{ id: TAPETE_ID, ordem: 1 }] }, error: null }),
     atualizarAdministrativo: vi.fn().mockResolvedValue({ data: { version: 2 }, error: null }),
     ...overrides,
   }
@@ -602,24 +606,113 @@ describe('detalhe de pedido personalizado', () => {
   })
 })
 
-describe('atualização comercial', () => {
+describe('atualização de dados comerciais', () => {
   function payloadComercial(overrides: Record<string, unknown> = {}) {
-    return { expectedVersion: 1, unidade: 'bigorrilho', consultora: 'Ana Silva', cliente: 'Cliente', telefone: '(41) 99999-9999', tapetes: [tapete({ id: TAPETE_ID })], ...overrides }
+    return { expectedVersion: 1, unidade: 'bigorrilho', consultora: 'Ana Silva', cliente: 'Cliente', telefone: '(41) 99999-9999', ...overrides }
   }
 
-  it('recalcula dados e retorna nova versão', async () => {
+  it('atualiza identificação e retorna nova versão, sem tocar tapetes', async () => {
     const repo = criarRepo()
-    const response = await atualizarComercial(requestJson(payloadComercial(), 'PATCH'), PEDIDO_ID, deps(repo))
+    const response = await atualizarDadosComerciais(requestJson(payloadComercial(), 'PATCH'), PEDIDO_ID, deps(repo))
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ pedidoId: PEDIDO_ID, version: 2 })
-    expect(repo.atualizarComercial).toHaveBeenCalledWith(expect.objectContaining({
+    expect(repo.atualizarDadosComerciais).toHaveBeenCalledWith(expect.objectContaining({
       p_expected_version: 1,
       p_telefone_normalizado: '41999999999',
+    }))
+    expect(repo.atualizarDadosComerciais).not.toHaveBeenCalledWith(expect.objectContaining({ p_tapetes: expect.anything() }))
+  })
+
+  it.each([
+    ['tapetes', [tapete()]],
+    ['status', 'RECEBIDO'],
+    ['comprador', 'JOÃO'],
+    ['numeroPedidoCompra', '1'],
+    ['dataEntrega', '05/08/2026'],
+  ])('rejeita campo de produtos/administrativo %s', async (campo, valor) => {
+    const response = await atualizarDadosComerciais(requestJson(payloadComercial({ [campo]: valor }), 'PATCH'), PEDIDO_ID, deps())
+    expect(response.status).toBe(422)
+    expect((await response.json()).erro).toBe('CAMPO_NAO_PERMITIDO')
+  })
+
+  it.each([
+    ['RASCUNHO', { code: 'P0003', message: 'CONFLITO_VERSAO' }, 409, 'CONFLITO_VERSAO'],
+    ['EM PRODUÇÃO', { code: 'P0001', message: 'EDICAO_COMERCIAL_BLOQUEADA' }, 422, 'EDICAO_COMERCIAL_BLOQUEADA'],
+    ['RECEBIDO', { code: 'P0001', message: 'EDICAO_COMERCIAL_BLOQUEADA' }, 422, 'EDICAO_COMERCIAL_BLOQUEADA'],
+  ])('mapeia erro da RPC no status %s', async (statusAtual, error, status, codigo) => {
+    const repo = criarRepo({
+      buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
+        data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: statusAtual, version: 1 },
+        error: null,
+      }),
+      atualizarDadosComerciais: vi.fn().mockResolvedValue({ data: null, error }),
+    })
+    const response = await atualizarDadosComerciais(requestJson(payloadComercial(), 'PATCH'), PEDIDO_ID, deps(repo))
+    expect(response.status).toBe(status)
+    expect((await response.json()).erro).toBe(codigo)
+  })
+
+  it('retorna 404 para pedido fora do escopo', async () => {
+    const semPedido = criarRepo({ buscarPedidoNoEscopo: vi.fn().mockResolvedValue({ data: null, error: null }) })
+    expect((await atualizarDadosComerciais(requestJson(payloadComercial(), 'PATCH'), PEDIDO_ID, deps(semPedido))).status).toBe(404)
+  })
+
+  it('nega nova unidade fora do escopo', async () => {
+    expect((await atualizarDadosComerciais(requestJson(payloadComercial({ unidade: 'feira' }), 'PATCH'), PEDIDO_ID, deps())).status).toBe(403)
+  })
+
+  it('permite editar comercial de pedido legado sem telefone em operação atômica única', async () => {
+    const repoLegacy = criarRepo({
+      buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
+        data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'RASCUNHO', version: 1, numero_lancamento: '0001', telefone_normalizado: null, data_entrega: null, data_pedido_fornecedor: null, numero_pedido_compra: null, comprador: null },
+        error: null,
+      }),
+    })
+    const response = await atualizarDadosComerciais(
+      requestJson(payloadComercial({ telefone: '', numeroLancamento: '0002' }), 'PATCH'),
+      PEDIDO_ID,
+      deps(repoLegacy),
+    )
+    expect(response.status).toBe(200)
+    expect(repoLegacy.atualizarDadosComerciais).toHaveBeenCalledTimes(1)
+    expect(repoLegacy.atualizarDadosComerciais).toHaveBeenCalledWith(expect.objectContaining({
+      p_telefone_normalizado: null,
+      p_numero_lancamento: '0002',
+    }))
+  })
+})
+
+describe('atualização de produtos', () => {
+  function payloadProdutos(overrides: Record<string, unknown> = {}) {
+    return { expectedVersion: 1, tapetes: [tapete({ id: TAPETE_ID })], ...overrides }
+  }
+
+  it('recalcula tapetes e retorna nova versão, em RASCUNHO', async () => {
+    const repo = criarRepo()
+    const response = await atualizarProdutos(requestJson(payloadProdutos(), 'PATCH'), PEDIDO_ID, deps(repo))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ pedidoId: PEDIDO_ID, version: 2 })
+    expect(repo.atualizarProdutos).toHaveBeenCalledWith(expect.objectContaining({
+      p_expected_version: 1,
       p_tapetes: [expect.objectContaining({ area_cobrada_centesimos_m2: 600, produto_id: catalogos.produtos[1].id })],
     }))
   })
 
-  it('registra fornecedor, código e campos quando a validação comercial falha', async () => {
+  it.each([
+    ['unidade', 'bigorrilho'],
+    ['consultora', 'Ana Silva'],
+    ['cliente', 'Cliente'],
+    ['telefone', '(41) 99999-9999'],
+    ['numeroLancamento', '000001'],
+    ['status', 'RECEBIDO'],
+    ['comprador', 'JOÃO'],
+  ])('rejeita campo de dados comerciais/administrativo %s', async (campo, valor) => {
+    const response = await atualizarProdutos(requestJson(payloadProdutos({ [campo]: valor }), 'PATCH'), PEDIDO_ID, deps())
+    expect(response.status).toBe(422)
+    expect((await response.json()).erro).toBe('CAMPO_NAO_PERMITIDO')
+  })
+
+  it('registra código e campos quando a validação de produtos falha', async () => {
     const log = vi.spyOn(console, 'info').mockImplementation(() => undefined)
     const repo = criarRepo({
       buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
@@ -635,15 +728,15 @@ describe('atualização comercial', () => {
         error: null,
       }),
     })
-    const response = await atualizarComercial(
-      requestJson(payloadComercial({ tapetes: [tapete({ cores: [{ id: uuidCor(15), ordem: 15 }] })] }), 'PATCH'),
+    const response = await atualizarProdutos(
+      requestJson(payloadProdutos({ tapetes: [tapete({ cores: [{ id: uuidCor(15), ordem: 15 }] })] }), 'PATCH'),
       PEDIDO_ID,
       deps(repo),
     )
 
     expect(response.status).toBe(422)
     expect(log).toHaveBeenCalledWith('[pedidos-personalizados]', expect.objectContaining({
-      operacao: 'atualizar_comercial',
+      operacao: 'atualizar_produtos',
       pedidoId: PEDIDO_ID,
       fornecedor: 'moriah_tapetes',
       resultado: 'erro_validacao',
@@ -654,62 +747,88 @@ describe('atualização comercial', () => {
   })
 
   it.each([
-    ['status', 'RECEBIDO'],
-    ['comprador', 'JOÃO'],
-    ['numeroPedidoCompra', '1'],
-    ['dataEntrega', '05/08/2026'],
-  ])('rejeita campo administrativo %s', async (campo, valor) => {
-    const response = await atualizarComercial(requestJson(payloadComercial({ [campo]: valor }), 'PATCH'), PEDIDO_ID, deps())
-    expect(response.status).toBe(422)
-    expect((await response.json()).erro).toBe('CAMPO_NAO_PERMITIDO')
-  })
-
-  it.each([
-    ['RASCUNHO', { code: 'P0003', message: 'CONFLITO_VERSAO' }, 409, 'CONFLITO_VERSAO'],
-    ['EM PRODUÇÃO', { code: 'P0001', message: 'EDICAO_COMERCIAL_BLOQUEADA' }, 422, 'EDICAO_COMERCIAL_BLOQUEADA'],
-    ['RECEBIDO', { code: 'P0001', message: 'EDICAO_COMERCIAL_BLOQUEADA' }, 422, 'EDICAO_COMERCIAL_BLOQUEADA'],
-  ])('mapeia erro da RPC no status %s', async (statusAtual, error, status, codigo) => {
+    ['VENDA FECHADA'],
+    ['AGUARDANDO LAYOUT'],
+    ['AGUARDANDO APROVAÇÃO DO CLIENTE'],
+    ['EM PRODUÇÃO'],
+    ['RECEBIDO'],
+    ['CANCELADO'],
+  ])('rejeita edição de produtos fora de RASCUNHO (%s), sem chamar a RPC', async (statusAtual) => {
     const repo = criarRepo({
       buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
         data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: statusAtual, version: 1 },
         error: null,
       }),
-      atualizarComercial: vi.fn().mockResolvedValue({ data: null, error }),
     })
-    const response = await atualizarComercial(requestJson(payloadComercial(), 'PATCH'), PEDIDO_ID, deps(repo))
-    expect(response.status).toBe(status)
-    expect((await response.json()).erro).toBe(codigo)
+    const response = await atualizarProdutos(requestJson(payloadProdutos(), 'PATCH'), PEDIDO_ID, deps(repo))
+    expect(response.status).toBe(422)
+    expect((await response.json()).erro).toBe('EDICAO_PRODUTOS_BLOQUEADA')
+    expect(repo.atualizarProdutos).not.toHaveBeenCalled()
+  })
+
+  it('mapeia conflito de versão vindo da RPC', async () => {
+    const repo = criarRepo({
+      atualizarProdutos: vi.fn().mockResolvedValue({ data: null, error: { code: 'P0003', message: 'CONFLITO_VERSAO' } }),
+    })
+    const response = await atualizarProdutos(requestJson(payloadProdutos(), 'PATCH'), PEDIDO_ID, deps(repo))
+    expect(response.status).toBe(409)
+    expect((await response.json()).erro).toBe('CONFLITO_VERSAO')
   })
 
   it('retorna 404 para pedido ou tapete fora do escopo', async () => {
     const semPedido = criarRepo({ buscarPedidoNoEscopo: vi.fn().mockResolvedValue({ data: null, error: null }) })
-    expect((await atualizarComercial(requestJson(payloadComercial(), 'PATCH'), PEDIDO_ID, deps(semPedido))).status).toBe(404)
+    expect((await atualizarProdutos(requestJson(payloadProdutos(), 'PATCH'), PEDIDO_ID, deps(semPedido))).status).toBe(404)
     const outroTapete = criarRepo({ listarTapeteIds: vi.fn().mockResolvedValue({ data: [], error: null }) })
-    expect((await atualizarComercial(requestJson(payloadComercial(), 'PATCH'), PEDIDO_ID, deps(outroTapete))).status).toBe(404)
+    expect((await atualizarProdutos(requestJson(payloadProdutos(), 'PATCH'), PEDIDO_ID, deps(outroTapete))).status).toBe(404)
   })
 
-  it('nega nova unidade fora do escopo', async () => {
-    expect((await atualizarComercial(requestJson(payloadComercial({ unidade: 'feira' }), 'PATCH'), PEDIDO_ID, deps())).status).toBe(403)
-  })
+  describe('Lebebe Exclusive', () => {
+    function payloadProdutosExclusive(overrides: Record<string, unknown> = {}) {
+      return {
+        expectedVersion: 1,
+        itens: [{ produtoId: '80000000-0000-4000-8000-000000000001', ordem: 1, quantidade: 2, nomeOuLetra: 'MARIA' }],
+        ...overrides,
+      }
+    }
+    function repoExclusive(overrides: Record<string, unknown> = {}) {
+      return criarRepo({
+        buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
+          data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'RASCUNHO', version: 1, fornecedor: { chave: 'lebebe_exclusive' } },
+          error: null,
+        }),
+        ...overrides,
+      })
+    }
 
-  it('permite editar comercial de pedido legado sem telefone em operação atômica única', async () => {
-    const repoLegacy = criarRepo({
-      buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
-        data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'RASCUNHO', version: 1, numero_lancamento: '0001', telefone_normalizado: null, data_entrega: null, data_pedido_fornecedor: null, numero_pedido_compra: null, comprador: null },
-        error: null,
-      }),
+    it('atualiza itens em RASCUNHO', async () => {
+      const repo = repoExclusive()
+      const response = await atualizarProdutos(requestJson(payloadProdutosExclusive(), 'PATCH'), PEDIDO_ID, deps(repo))
+      expect(response.status).toBe(200)
+      expect(repo.atualizarProdutosLebebeExclusive).toHaveBeenCalledWith(expect.objectContaining({
+        p_expected_version: 1,
+        p_itens: [expect.objectContaining({ produto_id: '80000000-0000-4000-8000-000000000001', quantidade: 2, nome_ou_letra: 'MARIA' })],
+      }))
     })
-    const response = await atualizarComercial(
-      requestJson(payloadComercial({ telefone: '', numeroLancamento: '0002' }), 'PATCH'),
-      PEDIDO_ID,
-      deps(repoLegacy),
-    )
-    expect(response.status).toBe(200)
-    expect(repoLegacy.atualizarComercial).toHaveBeenCalledTimes(1)
-    expect(repoLegacy.atualizarComercial).toHaveBeenCalledWith(expect.objectContaining({
-      p_telefone_normalizado: null,
-      p_numero_lancamento: '0002',
-    }))
+
+    it('rejeita fora de RASCUNHO, sem chamar a RPC', async () => {
+      const repo = repoExclusive({
+        buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
+          data: { id: PEDIDO_ID, unidade_id: UNIDADE_BIGORRILHO_ID, status: 'VENDA FECHADA', version: 1, fornecedor: { chave: 'lebebe_exclusive' } },
+          error: null,
+        }),
+      })
+      const response = await atualizarProdutos(requestJson(payloadProdutosExclusive(), 'PATCH'), PEDIDO_ID, deps(repo))
+      expect(response.status).toBe(422)
+      expect((await response.json()).erro).toBe('EDICAO_PRODUTOS_BLOQUEADA')
+      expect(repo.atualizarProdutosLebebeExclusive).not.toHaveBeenCalled()
+    })
+
+    it('rejeita campo de dados comerciais no payload de produtos', async () => {
+      const repo = repoExclusive()
+      const response = await atualizarProdutos(requestJson(payloadProdutosExclusive({ unidade: 'bigorrilho' }), 'PATCH'), PEDIDO_ID, deps(repo))
+      expect(response.status).toBe(422)
+      expect((await response.json()).erro).toBe('CAMPO_NAO_PERMITIDO')
+    })
   })
 })
 

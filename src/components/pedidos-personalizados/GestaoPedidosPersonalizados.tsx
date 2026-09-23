@@ -36,6 +36,7 @@ import {
   operacoesAnexoGestao,
   permiteEdicaoAdministrativa,
   permiteEdicaoComercial,
+  permiteEdicaoProdutos,
 } from '@/lib/pedidos-personalizados/status-fluxo'
 import { TIPO_TAPETE_PARA_EXIBICAO } from '@/lib/pedidos-personalizados'
 import type { StatusPedidoPersonalizado } from '@/lib/pedidos-personalizados'
@@ -58,6 +59,7 @@ import {
   adicionarObservacaoGestao,
   atualizarAdministrativoGestao,
   atualizarComercialGestao,
+  atualizarProdutosGestao,
   carregarDetalheGestao,
   contarPedidosGestaoPorStatus,
   detalheParaAdministrativo,
@@ -69,6 +71,7 @@ import {
   mensagemErroGestao,
   payloadAtualizacaoAdministrativa,
   payloadAtualizacaoComercial,
+  payloadAtualizacaoProdutos,
   camposComerciaisPendentesTransicao,
   requisitosPendentesTransicao,
   renomeacaoProdutoSgiEstaPendente,
@@ -145,6 +148,10 @@ function classePrazoBorda(situacao: string) {
   if (situacao === 'PRESTES A VENCER') return 'border-l-4 border-l-amber-400'
   return ''
 }
+
+/** Campos que "Editar dados comerciais" realmente envia — usado só para filtrar quais erros de
+ * `avaliacaoEdicao` bloqueiam aquele botão (o payload dos dois fornecedores tem os mesmos campos). */
+const CAMPOS_IDENTIFICACAO_COMERCIAL: readonly string[] = ['unidade', 'consultora', 'cliente', 'telefone', 'numeroLancamento']
 
 function filtrosVazios(filtros: FiltrosGestao) {
   return Object.values(filtros).every((valor) => !valor)
@@ -249,6 +256,7 @@ export function GestaoPedidosPersonalizados() {
   const [detalhe, setDetalhe] = useState<PedidoDetalhe | null>(null)
   const [carregandoDetalhe, setCarregandoDetalhe] = useState(false)
   const [editando, setEditando] = useState(false)
+  const [editandoProdutos, setEditandoProdutos] = useState(false)
   const [editandoAdministrativo, setEditandoAdministrativo] = useState(false)
   const [administrativo, setAdministrativo] = useState<EstadoAdministrativo | null>(null)
   const [errosAdministrativos, setErrosAdministrativos] = useState<ErrosAdministrativos>({})
@@ -414,6 +422,17 @@ export function GestaoPedidosPersonalizados() {
       mensagem: avaliacao.mensagem,
     }
   }, [formulario, opcoes, telefoneLegadoNulo])
+  // "Editar dados comerciais" e "Editar produtos" ficaram como ações independentes (cada uma com
+  // sua rota/RPC própria); aqui só se decide se cada botão pode salvar, filtrando os erros do
+  // mesmo `avaliacaoEdicao` pelo grupo de campos que a ação realmente envia.
+  const errosComerciaisEdicao = useMemo(
+    () => (avaliacaoEdicao?.validacao.erros ?? []).filter((item) => CAMPOS_IDENTIFICACAO_COMERCIAL.includes(item.campo)),
+    [avaliacaoEdicao]
+  )
+  const errosProdutosEdicao = useMemo(
+    () => (avaliacaoEdicao?.validacao.erros ?? []).filter((item) => item.campo.startsWith('tapetes')),
+    [avaliacaoEdicao]
+  )
   const resumoEmRascunho = detalhe?.status === 'RASCUNHO'
   const resumoFornecedor = useMemo(() => detalhe
     ? (resumoEmRascunho ? gerarResumoRascunhoDetalhe(detalhe) : gerarResumoFornecedorDetalhe(detalhe))
@@ -471,6 +490,7 @@ export function GestaoPedidosPersonalizados() {
       setFormulario(detalheParaFormulario(pedido))
       setAdministrativo(detalheParaAdministrativo(pedido))
       setEditando(false)
+      setEditandoProdutos(false)
       setEditandoAdministrativo(false)
       setConflitoAdministrativo(false)
       setTransicaoOrigemCard(false)
@@ -494,18 +514,39 @@ export function GestaoPedidosPersonalizados() {
   }
 
   async function salvarComercial() {
-    if (!detalhe || !formulario || !opcoes || salvando) return
-    if (!avaliacaoEdicao?.validacao.valido) {
+    if (!detalhe || !formulario || salvando) return
+    if (errosComerciaisEdicao.length > 0) {
       toast.error('Revise os dados comerciais indicados.')
       return
     }
     setSalvando(true)
     try {
-      await atualizarComercialGestao(detalhe.id, payloadAtualizacaoComercial(formulario, detalhe.version, opcoes))
+      await atualizarComercialGestao(detalhe.id, payloadAtualizacaoComercial(formulario, detalhe.version))
       await recarregarDetalhe()
       setEditando(false)
       await carregarLista()
       toast.success('Dados comerciais atualizados.')
+    } catch (error) {
+      toast.error(mensagemErroGestao(error))
+      if (erroStatus(error) === 409) await recarregarDetalhe().catch(() => undefined)
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  async function salvarProdutos() {
+    if (!detalhe || !formulario || salvando) return
+    if (errosProdutosEdicao.length > 0) {
+      toast.error('Revise os produtos indicados.')
+      return
+    }
+    setSalvando(true)
+    try {
+      await atualizarProdutosGestao(detalhe.id, payloadAtualizacaoProdutos(formulario, detalhe.version))
+      await recarregarDetalhe()
+      setEditandoProdutos(false)
+      await carregarLista()
+      toast.success('Produtos atualizados.')
     } catch (error) {
       toast.error(mensagemErroGestao(error))
       if (erroStatus(error) === 409) await recarregarDetalhe().catch(() => undefined)
@@ -575,6 +616,7 @@ export function GestaoPedidosPersonalizados() {
       setFormulario(detalheParaFormulario(pedido))
       setAdministrativo(detalheParaAdministrativo(pedido))
       setEditando(false)
+      setEditandoProdutos(false)
       setEditandoAdministrativo(false)
       setConflitoAdministrativo(false)
       setTransicao(montarEstadoTransicao(pedido))
@@ -920,6 +962,7 @@ export function GestaoPedidosPersonalizados() {
             setFormulario(null)
             setAdministrativo(null)
             setEditando(false)
+            setEditandoProdutos(false)
             setTextoObservacao('')
             setErroObservacao(null)
           }
@@ -927,8 +970,12 @@ export function GestaoPedidosPersonalizados() {
       >
         <DialogContent className="h-[calc(100dvh-1rem)] max-h-[calc(100dvh-1rem)] !w-[calc(100vw-1rem)] !max-w-[1400px] sm:h-[90vh] sm:max-h-[90vh] sm:!w-[90vw] lg:!w-[80vw]">
           <DialogHeader
-            title={editando ? 'Editar dados comerciais' : 'Pedido personalizado'}
-            description={editando ? 'Revise os dados comerciais e os tapetes antes de salvar.' : 'Detalhes comerciais, administrativos, tapetes, cores e anexos.'}
+            title={editando ? 'Editar dados comerciais' : editandoProdutos ? 'Editar produtos' : 'Pedido personalizado'}
+            description={
+              editando ? 'Revise unidade, consultora, cliente, telefone e lançamento antes de salvar.'
+                : editandoProdutos ? 'Revise tapetes, cores, produtos e personalizações antes de salvar.'
+                  : 'Detalhes comerciais, administrativos, tapetes, cores e anexos.'
+            }
             className="bg-gradient-to-r from-sky-50 to-indigo-50"
           />
           {carregandoDetalhe || !detalhe || !formulario || !opcoes ? (
@@ -937,10 +984,15 @@ export function GestaoPedidosPersonalizados() {
             <DialogBody className="space-y-5 overflow-x-hidden">
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-100 bg-gradient-to-r from-sky-50 to-indigo-50 p-4">
                 <div><p className="font-bold text-slate-900">{detalhe.cliente}</p><p className="text-sm text-slate-600">{detalhe.fornecedor?.nome} · {detalhe.unidade.nome} · versão {detalhe.version}</p></div>
-                <Badge tone={tomStatus(detalhe.status)} className="text-sm">{detalhe.status}</Badge>
+                <div className="flex flex-col items-end gap-1">
+                  <Badge tone={tomStatus(detalhe.status)} className="text-sm">{detalhe.status}</Badge>
+                  {!editando && !editandoProdutos && !permiteEdicaoProdutos(detalhe.status) && (
+                    <p className="text-xs text-slate-500">Produtos bloqueados após fechamento da venda</p>
+                  )}
+                </div>
               </div>
 
-              {!editando && (
+              {!editando && !editandoProdutos && (
                 <div className="grid gap-4 xl:grid-cols-3">
                   <Section tone="section-1" icon={<ShoppingBag className="size-4" />} title="Dados comerciais">
                     <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
@@ -974,7 +1026,7 @@ export function GestaoPedidosPersonalizados() {
                 </div>
               )}
 
-              {!editando && (
+              {!editando && !editandoProdutos && (
                 <section className="rounded-xl border border-slate-200 bg-white p-4" aria-labelledby="historico-status-titulo">
                   <h3 id="historico-status-titulo" className="font-semibold text-slate-900">Histórico de status</h3>
                   {detalhe.historico.length === 0 ? (
@@ -1030,38 +1082,43 @@ export function GestaoPedidosPersonalizados() {
                 </div>
               </section>
 
-              {editando ? detalhe.fornecedor?.chave === 'lebebe_exclusive' ? (
+              {editando ? (
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <FormField id="gestao-unidade" label="Unidade" required error={problemasPorCampo(errosComerciaisEdicao, 'unidade')[0]}>
+                      {(f) => <Select value={formulario.unidade} onValueChange={(v) => setFormulario({ ...formulario, unidade: v as EstadoNovoPedido['unidade'] })}><SelectTrigger id={f.id} aria-invalid={f['aria-invalid']}><SelectValue /></SelectTrigger><SelectContent>{opcoes.unidades.map((u) => <SelectItem key={u.chave} value={u.chave}>{u.nome}</SelectItem>)}</SelectContent></Select>}
+                    </FormField>
+                    <FormField id="gestao-consultora" label="Consultora" required error={problemasPorCampo(errosComerciaisEdicao, 'consultora')[0]}>
+                      {(f) => <Input {...f} maxLength={20} value={formulario.consultora} onChange={(e) => setFormulario({ ...formulario, consultora: e.target.value })} />}
+                    </FormField>
+                    <FormField id="gestao-cliente" label="Cliente" required error={problemasPorCampo(errosComerciaisEdicao, 'cliente')[0]}>
+                      {(f) => <Input {...f} maxLength={40} value={formulario.cliente} onChange={(e) => setFormulario({ ...formulario, cliente: e.target.value })} />}
+                    </FormField>
+                    <FormField id="gestao-telefone" label="Telefone do cliente" required error={problemasPorCampo(errosComerciaisEdicao, 'telefone')[0]} helper={telefoneLegadoNulo && !formulario.telefone.trim() ? 'Telefone não cadastrado neste pedido legado. Preencha se quiser atualizar.' : undefined}>
+                      {(f) => <Input {...f} inputMode="tel" autoComplete="tel" placeholder="(41) 99999-9999" value={formulario.telefone} onChange={(e) => setFormulario({ ...formulario, telefone: aplicarMascaraTelefoneBR(e.target.value) })} />}
+                    </FormField>
+                    <FormField id="gestao-lancamento" label="Lançamento" error={problemasPorCampo(errosComerciaisEdicao, 'numeroLancamento')[0]}>
+                      {(f) => <Input {...f} inputMode="numeric" maxLength={6} value={formulario.numeroLancamento} onChange={(e) => setFormulario({ ...formulario, numeroLancamento: e.target.value.replace(/\D/g, '').slice(0, 6) })} />}
+                    </FormField>
+                  </div>
+                  {errosComerciaisEdicao.length > 0 && <Alert tone="danger" title="Revise os campos indicados"><ul className="list-disc space-y-1 pl-5">{errosComerciaisEdicao.map((erro, indice) => <li key={`${erro.campo}-${erro.codigo}-${indice}`}>{erro.mensagem}</li>)}</ul></Alert>}
+                </div>
+              ) : editandoProdutos ? detalhe.fornecedor?.chave === 'lebebe_exclusive' ? (
                 <FormularioLebebeExclusive
                   opcoes={opcoes}
                   pedidoInicial={detalhe}
+                  ocultarIdentificacao
                   onAtualizado={async () => {
                     await recarregarDetalhe()
                     await carregarLista()
-                    setEditando(false)
+                    setEditandoProdutos(false)
                   }}
                 />
               ) : (
                 <div className="space-y-4">
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <FormField id="gestao-unidade" label="Unidade" required error={problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'unidade')[0]}>
-                      {(f) => <Select value={formulario.unidade} onValueChange={(v) => setFormulario({ ...formulario, unidade: v as EstadoNovoPedido['unidade'] })}><SelectTrigger id={f.id} aria-invalid={f['aria-invalid']}><SelectValue /></SelectTrigger><SelectContent>{opcoes.unidades.map((u) => <SelectItem key={u.chave} value={u.chave}>{u.nome}</SelectItem>)}</SelectContent></Select>}
-                    </FormField>
-                    <FormField id="gestao-consultora" label="Consultora" required error={problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'consultora')[0]}>
-                      {(f) => <Input {...f} maxLength={20} value={formulario.consultora} onChange={(e) => setFormulario({ ...formulario, consultora: e.target.value })} />}
-                    </FormField>
-                    <FormField id="gestao-cliente" label="Cliente" required error={problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'cliente')[0]}>
-                      {(f) => <Input {...f} maxLength={40} value={formulario.cliente} onChange={(e) => setFormulario({ ...formulario, cliente: e.target.value })} />}
-                    </FormField>
-                    <FormField id="gestao-telefone" label="Telefone do cliente" required error={problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'telefone')[0]} helper={telefoneLegadoNulo && !formulario.telefone.trim() ? 'Telefone não cadastrado neste pedido legado. Preencha se quiser atualizar.' : undefined}>
-                      {(f) => <Input {...f} inputMode="tel" autoComplete="tel" placeholder="(41) 99999-9999" value={formulario.telefone} onChange={(e) => setFormulario({ ...formulario, telefone: aplicarMascaraTelefoneBR(e.target.value) })} />}
-                    </FormField>
-                    <FormField id="gestao-lancamento" label="Lançamento" error={problemasPorCampo(avaliacaoEdicao?.validacao.erros ?? [], 'numeroLancamento')[0]}>
-                      {(f) => <Input {...f} inputMode="numeric" maxLength={6} value={formulario.numeroLancamento} onChange={(e) => setFormulario({ ...formulario, numeroLancamento: e.target.value.replace(/\D/g, '').slice(0, 6) })} />}
-                    </FormField>
-                  </div>
-                  {formulario.tapetes.map((tapete, indice) => <CardTapete key={tapete.chaveLocal} tapete={tapete} indice={indice} total={formulario.tapetes.length} produtos={opcoes.produtos} cores={opcoes.cores} erros={avaliacaoEdicao?.validacao.erros ?? []} camposTocados={new Set()} tentouSalvar disabled={salvando} onChange={(v) => atualizarTapete(indice, v)} onMover={(d) => setFormulario({ ...formulario, tapetes: moverItem(formulario.tapetes, indice, d) })} onRemover={() => setFormulario(removerTapete(formulario, tapete.chaveLocal))} onLimiteCores={() => toast.error('Máximo de 6 cores por tapete.')} onTocar={() => undefined} />)}
+                  {formulario.tapetes.map((tapete, indice) => <CardTapete key={tapete.chaveLocal} tapete={tapete} indice={indice} total={formulario.tapetes.length} produtos={opcoes.produtos} cores={opcoes.cores} erros={errosProdutosEdicao} camposTocados={new Set()} tentouSalvar disabled={salvando} onChange={(v) => atualizarTapete(indice, v)} onMover={(d) => setFormulario({ ...formulario, tapetes: moverItem(formulario.tapetes, indice, d) })} onRemover={() => setFormulario(removerTapete(formulario, tapete.chaveLocal))} onLimiteCores={() => toast.error('Máximo de 6 cores por tapete.')} onTocar={() => undefined} />)}
                   <Button type="button" variant="secondary" disabled={formulario.tapetes.length >= 10} onClick={() => setFormulario(adicionarTapete(formulario, crypto.randomUUID()))}>Adicionar tapete</Button>
-                  {(avaliacaoEdicao?.validacao.erros.length ?? 0) > 0 && <Alert tone="danger" title="Revise os campos indicados"><ul className="list-disc space-y-1 pl-5">{avaliacaoEdicao?.validacao.erros.map((erro, indice) => <li key={`${erro.campo}-${erro.codigo}-${indice}`}>{erro.mensagem}</li>)}</ul></Alert>}
+                  {errosProdutosEdicao.length > 0 && <Alert tone="danger" title="Revise os campos indicados"><ul className="list-disc space-y-1 pl-5">{errosProdutosEdicao.map((erro, indice) => <li key={`${erro.campo}-${erro.codigo}-${indice}`}>{erro.mensagem}</li>)}</ul></Alert>}
                 </div>
               ) : detalhe.fornecedor?.chave === 'lebebe_exclusive' ? (
                 <section className="space-y-4" aria-labelledby="produtos-exclusive-titulo">
@@ -1195,7 +1252,7 @@ export function GestaoPedidosPersonalizados() {
                 </section>
               )}
 
-              {!editando && resumoFornecedor && (
+              {!editando && !editandoProdutos && resumoFornecedor && (
                 <PreviaMensagem
                   mensagem={resumoFornecedor}
                   copiada={resumoCopiado}
@@ -1210,10 +1267,15 @@ export function GestaoPedidosPersonalizados() {
           {detalhe && formulario && opcoes && (
             <DialogFooter className="shrink-0 border-t bg-white px-4 py-3 sm:px-6">
               <Button type="button" variant="secondary" disabled={salvando || operacaoAnexo !== null} onClick={() => { setDetalhe(null); setFormulario(null); setAdministrativo(null) }}>Fechar</Button>
-              {editando ? detalhe.fornecedor?.chave === 'lebebe_exclusive' ? null : (
+              {editando ? (
                 <>
                   <Button type="button" variant="ghost" disabled={salvando} onClick={() => { setFormulario(detalheParaFormulario(detalhe)); setEditando(false) }}>Cancelar edição</Button>
                   <Button type="button" loading={salvando} onClick={() => void salvarComercial()}><Pencil />Salvar dados comerciais</Button>
+                </>
+              ) : editandoProdutos ? detalhe.fornecedor?.chave === 'lebebe_exclusive' ? null : (
+                <>
+                  <Button type="button" variant="ghost" disabled={salvando} onClick={() => { setFormulario(detalheParaFormulario(detalhe)); setEditandoProdutos(false) }}>Cancelar edição</Button>
+                  <Button type="button" loading={salvando} onClick={() => void salvarProdutos()}><Pencil />Salvar produtos</Button>
                 </>
               ) : (
                 <>
@@ -1232,6 +1294,9 @@ export function GestaoPedidosPersonalizados() {
                             : <><ShoppingBag />Criar produto no SGI</>}
                       </Button>
                     )}
+                  {permiteEdicaoProdutos(detalhe.status) && (
+                    <Button type="button" variant="secondary" onClick={() => setEditandoProdutos(true)}><Pencil />Editar produtos</Button>
+                  )}
                   <Button type="button" disabled={!permiteEdicaoComercial(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')} onClick={() => setEditando(true)}><Pencil />Editar dados comerciais</Button>
                   <Button type="button" variant="secondary" disabled={!permiteEdicaoAdministrativa(detalhe.status)} onClick={() => { setAdministrativo(detalheParaAdministrativo(detalhe)); setErrosAdministrativos({}); setConflitoAdministrativo(false); setEditandoAdministrativo(true) }}><Pencil />Editar dados administrativos</Button>
                   <BotaoAvancoStatus status={detalhe.status} fornecedor={detalhe.fornecedor} onClick={abrirTransicao} className="font-semibold shadow-sm" />
@@ -1338,6 +1403,12 @@ export function GestaoPedidosPersonalizados() {
             <FormField id="status-destino" label="Destino" required>
               {(f) => <Select value={transicao.destino} onValueChange={(destino) => setTransicao((atual) => ({ ...atual, destino: destino as StatusPedidoPersonalizado }))}><SelectTrigger id={f.id}><SelectValue /></SelectTrigger><SelectContent>{destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes').map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select>}
             </FormField>
+            {detalhe.status === 'RASCUNHO' && transicao.destino === 'VENDA FECHADA' && (
+              <Alert tone="warning" title="Fechar venda?">
+                <p>Ao avançar este pedido para Venda Fechada, os produtos e personalizações do pedido não poderão mais ser editados.</p>
+                <p className="mt-2">Confira produtos, quantidades, medidas, cores, letras e demais personalizações antes de continuar. Depois desta etapa, apenas os campos permitidos nas etapas seguintes poderão ser alterados.</p>
+              </Alert>
+            )}
             {exigeLancamentoNaTransicao && (
               <FormField id="transicao-numero-lancamento" label="Número de lançamento" required helper="Necessário para fechar a venda. Fica salvo junto aos dados comerciais do pedido.">
                 {(f) => <Input {...f} inputMode="numeric" maxLength={6} value={numeroLancamentoTransicao} onChange={(e) => setNumeroLancamentoTransicao(e.target.value.replace(/\D/g, '').slice(0, 6))} />}
@@ -1365,9 +1436,11 @@ export function GestaoPedidosPersonalizados() {
               onClick={() => void confirmarTransicao()}
               className={`w-full ${!salvando && detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')[0] ?? '') ? CLASSE_DEGRADE_AVANCO_STATUS : ''}`}
             >
-              {!salvando && detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')[0] ?? '')
-                ? <>Avançar para {transicao.destino}<ArrowRight /></>
-                : 'Confirmar transição'}
+              {detalhe?.status === 'RASCUNHO' && transicao.destino === 'VENDA FECHADA'
+                ? <>Confirmar e fechar venda<ArrowRight /></>
+                : !salvando && detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')[0] ?? '')
+                  ? <>Avançar para {transicao.destino}<ArrowRight /></>
+                  : 'Confirmar transição'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,9 +1,11 @@
 begin;
 
+-- Desde a separação de dados comerciais x produtos, esta função não recebe mais
+-- tapetes (rota própria `atualizar_pedido_personalizado_produtos_moriah`
+-- cobre isso — ver pedidos_personalizados_edicao_produtos_rascunho.sql).
 do $comercial$
 declare
   v_pedido public.pedidos_personalizados_pedidos%rowtype;
-  v_tapetes jsonb;
   v_result record;
 begin
   select p.* into v_pedido
@@ -13,25 +15,10 @@ begin
   limit 1;
   if v_pedido.id is null then raise exception 'FIXTURE_COMERCIAL_NAO_ENCONTRADA'; end if;
 
-  select jsonb_agg(jsonb_build_object(
-    'id', t.id, 'ordem', t.ordem, 'formato', t.formato, 'tipo', t.tipo,
-    'dimensao_1_cm', t.dimensao_1_cm, 'dimensao_2_cm', t.dimensao_2_cm,
-    'area_cobrada_centesimos_m2', t.area_cobrada_centesimos_m2,
-    'produto_id', t.produto_id, 'nome_colecao_catalogo', t.nome_colecao_catalogo,
-    'referencia_catalogo', t.referencia_catalogo, 'observacoes', t.observacoes,
-    'cores', coalesce((
-      select jsonb_agg(jsonb_build_object('cor_id', c.cor_id, 'ordem', c.ordem) order by c.ordem)
-      from public.pedidos_personalizados_tapete_cores c where c.tapete_id = t.id
-    ), '[]'::jsonb)
-  ) order by t.ordem) into v_tapetes
-  from public.pedidos_personalizados_moriah_tapetes t
-  where t.pedido_id = v_pedido.id;
-
   select * into v_result
   from public.atualizar_pedido_personalizado_comercial_moriah(
     v_pedido.id, v_pedido.version, v_pedido.created_by, v_pedido.unidade_id,
-    v_pedido.consultora, v_pedido.cliente, '41999999999',
-    '000999', v_tapetes
+    v_pedido.consultora, v_pedido.cliente, '41999999999', '000999'
   );
   if v_result.version <> v_pedido.version + 1 then raise exception 'VERSION_COMERCIAL_INCORRETA'; end if;
   if (select p.numero_lancamento from public.pedidos_personalizados_pedidos p where p.id = v_pedido.id) <> '000999'

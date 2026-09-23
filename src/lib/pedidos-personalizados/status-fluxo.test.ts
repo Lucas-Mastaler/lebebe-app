@@ -4,6 +4,7 @@ import {
   operacoesAnexoGestao,
   permiteEdicaoAdministrativa,
   permiteEdicaoComercial,
+  permiteEdicaoProdutos,
   podeTransicionarStatus,
 } from './status-fluxo'
 
@@ -28,6 +29,16 @@ describe('fluxo de status de pedidos personalizados', () => {
     expect(permiteEdicaoAdministrativa('EM PRODUÇÃO')).toBe(true)
     expect(permiteEdicaoAdministrativa('RECEBIDO')).toBe(false)
     expect(permiteEdicaoAdministrativa('CANCELADO')).toBe(false)
+  })
+
+  it('permite editar produtos somente em RASCUNHO, para os dois fornecedores', () => {
+    expect(permiteEdicaoProdutos('RASCUNHO')).toBe(true)
+    expect(permiteEdicaoProdutos('VENDA FECHADA')).toBe(false)
+    expect(permiteEdicaoProdutos('AGUARDANDO LAYOUT')).toBe(false)
+    expect(permiteEdicaoProdutos('AGUARDANDO APROVAÇÃO DO CLIENTE')).toBe(false)
+    expect(permiteEdicaoProdutos('EM PRODUÇÃO')).toBe(false)
+    expect(permiteEdicaoProdutos('RECEBIDO')).toBe(false)
+    expect(permiteEdicaoProdutos('CANCELADO')).toBe(false)
   })
 
   it('aplica as operacoes e a contabilizacao de anexos por status', () => {

@@ -79,6 +79,7 @@ BEGIN
   v_payload_base := jsonb_build_array(jsonb_build_object(
     'ordem', 1,
     'formato', 'REDONDO',
+    'tipo', 'PERSONALIZADO',
     'dimensao_1_cm', 100,
     'area_cobrada_centesimos_m2', 100,
     'produto_id', v_produto_moriah,
@@ -301,19 +302,20 @@ BEGIN
     IF SQLERRM <> 'COR_FORNECEDOR_INVALIDA' THEN RAISE; END IF;
   END;
 
-  -- Concorrencia e edicao comercial permitida nos tres status iniciais.
-  v_payload_comercial := jsonb_build_array((v_payload_base->0) || jsonb_build_object('id', v_tapete));
+  -- Concorrencia e edicao de dados comerciais permitida nos quatro status iniciais
+  -- (produtos/tapetes agora sao testados a parte, em RASCUNHO apenas — ver
+  -- pedidos_personalizados_edicao_produtos_rascunho.sql).
   SELECT version INTO v_version
   FROM public.atualizar_pedido_personalizado_comercial_moriah(
     v_pedido, 1, v_usuario_1, v_bigorrilho,
-    'CONSULTORA NOVA', 'CLIENTE NOVO', v_payload_comercial
+    'CONSULTORA NOVA', 'CLIENTE NOVO', NULL, NULL
   );
   IF v_version <> 2 THEN RAISE EXCEPTION 'TESTE_VERSION_INCREMENTO_FALHOU'; END IF;
 
   BEGIN
     PERFORM * FROM public.atualizar_pedido_personalizado_comercial_moriah(
       v_pedido, 1, v_usuario_1, v_bigorrilho,
-      'NAO DEVE GRAVAR', 'NAO DEVE GRAVAR', v_payload_comercial
+      'NAO DEVE GRAVAR', 'NAO DEVE GRAVAR', NULL, NULL
     );
     RAISE EXCEPTION 'TESTE_CONFLITO_NAO_REJEITOU';
   EXCEPTION WHEN OTHERS THEN
@@ -322,6 +324,17 @@ BEGIN
   IF (SELECT cliente FROM public.pedidos_personalizados_pedidos WHERE id = v_pedido) <> 'CLIENTE NOVO' THEN
     RAISE EXCEPTION 'TESTE_CONFLITO_ALTEROU_DADOS';
   END IF;
+
+  -- Fora de RASCUNHO, produtos ja ficam bloqueados (decisao de negocio desta fase).
+  BEGIN
+    PERFORM * FROM public.atualizar_pedido_personalizado_produtos_moriah(
+      v_pedido, v_version, v_usuario_1,
+      jsonb_build_array((v_payload_base->0) || jsonb_build_object('id', v_tapete))
+    );
+    RAISE EXCEPTION 'TESTE_BLOQUEIO_PRODUTOS_VENDA_FECHADA_FALHOU';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'EDICAO_PRODUTOS_BLOQUEADA' THEN RAISE; END IF;
+  END;
 
   FOREACH v_payload_cores IN ARRAY ARRAY[
     to_jsonb('AGUARDANDO LAYOUT'::text),
@@ -335,11 +348,20 @@ BEGIN
     SELECT version INTO v_version
     FROM public.atualizar_pedido_personalizado_comercial_moriah(
       v_pedido, v_version, v_usuario_1, v_bigorrilho,
-      'CONSULTORA NOVA', 'CLIENTE NOVO', v_payload_comercial
+      'CONSULTORA NOVA', 'CLIENTE NOVO', NULL, NULL
     );
+    BEGIN
+      PERFORM * FROM public.atualizar_pedido_personalizado_produtos_moriah(
+        v_pedido, v_version, v_usuario_1,
+        jsonb_build_array((v_payload_base->0) || jsonb_build_object('id', v_tapete))
+      );
+      RAISE EXCEPTION 'TESTE_BLOQUEIO_PRODUTOS_LAYOUT_APROVACAO_FALHOU';
+    EXCEPTION WHEN OTHERS THEN
+      IF SQLERRM <> 'EDICAO_PRODUTOS_BLOQUEADA' THEN RAISE; END IF;
+    END;
   END LOOP;
 
-  -- Producao bloqueia comercial, mas permite administrativo e layout.
+  -- Producao bloqueia dados comerciais, mas permite administrativo e layout.
   SELECT version INTO v_version
   FROM public.atualizar_pedido_personalizado_administrativo(
     v_pedido, v_version, v_usuario_1, '0001', NULL, NULL, NULL, NULL,
@@ -348,7 +370,7 @@ BEGIN
   BEGIN
     PERFORM * FROM public.atualizar_pedido_personalizado_comercial_moriah(
       v_pedido, v_version, v_usuario_1, v_bigorrilho,
-      'BLOQUEADA', 'BLOQUEADO', v_payload_comercial
+      'BLOQUEADA', 'BLOQUEADO', NULL, NULL
     );
     RAISE EXCEPTION 'TESTE_BLOQUEIO_PRODUCAO_FALHOU';
   EXCEPTION WHEN OTHERS THEN
@@ -368,7 +390,7 @@ BEGIN
     RAISE EXCEPTION 'TESTE_LAYOUT_PRODUCAO_FALHOU';
   END IF;
 
-  -- Recebido permite administrativo/layout e bloqueia comercial.
+  -- Recebido permite administrativo/layout e bloqueia dados comerciais.
   SELECT version INTO v_version
   FROM public.atualizar_pedido_personalizado_administrativo(
     v_pedido, v_version, v_usuario_1, '0003', NULL, NULL, NULL, NULL,
@@ -380,7 +402,7 @@ BEGIN
   BEGIN
     PERFORM * FROM public.atualizar_pedido_personalizado_comercial_moriah(
       v_pedido, v_version, v_usuario_1, v_bigorrilho,
-      'BLOQUEADA', 'BLOQUEADO', v_payload_comercial
+      'BLOQUEADA', 'BLOQUEADO', NULL, NULL
     );
     RAISE EXCEPTION 'TESTE_BLOQUEIO_RECEBIDO_FALHOU';
   EXCEPTION WHEN OTHERS THEN
@@ -505,7 +527,8 @@ BEGIN
     RAISE EXCEPTION 'TESTE_REMOCAO_ANEXO_FALHOU';
   END IF;
 
-  -- Volta a status comercial, inclui segundo tapete e remove o primeiro com anexo.
+  -- Volta a RASCUNHO (unico status onde produtos sao editaveis), inclui segundo
+  -- tapete e remove o primeiro com anexo — agora via rota de produtos propria.
   SELECT version INTO v_version
   FROM public.atualizar_pedido_personalizado_administrativo(
     v_pedido, v_version, v_usuario_1, NULL, NULL, NULL, NULL, NULL,
@@ -516,9 +539,8 @@ BEGIN
     (v_payload_base->0) || jsonb_build_object('ordem', 1)
   );
   SELECT version, tapetes INTO v_version, v_tapetes
-  FROM public.atualizar_pedido_personalizado_comercial_moriah(
-    v_pedido, v_version, v_usuario_1, v_bigorrilho,
-    'CONSULTORA NOVA', 'CLIENTE NOVO', v_payload_comercial
+  FROM public.atualizar_pedido_personalizado_produtos_moriah(
+    v_pedido, v_version, v_usuario_1, v_payload_comercial
   );
   SELECT (item->>'id')::uuid INTO v_tapete_novo
   FROM jsonb_array_elements(v_tapetes) AS item
@@ -526,9 +548,8 @@ BEGIN
 
   v_payload_comercial := jsonb_build_array((v_payload_base->0) || jsonb_build_object('id', v_tapete_novo, 'ordem', 1));
   SELECT version INTO v_version
-  FROM public.atualizar_pedido_personalizado_comercial_moriah(
-    v_pedido, v_version, v_usuario_1, v_bigorrilho,
-    'CONSULTORA NOVA', 'CLIENTE NOVO', v_payload_comercial
+  FROM public.atualizar_pedido_personalizado_produtos_moriah(
+    v_pedido, v_version, v_usuario_1, v_payload_comercial
   );
   IF EXISTS (SELECT 1 FROM public.pedidos_personalizados_moriah_tapetes WHERE id = v_tapete)
      OR EXISTS (SELECT 1 FROM public.pedidos_personalizados_anexos WHERE id = v_anexo_1)

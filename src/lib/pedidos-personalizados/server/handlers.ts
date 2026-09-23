@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import {
   FORMATOS_TAPETE_MORIAH,
+  FORNECEDOR_MORIAH,
   LIMITE_CORES_POR_TAPETE,
   LIMITE_TAPETES_POR_PEDIDO,
   MEDIDA_MAXIMA_CM,
@@ -8,16 +9,21 @@ import {
   UNIDADE_PARA_EXIBICAO,
 } from '../constantes'
 import type {
+  CodigoErroPedidoPersonalizado,
+  ParametrosAtualizarDadosComerciaisMoriahRpc,
+  ParametrosAtualizarProdutosMoriahRpc,
   ParametrosCriarPedidoPersonalizadoLebebeExclusiveRpc,
-  ParametrosAtualizarPedidoComercialMoriahRpc,
   ParametrosCriarPedidoPersonalizadoMoriahRpc,
+  PedidoPersonalizadoMoriahEntrada,
   PedidoPersonalizadoMoriahNormalizado,
+  ProblemaPedidoPersonalizado,
 } from '../tipos'
 import {
   montarPayloadTapetesMoriahRpc,
+  validarIdentificacao,
   validarPedidoPersonalizadoMoriah,
 } from '../validacao'
-import { permiteEdicaoAdministrativa } from '../status-fluxo'
+import { permiteEdicaoAdministrativa, permiteEdicaoProdutos } from '../status-fluxo'
 import { classificarSituacaoPrazo } from '../prazo'
 import {
   carregarContextoPedidosPersonalizados,
@@ -40,14 +46,18 @@ import {
   type CatalogosPedidos,
 } from './repositorio'
 import {
+  montarEntradaDadosComerciaisMoriah,
   montarEntradaPedido,
+  montarEntradaProdutosMoriah,
   statusDisponiveis,
   validarDadosAdministrativos,
   validarFiltrosPedidos,
   validarObservacao,
 } from './validacao-api'
 import {
+  validarEntradaDadosComerciaisLebebeExclusive,
   validarEntradaLebebeExclusive,
+  validarEntradaProdutosLebebeExclusive,
   validarFiltrosCatalogoLebebeExclusive,
 } from './lebebe-exclusive'
 import { serializarIntegracaoProdutoSgi } from './produto-sgi'
@@ -704,12 +714,12 @@ export async function adicionarObservacao(
   })
 }
 
-export async function atualizarComercial(
+export async function atualizarDadosComerciais(
   request: Request,
   pedidoId: string,
   deps: DependenciasApiPedidos = dependenciasPadrao
 ) {
-  const log: ContextoLogPedidos = { rota: '/api/pedidos-personalizados/pedidos/[id]/comercial', operacao: 'atualizar_comercial', inicio: Date.now(), pedidoId }
+  const log: ContextoLogPedidos = { rota: '/api/pedidos-personalizados/pedidos/[id]/comercial', operacao: 'atualizar_dados_comerciais', inicio: Date.now(), pedidoId }
   const acesso = await carregar(['pedidos_personalizados_gestao'], log, deps)
   if (!acesso.ok) return acesso.response
   if (!ehUuid(pedidoId)) return jsonErro('ID_INVALIDO', 'ID do pedido inválido.', 400)
@@ -723,24 +733,15 @@ export async function atualizarComercial(
   log.fornecedor = atual.data.fornecedor?.chave
 
   if (atual.data.fornecedor?.chave === 'lebebe_exclusive') {
-    const validacao = validarEntradaLebebeExclusive(corpo.valor, { comercial: true })
-    if (!validacao.ok || validacao.dados.expectedVersion === undefined) {
-      if (!validacao.ok) {
-        log.camposInvalidos = validacao.problemas.map((problema) => problema.campo)
-        registrarResultado(log, 'erro_validacao', validacao.codigo)
-      } else {
-        registrarResultado(log, 'erro_validacao', 'VERSAO_INVALIDA')
-      }
-      return jsonErro(
-        validacao.ok ? 'VERSAO_INVALIDA' : validacao.codigo,
-        validacao.ok ? 'Versão do pedido inválida.' : validacao.mensagem,
-        422,
-        !validacao.ok && validacao.campo ? { campo: validacao.campo } : undefined
-      )
+    const validacao = validarEntradaDadosComerciaisLebebeExclusive(corpo.valor)
+    if (!validacao.ok) {
+      log.camposInvalidos = validacao.problemas.map((problema) => problema.campo)
+      registrarResultado(log, 'erro_validacao', validacao.codigo)
+      return jsonErro(validacao.codigo, validacao.mensagem, 422, validacao.campo ? { campo: validacao.campo } : undefined)
     }
     const unidadeExclusive = unidadeDoContexto(acesso.contexto, validacao.dados.unidade)
     if (!unidadeExclusive) return jsonErro('UNIDADE_NAO_PERMITIDA', 'Unidade não permitida.', 403)
-    const resultadoExclusive = await repo.atualizarComercialLebebeExclusive({
+    const resultadoExclusive = await repo.atualizarDadosComerciaisLebebeExclusive({
       p_pedido_id: pedidoId,
       p_expected_version: validacao.dados.expectedVersion,
       p_usuario_id: acesso.contexto.allowedUser.id,
@@ -749,21 +750,16 @@ export async function atualizarComercial(
       p_cliente: validacao.dados.cliente,
       p_telefone_normalizado: validacao.dados.telefoneNormalizado,
       p_numero_lancamento: validacao.dados.numeroLancamento,
-      p_itens: validacao.dados.itens,
     })
     if (resultadoExclusive.error) return falhaBanco(log, resultadoExclusive.error)
-    registrarResultado(log, 'sucesso', 'PEDIDO_COMERCIAL_ATUALIZADO')
+    registrarResultado(log, 'sucesso', 'PEDIDO_DADOS_COMERCIAIS_ATUALIZADO')
     return NextResponse.json({ ok: true, pedidoId, version: resultadoExclusive.data.version })
   }
 
-  const entrada = montarEntradaPedido(corpo.valor, { comercial: true })
+  const entrada = montarEntradaDadosComerciaisMoriah(corpo.valor)
   if (!entrada.ok) {
     registrarResultado(log, 'erro', entrada.codigo)
-    return jsonErro(entrada.codigo, entrada.codigo === 'CAMPO_NAO_PERMITIDO' ? 'Campo administrativo não permitido nesta rota.' : 'Payload inválido.', 422)
-  }
-  if (entrada.expectedVersion === undefined) {
-    registrarResultado(log, 'erro', 'PAYLOAD_INVALIDO')
-    return jsonErro('PAYLOAD_INVALIDO', 'Payload inválido.', 422)
+    return jsonErro(entrada.codigo, entrada.codigo === 'CAMPO_NAO_PERMITIDO' ? 'Campo de produtos não permitido nesta rota.' : 'Payload inválido.', 422)
   }
 
   const unidade = unidadeDoContexto(acesso.contexto, entrada.entrada.unidade)
@@ -771,12 +767,113 @@ export async function atualizarComercial(
   log.unidade = unidade.chave
 
   const telefoneLegadoNulo = !atual.data.telefone_normalizado && !entrada.entrada.telefone.trim()
-  const validacaoCompleta = validarPedidoPersonalizadoMoriah(
-    telefoneLegadoNulo ? { ...entrada.entrada, telefone: '1100000000' } : entrada.entrada
-  )
-  const errosFiltrados = telefoneLegadoNulo
-    ? validacaoCompleta.erros.filter((item) => item.campo !== 'telefone')
-    : validacaoCompleta.erros
+  const erros: Array<ProblemaPedidoPersonalizado<CodigoErroPedidoPersonalizado>> = []
+  const identificacao = validarIdentificacao({
+    fornecedor: FORNECEDOR_MORIAH,
+    unidade: entrada.entrada.unidade,
+    consultora: entrada.entrada.consultora,
+    cliente: entrada.entrada.cliente,
+    telefone: telefoneLegadoNulo ? '1100000000' : entrada.entrada.telefone,
+    numeroLancamento: entrada.entrada.numeroLancamento,
+    tapetes: [],
+  } satisfies PedidoPersonalizadoMoriahEntrada, erros)
+  const errosFiltrados = telefoneLegadoNulo ? erros.filter((item) => item.campo !== 'telefone') : erros
+  if (errosFiltrados.length > 0) {
+    log.camposInvalidos = errosFiltrados.map((item) => item.campo)
+    registrarResultado(log, 'erro_validacao', 'DADOS_INVALIDOS')
+    return respostaProblemasDominio(errosFiltrados)
+  }
+
+  const resultado = await repo.atualizarDadosComerciais({
+    p_pedido_id: pedidoId,
+    p_expected_version: entrada.expectedVersion,
+    p_usuario_id: acesso.contexto.allowedUser.id,
+    p_unidade_id: unidade.id,
+    p_consultora: identificacao.consultora,
+    p_cliente: identificacao.cliente,
+    p_telefone_normalizado: telefoneLegadoNulo ? null : identificacao.telefoneNormalizado,
+    p_numero_lancamento: identificacao.numeroLancamento,
+  } satisfies ParametrosAtualizarDadosComerciaisMoriahRpc)
+  if (resultado.error) return falhaBanco(log, resultado.error)
+
+  registrarResultado(log, 'sucesso', 'PEDIDO_DADOS_COMERCIAIS_ATUALIZADO')
+  return NextResponse.json({ ok: true, pedidoId, version: resultado.data.version })
+}
+
+export async function atualizarProdutos(
+  request: Request,
+  pedidoId: string,
+  deps: DependenciasApiPedidos = dependenciasPadrao
+) {
+  const log: ContextoLogPedidos = { rota: '/api/pedidos-personalizados/pedidos/[id]/produtos', operacao: 'atualizar_produtos', inicio: Date.now(), pedidoId }
+  const acesso = await carregar(['pedidos_personalizados_gestao'], log, deps)
+  if (!acesso.ok) return acesso.response
+  if (!ehUuid(pedidoId)) return jsonErro('ID_INVALIDO', 'ID do pedido inválido.', 400)
+
+  const corpo = await lerJsonLimitado(request)
+  if (!corpo.ok) return corpo.response
+  const repo = deps.criarRepositorio(acesso.contexto)
+  const atual = await repo.buscarPedidoNoEscopo(pedidoId, acesso.contexto.unidades.map((item) => item.id))
+  if (atual.error) return falhaBanco(log, atual.error)
+  if (!atual.data) return jsonErro('PEDIDO_NAO_ENCONTRADO', 'Pedido não encontrado.', 404)
+  log.fornecedor = atual.data.fornecedor?.chave
+
+  // Defesa em profundidade: o frontend já esconde a ação fora de RASCUNHO, e a RPC também
+  // rejeita (EDICAO_PRODUTOS_BLOQUEADA), mas falhar cedo aqui evita trabalho de validação à toa.
+  if (!permiteEdicaoProdutos(atual.data.status)) {
+    registrarResultado(log, 'erro', 'EDICAO_PRODUTOS_BLOQUEADA')
+    return jsonErro('EDICAO_PRODUTOS_BLOQUEADA', 'Os produtos só podem ser alterados enquanto o pedido está em rascunho.', 422)
+  }
+
+  if (atual.data.fornecedor?.chave === 'lebebe_exclusive') {
+    const validacao = validarEntradaProdutosLebebeExclusive(corpo.valor)
+    if (!validacao.ok) {
+      log.camposInvalidos = validacao.problemas.map((problema) => problema.campo)
+      registrarResultado(log, 'erro_validacao', validacao.codigo)
+      return jsonErro(validacao.codigo, validacao.mensagem, 422, validacao.campo ? { campo: validacao.campo } : undefined)
+    }
+    const resultadoExclusive = await repo.atualizarProdutosLebebeExclusive({
+      p_pedido_id: pedidoId,
+      p_expected_version: validacao.dados.expectedVersion,
+      p_usuario_id: acesso.contexto.allowedUser.id,
+      p_itens: validacao.dados.itens,
+    })
+    if (resultadoExclusive.error) return falhaBanco(log, resultadoExclusive.error)
+    const itens = validarTapetesCriados(resultadoExclusive.data.itens, validacao.dados.itens.length)
+    if (!itens) return falhaConfirmacaoCriacao(log)
+    registrarResultado(log, 'sucesso', 'PEDIDO_PRODUTOS_ATUALIZADO')
+    return NextResponse.json({ ok: true, pedidoId, version: resultadoExclusive.data.version, itens })
+  }
+
+  const entrada = montarEntradaProdutosMoriah(corpo.valor)
+  if (!entrada.ok) {
+    registrarResultado(log, 'erro', entrada.codigo)
+    return jsonErro(entrada.codigo, entrada.codigo === 'CAMPO_NAO_PERMITIDO' ? 'Campo de dados comerciais não permitido nesta rota.' : 'Payload inválido.', 422)
+  }
+
+  const idsAtuais = await repo.listarTapeteIds(pedidoId)
+  if (idsAtuais.error) return falhaBanco(log, idsAtuais.error)
+  const conjuntoIds = new Set(idsAtuais.data)
+  if (entrada.tapetes.some((tapete) => tapete.id && !conjuntoIds.has(tapete.id))) {
+    return jsonErro('PEDIDO_NAO_ENCONTRADO', 'Pedido não encontrado.', 404)
+  }
+
+  // A validação de domínio dos tapetes exige uma identificação válida (não lida por
+  // `validarPedidoPersonalizadoMoriah` além de repassar), então usamos a já persistida —
+  // esta rota nunca altera unidade/consultora/cliente/telefone/lançamento.
+  const unidadeAtual = acesso.contexto.unidades.find((item) => item.id === atual.data!.unidade_id)
+  if (!unidadeAtual) return jsonErro('UNIDADE_NAO_PERMITIDA', 'Unidade não permitida.', 403)
+  const telefoneLegadoNulo = !atual.data.telefone_normalizado
+  const validacaoCompleta = validarPedidoPersonalizadoMoriah({
+    fornecedor: FORNECEDOR_MORIAH,
+    unidade: unidadeAtual.chave,
+    consultora: 'CONSULTORA VALIDA',
+    cliente: 'CLIENTE VALIDO',
+    telefone: telefoneLegadoNulo ? '1100000000' : (atual.data.telefone_normalizado as string),
+    numeroLancamento: atual.data.numero_lancamento,
+    tapetes: entrada.tapetes,
+  })
+  const errosFiltrados = validacaoCompleta.erros.filter((item) => item.campo.startsWith('tapetes.') || item.campo === 'tapetes')
   if (errosFiltrados.length > 0 || !validacaoCompleta.dados) {
     log.camposInvalidos = errosFiltrados.map((item) => item.campo)
     registrarResultado(log, 'erro_validacao', 'DADOS_INVALIDOS')
@@ -784,32 +881,20 @@ export async function atualizarComercial(
   }
   const dados = validacaoCompleta.dados
 
-  const idsAtuais = await repo.listarTapeteIds(pedidoId)
-  if (idsAtuais.error) return falhaBanco(log, idsAtuais.error)
-  const conjuntoIds = new Set(idsAtuais.data)
-  if (dados.tapetes.some((tapete) => tapete.id && !conjuntoIds.has(tapete.id))) {
-    return jsonErro('PEDIDO_NAO_ENCONTRADO', 'Pedido não encontrado.', 404)
-  }
-
   const catalogos = await repo.carregarCatalogos()
   if (catalogos.error) return falhaBanco(log, catalogos.error)
   const tapetesRpc = validarRelacoesCatalogo(dados, catalogos.data)
   if (tapetesRpc instanceof NextResponse) return tapetesRpc
 
-  const resultado = await repo.atualizarComercial({
+  const resultado = await repo.atualizarProdutos({
     p_pedido_id: pedidoId,
     p_expected_version: entrada.expectedVersion,
     p_usuario_id: acesso.contexto.allowedUser.id,
-    p_unidade_id: unidade.id,
-    p_consultora: dados.consultora,
-    p_cliente: dados.cliente,
-    p_telefone_normalizado: telefoneLegadoNulo ? null : dados.telefoneNormalizado,
-    p_numero_lancamento: dados.numeroLancamento,
     p_tapetes: tapetesRpc,
-  } satisfies ParametrosAtualizarPedidoComercialMoriahRpc)
+  } satisfies ParametrosAtualizarProdutosMoriahRpc)
   if (resultado.error) return falhaBanco(log, resultado.error)
 
-  registrarResultado(log, 'sucesso', 'PEDIDO_COMERCIAL_ATUALIZADO')
+  registrarResultado(log, 'sucesso', 'PEDIDO_PRODUTOS_ATUALIZADO')
   return NextResponse.json({ ok: true, pedidoId, version: resultado.data.version })
 }
 

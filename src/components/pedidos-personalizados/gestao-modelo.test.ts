@@ -4,12 +4,14 @@ import path from 'node:path'
 import {
   atualizarAdministrativoGestao,
   atualizarComercialGestao,
+  atualizarProdutosGestao,
   detalheParaAdministrativo,
   detalheParaFormulario,
   deveExibirAcaoProdutoSgi,
   listarPedidosGestao,
   payloadAtualizacaoAdministrativa,
   payloadAtualizacaoComercial,
+  payloadAtualizacaoProdutos,
   gerarResumoFornecedorDetalhe,
   gerarResumoRascunhoDetalhe,
   requisitosPendentesTransicao,
@@ -18,7 +20,6 @@ import {
   solicitarProdutoSgiGestao,
   validarAdministrativo,
 } from './gestao-modelo'
-import type { OpcoesNovoPedido } from './novo-pedido-modelo'
 import type { PedidoDetalhe } from './gestao-modelo'
 
 const PEDIDO = '10000000-0000-4000-8000-000000000001'
@@ -46,16 +47,6 @@ const detalhe: PedidoDetalhe = {
   }],
   itens: [],
 }
-
-const opcoes = {
-  fornecedor: { id: 'f', chave: 'moriah_tapetes', nome: 'MORIAH TAPETES' },
-  fornecedores: [{ id: 'f', chave: 'moriah_tapetes', nome: 'MORIAH TAPETES' }],
-  unidades: [{ chave: 'portao', nome: 'PORTÃO' }],
-  produtos: [{ id: 'p', codigo: '21158', descricao: 'Produto' }],
-  cores: [{ id: COR, numero: '01', codigo: 'K-01', nome: 'Grafite', ordem: 1 }],
-  formatos: ['RETANGULAR'], status: ['RASCUNHO', 'VENDA FECHADA'],
-  limites: { tapetesPorPedido: 10, coresPorTapete: 6, medidaMinimaCm: 10, medidaMaximaCm: 1500 },
-} as OpcoesNovoPedido
 
 describe('modelo da gestão de pedidos personalizados', () => {
   it('exibe a criação SGI para Exclusive em Venda Fechada mesmo sem lançamento', () => {
@@ -205,9 +196,18 @@ describe('modelo da gestão de pedidos personalizados', () => {
     expect(requisitosPendentesTransicao({ ...semLancamento, numeroLancamento: '000001' }, transicao)).toEqual([])
   })
 
-  it('monta atualização comercial com expectedVersion e IDs persistidos', () => {
-    const payload = payloadAtualizacaoComercial(detalheParaFormulario(detalhe), 4, opcoes)
-    expect(payload).toMatchObject({ expectedVersion: 4, unidade: 'portao', telefone: '41999999999', numeroLancamento: '000001', tapetes: [{ id: TAPETE, ordem: 1 }] })
+  it('monta atualização comercial só com identificação, nunca tapetes', () => {
+    const payload = payloadAtualizacaoComercial(detalheParaFormulario(detalhe), 4)
+    expect(payload).toEqual({ expectedVersion: 4, unidade: 'portao', consultora: 'ANA', cliente: 'CLIENTE', telefone: '41999999999', numeroLancamento: '000001' })
+    expect(payload).not.toHaveProperty('tapetes')
+  })
+
+  it('monta atualização de produtos com expectedVersion e IDs persistidos, nunca identificação', () => {
+    const payload = payloadAtualizacaoProdutos(detalheParaFormulario(detalhe), 4)
+    expect(payload).toMatchObject({ expectedVersion: 4, tapetes: [{ id: TAPETE, ordem: 1 }] })
+    expect(payload).not.toHaveProperty('unidade')
+    expect(payload).not.toHaveProperty('consultora')
+    expect(payload).not.toHaveProperty('telefone')
     expect(JSON.stringify(payload)).not.toMatch(/dataEntrega|comprador|status/)
   })
 
@@ -223,19 +223,7 @@ describe('modelo da gestão de pedidos personalizados', () => {
         ],
       }],
     }
-    const opcoesComOrdemGlobal = {
-      ...opcoes,
-      cores: [
-        opcoes.cores[0],
-        { id: COR_15, numero: '15', codigo: 'K-15', nome: 'Grafite', ordem: 15 },
-        { id: COR_29, numero: '29', codigo: 'K-29', nome: 'Marrom', ordem: 29 },
-      ],
-    }
-    const payload = payloadAtualizacaoComercial(
-      detalheParaFormulario(tresCores),
-      tresCores.version,
-      opcoesComOrdemGlobal,
-    )
+    const payload = payloadAtualizacaoProdutos(detalheParaFormulario(tresCores), tresCores.version)
 
     expect(payload.tapetes[0].cores).toEqual([
       { id: COR, ordem: 1 },
@@ -298,8 +286,19 @@ describe('modelo da gestão de pedidos personalizados', () => {
 
   it('usa PATCH e expectedVersion para atualização comercial', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true, version: 5 }), { status: 200 }))
-    const payload = payloadAtualizacaoComercial(detalheParaFormulario(detalhe), 4, opcoes)
+    const payload = payloadAtualizacaoComercial(detalheParaFormulario(detalhe), 4)
     await expect(atualizarComercialGestao(PEDIDO, payload)).resolves.toBe(5)
+    expect(fetchMock.mock.calls[0][0]).toBe(`/api/pedidos-personalizados/pedidos/${PEDIDO}/comercial`)
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'PATCH' })
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ expectedVersion: 4 })
+    fetchMock.mockRestore()
+  })
+
+  it('usa PATCH e expectedVersion para atualização de produtos, em rota própria', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true, version: 5 }), { status: 200 }))
+    const payload = payloadAtualizacaoProdutos(detalheParaFormulario(detalhe), 4)
+    await expect(atualizarProdutosGestao(PEDIDO, payload)).resolves.toBe(5)
+    expect(fetchMock.mock.calls[0][0]).toBe(`/api/pedidos-personalizados/pedidos/${PEDIDO}/produtos`)
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'PATCH' })
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({ expectedVersion: 4 })
     fetchMock.mockRestore()
@@ -316,9 +315,9 @@ describe('modelo da gestão de pedidos personalizados', () => {
         mensagem: 'A ordem da cor deve estar entre 1 e 6.',
       }],
     }), { status: 422 }))
-    const payload = payloadAtualizacaoComercial(detalheParaFormulario(detalhe), 4, opcoes)
+    const payload = payloadAtualizacaoProdutos(detalheParaFormulario(detalhe), 4)
 
-    await expect(atualizarComercialGestao(PEDIDO, payload)).rejects.toThrow(
+    await expect(atualizarProdutosGestao(PEDIDO, payload)).rejects.toThrow(
       'A ordem da cor deve estar entre 1 e 6.'
     )
     fetchMock.mockRestore()

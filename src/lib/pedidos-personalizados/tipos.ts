@@ -226,7 +226,8 @@ export type ParametrosCriarPedidoPersonalizadoMoriahRpc = {
   p_comprador: string | null
 }
 
-export type ParametrosAtualizarPedidoComercialMoriahRpc = {
+/** Atualiza somente identificação/dados comerciais do pedido Moriah (unidade, consultora, cliente, telefone, lançamento) — nunca tapetes. */
+export type ParametrosAtualizarDadosComerciaisMoriahRpc = {
   p_pedido_id: string
   p_expected_version: number
   p_usuario_id: string
@@ -235,6 +236,13 @@ export type ParametrosAtualizarPedidoComercialMoriahRpc = {
   p_cliente: string
   p_telefone_normalizado: string | null
   p_numero_lancamento: string | null
+}
+
+/** Atualiza somente a composição do pedido Moriah (tapetes/cores) — exige status RASCUNHO na RPC. */
+export type ParametrosAtualizarProdutosMoriahRpc = {
+  p_pedido_id: string
+  p_expected_version: number
+  p_usuario_id: string
   p_tapetes: TapeteMoriahRpc[]
 }
 
@@ -298,7 +306,8 @@ export type ParametrosCriarPedidoPersonalizadoLebebeExclusiveRpc = {
   p_itens: ItemPedidoLebebeExclusiveRpc[]
 }
 
-export type ParametrosAtualizarPedidoComercialLebebeExclusiveRpc = {
+/** Atualiza somente identificação/dados comerciais do pedido Lebebe Exclusive — nunca itens. */
+export type ParametrosAtualizarDadosComerciaisLebebeExclusiveRpc = {
   p_pedido_id: string
   p_expected_version: number
   p_usuario_id: string
@@ -307,5 +316,12 @@ export type ParametrosAtualizarPedidoComercialLebebeExclusiveRpc = {
   p_cliente: string
   p_telefone_normalizado: string
   p_numero_lancamento: string | null
+}
+
+/** Atualiza somente a composição do pedido Lebebe Exclusive (itens) — exige status RASCUNHO na RPC. */
+export type ParametrosAtualizarProdutosLebebeExclusiveRpc = {
+  p_pedido_id: string
+  p_expected_version: number
+  p_usuario_id: string
   p_itens: ItemPedidoLebebeExclusiveRpc[]
 }

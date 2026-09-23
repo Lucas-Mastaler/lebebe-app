@@ -100,19 +100,32 @@ export async function lerErroDetalhado(response: Response) {
 export function montarPayloadLebebeExclusive(params: {
   identificacao: Identificacao
   itens: readonly Pick<ItemSelecionado, 'id' | 'quantidade' | 'nomeOuLetra'>[]
-  idempotencyKey?: string
-  expectedVersion?: number
+  idempotencyKey: string
 }) {
   return {
-    ...(params.expectedVersion === undefined
-      ? { idempotencyKey: params.idempotencyKey }
-      : { expectedVersion: params.expectedVersion }),
+    idempotencyKey: params.idempotencyKey,
     fornecedor: 'lebebe_exclusive' as const,
     unidade: params.identificacao.unidade,
     consultora: params.identificacao.consultora,
     cliente: params.identificacao.cliente,
     telefone: params.identificacao.telefone,
     numeroLancamento: params.identificacao.numeroLancamento || null,
+    itens: params.itens.map((item, indice) => ({
+      produtoId: item.id,
+      ordem: indice + 1,
+      quantidade: item.quantidade,
+      nomeOuLetra: item.nomeOuLetra.trim() || null,
+    })),
+  }
+}
+
+/** Payload da rota `/produtos`: só os itens — identificação é editada separadamente por `/comercial`. */
+export function montarPayloadProdutosLebebeExclusive(params: {
+  itens: readonly Pick<ItemSelecionado, 'id' | 'quantidade' | 'nomeOuLetra'>[]
+  expectedVersion: number
+}) {
+  return {
+    expectedVersion: params.expectedVersion,
     itens: params.itens.map((item, indice) => ({
       produtoId: item.id,
       ordem: indice + 1,
@@ -344,8 +357,10 @@ export function FormularioLebebeExclusive({
 
   function validarAntesDeSalvar() {
     if (!fornecedor) return 'O fornecedor Lebebe Exclusive está indisponível.'
-    const problemaIdentificacao = validarIdentificacaoAntesDeSalvar()
-    if (problemaIdentificacao) return problemaIdentificacao
+    if (!pedidoInicial) {
+      const problemaIdentificacao = validarIdentificacaoAntesDeSalvar()
+      if (problemaIdentificacao) return problemaIdentificacao
+    }
     if (selecionados.size === 0) return 'Selecione ao menos um produto.'
     if ([...selecionados.values()].some((item) => !Number.isInteger(item.quantidade) || item.quantidade < 1)) return 'Revise as quantidades dos produtos.'
     return null
@@ -354,7 +369,7 @@ export function FormularioLebebeExclusive({
   async function salvar(event: FormEvent) {
     event.preventDefault()
     if (salvandoRef.current || pedidoSalvo) return
-    const problemaIdentificacao = validarIdentificacaoAntesDeSalvar()
+    const problemaIdentificacao = pedidoInicial ? null : validarIdentificacaoAntesDeSalvar()
     const problema = validarAntesDeSalvar()
     if (problema) {
       setErro(problema)
@@ -368,15 +383,13 @@ export function FormularioLebebeExclusive({
     setErro(null)
     try {
       const itensSelecionados = [...selecionados.values()]
-      const payload = montarPayloadLebebeExclusive({
-        identificacao: identificacaoAtual,
-        itens: itensSelecionados,
-        ...(pedidoInicial
-          ? { expectedVersion: pedidoInicial.version }
-          : { idempotencyKey: idempotencyKey.current }),
-      })
+      // Editando (pedidoInicial definido): só produtos — identificação é responsabilidade de
+      // "Editar dados comerciais" (rota /comercial), separada desta tela.
+      const payload = pedidoInicial
+        ? montarPayloadProdutosLebebeExclusive({ itens: itensSelecionados, expectedVersion: pedidoInicial.version })
+        : montarPayloadLebebeExclusive({ identificacao: identificacaoAtual, itens: itensSelecionados, idempotencyKey: idempotencyKey.current })
       const response = await fetch(pedidoInicial
-        ? `/api/pedidos-personalizados/pedidos/${pedidoInicial.id}/comercial`
+        ? `/api/pedidos-personalizados/pedidos/${pedidoInicial.id}/produtos`
         : '/api/pedidos-personalizados/pedidos', {
         method: pedidoInicial ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },

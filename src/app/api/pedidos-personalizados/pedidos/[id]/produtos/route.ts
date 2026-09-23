@@ -1,4 +1,4 @@
-import { atualizarDadosComerciais } from '@/lib/pedidos-personalizados/server/handlers'
+import { atualizarProdutos } from '@/lib/pedidos-personalizados/server/handlers'
 
 export const runtime = 'nodejs'
 
@@ -7,5 +7,5 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  return atualizarDadosComerciais(request, id)
+  return atualizarProdutos(request, id)
 }

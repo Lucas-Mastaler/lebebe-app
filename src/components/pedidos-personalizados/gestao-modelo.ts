@@ -7,7 +7,7 @@ import {
 } from '@/lib/pedidos-personalizados'
 import { dataOperacionalBrasil } from '@/lib/pedidos-personalizados/prazo'
 import type { CodigoProdutoMoriah, PedidoPersonalizadoMoriahNormalizado, SituacaoPrazoPedido, StatusPedidoPersonalizado, TipoTapeteMoriah, UnidadePedidoPersonalizado } from '@/lib/pedidos-personalizados'
-import type { AnexoFormulario, EstadoNovoPedido, OpcoesNovoPedido, TapeteFormulario } from './novo-pedido-modelo'
+import type { AnexoFormulario, EstadoNovoPedido, TapeteFormulario } from './novo-pedido-modelo'
 import { ehErroHttpNovoPedido } from './novo-pedido-modelo'
 
 export type FiltrosGestao = {
@@ -535,9 +535,8 @@ export function payloadAtualizacaoAdministrativa(
   }
 }
 
-export function payloadAtualizacaoComercial(estado: EstadoNovoPedido, expectedVersion: number, _opcoes: OpcoesNovoPedido) {
-  void _opcoes
-
+/** Só identificação/dados da venda — nunca tapetes (produtos têm payload e endpoint próprios). */
+export function payloadAtualizacaoComercial(estado: EstadoNovoPedido, expectedVersion: number) {
   return {
     expectedVersion,
     unidade: estado.unidade,
@@ -545,6 +544,13 @@ export function payloadAtualizacaoComercial(estado: EstadoNovoPedido, expectedVe
     cliente: estado.cliente,
     telefone: estado.telefone,
     numeroLancamento: normalizarNumeroLancamento(estado.numeroLancamento),
+  }
+}
+
+/** Só a composição do pedido (tapetes/cores) — nunca unidade/consultora/cliente/telefone/lançamento. */
+export function payloadAtualizacaoProdutos(estado: EstadoNovoPedido, expectedVersion: number) {
+  return {
+    expectedVersion,
     tapetes: estado.tapetes.map((tapete, indice) => ({
       id: tapete.tapeteId,
       ordem: indice + 1,
@@ -569,6 +575,16 @@ export async function atualizarComercialGestao(id: string, payload: ReturnType<t
   if (!response.ok) throw await erroResposta(response)
   const body = await response.json() as { ok?: boolean; version?: number }
   if (body.ok !== true || !Number.isInteger(body.version)) throw new Error('Resposta de atualização inválida.')
+  return body.version as number
+}
+
+export async function atualizarProdutosGestao(id: string, payload: ReturnType<typeof payloadAtualizacaoProdutos>) {
+  const response = await fetch(`/api/pedidos-personalizados/pedidos/${id}/produtos`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  })
+  if (!response.ok) throw await erroResposta(response)
+  const body = await response.json() as { ok?: boolean; version?: number }
+  if (body.ok !== true || !Number.isInteger(body.version)) throw new Error('Resposta de atualização de produtos inválida.')
   return body.version as number
 }
 

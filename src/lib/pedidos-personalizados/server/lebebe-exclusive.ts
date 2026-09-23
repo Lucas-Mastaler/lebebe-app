@@ -12,6 +12,10 @@ const CAMPOS_COMUNS = new Set([
   'idempotencyKey', 'expectedVersion', 'fornecedor', 'unidade', 'consultora',
   'cliente', 'telefone', 'numeroLancamento', 'itens',
 ])
+const CAMPOS_DADOS_COMERCIAIS = new Set([
+  'expectedVersion', 'unidade', 'consultora', 'cliente', 'telefone', 'numeroLancamento',
+])
+const CAMPOS_PRODUTOS = new Set(['expectedVersion', 'itens'])
 
 export type ProblemaValidacaoLebebeExclusive = {
   codigo: string
@@ -166,4 +170,137 @@ export function validarEntradaLebebeExclusive(
       itens,
     },
   }
+}
+
+export type EntradaDadosComerciaisLebebeExclusive = {
+  expectedVersion: number
+  unidade: string
+  consultora: string
+  cliente: string
+  telefoneNormalizado: string
+  numeroLancamento: string | null
+}
+
+/** Payload da rota `/comercial`: só identificação/dados da venda — nunca itens. */
+export function validarEntradaDadosComerciaisLebebeExclusive(
+  valor: unknown
+):
+  | { ok: true; dados: EntradaDadosComerciaisLebebeExclusive }
+  | { ok: false; codigo: string; mensagem: string; campo: string; problemas: ProblemaValidacaoLebebeExclusive[] } {
+  if (!ehObjeto(valor)) {
+    return falhaValidacao('PAYLOAD_INVALIDO', 'payload', 'O corpo do pedido deve ser um objeto JSON.')
+  }
+  const camposNaoPermitidos = Object.keys(valor).filter((campo) => !CAMPOS_DADOS_COMERCIAIS.has(campo))
+  if (camposNaoPermitidos.length > 0) {
+    const problemas = camposNaoPermitidos.map((campo) => ({
+      codigo: 'CAMPO_NAO_PERMITIDO',
+      campo,
+      mensagem: `O campo ${campo} não pertence aos dados comerciais deste pedido.`,
+    }))
+    return falhaValidacao('CAMPO_NAO_PERMITIDO', problemas[0].campo, problemas[0].mensagem, problemas)
+  }
+  if (!Number.isInteger(valor.expectedVersion) || Number(valor.expectedVersion) < 1) {
+    return falhaValidacao('VERSAO_INVALIDA', 'expectedVersion', 'Versão do pedido inválida.')
+  }
+  if (typeof valor.unidade !== 'string') return falhaValidacao('UNIDADE_INVALIDA', 'unidade', 'Selecione uma unidade válida.')
+  if (typeof valor.consultora !== 'string') return falhaValidacao('CONSULTORA_INVALIDA', 'consultora', 'Informe a consultora.')
+  if (typeof valor.cliente !== 'string') return falhaValidacao('CLIENTE_INVALIDO', 'cliente', 'Informe o cliente.')
+  if (typeof valor.telefone !== 'string') return falhaValidacao('TELEFONE_INVALIDO', 'telefone', 'Informe um telefone válido.')
+
+  const consultora = normalizarConsultora(valor.consultora)
+  const cliente = normalizarCliente(valor.cliente)
+  const telefone = normalizarTelefone(valor.telefone)
+  const numeroLancamento = typeof valor.numeroLancamento === 'string' || valor.numeroLancamento == null
+    ? normalizarNumeroLancamento(valor.numeroLancamento as string | null | undefined)
+    : '__INVALIDO__'
+
+  if (consultora.length < 2 || consultora.length > 20) {
+    return falhaValidacao('CONSULTORA_INVALIDA', 'consultora', 'Informe uma consultora válida.')
+  }
+  if (cliente.length < 1 || cliente.length > 40) {
+    return falhaValidacao('CLIENTE_INVALIDO', 'cliente', 'Informe um cliente válido.')
+  }
+  if (!telefone.valido || !telefone.telefoneNormalizado) {
+    return falhaValidacao('TELEFONE_INVALIDO', 'telefone', 'Informe um telefone válido.')
+  }
+  if (numeroLancamento === '__INVALIDO__' || (numeroLancamento !== null && !NUMERO_LANCAMENTO.test(numeroLancamento))) {
+    return falhaValidacao('NUMERO_LANCAMENTO_INVALIDO', 'numeroLancamento', 'O número de lançamento deve conter somente números, com até 6 dígitos.')
+  }
+
+  return {
+    ok: true,
+    dados: {
+      expectedVersion: Number(valor.expectedVersion),
+      unidade: valor.unidade,
+      consultora,
+      cliente,
+      telefoneNormalizado: telefone.telefoneNormalizado,
+      numeroLancamento,
+    },
+  }
+}
+
+export type EntradaProdutosLebebeExclusive = {
+  expectedVersion: number
+  itens: ItemPedidoLebebeExclusiveRpc[]
+}
+
+/** Payload da rota `/produtos`: só a composição (itens) — nunca unidade/consultora/cliente/telefone/lançamento. */
+export function validarEntradaProdutosLebebeExclusive(
+  valor: unknown
+):
+  | { ok: true; dados: EntradaProdutosLebebeExclusive }
+  | { ok: false; codigo: string; mensagem: string; campo: string; problemas: ProblemaValidacaoLebebeExclusive[] } {
+  if (!ehObjeto(valor)) {
+    return falhaValidacao('PAYLOAD_INVALIDO', 'payload', 'O corpo do pedido deve ser um objeto JSON.')
+  }
+  const camposNaoPermitidos = Object.keys(valor).filter((campo) => !CAMPOS_PRODUTOS.has(campo))
+  if (camposNaoPermitidos.length > 0) {
+    const problemas = camposNaoPermitidos.map((campo) => ({
+      codigo: 'CAMPO_NAO_PERMITIDO',
+      campo,
+      mensagem: `O campo ${campo} não pertence aos produtos deste pedido.`,
+    }))
+    return falhaValidacao('CAMPO_NAO_PERMITIDO', problemas[0].campo, problemas[0].mensagem, problemas)
+  }
+  if (!Number.isInteger(valor.expectedVersion) || Number(valor.expectedVersion) < 1) {
+    return falhaValidacao('VERSAO_INVALIDA', 'expectedVersion', 'Versão do pedido inválida.')
+  }
+  if (!Array.isArray(valor.itens)) return falhaValidacao('ITENS_INVALIDOS', 'itens', 'Informe os produtos do pedido.')
+  if (valor.itens.length < 1) {
+    return falhaValidacao('ITENS_OBRIGATORIOS', 'itens', 'Selecione ao menos um produto.')
+  }
+
+  const ids = new Set<string>()
+  const ordens = new Set<number>()
+  const itens: ItemPedidoLebebeExclusiveRpc[] = []
+  for (const [indice, item] of valor.itens.entries()) {
+    if (!ehObjeto(item) || Object.keys(item).some((campo) => !['produtoId', 'ordem', 'quantidade', 'nomeOuLetra'].includes(campo))) {
+      return falhaValidacao('ITEM_PEDIDO_INVALIDO', `itens.${indice}`, `Revise os dados do item ${indice + 1}.`)
+    }
+    const nomeOuLetra = typeof item.nomeOuLetra === 'string' ? item.nomeOuLetra.trim() : null
+    if (!ehUuid(item.produtoId) || ids.has(item.produtoId)) {
+      return falhaValidacao('PRODUTO_INVALIDO', `itens.${indice}.produtoId`, `Não foi possível identificar o produto do item ${indice + 1}. Atualize a pesquisa e tente novamente.`)
+    }
+    if (!Number.isInteger(item.ordem) || Number(item.ordem) < 1 || Number(item.ordem) > valor.itens.length || ordens.has(Number(item.ordem))) {
+      return falhaValidacao('ORDEM_ITEM_INVALIDA', `itens.${indice}.ordem`, `A ordem do item ${indice + 1} é inválida.`)
+    }
+    if (!Number.isInteger(item.quantidade) || Number(item.quantidade) < 1) {
+      return falhaValidacao('QUANTIDADE_INVALIDA', `itens.${indice}.quantidade`, `A quantidade do item ${indice + 1} deve ser um número inteiro maior que zero.`)
+    }
+    if ((item.nomeOuLetra !== undefined && item.nomeOuLetra !== null && typeof item.nomeOuLetra !== 'string') || (nomeOuLetra !== null && (nomeOuLetra.length < 1 || nomeOuLetra.length > 200))) {
+      return falhaValidacao('NOME_OU_LETRA_INVALIDO', `itens.${indice}.nomeOuLetra`, `O nome ou letra do item ${indice + 1} deve ter até 200 caracteres.`)
+    }
+    ids.add(item.produtoId)
+    ordens.add(Number(item.ordem))
+    itens.push({
+      produto_id: item.produtoId,
+      ordem: Number(item.ordem),
+      quantidade: Number(item.quantidade),
+      nome_ou_letra: nomeOuLetra,
+    })
+  }
+
+  itens.sort((a, b) => a.ordem - b.ordem)
+  return { ok: true, dados: { expectedVersion: Number(valor.expectedVersion), itens } }
 }

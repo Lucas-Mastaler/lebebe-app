@@ -49,6 +49,16 @@ export function permiteEdicaoComercial(
     || status === 'AGUARDANDO LAYOUT' || status === AGUARDANDO_APROVACAO
 }
 
+/**
+ * Composição do pedido (tapetes/cores na Moriah; itens na Lebebe Exclusive) — decisão de
+ * negócio: só editável em RASCUNHO, para os dois fornecedores. Regra própria, independente de
+ * `permiteEdicaoComercial` (que continua cobrindo só unidade/consultora/cliente/telefone/
+ * lançamento e permanece com o range de status já existente).
+ */
+export function permiteEdicaoProdutos(status: StatusPedidoPersonalizado) {
+  return status === 'RASCUNHO'
+}
+
 export function permiteEdicaoAdministrativa(status: StatusPedidoPersonalizado) {
   return status !== 'RECEBIDO' && status !== 'CANCELADO'
 }

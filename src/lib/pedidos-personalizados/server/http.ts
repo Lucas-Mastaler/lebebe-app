@@ -112,6 +112,9 @@ export function codigoEstavelErroBanco(error: ErroBanco) {
   if (mensagem.includes('EDICAO_COMERCIAL_BLOQUEADA')) {
     return 'EDICAO_COMERCIAL_BLOQUEADA'
   }
+  if (mensagem.includes('EDICAO_PRODUTOS_BLOQUEADA')) {
+    return 'EDICAO_PRODUTOS_BLOQUEADA'
+  }
   if (
     error.code === '22023'
     || error.code === '23514'
@@ -140,6 +143,13 @@ export function mapearErroBanco(error: ErroBanco): NextResponse {
     return jsonErro(
       codigo,
       'Os dados comerciais não podem ser alterados neste status.',
+      422
+    )
+  }
+  if (codigo === 'EDICAO_PRODUTOS_BLOQUEADA') {
+    return jsonErro(
+      codigo,
+      'Os produtos só podem ser alterados enquanto o pedido está em rascunho.',
       422
     )
   }

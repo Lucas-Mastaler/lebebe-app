@@ -169,7 +169,12 @@ export function converterDataAdministrativaParaISO(
   }
 }
 
-function validarIdentificacao(
+/**
+ * Só valida consultora/cliente/telefone/numeroLancamento/numeroPedidoCompra/comprador — nunca lê
+ * `entrada.tapetes`. Exportada para reuso pela rota `/comercial` (dados comerciais, sem tapetes),
+ * que não pode reutilizar `validarPedidoPersonalizadoMoriah` porque esta exige ao menos 1 tapete.
+ */
+export function validarIdentificacao(
   entrada: PedidoPersonalizadoMoriahEntrada,
   erros: Erro[]
 ): Omit<PedidoPersonalizadoMoriahNormalizado, 'fornecedor' | 'unidade' | 'status' | 'tapetes' | 'dataEntrega' | 'dataPedidoFornecedor'> {

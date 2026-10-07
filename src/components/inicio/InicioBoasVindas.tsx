@@ -20,7 +20,7 @@ const SHORTCUTS: {
   icon: React.ElementType
   tone: SectionTone
 }[] = [
-  { moduleKey: 'atendimento_presencial_ficha', title: 'Atendimento presencial', description: 'Registre e acompanhe o atendimento presencial.', icon: Users, tone: 'section-1' },
+  { moduleKey: 'atendimento_presencial_ficha', title: 'Prancheta Virtual de Atendimento', description: 'Registre e acompanhe o atendimento presencial.', icon: Users, tone: 'section-1' },
   { moduleKey: 'pedidos_personalizados_novo', title: 'Pedidos personalizados', description: 'Passe as vendas de novos pedidos personalizados.', icon: ClipboardList, tone: 'section-2' },
   { moduleKey: 'procurar_datas', title: 'Procurar datas', description: 'Encontre datas de entrega disponíveis.', icon: Search, tone: 'section-3' },
 ]

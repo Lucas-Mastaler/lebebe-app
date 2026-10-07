@@ -228,7 +228,7 @@ export function PatternsSection() {
         title="Pattern: formulário completo"
         description="Como um formulário longo é organizado na página inteira."
         options={[
-          { letter: 'A', label: 'Coluna única', note: 'Uma seção após a outra, scroll vertical — como a Ficha de Atendimento.', content: <FormPatternA /> },
+          { letter: 'A', label: 'Coluna única', note: 'Uma seção após a outra, scroll vertical — como a Prancheta Virtual de Atendimento.', content: <FormPatternA /> },
           { letter: 'B', label: 'Cards por seção', note: 'Seções em grid, várias visíveis ao mesmo tempo — como /pedidos-personalizados/novo.', content: <FormPatternB /> },
           { letter: 'C', label: 'Wizard por etapas', note: 'Um passo por vez, com barra de progresso — reduz carga cognitiva.', content: <FormPatternC /> },
         ]}

@@ -840,7 +840,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                     </div>
                     <Button
                       type="button"
-                      onClick={() => router.push(`/atendimento-presencial/ficha?rascunho=${rascunho.id}`)}
+                      onClick={() => router.push(`/atendimento-presencial/prancheta?rascunho=${rascunho.id}`)}
                       size="lg"
                       className="mt-3 w-full"
                     >

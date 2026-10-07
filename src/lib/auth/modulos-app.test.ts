@@ -89,7 +89,7 @@ describe('modulos-app catalog', () => {
     'Finalizações automáticas',
     'Novo pedido personalizado',
     'Gestão de pedidos personalizados',
-    'Ficha de atendimento',
+    'Prancheta Virtual de Atendimento',
     'Registros de atendimentos',
     'Clientes',
     'Procurar datas',
@@ -183,12 +183,12 @@ describe('modulos-app catalog', () => {
       'atendimento_presencial_clientes',
     ])
     expect(atendimentoPresencial?.items.map((item) => item.label)).toEqual([
-      'Ficha de atendimento',
+      'Prancheta Virtual de Atendimento',
       'Registros de atendimentos',
       'Clientes',
     ])
     expect(atendimentoPresencial?.items.map((item) => item.href)).toEqual([
-      '/atendimento-presencial/ficha',
+      '/atendimento-presencial/prancheta',
       '/atendimento-presencial/registros',
       '/atendimento-presencial/clientes',
     ])
@@ -350,7 +350,7 @@ describe('modulos-app catalog', () => {
       'src/app/digisac/finalizacoes-automaticas/page.tsx': "checkModuleAndWindowAccess('digisac_finalizacoes_automaticas')",
       'src/app/configuracoes/procurar-datas/page.tsx': "checkModuleAndWindowAccess('configuracoes_procurar_datas')",
       'src/app/pos-venda/atendimento-automatico/page.tsx': "checkModuleAndWindowAccess('pos_venda_atendimento_automatico')",
-      'src/app/atendimento-presencial/ficha/page.tsx': "checkModuleAndWindowAccess('atendimento_presencial_ficha')",
+      'src/app/atendimento-presencial/prancheta/page.tsx': "checkModuleAndWindowAccess('atendimento_presencial_ficha')",
       'src/app/atendimento-presencial/registros/page.tsx':
         "checkModuleAndWindowAccess('atendimento_presencial_registros')",
       'src/app/atendimento-presencial/clientes/page.tsx':

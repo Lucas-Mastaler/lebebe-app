@@ -144,7 +144,7 @@ export function FeedbackSection() {
         title="Alerts / feedback"
         description="Mensagens de sucesso, aviso, erro e informação — os 4 estados juntos, para comparar o conjunto."
         options={[
-          { letter: 'A', label: 'Borda + fundo claro', note: 'Borda fina colorida — padrão hoje na Ficha de Atendimento.', content: <AlertsBorder /> },
+          { letter: 'A', label: 'Borda + fundo claro', note: 'Borda fina colorida — padrão hoje na Prancheta Virtual de Atendimento.', content: <AlertsBorder /> },
           { letter: 'B', label: 'Fundo cheio', note: 'Fundo mais saturado, sem borda — padrão hoje em Recebimento.', content: <AlertsSolid /> },
           { letter: 'C', label: 'Cartão neutro + barra lateral', note: 'Base neutra (branco), cor só na barra lateral e no ícone.', content: <AlertsCard /> },
         ]}

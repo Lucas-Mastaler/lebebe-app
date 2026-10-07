@@ -121,7 +121,7 @@ type Props = {
 }
 
 const etapaLabels: Record<FichaEtapa, string> = {
-  ficha: 'Ficha de Atendimento',
+  ficha: 'Prancheta Virtual de Atendimento',
   resultado: 'Resultado',
   revisao: 'Revisao',
 }
@@ -1094,7 +1094,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       }
 
       if (typeof window !== 'undefined' && window.location.search) {
-        void router.replace('/atendimento-presencial/ficha', { scroll: false })
+        void router.replace('/atendimento-presencial/prancheta', { scroll: false })
       }
     } catch (error) {
       setErro(error instanceof Error ? error.message : 'Erro ao salvar rascunho atual')
@@ -1215,7 +1215,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       <FormPageContent ref={formContentRef} className="max-w-3xl space-y-5" style={actionBarHeight ? { paddingBottom: `${actionBarHeight + 24}px` } : undefined}>
         <PageHeader
           eyebrow="Atendimento presencial"
-          title="Ficha de Atendimento"
+          title="Prancheta Virtual de Atendimento"
           action={
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <Button

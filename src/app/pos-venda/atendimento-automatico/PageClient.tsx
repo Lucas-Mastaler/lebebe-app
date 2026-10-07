@@ -174,7 +174,7 @@ function resumoSituacao(metadata: Record<string, unknown> | null): string {
  * original tinha 6 cores ad hoc distintas (incluindo laranja e roxo, que o
  * DS não tem). `pausado_humano` e `bloqueado_24h` acabam dividindo o tom
  * `warning` — lacuna registrada, mesmo padrão já aceito para `Section` (só
- * 3 tons) em `/atendimento-presencial/ficha`.
+ * 3 tons) em `/atendimento-presencial/prancheta`.
  */
 const STATUS_TONE: Record<string, 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'brand'> = {
   ativa: 'success',

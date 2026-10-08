@@ -308,7 +308,7 @@ export async function gerarTextoResumoDiario(
   linhas.push(`Filas agendadas: ${filas.agendado}`)
   linhas.push(`Erros: ${filas.erro}`)
   linhas.push(`Retries: 0`)
-  linhas.push(`Cancelados: ${filas.cancelado}`)
+  linhas.push(`Filas canceladas (acumulado; não significa lead perdido): ${filas.cancelado}`)
   linhas.push(`Resultado incerto: ${filas.resultado_incerto}`)
   linhas.push(`Análise manual: ${filas.analise_manual}`)
 

@@ -227,6 +227,36 @@ describe('api detalhe de registro atendimento presencial', () => {
     expect(rpc).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['consultora_perfil_invalido', 'perfil de consultora ativo'],
+    ['consultora_unidade_invalida', 'vinculo com a filial'],
+    ['consultora_inativa', 'responsavel por este atendimento esta inativo'],
+    ['unidade_inativa', 'filial deste atendimento esta inativa'],
+    ['virada_cartao_obrigatoria', 'DD/MM'],
+    ['virada_cartao_invalida', 'data valida'],
+  ])('explica o erro %s sem confundir cadastro com preenchimento', async (erro, mensagem) => {
+    mockSupabase(filasContextoEPatch(), { data: null, error: { code: '23514', message: erro } })
+    const response = await PATCH(new Request('http://local', {
+      method: 'PATCH',
+      body: JSON.stringify(payloadEdicaoValido),
+    }), { params: Promise.resolve({ id: atendimentoId }) })
+    expect(response.status).toBe(400)
+    const json = await response.json()
+    expect(json.message).toContain(mensagem)
+    expect(json.ok).toBe(false)
+    if (erro.startsWith('virada_cartao_')) expect(json.field).toBe('viradaCartao')
+  })
+
+  it('mantem a rejeicao de permissao da RPC', async () => {
+    mockSupabase(filasContextoEPatch(), { data: null, error: { code: '42501', message: 'access_denied' } })
+    const response = await PATCH(new Request('http://local', {
+      method: 'PATCH',
+      body: JSON.stringify(payloadEdicaoValido),
+    }), { params: Promise.resolve({ id: atendimentoId }) })
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ ok: false, message: 'Voce nao possui permissao para editar este atendimento.' })
+  })
+
   it('retorna sucesso controlado quando a RPC sinaliza nenhuma_alteracao', async () => {
     mockSupabase(filasContextoEPatch(), {
       data: null,

@@ -95,6 +95,24 @@ function mapearErroRpcEdicao(error: { code?: string; message?: string }) {
   if (message.includes('nenhuma_alteracao')) {
     return NextResponse.json({ ok: true, semAlteracoes: true, message: 'Nao houve mudancas para salvar.' })
   }
+  if (message.includes('consultora_perfil_invalido')) {
+    return jsonErro('O usuario responsavel por este atendimento nao possui perfil de consultora ativo. Solicite a revisao do cadastro.', 400)
+  }
+  if (message.includes('consultora_unidade_invalida')) {
+    return jsonErro('O usuario responsavel por este atendimento nao possui vinculo com a filial. Solicite a revisao do cadastro.', 400)
+  }
+  if (message.includes('consultora_inativa')) {
+    return jsonErro('O usuario responsavel por este atendimento esta inativo. Solicite a revisao do cadastro.', 400)
+  }
+  if (message.includes('unidade_inativa')) {
+    return jsonErro('A filial deste atendimento esta inativa. Solicite a revisao do cadastro.', 400)
+  }
+  if (message.includes('virada_cartao_obrigatoria')) {
+    return jsonErro('Informe o dia e o mes da virada do cartao (DD/MM), sem ano.', 400, { field: 'viradaCartao' })
+  }
+  if (message.includes('virada_cartao_invalida')) {
+    return jsonErro('Data de virada do cartao invalida. Ajuste o dia (01 a 31) e o mes (01 a 12) para uma data valida, sem ano.', 400, { field: 'viradaCartao' })
+  }
   if (error.code === '23514') {
     return jsonErro('Dados obrigatorios da edicao nao foram preenchidos corretamente.', 400)
   }

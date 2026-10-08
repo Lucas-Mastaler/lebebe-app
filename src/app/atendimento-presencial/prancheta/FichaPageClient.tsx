@@ -24,6 +24,8 @@ import type { SectionTone } from '@/lib/design-system/section-tones'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { HistoricoClienteModal } from '@/components/atendimento-presencial/HistoricoClienteModal'
 import { TelefoneClienteRapido } from '@/components/atendimento-presencial/TelefoneClienteRapido'
+import { ViradaCartaoField } from '@/components/atendimento-presencial/ViradaCartaoField'
+import { VIRADA_CARTAO_OBRIGATORIA } from '@/lib/atendimento-presencial/virada-cartao-input'
 import {
   carregarCacheRascunho,
   removerCacheRascunho,
@@ -298,7 +300,7 @@ function validarEtapa(params: {
     if (!ficha.resultadoAtendimento) erros.push({ sectionId: 'secao-resultado-fechamento', message: 'Selecione o resultado do atendimento.' })
     if (ficha.motivosResultado.length === 0) erros.push({ sectionId: 'secao-resultado-produto', message: 'Selecione pelo menos um motivo.' })
     if (ficha.motivosResultado.includes('virada_cartao') && !formatarViradaCartao(ficha.viradaCartaoDia, ficha.viradaCartaoMes)) {
-      erros.push({ sectionId: 'secao-resultado-condicao', fieldId: 'virada-cartao', message: 'Informe o dia e o mes da virada do cartao.' })
+      erros.push({ sectionId: 'secao-resultado-condicao', fieldId: 'virada-cartao', message: VIRADA_CARTAO_OBRIGATORIA })
     }
     if (ficha.motivosResultado.includes('outro') && !ficha.motivoOutro?.trim()) {
       erros.push({ sectionId: 'secao-resultado-outro', fieldId: 'motivo-outro', message: 'Informe o complemento de Outro.' })
@@ -960,6 +962,13 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     atualizarCrianca(id, { nome: undefined, nomeNaoInformado: true })
   }
 
+  function limparErroViradaCartao() {
+    const restantes = errosValidacao.filter((item) => item.fieldId !== 'virada-cartao')
+    if (restantes.length === errosValidacao.length) return
+    setErrosValidacao(restantes)
+    setErroEtapa(restantes.length === 0 ? null : restantes.length === 1 ? restantes[0].message : 'Revise os campos destacados antes de continuar.')
+  }
+
   function atualizarViradaCartao(valor: string) {
     const formatada = formatarViradaCartaoInput(valor)
     const convertida = converterViradaCartaoInput(formatada)
@@ -969,6 +978,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       viradaCartaoDia: convertida?.dia,
       viradaCartaoMes: convertida?.mes,
     }))
+    if (convertida) limparErroViradaCartao()
   }
 
   function alternarDepartamento(chave: DepartamentoInteresse) {
@@ -995,6 +1005,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   function alternarMotivo(chave: MotivoResultado) {
+    if (chave === 'virada_cartao' && ficha.motivosResultado.includes(chave)) limparErroViradaCartao()
     atualizarFicha((atual) => {
       const selecionado = atual.motivosResultado.includes(chave)
       const motivosResultado = selecionado
@@ -1734,19 +1745,13 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                     tone="section-2"
                     erro={erroSecao('secao-resultado-condicao')}
                   >
-                    <FormField id="virada-cartao" label="Virada do cartao" required helper="Use somente dia e mes, sem ano.">
-                      {(f) => (
-                        <Input
-                          {...f}
-                          value={viradaCartaoInput}
-                          onChange={(event) => atualizarViradaCartao(event.target.value)}
-                          className="h-12 text-base"
-                          inputMode="numeric"
-                          placeholder="DD/MM"
-                          maxLength={5}
-                        />
-                      )}
-                    </FormField>
+                    <ViradaCartaoField
+                      id="virada-cartao"
+                      value={viradaCartaoInput}
+                      onChange={atualizarViradaCartao}
+                      error={erroSecao('secao-resultado-condicao')}
+                      className="h-12 text-base"
+                    />
                   </SecaoFicha>
                 )}
 

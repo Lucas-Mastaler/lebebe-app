@@ -33,6 +33,8 @@ import {
 } from '@/components/design-system'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { HistoricoClienteModal, type HistoricoClienteModalCliente } from '@/components/atendimento-presencial/HistoricoClienteModal'
+import { ViradaCartaoField } from '@/components/atendimento-presencial/ViradaCartaoField'
+import { validarViradaCartaoInput } from '@/lib/atendimento-presencial/virada-cartao-input'
 import {
   DEPARTAMENTOS_INTERESSE,
   FICHA_CONSULTORA_NOME_MAX_CHARS,
@@ -198,6 +200,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   const [fichaEdicao, setFichaEdicao] = useState<FichaDadosRascunho | null>(null)
   const [numeroLancamentoEdicao, setNumeroLancamentoEdicao] = useState('')
   const [viradaCartaoEdicaoInput, setViradaCartaoEdicaoInput] = useState('')
+  const [mostrarErroViradaCartaoEdicao, setMostrarErroViradaCartaoEdicao] = useState(false)
   const [produtoEdicaoDigitado, setProdutoEdicaoDigitado] = useState('')
   const [dataPrevistaEdicaoInputs, setDataPrevistaEdicaoInputs] = useState<Record<string, string>>({})
   const [salvandoEdicao, setSalvandoEdicao] = useState(false)
@@ -318,6 +321,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     setFichaEdicao(ficha)
     setNumeroLancamentoEdicao(detalhe.atendimento.numeroLancamento ? String(detalhe.atendimento.numeroLancamento) : '')
     setViradaCartaoEdicaoInput(formatarViradaCartao(ficha.viradaCartaoDia, ficha.viradaCartaoMes))
+    setMostrarErroViradaCartaoEdicao(false)
     setDataPrevistaEdicaoInputs(Object.fromEntries(
       ficha.criancas.map((crianca) => [crianca.id, formatarDataISOParaInput(crianca.dataPrevistaNascimento)])
     ))
@@ -411,6 +415,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   }
 
   function alternarMotivoEdicao(chave: MotivoResultado) {
+    if (chave === 'virada_cartao') setMostrarErroViradaCartaoEdicao(false)
     atualizarFichaEdicao((atual) => {
       const selecionado = atual.motivosResultado.includes(chave)
       const motivosResultado = selecionado
@@ -438,6 +443,10 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       numeroLancamento: numeroLancamentoEdicao,
     })
     if (!validacao.ok) {
+      if (validacao.field === 'viradaCartao') {
+        setMostrarErroViradaCartaoEdicao(true)
+        return
+      }
       setErroEdicao(validacao.message)
       return
     }
@@ -1093,18 +1102,12 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                 </div>
 
                 {fichaEdicao.motivosResultado.includes('virada_cartao') && (
-                  <FormField id="edicao-virada-cartao" label="Virada do cartao">
-                    {(field) => (
-                      <Input
-                        {...field}
-                        value={viradaCartaoEdicaoInput}
-                        onChange={(event) => atualizarViradaCartaoEdicao(event.target.value)}
-                        inputMode="numeric"
-                        placeholder="DD/MM"
-                        maxLength={5}
-                      />
-                    )}
-                  </FormField>
+                  <ViradaCartaoField
+                    id="edicao-virada-cartao"
+                    value={viradaCartaoEdicaoInput}
+                    onChange={atualizarViradaCartaoEdicao}
+                    error={mostrarErroViradaCartaoEdicao ? validarViradaCartaoInput(viradaCartaoEdicaoInput) : undefined}
+                  />
                 )}
 
                 {fichaEdicao.motivosResultado.includes('outro') && (

@@ -190,6 +190,15 @@ describe('pesquisarDatasV2', () => {
     )
   })
 
+  it('pesquisa datas apenas com coordenadas, sem campos textuais nem CEP', async () => {
+    const result = await pesquisarDatasV2({ dataInicial: '2026-07-10', tempoNecessario: '00:40',
+      destLat: -25.6963932, destLng: -49.5036726, destProvider: 'google-maps:coordenadas-diretas',
+      cep: '', numero: '', logradouro: '', bairro: '', cidade: '', uf: '', enderecoCompleto: '' })
+    expect(result.ok).toBe(true)
+    expect(result.resultadoFinal.candidatosFinais.length).toBeGreaterThan(0)
+    expect(calcularMapaMock).toHaveBeenCalledWith(expect.objectContaining({ destino: expect.objectContaining({ lat: -25.6963932, lng: -49.5036726 }) }))
+  })
+
   it('falha fechado quando a leitura da agenda foi truncada', async () => {
     buscarAgendaMock.mockResolvedValueOnce({
       diagnostico: {

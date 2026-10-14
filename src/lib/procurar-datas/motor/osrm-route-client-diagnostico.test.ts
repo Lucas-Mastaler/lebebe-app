@@ -29,6 +29,21 @@ const urlEsperada = `${baseUrl}/route/v1/driving/${coordenadas.de.lng},${coorden
 // ─── Testes ───────────────────────────────────────────────────────────────────
 
 describe('criarBuscarRotaOSRMRouteDiagnosticoV2', () => {
+  it('extrai associação do destino sem alterar a distância ou usar o waypoint da origem', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 'Ok', routes: [{ distance: 3500.5 }],
+      waypoints: [{ location: [-49, -25], distance: 1 }, { location: [-49.50, -25.69], distance: 345.25 }] })))
+    const buscar = criarBuscarRotaOSRMRouteDiagnosticoV2({ baseUrl, fetchImpl })
+    expect(await buscar(coordenadas.de, coordenadas.para)).toEqual({ ok: true, distanciaM: 3501,
+      associacaoDestino: { lat: -25.69, lng: -49.50, distanciaAteViaM: 345.25 } })
+  })
+
+  it.each([undefined, { location: [181, -25], distance: 1 }, { location: [-49, -25], distance: -1 }, { location: [-49], distance: 1 }])(
+    'metadado ausente ou inválido não altera o comportamento anterior da rota', async (destino) => {
+      const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 'Ok', routes: [{ distance: 3500.5 }], waypoints: [{}, destino] })))
+      const buscar = criarBuscarRotaOSRMRouteDiagnosticoV2({ baseUrl, fetchImpl })
+      expect(await buscar(coordenadas.de, coordenadas.para)).toEqual({ ok: true, distanciaM: 3501 })
+    })
+
   it('deve retornar distância em metros quando OSRM responde com sucesso', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,

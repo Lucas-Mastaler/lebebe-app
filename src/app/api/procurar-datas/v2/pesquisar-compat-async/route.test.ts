@@ -7,6 +7,8 @@ const pesquisarDatasV2Mock = vi.hoisted(() => vi.fn())
 const buscarConfigMock = vi.hoisted(() => vi.fn())
 const criarBuscarRotaMock = vi.hoisted(() => vi.fn())
 const salvarProgressoMock = vi.hoisted(() => vi.fn())
+const registrarAuditoriaMock = vi.hoisted(() => vi.fn<typeof import('@/lib/procurar-datas/v2/auditoria-pesquisa').registrarAuditoriaPesquisa>(async () => ({ sucesso: true, id: 'audit-test' })))
+vi.mock('@/lib/procurar-datas/v2/auditoria-pesquisa', () => ({ registrarAuditoriaPesquisa: registrarAuditoriaMock }))
 
 vi.mock('@/lib/procurar-datas/api', () => ({
   validarAcessoProcurarDatas: validarAcessoMock,
@@ -184,6 +186,20 @@ describe('POST /api/procurar-datas/v2/pesquisar-compat-async', () => {
     expect(json.diagnosticoPerformanceV2).toBeUndefined()
   })
 
+  it('aceita coordenadas sem endereço, encaminha ponto exato e grava ausência textual sem inventar dados', async () => {
+    const body = { ...payloadBase, cep: '', numero: '', logradouro: '', bairro: '', cidade: '', uf: '',
+      enderecoCompleto: '', destDisplay: 'Localização por coordenadas', destProvider: 'google-maps:coordenadas-diretas',
+      destLat: -25.6963932, destLng: -49.5036726 }
+    const response = await POST(criarRequest(body))
+    expect(response.status).toBe(200)
+    expect((await response.json()).status).toBe('done')
+    expect(pesquisarDatasV2Mock).toHaveBeenCalledWith(expect.objectContaining({ destLat: body.destLat, destLng: body.destLng, cidade: '', uf: '' }), expect.anything())
+    expect(registrarAuditoriaMock).toHaveBeenCalledWith(expect.objectContaining({ cep: null, numero: '', cidade: '', uf: '', latitude: body.destLat, longitude: body.destLng }))
+    const done = salvarProgressoMock.mock.calls.at(-1)?.[1]
+    expect(done.payload.candidates.length).toBeGreaterThan(0)
+    expect(done.payload.candidates[0].frete).toBeTruthy()
+  })
+
   it('com flag diagnostica retorna e salva diagnosticoPerformanceV2', async () => {
     const res = await POST(criarRequest({
       ...payloadBase,
@@ -327,4 +343,13 @@ describe('POST /api/procurar-datas/v2/pesquisar-compat-async', () => {
     expect(pesquisarDatasV2Mock).not.toHaveBeenCalled()
     expect(salvarProgressoMock).not.toHaveBeenCalled()
   })
+  it('encaminha a memória real ao snapshot persistido sem modificar o payload legado', async () => {
+    await POST(criarRequest(payloadBase))
+    const chamada = registrarAuditoriaMock.mock.calls.find(([params]) => params.status === 'success')
+    expect(chamada).toBeDefined()
+    const params = chamada![0]
+    expect(params.snapshotTecnico).toMatchObject({ memoriaFrete: { versao: 1, distKm: 8, fonteDistancia: 'osrm-route-deposito-destino', candidatos: [{ freteApresentado: params.resultados?.[0]?.frete }] } })
+    expect(params.resultados?.[0]).not.toHaveProperty('memoriaFrete')
+  })
+
 })

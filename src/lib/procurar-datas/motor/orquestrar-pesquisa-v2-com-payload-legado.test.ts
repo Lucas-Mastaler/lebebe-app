@@ -1,3 +1,5 @@
+import { lerMemoriaFretePesquisa } from './memoria-frete'
+import { calcularFrete } from './frete'
 import { describe, expect, it, vi } from 'vitest'
 import {
   orquestrarPesquisaV2ComPayloadLegado,
@@ -196,4 +198,37 @@ describe('orquestrarPesquisaV2ComPayloadLegado', () => {
     expect(resultado.avisos.some((aviso) => aviso.includes('Coordenadas do deposito invalidas'))).toBe(true)
     expect(deps.buscarRota).not.toHaveBeenCalled()
   })
+  it('preserva memória serializável com parâmetros efetivos, etapas e preço apresentado, independente da configuração futura', async () => {
+    const deps = depsBase(criarSaidaV2([
+      candidato('2026-07-10', 'normal', 1, 99999), candidato('2026-07-11', 'premium', 2, 1),
+    ]))
+    const configUsada = { ...CONFIG }
+    deps.buscarConfig.mockResolvedValue(configUsada)
+    const request = criarRequest({ valorInicialMinimo: 999, isRural: true, isEncomenda: true })
+    const resultado = await orquestrarPesquisaV2ComPayloadLegado(request, deps)
+    const memoria = lerMemoriaFretePesquisa(JSON.parse(JSON.stringify(resultado.diagnosticoPayloadLegado.memoriaFrete)))
+    expect(memoria).not.toBeNull()
+    expect(memoria).toMatchObject({ versao: 1, origemGeografica: 'deposito', distKm: 8, distM: 8000,
+      fonteDistancia: 'osrm-route-deposito-destino', valorInicialInformado: 999, valorInicialAplicadoComoPiso: false,
+      encomendaInformada: true, encomendaInfluenciaPreco: false, origem: { lat: CONFIG.latDeposito, lng: CONFIG.lngDeposito },
+      destino: { lat: request.destLat, lng: request.destLng } })
+    configUsada.valorSemanaAte10km = 9999
+    for (const item of memoria!.candidatos) {
+      expect(item.entrada.params.valorSemanaAte10km).toBe(CONFIG.valorSemanaAte10km)
+      expect(calcularFrete(item.entrada)).toEqual(item.resultado)
+      expect(item.etapas.at(-1)?.valor).toBe(item.resultado.valorFrete)
+      expect(item.freteApresentado).toBe(item.resultado.valorFormatado)
+    }
+    expect(memoria!.candidatos[1].entrada.isSabado).toBe(true)
+    expect(memoria!.candidatos[1].etapas.find((etapa) => etapa.descricao === 'Adicional por tipo (premium)')?.valor).toBe(CONFIG.valorAdicionalRotaPremium)
+  })
+  it('não fabrica memória quando OSRM não forneceu distância', async () => {
+    const deps = depsBase()
+    deps.buscarRota.mockResolvedValue({ ok: false, distanciaM: null })
+    const resultado = await orquestrarPesquisaV2ComPayloadLegado(criarRequest(), deps)
+    expect(resultado.diagnosticoPayloadLegado.memoriaFrete).toBeNull()
+    expect(lerMemoriaFretePesquisa(undefined)).toBeNull()
+    expect(lerMemoriaFretePesquisa({ versao: 99 })).toBeNull()
+  })
+
 })

@@ -5180,3 +5180,45 @@ Adicionada regra de tolerancia de ate 30 minutos no tempo disponivel para candid
 1. Gates antecipados (equipe, ativa, tempoNecessarioMin, domingo, km, config, limites) permanecem intactos
 2. Helper usa apenas `diaSemana` (nao `ehSabado`) — quarta = 3, sabado = 6 derivados internamente
 3. `disponivelMin` confirmado como mesmo valor que originou `suficienteParaServico`
+
+
+## 2026-10-13 — Auditoria Contenda: histórico, preço e diagnóstico
+
+Relatório detalhado em `procurar-datas-escopo-equivalencia-legado-v2.md`, seção Auditoria do run `71a9a968-5203-4543-9c54-2502d67effb9`. Evidência real confirma os snapshots e preços, mudança dos dados consumidos de 28/11 e omissão de disponibilidade no mapa espacial da auditoria. Apresentação por data/equipe e flags corrigidas localmente; motor, cobrança, ranking e fontes externas intactos. Memória de preço histórica não preservada: contas com OSRM/configuração atuais são reconstruções. 85 testes focados aprovados; validação visual superadmin e comprovação histórica integral pendentes. Sem commit, push ou deploy.
+
+
+### 13/10/2026 — Conclusão técnica da auditoria Dev V2
+
+Disponibilidade do diagnóstico corrigida com helper compartilhado de produção e limite 2000; estados elegível/rejeitado/inconclusivo explícitos. Validação local com fontes reais: 28/11 rejeitado atualmente (60 min e filtro early, sem delta); 03/12 elegível (38,909 km); 05/12 elegível (38,806 km); 310 disponibilidades, zero truncamento e zero bloqueios espaciais. Memória futura versionada de frete implementada no JSON existente, coletada no cálculo efetivo e exibida na auditoria, sem mudar fórmula ou preços. 121 testes focados passaram; suíte ampla 1049 aprovados/8 falhas preexistentes do leitor de agenda; lint sem erros; typecheck com dívida anterior fora do escopo. Sessão local redirecionou Dev V2 para /inicio (sem superadmin), portanto visual pendente. Detalhes no complemento do contrato. Sem escrita externa, commit, push ou deploy. Atividade técnica encerrada; Google Maps permanece separado.
+
+### 13/10/2026 — Localização Google Maps (Frentes 1/3/0)
+
+Entrada opcional implementada na tela principal com extração de pin/coordenadas, expansão restrita de links curtos, confirmação de ponto/endereço e diagnóstico de associação viária OSRM. Casa Nostra completo extrai -25.6963932,-49.5036726; sessão técnica local confirmou aviso de 388 m até via e bloqueio de confirmação com endereço ausente. Link curto real sem pin explícito continua exigindo coordenadas manuais; nomes/Place IDs sem coordenadas não acionam API paga. Text Search/Details avaliados e não ativados. Requisitos textuais obrigatórios preservados, inclusive número; rural incompleto requer decisão adicional.
+
+78 testes focados/regressão aprovados; lint sem erros (warning antigo progressSnapshot); typecheck global bloqueado em arquivos fora do escopo, sem diagnóstico Maps. E2E de confirmação/endereço completo e pesquisa com persistência não executado. Nenhuma alteração em regras de motor, schema, preço, ranking, agenda, Haversine ou OSRM; cliente Route recebeu só metadado opcional de waypoint. Sem commit/push/deploy. Contrato, formatos, limites e proposta Places detalhados em procurar-datas-escopo-equivalencia-legado-v2.md, seção Localização por Google Maps.
+
+### 14/10/2026 — Ajustes UX Maps e pesquisa sem endereço
+
+Identificar localização agora libera imediatamente a pesquisa por coordenadas, sem checkboxes e sem os seis campos textuais. Endereço opcional permanece editável; limpar/editar link invalida ponto, valores e resultados. Detalhes técnicos recolhidos. Aviso principal de associação à via somente acima de 1.000 m; nenhuma regra de cálculo alterada. Parser rejeita estruturas de rotas antes de escolher pin e aceita coordenadas repetidas equivalentes.
+
+Consulta reversa Photon preparada com cache Redis existente, controle global, timeout e atribuição, porém desativada por padrão. Teste externo bloqueado pela revisão automática por envio de coordenadas sem autorização específica; depende dessa autorização antes de teste/ativação. Sem cidade/UF, pesquisa continua válida. LocationIQ/Google não tiveram consumo ampliado nem serviço pago habilitado.
+
+Pesquisa real local na sessão técnica: Casa Nostra, todos os campos de endereço vazios, área rural, DIVERSOS, 00:40, início 28/11/2026 → 03/12 R$340, 05/12 R$460, 10/12 R$340 em 23 s. MCP confirmou run 4225b1ad-c394-4f9a-be48-f054af172f50, coordenadas exatas, campos nulos e três resultados. Sem pré-agendamento. Link de rota rejeitado, edição e limpeza invalidadas visualmente. Entrada direta coberta em testes; tentativa visual adicional terminou Não autorizado. Evidência DOM em output/maps-ux-pesquisa-sem-endereco.txt; PNG não salvo por timeout CDP.
+
+Link curto Casa Nostra: HTTP da tela continua sem pin explícito (422). Chrome controlado expôs coordenadas corretas após ação Rotas, demonstrando dependência de JS/interação nesse exemplo. Proposta de serviço Selenium isolado/auth, limite de concorrência, timeout 10 s, egress restrito e encerramento de sessão está no contrato; nenhuma implementação/alteração de VPS executada. Tentativa SSH somente leitura falhou na autenticação, sem dimensionamento atual confirmado.
+
+Validação final: 139 testes aprovados em dez arquivos. ESLint sem erros, warning preexistente progressSnapshot em PageClient. Typecheck padrão impactado pela cópia concorrente output/decorisi-conferencia-app; verificação adicional com configuração temporária em output/maps-typecheck.json, incluindo somente src, manteve erros fora do escopo em auth/agente/route.test.ts, hub-vendas/alertas/teste/route.test.ts, auth/agent-bootstrap.test.ts e mere-ia/experimental/estabilizacao.test.ts; sem diagnóstico Maps. Diff sem erros de whitespace. Tradicional preservado por testes existentes de validação textual/entrada/adaptador; não repetida pesquisa tradicional completa autenticada após perda da sessão. Sem commit, push, deploy, migration ou escrita no log congelado.
+
+### 14/10/2026 — Experimento Photon autorizado somente para Casa Nostra
+
+Uma única consulta /reverse para -25.6963932,-49.5036726, limit=1 e timeout de 3.500 ms: TimeoutError em 3.518 ms, sem dados retornados. Cidade/UF não confirmadas; não houve retry nem envio de outros pontos. Evidência em output/photon-casa-nostra-experimental.json. Coordenadas, destino, frete e configuração global preservados; integração continua desativada. Não recomendar ativação com este resultado inconclusivo. Detalhes no complemento experimental do contrato. Sem commit/push/deploy.
+
+### 14/10/2026 — Reverso Nominatim habilitado e homologado localmente
+
+Photon reavaliado com timeout 10 s: quatro timeouts (Casa Nostra padrão/repetição/layer=city e controle Curitiba). DNS/TCP/TLS funcionaram; lentidão HTTP/reverse observada, sem generalizar indisponibilidade. Nominatim HTTP 200 em seis consultas públicas seriadas (38–1.110 ms), Contenda - PR e Curitiba - PR corretos. Limites administrativos reais contêm os pontos originais; três validações reais aprovadas.
+
+Implementado Nominatim direto, fallback por coordenadas, timeout total 10 s, cache Redis 24 h, controle global 1 req/2 s, deduplicação local/distribuída e respeito ao Retry-After. Município exige limite administrativo contendo ponto; não usa cidade mais próxima. Coordenadas/frete/OSRM preservados. Provider apenas no diagnóstico; atribuição OSM visível. Flag genérica PROCURAR_DATAS_REVERSE_ENABLED habilitada somente em .env.local, exemplo false e instância configurável no servidor. Sem serviço pago ou configuração de produção.
+
+E2E técnico local: identificação exibiu Contenda - PR, reverso 592 ms; pesquisa rural 00:40 em 21 s retornou 03/12 R$340, 05/12 R$460, 10/12 R$340. MCP confirmou run 25c1a3a8-bfb8-4ccc-b5d2-bf1c967e9f11 com ponto exato. Reverso ausente simulado por flag temporária: pesquisa completou em 20 s com mesmos fretes e seis campos nulos, run e5fe8250-9f44-4cdb-9b8b-53d4efdc1a3c; flag restaurada true. Cache real conferido. Captura output/maps-contenda-reverso.png e evidências JSON/DOM em output; nenhum pré-agendamento.
+
+168 testes aprovados em 11 arquivos, mais três verificações temporárias de respostas reais. Lint sem diagnósticos. Typecheck do src mantém somente dívida anterior nos testes auth/agente, hub-vendas/alertas/teste e auth/agent-bootstrap, sem erros nesta etapa. Diff verificado. Produção e links curtos via Selenium permanecem fora desta entrega; serviço público sem SLA e uso deve continuar moderado. Detalhes e fontes oficiais no complemento do contrato. Sem commit/push/deploy/migration/log congelado.

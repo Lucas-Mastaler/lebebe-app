@@ -450,3 +450,17 @@ describe('calcularFrete', () => {
     expect(r.valorFormatado).toBe('R$ 720')
   })
 })
+
+// Reconstrução com configuração consultada em 13/10/2026; não comprova os parâmetros históricos do run.
+describe('reconstrução do frete Contenda com OSRM atual', () => {
+  it.each([['2026-11-28', true, 450], ['2026-12-03', false, 330], ['2026-12-05', true, 450]] as const)('%s', (_data, isSabado, esperado) => {
+    const resultado = calcularFrete({ distKm: 38.948, isSabado, isRural: true, isCondominio: false, tipo: 'normal', params: {
+      kmMaxViagem: 150, kmMaxValorFixo: 10, kmMaxLongaCidade: 25, kmMaxNaoViagem: 40,
+      valorSemanaAte10km: 90, valorSabadoAte10km: 140, fatorMultiplicadorKmViagem: 2.05,
+      multiplicadorKmNaoViagem: 3, valorDiaApos25kmSemana: 50, valorDiaApos25kmSabado: 100, precoCondominioAdicional: 50,
+    } })
+    expect(resultado.ok).toBe(true)
+    expect(resultado.valorFrete).toBe(esperado)
+    expect(resultado.faixaAplicada).toBe('longa')
+  })
+})

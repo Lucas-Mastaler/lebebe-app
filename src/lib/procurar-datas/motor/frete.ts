@@ -25,6 +25,13 @@ import type {
   FaixaFrete,
 } from './types'
 
+/** Etapas observadas durante o cálculo real; valor é o resultado da operação indicada. */
+export interface EtapaCalculoFrete {
+  descricao: string
+  operacao: string
+  valor: number
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Arredonda para cima na dezena mais próxima (idêntico ao Apps Script). */
@@ -61,7 +68,8 @@ export function calcularFreteBase(
   isSabado: boolean,
   isRural: boolean,
   isCondominio: boolean,
-  p: FreteParams
+  p: FreteParams,
+  etapas?: EtapaCalculoFrete[]
 ): number | null {
   // Limite máximo de viagem
   if (distKm > p.kmMaxViagem) return null
@@ -69,6 +77,7 @@ export function calcularFreteBase(
   // Preço base conforme dia da semana
   const base = isSabado ? p.valorSabadoAte10km : p.valorSemanaAte10km
 
+  etapas?.push({ descricao: 'Base por dia', operacao: isSabado ? 'valorSabadoAte10km' : 'valorSemanaAte10km', valor: base })
   let preco: number
 
   if (distKm <= p.kmMaxValorFixo) {
@@ -76,23 +85,36 @@ export function calcularFreteBase(
     preco = base
   } else if (distKm <= p.kmMaxLongaCidade) {
     // Faixa 2: em viagem (normal)
-    preco = base + (distKm - p.kmMaxValorFixo) * p.fatorMultiplicadorKmViagem
+    const parcelaKm = (distKm - p.kmMaxValorFixo) * p.fatorMultiplicadorKmViagem
+    etapas?.push({ descricao: 'Parcela de quilometragem', operacao: '(' + distKm + ' - ' + p.kmMaxValorFixo + ') × ' + p.fatorMultiplicadorKmViagem, valor: parcelaKm })
+    preco = base + parcelaKm
   } else if (distKm <= p.kmMaxNaoViagem) {
     // Faixa 3: em viagem após "longa cidade"
     const add25 = isSabado ? p.valorDiaApos25kmSabado : p.valorDiaApos25kmSemana
-    preco = base + add25 + (distKm - p.kmMaxLongaCidade) * p.fatorMultiplicadorKmViagem
+    const parcelaKm = (distKm - p.kmMaxLongaCidade) * p.fatorMultiplicadorKmViagem
+    etapas?.push({ descricao: 'Adicional após longa cidade', operacao: isSabado ? 'valorDiaApos25kmSabado' : 'valorDiaApos25kmSemana', valor: add25 })
+    etapas?.push({ descricao: 'Parcela de quilometragem', operacao: '(' + distKm + ' - ' + p.kmMaxLongaCidade + ') × ' + p.fatorMultiplicadorKmViagem, valor: parcelaKm })
+    preco = base + add25 + parcelaKm
   } else {
     // Faixa 4: não viagem
     const add25 = isSabado ? p.valorDiaApos25kmSabado : p.valorDiaApos25kmSemana
-    preco = base + add25 + (distKm - p.kmMaxLongaCidade) * p.multiplicadorKmNaoViagem
+    const parcelaKm = (distKm - p.kmMaxLongaCidade) * p.multiplicadorKmNaoViagem
+    etapas?.push({ descricao: 'Adicional após longa cidade', operacao: isSabado ? 'valorDiaApos25kmSabado' : 'valorDiaApos25kmSemana', valor: add25 })
+    etapas?.push({ descricao: 'Parcela de quilometragem', operacao: '(' + distKm + ' - ' + p.kmMaxLongaCidade + ') × ' + p.multiplicadorKmNaoViagem, valor: parcelaKm })
+    preco = base + add25 + parcelaKm
   }
 
   // Adicionais
   if (isRural) preco += 100
+  etapas?.push({ descricao: 'Adicional rural', operacao: isRural ? '+100' : '+0', valor: isRural ? 100 : 0 })
   if (isCondominio) preco += p.precoCondominioAdicional
+  etapas?.push({ descricao: 'Adicional condomínio', operacao: '+' + (isCondominio ? p.precoCondominioAdicional : 0), valor: isCondominio ? p.precoCondominioAdicional : 0 })
+  etapas?.push({ descricao: 'Subtotal antes do arredondamento', operacao: 'soma da base, parcela de km e adicionais', valor: preco })
 
   // Arredonda para cima na dezena
-  return ceilDezena(preco)
+  const arredondado = ceilDezena(preco)
+  etapas?.push({ descricao: 'Primeiro arredondamento', operacao: 'ceil(' + preco + ' / 10) × 10', valor: arredondado })
+  return arredondado
 }
 
 // ─── Ajuste global (equivale a aplicarAjusteFrete do Apps Script) ────────────
@@ -103,10 +125,15 @@ export function calcularFreteBase(
  *   2. ceil dezena
  *   3. mínimo R$ 110
  */
-export function aplicarAjusteGlobal(valor: number): number {
+export function aplicarAjusteGlobal(valor: number, etapas?: EtapaCalculoFrete[]): number {
   let num = valor * 1.2
+  etapas?.push({ descricao: 'Ajuste global de 20%', operacao: valor + ' × 1.2', valor: num })
+  const antesArredondamento = num
   num = ceilDezena(num)
+  etapas?.push({ descricao: 'Segundo arredondamento', operacao: 'ceil(' + antesArredondamento + ' / 10) × 10', valor: num })
+  const antesMinimo = num
   if (num < 110) num = 110
+  etapas?.push({ descricao: 'Piso global de R$ 110', operacao: 'max(110, ' + antesMinimo + ')', valor: num })
   return num
 }
 
@@ -122,7 +149,7 @@ export function aplicarAjusteGlobal(valor: number): number {
  *
  * Todos os valores de adicional por tipo vêm da entrada, nunca hard-coded.
  */
-export function calcularFrete(input: FreteInput): FreteOutput {
+export function calcularFrete(input: FreteInput, etapas?: EtapaCalculoFrete[]): FreteOutput {
   const {
     distKm,
     isSabado,
@@ -149,13 +176,14 @@ export function calcularFrete(input: FreteInput): FreteOutput {
   }
 
   // 1. Preço bruto (calcularFrete do Apps Script)
-  const brutoPre = calcularFreteBase(distKm, isSabado, isRural, isCondominio, params)
+  const brutoPre = calcularFreteBase(distKm, isSabado, isRural, isCondominio, params, etapas)
   // brutoPre nunca será null aqui porque faixa !== 'recusado', mas TypeScript exige guard
   const bruto = brutoPre as number
 
   // 2. Ajuste global: ×1.2, ceil dezena, min R$110
-  let valor = aplicarAjusteGlobal(bruto)
+  let valor = aplicarAjusteGlobal(bruto, etapas)
 
+  const antesAdicionalTipo = valor
   // 3. Adicional por tipo de candidato
   if (tipo === 'especial') {
     valor += valorAdicionalEspecial
@@ -164,6 +192,9 @@ export function calcularFrete(input: FreteInput): FreteOutput {
   } else if (tipo === 'hora-marcada') {
     valor += horaMarcadaValorAdicional
   }
+
+  etapas?.push({ descricao: 'Adicional por tipo (' + tipo + ')', operacao: '+' + (valor - antesAdicionalTipo), valor: valor - antesAdicionalTipo })
+  etapas?.push({ descricao: 'Frete final', operacao: antesAdicionalTipo + ' + ' + (valor - antesAdicionalTipo), valor })
 
   return {
     ok: true,

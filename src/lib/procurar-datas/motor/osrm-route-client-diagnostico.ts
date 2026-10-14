@@ -59,6 +59,8 @@ export type ConfigOSRMRouteClient = {
 }
 
 export type ResultadoRotaOSRM = {
+  /** Metadado opcional do waypoint do destino; não altera distância ou regra de rota. */
+  associacaoDestino?: { lat: number; lng: number; distanciaAteViaM: number }
   /** Distância da rota em metros (routes[0].distance). */
   distanciaM: number | null
 
@@ -96,6 +98,7 @@ type RespostaOSRMRoute = {
   code: string
   routes?: RotaOSRM[]
   message?: string
+  waypoints?: Array<{ location?: number[]; distance?: number }>
 }
 
 // ─── Função principal ─────────────────────────────────────────────────────────
@@ -183,6 +186,14 @@ export function criarBuscarRotaOSRMRouteDiagnosticoV2(
     }
 
     // Distância em metros
-    return { distanciaM: Math.round(route.distance), ok: true }
+    const destino = data.waypoints?.[1]
+    const location = destino?.location
+    const associacaoDestino = Array.isArray(location) && location.length === 2 &&
+      Number.isFinite(location[0]) && Math.abs(location[0]) <= 180 &&
+      Number.isFinite(location[1]) && Math.abs(location[1]) <= 90 &&
+      typeof destino?.distance === 'number' && Number.isFinite(destino.distance) && destino.distance >= 0
+      ? { lat: location[1], lng: location[0], distanciaAteViaM: destino.distance }
+      : undefined
+    return { distanciaM: Math.round(route.distance), ok: true, ...(associacaoDestino ? { associacaoDestino } : {}) }
   }
 }

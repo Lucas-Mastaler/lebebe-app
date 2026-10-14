@@ -1,3 +1,4 @@
+import type { MemoriaFretePesquisaV1 } from './memoria-frete'
 import type { PesquisarDatasRequest } from '../contratos'
 import type { Coordenada } from './distancia'
 import {
@@ -59,6 +60,7 @@ export interface DiagnosticoPayloadLegadoV2 {
   distKmDepositoDestino: DistKmDepositoDestinoResultado | null
   fretesMontados: number
   freteOrigem: 'dist-km-deposito-destino' | 'ausente'
+  memoriaFrete?: MemoriaFretePesquisaV1 | null
 }
 
 export interface OrquestrarPesquisaV2ComPayloadLegadoOutput {
@@ -163,6 +165,7 @@ export async function orquestrarPesquisaV2ComPayloadLegado(
   }
 
   const candidatos = saidaV2.resultadoFinal?.candidatosFinais ?? []
+  let memoriaFrete: MemoriaFretePesquisaV1 | null = null
   let distKmResultado: DistKmDepositoDestinoResultado | null = null
   let fretes = undefined as ReturnType<typeof montarFretesLegadoPorDistKm>['fretes'] | undefined
 
@@ -204,6 +207,16 @@ export async function orquestrarPesquisaV2ComPayloadLegado(
             horaMarcadaValorAdicional: config.horaMarcadaValorAdicional,
           })
           fretes = fretesResult.fretes
+          if (distKmResultado.origem && distKmResultado.destino && distKmResultado.distM != null && distKmResultado.origemDistancia) {
+            memoriaFrete = {
+              versao: 1, formula: 'legado-frete-v1', origemGeografica: 'deposito',
+              origem: { ...distKmResultado.origem }, destino: { ...distKmResultado.destino },
+              distKm: distKmResultado.distKm, distM: distKmResultado.distM, fonteDistancia: distKmResultado.origemDistancia,
+              valorInicialInformado: typeof request.valorInicialMinimo === 'number' ? request.valorInicialMinimo : null,
+              valorInicialAplicadoComoPiso: false, encomendaInformada: request.isEncomenda === true, encomendaInfluenciaPreco: false,
+              candidatos: fretesResult.memorias,
+            }
+          }
           avisos.push(...fretesResult.avisos)
         } else {
           avisos.push(
@@ -238,6 +251,13 @@ export async function orquestrarPesquisaV2ComPayloadLegado(
     dataReferenciaISO: request.dataInicial,
   })
 
+  if (memoriaFrete) {
+    memoriaFrete.candidatos = memoriaFrete.candidatos.map((memoria) => ({
+      ...memoria,
+      freteApresentado: adaptado.payload.candidates.find((candidato) =>
+        candidato.dateISO?.slice(0, 10) === memoria.dataISO && candidato.team === memoria.equipe && candidato.tipo === memoria.tipo)?.frete,
+    }))
+  }
   const fretesMontados = fretes?.length ?? 0
 
   return {
@@ -250,6 +270,7 @@ export async function orquestrarPesquisaV2ComPayloadLegado(
     ],
     diagnosticoMinimo: saidaV2.diagnosticoMinimo,
     diagnosticoPayloadLegado: {
+      memoriaFrete,
       distKmDepositoDestino: distKmResultado,
       fretesMontados,
       freteOrigem: fretesMontados > 0 ? 'dist-km-deposito-destino' : 'ausente',

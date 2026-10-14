@@ -1,3 +1,4 @@
+import { montarSlotsAgendaReal, LIMITE_LEITURA_FONTES_V2 } from './montar-slots-agenda-real'
 import { buscarConfiguracoesProcurarDatas } from '../config-service'
 import type { PesquisarDatasRequest } from '../contratos'
 import { normalizarEntradaPesquisaV2 } from './entrada'
@@ -251,47 +252,6 @@ function montarEntradaMinima(
   }
 }
 
-function montarSlotsAgendaReal(input: {
-  janelaDatas: Array<{ dataISO: string }>
-  linhasAgenda: SlotInputMapaKmAdicional['linhasAgenda']
-  disponibilidades: DisponibilidadeEquipeDataV2[]
-  cacheCoordenadasPorEndereco: Record<string, { lat: number; lng: number }>
-  equipe1Ativa: boolean
-  equipe2Ativa: boolean
-}): SlotInputMapaKmAdicional[] {
-  const equipes: string[] = []
-  if (input.equipe1Ativa) equipes.push('EQUIPE 1')
-  if (input.equipe2Ativa) equipes.push('EQUIPE 2')
-
-  const slots: SlotInputMapaKmAdicional[] = []
-  const disponibilidadePorSlot = new Map<string, DisponibilidadeEquipeDataV2>(
-    input.disponibilidades.flatMap((disponibilidade) => {
-      const equipe = normalizarEquipe(disponibilidade.equipe)
-      return equipe
-        ? [[`${disponibilidade.dataISO}::${equipe}`, disponibilidade] as const]
-        : []
-    })
-  )
-  for (const dataDia of input.janelaDatas) {
-    for (const equipe of equipes) {
-      const disponibilidade = disponibilidadePorSlot.get(`${dataDia.dataISO}::${equipe}`)
-      slots.push({
-        dataISO: dataDia.dataISO,
-        equipe,
-        linhasAgenda: input.linhasAgenda,
-        disponibilidade: disponibilidade
-          ? {
-              tempoUtilizadoMin: disponibilidade.tempoUtilizadoMin,
-              disponivelMin: disponibilidade.disponivelMin,
-              capacidadeTotalMin: disponibilidade.capacidadeTotalMin,
-            }
-          : null,
-        cacheCoordenadasPorEndereco: input.cacheCoordenadasPorEndereco,
-      })
-    }
-  }
-  return slots
-}
 
 function derivarSlotTemPontos(
   detalhesPorSlot: DetalheSlotMapaKmAdicional[]
@@ -697,15 +657,15 @@ export async function pesquisarDatasV2(
   const [disponibilidadeReal, agendaReal] = await (perf?.medirAsync('agenda-disponibilidade', () =>
     Promise.all([
       perf.medirAsync('google-sheets-disponibilidade-total', () =>
-        buscarDisponibilidadeRealDiagnosticaComDados(dataInicialISO, 2000, 20, 'entrada', perf)
+        buscarDisponibilidadeRealDiagnosticaComDados(dataInicialISO, LIMITE_LEITURA_FONTES_V2, 20, 'entrada', perf)
       ),
       perf.medirAsync('google-sheets-agenda-total', () =>
-        buscarAgendaRealDiagnosticaComDados(2000, undefined, perf)
+        buscarAgendaRealDiagnosticaComDados(LIMITE_LEITURA_FONTES_V2, undefined, perf)
       ),
     ])
   ) ?? Promise.all([
-    buscarDisponibilidadeRealDiagnosticaComDados(dataInicialISO, 2000, 20, 'entrada'),
-    buscarAgendaRealDiagnosticaComDados(2000),
+    buscarDisponibilidadeRealDiagnosticaComDados(dataInicialISO, LIMITE_LEITURA_FONTES_V2, 20, 'entrada'),
+    buscarAgendaRealDiagnosticaComDados(LIMITE_LEITURA_FONTES_V2),
   ]))
 
   if (!disponibilidadeReal.diagnostico.ok) {

@@ -4018,3 +4018,219 @@ O legado Apps Script NAO possui tolerancia de tempo. A comparacao `avail >= minM
 3. Frontend: sem mudanca (backend-only)
 4. API: sem alteracao de contrato
 5. Persistencia: sem migration (apenas snapshot tecnico em memoria)
+
+
+---
+
+## 2026-10-13 — Auditoria do run 71a9a968-5203-4543-9c54-2502d67effb9
+
+### Parte 1 — Resumo executivo
+
+Pesquisa 0bf22ef3-81a2-4eb1-b812-d5925d77a5b7, executada em 08/10/2026 às 11:59:27 (São Paulo), success, 4078 ms. Consulta somente de leitura pelo MCP Supabase confirmou entrada, preços, ranking e snapshots. Planilhas foram consultadas diretamente pela API Google com OAuth existente, sem escrita; OSRM foi consultado somente para rotas atuais.
+
+- O snapshot confirma que o motor considerou as três datas elegíveis, normais e sem motivos de recusa. As condições registradas são consistentes com essa decisão. Não é prova independente de integridade da agenda original: não foi preservado seu conteúdo completo.
+- Há mudança comprovada nos dados consumidos de 28/11: disponibilidade histórica 240 minutos e zero linhas de agenda; leitura atual 60 minutos e um evento de 180 minutos. Não se confirmou quando/quem criou ou alterou o evento, nem se a ausência original veio do Calendar, sincronização ou leitura da planilha.
+- Em 03/12 e 05/12 há diferença comprovada de processamento: auditar-run não repassa disponibilidade aos slots do mapa espacial; pesquisar-datas-v2 repassa. Sem pontos e sem tempo utilizado informado, a barreira retorna capacidade-indeterminada e não calcula KM. Não atribuir esses dois bloqueios a uma mudança de agenda sem evidência.
+- O recálculo não é reprodução histórica nem validação completa do frete. As flags antigas permitiam comunicar conclusão apesar de distância ausente; a semântica foi corrigida localmente.
+- Não há evidência comprovada de oferta incorreta ou subcobrança. Os preços são compatíveis com a fórmula e configuração consultadas, mas a memória exata da cobrança histórica não é recuperável nos campos persistidos.
+
+### Parte 2 — Análise individual
+
+| Data / EQUIPE 1 | Snapshot de produção | Leitura atual em 13/10 | Diagnóstico e conclusão |
+|---|---|---|---|
+| 28/11, sábado, rank 1 | Normal; elegível; 240 livres / 180 necessários; dia-realmente-vazio; 0 pontos; delta 38,806 km OSRM table; R$ 450 | Disponibilidade linha 82: 180 utilizados / 60 livres. Agenda linha 139: evento de 180 min | Insuficiência de tempo real hoje e filtro Haversine informado de 30,582 > 12 km. Dados consumidos diferem comprovadamente; causa temporal da alteração não preservada |
+| 03/12, quinta, rank 2 | Normal; elegível; 390 livres / 180 necessários; 30 utilizados, capacidade 420; carregamento operacional sem ponto; delta 38,909 km OSRM table; R$ 330 | Disponibilidade linha 90: 30 utilizados / 390 livres. Agenda linha 148: evento de 30 min | Tempo atual é suficiente. A omissão de disponibilidade no mapa diagnóstico explica capacidade-indeterminada; não demonstra invalidade da oferta histórica |
+| 05/12, sábado, rank 3 | Normal; elegível; 240 livres / 180 necessários; zero utilizados; dia-realmente-vazio; delta 38,806 km OSRM table; R$ 450 | Disponibilidade linha 94: zero utilizados / 240 livres; nenhuma linha dessa data na AGENDA | Tempo atual é suficiente. O mapa diagnóstico não recebe essa disponibilidade; o bloqueio espacial não comprova erro de produção |
+
+Nos dias sem pontos, limites normais configurados são 45 km no sábado e 150 km na semana; com pontos, limite adicional é 5 km. Especial acrescenta 5 km, premium 10 km. Logo os deltas históricos ficam dentro dos limites normais, sem tolerância de tempo. O recorte atual implementado seleciona até três normais e ordena o resultado por data; o ranking salvo 1, 2, 3 é coerente. A seleção global dos melhores entre todos os candidatos não pode ser refeita historicamente: nem todos os candidatos e fontes originais foram preservados.
+
+A origem operacional para seleção é casa da equipe no sábado e depósito na semana (resolver-origem-operacional.ts e legado). A origem informada pelo filtro early é o ponto de agenda mais próximo, não o depósito nem automaticamente a casa da equipe. Sem os pontos/coordenadas originais completos, a seleção original não é verificável de forma independente.
+
+### Parte 3 — Cálculo detalhado do frete
+
+**Natureza da prova:** preços finais são históricos comprovados. A fórmula foi conferida em CEP-CONFIG.gs/calcularFrete e CEP-APIBACK.gs (distKm e ajuste), e no código V2. Os demonstrativos abaixo são reconstruções com configuração consultada em 13/10/2026 e OSRM atual; não são a memória histórica da execução.
+
+Caminho: orquestrar-pesquisa-v2-com-payload-legado -> calcularDistKmDepositoDestino -> montarFretesLegadoPorDistKm -> calcularFreteBase -> aplicarAjusteGlobal -> adapter. A distância de preço é depósito -> destino, uma só distância para todas as datas, inclusive sábado. Não é delta de inserção nem rota completa. O helper de preço V2 requer OSRM Route e arredonda metros com Math.round; não substitui falha por Haversine. O legado getDrivingKm tenta cache, OSRM configurado, OSRM público e finalmente Haversine; essa diferença de fallback não comprova problema neste run bem-sucedido.
+
+OSRM atual consultado em 13/10 às 13:01 (São Paulo): depósito -> destino = 38947,5 m, convertido pelo helper para 38948 m = **38,948 km**. Casa E1 -> destino = 38844,4 m (distância operacional atual, não usada no preço). Os valores históricos 38,909 e 38,806 km são deltas OSRM Table; não tratar diferenças entre endpoints, execução ou época como prova de mudança no mapa OSRM.
+
+Parâmetros atuais reais do Supabase (grupo frete): máximo 150 km; fixo até 10; longa cidade 25; não viagem 40; base semana R$ 90 / sábado R$ 140; adicional após 25 km R$ 50 / sábado R$ 100; fator R$ 2,05/km na faixa de 25 a 40; acima de 40 usa R$ 3/km; condomínio R$ 50. Rural +R$ 100 está no código. Ajuste global +20%, dois arredondamentos para cima na dezena, piso R$ 110. Acima de 150 km recusa; não há teto monetário. Configurações atuais têm updated_at anterior ao run e não houve registros de alteração do grupo frete consultado desde 01/10; isso apoia continuidade, mas não prova o objeto efetivamente carregado, inclusive eventual fallback de planilha.
+
+#### 28/11/2026 — sábado, R$ 450 registrado
+
+Dados: origem de preço depósito configurado; distância histórica depósito -> cliente **não preservada**; delta histórico 38,806 km; distância de preço nesta reconstrução **38,948 km atual**; rural sim; condomínio não; encomenda de entrada sim; tipo normal; faixa >25 e <=40; mínimo informado R$ 330 não entra neste cálculo.
+
+| Etapa | Operação da reconstrução atual | Resultado |
+|---|---|---|
+| Base sábado | valorSabadoAte10km | R$ 140 |
+| Adicional após 25 | valorDiaApos25kmSabado | R$ 100 |
+| Parcela de KM | (38,948 - 25) x 2,05 | R$ 28,5934 |
+| Rural / condomínio | +100 / +0 | R$ 100 |
+| Subtotal | 140 + 100 + 28,5934 + 100 | R$ 368,5934 |
+| Primeiro arredondamento | ceil(368,5934 / 10) x 10 | R$ 370 |
+| Ajuste global | 370 x 1,20 | R$ 444 |
+| Segundo arredondamento e piso | max(110, ceil(444 / 10) x 10) | R$ 450 |
+| Tipo normal / total reconstruído | +0 | **R$ 450** |
+
+#### 03/12/2026 — quinta-feira, R$ 330 registrado
+
+Dados: origem de preço depósito; distância histórica depósito -> cliente **não preservada**; delta histórico 38,909 km; distância de preço nesta reconstrução **38,948 km atual**; rural sim; condomínio não; encomenda de entrada sim; tipo normal; faixa >25 e <=40; valor inicial informado R$ 330 não atua como piso.
+
+| Etapa | Operação da reconstrução atual | Resultado |
+|---|---|---|
+| Base semana | valorSemanaAte10km | R$ 90 |
+| Adicional após 25 | valorDiaApos25kmSemana | R$ 50 |
+| Parcela de KM | (38,948 - 25) x 2,05 | R$ 28,5934 |
+| Rural / condomínio | +100 / +0 | R$ 100 |
+| Subtotal | 90 + 50 + 28,5934 + 100 | R$ 268,5934 |
+| Primeiro arredondamento | ceil(268,5934 / 10) x 10 | R$ 270 |
+| Ajuste global | 270 x 1,20 | R$ 324 |
+| Segundo arredondamento e piso | max(110, ceil(324 / 10) x 10) | R$ 330 |
+| Tipo normal / total reconstruído | +0 | **R$ 330** |
+
+#### 05/12/2026 — sábado, R$ 450 registrado
+
+Dados: origem de preço depósito, apesar da casa da equipe na seleção; distância histórica depósito -> cliente **não preservada**; delta histórico 38,806 km; distância de preço nesta reconstrução **38,948 km atual**; rural sim; condomínio não; encomenda de entrada sim; tipo normal; faixa >25 e <=40; mínimo informado não aplicado.
+
+| Etapa | Operação da reconstrução atual | Resultado |
+|---|---|---|
+| Base sábado | valorSabadoAte10km | R$ 140 |
+| Adicional após 25 | valorDiaApos25kmSabado | R$ 100 |
+| Parcela de KM | (38,948 - 25) x 2,05 | R$ 28,5934 |
+| Rural / condomínio | +100 / +0 | R$ 100 |
+| Subtotal | 140 + 100 + 28,5934 + 100 | R$ 368,5934 |
+| Primeiro arredondamento | ceil(368,5934 / 10) x 10 | R$ 370 |
+| Ajuste global | 370 x 1,20 | R$ 444 |
+| Segundo arredondamento e piso | max(110, ceil(444 / 10) x 10) | R$ 450 |
+| Tipo normal / total reconstruído | +0 | **R$ 450** |
+
+Conferência das três datas: fórmula e adicionais têm equivalência neste caminho de sucesso, os resultados atuais coincidem matematicamente com os registrados, e o piso R$ 110 não interfere. Distância e parâmetros efetivamente usados em 08/10 não foram registrados para cobrança, impedindo comprovação integral histórica. Os preços arredondados não permitem inverter unicamente a distância. Não há evidência comprovada de subcobrança.
+
+Encomenda de saída não copia o boolean de entrada: legado e adapter calculam antecedência >60 dias para DIVERSOS (>90 para NIDO). Em 08/10, as datas estavam a 51, 56 e 58 dias, portanto todas saem Não. Isso não é adicional de preço. daysLeftTxt usa dataInicial na V2 (9, 14 e 16 dias), enquanto o legado usa hoje; essa diferença de apresentação preexistente não foi alterada.
+
+### Parte 4 — Causas, estados e limitações
+
+- **capacidade-indeterminada:** não há pontos válidos e tempo utilizado não está confirmado. auditar-run omite disponibilidade na montagem dos slots, diferentemente da produção. Proposta: ligar a disponibilidade real por data/equipe ao mapa diagnóstico, com regressão; não aplicada nesta rodada para manter cálculo diagnóstico intacto e tornar a limitação explícita.
+- **slot-espacial-inconsistente:** origem diagnóstica de KM ausente por bloqueio de consistência; não é distância nem prova de endereço incorreto. Pode resultar da omissão acima.
+- **rota-simples-com-carregamento:** evento operacional reconhecido sem endereço, tempo utilizado positivo, sem evento desconhecido; permite rota simples sem waypoint artificial. Aplicável ao snapshot de 03/12.
+- **dia-realmente-vazio:** zero tempo utilizado, sem evidência espacial impeditiva e sem pontos; aplicável aos sábados históricos e compatível com os dados atuais de 05/12, caso a disponibilidade seja fornecida ao helper.
+- **filtrado-early-legado-diagnostico:** ponto mais próximo excede 8 x 1,5 = 12 km Haversine (ou outra condição de âncora); não calcula delta. Legado efetivamente filtra a reta antes de chamadas de proximidade OSRM; o helper V2 prepara a matriz ANTES desse filtro. Portanto delta pulado não significa que nenhuma chamada OSRM ocorreu. A API já distingue osrmMatrizExecutadaNaAuditoria de osrmPuladoPeloFiltroLegado. Diferença operacional de ordem, sem alteração aplicada.
+- **Truncamento:** leitura real contém 310 registros de disponibilidade (311 com cabeçalho), snapshot tinha 308. Corte de 200 ocorre antes do parser e preserva ordem física, sem ordenar/filtrar a janela primeiro. Pode perder cobertura, produzir indisponibilidade e capacidade indeterminada em datas fora do corte. As três datas estão nas linhas 82/90/94 e não foram cortadas. Agenda atual: 435 registros, snapshot: 449; contagens não explicam sozinhas quais eventos mudaram.
+- **Flags:** antes, insercaoRealCompleta verificava somente falta de coordenadas e early; não exigia KM. conclusivo ignorava truncamento e slots sem KM. Correção local exige distância/resultado técnico para inserção e rebaixa conclusão quando falta KM ou cobertura.
+- **Prova histórica incompleta:** snapshot registra decisão, disponibilidade resumida e delta dos candidatos; não registra linhas originais, matriz/trechos, versão completa de código/configuração, resposta de preço nem cronologia de alterações do Calendar. Não é possível garantir retrospectivamente a verdade operacional de todas as fontes apenas com esse snapshot. A versão de código efetivamente implantada no horário do run não foi verificada nesta rodada.
+
+### Parte 5 — Alterações e validação
+
+- DevV2PesquisarCompatClient.tsx: cards do Design System por data/equipe com histórico e recálculo separados; preço registrado, KM adicional e fonte, capacidade histórica e atual, filtro/rejeição e limites da memória do frete. Dados técnicos e cópia JSON preservados.
+- auditar-run/route.ts: analisadoEm aditivo; flags de completude/conclusão mais conservadoras; motivo de distância ausente e limitações explícitas. Não alterados input do mapa, limite de 200, pesquisa produtiva, preço, regra de origem, ranking, geocodificação ou persistência.
+- auditar-run/route.test.ts: regressões sem KM e com truncamento; fixtures dos testes de severidade passam a fornecer distância válida quando exigem recálculo conclusivo.
+- motor/frete.test.ts: três casos de reconstrução atual (explicitamente não históricos), sem mudar implementação de preço.
+- Testes focados: 85 aprovados em 5 arquivos (auditar-run, frete, consistência espacial, carregamento, distância depósito/destino), pool threads.
+- ESLint dos arquivos da API/UI: zero erros; warning de import NextResponse não utilizado no teste já existente. Typecheck global falhou em testes de auth/agente, hub-vendas e agent-bootstrap; nenhum diagnóstico nos arquivos alterados nesta rodada. Não corrigidos itens fora do escopo.
+- Validação visual autenticada não realizada: página Dev V2 exige superadmin e conta técnica prevista tem perfil gestao. Permissões não foram ampliadas. Sem commit, push, deploy, migrations ou escritas nas fontes externas.
+
+### Parte 6 — Pendências e próximos passos
+
+1. Validar visualmente a tela com sessão superadmin autorizada; código local ainda não publicado.
+2. Decidir correção localizada do encadeamento de disponibilidade na auditoria e remover corte arbitrário antes de considerar o recálculo equivalente à produção. Nenhuma mudança de motor produtivo é proposta por estes achados.
+3. Para memória futura, avaliar campo opcional versionado dentro de parametros_json.snapshotTecnico: coordenadas/origem e distância de preço, fonte/endpoint, parâmetros monetários efetivos, fórmula/versionamento, valores intermediários e final. Aproveitar diagnosticoPayloadLegado já existente e preservar compatibilidade de registros antigos; não exige automaticamente tabela ou migration. Captura nova não implementada sem decisão de impacto na persistência.
+4. Para prova de elegibilidade histórica, avaliar snapshot mínimo dos dados de agenda/disponibilidade utilizados e metadados de versão; isso demanda decisão sobre volume/retenção e dados pessoais, sem copiar informações sensíveis desnecessárias.
+5. Auditoria histórica delimitada: critérios registrados e compatibilidade matemática explicados, mas comprovação integral da cobrança e replay histórico permanecem indisponíveis pelos motivos acima. Não declarar validação de produção ou auditoria forense integral concluída.
+6. Próxima atividade registrada, não iniciada: suporte a links Google Maps completos/encurtados para endereço rural, extração de coordenadas, eventual Places Essentials, confirmação visual e integração com geocodificação/OSRM. Aguardar validação desta auditoria.
+
+
+### Complemento de conclusão técnica — 13/10/2026
+
+Correções autorizadas após a auditoria acima; o relatório histórico anterior permanece como evidência daquela etapa.
+
+- Disponibilidade agora é associada aos slots por montarSlotsAgendaReal, extraído da produção e compartilhado com auditar-run. Mesmos mapa espacial, consistência, origem, limites pertinentes, OSRM e gerador de candidatos; nenhuma fórmula, regra de elegibilidade ou ranking alterada. A auditoria continua cache-only para coordenadas de agenda, podendo ficar inconclusiva quando faltarem coordenadas que a produção consegue resolver externamente.
+- Limite de leitura da disponibilidade alinhado à produção em 2000, compartilhado por constante. Truncamento remanescente na agenda/disponibilidade, parser inválido, ausência de disponibilidade, candidato ou cálculo impedem conclusão por slot. Dias comprovadamente vazios não são tratados como inconclusivos somente por não terem pontos.
+- Estado diagnóstico explícito: elegivel, rejeitado ou inconclusivo. Filtro early pode comprovar rejeição sem delta; insercaoRealCompleta permanece false e a comparação global de distâncias permanece não conclusiva nesse caso. Histórico e decisão atual continuam separados.
+
+**Validação real somente de leitura em 13/10/2026 às 15:48 (São Paulo):** handler local com autorização substituída exclusivamente no teste, consultando o run existente via Supabase e lendo Google Sheets/OSRM reais. Não constitui validação autenticada do browser nem execução produtiva. Evidência sanitizada em output/auditoria-run-contenda-sanitizada.json; teste temporário removido.
+
+| Slot / EQUIPE 1 | Estado atual | Livre / necessário | KM adicional atual | Inserção completa |
+|---|---|---|---|---|
+| 28/11/2026 | rejeitado pelo filtro early | 60 / 180 min | não calculado | false; interrompida por early |
+| 03/12/2026 | elegível | 390 / 180 min | 38,909 km OSRM Table | true |
+| 05/12/2026 | elegível | 240 / 180 min | 38,806 km OSRM Table | true |
+
+Leitura de 310 disponibilidades, sem truncamento; 3 slots processados, 2 com KM, 1 descartado, zero bloqueios espaciais, zero erros e zero fallback Haversine. Comparação global conclusivo=false, corretamente, pela ausência do delta do slot descartado. Nenhum resultado foi forçado nem alterado historicamente.
+
+**Memória futura implementada:** chave opcional parametros_json.snapshotTecnico.memoriaFrete, versao=1 e formula=legado-frete-v1. Contém origem depósito e coordenadas origem/destino, metros/KM usados no preço, fonte OSRM Route, parâmetros efetivos copiados, condições por candidato, entradas/adicionais, operações e resultados de cada etapa, subtotal, ajuste de 20%, dois arredondamentos, piso R$110, adicional do tipo, valor calculado e texto final apresentado. Registra também valorInicialInformado e que não é aplicado como piso, e encomenda sem influência no preço. As etapas são coletadas durante o cálculo que produz o preço, não reconstruídas com configuração posterior. Captura no caminho produtivo pesquisar-compat-async usando a gravação existente, sem nova query, tabela ou migration e sem mudar resultados_json/payload legado. Não altera registros antigos; ausência, versão desconhecida ou memória incompleta permanecem indisponíveis na tela.
+
+**Arquivos desta conclusão:**
+- Motor: montar-slots-agenda-real.ts, pesquisar-datas-v2.ts, estado-recalculo-slot.ts, memoria-frete.ts, frete.ts (somente captura de etapas), montar-fretes-legado-por-dist-km.ts e orquestrar-pesquisa-v2-com-payload-legado.ts.
+- Rotas: v2/auditar-run/route.ts e v2/pesquisar-compat-async/route.ts; tela DevV2PesquisarCompatClient.tsx.
+- Testes novos: montar-slots-agenda-real.test.ts, estado-recalculo-slot.test.ts, memoria-frete.test.ts, frete-rastreabilidade.test.ts e v2/auditoria-pesquisa.test.ts. Testes atualizados: auditar-run/route.test.ts, pesquisar-compat-async/route.test.ts e orquestrar-pesquisa-v2-com-payload-legado.test.ts.
+- Documentação: este contrato e procurar-datas-motor-v2-progresso.md; log congelado intocado.
+
+**Validações:** 121 testes focados aprovados em 11 arquivos; comparação com a função real calcularFrete do Apps Script em 320 combinações de faixas/condições/tipos, além do piso e serialização/encaminhamento da memória. Teste local com fontes reais aprovou os três slots. Na suíte ampla: 1049 aprovados e 8 falhas no teste preexistente agenda-real-helper.test.ts, que tenta OAuth real por mock incompleto e falha com ENOTFOUND no sandbox; arquivo e helper não alterados. ESLint: zero erros e warning preexistente de NextResponse não utilizado em auditar-run/route.test.ts. Typecheck global mantém os erros já observados em auth/agente/route.test.ts, hub-vendas/alertas/teste/route.test.ts e auth/agent-bootstrap.test.ts; nenhum diagnóstico nos arquivos desta conclusão.
+
+**Limitações finais:** tentativa visual na sessão local existente em 127.0.0.1:3014/procurar-datas/dev-v2 redirecionou para /inicio, conforme restrição superadmin; permissões não ampliadas. Memória futura ainda não gravada por pesquisa de produção porque não houve deploy nem pesquisa nova; gravação validada com dublê de banco. Memória histórica do run antigo continua irrecuperável. Encerrada a implementação técnica autorizada, com validação visual e produtiva explicitamente pendentes. Sem commit, push, deploy, migration ou escrita nas fontes externas; Google Maps não iniciado.
+
+### Localização por Google Maps — 13/10/2026 (Frentes 1, 3 e 0)
+
+Implementada entrada opcional em `/procurar-datas`, com resolução no backend autenticado `/api/procurar-datas/localizacao-maps`. Sem Google Places, chave nova, migration ou escrita em registros existentes. Não altera fórmulas, classificação, ranking, agenda, origens ou regras de distância da Frente 2.
+
+- Coordenadas diretas `latitude, longitude`: validação finita e faixas geográficas.
+- Link completo com pin `!3d...!4d...`: extrai o ponto selecionado; nunca usa `@`, centro, imagem estática ou `ll` como destino.
+- Pesquisa com `query`/`q` numérico ou destino explícito de Maps URLs: extrai coordenadas. Place ID tem precedência; CID/ftid não é convertido em Place ID.
+- Link curto: até seis redirecionamentos HTTP, oito segundos totais, HTTPS e lista exata de domínios Google Maps, conferência de cada salto, sem credenciais/portas alternativas/URL arbitrária. Sem executar JS ou raspar HTML. Só aceita coordenadas explícitas confiáveis na URL resultante.
+- Link completo Casa Nostra: ponto -25.6963932, -49.5036726 identificado. Link curto real fornecido: cadeia termina em nome+ftid e HTML sem coordenadas confiáveis; solicita cópia manual, não usa centro de mapa. Essa limitação permanece.
+
+Antes de confirmar, apresenta ponto, fonte e links de conferência. Exige declaração explícita de correspondência entre coordenadas e endereço textual; endereço alterado invalida confirmação. Respostas antigas de geocodificação são descartadas e validação tradicional não sobrescreve Maps confirmado. Confirmação alimenta AddressResult existente e envia as mesmas coordenadas em lat/lng e destLat/destLng ao fluxo atual. Sem link, mantém validação tradicional.
+
+O endpoint verifica rota desde o depósito configurado com o cliente OSRM Route existente. Metadado opcional waypoint do destino expõe ponto de associação e distância em metros, sem substituir o destino nem alterar a distância retornada ao motor. O aviso informa o trecho fora da via e exige conferência do acesso, sem novo limiar de negócio. Falta de rota/waypoint confiável impede confirmação; fallback de valor inicial não é apresentado como preço válido no fluxo Maps. Na sessão técnica local, o ponto Casa Nostra retornou associação a 388 m, aviso exibido e confirmação bloqueada com endereço incompleto.
+
+CEP aproximado não autoriza endereço fictício: permanecem CEP de oito dígitos, número, logradouro, bairro, cidade e UF obrigatórios. Endereço rural sem número/completo ainda exige decisão humana de contrato/validação; não foi liberado automaticamente.
+
+**Places opcional, proposta não executada:** Place ID válido permitiria Place Details (New) com FieldMask location (Essentials). Só nome exigiria descoberta por Text Search com fields mínimos/IDs e Details location; location direto em Text Search pertence ao SKU Pro. Exige autorização para serviço faturável, chave habilitada/restrita no backend e definição de custo/cota; a chave Geocoding existente não prova habilitação nem autoriza cobrança. Implementação atual funciona sem essa chave.
+
+Fontes oficiais consultadas: [Maps URLs](https://developers.google.com/maps/documentation/urls/get-started), [campos e SKUs Places](https://developers.google.com/maps/documentation/places/web-service/data-fields), [Text Search](https://developers.google.com/maps/documentation/places/web-service/text-search), [Place Details](https://developers.google.com/maps/documentation/places/web-service/place-details) e [OSRM Waypoints](https://project-osrm.org/docs/v5.24.0/api/).
+
+Validação: 78 testes aprovados em seis arquivos (parser, segurança/redirecionamentos, rota autenticada/configurada, metadados OSRM, equivalência Route/Table, validação textual e orquestração). Lint sem erros; warning antigo progressSnapshot em PageClient. Typecheck global falha fora do escopo em auth/agente/route.test.ts, hub-vendas/alertas/teste/route.test.ts, auth/agent-bootstrap.test.ts e atendimento-presencial/autosave-fila.ts (alterado por trabalho concorrente); nenhum erro nos arquivos Maps. Tela local abriu na sessão técnica após servidor fora do sandbox; coordenadas diretas e pin completo testados com fontes reais, sem disparar pesquisa/persistência. Confirmação com endereço completo, divergência textual interativa e pesquisa completa permanecem sem validação E2E. Sem commit, push, deploy, ativação paga ou log congelado.
+
+### 14/10/2026 — Google Maps: UX simples e destino sem endereço (Frentes 1/3/0)
+
+Esta decisão substitui as exigências de endereço e confirmações técnicas da primeira versão. Autorização: pedido de ajustes de UX/funcionalidade. Caminho tradicional mantém suas validações; caminho Maps identificado torna latitude/longitude utilizáveis imediatamente, sem CEP, número, rua, bairro, cidade ou UF. Esses campos passam a opcionais e editáveis para identificação. Metadados do endereço anterior são limpos ao identificar um novo ponto, incluindo UF padrão não comprovada; não há valores estruturados fictícios. Alteração/limpeza do link invalida ponto, preços e resultados antigos. Nova consulta aborta identificação pendente. Geocodificação tradicional continua impedida de sobrescrever Maps ativo.
+
+**Integração confirmada no código:** `normalizarEntradaPesquisaV2` e `pesquisarDatasV2` exigem coordenadas, data e tempo, não endereço mínimo. Cidade/UF/CEP não participam da fórmula nem do ranking; são identificação/exibição. Adaptador já aceita texto vazio e usa destDisplay quando disponível. API intermediária valor-inicial usa coordenadas. API pesquisar-compat-async já aceita ausência textual; auditoria foi corrigida para registrar o destino normalizado, com precedência destLat/destLng igual ao motor, em vez de somente lat/lng. MCP confirmou campos textuais nullable. Nenhuma mudança de schema/migration, fórmula, classe, origem, ranking ou fallback do motor.
+
+**UX:** colar → Identificar localização → pesquisar. Nome só quando informado no próprio link; sem nome/região, texto neutro. Latitude/longitude, fonte e OSRM ficam em “Mostrar detalhes da localização”, recolhido. Link de conferência mantido. Associação até 1.000 m inclusive não mostra aviso principal. Acima de 1.000 m, aviso simples, sem confirmação, bloqueio adicional ou acréscimo de cobrança. Ausência de rota/waypoint confiável mantém impedimento técnico. Limite visual compara metros brutos antes de arredondar.
+
+**Cidade e UF:** infraestrutura existente investigada: LocationIQ direto no Next, Google fallback e provedores legados no Apps Script, sem reverso disponível nesse fluxo. Não ampliado consumo de provedores faturáveis. Adaptador opcional Photon/OpenStreetMap implementado, desativado por padrão (`PROCURAR_DATAS_PHOTON_REVERSE_ENABLED=true` somente após autorização). Retorna somente city/state explícitos do provedor, nunca nome de cidade próxima ou coordenadas substitutas. Estado é convertido por tabela de nomes oficiais; ausência/falha não bloqueia pesquisa. Usa Redis existente: cache de metadados 24 h, respostas vazias 10 min, chave com hash do ponto, limite compartilhado de uma chamada a cada 2 s, sem fila ou retries, timeout total 3,5 s e redirect:error; sem Redis, nenhuma consulta pública. Atribuição visível quando houver metadados. Não cria servidor, banco ou chave paga. Teste externo foi rejeitado pela revisão automática por envio de coordenadas exatas ao Photon sem autorização específica; não houve contorno, ativação ou confirmação real de Contenda via esse provedor. Testes dessa parte usam respostas controladas. [Photon API](https://github.com/komoot/photon/blob/master/docs/api-v1.md) e [limites do servidor público](https://github.com/komoot/photon/blob/master/README.md): uso moderado, sem garantia de disponibilidade; desligamento por configuração. Nominatim público avaliado e não adotado; sua [política](https://operations.osmfoundation.org/policies/nominatim/) exige até 1 req/s por aplicação, atribuição/cache e decisão informada de uso.
+
+**Links de rotas:** estrutura `/maps/dir`, `/maps/preview/dir`, origin/waypoints de Maps URLs e saddr/daddr são rejeitadas antes da extração. Mensagem orienta enviar um único lugar; conservadoramente também rejeita links de navegação com origem implícita. Centro do mapa diferente não conta como outro local; repetições numéricas do mesmo pin são normalizadas. Pins distintos permanecem ambíguos. Domínios/redirecionamentos restritos preservados.
+
+**Link curto real:** HTTP na própria tela permanece 422: destino com nome+ftid sem pin explícito confiável. Navegador controlado abriu Sítio Casa Nostra; a ação “Rotas” expôs URL com destino explícito -25.6963932,-49.5036726, igual ao link completo. Isso comprova viabilidade de interação JS nesse exemplo, não implementação de um resolvedor Selenium de produção. Não foram raspados estados internos nem usado centro do mapa.
+
+**Proposta Selenium, não executada:** serviço interno autenticado chamado somente pelo backend como último recurso de links curtos; sessão efêmera sem cookies pessoais, máximo inicial de uma execução simultânea e sem disputar slots com automações operacionais. Orçamento total de 10 s, resposta de ocupado sem fila longa, encerramento em finally e watchdog de sessão. Validar domínio/URL em cada navegação, bloquear egress a redes privadas/metadata, limitar também subrecursos a hosts Google necessários explicitamente listados, sem URL arbitrária. Detectar um único lugar selecionado; só extrair destino exposto por ação visível e rejeitar divergência/ambiguidade; não acionar rotas em links de rotas enviados pelo cliente. Contrato proposto: entrada link; saída coordenadas, nome opcional, fonte e status sanitizado. Sem credenciais no browser. Avaliar termos do Google e estabilidade em sessão anônima antes de liberar; não contornar CAPTCHA/consentimento/proteções. A prova atual foi no Chrome conectado, não em Selenium anônimo. Dimensionar CPU/RAM por medição em homologação; capacidade atual não confirmada porque tentativa SSH read-only na VPS atual falhou com Permission denied. Não alterados serviços/VPS. Requer autorização específica e acesso técnico válido antes de implementação/produção. [Termos Google Maps](https://maps.google.com/help/terms_maps/) consultados; proíbem cópia não permitida e coleta em massa, portanto não há afirmação de conformidade automática do serviço proposto.
+
+**Validação real:** sessão técnica local, link completo Casa Nostra, todos os seis campos textuais vazios, área rural, berço DIVERSOS, tempo 00:40, início 28/11/2026. Pesquisa concluída em 23 s com 03/12 R$340, 05/12 R$460, 10/12 R$340. MCP confirmou run `4225b1ad-c394-4f9a-be48-f054af172f50`: coordenadas exatas, seis campos textuais nulos e três resultados. Nenhum pré-agendamento. Edição do link removeu localização/resultados e bloqueou pesquisa; link de rota apresentou mensagem esperada; limpeza verificada. Tentativa visual adicional de entrada direta retornou Não autorizado após a sessão deixar de autorizar a API; extração direta está coberta pelos testes automatizados. Evidência DOM em output/maps-ux-pesquisa-sem-endereco.txt; captura PNG falhou por timeout CDP.
+
+Testes e verificações finais registrados no progresso canônico. Nenhum registro histórico alterado, serviço pago ativado, commit, push, deploy ou log congelado. Pesquisa de validação criou apenas os registros operacionais normais de uma nova pesquisa e progresso transitório; memória futura de frete segue a captura anterior.
+
+### 14/10/2026 — Consulta experimental única ao Photon: Casa Nostra
+
+Autorização humana limitada exclusivamente a -25.6963932,-49.5036726, sem ativação global ou envio de outros clientes. Executada uma única requisição HTTPS GET /reverse com limit=1, sem redirecionamentos/retries, usando o mesmo orçamento de 3.500 ms previsto no adaptador opcional. Resultado: TimeoutError em 3.518 ms, sem resposta JSON ou status HTTP disponível. Não é possível confirmar Contenda, Paraná ou informações complementares a partir desse teste. Isso comprova apenas que a consulta não terminou no prazo neste ambiente, não que o serviço não possua os dados.
+
+Evidência: output/photon-casa-nostra-experimental.json. Nenhuma segunda tentativa, escrita em cache operacional, alteração de coordenadas, endereço, frete, configuração global ou código. Integração permanece desativada. Não recomendado ativar para usuários com esta evidência inconclusiva. Eventual novo teste requer nova autorização; se houver validação futura, manter enriquecimento opcional, controle compartilhado de tráfego/cache, informação de compartilhamento externo e fallback que preserve pesquisa por coordenadas. O servidor público Photon exige uso moderado, pode limitar/bloquear excesso e não garante disponibilidade: https://github.com/komoot/photon/blob/master/README.md. Sem commit, push ou deploy.
+
+### 14/10/2026 — Geocodificação reversa concluída para homologação local
+
+Autorização atual amplia os testes controlados do Casa Nostra e permite controles públicos, fallback gratuito e ativação local. Substitui o bloqueio experimental anterior; não autoriza deploy/ativação de produção.
+
+**Comparação real (timeout 10 s):** Photon: três consultas Casa Nostra (duas padrão e uma layer=city) e uma no centro de Curitiba, todas TimeoutError entre 10.002 e 10.012 ms. DNS resolveu em 2 ms. Diagnóstico separado de conexão completou TCP em 285 ms e TLS em 703 ms: a evidência aponta para demora/ausência de resposta HTTP/reverse no caminho testado, não falha de DNS/chave local. Não prova indisponibilidade universal do Photon. A primeira revisão automática do diagnóstico de conectividade expirou sem executar; o único retry permitido foi aprovado e completou.
+
+Nominatim: seis consultas seriadas, com intervalo de 1,2 s, sem retries automáticos: Casa Nostra zoom=18 (832 ms), zoom=10 (635 ms), dois retornos municipais com polygon_geojson=1 (891 ms e 38 ms), Curitiba zoom=10 (341 ms) e Curitiba com polígono (1.110 ms). Todas HTTP 200. Casa Nostra retornou town=Contenda, state=Paraná, ISO3166-2-lvl4=BR-PR. Curitiba retornou city=Curitiba/PR. Polígonos municipais retornados como boundary/administrative/relation foram validados contra o ponto original por helper puro: três respostas reais aprovadas (teste temporário removido após execução). Evidências: output/comparacao-geocodificacao-reversa.json e output/nominatim-municipios-validacao.json.
+
+**Estratégia adotada:** Nominatim diretamente como provedor ativo, fallback final para coordenadas. Photon permanece apenas na comparação experimental/parser; não impõe espera de 10 s antes de cada consulta ao provedor que funcionou. Uma chamada externa por identificação/cache miss, sem retry/fila. Timeout total 10 s incluindo Redis e leitura do retorno; limite compartilhado de uma chamada a cada 2 s, abaixo de 1 req/s. Cache positivo de 24 h, ausência de município confiável 10 min e erro HTTP 30 s; deduplicação de promises no processo e lock de ponto por 12 s entre processos. Retry-After 429 respeitado em segundos ou data HTTP. Sem Redis/limite disponível, retorno neutro por coordenadas. Falha de gravação de cache não descarta metadado já validado. Logs sanitizados de etapa/status/HTTP/provider/duração, sem ponto, link ou credenciais.
+
+**Confiabilidade:** reverse com zoom=10, layer=address e polygon_geojson=1. Aceita somente limite administrativo municipal brasileiro (city/town/municipality), com nome único, UF coerente com ISO e polígono/multipolígono contendo o ponto. Limite exato, buracos, geometria ausente, somente centro/bounding box, município vizinho ou conflito de nomes/UF retornam ausência de metadado. Não infere município pela proximidade do centróide. Não é certificação territorial oficial: depende da qualidade/atualidade OSM. Nenhuma geometria ou centro retornado substitui latitude/longitude de Maps ou participa do cálculo de frete/OSRM.
+
+**Configuração/UX:** .env.local agora contém PROCURAR_DATAS_REVERSE_ENABLED=true; exemplo versionado false, sem configurar Vercel/produção. Flag anterior específica Photon não ativa o novo fluxo. PROCURAR_DATAS_NOMINATIM_BASE_URL permite trocar a instância via configuração do servidor, HTTPS sem credenciais/portas alternativas; não aceita URL de usuário. Nome do provedor fica nos detalhes técnicos; atribuição OpenStreetMap permanece visível. Usuária identifica o link e vê Contenda - PR automaticamente, sem confirmações extras; ausência de resposta mantém localização por coordenadas e libera pesquisa. [Política Nominatim](https://operations.osmfoundation.org/policies/nominatim/): uso moderado, máximo 1 req/s por aplicação, identificação, atribuição, cache e possibilidade de troca; não enviar material confidencial. Homologação usou apenas pontos públicos autorizados. Antes de eventual produção, manter transparência sobre compartilhamento de localização e conferir que outros consumidores da aplicação usem o mesmo limite; não há SLA do serviço público. [Reverse](https://nominatim.org/release-docs/latest/api/Reverse/) e [Photon API](https://github.com/komoot/photon/blob/master/docs/api-v1.md) consultados. Nenhum serviço pago habilitado.
+
+**E2E real na sessão técnica local:** identificação Casa Nostra trouxe Contenda - PR (consulta reversa 592 ms, rota/identificação 2.128 ms), screenshot output/maps-contenda-reverso.png. Área rural, DIVERSOS, 00:40 e início 28/11: pesquisa em 21 s, 03/12 R$340, 05/12 R$460, 10/12 R$340. Run 25c1a3a8-bfb8-4ccc-b5d2-bf1c967e9f11 confirmado via MCP com coordenadas exatas, cidade/UF e demais quatro campos nulos. Ausência do serviço simulada desligando temporariamente a flag: identificação liberou pesquisa com os seis campos vazios, finalizada em 20 s com mesmos resultados; run e5fe8250-9f44-4cdb-9b8b-53d4efdc1a3c confirmado via MCP. Flag restaurada true ao final. Timeout/rede/429 cobertos em testes controlados; sem mexer em firewall ou provedor externo para simular falha. Cache real de Casa Nostra conferido, sem segunda chamada ao geocoder. Nenhum pré-agendamento.
+
+**Verificações:** 168 testes aprovados em 11 arquivos; três verificações adicionais dos polígonos reais aprovadas. Lint do escopo sem erros/warnings. Typecheck de src com configuração temporária output/maps-typecheck.json continua bloqueado apenas por erros anteriores em auth/agente/route.test.ts, hub-vendas/alertas/teste/route.test.ts e auth/agent-bootstrap.test.ts; nenhum erro nos arquivos desta etapa. Sem build/deploy. Arquivos desta etapa: cidade-uf-maps.ts/test.ts, novo municipio-reverso.ts/test.ts, LocalizacaoGoogleMaps.tsx, .env.example, .env.local e os dois dossiês canônicos. Helpers/API/motor de preço/classificação/agenda não alterados nesta etapa. Sem migration, alteração de histórico, commit, push, deploy ou escrita no log congelado. Homologação local funcional; ativação de produção continua fora do escopo.

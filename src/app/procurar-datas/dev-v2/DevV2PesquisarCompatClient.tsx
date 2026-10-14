@@ -1,6 +1,10 @@
 'use client'
 
+import type { MemoriaFretePesquisaV1 } from '@/lib/procurar-datas/motor/memoria-frete'
+
 import { useState } from 'react'
+import { Card, CardHeader, CardContent } from '@/components/design-system/Card'
+import { Alert } from '@/components/design-system/Alert'
 import { Button } from '@/components/ui/button'
 import { K13_FIXTURE } from '@/lib/procurar-datas/v2/dev-fixtures'
 import type { PesquisarDatasRequest } from '@/lib/procurar-datas/contratos'
@@ -59,6 +63,13 @@ type FiltroEarlyAuditoria = {
 type AuditarRunResponse =
   | {
       ok: true
+      analisadoEm?: string
+      snapshotTecnico?: { memoriaFrete?: MemoriaFretePesquisaV1 | null; candidatosFinais: Array<{
+        dataISO: string; equipe: string; elegivel: boolean; tipoOriginal: string;
+        slotAvailMin: number | null; serviceMin: number | null;
+        kmAdicionalNaRotaM: number | null; origemKmAdicionalNaRotaM: string | null;
+        consistenciaEspacial?: { estado?: string; motivo?: string } | null;
+      }> } | null
       pesquisa: {
         id: string
         runId: string | null
@@ -110,6 +121,7 @@ type AuditarRunResponse =
         insercaoRealCompleta?: boolean
         enderecosSemCoordenadas?: EnderecoSemCoordenadasAuditoria[]
         slots?: Array<{
+          estadoRecalculo?: 'elegivel' | 'rejeitado' | 'inconclusivo'
           slotKey: string | null
           dataISO: string | null
           equipe: string | null
@@ -139,6 +151,7 @@ type AuditarRunResponse =
         }>
       }
       comparacao: {
+        recalculoConclusivo?: { conclusivo: boolean; motivos: string[] }
         divergencias: Array<{ slotKey: string | null; tipo: string; detalhe: string }>
         avisos: string[]
         limitacoesHistoricas: string[]
@@ -404,6 +417,82 @@ type CandidatoDevV2 = CandidatoFinal & {
               </div>
             </div>
 
+            <Alert tone="info" title="Histórico e diagnóstico atual são contextos diferentes">
+              O recálculo usa planilhas e configuração atuais e não invalida retroativamente uma oferta.
+              Análise: {formatarData(auditoriaResultado.analisadoEm)}.
+            </Alert>
+            {auditoriaResultado.resultadosSalvos.map((resultado, indice) => {
+              const historico = auditoriaResultado.snapshotTecnico?.candidatosFinais.find((c) => c.dataISO === resultado.dataISO && c.equipe === resultado.equipe)
+              const atual = auditoriaResultado.diagnosticoReal.slots?.find((c) => c.dataISO === resultado.dataISO && c.equipe === resultado.equipe)
+              const km = (metros: number | null | undefined) => metros == null ? 'Não registrado/calculado' : (metros / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 3 }) + ' km'
+              const memoriaPesquisa = auditoriaResultado.snapshotTecnico?.memoriaFrete
+              const memoria = memoriaPesquisa?.candidatos.find((c) => c.dataISO === resultado.dataISO && c.equipe === resultado.equipe && c.tipo === resultado.tipo)
+              return (
+                <Card key={indice}>
+                  <CardHeader title={(resultado.dataISO ?? '-') + ' · ' + (resultado.equipe ?? '-')} />
+                  <CardContent className="space-y-4 text-sm">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <section className="space-y-1" aria-label="Resultado original da pesquisa">
+                        <h4 className="font-semibold">Resultado original da pesquisa</h4>
+                        <p>{formatarData(auditoriaResultado.pesquisa.createdAt ?? undefined)}</p>
+                        <p>Elegibilidade histórica: {historico ? historico.elegivel ? 'Elegível na pesquisa original' : 'Não elegível no snapshot' : 'Snapshot não disponível'}</p>
+                        <p>Tipo: {historico?.tipoOriginal ?? resultado.tipo ?? '-'} · Preço registrado: {resultado.frete ?? '-'}</p>
+                        <p>KM adicional de inserção: {km(historico?.kmAdicionalNaRotaM)}</p>
+                        <p>Fonte: {historico?.origemKmAdicionalNaRotaM ?? 'Não registrada'}</p>
+                        <p>Disponibilidade: {historico?.slotAvailMin ?? '-'} min · Serviço: {historico?.serviceMin ?? '-'} min</p>
+                        <p>{historico?.consistenciaEspacial?.motivo ?? 'Condição espacial histórica não registrada.'}</p>
+                      </section>
+                      <section className="space-y-1" aria-label="Diagnóstico recalculado">
+                        <h4 className="font-semibold">Diagnóstico recalculado</h4>
+                        <p>Estado atual: {atual?.estadoRecalculo === 'elegivel' ? 'Atualmente elegível' : atual?.estadoRecalculo === 'rejeitado' ? 'Atualmente rejeitado' : 'Recálculo incompleto ou inconclusivo'}</p>
+                        {historico && atual?.estadoRecalculo !== 'inconclusivo' && atual?.elegivelRecalculado != null && historico.elegivel !== atual.elegivelRecalculado && (
+                          <p className="font-medium">Divergência entre a decisão histórica e os dados atuais.</p>
+                        )}
+                        <p>KM adicional atual: {km(atual?.kmAdicionalNaRotaM)}</p>
+                        <p>Fonte atual: {atual?.origemKmAdicionalNaRotaM ?? 'Distância não calculada'}</p>
+                        <p>Disponibilidade: {atual?.slotAvailMin ?? '-'} min · Serviço: {atual?.serviceMin ?? '-'} min</p>
+                        <p>{atual?.filtroEarly?.descartado ? atual.filtroEarly.motivoTextual : atual?.motivoInsercaoRealIncompleta ?? atual?.motivoIndisponibilidade ?? 'Nenhuma rejeição informada.'}</p>
+                      </section>
+                    </div>
+                    {memoria && memoriaPesquisa ? (
+                      <details>
+                        <summary className="cursor-pointer font-medium">Memória histórica do frete · {memoria.freteApresentado}</summary>
+                        <div className="mt-2 space-y-2">
+                          <p>Capturada na pesquisa · fórmula {memoriaPesquisa.formula} · versão {memoriaPesquisa.versao}</p>
+                          <p>Origem da cobrança: depósito ({memoriaPesquisa.origem.lat}, {memoriaPesquisa.origem.lng}). Destino: {memoriaPesquisa.destino.lat}, {memoriaPesquisa.destino.lng}.</p>
+                          <p>KM efetivamente usado no preço: {memoriaPesquisa.distKm.toLocaleString('pt-BR')} km · Fonte: {memoriaPesquisa.fonteDistancia}</p>
+                          <p>Sábado: {memoria.entrada.isSabado ? 'Sim' : 'Não'} · Rural: {memoria.entrada.isRural ? 'Sim' : 'Não'} · Condomínio: {memoria.entrada.isCondominio ? 'Sim' : 'Não'} · Tipo: {memoria.tipo} · Faixa: {memoria.resultado.faixaAplicada}</p>
+                          <p>Valor inicial informado: {memoriaPesquisa.valorInicialInformado ?? 'Não informado'}; não aplicado como piso. Encomenda informada: {memoriaPesquisa.encomendaInformada ? 'Sim' : 'Não'}; sem adicional de preço.</p>
+                          <details>
+                            <summary className="cursor-pointer">Parâmetros capturados</summary>
+                            <dl>{Object.entries(memoria.entrada.params).map(([chave, valor]) => <div key={chave}><dt className="inline font-medium">{chave}: </dt><dd className="inline">{valor}</dd></div>)}</dl>
+                            <p>Adicionais configurados: especial {memoria.entrada.valorAdicionalEspecial}; premium {memoria.entrada.valorAdicionalPremium}; hora marcada {memoria.entrada.horaMarcadaValorAdicional}.</p>
+                          </details>
+                          <ol className="list-decimal space-y-1 pl-5">{memoria.etapas.map((etapa, i) => <li key={i}>{etapa.descricao}: {etapa.operacao} = R$ {etapa.valor.toLocaleString('pt-BR', { maximumFractionDigits: 8 })}</li>)}</ol>
+                          <p>Final calculado: {memoria.resultado.valorFormatado} · Final apresentado: {memoria.freteApresentado}</p>
+                          {memoria.freteApresentado !== resultado.frete && <Alert tone="warning">O preço apresentado capturado diverge do resultado salvo.</Alert>}
+                        </div>
+                      </details>
+                    ) : (
+                      <Alert tone="warning" title="Memória histórica do frete indisponível">
+                        A distância de cobrança e os parâmetros efetivamente aplicados não foram registrados ou não estão disponíveis em formato compatível.
+                        O KM adicional serve à seleção e não comprova a distância cobrada. Nenhum valor atual substitui o histórico ausente.
+                      </Alert>
+                    )}
+                    <p className="text-xs text-slate-500">KM operacional, rota antes e rota após inserção não constam do snapshot histórico deste formato. O preço usa depósito → cliente, inclusive aos sábados.</p>
+                  </CardContent>
+                </Card>
+              )
+            })}
+            <Alert tone="warning" title="Limitações do recálculo">
+              {auditoriaResultado.comparacao.recalculoConclusivo?.conclusivo
+                ? 'O recálculo técnico terminou; isso não comprova o preço nem reproduz a agenda histórica.'
+                : 'Recálculo não conclusivo para validar integralmente os resultados históricos.'}
+              <ul className="mt-2 list-disc pl-5">
+                {[...(auditoriaResultado.comparacao.recalculoConclusivo?.motivos ?? []), ...auditoriaResultado.comparacao.limitacoesHistoricas].map((motivo, i) => <li key={i}>{motivo}</li>)}
+              </ul>
+            </Alert>
+
             <div className="rounded-md border border-slate-200 overflow-hidden">
               <div className="p-3 border-b border-slate-200">
                 <h4 className="text-sm font-medium text-slate-700">Resultados salvos</h4>
@@ -468,7 +557,7 @@ type CandidatoDevV2 = CandidatoFinal & {
                     <thead className="bg-slate-50 border-b border-slate-200">
                       <tr>
                         <th className="text-left px-3 py-2">Slot</th>
-                        <th className="text-left px-3 py-2">Km rota</th>
+                        <th className="text-left px-3 py-2">KM adicional atual</th>
                         <th className="text-left px-3 py-2">Tempo disp.</th>
                         <th className="text-left px-3 py-2">Serviço</th>
                         <th className="text-left px-3 py-2">Ativa</th>
@@ -476,7 +565,7 @@ type CandidatoDevV2 = CandidatoFinal & {
                         <th className="text-left px-3 py-2">Inserção real</th>
                         <th className="text-left px-3 py-2">Filtro early</th>
                         <th className="text-left px-3 py-2">Tipo atual</th>
-                        <th className="text-left px-3 py-2">Elegível</th>
+                        <th className="text-left px-3 py-2">Estado atual</th>
                         <th className="text-left px-3 py-2">Limite base</th>
                         <th className="text-left px-3 py-2">Limite especial</th>
                         <th className="text-left px-3 py-2">Limite premium</th>
@@ -506,7 +595,7 @@ type CandidatoDevV2 = CandidatoFinal & {
                               : '-'}
                           </td>
                           <td className="px-3 py-2">{slot.tipoRecalculado ?? '-'}</td>
-                          <td className="px-3 py-2">{String(slot.elegivelRecalculado)}</td>
+                          <td className="px-3 py-2">{slot.estadoRecalculo === 'elegivel' ? 'Elegível' : slot.estadoRecalculo === 'rejeitado' ? 'Rejeitado' : 'Inconclusivo'}</td>
                           <td className="px-3 py-2">{slot.limiteBaseM ?? '-'}</td>
                           <td className="px-3 py-2">{slot.limiteEspecialM ?? '-'}</td>
                           <td className="px-3 py-2">{slot.limitePremiumM ?? '-'}</td>

@@ -19,6 +19,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
+import { normalizarEntradaPesquisaV2 } from '@/lib/procurar-datas/motor/entrada'
 import { validarAcessoProcurarDatas, respostaErroProcurarDatas } from '@/lib/procurar-datas/api'
 import { buscarConfiguracoesProcurarDatas } from '@/lib/procurar-datas/config-service'
 import type { PesquisarDatasRequest } from '@/lib/procurar-datas/contratos'
@@ -137,6 +138,7 @@ export async function POST(request: NextRequest) {
       diagnosticoDeltaSantoAmaro16Jul?: boolean
       usarDiagnosticoDeltaSantoAmaro16Jul?: boolean
     }
+    const destinoAuditoria = normalizarEntradaPesquisaV2(body).coordenadasDestino
     const medidorPerformance =
       medidorPerformanceQuery ?? criarMedidorPerformanceV2(flagDiagnosticoPerformance(request, body))
     const modoLogsPerformanceV2 = modoLogsPerformance(request, body)
@@ -247,8 +249,8 @@ export async function POST(request: NextRequest) {
         cidade: body.cidade || null,
         uf: body.uf || null,
         enderecoCompleto: body.enderecoCompleto || null,
-        latitude: body.lat || null,
-        longitude: body.lng || null,
+        latitude: destinoAuditoria?.lat ?? null,
+        longitude: destinoAuditoria?.lng ?? null,
         parametros: {
           dataInicial: body.dataInicial,
           encomenda: body.isEncomenda,
@@ -321,8 +323,8 @@ export async function POST(request: NextRequest) {
         cidade: body.cidade || null,
         uf: body.uf || null,
         enderecoCompleto: body.enderecoCompleto || null,
-        latitude: body.lat || null,
-        longitude: body.lng || null,
+        latitude: destinoAuditoria?.lat ?? null,
+        longitude: destinoAuditoria?.lng ?? null,
         parametros: {
           dataInicial: body.dataInicial,
           encomenda: body.isEncomenda,
@@ -454,8 +456,8 @@ export async function POST(request: NextRequest) {
       cidade: body.cidade,
       uf: body.uf,
       enderecoCompleto: body.enderecoCompleto,
-      latitude: body.lat,
-      longitude: body.lng,
+      latitude: destinoAuditoria?.lat ?? null,
+      longitude: destinoAuditoria?.lng ?? null,
       parametros: {
         dataInicial: body.dataInicial,
         encomenda: body.isEncomenda,
@@ -470,6 +472,7 @@ export async function POST(request: NextRequest) {
         valorInicialMinimo: typeof body.valorInicialMinimo === 'number' ? body.valorInicialMinimo : undefined,
       },
       snapshotTecnico: {
+        memoriaFrete: resultado.diagnosticoPayloadLegado.memoriaFrete ?? null,
         candidatosFinais: resultado.saidaV2.snapshotTecnicoCandidatosFinais ?? [],
         slotsBloqueados: resultado.saidaV2.snapshotTecnicoSlotsBloqueados ?? [],
         contadoresMapaKm: contadoresMapaKm ?? null,
@@ -497,8 +500,8 @@ export async function POST(request: NextRequest) {
       cidade: body.cidade,
       uf: body.uf,
       enderecoCompleto: body.enderecoCompleto,
-      latitude: body.lat,
-      longitude: body.lng,
+      latitude: destinoAuditoria?.lat ?? null,
+      longitude: destinoAuditoria?.lng ?? null,
       parametros: {
         dataInicial: body.dataInicial,
         encomenda: body.isEncomenda,
@@ -513,6 +516,7 @@ export async function POST(request: NextRequest) {
         valorInicialMinimo: typeof body.valorInicialMinimo === 'number' ? body.valorInicialMinimo : undefined,
       },
       snapshotTecnico: {
+        memoriaFrete: resultado.diagnosticoPayloadLegado.memoriaFrete ?? null,
         candidatosFinais: resultado.saidaV2.snapshotTecnicoCandidatosFinais ?? [],
         slotsBloqueados: resultado.saidaV2.snapshotTecnicoSlotsBloqueados ?? [],
         contadoresMapaKm: contadoresMapaKm ?? null,

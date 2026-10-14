@@ -1,5 +1,6 @@
 import type { FreteCandidatoLegadoInput } from './adaptar-saida-v2-para-legado'
-import { calcularFrete } from './frete'
+import { calcularFrete, type EtapaCalculoFrete } from './frete'
+import type { MemoriaFreteCandidatoV1 } from './memoria-frete'
 import type { CandidatoFinalPesquisarDatasV2 } from './pesquisar-datas-v2'
 import type { FreteInput, FreteParams } from './types'
 
@@ -19,6 +20,7 @@ export interface MontarFretesLegadoPorDistKmInput {
 export interface MontarFretesLegadoPorDistKmOutput {
   fretes: FreteCandidatoLegadoInput[]
   avisos: string[]
+  memorias: MemoriaFreteCandidatoV1[]
 }
 
 function extrairDataBase(dataISO: string): string {
@@ -48,10 +50,11 @@ export function montarFretesLegadoPorDistKm(
 ): MontarFretesLegadoPorDistKmOutput {
   const avisos: string[] = []
   const fretes: FreteCandidatoLegadoInput[] = []
+  const memorias: MemoriaFreteCandidatoV1[] = []
 
   if (!Number.isFinite(input.distKm) || input.distKm == null || input.distKm < 0) {
     avisos.push('distKm deposito -> destino ausente ou invalido; fretes legados nao foram montados.')
-    return { fretes, avisos }
+    return { fretes, avisos, memorias }
   }
 
   for (const candidato of input.candidatos) {
@@ -69,17 +72,20 @@ export function montarFretesLegadoPorDistKm(
       continue
     }
 
-    const frete = calcularFrete({
+    const entradaFrete: FreteInput = {
       distKm: input.distKm,
       isSabado: diaSemana === 6,
       isRural: input.isRural,
       isCondominio: input.isCondominio,
-      params: input.params,
+      params: { ...input.params },
       tipo,
       valorAdicionalEspecial: input.valorAdicionalEspecial,
       valorAdicionalPremium: input.valorAdicionalPremium,
       horaMarcadaValorAdicional: input.horaMarcadaValorAdicional,
-    })
+    }
+    const etapas: EtapaCalculoFrete[] = []
+    const frete = calcularFrete(entradaFrete, etapas)
+    memorias.push({ dataISO: extrairDataBase(candidato.dataISO), equipe: candidato.equipe, tipo: candidato.tipo, entrada: entradaFrete, etapas, resultado: frete })
 
     fretes.push({
       dataISO: candidato.dataISO,
@@ -90,5 +96,5 @@ export function montarFretesLegadoPorDistKm(
     })
   }
 
-  return { fretes, avisos }
+  return { fretes, avisos, memorias }
 }

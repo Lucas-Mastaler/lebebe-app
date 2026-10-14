@@ -1,6 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { LocalizacaoGoogleMaps } from '@/components/procurar-datas/LocalizacaoGoogleMaps'
+import type { LocalizacaoMapsVerificada } from '@/lib/procurar-datas/acesso-viario-maps'
+import { coordenadasMapsValidas } from '@/lib/procurar-datas/localizacao-maps'
 import { CalendarCheck, CheckCircle2, Edit, RotateCcw, Search, Send, TimerReset, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -271,6 +274,7 @@ async function readJson(response: Response) {
 
 export default function ProcurarDatasPage() {
   const [form, setForm] = useState<FormState>(initialForm)
+  const [mapsReset, setMapsReset] = useState(0)
   const [opcoes, setOpcoes] = useState<OptionLists>({})
   const [tempoMapLoaded, setTempoMapLoaded] = useState(false)
   const [tempoNecessario, setTempoNecessario] = useState('')
@@ -315,6 +319,7 @@ export default function ProcurarDatasPage() {
   const candidates = searchPayload?.candidates || []
   const normalCandidates = candidates.filter(isNormalCandidate).slice(0, 3)
   const extraCandidates = candidates.filter((candidate) => !isNormalCandidate(candidate))
+  const mapsConfirmado = addressConfirmed && addressConfirmedResult?.provider?.startsWith('google-maps:') === true
   const serviceLocked = !addressConfirmed || addressConfirmedResult?.ok !== true
   const formLocked = serviceLocked || searching
   const tempoMinutes = hhmmToMinutes(tempoNecessario)
@@ -423,7 +428,7 @@ export default function ProcurarDatasPage() {
   }, [form, tempoMapLoaded, addressResult])
 
   useEffect(() => {
-    if (!addressResult?.ok || !addressResult.lat || !addressResult.lng) {
+    if (!addressResult?.ok || !coordenadasMapsValidas(addressResult.lat, addressResult.lng)) {
       setValorInicial('')
       setValorInicialNumerico(null)
       return
@@ -453,6 +458,12 @@ export default function ProcurarDatasPage() {
         const data = (await readJson(response)) as ValorInicialResponseSucesso
         const resultado = data.resultado || {}
         if (active) {
+          if (addressResult.provider?.startsWith('google-maps:') && (resultado.fallbackUsado || resultado.ok === false)) {
+            setValorInicial('')
+            setValorInicialNumerico(null)
+            toast.error('Não foi possível calcular o valor com rota válida para o ponto do Maps. Nenhuma aproximação foi aplicada.')
+            return
+          }
           setValorInicial(resultado.valorFormatado || resultado.valorFmt || '')
           setValorInicialNumerico(typeof resultado.valor === 'number' ? resultado.valor : null)
         }
@@ -551,7 +562,7 @@ export default function ProcurarDatasPage() {
       }
       return next
     })
-    if (camposEndereco.includes(String(key))) {
+    if (camposEndereco.includes(String(key)) && !mapsConfirmado) {
       limparResultadoValidacao({ preservarRevisaoEndereco: addressValidationReviewMode })
       setPhase('Endereco alterado')
       if (estadoCep === 'confirmado') {
@@ -688,6 +699,10 @@ export default function ProcurarDatasPage() {
   }
 
   async function validarEndereco() {
+    if (mapsConfirmado) {
+      toast.info('A localização do Google Maps está confirmada. Limpe ou altere essa localização para voltar à validação por endereço.')
+      return
+    }
     const { ok, errors } = validarCamposEndereco(form)
     if (!ok) {
       setFormErrors((current) => ({ ...current, ...errors }))
@@ -829,6 +844,10 @@ export default function ProcurarDatasPage() {
         if (status === 'done') {
           const rootCandidates = (progress as SearchProgress & { candidates?: Candidate[] }).candidates
           const payload = progress.payload || (Array.isArray(rootCandidates) ? { candidates: rootCandidates } : null)
+          if (addressConfirmedResult?.provider?.startsWith('google-maps:') && payload?.candidates?.some((candidate) => !candidate.frete?.trim())) {
+            finalizarBuscaComErro('A pesquisa não conseguiu calcular o frete com uma rota válida para o ponto informado. Confira o acesso viário e tente novamente.')
+            return
+          }
           if (!payload || !Array.isArray(payload.candidates) || payload.candidates.length === 0) {
             finalizarBuscaComErro('A busca terminou, mas nao retornou resultados validos. Verifique logs pelo token.')
             return
@@ -868,6 +887,7 @@ export default function ProcurarDatasPage() {
   }
 
   function iniciarNovaConsulta() {
+    setMapsReset((version) => version + 1)
     activeSearchTokenRef.current = ''
     searchStartedAtRef.current = 0
     currentRunIdRef.current = null
@@ -888,6 +908,36 @@ export default function ProcurarDatasPage() {
     setValidatingAddress(false)
     setPhase('Pronto para validar endereco')
     cepInputRef.current?.focus()
+  }
+
+  function invalidarLocalizacaoMaps() {
+    if (addressConfirmedResult?.provider?.startsWith('google-maps:')) {
+      validationTokenRef.current = ''
+      limparEstadosDependentesDeCoordenada()
+      setEstadoCep('aguardando_input')
+      setPhase('Identifique a nova localização')
+    }
+  }
+
+  function confirmarLocalizacaoMaps(local: LocalizacaoMapsVerificada) {
+    if (!coordenadasMapsValidas(local.lat, local.lng)) return
+    // Invalida respostas antigas de geocodificação: nenhuma pode substituir o ponto confirmado.
+    validationTokenRef.current = ''
+    limparEstadosDependentesDeCoordenada()
+    setAddressValidationError(null)
+    setAddressValidationReviewMode(false)
+    // Metadados do endereço anterior não pertencem necessariamente ao novo ponto.
+    setCepInput('')
+    setForm((current) => ({ ...current, numero: '', logradouro: '', bairro: '',
+      cidade: local.regiao?.cidade || '', uf: local.regiao?.uf || '' }))
+    setFormErrors({})
+    const display = local.nome || [local.regiao?.cidade, local.regiao?.uf].filter(Boolean).join(' - ') ||
+      `Localização por coordenadas (${local.lat}, ${local.lng})`
+    const resultado: AddressResult = { ok: true, lat: local.lat, lng: local.lng,
+      display, provider: 'google-maps:' + local.fonte }
+    setAddressResult(resultado)
+    setEstadoCep('confirmado')
+    confirmarLocal(resultado)
   }
 
   function confirmarLocal(resultado: AddressResult) {
@@ -927,7 +977,7 @@ export default function ProcurarDatasPage() {
 
   async function pesquisarDatas() {
     const nextErrors: FormErrors = {}
-    if (!addressConfirmed || !addressConfirmedResult?.ok || !addressConfirmedResult.lat || !addressConfirmedResult.lng) {
+    if (!addressConfirmed || !addressConfirmedResult?.ok || !coordenadasMapsValidas(addressConfirmedResult.lat, addressConfirmedResult.lng)) {
       nextErrors.endereco = 'Valide e confirme o endereco antes de pesquisar.'
     }
     if (!form.dataInicial) {
@@ -944,7 +994,7 @@ export default function ProcurarDatasPage() {
     }
 
     const confirmed = addressConfirmedResult
-    if (!confirmed || !confirmed.lat || !confirmed.lng) {
+    if (!confirmed || !coordenadasMapsValidas(confirmed.lat, confirmed.lng)) {
       setFormErrors((current) => ({ ...current, endereco: 'Valide e confirme o endereco antes de pesquisar.' }))
       toast.error('Valide e confirme o endereco antes de pesquisar.')
       return
@@ -969,14 +1019,14 @@ export default function ProcurarDatasPage() {
         ...form,
         clientToken: token,
         tempoNecessario,
-        cep: confirmed.cep || '',
+        cep: mapsConfirmado ? cepInput : confirmed.cep || '',
         lat: confirmed.lat,
         lng: confirmed.lng,
         destLat: confirmed.lat,
         destLng: confirmed.lng,
         destDisplay: confirmed.enderecoCompleto || confirmed.display || confirmed.display_name || '',
         destProvider: confirmed.provider || '',
-        enderecoCompleto: confirmed.enderecoCompleto || confirmed.display || confirmed.display_name || '',
+        enderecoCompleto: mapsConfirmado ? montarEnderecoFormatadoParaMaps(form, cepInput) : confirmed.enderecoCompleto || confirmed.display || confirmed.display_name || '',
         monthYear: form.dataInicial,
         valorInicialMinimo: valorInicialNumerico ?? undefined,
       }
@@ -1152,13 +1202,18 @@ export default function ProcurarDatasPage() {
               <p className="mt-1">AVISO: SE FOR VENDA SHOWROOM FALAR COM PÓS VENDA SOBRE DATA PRA DESMONTAR E MONTAR.</p>
             </Alert>
 
+            <LocalizacaoGoogleMaps key={mapsReset} disabled={searching || loadingCep || validatingAddress}
+              onConfirmar={confirmarLocalizacaoMaps} onInvalidar={invalidarLocalizacaoMaps} />
+
+            {mapsConfirmado && <p className="mb-3 text-sm text-slate-600">Endereço para identificação (opcional). A pesquisa usará o ponto identificado no mapa.</p>}
+
             <div className="grid gap-3 md:grid-cols-6">
-              <FormField id="cepInput" label="CEP" required className="md:col-span-2">
+              <FormField id="cepInput" label="CEP" required={!mapsConfirmado} className="md:col-span-2">
                 {(f) => (
                   <Input
                     {...f}
                     ref={cepInputRef}
-                    disabled={cepBloqueado}
+                    disabled={mapsConfirmado ? searching : cepBloqueado}
                     value={cepInput}
                     onChange={(e) => {
                       const raw = e.target.value.replace(/\D/g, '').slice(0, 8)
@@ -1171,7 +1226,7 @@ export default function ProcurarDatasPage() {
                         setPhase('CEP alterado')
                         return
                       }
-                      if (estadoCep !== 'aguardando_input') {
+                      if (!mapsConfirmado && estadoCep !== 'aguardando_input') {
                         rejeitarEnderecoCep()
                       }
                     }}
@@ -1180,11 +1235,11 @@ export default function ProcurarDatasPage() {
                   />
                 )}
               </FormField>
-              <FormField id="numero" label="Numero" required error={formErrors.numero} className="md:col-span-2">
+              <FormField id="numero" label="Numero" required={!mapsConfirmado} error={formErrors.numero} className="md:col-span-2">
                 {(f) => (
                   <Input
                     {...f}
-                    disabled={numeroBloqueado}
+                    disabled={mapsConfirmado ? searching : numeroBloqueado}
                     value={form.numero}
                     onChange={(e) => updateForm('numero', e.target.value)}
                     placeholder="Apenas numeros"
@@ -1207,52 +1262,52 @@ export default function ProcurarDatasPage() {
             </div>
 
             <div className="mt-3 grid gap-3 md:grid-cols-6">
-              <FormField id="logradouro" label="Logradouro" required error={formErrors.logradouro} className="md:col-span-3">
+              <FormField id="logradouro" label="Logradouro" required={!mapsConfirmado} error={formErrors.logradouro} className="md:col-span-3">
                 {(f) => (
                   <Input
                     {...f}
-                    disabled={logradouroBloqueado}
-                    readOnly={logradouroBloqueado}
+                    disabled={mapsConfirmado ? searching : logradouroBloqueado}
+                    readOnly={!mapsConfirmado && logradouroBloqueado}
                     value={form.logradouro}
                     onChange={(e) => updateForm('logradouro', e.target.value)}
                   />
                 )}
               </FormField>
-              <FormField id="bairro" label="Bairro" required error={formErrors.bairro} className="md:col-span-3">
+              <FormField id="bairro" label="Bairro" required={!mapsConfirmado} error={formErrors.bairro} className="md:col-span-3">
                 {(f) => (
                   <Input
                     {...f}
-                    disabled={bairroBloqueado}
-                    readOnly={bairroBloqueado}
+                    disabled={mapsConfirmado ? searching : bairroBloqueado}
+                    readOnly={!mapsConfirmado && bairroBloqueado}
                     value={form.bairro}
                     onChange={(e) => updateForm('bairro', e.target.value)}
                   />
                 )}
               </FormField>
-              <FormField id="cidade" label="Cidade" required error={formErrors.cidade} className="md:col-span-3">
+              <FormField id="cidade" label="Cidade" required={!mapsConfirmado} error={formErrors.cidade} className="md:col-span-3">
                 {(f) => (
                   <Input
                     {...f}
-                    disabled={cidadeUfBloqueado}
-                    readOnly={cidadeUfBloqueado}
+                    disabled={mapsConfirmado ? searching : cidadeUfBloqueado}
+                    readOnly={!mapsConfirmado && cidadeUfBloqueado}
                     value={form.cidade}
                     onChange={(e) => updateForm('cidade', e.target.value)}
                   />
                 )}
               </FormField>
-              <FormField id="uf" label="UF" required error={formErrors.uf} className={addressResult?.ok ? undefined : 'md:col-span-3'}>
+              <FormField id="uf" label="UF" required={!mapsConfirmado} error={formErrors.uf} className={addressResult?.ok ? undefined : 'md:col-span-3'}>
                 {(f) => (
                   <Input
                     {...f}
-                    disabled={cidadeUfBloqueado}
-                    readOnly={cidadeUfBloqueado}
+                    disabled={mapsConfirmado ? searching : cidadeUfBloqueado}
+                    readOnly={!mapsConfirmado && cidadeUfBloqueado}
                     maxLength={2}
                     value={form.uf}
                     onChange={(e) => updateForm('uf', e.target.value)}
                   />
                 )}
               </FormField>
-              {addressResult?.ok && (
+              {addressResult?.ok && !mapsConfirmado && (
                 <div className="md:col-span-2 flex items-end">
                   <Button
                     type="button"
@@ -1351,7 +1406,7 @@ export default function ProcurarDatasPage() {
               <p className="mt-3 text-xs font-semibold text-red-600">{formErrors.endereco}</p>
             )}
 
-            {addressResult?.ok && (
+            {addressResult?.ok && !mapsConfirmado && (
               <Alert tone="info" className="mt-4">
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div className="flex-1">

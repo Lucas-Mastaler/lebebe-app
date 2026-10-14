@@ -1,3 +1,6 @@
+import { classificarEstadoRecalculoSlot } from '@/lib/procurar-datas/motor/estado-recalculo-slot'
+import { lerMemoriaFretePesquisa, type MemoriaFretePesquisaV1 } from '@/lib/procurar-datas/motor/memoria-frete'
+import { montarSlotsAgendaReal, LIMITE_LEITURA_FONTES_V2 } from '@/lib/procurar-datas/motor/montar-slots-agenda-real'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireModuleAccess } from '@/lib/auth/module-access'
 import { createServiceClient } from '@/lib/supabase/service'
@@ -22,7 +25,6 @@ import {
 import {
   calcularMapaKmAdicionalPorSlotControladoV2,
   type DetalheSlotMapaKmAdicional,
-  type SlotInputMapaKmAdicional,
 } from '@/lib/procurar-datas/motor/calcular-mapa-km-adicional-por-slot'
 import { criarBuscarMatrizOSRMTableDiagnosticoV2 } from '@/lib/procurar-datas/motor/osrm-table-client-diagnostico'
 import { gerarCandidatosComDisponibilidadeRealV2 } from '@/lib/procurar-datas/motor/gerar-candidatos-disponibilidade-real'
@@ -128,6 +130,7 @@ type SnapshotTecnicoCandidatoSalvo = {
 }
 
 type SnapshotTecnicoSalvo = {
+  memoriaFrete: MemoriaFretePesquisaV1 | null
   candidatosFinais: SnapshotTecnicoCandidatoSalvo[]
   slotsBloqueados: unknown[]
   contadoresMapaKm: {
@@ -238,6 +241,7 @@ function extrairSnapshotTecnico(parametros: JsonRecord): SnapshotTecnicoSalvo | 
   if (candidatosFinais.length === 0 && slotsBloqueados.length === 0) return null
   const contadoresRaw = (raw as JsonRecord).contadoresMapaKm
   return {
+    memoriaFrete: lerMemoriaFretePesquisa(raw.memoriaFrete),
     candidatosFinais,
     slotsBloqueados,
     contadoresMapaKm: isRecord(contadoresRaw)
@@ -283,9 +287,21 @@ function avaliarRecalculoConclusivo(input: {
   }
 
   const slots = Array.isArray(dr.slots) ? dr.slots : []
-  const slotsSemPontos = slots.filter((s: { slotTemPontos?: boolean | null }) => s.slotTemPontos === false)
-  if (slots.length > 0 && slotsSemPontos.length === slots.length) {
-    motivos.push('Todos os slots do recálculo estão sem pontos de agenda — recálculo não conclusivo.')
+
+  const leituraDisponibilidade = dr.disponibilidadeReal
+  if ('leitura' in leituraDisponibilidade && leituraDisponibilidade.leitura?.truncada) {
+    motivos.push('Disponibilidade truncada antes do parser; cobertura do recálculo incompleta.')
+  }
+  if (slots.some((slot) => slot.kmAdicionalNaRotaM === null)) {
+    motivos.push('Há slots salvos sem quilometragem recalculada; elegibilidade e distância não foram integralmente validadas.')
+  }
+
+  if (slots.some((slot) => slot.estadoRecalculo === 'inconclusivo')) {
+    motivos.push('Há slots com dados essenciais incompletos; não é possível confirmar sua elegibilidade atual.')
+  }
+  const agenda = dr.agendaReal
+  if ('leitura' in agenda && agenda.leitura?.truncada) {
+    motivos.push('Agenda truncada; cobertura do recálculo incompleta.')
   }
 
   const insercaoCompleta = dr.insercaoRealCompleta
@@ -299,7 +315,7 @@ function avaliarRecalculoConclusivo(input: {
   if (input.snapshotTecnico) {
     const snapContadores = input.snapshotTecnico.contadoresMapaKm
     if (snapContadores && snapContadores.slotsComKm > 0 && totalCandidatos === 0) {
-      motivos.push('Snapshot da produção tinha slots com km calculado, mas o recálculo atual gerou 0 candidatos — divergência provavelmente por dados de agenda desatualizados.')
+      motivos.push('Snapshot da produção tinha slots com km calculado, mas o recálculo atual gerou 0 candidatos; a causa da diferença não está comprovada.')
     }
   }
 
@@ -692,8 +708,8 @@ async function montarDiagnosticoReal(input: {
   }
 
   const [agendaReal, disponibilidadeReal] = await Promise.all([
-    buscarAgendaRealDiagnosticaComDados(2000),
-    buscarDisponibilidadeRealDiagnosticaComDados(entradaNormalizada.dataInicialISO, 200, 20, 'entrada'),
+    buscarAgendaRealDiagnosticaComDados(LIMITE_LEITURA_FONTES_V2),
+    buscarDisponibilidadeRealDiagnosticaComDados(entradaNormalizada.dataInicialISO, LIMITE_LEITURA_FONTES_V2, 20, 'entrada'),
   ])
 
   const agendaOk = agendaReal.diagnostico.ok === true
@@ -734,12 +750,15 @@ async function montarDiagnosticoReal(input: {
   })
   avisos.push(...cacheSeguroAgenda.avisos)
 
-  const slotsAlvo: SlotInputMapaKmAdicional[] = Array.from(slotsAlvoMap.values()).map((slot) => ({
-    dataISO: slot.dataISO,
-    equipe: slot.equipe,
+  const slotsAlvo = montarSlotsAgendaReal({
+    janelaDatas: [],
+    slotsAlvo: Array.from(slotsAlvoMap.values()),
     linhasAgenda: agendaReal.linhasAgenda,
+    disponibilidades: disponibilidadeReal.disponibilidades,
     cacheCoordenadasPorEndereco: cacheAgenda.cacheCoordenadasPorEndereco,
-  }))
+    equipe1Ativa: configResult.config.equipe1Ativa,
+    equipe2Ativa: configResult.config.equipe2Ativa,
+  })
 
   const buscarMatrizOSRM = criarBuscarMatrizOSRMTableDiagnosticoV2({
     baseUrl: normalizarOsrmBaseUrl(configResult.config.osrmBaseUrl),
@@ -814,6 +833,12 @@ async function montarDiagnosticoReal(input: {
   const candidatosPorChave = new Map(candidatos.candidatos.map((candidato) => [`${candidato.dataISO}::${normalizarEquipe(candidato.equipe) ?? candidato.equipe}`, candidato]))
   const recorteChaves = new Set(recorte.candidatosFinais.map((candidato) => `${candidato.dataISO}::${normalizarEquipe(candidato.equipe) ?? candidato.equipe}`))
 
+  const fontesCompletas =
+    !('leitura' in agendaReal.diagnostico && agendaReal.diagnostico.leitura?.truncada) &&
+    !('leitura' in disponibilidadeReal.diagnostico && disponibilidadeReal.diagnostico.leitura?.truncada) &&
+    !('parser' in disponibilidadeReal.diagnostico && disponibilidadeReal.diagnostico.parser?.ok === false)
+  const disponibilidadePorChave = new Map(slotsAlvo.map((slot) => [slotKey(slot.dataISO, slot.equipe), slot.disponibilidade]))
+
   const slots = input.resultadosSalvos.map((resultado) => {
     const key = slotKey(resultado.dataISO, resultado.equipe)
     const detalhe = key ? detalhesPorChave.get(key) : undefined
@@ -835,18 +860,31 @@ async function montarDiagnosticoReal(input: {
         : null,
     })
     const insercaoInterrompidaPorFiltroEarly = filtroEarly?.descartado === true
-    const insercaoRealCompleta = enderecosSemCoordenadas.length === 0 && !insercaoInterrompidaPorFiltroEarly
+    const insercaoRealCompleta = detalhe?.ok === true && detalhe.kmAdicionalNaRotaM != null && enderecosSemCoordenadas.length === 0 && !insercaoInterrompidaPorFiltroEarly
     const validacaoInsercaoReal = insercaoInterrompidaPorFiltroEarly
       ? 'interrompida_por_filtro_early'
       : insercaoRealCompleta
         ? 'completa'
-        : 'incompleta_sem_coordenadas'
+        : enderecosSemCoordenadas.length > 0 ? 'incompleta_sem_coordenadas' : 'incompleta_sem_distancia'
     const motivoInsercaoRealIncompleta = insercaoInterrompidaPorFiltroEarly
       ? 'Filtro early legado descartou o slot antes do delta de insercao; km por insercao real nao foi calculado.'
       : insercaoRealCompleta
         ? null
-        : 'Pontos reais da agenda foram descartados por falta de coordenadas; km por insercao nao deve ser tratado como validado.'
+        : enderecosSemCoordenadas.length > 0
+          ? 'Pontos reais da agenda foram descartados por falta de coordenadas; km por insercao nao deve ser tratado como validado.'
+          : detalhe?.consistenciaEspacial?.motivo ?? 'A auditoria atual não possui distância calculada para validar a inserção.'
+    const disponibilidade = key ? disponibilidadePorChave.get(key) : undefined
+    const estadoRecalculo = classificarEstadoRecalculoSlot({
+      fontesCompletas,
+      disponibilidadeConfirmada: disponibilidade != null && Number.isFinite(disponibilidade.tempoUtilizadoMin) && Number.isFinite(disponibilidade.disponivelMin),
+      candidatoPresente: candidato != null,
+      calculoOk: detalhe?.ok === true,
+      kmAdicionalNaRotaM: detalhe?.kmAdicionalNaRotaM ?? null,
+      filtroEarlyDescartado: insercaoInterrompidaPorFiltroEarly,
+      elegivel: candidato?.elegivel === true,
+    })
     return {
+      estadoRecalculo,
       slotKey: key,
       dataISO: resultado.dataISO,
       equipe: resultado.equipe,
@@ -917,7 +955,7 @@ async function montarDiagnosticoReal(input: {
     },
     slots,
     enderecosSemCoordenadas,
-    insercaoRealCompleta: enderecosSemCoordenadas.length === 0 && slotsInterrompidosPorFiltroEarly.length === 0,
+    insercaoRealCompleta: slots.length > 0 && slots.every((slot) => slot.insercaoRealCompleta),
     slotsInterrompidosPorFiltroEarly: slotsInterrompidosPorFiltroEarly.map((slot) => ({
       slotKey: slot.slotKey,
       tipoFiltroEarly: slot.filtroEarly?.tipoFiltroEarly ?? null,
@@ -968,12 +1006,12 @@ function montarDivergencias(
     if (slot.insercaoRealCompleta === false) {
       const detalhe = slot.filtroEarly?.descartado
         ? `Km por insercao nao validado: filtro early legado (${slot.filtroEarly.tipoFiltroEarly}) interrompeu o calculo do delta.`
-        : `Km por insercao nao validado: ${slot.enderecosSemCoordenadas.length} ponto(s) real(is) da agenda sem coordenadas.`
+        : `Km por insercao nao validado: ${slot.motivoInsercaoRealIncompleta ?? 'distância não calculada'}`
       divergencias.push({
         slotKey: slot.slotKey,
         tipo: slot.filtroEarly?.descartado
           ? 'insercao-real-interrompida-por-filtro-early'
-          : 'insercao-real-incompleta-sem-coordenadas',
+          : slot.enderecosSemCoordenadas.length > 0 ? 'insercao-real-incompleta-sem-coordenadas' : 'insercao-real-incompleta-sem-distancia',
         detalhe,
         severidade: 'aviso',
       })
@@ -986,7 +1024,7 @@ function montarDivergencias(
         tipo: 'tipo-divergente',
         detalhe: rebaixar
           ? coerenteSnap
-            ? `Resultado salvo tipo=${salvo.tipo}; diagnostico atual tipo=${slot.tipoRecalculado}. Resultado salvo está coerente com o snapshot técnico da produção. A divergência vem do recálculo atual com dados atuais, possivelmente por mudança posterior de agenda/disponibilidade.`
+            ? `Resultado salvo tipo=${salvo.tipo}; diagnostico atual tipo=${slot.tipoRecalculado}. Resultado salvo está coerente com o snapshot técnico da produção. A divergência vem do recálculo atual com dados atuais, A causa dessa diferença deve ser avaliada separadamente.`
             : `Resultado salvo tipo=${salvo.tipo}; diagnostico atual tipo=${slot.tipoRecalculado}. AVISO: recálculo não conclusivo (${recalculoConclusivo.motivos.join('; ')}). Divergência rebaixada para aviso.`
           : `Resultado salvo tipo=${salvo.tipo}; diagnostico atual tipo=${slot.tipoRecalculado}.`,
         severidade: rebaixar ? 'aviso' : 'forte',
@@ -1000,7 +1038,7 @@ function montarDivergencias(
         tipo: 'resultado-salvo-nao-elegivel-atual',
         detalhe: rebaixar
           ? coerenteSnap
-            ? `Resultado salvo existe, mas o diagnostico atual marcou como nao elegivel: ${slot.motivoIndisponibilidade ?? 'motivo nao informado'}. Resultado salvo está coerente com o snapshot técnico da produção. A divergência vem do recálculo atual com dados atuais, possivelmente por mudança posterior de agenda/disponibilidade.`
+            ? `Resultado salvo existe, mas o diagnostico atual marcou como nao elegivel: ${slot.motivoIndisponibilidade ?? 'motivo nao informado'}. Resultado salvo está coerente com o snapshot técnico da produção. A divergência vem do recálculo atual com dados atuais, possivelmente por diferença entre histórico e dados atuais.`
             : `Resultado salvo existe, mas o diagnostico atual marcou como nao elegivel: ${slot.motivoIndisponibilidade ?? 'motivo nao informado'}. AVISO: recálculo não conclusivo — divergência rebaixada para aviso.`
           : `Resultado salvo existe, mas o diagnostico atual marcou como nao elegivel: ${slot.motivoIndisponibilidade ?? 'motivo nao informado'}.`,
         severidade: rebaixar ? 'aviso' : 'forte',
@@ -1014,7 +1052,7 @@ function montarDivergencias(
         tipo: 'resultado-salvo-fora-do-recorte-atual',
         detalhe: rebaixar
           ? coerenteSnap
-            ? 'O slot salvo nao apareceu no recorte final recalculado com os dados atuais. Resultado salvo está coerente com o snapshot técnico da produção. A divergência vem do recálculo atual com dados atuais, possivelmente por mudança posterior de agenda/disponibilidade.'
+            ? 'O slot salvo nao apareceu no recorte final recalculado com os dados atuais. Resultado salvo está coerente com o snapshot técnico da produção. A divergência vem do recálculo atual com dados atuais, possivelmente por diferença entre histórico e dados atuais.'
             : 'O slot salvo nao apareceu no recorte final recalculado com os dados atuais. AVISO: recálculo não conclusivo — pode ser mudança na planilha, não bug.'
           : 'O slot salvo nao apareceu no recorte final recalculado com os dados atuais.',
         severidade: rebaixar ? 'aviso' : 'forte',
@@ -1125,6 +1163,9 @@ export async function POST(request: NextRequest) {
 
     const limitacoesHistoricas = [
       ...(diagnosticoReal.limitacoesHistoricas ?? []),
+      snapshotTecnico?.memoriaFrete
+        ? 'Memória histórica do frete capturada durante a pesquisa; cálculo disponível sem consultar parâmetros atuais.'
+        : 'Memória histórica do frete não registrada ou incompatível com a versão suportada; km adicional não comprova o km utilizado no preço.',
       snapshotTecnico
         ? 'Snapshot técnico da produção disponível em parametros_json.snapshotTecnico. Use como referência principal para auditoria quando o recálculo atual não for conclusivo.'
         : 'Snapshot técnico da produção não disponível nesta auditoria. Recálculo atual é a única base de comparação, mas pode não ser conclusivo se a agenda mudou.',
@@ -1163,6 +1204,7 @@ export async function POST(request: NextRequest) {
       pesquisa,
       entrada,
       resultadosSalvos,
+      analisadoEm: new Date().toISOString(),
       snapshotTecnicoDisponivel: snapshotTecnico !== null,
       snapshotTecnico,
       diagnosticoReal,

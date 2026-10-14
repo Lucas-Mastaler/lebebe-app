@@ -141,7 +141,7 @@ const agendaRealBase = {
 
 const disponibilidadeRealBase = {
   diagnostico: { ok: true, total: 200, fonte: 'google-sheets' },
-  disponibilidades: [],
+  disponibilidades: [{ dataISO: '2026-08-15', equipe: 'Equipe 1', tempoUtilizadoMin: 240, disponivelMin: 0, capacidadeTotalMin: 240 }],
 }
 
 const cacheAgendaBase = {
@@ -274,6 +274,15 @@ describe('POST /api/procurar-datas/v2/auditar-run — snapshot técnico', () => 
     expect(json.snapshotTecnico).not.toBeNull()
     expect(json.snapshotTecnico.candidatosFinais).toHaveLength(1)
     expect(json.snapshotTecnico.candidatosFinais[0].slotKey).toBe('2026-08-15::EQUIPE 1')
+    expect(json.snapshotTecnico.memoriaFrete).toBeNull()
+    expect(buscarDisponibilidadeMock).toHaveBeenCalledWith('2026-08-15', 2000, 20, 'entrada')
+    expect(calcularMapaMock.mock.calls[0][0]).toMatchObject({
+      slots: [{ dataISO: '2026-08-15', equipe: 'EQUIPE 1', disponibilidade: { tempoUtilizadoMin: 240, disponivelMin: 0, capacidadeTotalMin: 240 } }],
+      configOrigem: { latDeposito: configBase.config.latDeposito, lngDeposito: configBase.config.lngDeposito,
+        latCasaE1: configBase.config.latCasaE1, lngCasaE1: configBase.config.lngCasaE1,
+        latCasaE2: configBase.config.latCasaE2, lngCasaE2: configBase.config.lngCasaE2 },
+      configFiltroEarlyLegado: { kmMaxEntrePontosKm: 8, kmAdicionalMaxNaRotaPremiumM: 18000 },
+    })
   })
 
   it('inclui snapshotTecnicoDisponivel=false quando snapshot não existe', async () => {
@@ -596,6 +605,7 @@ describe('POST /api/procurar-datas/v2/auditar-run — snapshot técnico', () => 
       diagnostico: { ok: true, linhasLidas: 506, fonte: 'google-sheets' },
       linhasAgenda: [{ data: '2026-08-15', equipe: 'EQUIPE 1', endereco: 'Rua A' }],
     })
+    calcularMapaMock.mockResolvedValue({ ...mapaPorSlotBase, detalhesPorSlot: [{ chave: '2026-08-15::EQUIPE 1', ok: true, kmAdicionalNaRotaM: 797, avisos: [], erros: [], descartados: [] }] })
     gerarCandidatosMock.mockReturnValue({
       candidatos: [candidatoIndisponivel],
       candidatosOrdenados: [candidatoIndisponivel],
@@ -664,6 +674,7 @@ describe('POST /api/procurar-datas/v2/auditar-run — snapshot técnico', () => 
       diagnostico: { ok: true, linhasLidas: 506, fonte: 'google-sheets' },
       linhasAgenda: [{ data: '2026-08-15', equipe: 'EQUIPE 1', endereco: 'Rua A' }],
     })
+    calcularMapaMock.mockResolvedValue({ ...mapaPorSlotBase, detalhesPorSlot: [{ chave: '2026-08-15::EQUIPE 1', ok: true, kmAdicionalNaRotaM: 797, avisos: [], erros: [], descartados: [] }] })
     gerarCandidatosMock.mockReturnValue({
       candidatos: [candidatoIndisponivel],
       candidatosOrdenados: [candidatoIndisponivel],
@@ -727,6 +738,7 @@ describe('POST /api/procurar-datas/v2/auditar-run — snapshot técnico', () => 
       diagnostico: { ok: true, linhasLidas: 506, fonte: 'google-sheets' },
       linhasAgenda: [{ data: '2026-08-15', equipe: 'EQUIPE 1', endereco: 'Rua A' }],
     })
+    calcularMapaMock.mockResolvedValue({ ...mapaPorSlotBase, detalhesPorSlot: [{ chave: '2026-08-15::EQUIPE 1', ok: true, kmAdicionalNaRotaM: 797, avisos: [], erros: [], descartados: [] }] })
     gerarCandidatosMock.mockReturnValue({
       candidatos: [candidatoIndisponivel],
       candidatosOrdenados: [candidatoIndisponivel],
@@ -780,6 +792,7 @@ describe('POST /api/procurar-datas/v2/auditar-run — snapshot técnico', () => 
       diagnostico: { ok: true, linhasLidas: 506, fonte: 'google-sheets' },
       linhasAgenda: [{ data: '2026-08-15', equipe: 'EQUIPE 1', endereco: 'Rua A' }],
     })
+    calcularMapaMock.mockResolvedValue({ ...mapaPorSlotBase, detalhesPorSlot: [{ chave: '2026-08-15::EQUIPE 1', ok: true, kmAdicionalNaRotaM: 797, avisos: [], erros: [], descartados: [] }] })
     gerarCandidatosMock.mockReturnValue({
       candidatos: [candidatoIndisponivel],
       candidatosOrdenados: [candidatoIndisponivel],
@@ -835,6 +848,7 @@ describe('POST /api/procurar-datas/v2/auditar-run — snapshot técnico', () => 
       diagnostico: { ok: true, linhasLidas: 506, fonte: 'google-sheets' },
       linhasAgenda: [{ data: '2026-08-15', equipe: 'EQUIPE 1', endereco: 'Rua A' }],
     })
+    calcularMapaMock.mockResolvedValue({ ...mapaPorSlotBase, detalhesPorSlot: [{ chave: '2026-08-15::EQUIPE 1', ok: true, kmAdicionalNaRotaM: 797, avisos: [], erros: [], descartados: [] }] })
     gerarCandidatosMock.mockReturnValue({
       candidatos: [{
         ...candidatoIndisponivel,
@@ -866,11 +880,26 @@ describe('POST /api/procurar-datas/v2/auditar-run — snapshot técnico', () => 
     expect(naoElegivel).toBeDefined()
     expect(naoElegivel.severidade).toBe('aviso')
     expect(naoElegivel.detalhe).toContain('coerente com o snapshot técnico da produção')
-    expect(naoElegivel.detalhe).toContain('mudança posterior de agenda/disponibilidade')
+    expect(naoElegivel.detalhe).toContain('diferença entre histórico e dados atuais')
 
     const foraRecorte = divergencias.find((d: { tipo: string }) => d.tipo === 'resultado-salvo-fora-do-recorte-atual')
     expect(foraRecorte).toBeDefined()
     expect(foraRecorte.severidade).toBe('aviso')
     expect(foraRecorte.detalhe).toContain('coerente com o snapshot técnico da produção')
   })
+  it.each([false, true])('não confirma inserção sem KM; truncamento=%s', async (truncada) => {
+    setupSupabaseMock({ id: 'audit-test', run_id: 'run-sem-km', parametros_json: { dataInicial: '2026-08-15', tempoNecessario: '00:40' }, resultados_json: resultadosSalvosBase, latitude: -25.4, longitude: -49.2 })
+    buscarDisponibilidadeMock.mockResolvedValue({ ...disponibilidadeRealBase, diagnostico: { ok: true, leitura: { truncada } } })
+    gerarCandidatosMock.mockReturnValue({ candidatos: [candidatoIndisponivel], candidatosOrdenados: [candidatoIndisponivel], avisos: [] })
+    const res = await POST(criarRequest({ runIdOuPesquisaId: 'run-sem-km' }))
+    const json = await res.json()
+    expect(json.ok).toBe(true)
+    expect(json.diagnosticoReal.slots[0].insercaoRealCompleta).toBe(false)
+    expect(json.diagnosticoReal.slots[0].validacaoInsercaoReal).toBe('incompleta_sem_distancia')
+    expect(json.diagnosticoReal.insercaoRealCompleta).toBe(false)
+    expect(json.comparacao.recalculoConclusivo.conclusivo).toBe(false)
+    expect(json.comparacao.recalculoConclusivo.motivos.some((m: string) => m.includes('truncada'))).toBe(truncada)
+    expect(json.analisadoEm).toBeDefined()
+  })
+
 })

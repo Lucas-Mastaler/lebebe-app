@@ -49,6 +49,16 @@ const detalhe: PedidoDetalhe = {
 }
 
 describe('modelo da gestão de pedidos personalizados', () => {
+  it('resumo Decorisi preserva fornecedor, composição e subtotal congelado', () => {
+    const pedido = { ...detalhe, fornecedor: { chave: 'decorisi', nome: 'DECORISI' }, tapetes: [], decorisiItens: [{ id: 'arte', ordem: 1, tipo: 'PAINEL' as const, classificacao: 'CATALOGO' as const, referencia: 'PF200', descricao: null, observacoes: null, layoutAlteracoes: 0, snapshotComercial: { quantidade: '1.0201', subtotalCentavos: '23462' }, medidas: [{ id: 'medida', ordem: 1, ambiente: null, larguraCm: 101, alturaCm: 101 }], anexos: [] }] }
+    const texto = gerarResumoFornecedorDetalhe(pedido)
+    expect(texto).toContain('FORNECEDOR: DECORISI')
+    expect(texto).toContain('101 × 101 cm')
+    expect(texto).toContain('1.0201 m²')
+    expect(texto).toContain('234,62')
+    expect(texto).not.toContain('MORIAH')
+    expect(gerarResumoRascunhoDetalhe(pedido)).not.toContain('SUBTOTAL')
+  })
   it('exibe a criação SGI para Exclusive em Venda Fechada mesmo sem lançamento', () => {
     const exclusive = { ...detalhe, fornecedor: { chave: 'lebebe_exclusive', nome: 'LEBEBE EXCLUSIVE' } }
     expect(deveExibirAcaoProdutoSgi(exclusive)).toBe(true)
@@ -271,7 +281,7 @@ describe('modelo da gestão de pedidos personalizados', () => {
   it('serializa filtros e paginação na listagem', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true, itens: [], pagina: 2, totalPaginas: 2, totalRegistros: 21, limite: 20 }), { status: 200 }))
     await listarPedidosGestao({
-      cliente: 'Bebê', consultora: '', numeroLancamento: '000001', status: '', unidade: 'portao', dataInicial: '', dataFinal: '',
+      fornecedor: '', cliente: 'Bebê', consultora: '', numeroLancamento: '000001', status: '', unidade: 'portao', dataInicial: '', dataFinal: '',
       dataPedidoFornecedorInicial: '2026-08-01', dataPedidoFornecedorFinal: '2026-08-15',
       dataEntregaInicial: '2026-08-20', dataEntregaFinal: '2026-08-31',
       situacaoPrazo: 'PRESTES A VENCER', tipoTapete: '',
@@ -368,7 +378,7 @@ describe('modelo da gestão de pedidos personalizados', () => {
   it('bloqueia intervalos de filtro invertidos antes da requisição', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
     await expect(listarPedidosGestao({
-      cliente: '', consultora: '', numeroLancamento: '', status: '', unidade: '', dataInicial: '', dataFinal: '',
+      fornecedor: '', cliente: '', consultora: '', numeroLancamento: '', status: '', unidade: '', dataInicial: '', dataFinal: '',
       dataPedidoFornecedorInicial: '2026-08-10', dataPedidoFornecedorFinal: '2026-08-01',
       dataEntregaInicial: '', dataEntregaFinal: '',
       situacaoPrazo: '', tipoTapete: '',

@@ -58,6 +58,7 @@ export type SituacaoPrazoFiltro = 'NO PRAZO' | 'PRESTES A VENCER' | 'ATRASADO'
 
 export type FiltrosPedidos = {
   pagina: number
+  fornecedor?: 'moriah_tapetes' | 'decorisi' | 'lebebe_exclusive' | null
   unidade: string | null
   cliente: string | null
   consultora: string | null
@@ -409,6 +410,11 @@ export function validarFiltrosPedidos(url: URL):
   if (cliente && cliente.length < 2) return { ok: false, mensagem: 'Cliente deve ter ao menos 2 caracteres.' }
   if (consultora && consultora.length < 2) return { ok: false, mensagem: 'Consultora deve ter ao menos 2 caracteres.' }
 
+  const fornecedorTexto = url.searchParams.get('fornecedor')?.trim() || null
+  if (fornecedorTexto && !['moriah_tapetes', 'decorisi', 'lebebe_exclusive'].includes(fornecedorTexto)) {
+    return { ok: false, mensagem: 'Fornecedor inválido.' }
+  }
+
   const numeroLancamento = url.searchParams.get('numeroLancamento')?.trim() || null
   if (numeroLancamento && !NUMERO_LANCAMENTO.test(numeroLancamento)) {
     return { ok: false, mensagem: 'Número de lançamento inválido.' }
@@ -466,6 +472,7 @@ export function validarFiltrosPedidos(url: URL):
     ok: true,
     filtros: {
       pagina,
+      fornecedor: fornecedorTexto as FiltrosPedidos['fornecedor'],
       unidade: url.searchParams.get('unidade')?.trim() || null,
       cliente,
       consultora,

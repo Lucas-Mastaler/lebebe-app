@@ -71,7 +71,7 @@ export function gerarCaminhoAnexo(params: {
   return `${params.pedidoId}/${params.tapeteId}/${params.anexoId}/${arquivoId}.${params.extensao}`
 }
 
-export async function lerMultipartAnexo(request: Request, exigirSlot: boolean) {
+export async function lerMultipartAnexo(request: Request, exigirSlot: boolean, limiteSlots = 2) {
   const contentType = request.headers.get('content-type') ?? ''
   if (!contentType.toLowerCase().startsWith('multipart/form-data;')) {
     throw new ErroArquivoAnexo('CONTENT_TYPE_INVALIDO', 422)
@@ -111,7 +111,7 @@ export async function lerMultipartAnexo(request: Request, exigirSlot: boolean) {
     throw new ErroArquivoAnexo('EXPECTED_VERSION_INVALIDA', 422)
   }
   const slot = exigirSlot ? Number(form.get('slot')) : undefined
-  if (exigirSlot && slot !== 1 && slot !== 2) throw new ErroArquivoAnexo('SLOT_INVALIDO', 422)
+  if (exigirSlot && (!Number.isInteger(slot) || slot! < 1 || slot! > limiteSlots)) throw new ErroArquivoAnexo('SLOT_INVALIDO', 422)
 
   return {
     expectedVersion,

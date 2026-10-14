@@ -12,7 +12,7 @@ export type StatusPedidoPersonalizado =
   | 'CANCELADO'
 
 export type UnidadePedidoPersonalizado = 'bigorrilho' | 'portao' | 'marechal' | 'feira'
-export type FornecedorPedidoPersonalizado = 'moriah_tapetes' | 'lebebe_exclusive'
+export type FornecedorPedidoPersonalizado = 'moriah_tapetes' | 'lebebe_exclusive' | 'decorisi'
 export type CodigoProdutoMoriah = '21157' | '21158' | '21159'
 
 export type CodigoErroPedidoPersonalizado =

@@ -1,0 +1,3595 @@
+{
+  "grants": [
+    {
+      "role": "anon",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "anon",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "anon",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "anon",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "anon",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "anon",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "anon",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "authenticated",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "authenticated",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "authenticated",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "authenticated",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "authenticated",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "authenticated",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "authenticated",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "usuarios_permitidos",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_status_historico",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_status_historico",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "app_unidades",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "app_unidades",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "app_unidades",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "app_unidades",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "app_unidades",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "app_unidades",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "app_unidades",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "tabela": "app_usuarios_unidades",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "app_usuarios_unidades",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "app_usuarios_unidades",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "app_usuarios_unidades",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "app_usuarios_unidades",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "app_usuarios_unidades",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "app_usuarios_unidades",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "authenticated",
+      "tabela": "sgi_produtos_cache",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "sgi_produtos_cache",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "sgi_produtos_cache",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "sgi_produtos_cache",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "sgi_produtos_cache",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "sgi_produtos_cache",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "sgi_produtos_cache",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "sgi_produtos_cache",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi_worker",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi_worker",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi_worker",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi_worker",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi_worker",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi_worker",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi_worker",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_observacoes",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_observacoes",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_fornecedores",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_fornecedores",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_fornecedores",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_fornecedores",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_fornecedores",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_fornecedores",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_fornecedores",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_cores",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_cores",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_cores",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_cores",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_cores",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_cores",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_cores",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_moriah_tapetes",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_moriah_tapetes",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_moriah_tapetes",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_moriah_tapetes",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_moriah_tapetes",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_moriah_tapetes",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_moriah_tapetes",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_anexos",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_anexos",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_anexos",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_anexos",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_anexos",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_anexos",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_anexos",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_produtos",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_produtos",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_produtos",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_produtos",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_produtos",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_produtos",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_produtos",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_pedidos",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_pedidos",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_pedidos",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_pedidos",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_pedidos",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_pedidos",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_pedidos",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_storage_pendencias",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_storage_pendencias",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_storage_pendencias",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_storage_pendencias",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_storage_pendencias",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_storage_pendencias",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_storage_pendencias",
+      "privilegio": "TRIGGER"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_tapete_cores",
+      "privilegio": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_tapete_cores",
+      "privilegio": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_tapete_cores",
+      "privilegio": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_tapete_cores",
+      "privilegio": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_tapete_cores",
+      "privilegio": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_tapete_cores",
+      "privilegio": "REFERENCES"
+    },
+    {
+      "role": "service_role",
+      "tabela": "pedidos_personalizados_tapete_cores",
+      "privilegio": "TRIGGER"
+    }
+  ],
+  "indices": [
+    "CREATE INDEX idx_usuarios_email ON public.usuarios_permitidos USING btree (email)",
+    "CREATE INDEX idx_usuarios_ativo ON public.usuarios_permitidos USING btree (ativo)",
+    "CREATE INDEX idx_usuarios_role ON public.usuarios_permitidos USING btree (role)",
+    "CREATE INDEX idx_usuarios_permitidos_invite_status ON public.usuarios_permitidos USING btree (invite_status)",
+    "CREATE INDEX idx_usuarios_permitidos_last_invite_sent_at ON public.usuarios_permitidos USING btree (last_invite_sent_at)",
+    "CREATE INDEX idx_usuarios_permitidos_invite_token ON public.usuarios_permitidos USING btree (invite_token) WHERE (invite_token IS NOT NULL)",
+    "CREATE INDEX idx_usuarios_permitidos_invite_token_used_at ON public.usuarios_permitidos USING btree (invite_token_used_at)",
+    "CREATE INDEX idx_pedidos_personalizados_lebebe_exclusive_itens_produto ON public.pedidos_personalizados_lebebe_exclusive_itens USING btree (produto_id)",
+    "CREATE INDEX idx_pedidos_personalizados_status_historico_usuario_id ON public.pedidos_personalizados_status_historico USING btree (usuario_id)",
+    "CREATE INDEX idx_pedidos_personalizados_status_historico_unidade_id ON public.pedidos_personalizados_status_historico USING btree (unidade_id)",
+    "CREATE INDEX idx_pedidos_personalizados_status_historico_pedido_created_at ON public.pedidos_personalizados_status_historico USING btree (pedido_id, created_at DESC)",
+    "CREATE INDEX idx_app_usuarios_unidades_usuario ON public.app_usuarios_unidades USING btree (usuario_id)",
+    "CREATE INDEX idx_app_usuarios_unidades_unidade ON public.app_usuarios_unidades USING btree (unidade_id)",
+    "CREATE UNIQUE INDEX idx_pp_lex_sgi_produto_id ON public.pedidos_personalizados_lebebe_exclusive_sgi USING btree (produto_id_sgi) WHERE (produto_id_sgi IS NOT NULL)",
+    "CREATE UNIQUE INDEX idx_pp_lex_sgi_codigo ON public.pedidos_personalizados_lebebe_exclusive_sgi USING btree (codigo_sgi) WHERE (codigo_sgi IS NOT NULL)",
+    "CREATE INDEX idx_pp_lex_sgi_fila ON public.pedidos_personalizados_lebebe_exclusive_sgi USING btree (solicitado_em, pedido_id) WHERE (status_integracao = 'PENDENTE'::text)",
+    "CREATE INDEX idx_pp_lex_sgi_solicitado_por ON public.pedidos_personalizados_lebebe_exclusive_sgi USING btree (solicitado_por)",
+    "CREATE INDEX idx_pp_lex_sgi_ultima_solicitacao_por ON public.pedidos_personalizados_lebebe_exclusive_sgi USING btree (ultima_solicitacao_por)",
+    "CREATE INDEX idx_pp_lex_sgi_renomeacao_fila ON public.pedidos_personalizados_lebebe_exclusive_sgi USING btree (solicitado_em, pedido_id) WHERE (status_renomeacao = 'PENDENTE'::text)",
+    "CREATE INDEX idx_pedidos_personalizados_observacoes_pedido_created_at ON public.pedidos_personalizados_observacoes USING btree (pedido_id, created_at DESC, id DESC)",
+    "CREATE INDEX idx_pedidos_personalizados_moriah_tapetes_produto ON public.pedidos_personalizados_moriah_tapetes USING btree (produto_id)",
+    "CREATE INDEX idx_pedidos_personalizados_moriah_tapetes_created_by ON public.pedidos_personalizados_moriah_tapetes USING btree (created_by)",
+    "CREATE INDEX idx_pedidos_personalizados_moriah_tapetes_updated_by ON public.pedidos_personalizados_moriah_tapetes USING btree (updated_by)",
+    "CREATE INDEX idx_pedidos_personalizados_anexos_created_by ON public.pedidos_personalizados_anexos USING btree (created_by)",
+    "CREATE INDEX idx_pedidos_personalizados_anexos_updated_by ON public.pedidos_personalizados_anexos USING btree (updated_by)",
+    "CREATE UNIQUE INDEX pedidos_personalizados_produtos_produto_id_sgi_uidx ON public.pedidos_personalizados_produtos USING btree (produto_id_sgi) WHERE (produto_id_sgi IS NOT NULL)",
+    "CREATE INDEX idx_pedidos_personalizados_pedidos_telefone_normalizado ON public.pedidos_personalizados_pedidos USING btree (telefone_normalizado) WHERE (telefone_normalizado IS NOT NULL)",
+    "CREATE INDEX idx_pedidos_personalizados_pedidos_fornecedor ON public.pedidos_personalizados_pedidos USING btree (fornecedor_id)",
+    "CREATE INDEX idx_pedidos_personalizados_pedidos_unidade_created_at ON public.pedidos_personalizados_pedidos USING btree (unidade_id, created_at DESC)",
+    "CREATE INDEX idx_pedidos_personalizados_pedidos_status_created_at ON public.pedidos_personalizados_pedidos USING btree (status, created_at DESC)",
+    "CREATE INDEX idx_pedidos_personalizados_pedidos_numero_lancamento ON public.pedidos_personalizados_pedidos USING btree (numero_lancamento) WHERE (numero_lancamento IS NOT NULL)",
+    "CREATE INDEX idx_pedidos_personalizados_pedidos_numero_pedido_compra ON public.pedidos_personalizados_pedidos USING btree (numero_pedido_compra) WHERE (numero_pedido_compra IS NOT NULL)",
+    "CREATE INDEX idx_pedidos_personalizados_pedidos_created_by ON public.pedidos_personalizados_pedidos USING btree (created_by)",
+    "CREATE INDEX idx_pedidos_personalizados_pedidos_updated_by ON public.pedidos_personalizados_pedidos USING btree (updated_by)",
+    "CREATE UNIQUE INDEX idx_pedidos_personalizados_storage_pendencias_objeto_pendente ON public.pedidos_personalizados_storage_pendencias USING btree (bucket_id, caminho_objeto) WHERE (processado_em IS NULL)",
+    "CREATE INDEX idx_pedidos_personalizados_storage_pendencias_proxima_tentativa ON public.pedidos_personalizados_storage_pendencias USING btree (proxima_tentativa_em, id) WHERE (processado_em IS NULL)",
+    "CREATE INDEX idx_pedidos_personalizados_tapete_cores_cor ON public.pedidos_personalizados_tapete_cores USING btree (cor_id)"
+  ],
+  "tabelas": [
+    {
+      "rls": true,
+      "nome": "app_unidades",
+      "colunas": [
+        {
+          "nome": "id",
+          "tipo": "uuid",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "chave",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "nome",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ativo",
+          "tipo": "boolean",
+          "default": "true",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ordem",
+          "tipo": "integer",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "app_usuarios_unidades",
+      "colunas": [
+        {
+          "nome": "id",
+          "tipo": "uuid",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "usuario_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "unidade_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "atribuido_por",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "pedidos_personalizados_anexos",
+      "colunas": [
+        {
+          "nome": "id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "tapete_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "slot",
+          "tipo": "integer",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "bucket_id",
+          "tipo": "text",
+          "default": "'pedidos-personalizados-anexos'::text",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "caminho_objeto",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "nome_original",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "mime_type",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "tamanho_bytes",
+          "tipo": "bigint",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_by",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_by",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "pedidos_personalizados_cores",
+      "colunas": [
+        {
+          "nome": "id",
+          "tipo": "uuid",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "fornecedor_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "numero",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "codigo",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "nome",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ativo",
+          "tipo": "boolean",
+          "default": "true",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ordem",
+          "tipo": "integer",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "pedidos_personalizados_fornecedores",
+      "colunas": [
+        {
+          "nome": "id",
+          "tipo": "uuid",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "chave",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "nome",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "disponivel",
+          "tipo": "boolean",
+          "default": "false",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ordem",
+          "tipo": "integer",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "pedidos_personalizados_lebebe_exclusive_catalogo",
+      "colunas": [
+        {
+          "nome": "produto_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "colecao",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "referencia",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "preco_unitario",
+          "tipo": "numeric(12,2)",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "custo_unitario",
+          "tipo": "numeric(12,2)",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "colecao_busca",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "descricao_busca",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "referencia_busca",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "linha_origem",
+          "tipo": "integer",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "arquivo_origem_sha256",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "pedidos_personalizados_lebebe_exclusive_itens",
+      "colunas": [
+        {
+          "nome": "id",
+          "tipo": "uuid",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "pedido_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "produto_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ordem",
+          "tipo": "integer",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "quantidade",
+          "tipo": "integer",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "nome_ou_letra",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "colecao_snapshot",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "descricao_snapshot",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "referencia_snapshot",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "preco_unitario_snapshot",
+          "tipo": "numeric(12,2)",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "custo_unitario_snapshot",
+          "tipo": "numeric(12,2)",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "total_venda",
+          "tipo": "numeric(14,2)",
+          "default": "((preco_unitario_snapshot * (quantidade)::numeric))::numeric(14,2)",
+          "notNull": false,
+          "identity": "",
+          "generated": "s"
+        },
+        {
+          "nome": "total_custo",
+          "tipo": "numeric(14,2)",
+          "default": "((custo_unitario_snapshot * (quantidade)::numeric))::numeric(14,2)",
+          "notNull": false,
+          "identity": "",
+          "generated": "s"
+        },
+        {
+          "nome": "created_by",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_by",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "pedidos_personalizados_lebebe_exclusive_sgi",
+      "colunas": [
+        {
+          "nome": "pedido_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "status_integracao",
+          "tipo": "text",
+          "default": "'PENDENTE'::text",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "etapa",
+          "tipo": "text",
+          "default": "'NAO_INICIADO'::text",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "modelo_produto_id_sgi",
+          "tipo": "text",
+          "default": "'39879'::text",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "modelo_nome_esperado",
+          "tipo": "text",
+          "default": "'LEBEBE EXCLUSIVE (MODELO PADRÃO - NÃO USAR)'::text",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "unidade_snapshot",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "numero_lancamento_snapshot",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "nome_produto_sgi",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "custo_enviado",
+          "tipo": "numeric(14,2)",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "preco_enviado",
+          "tipo": "numeric(14,2)",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "produto_id_sgi",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "codigo_sgi",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "procedimento_custo_sgi",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "numero_lancamento_entrada_sgi",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "documento_entrada_id_sgi",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "procedimento_finalizacao_sgi",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "tabela_preco_id_sgi",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "item_tabela_preco_id_sgi",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "claim_token",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "claim_expira_em",
+          "tipo": "timestamp with time zone",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "tentativas",
+          "tipo": "integer",
+          "default": "0",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "erro_codigo",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "erro_mensagem",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "eventos",
+          "tipo": "jsonb",
+          "default": "'[]'::jsonb",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "solicitado_por",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ultima_solicitacao_por",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "solicitado_em",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "iniciado_em",
+          "tipo": "timestamp with time zone",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "concluido_em",
+          "tipo": "timestamp with time zone",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "cliente_snapshot",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "operacao_pendente",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "lancamento_aplicado_em",
+          "tipo": "timestamp with time zone",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "status_renomeacao",
+          "tipo": "text",
+          "default": "'NAO_SOLICITADA'::text",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "erro_renomeacao_codigo",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "erro_renomeacao_mensagem",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "pedidos_personalizados_lebebe_exclusive_sgi_worker",
+      "colunas": [
+        {
+          "nome": "id",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "token_sha256",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ativo",
+          "tipo": "boolean",
+          "default": "true",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "pedidos_personalizados_moriah_tapetes",
+      "colunas": [
+        {
+          "nome": "id",
+          "tipo": "uuid",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "pedido_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ordem",
+          "tipo": "integer",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "formato",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "dimensao_1_cm",
+          "tipo": "integer",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "dimensao_2_cm",
+          "tipo": "integer",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "area_cobrada_centesimos_m2",
+          "tipo": "integer",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "produto_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "nome_colecao_catalogo",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "referencia_catalogo",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "observacoes",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "teve_alteracao_layout",
+          "tipo": "boolean",
+          "default": "false",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "quantidade_alteracoes_layout",
+          "tipo": "integer",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_by",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_by",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "tipo",
+          "tipo": "text",
+          "default": "'PERSONALIZADO'::text",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "pedidos_personalizados_observacoes",
+      "colunas": [
+        {
+          "nome": "id",
+          "tipo": "uuid",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "pedido_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "usuario_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "texto",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "pedidos_personalizados_pedidos",
+      "colunas": [
+        {
+          "nome": "id",
+          "tipo": "uuid",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "fornecedor_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "unidade_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "consultora",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "cliente",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "numero_lancamento",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "data_entrega",
+          "tipo": "date",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "data_pedido_fornecedor",
+          "tipo": "date",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "numero_pedido_compra",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "comprador",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "status",
+          "tipo": "text",
+          "default": "'RASCUNHO'::text",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "version",
+          "tipo": "integer",
+          "default": "1",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_by",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_by",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "idempotency_key",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "telefone_normalizado",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "pedidos_personalizados_produtos",
+      "colunas": [
+        {
+          "nome": "id",
+          "tipo": "uuid",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "fornecedor_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "codigo",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "descricao",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ativo",
+          "tipo": "boolean",
+          "default": "true",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ordem",
+          "tipo": "integer",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "produto_id_sgi",
+          "tipo": "bigint",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "pedidos_personalizados_status_historico",
+      "colunas": [
+        {
+          "nome": "id",
+          "tipo": "uuid",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "pedido_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "status_anterior",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "status_novo",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "usuario_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "unidade_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "version_anterior",
+          "tipo": "integer",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "version_nova",
+          "tipo": "integer",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "justificativa",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "data_recebimento",
+          "tipo": "date",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "pedidos_personalizados_storage_pendencias",
+      "colunas": [
+        {
+          "nome": "id",
+          "tipo": "uuid",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "bucket_id",
+          "tipo": "text",
+          "default": "'pedidos-personalizados-anexos'::text",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "caminho_objeto",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "motivo",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "tentativas",
+          "tipo": "integer",
+          "default": "0",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "proxima_tentativa_em",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ultimo_erro",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "processado_em",
+          "tipo": "timestamp with time zone",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "pedidos_personalizados_tapete_cores",
+      "colunas": [
+        {
+          "nome": "tapete_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "cor_id",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ordem",
+          "tipo": "integer",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "sgi_produtos_cache",
+      "colunas": [
+        {
+          "nome": "produto_id_sgi",
+          "tipo": "bigint",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "codigo",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "descricao",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "preco",
+          "tipo": "numeric(12,2)",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ativo",
+          "tipo": "boolean",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "fora_linha",
+          "tipo": "boolean",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ultima_validacao_sgi",
+          "tipo": "timestamp with time zone",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ultima_alteracao_webhook",
+          "tipo": "timestamp with time zone",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    },
+    {
+      "rls": true,
+      "nome": "usuarios_permitidos",
+      "colunas": [
+        {
+          "nome": "id",
+          "tipo": "uuid",
+          "default": "gen_random_uuid()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "email",
+          "tipo": "text",
+          "default": null,
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "role",
+          "tipo": "text",
+          "default": "'user'::text",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "ativo",
+          "tipo": "boolean",
+          "default": "true",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": true,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "created_by",
+          "tipo": "uuid",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "updated_at",
+          "tipo": "timestamp with time zone",
+          "default": "now()",
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "last_invite_sent_at",
+          "tipo": "timestamp with time zone",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "invite_status",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "invite_token",
+          "tipo": "text",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "invite_token_expires_at",
+          "tipo": "timestamp with time zone",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        },
+        {
+          "nome": "invite_token_used_at",
+          "tipo": "timestamp with time zone",
+          "default": null,
+          "notNull": false,
+          "identity": "",
+          "generated": ""
+        }
+      ]
+    }
+  ],
+  "policies": [
+    {
+      "cmd": "SELECT",
+      "qual": "(is_superadmin() OR is_own_record(email))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "usuarios_permitidos",
+      "permissive": "PERMISSIVE",
+      "policyname": "usuarios_permitidos_select",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "usuarios_permitidos",
+      "permissive": "PERMISSIVE",
+      "policyname": "usuarios_permitidos_insert",
+      "schemaname": "public",
+      "with_check": "is_superadmin()"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "is_superadmin()",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "usuarios_permitidos",
+      "permissive": "PERMISSIVE",
+      "policyname": "usuarios_permitidos_update",
+      "schemaname": "public",
+      "with_check": "is_superadmin()"
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "is_superadmin()",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "usuarios_permitidos",
+      "permissive": "PERMISSIVE",
+      "policyname": "usuarios_permitidos_delete",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "true",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "sgi_produtos_cache",
+      "permissive": "PERMISSIVE",
+      "policyname": "sgi_produtos_cache_authenticated_read",
+      "schemaname": "public",
+      "with_check": null
+    }
+  ],
+  "triggers": [
+    {
+      "def": "CREATE TRIGGER update_usuarios_permitidos_updated_at BEFORE UPDATE ON public.usuarios_permitidos FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()",
+      "funcao": "update_updated_at_column",
+      "tabela": "usuarios_permitidos"
+    },
+    {
+      "def": "CREATE TRIGGER trigger_validar_superadmin_ativo BEFORE DELETE OR UPDATE ON public.usuarios_permitidos FOR EACH ROW EXECUTE FUNCTION validar_superadmin_ativo()",
+      "funcao": "validar_superadmin_ativo",
+      "tabela": "usuarios_permitidos"
+    },
+    {
+      "def": "CREATE TRIGGER trg_pedidos_personalizados_lebebe_exclusive_catalogo_touch BEFORE UPDATE ON public.pedidos_personalizados_lebebe_exclusive_catalogo FOR EACH ROW EXECUTE FUNCTION pedidos_personalizados_touch_updated_at()",
+      "funcao": "pedidos_personalizados_touch_updated_at",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo"
+    },
+    {
+      "def": "CREATE TRIGGER trg_pedidos_personalizados_lebebe_exclusive_itens_touch BEFORE UPDATE ON public.pedidos_personalizados_lebebe_exclusive_itens FOR EACH ROW EXECUTE FUNCTION pedidos_personalizados_touch_updated_at()",
+      "funcao": "pedidos_personalizados_touch_updated_at",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens"
+    },
+    {
+      "def": "CREATE TRIGGER trg_pp_lex_sgi_worker_touch BEFORE UPDATE ON public.pedidos_personalizados_lebebe_exclusive_sgi_worker FOR EACH ROW EXECUTE FUNCTION pedidos_personalizados_touch_updated_at()",
+      "funcao": "pedidos_personalizados_touch_updated_at",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi_worker"
+    },
+    {
+      "def": "CREATE TRIGGER trg_pedidos_personalizados_fornecedores_touch BEFORE UPDATE ON public.pedidos_personalizados_fornecedores FOR EACH ROW EXECUTE FUNCTION pedidos_personalizados_touch_updated_at()",
+      "funcao": "pedidos_personalizados_touch_updated_at",
+      "tabela": "pedidos_personalizados_fornecedores"
+    },
+    {
+      "def": "CREATE TRIGGER trg_pedidos_personalizados_produtos_touch BEFORE UPDATE ON public.pedidos_personalizados_produtos FOR EACH ROW EXECUTE FUNCTION pedidos_personalizados_touch_updated_at()",
+      "funcao": "pedidos_personalizados_touch_updated_at",
+      "tabela": "pedidos_personalizados_produtos"
+    },
+    {
+      "def": "CREATE TRIGGER trg_pedidos_personalizados_pedidos_touch BEFORE UPDATE ON public.pedidos_personalizados_pedidos FOR EACH ROW EXECUTE FUNCTION pedidos_personalizados_touch_updated_at()",
+      "funcao": "pedidos_personalizados_touch_updated_at",
+      "tabela": "pedidos_personalizados_pedidos"
+    },
+    {
+      "def": "CREATE TRIGGER trg_pedidos_personalizados_moriah_tapetes_touch BEFORE UPDATE ON public.pedidos_personalizados_moriah_tapetes FOR EACH ROW EXECUTE FUNCTION pedidos_personalizados_touch_updated_at()",
+      "funcao": "pedidos_personalizados_touch_updated_at",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "CREATE TRIGGER trg_pedidos_personalizados_cores_touch BEFORE UPDATE ON public.pedidos_personalizados_cores FOR EACH ROW EXECUTE FUNCTION pedidos_personalizados_touch_updated_at()",
+      "funcao": "pedidos_personalizados_touch_updated_at",
+      "tabela": "pedidos_personalizados_cores"
+    },
+    {
+      "def": "CREATE TRIGGER trg_pedidos_personalizados_anexos_touch BEFORE UPDATE ON public.pedidos_personalizados_anexos FOR EACH ROW EXECUTE FUNCTION pedidos_personalizados_touch_updated_at()",
+      "funcao": "pedidos_personalizados_touch_updated_at",
+      "tabela": "pedidos_personalizados_anexos"
+    },
+    {
+      "def": "CREATE TRIGGER trg_pedidos_personalizados_storage_pendencias_touch BEFORE UPDATE ON public.pedidos_personalizados_storage_pendencias FOR EACH ROW EXECUTE FUNCTION pedidos_personalizados_touch_updated_at()",
+      "funcao": "pedidos_personalizados_touch_updated_at",
+      "tabela": "pedidos_personalizados_storage_pendencias"
+    },
+    {
+      "def": "CREATE TRIGGER trg_pp_lex_sgi_touch BEFORE UPDATE ON public.pedidos_personalizados_lebebe_exclusive_sgi FOR EACH ROW EXECUTE FUNCTION pedidos_personalizados_touch_updated_at()",
+      "funcao": "pedidos_personalizados_touch_updated_at",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    }
+  ],
+  "constraints": [
+    {
+      "def": "UNIQUE (chave)",
+      "nome": "app_unidades_chave_key",
+      "tipo": "u",
+      "tabela": "app_unidades"
+    },
+    {
+      "def": "PRIMARY KEY (id)",
+      "nome": "app_unidades_pkey",
+      "tipo": "p",
+      "tabela": "app_unidades"
+    },
+    {
+      "def": "PRIMARY KEY (id)",
+      "nome": "app_usuarios_unidades_pkey",
+      "tipo": "p",
+      "tabela": "app_usuarios_unidades"
+    },
+    {
+      "def": "UNIQUE (usuario_id, unidade_id)",
+      "nome": "app_usuarios_unidades_usuario_id_unidade_id_key",
+      "tipo": "u",
+      "tabela": "app_usuarios_unidades"
+    },
+    {
+      "def": "CHECK ((bucket_id = 'pedidos-personalizados-anexos'::text))",
+      "nome": "pedidos_personalizados_anexos_bucket_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_anexos"
+    },
+    {
+      "def": "CHECK ((caminho_objeto ~ '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\\.(jpg|png|webp|pdf)$'::text))",
+      "nome": "pedidos_personalizados_anexos_caminho_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_anexos"
+    },
+    {
+      "def": "UNIQUE (caminho_objeto)",
+      "nome": "pedidos_personalizados_anexos_caminho_unique",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_anexos"
+    },
+    {
+      "def": "CHECK ((((mime_type = 'image/jpeg'::text) AND (caminho_objeto ~ '\\.jpg$'::text)) OR ((mime_type = 'image/png'::text) AND (caminho_objeto ~ '\\.png$'::text)) OR ((mime_type = 'image/webp'::text) AND (caminho_objeto ~ '\\.webp$'::text)) OR ((mime_type = 'application/pdf'::text) AND (caminho_objeto ~ '\\.pdf$'::text))))",
+      "nome": "pedidos_personalizados_anexos_extensao_mime_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_anexos"
+    },
+    {
+      "def": "CHECK ((mime_type = ANY (ARRAY['image/jpeg'::text, 'image/png'::text, 'image/webp'::text, 'application/pdf'::text])))",
+      "nome": "pedidos_personalizados_anexos_mime_type_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_anexos"
+    },
+    {
+      "def": "CHECK (((nome_original = btrim(nome_original)) AND ((char_length(nome_original) >= 1) AND (char_length(nome_original) <= 255))))",
+      "nome": "pedidos_personalizados_anexos_nome_original_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_anexos"
+    },
+    {
+      "def": "PRIMARY KEY (id)",
+      "nome": "pedidos_personalizados_anexos_pkey",
+      "tipo": "p",
+      "tabela": "pedidos_personalizados_anexos"
+    },
+    {
+      "def": "CHECK ((slot = ANY (ARRAY[1, 2])))",
+      "nome": "pedidos_personalizados_anexos_slot_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_anexos"
+    },
+    {
+      "def": "CHECK (((tamanho_bytes >= 1) AND (tamanho_bytes <= 10485760)))",
+      "nome": "pedidos_personalizados_anexos_tamanho_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_anexos"
+    },
+    {
+      "def": "UNIQUE (tapete_id, slot)",
+      "nome": "pedidos_personalizados_anexos_tapete_slot_unique",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_anexos"
+    },
+    {
+      "def": "CHECK ((codigo ~ '^[A-Za-z0-9-]{1,40}$'::text))",
+      "nome": "pedidos_personalizados_cores_codigo_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_cores"
+    },
+    {
+      "def": "UNIQUE (fornecedor_id, codigo)",
+      "nome": "pedidos_personalizados_cores_fornecedor_codigo_unique",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_cores"
+    },
+    {
+      "def": "UNIQUE (fornecedor_id, numero)",
+      "nome": "pedidos_personalizados_cores_fornecedor_numero_unique",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_cores"
+    },
+    {
+      "def": "UNIQUE (fornecedor_id, ordem)",
+      "nome": "pedidos_personalizados_cores_fornecedor_ordem_unique",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_cores"
+    },
+    {
+      "def": "CHECK (((nome = btrim(nome)) AND ((char_length(nome) >= 1) AND (char_length(nome) <= 80))))",
+      "nome": "pedidos_personalizados_cores_nome_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_cores"
+    },
+    {
+      "def": "CHECK ((numero ~ '^[0-9]{1,10}$'::text))",
+      "nome": "pedidos_personalizados_cores_numero_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_cores"
+    },
+    {
+      "def": "CHECK ((ordem >= 1))",
+      "nome": "pedidos_personalizados_cores_ordem_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_cores"
+    },
+    {
+      "def": "PRIMARY KEY (id)",
+      "nome": "pedidos_personalizados_cores_pkey",
+      "tipo": "p",
+      "tabela": "pedidos_personalizados_cores"
+    },
+    {
+      "def": "CHECK ((chave ~ '^[a-z0-9_]{2,50}$'::text))",
+      "nome": "pedidos_personalizados_fornecedores_chave_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_fornecedores"
+    },
+    {
+      "def": "UNIQUE (chave)",
+      "nome": "pedidos_personalizados_fornecedores_chave_unique",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_fornecedores"
+    },
+    {
+      "def": "CHECK (((nome = btrim(nome)) AND ((char_length(nome) >= 2) AND (char_length(nome) <= 80))))",
+      "nome": "pedidos_personalizados_fornecedores_nome_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_fornecedores"
+    },
+    {
+      "def": "UNIQUE (nome)",
+      "nome": "pedidos_personalizados_fornecedores_nome_unique",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_fornecedores"
+    },
+    {
+      "def": "CHECK ((ordem >= 1))",
+      "nome": "pedidos_personalizados_fornecedores_ordem_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_fornecedores"
+    },
+    {
+      "def": "UNIQUE (ordem)",
+      "nome": "pedidos_personalizados_fornecedores_ordem_unique",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_fornecedores"
+    },
+    {
+      "def": "PRIMARY KEY (id)",
+      "nome": "pedidos_personalizados_fornecedores_pkey",
+      "tipo": "p",
+      "tabela": "pedidos_personalizados_fornecedores"
+    },
+    {
+      "def": "CHECK (((colecao_busca = btrim(colecao_busca)) AND (colecao_busca <> ''::text) AND (descricao_busca = btrim(descricao_busca)) AND (descricao_busca <> ''::text) AND (referencia_busca = btrim(referencia_busca)) AND (referencia_busca <> ''::text)))",
+      "nome": "pedidos_personalizados_lebebe_exclusive_catalogo_busca_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo"
+    },
+    {
+      "def": "CHECK (((colecao = btrim(colecao)) AND ((char_length(colecao) >= 1) AND (char_length(colecao) <= 80))))",
+      "nome": "pedidos_personalizados_lebebe_exclusive_catalogo_colecao_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo"
+    },
+    {
+      "def": "CHECK ((custo_unitario > (0)::numeric))",
+      "nome": "pedidos_personalizados_lebebe_exclusive_catalogo_custo_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo"
+    },
+    {
+      "def": "CHECK ((arquivo_origem_sha256 ~ '^[A-F0-9]{64}$'::text))",
+      "nome": "pedidos_personalizados_lebebe_exclusive_catalogo_hash_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo"
+    },
+    {
+      "def": "CHECK ((linha_origem >= 2))",
+      "nome": "pedidos_personalizados_lebebe_exclusive_catalogo_linha_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo"
+    },
+    {
+      "def": "UNIQUE (arquivo_origem_sha256, linha_origem)",
+      "nome": "pedidos_personalizados_lebebe_exclusive_catalogo_origem_unique",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo"
+    },
+    {
+      "def": "PRIMARY KEY (produto_id)",
+      "nome": "pedidos_personalizados_lebebe_exclusive_catalogo_pkey",
+      "tipo": "p",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo"
+    },
+    {
+      "def": "CHECK ((preco_unitario > (0)::numeric))",
+      "nome": "pedidos_personalizados_lebebe_exclusive_catalogo_preco_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo"
+    },
+    {
+      "def": "CHECK (((referencia = btrim(referencia)) AND ((char_length(referencia) >= 1) AND (char_length(referencia) <= 100))))",
+      "nome": "pedidos_personalizados_lebebe_exclusive_catalogo_referencia_che",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo"
+    },
+    {
+      "def": "CHECK (((nome_ou_letra IS NULL) OR ((nome_ou_letra = btrim(nome_ou_letra)) AND ((char_length(nome_ou_letra) >= 1) AND (char_length(nome_ou_letra) <= 200)))))",
+      "nome": "pedidos_personalizados_lebebe_exclusive_itens_nome_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens"
+    },
+    {
+      "def": "CHECK ((ordem >= 1))",
+      "nome": "pedidos_personalizados_lebebe_exclusive_itens_ordem_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens"
+    },
+    {
+      "def": "UNIQUE (pedido_id, ordem) DEFERRABLE",
+      "nome": "pedidos_personalizados_lebebe_exclusive_itens_pedido_ordem_uniq",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens"
+    },
+    {
+      "def": "UNIQUE (pedido_id, produto_id)",
+      "nome": "pedidos_personalizados_lebebe_exclusive_itens_pedido_produto_un",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens"
+    },
+    {
+      "def": "PRIMARY KEY (id)",
+      "nome": "pedidos_personalizados_lebebe_exclusive_itens_pkey",
+      "tipo": "p",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens"
+    },
+    {
+      "def": "CHECK ((quantidade >= 1))",
+      "nome": "pedidos_personalizados_lebebe_exclusive_itens_quantidade_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens"
+    },
+    {
+      "def": "CHECK (((colecao_snapshot = btrim(colecao_snapshot)) AND (colecao_snapshot <> ''::text) AND (descricao_snapshot = btrim(descricao_snapshot)) AND (descricao_snapshot <> ''::text) AND (referencia_snapshot = btrim(referencia_snapshot)) AND (referencia_snapshot <> ''::text) AND (preco_unitario_snapshot > (0)::numeric) AND (custo_unitario_snapshot > (0)::numeric)))",
+      "nome": "pedidos_personalizados_lebebe_exclusive_itens_snapshot_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens"
+    },
+    {
+      "def": "PRIMARY KEY (pedido_id)",
+      "nome": "pedidos_personalizados_lebebe_exclusive_sgi_pkey",
+      "tipo": "p",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "UNIQUE (token_sha256)",
+      "nome": "pedidos_personalizados_lebebe_exclusive_sgi_wo_token_sha256_key",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi_worker"
+    },
+    {
+      "def": "PRIMARY KEY (id)",
+      "nome": "pedidos_personalizados_lebebe_exclusive_sgi_worker_pkey",
+      "tipo": "p",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi_worker"
+    },
+    {
+      "def": "CHECK (((area_cobrada_centesimos_m2 >= 1) AND (area_cobrada_centesimos_m2 <= 22500)))",
+      "nome": "pedidos_personalizados_moriah_tapetes_area_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "CHECK (((tipo <> 'CATALOGO'::text) OR ((nome_colecao_catalogo IS NOT NULL) AND (referencia_catalogo IS NOT NULL))))",
+      "nome": "pedidos_personalizados_moriah_tapetes_catalogo_dados_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "CHECK (((nome_colecao_catalogo IS NULL) OR ((char_length(btrim(nome_colecao_catalogo)) >= 1) AND (char_length(btrim(nome_colecao_catalogo)) <= 30))))",
+      "nome": "pedidos_personalizados_moriah_tapetes_colecao_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "CHECK (((dimensao_1_cm >= 10) AND (dimensao_1_cm <= 1500)))",
+      "nome": "pedidos_personalizados_moriah_tapetes_dimensao_1_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "CHECK (((dimensao_2_cm IS NULL) OR ((dimensao_2_cm >= 10) AND (dimensao_2_cm <= 1500))))",
+      "nome": "pedidos_personalizados_moriah_tapetes_dimensao_2_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "CHECK ((((formato = 'REDONDO'::text) AND (dimensao_2_cm IS NULL)) OR ((formato = ANY (ARRAY['RETANGULAR'::text, 'ORGANICO'::text])) AND (dimensao_2_cm IS NOT NULL))))",
+      "nome": "pedidos_personalizados_moriah_tapetes_dimensoes_formato_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "CHECK ((formato = ANY (ARRAY['REDONDO'::text, 'RETANGULAR'::text, 'ORGANICO'::text])))",
+      "nome": "pedidos_personalizados_moriah_tapetes_formato_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "CHECK ((((teve_alteracao_layout = false) AND (quantidade_alteracoes_layout IS NULL)) OR ((teve_alteracao_layout = true) AND (quantidade_alteracoes_layout >= 1))))",
+      "nome": "pedidos_personalizados_moriah_tapetes_layout_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "CHECK (((observacoes IS NULL) OR (char_length(observacoes) <= 500)))",
+      "nome": "pedidos_personalizados_moriah_tapetes_observacoes_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "CHECK (((ordem >= 1) AND (ordem <= 10)))",
+      "nome": "pedidos_personalizados_moriah_tapetes_ordem_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "UNIQUE (pedido_id, ordem) DEFERRABLE",
+      "nome": "pedidos_personalizados_moriah_tapetes_pedido_ordem_unique",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "PRIMARY KEY (id)",
+      "nome": "pedidos_personalizados_moriah_tapetes_pkey",
+      "tipo": "p",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "CHECK (((referencia_catalogo IS NULL) OR (referencia_catalogo ~ '^[A-Za-z0-9-]{1,20}$'::text)))",
+      "nome": "pedidos_personalizados_moriah_tapetes_referencia_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "CHECK ((tipo = ANY (ARRAY['CATALOGO'::text, 'PERSONALIZADO'::text])))",
+      "nome": "pedidos_personalizados_moriah_tapetes_tipo_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "PRIMARY KEY (id)",
+      "nome": "pedidos_personalizados_observacoes_pkey",
+      "tipo": "p",
+      "tabela": "pedidos_personalizados_observacoes"
+    },
+    {
+      "def": "CHECK (((char_length(btrim(texto)) >= 1) AND (char_length(btrim(texto)) <= 2000)))",
+      "nome": "pedidos_personalizados_observacoes_texto_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_observacoes"
+    },
+    {
+      "def": "CHECK (((char_length(btrim(cliente)) >= 1) AND (char_length(btrim(cliente)) <= 40)))",
+      "nome": "pedidos_personalizados_pedidos_cliente_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_pedidos"
+    },
+    {
+      "def": "CHECK (((comprador IS NULL) OR ((char_length(btrim(comprador)) >= 2) AND (char_length(btrim(comprador)) <= 40))))",
+      "nome": "pedidos_personalizados_pedidos_comprador_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_pedidos"
+    },
+    {
+      "def": "CHECK (((char_length(btrim(consultora)) >= 2) AND (char_length(btrim(consultora)) <= 20)))",
+      "nome": "pedidos_personalizados_pedidos_consultora_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_pedidos"
+    },
+    {
+      "def": "UNIQUE (created_by, idempotency_key)",
+      "nome": "pedidos_personalizados_pedidos_criador_idempotencia_unique",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_pedidos"
+    },
+    {
+      "def": "CHECK (((numero_lancamento IS NULL) OR (numero_lancamento ~ '^[0-9]{1,6}$'::text)))",
+      "nome": "pedidos_personalizados_pedidos_numero_lancamento_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_pedidos"
+    },
+    {
+      "def": "CHECK (((numero_pedido_compra IS NULL) OR (numero_pedido_compra ~ '^[0-9]{1,5}$'::text)))",
+      "nome": "pedidos_personalizados_pedidos_numero_pedido_compra_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_pedidos"
+    },
+    {
+      "def": "PRIMARY KEY (id)",
+      "nome": "pedidos_personalizados_pedidos_pkey",
+      "tipo": "p",
+      "tabela": "pedidos_personalizados_pedidos"
+    },
+    {
+      "def": "CHECK ((status = ANY (ARRAY['RASCUNHO'::text, 'VENDA FECHADA'::text, 'AGUARDANDO LAYOUT'::text, 'AGUARDANDO APROVAÇÃO DO CLIENTE'::text, 'EM PRODUÇÃO'::text, 'RECEBIDO'::text, 'CANCELADO'::text])))",
+      "nome": "pedidos_personalizados_pedidos_status_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_pedidos"
+    },
+    {
+      "def": "CHECK (((telefone_normalizado IS NULL) OR (telefone_normalizado ~ '^[0-9]{10,11}$'::text)))",
+      "nome": "pedidos_personalizados_pedidos_telefone_normalizado_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_pedidos"
+    },
+    {
+      "def": "CHECK ((version >= 1))",
+      "nome": "pedidos_personalizados_pedidos_version_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_pedidos"
+    },
+    {
+      "def": "CHECK (((codigo = btrim(codigo)) AND ((char_length(codigo) >= 1) AND (char_length(codigo) <= 40))))",
+      "nome": "pedidos_personalizados_produtos_codigo_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_produtos"
+    },
+    {
+      "def": "CHECK (((descricao = btrim(descricao)) AND ((char_length(descricao) >= 1) AND (char_length(descricao) <= 300))))",
+      "nome": "pedidos_personalizados_produtos_descricao_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_produtos"
+    },
+    {
+      "def": "UNIQUE (fornecedor_id, codigo)",
+      "nome": "pedidos_personalizados_produtos_fornecedor_codigo_unique",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_produtos"
+    },
+    {
+      "def": "UNIQUE (fornecedor_id, ordem)",
+      "nome": "pedidos_personalizados_produtos_fornecedor_ordem_unique",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_produtos"
+    },
+    {
+      "def": "CHECK ((ordem >= 1))",
+      "nome": "pedidos_personalizados_produtos_ordem_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_produtos"
+    },
+    {
+      "def": "PRIMARY KEY (id)",
+      "nome": "pedidos_personalizados_produtos_pkey",
+      "tipo": "p",
+      "tabela": "pedidos_personalizados_produtos"
+    },
+    {
+      "def": "CHECK (((data_recebimento IS NULL) OR (status_novo = 'RECEBIDO'::text)))",
+      "nome": "pedidos_personalizados_status_historico_data_recebimento_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_status_historico"
+    },
+    {
+      "def": "CHECK ((((status_novo = 'CANCELADO'::text) AND (justificativa IS NOT NULL) AND ((char_length(btrim(justificativa)) >= 1) AND (char_length(btrim(justificativa)) <= 500))) OR ((status_novo <> 'CANCELADO'::text) AND (justificativa IS NULL))))",
+      "nome": "pedidos_personalizados_status_historico_justificativa_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_status_historico"
+    },
+    {
+      "def": "CHECK ((status_anterior <> status_novo))",
+      "nome": "pedidos_personalizados_status_historico_mudanca_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_status_historico"
+    },
+    {
+      "def": "PRIMARY KEY (id)",
+      "nome": "pedidos_personalizados_status_historico_pkey",
+      "tipo": "p",
+      "tabela": "pedidos_personalizados_status_historico"
+    },
+    {
+      "def": "CHECK ((status_anterior = ANY (ARRAY['RASCUNHO'::text, 'VENDA FECHADA'::text, 'AGUARDANDO LAYOUT'::text, 'AGUARDANDO APROVAÇÃO DO CLIENTE'::text, 'EM PRODUÇÃO'::text, 'RECEBIDO'::text, 'CANCELADO'::text])))",
+      "nome": "pedidos_personalizados_status_historico_status_anterior_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_status_historico"
+    },
+    {
+      "def": "CHECK ((status_novo = ANY (ARRAY['RASCUNHO'::text, 'VENDA FECHADA'::text, 'AGUARDANDO LAYOUT'::text, 'AGUARDANDO APROVAÇÃO DO CLIENTE'::text, 'EM PRODUÇÃO'::text, 'RECEBIDO'::text, 'CANCELADO'::text])))",
+      "nome": "pedidos_personalizados_status_historico_status_novo_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_status_historico"
+    },
+    {
+      "def": "CHECK (((version_anterior >= 1) AND (version_nova = (version_anterior + 1))))",
+      "nome": "pedidos_personalizados_status_historico_version_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_status_historico"
+    },
+    {
+      "def": "CHECK ((bucket_id = 'pedidos-personalizados-anexos'::text))",
+      "nome": "pedidos_personalizados_storage_pendencias_bucket_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_storage_pendencias"
+    },
+    {
+      "def": "CHECK ((caminho_objeto ~ '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\\.(jpg|png|webp|pdf)$'::text))",
+      "nome": "pedidos_personalizados_storage_pendencias_caminho_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_storage_pendencias"
+    },
+    {
+      "def": "CHECK ((motivo = ANY (ARRAY['SUBSTITUICAO'::text, 'REMOCAO_ANEXO'::text, 'REMOCAO_TAPETE'::text, 'REMOCAO_PEDIDO'::text, 'FALHA_APOS_UPLOAD'::text])))",
+      "nome": "pedidos_personalizados_storage_pendencias_motivo_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_storage_pendencias"
+    },
+    {
+      "def": "PRIMARY KEY (id)",
+      "nome": "pedidos_personalizados_storage_pendencias_pkey",
+      "tipo": "p",
+      "tabela": "pedidos_personalizados_storage_pendencias"
+    },
+    {
+      "def": "CHECK ((tentativas >= 0))",
+      "nome": "pedidos_personalizados_storage_pendencias_tentativas_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_storage_pendencias"
+    },
+    {
+      "def": "CHECK (((ultimo_erro IS NULL) OR ((char_length(ultimo_erro) >= 1) AND (char_length(ultimo_erro) <= 500))))",
+      "nome": "pedidos_personalizados_storage_pendencias_ultimo_erro_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_storage_pendencias"
+    },
+    {
+      "def": "CHECK (((ordem >= 1) AND (ordem <= 6)))",
+      "nome": "pedidos_personalizados_tapete_cores_ordem_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_tapete_cores"
+    },
+    {
+      "def": "PRIMARY KEY (tapete_id, cor_id)",
+      "nome": "pedidos_personalizados_tapete_cores_pkey",
+      "tipo": "p",
+      "tabela": "pedidos_personalizados_tapete_cores"
+    },
+    {
+      "def": "UNIQUE (tapete_id, ordem)",
+      "nome": "pedidos_personalizados_tapete_cores_tapete_ordem_unique",
+      "tipo": "u",
+      "tabela": "pedidos_personalizados_tapete_cores"
+    },
+    {
+      "def": "CHECK ((((claim_token IS NULL) AND (claim_expira_em IS NULL)) OR ((claim_token IS NOT NULL) AND (claim_expira_em IS NOT NULL) AND ((status_integracao = 'PROCESSANDO'::text) OR (status_renomeacao = 'PROCESSANDO'::text)))))",
+      "nome": "pp_lex_sgi_claim_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK (((status_integracao <> 'CONCLUIDO'::text) OR ((etapa = 'CONCLUIDO'::text) AND (produto_id_sgi IS NOT NULL) AND (codigo_sgi IS NOT NULL) AND (concluido_em IS NOT NULL))))",
+      "nome": "pp_lex_sgi_conclusao_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK (((etapa <> ALL (ARRAY['CUSTO_CRIADO'::text, 'CUSTO_FINALIZADO'::text, 'PRECO_ATUALIZADO'::text, 'CONCLUIDO'::text])) OR ((procedimento_custo_sgi IS NOT NULL) AND (numero_lancamento_entrada_sgi IS NOT NULL) AND (documento_entrada_id_sgi IS NOT NULL))))",
+      "nome": "pp_lex_sgi_custo_criado_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK ((((status_integracao = 'ERRO'::text) AND (erro_codigo IS NOT NULL) AND (erro_mensagem IS NOT NULL)) OR ((status_integracao <> 'ERRO'::text) AND (erro_codigo IS NULL) AND (erro_mensagem IS NULL))))",
+      "nome": "pp_lex_sgi_erro_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK ((((status_renomeacao = 'ERRO'::text) AND (erro_renomeacao_codigo IS NOT NULL) AND (erro_renomeacao_mensagem IS NOT NULL)) OR ((status_renomeacao <> 'ERRO'::text) AND (erro_renomeacao_codigo IS NULL) AND (erro_renomeacao_mensagem IS NULL))))",
+      "nome": "pp_lex_sgi_erro_renomeacao_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK ((etapa = ANY (ARRAY['NAO_INICIADO'::text, 'PRODUTO_DUPLICADO'::text, 'PRODUTO_RENOMEADO'::text, 'CUSTO_CRIADO'::text, 'CUSTO_FINALIZADO'::text, 'PRECO_ATUALIZADO'::text, 'CONCLUIDO'::text])))",
+      "nome": "pp_lex_sgi_etapa_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK (((jsonb_typeof(eventos) = 'array'::text) AND (jsonb_array_length(eventos) <= 100)))",
+      "nome": "pp_lex_sgi_eventos_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK (((numero_lancamento_snapshot IS NULL) OR (numero_lancamento_snapshot ~ '^[0-9]{1,6}$'::text)))",
+      "nome": "pp_lex_sgi_lancamento_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK (((modelo_produto_id_sgi = '39879'::text) AND (modelo_nome_esperado = 'LEBEBE EXCLUSIVE (MODELO PADRÃO - NÃO USAR)'::text)))",
+      "nome": "pp_lex_sgi_modelo_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK (((nome_produto_sgi = btrim(nome_produto_sgi)) AND (char_length(nome_produto_sgi) <= 120) AND (nome_produto_sgi ~ '^LEBEBE EXCLUSIVE \\(.+\\)$'::text)))",
+      "nome": "pp_lex_sgi_nome_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK (((operacao_pendente IS NULL) OR (operacao_pendente = ANY (ARRAY['CRIAR_PRODUTO'::text, 'RENOMEAR_PRODUTO'::text]))))",
+      "nome": "pp_lex_sgi_operacao_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK (((etapa <> ALL (ARRAY['PRECO_ATUALIZADO'::text, 'CONCLUIDO'::text])) OR ((tabela_preco_id_sgi = '3'::text) AND (item_tabela_preco_id_sgi IS NOT NULL))))",
+      "nome": "pp_lex_sgi_preco_atualizado_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK ((status_integracao = ANY (ARRAY['PENDENTE'::text, 'PROCESSANDO'::text, 'ERRO'::text, 'CONCLUIDO'::text])))",
+      "nome": "pp_lex_sgi_status_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK ((status_renomeacao = ANY (ARRAY['NAO_SOLICITADA'::text, 'PENDENTE'::text, 'PROCESSANDO'::text, 'ERRO'::text, 'CONCLUIDO'::text])))",
+      "nome": "pp_lex_sgi_status_renomeacao_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK ((tentativas >= 0))",
+      "nome": "pp_lex_sgi_tentativas_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK (((custo_enviado > (0)::numeric) AND (preco_enviado > (0)::numeric)))",
+      "nome": "pp_lex_sgi_valores_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "CHECK ((token_sha256 ~ '^[a-f0-9]{64}$'::text))",
+      "nome": "pp_lex_sgi_worker_hash_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi_worker"
+    },
+    {
+      "def": "CHECK ((id = 'exclusive_sgi_worker'::text))",
+      "nome": "pp_lex_sgi_worker_id_check",
+      "tipo": "c",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi_worker"
+    },
+    {
+      "def": "UNIQUE (codigo)",
+      "nome": "sgi_produtos_cache_codigo_key",
+      "tipo": "u",
+      "tabela": "sgi_produtos_cache"
+    },
+    {
+      "def": "PRIMARY KEY (produto_id_sgi)",
+      "nome": "sgi_produtos_cache_pkey",
+      "tipo": "p",
+      "tabela": "sgi_produtos_cache"
+    },
+    {
+      "def": "UNIQUE (email)",
+      "nome": "usuarios_permitidos_email_key",
+      "tipo": "u",
+      "tabela": "usuarios_permitidos"
+    },
+    {
+      "def": "CHECK ((invite_status = ANY (ARRAY['sent'::text, 'accepted'::text, 'expired'::text, 'failed'::text])))",
+      "nome": "usuarios_permitidos_invite_status_check",
+      "tipo": "c",
+      "tabela": "usuarios_permitidos"
+    },
+    {
+      "def": "UNIQUE (invite_token)",
+      "nome": "usuarios_permitidos_invite_token_key",
+      "tipo": "u",
+      "tabela": "usuarios_permitidos"
+    },
+    {
+      "def": "PRIMARY KEY (id)",
+      "nome": "usuarios_permitidos_pkey",
+      "tipo": "p",
+      "tabela": "usuarios_permitidos"
+    },
+    {
+      "def": "CHECK ((role = ANY (ARRAY['user'::text, 'superadmin'::text])))",
+      "nome": "usuarios_permitidos_role_check",
+      "tipo": "c",
+      "tabela": "usuarios_permitidos"
+    },
+    {
+      "def": "FOREIGN KEY (atribuido_por) REFERENCES usuarios_permitidos(id)",
+      "nome": "app_usuarios_unidades_atribuido_por_fkey",
+      "tipo": "f",
+      "tabela": "app_usuarios_unidades"
+    },
+    {
+      "def": "FOREIGN KEY (unidade_id) REFERENCES app_unidades(id) ON DELETE RESTRICT",
+      "nome": "app_usuarios_unidades_unidade_id_fkey",
+      "tipo": "f",
+      "tabela": "app_usuarios_unidades"
+    },
+    {
+      "def": "FOREIGN KEY (usuario_id) REFERENCES usuarios_permitidos(id) ON DELETE CASCADE",
+      "nome": "app_usuarios_unidades_usuario_id_fkey",
+      "tipo": "f",
+      "tabela": "app_usuarios_unidades"
+    },
+    {
+      "def": "FOREIGN KEY (created_by) REFERENCES usuarios_permitidos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_anexos_created_by_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_anexos"
+    },
+    {
+      "def": "FOREIGN KEY (tapete_id) REFERENCES pedidos_personalizados_moriah_tapetes(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_anexos_tapete_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_anexos"
+    },
+    {
+      "def": "FOREIGN KEY (updated_by) REFERENCES usuarios_permitidos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_anexos_updated_by_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_anexos"
+    },
+    {
+      "def": "FOREIGN KEY (fornecedor_id) REFERENCES pedidos_personalizados_fornecedores(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_cores_fornecedor_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_cores"
+    },
+    {
+      "def": "FOREIGN KEY (ultima_solicitacao_por) REFERENCES usuarios_permitidos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_lebebe_exclu_ultima_solicitacao_por_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "FOREIGN KEY (produto_id) REFERENCES pedidos_personalizados_produtos(id) ON DELETE CASCADE",
+      "nome": "pedidos_personalizados_lebebe_exclusive_catalog_produto_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_catalogo"
+    },
+    {
+      "def": "FOREIGN KEY (created_by) REFERENCES usuarios_permitidos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_lebebe_exclusive_itens_created_by_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens"
+    },
+    {
+      "def": "FOREIGN KEY (pedido_id) REFERENCES pedidos_personalizados_pedidos(id) ON DELETE CASCADE",
+      "nome": "pedidos_personalizados_lebebe_exclusive_itens_pedido_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens"
+    },
+    {
+      "def": "FOREIGN KEY (produto_id) REFERENCES pedidos_personalizados_produtos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_lebebe_exclusive_itens_produto_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens"
+    },
+    {
+      "def": "FOREIGN KEY (updated_by) REFERENCES usuarios_permitidos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_lebebe_exclusive_itens_updated_by_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_itens"
+    },
+    {
+      "def": "FOREIGN KEY (pedido_id) REFERENCES pedidos_personalizados_pedidos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_lebebe_exclusive_sgi_pedido_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "FOREIGN KEY (solicitado_por) REFERENCES usuarios_permitidos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_lebebe_exclusive_sgi_solicitado_por_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_lebebe_exclusive_sgi"
+    },
+    {
+      "def": "FOREIGN KEY (created_by) REFERENCES usuarios_permitidos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_moriah_tapetes_created_by_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "FOREIGN KEY (pedido_id) REFERENCES pedidos_personalizados_pedidos(id) ON DELETE CASCADE",
+      "nome": "pedidos_personalizados_moriah_tapetes_pedido_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "FOREIGN KEY (produto_id) REFERENCES pedidos_personalizados_produtos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_moriah_tapetes_produto_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "FOREIGN KEY (updated_by) REFERENCES usuarios_permitidos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_moriah_tapetes_updated_by_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_moriah_tapetes"
+    },
+    {
+      "def": "FOREIGN KEY (pedido_id) REFERENCES pedidos_personalizados_pedidos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_observacoes_pedido_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_observacoes"
+    },
+    {
+      "def": "FOREIGN KEY (usuario_id) REFERENCES usuarios_permitidos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_observacoes_usuario_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_observacoes"
+    },
+    {
+      "def": "FOREIGN KEY (created_by) REFERENCES usuarios_permitidos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_pedidos_created_by_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_pedidos"
+    },
+    {
+      "def": "FOREIGN KEY (fornecedor_id) REFERENCES pedidos_personalizados_fornecedores(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_pedidos_fornecedor_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_pedidos"
+    },
+    {
+      "def": "FOREIGN KEY (unidade_id) REFERENCES app_unidades(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_pedidos_unidade_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_pedidos"
+    },
+    {
+      "def": "FOREIGN KEY (updated_by) REFERENCES usuarios_permitidos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_pedidos_updated_by_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_pedidos"
+    },
+    {
+      "def": "FOREIGN KEY (fornecedor_id) REFERENCES pedidos_personalizados_fornecedores(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_produtos_fornecedor_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_produtos"
+    },
+    {
+      "def": "FOREIGN KEY (produto_id_sgi) REFERENCES sgi_produtos_cache(produto_id_sgi) ON UPDATE CASCADE ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_produtos_produto_id_sgi_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_produtos"
+    },
+    {
+      "def": "FOREIGN KEY (pedido_id) REFERENCES pedidos_personalizados_pedidos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_status_historico_pedido_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_status_historico"
+    },
+    {
+      "def": "FOREIGN KEY (unidade_id) REFERENCES app_unidades(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_status_historico_unidade_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_status_historico"
+    },
+    {
+      "def": "FOREIGN KEY (usuario_id) REFERENCES usuarios_permitidos(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_status_historico_usuario_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_status_historico"
+    },
+    {
+      "def": "FOREIGN KEY (cor_id) REFERENCES pedidos_personalizados_cores(id) ON DELETE RESTRICT",
+      "nome": "pedidos_personalizados_tapete_cores_cor_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_tapete_cores"
+    },
+    {
+      "def": "FOREIGN KEY (tapete_id) REFERENCES pedidos_personalizados_moriah_tapetes(id) ON DELETE CASCADE",
+      "nome": "pedidos_personalizados_tapete_cores_tapete_id_fkey",
+      "tipo": "f",
+      "tabela": "pedidos_personalizados_tapete_cores"
+    },
+    {
+      "def": "FOREIGN KEY (created_by) REFERENCES usuarios_permitidos(id)",
+      "nome": "usuarios_permitidos_created_by_fkey",
+      "tipo": "f",
+      "tabela": "usuarios_permitidos"
+    }
+  ],
+  "funcoes": [
+    {
+      "proname": "criar_pedido_personalizado_lebebe_exclusive",
+      "def": "CREATE OR REPLACE FUNCTION public.criar_pedido_personalizado_lebebe_exclusive(p_usuario_id uuid, p_idempotency_key uuid, p_fornecedor_id uuid, p_unidade_id uuid, p_consultora text, p_cliente text, p_telefone_normalizado text, p_numero_lancamento text, p_itens jsonb)\n RETURNS TABLE(pedido_id uuid, version integer, reutilizado boolean, itens jsonb)\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\ndeclare\n  v_pedido public.pedidos_personalizados_pedidos%rowtype;\n  v_item jsonb;\n  v_catalogo record;\n  v_item_id uuid;\n  v_total_itens integer;\n  v_itens_retorno jsonb := '[]'::jsonb;\nbegin\n  if p_usuario_id is null or not exists (\n    select 1 from public.usuarios_permitidos where id = p_usuario_id and ativo = true\n  ) then raise exception 'USUARIO_INVALIDO' using errcode = '42501'; end if;\n  if p_idempotency_key is null then\n    raise exception 'IDEMPOTENCY_KEY_INVALIDA' using errcode = '22023';\n  end if;\n\n  perform pg_advisory_xact_lock(\n    hashtextextended(p_usuario_id::text || ':' || p_idempotency_key::text, 0)\n  );\n\n  select * into v_pedido\n  from public.pedidos_personalizados_pedidos\n  where created_by = p_usuario_id and idempotency_key = p_idempotency_key;\n\n  if found then\n    if v_pedido.fornecedor_id <> p_fornecedor_id then\n      raise exception 'IDEMPOTENCY_KEY_CONFLITO' using errcode = '23505';\n    end if;\n    return query\n    select v_pedido.id, v_pedido.version, true,\n      coalesce((\n        select jsonb_agg(jsonb_build_object('id', item.id, 'ordem', item.ordem) order by item.ordem)\n        from public.pedidos_personalizados_lebebe_exclusive_itens as item\n        where item.pedido_id = v_pedido.id\n      ), '[]'::jsonb);\n    return;\n  end if;\n\n  if not exists (\n    select 1 from public.pedidos_personalizados_fornecedores\n    where id = p_fornecedor_id and chave = 'lebebe_exclusive' and disponivel = true\n  ) then raise exception 'FORNECEDOR_INDISPONIVEL' using errcode = '23514'; end if;\n  if not exists (\n    select 1 from public.app_unidades\n    where id = p_unidade_id and ativo = true\n      and chave in ('bigorrilho', 'portao', 'marechal', 'feira')\n  ) then raise exception 'UNIDADE_NAO_PERMITIDA' using errcode = '22023'; end if;\n  if p_consultora is null or char_length(btrim(p_consultora)) not between 2 and 20 then\n    raise exception 'CONSULTORA_INVALIDA' using errcode = '22023';\n  end if;\n  if p_cliente is null or char_length(btrim(p_cliente)) not between 1 and 40 then\n    raise exception 'CLIENTE_INVALIDO' using errcode = '22023';\n  end if;\n  if p_telefone_normalizado is null\n     or p_telefone_normalizado !~ '^[0-9]{10,11}$'\n     or left(p_telefone_normalizado, 2) = '00'\n  then raise exception 'TELEFONE_INVALIDO' using errcode = '22023'; end if;\n  if p_numero_lancamento is not null and p_numero_lancamento !~ '^[0-9]{1,6}$' then\n    raise exception 'NUMERO_LANCAMENTO_INVALIDO' using errcode = '22023';\n  end if;\n  if p_itens is null or jsonb_typeof(p_itens) <> 'array' or jsonb_array_length(p_itens) < 1 then\n    raise exception 'ITENS_OBRIGATORIOS' using errcode = '22023';\n  end if;\n\n  v_total_itens := jsonb_array_length(p_itens);\n  if exists (\n    select 1 from jsonb_array_elements(p_itens) as item(value)\n    where jsonb_typeof(item.value) <> 'object'\n       or item.value->>'produto_id' !~* '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'\n       or item.value->>'ordem' !~ '^[0-9]+$'\n       or (item.value->>'ordem')::integer not between 1 and v_total_itens\n       or item.value->>'quantidade' !~ '^[0-9]+$'\n       or (item.value->>'quantidade')::integer < 1\n       or (item.value->>'nome_ou_letra' is not null and (\n         btrim(item.value->>'nome_ou_letra') = ''\n         or char_length(btrim(item.value->>'nome_ou_letra')) > 200\n       ))\n  ) or exists (\n    select 1 from jsonb_array_elements(p_itens) as item(value)\n    group by item.value->>'ordem' having count(*) > 1\n  ) or exists (\n    select 1 from jsonb_array_elements(p_itens) as item(value)\n    group by item.value->>'produto_id' having count(*) > 1\n  ) then raise exception 'ITEM_PEDIDO_INVALIDO' using errcode = '22023'; end if;\n\n  insert into public.pedidos_personalizados_pedidos (\n    fornecedor_id, unidade_id, consultora, cliente, telefone_normalizado,\n    numero_lancamento, idempotency_key, created_by, updated_by\n  ) values (\n    p_fornecedor_id, p_unidade_id, btrim(p_consultora), btrim(p_cliente),\n    p_telefone_normalizado, p_numero_lancamento, p_idempotency_key,\n    p_usuario_id, p_usuario_id\n  ) returning * into v_pedido;\n\n  for v_item in\n    select item.value from jsonb_array_elements(p_itens) as item(value)\n    order by (item.value->>'ordem')::integer\n  loop\n    select produto.id, produto.descricao, catalogo.colecao, catalogo.referencia,\n           catalogo.preco_unitario, catalogo.custo_unitario\n      into v_catalogo\n    from public.pedidos_personalizados_produtos as produto\n    join public.pedidos_personalizados_lebebe_exclusive_catalogo as catalogo\n      on catalogo.produto_id = produto.id\n    where produto.id = (v_item->>'produto_id')::uuid\n      and produto.fornecedor_id = p_fornecedor_id\n      and produto.ativo = true;\n    if not found then raise exception 'PRODUTO_FORNECEDOR_INVALIDO' using errcode = '23514'; end if;\n\n    insert into public.pedidos_personalizados_lebebe_exclusive_itens (\n      pedido_id, produto_id, ordem, quantidade, nome_ou_letra,\n      colecao_snapshot, descricao_snapshot, referencia_snapshot,\n      preco_unitario_snapshot, custo_unitario_snapshot, created_by, updated_by\n    ) values (\n      v_pedido.id, v_catalogo.id, (v_item->>'ordem')::integer,\n      (v_item->>'quantidade')::integer, nullif(btrim(v_item->>'nome_ou_letra'), ''),\n      v_catalogo.colecao, v_catalogo.descricao, v_catalogo.referencia,\n      v_catalogo.preco_unitario, v_catalogo.custo_unitario,\n      p_usuario_id, p_usuario_id\n    ) returning id into v_item_id;\n\n    v_itens_retorno := v_itens_retorno || jsonb_build_array(\n      jsonb_build_object('id', v_item_id, 'ordem', (v_item->>'ordem')::integer)\n    );\n  end loop;\n\n  return query select v_pedido.id, v_pedido.version, false, v_itens_retorno;\nend;\n$function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "proname": "criar_pedido_personalizado_moriah",
+      "def": "CREATE OR REPLACE FUNCTION public.criar_pedido_personalizado_moriah(p_usuario_id uuid, p_idempotency_key uuid, p_fornecedor_id uuid, p_unidade_id uuid, p_consultora text, p_cliente text, p_tapetes jsonb, p_numero_lancamento text DEFAULT NULL::text, p_data_entrega date DEFAULT NULL::date, p_data_pedido_fornecedor date DEFAULT NULL::date, p_numero_pedido_compra text DEFAULT NULL::text, p_comprador text DEFAULT NULL::text)\n RETURNS TABLE(pedido_id uuid, version integer, reutilizado boolean, tapetes jsonb)\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  v_pedido public.pedidos_personalizados_pedidos%ROWTYPE;\n  v_tapete jsonb;\n  v_cor jsonb;\n  v_tapete_id uuid;\n  v_produto_id uuid;\n  v_cor_id uuid;\n  v_total_tapetes integer;\n  v_total_cores integer;\n  v_tapetes_retorno jsonb := '[]'::jsonb;\nBEGIN\n  IF p_usuario_id IS NULL OR NOT EXISTS (\n    SELECT 1\n    FROM public.usuarios_permitidos\n    WHERE id = p_usuario_id\n      AND ativo = true\n  ) THEN\n    RAISE EXCEPTION 'USUARIO_INVALIDO' USING ERRCODE = '42501';\n  END IF;\n\n  IF p_idempotency_key IS NULL THEN\n    RAISE EXCEPTION 'IDEMPOTENCY_KEY_INVALIDA' USING ERRCODE = '22023';\n  END IF;\n\n  PERFORM pg_advisory_xact_lock(\n    hashtextextended(p_usuario_id::text || ':' || p_idempotency_key::text, 0)\n  );\n\n  SELECT *\n    INTO v_pedido\n  FROM public.pedidos_personalizados_pedidos\n  WHERE created_by = p_usuario_id\n    AND idempotency_key = p_idempotency_key;\n\n  IF FOUND THEN\n    RETURN QUERY\n    SELECT\n      v_pedido.id,\n      v_pedido.version,\n      true,\n      COALESCE(\n        (\n          SELECT jsonb_agg(\n            jsonb_build_object('id', t.id, 'ordem', t.ordem)\n            ORDER BY t.ordem\n          )\n          FROM public.pedidos_personalizados_moriah_tapetes AS t\n          WHERE t.pedido_id = v_pedido.id\n        ),\n        '[]'::jsonb\n      );\n    RETURN;\n  END IF;\n\n  IF NOT EXISTS (\n    SELECT 1\n    FROM public.pedidos_personalizados_fornecedores\n    WHERE id = p_fornecedor_id\n      AND disponivel = true\n  ) THEN\n    RAISE EXCEPTION 'FORNECEDOR_INDISPONIVEL' USING ERRCODE = '23514';\n  END IF;\n\n  IF NOT EXISTS (\n    SELECT 1\n    FROM public.pedidos_personalizados_fornecedores\n    WHERE id = p_fornecedor_id\n      AND chave = 'moriah_tapetes'\n  ) THEN\n    RAISE EXCEPTION 'FORNECEDOR_NAO_SUPORTADO' USING ERRCODE = '22023';\n  END IF;\n\n  IF NOT EXISTS (\n    SELECT 1\n    FROM public.app_unidades\n    WHERE id = p_unidade_id\n      AND ativo = true\n      AND chave IN ('bigorrilho', 'portao', 'marechal', 'feira')\n  ) THEN\n    RAISE EXCEPTION 'UNIDADE_NAO_PERMITIDA' USING ERRCODE = '22023';\n  END IF;\n\n  IF p_tapetes IS NULL OR jsonb_typeof(p_tapetes) <> 'array' THEN\n    RAISE EXCEPTION 'LIMITE_TAPETES' USING ERRCODE = '22023';\n  END IF;\n\n  v_total_tapetes := jsonb_array_length(p_tapetes);\n  IF v_total_tapetes NOT BETWEEN 1 AND 10 THEN\n    RAISE EXCEPTION 'LIMITE_TAPETES' USING ERRCODE = '22023';\n  END IF;\n\n  IF EXISTS (\n    SELECT 1\n    FROM jsonb_array_elements(p_tapetes) AS item(value)\n    WHERE item.value->>'ordem' IS NULL\n       OR item.value->>'ordem' !~ '^[0-9]+$'\n  ) OR (\n    SELECT count(*)\n    FROM (\n      SELECT item.value->>'ordem'\n      FROM jsonb_array_elements(p_tapetes) AS item(value)\n      GROUP BY item.value->>'ordem'\n      HAVING count(*) > 1\n    ) AS duplicadas\n  ) > 0 THEN\n    RAISE EXCEPTION 'ORDEM_TAPETE_DUPLICADA' USING ERRCODE = '22023';\n  END IF;\n\n  FOR v_tapete IN\n    SELECT item.value\n    FROM jsonb_array_elements(p_tapetes) AS item(value)\n  LOOP\n    IF jsonb_typeof(v_tapete) <> 'object'\n       OR (v_tapete->>'ordem')::integer NOT BETWEEN 1 AND 10\n       OR v_tapete->>'formato' NOT IN ('REDONDO', 'RETANGULAR', 'ORGANICO')\n       OR v_tapete->>'tipo' NOT IN ('CATALOGO', 'PERSONALIZADO')\n       OR v_tapete->>'dimensao_1_cm' IS NULL\n       OR v_tapete->>'dimensao_1_cm' !~ '^[0-9]+$'\n       OR (v_tapete->>'dimensao_1_cm')::integer NOT BETWEEN 10 AND 1500\n       OR v_tapete->>'area_cobrada_centesimos_m2' IS NULL\n       OR v_tapete->>'area_cobrada_centesimos_m2' !~ '^[0-9]+$'\n       OR (v_tapete->>'area_cobrada_centesimos_m2')::integer NOT BETWEEN 1 AND 22500\n       OR (v_tapete->>'produto_id') IS NULL\n       OR (v_tapete->>'produto_id') !~* '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'\n       OR (\n         v_tapete->>'formato' = 'REDONDO'\n         AND v_tapete->>'dimensao_2_cm' IS NOT NULL\n       )\n       OR (\n         v_tapete->>'formato' IN ('RETANGULAR', 'ORGANICO')\n         AND (\n           v_tapete->>'dimensao_2_cm' IS NULL\n           OR v_tapete->>'dimensao_2_cm' !~ '^[0-9]+$'\n           OR (v_tapete->>'dimensao_2_cm')::integer NOT BETWEEN 10 AND 1500\n         )\n       )\n       OR (\n         v_tapete->>'nome_colecao_catalogo' IS NOT NULL\n         AND char_length(btrim(v_tapete->>'nome_colecao_catalogo')) NOT BETWEEN 1 AND 80\n       )\n       OR (\n         v_tapete->>'referencia_catalogo' IS NOT NULL\n         AND v_tapete->>'referencia_catalogo' !~ '^[A-Za-z0-9-]{1,40}$'\n       )\n       OR (\n         v_tapete->>'observacoes' IS NOT NULL\n         AND char_length(v_tapete->>'observacoes') > 500\n       )\n       OR (\n         v_tapete->>'tipo' = 'CATALOGO'\n         AND (\n           v_tapete->>'nome_colecao_catalogo' IS NULL\n           OR btrim(v_tapete->>'nome_colecao_catalogo') = ''\n           OR v_tapete->>'referencia_catalogo' IS NULL\n           OR btrim(v_tapete->>'referencia_catalogo') = ''\n         )\n       ) THEN\n      RAISE EXCEPTION 'TAPETE_INVALIDO' USING ERRCODE = '22023';\n    END IF;\n\n    v_produto_id := (v_tapete->>'produto_id')::uuid;\n    IF NOT EXISTS (\n      SELECT 1\n      FROM public.pedidos_personalizados_produtos\n      WHERE id = v_produto_id\n        AND fornecedor_id = p_fornecedor_id\n        AND ativo = true\n    ) THEN\n      RAISE EXCEPTION 'PRODUTO_FORNECEDOR_INVALIDO' USING ERRCODE = '23514';\n    END IF;\n\n    IF v_tapete ? 'cores' AND jsonb_typeof(v_tapete->'cores') <> 'array' THEN\n      RAISE EXCEPTION 'LIMITE_CORES' USING ERRCODE = '22023';\n    END IF;\n\n    v_total_cores := jsonb_array_length(COALESCE(v_tapete->'cores', '[]'::jsonb));\n    IF v_total_cores > 6 THEN\n      RAISE EXCEPTION 'LIMITE_CORES' USING ERRCODE = '22023';\n    END IF;\n\n    IF EXISTS (\n      SELECT 1\n      FROM jsonb_array_elements(COALESCE(v_tapete->'cores', '[]'::jsonb)) AS cor(value)\n      WHERE cor.value->>'ordem' IS NULL\n         OR cor.value->>'ordem' !~ '^[0-9]+$'\n         OR (cor.value->>'ordem')::integer NOT BETWEEN 1 AND 6\n         OR cor.value->>'cor_id' IS NULL\n         OR cor.value->>'cor_id' !~* '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'\n    ) OR EXISTS (\n      SELECT 1\n      FROM jsonb_array_elements(COALESCE(v_tapete->'cores', '[]'::jsonb)) AS cor(value)\n      GROUP BY cor.value->>'ordem'\n      HAVING count(*) > 1\n    ) THEN\n      RAISE EXCEPTION 'ORDEM_COR_DUPLICADA' USING ERRCODE = '22023';\n    END IF;\n\n    IF EXISTS (\n      SELECT 1\n      FROM jsonb_array_elements(COALESCE(v_tapete->'cores', '[]'::jsonb)) AS cor(value)\n      GROUP BY cor.value->>'cor_id'\n      HAVING count(*) > 1\n    ) THEN\n      RAISE EXCEPTION 'COR_DUPLICADA' USING ERRCODE = '22023';\n    END IF;\n\n    FOR v_cor IN\n      SELECT cor.value\n      FROM jsonb_array_elements(COALESCE(v_tapete->'cores', '[]'::jsonb)) AS cor(value)\n    LOOP\n      v_cor_id := (v_cor->>'cor_id')::uuid;\n      IF NOT EXISTS (\n        SELECT 1\n        FROM public.pedidos_personalizados_cores\n        WHERE id = v_cor_id\n          AND fornecedor_id = p_fornecedor_id\n          AND ativo = true\n      ) THEN\n        RAISE EXCEPTION 'COR_FORNECEDOR_INVALIDA' USING ERRCODE = '23514';\n      END IF;\n    END LOOP;\n  END LOOP;\n\n  INSERT INTO public.pedidos_personalizados_pedidos (\n    fornecedor_id,\n    unidade_id,\n    consultora,\n    cliente,\n    numero_lancamento,\n    data_entrega,\n    data_pedido_fornecedor,\n    numero_pedido_compra,\n    comprador,\n    idempotency_key,\n    created_by,\n    updated_by\n  ) VALUES (\n    p_fornecedor_id,\n    p_unidade_id,\n    p_consultora,\n    p_cliente,\n    p_numero_lancamento,\n    p_data_entrega,\n    p_data_pedido_fornecedor,\n    p_numero_pedido_compra,\n    p_comprador,\n    p_idempotency_key,\n    p_usuario_id,\n    p_usuario_id\n  )\n  RETURNING * INTO v_pedido;\n\n  FOR v_tapete IN\n    SELECT item.value\n    FROM jsonb_array_elements(p_tapetes) AS item(value)\n    ORDER BY (item.value->>'ordem')::integer\n  LOOP\n    v_tapete_id := gen_random_uuid();\n    v_produto_id := (v_tapete->>'produto_id')::uuid;\n\n    INSERT INTO public.pedidos_personalizados_moriah_tapetes (\n      id,\n      pedido_id,\n      ordem,\n      formato,\n      tipo,\n      dimensao_1_cm,\n      dimensao_2_cm,\n      area_cobrada_centesimos_m2,\n      produto_id,\n      nome_colecao_catalogo,\n      referencia_catalogo,\n      observacoes,\n      created_by,\n      updated_by\n    ) VALUES (\n      v_tapete_id,\n      v_pedido.id,\n      (v_tapete->>'ordem')::integer,\n      v_tapete->>'formato',\n      v_tapete->>'tipo',\n      (v_tapete->>'dimensao_1_cm')::integer,\n      NULLIF(v_tapete->>'dimensao_2_cm', '')::integer,\n      (v_tapete->>'area_cobrada_centesimos_m2')::integer,\n      v_produto_id,\n      NULLIF(v_tapete->>'nome_colecao_catalogo', ''),\n      NULLIF(v_tapete->>'referencia_catalogo', ''),\n      v_tapete->>'observacoes',\n      p_usuario_id,\n      p_usuario_id\n    );\n\n    IF v_tapete->>'tipo' <> 'CATALOGO' THEN\n      FOR v_cor IN\n        SELECT cor.value\n        FROM jsonb_array_elements(COALESCE(v_tapete->'cores', '[]'::jsonb)) AS cor(value)\n        ORDER BY (cor.value->>'ordem')::integer\n      LOOP\n        INSERT INTO public.pedidos_personalizados_tapete_cores (\n          tapete_id,\n          cor_id,\n          ordem\n        ) VALUES (\n          v_tapete_id,\n          (v_cor->>'cor_id')::uuid,\n          (v_cor->>'ordem')::integer\n        );\n      END LOOP;\n    END IF;\n\n    v_tapetes_retorno := v_tapetes_retorno || jsonb_build_array(\n      jsonb_build_object(\n        'id', v_tapete_id,\n        'ordem', (v_tapete->>'ordem')::integer\n      )\n    );\n  END LOOP;\n\n  RETURN QUERY\n  SELECT v_pedido.id, v_pedido.version, false, v_tapetes_retorno;\nEND;\n$function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "proname": "criar_pedido_personalizado_moriah",
+      "def": "CREATE OR REPLACE FUNCTION public.criar_pedido_personalizado_moriah(p_usuario_id uuid, p_idempotency_key uuid, p_fornecedor_id uuid, p_unidade_id uuid, p_consultora text, p_cliente text, p_telefone_normalizado text, p_tapetes jsonb, p_numero_lancamento text DEFAULT NULL::text, p_data_entrega date DEFAULT NULL::date, p_data_pedido_fornecedor date DEFAULT NULL::date, p_numero_pedido_compra text DEFAULT NULL::text, p_comprador text DEFAULT NULL::text)\n RETURNS TABLE(pedido_id uuid, version integer, reutilizado boolean, tapetes jsonb)\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\ndeclare\n  v_resultado record;\n  v_telefone_atual text;\nbegin\n  if p_telefone_normalizado is null\n     or p_telefone_normalizado !~ '^[0-9]{10,11}$'\n     or left(p_telefone_normalizado, 2) = '00' then\n    raise exception 'TELEFONE_INVALIDO' using errcode = '22023';\n  end if;\n\n  select * into v_resultado\n  from public.criar_pedido_personalizado_moriah(\n    p_usuario_id,\n    p_idempotency_key,\n    p_fornecedor_id,\n    p_unidade_id,\n    p_consultora,\n    p_cliente,\n    p_tapetes,\n    p_numero_lancamento,\n    p_data_entrega,\n    p_data_pedido_fornecedor,\n    p_numero_pedido_compra,\n    p_comprador\n  );\n\n  select pedido.telefone_normalizado\n    into v_telefone_atual\n  from public.pedidos_personalizados_pedidos as pedido\n  where pedido.id = v_resultado.pedido_id\n  for update;\n\n  if v_telefone_atual is not null and v_telefone_atual <> p_telefone_normalizado then\n    raise exception 'IDEMPOTENCY_PAYLOAD_DIVERGENTE' using errcode = '22023';\n  end if;\n\n  update public.pedidos_personalizados_pedidos as pedido\n  set telefone_normalizado = p_telefone_normalizado\n  where pedido.id = v_resultado.pedido_id\n    and pedido.telefone_normalizado is distinct from p_telefone_normalizado;\n\n  return query\n  select\n    v_resultado.pedido_id::uuid,\n    v_resultado.version::integer,\n    v_resultado.reutilizado::boolean,\n    v_resultado.tapetes::jsonb;\nend;\n$function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "proname": "is_own_record",
+      "def": "CREATE OR REPLACE FUNCTION public.is_own_record(record_email text)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\nAS $function$\r\nDECLARE\r\n    user_email TEXT;\r\nBEGIN\r\n    user_email := auth.jwt()->>'email';\r\n    \r\n    IF user_email IS NULL THEN\r\n        RETURN FALSE;\r\n    END IF;\r\n    \r\n    RETURN LOWER(user_email) = LOWER(record_email);\r\nEND;\r\n$function$\n",
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "proname": "is_superadmin",
+      "def": "CREATE OR REPLACE FUNCTION public.is_superadmin()\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\nAS $function$\r\nDECLARE\r\n    user_email TEXT;\r\n    is_admin BOOLEAN;\r\nBEGIN\r\n    -- Pega o email do JWT do usuário autenticado\r\n    user_email := auth.jwt()->>'email';\r\n    \r\n    IF user_email IS NULL THEN\r\n        RETURN FALSE;\r\n    END IF;\r\n    \r\n    -- Verifica se é superadmin (SECURITY DEFINER bypassa RLS)\r\n    SELECT EXISTS (\r\n        SELECT 1 FROM usuarios_permitidos\r\n        WHERE LOWER(email) = LOWER(user_email)\r\n        AND role = 'superadmin'\r\n        AND ativo = true\r\n    ) INTO is_admin;\r\n    \r\n    RETURN COALESCE(is_admin, FALSE);\r\nEND;\r\n$function$\n",
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "proname": "pedidos_personalizados_touch_updated_at",
+      "def": "CREATE OR REPLACE FUNCTION public.pedidos_personalizados_touch_updated_at()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  NEW.updated_at = now();\n  RETURN NEW;\nEND;\n$function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "proname": "transicionar_pedido_personalizado",
+      "def": "CREATE OR REPLACE FUNCTION public.transicionar_pedido_personalizado(p_pedido_id uuid, p_expected_version integer, p_usuario_id uuid, p_status_destino text, p_numero_lancamento text DEFAULT NULL::text, p_numero_pedido_compra text DEFAULT NULL::text, p_data_pedido_fornecedor date DEFAULT NULL::date, p_comprador text DEFAULT NULL::text, p_data_entrega date DEFAULT NULL::date, p_justificativa text DEFAULT NULL::text)\n RETURNS TABLE(evento_id uuid, status text, version integer)\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\ndeclare\n  v_p public.pedidos_personalizados_pedidos%rowtype; v_f text;\n  v_i public.pedidos_personalizados_lebebe_exclusive_sgi%rowtype;\n  v_lancamento text; v_evento uuid:=gen_random_uuid(); v_version integer;\n  v_numero_pedido_compra text; v_data_pedido_fornecedor date; v_comprador text;\n  v_data_entrega date; v_data_recebimento date; v_justificativa text; v_preenche_dados_compra boolean;\nbegin\n  if p_usuario_id is null or not exists(select 1 from public.usuarios_permitidos u where u.id=p_usuario_id and u.ativo) then raise exception 'USUARIO_INVALIDO' using errcode='42501'; end if;\n  select * into v_p from public.pedidos_personalizados_pedidos where id=p_pedido_id for update;\n  if not found then raise exception 'PEDIDO_NAO_ENCONTRADO' using errcode='P0002'; end if;\n  if v_p.version<>p_expected_version then raise exception 'CONFLITO_VERSAO' using errcode='P0003'; end if;\n  select chave into v_f from public.pedidos_personalizados_fornecedores where id=v_p.fornecedor_id;\n  if not ((v_p.status='RASCUNHO' and p_status_destino in ('VENDA FECHADA','CANCELADO'))\n    or (v_f='lebebe_exclusive' and ((v_p.status='VENDA FECHADA' and p_status_destino in (U&'EM PRODU\\00C7\\00C3O','CANCELADO')) or (v_p.status=U&'EM PRODU\\00C7\\00C3O' and p_status_destino in ('RECEBIDO','CANCELADO'))))\n    or (v_f='moriah_tapetes' and ((v_p.status='VENDA FECHADA' and p_status_destino in ('AGUARDANDO LAYOUT','CANCELADO')) or (v_p.status='AGUARDANDO LAYOUT' and p_status_destino in (U&'AGUARDANDO APROVA\\00C7\\00C3O DO CLIENTE','CANCELADO')) or (v_p.status=U&'AGUARDANDO APROVA\\00C7\\00C3O DO CLIENTE' and p_status_destino in (U&'EM PRODU\\00C7\\00C3O','AGUARDANDO LAYOUT','CANCELADO')) or (v_p.status=U&'EM PRODU\\00C7\\00C3O' and p_status_destino in ('RECEBIDO','CANCELADO'))))) then raise exception 'TRANSICAO_STATUS_INVALIDA' using errcode='P0001'; end if;\n  v_lancamento:=case when (v_p.status='RASCUNHO' and p_status_destino='VENDA FECHADA') or (v_f='lebebe_exclusive' and v_p.status='VENDA FECHADA' and p_status_destino=U&'EM PRODU\\00C7\\00C3O') then coalesce(nullif(btrim(p_numero_lancamento),''),v_p.numero_lancamento) else v_p.numero_lancamento end;\n  if p_numero_lancamento is not null and not ((v_p.status='RASCUNHO' and p_status_destino='VENDA FECHADA') or (v_f='lebebe_exclusive' and v_p.status='VENDA FECHADA' and p_status_destino=U&'EM PRODU\\00C7\\00C3O')) then raise exception 'NUMERO_LANCAMENTO_NAO_PERMITIDO' using errcode='22023'; end if;\n  if v_f<>'lebebe_exclusive' and v_p.status='RASCUNHO' and p_status_destino='VENDA FECHADA' and (v_lancamento is null or v_lancamento !~ '^[0-9]{1,6}$') then raise exception 'NUMERO_LANCAMENTO_OBRIGATORIO' using errcode='23514'; end if;\n  if v_f='lebebe_exclusive' and v_p.status='VENDA FECHADA' and p_status_destino=U&'EM PRODU\\00C7\\00C3O' then\n    if v_lancamento is null or v_lancamento !~ '^[0-9]{1,6}$' then raise exception 'NUMERO_LANCAMENTO_OBRIGATORIO' using errcode='23514'; end if;\n    select * into v_i from public.pedidos_personalizados_lebebe_exclusive_sgi where pedido_id=p_pedido_id for update;\n    if not found or v_i.status_integracao<>'CONCLUIDO' or v_i.produto_id_sgi is null then raise exception 'PRODUTO_SGI_OBRIGATORIO' using errcode='23514'; end if;\n    if v_i.lancamento_aplicado_em is null and v_i.status_renomeacao not in ('PENDENTE','PROCESSANDO') then\n      update public.pedidos_personalizados_lebebe_exclusive_sgi set numero_lancamento_snapshot=v_lancamento,\n        nome_produto_sgi='LEBEBE EXCLUSIVE ('||unidade_snapshot||' '||v_lancamento||' '||cliente_snapshot||')',status_renomeacao='PENDENTE',operacao_pendente='RENOMEAR_PRODUTO',solicitado_em=now(),claim_token=null,claim_expira_em=null\n      where pedido_id=p_pedido_id;\n    end if;\n  end if;\n  if v_f='moriah_tapetes' and p_status_destino in (U&'AGUARDANDO APROVA\\00C7\\00C3O DO CLIENTE',U&'EM PRODU\\00C7\\00C3O') and not exists(select 1 from public.pedidos_personalizados_moriah_tapetes t join public.pedidos_personalizados_anexos a on a.tapete_id=t.id where t.pedido_id=p_pedido_id) then raise exception 'ANEXO_LAYOUT_OBRIGATORIO' using errcode='23514'; end if;\n  v_numero_pedido_compra:=coalesce(p_numero_pedido_compra,v_p.numero_pedido_compra); v_data_pedido_fornecedor:=coalesce(p_data_pedido_fornecedor,v_p.data_pedido_fornecedor); v_comprador:=coalesce(nullif(btrim(p_comprador),''),v_p.comprador); v_data_entrega:=case when p_status_destino=U&'EM PRODU\\00C7\\00C3O' then coalesce(p_data_entrega,v_p.data_entrega) else v_p.data_entrega end; v_data_recebimento:=case when p_status_destino='RECEBIDO' then p_data_entrega end; v_justificativa:=nullif(btrim(p_justificativa),'');\n  v_preenche_dados_compra:=(v_f='moriah_tapetes' and v_p.status='VENDA FECHADA' and p_status_destino='AGUARDANDO LAYOUT') or (v_f='lebebe_exclusive' and v_p.status='VENDA FECHADA' and p_status_destino=U&'EM PRODU\\00C7\\00C3O');\n  if v_preenche_dados_compra and (v_numero_pedido_compra is null or v_numero_pedido_compra !~ '^[0-9]{1,5}$' or v_data_pedido_fornecedor is null or v_comprador is null or char_length(btrim(v_comprador)) not between 2 and 40) then raise exception 'CAMPOS_PRODUCAO_OBRIGATORIOS' using errcode='23514'; end if;\n  if p_status_destino=U&'EM PRODU\\00C7\\00C3O' and v_data_entrega is null then raise exception 'DATA_ENTREGA_OBRIGATORIA' using errcode='23514'; end if;\n  if p_status_destino='RECEBIDO' and v_data_recebimento is null then raise exception 'DATA_RECEBIMENTO_OBRIGATORIA' using errcode='23514'; end if;\n  if p_status_destino='CANCELADO' and (v_justificativa is null or char_length(v_justificativa)>500) then raise exception 'JUSTIFICATIVA_CANCELAMENTO_OBRIGATORIA' using errcode='23514'; end if;\n  if p_status_destino<>'CANCELADO' and v_justificativa is not null then raise exception 'JUSTIFICATIVA_NAO_PERMITIDO' using errcode='22023'; end if;\n  update public.pedidos_personalizados_pedidos as pedido set status=p_status_destino,\n    numero_lancamento=case when (v_p.status='RASCUNHO' and p_status_destino='VENDA FECHADA') or (v_f='lebebe_exclusive' and p_status_destino=U&'EM PRODU\\00C7\\00C3O') then v_lancamento else numero_lancamento end,\n    numero_pedido_compra=case when v_preenche_dados_compra then v_numero_pedido_compra else numero_pedido_compra end,\n    data_pedido_fornecedor=case when v_preenche_dados_compra then v_data_pedido_fornecedor else data_pedido_fornecedor end,\n    comprador=case when v_preenche_dados_compra then v_comprador else comprador end,\n    data_entrega=case when p_status_destino=U&'EM PRODU\\00C7\\00C3O' then v_data_entrega else data_entrega end,\n    version=v_p.version+1,updated_by=p_usuario_id where id=p_pedido_id returning pedido.version into v_version;\n  insert into public.pedidos_personalizados_status_historico(id,pedido_id,status_anterior,status_novo,usuario_id,unidade_id,version_anterior,version_nova,justificativa,data_recebimento)\n  values(v_evento,p_pedido_id,v_p.status,p_status_destino,p_usuario_id,v_p.unidade_id,v_p.version,v_version,case when p_status_destino='CANCELADO' then nullif(btrim(p_justificativa),'') end,case when p_status_destino='RECEBIDO' then p_data_entrega end);\n  return query select v_evento,p_status_destino,v_version;\nend;\n$function$\n",
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "proname": "update_updated_at_column",
+      "def": "CREATE OR REPLACE FUNCTION public.update_updated_at_column()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\r\nBEGIN\r\n    NEW.updated_at = now();\r\n    RETURN NEW;\r\nEND;\r\n$function$\n",
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "proname": "validar_superadmin_ativo",
+      "def": "CREATE OR REPLACE FUNCTION public.validar_superadmin_ativo()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\r\nDECLARE\r\n    superadmin_count INTEGER;\r\nBEGIN\r\n    -- Conta superadmins ativos após a operação\r\n    IF TG_OP = 'DELETE' THEN\r\n        SELECT COUNT(*) INTO superadmin_count\r\n        FROM usuarios_permitidos\r\n        WHERE role = 'superadmin' AND ativo = true AND id != OLD.id;\r\n        \r\n        IF superadmin_count = 0 THEN\r\n            RAISE EXCEPTION 'Não é permitido remover o último superadmin ativo';\r\n        END IF;\r\n        RETURN OLD;\r\n    ELSIF TG_OP = 'UPDATE' THEN\r\n        -- Se está tentando desativar ou mudar role de um superadmin\r\n        IF OLD.role = 'superadmin' AND OLD.ativo = true THEN\r\n            IF NEW.ativo = false OR NEW.role != 'superadmin' THEN\r\n                SELECT COUNT(*) INTO superadmin_count\r\n                FROM usuarios_permitidos\r\n                WHERE role = 'superadmin' AND ativo = true AND id != OLD.id;\r\n                \r\n                IF superadmin_count = 0 THEN\r\n                    RAISE EXCEPTION 'Não é permitido desativar ou alterar o último superadmin ativo';\r\n                END IF;\r\n            END IF;\r\n        END IF;\r\n        \r\n        -- Proteger superadmins iniciais\r\n        IF OLD.email IN ('lucas@lebebe.com.br', 'robyson@lebebe.com.br') THEN\r\n            IF NEW.ativo = false THEN\r\n                RAISE EXCEPTION 'Não é permitido desativar os superadmins iniciais';\r\n            END IF;\r\n        END IF;\r\n        \r\n        RETURN NEW;\r\n    END IF;\r\n    \r\n    RETURN NEW;\r\nEND;\r\n$function$\n",
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}"
+    }
+  ],
+  "authFuncoes": [
+    {
+      "nspname": "auth",
+      "proname": "jwt",
+      "def": "CREATE OR REPLACE FUNCTION auth.jwt()\n RETURNS jsonb\n LANGUAGE sql\n STABLE\nAS $function$\n  select \n    coalesce(\n        nullif(current_setting('request.jwt.claim', true), ''),\n        nullif(current_setting('request.jwt.claims', true), '')\n    )::jsonb\n$function$\n"
+    }
+  ],
+  "origem": {
+    "projeto": "phsoawbdvhurroryfnok",
+    "postgres": "17.6",
+    "coletadoEm": "2026-10-09",
+    "conteudo": "Somente metadados; sem linhas de produção. Fechamento das dependências por FKs das tabelas de pedidos."
+  }
+}

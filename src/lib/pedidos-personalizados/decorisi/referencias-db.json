@@ -1,0 +1,367 @@
+{
+  "fonte": "https://decorisi.com.br/#calculadora",
+  "extraidoEm": "2026-10-09T17:35:26.285Z",
+  "sha256": "869e543ea5b138a1328528777bc941c343ff1d8643505ad0fb525d923df5057d",
+  "registros": [
+    {
+      "referencia": "DB701",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "DB702",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "DB703",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "DB704",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "DB705",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "DB706",
+      "repeticaoM": "0.08"
+    },
+    {
+      "referencia": "DB707",
+      "repeticaoM": "0.08"
+    },
+    {
+      "referencia": "DB708",
+      "repeticaoM": "0.08"
+    },
+    {
+      "referencia": "DB709",
+      "repeticaoM": "0.08"
+    },
+    {
+      "referencia": "DB710",
+      "repeticaoM": "0.15"
+    },
+    {
+      "referencia": "DB711",
+      "repeticaoM": "0.15"
+    },
+    {
+      "referencia": "DB712",
+      "repeticaoM": "0.15"
+    },
+    {
+      "referencia": "DB713",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "DB714",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "DB715",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "DB716",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB717",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB718",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB719",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB720",
+      "repeticaoM": "0.48"
+    },
+    {
+      "referencia": "DB721",
+      "repeticaoM": "0.47"
+    },
+    {
+      "referencia": "DB722",
+      "repeticaoM": "0.48"
+    },
+    {
+      "referencia": "DB723",
+      "repeticaoM": "0.48"
+    },
+    {
+      "referencia": "DB724",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB725",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB726",
+      "repeticaoM": "0.48"
+    },
+    {
+      "referencia": "DB727",
+      "repeticaoM": "0.51"
+    },
+    {
+      "referencia": "DB728",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB729",
+      "repeticaoM": "0.48"
+    },
+    {
+      "referencia": "DB730",
+      "repeticaoM": "0.48"
+    },
+    {
+      "referencia": "DB731",
+      "repeticaoM": "0.47"
+    },
+    {
+      "referencia": "DB732",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB733",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB734",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB735",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB736",
+      "repeticaoM": "0.31"
+    },
+    {
+      "referencia": "DB737",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "DB738",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "DB739",
+      "repeticaoM": "0.31"
+    },
+    {
+      "referencia": "DB740",
+      "repeticaoM": "0.44"
+    },
+    {
+      "referencia": "DB741",
+      "repeticaoM": "0.49"
+    },
+    {
+      "referencia": "DB742",
+      "repeticaoM": "0.50"
+    },
+    {
+      "referencia": "DB743",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB744",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB745",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB801",
+      "repeticaoM": "0.21"
+    },
+    {
+      "referencia": "DB802",
+      "repeticaoM": "0.41"
+    },
+    {
+      "referencia": "DB803",
+      "repeticaoM": "0.41"
+    },
+    {
+      "referencia": "DB804",
+      "repeticaoM": "0.04"
+    },
+    {
+      "referencia": "DB805",
+      "repeticaoM": "0.04"
+    },
+    {
+      "referencia": "DB806",
+      "repeticaoM": "0.04"
+    },
+    {
+      "referencia": "DB807",
+      "repeticaoM": "0.04"
+    },
+    {
+      "referencia": "DB808",
+      "repeticaoM": "0.11"
+    },
+    {
+      "referencia": "DB809",
+      "repeticaoM": "0.11"
+    },
+    {
+      "referencia": "DB810",
+      "repeticaoM": "0.39"
+    },
+    {
+      "referencia": "DB811",
+      "repeticaoM": "0.39"
+    },
+    {
+      "referencia": "DB812",
+      "repeticaoM": "0.39"
+    },
+    {
+      "referencia": "DB813",
+      "repeticaoM": "0.39"
+    },
+    {
+      "referencia": "DB814",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "DB815",
+      "repeticaoM": "0.40"
+    },
+    {
+      "referencia": "DB816",
+      "repeticaoM": "0.40"
+    },
+    {
+      "referencia": "DB817",
+      "repeticaoM": "0.40"
+    },
+    {
+      "referencia": "DB818",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "DB819",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "DB820",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "DB821",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "DB822",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB823",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB824",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB825",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB826",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB827",
+      "repeticaoM": "0.50"
+    },
+    {
+      "referencia": "DB828",
+      "repeticaoM": "0.41"
+    },
+    {
+      "referencia": "DB829",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "DB830",
+      "repeticaoM": "0.50"
+    },
+    {
+      "referencia": "DB831",
+      "repeticaoM": "0.19"
+    },
+    {
+      "referencia": "DB832",
+      "repeticaoM": "0.48"
+    },
+    {
+      "referencia": "DB833",
+      "repeticaoM": "0.46"
+    },
+    {
+      "referencia": "DB834",
+      "repeticaoM": "0.48"
+    },
+    {
+      "referencia": "DB835",
+      "repeticaoM": "0.48"
+    },
+    {
+      "referencia": "DB836",
+      "repeticaoM": "0.48"
+    },
+    {
+      "referencia": "DB837",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB838",
+      "repeticaoM": "0.42"
+    },
+    {
+      "referencia": "DB839",
+      "repeticaoM": "0.42"
+    },
+    {
+      "referencia": "DB840",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB841",
+      "repeticaoM": "0.50"
+    },
+    {
+      "referencia": "DB842",
+      "repeticaoM": "0.50"
+    },
+    {
+      "referencia": "DB843",
+      "repeticaoM": "0.50"
+    },
+    {
+      "referencia": "DB844",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "DB845",
+      "repeticaoM": "0.44"
+    }
+  ]
+}

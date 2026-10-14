@@ -51,6 +51,48 @@ describe('handler de transicao de status', () => {
     expect(cenario.repo.transicionarStatus).not.toHaveBeenCalled()
   })
 
+  it('encaminha transições operacionais Decorisi para a RPC própria', async () => {
+    const transicionarStatusDecorisi = vi.fn().mockResolvedValue({
+      data: { evento_id: EVENTO, status: 'AGUARDANDO LAYOUT', version: 2 },
+      error: null,
+    })
+    const cenario = deps('VENDA FECHADA', {
+      buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
+        data: { id: PEDIDO, unidade_id: UNIDADE, status: 'VENDA FECHADA', version: 1, fornecedor: { chave: 'decorisi' } },
+        error: null,
+      }),
+      transicionarStatusDecorisi,
+    })
+    const response = await transicionarStatus(
+      request({ expectedVersion: 1, statusDestino: 'AGUARDANDO LAYOUT', numeroPedidoCompra: '123', dataPedidoFornecedor: '2026-08-06', comprador: 'ANA' }),
+      PEDIDO,
+      cenario.deps,
+    )
+    expect(response.status).toBe(200)
+    expect(transicionarStatusDecorisi).toHaveBeenCalledWith(expect.objectContaining({
+      p_pedido_id: PEDIDO,
+      p_usuario_id: USUARIO,
+      p_expected_version: 1,
+      p_status_destino: 'AGUARDANDO LAYOUT',
+    }))
+    expect(cenario.repo.transicionarStatus).not.toHaveBeenCalled()
+  })
+
+  it('impede fechar rascunho Decorisi pelo endpoint genérico', async () => {
+    const transicionarStatusDecorisi = vi.fn()
+    const cenario = deps('RASCUNHO', {
+      buscarPedidoNoEscopo: vi.fn().mockResolvedValue({
+        data: { id: PEDIDO, unidade_id: UNIDADE, status: 'RASCUNHO', version: 1, fornecedor: { chave: 'decorisi' } },
+        error: null,
+      }),
+      transicionarStatusDecorisi,
+    })
+    const response = await transicionarStatus(request({ expectedVersion: 1, statusDestino: 'VENDA FECHADA' }), PEDIDO, cenario.deps)
+    expect(response.status).toBe(422)
+    expect((await response.json()).erro).toBe('FECHAMENTO_DECORISI_REQUER_COTACAO')
+    expect(transicionarStatusDecorisi).not.toHaveBeenCalled()
+  })
+
   it('exige lançamento antes de fechar a venda somente para Moriah', async () => {
     for (const fornecedor of ['moriah_tapetes']) {
       const cenario = deps('RASCUNHO', {

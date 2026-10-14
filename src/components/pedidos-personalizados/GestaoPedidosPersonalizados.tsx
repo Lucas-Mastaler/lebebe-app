@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import Link from 'next/link'
 import { ArrowRight, Ban, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Clock, Eye, Loader2, PackageCheck, Pencil, RefreshCw, ShoppingBag, SlidersHorizontal, UserSearch } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -28,6 +29,7 @@ import type { BadgeProps } from '@/components/design-system'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CardTapete } from './CardTapete'
 import { AnexosTapete } from './AnexosTapete'
+import { AnexosGestaoDecorisi } from './AnexosGestaoDecorisi'
 import { PreviaMensagem } from './PreviaMensagem'
 import { FormularioLebebeExclusive, paginasVisiveisLebebeExclusive } from './FormularioLebebeExclusive'
 import { aplicarMascaraTelefoneBR, formatarTelefone } from '@/lib/atendimento-presencial/telefone'
@@ -300,6 +302,9 @@ export function GestaoPedidosPersonalizados() {
     destino: '', numeroPedidoCompra: '', dataPedidoFornecedor: '', comprador: '', dataEntrega: '', dataRecebimento: '', justificativa: '',
   })
   const [numeroLancamentoTransicao, setNumeroLancamentoTransicao] = useState('')
+  const [fechandoDecorisi, setFechandoDecorisi] = useState(false)
+  const [numeroLancamentoDecorisi, setNumeroLancamentoDecorisi] = useState('')
+  const [cotacaoDecorisiFechamento, setCotacaoDecorisiFechamento] = useState<(Record<string, unknown> & { completa: boolean; totalCentavos: string }) | null>(null)
   const [transicaoOrigemCard, setTransicaoOrigemCard] = useState(false)
   const [modoCancelamento, setModoCancelamento] = useState(false)
   const [produtoSgiOrigemCard, setProdutoSgiOrigemCard] = useState(false)
@@ -640,6 +645,10 @@ export function GestaoPedidosPersonalizados() {
    */
   function abrirTransicao(destinoForcado?: 'CANCELADO') {
     if (!detalhe) return
+    if (!destinoForcado && detalhe.fornecedor?.chave === 'decorisi' && detalhe.status === 'RASCUNHO') {
+      void abrirFechamentoDecorisi(detalhe)
+      return
+    }
     const estado = montarEstadoTransicao(detalhe)
     setTransicao(destinoForcado ? { ...estado, destino: destinoForcado, justificativa: '' } : estado)
     setNumeroLancamentoTransicao(detalhe.numeroLancamento ?? '')
@@ -662,6 +671,11 @@ export function GestaoPedidosPersonalizados() {
       setEditandoProdutos(false)
       setEditandoAdministrativo(false)
       setConflitoAdministrativo(false)
+      if (!destinoForcado && pedido.fornecedor?.chave === 'decorisi' && pedido.status === 'RASCUNHO') {
+        setTransicaoOrigemCard(false)
+        await abrirFechamentoDecorisi(pedido)
+        return
+      }
       const estado = montarEstadoTransicao(pedido)
       setTransicao(destinoForcado ? { ...estado, destino: destinoForcado, justificativa: '' } : estado)
       setNumeroLancamentoTransicao(pedido.numeroLancamento ?? '')
@@ -672,6 +686,41 @@ export function GestaoPedidosPersonalizados() {
       setModoCancelamento(false)
     } finally {
       setCarregandoDetalhe(false)
+    }
+  }
+
+  async function abrirFechamentoDecorisi(pedido: PedidoDetalhe) {
+    try {
+      const response = await fetch(`/api/pedidos-personalizados/pedidos/${pedido.id}/cotacao`, { cache: 'no-store' })
+      const body = await response.json() as { ok?: boolean; cotacao?: Record<string, unknown> & { completa?: boolean; totalCentavos?: string | null } }
+      if (!response.ok || body.ok !== true || !body.cotacao || body.cotacao.completa !== true || typeof body.cotacao.totalCentavos !== 'string') {
+        throw new Error('COTACAO_DECORISI_INCOMPLETA')
+      }
+      setCotacaoDecorisiFechamento(body.cotacao as Record<string, unknown> & { completa: boolean; totalCentavos: string })
+      setNumeroLancamentoDecorisi(pedido.numeroLancamento ?? '')
+      setFechandoDecorisi(true)
+    } catch {
+      toast.error('A cotação Decorisi está incompleta. Revise referências, medidas, anexos e preços antes de fechar a venda.')
+    }
+  }
+
+  async function confirmarFechamentoDecorisi() {
+    if (!detalhe || !cotacaoDecorisiFechamento || !/^\d{1,6}$/.test(numeroLancamentoDecorisi) || salvando) return
+    setSalvando(true)
+    try {
+      const response = await fetch(`/api/pedidos-personalizados/decorisi/pedidos/${detalhe.id}/fechar`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expectedVersion: detalhe.version, numeroLancamento: numeroLancamentoDecorisi, cotacaoConfirmada: cotacaoDecorisiFechamento }),
+      })
+      if (!response.ok) throw Object.assign(new Error('FECHAMENTO_DECORISI_FALHOU'), { status: response.status })
+      await recarregarDetalhe()
+      await carregarLista()
+      setFechandoDecorisi(false)
+      toast.success('Venda Decorisi fechada e preços congelados.')
+    } catch (error) {
+      toast.error(erroStatus(error) === 409 ? 'A cotação ou a versão mudou. Recarregue o pedido antes de fechar.' : 'Não foi possível fechar a venda Decorisi.')
+    } finally {
+      setSalvando(false)
     }
   }
 
@@ -867,6 +916,7 @@ export function GestaoPedidosPersonalizados() {
         </FilterFieldGroup>
 
         <FilterFieldGroup label="Classificação" icon={<SlidersHorizontal className="size-4 text-slate-400" aria-hidden="true" />}>
+          <Select value={filtros.fornecedor || 'TODOS'} onValueChange={(v) => setFiltros({ ...filtros, fornecedor: v === 'TODOS' ? '' : v as FiltrosGestao['fornecedor'] })}><SelectTrigger className="w-full" aria-label="Filtrar por fornecedor"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="TODOS">Todos os fornecedores</SelectItem><SelectItem value="moriah_tapetes">Moriah Tapetes</SelectItem><SelectItem value="decorisi">Decorisi</SelectItem><SelectItem value="lebebe_exclusive">Le Bébé Exclusive</SelectItem></SelectContent></Select>
           <Select value={filtros.unidade || 'TODAS'} onValueChange={(v) => setFiltros({ ...filtros, unidade: v === 'TODAS' ? '' : v as FiltrosGestao['unidade'] })}><SelectTrigger className="w-full" aria-label="Filtrar por unidade"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="TODAS">Todas as unidades</SelectItem>{opcoes?.unidades.map((u) => <SelectItem key={u.chave} value={u.chave}>{u.nome}</SelectItem>)}</SelectContent></Select>
           <Select value={filtros.status || 'TODOS'} onValueChange={(v) => setFiltros({ ...filtros, status: v === 'TODOS' ? '' : v as FiltrosGestao['status'] })}><SelectTrigger className="w-full" aria-label="Filtrar por status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="TODOS">Todos os status</SelectItem>{opcoes?.status?.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>
           <Select value={filtros.situacaoPrazo || 'TODOS'} onValueChange={(v) => setFiltros({ ...filtros, situacaoPrazo: v === 'TODOS' ? '' : v as FiltrosGestao['situacaoPrazo'] })}><SelectTrigger className="w-full" aria-label="Filtrar por situação do prazo"><SelectValue placeholder="Situação do prazo" /></SelectTrigger><SelectContent><SelectItem value="TODOS">Todos os prazos</SelectItem><SelectItem value="NO PRAZO">No prazo</SelectItem><SelectItem value="PRESTES A VENCER">Prestes a vencer</SelectItem><SelectItem value="ATRASADO">Atrasado</SelectItem></SelectContent></Select>
@@ -931,9 +981,10 @@ export function GestaoPedidosPersonalizados() {
                     <div><dt className="text-slate-500">Pedido ao fornecedor</dt><dd className="font-medium">{item.dataPedidoFornecedor ? dataIsoParaExibicao(item.dataPedidoFornecedor) : '—'}</dd></div>
                     {item.status === 'RECEBIDO' && item.recebidoEm && <div><dt className="text-slate-500">Recebido em</dt><dd className="font-medium">{formatarDataRecebimento(item.recebidoEm)}</dd></div>}
                     <div><dt className="text-slate-500">Comprador</dt><dd className="font-medium">{item.comprador ?? '—'}</dd></div>
-                    <div><dt className="text-slate-500">{item.fornecedor?.chave === 'lebebe_exclusive' ? 'Itens' : 'Tapetes'}</dt><dd className="font-medium">{item.fornecedor?.chave === 'lebebe_exclusive' ? item.quantidadeItens : item.quantidadeTapetes}</dd></div>
-                    {item.fornecedor?.chave !== 'lebebe_exclusive' && <div><dt className="text-slate-500">Tipo</dt><dd className="font-medium">{item.tiposTapetes.map((tipo) => TIPO_TAPETE_PARA_EXIBICAO[tipo]).join(' + ') || '—'}</dd></div>}
-                    <div><dt className="text-slate-500">Produtos</dt><dd className="font-medium">{item.fornecedor?.chave === 'lebebe_exclusive' ? item.referenciasProdutos.join(', ') || '—' : item.codigosProdutos.join(', ') || '—'}</dd></div>
+                    <div><dt className="text-slate-500">{item.fornecedor?.chave === 'lebebe_exclusive' ? 'Itens' : item.fornecedor?.chave === 'decorisi' ? 'Produtos' : 'Tapetes'}</dt><dd className="font-medium">{item.fornecedor?.chave === 'lebebe_exclusive' ? item.quantidadeItens : item.fornecedor?.chave === 'decorisi' ? item.quantidadeDecorisiItens : item.quantidadeTapetes}</dd></div>
+                    {item.fornecedor?.chave !== 'lebebe_exclusive' && item.fornecedor?.chave !== 'decorisi' && <div><dt className="text-slate-500">Tipo</dt><dd className="font-medium">{item.tiposTapetes.map((tipo) => TIPO_TAPETE_PARA_EXIBICAO[tipo]).join(' + ') || '—'}</dd></div>}
+                    <div><dt className="text-slate-500">Produtos</dt><dd className="font-medium">{item.fornecedor?.chave === 'lebebe_exclusive' ? item.referenciasProdutos.join(', ') || '—' : item.fornecedor?.chave === 'decorisi' ? item.referenciasDecorisi.join(', ') || '—' : item.codigosProdutos.join(', ') || '—'}</dd></div>
+                    {item.fornecedor?.chave === 'decorisi' && typeof item.valorTotalCentavos === 'number' && <div><dt className="text-slate-500">Total cotado</dt><dd className="font-semibold">{(item.valorTotalCentavos / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</dd></div>}
                     <div><dt className="text-slate-500">Cadastro</dt><dd className="font-medium">{formatarData(item.createdAt)}</dd></div>
                   </dl>
                   {item.fornecedor?.chave === 'lebebe_exclusive' && item.produtoSgi && (
@@ -1028,7 +1079,7 @@ export function GestaoPedidosPersonalizados() {
             description={
               editando ? 'Revise unidade, consultora, cliente, telefone e lançamento antes de salvar.'
                 : editandoProdutos ? 'Revise tapetes, cores, produtos e personalizações antes de salvar.'
-                  : 'Detalhes comerciais, administrativos, tapetes, cores e anexos.'
+                  : 'Detalhes comerciais, administrativos, produtos e anexos.'
             }
             className="bg-gradient-to-r from-sky-50 to-indigo-50"
           />
@@ -1174,6 +1225,27 @@ export function GestaoPedidosPersonalizados() {
                   <Button type="button" variant="secondary" disabled={formulario.tapetes.length >= 10} onClick={() => setFormulario(adicionarTapete(formulario, crypto.randomUUID()))}>Adicionar tapete</Button>
                   {errosProdutosEdicao.length > 0 && <Alert tone="danger" title="Revise os campos indicados"><ul className="list-disc space-y-1 pl-5">{errosProdutosEdicao.map((erro, indice) => <li key={`${erro.campo}-${erro.codigo}-${indice}`}>{erro.mensagem}</li>)}</ul></Alert>}
                 </div>
+              ) : detalhe.fornecedor?.chave === 'decorisi' ? (
+                <section className="space-y-4" aria-labelledby="decorisi-itens-titulo">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 id="decorisi-itens-titulo" className="flex items-center gap-2 font-semibold text-slate-900"><PackageCheck className="size-5 text-violet-700" />Produtos Decorisi</h3>
+                    {detalhe.cotacaoDecorisi?.totalCentavos && <p className="text-sm font-semibold">Total: {(Number(detalhe.cotacaoDecorisi.totalCentavos) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>}
+                  </div>
+                  {(detalhe.decorisiItens ?? []).map((item) => (
+                    <Card key={item.id} className="p-4 sm:p-5">
+                      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
+                        <div><h4 className="font-bold text-slate-950">Produto {item.ordem} · {item.tipo === 'PAPEL' ? 'Papel' : 'Painel'}</h4><p className="mt-1 text-xs font-bold uppercase tracking-wide text-sky-700">{item.classificacao === 'CATALOGO' ? 'Catálogo' : 'Personalizado'} · {item.referencia ?? 'Sem referência'}</p><p className="mt-1 text-sm text-slate-600">{item.descricao || 'Sem descrição adicional'}</p></div>
+                        <Badge tone="neutral">{item.layoutAlteracoes} alteração(ões) de layout</Badge>
+                      </div>
+                      <div className="mt-4 overflow-x-auto">
+                        <table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-b text-xs uppercase tracking-wide text-slate-500"><th className="px-2 py-2">Ambiente</th><th className="px-2 py-2">Largura</th><th className="px-2 py-2">Altura</th><th className="px-2 py-2">Quantidade</th></tr></thead><tbody>{item.medidas.map((medida) => <tr key={medida.id} className="border-b border-slate-100"><td className="px-2 py-2">{medida.ambiente || '—'}</td><td className="px-2 py-2">{medida.larguraCm !== null ? `${(medida.larguraCm / 100).toFixed(2)} m` : '—'}</td><td className="px-2 py-2">{medida.alturaCm !== null ? `${(medida.alturaCm / 100).toFixed(2)} m` : '—'}</td><td className="px-2 py-2">{item.snapshotComercial && typeof item.snapshotComercial.quantidade === 'string' ? item.snapshotComercial.quantidade : '—'}</td></tr>)}</tbody></table>
+                      </div>
+                      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">Observações</dt><dd className="whitespace-pre-wrap break-words">{item.observacoes || '—'}</dd></div><div><dt className="text-slate-500">Subtotal</dt><dd className="font-semibold">{item.snapshotComercial && typeof item.snapshotComercial.subtotalCentavos === 'string' ? (Number(item.snapshotComercial.subtotalCentavos) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Cotação atual não congelada'}</dd></div></dl>
+                      <div className="mt-5 border-t border-slate-200 pt-4"><AnexosGestaoDecorisi pedido={detalhe} item={item} onAtualizado={async () => { await recarregarDetalhe(); await carregarLista() }} /></div>
+                    </Card>
+                  ))}
+                  {(detalhe.decorisiItens ?? []).length === 0 && <EmptyState title="Nenhum produto encontrado" description="Este pedido Decorisi ainda não possui itens persistidos." />}
+                </section>
               ) : detalhe.fornecedor?.chave === 'lebebe_exclusive' ? (
                 <section className="space-y-4" aria-labelledby="produtos-exclusive-titulo">
                   <div className="flex flex-wrap items-center justify-between gap-3"><h3 id="produtos-exclusive-titulo" className="flex items-center gap-2 font-semibold text-slate-900"><PackageCheck className="size-5 text-violet-700" />Produtos do pedido</h3><p className="text-sm font-semibold">Venda: {detalhe.itens.reduce((soma, item) => soma + item.totalVenda, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} · Custo: {detalhe.itens.reduce((soma, item) => soma + item.totalCusto, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p></div>
@@ -1348,11 +1420,17 @@ export function GestaoPedidosPersonalizados() {
                             : <><ShoppingBag />Criar produto no SGI</>}
                       </Button>
                     )}
-                  {permiteEdicaoProdutos(detalhe.status) && (
+                  {detalhe.fornecedor?.chave !== 'decorisi' && permiteEdicaoProdutos(detalhe.status) && (
                     <Button type="button" variant="secondary" onClick={() => setEditandoProdutos(true)}><Pencil />Editar produtos</Button>
                   )}
-                  <Button type="button" disabled={!permiteEdicaoComercial(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')} onClick={() => setEditando(true)}><Pencil />Editar dados comerciais</Button>
-                  <Button type="button" variant="secondary" disabled={!permiteEdicaoAdministrativa(detalhe.status)} onClick={() => { setAdministrativo(detalheParaAdministrativo(detalhe)); setErrosAdministrativos({}); setConflitoAdministrativo(false); setEditandoAdministrativo(true) }}><Pencil />Editar dados administrativos</Button>
+                  {detalhe.fornecedor?.chave === 'decorisi' ? (
+                    detalhe.status === 'RASCUNHO' && <Button asChild variant="secondary"><Link href={`/pedidos-personalizados/novo?decorisiPedido=${detalhe.id}`}><Pencil />Retomar rascunho</Link></Button>
+                  ) : (
+                    <>
+                      <Button type="button" disabled={!permiteEdicaoComercial(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')} onClick={() => setEditando(true)}><Pencil />Editar dados comerciais</Button>
+                      <Button type="button" variant="secondary" disabled={!permiteEdicaoAdministrativa(detalhe.status)} onClick={() => { setAdministrativo(detalheParaAdministrativo(detalhe)); setErrosAdministrativos({}); setConflitoAdministrativo(false); setEditandoAdministrativo(true) }}><Pencil />Editar dados administrativos</Button>
+                    </>
+                  )}
                   <BotaoCancelarPedido status={detalhe.status} fornecedor={detalhe.fornecedor} onClick={() => abrirTransicao('CANCELADO')} />
                   <BotaoAvancoStatus status={detalhe.status} fornecedor={detalhe.fornecedor} onClick={() => abrirTransicao()} className="font-semibold shadow-sm" podeVer={podeVerAvancoStatus(detalhe.status)} />
                 </>
@@ -1360,6 +1438,18 @@ export function GestaoPedidosPersonalizados() {
               <Button type="button" variant="ghost" disabled={salvando} onClick={() => void recarregarDetalhe()}><RefreshCw />Recarregar</Button>
             </DialogFooter>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={fechandoDecorisi} onOpenChange={(aberto) => { if (!salvando) setFechandoDecorisi(aberto) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader title="Fechar venda Decorisi" description="A confirmação congela os preços, quantidades, referências e versão do cálculo." />
+          <DialogBody className="space-y-4">
+            <Alert tone="warning" title="Confirme antes de fechar">Depois do fechamento, a composição e os preços comerciais não poderão ser alterados.</Alert>
+            <div className="rounded-lg border bg-slate-50 p-4 text-sm"><p className="text-slate-500">Total autoritativo</p><p className="mt-1 text-2xl font-bold">{cotacaoDecorisiFechamento ? (Number(cotacaoDecorisiFechamento.totalCentavos) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}</p></div>
+            <FormField id="decorisi-numero-lancamento" label="Número de lançamento" required>{(f) => <Input {...f} inputMode="numeric" maxLength={6} value={numeroLancamentoDecorisi} onChange={(e) => setNumeroLancamentoDecorisi(e.target.value.replace(/\D/g, '').slice(0, 6))} />}</FormField>
+          </DialogBody>
+          <DialogFooter><Button type="button" variant="secondary" disabled={salvando} onClick={() => setFechandoDecorisi(false)}>Cancelar</Button><Button type="button" loading={salvando} disabled={!/^\d{1,6}$/.test(numeroLancamentoDecorisi)} onClick={() => void confirmarFechamentoDecorisi()}><CheckCircle2 />Confirmar fechamento</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

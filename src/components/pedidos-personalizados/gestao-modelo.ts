@@ -11,6 +11,7 @@ import type { AnexoFormulario, EstadoNovoPedido, TapeteFormulario } from './novo
 import { ehErroHttpNovoPedido } from './novo-pedido-modelo'
 
 export type FiltrosGestao = {
+  fornecedor: '' | 'moriah_tapetes' | 'decorisi' | 'lebebe_exclusive'
   cliente: string
   consultora: string
   numeroLancamento: string
@@ -47,6 +48,9 @@ export type ItemPedidoGestao = {
   tiposTapetes: TipoTapeteMoriah[]
   quantidadeItens: number
   referenciasProdutos: string[]
+  quantidadeDecorisiItens: number
+  referenciasDecorisi: string[]
+  valorTotalCentavos: number | null
   situacaoPrazo: SituacaoPrazoPedido | null
   recebidoEm: string | null
   produtoSgi: ProdutoSgiDetalhe | null
@@ -86,6 +90,37 @@ export type TapeteDetalhe = {
   anexos: AnexoFormulario[]
 }
 
+export type DecorisiAnexoDetalhe = {
+  id: string
+  slot: number
+  nomeOriginal: string
+  mime: string
+  tamanho: number
+  createdAt: string
+}
+
+export type DecorisiMedidaDetalhe = {
+  id: string
+  ordem: number
+  ambiente: string | null
+  larguraCm: number | null
+  alturaCm: number | null
+}
+
+export type DecorisiItemDetalhe = {
+  id: string
+  ordem: number
+  tipo: 'PAPEL' | 'PAINEL'
+  classificacao: 'CATALOGO' | 'PERSONALIZADO'
+  referencia: string | null
+  descricao: string | null
+  observacoes: string | null
+  layoutAlteracoes: number
+  snapshotComercial: Record<string, unknown> | null
+  medidas: DecorisiMedidaDetalhe[]
+  anexos: DecorisiAnexoDetalhe[]
+}
+
 export type HistoricoStatusDetalhe = {
   id: string
   statusAnterior: StatusPedidoPersonalizado
@@ -117,6 +152,8 @@ export type PedidoDetalhe = {
   produtoSgi: ProdutoSgiDetalhe | null
   tapetes: TapeteDetalhe[]
   itens: ProdutoExclusiveDetalhe[]
+  decorisiItens?: DecorisiItemDetalhe[]
+  cotacaoDecorisi?: { completa: boolean; totalCentavos: string | null; itens: unknown[] } | null
   historico: HistoricoStatusDetalhe[]
   observacoes: ObservacaoDetalhe[]
 }
@@ -259,7 +296,7 @@ export type EstadoAdministrativo = {
 export type ErrosAdministrativos = Partial<Record<keyof EstadoAdministrativo, string>>
 
 export const FILTROS_VAZIOS: FiltrosGestao = {
-  cliente: '', consultora: '', numeroLancamento: '', status: '', unidade: '', dataInicial: '', dataFinal: '',
+  fornecedor: '', cliente: '', consultora: '', numeroLancamento: '', status: '', unidade: '', dataInicial: '', dataFinal: '',
   dataPedidoFornecedorInicial: '', dataPedidoFornecedorFinal: '', dataEntregaInicial: '', dataEntregaFinal: '',
   situacaoPrazo: '', tipoTapete: '',
 }
@@ -417,6 +454,20 @@ export function detalheParaAdministrativo(pedido: PedidoDetalhe): EstadoAdminist
  * necessários para a consultora colar nas observações da venda.
  */
 function montarResumoDetalhe(pedido: PedidoDetalhe, modo: 'completo' | 'rascunho') {
+  if (pedido.fornecedor?.chave === 'decorisi') {
+    const linhas = ['FORNECEDOR: DECORISI', `UNIDADE: ${pedido.unidade.nome}`, `CONSULTORA: ${pedido.consultora}`, `CLIENTE: ${pedido.cliente}`,
+      ...(pedido.numeroLancamento ? [`LANÇAMENTO: ${pedido.numeroLancamento}`] : [])]
+    for (const item of pedido.decorisiItens ?? []) {
+      linhas.push('', `PRODUTO ${item.ordem}: ${item.tipo === 'PAPEL' ? 'PAPEL' : 'PAINEL'} — ${item.classificacao === 'CATALOGO' ? 'CATÁLOGO' : 'PERSONALIZADO'}`)
+      if (item.referencia) linhas.push(`REFERÊNCIA: ${item.referencia}`)
+      if (item.descricao) linhas.push(`DESCRIÇÃO: ${item.descricao}`)
+      for (const medida of item.medidas) linhas.push(`MEDIDA ${medida.ordem}: ${medida.larguraCm ?? '—'} × ${medida.alturaCm ?? '—'} cm${medida.ambiente ? ` (${medida.ambiente})` : ''}`)
+      if (item.snapshotComercial?.quantidade) linhas.push(`QUANTIDADE: ${item.snapshotComercial.quantidade} ${item.tipo === 'PAPEL' ? 'rolo(s)' : 'm²'}`)
+      if (modo === 'completo' && typeof item.snapshotComercial?.subtotalCentavos === 'string') linhas.push(`SUBTOTAL: ${(Number(item.snapshotComercial.subtotalCentavos) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`)
+      if (item.observacoes) linhas.push(`OBSERVAÇÕES: ${item.observacoes}`)
+    }
+    return linhas.join('\n')
+  }
   if (pedido.fornecedor?.chave === 'lebebe_exclusive') {
     const linhas = [
       'FORNECEDOR: LEBEBE EXCLUSIVE',

@@ -84,6 +84,33 @@ export async function transicionarStatus(
     return jsonErro('TRANSICAO_STATUS_INVALIDA', 'Esta transicao de status nao e permitida.', 422)
   }
 
+  if (fornecedor === 'decorisi') {
+    if (atual.data.status === 'RASCUNHO' && validacao.dados.statusDestino === 'VENDA FECHADA') {
+      return jsonErro('FECHAMENTO_DECORISI_REQUER_COTACAO', 'Feche a venda pela cotação autoritativa da Decorisi.', 422)
+    }
+    const resultadoDecorisi = await repo.transicionarStatusDecorisi({
+      p_pedido_id: pedidoId,
+      p_expected_version: validacao.dados.expectedVersion,
+      p_usuario_id: acesso.contexto.allowedUser.id,
+      p_status_destino: validacao.dados.statusDestino,
+      p_numero_pedido_compra: validacao.dados.numeroPedidoCompra,
+      p_data_pedido_fornecedor: validacao.dados.dataPedidoFornecedor,
+      p_comprador: validacao.dados.comprador,
+      p_data_entrega: validacao.dados.dataEntrega,
+      p_data_recebimento: validacao.dados.dataRecebimento,
+      p_justificativa: validacao.dados.justificativa,
+    })
+    if (resultadoDecorisi.error) return erroTransicao(resultadoDecorisi.error)
+    registrarResultado(log, 'sucesso', 'STATUS_DECORISI_ALTERADO')
+    return NextResponse.json({
+      ok: true,
+      pedidoId,
+      eventoId: resultadoDecorisi.data.evento_id,
+      status: resultadoDecorisi.data.status,
+      version: resultadoDecorisi.data.version,
+    })
+  }
+
   const numeroPedidoCompra = validacao.dados.numeroPedidoCompra ?? atual.data.numero_pedido_compra
   const dataPedidoFornecedor = validacao.dados.dataPedidoFornecedor ?? atual.data.data_pedido_fornecedor
   const comprador = validacao.dados.comprador ?? atual.data.comprador

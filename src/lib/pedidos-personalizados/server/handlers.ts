@@ -188,6 +188,9 @@ function serializarItemListagem(valor: unknown) {
     tiposTapetes: row.tipos_tapetes,
     quantidadeItens: row.quantidade_itens,
     referenciasProdutos: row.referencias_produtos,
+    quantidadeDecorisiItens: row.quantidade_decorisi_itens,
+    referenciasDecorisi: row.referencias_decorisi,
+    valorTotalCentavos: row.valor_total_centavos,
     situacaoPrazo: classificarSituacaoPrazo(
       typeof row.data_entrega === 'string' ? row.data_entrega : null,
       row.status as import('../tipos').StatusPedidoPersonalizado
@@ -203,6 +206,8 @@ function serializarDetalhe(valor: {
   pedido: unknown
   tapetes: unknown[]
   itens: unknown[]
+  decorisiItens?: unknown[]
+  cotacaoDecorisi?: unknown
   historico: unknown[]
   observacoes?: unknown[]
   produtoSgi: IntegracaoProdutoSgiRow | null
@@ -280,6 +285,37 @@ function serializarDetalhe(valor: {
         totalCusto: Number(produto.total_custo),
       }
     }),
+    decorisiItens: (valor.decorisiItens ?? []).map((item) => {
+      const decorisi = item as Record<string, unknown>
+      const referencia = decorisi.referencia as { referencia?: string } | null
+      return {
+        id: decorisi.id,
+        ordem: decorisi.ordem,
+        tipo: decorisi.tipo,
+        classificacao: decorisi.classificacao,
+        referencia: referencia?.referencia ?? decorisi.referencia_pf ?? null,
+        descricao: decorisi.descricao,
+        observacoes: decorisi.observacoes,
+        layoutAlteracoes: decorisi.layout_alteracoes,
+        snapshotComercial: decorisi.snapshot_comercial,
+        medidas: ((decorisi.medidas as Array<Record<string, unknown>> | undefined) ?? []).map((medida) => ({
+          id: medida.id,
+          ordem: medida.ordem,
+          ambiente: medida.ambiente,
+          larguraCm: medida.largura_cm,
+          alturaCm: medida.altura_cm,
+        })),
+        anexos: ((decorisi.anexos as Array<Record<string, unknown>> | undefined) ?? []).map((anexo) => ({
+          id: anexo.id,
+          slot: anexo.slot,
+          nomeOriginal: anexo.nome_original,
+          mime: anexo.mime_type,
+          tamanho: anexo.tamanho_bytes,
+          createdAt: anexo.created_at,
+        })),
+      }
+    }),
+    cotacaoDecorisi: valor.cotacaoDecorisi,
     historico: (valor.historico ?? []).map((item) => {
       const evento = item as Record<string, unknown>
       const usuario = evento.usuario as Record<string, unknown> | null
@@ -655,7 +691,7 @@ export async function obterDetalhePedido(
   }
 
   const repo = deps.criarRepositorio(acesso.contexto)
-  const detalhe = await repo.carregarDetalhe(pedidoId, acesso.contexto.unidades.map((item) => item.id))
+  const detalhe = await repo.carregarDetalhe(pedidoId, acesso.contexto.unidades.map((item) => item.id), acesso.contexto.allowedUser.id)
   if (detalhe.error) return falhaBanco(log, detalhe.error)
   if (!detalhe.data) {
     registrarResultado(log, 'erro', 'PEDIDO_NAO_ENCONTRADO')

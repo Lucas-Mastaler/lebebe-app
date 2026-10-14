@@ -81,7 +81,7 @@ export type PedidoEscopoRow = {
   data_pedido_fornecedor: string | null
   numero_pedido_compra: string | null
   comprador: string | null
-  fornecedor: { chave: 'moriah_tapetes' | 'lebebe_exclusive' } | null
+  fornecedor: { chave: 'moriah_tapetes' | 'lebebe_exclusive' | 'decorisi' } | null
 }
 
 export type TapeteCriadoRow = {
@@ -421,6 +421,24 @@ export class RepositorioPedidosPersonalizados {
     return retorno ? { data: retorno, error: null } : { data: null, error: { message: 'RETORNO_RPC_INVALIDO' } }
   }
 
+  async transicionarStatusDecorisi(parametros: {
+    p_pedido_id: string
+    p_expected_version: number
+    p_usuario_id: string
+    p_status_destino: string
+    p_numero_pedido_compra: string | null
+    p_data_pedido_fornecedor: string | null
+    p_comprador: string | null
+    p_data_entrega: string | null
+    p_data_recebimento: string | null
+    p_justificativa: string | null
+  }): Promise<ResultadoBanco<ResultadoTransicaoStatusRpc>> {
+    const { data, error } = await this.supabase.rpc('transicionar_pedido_personalizado_decorisi', parametros)
+    if (error) return { data: null, error }
+    const retorno = (Array.isArray(data) ? data[0] : data) as ResultadoTransicaoStatusRpc | null
+    return retorno ? { data: retorno, error: null } : { data: null, error: { message: 'RETORNO_RPC_INVALIDO' } }
+  }
+
   async buscarPedidoNoEscopo(
     pedidoId: string,
     unidadeIds: readonly string[]
@@ -532,10 +550,12 @@ export class RepositorioPedidosPersonalizados {
         id, created_at, updated_at, unidade_id, consultora, cliente, telefone_normalizado,
         numero_lancamento, data_entrega, data_pedido_fornecedor,
         numero_pedido_compra, comprador, status, version,
-        fornecedor:pedidos_personalizados_fornecedores!pedidos_personalizados_pedidos_fornecedor_id_fkey(chave, nome),
+        fornecedor:pedidos_personalizados_fornecedores!inner(chave, nome),
         unidade:app_unidades!pedidos_personalizados_pedidos_unidade_id_fkey(chave, nome)
       `, { count: 'exact' })
       .in('unidade_id', unidadeIds)
+
+    if (filtros.fornecedor) query = query.eq('fornecedor.chave', filtros.fornecedor)
 
     if (filtros.unidade) {
       const unidade = unidades.find((item) => item.chave === filtros.unidade)
@@ -580,10 +600,12 @@ export class RepositorioPedidosPersonalizados {
     const pedidoIds = rows.map((row) => row.id)
     const resumoPorPedido = new Map<string, { quantidade: number; codigos: Set<string>; tipos: Set<string> }>()
     const resumoExclusivePorPedido = new Map<string, { quantidade: number; referencias: Set<string> }>()
+    const resumoDecorisiPorPedido = new Map<string, { quantidade: number; referencias: Set<string>; valorTotalCentavos: number | null }>()
     const recebidoEmPorPedido = new Map<string, string>()
     const produtoSgiPorPedido = new Map<string, IntegracaoProdutoSgiRow>()
     if (pedidoIds.length > 0) {
-      const [tapetesResultado, itensExclusiveResultado, historicoResultado, produtoSgiResultado] = await Promise.all([
+      const temDecorisi = rows.some((row) => (row.fornecedor as { chave?: string } | null)?.chave === 'decorisi')
+      const [tapetesResultado, itensExclusiveResultado, itensDecorisiResultado, historicoResultado, produtoSgiResultado] = await Promise.all([
         this.supabase
           .from('pedidos_personalizados_moriah_tapetes')
           .select('pedido_id, tipo, produto:pedidos_personalizados_produtos!pedidos_personalizados_moriah_tapetes_produto_id_fkey(codigo)')
@@ -592,6 +614,12 @@ export class RepositorioPedidosPersonalizados {
           .from('pedidos_personalizados_lebebe_exclusive_itens')
           .select('pedido_id, quantidade, referencia_snapshot')
           .in('pedido_id', pedidoIds),
+        temDecorisi
+          ? this.supabase
+            .from('pedidos_personalizados_decorisi_itens')
+            .select('pedido_id, tipo, classificacao, referencia_db_id, referencia_pf, snapshot_comercial, referencia:pedidos_personalizados_decorisi_referencias!pedidos_personalizados_decorisi_itens_referencia_db_id_fkey(referencia)')
+            .in('pedido_id', pedidoIds)
+          : Promise.resolve({ data: [], error: null }),
         this.supabase
           .from('pedidos_personalizados_status_historico')
           .select('pedido_id, data_recebimento, created_at')
@@ -611,6 +639,7 @@ export class RepositorioPedidosPersonalizados {
       ])
       if (tapetesResultado.error) return { data: null, error: tapetesResultado.error }
       if (itensExclusiveResultado.error) return { data: null, error: itensExclusiveResultado.error }
+      if (itensDecorisiResultado.error) return { data: null, error: itensDecorisiResultado.error }
       if (historicoResultado.error) return { data: null, error: historicoResultado.error }
       if (produtoSgiResultado.error) return { data: null, error: produtoSgiResultado.error }
       const tapetesPagina = tapetesResultado.data
@@ -632,6 +661,27 @@ export class RepositorioPedidosPersonalizados {
         resumo.referencias.add(item.referencia_snapshot)
         resumoExclusivePorPedido.set(item.pedido_id, resumo)
       }
+      for (const item of (itensDecorisiResultado.data ?? []) as unknown as Array<{
+        pedido_id: string
+        tipo: string
+        classificacao: string
+        referencia_pf: string | null
+        snapshot_comercial: { subtotalCentavos?: string | number } | null
+        referencia: { referencia: string } | null
+      }>) {
+        const resumo = resumoDecorisiPorPedido.get(item.pedido_id)
+          ?? { quantidade: 0, referencias: new Set<string>(), valorTotalCentavos: null }
+        resumo.quantidade += 1
+        const referencia = item.referencia?.referencia ?? item.referencia_pf
+        if (referencia) resumo.referencias.add(referencia)
+        const subtotal = item.snapshot_comercial?.subtotalCentavos
+        if (subtotal !== undefined && Number.isFinite(Number(subtotal))) {
+          resumo.valorTotalCentavos = (resumo.valorTotalCentavos ?? 0) + Math.round(Number(subtotal))
+        } else if (item.snapshot_comercial === null) {
+          resumo.valorTotalCentavos = null
+        }
+        resumoDecorisiPorPedido.set(item.pedido_id, resumo)
+      }
       for (const evento of (historicoResultado.data ?? []) as Array<{ pedido_id: string; data_recebimento: string | null; created_at: string }>) {
         if (!recebidoEmPorPedido.has(evento.pedido_id)) {
           recebidoEmPorPedido.set(evento.pedido_id, evento.data_recebimento ?? dataOperacionalBrasil(new Date(evento.created_at)))
@@ -651,6 +701,9 @@ export class RepositorioPedidosPersonalizados {
           tipos_tapetes: Array.from(resumoPorPedido.get(row.id)?.tipos ?? []).sort(),
           quantidade_itens: resumoExclusivePorPedido.get(row.id)?.quantidade ?? 0,
           referencias_produtos: Array.from(resumoExclusivePorPedido.get(row.id)?.referencias ?? []).sort(),
+          quantidade_decorisi_itens: resumoDecorisiPorPedido.get(row.id)?.quantidade ?? 0,
+          referencias_decorisi: Array.from(resumoDecorisiPorPedido.get(row.id)?.referencias ?? []).sort(),
+          valor_total_centavos: resumoDecorisiPorPedido.get(row.id)?.valorTotalCentavos ?? null,
           recebido_em: recebidoEmPorPedido.get(row.id) ?? null,
           produto_sgi: produtoSgiPorPedido.get(row.id) ?? null,
         })),
@@ -727,9 +780,10 @@ export class RepositorioPedidosPersonalizados {
       }
       let query = this.supabase
         .from('pedidos_personalizados_pedidos')
-        .select('id', { count: 'exact', head: true })
+        .select('id, fornecedor:pedidos_personalizados_fornecedores!inner(chave)', { count: 'exact', head: true })
         .in('unidade_id', unidadeIdFiltrado ? [unidadeIdFiltrado] : unidadeIds)
         .eq('status', status)
+      if (filtros.fornecedor) query = query.eq('fornecedor.chave', filtros.fornecedor)
       if (filtros.cliente) query = query.ilike('cliente', `%${escaparTermoIlike(filtros.cliente)}%`)
       if (filtros.consultora) query = query.ilike('consultora', `%${escaparTermoIlike(filtros.consultora)}%`)
       if (filtros.numeroLancamento) query = query.eq('numero_lancamento', filtros.numeroLancamento)
@@ -759,8 +813,9 @@ export class RepositorioPedidosPersonalizados {
 
   async carregarDetalhe(
     pedidoId: string,
-    unidadeIds: readonly string[]
-  ): Promise<ResultadoBanco<{ pedido: unknown; tapetes: unknown[]; itens: unknown[]; historico: unknown[]; observacoes: unknown[]; produtoSgi: IntegracaoProdutoSgiRow | null } | null>> {
+    unidadeIds: readonly string[],
+    usuarioId?: string
+  ): Promise<ResultadoBanco<{ pedido: unknown; tapetes: unknown[]; itens: unknown[]; decorisiItens: unknown[]; cotacaoDecorisi: unknown; historico: unknown[]; observacoes: unknown[]; produtoSgi: IntegracaoProdutoSgiRow | null } | null>> {
     if (unidadeIds.length === 0) return { data: null, error: null }
     const { data: pedido, error: pedidoError } = await this.supabase
       .from('pedidos_personalizados_pedidos')
@@ -799,6 +854,30 @@ export class RepositorioPedidosPersonalizados {
       .eq('pedido_id', pedidoId)
       .order('ordem', { ascending: true })
     if (itensError) return { data: null, error: itensError }
+
+    const fornecedorPedido = (pedido.fornecedor as { chave?: string } | null)?.chave
+    const { data: decorisiItens, error: decorisiItensError } = fornecedorPedido === 'decorisi'
+      ? await this.supabase
+        .from('pedidos_personalizados_decorisi_itens')
+        .select(`
+          id, ordem, tipo, classificacao, referencia_pf, descricao, observacoes,
+          layout_alteracoes, snapshot_comercial,
+          referencia:pedidos_personalizados_decorisi_referencias!pedidos_personalizados_decorisi_itens_referencia_db_id_fkey(referencia),
+          medidas:pedidos_personalizados_decorisi_medidas(id, ordem, ambiente, largura_cm, altura_cm),
+          anexos:pedidos_personalizados_decorisi_anexos(id, slot, nome_original, mime_type, tamanho_bytes, created_at)
+        `)
+        .eq('pedido_id', pedidoId)
+        .order('ordem', { ascending: true })
+      : { data: [], error: null }
+    if (decorisiItensError) return { data: null, error: decorisiItensError }
+
+    let cotacaoDecorisi: unknown = null
+    if (fornecedorPedido === 'decorisi' && usuarioId) {
+      const cotacao = await this.supabase.rpc('cotar_pedido_personalizado_decorisi', { p_pedido_id: pedidoId, p_usuario_id: usuarioId })
+      // A RPC exige escopo; a gestão já comprovou a unidade acima. Para não expor erro
+      // técnico em pedidos antigos, a cotação fica ausente quando o pedido não está cotável.
+      if (!cotacao.error) cotacaoDecorisi = cotacao.data
+    }
 
     const { data: produtoSgi, error: produtoSgiError } = await this.supabase
       .from('pedidos_personalizados_lebebe_exclusive_sgi')
@@ -882,6 +961,8 @@ export class RepositorioPedidosPersonalizados {
             })),
         })),
         itens: itens ?? [],
+        decorisiItens: decorisiItens ?? [],
+        cotacaoDecorisi,
         historico: historico ?? [],
         observacoes: observacoes ?? [],
         produtoSgi: produtoSgi as IntegracaoProdutoSgiRow | null,

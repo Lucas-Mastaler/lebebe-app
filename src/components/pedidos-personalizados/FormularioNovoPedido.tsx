@@ -32,6 +32,8 @@ import { AnexosTapete } from './AnexosTapete'
 import { AnexosIniciaisTapete } from './AnexosIniciaisTapete'
 import { PreviaMensagem } from './PreviaMensagem'
 import { AvisoPedidoSalvoFixo } from './AvisoPedidoSalvoFixo'
+import { FormularioDecorisi } from './FormularioDecorisi'
+import { apiFormularioDecorisi, errosFormularioDecorisi, type OpcoesFormularioDecorisi, type IdentificacaoFormularioDecorisi } from '@/lib/pedidos-personalizados/decorisi/formulario'
 import { FormularioLebebeExclusive } from './FormularioLebebeExclusive'
 import { BarraResumoPedidoPersonalizado } from './BarraResumoPedidoPersonalizado'
 import {
@@ -70,7 +72,7 @@ type OperacaoAnexo = {
   tipo: 'upload' | 'substituicao' | 'remocao' | 'abertura'
 }
 
-type FornecedorPedido = 'moriah_tapetes' | 'lebebe_exclusive'
+type FornecedorPedido = 'moriah_tapetes' | 'lebebe_exclusive' | 'decorisi'
 type DadosIdentificacao = Pick<EstadoNovoPedido, 'unidade' | 'numeroLancamento' | 'consultora' | 'cliente' | 'telefone'>
 
 function validarIdentificacaoLebebeExclusive(dados: DadosIdentificacao) {
@@ -100,7 +102,9 @@ function IdentificacaoPedido({
   onTocar,
   onColarNumeroLancamento,
   onColarTelefone,
+  mostrarLancamento = true,
 }: {
+  mostrarLancamento?: boolean
   opcoes: OpcoesNovoPedido
   dados: DadosIdentificacao
   bloqueado: boolean
@@ -125,9 +129,9 @@ function IdentificacaoPedido({
           <FormField id="consultora" label="Consultora" required error={mensagens('consultora')[0]}>
             {(f) => <Input {...f} value={dados.consultora} onChange={(event) => onChange({ ...dados, consultora: event.target.value })} onBlur={() => onTocar('consultora')} maxLength={20} disabled={bloqueado} className="h-11" />}
           </FormField>
-          <FormField id="numero-lancamento" label="Número de lançamento" error={mensagens('numeroLancamento')[0]}>
+          {mostrarLancamento && <FormField id="numero-lancamento" label="Número de lançamento" error={mensagens('numeroLancamento')[0]}>
             {(f) => <Input {...f} value={dados.numeroLancamento} onChange={(event) => onChange({ ...dados, numeroLancamento: event.target.value })} onPaste={onColarNumeroLancamento} onBlur={() => onTocar('numeroLancamento')} inputMode="numeric" pattern="[0-9]*" maxLength={6} placeholder="Opcional" disabled={bloqueado} className="h-11" />}
-          </FormField>
+          </FormField>}
           <FormField id="cliente" label="Cliente" required error={mensagens('cliente')[0]}>
             {(f) => <Input {...f} value={dados.cliente} onChange={(event) => onChange({ ...dados, cliente: event.target.value })} onBlur={() => onTocar('cliente')} maxLength={40} disabled={bloqueado} className="h-11" />}
           </FormField>
@@ -143,16 +147,17 @@ function IdentificacaoPedido({
 const OPCOES_FORNECEDOR: ReadonlyArray<{ chave: FornecedorPedido; nome: string; descricao: string; Icone: typeof Sparkles }> = [
   { chave: 'moriah_tapetes', nome: 'Moriah Tapetes', descricao: 'Tapetes personalizados', Icone: Ruler },
   { chave: 'lebebe_exclusive', nome: 'Lebebe Exclusive', descricao: 'Produtos de catálogo', Icone: Package },
+  { chave: 'decorisi', nome: 'Decorisi', descricao: 'Papéis de parede e painéis', Icone: Ruler },
 ]
 
-function EscolhaFornecedor({ fornecedorSelecionado, bloqueado, onEscolher }: { fornecedorSelecionado: FornecedorPedido | null; bloqueado: boolean; onEscolher: (fornecedor: FornecedorPedido) => void }) {
+function EscolhaFornecedor({ fornecedorSelecionado, bloqueado, onEscolher, decorisiDisponivel }: { decorisiDisponivel: boolean; fornecedorSelecionado: FornecedorPedido | null; bloqueado: boolean; onEscolher: (fornecedor: FornecedorPedido) => void }) {
   return (
     <Card>
       <CardContent>
         <h2 id="titulo-fornecedor" className="text-lg font-bold text-slate-900">Escolha o fornecedor</h2>
         {fornecedorSelecionado === null && <p className="mt-1 text-sm text-slate-500">Selecione um fornecedor para continuar o preenchimento do pedido.</p>}
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {OPCOES_FORNECEDOR.map(({ chave, nome, descricao, Icone }) => {
+          {OPCOES_FORNECEDOR.filter((f) => f.chave !== 'decorisi' || decorisiDisponivel).map(({ chave, nome, descricao, Icone }) => {
             const ativo = fornecedorSelecionado === chave
             return (
               <Button
@@ -180,6 +185,9 @@ function EscolhaFornecedor({ fornecedorSelecionado, bloqueado, onEscolher }: { f
 }
 
 export default function FormularioNovoPedido() {
+  const [opcoesDecorisi, setOpcoesDecorisi] = useState<OpcoesFormularioDecorisi | null>(null)
+  const [errosDecorisi, setErrosDecorisi] = useState<Record<string, string>>({})
+  const mudarIdentificacaoDecorisi = useCallback((dados: IdentificacaoFormularioDecorisi) => setEstado((atual) => ({ ...atual, ...dados, unidade: dados.unidade as EstadoNovoPedido['unidade'] })), [])
   const [opcoes, setOpcoes] = useState<OpcoesNovoPedido | null>(null)
   const [fornecedorSelecionado, setFornecedorSelecionado] = useState<FornecedorPedido | null>(null)
   const [trocaFornecedorPendente, setTrocaFornecedorPendente] = useState<FornecedorPedido | null>(null)
@@ -223,6 +231,15 @@ export default function FormularioNovoPedido() {
     try {
       const dados = await carregarOpcoesNovoPedido()
       setOpcoes(dados)
+      try {
+        const decorisi = await apiFormularioDecorisi<OpcoesFormularioDecorisi>('/api/pedidos-personalizados/decorisi/opcoes')
+        setOpcoesDecorisi(decorisi)
+        if (new URL(window.location.href).searchParams.has('decorisiPedido')) setFornecedorSelecionado('decorisi')
+      } catch (erroDecorisi) {
+        // Gate fechado não impede os formulários existentes.
+        setOpcoesDecorisi(null)
+        if (new URL(window.location.href).searchParams.has('decorisiPedido')) setErroCarregamento(erroDecorisi instanceof Error ? erroDecorisi.message : 'Decorisi indisponível.')
+      }
     } catch (erro) {
       setErroCarregamento(ehErroHttpNovoPedido(erro) ? erro.mensagem : 'Não foi possível carregar as opções. Tente novamente.')
     } finally {
@@ -247,7 +264,7 @@ export default function FormularioNovoPedido() {
     : []
   const avisos = avaliacao?.validacao.avisos ?? []
   const possuiUploadPendente = operacaoAnexo !== null || estado.tapetes.some((tapete) => tapete.anexosLocais.length > 0)
-  const deveAvisarSaida = deveAvisarDadosNaoSalvos(alterado, !!salvo, possuiUploadPendente)
+  const deveAvisarSaida = fornecedorSelecionado !== 'decorisi' && deveAvisarDadosNaoSalvos(alterado, !!salvo, possuiUploadPendente)
 
   useEffect(() => {
     if (!deveAvisarSaida) return
@@ -617,6 +634,12 @@ export default function FormularioNovoPedido() {
   }
 
   function iniciarNovoPedido() {
+    if (fornecedorSelecionado === 'decorisi') {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('decorisiPedido')
+      window.history.replaceState(null, '', url)
+      setErrosDecorisi({})
+    }
     for (const tapete of estado.tapetes) {
       for (const anexo of tapete.anexosLocais) revogarPreview(anexo.previewUrl)
     }
@@ -680,6 +703,11 @@ export default function FormularioNovoPedido() {
   }
 
   function efetivarTrocaFornecedor(proximoFornecedor: FornecedorPedido) {
+    if (fornecedorSelecionado === 'decorisi') {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('decorisiPedido')
+      window.history.replaceState(null, '', url)
+    }
     if (fornecedorSelecionado === 'moriah_tapetes') limparDadosEspecificosMoriah()
     setTentouSalvarExclusive(false)
     setFornecedorSelecionado(proximoFornecedor)
@@ -727,7 +755,8 @@ export default function FormularioNovoPedido() {
       opcoes={opcoes}
       dados={estado}
       bloqueado={formularioBloqueado || exclusiveBloqueiaTroca}
-      mensagens={mensagens}
+      mostrarLancamento={fornecedorSelecionado !== 'decorisi'}
+      mensagens={fornecedorSelecionado === 'decorisi' ? (campo) => { const erro = (errosDecorisi[campo] || camposTocados.has(campo)) ? errosFormularioDecorisi([], estado)[campo] : undefined; return erro ? [erro] : [] } : mensagens}
       onChange={(dados) => atualizarEstado({ ...estado, ...dados })}
       onTocar={marcarTocado}
       onColarNumeroLancamento={colarNumeroLancamento}
@@ -735,10 +764,20 @@ export default function FormularioNovoPedido() {
     />
   )
 
-  const escolhaFornecedor = <EscolhaFornecedor fornecedorSelecionado={fornecedorSelecionado} bloqueado={formularioBloqueado || exclusiveBloqueiaTroca} onEscolher={solicitarTrocaFornecedor} />
+  const escolhaFornecedor = <EscolhaFornecedor decorisiDisponivel={!!opcoesDecorisi} fornecedorSelecionado={fornecedorSelecionado} bloqueado={formularioBloqueado || exclusiveBloqueiaTroca} onEscolher={solicitarTrocaFornecedor} />
 
   if (fornecedorSelecionado === null) {
     return <div className="space-y-6">{identificacao}{escolhaFornecedor}</div>
+  }
+
+  if (fornecedorSelecionado === 'decorisi' && opcoesDecorisi) {
+    return <div className="space-y-6">
+      {identificacao}{escolhaFornecedor}
+      <FormularioDecorisi key={exclusiveInstancia} opcoes={opcoesDecorisi} identificacao={estado} onIdentificacao={mudarIdentificacaoDecorisi} onBloqueio={setExclusiveBloqueiaTroca} onAlterado={setExclusiveTemDadosEspecificos} onErrosIdentificacao={setErrosDecorisi} onNovoPedido={iniciarNovoPedido} />
+      <Dialog open={trocaFornecedorPendente !== null} onOpenChange={(aberto) => { if (!aberto) setTrocaFornecedorPendente(null) }}>
+        <DialogContent><DialogHeader title="Trocar fornecedor?" description="As alterações locais não salvas serão descartadas. O rascunho já salvo será preservado." /><DialogFooter><Button type="button" variant="secondary" onClick={() => setTrocaFornecedorPendente(null)}>Cancelar</Button><Button type="button" onClick={() => trocaFornecedorPendente && efetivarTrocaFornecedor(trocaFornecedorPendente)}>Continuar</Button></DialogFooter></DialogContent>
+      </Dialog>
+    </div>
   }
 
   if (fornecedorSelecionado === 'lebebe_exclusive') {

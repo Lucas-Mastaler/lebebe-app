@@ -1,0 +1,535 @@
+{
+  "fonte": "https://decorisi.com.br/#calculadora",
+  "extraidoEm": "2026-10-13T20:46:09.747Z",
+  "sha256": "9234cbe66712f156dfb3fbf66cd25311ba5bab646ddd0424adcb9386a294047e",
+  "registros": [
+    {
+      "referencia": "XP001",
+      "repeticaoM": "0.50"
+    },
+    {
+      "referencia": "XP002",
+      "repeticaoM": "0.50"
+    },
+    {
+      "referencia": "XP003",
+      "repeticaoM": "0.50"
+    },
+    {
+      "referencia": "XP004",
+      "repeticaoM": "0.50"
+    },
+    {
+      "referencia": "XP005",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP006",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP007",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP008",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP009",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP010",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP011",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP012",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP013",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP014",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP015",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP016",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "XP017",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "XP018",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "XP019",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "XP020",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "XP021",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "XP022",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP023",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP024",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP025",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP026",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP027",
+      "repeticaoM": "0.11"
+    },
+    {
+      "referencia": "XP028",
+      "repeticaoM": "0.11"
+    },
+    {
+      "referencia": "XP029",
+      "repeticaoM": "0.11"
+    },
+    {
+      "referencia": "XP030",
+      "repeticaoM": "0.11"
+    },
+    {
+      "referencia": "XP031",
+      "repeticaoM": "0.11"
+    },
+    {
+      "referencia": "XP032",
+      "repeticaoM": "0.08"
+    },
+    {
+      "referencia": "XP033",
+      "repeticaoM": "0.08"
+    },
+    {
+      "referencia": "XP034",
+      "repeticaoM": "0.08"
+    },
+    {
+      "referencia": "XP035",
+      "repeticaoM": "0.08"
+    },
+    {
+      "referencia": "XP036",
+      "repeticaoM": "0.21"
+    },
+    {
+      "referencia": "XP037",
+      "repeticaoM": "0.21"
+    },
+    {
+      "referencia": "XP038",
+      "repeticaoM": "0.21"
+    },
+    {
+      "referencia": "XP039",
+      "repeticaoM": "0.21"
+    },
+    {
+      "referencia": "XP040",
+      "repeticaoM": "0.21"
+    },
+    {
+      "referencia": "XP041",
+      "repeticaoM": "0.21"
+    },
+    {
+      "referencia": "XP042",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "XP043",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "XP044",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "XP045",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "XP046",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "XP047",
+      "repeticaoM": "0.45"
+    },
+    {
+      "referencia": "XP048",
+      "repeticaoM": "0.31"
+    },
+    {
+      "referencia": "XP049",
+      "repeticaoM": "0.31"
+    },
+    {
+      "referencia": "XP050",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP051",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP052",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP053",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP054",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP055",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP056",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP057",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP058",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP059",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP060",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP061",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP062",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP063",
+      "repeticaoM": "0.47"
+    },
+    {
+      "referencia": "XP064",
+      "repeticaoM": "0.47"
+    },
+    {
+      "referencia": "XP065",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP066",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP067",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP068",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP069",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP070",
+      "repeticaoM": "0.31"
+    },
+    {
+      "referencia": "XP071",
+      "repeticaoM": "0.31"
+    },
+    {
+      "referencia": "XP072",
+      "repeticaoM": "0.31"
+    },
+    {
+      "referencia": "XP073",
+      "repeticaoM": "0.31"
+    },
+    {
+      "referencia": "XP074",
+      "repeticaoM": "0.09"
+    },
+    {
+      "referencia": "XP075",
+      "repeticaoM": "0.09"
+    },
+    {
+      "referencia": "XP076",
+      "repeticaoM": "0.09"
+    },
+    {
+      "referencia": "XP077",
+      "repeticaoM": "0.09"
+    },
+    {
+      "referencia": "XP078",
+      "repeticaoM": "0.09"
+    },
+    {
+      "referencia": "XP079",
+      "repeticaoM": "0.09"
+    },
+    {
+      "referencia": "XP080",
+      "repeticaoM": "0.09"
+    },
+    {
+      "referencia": "XP081",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP082",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP083",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP084",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP085",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP086",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP087",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP088",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP089",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP090",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP091",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP092",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP093",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP094",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP095",
+      "repeticaoM": "0.26"
+    },
+    {
+      "referencia": "XP096",
+      "repeticaoM": "0.26"
+    },
+    {
+      "referencia": "XP097",
+      "repeticaoM": "0.26"
+    },
+    {
+      "referencia": "XP098",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP099",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP100",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP101",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP102",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP103",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP104",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP105",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP106",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP107",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP108",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP109",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP110",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP111",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP112",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP113",
+      "repeticaoM": "0.21"
+    },
+    {
+      "referencia": "XP114",
+      "repeticaoM": "0.21"
+    },
+    {
+      "referencia": "XP115",
+      "repeticaoM": "0.21"
+    },
+    {
+      "referencia": "XP116",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP117",
+      "repeticaoM": "0.13"
+    },
+    {
+      "referencia": "XP118",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP119",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP120",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP121",
+      "repeticaoM": "0.16"
+    },
+    {
+      "referencia": "XP122",
+      "repeticaoM": "0.18"
+    },
+    {
+      "referencia": "XP123",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP124",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP125",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP126",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP127",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP128",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP129",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP130",
+      "repeticaoM": "0"
+    },
+    {
+      "referencia": "XP131",
+      "repeticaoM": "0.22"
+    },
+    {
+      "referencia": "XP132",
+      "repeticaoM": "0.22"
+    }
+  ]
+}

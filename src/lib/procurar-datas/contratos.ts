@@ -123,7 +123,7 @@ export interface ErroProcurarDatasResponse {
 // ---------------------------------------------------------------------------
 
 /** Request: 'ProcurarDatasServicoForm' (já tipado em 'types.ts'). */
-export type PesquisarDatasRequest = ProcurarDatasServicoForm
+export type PesquisarDatasRequest = ProcurarDatasServicoForm & { localizacao?: import('./localizacao-auditoria').LocalizacaoAuditoria }
 
 export type PesquisarDatasStatus = 'started' | 'already_started'
 

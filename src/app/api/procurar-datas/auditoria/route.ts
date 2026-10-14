@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { consultarResumoConsumoLocalizacao } from '@/lib/procurar-datas/consumo-localizacao'
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireModuleAccess } from '@/lib/auth/module-access'
 
@@ -171,6 +172,7 @@ export async function GET(request: NextRequest) {
   const id = searchParams.get('id')?.trim()
 
   try {
+    if (searchParams.get('consumo') === '1') return NextResponse.json({ ok: true, consumo: await consultarResumoConsumoLocalizacao() }, { headers: { 'Cache-Control': 'no-store' } })
     if (id) return await buscarDetalhe(id)
     return await buscarListagem(searchParams)
   } catch (error) {

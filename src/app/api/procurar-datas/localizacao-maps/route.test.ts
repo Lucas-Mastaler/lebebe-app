@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { NextRequest, NextResponse } from 'next/server'
 import { POST } from './route'
+import { consultarCidadeUfMaps } from '@/lib/procurar-datas/cidade-uf-maps'
 
 const mocks = vi.hoisted(() => ({ acesso: vi.fn(), config: vi.fn(), rota: vi.fn(), criarRota: vi.fn() }))
 vi.mock('@/lib/procurar-datas/api', () => ({ validarAcessoProcurarDatas: mocks.acesso }))
@@ -14,6 +15,7 @@ beforeEach(() => {
   mocks.config.mockResolvedValue({ ok: true, config: { latDeposito: -25, lngDeposito: -49, osrmBaseUrl: 'https://osrm.example/' } })
   mocks.criarRota.mockReturnValue(mocks.rota)
   mocks.rota.mockResolvedValue({ ok: true, distanciaM: 12000, associacaoDestino: { lat: -25.69, lng: -49.50, distanciaAteViaM: 350 } })
+  vi.mocked(consultarCidadeUfMaps).mockResolvedValue(null)
 })
 it('exige acesso antes de resolver ou consultar configuração', async () => {
   mocks.acesso.mockResolvedValue({ response: NextResponse.json({ error: 'Acesso negado' }, { status: 403 }) })
@@ -42,4 +44,11 @@ it('retorna indisponibilidade de configuração sem aproximar rota', async () =>
   mocks.config.mockResolvedValue({ ok: false })
   expect((await POST(request('{"entrada":"-25.6,-49.5"}'))).status).toBe(503)
   expect(mocks.rota).not.toHaveBeenCalled()
+})
+it('quota esgotada no reverso não bloqueia o link com coordenadas explícitas',async()=>{
+  vi.mocked(consultarCidadeUfMaps).mockResolvedValue({fonte:'nominatim-openstreetmap',aviso:'Limite mensal de consultas de localização atingido.'})
+  const entrada='https://www.google.com/maps/search/-25.665061,+-49.298785'
+  const response=await POST(request(JSON.stringify({entrada})))
+  expect(response.status).toBe(200)
+  expect((await response.json()).resultado).toMatchObject({lat:-25.665061,lng:-49.298785,linkOriginal:entrada,regiao:{aviso:expect.stringContaining('Limite mensal')}})
 })

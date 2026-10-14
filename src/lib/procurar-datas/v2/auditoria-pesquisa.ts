@@ -32,6 +32,7 @@ export interface AuditoriaPesquisaParams {
     painel?: string
     tempoNecessario?: string
     valorInicialMinimo?: number
+    localizacao?: import('../localizacao-auditoria').LocalizacaoAuditoria | null
   }
   
   // Resultados exibidos
@@ -111,8 +112,8 @@ export async function registrarAuditoriaPesquisa(params: AuditoriaPesquisaParams
       cidade: cidade || null,
       uf: uf || null,
       endereco_completo: enderecoCompleto || null,
-      latitude: latitude || null,
-      longitude: longitude || null,
+      latitude: latitude ?? null,
+      longitude: longitude ?? null,
       parametros_json:
         snapshotTecnico !== undefined
           ? { ...parametros, snapshotTecnico }

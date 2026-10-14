@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { validateComercialUser } from '@/lib/auth/sgi-auth'
 import { isTimeoutError } from './apps-script'
+import { ErroConsumoLocalizacao } from './consumo-localizacao'
 
 export async function validarAcessoProcurarDatas() {
   const auth = await validateComercialUser()
@@ -16,6 +17,7 @@ export async function validarAcessoProcurarDatas() {
 }
 
 export function respostaErroProcurarDatas(error: unknown) {
+  if (error instanceof ErroConsumoLocalizacao) return NextResponse.json({ ok: false, error: error.message }, { status: error.motivo === 'limite-mensal' ? 429 : 503 })
   const message = error instanceof Error ? error.message : String(error || 'Erro desconhecido')
 
   if (isTimeoutError(error)) {

@@ -63,12 +63,13 @@ export function DateField({ id, value, onChange, onBlur, placeholder = 'dd/mm/aa
             type="button"
             disabled={disabled}
             aria-label="Abrir calendário"
+            aria-controls={id ? `${id}-calendar` : undefined}
             className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-50"
           >
             <CalendarIcon className="size-4" />
           </button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-auto p-0">
+        <PopoverContent id={id ? `${id}-calendar` : undefined} align="end" className="w-auto p-0">
           <Calendar
             mode="single"
             selected={selectedDate}

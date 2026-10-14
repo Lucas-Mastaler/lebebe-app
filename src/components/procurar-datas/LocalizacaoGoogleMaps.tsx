@@ -53,6 +53,7 @@ export function LocalizacaoGoogleMaps(props: {
           setEntrada(''); setLocal(null); setErro(''); props.onInvalidar()
         }}>Limpar localização</Button>}
       </div>
+      {local?.regiao?.aviso && <Alert tone="warning">{local.regiao.aviso}</Alert>}
       {local && <Alert tone="success" title="Localização identificada">
         <div className="space-y-2">
           {local.nome && <p className="font-medium">{local.nome}</p>}
@@ -68,7 +69,7 @@ export function LocalizacaoGoogleMaps(props: {
               <p>Latitude: {local.lat} · Longitude: {local.lng}</p>
               <p>Origem das coordenadas: {local.fonte}</p>
               {local.regiao && <p>Município: {local.regiao.fonte}</p>}
-              {local.nome && <p>Nome informado no link: {local.nome}</p>}
+              {local.nome && <p>Nome do local: {local.nome}</p>}
               <p>Rota OSRM: {(local.acessoViario.distanciaRotaM / 1000).toLocaleString('pt-BR')} km.</p>
               <p>Associação à via: {Math.round(local.acessoViario.distanciaAteViaM).toLocaleString('pt-BR')} m. Esse trecho não é somado à cobrança.</p>
               <a href={local.acessoViario.conferirViaUrl} target="_blank" rel="noopener noreferrer" className="block underline">Ver onde a rota termina</a>

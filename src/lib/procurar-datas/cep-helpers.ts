@@ -1,3 +1,4 @@
+import { ErroConsumoLocalizacao, fetchLocalizacao } from './consumo-localizacao'
 export type BuscarCepResultado = {
   cep: string
   logradouro: string
@@ -63,7 +64,7 @@ type BrasilApiCepResponse = {
 export async function consultarViaCep(cep8: string): Promise<BuscarCepResultado | null> {
   try {
     const url = `https://viacep.com.br/ws/${cep8}/json/`
-    const resp = await fetch(url, {
+    const resp = await fetchLocalizacao('viacep', url, {
       headers: { 'User-Agent': 'LeBebe-App/1.0' },
       signal: AbortSignal.timeout(5000),
     })
@@ -82,7 +83,8 @@ export async function consultarViaCep(cep8: string): Promise<BuscarCepResultado 
       uf,
       provider: 'viacep',
     }
-  } catch {
+  } catch (error) {
+    if (error instanceof ErroConsumoLocalizacao) throw error
     return null
   }
 }
@@ -94,7 +96,7 @@ export async function consultarViaCep(cep8: string): Promise<BuscarCepResultado 
 export async function consultarBrasilApi(cep8: string): Promise<BuscarCepResultado | null> {
   try {
     const url = `https://brasilapi.com.br/api/cep/v2/${cep8}`
-    const resp = await fetch(url, {
+    const resp = await fetchLocalizacao('brasilapi', url, {
       headers: { 'User-Agent': 'LeBebe-App/1.0' },
       signal: AbortSignal.timeout(5000),
     })
@@ -113,7 +115,8 @@ export async function consultarBrasilApi(cep8: string): Promise<BuscarCepResulta
       uf,
       provider: 'brasilapi',
     }
-  } catch {
+  } catch (error) {
+    if (error instanceof ErroConsumoLocalizacao) throw error
     return null
   }
 }

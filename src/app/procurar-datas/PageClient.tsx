@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { LocalizacaoGoogleMaps } from '@/components/procurar-datas/LocalizacaoGoogleMaps'
 import type { LocalizacaoMapsVerificada } from '@/lib/procurar-datas/acesso-viario-maps'
 import { coordenadasMapsValidas } from '@/lib/procurar-datas/localizacao-maps'
+import type { LocalizacaoAuditoria } from '@/lib/procurar-datas/localizacao-auditoria'
+import { preencherEnderecoMaps } from '@/lib/procurar-datas/preencher-endereco-maps'
 import { CalendarCheck, CheckCircle2, Edit, RotateCcw, Search, Send, TimerReset, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -22,6 +24,7 @@ import {
   DateField,
   Spinner,
   LoadingLeBebe,
+  Section,
   type ResponsiveTableColumn,
 } from '@/components/design-system'
 import { dateToBr, dateToIso, parseBrDate } from '@/lib/design-system/dates'
@@ -48,6 +51,7 @@ type OptionLists = {
 }
 
 type AddressResult = {
+  localizacao?: LocalizacaoAuditoria
   ok?: boolean
   lat?: number
   lng?: number
@@ -272,9 +276,19 @@ async function readJson(response: Response) {
   return data
 }
 
+function EnderecoDaBusca({ porCoordenadas, children }: { porCoordenadas: boolean; children: ReactNode }) {
+  return porCoordenadas ? (
+    <Section title="Endereço (opcional)" description="A pesquisa usará o ponto identificado no mapa."
+      variant="subsection" collapsible defaultCollapsed className="mb-3">
+      {children}
+    </Section>
+  ) : <>{children}</>
+}
+
 export default function ProcurarDatasPage() {
   const [form, setForm] = useState<FormState>(initialForm)
   const [mapsReset, setMapsReset] = useState(0)
+  const camposEnderecoEditados = useRef(new Set<string>())
   const [opcoes, setOpcoes] = useState<OptionLists>({})
   const [tempoMapLoaded, setTempoMapLoaded] = useState(false)
   const [tempoNecessario, setTempoNecessario] = useState('')
@@ -552,6 +566,7 @@ export default function ProcurarDatasPage() {
   }
 
   function updateForm<K extends keyof FormState>(key: K, value: FormState[K]) {
+    if (camposEndereco.includes(String(key))) camposEnderecoEditados.current.add(String(key))
     const nextValue = normalizeValue(key, value)
     setForm((current) => ({ ...current, [key]: nextValue }))
     setFormErrors((current) => {
@@ -887,6 +902,7 @@ export default function ProcurarDatasPage() {
   }
 
   function iniciarNovaConsulta() {
+    camposEnderecoEditados.current.clear()
     setMapsReset((version) => version + 1)
     activeSearchTokenRef.current = ''
     searchStartedAtRef.current = 0
@@ -927,14 +943,22 @@ export default function ProcurarDatasPage() {
     setAddressValidationError(null)
     setAddressValidationReviewMode(false)
     // Metadados do endereço anterior não pertencem necessariamente ao novo ponto.
-    setCepInput('')
-    setForm((current) => ({ ...current, numero: '', logradouro: '', bairro: '',
-      cidade: local.regiao?.cidade || '', uf: local.regiao?.uf || '' }))
+    const endereco = preencherEnderecoMaps({ ...form, cep: cepInput }, local.regiao ?? {}, camposEnderecoEditados.current)
+    setCepInput(endereco.cep || '')
+    setForm((current) => ({ ...current, numero: endereco.numero || '', logradouro: endereco.logradouro || '',
+      bairro: endereco.bairro || '', cidade: endereco.cidade || '', uf: endereco.uf || '' }))
+    if ((['cep','numero','logradouro','bairro','cidade','uf'] as const).some((campo) => camposEnderecoEditados.current.has(campo) &&
+      local.regiao?.[campo] && endereco[campo] !== local.regiao[campo])) {
+      toast.info('Há diferença entre o endereço digitado e o identificado. Mantivemos seus campos e as coordenadas do Maps.')
+    }
     setFormErrors({})
     const display = local.nome || [local.regiao?.cidade, local.regiao?.uf].filter(Boolean).join(' - ') ||
       `Localização por coordenadas (${local.lat}, ${local.lng})`
     const resultado: AddressResult = { ok: true, lat: local.lat, lng: local.lng,
-      display, provider: 'google-maps:' + local.fonte }
+      display, provider: 'google-maps:' + local.fonte,
+      localizacao: { versao: 1, metodo: local.fonte === 'coordenadas-diretas' ? 'coordenadas-diretas' : 'google-maps-link',
+        linkOriginal: local.linkOriginal, origemCoordenadas: local.fonte, nome: local.nome || local.regiao?.nome,
+        cidade: local.regiao?.cidade, uf: local.regiao?.uf, lat: local.lat, lng: local.lng } }
     setAddressResult(resultado)
     setEstadoCep('confirmado')
     confirmarLocal(resultado)
@@ -1026,6 +1050,7 @@ export default function ProcurarDatasPage() {
         destLng: confirmed.lng,
         destDisplay: confirmed.enderecoCompleto || confirmed.display || confirmed.display_name || '',
         destProvider: confirmed.provider || '',
+        localizacao: confirmed.localizacao ?? { versao: 1, metodo: 'endereco-tradicional', origemCoordenadas: confirmed.provider, lat: confirmed.lat!, lng: confirmed.lng! },
         enderecoCompleto: mapsConfirmado ? montarEnderecoFormatadoParaMaps(form, cepInput) : confirmed.enderecoCompleto || confirmed.display || confirmed.display_name || '',
         monthYear: form.dataInicial,
         valorInicialMinimo: valorInicialNumerico ?? undefined,
@@ -1205,8 +1230,8 @@ export default function ProcurarDatasPage() {
             <LocalizacaoGoogleMaps key={mapsReset} disabled={searching || loadingCep || validatingAddress}
               onConfirmar={confirmarLocalizacaoMaps} onInvalidar={invalidarLocalizacaoMaps} />
 
-            {mapsConfirmado && <p className="mb-3 text-sm text-slate-600">Endereço para identificação (opcional). A pesquisa usará o ponto identificado no mapa.</p>}
-
+            <EnderecoDaBusca porCoordenadas={mapsConfirmado}
+              key={mapsConfirmado ? `${addressConfirmedResult?.lat},${addressConfirmedResult?.lng}` : 'tradicional'}>
             <div className="grid gap-3 md:grid-cols-6">
               <FormField id="cepInput" label="CEP" required={!mapsConfirmado} className="md:col-span-2">
                 {(f) => (
@@ -1219,6 +1244,7 @@ export default function ProcurarDatasPage() {
                       const raw = e.target.value.replace(/\D/g, '').slice(0, 8)
                       const fmt = raw.length > 5 ? raw.slice(0, 5) + '-' + raw.slice(5) : raw
                       setCepInput(fmt)
+                      camposEnderecoEditados.current.add('cep')
                       if (addressValidationReviewMode) {
                         setAddressValidationError(null)
                         limparEstadosDependentesDeCoordenada()
@@ -1322,6 +1348,8 @@ export default function ProcurarDatasPage() {
                 </div>
               )}
             </div>
+
+            </EnderecoDaBusca>
 
             {estadoCep === 'encontrado' && (cepSemLogradouro || cepSemBairro) && (
               <Alert tone="warning" className="mt-3">
@@ -1527,10 +1555,10 @@ export default function ProcurarDatasPage() {
                         value={normalizeSelectValue(form[key]) || SELECT_VAZIO}
                         onValueChange={(value) => updateForm(key, value === SELECT_VAZIO ? '' : value)}
                       >
-                        <SelectTrigger id={f.id} className="w-full" aria-invalid={f['aria-invalid']}>
+                        <SelectTrigger id={f.id} aria-controls={`${f.id}-options`} className="w-full" aria-invalid={f['aria-invalid']}>
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent id={`${f.id}-options`}>
                           <SelectItem value={SELECT_VAZIO}>Selecione</SelectItem>
                           {(opcoes[key] || []).map((option) => (
                             <SelectItem key={option} value={normalizeSelectValue(option) || SELECT_VAZIO}>

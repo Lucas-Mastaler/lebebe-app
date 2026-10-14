@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { controleConsumoLocalizacao, ErroConsumoLocalizacao, fetchLocalizacao, type ProvedorLocalizacao } from '@/lib/procurar-datas/consumo-localizacao'
 import { chamarAppsScriptProcurarDatas } from '@/lib/procurar-datas/apps-script'
 import { respostaErroProcurarDatas, validarAcessoProcurarDatas } from '@/lib/procurar-datas/api'
 import { buscarEnderecoNoGeoCache, salvarEnderecoNoGeoCache } from '@/lib/procurar-datas/endereco-cache'
@@ -60,7 +61,15 @@ export async function POST(request: NextRequest) {
       console.log(`[PROCURAR_DATAS][validar-endereco] ${event.tipo} duracaoMs=${Date.now() - inicio}`)
     }
 
+    // Estes geocodificadores também atendem agenda/Mère. A cota fica no fluxo de entrada da tela.
+    let bloqueioConsumo: ErroConsumoLocalizacao | null = null
+    const fetchControlado = (provedor: ProvedorLocalizacao): typeof fetch => async (input, init) => {
+      if (bloqueioConsumo) throw bloqueioConsumo
+      try { return await fetchLocalizacao(provedor, input, init) }
+      catch (error) { if (error instanceof ErroConsumoLocalizacao) bloqueioConsumo = error; throw error }
+    }
     const locationIq = await buscarEnderecoLocationIq(body, {
+      fetchFn: fetchControlado('locationiq'),
       onEvent: logLocationIq,
       context: {
         origemFluxo: 'procurar_datas',
@@ -70,6 +79,7 @@ export async function POST(request: NextRequest) {
         proximoFallback: 'google_geocoding',
       },
     })
+    if (bloqueioConsumo) throw bloqueioConsumo
     if (locationIq.status === 'success') {
       const cacheSave = await salvarEnderecoNoGeoCache(body, locationIq.resultado)
       if (!cacheSave.ok) {
@@ -164,9 +174,11 @@ export async function POST(request: NextRequest) {
     }
 
     const google = await consultarGoogleGeocodingEnderecoDificil(body, {
+      fetchFn: fetchControlado('google-geocoding'),
       onEvent: logGoogle,
       permitirEnderecoComum: true,
     })
+    if (bloqueioConsumo) throw bloqueioConsumo
     if (google.status === 'success') {
       const cacheSave = await salvarEnderecoNoGeoCache(body, google.resultado)
       if (!cacheSave.ok) {
@@ -195,9 +207,16 @@ export async function POST(request: NextRequest) {
     )
 
     console.log(`[PROCURAR_DATAS][validar-endereco] fallback_appsscript motivo="google_sem_resultado_valido" duracaoMs=${Date.now() - inicio}`)
-    const resultado = await chamarAppsScriptProcurarDatas('LookupCompletoPorEndereco', [body], {
-      rota: 'validar-endereco',
-    }) as EnderecoValidado
+    const reserva = await controleConsumoLocalizacao.reservar('appsscript-endereco')
+    if (!reserva) throw new ErroConsumoLocalizacao('limite-mensal')
+    let resultado: EnderecoValidado
+    let sucessoExterno = false
+    try {
+      resultado = await chamarAppsScriptProcurarDatas('LookupCompletoPorEndereco', [body], { rota: 'validar-endereco' }) as EnderecoValidado
+      sucessoExterno = true
+    } finally {
+      await controleConsumoLocalizacao.concluir(reserva, sucessoExterno).catch(() => console.warn('[procurar-datas:consumo-localizacao]', { etapa: 'conclusao-appsscript' }))
+    }
     const validacaoAppsScript = validarEnderecoProviderDireto(resultado, body)
 
     // Log sanitizado do resultado do fallback Apps Script

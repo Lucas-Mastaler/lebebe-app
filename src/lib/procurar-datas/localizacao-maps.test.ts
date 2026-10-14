@@ -10,11 +10,28 @@ const redirect = (location: string) => new Response(null, { status: 302, headers
 
 describe('localização explícita do Google Maps', () => {
   it.each([
+    'https://www.google.com/maps/search/-25.665061,+-49.298785?entry=tts&g_ep=EgoyMDI2MTAxMS4wIPu8ASoASAFQAw%3D%3D&skid=17137bbe-8278-4935-a319-77f3e824d498',
+    'https://www.google.com/maps/search/-25.665061,%20-49.298785',
+    'https://www.google.com/maps/search/%2D25.665061%2C%20%2D49.298785/',
+    'https://www.google.com/maps/search/-25.665061, -49.298785',
+    'https://www.google.com/maps/search/?query=-25.665061%2C+-49.298785',
+    'https://maps.google.com/?q=-25.665061%2C%20-49.298785',
+    'https://www.google.com/maps/search/-25.665061,+-49.298785?q=-25.665061,-49.298785',
+    'https://www.google.com/maps/search/-25.665061,+-49.298785/@-20,-40,16z',
+  ])('ponto sem estabelecimento é extraído localmente: %s', async(url)=>{
+    const fetchImpl=vi.fn<typeof fetch>()
+    expect(await resolverLinkMaps(url,fetchImpl)).toMatchObject({lat:-25.665061,lng:-49.298785,fonte:'google-maps-pesquisa-coordenadas',linkOriginal:url})
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+  it.each(['https://www.google.com/maps/search/91,-49','https://www.google.com/maps/search/-25,-181'])('valida intervalo no caminho: %s',(url)=>expect(()=>extrairLocalizacaoMaps(url)).toThrow('Latitude deve'))
+  it('pares diferentes no caminho e parâmetro são ambíguos',()=>expect(()=>extrairLocalizacaoMaps('https://www.google.com/maps/search/-25,-49?q=-26,-50')).toThrow('mais de um ponto'))
+  it.each([
     'https://www.google.com/maps/dir/Curitiba/Contenda/data=!3d-25!4d-49',
     'https://www.google.com/maps/preview/dir/Curitiba/Contenda/data=!3d-25!4d-49',
     'https://www.google.com/maps/dir/?api=1&origin=-25,-49&destination=-26,-50',
     'https://maps.google.com/?saddr=-25,-49&daddr=-26,-50',
     'https://www.google.com/maps/dir/?api=1&destination=-26,-50&waypoints=-25,-49',
+    'https://www.google.com/maps/search/-25,-49?origin=-25,-49&destination=-26,-50',
   ])('rejeita rota por sua estrutura, sem selecionar origem ou destino: %s', (url) => {
     expect(() => extrairLocalizacaoMaps(url)).toThrow('Este link contém uma rota com mais de um local')
   })

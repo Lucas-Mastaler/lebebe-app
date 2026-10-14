@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest, NextResponse } from 'next/server'
 import { POST } from './route'
+import type { LocalizacaoAuditoria } from '@/lib/procurar-datas/localizacao-auditoria'
 
 const validarAcessoMock = vi.hoisted(() => vi.fn())
 const pesquisarDatasV2Mock = vi.hoisted(() => vi.fn())
@@ -198,6 +199,13 @@ describe('POST /api/procurar-datas/v2/pesquisar-compat-async', () => {
     const done = salvarProgressoMock.mock.calls.at(-1)?.[1]
     expect(done.payload.candidates.length).toBeGreaterThan(0)
     expect(done.payload.candidates[0].frete).toBeTruthy()
+  })
+  it('persiste Maps no JSON existente usando o ponto efetivo da pesquisa',async()=>{
+    const localizacao: LocalizacaoAuditoria={versao:1,metodo:'google-maps-link',linkOriginal:'https://maps.app.goo.gl/aF2ERzRMNpZomkdr9',
+      origemCoordenadas:'google-maps-ponto',nome:'Estância Sonhos',cidade:'São José dos Pinhais',uf:'PR',lat:0,lng:0}
+    const body={...payloadBase,localizacao,destLat:-25.6702493,destLng:-49.2276593}
+    expect((await POST(criarRequest(body))).status).toBe(200)
+    expect(registrarAuditoriaMock).toHaveBeenCalledWith(expect.objectContaining({parametros:expect.objectContaining({localizacao:{...localizacao,lat:body.destLat,lng:body.destLng}})}))
   })
 
   it('com flag diagnostica retorna e salva diagnosticoPerformanceV2', async () => {

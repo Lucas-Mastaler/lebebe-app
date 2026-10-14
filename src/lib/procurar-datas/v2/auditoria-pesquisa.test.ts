@@ -17,3 +17,9 @@ it('preserva o snapshot adicional dentro do JSON existente e não altera resulta
   expect(insert.mock.calls[0][0]).toMatchObject({ parametros_json: { dataInicial: '2026-11-19', snapshotTecnico }, resultados_json: [] })
   expect(JSON.parse(JSON.stringify(insert.mock.calls[0][0])).parametros_json.snapshotTecnico).toEqual(snapshotTecnico)
 })
+it('preserva localização declarada no JSON e coordenada zero, sem perder precisão',async()=>{
+  const localizacao={versao:1 as const,metodo:'coordenadas-diretas' as const,lat:0,lng:-49.298785,origemCoordenadas:'coordenadas-diretas'}
+  await registrarAuditoriaPesquisa({runId:'run-coordenadas',clientToken:'token',userEmail:'test@example.invalid',
+    latitude:localizacao.lat,longitude:localizacao.lng,parametros:{localizacao},status:'success'})
+  expect(insert.mock.calls[0][0]).toMatchObject({latitude:0,longitude:-49.298785,parametros_json:{localizacao}})
+})

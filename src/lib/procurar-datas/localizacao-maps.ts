@@ -5,6 +5,7 @@ export type LocalizacaoMaps = CoordenadasMaps & {
   fonte: 'coordenadas-diretas' | 'google-maps-ponto' | 'google-maps-pesquisa-coordenadas'
   conferirUrl: string
   nome?: string
+  linkOriginal?: string
 }
 export class ErroLocalizacaoMaps extends Error {
   constructor(public codigo: string, message: string, public status = 400) { super(message) }
@@ -54,7 +55,7 @@ export function extrairLocalizacaoMaps(entrada: string): LocalizacaoMaps | null 
   let caminho: string
   try { caminho = decodeURIComponent(url.pathname) } catch { throw new ErroLocalizacaoMaps('link-invalido', 'O link contém codificação inválida.') }
   // A semântica de rota tem precedência sobre pins/pares duplicados nos metadados.
-  if (/^\/maps\/(?:preview\/)?dir(?:\/|$)/.test(caminho) || url.searchParams.get('api') === '1' &&
+  if (/^\/maps\/(?:preview\/)?dir(?:\/|$)/.test(caminho) ||
     (url.searchParams.has('origin') || url.searchParams.has('waypoints')) ||
     ['saddr', 'daddr'].some((key) => url.searchParams.has(key))) {
     throw new ErroLocalizacaoMaps('link-de-rota', 'Este link contém uma rota com mais de um local. Envie o link de um único lugar no Google Maps.')
@@ -76,7 +77,11 @@ export function extrairLocalizacaoMaps(entrada: string): LocalizacaoMaps | null 
   }
   // Place ID, quando fornecido, tem precedência sobre query; CID/ftid não são Place IDs.
   if (url.searchParams.has('query_place_id') || url.searchParams.has('destination_place_id')) return null
-  const consulta = url.pathname.startsWith('/maps/dir') ? url.searchParams.get('destination') : url.searchParams.get('query') ?? url.searchParams.get('q')
-  const ponto = consulta ? parCoordenadas(consulta.replace(/^loc:/i, '')) : null
+  const caminhoPesquisa = caminho.match(/^\/maps\/search\/([^/]+)(?:\/@[^/]+)?(?:\/data=.*)?\/?$/)?.[1]
+  const consultas = [caminhoPesquisa, url.searchParams.get('query'), url.searchParams.get('q')]
+  const pontos = consultas.filter((v): v is string => !!v).map((v) => parCoordenadas(v.replace(/^loc:/i, '').replace(/\+/g, ' '))).filter((v): v is CoordenadasMaps => v !== null)
+  const unicosPesquisados = [...new Set(pontos.map((p) => `${p.lat},${p.lng}`))]
+  if (unicosPesquisados.length > 1) throw new ErroLocalizacaoMaps('local-ambiguo', 'O link contém mais de um ponto. Copie as coordenadas do destino desejado.')
+  const ponto = pontos[0] ?? null
   return ponto ? { ...ponto, fonte: 'google-maps-pesquisa-coordenadas', conferirUrl: linkConferenciaMaps(ponto) } : null
 }

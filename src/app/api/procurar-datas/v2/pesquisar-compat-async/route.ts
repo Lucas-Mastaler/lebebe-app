@@ -19,6 +19,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
+import { normalizarLocalizacaoAuditoria } from '@/lib/procurar-datas/localizacao-auditoria'
 import { normalizarEntradaPesquisaV2 } from '@/lib/procurar-datas/motor/entrada'
 import { validarAcessoProcurarDatas, respostaErroProcurarDatas } from '@/lib/procurar-datas/api'
 import { buscarConfiguracoesProcurarDatas } from '@/lib/procurar-datas/config-service'
@@ -252,6 +253,7 @@ export async function POST(request: NextRequest) {
         latitude: destinoAuditoria?.lat ?? null,
         longitude: destinoAuditoria?.lng ?? null,
         parametros: {
+          localizacao: normalizarLocalizacaoAuditoria(body.localizacao, destinoAuditoria),
           dataInicial: body.dataInicial,
           encomenda: body.isEncomenda,
           areaRural: body.isRural,
@@ -326,6 +328,7 @@ export async function POST(request: NextRequest) {
         latitude: destinoAuditoria?.lat ?? null,
         longitude: destinoAuditoria?.lng ?? null,
         parametros: {
+          localizacao: normalizarLocalizacaoAuditoria(body.localizacao, destinoAuditoria),
           dataInicial: body.dataInicial,
           encomenda: body.isEncomenda,
           areaRural: body.isRural,
@@ -459,6 +462,7 @@ export async function POST(request: NextRequest) {
       latitude: destinoAuditoria?.lat ?? null,
       longitude: destinoAuditoria?.lng ?? null,
       parametros: {
+          localizacao: normalizarLocalizacaoAuditoria(body.localizacao, destinoAuditoria),
         dataInicial: body.dataInicial,
         encomenda: body.isEncomenda,
         areaRural: body.isRural,
@@ -503,6 +507,7 @@ export async function POST(request: NextRequest) {
       latitude: destinoAuditoria?.lat ?? null,
       longitude: destinoAuditoria?.lng ?? null,
       parametros: {
+          localizacao: normalizarLocalizacaoAuditoria(body.localizacao, destinoAuditoria),
         dataInicial: body.dataInicial,
         encomenda: body.isEncomenda,
         areaRural: body.isRural,

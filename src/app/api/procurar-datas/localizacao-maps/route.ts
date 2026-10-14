@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
       buscarRota({ lat: config.latDeposito, lng: config.lngDeposito }, local),
       consultarCidadeUfMaps(local),
     ])
-    const resultado = { ...verificarRotaLocalizacaoMaps(local, rota), regiao }
+    const resultado = { ...verificarRotaLocalizacaoMaps(local, rota), nome: local.nome || regiao?.nome, regiao }
     console.info('[procurar-datas:localizacao-maps]', { status: 'identificada', fonte: local.fonte, duracaoMs: Date.now() - inicio })
     return NextResponse.json({ ok: true, resultado }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {

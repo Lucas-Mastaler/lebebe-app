@@ -1,4 +1,6 @@
 'use client'
+import { lerLocalizacaoAuditoria } from '@/lib/procurar-datas/localizacao-auditoria'
+import type { ResumoConsumoLocalizacao } from '@/lib/procurar-datas/consumo-localizacao'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Eye, Search, MapPin, Settings, ListChecks, CalendarCheck, CheckCircle2, AlertCircle, Cpu, Hash } from 'lucide-react'
@@ -284,6 +286,17 @@ function PreAgendamentoResumo({ payload }: { payload: unknown }) {
 }
 
 export default function PageClient() {
+  const [consumo, setConsumo] = useState<ResumoConsumoLocalizacao | null>(null)
+  const [consumoCarregando, setConsumoCarregando] = useState(true)
+  useEffect(() => {
+    const controller = new AbortController()
+    void fetch('/api/procurar-datas/auditoria?consumo=1', { signal: controller.signal })
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => { if (!controller.signal.aborted) setConsumo(data?.consumo ?? null) })
+      .catch(() => { if (!controller.signal.aborted) setConsumo(null) })
+      .finally(() => { if (!controller.signal.aborted) setConsumoCarregando(false) })
+    return () => controller.abort()
+  }, [])
   const filtros = useFilterState<Filtros>(filtrosIniciais())
   const [items, setItems] = useState<AuditoriaItem[]>([])
   const [total, setTotal] = useState(0)
@@ -374,6 +387,15 @@ export default function PageClient() {
       />
 
       <div className="mt-6">
+        <Section title="Consultas de localização" variant="subsection">
+          {consumo ? <>
+            <p className="text-sm text-slate-600">{consumo.total.toLocaleString('pt-BR')} de {consumo.limite.toLocaleString('pt-BR')} consultas registradas no mês · {consumo.restantes.toLocaleString('pt-BR')} restantes · Reinício: {formatDate(consumo.proximoReinicio)} (São Paulo).</p>
+            <details className="mt-2 text-sm text-slate-600"><summary className="cursor-pointer">Consumo por provedor</summary>
+              {consumo.provedores.map((p) => <p key={p.provedor}>{p.provedor}: {p.total} consultas · {p.falhas} falhas · {p.pendentes} sem conclusão registrada</p>)}
+              {!consumo.provedores.length && <p>Nenhuma consulta externa registrada neste mês.</p>}
+            </details>
+          </> : <p className="text-sm text-slate-500">{consumoCarregando ? 'Carregando consumo...' : 'Resumo de consumo indisponível.'}</p>}
+        </Section>
         <FilterPanel dirty={filtros.dirty} onApply={pesquisar} onClear={limpar}>
           <FilterFieldGroup label="Período">
             <FormField id="filtro-data-inicial" label="Data inicial">
@@ -559,6 +581,7 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
   const pesquisa = detalhe.pesquisa
   const parametros = asRecord(pesquisa.parametros_json)
   const resultados = asResultados(pesquisa.resultados_json)
+  const localizacao = lerLocalizacaoAuditoria(parametros.localizacao)
 
   return (
     <div className="space-y-5">
@@ -592,6 +615,13 @@ function DetalhePesquisa({ detalhe }: { detalhe: DetalheResponse }) {
 
       <Section title="Endereço" icon={<MapPin className="size-4" />} tone="section-2">
         <dl className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <Campo label="Método de localização" value={!localizacao ? 'Não registrado' : localizacao.metodo === 'endereco-tradicional' ? 'Endereço tradicional' : localizacao.metodo === 'google-maps-link' ? 'Google Maps' : 'Coordenadas informadas diretamente'} />
+          {localizacao && localizacao.metodo !== 'endereco-tradicional' && <>
+            {localizacao.linkOriginal && <div><dt className="text-xs text-slate-500">Link informado</dt><dd className="break-all text-sm"><a href={localizacao.linkOriginal} target="_blank" rel="noopener noreferrer" className="underline">{localizacao.linkOriginal}</a></dd></div>}
+            <Campo label="Coordenadas utilizadas" value={`${localizacao.lat}, ${localizacao.lng}`} />
+            <Campo label="Local identificado" value={[localizacao.nome,localizacao.cidade,localizacao.uf].filter(Boolean).join(' · ')} />
+            <Campo label="Origem das coordenadas" value={localizacao.origemCoordenadas} />
+          </>}
           <Campo label="CEP" value={pesquisa.cep} />
           <Campo label="Número" value={pesquisa.numero_residencia} />
           <Campo label="Logradouro" value={pesquisa.logradouro} />

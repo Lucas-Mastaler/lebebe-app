@@ -1,59 +1,117 @@
-import type { DadosRascunho } from './rascunhos'
-import { validarFichaDadosRascunho } from './ficha-schema'
+import { converterDataInputParaISO, converterViradaCartaoInput, validarFichaDadosRascunho, type FichaDadosRascunho } from './ficha-schema'
+import type { ParentescoCliente } from './clientes'
+
+export type EntradasLocaisRascunho = {
+  novoCliente: { nome: string; telefone: string; parentesco: ParentescoCliente | ''; parentescoOutro: string }
+  dataPrevistaInputs: Record<string, string>
+  viradaCartaoInput: string
+  produtoDigitado: string
+  numeroLancamento: string
+  telefonePendente: { clienteId: string; valor: string } | null
+}
 
 export type RascunhoCache = {
   draftClientId: string
   usuarioId: string
   atendimentoId: string | null
   version: number | null
-  dadosRascunho: DadosRascunho
+  // undefined identifica caches legados, que nao guardavam o vinculo.
+  clienteId?: string | null
+  unidadeId?: string
+  editorId?: string
+  arquivado?: boolean
+  entradasLocais?: EntradasLocaisRascunho
+  dadosRascunho: FichaDadosRascunho
   atualizadoEm: string
   sincronizado: boolean
 }
 
-export type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
-
+export type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> & Partial<Pick<Storage, 'length' | 'key'>>
 const PREFIXO_CACHE = 'atendimento-presencial:rascunho'
 
-export function criarChaveCacheRascunho(usuarioId: string, draftClientId: string) {
-  return `${PREFIXO_CACHE}:${usuarioId}:${draftClientId}`
+export function temDadosIntermediariosRascunho(dados: FichaDadosRascunho) {
+  return dados.criancas.some((crianca) => crianca.situacao === 'ja_nasceu' && !!crianca.idadeUnidade && crianca.idadeValor === undefined)
+}
+
+export function temEntradasLocaisPendentes(entradas: EntradasLocaisRascunho) {
+  return Object.values(entradas.novoCliente).some(Boolean)
+    || !!entradas.produtoDigitado || !!entradas.numeroLancamento || !!entradas.telefonePendente
+    || Object.values(entradas.dataPrevistaInputs).some((valor) => !!valor && !converterDataInputParaISO(valor))
+    || (!!entradas.viradaCartaoInput && !converterViradaCartaoInput(entradas.viradaCartaoInput))
+}
+
+export function criarChaveCacheRascunho(usuarioId: string, draftClientId: string, editorId?: string) {
+  const base = `${PREFIXO_CACHE}:${usuarioId}:${draftClientId}`
+  return editorId ? `${base}:${editorId}` : base
 }
 
 export function salvarCacheRascunho(storage: StorageLike, cache: RascunhoCache) {
-  storage.setItem(
-    criarChaveCacheRascunho(cache.usuarioId, cache.draftClientId),
-    JSON.stringify(cache)
-  )
-}
-
-export function carregarCacheRascunho(
-  storage: StorageLike,
-  usuarioId: string,
-  draftClientId: string
-): RascunhoCache | null {
-  const raw = storage.getItem(criarChaveCacheRascunho(usuarioId, draftClientId))
-  if (!raw) return null
-
   try {
-    const parsed = JSON.parse(raw) as Partial<RascunhoCache>
-    if (parsed.usuarioId !== usuarioId || parsed.draftClientId !== draftClientId) return null
-    const validacao = validarFichaDadosRascunho(parsed.dadosRascunho)
-    if (!validacao.ok) return null
-
-    return {
-      draftClientId,
-      usuarioId,
-      atendimentoId: typeof parsed.atendimentoId === 'string' ? parsed.atendimentoId : null,
-      version: typeof parsed.version === 'number' ? parsed.version : null,
-      dadosRascunho: validacao.dados,
-      atualizadoEm: typeof parsed.atualizadoEm === 'string' ? parsed.atualizadoEm : '',
-      sincronizado: parsed.sincronizado === true,
-    }
+    // Cada editor guarda sua propria copia: outra aba nunca apaga a pendencia desta.
+    storage.setItem(criarChaveCacheRascunho(cache.usuarioId, cache.draftClientId, cache.editorId), JSON.stringify(cache))
+    return true
   } catch {
-    return null
+    return false
   }
 }
 
-export function removerCacheRascunho(storage: StorageLike, usuarioId: string, draftClientId: string) {
-  storage.removeItem(criarChaveCacheRascunho(usuarioId, draftClientId))
+export function listarCachesRascunho(storage: StorageLike, usuarioId: string, draftClientId?: string): RascunhoCache[] {
+  try {
+    const prefixo = `${PREFIXO_CACHE}:${usuarioId}:`
+    const chaves = storage.key
+      ? Array.from({ length: storage.length ?? 0 }, (_, i) => storage.key!(i)).filter((key): key is string => !!key && key.startsWith(prefixo))
+      : draftClientId ? [criarChaveCacheRascunho(usuarioId, draftClientId)] : []
+    return chaves.flatMap((key) => {
+      try {
+        const parsed = JSON.parse(storage.getItem(key) ?? 'null') as RascunhoCache | null
+        if (!parsed || parsed.usuarioId !== usuarioId || typeof parsed.draftClientId !== 'string') return []
+        if (typeof parsed.atualizadoEm !== 'string' || typeof parsed.sincronizado !== 'boolean') return []
+        const entradas = parsed.entradasLocais
+        if (entradas && (!entradas.novoCliente || !entradas.dataPrevistaInputs
+          || !Object.values(entradas.novoCliente).every((valor) => typeof valor === 'string')
+          || !Object.values(entradas.dataPrevistaInputs).every((valor) => typeof valor === 'string')
+          || ![entradas.viradaCartaoInput, entradas.produtoDigitado, entradas.numeroLancamento].every((valor) => typeof valor === 'string')
+          || (entradas.telefonePendente !== null && (typeof entradas.telefonePendente?.clienteId !== 'string' || typeof entradas.telefonePendente?.valor !== 'string')))) return []
+        if (draftClientId && parsed.draftClientId !== draftClientId) return []
+        if (key !== criarChaveCacheRascunho(usuarioId, parsed.draftClientId, parsed.editorId)) return []
+        if (!validarFichaDadosRascunho(parsed.dadosRascunho).ok) return []
+        if (parsed.clienteId !== undefined && parsed.clienteId !== null && typeof parsed.clienteId !== 'string') return []
+        return [parsed]
+      } catch {
+        return []
+      }
+    }).sort((a, b) => b.atualizadoEm.localeCompare(a.atualizadoEm))
+  } catch {
+    return []
+  }
+}
+
+export function carregarCacheRascunho(storage: StorageLike, usuarioId: string, draftClientId: string, editorId?: string) {
+  const caches = listarCachesRascunho(storage, usuarioId, draftClientId).filter((cache) => !cache.arquivado && (!editorId || cache.editorId === editorId))
+  return caches.find((cache) => !cache.sincronizado) ?? caches[0] ?? null
+}
+
+export function removerCacheRascunho(storage: StorageLike, usuarioId: string, draftClientId: string, editorId?: string) {
+  try {
+    if (editorId) storage.removeItem(criarChaveCacheRascunho(usuarioId, draftClientId, editorId))
+    else {
+      for (const cache of listarCachesRascunho(storage, usuarioId, draftClientId)) {
+        storage.removeItem(criarChaveCacheRascunho(usuarioId, draftClientId, cache.editorId))
+      }
+      storage.removeItem(criarChaveCacheRascunho(usuarioId, draftClientId))
+    }
+  } catch {
+    return false
+  }
+  return true
+}
+
+export function planejarRecuperacaoRascunho(cache: RascunhoCache | null, servidor: { id: string; version: number; clienteId: string | null }) {
+  if (!cache || cache.atendimentoId !== servidor.id) return { usarCache: false, conflito: false, clienteId: servidor.clienteId }
+  const usarCache = !cache.sincronizado
+  return {
+    usarCache,
+    conflito: usarCache && cache.version !== servidor.version,
+    clienteId: usarCache && cache.clienteId !== undefined ? cache.clienteId : servidor.clienteId,
+  }
 }

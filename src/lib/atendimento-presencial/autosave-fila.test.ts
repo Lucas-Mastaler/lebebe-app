@@ -67,7 +67,7 @@ function criarFila(params?: {
     draftId: 'draft-1',
     initialVersion: 1,
     initialRascunho: rascunho(1),
-    initialSavedPayload: JSON.stringify(payloadBase),
+    initialSavedPayload: serializarPayloadAutosave(payloadBase),
     debounceMs: 10,
     save,
     getOnline: params?.online ?? (() => true),
@@ -247,5 +247,98 @@ describe('fila serial de autosave presencial', () => {
     expect(save).not.toHaveBeenCalled()
     expect(fila.getVersion()).toBe(1)
     expect(status).toHaveBeenLastCalledWith('offline')
+  })
+})
+
+
+describe('regressoes de autosave interrompido', () => {
+  it('nao indica salvo quando usuario volta ao valor anterior durante PATCH', async () => {
+    let resolver!: (value: AutosaveSaveResult) => void
+    const save = vi.fn().mockImplementationOnce(() => new Promise<AutosaveSaveResult>((resolve) => { resolver = resolve }))
+      .mockImplementation(async ({ payload, expectedVersion }) => ({ ok: true, rascunho: rascunho(expectedVersion + 1, payload) }))
+    const { fila, status } = criarFila({ save })
+    const primeiro = fila.flushNow(payloadComProduto('B'))
+    fila.enqueue(payloadBase)
+    expect(status).not.toHaveBeenLastCalledWith('salvo')
+    resolver({ ok: true, rascunho: rascunho(2, payloadComProduto('B')) })
+    await primeiro
+    expect(save).toHaveBeenLastCalledWith({ payload: payloadBase, expectedVersion: 2 })
+    expect(status).toHaveBeenLastCalledWith('salvo')
+  })
+
+  it('409 equivalente confirma somente o envio antigo e salva a edicao posterior', async () => {
+    let resolver!: (value: AutosaveSaveResult) => void
+    const save = vi.fn().mockImplementationOnce(() => new Promise<AutosaveSaveResult>((resolve) => { resolver = resolve }))
+      .mockImplementation(async ({ payload, expectedVersion }) => ({ ok: true, rascunho: rascunho(expectedVersion + 1, payload) }))
+    const { fila, status } = criarFila({ save })
+    const primeiro = fila.flushNow(payloadComProduto('B'))
+    fila.enqueue(payloadComProduto('C'))
+    resolver({ ok: false, status: 409, message: 'Conflito', rascunho: rascunho(4, payloadComProduto('B')) })
+    await primeiro
+    expect(save).toHaveBeenLastCalledWith({ payload: payloadComProduto('C'), expectedVersion: 4 })
+    expect(fila.getVersion()).toBe(5)
+    expect(status.mock.calls.filter(([s]) => s === 'salvo')).toHaveLength(1)
+  })
+
+  it('conflito real preserva o payload mais recente e bloqueia flush', async () => {
+    let resolver!: (value: AutosaveSaveResult) => void
+    const onConflict = vi.fn()
+    const { fila, save } = criarFila({ onConflict, save: vi.fn(() => new Promise<AutosaveSaveResult>((resolve) => { resolver = resolve })) })
+    const primeiro = fila.flushNow(payloadComProduto('B'))
+    fila.enqueue(payloadComProduto('C'))
+    resolver({ ok: false, status: 409, message: 'Conflito', rascunho: rascunho(4, payloadComProduto('Servidor')) })
+    await primeiro
+    expect(onConflict).toHaveBeenCalledWith(expect.objectContaining({ payload: payloadComProduto('C') }))
+    expect(await fila.flushNow()).toMatchObject({ ok: false, status: 'conflito' })
+    expect(save).toHaveBeenCalledTimes(1)
+  })
+
+  it('falha HTTP preserva pendencia para tentativa manual sem novo payload', async () => {
+    const save = vi.fn().mockResolvedValueOnce({ ok: false, status: 422, message: 'Invalido' })
+      .mockImplementation(async ({ payload, expectedVersion }) => ({ ok: true, rascunho: rascunho(expectedVersion + 1, payload) }))
+    const { fila, timers } = criarFila({ save })
+    expect(await fila.flushNow(payloadComProduto('B'))).toMatchObject({ ok: false })
+    expect(fila.hasPending()).toBe(true)
+    expect(timers).toHaveLength(0)
+    expect(await fila.flushNow()).toMatchObject({ ok: true })
+    expect(save).toHaveBeenCalledTimes(2)
+  })
+
+  it('recupera erro transitorio com tentativa automatica e mesma versao', async () => {
+    const save = vi.fn().mockResolvedValueOnce({ ok: false, status: 503, message: 'Temporario' })
+      .mockImplementation(async ({ payload, expectedVersion }) => ({ ok: true, rascunho: rascunho(expectedVersion + 1, payload) }))
+    const { fila, timers, status } = criarFila({ save })
+    await fila.flushNow(payloadComProduto('B'))
+    expect(timers).toHaveLength(1)
+    await timers[0]()
+    await Promise.resolve()
+    expect(save).toHaveBeenLastCalledWith({ payload: payloadComProduto('B'), expectedVersion: 1 })
+    expect(status).toHaveBeenLastCalledWith('salvo')
+  })
+
+  it('limita a duas novas tentativas e nao repete erro definitivo', async () => {
+    const { fila, save, timers } = criarFila({ save: vi.fn(async () => ({ ok: false as const, status: 503, message: 'Temporario' })) })
+    await fila.flushNow(payloadComProduto('B'))
+    await timers[0](); await Promise.resolve(); await Promise.resolve()
+    await timers[1](); await Promise.resolve(); await Promise.resolve()
+    expect(save).toHaveBeenCalledTimes(3)
+    expect(timers).toHaveLength(2)
+    expect(fila.hasPending()).toBe(true)
+  })
+
+  it('salva crianca sem mudar a etapa ficha', async () => {
+    const { fila, save } = criarFila()
+    const payload = { ...payloadBase, dadosRascunho: { ...payloadBase.dadosRascunho, criancas: [{ id: 'crianca-teste', situacao: 'gestacao' as const, nome: 'Teste' }] } }
+    await fila.flushNow(payload)
+    expect(save).toHaveBeenCalledWith({ payload, expectedVersion: 1 })
+    expect(fila.getRascunho().dadosRascunho.etapaAtual).toBe('ficha')
+  })
+
+  it('saida antes do debounce pode enviar com flush sem duplicar PATCH', async () => {
+    const { fila, save, timers } = criarFila()
+    fila.enqueue(payloadComProduto('B'))
+    await fila.flushNow()
+    expect(timers).toHaveLength(0)
+    expect(save).toHaveBeenCalledTimes(1)
   })
 })

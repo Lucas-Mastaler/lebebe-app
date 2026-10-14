@@ -309,3 +309,10 @@ describe('schema da ficha de atendimento presencial', () => {
     })).toMatchObject({ ok: false, field: 'viradaCartao' })
   })
 })
+
+
+it('preserva oito criancas e rejeita a nona sem retornar payload truncado', () => {
+  const criancas = Array.from({ length: 9 }, (_, i) => ({ id: `crianca-${i}`, situacao: 'gestacao' }))
+  expect(validarFichaDadosRascunho({ criancas: criancas.slice(0, 8) })).toMatchObject({ ok: true, dados: { criancas: criancas.slice(0, 8) } })
+  expect(validarFichaDadosRascunho({ criancas })).toMatchObject({ ok: false, field: 'criancas' })
+})

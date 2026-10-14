@@ -107,6 +107,7 @@ export const FICHA_OBSERVACOES_MAX_CHARS = 2000
 export const FICHA_NOME_CRIANCA_MAX_CHARS = 80
 export const FICHA_MOTIVO_OUTRO_MAX_CHARS = 120
 export const FICHA_PAYLOAD_MAX_BYTES = 16384
+export const FICHA_CRIANCAS_MAX_ITENS = 8
 
 export type FichaClienteRascunho = {
   parentesco?: ParentescoCliente
@@ -309,7 +310,7 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
   }
 
   const payload = valor as Record<string, unknown>
-  if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > FICHA_PAYLOAD_MAX_BYTES) {
+  if (new TextEncoder().encode(JSON.stringify(payload)).byteLength > FICHA_PAYLOAD_MAX_BYTES) {
     return { ok: false, field: 'dadosRascunho', message: 'Dados do rascunho excedem o limite permitido' }
   }
 
@@ -330,6 +331,9 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
   }
 
   if (Array.isArray(payload.criancas)) {
+    if (payload.criancas.length > FICHA_CRIANCAS_MAX_ITENS) {
+      return { ok: false, field: 'criancas', message: 'O atendimento permite no maximo oito criancas. Nenhuma alteracao foi salva.' }
+    }
     for (const item of payload.criancas) {
       if (typeof item !== 'object' || item === null || Array.isArray(item)) continue
       const row = item as Record<string, unknown>
@@ -342,7 +346,7 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
         return { ok: false, field: 'criancas', message: 'Marcacao de nome da crianca invalida' }
       }
     }
-    dados.criancas = payload.criancas.slice(0, 8).flatMap((item) => {
+    dados.criancas = payload.criancas.flatMap((item) => {
       if (typeof item !== 'object' || item === null || Array.isArray(item)) return []
       const row = item as Record<string, unknown>
       if (typeof row.id !== 'string' || row.id.trim().length < 4 || row.id.length > 80) return []
@@ -426,7 +430,7 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
 
   dados.etapaAtual = mapearEtapaRascunho(payload.etapaAtual)
 
-  const tamanho = Buffer.byteLength(JSON.stringify(dados), 'utf8')
+  const tamanho = new TextEncoder().encode(JSON.stringify(dados)).byteLength
   if (tamanho > FICHA_PAYLOAD_MAX_BYTES) {
     return { ok: false, field: 'dadosRascunho', message: 'Dados do rascunho excedem o limite permitido' }
   }

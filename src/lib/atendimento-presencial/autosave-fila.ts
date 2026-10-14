@@ -77,6 +77,12 @@ export class AutosaveSerialQueue {
   private pendingSave = false
   private stopped = false
   private conflict = false
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
+  private retryCount = 0
+
+  hasPending() {
+    return this.saveInFlight || this.pendingSave || this.conflict
+  }
 
   constructor(options: AutosaveQueueOptions) {
     this.draftId = options.draftId
@@ -113,6 +119,7 @@ export class AutosaveSerialQueue {
   stop() {
     this.stopped = true
     this.cancelDebounce()
+    this.cancelRetry()
   }
 
   resume() {
@@ -126,16 +133,19 @@ export class AutosaveSerialQueue {
   }
 
   enqueue(payload: AutosavePayload) {
-    if (this.stopped || this.conflict) return
     this.latestPayload = payload
+    if (this.stopped || this.conflict) return
     const payloadSerializado = serializarPayloadAutosave(payload)
-    if (payloadSerializado === this.lastSavedPayload) {
+    this.cancelDebounce()
+    this.cancelRetry()
+    this.retryCount = 0
+    this.pendingSave = this.saveInFlight || payloadSerializado !== this.lastSavedPayload
+    if (!this.pendingSave) {
       this.onStatus('salvo')
       return
     }
-    this.pendingSave = true
-    this.onStatus(this.getOnline() ? 'aguardando' : 'offline')
-    this.cancelDebounce()
+    this.onStatus(this.getOnline() ? 'salvando' : 'offline')
+    if (this.saveInFlight) return
     this.timer = this.setTimer(() => {
       this.timer = null
       void this.processarFilaAutosave()
@@ -148,7 +158,29 @@ export class AutosaveSerialQueue {
       if (serializarPayloadAutosave(payload) !== this.lastSavedPayload) this.pendingSave = true
     }
     this.cancelDebounce()
+    this.cancelRetry()
+    this.retryCount = 0
     return this.processarFilaAutosave()
+  }
+
+  private cancelRetry() {
+    if (this.retryTimer !== null) this.clearTimer(this.retryTimer)
+    this.retryTimer = null
+  }
+
+  private falhar(message: string, transient: boolean) {
+    this.pendingSave = true
+    const status: AutosaveStatus = this.getOnline() ? 'erro' : 'offline'
+    this.onStatus(status)
+    this.onLog?.(`[AUTOSAVE] falha draft=${this.draftId.slice(0, 8)} retry=${this.retryCount}`)
+    if (transient && this.getOnline() && !this.stopped && this.retryCount < 2) {
+      const delay = [1000, 3000][this.retryCount++]
+      this.retryTimer = this.setTimer(() => {
+        this.retryTimer = null
+        void this.processarFilaAutosave()
+      }, delay)
+    }
+    return { ok: false as const, status, message }
   }
 
   private processarFilaAutosave(): Promise<{ ok: true; rascunho: AtendimentoPresencialDTO } | { ok: false; status: AutosaveStatus; message: string }> {
@@ -160,6 +192,8 @@ export class AutosaveSerialQueue {
   }
 
   private async executarFilaAutosave(): Promise<{ ok: true; rascunho: AtendimentoPresencialDTO } | { ok: false; status: AutosaveStatus; message: string }> {
+    if (this.conflict) return { ok: false, status: 'conflito', message: 'Conflito de versao. Revise as alteracoes locais antes de continuar.' }
+    if (this.stopped) return { ok: false, status: 'erro', message: 'Salvamento interrompido. Alteracoes locais ainda pendentes.' }
     while (!this.stopped && !this.conflict && this.pendingSave) {
       if (!this.latestPayload) {
         this.pendingSave = false
@@ -170,7 +204,6 @@ export class AutosaveSerialQueue {
       const payloadSerializado = serializarPayloadAutosave(payload)
       if (payloadSerializado === this.lastSavedPayload) {
         this.pendingSave = false
-        this.onStatus('salvo')
         break
       }
 
@@ -192,10 +225,17 @@ export class AutosaveSerialQueue {
         if (result.ok) {
           this.currentVersion = result.rascunho.version
           this.currentRascunho = result.rascunho
-          this.lastSavedPayload = payloadSerializado
+          this.lastSavedPayload = serializarPayloadAutosave({ dadosRascunho: result.rascunho.dadosRascunho, clienteId: result.rascunho.clienteId })
+          this.retryCount = 0
+          this.pendingSave = !!this.latestPayload && serializarPayloadAutosave(this.latestPayload) !== this.lastSavedPayload
+          // O servidor pode normalizar o payload. Nao repetir indefinidamente o mesmo envio.
+          if (this.latestPayload === payload && this.pendingSave) {
+            this.onSaved?.({ payload, payloadSerializado: this.lastSavedPayload, rascunho: result.rascunho })
+            return this.falhar('O servidor nao confirmou todos os campos enviados. Revise os dados.', false)
+          }
           this.onLog?.(`[AUTOSAVE] sucesso draft=${this.draftId.slice(0, 8)} novaVersion=${result.rascunho.version} pending=${this.pendingSave}`)
           this.onSaved?.({ payload, payloadSerializado, rascunho: result.rascunho })
-          this.onStatus(this.pendingSave ? 'aguardando' : 'salvo')
+          if (this.pendingSave) this.onStatus('salvando')
           continue
         }
 
@@ -209,36 +249,33 @@ export class AutosaveSerialQueue {
           const payloadIgual = payloadServidor === payloadSerializado
           this.onLog?.(`[AUTOSAVE] conflito draft=${this.draftId.slice(0, 8)} serverVersion=${result.rascunho?.version ?? 'n/a'} payloadIgual=${payloadIgual}`)
           this.cancelDebounce()
-          this.pendingSave = false
           if (payloadIgual && result.rascunho) {
             this.currentVersion = result.rascunho.version
             this.currentRascunho = result.rascunho
             this.lastSavedPayload = payloadSerializado
+            this.retryCount = 0
+            this.pendingSave = !!this.latestPayload && serializarPayloadAutosave(this.latestPayload) !== this.lastSavedPayload
             this.onSaved?.({ payload, payloadSerializado, rascunho: result.rascunho })
-            this.onStatus('salvo')
-            return { ok: true, rascunho: result.rascunho }
+            if (this.pendingSave) this.onStatus('salvando')
+            continue
           }
           this.conflict = true
           this.stopped = true
           this.onStatus('conflito')
-          this.onConflict?.({ payload, servidor: result.rascunho ?? null, payloadIgual })
+          this.pendingSave = true
+          this.onConflict?.({ payload: this.latestPayload ?? payload, servidor: result.rascunho ?? null, payloadIgual })
           return { ok: false, status: 'conflito', message: result.message }
         }
 
-        this.onStatus('erro')
-        return { ok: false, status: 'erro', message: result.message }
+        return this.falhar(result.message, result.status >= 500 || result.status === 408 || result.status === 429)
       } catch (error) {
         this.saveInFlight = false
-        const offline = !this.getOnline()
-        this.onStatus(offline ? 'offline' : 'erro')
-        return {
-          ok: false,
-          status: offline ? 'offline' : 'erro',
-          message: error instanceof Error ? error.message : 'Erro ao salvar',
-        }
+        return this.falhar(error instanceof Error ? error.message : 'Erro ao salvar', true)
       }
     }
 
+    if (this.pendingSave || this.conflict) return { ok: false, status: 'erro', message: 'Existem alteracoes ainda nao confirmadas.' }
+    if (!this.stopped) this.onStatus('salvo')
     return { ok: true, rascunho: this.currentRascunho }
   }
 }

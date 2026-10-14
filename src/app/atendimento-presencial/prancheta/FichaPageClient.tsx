@@ -28,12 +28,19 @@ import { ViradaCartaoField } from '@/components/atendimento-presencial/ViradaCar
 import { VIRADA_CARTAO_OBRIGATORIA } from '@/lib/atendimento-presencial/virada-cartao-input'
 import {
   carregarCacheRascunho,
+  listarCachesRascunho,
+  planejarRecuperacaoRascunho,
+  temEntradasLocaisPendentes,
+  temDadosIntermediariosRascunho,
+  type RascunhoCache,
+  type EntradasLocaisRascunho,
   removerCacheRascunho,
   salvarCacheRascunho,
 } from '@/lib/atendimento-presencial/rascunho-cache'
 import {
   DEPARTAMENTOS_INTERESSE,
   FICHA_CONSULTORA_NOME_MAX_CHARS,
+  FICHA_CRIANCAS_MAX_ITENS,
   FICHA_ETAPAS,
   FICHA_OBSERVACOES_MAX_CHARS,
   FICHA_PRODUTO_MAX_CHARS,
@@ -176,13 +183,13 @@ function criarPayloadInicial(): FichaDadosRascunho {
 function StatusSync({ status }: { status: SyncStatus }) {
   const texto: Record<SyncStatus, string> = {
     ocioso: 'Ocioso',
-    alterado: 'Alterado',
-    aguardando: 'Aguardando',
+    alterado: 'Somente neste navegador',
+    aguardando: 'Salvando',
     salvando: 'Salvando',
     salvo: 'Salvo',
     offline: 'Offline',
     conflito: 'Conflito',
-    erro: 'Erro',
+    erro: 'Erro ao salvar',
   }
   const tone: Record<SyncStatus, 'neutral' | 'warning' | 'info' | 'success' | 'danger'> = {
     ocioso: 'neutral',
@@ -320,6 +327,18 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [ativo, setAtivo] = useState<AtendimentoPresencialDTO | null>(null)
   const [ficha, setFicha] = useState<FichaDadosRascunho>(() => criarPayloadInicial())
   const [clienteSelecionada, setClienteSelecionada] = useState<ClientePresencialDTO | null>(null)
+  const [clienteId, setClienteId] = useState<string | null>(null)
+  const clienteIdRef = useRef<string | null>(null)
+  const clienteRequestRef = useRef(0)
+  const [erroCliente, setErroCliente] = useState<string | null>(null)
+  const [telefonePendente, setTelefonePendente] = useState<EntradasLocaisRascunho['telefonePendente']>(null)
+  const [erroCache, setErroCache] = useState(false)
+  const [cachesRecuperaveis, setCachesRecuperaveis] = useState<RascunhoCache[]>([])
+  const [conflitoLocal, setConflitoLocal] = useState<{ cache: RascunhoCache; servidor: AtendimentoPresencialDTO } | null>(null)
+  const conflitoLocalRef = useRef(false)
+  const editorIdRef = useRef<string | null>(null)
+  const cacheRecuperadoRef = useRef<RascunhoCache | null>(null)
+  const [saindo, setSaindo] = useState(false)
   const [buscaCliente, setBuscaCliente] = useState('')
   const [clientesEncontradas, setClientesEncontradas] = useState<ClientePresencialDTO[]>([])
   const [buscandoCliente, setBuscandoCliente] = useState(false)
@@ -356,6 +375,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const fichaRef = useRef(ficha)
   const telefoneDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const telefoneRequestRef = useRef(0)
+  const telefoneSaveRef = useRef<Promise<void> | null>(null)
   const telefoneClienteSincronizadoRef = useRef('')
   const clienteSelecionadaRef = useRef<ClientePresencialDTO | null>(null)
   const mountedRef = useRef(false)
@@ -367,6 +387,44 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const novoAtendimentoRef = useRef(false)
   fichaRef.current = ficha
   clienteSelecionadaRef.current = clienteSelecionada
+  const entradasLocais: EntradasLocaisRascunho = { novoCliente, dataPrevistaInputs, viradaCartaoInput, produtoDigitado, numeroLancamento, telefonePendente }
+  const entradasLocaisRef = useRef(entradasLocais)
+  entradasLocaisRef.current = entradasLocais
+  const ativoRef = useRef(ativo)
+  ativoRef.current = ativo
+  const unidadeIdRef = useRef(unidadeId)
+  unidadeIdRef.current = unidadeId
+  const persistirLocalRef = useRef<() => void>(() => undefined)
+  const pendenciasLocais = temEntradasLocaisPendentes(entradasLocais) || temDadosIntermediariosRascunho(ficha)
+
+  function definirClienteId(id: string | null) {
+    clienteIdRef.current = id
+    setClienteId(id)
+  }
+
+  function obterEditorId() {
+    if (!editorIdRef.current) editorIdRef.current = gerarIdLocal('editor')
+    return editorIdRef.current
+  }
+
+  function carregarCacheLocal(draftClientId: string, editorId?: string) {
+    try {
+      return carregarCacheRascunho(window.localStorage, usuarioId, draftClientId, editorId)
+    } catch {
+      setErroCache(true)
+      return null
+    }
+  }
+
+  function restaurarEntradasLocais(entradas?: EntradasLocaisRascunho) {
+    if (!entradas) return
+    setNovoCliente(entradas.novoCliente)
+    setDataPrevistaInputs(entradas.dataPrevistaInputs)
+    setViradaCartaoInput(entradas.viradaCartaoInput)
+    setProdutoDigitado(entradas.produtoDigitado)
+    setNumeroLancamento(entradas.numeroLancamento)
+    setTelefonePendente(entradas.telefonePendente)
+  }
 
   const etapaAtual = ficha.etapaAtual
   const etapaNumero = indexEtapa(etapaAtual) + 1
@@ -415,18 +473,18 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     setFicha((atual) => mutator(atual))
   }
 
-  async function carregarClientePorId(clienteId: string | null) {
-    if (!clienteId) {
-      setClienteSelecionada(null)
-      return
-    }
-
+  async function carregarClientePorId(id: string | null) {
+    const requestId = ++clienteRequestRef.current
+    setClienteSelecionada(null)
+    setErroCliente(null)
+    if (!id) return
     try {
-      const response = await fetch(`/api/atendimento-presencial/clientes/${clienteId}`, { cache: 'no-store' })
+      const response = await fetch(`/api/atendimento-presencial/clientes/${id}`, { cache: 'no-store' })
       const data = (await response.json()) as ApiClientesResponse
-      if (response.ok && data.ok && data.cliente) setClienteSelecionada(data.cliente)
+      if (!response.ok || !data.ok || !data.cliente) throw new Error('Cliente indisponivel')
+      if (requestId === clienteRequestRef.current && clienteIdRef.current === id) setClienteSelecionada(data.cliente)
     } catch {
-      setClienteSelecionada(null)
+      if (requestId === clienteRequestRef.current) setErroCliente('Nao foi possivel carregar a cliente. O vinculo foi preservado; tente novamente.')
     }
   }
 
@@ -465,24 +523,27 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     mountedRef.current = true
     return () => {
       mountedRef.current = false
-      autosaveQueueRef.current?.stop()
-      autosaveQueueRef.current = null
+      persistirLocalRef.current()
+      const fila = autosaveQueueRef.current
+      // A copia local independe da conclusao da requisicao durante a saida.
+      if (fila && !conflitoLocalRef.current) void fila.flushNow(montarPayloadAutosave()).finally(() => { if (!mountedRef.current) fila.stop() })
       if (telefoneDebounceRef.current) clearTimeout(telefoneDebounceRef.current)
     }
   }, [])
 
   useEffect(() => {
     const cliente = clienteSelecionadaRef.current
-    const sincronizacao = `${cliente?.id ?? ''}:${cliente?.version ?? ''}`
+    const sincronizacao = cliente?.id ?? ''
     if (telefoneClienteSincronizadoRef.current === sincronizacao) return
     telefoneClienteSincronizadoRef.current = sincronizacao
-    setTelefoneClienteEdicao(telefoneFormatadoDaCliente(cliente))
+    const pendente = entradasLocaisRef.current.telefonePendente
+    setTelefoneClienteEdicao(pendente && pendente.clienteId === cliente?.id ? pendente.valor : telefoneFormatadoDaCliente(cliente))
     setErroTelefone(null)
     if (telefoneDebounceRef.current) {
       clearTimeout(telefoneDebounceRef.current)
       telefoneDebounceRef.current = null
     }
-  }, [clienteSelecionada?.id, clienteSelecionada?.version])
+  }, [clienteSelecionada?.id])
 
   useEffect(() => {
     const unidadeValida = !!unidadeId && unidadesParaSelecao.some((unidade) => unidade.id === unidadeId)
@@ -527,12 +588,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }, [])
 
   function montarPayloadAutosave(
-    fichaAtual = fichaRef.current,
-    clienteAtual = clienteSelecionadaRef.current
+    fichaAtual = fichaRef.current
   ): AutosavePayload {
     return {
       dadosRascunho: migrarFichaDadosRascunho(fichaAtual),
-      clienteId: clienteAtual?.id ?? null,
+      clienteId: clienteIdRef.current,
     }
   }
 
@@ -542,16 +602,37 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     sincronizado: boolean
     version?: number
   }) {
-    salvarCacheRascunho(window.localStorage, {
-      draftClientId: params.rascunho.draftClientId,
-      usuarioId,
-      atendimentoId: params.rascunho.id,
-      version: params.version ?? autosaveQueueRef.current?.getVersion() ?? params.rascunho.version,
-      dadosRascunho: params.payload.dadosRascunho,
-      atualizadoEm: new Date().toISOString(),
-      sincronizado: params.sincronizado,
-    })
+    persistirCacheLocal(params.rascunho, params.payload, params.version, params.sincronizado)
   }
+
+  function persistirCacheLocal(rascunho = ativoRef.current, payload = montarPayloadAutosave(), version?: number, sincronizado?: boolean) {
+    if (conflitoLocalRef.current) return
+    if (!rascunho && !fichaRef.current.consultoraNome && !clienteIdRef.current && !temEntradasLocaisPendentes(entradasLocaisRef.current)
+      && JSON.stringify(fichaRef.current) === JSON.stringify(criarPayloadInicial())) return
+    if (!draftClientIdRef.current) draftClientIdRef.current = gerarIdLocal('draft')
+    const fila = autosaveQueueRef.current
+    const confirmado = sincronizado ?? (!!fila && serializarPayloadAutosave(payload) === fila.getLastSavedPayload() && !fila.hasPending())
+    try {
+      const ok = salvarCacheRascunho(window.localStorage, {
+        draftClientId: rascunho?.draftClientId ?? draftClientIdRef.current,
+        usuarioId, atendimentoId: rascunho?.id ?? null,
+        version: version ?? fila?.getVersion() ?? rascunho?.version ?? null,
+        clienteId: clienteIdRef.current, unidadeId: unidadeIdRef.current, editorId: obterEditorId(),
+        dadosRascunho: fichaRef.current, entradasLocais: entradasLocaisRef.current,
+        atualizadoEm: new Date().toISOString(),
+        sincronizado: confirmado && !temEntradasLocaisPendentes(entradasLocaisRef.current) && !temDadosIntermediariosRascunho(fichaRef.current),
+      })
+      if (ok && cacheRecuperadoRef.current) {
+        // A copia recuperada ja esta preservada neste editor; evita conflitos falsos na proxima retomada.
+        salvarCacheRascunho(window.localStorage, { ...cacheRecuperadoRef.current, arquivado: true })
+        cacheRecuperadoRef.current = null
+      }
+      if (mountedRef.current) setErroCache(!ok)
+    } catch {
+      if (mountedRef.current) setErroCache(true)
+    }
+  }
+  persistirLocalRef.current = () => persistirCacheLocal()
 
   function aplicarRascunhoSalvo(params: {
     rascunho: AtendimentoPresencialDTO
@@ -563,9 +644,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     setErro(null)
     salvarCacheLocalRascunho({
       rascunho: params.rascunho,
-      payload: params.payload,
+      payload: montarPayloadAutosave(),
       version: params.rascunho.version,
-      sincronizado: params.sincronizado,
+      sincronizado: params.sincronizado && serializarPayloadAutosave(montarPayloadAutosave()) === autosaveQueueRef.current?.getLastSavedPayload(),
     })
   }
 
@@ -579,6 +660,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       save: async ({ payload, expectedVersion }): Promise<AutosaveSaveResult> => {
         const response = await fetch(`/api/atendimento-presencial/atendimentos/${rascunho.id}/rascunho`, {
           method: 'PATCH',
+          keepalive: true,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             version: expectedVersion,
@@ -605,7 +687,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       },
       onConflict: ({ payload, servidor, payloadIgual }) => {
         if (!mountedRef.current) return
-        salvarCacheLocalRascunho({ rascunho: servidor ?? rascunho, payload, sincronizado: false })
+        salvarCacheLocalRascunho({ rascunho, payload, sincronizado: false })
+        if (servidor) {
+          const cache = carregarCacheLocal(rascunho.draftClientId, obterEditorId())
+          if (cache) { conflitoLocalRef.current = true; setConflitoLocal({ cache, servidor }) }
+        }
         if (!payloadIgual) setErro('Conflito de versao. Recarregue o rascunho para comparar com a versao do servidor.')
       },
       onLog: (message) => console.log(message),
@@ -613,35 +699,65 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     })
   }
 
-  function aplicarRascunho(rascunho: AtendimentoPresencialDTO) {
+  function aplicarRascunho(rascunho: AtendimentoPresencialDTO, cacheEscolhido?: RascunhoCache | null) {
+    const cache = cacheEscolhido === undefined ? carregarCacheLocal(rascunho.draftClientId) : cacheEscolhido
+    const recuperacao = planejarRecuperacaoRascunho(cache, rascunho)
+    if (recuperacao.conflito && cache) {
+      autosaveQueueRef.current?.stop()
+      conflitoLocalRef.current = true
+      setConflitoLocal({ cache, servidor: rascunho })
+      setStatusSync('conflito')
+      return
+    }
+    conflitoLocalRef.current = false
+    setConflitoLocal(null)
     setAtivo(rascunho)
+    ativoRef.current = rascunho
+    draftClientIdRef.current = rascunho.draftClientId
     setUnidadeId(rascunho.unidadeId)
-    const cache = carregarCacheRascunho(window.localStorage, usuarioId, rascunho.draftClientId)
-    const usarCache = cache?.sincronizado === false && (cache.version ?? 0) >= rascunho.version
-    const dados = usarCache ? cache.dadosRascunho : rascunho.dadosRascunho
-    const payload = migrarFichaDadosRascunho(dados)
-    if (payload.criancas.length === 0) {
-      payload.criancas = [criarCriancaRascunho(gerarIdLocal('crianca'))]
-    }
-    const payloadServidor = {
-      dadosRascunho: migrarFichaDadosRascunho(rascunho.dadosRascunho),
-      clienteId: rascunho.clienteId,
-    }
-    const payloadAtual = {
-      dadosRascunho: payload,
-      clienteId: usarCache ? rascunho.clienteId : rascunho.clienteId,
-    }
-    criarFilaAutosave(rascunho, serializarPayloadAutosave(payloadServidor))
-    setFicha(payload)
-    setDataPrevistaInputs(Object.fromEntries(payload.criancas.map((crianca) => [crianca.id, formatarDataISOParaInput(crianca.dataPrevistaNascimento)])))
-    setViradaCartaoInput(formatarViradaCartao(payload.viradaCartaoDia, payload.viradaCartaoMes))
+    const dados = recuperacao.usarCache && cache ? cache.dadosRascunho : migrarFichaDadosRascunho(rascunho.dadosRascunho)
+    cacheRecuperadoRef.current = recuperacao.usarCache ? cache : null
+    criarFilaAutosave(rascunho, serializarPayloadAutosave({ dadosRascunho: rascunho.dadosRascunho, clienteId: rascunho.clienteId }))
+    fichaRef.current = dados
+    setFicha(dados)
+    definirClienteId(recuperacao.clienteId)
+    setDataPrevistaInputs(Object.fromEntries(dados.criancas.map((crianca) => [crianca.id, formatarDataISOParaInput(crianca.dataPrevistaNascimento)])))
+    setViradaCartaoInput(formatarViradaCartao(dados.viradaCartaoDia, dados.viradaCartaoMes))
+    setNumeroLancamento('')
     setErrosValidacao([])
     setErroEtapa(null)
-    if (usarCache) salvarCacheLocalRascunho({ rascunho, payload: payloadAtual, sincronizado: false, version: rascunho.version })
-    setStatusSync(usarCache ? 'offline' : 'salvo')
-    setNumeroLancamento('')
     setMensagemConclusao(null)
-    void carregarClientePorId(rascunho.clienteId)
+    if (cache && recuperacao.usarCache) restaurarEntradasLocais(cache.entradasLocais)
+    const alterado = serializarPayloadAutosave(montarPayloadAutosave()) !== autosaveQueueRef.current?.getLastSavedPayload()
+    setStatusSync(alterado ? 'salvando' : 'salvo')
+    void carregarClientePorId(recuperacao.clienteId)
+  }
+
+  async function recuperarCache(cache: RascunhoCache) {
+    if (cache.atendimentoId) {
+      router.push(`/atendimento-presencial/prancheta?rascunho=${cache.atendimentoId}`)
+      return
+    }
+    draftClientIdRef.current = cache.draftClientId
+    cacheRecuperadoRef.current = cache
+    fichaRef.current = cache.dadosRascunho
+    setFicha(cache.dadosRascunho)
+    setUnidadeId(cache.unidadeId ?? '')
+    definirClienteId(cache.clienteId ?? null)
+    restaurarEntradasLocais(cache.entradasLocais)
+    setCachesRecuperaveis([])
+    void carregarClientePorId(cache.clienteId ?? null)
+  }
+
+  function resolverConflitoLocal(usarLocal: boolean) {
+    if (!conflitoLocal) return
+    const { cache, servidor } = conflitoLocal
+    // Escolha explicita: preserva a outra copia e usa a versao atual como base.
+    salvarCacheRascunho(window.localStorage, { ...cache, arquivado: true })
+    conflitoLocalRef.current = false
+    setConflitoLocal(null)
+    editorIdRef.current = gerarIdLocal('editor')
+    aplicarRascunho(servidor, usarLocal ? { ...cache, version: servidor.version } : null)
   }
 
   async function aplicarRascunhoCriado(rascunho: AtendimentoPresencialDTO) {
@@ -659,27 +775,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     setErroEtapa(null)
     setErrosValidacao([])
 
+    // Nao reaplicar snapshots: o usuario pode ter continuado digitando durante o POST.
+    draftClientIdRef.current = rascunho.draftClientId
     const fila = autosaveQueueRef.current
-    let dadosRascunhoFinais = payloadServidor.dadosRascunho
-    if (fila) {
-      const payloadAtual = montarPayloadAutosave()
-      if (serializarPayloadAutosave(payloadAtual) !== serializarPayloadAutosave(payloadServidor)) {
-        const resultado = await fila.flushNow(payloadAtual)
-        if (resultado.ok && resultado.rascunho) {
-          dadosRascunhoFinais = migrarFichaDadosRascunho(resultado.rascunho.dadosRascunho)
-        } else {
-          dadosRascunhoFinais = payloadAtual.dadosRascunho
-        }
-      }
-    }
-
-    const consultoraNomeAtual = fichaRef.current.consultoraNome
-    setFicha({
-      ...dadosRascunhoFinais,
-      consultoraNome: consultoraNomeAtual ?? dadosRascunhoFinais.consultoraNome,
-    })
-    setDataPrevistaInputs(Object.fromEntries(dadosRascunhoFinais.criancas.map((crianca) => [crianca.id, formatarDataISOParaInput(crianca.dataPrevistaNascimento)])))
-    setViradaCartaoInput(formatarViradaCartao(dadosRascunhoFinais.viradaCartaoDia, dadosRascunhoFinais.viradaCartaoMes))
+    persistirCacheLocal(rascunho)
+    if (fila) await fila.flushNow(montarPayloadAutosave())
   }
 
   async function iniciarRascunho(draftClientId?: string) {
@@ -694,7 +794,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
 
     const unidadeFinal = unidadeId || unidadesParaSelecao[0]?.id
     const consultoraNomeFinal = normalizarNomeConsultora(ficha.consultoraNome)
-    const clienteIdFinal = clienteSelecionada?.id ?? null
+    const clienteIdFinal = clienteIdRef.current
 
     const dadosRascunhoEnviados: FichaDadosRascunho = {
       ...ficha,
@@ -739,6 +839,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     }
 
     const cliente = clienteSelecionada
+    setTelefonePendente({ clienteId: cliente.id, valor: telefone })
     setTelefoneClienteEdicao(telefone)
     setClienteSelecionada((atual) => atual ? {
       ...atual,
@@ -755,30 +856,59 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   async function salvarTelefoneCliente(cliente: ClientePresencialDTO, telefone: string, requestId: number) {
+    const anterior = telefoneSaveRef.current
+    let liberar!: () => void
+    const atual = new Promise<void>((resolve) => { liberar = resolve })
+    telefoneSaveRef.current = atual
+    await anterior
     setSalvandoTelefone(true)
     try {
+      if (requestId !== telefoneRequestRef.current || clienteIdRef.current !== cliente.id) return
+      const versaoAtual = clienteSelecionadaRef.current?.version ?? cliente.version
       const response = await fetch(`/api/atendimento-presencial/clientes/${cliente.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          telefone: telefone || null,
-          version: cliente.version,
-        }),
+        body: JSON.stringify({ telefone: telefone || null, version: versaoAtual }),
       })
       const data = (await response.json()) as ApiClientesResponse
-      if (requestId !== telefoneRequestRef.current) return
-      if (!response.ok || !data.ok || !data.cliente) {
-        throw new Error(data.message ?? 'Erro ao atualizar telefone')
+      if (clienteIdRef.current !== cliente.id) return
+      if (data.cliente) {
+        // Mesmo uma resposta antiga atualiza a versao, mas nao substitui o texto mais recente.
+        const pendente = entradasLocaisRef.current.telefonePendente
+        const dto = requestId === telefoneRequestRef.current ? data.cliente : {
+          ...data.cliente, telefone: pendente?.valor ?? null, telefoneFormatado: pendente?.valor ?? null,
+        }
+        clienteSelecionadaRef.current = dto
+        setClienteSelecionada(dto)
       }
-      setClienteSelecionada(data.cliente)
+      if (requestId !== telefoneRequestRef.current) return
+      if (!response.ok || !data.ok || !data.cliente) throw new Error(data.message ?? 'Erro ao atualizar telefone')
+      setTelefonePendente(null)
+      setErroTelefone(null)
       setTelefoneClienteEdicao(data.cliente.telefoneFormatado ?? '')
     } catch (error) {
-      if (requestId === telefoneRequestRef.current) {
+      if (requestId === telefoneRequestRef.current && mountedRef.current) {
         setErroTelefone(error instanceof Error ? error.message : 'Erro ao atualizar telefone')
       }
     } finally {
-      if (requestId === telefoneRequestRef.current) setSalvandoTelefone(false)
+      liberar()
+      if (telefoneSaveRef.current === atual) telefoneSaveRef.current = null
+      if (requestId === telefoneRequestRef.current && mountedRef.current) setSalvandoTelefone(false)
     }
+  }
+
+  async function descartarEdicaoTelefone() {
+    const id = telefonePendente?.clienteId
+    if (!id) return
+    if (telefoneDebounceRef.current) clearTimeout(telefoneDebounceRef.current)
+    const requestId = ++telefoneRequestRef.current
+    // Uma requisicao ja enviada pode ter sido aceita. Releia o cadastro apos sua resposta.
+    await telefoneSaveRef.current
+    if (requestId !== telefoneRequestRef.current) return
+    setTelefonePendente(null)
+    setSalvandoTelefone(false)
+    setErroTelefone(null)
+    await carregarClientePorId(id)
   }
 
   async function buscarClientes() {
@@ -802,6 +932,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   function selecionarCliente(cliente: ClientePresencialDTO) {
+    ++clienteRequestRef.current
+    definirClienteId(cliente.id)
+    setErroCliente(null)
     setClienteSelecionada(cliente)
     setBuscaCliente('')
     setClientesEncontradas([])
@@ -837,6 +970,10 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   function trocarCliente() {
+    if (telefonePendente) { setErroTelefone('Salve ou descarte a edicao do telefone antes de trocar a cliente.'); return }
+    ++clienteRequestRef.current
+    definirClienteId(null)
+    setErroCliente(null)
     setClienteSelecionada(null)
     setHistoricoAberto(false)
     atualizarFicha((atual) => ({ ...atual, cliente: undefined }))
@@ -850,7 +987,6 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       const data = (await response.json()) as ApiRascunhoResponse
       if (!response.ok || !data.ok || !data.rascunho) throw new Error(data.message ?? 'Erro ao recarregar rascunho')
       aplicarRascunho(data.rascunho)
-      setStatusSync('salvo')
     } catch (error) {
       setErro(error instanceof Error ? error.message : 'Erro ao recarregar rascunho')
     }
@@ -922,10 +1058,14 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   function adicionarCrianca() {
+    if (fichaRef.current.criancas.length >= FICHA_CRIANCAS_MAX_ITENS) {
+      setErroEtapa('O atendimento permite no maximo oito criancas.')
+      return
+    }
     const crianca = criarCriancaRascunho(gerarIdLocal('crianca'))
     atualizarFicha((atual) => ({
       ...atual,
-      criancas: [...atual.criancas, crianca],
+      criancas: atual.criancas.length >= FICHA_CRIANCAS_MAX_ITENS ? atual.criancas : [...atual.criancas, crianca],
     }))
   }
 
@@ -1036,6 +1176,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   async function garantirRascunhoSalvoAntesDeConcluir() {
+    if (conflitoLocalRef.current) throw new Error('Resolva o conflito antes de continuar.')
+    if (telefonePendente) throw new Error('Confirme a atualizacao do telefone antes de continuar.')
     if (!ativo || !autosaveQueueRef.current) return null
     const fila = autosaveQueueRef.current
     const payload = montarPayloadAutosave()
@@ -1070,6 +1212,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       autosaveQueueRef.current = null
       setAtivo(null)
       setFicha(criarPayloadInicial())
+      definirClienteId(null)
+      setTelefonePendente(null)
       setClienteSelecionada(null)
       setBuscaCliente('')
       setClientesEncontradas([])
@@ -1095,6 +1239,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       setCarregandoRascunhoInicial(false)
       telefoneClienteSincronizadoRef.current = ''
       draftClientIdRef.current = null
+      ativoRef.current = null
+      setCachesRecuperaveis([])
       tentativaUnidadeRef.current = ''
       tentativaNomeRef.current = ''
 
@@ -1115,17 +1261,31 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     }
   }
 
+  async function tentarSalvarNovamente() {
+    if (!ativo || conflitoLocalRef.current) return
+    const resultado = await autosaveQueueRef.current?.flushNow(montarPayloadAutosave())
+    if (resultado && !resultado.ok) setErro(resultado.message)
+  }
+
   async function verRascunhos() {
-    if (ativo && autosaveQueueRef.current) {
-      const payload = montarPayloadAutosave()
-      autosaveQueueRef.current.cancelDebounce()
-      try {
-        await autosaveQueueRef.current.flushNow(payload)
-      } catch {
-        // segue navegacao mesmo se falhar
+    if (saindo) return
+    setSaindo(true)
+    try {
+      persistirCacheLocal()
+      if (conflitoLocalRef.current) throw new Error('Resolva o conflito antes de sair.')
+      if (telefonePendente) throw new Error('O telefone ainda nao foi confirmado. Tente salvar novamente.')
+      if (ativo && autosaveQueueRef.current) {
+        const resultado = await autosaveQueueRef.current.flushNow(montarPayloadAutosave())
+        if (!resultado.ok) throw new Error(resultado.message)
+      } else if (ficha.consultoraNome || clienteId) {
+        throw new Error('O rascunho ainda nao foi criado. Aguarde ou tente novamente; a copia local foi mantida quando disponivel.')
       }
+      router.push('/atendimento-presencial/registros?tab=rascunhos')
+    } catch (error) {
+      setErro(error instanceof Error ? error.message : 'Nao foi possivel confirmar o salvamento.')
+    } finally {
+      setSaindo(false)
     }
-    router.push('/atendimento-presencial/registros?tab=rascunhos')
   }
 
   async function concluirAtendimento() {
@@ -1133,7 +1293,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     concluindoRef.current = true
     const validacao = validarFichaParaConclusao({
       ficha,
-      clienteId: clienteSelecionada?.id ?? null,
+      clienteId: clienteIdRef.current,
       numeroLancamento,
     })
     if (!validacao.ok) {
@@ -1170,6 +1330,10 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       autosaveQueueRef.current?.stop()
       autosaveQueueRef.current = null
       setAtivo(null)
+      ativoRef.current = null
+      draftClientIdRef.current = null
+      definirClienteId(null)
+      setTelefonePendente(null)
       setFicha(criarPayloadInicial())
       setClienteSelecionada(null)
       setBuscaCliente('')
@@ -1192,34 +1356,51 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
 
   useEffect(() => {
     const fila = autosaveQueueRef.current
-    if (!ativo || !fila) return
-    const payload: AutosavePayload = {
-      dadosRascunho: migrarFichaDadosRascunho(ficha),
-      clienteId: clienteSelecionada?.id ?? null,
-    }
-    const payloadSerializado = serializarPayloadAutosave(payload)
-    const sincronizado = payloadSerializado === fila.getLastSavedPayload()
-    salvarCacheRascunho(window.localStorage, {
-      draftClientId: ativo.draftClientId,
-      usuarioId,
-      atendimentoId: ativo.id,
-      version: fila.getVersion(),
-      dadosRascunho: payload.dadosRascunho,
-      atualizadoEm: new Date().toISOString(),
-      sincronizado,
-    })
-
-    if (concluindoRef.current) return
-    if (sincronizado) {
-      setStatusSync('salvo')
-      return
-    }
-
-    setStatusSync(navigator.onLine ? 'alterado' : 'offline')
+    if (!ativo || !fila || conflitoLocalRef.current || concluindoRef.current) return
+    const payload = montarPayloadAutosave()
+    if (serializarPayloadAutosave(payload) === fila.getLastSavedPayload() && !fila.hasPending()) return
     fila.enqueue(payload)
-  }, [ativo, clienteSelecionada?.id, ficha, onlineTick, usuarioId])
+  // A confirmacao de PATCH nao e uma nova edicao.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ativo?.id, clienteId, ficha, onlineTick])
+
+  useEffect(() => {
+    if (carregandoRascunhoInicial || erroRascunhoInicial || conflitoLocalRef.current) return
+    const temConteudo = !!ativo || !!ficha.consultoraNome || !!clienteId || pendenciasLocais
+      || ficha.criancas.some((crianca) => !!crianca.nome || !!crianca.sexo || !!crianca.dataPrevistaNascimento || !!crianca.idadeUnidade)
+    if (temConteudo) persistirLocalRef.current()
+  }, [ativo, ficha, clienteId, novoCliente, dataPrevistaInputs, viradaCartaoInput, produtoDigitado, numeroLancamento, telefonePendente, pendenciasLocais, carregandoRascunhoInicial, erroRascunhoInicial])
+
+  useEffect(() => {
+    if (!rascunhoIdInicial) {
+      try {
+        const caches = listarCachesRascunho(window.localStorage, usuarioId).filter((cache) => !cache.sincronizado && !cache.arquivado)
+        setCachesRecuperaveis(caches.filter((cache, i) => caches.findIndex((item) => item.draftClientId === cache.draftClientId) === i))
+      } catch {
+        setErroCache(true)
+      }
+    }
+    function preservarSaida() {
+      persistirLocalRef.current()
+      const fila = autosaveQueueRef.current
+      if (fila && !conflitoLocalRef.current) void fila.flushNow(montarPayloadAutosave())
+    }
+    function ocultar() { if (document.visibilityState === 'hidden') preservarSaida() }
+    window.addEventListener('pagehide', preservarSaida)
+    document.addEventListener('visibilitychange', ocultar)
+    return () => {
+      window.removeEventListener('pagehide', preservarSaida)
+      document.removeEventListener('visibilitychange', ocultar)
+    }
+  }, [usuarioId, rascunhoIdInicial])
 
   const unidadeAtual = contexto?.unidadesPermitidas.find((unidade) => unidade.id === unidadeId)
+  const filaAtual = autosaveQueueRef.current
+  const alteracoesNaoConfirmadas = !!filaAtual && (filaAtual.hasPending()
+    || serializarPayloadAutosave(montarPayloadAutosave()) !== filaAtual.getLastSavedPayload())
+  const statusVisivel: SyncStatus = statusSync === 'salvo'
+    ? alteracoesNaoConfirmadas ? 'salvando' : pendenciasLocais ? 'alterado' : 'salvo'
+    : statusSync
 
   return (
     <PageContainer>
@@ -1240,7 +1421,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 <Plus className="size-4" aria-hidden="true" />
                 Novo Atendimento
               </Button>
-              <Button type="button" variant="ghost" onClick={verRascunhos} className="w-full sm:w-auto">
+              <Button type="button" variant="ghost" onClick={verRascunhos} disabled={saindo} loading={saindo} className="w-full sm:w-auto">
                 <ClipboardList className="size-4" aria-hidden="true" />
                 Ver rascunhos
               </Button>
@@ -1253,7 +1434,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
             <p className="text-sm font-semibold text-slate-700">Etapa {etapaNumero} de {FICHA_TOTAL_ETAPAS}</p>
             <p className="text-sm text-slate-500">{etapaLabelAtual}</p>
           </div>
-          <StatusSync status={statusSync} />
+          <StatusSync status={statusVisivel} />
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
           <div className="h-full rounded-full bg-primary" style={{ width: `${(etapaNumero / FICHA_TOTAL_ETAPAS) * 100}%` }} />
@@ -1276,6 +1457,28 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
             )}
           </Alert>
         )}
+        {statusSync === 'erro' && !conflitoLocal && <Alert tone="danger">Existem alteracoes nao confirmadas no servidor.
+          <Button type="button" variant="secondary" size="sm" onClick={tentarSalvarNovamente}>Tentar salvar novamente</Button>
+        </Alert>}
+        {erroCache && <Alert tone="danger">Nao foi possivel manter a copia neste navegador. Aguarde a confirmacao no servidor antes de sair.</Alert>}
+        {pendenciasLocais && <Alert tone="warning">Existem entradas guardadas somente neste navegador. Cadastre a nova cliente, adicione o produto e complete as datas quando necessario. O lancamento sera enviado apenas ao concluir.</Alert>}
+        {telefonePendente && <Alert tone="warning">O telefone ainda nao foi confirmado no cadastro.
+          <Button type="button" variant="secondary" size="sm" disabled={!clienteSelecionada || salvandoTelefone} onClick={() => clienteSelecionada && void salvarTelefoneCliente(clienteSelecionada, telefonePendente.valor, ++telefoneRequestRef.current)}>Tentar salvar telefone</Button>
+          <Button type="button" variant="ghost" size="sm" onClick={descartarEdicaoTelefone}>Descartar edicao do telefone</Button>
+        </Alert>}
+        {erroCliente && <Alert tone="warning">{erroCliente}
+          <Button type="button" variant="secondary" size="sm" onClick={() => void carregarClientePorId(clienteIdRef.current)}>Carregar cliente novamente</Button>
+          <Button type="button" variant="ghost" size="sm" onClick={trocarCliente}>Trocar cliente</Button>
+        </Alert>}
+        {conflitoLocal && <Alert tone="warning">
+          <p>Ha alteracoes locais e uma versao diferente no servidor. A sincronizacao foi pausada. Escolha qual versao deseja continuar; a outra copia local sera mantida.</p>
+          <Button type="button" variant="secondary" size="sm" onClick={() => resolverConflitoLocal(true)}>Continuar com alteracoes locais</Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => resolverConflitoLocal(false)}>Continuar com versao do servidor</Button>
+        </Alert>}
+        {!ativo && !conflitoLocal && cachesRecuperaveis.length > 0 && <Alert tone="info">
+          <p>Existem alteracoes locais recuperaveis neste navegador.</p>
+          {cachesRecuperaveis.map((cache) => <Button key={cache.draftClientId} type="button" variant="secondary" size="sm" onClick={() => void recuperarCache(cache)}>Retomar copia local ({new Date(cache.atualizadoEm).toLocaleString('pt-BR')})</Button>)}
+        </Alert>}
         {erroEtapa && <Alert tone="warning">{erroEtapa}</Alert>}
         {mensagemConclusao && <Alert tone="success">{mensagemConclusao}</Alert>}
 
@@ -1302,7 +1505,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
           </Alert>
         )}
 
-        {(etapaAtual === 'ficha' || ativo) && !carregandoRascunhoInicial && !erroRascunhoInicial && (
+        {(etapaAtual === 'ficha' || ativo) && !carregandoRascunhoInicial && !erroRascunhoInicial && !conflitoLocal && (
           <div className="grid gap-5">
             {etapaAtual === 'ficha' && (
               <SecaoFicha
@@ -1364,7 +1567,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
               <SecaoFicha
                 id="secao-cliente"
                 titulo="Cliente"
-                descricao={!clienteSelecionada ? 'Busque por nome ou telefone, ou cadastre uma nova cliente.' : undefined}
+                descricao={clienteId && !clienteSelecionada ? 'O vinculo da cliente esta preservado enquanto seu cadastro e carregado.' : !clienteSelecionada ? 'Busque por nome ou telefone, ou cadastre uma nova cliente.' : undefined}
                 icon={UserRound}
                 tone="section-1"
                 erro={erroSecao('secao-cliente')}
@@ -1389,7 +1592,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                   </Card>
                 )}
 
-                {!clienteSelecionada && (
+                {!clienteSelecionada && !clienteId && (
                   <>
                     <div>
                       <label className="text-sm font-semibold text-slate-700" htmlFor="busca-cliente">Buscar por nome ou telefone</label>
@@ -1608,9 +1811,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                     </CardContent>
                   </Card>
                 ))}
-                <Button type="button" variant="secondary" onClick={adicionarCrianca} size="lg" className="h-12">
+                <Button type="button" variant="secondary" disabled={ficha.criancas.length >= FICHA_CRIANCAS_MAX_ITENS} onClick={adicionarCrianca} size="lg" className="h-12">
                   <Plus className="size-4" aria-hidden="true" />
-                  Adicionar outra crianca
+                  {ficha.criancas.length >= FICHA_CRIANCAS_MAX_ITENS ? 'Limite de oito criancas atingido' : 'Adicionar outra crianca'}
                 </Button>
               </SecaoFicha>
             )}
@@ -1896,6 +2099,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
               onChange={atualizarTelefoneCliente}
               erro={erroTelefone}
               loading={salvandoTelefone}
+              disabled={!!clienteId && !clienteSelecionada}
               compact={etapaAtual === 'ficha' && !clienteSelecionada}
             />
           </div>

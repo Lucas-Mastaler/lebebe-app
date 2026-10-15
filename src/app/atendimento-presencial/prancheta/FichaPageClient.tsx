@@ -2110,7 +2110,13 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         <div ref={actionBarRef} className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-lg backdrop-blur">
           <div className="mx-auto flex max-w-3xl flex-col gap-2">
             {mensagemContinuar && (
-              <p className="text-center text-xs font-medium text-slate-600">{mensagemContinuar}</p>
+              errosEtapaAtual.length > 0 ? (
+                <div className="flex justify-center">
+                  <Badge tone="danger" role="alert">{mensagemContinuar}</Badge>
+                </div>
+              ) : (
+                <p className="text-center text-xs font-medium text-slate-600">{mensagemContinuar}</p>
+              )
             )}
             <div className="flex gap-2">
               <Button type="button" variant="secondary" onClick={voltar} disabled={etapaAtual === 'ficha'} size="lg" className="h-12 flex-1">

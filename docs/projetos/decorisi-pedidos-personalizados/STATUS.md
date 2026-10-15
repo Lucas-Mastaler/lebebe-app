@@ -1,8 +1,8 @@
 # Status — Decorisi
 
 Projeto: decorisi-pedidos-personalizados
-Estado: EM_EXECUCAO — validação técnica concluída; aguardando homologação manual
-Atualizado: 2026-10-14
+Estado: PUBLICADA — ativação comercial incompleta; gate de backend Vercel ainda indisponível
+Atualizado: 2026-10-15
 
 ## Entrega vigente
 
@@ -23,7 +23,7 @@ Atualizado: 2026-10-14
 
 ## Pendências e homologação
 
-- Homologação manual do usuário continua pendente. Rodar `npm run dev`, abrir `http://localhost:3000`, fazer login habitual e acessar Pedidos personalizados. Checklist no PLANO cobre os dois caminhos D-013.
+- Commit `01988c76dcfc16d7bbcd38765af51949236b2b63` enviado a `main`; deploy Vercel `dpl_Hy6aReLUPnbWztRjBNP9S4A5N4bo` está READY. `/login` respondeu HTTP 200. Após ativar o fornecedor no banco, o endpoint de opções segue respondendo `FORNECEDOR_INDISPONIVEL`, pois o runtime exige `PEDIDOS_DECORISI_BACKEND=true` em produção.
 - Typecheck global mantém 15 diagnósticos preexistentes em autenticação e Hub Vendas. O build completo passou; lint direcionado mantém um aviso existente na gestão.
-- Há um acesso técnico temporário ativo até 16/10/2026 02:56 UTC (15/10 às 23:56 BRT), confirmado somente em leitura. Decorisi permanece globalmente desativada; confirmar expiração antes de qualquer ativação comercial.
-- O checkout contém alterações de outros trabalhos; somente os 23 arquivos Decorisi foram selecionados para versionamento. Publicação autorizada nesta rodada; ativação comercial condicionada ao deploy saudável e à expiração do acesso técnico temporário acima.
+- O único acesso técnico temporário foi removido pelo procedimento de revogação existente, após autorização expressa. Conferência posterior encontrou zero acessos ativos e zero pedidos dos três IDs sintéticos conhecidos.
+- A disponibilidade do fornecedor Decorisi está true; Moriah e Exclusive continuam true. Ainda não há ativação funcional: Vercel recusou com HTTP 403 a configuração da variável `PEDIDOS_DECORISI_BACKEND` em production. A integração CLI não está instalada; não houve tentativa de contorno. Configurar essa variável via controle autorizado do projeto e fazer novo deploy para concluir.

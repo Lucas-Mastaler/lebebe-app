@@ -126,6 +126,7 @@ export type FichaCriancaRascunho = {
 }
 
 export type FichaDadosRascunho = {
+  entradasFormulario?: EntradasFormularioRascunho
   cliente?: FichaClienteRascunho
   consultoraNome?: string
   criancas: FichaCriancaRascunho[]
@@ -139,6 +140,16 @@ export type FichaDadosRascunho = {
   observacoes?: string
   etapaAtual: FichaEtapa
   notaTecnica?: string
+}
+
+// Texto ainda em edicao: preservado no rascunho, sem efetivar cadastros ou lancamentos.
+export type EntradasFormularioRascunho = {
+  novoCliente: { nome: string; telefone: string; parentesco: ParentescoCliente | ''; parentescoOutro: string }
+  dataPrevistaInputs: Record<string, string>
+  viradaCartaoInput: string
+  produtoDigitado: string
+  numeroLancamento: string
+  telefonePendente: { clienteId: string; valor: string } | null
 }
 
 export type ValidacaoFichaRascunho =
@@ -157,6 +168,7 @@ const departamentosValidos = new Set<string>(DEPARTAMENTOS_INTERESSE.map((item) 
 const resultadosValidos = new Set<string>(RESULTADOS_ATENDIMENTO.map((item) => item.chave))
 const motivosValidos = new Set<string>(MOTIVOS_RESULTADO_GRUPOS.flatMap((grupo) => grupo.motivos.map((item) => item.chave)))
 const chavesPermitidas = new Set([
+  'entradasFormulario',
   'cliente',
   'consultoraNome',
   'criancas',
@@ -321,6 +333,31 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
 
   const dados = payloadBase()
 
+  if (payload.entradasFormulario !== undefined) {
+    const entrada = payload.entradasFormulario as EntradasFormularioRascunho | null
+    const textoValido = (texto: unknown, limite: number): texto is string => typeof texto === 'string' && texto.length <= limite
+    if (!entrada || typeof entrada !== 'object' || Array.isArray(entrada)
+      || !entrada.novoCliente || typeof entrada.novoCliente !== 'object'
+      || !textoValido(entrada.novoCliente.nome, 120) || !textoValido(entrada.novoCliente.telefone, 30)
+      || !textoValido(entrada.novoCliente.parentesco, 40) || !textoValido(entrada.novoCliente.parentescoOutro, 120)
+      || !entrada.dataPrevistaInputs || typeof entrada.dataPrevistaInputs !== 'object' || Array.isArray(entrada.dataPrevistaInputs)
+      || Object.entries(entrada.dataPrevistaInputs).some(([id, texto]) => id.length > 80 || !textoValido(texto, 10))
+      || !textoValido(entrada.viradaCartaoInput, 5) || !textoValido(entrada.produtoDigitado, FICHA_PRODUTO_MAX_CHARS)
+      || !textoValido(entrada.numeroLancamento, 6)
+      || (entrada.telefonePendente !== null && (!entrada.telefonePendente
+        || !textoValido(entrada.telefonePendente.clienteId, 80) || !textoValido(entrada.telefonePendente.valor, 30)))) {
+      return { ok: false, field: 'dadosRascunho', message: 'Revise os campos em edicao do rascunho.' }
+    }
+    dados.entradasFormulario = {
+      novoCliente: { nome: entrada.novoCliente.nome, telefone: entrada.novoCliente.telefone, parentesco: entrada.novoCliente.parentesco, parentescoOutro: entrada.novoCliente.parentescoOutro },
+      dataPrevistaInputs: { ...entrada.dataPrevistaInputs },
+      viradaCartaoInput: entrada.viradaCartaoInput,
+      produtoDigitado: entrada.produtoDigitado,
+      numeroLancamento: entrada.numeroLancamento,
+      telefonePendente: entrada.telefonePendente ? { clienteId: entrada.telefonePendente.clienteId, valor: entrada.telefonePendente.valor } : null,
+    }
+  }
+
   if (typeof payload.cliente === 'object' && payload.cliente !== null && !Array.isArray(payload.cliente)) {
     const cliente = payload.cliente as Record<string, unknown>
     const fichaCliente: FichaClienteRascunho = {}
@@ -339,6 +376,9 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
       const row = item as Record<string, unknown>
       const nomeNaoInformado = row.nomeNaoInformado === true
       const nome = normalizarNomeCrianca(row.nome)
+      if (!nomeCriancaValido(row.nome)) {
+        return { ok: false, field: 'criancas', message: 'Revise o nome da crianca. Nenhuma alteracao foi salva.' }
+      }
       if (nomeNaoInformado && nome) {
         return { ok: false, field: 'criancas', message: 'Nome da crianca nao pode ser preenchido junto com Nao sabe ainda' }
       }
@@ -368,6 +408,7 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
       if (situacao === 'ja_nasceu') {
         const idadeUnidade = row.idadeUnidade === 'meses' || row.idadeUnidade === 'anos' ? row.idadeUnidade : undefined
         const idadeValor = Number(row.idadeValor)
+        if (idadeUnidade) crianca.idadeUnidade = idadeUnidade
         if (idadeUnidade === 'meses' && Number.isInteger(idadeValor) && idadeValor >= 1 && idadeValor <= 11) {
           crianca.idadeUnidade = 'meses'
           crianca.idadeValor = idadeValor

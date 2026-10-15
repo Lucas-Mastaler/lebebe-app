@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { serializarPayloadAutosave } from './autosave-fila'
 import {
   carregarCacheRascunho,
   listarCachesRascunho,
@@ -25,6 +26,15 @@ function criarStorage(): StorageLike & { data: Map<string, string> } {
 }
 
 describe('cache local de rascunho', () => {
+  it('retomada apos PATCH concluido ao sair nao cria conflito se o conteudo ja esta no servidor', () => {
+    const dados = { criancas: [{ id: 'crianca-teste', situacao: 'gestacao' as const, nome: 'Maria' }], departamentos: [], produtosInteresse: [], motivosResultado: [], etapaAtual: 'ficha' as const }
+    const cache: RascunhoCache = { usuarioId: 'usuario', draftClientId: 'draft', atendimentoId: 'atendimento', version: 1, clienteId: null, dadosRascunho: dados, atualizadoEm: '2026-10-15', sincronizado: false }
+    expect(planejarRecuperacaoRascunho(cache, { id: 'atendimento', version: 2, clienteId: null, dadosRascunho: dados }).conflito).toBe(false)
+    expect(planejarRecuperacaoRascunho(cache, { id: 'atendimento', version: 2, clienteId: null, dadosRascunho: { ...dados, criancas: [] } }).conflito).toBe(true)
+    cache.basesRecuperacao = [serializarPayloadAutosave({ dadosRascunho: { ...dados, criancas: [] }, clienteId: null })]
+    expect(planejarRecuperacaoRascunho(cache, { id: 'atendimento', version: 2, clienteId: null, dadosRascunho: { ...dados, criancas: [] } }).conflito).toBe(false)
+    expect(planejarRecuperacaoRascunho(cache, { id: 'atendimento', version: 2, clienteId: null, dadosRascunho: { ...dados, observacoes: 'Outra aba' } }).conflito).toBe(true)
+  })
   it('cria chave por usuario e draft', () => {
     expect(criarChaveCacheRascunho('usuario-1', 'draft-1')).toBe('atendimento-presencial:rascunho:usuario-1:draft-1')
   })

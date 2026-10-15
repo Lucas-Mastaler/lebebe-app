@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, Baby, Check, ChevronLeft, ChevronRight, ClipboardList, History, MessageSquareText, Plus, RefreshCw, Save, Search, ShoppingBag, UserRound, WifiOff, X } from 'lucide-react'
+import { AlertCircle, Baby, Check, ChevronLeft, ChevronRight, ClipboardList, History, LoaderCircle, MessageSquareText, Plus, RefreshCw, Save, Search, ShoppingBag, UserRound, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   Alert,
@@ -63,6 +63,7 @@ import {
   migrarFichaDadosRascunho,
   normalizarNomeConsultora,
   validarFichaParaConclusao,
+  validarFichaDadosRascunho,
   validarNomeConsultora,
   type DepartamentoInteresse,
   type FichaCriancaRascunho,
@@ -180,15 +181,15 @@ function criarPayloadInicial(): FichaDadosRascunho {
   }
 }
 
-function StatusSync({ status }: { status: SyncStatus }) {
+function StatusSync({ status, onRetry }: { status: SyncStatus; onRetry: () => void }) {
   const texto: Record<SyncStatus, string> = {
-    ocioso: 'Ocioso',
-    alterado: 'Somente neste navegador',
-    aguardando: 'Salvando',
-    salvando: 'Salvando',
-    salvo: 'Salvo',
-    offline: 'Offline',
-    conflito: 'Conflito',
+    ocioso: 'Aguardando inicio',
+    alterado: 'Salvando...',
+    aguardando: 'Salvando...',
+    salvando: 'Salvando...',
+    salvo: 'Rascunho salvo',
+    offline: 'Erro ao salvar',
+    conflito: 'Erro ao salvar',
     erro: 'Erro ao salvar',
   }
   const tone: Record<SyncStatus, 'neutral' | 'warning' | 'info' | 'success' | 'danger'> = {
@@ -203,10 +204,15 @@ function StatusSync({ status }: { status: SyncStatus }) {
   }
 
   return (
-    <Badge tone={tone[status]} className="min-h-9 gap-1.5">
-      {status === 'offline' ? <WifiOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Save className="h-3.5 w-3.5" aria-hidden="true" />}
-      {texto[status]}
-    </Badge>
+    <div className="flex shrink-0 flex-col items-end gap-1" role="status" aria-live="polite">
+      <Badge tone={status === 'offline' ? 'danger' : tone[status]} className="gap-1.5 whitespace-nowrap text-xs">
+        {['alterado', 'aguardando', 'salvando'].includes(status) ? <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />
+          : status === 'salvo' ? <Check className="size-3.5" aria-hidden="true" />
+            : ['offline', 'erro', 'conflito'].includes(status) ? <AlertCircle className="size-3.5" aria-hidden="true" /> : <Save className="size-3.5" aria-hidden="true" />}
+        {texto[status]}
+      </Badge>
+      {['erro', 'offline'].includes(status) && <button type="button" onClick={onRetry} className="min-h-9 text-xs font-semibold text-primary underline">Tentar novamente</button>}
+    </div>
   )
 }
 
@@ -417,13 +423,20 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   function restaurarEntradasLocais(entradas?: EntradasLocaisRascunho) {
-    if (!entradas) return
-    setNovoCliente(entradas.novoCliente)
-    setDataPrevistaInputs(entradas.dataPrevistaInputs)
-    setViradaCartaoInput(entradas.viradaCartaoInput)
-    setProdutoDigitado(entradas.produtoDigitado)
-    setNumeroLancamento(entradas.numeroLancamento)
-    setTelefonePendente(entradas.telefonePendente)
+    const dados = fichaRef.current
+    const valores = entradas ?? {
+      novoCliente: { nome: '', telefone: '', parentesco: '' as const, parentescoOutro: '' },
+      dataPrevistaInputs: Object.fromEntries(dados.criancas.map((crianca) => [crianca.id, formatarDataISOParaInput(crianca.dataPrevistaNascimento)])),
+      viradaCartaoInput: formatarViradaCartao(dados.viradaCartaoDia, dados.viradaCartaoMes),
+      produtoDigitado: '', numeroLancamento: '', telefonePendente: null,
+    }
+    entradasLocaisRef.current = valores
+    setNovoCliente(valores.novoCliente)
+    setDataPrevistaInputs(valores.dataPrevistaInputs)
+    setViradaCartaoInput(valores.viradaCartaoInput)
+    setProdutoDigitado(valores.produtoDigitado)
+    setNumeroLancamento(valores.numeroLancamento)
+    setTelefonePendente(valores.telefonePendente)
   }
 
   const etapaAtual = ficha.etapaAtual
@@ -590,8 +603,12 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   function montarPayloadAutosave(
     fichaAtual = fichaRef.current
   ): AutosavePayload {
+    const entradas = entradasLocaisRef.current
+    const dados = { ...fichaAtual, ...(fichaAtual.entradasFormulario || temEntradasLocaisPendentes(entradas) ? { entradasFormulario: entradas } : {}) }
+    const validacao = validarFichaDadosRascunho(dados)
     return {
-      dadosRascunho: migrarFichaDadosRascunho(fichaAtual),
+      // Falha de validacao deve ser rejeitada pela API, nunca virar um formulario vazio.
+      dadosRascunho: validacao.ok ? validacao.dados : dados,
       clienteId: clienteIdRef.current,
     }
   }
@@ -619,8 +636,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         version: version ?? fila?.getVersion() ?? rascunho?.version ?? null,
         clienteId: clienteIdRef.current, unidadeId: unidadeIdRef.current, editorId: obterEditorId(),
         dadosRascunho: fichaRef.current, entradasLocais: entradasLocaisRef.current,
+        basesRecuperacao: fila?.getBasesRecuperacao(),
         atualizadoEm: new Date().toISOString(),
-        sincronizado: confirmado && !temEntradasLocaisPendentes(entradasLocaisRef.current) && !temDadosIntermediariosRascunho(fichaRef.current),
+        sincronizado: confirmado,
       })
       if (ok && cacheRecuperadoRef.current) {
         // A copia recuperada ja esta preservada neste editor; evita conflitos falsos na proxima retomada.
@@ -650,13 +668,14 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     })
   }
 
-  function criarFilaAutosave(rascunho: AtendimentoPresencialDTO, payloadSalvoSerializado: string) {
+  function criarFilaAutosave(rascunho: AtendimentoPresencialDTO, payloadSalvoSerializado: string, recoveryBases?: string[]) {
     autosaveQueueRef.current?.stop()
     autosaveQueueRef.current = new AutosaveSerialQueue({
       draftId: rascunho.draftClientId,
       initialVersion: rascunho.version,
       initialRascunho: rascunho,
       initialSavedPayload: payloadSalvoSerializado,
+      recoveryBases,
       save: async ({ payload, expectedVersion }): Promise<AutosaveSaveResult> => {
         const response = await fetch(`/api/atendimento-presencial/atendimentos/${rascunho.id}/rascunho`, {
           method: 'PATCH',
@@ -692,7 +711,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
           const cache = carregarCacheLocal(rascunho.draftClientId, obterEditorId())
           if (cache) { conflitoLocalRef.current = true; setConflitoLocal({ cache, servidor }) }
         }
-        if (!payloadIgual) setErro('Conflito de versao. Recarregue o rascunho para comparar com a versao do servidor.')
+        if (!payloadIgual && !servidor) setErro('Nao foi possivel recuperar o rascunho. Tente carregar novamente.')
       },
       onLog: (message) => console.log(message),
       getOnline: () => navigator.onLine,
@@ -717,7 +736,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     setUnidadeId(rascunho.unidadeId)
     const dados = recuperacao.usarCache && cache ? cache.dadosRascunho : migrarFichaDadosRascunho(rascunho.dadosRascunho)
     cacheRecuperadoRef.current = recuperacao.usarCache ? cache : null
-    criarFilaAutosave(rascunho, serializarPayloadAutosave({ dadosRascunho: rascunho.dadosRascunho, clienteId: rascunho.clienteId }))
+    criarFilaAutosave(rascunho, serializarPayloadAutosave({ dadosRascunho: rascunho.dadosRascunho, clienteId: rascunho.clienteId }), recuperacao.usarCache ? cache?.basesRecuperacao : undefined)
     fichaRef.current = dados
     setFicha(dados)
     definirClienteId(recuperacao.clienteId)
@@ -727,7 +746,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     setErrosValidacao([])
     setErroEtapa(null)
     setMensagemConclusao(null)
-    if (cache && recuperacao.usarCache) restaurarEntradasLocais(cache.entradasLocais)
+    restaurarEntradasLocais(recuperacao.usarCache && cache?.entradasLocais ? cache.entradasLocais : dados.entradasFormulario)
     const alterado = serializarPayloadAutosave(montarPayloadAutosave()) !== autosaveQueueRef.current?.getLastSavedPayload()
     setStatusSync(alterado ? 'salvando' : 'salvo')
     void carregarClientePorId(recuperacao.clienteId)
@@ -801,7 +820,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       consultoraNome: consultoraNomeFinal,
     }
     const payloadEnviado: AutosavePayload = {
-      dadosRascunho: migrarFichaDadosRascunho(dadosRascunhoEnviados),
+      dadosRascunho: montarPayloadAutosave(dadosRascunhoEnviados).dadosRascunho,
       clienteId: clienteIdFinal,
     }
 
@@ -1362,7 +1381,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     fila.enqueue(payload)
   // A confirmacao de PATCH nao e uma nova edicao.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ativo?.id, clienteId, ficha, onlineTick])
+  }, [ativo?.id, clienteId, ficha, onlineTick, novoCliente, dataPrevistaInputs, viradaCartaoInput, produtoDigitado, numeroLancamento, telefonePendente])
 
   useEffect(() => {
     if (carregandoRascunhoInicial || erroRascunhoInicial || conflitoLocalRef.current) return
@@ -1398,9 +1417,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const filaAtual = autosaveQueueRef.current
   const alteracoesNaoConfirmadas = !!filaAtual && (filaAtual.hasPending()
     || serializarPayloadAutosave(montarPayloadAutosave()) !== filaAtual.getLastSavedPayload())
-  const statusVisivel: SyncStatus = statusSync === 'salvo'
-    ? alteracoesNaoConfirmadas ? 'salvando' : pendenciasLocais ? 'alterado' : 'salvo'
-    : statusSync
+  const statusVisivel: SyncStatus = conflitoLocal ? 'conflito' : erroCriacao || (erroCache && alteracoesNaoConfirmadas) || ['offline', 'erro', 'conflito'].includes(statusSync)
+    ? 'erro'
+    : iniciando || alteracoesNaoConfirmadas ? 'salvando' : ativo ? 'salvo' : 'ocioso'
 
   return (
     <PageContainer>
@@ -1434,13 +1453,13 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
             <p className="text-sm font-semibold text-slate-700">Etapa {etapaNumero} de {FICHA_TOTAL_ETAPAS}</p>
             <p className="text-sm text-slate-500">{etapaLabelAtual}</p>
           </div>
-          <StatusSync status={statusVisivel} />
+          <StatusSync status={statusVisivel} onRetry={() => erroCriacao ? void iniciarRascunho(draftClientIdRef.current ?? undefined) : tentarSalvarNovamente()} />
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
           <div className="h-full rounded-full bg-primary" style={{ width: `${(etapaNumero / FICHA_TOTAL_ETAPAS) * 100}%` }} />
         </div>
 
-        {(erro || erroCriacao) && (
+        {(erro || erroCriacao) && !conflitoLocal && (
           <Alert tone="danger">
             <p>{erro ?? erroCriacao}</p>
             {erroCriacao && !iniciando && (
@@ -1457,21 +1476,16 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
             )}
           </Alert>
         )}
-        {statusSync === 'erro' && !conflitoLocal && <Alert tone="danger">Existem alteracoes nao confirmadas no servidor.
-          <Button type="button" variant="secondary" size="sm" onClick={tentarSalvarNovamente}>Tentar salvar novamente</Button>
-        </Alert>}
-        {erroCache && <Alert tone="danger">Nao foi possivel manter a copia neste navegador. Aguarde a confirmacao no servidor antes de sair.</Alert>}
-        {pendenciasLocais && <Alert tone="warning">Existem entradas guardadas somente neste navegador. Cadastre a nova cliente, adicione o produto e complete as datas quando necessario. O lancamento sera enviado apenas ao concluir.</Alert>}
-        {telefonePendente && <Alert tone="warning">O telefone ainda nao foi confirmado no cadastro.
+        {telefonePendente && erroTelefone && !conflitoLocal && <Alert tone="danger">Nao foi possivel atualizar o telefone no cadastro. O texto permanece no rascunho.
           <Button type="button" variant="secondary" size="sm" disabled={!clienteSelecionada || salvandoTelefone} onClick={() => clienteSelecionada && void salvarTelefoneCliente(clienteSelecionada, telefonePendente.valor, ++telefoneRequestRef.current)}>Tentar salvar telefone</Button>
           <Button type="button" variant="ghost" size="sm" onClick={descartarEdicaoTelefone}>Descartar edicao do telefone</Button>
         </Alert>}
-        {erroCliente && <Alert tone="warning">{erroCliente}
+        {erroCliente && !conflitoLocal && <Alert tone="warning">{erroCliente}
           <Button type="button" variant="secondary" size="sm" onClick={() => void carregarClientePorId(clienteIdRef.current)}>Carregar cliente novamente</Button>
           <Button type="button" variant="ghost" size="sm" onClick={trocarCliente}>Trocar cliente</Button>
         </Alert>}
-        {conflitoLocal && <Alert tone="warning">
-          <p>Ha alteracoes locais e uma versao diferente no servidor. A sincronizacao foi pausada. Escolha qual versao deseja continuar; a outra copia local sera mantida.</p>
+        {conflitoLocal && <Alert tone="danger">
+          <p>Este rascunho foi alterado em outra sessao. Escolha qual versao deseja continuar.</p>
           <Button type="button" variant="secondary" size="sm" onClick={() => resolverConflitoLocal(true)}>Continuar com alteracoes locais</Button>
           <Button type="button" variant="ghost" size="sm" onClick={() => resolverConflitoLocal(false)}>Continuar com versao do servidor</Button>
         </Alert>}
@@ -1479,7 +1493,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
           <p>Existem alteracoes locais recuperaveis neste navegador.</p>
           {cachesRecuperaveis.map((cache) => <Button key={cache.draftClientId} type="button" variant="secondary" size="sm" onClick={() => void recuperarCache(cache)}>Retomar copia local ({new Date(cache.atualizadoEm).toLocaleString('pt-BR')})</Button>)}
         </Alert>}
-        {erroEtapa && <Alert tone="warning">{erroEtapa}</Alert>}
+        {erroEtapa && !conflitoLocal && <Alert tone="warning">{erroEtapa}</Alert>}
         {mensagemConclusao && <Alert tone="success">{mensagemConclusao}</Alert>}
 
         {carregandoRascunhoInicial && (
@@ -2102,6 +2116,10 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
               disabled={!!clienteId && !clienteSelecionada}
               compact={etapaAtual === 'ficha' && !clienteSelecionada}
             />
+            {telefonePendente && !salvandoTelefone && !erroTelefone && <div className="flex flex-wrap justify-end gap-2 text-xs">
+              <Button type="button" variant="ghost" size="sm" disabled={!clienteSelecionada} onClick={() => clienteSelecionada && void salvarTelefoneCliente(clienteSelecionada, telefonePendente.valor, ++telefoneRequestRef.current)}>Confirmar telefone no cadastro</Button>
+              <Button type="button" variant="ghost" size="sm" onClick={descartarEdicaoTelefone}>Descartar edicao do telefone</Button>
+            </div>}
           </div>
         )}
       </FormPageContent>

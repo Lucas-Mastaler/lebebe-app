@@ -3,6 +3,7 @@ import { PATCH } from './route'
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireModuleAccess } from '@/lib/auth/module-access'
 import { checkAccessWindowForUser } from '@/lib/auth/access-window'
+import { migrarFichaDadosRascunho } from '@/lib/atendimento-presencial/ficha-schema'
 
 vi.mock('@/lib/supabase/service', () => ({
   createServiceClient: vi.fn(),
@@ -54,13 +55,13 @@ function builder(result: unknown) {
 }
 
 function mockSupabase(queues: Record<string, unknown[]>) {
-  vi.mocked(createServiceClient).mockReturnValue({
-    from: vi.fn((table: string) => {
+  const from = vi.fn((table: string) => {
       const queue = queues[table]
       if (!queue || queue.length === 0) throw new Error(`Sem mock para tabela ${table}`)
       return builder(queue.shift())
-    }),
-  } as never)
+    })
+  vi.mocked(createServiceClient).mockReturnValue({ from } as never)
+  return from
 }
 
 describe('api rascunho por id', () => {
@@ -117,6 +118,31 @@ describe('api rascunho por id', () => {
     expect(response.status).toBe(409)
     expect(json.ok).toBe(false)
     expect(json.rascunho.version).toBe(2)
+  })
+
+  it('envia nome sexo data e entradas intermediarias ao JSONB e os devolve na resposta', async () => {
+    const dados = migrarFichaDadosRascunho({
+      consultoraNome: 'Ana Clara',
+      criancas: [{ id: 'crianca-teste', situacao: 'gestacao', nome: 'Maria Clara', sexo: 'menina', dataPrevistaNascimento: '2027-02-15' }],
+      entradasFormulario: {
+        novoCliente: { nome: 'Cadastro pendente', telefone: '', parentesco: '', parentescoOutro: '' },
+        dataPrevistaInputs: { outra: '15/02' }, viradaCartaoInput: '', produtoDigitado: 'Berco', numeroLancamento: '123', telefonePendente: null,
+      },
+    })
+    const from = mockSupabase({
+      app_usuarios_perfis: [{ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null }],
+      app_usuarios_unidades: [{ data: [{ app_unidades: { id: unidadeId, chave: 'teste', nome: 'Teste', ativo: true } }], error: null }],
+      atendimento_presencial_atendimentos: [
+        { data: rascunhoRow, error: null },
+        { data: { ...rascunhoRow, dados_rascunho: dados, version: 3 }, error: null },
+      ],
+    })
+    const response = await PATCH(new Request('http://local', { method: 'PATCH', body: JSON.stringify({ version: 2, dadosRascunho: dados }) }), { params: Promise.resolve({ id: rascunhoId }) })
+    expect(response.status).toBe(200)
+    const updateQuery = from.mock.results.map((result) => result.value).find((query) => query.update.mock.calls.length)
+    expect(updateQuery?.update).toHaveBeenCalledWith(expect.objectContaining({ dados_rascunho: dados }))
+    expect((await response.json()).rascunho.dadosRascunho).toEqual(dados)
+    expect(from.mock.calls.every(([table]) => table !== 'atendimento_presencial_clientes')).toBe(true)
   })
 
   it('atualiza cliente_id quando cliente ativa e selecionada', async () => {

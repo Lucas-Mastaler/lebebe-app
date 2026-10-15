@@ -16,6 +16,31 @@ import {
 } from './ficha-schema'
 
 describe('schema da ficha de atendimento presencial', () => {
+  it('preserva nome, sexo, data e inputs incompletos em sucessivas normalizacoes do servidor', () => {
+    const dados = {
+      criancas: [{ id: 'crianca-teste', situacao: 'gestacao', nome: 'Maria Clara', sexo: 'menina', dataPrevistaNascimento: '2027-02-15' }],
+      entradasFormulario: {
+        novoCliente: { nome: 'Cadastro em edicao', telefone: '(41) 9', parentesco: '', parentescoOutro: '' },
+        dataPrevistaInputs: { outra: '15/02' }, viradaCartaoInput: '12/', produtoDigitado: 'Berco', numeroLancamento: '123',
+        telefonePendente: { clienteId: 'cliente-teste', valor: '(41) 99' },
+      },
+    }
+    const primeira = validarFichaDadosRascunho(dados)
+    expect(primeira.ok).toBe(true)
+    if (!primeira.ok) return
+    const segunda = migrarFichaDadosRascunho(JSON.parse(JSON.stringify(primeira.dados)))
+    expect(segunda.criancas).toEqual(dados.criancas)
+    expect(segunda.entradasFormulario).toEqual(dados.entradasFormulario)
+    expect(segunda.etapaAtual).toBe('ficha')
+  })
+
+  it('rejeita nome invalido sem apagar silenciosamente a crianca', () => {
+    expect(validarFichaDadosRascunho({ criancas: [{ id: 'crianca-teste', nome: 'Maria123' }] })).toMatchObject({ ok: false, field: 'criancas' })
+  })
+
+  it('preserva unidade da idade antes de informar o valor', () => {
+    expect(migrarFichaDadosRascunho({ criancas: [{ id: 'crianca-teste', situacao: 'ja_nasceu', idadeUnidade: 'meses' }] }).criancas[0].idadeUnidade).toBe('meses')
+  })
   it('aceita payload vazio e cria defaults', () => {
     expect(validarFichaDadosRascunho({})).toEqual({
       ok: true,

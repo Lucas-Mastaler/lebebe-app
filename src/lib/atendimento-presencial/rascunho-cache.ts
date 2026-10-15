@@ -1,14 +1,7 @@
-import { converterDataInputParaISO, converterViradaCartaoInput, validarFichaDadosRascunho, type FichaDadosRascunho } from './ficha-schema'
-import type { ParentescoCliente } from './clientes'
+import { converterDataInputParaISO, converterViradaCartaoInput, validarFichaDadosRascunho, type FichaDadosRascunho, type EntradasFormularioRascunho } from './ficha-schema'
+import { serializarPayloadAutosave } from './autosave-fila'
 
-export type EntradasLocaisRascunho = {
-  novoCliente: { nome: string; telefone: string; parentesco: ParentescoCliente | ''; parentescoOutro: string }
-  dataPrevistaInputs: Record<string, string>
-  viradaCartaoInput: string
-  produtoDigitado: string
-  numeroLancamento: string
-  telefonePendente: { clienteId: string; valor: string } | null
-}
+export type EntradasLocaisRascunho = EntradasFormularioRascunho
 
 export type RascunhoCache = {
   draftClientId: string
@@ -21,6 +14,7 @@ export type RascunhoCache = {
   editorId?: string
   arquivado?: boolean
   entradasLocais?: EntradasLocaisRascunho
+  basesRecuperacao?: string[]
   dadosRascunho: FichaDadosRascunho
   atualizadoEm: string
   sincronizado: boolean
@@ -66,6 +60,8 @@ export function listarCachesRascunho(storage: StorageLike, usuarioId: string, dr
         const parsed = JSON.parse(storage.getItem(key) ?? 'null') as RascunhoCache | null
         if (!parsed || parsed.usuarioId !== usuarioId || typeof parsed.draftClientId !== 'string') return []
         if (typeof parsed.atualizadoEm !== 'string' || typeof parsed.sincronizado !== 'boolean') return []
+        if (parsed.basesRecuperacao !== undefined && (!Array.isArray(parsed.basesRecuperacao)
+          || !parsed.basesRecuperacao.every((payload) => typeof payload === 'string'))) return []
         const entradas = parsed.entradasLocais
         if (entradas && (!entradas.novoCliente || !entradas.dataPrevistaInputs
           || !Object.values(entradas.novoCliente).every((valor) => typeof valor === 'string')
@@ -106,12 +102,24 @@ export function removerCacheRascunho(storage: StorageLike, usuarioId: string, dr
   return true
 }
 
-export function planejarRecuperacaoRascunho(cache: RascunhoCache | null, servidor: { id: string; version: number; clienteId: string | null }) {
+export function planejarRecuperacaoRascunho(cache: RascunhoCache | null, servidor: { id: string; version: number; clienteId: string | null; dadosRascunho?: FichaDadosRascunho }) {
   if (!cache || cache.atendimentoId !== servidor.id) return { usarCache: false, conflito: false, clienteId: servidor.clienteId }
   const usarCache = !cache.sincronizado
+  const validacao = validarFichaDadosRascunho(cache.dadosRascunho)
+  const incluirEntradas = cache.entradasLocais
+    && (temEntradasLocaisPendentes(cache.entradasLocais) || servidor.dadosRascunho?.entradasFormulario)
+  const dadosCache = validacao.ok ? {
+    ...validacao.dados,
+    ...(incluirEntradas ? { entradasFormulario: cache.entradasLocais } : {}),
+  } : cache.dadosRascunho
+  const igual = !!servidor.dadosRascunho && validacao.ok
+    && serializarPayloadAutosave({ dadosRascunho: dadosCache, clienteId: cache.clienteId === undefined ? servidor.clienteId : cache.clienteId })
+      === serializarPayloadAutosave({ dadosRascunho: servidor.dadosRascunho, clienteId: servidor.clienteId })
+  const servidorNaBasePropria = !!servidor.dadosRascunho && Array.isArray(cache.basesRecuperacao)
+    && cache.basesRecuperacao.includes(serializarPayloadAutosave({ dadosRascunho: servidor.dadosRascunho, clienteId: servidor.clienteId }))
   return {
     usarCache,
-    conflito: usarCache && cache.version !== servidor.version,
+    conflito: usarCache && cache.version !== servidor.version && !igual && !servidorNaBasePropria,
     clienteId: usarCache && cache.clienteId !== undefined ? cache.clienteId : servidor.clienteId,
   }
 }

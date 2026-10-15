@@ -18,6 +18,7 @@ type AutosaveQueueOptions = {
   initialVersion: number
   initialRascunho: AtendimentoPresencialDTO
   initialSavedPayload: string
+  recoveryBases?: string[]
   debounceMs?: number
   save: (params: { payload: AutosavePayload; expectedVersion: number }) => Promise<AutosaveSaveResult>
   onStatus?: (status: AutosaveStatus) => void
@@ -30,9 +31,16 @@ type AutosaveQueueOptions = {
 }
 
 export function serializarPayloadAutosave(payload: AutosavePayload) {
+  // JSONB nao preserva a ordem das chaves, inclusive dentro das criancas e inputs.
+  function ordenar(valor: unknown): unknown {
+    if (Array.isArray(valor)) return valor.map(ordenar)
+    if (valor && typeof valor === 'object') return Object.fromEntries(Object.entries(valor).sort(([a], [b]) => a.localeCompare(b)).map(([chave, item]) => [chave, ordenar(item)]))
+    return valor
+  }
   const dados = payload.dadosRascunho
-  return JSON.stringify({
+  return JSON.stringify(ordenar({
     dadosRascunho: {
+      entradasFormulario: dados.entradasFormulario,
       cliente: dados.cliente,
       consultoraNome: dados.consultoraNome,
       criancas: dados.criancas,
@@ -48,7 +56,7 @@ export function serializarPayloadAutosave(payload: AutosavePayload) {
       notaTecnica: dados.notaTecnica,
     },
     clienteId: payload.clienteId,
-  })
+  }))
 }
 
 export function payloadAutosaveIgual(a: AutosavePayload, b: AutosavePayload) {
@@ -79,12 +87,20 @@ export class AutosaveSerialQueue {
   private conflict = false
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private retryCount = 0
+  private envioSemConfirmacao: string | null = null
+  private payloadEmEnvio: string | null = null
+  private recoveryBases: string[]
+
+  getBasesRecuperacao() {
+    return [...new Set([this.lastSavedPayload, this.payloadEmEnvio, this.envioSemConfirmacao, ...this.recoveryBases].filter((payload): payload is string => payload !== null))]
+  }
 
   hasPending() {
     return this.saveInFlight || this.pendingSave || this.conflict
   }
 
   constructor(options: AutosaveQueueOptions) {
+    this.recoveryBases = options.recoveryBases ?? []
     this.draftId = options.draftId
     this.currentVersion = options.initialVersion
     this.currentRascunho = options.initialRascunho
@@ -214,6 +230,7 @@ export class AutosaveSerialQueue {
 
       this.pendingSave = false
       this.saveInFlight = true
+      this.payloadEmEnvio = payloadSerializado
       const expectedVersion = this.currentVersion
       this.onStatus('salvando')
       this.onLog?.(`[AUTOSAVE] inicio draft=${this.draftId.slice(0, 8)} expectedVersion=${expectedVersion}`)
@@ -221,8 +238,11 @@ export class AutosaveSerialQueue {
       try {
         const result = await this.save({ payload, expectedVersion })
         this.saveInFlight = false
+        this.payloadEmEnvio = null
 
         if (result.ok) {
+          this.recoveryBases = []
+          this.envioSemConfirmacao = null
           this.currentVersion = result.rascunho.version
           this.currentRascunho = result.rascunho
           this.lastSavedPayload = serializarPayloadAutosave({ dadosRascunho: result.rascunho.dadosRascunho, clienteId: result.rascunho.clienteId })
@@ -247,15 +267,21 @@ export class AutosaveSerialQueue {
             })
             : null
           const payloadIgual = payloadServidor === payloadSerializado
+          // Uma resposta perdida pode ter confirmado o envio anterior desta fila.
+          // So rebasear quando o servidor ainda contem nossa ultima base confirmada.
+          const servidorNaBase = result.rascunho && result.rascunho.version > this.currentVersion
+            && (payloadServidor === this.lastSavedPayload || payloadServidor === this.envioSemConfirmacao
+              || (payloadServidor !== null && this.recoveryBases.includes(payloadServidor)))
           this.onLog?.(`[AUTOSAVE] conflito draft=${this.draftId.slice(0, 8)} serverVersion=${result.rascunho?.version ?? 'n/a'} payloadIgual=${payloadIgual}`)
           this.cancelDebounce()
-          if (payloadIgual && result.rascunho) {
+          if ((payloadIgual || servidorNaBase) && result.rascunho) {
+            this.envioSemConfirmacao = null
             this.currentVersion = result.rascunho.version
             this.currentRascunho = result.rascunho
-            this.lastSavedPayload = payloadSerializado
+            this.lastSavedPayload = payloadServidor!
             this.retryCount = 0
             this.pendingSave = !!this.latestPayload && serializarPayloadAutosave(this.latestPayload) !== this.lastSavedPayload
-            this.onSaved?.({ payload, payloadSerializado, rascunho: result.rascunho })
+            if (payloadIgual) this.onSaved?.({ payload, payloadSerializado, rascunho: result.rascunho })
             if (this.pendingSave) this.onStatus('salvando')
             continue
           }
@@ -267,8 +293,11 @@ export class AutosaveSerialQueue {
           return { ok: false, status: 'conflito', message: result.message }
         }
 
+        if (result.status >= 500 || result.status === 408) this.envioSemConfirmacao = payloadSerializado
         return this.falhar(result.message, result.status >= 500 || result.status === 408 || result.status === 429)
       } catch (error) {
+        this.payloadEmEnvio = null
+        this.envioSemConfirmacao = payloadSerializado
         this.saveInFlight = false
         return this.falhar(error instanceof Error ? error.message : 'Erro ao salvar', true)
       }

@@ -38,7 +38,7 @@ describe('migration conclusao atendimento presencial', () => {
       criancas: Array.from({ length: 8 }, (_, index) => ({
         id: `crianca-local-${index.toString().padStart(2, '0')}`,
         situacao: index % 2 === 0 ? 'gestacao' : 'ja_nasceu',
-        nome: texto(80, `Crianca ${index} `),
+        nome: texto(80, 'Crianca '),
         sexo: index % 2 === 0 ? 'menina' : 'menino',
         ...(index % 2 === 0
           ? { dataPrevistaNascimento: '2027-12-20' }

@@ -13,6 +13,12 @@ const payloadBase: AutosavePayload = {
   },
 }
 
+it('compara conteudo sem depender da ordem das chaves de JSONB', () => {
+  const a: AutosavePayload = { ...payloadBase, dadosRascunho: { ...payloadBase.dadosRascunho, criancas: [{ id: 'crianca-teste', situacao: 'gestacao', nome: 'Maria', sexo: 'menina' }] } }
+  const b: AutosavePayload = { ...a, dadosRascunho: { ...a.dadosRascunho, criancas: [{ sexo: 'menina', nome: 'Maria', situacao: 'gestacao', id: 'crianca-teste' }] } }
+  expect(serializarPayloadAutosave(a)).toBe(serializarPayloadAutosave(b))
+})
+
 function rascunho(version: number, payload: AutosavePayload = payloadBase): AtendimentoPresencialDTO {
   return {
     id: 'rascunho-1',
@@ -50,6 +56,7 @@ function payloadComProduto(produto: string): AutosavePayload {
 }
 
 function criarFila(params?: {
+  recoveryBases?: string[]
   save?: (params: { payload: AutosavePayload; expectedVersion: number }) => Promise<AutosaveSaveResult>
   online?: () => boolean
   onSaved?: Mock
@@ -68,6 +75,7 @@ function criarFila(params?: {
     initialVersion: 1,
     initialRascunho: rascunho(1),
     initialSavedPayload: serializarPayloadAutosave(payloadBase),
+    recoveryBases: params?.recoveryBases,
     debounceMs: 10,
     save,
     getOnline: params?.online ?? (() => true),
@@ -87,6 +95,35 @@ function criarFila(params?: {
 
   return { fila, save: vi.mocked(save), timers, status, logs }
 }
+
+it('reconcilia resposta perdida da propria aba antes de salvar a edicao seguinte', async () => {
+  const a = payloadComProduto('Primeira edicao')
+  const b = payloadComProduto('Segunda edicao')
+  const save = vi.fn()
+    .mockRejectedValueOnce(new Error('Resposta perdida'))
+    .mockResolvedValueOnce({ ok: false, status: 409, message: 'Versao', rascunho: rascunho(2, a) })
+    .mockResolvedValueOnce({ ok: true, rascunho: rascunho(3, b) })
+  const onConflict = vi.fn()
+  const { fila } = criarFila({ save, onConflict })
+  expect((await fila.flushNow(a)).ok).toBe(false)
+  expect((await fila.flushNow(b)).ok).toBe(true)
+  expect(save.mock.calls.map(([params]) => params.expectedVersion)).toEqual([1, 1, 2])
+  expect(onConflict).not.toHaveBeenCalled()
+  expect(fila.hasPending()).toBe(false)
+})
+
+it('retomada reconhece envio da sessao anterior que terminou depois da recarga', async () => {
+  const a = payloadComProduto('Em voo ao recarregar')
+  const b = payloadComProduto('Digitado antes de recarregar')
+  const save = vi.fn()
+    .mockResolvedValueOnce({ ok: false, status: 409, message: 'Versao', rascunho: rascunho(2, a) })
+    .mockResolvedValueOnce({ ok: true, rascunho: rascunho(3, b) })
+  const onConflict = vi.fn()
+  const { fila } = criarFila({ save, onConflict, recoveryBases: [serializarPayloadAutosave(a)] })
+  expect((await fila.flushNow(b)).ok).toBe(true)
+  expect(onConflict).not.toHaveBeenCalled()
+  expect(fila.getLastSavedPayload()).toBe(serializarPayloadAutosave(b))
+})
 
 describe('fila serial de autosave presencial', () => {
   it('serializa resultado canonico e virada de cartao para detectar mudanca antes da conclusao', () => {

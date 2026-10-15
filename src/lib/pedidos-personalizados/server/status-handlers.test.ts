@@ -36,6 +36,17 @@ function request(body: unknown) {
 }
 
 describe('handler de transicao de status', () => {
+  it.each([null, { code: 'P0001', message: 'TRANSICAO_STATUS_INVALIDA' }])('delega o caminho direto Decorisi à composição validada pela RPC: %j', async (error) => {
+    const transicionarStatusDecorisi = vi.fn().mockResolvedValue({ data: { evento_id: EVENTO, status: 'EM PRODUÇÃO', version: 2 }, error })
+    const cenario = deps('VENDA FECHADA', {
+      buscarPedidoNoEscopo: vi.fn().mockResolvedValue({ data: { id: PEDIDO, status: 'VENDA FECHADA', fornecedor: { chave: 'decorisi' } }, error: null }),
+      transicionarStatusDecorisi,
+    })
+    const response = await transicionarStatus(request({ expectedVersion: 1, statusDestino: 'EM PRODUÇÃO', numeroPedidoCompra: '123', dataPedidoFornecedor: '2026-10-14', comprador: 'Teste', dataEntrega: '2026-10-24' }), PEDIDO, cenario.deps)
+    expect(response.status).toBe(error ? 422 : 200)
+    expect(transicionarStatusDecorisi).toHaveBeenCalledWith(expect.objectContaining({ p_status_destino: 'EM PRODUÇÃO', p_expected_version: 1, p_usuario_id: USUARIO }))
+    expect(cenario.repo.transicionarStatus).not.toHaveBeenCalled()
+  })
   it('executa a transicao permitida com usuario e versao', async () => {
     const cenario = deps()
     const response = await transicionarStatus(request({ expectedVersion: 1, statusDestino: 'AGUARDANDO LAYOUT' }), PEDIDO, cenario.deps)

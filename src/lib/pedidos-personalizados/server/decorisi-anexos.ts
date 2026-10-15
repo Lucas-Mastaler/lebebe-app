@@ -6,6 +6,7 @@ import {
   type ContextoPedidosPersonalizados,
 } from './contexto'
 import { RepositorioDecorisi } from './decorisi-repositorio'
+import { backendDecorisiHabilitado } from './decorisi-local'
 import { StorageAnexos } from './anexos-repositorio'
 import {
   BUCKET_ANEXOS_PEDIDOS,
@@ -64,14 +65,14 @@ export class RepositorioAnexosDecorisi {
   }
 }
 export type DependenciasAnexosDecorisi = {
-  habilitado: () => boolean
+  habilitado: (request: Request) => boolean
   contexto: typeof carregarContextoPedidosPersonalizados
   pedido: (ctx: ContextoPedidosPersonalizados) => RepositorioDecorisi
   anexos: (ctx: ContextoPedidosPersonalizados) => RepositorioAnexosDecorisi
   storage: (ctx: ContextoPedidosPersonalizados) => StorageAnexos
 }
 const padrao: DependenciasAnexosDecorisi = {
-  habilitado: () => process.env.PEDIDOS_DECORISI_BACKEND === 'true',
+  habilitado: backendDecorisiHabilitado,
   contexto: carregarContextoPedidosPersonalizados,
   pedido: (ctx) => new RepositorioDecorisi(ctx.supabase),
   anexos: (ctx) => new RepositorioAnexosDecorisi(ctx.supabase),
@@ -91,7 +92,7 @@ export async function executarAnexoDecorisi(
     inicio: Date.now(),
     pedidoId,
   }
-  if (!deps.habilitado())
+  if (!deps.habilitado(request))
     return jsonErro('FORNECEDOR_INDISPONIVEL', 'Fornecedor indisponível.', 404)
   const acesso = await deps.contexto([
     'pedidos_personalizados_gestao',

@@ -270,16 +270,16 @@ try {
   const transicionar = (id, version, destino, campos = {}) => db.query(
     'select * from transicionar_pedido_personalizado_decorisi($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
     [id,version,usuario,destino,campos.compra ?? null,campos.data ?? null,campos.comprador ?? null,campos.entrega ?? null,campos.recebimento ?? null,campos.justificativa ?? null])
-  await verificar('catálogo sem anexo percorre fluxo completo; versão e histórico únicos', async () => {
+  await verificar('papel catálogo sem anexo dispensa layout; versão e histórico únicos', async () => {
     const a=await criar([papel]); const q=await cotar(a.pedidoId); await fechar(a,q)
     let version=a.version+1
-    const destinos=['AGUARDANDO LAYOUT','AGUARDANDO APROVAÇÃO DO CLIENTE','EM PRODUÇÃO','RECEBIDO']
+    const destinos=['EM PRODUÇÃO','RECEBIDO']
     for(const destino of destinos) {
       const campos={compra:'123',data:'2026-10-09',comprador:'Teste',entrega:'2026-10-20',recebimento:'2026-10-09'}
       const r=await transicionar(a.pedidoId,version,destino,campos); assert.equal(r.rows[0].version,++version)
       await assert.rejects(transicionar(a.pedidoId,version-1,destino,campos),/CONFLITO_VERSAO/)
     }
-    assert.equal(await valor('select count(*)::int valor from pedidos_personalizados_status_historico where pedido_id=$1',[a.pedidoId]),5)
+    assert.equal(await valor('select count(*)::int valor from pedidos_personalizados_status_historico where pedido_id=$1',[a.pedidoId]),3)
     await assert.rejects(transicionar(a.pedidoId,version,'CANCELADO',{justificativa:'Teste'}),/TRANSICAO_STATUS_INVALIDA/)
   })
   await verificar('retorno de layout preserva snapshots e conta apenas personalizações',async()=>{
@@ -304,6 +304,33 @@ try {
     await assert.rejects(transicionar(a.pedidoId,a.version,'CANCELADO'),/JUSTIFICATIVA/)
     await transicionar(a.pedidoId,a.version,'CANCELADO',{justificativa:'Teste sintético'})
   })
+
+  for (const [nome,itens,dispensa] of [
+    ['vários papéis catálogo',[papel,{...papel,referencia:'DB702'}],true],
+    ['papel personalizado',[{...papel,classificacao:'PERSONALIZADO',descricao:'Arte teste'}],false],
+    ['painel Fofura',[{tipo:'PAINEL',classificacao:'CATALOGO',referencia:'PF200',medidas:papel.medidas}],false],
+    ['painel personalizado',[{tipo:'PAINEL',classificacao:'PERSONALIZADO',descricao:'Arte teste',medidas:papel.medidas}],false],
+    ['papel misto',[papel,{...papel,classificacao:'PERSONALIZADO',descricao:'Arte teste'}],false],
+    ['papel e painel',[papel,{tipo:'PAINEL',classificacao:'CATALOGO',referencia:'PF200',medidas:papel.medidas}],false],
+  ]) await verificar('nova regra: '+nome,async()=>{
+    const a=await criar(itens);
+    const personalizados=(await db.query("select id from pedidos_personalizados_decorisi_itens where pedido_id=$1 and classificacao='PERSONALIZADO'",[a.pedidoId])).rows;
+    for(const item of personalizados){
+      const id=crypto.randomUUID();
+      await db.query('insert into pedidos_personalizados_decorisi_anexos(id,item_id,slot,bucket,path,nome_original,mime_type,tamanho_bytes,created_by,updated_by) values($1,$2,1,$3,$4,$5,$6,10,$7,$7)',[id,item.id,'pedidos-personalizados-anexos',a.pedidoId+'/'+item.id+'/'+id+'/'+crypto.randomUUID()+'.pdf','teste.pdf','application/pdf',usuario]);
+    }
+    const q=await cotar(a.pedidoId);await fechar({...a,version:q.version},q);
+    let version=q.version+1;
+    const campos={compra:'123',data:'2026-10-09',comprador:'Teste',entrega:'2026-10-20',recebimento:'2026-10-09'};
+    await assert.rejects(transicionar(a.pedidoId,version,dispensa?'AGUARDANDO LAYOUT':'EM PRODUÇÃO',campos),/TRANSICAO_STATUS_INVALIDA/);
+    if(dispensa) await assert.rejects(transicionar(a.pedidoId,version,'AGUARDANDO APROVAÇÃO DO CLIENTE',campos),/TRANSICAO_STATUS_INVALIDA/);
+    for(const destino of dispensa?['EM PRODUÇÃO','RECEBIDO']:['AGUARDANDO LAYOUT','AGUARDANDO APROVAÇÃO DO CLIENTE','EM PRODUÇÃO','RECEBIDO']) {
+      await transicionar(a.pedidoId,version++,destino,campos);
+      await assert.rejects(transicionar(a.pedidoId,version-2,destino,campos),/CONFLITO_VERSAO/);
+    }
+    const historico=(await db.query('select status_novo from pedidos_personalizados_status_historico where pedido_id=$1 order by version_nova',[a.pedidoId])).rows.map(r=>r.status_novo);
+    assert.deepEqual(historico,dispensa?['VENDA FECHADA','EM PRODUÇÃO','RECEBIDO']:['VENDA FECHADA','AGUARDANDO LAYOUT','AGUARDANDO APROVAÇÃO DO CLIENTE','EM PRODUÇÃO','RECEBIDO']);
+  });
   console.info(`[decorisi/sql] ${testes} cenários aprovados; PostgreSQL isolado descartável; produção não acessada.`)
 } catch (erro) {
   console.error('[decorisi/sql] FALHA', { mensagem: erro.message, codigo: erro.code, posicao: erro.position, contexto: erro.where })

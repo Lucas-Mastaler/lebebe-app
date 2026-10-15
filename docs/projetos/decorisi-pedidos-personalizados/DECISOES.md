@@ -80,3 +80,16 @@
 - Reutilizar StorageAnexos, validador de assinatura/MIME/tamanho e consumidor existente. Metadados ficam na FK de item Decorisi. Parser compartilhado conserva dois slots por padrão; Decorisi pede cinco explicitamente.
 - Congelar payload de criação/envio enquanto confirmação estiver incerta; recarga após edição ambígua/conflito exige confirmação. Gerenciar anexos exige primeiro salvar alterações locais, evitando perda ao reidratar.
 - Ensaio visual em Vite loopback, componentes reais e APIs simuladas; nenhuma rota de bypass no aplicativo. Storage/GoTrue reais continuam pendentes.
+
+## D-012 — Homologação no localhost normal
+
+- Data: 2026-10-14; autorizada pelo usuário.
+- `npm run dev` prepara acesso nominativo após autenticação, módulo, janela e unidade; somente NODE_ENV=development, loopback e sem VERCEL_ENV. Reutiliza testadores, com prazo fixo máximo de oito horas por processo, sem renovação por requisição/HMR. Não sobrescreve acessos ativos nem finalidade diferente.
+- Produção mantém o gate anterior e disponibilidade comercial desativada. Sem migration, mudança SGI ou bypass de autenticação. Revogação antecipada pelo script existente; encerrar o processo não revoga imediatamente, mas o prazo no banco permanece obrigatório.
+
+## D-013 — Papel de catálogo dispensa layout e aprovação
+
+- Data: 2026-10-14; regra comercial confirmada pelo usuário.
+- Quando há itens e TODOS são PAPEL/CATALOGO, o fluxo é VENDA FECHADA → EM PRODUÇÃO → RECEBIDO. Papel personalizado, painel Fofura, painel personalizado e qualquer mistura mantêm layout/aprovação. Não inferir pelo primeiro item nem pelo catálogo DB/XP.
+- RPC Decorisi calcula a condição na composição persistida sob lock do pedido; rejeita layout/aprovação para dispensados e produção direta para demais. Compra, data do pedido, comprador e previsão de entrega continuam obrigatórios ao entrar direto em produção. Histórico contém somente as transições executadas; versão/concorrência/ACL/escopo permanecem preservados.
+- Nenhum pedido existente foi reclassificado ou atualizado pela migration. Funções, triggers, políticas e permissões compartilhadas Moriah/Exclusive não são alteradas. Sem nova etapa, preço, cálculo, referência ou ativação comercial.

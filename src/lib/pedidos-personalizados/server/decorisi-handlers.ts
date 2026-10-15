@@ -4,18 +4,17 @@ import { validarItensDecorisi } from '../decorisi/validacao'
 import type { IdentificacaoDecorisiRpc } from '../decorisi/tipos'
 import { carregarContextoPedidosPersonalizados, type ContextoPedidosPersonalizados } from './contexto'
 import { RepositorioDecorisi } from './decorisi-repositorio'
+import { backendDecorisiHabilitado, expiracaoDecorisiLocal } from './decorisi-local'
 import { ehObjeto, ehUuid, jsonErro, lerJsonLimitado, mapearErroBanco, registrarResultado } from './http'
 
 type Operacao = 'opcoes' | 'referencias' | 'criar' | 'obter' | 'atualizar' | 'cotar' | 'fechar'
 export type DependenciasDecorisi = {
-  habilitado: () => boolean
+  habilitado: (request: Request) => boolean
   carregarContexto: typeof carregarContextoPedidosPersonalizados
   criarRepositorio: (contexto: ContextoPedidosPersonalizados) => RepositorioDecorisi
 }
 const padrao: DependenciasDecorisi = {
-  // Duplo gate: mesmo após aplicar migrations, exige habilitação explícita do backend
-  // e fornecedor disponível. Não configurar este flag na presente entrega.
-  habilitado: () => process.env.PEDIDOS_DECORISI_BACKEND === 'true',
+  habilitado: backendDecorisiHabilitado,
   carregarContexto: carregarContextoPedidosPersonalizados,
   criarRepositorio: (ctx) => new RepositorioDecorisi(ctx.supabase),
 }
@@ -32,11 +31,17 @@ function identificacaoDecorisi(v: Record<string, unknown>, ctx: ContextoPedidosP
 export async function executarApiDecorisi(request: Request, operacao: Operacao, pedidoId?: string, deps: DependenciasDecorisi = padrao): Promise<Response> {
   const log = { rota: new URL(request.url).pathname, operacao: `decorisi_${operacao}`, inicio: Date.now(), pedidoId }
   // Flag desligado não expõe referências, schema, preço ou existência de pedido.
-  if (!deps.habilitado()) return jsonErro('FORNECEDOR_INDISPONIVEL', 'Fornecedor indisponível.', 404)
+  if (!deps.habilitado(request)) return jsonErro('FORNECEDOR_INDISPONIVEL', 'Fornecedor indisponível.', 404)
   const acesso = await deps.carregarContexto(operacao === 'criar' ? ['pedidos_personalizados_novo'] : ['pedidos_personalizados_gestao', 'pedidos_personalizados_novo'])
   if (!acesso.ok) return acesso.response
   const ctx = acesso.contexto, repo = deps.criarRepositorio(ctx)
   try {
+    const expiracaoLocal = operacao === 'opcoes' ? expiracaoDecorisiLocal(request) : undefined
+    if (expiracaoLocal) {
+      // Só após autenticação, módulo, janela e unidades já validados pelo contexto.
+      const homologacao = await repo.homologacaoLocal(ctx.allowedUser.id, expiracaoLocal)
+      if (homologacao.error) return mapearErroBanco(homologacao.error)
+    }
     const fornecedor = await repo.disponivel(ctx.allowedUser.id)
     if (fornecedor.error) return mapearErroBanco(fornecedor.error)
     if (!fornecedor.data) return jsonErro('FORNECEDOR_INDISPONIVEL', 'Fornecedor indisponível.', 404)

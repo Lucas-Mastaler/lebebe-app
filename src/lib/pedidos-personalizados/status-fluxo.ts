@@ -25,11 +25,21 @@ const TRANSICOES_STATUS_EXCLUSIVE: Readonly<Record<StatusPedidoPersonalizado, re
 
 export function destinosPermitidosStatus(
   status: StatusPedidoPersonalizado,
-  fornecedor: FornecedorPedidoPersonalizado = 'moriah_tapetes'
+  fornecedor: FornecedorPedidoPersonalizado = 'moriah_tapetes',
+  dispensaLayoutDecorisi = false,
 ) {
+  if (fornecedor === 'decorisi' && dispensaLayoutDecorisi) {
+    if (status === 'VENDA FECHADA') return [EM_PRODUCAO, 'CANCELADO'] as const
+    return TRANSICOES_STATUS_PEDIDO[status].filter((destino) => destino !== 'AGUARDANDO LAYOUT' && destino !== AGUARDANDO_APROVACAO)
+  }
   return fornecedor === 'lebebe_exclusive'
     ? TRANSICOES_STATUS_EXCLUSIVE[status]
     : TRANSICOES_STATUS_PEDIDO[status]
+}
+
+/** Sem itens, ou com qualquer produto diferente, mantém o fluxo completo. */
+export function decorisiDispensaLayout(itens: readonly { tipo: string; classificacao: string }[]) {
+  return itens.length > 0 && itens.every((item) => item.tipo === 'PAPEL' && item.classificacao === 'CATALOGO')
 }
 
 export function podeTransicionarStatus(

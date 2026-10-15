@@ -24,3 +24,9 @@ Incluir Decorisi no cabeçalho compartilhado de Pedidos Personalizados, com refe
 Backend permanece desligado por flag e disponibilidade do fornecedor. As seis migrations anteriores não devem ser reaplicadas; a incremental Fase 5 foi autorizada e aplicada (D-009). Não habilitar flags de produção nesta entrega. Não modificar serviços, crons, preços ou unidades SGI. Não repetir a carga inicial concluída por outro Codex. Não criar sincronizador paralelo.
 
 Aceite técnico local: cálculo TS/SQL equivalente, importação íntegra, persistência atômica, controle de versão/idempotência, proteção de preços e autorização testados. Aceite integral depende de migrations em ambiente autorizado, integração HTTP/banco real, Storage, UI, gestão e validação autenticada antes da ativação comercial.
+
+### Fluxo operacional por composição — D-013
+
+- Exclusivamente PAPEL/CATALOGO, com pelo menos um item: VENDA FECHADA → EM PRODUÇÃO → RECEBIDO; layout e aprovação não são permitidos nem registrados ficticiamente.
+- Qualquer papel personalizado ou painel, inclusive Fofura: manter VENDA FECHADA → AGUARDANDO LAYOUT → AGUARDANDO APROVAÇÃO DO CLIENTE → EM PRODUÇÃO → RECEBIDO, incluindo retornos/cancelamentos existentes.
+- Todos os itens determinam a regra. RPC autoritativa e gestão devem concordar; após fechar, ações/detalhes/lista são recarregados automaticamente. Metadados de compra/entrega e restrições de anexos continuam válidos.

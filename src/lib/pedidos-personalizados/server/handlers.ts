@@ -189,6 +189,7 @@ function serializarItemListagem(valor: unknown) {
     quantidadeItens: row.quantidade_itens,
     referenciasProdutos: row.referencias_produtos,
     quantidadeDecorisiItens: row.quantidade_decorisi_itens,
+    decorisiDispensaLayout: row.decorisi_dispensa_layout,
     referenciasDecorisi: row.referencias_decorisi,
     valorTotalCentavos: row.valor_total_centavos,
     situacaoPrazo: classificarSituacaoPrazo(

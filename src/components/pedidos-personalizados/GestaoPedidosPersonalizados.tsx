@@ -35,6 +35,7 @@ import { FormularioLebebeExclusive, paginasVisiveisLebebeExclusive } from './For
 import { aplicarMascaraTelefoneBR, formatarTelefone } from '@/lib/atendimento-presencial/telefone'
 import {
   destinosPermitidosStatus,
+  decorisiDispensaLayout,
   operacoesAnexoGestao,
   permiteEdicaoAdministrativa,
   permiteEdicaoComercial,
@@ -99,6 +100,39 @@ function dataIsoParaExibicao(valor: string) {
 
 function formatarArea(valor: number) {
   return `${(valor / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m²`
+}
+
+function moedaCentavos(centavos: string) {
+  return (Number(centavos) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+function centavosTexto(valor: unknown) {
+  if (typeof valor !== 'string' || !/^\d+(\.\d+)?$/.test(valor)) return null
+  const numero = Number(valor)
+  return Number.isFinite(numero) ? String(Math.round(numero)) : null
+}
+
+function linhaCotacaoDecorisi(cotacao: PedidoDetalhe['cotacaoDecorisi'], itemId: string) {
+  for (const entrada of cotacao?.itens ?? []) {
+    if (!entrada || typeof entrada !== 'object') continue
+    const linha = entrada as { itemId?: unknown; subtotalCentavos?: unknown; quantidade?: unknown }
+    if (linha.itemId === itemId) return linha
+  }
+  return null
+}
+
+function subtotalGestaoDecorisi(item: { id: string; snapshotComercial: Record<string, unknown> | null }, cotacao: PedidoDetalhe['cotacaoDecorisi']) {
+  const congelado = centavosTexto(item.snapshotComercial?.subtotalCentavos)
+  const centavos = congelado ?? centavosTexto(linhaCotacaoDecorisi(cotacao, item.id)?.subtotalCentavos)
+  if (!centavos) return { valor: 'Cotação atual não congelada', aviso: null as string | null }
+  return { valor: moedaCentavos(centavos), aviso: congelado ? null : 'Estimativa da cotação atual, ainda não congelada.' }
+}
+
+function quantidadeGestaoDecorisi(item: { id: string; snapshotComercial: Record<string, unknown> | null }, cotacao: PedidoDetalhe['cotacaoDecorisi']) {
+  const congelada = typeof item.snapshotComercial?.quantidade === 'string' ? item.snapshotComercial.quantidade : null
+  const viva = linhaCotacaoDecorisi(cotacao, item.id)?.quantidade
+  const quantidade = congelada ?? (typeof viva === 'string' ? viva : null)
+  return quantidade ? quantidade.replace('.', ',') : '—'
 }
 
 function erroStatus(error: unknown) {
@@ -209,6 +243,7 @@ function BotaoAvancoStatus({
   className,
   variant,
   podeVer = true,
+  dispensaLayout = false,
 }: {
   status: StatusPedidoPersonalizado
   fornecedor: { chave: string } | null | undefined
@@ -217,9 +252,10 @@ function BotaoAvancoStatus({
   className?: string
   variant?: 'primary' | 'secondary'
   /** Regra de UI (não de acesso): esconde o botão para perfis que não operam as etapas pós-Venda Fechada — ver `permiteVerAvancoStatus`. A API/RPC não muda. */
+  dispensaLayout?: boolean
   podeVer?: boolean
 }) {
-  const destinos = destinosPermitidosStatus(status, fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')
+  const destinos = destinosPermitidosStatus(status, fornecedor?.chave as 'decorisi' | 'lebebe_exclusive' | 'moriah_tapetes', dispensaLayout)
     .filter((destino) => destino !== 'CANCELADO')
   if (destinos.length === 0 || !podeVer) return null
   const proximaFase = destinos[0]
@@ -625,7 +661,8 @@ export function GestaoPedidosPersonalizados() {
   function montarEstadoTransicao(pedido: PedidoDetalhe): EstadoTransicaoGestao {
     const destino = destinosPermitidosStatus(
       pedido.status,
-      pedido.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes'
+      pedido.fornecedor?.chave as 'decorisi' | 'lebebe_exclusive' | 'moriah_tapetes',
+      decorisiDispensaLayout(pedido.decorisiItens ?? [])
     )[0] ?? ''
     return {
       destino,
@@ -1015,7 +1052,7 @@ export function GestaoPedidosPersonalizados() {
                               : <><ShoppingBag />Criar produto SGI</>}
                         </Button>
                       )}
-                    <BotaoAvancoStatus
+                    <BotaoAvancoStatus dispensaLayout={item.decorisiDispensaLayout}
                       status={item.status}
                       fornecedor={item.fornecedor}
                       disabled={carregandoDetalhe}
@@ -1229,7 +1266,7 @@ export function GestaoPedidosPersonalizados() {
                 <section className="space-y-4" aria-labelledby="decorisi-itens-titulo">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h3 id="decorisi-itens-titulo" className="flex items-center gap-2 font-semibold text-slate-900"><PackageCheck className="size-5 text-violet-700" />Produtos Decorisi</h3>
-                    {detalhe.cotacaoDecorisi?.totalCentavos && <p className="text-sm font-semibold">Total: {(Number(detalhe.cotacaoDecorisi.totalCentavos) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>}
+                    {detalhe.cotacaoDecorisi?.totalCentavos && centavosTexto(detalhe.cotacaoDecorisi.totalCentavos) && <p className="text-sm font-semibold">Total: {moedaCentavos(centavosTexto(detalhe.cotacaoDecorisi.totalCentavos)!)}</p>}
                   </div>
                   {(detalhe.decorisiItens ?? []).map((item) => (
                     <Card key={item.id} className="p-4 sm:p-5">
@@ -1238,9 +1275,9 @@ export function GestaoPedidosPersonalizados() {
                         <Badge tone="neutral">{item.layoutAlteracoes} alteração(ões) de layout</Badge>
                       </div>
                       <div className="mt-4 overflow-x-auto">
-                        <table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-b text-xs uppercase tracking-wide text-slate-500"><th className="px-2 py-2">Ambiente</th><th className="px-2 py-2">Largura</th><th className="px-2 py-2">Altura</th><th className="px-2 py-2">Quantidade</th></tr></thead><tbody>{item.medidas.map((medida) => <tr key={medida.id} className="border-b border-slate-100"><td className="px-2 py-2">{medida.ambiente || '—'}</td><td className="px-2 py-2">{medida.larguraCm !== null ? `${(medida.larguraCm / 100).toFixed(2)} m` : '—'}</td><td className="px-2 py-2">{medida.alturaCm !== null ? `${(medida.alturaCm / 100).toFixed(2)} m` : '—'}</td><td className="px-2 py-2">{item.snapshotComercial && typeof item.snapshotComercial.quantidade === 'string' ? item.snapshotComercial.quantidade : '—'}</td></tr>)}</tbody></table>
+                        <table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-b text-xs uppercase tracking-wide text-slate-500"><th className="px-2 py-2">Ambiente</th><th className="px-2 py-2">Largura</th><th className="px-2 py-2">Altura</th><th className="px-2 py-2">Quantidade</th></tr></thead><tbody>{item.medidas.map((medida) => <tr key={medida.id} className="border-b border-slate-100"><td className="px-2 py-2">{medida.ambiente || '—'}</td><td className="px-2 py-2">{medida.larguraCm !== null ? `${(medida.larguraCm / 100).toFixed(2)} m` : '—'}</td><td className="px-2 py-2">{medida.alturaCm !== null ? `${(medida.alturaCm / 100).toFixed(2)} m` : '—'}</td><td className="px-2 py-2">{quantidadeGestaoDecorisi(item, detalhe.cotacaoDecorisi)}</td></tr>)}</tbody></table>
                       </div>
-                      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">Observações</dt><dd className="whitespace-pre-wrap break-words">{item.observacoes || '—'}</dd></div><div><dt className="text-slate-500">Subtotal</dt><dd className="font-semibold">{item.snapshotComercial && typeof item.snapshotComercial.subtotalCentavos === 'string' ? (Number(item.snapshotComercial.subtotalCentavos) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'Cotação atual não congelada'}</dd></div></dl>
+                      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">Observações</dt><dd className="whitespace-pre-wrap break-words">{item.observacoes || '—'}</dd></div><div><dt className="text-slate-500">Subtotal</dt><dd>{(() => { const subtotal = subtotalGestaoDecorisi(item, detalhe.cotacaoDecorisi); return <><p className="font-semibold">{subtotal.valor}</p>{subtotal.aviso && <p className="text-xs font-normal text-slate-500">{subtotal.aviso}</p>}</> })()}</dd></div></dl>
                       <div className="mt-5 border-t border-slate-200 pt-4"><AnexosGestaoDecorisi pedido={detalhe} item={item} onAtualizado={async () => { await recarregarDetalhe(); await carregarLista() }} /></div>
                     </Card>
                   ))}
@@ -1432,7 +1469,7 @@ export function GestaoPedidosPersonalizados() {
                     </>
                   )}
                   <BotaoCancelarPedido status={detalhe.status} fornecedor={detalhe.fornecedor} onClick={() => abrirTransicao('CANCELADO')} />
-                  <BotaoAvancoStatus status={detalhe.status} fornecedor={detalhe.fornecedor} onClick={() => abrirTransicao()} className="font-semibold shadow-sm" podeVer={podeVerAvancoStatus(detalhe.status)} />
+                  <BotaoAvancoStatus dispensaLayout={decorisiDispensaLayout(detalhe.decorisiItens ?? [])} status={detalhe.status} fornecedor={detalhe.fornecedor} onClick={() => abrirTransicao()} className="font-semibold shadow-sm" podeVer={podeVerAvancoStatus(detalhe.status)} />
                 </>
               )}
               <Button type="button" variant="ghost" disabled={salvando} onClick={() => void recarregarDetalhe()}><RefreshCw />Recarregar</Button>
@@ -1568,7 +1605,7 @@ export function GestaoPedidosPersonalizados() {
                 </div>
                 <FormField id="status-destino" label="Destino" required>
                   {/* CANCELADO some daqui de propósito: o botão dedicado "Cancelar pedido" (mesma regra `podeCancelarPedido`) cobre esse caso com uma confirmação mais direta — ver §6 do pedido. */}
-                  {(f) => <Select value={transicao.destino} onValueChange={(destino) => setTransicao((atual) => ({ ...atual, destino: destino as StatusPedidoPersonalizado }))}><SelectTrigger id={f.id}><SelectValue /></SelectTrigger><SelectContent>{destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes').filter((status) => status !== 'CANCELADO').map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select>}
+                  {(f) => <Select value={transicao.destino} onValueChange={(destino) => setTransicao((atual) => ({ ...atual, destino: destino as StatusPedidoPersonalizado }))}><SelectTrigger id={f.id}><SelectValue /></SelectTrigger><SelectContent>{destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave as 'decorisi' | 'lebebe_exclusive' | 'moriah_tapetes', decorisiDispensaLayout(detalhe.decorisiItens ?? [])).filter((status) => status !== 'CANCELADO').map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select>}
                 </FormField>
                 {detalhe.status === 'RASCUNHO' && transicao.destino === 'VENDA FECHADA' && (
                   <Alert tone="warning" title="Fechar venda?">
@@ -1600,11 +1637,11 @@ export function GestaoPedidosPersonalizados() {
                   disabled={pendenciasTransicao.length > 0}
                   loading={salvando}
                   onClick={() => void confirmarTransicao()}
-                  className={`w-full ${!salvando && detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')[0] ?? '') ? CLASSE_DEGRADE_AVANCO_STATUS : ''}`}
+                  className={`w-full ${!salvando && detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave as 'decorisi' | 'lebebe_exclusive' | 'moriah_tapetes', decorisiDispensaLayout(detalhe.decorisiItens ?? []))[0] ?? '') ? CLASSE_DEGRADE_AVANCO_STATUS : ''}`}
                 >
                   {detalhe?.status === 'RASCUNHO' && transicao.destino === 'VENDA FECHADA'
                     ? <>Confirmar e fechar venda<ArrowRight /></>
-                    : !salvando && detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave === 'lebebe_exclusive' ? 'lebebe_exclusive' : 'moriah_tapetes')[0] ?? '')
+                    : !salvando && detalhe && transicao.destino && transicao.destino === (destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave as 'decorisi' | 'lebebe_exclusive' | 'moriah_tapetes', decorisiDispensaLayout(detalhe.decorisiItens ?? []))[0] ?? '')
                       ? <>Avançar para {transicao.destino}<ArrowRight /></>
                       : 'Confirmar transição'}
                 </Button>

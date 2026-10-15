@@ -1,6 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
+import { ArrowRight, Plus, Ruler } from 'lucide-react'
+import { toast } from 'sonner'
 import {
   Alert,
   Button,
@@ -28,6 +31,7 @@ import {
   type PedidoFormularioDecorisi,
 } from '@/lib/pedidos-personalizados/decorisi/formulario'
 import { LIMITE_ANEXO_BYTES } from '@/lib/pedidos-personalizados/server/anexos-arquivo'
+import { AvisoPedidoSalvoFixo } from './AvisoPedidoSalvoFixo'
 import { CardProdutoDecorisi } from './CardProdutoDecorisi'
 
 function focarCampo(id: string) {
@@ -37,6 +41,20 @@ function focarCampo(id: string) {
 }
 
 const BASE = '/api/pedidos-personalizados/decorisi'
+const TIPOS_ANEXO = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
+
+function arquivoAceito(arquivo: File) {
+  return arquivo.size >= 1 && arquivo.size <= LIMITE_ANEXO_BYTES && TIPOS_ANEXO.includes(arquivo.type)
+}
+
+type LocalDecorisi = {
+  artigoId: string
+  slot: number
+  arquivo: File
+  previewUrl: string | null
+  anexoId?: string
+  chave: string
+}
 type Cotacao = {
   version: number
   completa: boolean
@@ -92,6 +110,8 @@ export function FormularioDecorisi({
   const [erro, setErro] = useState<string | null>(null)
   const [urlAnexo, setUrlAnexo] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
+  const [confirmacaoSalvo, setConfirmacaoSalvo] = useState<{ version: number; arquivos: number } | null>(null)
+  const [ocorrenciaSalvo, setOcorrenciaSalvo] = useState(0)
   const [tentou, setTentou] = useState(false)
   const [cotacao, setCotacao] = useState<Cotacao | null>(null)
   const [conflito, setConflito] = useState(false)
@@ -114,6 +134,8 @@ export function FormularioDecorisi({
     chave: string
     version: number
   } | null>(null)
+  const [locais, setLocais] = useState<LocalDecorisi[]>([])
+  const locaisRef = useRef<LocalDecorisi[]>([])
   const snapshot = JSON.stringify({ identificacao, artigos })
   const alterado = snapshot !== persistido
   const erros = useMemo(
@@ -146,7 +168,7 @@ export function FormularioDecorisi({
   }, [tentou, erros, onErrosIdentificacao])
   useEffect(() => {
     function sair(e: BeforeUnloadEvent) {
-      if (alterado || ocupado || reenvio) {
+      if (alterado || ocupado || reenvio || locaisRef.current.length) {
         e.preventDefault()
         e.returnValue = ''
       }
@@ -186,6 +208,7 @@ export function FormularioDecorisi({
         `/api/pedidos-personalizados/pedidos/${id}/cotacao`,
       )
       setCotacao(q.cotacao)
+      return { id: dados.id, version: dados.version }
     },
     [onIdentificacao],
   )
@@ -209,6 +232,56 @@ export function FormularioDecorisi({
       setOcupado(false)
     }
   }
+  function definirLocais(proximo: LocalDecorisi[]) {
+    locaisRef.current = proximo
+    setLocais(proximo)
+  }
+  function removerLocal(artigoId: string, slot: number) {
+    const anterior = locaisRef.current.find((item) => item.artigoId === artigoId && item.slot === slot)
+    if (anterior?.previewUrl) URL.revokeObjectURL(anterior.previewUrl)
+    definirLocais(locaisRef.current.filter((item) => !(item.artigoId === artigoId && item.slot === slot)))
+  }
+  function selecionarLocal(artigoId: string, slot: number, arquivo: File, anexoId?: string) {
+    if (!arquivoAceito(arquivo)) {
+      setErro('Escolha JPEG, PNG, WEBP ou PDF, com até 10 MiB.')
+      return
+    }
+    setErro(null)
+    const anterior = locaisRef.current.find((item) => item.artigoId === artigoId && item.slot === slot)
+    if (anterior?.previewUrl) URL.revokeObjectURL(anterior.previewUrl)
+    definirLocais([
+      ...locaisRef.current.filter((item) => !(item.artigoId === artigoId && item.slot === slot)),
+      {
+        artigoId,
+        slot,
+        arquivo,
+        previewUrl: arquivo.type.startsWith('image/') ? URL.createObjectURL(arquivo) : null,
+        anexoId,
+        chave: crypto.randomUUID(),
+      },
+    ])
+  }
+  useEffect(() => () => {
+    for (const local of locaisRef.current) if (local.previewUrl) URL.revokeObjectURL(local.previewUrl)
+  }, [])
+  async function transmitirArquivo(params: { pedidoId: string; version: number; artigoId: string; arquivo: File; slot: number; anexoId?: string; chave: string }) {
+    if (!arquivoAceito(params.arquivo)) {
+      const invalido = new ErroApiFormularioDecorisi(422, 'ARQUIVO_INVALIDO', 'Escolha JPEG, PNG, WEBP ou PDF, com até 10 MiB.')
+      setErro(invalido.message)
+      throw invalido
+    }
+    const form = new FormData()
+    form.set('arquivo', params.arquivo)
+    form.set('slot', String(params.slot))
+    form.set('expectedVersion', String(params.version))
+    const url = `${BASE}/pedidos/${params.pedidoId}/itens/${params.artigoId}/anexos${params.anexoId ? `/${params.anexoId}` : ''}`
+    const resposta = await apiFormularioDecorisi<{ version?: number }>(url, {
+      method: params.anexoId ? 'PUT' : 'POST',
+      headers: { 'Idempotency-Key': params.chave },
+      body: form,
+    })
+    return typeof resposta.version === 'number' ? resposta.version : params.version
+  }
   useEffect(() => {
     if (inicializado.current) return
     inicializado.current = true
@@ -216,7 +289,9 @@ export function FormularioDecorisi({
     const id = new URL(window.location.href).searchParams.get('decorisiPedido')
     if (id) {
       setFalhaAbertura(true)
-      void executar(() => recarregar(id))
+      void executar(async () => {
+        await recarregar(id)
+      })
     } else {
       const iniciais = [novoArtigoDecorisi()]
       setArtigos(iniciais)
@@ -299,10 +374,46 @@ export function FormularioDecorisi({
           throw e
         }
       }
-      await recarregar(id!)
-      setAviso(
-        'Rascunho salvo. Você pode continuar editando e anexar os arquivos.',
-      )
+      const carregado = await recarregar(id!)
+      let version = carregado.version
+      const fila = [...locaisRef.current]
+      for (const local of fila) {
+        arquivoPendente.current = {
+          artigoId: local.artigoId,
+          arquivo: local.arquivo,
+          slot: local.slot,
+          anexoId: local.anexoId,
+          chave: local.chave,
+          version,
+        }
+        try {
+          version = await transmitirArquivo({
+            pedidoId: carregado.id,
+            version,
+            artigoId: local.artigoId,
+            arquivo: local.arquivo,
+            slot: local.slot,
+            anexoId: local.anexoId,
+            chave: local.chave,
+          })
+          arquivoPendente.current = null
+          setReenvio(false)
+          setPedido({ id: carregado.id, version })
+          removerLocal(local.artigoId, local.slot)
+        } catch (e) {
+          if (!(e instanceof ErroApiFormularioDecorisi) || e.status >= 500) setReenvio(true)
+          else {
+            arquivoPendente.current = null
+            setReenvio(false)
+          }
+          throw e
+        }
+      }
+      if (fila.length) await recarregar(carregado.id)
+      setAviso(null)
+      setConfirmacaoSalvo({ version, arquivos: fila.length })
+      setOcorrenciaSalvo((atual) => atual + 1)
+      toast.success('Orçamento salvo como rascunho.')
     })
   }
   async function enviarArquivo(
@@ -316,13 +427,7 @@ export function FormularioDecorisi({
       setErro('Salve as alterações antes de enviar um anexo.')
       return
     }
-    if (
-      arquivo.size < 1 ||
-      arquivo.size > LIMITE_ANEXO_BYTES ||
-      !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(
-        arquivo.type,
-      )
-    ) {
+    if (!arquivoAceito(arquivo)) {
       setErro('Escolha JPEG, PNG, WEBP ou PDF, com até 10 MiB.')
       return
     }
@@ -336,19 +441,19 @@ export function FormularioDecorisi({
     }
     arquivoPendente.current = pendente
     await executar(async () => {
-      const form = new FormData()
-      form.set('arquivo', pendente.arquivo)
-      form.set('slot', String(pendente.slot))
-      form.set('expectedVersion', String(pendente.version))
-      const url = `${BASE}/pedidos/${pedido.id}/itens/${pendente.artigoId}/anexos${pendente.anexoId ? `/${pendente.anexoId}` : ''}`
       try {
-        await apiFormularioDecorisi(url, {
-          method: pendente.anexoId ? 'PUT' : 'POST',
-          headers: { 'Idempotency-Key': pendente.chave },
-          body: form,
+        await transmitirArquivo({
+          pedidoId: pedido.id,
+          version: pendente.version,
+          artigoId: pendente.artigoId,
+          arquivo: pendente.arquivo,
+          slot: pendente.slot,
+          anexoId: pendente.anexoId,
+          chave: pendente.chave,
         })
         arquivoPendente.current = null
         setReenvio(false)
+        removerLocal(pendente.artigoId, pendente.slot)
         await recarregar(pedido.id)
         setAviso('Anexo salvo.')
       } catch (e) {
@@ -405,6 +510,10 @@ export function FormularioDecorisi({
       mensagem:
         'Remover este produto e seus anexos? A remoção será confirmada ao salvar o rascunho.',
       executar: () => {
+        for (const local of locaisRef.current.filter((item) => item.artigoId === id)) {
+          if (local.previewUrl) URL.revokeObjectURL(local.previewUrl)
+        }
+        definirLocais(locaisRef.current.filter((item) => item.artigoId !== id))
         setArtigos((itens) => itens.filter((a) => a.id !== id))
         setCotacao(null)
       },
@@ -419,16 +528,22 @@ export function FormularioDecorisi({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-primary">Decorisi</p>
-          <h2 className="text-lg font-bold">
-            Produtos e medidas · {artigos.length}/10
-          </h2>
+        <div className="flex items-center gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Ruler className="size-5" aria-hidden="true" />
+          </span>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary">Decorisi</p>
+            <h2 className="text-base font-bold text-slate-900 sm:text-lg">
+              Produtos e medidas · {artigos.length}/10
+            </h2>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             variant="secondary"
+            className="min-h-11"
             disabled={ocupado || reenvio || conflito || falhaAbertura}
             onClick={() => {
               if (alterado)
@@ -445,13 +560,14 @@ export function FormularioDecorisi({
           <Button
             type="button"
             variant="secondary"
+            className="min-h-11"
             disabled={bloqueado || artigos.length >= 10}
             onClick={() => {
               setArtigos((a) => [...a, novoArtigoDecorisi()])
               setCotacao(null)
             }}
           >
-            Adicionar produto
+            <Plus aria-hidden="true" />Adicionar produto
           </Button>
         </div>
       </div>
@@ -477,13 +593,13 @@ export function FormularioDecorisi({
             type="button"
             disabled={ocupado}
             onClick={() =>
-              void executar(() =>
-                recarregar(
+              void executar(async () => {
+                await recarregar(
                   new URL(window.location.href).searchParams.get(
                     'decorisiPedido',
                   )!,
-                ),
-              )
+                )
+              })
             }
           >
             Tentar abrir novamente
@@ -502,7 +618,10 @@ export function FormularioDecorisi({
               setConfirmacao({
                 mensagem:
                   'Recarregar o pedido e descartar as alterações locais?',
-                executar: () => void executar(() => recarregar(pedido!.id)),
+                executar: () =>
+                  void executar(async () => {
+                    await recarregar(pedido!.id)
+                  }),
               })
             }
           >
@@ -552,9 +671,40 @@ export function FormularioDecorisi({
           onArquivo={(f, s, id) => enviarArquivo(a.id, f, s, id)}
           onExcluirAnexo={(id) => removerAnexo(a.id, id)}
           onAbrirAnexo={(id) => abrirAnexo(a.id, id)}
+          locais={locais.filter((item) => item.artigoId === a.id)}
+          onSelecionarLocal={(slot, arquivo, anexoId) => selecionarLocal(a.id, slot, arquivo, anexoId)}
+          onRemoverLocal={(slot) => removerLocal(a.id, slot)}
         />
       ))}
-      <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-background p-4 shadow-lg">
+      <Button
+        type="button"
+        variant="secondary"
+        className="min-h-11"
+        disabled={bloqueado || artigos.length >= 10}
+        onClick={() => {
+          setArtigos((a) => [...a, novoArtigoDecorisi()])
+          setCotacao(null)
+        }}
+      >
+        <Plus aria-hidden="true" />Adicionar produto
+      </Button>
+      {confirmacaoSalvo && (
+        <Alert tone="success" title="Orçamento salvo">
+          <p>Status RASCUNHO; versão {confirmacaoSalvo.version}; {artigos.length} produto(s). A venda ainda não foi fechada.</p>
+          {confirmacaoSalvo.arquivos > 0 && <p className="mt-2">Os arquivos selecionados foram enviados.</p>}
+          <Button asChild type="button" variant="secondary" className="mt-4 min-h-10">
+            <Link href="/pedidos-personalizados">Ir para a gestão de pedidos<ArrowRight /></Link>
+          </Button>
+        </Alert>
+      )}
+      <div className="sticky bottom-0 z-20 flex flex-col gap-2">
+        <AvisoPedidoSalvoFixo
+          key={ocorrenciaSalvo}
+          disparo={confirmacaoSalvo !== null}
+          titulo="Pedido salvo"
+          mensagem="O pedido foi salvo com sucesso. Você pode ir para a gestão de pedidos personalizados."
+        />
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-background p-4 shadow-lg">
         <div aria-live="polite">
           <p className="font-bold">
             Total estimado:{' '}
@@ -610,6 +760,7 @@ export function FormularioDecorisi({
             rascunho
           </Button>
         </div>
+      </div>
       </div>
       <Dialog
         open={confirmacao !== null}

@@ -80,7 +80,8 @@ export async function transicionarStatus(
   if (!atual.data) return jsonErro('PEDIDO_NAO_ENCONTRADO', 'Pedido nao encontrado.', 404)
   const fornecedor = atual.data.fornecedor?.chave
   log.fornecedor = fornecedor
-  if (!fornecedor || !podeTransicionarStatus(atual.data.status, validacao.dados.statusDestino, fornecedor)) {
+  // A RPC Decorisi valida a composição completa sob lock; não inferir o fluxo pelo payload.
+  if (!fornecedor || (fornecedor !== 'decorisi' && !podeTransicionarStatus(atual.data.status, validacao.dados.statusDestino, fornecedor))) {
     return jsonErro('TRANSICAO_STATUS_INVALIDA', 'Esta transicao de status nao e permitida.', 422)
   }
 

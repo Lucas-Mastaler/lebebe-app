@@ -156,8 +156,8 @@ try {
   })
   await verificar('transições simultâneas: uma versão e um evento operacional',async()=>{
     const p=await criar(a),q=await cotar(a,p); await fechar(a,p,q)
-    const sql='select * from transicionar_pedido_personalizado_decorisi($1,$2,$3,$4,$5,$6,$7)'
-    const params=[p.pedidoId,p.version+1,usuario,'AGUARDANDO LAYOUT','123','2026-10-09','Teste']
+    const sql='select * from transicionar_pedido_personalizado_decorisi($1,$2,$3,$4,$5,$6,$7,$8)'
+    const params=[p.pedidoId,p.version+1,usuario,'EM PRODUÇÃO','123','2026-10-09','Teste','2026-10-20']
     await a.query('begin'); await a.query(sql,params)
     const concorrente=b.query(sql,params).then(()=>null,e=>e.message)
     await esperarLock(admin,pidB); await a.query('commit')
@@ -202,6 +202,18 @@ try {
       'select fechar_pedido_personalizado_decorisi($1,$2,1,\'123\',\'{}\')',
     ]) await assert.rejects(a.query(sql,[p.pedidoId,desautorizado]),/ACESSO_NEGADO/)
   })
+
+  await verificar('duas transições diretas concorrentes: uma versão e um histórico',async()=>{
+    const p=await criar(a),q=await cotar(a,p);await fechar(a,p,q);
+    const sql="select * from transicionar_pedido_personalizado_decorisi($1,$2,$3,'EM PRODUÇÃO','123','2026-10-09','Teste','2026-10-20')";
+    const params=[p.pedidoId,q.version+1,usuario];
+    await a.query('begin');await a.query(sql,params);
+    const segunda=b.query(sql,params).then(()=>null,e=>e.message);
+    await esperarLock(admin,pidB);await a.query('commit');
+    assert.match(await segunda,/CONFLITO_VERSAO/);
+    assert.equal(await valor(a,"select count(*)::int valor from pedidos_personalizados_status_historico where pedido_id=$1 and status_novo='EM PRODUÇÃO'",[p.pedidoId]),1);
+    assert.equal(await valor(a,"select count(*)::int valor from pedidos_personalizados_status_historico where pedido_id=$1 and status_novo in ('AGUARDANDO LAYOUT','AGUARDANDO APROVAÇÃO DO CLIENTE')",[p.pedidoId]),0);
+  });
   await verificar('Moriah/Exclusive preservados; criação e status legados continuam funcionais',async()=>{
     assert.deepEqual(await preservarFornecedores(admin),antes)
     const pedidos=await criarLegados(a)

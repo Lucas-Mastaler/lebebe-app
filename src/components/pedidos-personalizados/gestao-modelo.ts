@@ -48,6 +48,7 @@ export type ItemPedidoGestao = {
   tiposTapetes: TipoTapeteMoriah[]
   quantidadeItens: number
   referenciasProdutos: string[]
+  decorisiDispensaLayout?: boolean
   quantidadeDecorisiItens: number
   referenciasDecorisi: string[]
   valorTotalCentavos: number | null

@@ -3,6 +3,18 @@ import type { IdentificacaoDecorisiRpc, ItemDecorisi } from '../decorisi/tipos'
 
 export class RepositorioDecorisi {
   constructor(private readonly supabase: SupabaseClient) {}
+  async homologacaoLocal(usuarioId: string, expiraEm: string) {
+    const tabela = 'pedidos_personalizados_decorisi_testadores'
+    const atual = await this.supabase.from(tabela).select('expira_em,finalidade').eq('usuario_id', usuarioId).maybeSingle()
+    if (atual.error) return atual
+    if (atual.data) {
+      // Não prolonga acessos ativos nem altera acessos de outra finalidade.
+      if (new Date(atual.data.expira_em).getTime() > Date.now() || !atual.data.finalidade.startsWith('Homologação local Decorisi ')) return atual
+      return this.supabase.from(tabela).update({ expira_em: expiraEm, finalidade: 'Homologação local Decorisi localhost' })
+        .eq('usuario_id', usuarioId).eq('expira_em', atual.data.expira_em).eq('finalidade', atual.data.finalidade)
+    }
+    return this.supabase.from(tabela).upsert({ usuario_id: usuarioId, expira_em: expiraEm, finalidade: 'Homologação local Decorisi localhost' }, { onConflict: 'usuario_id', ignoreDuplicates: true })
+  }
   async disponivel(usuarioId: string) {
     return this.supabase.rpc('decorisi_fornecedor_para_usuario', { p_usuario: usuarioId })
   }

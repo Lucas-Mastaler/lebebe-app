@@ -600,7 +600,7 @@ export class RepositorioPedidosPersonalizados {
     const pedidoIds = rows.map((row) => row.id)
     const resumoPorPedido = new Map<string, { quantidade: number; codigos: Set<string>; tipos: Set<string> }>()
     const resumoExclusivePorPedido = new Map<string, { quantidade: number; referencias: Set<string> }>()
-    const resumoDecorisiPorPedido = new Map<string, { quantidade: number; referencias: Set<string>; valorTotalCentavos: number | null }>()
+    const resumoDecorisiPorPedido = new Map<string, { quantidade: number; referencias: Set<string>; valorTotalCentavos: number | null; dispensaLayout: boolean }>()
     const recebidoEmPorPedido = new Map<string, string>()
     const produtoSgiPorPedido = new Map<string, IntegracaoProdutoSgiRow>()
     if (pedidoIds.length > 0) {
@@ -670,8 +670,9 @@ export class RepositorioPedidosPersonalizados {
         referencia: { referencia: string } | null
       }>) {
         const resumo = resumoDecorisiPorPedido.get(item.pedido_id)
-          ?? { quantidade: 0, referencias: new Set<string>(), valorTotalCentavos: null }
+          ?? { quantidade: 0, referencias: new Set<string>(), valorTotalCentavos: null, dispensaLayout: true }
         resumo.quantidade += 1
+        resumo.dispensaLayout &&= item.tipo === 'PAPEL' && item.classificacao === 'CATALOGO'
         const referencia = item.referencia?.referencia ?? item.referencia_pf
         if (referencia) resumo.referencias.add(referencia)
         const subtotal = item.snapshot_comercial?.subtotalCentavos
@@ -701,6 +702,7 @@ export class RepositorioPedidosPersonalizados {
           tipos_tapetes: Array.from(resumoPorPedido.get(row.id)?.tipos ?? []).sort(),
           quantidade_itens: resumoExclusivePorPedido.get(row.id)?.quantidade ?? 0,
           referencias_produtos: Array.from(resumoExclusivePorPedido.get(row.id)?.referencias ?? []).sort(),
+          decorisi_dispensa_layout: resumoDecorisiPorPedido.get(row.id)?.dispensaLayout ?? false,
           quantidade_decorisi_itens: resumoDecorisiPorPedido.get(row.id)?.quantidade ?? 0,
           referencias_decorisi: Array.from(resumoDecorisiPorPedido.get(row.id)?.referencias ?? []).sort(),
           valor_total_centavos: resumoDecorisiPorPedido.get(row.id)?.valorTotalCentavos ?? null,

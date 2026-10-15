@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/service'
 import { fetchDigisacRaw, sanitizarDigisacParaLog } from '@/lib/digisac/clienteDigisac'
 import { HUB_VENDAS_LOJAS, obterAlertasContactId, obterAlertasServiceId } from './constants'
+import { operacaoHubVendasPrecisaAtencao } from './estado-operacional'
 import { obterPartesDataLocal, obterIntervaloDiaLocalUtc } from './tempo'
 
 type SupabaseServiceClient = ReturnType<typeof createServiceClient>
@@ -333,17 +334,16 @@ export async function gerarTextoResumoDiario(
     linhas.push(`Erros consecutivos: ${errosConsecutivos.join(', ')}`)
   }
 
-  // Status geral: além do que já valia antes (automação pausada, erro de envio, resultado
-  // incerto, conexão pausada), agora também considera análise manual pendente — sinal
-  // explícito pedido para reavaliar esse critério nesta tarefa.
-  const saudavel =
-    !config.pausada &&
-    filas.erro === 0 &&
-    filas.resultado_incerto === 0 &&
-    filas.analise_manual === 0 &&
-    conexoesPausadas === 0
+  // Mesma regra do selo da tela: condições ainda abertas, não o histórico de avisos.
+  const precisaAtencao = operacaoHubVendasPrecisaAtencao({
+    automacaoPausada: config.pausada,
+    errosPendentes: filas.erro,
+    resultadoIncerto: filas.resultado_incerto,
+    analiseManual: filas.analise_manual,
+    conexoesPausadas,
+  })
   linhas.push('')
-  linhas.push(`Status geral: ${saudavel ? '✅ saudável' : '⚠️ com atenção'}`)
+  linhas.push(`Status geral: ${precisaAtencao ? '⚠️ com atenção' : '✅ saudável'}`)
   if (config.pausada) {
     linhas.push(`Automação pausada: ${config.motivo ?? 'motivo não informado'}`)
   }

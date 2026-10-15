@@ -492,28 +492,48 @@ export type ResumoAlertasTela = {
   }>
 }
 
+const LIMITE_LISTA_ALERTAS_TELA = 10
+
 export async function obterResumoAlertasTela(
   supabase: SupabaseServiceClient = createServiceClient()
 ): Promise<ResumoAlertasTela> {
+  // Janela móvel de 24 horas a partir de agora. enviado_em é timestamptz,
+  // então a comparação não depende do fuso do calendário.
   const limite24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
-  const { data: recentes, error } = await supabase
-    .from('hub_vendas_alertas')
-    .select('tipo, status, enviado_em, chave_deduplicacao')
-    .gte('enviado_em', limite24h)
-    .order('enviado_em', { ascending: false })
-    .limit(20)
+  const [contagemResult, ultimoResult, listaResult] = await Promise.all([
+    supabase
+      .from('hub_vendas_alertas')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'enviado')
+      .gte('enviado_em', limite24h),
+    supabase
+      .from('hub_vendas_alertas')
+      .select('tipo, enviado_em')
+      .eq('status', 'enviado')
+      .gte('enviado_em', limite24h)
+      .order('enviado_em', { ascending: false })
+      .limit(1),
+    supabase
+      .from('hub_vendas_alertas')
+      .select('tipo, status, enviado_em, chave_deduplicacao')
+      .gte('enviado_em', limite24h)
+      .order('enviado_em', { ascending: false })
+      .limit(LIMITE_LISTA_ALERTAS_TELA),
+  ])
 
-  if (error) throw error
+  if (contagemResult.error) throw contagemResult.error
+  if (ultimoResult.error) throw ultimoResult.error
+  if (listaResult.error) throw listaResult.error
 
-  const rows = (recentes ?? []) as Array<{ tipo: string; status: string; enviado_em: string; chave_deduplicacao: string }>
-  const enviados = rows.filter((r) => r.status === 'enviado')
+  const ultimo = ((ultimoResult.data ?? []) as Array<{ tipo: string; enviado_em: string }>)[0]
+  const rows = (listaResult.data ?? []) as Array<{ tipo: string; status: string; enviado_em: string; chave_deduplicacao: string }>
 
   return {
-    total24h: enviados.length,
-    ultimoAlertaEm: enviados[0]?.enviado_em ?? null,
-    ultimoTipo: enviados[0]?.tipo ?? null,
-    ultimos: rows.slice(0, 10).map((r) => ({
+    total24h: contagemResult.count ?? 0,
+    ultimoAlertaEm: ultimo?.enviado_em ?? null,
+    ultimoTipo: ultimo?.tipo ?? null,
+    ultimos: rows.map((r) => ({
       tipo: r.tipo,
       status: r.status,
       enviadoEm: r.enviado_em,

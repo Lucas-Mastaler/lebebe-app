@@ -27,6 +27,8 @@ import type {
   FilaListadaHubVendas,
 } from '@/lib/digisac/hub-vendas/gestao'
 import { formatarPercentualHubVendas, LIMITE_DIARIO_MAXIMO } from '@/lib/digisac/hub-vendas/gestao'
+import { operacaoHubVendasPrecisaAtencao } from '@/lib/digisac/hub-vendas/estado-operacional'
+import { rotuloStatusAlertaHubVendas, rotuloTipoAlertaHubVendas, tomStatusAlertaHubVendas } from '@/lib/digisac/hub-vendas/rotulos-alerta'
 import { montarUrlHistoricoTicket } from '@/lib/digisac/urls'
 
 const POLLING_INTERVAL_MS = 60_000
@@ -121,7 +123,7 @@ function mesclarResumoHistorico(
   }
 }
 
-export default function PageClient() {
+export default function PageClient({ podeGerenciar }: { podeGerenciar: boolean }) {
   const periodoFilters = useFilterState<PeriodoRascunhoBr>({ de: '', ate: '' })
   const [carregandoPeriodo, setCarregandoPeriodo] = useState(false)
   const [erroPeriodo, setErroPeriodo] = useState<string | null>(null)
@@ -527,6 +529,13 @@ export default function PageClient() {
   if (!status) return null
 
   const automacaoAtiva = status.automacao.ativa && !status.automacao.pausada
+  const operacaoPrecisaAtencao = operacaoHubVendasPrecisaAtencao({
+    automacaoPausada: status.automacao.pausada,
+    errosPendentes: status.resumo.erro,
+    resultadoIncerto: status.resumo.resultadoIncerto,
+    analiseManual: status.resumo.analiseManual,
+    conexoesPausadas: status.resumo.conexoesPausadas,
+  })
 
   return (
     <PageContainer className="space-y-6">
@@ -599,19 +608,21 @@ export default function PageClient() {
               </div>
             </div>
 
-            <div className="flex gap-2">
-              {automacaoAtiva ? (
-                <Button variant="secondary" onClick={() => setModalPausa(true)}>
-                  <Pause className="size-4" />
-                  Pausar automação
-                </Button>
-              ) : (
-                <Button variant="primary" onClick={() => setModalReativar(true)}>
-                  <Play className="size-4" />
-                  Reativar automação
-                </Button>
-              )}
-            </div>
+            {podeGerenciar ? (
+              <div className="flex gap-2">
+                {automacaoAtiva ? (
+                  <Button variant="secondary" onClick={() => setModalPausa(true)}>
+                    <Pause className="size-4" />
+                    Pausar automação
+                  </Button>
+                ) : (
+                  <Button variant="primary" onClick={() => setModalReativar(true)}>
+                    <Play className="size-4" />
+                    Reativar automação
+                  </Button>
+                )}
+              </div>
+            ) : null}
           </div>
 
           {/* Parâmetros */}
@@ -634,7 +645,7 @@ export default function PageClient() {
               label="Leads registrados"
               value={status.resumo.leadsRegistrados}
               icon={<Users className="size-4" />}
-              labelAction={<KpiTooltip label="Leads registrados" texto="Total de clientes que já entraram em contato pela nossa Central de Atendimento." />}
+              labelAction={<KpiTooltip label="Leads registrados" texto="Contatos que entraram pela Central de Atendimento. Com um período selecionado, conta só quem entrou nesse intervalo e mostra a situação atual de cada um. A soma dos outros cartões pode não fechar 100%, porque alguns ainda estão na fila ou em outra situação." />}
             />
             <KpiCard
               label="Candidatos elegíveis"
@@ -642,7 +653,7 @@ export default function PageClient() {
               icon={<UserCheck className="size-4" />}
               tone="info"
               detail={formatarPercentualHubVendas(status.resumo.candidatosElegiveis, status.resumo.leadsRegistrados)}
-              labelAction={<KpiTooltip label="Candidatos elegíveis" texto="Clientes que ainda podem receber uma mensagem de recuperação." />}
+              labelAction={<KpiTooltip label="Candidatos elegíveis" texto="Contatos recentes que ainda podem entrar na fila de recuperação. Continuam aguardando: ainda não foram convertidos e a mensagem ainda não foi enviada. O percentual é sobre os leads registrados." />}
             />
             <KpiCard
               label="Convertidos organicamente"
@@ -655,7 +666,7 @@ export default function PageClient() {
                   <p className="truncate" title={formatarDetalhePorLoja(status.resumo.convertidosPorLoja)}>{formatarDetalhePorLoja(status.resumo.convertidosPorLoja)}</p>
                 </>
               }
-              labelAction={<KpiTooltip label="Convertidos organicamente" texto="Clientes que procuraram uma das lojas por conta própria, antes de receber uma mensagem de recuperação." />}
+              labelAction={<KpiTooltip label="Convertidos organicamente" texto="Procuraram uma loja por conta própria em até 24 horas depois de entrar na Central, antes de receber a mensagem de recuperação. Portão, Bigorrilho e Hauer mostram a primeira loja procurada. O percentual é sobre os leads registrados." />}
             />
             <KpiCard
               label="Recuperação enviada / aguardando"
@@ -668,7 +679,7 @@ export default function PageClient() {
                   <p className="truncate" title={formatarDetalhePorLoja(status.resumo.recuperacaoEnviadaPorLoja)}>{formatarDetalhePorLoja(status.resumo.recuperacaoEnviadaPorLoja)}</p>
                 </>
               }
-              labelAction={<KpiTooltip label="Recuperação enviada / aguardando" texto="Clientes que receberam nossa mensagem de recuperação e ainda estão dentro do prazo para responder." />}
+              labelAction={<KpiTooltip label="Recuperação enviada / aguardando" texto="Já receberam a mensagem de recuperação e ainda estão nas 24 horas para procurar uma loja. Portão, Bigorrilho e Hauer mostram a loja que enviou a mensagem. O percentual é sobre os leads registrados." />}
             />
             <KpiCard
               label="Recuperados"
@@ -681,7 +692,7 @@ export default function PageClient() {
                   <p className="truncate" title={formatarDetalhePorLoja(status.resumo.recuperadosPorLoja)}>{formatarDetalhePorLoja(status.resumo.recuperadosPorLoja)}</p>
                 </>
               }
-              labelAction={<KpiTooltip label="Recuperados" texto="Clientes que responderam depois de receber nossa mensagem de recuperação." />}
+              labelAction={<KpiTooltip label="Recuperados" texto="Depois da mensagem de recuperação, procuraram uma loja em até 24 horas. A divisão por loja mostra quem enviou a mensagem, não necessariamente a loja procurada. O percentual é sobre os leads registrados." />}
             />
             <KpiCard
               label="Perdidos"
@@ -693,7 +704,7 @@ export default function PageClient() {
                   <p className="truncate" title={formatarDetalhePorLoja(status.resumo.perdidosPorLoja)}>{formatarDetalhePorLoja(status.resumo.perdidosPorLoja)}</p>
                 </>
               }
-              labelAction={<KpiTooltip label="Perdidos" texto="Clientes que receberam a mensagem de recuperação, mas não responderam dentro do prazo." />}
+              labelAction={<KpiTooltip label="Perdidos" texto="Receberam a mensagem de recuperação e não procuraram uma loja nas 24 horas seguintes. A divisão por loja mostra quem enviou a mensagem. O percentual é sobre os leads registrados." />}
             />
             <KpiCard
               label="Fila manual"
@@ -701,7 +712,7 @@ export default function PageClient() {
               icon={<Clock className="size-4" />}
               tone="warning"
               detail={formatarPercentualHubVendas(status.resumo.filaManual, status.resumo.leadsRegistrados)}
-              labelAction={<KpiTooltip label="Fila manual" texto="Clientes que poderiam receber recuperação, mas não entraram na fila ou não tiveram a recuperação concluída dentro do prazo." />}
+              labelAction={<KpiTooltip label="Fila manual" texto="O prazo acabou sem a mensagem de recuperação ter sido enviada: não entraram na fila, ou a fila terminou sem envio. Diferente de Perdidos, que já receberam a mensagem. O percentual é sobre os leads registrados." />}
             />
           </>
         }
@@ -721,6 +732,14 @@ export default function PageClient() {
             value={status.resumo.enviadaHoje}
             icon={<Send className="size-4" />}
             tone="success"
+            labelAction={
+              <KpiTooltip
+                label={periodoAplicado ? 'Enviados no período' : 'Enviados hoje'}
+                texto={periodoAplicado
+                  ? 'Mensagens de recuperação que o sistema confirmou como enviadas no período selecionado.'
+                  : 'Mensagens de recuperação que o sistema confirmou como enviadas hoje, no horário de Brasília.'}
+              />
+            }
           />
         }
       />
@@ -729,10 +748,33 @@ export default function PageClient() {
       <KpiSection
         kpis={
           <>
-            <KpiCard label="Filas agendadas" value={status.resumo.agendada} icon={<Clock className="size-4" />} tone="info" />
-            <KpiCard label="Filas reservadas" value={status.resumo.reservada} icon={<Hash className="size-4" />} tone="info" />
-            <KpiCard label="Enviando" value={status.resumo.enviando} icon={<Send className="size-4" />} tone="info" />
-            <KpiCard label="Canceladas" value={status.resumo.cancelada} icon={<XCircle className="size-4" />} />
+            <KpiCard
+              label="Filas agendadas"
+              value={status.resumo.agendada}
+              icon={<Clock className="size-4" />}
+              tone="info"
+              labelAction={<KpiTooltip label="Filas agendadas" texto="Recuperações com horário marcado que ainda não começaram a ser enviadas. É a situação de agora e não muda com o período selecionado." />}
+            />
+            <KpiCard
+              label="Filas reservadas"
+              value={status.resumo.reservada}
+              icon={<Hash className="size-4" />}
+              tone="info"
+              labelAction={<KpiTooltip label="Filas reservadas" texto="Recuperações que o sistema já separou e vai enviar em seguida. É a situação de agora e não muda com o período selecionado." />}
+            />
+            <KpiCard
+              label="Enviando"
+              value={status.resumo.enviando}
+              icon={<Send className="size-4" />}
+              tone="info"
+              labelAction={<KpiTooltip label="Enviando" texto="Recuperações cujo envio está acontecendo neste momento. Não muda com o período selecionado." />}
+            />
+            <KpiCard
+              label="Canceladas"
+              value={status.resumo.cancelada}
+              icon={<XCircle className="size-4" />}
+              labelAction={<KpiTooltip label="Canceladas" texto="Recuperações canceladas antes do envio, por exemplo porque o cliente já procurou a loja ou a loja estava pausada. É o total acumulado, não só o de hoje, e não significa que o cliente foi perdido." />}
+            />
             <KpiCard
               label="Erros hoje"
               value={status.resumo.erroHoje}
@@ -743,12 +785,24 @@ export default function PageClient() {
                 : undefined}
               labelAction={<KpiTooltip label="Erros hoje" texto="Filas em erro programadas para hoje. Erros de dias anteriores que ainda estão pendentes aparecem à parte e podem ser reprocessados na lista de filas." />}
             />
-            <KpiCard label="Resultado incerto" value={status.resumo.resultadoIncerto} icon={<AlertTriangle className="size-4" />} tone={status.resumo.resultadoIncerto > 0 ? 'warning' : 'neutral'} />
-            <KpiCard label="Análise manual" value={status.resumo.analiseManual} icon={<ShieldAlert className="size-4" />} tone={status.resumo.analiseManual > 0 ? 'warning' : 'neutral'} />
+            <KpiCard
+              label="Resultado incerto"
+              value={status.resumo.resultadoIncerto}
+              icon={<AlertTriangle className="size-4" />}
+              tone={status.resumo.resultadoIncerto > 0 ? 'warning' : 'neutral'}
+              labelAction={<KpiTooltip label="Resultado incerto" texto="O sistema tentou enviar, mas não confirmou se a mensagem saiu. Essas filas não são reenviadas sozinhas, para evitar mensagem duplicada. É a situação de agora." />}
+            />
+            <KpiCard
+              label="Análise manual"
+              value={status.resumo.analiseManual}
+              icon={<ShieldAlert className="size-4" />}
+              tone={status.resumo.analiseManual > 0 ? 'warning' : 'neutral'}
+              labelAction={<KpiTooltip label="Análise manual" texto="Envios parados porque a mensagem não pôde ser montada com segurança e precisam de uma pessoa para revisar. É a situação de agora." />}
+            />
           </>
         }
       >
-        <p className="-mt-2 text-xs text-slate-500">Estado atual das filas, limites e alertas da automação, independente do período selecionado.</p>
+        <p className="-mt-2 text-xs text-slate-500">Situação atual das filas de recuperação, sem usar o período selecionado. “Erros hoje” usa o dia de hoje.</p>
       </KpiSection>
 
       {status.resumo.conexoesPausadas > 0 && (
@@ -764,24 +818,35 @@ export default function PageClient() {
           title="Alertas e resumo operacional"
           action={
             <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => { carregarAlertas(true); carregarResumo(true) }}
-                loading={atualizandoAlertas}
-              >
-                <RefreshCw className="size-3.5" />
-                {atualizandoAlertas ? 'Atualizando...' : 'Atualizar'}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => { setFeedbackTeste(null); setModalTesteAlerta(true) }}
-                disabled={enviandoTeste}
-              >
-                <ShieldAlert className="size-3.5" />
-                Enviar alerta de teste
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => { carregarAlertas(true); carregarResumo(true) }}
+                      loading={atualizandoAlertas}
+                    >
+                      <RefreshCw className="size-3.5" />
+                      {atualizandoAlertas ? 'Atualizando...' : 'Atualizar'}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" collisionPadding={16} className="max-w-[280px] text-left text-xs">
+                  Recarrega só o resumo diário e os alertas desta seção.
+                </TooltipContent>
+              </Tooltip>
+              {podeGerenciar ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => { setFeedbackTeste(null); setModalTesteAlerta(true) }}
+                  disabled={enviandoTeste}
+                >
+                  <ShieldAlert className="size-3.5" />
+                  Enviar alerta de teste
+                </Button>
+              ) : null}
             </div>
           }
         />
@@ -797,16 +862,26 @@ export default function PageClient() {
           {feedbackTeste && <Alert tone={feedbackTeste.tipo === 'sucesso' ? 'success' : 'danger'}>{feedbackTeste.texto}</Alert>}
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <Section title="Resumo diário" icon={<Clock className="size-4" />} tone="section-1">
+            <Section
+              title={<span className="inline-flex items-center gap-1">Resumo diário <KpiTooltip label="Resumo diário" texto="Último boletim automático enviado ao canal operacional, com o movimento do dia." /></span>}
+              icon={<Clock className="size-4" />}
+              tone="section-1"
+            >
               {loadingAlertas ? (
                 <p className="text-xs text-slate-400">Carregando...</p>
               ) : statusResumo.ultimoResumoEm ? (
                 <div className="space-y-1 text-xs">
-                  <p className="text-slate-700"><span className="text-slate-400">Data:</span> {statusResumo.ultimoResumoDataLocal ?? '—'}</p>
-                  <p className="text-slate-700"><span className="text-slate-400">Enviado:</span> {formatarData(statusResumo.ultimoResumoEm)}</p>
-                  <p className="text-slate-700">
-                    <span className="text-slate-400">Status:</span>{' '}
-                    <span className={statusResumo.ultimoResumoStatus === 'enviado' ? 'text-emerald-600' : 'text-destructive'}>{statusResumo.ultimoResumoStatus ?? '—'}</span>
+                  <p className="flex flex-wrap items-center gap-1 text-slate-700">
+                    <span className="inline-flex items-center gap-1 text-slate-400">Data: <KpiTooltip label="Data do resumo" texto="Dia a que o boletim se refere." /></span>
+                    {statusResumo.ultimoResumoDataLocal ?? '—'}
+                  </p>
+                  <p className="flex flex-wrap items-center gap-1 text-slate-700">
+                    <span className="inline-flex items-center gap-1 text-slate-400">Enviado: <KpiTooltip label="Enviado em" texto="Momento em que esse boletim foi enviado ou em que a tentativa falhou." /></span>
+                    {formatarData(statusResumo.ultimoResumoEm)}
+                  </p>
+                  <p className="flex flex-wrap items-center gap-1 text-slate-700">
+                    <span className="inline-flex items-center gap-1 text-slate-400">Status: <KpiTooltip label="Status do resumo" texto="Enviado significa que o boletim saiu. Falha significa que a tentativa não foi entregue." /></span>
+                    <span className={statusResumo.ultimoResumoStatus === 'enviado' ? 'text-emerald-600' : 'text-destructive'}>{rotuloStatusAlertaHubVendas(statusResumo.ultimoResumoStatus ?? '—')}</span>
                   </p>
                 </div>
               ) : (
@@ -814,24 +889,42 @@ export default function PageClient() {
               )}
             </Section>
 
-            <Section title="Alertas (24h)" icon={<AlertCircle className="size-4" />} tone="section-2">
+            <Section
+              title={<span className="inline-flex items-center gap-1">Alertas (24h) <KpiTooltip label="Alertas (24h)" texto="Quantidade de avisos entregues ao canal operacional nas últimas 24 horas. A lista de baixo mostra só os mais recentes. O resumo do dia e o teste entram neste número, mas não mudam o estado operacional." /></span>}
+              icon={<AlertCircle className="size-4" />}
+              tone="section-2"
+            >
               {loadingAlertas ? (
                 <p className="text-xs text-slate-400">Carregando...</p>
               ) : (
                 <div className="space-y-1 text-xs">
                   <p className="text-2xl font-bold text-slate-800">{alertas.total24h}</p>
-                  {alertas.ultimoAlertaEm && <p className="text-slate-500">Último: {formatarData(alertas.ultimoAlertaEm)}</p>}
-                  {alertas.ultimoTipo && <p className="text-slate-500">Tipo: {alertas.ultimoTipo}</p>}
+                  {alertas.ultimoAlertaEm && (
+                    <p className="flex flex-wrap items-center gap-1 text-slate-500">
+                      <span className="inline-flex items-center gap-1">Último: <KpiTooltip label="Último alerta" texto="Horário do aviso enviado mais recente nesse intervalo de 24 horas." /></span>
+                      {formatarData(alertas.ultimoAlertaEm)}
+                    </p>
+                  )}
+                  {alertas.ultimoTipo && (
+                    <p className="flex flex-wrap items-center gap-1 text-slate-500">
+                      <span className="inline-flex items-center gap-1">Tipo: <KpiTooltip label="Tipo de alerta" texto="Motivo do último aviso entregue." /></span>
+                      {rotuloTipoAlertaHubVendas(alertas.ultimoTipo)}
+                    </p>
+                  )}
                 </div>
               )}
             </Section>
 
-            <Section title="Estado operacional" icon={<CheckCircle className="size-4" />} tone="section-3">
+            <Section
+              title={<span className="inline-flex items-center gap-1">Estado operacional <KpiTooltip label="Estado operacional" texto="Saudável quando a automação não está pausada, não há erro de fila pendente, não há resultado incerto, não há análise manual e nenhuma loja está pausada. Qualquer um desses pontos mostra Com atenção. O resumo do dia e o alerta de teste não mudam este estado." /></span>}
+              icon={<CheckCircle className="size-4" />}
+              tone="section-3"
+            >
               <div className="text-xs">
-                {alertas.total24h === 0 && status.resumo.erroHoje === 0 && status.resumo.resultadoIncerto === 0 ? (
-                  <Badge tone="success">Saudável</Badge>
-                ) : (
+                {operacaoPrecisaAtencao ? (
                   <Badge tone="warning">Com atenção</Badge>
+                ) : (
+                  <Badge tone="success">Saudável</Badge>
                 )}
               </div>
             </Section>
@@ -840,12 +933,15 @@ export default function PageClient() {
           {/* Alertas recentes */}
           {alertas.ultimos.length > 0 && (
             <div className="border-t border-slate-100 pt-4">
-              <h3 className="mb-2 text-xs font-semibold text-slate-600">Alertas recentes</h3>
+              <h3 className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-slate-600">
+                Alertas recentes
+                <KpiTooltip label="Alertas recentes" texto="Os avisos mais recentes das últimas 24 horas. A lista é resumida; o número acima conta todos os que foram entregues. Enviado saiu; Falha não saiu." />
+              </h3>
               <div className="max-h-40 space-y-1.5 overflow-y-auto">
                 {alertas.ultimos.map((alerta, i) => (
                   <div key={i} className="flex items-center gap-2 text-xs text-slate-600">
-                    <Badge tone={alerta.status === 'enviado' ? 'success' : alerta.status === 'deduplicado' ? 'neutral' : 'danger'}>{alerta.status}</Badge>
-                    <span className="font-medium">{alerta.tipo}</span>
+                    <Badge tone={tomStatusAlertaHubVendas(alerta.status)}>{rotuloStatusAlertaHubVendas(alerta.status)}</Badge>
+                    <span className="font-medium">{rotuloTipoAlertaHubVendas(alerta.tipo)}</span>
                     <span className="text-slate-400">{formatarData(alerta.enviadoEm)}</span>
                   </div>
                 ))}
@@ -865,7 +961,7 @@ export default function PageClient() {
         </div>
       </section>
 
-      {/* Configuração do limite */}
+      {podeGerenciar ? (
       <Card>
         <CardHeader title="Limite diário por loja" />
         <CardContent>
@@ -891,6 +987,7 @@ export default function PageClient() {
           {feedbackLimite && <Alert tone={feedbackLimite.tipo === 'sucesso' ? 'success' : 'danger'} className="mt-3">{feedbackLimite.texto}</Alert>}
         </CardContent>
       </Card>
+      ) : null}
 
       {/* Filtros + Tabela de filas */}
       <section className="space-y-4">
@@ -1071,6 +1168,7 @@ export default function PageClient() {
       {/* Modal Detalhe */}
       <ModalDetalhe
         detalhe={detalhe}
+        podeGerenciar={podeGerenciar}
         onClose={() => setDetalhe(null)}
         onAcao={(acao, titulo) => { if (detalhe) { setModalAcao({ filaId: detalhe.fila.id, acao, titulo }); setMotivoAcao('') } }}
       />
@@ -1185,7 +1283,7 @@ function KpiTooltip({ label, texto }: { label: string; texto: string }) {
             <Info className="w-3 h-3" />
           </button>
         </TooltipTrigger>
-        <TooltipContent className="max-w-[220px] text-xs">{texto}</TooltipContent>
+        <TooltipContent side="top" collisionPadding={16} className="max-w-[280px] text-left text-xs">{texto}</TooltipContent>
       </Tooltip>
     </span>
   )
@@ -1203,7 +1301,10 @@ function CardLoja({ loja }: { loja: ResumoLojaHubVendas }) {
         </div>
         <div className="grid grid-cols-3 gap-2 text-center">
           <div>
-            <p className="text-xs text-slate-400">Enviados hoje</p>
+            <p className="flex w-full items-center justify-center gap-1 text-xs text-slate-400">
+              Enviados hoje
+              <KpiTooltip label="Enviados hoje nesta loja" texto="Recuperações programadas para hoje nesta loja que entram no limite diário, inclusive as que ainda não saíram. É diferente do cartão Enviados hoje, que conta só as mensagens já confirmadas." />
+            </p>
             <p className="text-lg font-bold text-slate-700">{loja.enviadosHoje}</p>
           </div>
           <div>
@@ -1292,9 +1393,10 @@ function ModalConfirmacao({
 }
 
 function ModalDetalhe({
-  detalhe, onClose, onAcao,
+  detalhe, podeGerenciar, onClose, onAcao,
 }: {
   detalhe: DetalheFilaHubVendas | null
+  podeGerenciar: boolean
   onClose: () => void
   onAcao: (acao: 'cancelar_agendada' | 'reprocessar_erro' | 'liberar_analise_manual', titulo: string) => void
 }) {
@@ -1346,24 +1448,25 @@ function ModalDetalhe({
                 </div>
               )}
 
-              {/* Ações manuais */}
+              {podeGerenciar ? (
               <div className="mt-5 border-t border-slate-100 pt-4">
-                <h4 className="mb-2 text-sm font-semibold text-slate-700">Ações manuais</h4>
-                <div className="flex flex-wrap gap-2">
-                  {f.status === 'agendado' && (
-                    <Button variant="destructive" size="sm" onClick={() => onAcao('cancelar_agendada', 'Cancelar fila agendada')}>Cancelar fila</Button>
-                  )}
-                  {f.status === 'erro' && (
-                    <Button variant="secondary" size="sm" onClick={() => onAcao('reprocessar_erro', 'Reprocessar fila com erro')}>Reprocessar</Button>
-                  )}
-                  {f.status === 'analise_manual' && (
-                    <Button variant="secondary" size="sm" onClick={() => onAcao('liberar_analise_manual', 'Liberar análise manual')}>Liberar (cancelar)</Button>
-                  )}
-                  {!['agendado', 'erro', 'analise_manual'].includes(f.status) && (
-                    <span className="text-xs text-slate-400">Nenhuma ação manual disponível para este status.</span>
-                  )}
+                  <h4 className="mb-2 text-sm font-semibold text-slate-700">Ações manuais</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {f.status === 'agendado' && (
+                      <Button variant="destructive" size="sm" onClick={() => onAcao('cancelar_agendada', 'Cancelar fila agendada')}>Cancelar fila</Button>
+                    )}
+                    {f.status === 'erro' && (
+                      <Button variant="secondary" size="sm" onClick={() => onAcao('reprocessar_erro', 'Reprocessar fila com erro')}>Reprocessar</Button>
+                    )}
+                    {f.status === 'analise_manual' && (
+                      <Button variant="secondary" size="sm" onClick={() => onAcao('liberar_analise_manual', 'Liberar análise manual')}>Liberar (cancelar)</Button>
+                    )}
+                    {!['agendado', 'erro', 'analise_manual'].includes(f.status) && (
+                      <span className="text-xs text-slate-400">Nenhuma ação manual disponível para este status.</span>
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </>
           )}
         </DialogBody>

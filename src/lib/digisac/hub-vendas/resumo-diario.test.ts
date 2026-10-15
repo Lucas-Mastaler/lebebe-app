@@ -173,7 +173,7 @@ describe('resumo diário Hub/Vendas', () => {
   it('mostra erros e pendências', async () => {
     const texto = await gerarTextoResumoDiario(mockSupabase as never)
     expect(texto).toContain('Erros:')
-    expect(texto).toContain('Cancelados:')
+    expect(texto).toContain('Filas canceladas (acumulado; não significa lead perdido):')
     expect(texto).toContain('Resultado incerto:')
     expect(texto).toContain('Análise manual:')
     expect(texto).toContain('Conexões pausadas:')

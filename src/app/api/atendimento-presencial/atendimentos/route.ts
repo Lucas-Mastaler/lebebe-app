@@ -143,18 +143,23 @@ export async function GET(request = new Request('http://localhost/api/atendiment
     const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
     const nomeCliente = normalizarTermoBusca(params.get('clienteNome') ?? params.get('nomeCliente'))
     const consultora = normalizarFiltroConsultora(params.get('consultora'))
+    const unidadeId = params.get('unidadeId')?.trim() ?? ''
     const viradaDe = viradaCartaoDe ? converterViradaCartaoInput(viradaCartaoDe) : null
     const viradaAte = viradaCartaoAte ? converterViradaCartaoInput(viradaCartaoAte) : null
     if (viradaCartaoDe && !viradaDe) return jsonErro('Virada do cartao inicial invalida', 400)
     if (viradaCartaoAte && !viradaAte) return jsonErro('Virada do cartao final invalida', 400)
+    if (unidadeId && !loaded.contexto.unidadesPermitidas.some((unidade) => unidade.id === unidadeId)) {
+      return jsonErro('Filial invalida para este usuario', 400)
+    }
 
     const consultoras = await carregarConsultorasFinalizados(loaded.supabase, loaded.contexto)
+    const unidades = loaded.contexto.unidadesPermitidas.map(({ id, nome }) => ({ id, nome }))
     const clienteIdsFiltrados = nomeCliente
       ? await buscarClienteIdsPorNome(loaded.supabase, nomeCliente)
       : null
     if (clienteIdsFiltrados?.erro) return clienteIdsFiltrados.erro
     if (clienteIdsFiltrados && clienteIdsFiltrados.ids.length === 0) {
-      return NextResponse.json({ ok: true, registros: [], consultoras })
+      return NextResponse.json({ ok: true, registros: [], consultoras, unidades })
     }
 
     let query = loaded.supabase
@@ -170,11 +175,15 @@ export async function GET(request = new Request('http://localhost/api/atendiment
       query = query.ilike('consultora_nome', escaparTermoIlike(consultora))
     }
 
+    if (unidadeId) {
+      query = query.eq('unidade_id', unidadeId)
+    }
+
     if (loaded.contexto.perfil === 'consultora') {
       query = query.eq('consultora_usuario_id', loaded.contexto.usuarioId)
     } else if (loaded.contexto.perfil !== 'superadmin') {
       if (loaded.contexto.unidadesPermitidas.length === 0) {
-        return NextResponse.json({ ok: true, registros: [] })
+        return NextResponse.json({ ok: true, registros: [], consultoras, unidades })
       }
       query = query.in('unidade_id', loaded.contexto.unidadesPermitidas.map((unidade) => unidade.id))
     }
@@ -237,6 +246,7 @@ export async function GET(request = new Request('http://localhost/api/atendiment
     return NextResponse.json({
       ok: true,
       consultoras,
+      unidades,
       page: currentPage,
       pageSize: TABLE_PAGE_SIZE,
       total,

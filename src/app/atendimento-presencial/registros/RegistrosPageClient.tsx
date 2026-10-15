@@ -98,6 +98,7 @@ type ApiListaResponse = {
   message?: string
   registros?: RegistroResumo[]
   consultoras?: Array<{ nome: string }>
+  unidades?: Array<{ id: string; nome: string }>
   page?: number
   total?: number
 }
@@ -174,6 +175,7 @@ function OpcaoButton(props: {
 const FILTROS_FINALIZADOS_INICIAL = {
   clienteNome: '',
   consultora: '',
+  unidadeId: '',
   viradaCartaoDe: '',
   viradaCartaoAte: '',
 }
@@ -196,6 +198,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   const [erro, setErro] = useState<string | null>(null)
   const filtrosFinalizados = useFilterState(FILTROS_FINALIZADOS_INICIAL)
   const [consultorasFinalizados, setConsultorasFinalizados] = useState<Array<{ nome: string }>>([])
+  const [unidadesFinalizados, setUnidadesFinalizados] = useState<Array<{ id: string; nome: string }>>([])
   const [edicaoAberta, setEdicaoAberta] = useState(false)
   const [fichaEdicao, setFichaEdicao] = useState<FichaDadosRascunho | null>(null)
   const [numeroLancamentoEdicao, setNumeroLancamentoEdicao] = useState('')
@@ -218,6 +221,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     ate?: string
     clienteNome?: string
     consultora?: string
+    unidadeId?: string
     page?: number
   }) {
     setCarregando(true)
@@ -228,11 +232,13 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       const filtroAte = filtrosOverride?.ate ?? filtrosFinalizados.applied.viradaCartaoAte
       const filtroCliente = filtrosOverride?.clienteNome ?? filtrosFinalizados.applied.clienteNome
       const filtroConsultora = filtrosOverride?.consultora ?? filtrosFinalizados.applied.consultora
+      const filtroUnidade = filtrosOverride?.unidadeId ?? filtrosFinalizados.applied.unidadeId
       const pagina = filtrosOverride?.page ?? paginaRegistros
       if (filtroDe.trim()) params.set('viradaCartaoDe', filtroDe.trim())
       if (filtroAte.trim()) params.set('viradaCartaoAte', filtroAte.trim())
       if (filtroCliente.trim()) params.set('clienteNome', filtroCliente.trim())
       if (filtroConsultora.trim()) params.set('consultora', filtroConsultora.trim())
+      if (filtroUnidade) params.set('unidadeId', filtroUnidade)
       params.set('page', String(pagina))
       const query = params.toString()
       const response = await fetch(`/api/atendimento-presencial/atendimentos${query ? `?${query}` : ''}`, { cache: 'no-store' })
@@ -240,6 +246,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       if (!response.ok || !data.ok) throw new Error(data.message ?? 'Erro ao carregar registros')
       setRegistros(data.registros ?? [])
       setConsultorasFinalizados(data.consultoras ?? [])
+      setUnidadesFinalizados(data.unidades ?? [])
       setPaginaRegistros(data.page ?? pagina)
       setTotalRegistros(data.total ?? 0)
     } catch (error) {
@@ -256,13 +263,14 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       ate: filtrosFinalizados.draft.viradaCartaoAte,
       clienteNome: filtrosFinalizados.draft.clienteNome.trim().replace(/\s+/g, ' '),
       consultora: filtrosFinalizados.draft.consultora,
+      unidadeId: filtrosFinalizados.draft.unidadeId,
       page: 1,
     })
   }
 
   function limparFiltrosFinalizados() {
     filtrosFinalizados.clear()
-    void carregarRegistros({ de: '', ate: '', clienteNome: '', consultora: '', page: 1 })
+    void carregarRegistros({ de: '', ate: '', clienteNome: '', consultora: '', unidadeId: '', page: 1 })
   }
 
   async function buscarDetalhe(id: string): Promise<RegistroDetalhe> {
@@ -572,7 +580,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                   onClear={limparFiltrosFinalizados}
                   applyDisabled={carregando}
                 >
-                  <FilterFieldGroup label="Cliente e consultora">
+                  <FilterFieldGroup label="Cliente, consultora e filial">
                     <FormField id="filtro-cliente-nome" label="Cliente">
                       {(field) => (
                         <Input
@@ -595,6 +603,22 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                             <SelectItem value="all">Todas</SelectItem>
                             {consultorasFinalizados.map((consultora) => (
                               <SelectItem key={consultora.nome} value={consultora.nome}>{consultora.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </FormField>
+                    <FormField id="filtro-filial" label="Filial">
+                      {(field) => (
+                        <Select
+                          value={filtrosFinalizados.draft.unidadeId || 'all'}
+                          onValueChange={(value) => filtrosFinalizados.setField('unidadeId', value === 'all' ? '' : value)}
+                        >
+                          <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todas</SelectItem>
+                            {unidadesFinalizados.map((unidade) => (
+                              <SelectItem key={unidade.id} value={unidade.id}>{unidade.nome}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>

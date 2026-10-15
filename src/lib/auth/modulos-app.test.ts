@@ -8,7 +8,9 @@ import {
   PROFILE_PERMISSION_GROUPS,
   PROFILE_PERMISSION_MODULE_KEYS,
   getAppModuleDefinition,
+  getProfilePermissionGroupLabel,
   getProfilePermissionOrder,
+  incluirVisualizacaoQuandoHaGerenciamentoHubVendas,
   type AppModuleDefinition,
 } from './modulos-app'
 
@@ -87,6 +89,7 @@ describe('modulos-app catalog', () => {
     'Chamados finalizados',
     'Inteligência comercial',
     'Finalizações automáticas',
+    'Hub Vendas',
     'Novo pedido personalizado',
     'Gestão de pedidos personalizados',
     'Prancheta Virtual de Atendimento',
@@ -158,7 +161,10 @@ describe('modulos-app catalog', () => {
     const profileMenuKeys = profileNavigationItems.map((item) => item.moduleKey)
     const profileMenuLabels = profileNavigationItems.map((item) => item.label)
 
-    expect(PROFILE_PERMISSION_MODULE_KEYS).toEqual(profileMenuKeys)
+    const expectedPermissionKeys = profileMenuKeys.flatMap((moduleKey) =>
+      moduleKey === 'hub_vendas_recuperacao' ? [moduleKey, 'hub_vendas_gestao'] : [moduleKey]
+    )
+    expect(PROFILE_PERMISSION_MODULE_KEYS).toEqual(expectedPermissionKeys)
     expect(profileMenuLabels).toEqual(expectedProfileMenuLabels)
     expect(
       [...PROFILE_PERMISSION_MODULE_KEYS].sort(
@@ -384,5 +390,78 @@ describe('modulos-app catalog', () => {
         "requireModuleAccess('pos_venda_atendimento_automatico')"
       )
     }
+  })
+
+  it('cadastra Hub Vendas com um item de menu e gerenciamento configuravel', () => {
+    const visualizacao = getAppModuleDefinition('hub_vendas_recuperacao')
+    const gerenciamento = getAppModuleDefinition('hub_vendas_gestao')
+    const itensHub = navigationItems.filter((item) => item.href === '/hub-vendas')
+
+    expect(visualizacao?.nome).toBe('HUB VENDAS — VISUALIZAÇÃO')
+    expect(visualizacao?.rotaBase).toBe('/hub-vendas')
+    expect(visualizacao?.access).toBe('profile')
+    expect(visualizacao?.somenteSuperadmin).toBe(false)
+    expect(gerenciamento?.nome).toBe('HUB VENDAS — GERENCIAMENTO')
+    expect(gerenciamento?.rotaBase).toBe('/hub-vendas')
+    expect(gerenciamento?.access).toBe('profile')
+    expect(gerenciamento?.somenteSuperadmin).toBe(false)
+    expect(itensHub).toHaveLength(1)
+    expect(itensHub[0]?.moduleKey).toBe('hub_vendas_recuperacao')
+    expect(itensHub[0]?.label).toBe('Hub Vendas')
+    expect(getProfilePermissionGroupLabel('hub_vendas_recuperacao')).toBe('VENDAS')
+    expect(getProfilePermissionGroupLabel('hub_vendas_gestao')).toBe('VENDAS')
+    expect(MODULE_KEYS_WITHOUT_AUTOMATIC_PROFILE_GRANT).toEqual(
+      expect.arrayContaining(['hub_vendas_recuperacao', 'hub_vendas_gestao'])
+    )
+    expect(readProjectFile('src/app/hub-vendas/page.tsx')).toContain('checkHubVendasViewAndWindowAccess()')
+  })
+
+  it('faz o gerenciamento do Hub Vendas incluir a visualizacao no menu', () => {
+    const visualizacao = { chave: 'hub_vendas_recuperacao', nome: 'visualizacao' }
+    const gerenciamento = { chave: 'hub_vendas_gestao', nome: 'gerenciamento' }
+
+    expect(incluirVisualizacaoQuandoHaGerenciamentoHubVendas([gerenciamento], visualizacao)).toEqual([
+      gerenciamento,
+      visualizacao,
+    ])
+    expect(incluirVisualizacaoQuandoHaGerenciamentoHubVendas([visualizacao, gerenciamento], visualizacao)).toEqual([
+      visualizacao,
+      gerenciamento,
+    ])
+    expect(incluirVisualizacaoQuandoHaGerenciamentoHubVendas([visualizacao], visualizacao)).toEqual([
+      visualizacao,
+    ])
+  })
+
+  it('separa leitura e alteracao nas APIs do Hub Vendas', () => {
+    const leitura = [
+      'src/app/api/hub-vendas/status/route.ts',
+      'src/app/api/hub-vendas/filas/route.ts',
+      'src/app/api/hub-vendas/resumo/route.ts',
+      'src/app/api/hub-vendas/alertas/route.ts',
+      'src/app/api/hub-vendas/filas/[id]/route.ts',
+    ]
+    const alteracao = [
+      'src/app/api/hub-vendas/pausar/route.ts',
+      'src/app/api/hub-vendas/reativar/route.ts',
+      'src/app/api/hub-vendas/filas/[id]/acao/route.ts',
+      'src/app/api/hub-vendas/alertas/teste/route.ts',
+    ]
+
+    for (const filePath of leitura) {
+      const source = readProjectFile(filePath)
+      expect(source, filePath).toContain('requireHubVendasViewAccess()')
+      expect(source, filePath).not.toContain('requireHubVendasManageAccess()')
+    }
+
+    for (const filePath of alteracao) {
+      const source = readProjectFile(filePath)
+      expect(source, filePath).toContain('requireHubVendasManageAccess()')
+      expect(source, filePath).not.toContain('requireHubVendasViewAccess()')
+    }
+
+    const limite = readProjectFile('src/app/api/hub-vendas/limite/route.ts')
+    expect(limite).toContain('requireHubVendasViewAccess()')
+    expect(limite).toContain('requireHubVendasManageAccess()')
   })
 })

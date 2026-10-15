@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireModuleAccess } from '@/lib/auth/module-access'
+import { requireHubVendasViewAccess } from '@/lib/auth/module-access'
 import { obterStatusGestaoHubVendas } from '@/lib/digisac/hub-vendas/gestao'
 import { obterIntervaloDatasLocaisUtc } from '@/lib/digisac/hub-vendas/tempo'
 
@@ -8,10 +8,10 @@ export const dynamic = 'force-dynamic'
 
 // GET /api/hub-vendas/status
 // Retorna status geral da automação + estatísticas por loja.
-// Acesso restrito ao módulo hub_vendas_gestao (somente superadmin).
+// Leitura: visualização ou gerenciamento.
 export async function GET(request: Request) {
   try {
-    const auth = await requireModuleAccess('hub_vendas_gestao')
+    const auth = await requireHubVendasViewAccess()
     if (!auth.ok) return auth.response
 
     const { searchParams } = new URL(request.url)

@@ -455,3 +455,84 @@ export async function checkModuleAndWindowAccess(
 
   return { ok: true, moduleAccess, windowAccess }
 }
+
+// Gerenciamento é consultado primeiro. Se ele estiver liberado, a visualização
+// entra junto e o moduleKey devolvido identifica o nível mais alto.
+const HUB_VENDAS_VIEW_MODULE_KEYS = ['hub_vendas_gestao', 'hub_vendas_recuperacao'] as const satisfies readonly ModuleKey[]
+
+export function acessoHubVendasPermiteGerenciamento(
+  access: Pick<RequireModuleAccessSuccess, 'acessoTotal' | 'moduleKey'>,
+) {
+  return access.acessoTotal || access.moduleKey === 'hub_vendas_gestao'
+}
+
+export async function checkAnyModuleAccess(
+  moduleKeys: readonly ModuleKey[],
+): Promise<CheckModuleAccessResult> {
+  let resultado: CheckModuleAccessResult = { ok: false, reason: 'forbidden' }
+
+  for (const moduleKey of moduleKeys) {
+    resultado = await checkModuleAccess(moduleKey)
+    if (resultado.ok || resultado.reason !== 'forbidden') return resultado
+  }
+
+  return resultado
+}
+
+async function requireAnyModuleAccess(
+  moduleKeys: readonly ModuleKey[],
+): Promise<RequireModuleAccessResult> {
+  const result = await checkAnyModuleAccess(moduleKeys)
+
+  if (result.ok) return result
+
+  const status = result.reason === 'unauthenticated' ? 401 : result.reason === 'error' ? 500 : 403
+  const message =
+    result.reason === 'unauthenticated'
+      ? 'Não autenticado'
+      : result.reason === 'error'
+      ? 'Erro ao processar requisição'
+      : 'Acesso negado'
+
+  return {
+    ok: false,
+    response: NextResponse.json({ ok: false, message }, { status }),
+  }
+}
+
+function logAcessoHubVendasNegado(nivel: 'visualizacao' | 'gerenciamento', motivo: string) {
+  console.info(`[HUB VENDAS ACESSO] negado nivel=${nivel} motivo=${motivo}`)
+}
+
+export async function requireHubVendasViewAccess(): Promise<RequireModuleAccessResult> {
+  const result = await requireAnyModuleAccess(HUB_VENDAS_VIEW_MODULE_KEYS)
+  if (!result.ok) logAcessoHubVendasNegado('visualizacao', 'modulo')
+  return result
+}
+
+export async function requireHubVendasManageAccess(): Promise<RequireModuleAccessResult> {
+  const result = await requireModuleAccess('hub_vendas_gestao')
+  if (!result.ok) logAcessoHubVendasNegado('gerenciamento', 'modulo')
+  return result
+}
+
+export async function checkHubVendasViewAndWindowAccess(): Promise<CheckPageAccessResult> {
+  const moduleAccess = await checkAnyModuleAccess(HUB_VENDAS_VIEW_MODULE_KEYS)
+
+  if (!moduleAccess.ok) {
+    logAcessoHubVendasNegado('visualizacao', moduleAccess.reason)
+    return { ok: false, reason: 'module', redirectTo: '/acesso-negado' }
+  }
+
+  const windowAccess = await checkAccessWindowForUser({
+    usuarioId: moduleAccess.allowedUser.id,
+    role: moduleAccess.allowedUser.role as 'user' | 'superadmin',
+  })
+
+  if (!windowAccess.ok) {
+    logAcessoHubVendasNegado('visualizacao', 'janela')
+    return { ok: false, reason: 'window', redirectTo: '/fora-do-horario' }
+  }
+
+  return { ok: true, moduleAccess, windowAccess }
+}

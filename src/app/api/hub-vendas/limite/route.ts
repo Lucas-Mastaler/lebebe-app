@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireModuleAccess } from '@/lib/auth/module-access'
+import { requireHubVendasManageAccess, requireHubVendasViewAccess } from '@/lib/auth/module-access'
 import { alterarLimiteDiarioHubVendas, validarLimiteDiario, LIMITE_DIARIO_MAXIMO } from '@/lib/digisac/hub-vendas/gestao'
 
 export const runtime = 'nodejs'
@@ -7,10 +7,10 @@ export const dynamic = 'force-dynamic'
 
 // PATCH /api/hub-vendas/limite
 // Altera o limite diário por loja/conexão (valor único aplicado a todas as lojas).
-// Acesso restrito ao módulo hub_vendas_gestao (somente superadmin).
+// Alteração: somente gerenciamento.
 export async function PATCH(request: Request) {
   try {
-    const auth = await requireModuleAccess('hub_vendas_gestao')
+    const auth = await requireHubVendasManageAccess()
     if (!auth.ok) return auth.response
 
     const body = await request.json().catch(() => null)
@@ -43,9 +43,10 @@ export async function PATCH(request: Request) {
 
 // GET /api/hub-vendas/limite
 // Retorna o máximo seguro permitido para validação do frontend.
+// Leitura: visualização ou gerenciamento.
 export async function GET() {
   try {
-    const auth = await requireModuleAccess('hub_vendas_gestao')
+    const auth = await requireHubVendasViewAccess()
     if (!auth.ok) return auth.response
 
     return NextResponse.json({

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mocks
 vi.mock('@/lib/auth/module-access', () => ({
-  requireModuleAccess: vi.fn(),
+  requireHubVendasManageAccess: vi.fn(),
 }))
 
 vi.mock('@/lib/digisac/hub-vendas/alertas', () => ({
@@ -13,7 +13,7 @@ vi.mock('@/lib/supabase/service', () => ({
   createServiceClient: () => ({}),
 }))
 
-const { requireModuleAccess } = await import('@/lib/auth/module-access')
+const { requireHubVendasManageAccess } = await import('@/lib/auth/module-access')
 const { alertarTesteManual } = await import('@/lib/digisac/hub-vendas/alertas')
 const { POST } = await import('./route')
 
@@ -45,27 +45,28 @@ describe('POST /api/hub-vendas/alertas/teste', () => {
   })
 
   it('exige autenticação — retorna 403 se não autenticado', async () => {
-    vi.mocked(requireModuleAccess).mockResolvedValueOnce(criarAuthResponse(false))
+    vi.mocked(requireHubVendasManageAccess).mockResolvedValueOnce(criarAuthResponse(false))
     const res = await POST()
     expect(res.status).toBe(403)
   })
 
-  it('exige superadmin — retorna 403 se acessoTotal=false', async () => {
-    vi.mocked(requireModuleAccess).mockResolvedValueOnce(criarAuthResponse(true, false))
+  it('gerenciamento autorizado envia alerta sem exigir acesso total', async () => {
+    vi.mocked(requireHubVendasManageAccess).mockResolvedValueOnce(criarAuthResponse(true, false))
+    vi.mocked(alertarTesteManual).mockResolvedValueOnce({ ok: true, deduplicado: false })
     const res = await POST()
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.error).toBe('apenas_superadmin')
+    expect(body.ok).toBe(true)
   })
 
   it('usuário sem permissão recebe 403', async () => {
-    vi.mocked(requireModuleAccess).mockResolvedValueOnce(criarAuthResponse(false))
+    vi.mocked(requireHubVendasManageAccess).mockResolvedValueOnce(criarAuthResponse(false))
     const res = await POST()
     expect(res.status).toBe(403)
   })
 
   it('superadmin autorizado envia alerta de teste com sucesso', async () => {
-    vi.mocked(requireModuleAccess).mockResolvedValueOnce(criarAuthResponse(true, true))
+    vi.mocked(requireHubVendasManageAccess).mockResolvedValueOnce(criarAuthResponse(true, true))
     vi.mocked(alertarTesteManual).mockResolvedValueOnce({ ok: true, deduplicado: false })
 
     const res = await POST()
@@ -77,7 +78,7 @@ describe('POST /api/hub-vendas/alertas/teste', () => {
   })
 
   it('alerta deduplicado retorna ok com deduplicado=true', async () => {
-    vi.mocked(requireModuleAccess).mockResolvedValueOnce(criarAuthResponse(true, true))
+    vi.mocked(requireHubVendasManageAccess).mockResolvedValueOnce(criarAuthResponse(true, true))
     vi.mocked(alertarTesteManual).mockResolvedValueOnce({ ok: true, deduplicado: true })
 
     const res = await POST()
@@ -88,7 +89,7 @@ describe('POST /api/hub-vendas/alertas/teste', () => {
   })
 
   it('falha no envio retorna 502', async () => {
-    vi.mocked(requireModuleAccess).mockResolvedValueOnce(criarAuthResponse(true, true))
+    vi.mocked(requireHubVendasManageAccess).mockResolvedValueOnce(criarAuthResponse(true, true))
     vi.mocked(alertarTesteManual).mockResolvedValueOnce({ ok: false, erro: 'erro_digisac' })
 
     const res = await POST()
@@ -99,7 +100,7 @@ describe('POST /api/hub-vendas/alertas/teste', () => {
   })
 
   it('exceção interna retorna 500', async () => {
-    vi.mocked(requireModuleAccess).mockResolvedValueOnce(criarAuthResponse(true, true))
+    vi.mocked(requireHubVendasManageAccess).mockResolvedValueOnce(criarAuthResponse(true, true))
     vi.mocked(alertarTesteManual).mockRejectedValueOnce(new Error('boom'))
 
     const res = await POST()
@@ -110,7 +111,7 @@ describe('POST /api/hub-vendas/alertas/teste', () => {
   })
 
   it('não aceita contactId/serviceId/userId do frontend — rota não lê body', async () => {
-    vi.mocked(requireModuleAccess).mockResolvedValueOnce(criarAuthResponse(true, true))
+    vi.mocked(requireHubVendasManageAccess).mockResolvedValueOnce(criarAuthResponse(true, true))
     vi.mocked(alertarTesteManual).mockResolvedValueOnce({ ok: true, deduplicado: false })
 
     // A rota POST() não recebe request nem lê body — qualquer payload é ignorado
@@ -121,7 +122,7 @@ describe('POST /api/hub-vendas/alertas/teste', () => {
   })
 
   it('não retorna IDs técnicos na resposta', async () => {
-    vi.mocked(requireModuleAccess).mockResolvedValueOnce(criarAuthResponse(true, true))
+    vi.mocked(requireHubVendasManageAccess).mockResolvedValueOnce(criarAuthResponse(true, true))
     vi.mocked(alertarTesteManual).mockResolvedValueOnce({ ok: true, deduplicado: false })
 
     const res = await POST()
@@ -135,7 +136,7 @@ describe('POST /api/hub-vendas/alertas/teste', () => {
   })
 
   it('usa alertarTesteManual (autoria bot, contato técnico, tipo teste_manual)', async () => {
-    vi.mocked(requireModuleAccess).mockResolvedValueOnce(criarAuthResponse(true, true))
+    vi.mocked(requireHubVendasManageAccess).mockResolvedValueOnce(criarAuthResponse(true, true))
     vi.mocked(alertarTesteManual).mockResolvedValueOnce({ ok: true, deduplicado: false })
 
     await POST()

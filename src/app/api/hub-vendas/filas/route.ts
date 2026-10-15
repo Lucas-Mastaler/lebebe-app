@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireModuleAccess } from '@/lib/auth/module-access'
+import { requireHubVendasViewAccess } from '@/lib/auth/module-access'
 import { listarFilasHubVendas, type FiltrosListagemFilas } from '@/lib/digisac/hub-vendas/gestao'
 import type { HubVendasLoja } from '@/lib/digisac/hub-vendas/constants'
 import { obterIntervaloDatasLocaisUtc } from '@/lib/digisac/hub-vendas/tempo'
@@ -11,10 +11,10 @@ const LOJAS_VALIDAS = new Set<string>(['portao', 'bigorrilho', 'hauer_marechal']
 
 // GET /api/hub-vendas/filas
 // Listagem paginada de filas com filtros.
-// Acesso restrito ao módulo hub_vendas_gestao (somente superadmin).
+// Leitura: visualização ou gerenciamento.
 export async function GET(request: Request) {
   try {
-    const auth = await requireModuleAccess('hub_vendas_gestao')
+    const auth = await requireHubVendasViewAccess()
     if (!auth.ok) return auth.response
 
     const { searchParams } = new URL(request.url)

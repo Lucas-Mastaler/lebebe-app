@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireAuthenticatedUser } from '@/lib/auth/api-auth'
 import { NextResponse } from 'next/server'
+import { incluirVisualizacaoQuandoHaGerenciamentoHubVendas } from '@/lib/auth/modulos-app'
 import type {
   AppModulo,
   AppPermissaoUsuario,
@@ -290,12 +291,30 @@ export async function GET() {
       }
     }
 
+    const moduloVisualizacao = modulos.find((modulo) => modulo.chave === 'hub_vendas_recuperacao')
+    const origemGerenciamento = modulosPermitidos.find((modulo) => modulo.chave === 'hub_vendas_gestao')?.origem
+    const modulosEfetivos = incluirVisualizacaoQuandoHaGerenciamentoHubVendas(
+      modulosPermitidos,
+      moduloVisualizacao && origemGerenciamento
+        ? {
+            id: moduloVisualizacao.id,
+            chave: moduloVisualizacao.chave,
+            nome: moduloVisualizacao.nome,
+            rotaBase: moduloVisualizacao.rota_base,
+            categoria: moduloVisualizacao.categoria,
+            publico: moduloVisualizacao.publico,
+            somenteSuperadmin: moduloVisualizacao.somente_superadmin,
+            origem: origemGerenciamento,
+          }
+        : null,
+    )
+
     const resposta: PermissoesResponse = {
       ok: true,
       usuario,
       perfilAtual,
-      modulosPermitidos,
-      chavesPermitidas: modulosPermitidos.map((m) => m.chave),
+      modulosPermitidos: modulosEfetivos,
+      chavesPermitidas: modulosEfetivos.map((m) => m.chave),
       janelasAcesso: {
         perfil: janelasPerfil,
         usuario: janelasUsuario,

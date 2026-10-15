@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireModuleAccess } from '@/lib/auth/module-access'
+import { requireHubVendasViewAccess } from '@/lib/auth/module-access'
 import { obterStatusResumoDiarioTela } from '@/lib/digisac/hub-vendas/resumo-diario'
 
 export const runtime = 'nodejs'
@@ -7,10 +7,10 @@ export const dynamic = 'force-dynamic'
 
 // GET /api/hub-vendas/resumo
 // Retorna status do último resumo diário enviado para a tela administrativa.
-// Acesso restrito ao módulo hub_vendas_gestao (somente superadmin).
+// Leitura: visualização ou gerenciamento.
 export async function GET() {
   try {
-    const auth = await requireModuleAccess('hub_vendas_gestao')
+    const auth = await requireHubVendasViewAccess()
     if (!auth.ok) return auth.response
 
     const resumo = await obterStatusResumoDiarioTela()

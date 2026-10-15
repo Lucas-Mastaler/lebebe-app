@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireModuleAccess } from '@/lib/auth/module-access'
+import { requireHubVendasManageAccess } from '@/lib/auth/module-access'
 import { reativarAutomacaoHubVendas } from '@/lib/digisac/hub-vendas/gestao'
 
 export const runtime = 'nodejs'
@@ -7,10 +7,10 @@ export const dynamic = 'force-dynamic'
 
 // POST /api/hub-vendas/reativar
 // Reativa a automação Hub/Vendas (limpa metadados de pausa).
-// Acesso restrito ao módulo hub_vendas_gestao (somente superadmin).
+// Alteração: somente gerenciamento.
 export async function POST(request: Request) {
   try {
-    const auth = await requireModuleAccess('hub_vendas_gestao')
+    const auth = await requireHubVendasManageAccess()
     if (!auth.ok) return auth.response
 
     const body = await request.json().catch(() => null)

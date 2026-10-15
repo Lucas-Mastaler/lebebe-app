@@ -60,28 +60,28 @@ export const APP_MODULES = [
   },
   {
     moduleKey: 'hub_vendas_recuperacao',
-    nome: 'HUB VENDAS RECUPERACAO',
-    descricao: 'Recuperacao automatica de leads do Hub/Vendas',
-    rotaBase: '/hub-vendas/recuperacao',
+    nome: 'HUB VENDAS — VISUALIZAÇÃO',
+    descricao: 'Consulta de indicadores, status, filas, detalhes e alertas do Hub Vendas',
+    rotaBase: '/hub-vendas',
+    categoria: 'digisac',
+    publico: false,
+    somenteSuperadmin: false,
+    ativo: true,
+    ordem: 64,
+    access: 'profile',
+    menuLabel: 'Hub Vendas',
+  },
+  {
+    moduleKey: 'hub_vendas_gestao',
+    nome: 'HUB VENDAS — GERENCIAMENTO',
+    descricao: 'Pausa, reativação, limites, ações de fila e testes de alerta do Hub Vendas',
+    rotaBase: '/hub-vendas',
     categoria: 'digisac',
     publico: false,
     somenteSuperadmin: false,
     ativo: true,
     ordem: 65,
     access: 'profile',
-  },
-  {
-    moduleKey: 'hub_vendas_gestao',
-    nome: 'GESTAO HUB VENDAS',
-    descricao: 'Tela administrativa de gestao, monitoramento e configuracao da automacao Hub/Vendas',
-    rotaBase: '/hub-vendas',
-    categoria: 'admin',
-    publico: false,
-    somenteSuperadmin: true,
-    ativo: true,
-    ordem: 64,
-    access: 'superadmin',
-    menuLabel: 'Gestão Hub Vendas',
   },
   {
     moduleKey: 'atendimento_presencial_ficha',
@@ -375,7 +375,7 @@ export const NAVIGATION_GROUPS = [
       navigationItem('chamados_finalizados', 'checkCircle'),
       navigationItem('inteligencia_comercial', 'trendingUp'),
       navigationItem('digisac_finalizacoes_automaticas', 'bot'),
-      navigationItem('hub_vendas_gestao', 'bot'),
+      navigationItem('hub_vendas_recuperacao', 'bot'),
       navigationItem('pedidos_personalizados_novo', 'clipboardList'),
       navigationItem('pedidos_personalizados_gestao', 'package'),
     ],
@@ -426,12 +426,19 @@ export const PROFILE_CONTROLLED_MODULE_KEYS = APP_MODULES
   .filter((module) => module.access === 'profile')
   .map((module) => module.moduleKey)
 
+const PROFILE_PERMISSION_COMPANION_KEYS: Partial<Record<AppModuleKey, readonly AppModuleKey[]>> = {
+  hub_vendas_recuperacao: ['hub_vendas_gestao'],
+}
+
 export const PROFILE_PERMISSION_GROUPS = NAVIGATION_GROUPS
   .map((group) => ({
     label: group.label,
     moduleKeys: group.items
       .filter((item) => item.access === 'profile')
-      .map((item) => item.moduleKey),
+      .flatMap((item) => [
+        item.moduleKey,
+        ...(PROFILE_PERMISSION_COMPANION_KEYS[item.moduleKey] ?? []),
+      ]),
   }))
   .filter((group) => group.moduleKeys.length > 0)
 
@@ -466,10 +473,21 @@ export const MODULE_KEYS_WITHOUT_AUTOMATIC_PROFILE_GRANT = [
   'atendimento_presencial_registros',
   'atendimento_presencial_clientes',
   'hub_vendas_recuperacao',
+  'hub_vendas_gestao',
   'pedidos_personalizados_novo',
   'pedidos_personalizados_gestao',
 ] as const satisfies readonly AppModuleKey[]
 
 export function getAppModuleDefinition(moduleKey: AppModuleKey) {
   return appModulesByKey.get(moduleKey) ?? null
+}
+
+export function incluirVisualizacaoQuandoHaGerenciamentoHubVendas<T extends { chave: string }>(
+  modulosPermitidos: readonly T[],
+  moduloVisualizacao: T | null,
+): T[] {
+  const temGerenciamento = modulosPermitidos.some((modulo) => modulo.chave === 'hub_vendas_gestao')
+  const temVisualizacao = modulosPermitidos.some((modulo) => modulo.chave === 'hub_vendas_recuperacao')
+  if (!temGerenciamento || temVisualizacao || !moduloVisualizacao) return [...modulosPermitidos]
+  return [...modulosPermitidos, moduloVisualizacao]
 }

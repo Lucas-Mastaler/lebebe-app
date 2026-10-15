@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireModuleAccess } from '@/lib/auth/module-access'
+import { requireHubVendasManageAccess } from '@/lib/auth/module-access'
 import {
   cancelarFilaAgendadaHubVendas,
   reprocessarFilaErroHubVendas,
@@ -19,13 +19,13 @@ const ACOES_VALIDAS = new Set<AcaoManual>([
 
 // POST /api/hub-vendas/filas/[id]/acao
 // Executa ação manual segura em uma fila específica.
-// Acesso restrito ao módulo hub_vendas_gestao (somente superadmin).
+// Alteração: somente gerenciamento.
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await requireModuleAccess('hub_vendas_gestao')
+    const auth = await requireHubVendasManageAccess()
     if (!auth.ok) return auth.response
 
     const { id } = await params

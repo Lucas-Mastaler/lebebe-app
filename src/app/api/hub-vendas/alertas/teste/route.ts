@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireModuleAccess } from '@/lib/auth/module-access'
+import { requireHubVendasManageAccess } from '@/lib/auth/module-access'
 import { alertarTesteManual } from '@/lib/digisac/hub-vendas/alertas'
 
 export const runtime = 'nodejs'
@@ -7,23 +7,15 @@ export const dynamic = 'force-dynamic'
 
 // POST /api/hub-vendas/alertas/teste
 // Envia um alerta de teste APENAS para o contato técnico configurado.
-// - Exige autenticação + módulo hub_vendas_gestao + superadmin (acessoTotal).
+// - Exige autenticação e a permissão Hub Vendas — Gerenciamento. Superadmin segue com acesso total.
 // - Não aceita contactId/serviceId/userId/texto do frontend.
 // - Usa configurações do servidor (env vars).
 // - Não cria fila, não altera lead, não altera limite, não pausa automação.
 // - Registra em hub_vendas_alertas com tipo='teste_manual'.
 export async function POST() {
   try {
-    const auth = await requireModuleAccess('hub_vendas_gestao')
+    const auth = await requireHubVendasManageAccess()
     if (!auth.ok) return auth.response
-
-    // Garantir superadmin no backend (não confiar no frontend)
-    if (!auth.acessoTotal) {
-      return NextResponse.json(
-        { ok: false, error: 'apenas_superadmin' },
-        { status: 403 }
-      )
-    }
 
     const resultado = await alertarTesteManual()
 

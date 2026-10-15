@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireModuleAccess } from '@/lib/auth/module-access'
+import { requireHubVendasViewAccess } from '@/lib/auth/module-access'
 import { obterDetalheFilaHubVendas } from '@/lib/digisac/hub-vendas/gestao'
 
 export const runtime = 'nodejs'
@@ -7,13 +7,13 @@ export const dynamic = 'force-dynamic'
 
 // GET /api/hub-vendas/filas/[id]
 // Detalhes de uma fila específica.
-// Acesso restrito ao módulo hub_vendas_gestao (somente superadmin).
+// Leitura: visualização ou gerenciamento.
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const auth = await requireModuleAccess('hub_vendas_gestao')
+    const auth = await requireHubVendasViewAccess()
     if (!auth.ok) return auth.response
 
     const { id } = await params

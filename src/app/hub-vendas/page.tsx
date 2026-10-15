@@ -1,10 +1,13 @@
 import { redirect } from 'next/navigation'
-import { checkModuleAndWindowAccess } from '@/lib/auth/module-access'
+import {
+  acessoHubVendasPermiteGerenciamento,
+  checkHubVendasViewAndWindowAccess,
+} from '@/lib/auth/module-access'
 import PageClient from './PageClient'
 
 export default async function HubVendasGestaoPage() {
-  const access = await checkModuleAndWindowAccess('hub_vendas_gestao')
+  const access = await checkHubVendasViewAndWindowAccess()
   if (!access.ok) redirect(access.redirectTo)
 
-  return <PageClient />
+  return <PageClient podeGerenciar={acessoHubVendasPermiteGerenciamento(access.moduleAccess)} />
 }

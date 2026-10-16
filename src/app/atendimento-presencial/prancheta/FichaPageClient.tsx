@@ -1,6 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
+import { aguardarPinturaFeedback } from '@/lib/atendimento-presencial/feedback-renderizacao'
+import { IdadeCriancaSelector } from './IdadeCriancaSelector'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { CriancasCadastradas } from './CriancasCadastradas'
@@ -76,7 +79,6 @@ import {
   type ResultadoAtendimento,
   type SexoCrianca,
   type SituacaoCrianca,
-  type UnidadeIdadeCrianca,
 } from '@/lib/atendimento-presencial/ficha-schema'
 import {
   AutosaveSerialQueue,
@@ -400,6 +402,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const mountedRef = useRef(false)
   const concluindoRef = useRef(false)
   const focoCriancaSelecionadaRef = useRef<string | null>(null)
+  const etapaParaTopoRef = useRef<FichaEtapa | null>(null)
   const draftClientIdRef = useRef<string | null>(null)
   const tentativaUnidadeRef = useRef('')
   const tentativaNomeRef = useRef('')
@@ -461,6 +464,17 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const camposComerciaisVisiveis = ficha.tipoAtendimento === 'cliente'
   const etapaLabelAtual = etapaLabels[etapaAtual]
   const unidadesParaSelecao = useMemo(() => contexto?.unidadesPermitidas ?? [], [contexto])
+
+  useEffect(() => {
+    if (etapaParaTopoRef.current !== etapaAtual) return
+    const frame = window.requestAnimationFrame(() => {
+      etapaParaTopoRef.current = null
+      const conteudo = formContentRef.current
+      if (conteudo) { conteudo.tabIndex = -1; conteudo.focus({ preventScroll: true }) }
+      window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [etapaAtual])
 
   useEffect(() => {
     const id = focoCriancaSelecionadaRef.current
@@ -1160,8 +1174,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     setErroConclusao(null)
     setErroEtapa(null)
     setErrosValidacao([])
+    etapaParaTopoRef.current = etapa
     atualizarFicha((atual) => ({ ...atual, etapaAtual: etapa }))
-    window.requestAnimationFrame(() => formContentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
 
   function revelarAlvo(id: string, fallbackId?: string) {
@@ -1262,13 +1276,14 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   function escolherResultado(resultado: ResultadoAtendimento) {
+    if (concluindoRef.current) return
     const proximaFicha: FichaDadosRascunho = { ...ficha, versaoFluxo: 2, resultadoAtendimento: resultado }
     atualizarFicha(() => proximaFicha)
+    if (resultado === 'sim') { void concluirAtendimento(proximaFicha); return }
     const erros = validarEtapa({ etapa: 'ficha', ficha: proximaFicha, clienteSelecionada, dataPrevistaInputs })
     if (!unidadeId) erros.unshift({ sectionId: 'secao-unidade', message: 'Selecione a unidade.' })
     if (erros.length) return registrarErrosValidacao(erros)
-    if (resultado === 'sim') void concluirAtendimento(proximaFicha)
-    else irParaEtapa('resultado')
+    irParaEtapa('resultado')
   }
 
   function voltar() { irParaEtapa('ficha') }
@@ -1536,8 +1551,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   async function concluirAtendimento(fichaConclusao: FichaDadosRascunho = ficha) {
     if (concluindoRef.current) return
     concluindoRef.current = true
-    setConcluindo(true)
-    setErroConclusao(null)
+    flushSync(() => { setConcluindo(true); setErroConclusao(null) })
+    await aguardarPinturaFeedback()
     const errosIniciais = validarEtapa({ etapa: 'ficha', ficha: fichaConclusao, clienteSelecionada, dataPrevistaInputs })
     if (!unidadeId) errosIniciais.unshift({ sectionId: 'secao-unidade', message: 'Selecione a unidade.' })
     if (errosIniciais.length) {
@@ -2061,22 +2076,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                             <p className="text-sm font-semibold text-slate-700">Idade aproximada *</p>
                             {crianca.dataReferenciaNascimento && <div data-idade-estimada><p className="text-base font-semibold text-slate-950">{descreverIdadeAproximada(crianca.dataReferenciaNascimento)}</p><p className="text-xs text-muted-foreground">Referência estimada: {formatarDataISOParaInput(crianca.dataReferenciaNascimento)}</p></div>}
                             {errosValidacao.find((item) => item.fieldId === `idade-${crianca.id}`) && <p id={`idade-${crianca.id}-erro`} role="alert" className="text-xs text-destructive">{errosValidacao.find((item) => item.fieldId === `idade-${crianca.id}`)?.message}</p>}
-                            <div className="grid grid-cols-2 gap-2">
-                              {(['meses', 'anos'] as UnidadeIdadeCrianca[]).map((unidade) => (
-                                <OpcaoButton key={unidade} selected={crianca.idadeUnidade === unidade} onClick={() => atualizarCrianca(crianca.id, { idadeUnidade: unidade, idadeValor: undefined })}>
-                                  {unidade === 'meses' ? 'Meses' : 'Anos'}
-                                </OpcaoButton>
-                              ))}
-                            </div>
-                            {crianca.idadeUnidade && (
-                              <div className="grid grid-cols-4 gap-2">
-                                {Array.from({ length: crianca.idadeUnidade === 'meses' ? 11 : 6 }, (_, i) => i + 1).map((valor) => (
-                                  <OpcaoButton key={valor} selected={crianca.idadeValor === valor} onClick={() => atualizarCrianca(crianca.id, { idadeValor: valor })} className="text-center">
-                                    {valor}
-                                  </OpcaoButton>
-                                ))}
-                              </div>
-                            )}
+                            <IdadeCriancaSelector unidade={crianca.idadeUnidade} valor={crianca.idadeValor} onChange={(idade) => atualizarCrianca(crianca.id, idade)} />
                           </div>
                         )}
                         <FormField id={`nome-crianca-${crianca.id}`} label="Nome da crianca" helper="Opcional">
@@ -2346,7 +2346,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       </FormPageContent>
 
       {!carregandoRascunhoInicial && !erroRascunhoInicial && (
-        <div ref={actionBarRef} data-prancheta-rodape inert={!rodapeVisivel} aria-hidden={!rodapeVisivel} style={{ visibility: rodapeVisivel ? 'visible' : 'hidden' }} className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-lg backdrop-blur">
+        <div ref={actionBarRef} data-prancheta-rodape inert={!rodapeVisivel} aria-hidden={!rodapeVisivel} style={{ visibility: rodapeVisivel ? 'visible' : 'hidden', opacity: rodapeVisivel ? 1 : 0, transform: rodapeVisivel ? 'translateY(0)' : 'translateY(12px)' }} className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-lg backdrop-blur transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none">
           <div className="mx-auto flex max-w-3xl flex-col gap-2">
             <div className="grid gap-2 sm:flex">
               {etapaAtual === 'resultado' && <Button type="button" variant="secondary" onClick={voltar} disabled={concluindo} size="lg"><ChevronLeft className="size-4" aria-hidden="true" />Voltar</Button>}
@@ -2354,12 +2354,12 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 <Button type="button" disabled className="min-h-12 flex-1 bg-success text-white disabled:opacity-100"><Check className="size-4" aria-hidden="true" />Atendimento concluído</Button>
               ) : etapaAtual === 'ficha' && camposComerciaisVisiveis ? (
                 <>
-                  <Button type="button" onClick={() => escolherResultado('sim')} disabled={concluindo} loading={concluindo} className="min-h-12 flex-1"><Check className="size-4" aria-hidden="true" />Venda fechada</Button>
+                  <Button type="button" onClick={() => escolherResultado('sim')} disabled={concluindo} loading={concluindo} className="min-h-12 flex-1"><Check className="size-4" aria-hidden="true" />{concluindo ? 'Finalizando...' : 'Venda fechada'}</Button>
                   <Button type="button" variant="secondary" onClick={() => escolherResultado('negociacao')} disabled={concluindo} className="min-h-12 flex-1"><MessageSquareText className="size-4" aria-hidden="true" />Negociação</Button>
                   <Button type="button" variant="secondary" onClick={() => escolherResultado('nao')} disabled={concluindo} className="min-h-12 flex-1"><X className="size-4" aria-hidden="true" />Venda perdida</Button>
                 </>
               ) : (
-                <Button type="button" onClick={() => void concluirAtendimento()} disabled={concluindo} loading={concluindo} className="min-h-12 flex-1"><Check className="size-4" aria-hidden="true" />Finalizar atendimento</Button>
+                <Button type="button" onClick={() => void concluirAtendimento()} disabled={concluindo} loading={concluindo} className="min-h-12 flex-1"><Check className="size-4" aria-hidden="true" />{concluindo ? 'Finalizando...' : 'Finalizar atendimento'}</Button>
               )}
             </div>
           </div>

@@ -112,7 +112,11 @@ Urgências independentes: patch contra HEAD publicado em scripts/prancheta/urgen
 
 ## Publicação pessoal direta — plano vigente D-024 (16/10/2026)
 
+Rodada D-026: apresentação histórica e idade por toque compartilhada; transição de rodapé e etapas após render; feedback de conclusão com guard, commit DOM e oportunidade de pintura antes de validações/autosave. Testes focais 376/lint/diff e build completo aprovados; publicação em andamento. Navegador limitado conforme D-025, reteste no celular real antes do aceite. P2/P3 e reabertura dependem de decisão posterior.
+
 Correções UX D-025: testes focais 372/lint/diff e build completo final aprovados. Publicar allowlist de dois componentes e três Harness na main; verificar SHA/READY/alias Vercel. Navegador final dispensado nesta rodada por decisão explícita após bloqueio da revisão automática; usuário valida feedback/rolagem/reset, crianças e rodapé em celular/notebook antes de reabrir lojas. Recuperação para versão P1 95ba0b2 sem alteração de banco.
+
+Publicação D-025 executada: ccf0d963d49efd65b979b2005ec92edfba74ad79 na main/origin; dpl_5NYCVKb8k1wZ6Lj8YcKg19jsoZX4 READY/production com lebebe.cloud. Homologação manual e reabertura das lojas continuam pendentes. Identificação final registrada localmente após o deploy.
 
 Substitui exigências anteriores de Preview/allowlist piloto. Sem novo banco/estrutura/permissões; lojas suspensas operacionalmente, usuário testa pessoalmente.
 

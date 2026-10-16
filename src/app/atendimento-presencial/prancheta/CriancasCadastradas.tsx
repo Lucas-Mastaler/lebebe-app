@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { ParentescoCriancaField } from './ParentescoCriancaField'
+import { IdadeCriancaSelector } from './IdadeCriancaSelector'
 import { Alert, Button, Card, CardContent, FormField, Input } from '@/components/design-system'
 import { descreverInformacaoNascimento, opcoesCriancasDisponiveis, selecionarCriancaCadastrada, type CriancaReutilizavel } from '@/lib/atendimento-presencial/criancas-permanentes'
 import type { FichaCriancaRascunho } from '@/lib/atendimento-presencial/ficha-schema'
@@ -33,6 +34,8 @@ export function CriancasCadastradas({ clienteId, rascunhoId, selecionadas, sincr
   const geracao = useRef(0)
   const disponiveis = opcoesCriancasDisponiveis(permanentes, selecionadas, clienteId)
   const limite = selecionadas.length >= 8
+  const informacaoNascimento = confirmando ? descreverInformacaoNascimento(confirmando) : ''
+  const separadorInformacao = informacaoNascimento.indexOf(':')
 
   useEffect(() => {
     if (!confirmando?.id) return
@@ -122,13 +125,16 @@ export function CriancasCadastradas({ clienteId, rascunhoId, selecionadas, sincr
     </div>}
     {confirmando && <Card id="confirmacao-crianca-historica" tabIndex={-1} className="scroll-mt-32 scroll-mb-48"><CardContent className="grid gap-3 p-4">
       <h3 className="font-semibold">Confirmar criança histórica</h3>
-      <p className="font-semibold text-primary">{confirmando.dados.nome || 'Nome não informado'} selecionada. Complete os dados abaixo e confirme o cadastro.</p>
-      <p className="text-sm">{descreverInformacaoNascimento(confirmando)}. O cadastro será salvo mesmo se este atendimento não for concluído.</p>
+      <p className="font-semibold text-primary"><strong className="text-foreground">{confirmando.dados.nome || 'Nome não informado'}</strong> selecionada. Complete os dados abaixo e confirme o cadastro.</p>
+      <div className="space-y-2 text-sm">
+        <p>{separadorInformacao >= 0 ? <><strong>{informacaoNascimento.slice(0, separadorInformacao + 1)}</strong>{informacaoNascimento.slice(separadorInformacao + 1)}</> : informacaoNascimento}</p>
+        <p>O cadastro será salvo mesmo se este atendimento não for concluído.</p>
+      </div>
       {(!dadosOriginaisRef.current?.nome || revisando) && <FormField id="historica-nome" label="Nome" helper="Opcional">{(field) => <Input {...field} value={nome} maxLength={80} disabled={ocupado || !!associarId} onChange={(e) => setNome(e.target.value)} />}</FormField>}
       {confirmando.dados.situacao === 'presente_outra_pessoa' && (dadosOriginaisRef.current?.presenteJaNasceu === undefined || revisando) && <FormField id="historica-presente-nasceu" label="Já nasceu?" required>{(field) => <select {...field} className="w-full rounded-md border p-2" disabled={ocupado || !!associarId} value={confirmando.dados.presenteJaNasceu === undefined ? '' : String(confirmando.dados.presenteJaNasceu)} onChange={(e) => setConfirmando({ ...confirmando, dados: { ...confirmando.dados, presenteJaNasceu: e.target.value === '' ? undefined : e.target.value === 'true', idadeUnidade: undefined, idadeValor: undefined, dataPrevistaNascimento: undefined, dataReferenciaNascimento: undefined } })}><option value="">Selecione</option><option value="true">Sim</option><option value="false">Não</option></select>}</FormField>}
-      {criancaJaNasceu(confirmando.dados) && (!dadosOriginaisRef.current?.idadeUnidade || !dadosOriginaisRef.current?.idadeValor || revisando) && <div className="grid gap-3 sm:grid-cols-2">
-        <FormField id="historica-idade-unidade" label="Unidade da idade informada" required>{(field) => <select {...field} className="w-full rounded-md border p-2" disabled={ocupado || !!associarId} value={confirmando.dados.idadeUnidade ?? ''} onChange={(e) => setConfirmando({ ...confirmando, dados: { ...confirmando.dados, idadeUnidade: e.target.value as 'meses' | 'anos', idadeValor: undefined } })}><option value="">Selecione</option><option value="meses">Meses</option><option value="anos">Anos</option></select>}</FormField>
-        <FormField id="historica-idade" label="Idade informada" required>{(field) => <Input {...field} type="number" min={1} max={confirmando.dados.idadeUnidade === 'meses' ? 11 : 6} value={confirmando.dados.idadeValor ?? ''} disabled={ocupado || !!associarId} onChange={(e) => setConfirmando({ ...confirmando, dados: { ...confirmando.dados, idadeValor: e.target.value ? Number(e.target.value) : undefined } })} />}</FormField>
+      {criancaJaNasceu(confirmando.dados) && (!dadosOriginaisRef.current?.idadeUnidade || !dadosOriginaisRef.current?.idadeValor || revisando) && <div className="grid gap-3">
+        <p className="text-sm font-semibold text-slate-700">Idade informada *</p>
+        <IdadeCriancaSelector unidade={confirmando.dados.idadeUnidade} valor={confirmando.dados.idadeValor} disabled={ocupado || !!associarId} onChange={(idade) => setConfirmando({ ...confirmando, dados: { ...confirmando.dados, ...idade } })} />
       </div>}
       {revisando && confirmando.dados.dataPrevistaNascimento && <FormField id="historica-previsao" label="Previsão informada" helper="Opcional; não representa nascimento confirmado">{(field) => <Input {...field} type="date" value={confirmando.dados.dataPrevistaNascimento} disabled={ocupado || !!associarId} onChange={(e) => setConfirmando({ ...confirmando, dados: { ...confirmando.dados, dataPrevistaNascimento: e.target.value || undefined } })} />}</FormField>}
       <ParentescoCriancaField id="historica-parentesco" value={parentesco} disabled={ocupado} error={erro === 'Confirme o parentesco.' ? erro : undefined} onChange={(valor) => { setParentesco(valor); setErro(null) }} />

@@ -20,6 +20,9 @@ export function CriancasCadastradas({ clienteId, rascunhoId, selecionadas, sincr
   const [aberto, setAberto] = useState(true)
   const [opcoes, setOpcoes] = useState(false)
   const [confirmando, setConfirmando] = useState<CriancaReutilizavel | null>(null)
+  const [revisando, setRevisando] = useState(false)
+  const raizRef = useRef<HTMLDivElement>(null)
+  const dadosOriginaisRef = useRef<FichaCriancaRascunho | null>(null)
   const [parentesco, setParentesco] = useState('')
   const [nome, setNome] = useState('')
   const [associarId, setAssociarId] = useState('')
@@ -30,6 +33,16 @@ export function CriancasCadastradas({ clienteId, rascunhoId, selecionadas, sincr
   const geracao = useRef(0)
   const disponiveis = opcoesCriancasDisponiveis(permanentes, selecionadas, clienteId)
   const limite = selecionadas.length >= 8
+
+  useEffect(() => {
+    if (!confirmando?.id) return
+    const frame = window.requestAnimationFrame(() => {
+      const bloco = document.getElementById('confirmacao-crianca-historica')
+      bloco?.focus({ preventScroll: true })
+      bloco?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [confirmando?.id])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -78,7 +91,7 @@ export function CriancasCadastradas({ clienteId, rascunhoId, selecionadas, sincr
     finally { emCurso.current = false; if (atual === geracao.current) setOcupado(false) }
   }
 
-  return <div className="grid gap-3">
+  return <div ref={raizRef} tabIndex={-1} className="grid gap-3">
     {erro && <Alert tone="danger">{erro}</Alert>}
     {carregando && <p role="status">Carregando crianças cadastradas…</p>}
     {aberto && !carregando && <div className="grid gap-4">
@@ -96,7 +109,7 @@ export function CriancasCadastradas({ clienteId, rascunhoId, selecionadas, sincr
       </div>
       {historicas.length > 0 && <div className="grid gap-2 border-t border-slate-200 pt-3" role="group" aria-label="Sugestões históricas">
         <div><h3 className="text-sm font-semibold text-slate-950">Sugestões históricas</h3><p className="mt-1 text-xs text-muted-foreground">Confirme os dados antes de reutilizar.</p></div>
-        {historicas.map((item) => <Card key={item.id} className={confirmando?.id === item.id ? "border-primary shadow-none" : "shadow-none"} data-crianca-opcao="historica"><Button type="button" variant="ghost" className="h-auto min-h-12 w-full justify-between whitespace-normal rounded-2xl p-3 text-left hover:bg-primary/5 focus-visible:ring-inset" aria-pressed={confirmando?.id === item.id} aria-label={`Confirmar ${item.dados.nome || 'Nome não informado'} — ${descreverInformacaoNascimento(item)}`} disabled={limite || ocupado} onClick={() => { if (confirmando?.id === item.id) return; setConfirmando(item); setNome(item.dados.nome ?? ''); setParentesco(''); setAssociarId(''); setErro(null); window.requestAnimationFrame(() => document.getElementById('historica-nome')?.focus()) }}>
+        {historicas.map((item) => <Card key={item.id} className={confirmando?.id === item.id ? "border-primary shadow-none" : "shadow-none"} data-crianca-opcao="historica"><Button type="button" variant="ghost" className="h-auto min-h-12 w-full justify-between whitespace-normal rounded-2xl p-3 text-left hover:bg-primary/5 focus-visible:ring-inset" aria-pressed={confirmando?.id === item.id} aria-label={`Confirmar ${item.dados.nome || 'Nome não informado'} — ${descreverInformacaoNascimento(item)}`} disabled={limite || ocupado} onClick={() => { if (confirmando?.id === item.id) return; dadosOriginaisRef.current = item.dados; setConfirmando(item); setNome(item.dados.nome ?? ''); setParentesco(''); setAssociarId(''); setErro(null); setRevisando(false); setAberto(false); setOpcoes(false) }}>
           <span className="min-w-0 space-y-1">
             <span role="heading" aria-level={4} className="block break-words text-sm font-semibold text-slate-950">{item.dados.nome || 'Nome não informado'}</span>
             <span className="block text-xs text-muted-foreground">{item.dados.idadeValor && item.dados.idadeUnidade ? `Idade informada: ${item.dados.idadeValor} ${item.dados.idadeUnidade}` : descreverInformacaoNascimento(item)}</span>
@@ -107,28 +120,30 @@ export function CriancasCadastradas({ clienteId, rascunhoId, selecionadas, sincr
         </Button></Card>)}
       </div>}
     </div>}
-    {confirmando && <Card><CardContent className="grid gap-3 p-4">
+    {confirmando && <Card id="confirmacao-crianca-historica" tabIndex={-1} className="scroll-mt-32 scroll-mb-48"><CardContent className="grid gap-3 p-4">
       <h3 className="font-semibold">Confirmar criança histórica</h3>
+      <p className="font-semibold text-primary">{confirmando.dados.nome || 'Nome não informado'} selecionada. Complete os dados abaixo e confirme o cadastro.</p>
       <p className="text-sm">{descreverInformacaoNascimento(confirmando)}. O cadastro será salvo mesmo se este atendimento não for concluído.</p>
-      <FormField id="historica-nome" label="Nome" helper="Opcional">{(field) => <Input {...field} value={nome} maxLength={80} disabled={ocupado || !!associarId} onChange={(e) => setNome(e.target.value)} />}</FormField>
-      {confirmando.dados.situacao === 'presente_outra_pessoa' && <FormField id="historica-presente-nasceu" label="Já nasceu?" required>{(field) => <select {...field} className="w-full rounded-md border p-2" disabled={ocupado || !!associarId} value={confirmando.dados.presenteJaNasceu === undefined ? '' : String(confirmando.dados.presenteJaNasceu)} onChange={(e) => setConfirmando({ ...confirmando, dados: { ...confirmando.dados, presenteJaNasceu: e.target.value === '' ? undefined : e.target.value === 'true', idadeUnidade: undefined, idadeValor: undefined, dataPrevistaNascimento: undefined, dataReferenciaNascimento: undefined } })}><option value="">Selecione</option><option value="true">Sim</option><option value="false">Não</option></select>}</FormField>}
-      {criancaJaNasceu(confirmando.dados) && <div className="grid gap-3 sm:grid-cols-2">
+      {(!dadosOriginaisRef.current?.nome || revisando) && <FormField id="historica-nome" label="Nome" helper="Opcional">{(field) => <Input {...field} value={nome} maxLength={80} disabled={ocupado || !!associarId} onChange={(e) => setNome(e.target.value)} />}</FormField>}
+      {confirmando.dados.situacao === 'presente_outra_pessoa' && (dadosOriginaisRef.current?.presenteJaNasceu === undefined || revisando) && <FormField id="historica-presente-nasceu" label="Já nasceu?" required>{(field) => <select {...field} className="w-full rounded-md border p-2" disabled={ocupado || !!associarId} value={confirmando.dados.presenteJaNasceu === undefined ? '' : String(confirmando.dados.presenteJaNasceu)} onChange={(e) => setConfirmando({ ...confirmando, dados: { ...confirmando.dados, presenteJaNasceu: e.target.value === '' ? undefined : e.target.value === 'true', idadeUnidade: undefined, idadeValor: undefined, dataPrevistaNascimento: undefined, dataReferenciaNascimento: undefined } })}><option value="">Selecione</option><option value="true">Sim</option><option value="false">Não</option></select>}</FormField>}
+      {criancaJaNasceu(confirmando.dados) && (!dadosOriginaisRef.current?.idadeUnidade || !dadosOriginaisRef.current?.idadeValor || revisando) && <div className="grid gap-3 sm:grid-cols-2">
         <FormField id="historica-idade-unidade" label="Unidade da idade informada" required>{(field) => <select {...field} className="w-full rounded-md border p-2" disabled={ocupado || !!associarId} value={confirmando.dados.idadeUnidade ?? ''} onChange={(e) => setConfirmando({ ...confirmando, dados: { ...confirmando.dados, idadeUnidade: e.target.value as 'meses' | 'anos', idadeValor: undefined } })}><option value="">Selecione</option><option value="meses">Meses</option><option value="anos">Anos</option></select>}</FormField>
         <FormField id="historica-idade" label="Idade informada" required>{(field) => <Input {...field} type="number" min={1} max={confirmando.dados.idadeUnidade === 'meses' ? 11 : 6} value={confirmando.dados.idadeValor ?? ''} disabled={ocupado || !!associarId} onChange={(e) => setConfirmando({ ...confirmando, dados: { ...confirmando.dados, idadeValor: e.target.value ? Number(e.target.value) : undefined } })} />}</FormField>
       </div>}
-      {confirmando.dados.dataPrevistaNascimento && <FormField id="historica-previsao" label="Previsão informada" helper="Opcional; não representa nascimento confirmado">{(field) => <Input {...field} type="date" value={confirmando.dados.dataPrevistaNascimento} disabled={ocupado || !!associarId} onChange={(e) => setConfirmando({ ...confirmando, dados: { ...confirmando.dados, dataPrevistaNascimento: e.target.value || undefined } })} />}</FormField>}
+      {revisando && confirmando.dados.dataPrevistaNascimento && <FormField id="historica-previsao" label="Previsão informada" helper="Opcional; não representa nascimento confirmado">{(field) => <Input {...field} type="date" value={confirmando.dados.dataPrevistaNascimento} disabled={ocupado || !!associarId} onChange={(e) => setConfirmando({ ...confirmando, dados: { ...confirmando.dados, dataPrevistaNascimento: e.target.value || undefined } })} />}</FormField>}
       <ParentescoCriancaField id="historica-parentesco" value={parentesco} disabled={ocupado} error={erro === 'Confirme o parentesco.' ? erro : undefined} onChange={(valor) => { setParentesco(valor); setErro(null) }} />
-      {permanentes.length > 0 && <FormField id="historica-associar" label="Associar a cadastro existente" helper="Opcional; somente se você reconhece a mesma criança">
+      <Button type="button" variant="ghost" size="sm" disabled={ocupado} onClick={() => setRevisando(!revisando)}>{revisando ? 'Recolher revisão opcional' : 'Revisar dados ou associar a cadastro existente'}</Button>
+      {revisando && permanentes.length > 0 && <FormField id="historica-associar" label="Associar a cadastro existente" helper="Opcional; somente se você reconhece a mesma criança">
         {(field) => <select {...field} className="w-full rounded-md border p-2" value={associarId} disabled={ocupado} onChange={(e) => { setAssociarId(e.target.value); const item = permanentes.find((p) => p.id === e.target.value); if (item) setParentesco(item.parentesco ?? '') }}>
           <option value="">Criar cadastro desta criança histórica</option>{permanentes.map((p) => <option key={p.id} value={p.id}>{p.dados.nome || 'Nome não informado'} — {p.parentesco} — {descreverInformacaoNascimento(p)}</option>)}
         </select>}
       </FormField>}
-      <div className="flex flex-wrap gap-2"><Button type="button" loading={ocupado} disabled={limite} onClick={() => void confirmar()}>Confirmar cadastro</Button><Button type="button" variant="ghost" disabled={ocupado} onClick={() => setConfirmando(null)}>Cancelar</Button></div>
+      <div className="flex flex-wrap gap-2"><Button type="button" loading={ocupado} disabled={limite} onClick={() => void confirmar()}>Confirmar cadastro</Button><Button type="button" variant="ghost" disabled={ocupado} onClick={() => { setConfirmando(null); setAberto(true); window.requestAnimationFrame(() => raizRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })) }}>Cancelar</Button></div>
     </CardContent></Card>}
-    <Button type="button" variant="secondary" disabled={limite || ocupado} onClick={() => {
+    {!confirmando && <Button type="button" variant="secondary" disabled={limite || ocupado} onClick={() => {
       if (permanentes.length || historicas.length) setOpcoes(!opcoes)
       else cadastrar()
-    }}>{limite ? 'Limite de oito crianças atingido' : 'Adicionar outra criança'}</Button>
+    }}>{limite ? 'Limite de oito crianças atingido' : 'Adicionar outra criança'}</Button>}
     {opcoes && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       <Button type="button" variant="secondary" className="min-h-12 w-full" onClick={() => { setAberto(true); setOpcoes(false) }}>Crianças cadastradas</Button>
       <Button type="button" variant="secondary" className="min-h-12 w-full" onClick={() => { cadastrar(); setOpcoes(false); setAberto(false) }}>Cadastrar nova criança</Button>

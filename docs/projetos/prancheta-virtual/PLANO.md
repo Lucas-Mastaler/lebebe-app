@@ -112,6 +112,8 @@ Urgências independentes: patch contra HEAD publicado em scripts/prancheta/urgen
 
 ## Publicação pessoal direta — plano vigente D-024 (16/10/2026)
 
+Correções UX D-025: testes focais 372/lint/diff e build completo final aprovados. Publicar allowlist de dois componentes e três Harness na main; verificar SHA/READY/alias Vercel. Navegador final dispensado nesta rodada por decisão explícita após bloqueio da revisão automática; usuário valida feedback/rolagem/reset, crianças e rodapé em celular/notebook antes de reabrir lojas. Recuperação para versão P1 95ba0b2 sem alteração de banco.
+
 Substitui exigências anteriores de Preview/allowlist piloto. Sem novo banco/estrutura/permissões; lojas suspensas operacionalmente, usuário testa pessoalmente.
 
 - [x] Remover gates temporários de UI/API, inclusive editor de registros; preservar validações, acesso/unidades, versionamento e impedir downgrade.
@@ -119,7 +121,7 @@ Substitui exigências anteriores de Preview/allowlist piloto. Sem novo banco/est
 - [x] Distinguir testes por Consultora HOMOLOGACAO Lucas; excluir da listagem padrão/sugestões, consultar com filtro explícito. Sem novo schema; extrações externas precisam excluir o prefixo.
 - [x] 426 testes e 14 grupos browser isolado aprovados; lint dirigido; SQL de ativação dos gates existentes ensaiado sem mudar ACL.
 - [x] Build completo final aprovado, diff/allowlist revisados (54 fontes + quatro Harness + três SQLs auxiliares necessários, 61 arquivos); commit/push somente esses arquivos.
-- [ ] Deployment produção READY no commit correto, aliases lebebe.cloud e smoke de leitura; ativação dos dois gates SQL sem migration nova e pós-verificação.
+- [x] Deployment produção READY no commit 95ba0b214e0dd88bc9c76aec7fb5ca2f9d32f2ba, alias lebebe.cloud e smoke de leitura; ambos gates SQL true sem migration nova e pós-verificação de contratos/ACL aprovada.
 - [ ] Usuário executar roteiro real abaixo com marcadores, sem alterar atendimentos comerciais reais; aceite antes de reabrir lojas.
 
 Recuperação/versão anterior e limites no STATUS D-024. Testes reais: preencher HOMOLOGACAO Lucas a cada atendimento (reset limpa consultora), usar cliente/criança claramente de teste e telefone sob controle, não cliente → venda fechada com lançamento → negociação → venda perdida → reutilização/permanente/histórico confirmado → Presente/idade → recarregar rascunho/autosave → sucesso/reset/novo. Reabrir registros pelo filtro de consultora HOMOLOGACAO Lucas, conferir persistência. Não finalizar os dois rascunhos v2 comerciais preexistentes como testes. Limpeza posterior somente com análise de dependências e autorização.

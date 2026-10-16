@@ -381,6 +381,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [errosValidacao, setErrosValidacao] = useState<ErroValidacaoFicha[]>([])
   const [numeroLancamento, setNumeroLancamento] = useState('')
   const [concluindo, setConcluindo] = useState(false)
+  const [resultadoEmValidacao, setResultadoEmValidacao] = useState<ResultadoAtendimento | null>(null)
   const [rodapeVisivel, setRodapeVisivel] = useState(false)
   const [mensagemConclusao, setMensagemConclusao] = useState<string | null>(null)
   const [rascunhoEncerrado, setRascunhoEncerrado] = useState<string | null>(null)
@@ -409,6 +410,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const clienteSelecionadaRef = useRef<ClientePresencialDTO | null>(null)
   const mountedRef = useRef(false)
   const concluindoRef = useRef(false)
+  const validandoResultadoRef = useRef(false)
   const focoCriancaSelecionadaRef = useRef<string | null>(null)
   const etapaParaTopoRef = useRef<FichaEtapa | null>(null)
   const draftClientIdRef = useRef<string | null>(null)
@@ -476,7 +478,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const etapaNumero = etapaAtual === 'resultado' ? 2 : 1
   const camposComerciaisVisiveis = ficha.tipoAtendimento === 'cliente'
   const etapaLabelAtual = etapaLabels[etapaAtual]
-  const barraAcaoVisivel = rodapeVisivel || concluindo || Boolean(mensagemConclusao)
+  const acaoResultadoOcupada = concluindo || resultadoEmValidacao !== null
+  const barraAcaoVisivel = rodapeVisivel || acaoResultadoOcupada || Boolean(mensagemConclusao)
   const unidadesParaSelecao = useMemo(() => contexto?.unidadesPermitidas ?? [], [contexto])
 
   useLayoutEffect(() => {
@@ -1288,16 +1291,28 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     return primeiroErroPorSecao(errosValidacao, sectionId)
   }
 
-  function escolherResultado(resultado: ResultadoAtendimento) {
-    if (concluindoRef.current) return
+  async function escolherResultado(resultado: ResultadoAtendimento) {
+    if (concluindoRef.current || validandoResultadoRef.current) return
     const trocou = ficha.resultadoAtendimento !== resultado
     const proximaFicha: FichaDadosRascunho = { ...ficha, versaoFluxo: 2, resultadoAtendimento: resultado, ...(trocou ? { motivosResultado: [], lojasMotivos: undefined, motivoOutro: undefined, viradaCartaoDia: undefined, viradaCartaoMes: undefined } : {}) }
-    atualizarFicha(() => proximaFicha)
-    if (resultado === 'sim') { void concluirAtendimento(proximaFicha); return }
-    const erros = validarEtapa({ etapa: 'ficha', ficha: proximaFicha, clienteSelecionada, dataPrevistaInputs })
-    if (!unidadeId) erros.unshift({ sectionId: 'secao-unidade', message: 'Selecione a unidade.' })
-    if (erros.length) return registrarErrosValidacao(erros)
-    irParaEtapa('resultado')
+    if (resultado === 'sim') {
+      atualizarFicha(() => proximaFicha)
+      await concluirAtendimento(proximaFicha)
+      return
+    }
+    validandoResultadoRef.current = true
+    flushSync(() => setResultadoEmValidacao(resultado))
+    try {
+      await aguardarPinturaFeedback()
+      const erros = validarEtapa({ etapa: 'ficha', ficha: proximaFicha, clienteSelecionada, dataPrevistaInputs })
+      if (!unidadeId) erros.unshift({ sectionId: 'secao-unidade', message: 'Selecione a unidade.' })
+      if (erros.length) return registrarErrosValidacao(erros)
+      atualizarFicha(() => proximaFicha)
+      irParaEtapa('resultado')
+    } finally {
+      validandoResultadoRef.current = false
+      setResultadoEmValidacao(null)
+    }
   }
 
   useEffect(() => {
@@ -1500,7 +1515,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   async function novoAtendimento() {
-    if (novoAtendimentoRef.current || iniciando || concluindo) return
+    if (novoAtendimentoRef.current || iniciando || concluindo || validandoResultadoRef.current) return
     novoAtendimentoRef.current = true
     setIniciandoNovoAtendimento(true)
     setErro(null)
@@ -1780,7 +1795,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 type="button"
                 variant="secondary"
                 onClick={novoAtendimento}
-                disabled={iniciandoNovoAtendimento || iniciando || concluindo || carregandoRascunhoInicial}
+                disabled={iniciandoNovoAtendimento || iniciando || acaoResultadoOcupada || carregandoRascunhoInicial}
                 loading={iniciandoNovoAtendimento}
                 className="w-full sm:w-auto"
               >
@@ -2416,7 +2431,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       </FormPageContent>
 
       {!carregandoRascunhoInicial && !erroRascunhoInicial && (
-        <div ref={actionBarRef} data-prancheta-rodape inert={!barraAcaoVisivel} aria-hidden={!barraAcaoVisivel} style={{ visibility: barraAcaoVisivel ? 'visible' : 'hidden', opacity: barraAcaoVisivel ? 1 : 0, transform: barraAcaoVisivel ? 'translateY(0)' : 'translateY(12px)' }} className={`fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-lg backdrop-blur ${concluindo || mensagemConclusao ? 'transition-none' : 'transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none'}`}>
+        <div ref={actionBarRef} data-prancheta-rodape inert={!barraAcaoVisivel} aria-hidden={!barraAcaoVisivel} style={{ visibility: barraAcaoVisivel ? 'visible' : 'hidden', opacity: barraAcaoVisivel ? 1 : 0, transform: barraAcaoVisivel ? 'translateY(0)' : 'translateY(12px)' }} className={`fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-lg backdrop-blur ${acaoResultadoOcupada || mensagemConclusao ? 'transition-none' : 'transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none'}`}>
           <div className="mx-auto flex max-w-3xl flex-col gap-2">
             <div className="grid gap-2 sm:flex">
               {etapaAtual === 'resultado' && <Button type="button" variant="secondary" onClick={voltar} disabled={concluindo} size="lg"><ChevronLeft className="size-4" aria-hidden="true" />Voltar</Button>}
@@ -2424,9 +2439,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 <Button type="button" disabled className="min-h-12 flex-1 bg-success text-white disabled:opacity-100"><Check className="size-4" aria-hidden="true" />Atendimento concluído</Button>
               ) : etapaAtual === 'ficha' && camposComerciaisVisiveis ? (
                 <>
-                  <Button type="button" onClick={() => escolherResultado('sim')} disabled={concluindo} loading={concluindo} className="min-h-12 flex-1">{!concluindo && <Check className="size-4" aria-hidden="true" />}{concluindo ? 'Finalizando...' : 'Venda fechada'}</Button>
-                  <Button type="button" variant="secondary" onClick={() => escolherResultado('negociacao')} disabled={concluindo} className="min-h-12 flex-1"><MessageSquareText className="size-4" aria-hidden="true" />Negociação</Button>
-                  <Button type="button" variant="secondary" onClick={() => escolherResultado('nao')} disabled={concluindo} className="min-h-12 flex-1"><X className="size-4" aria-hidden="true" />Venda perdida</Button>
+                  <Button type="button" onClick={() => void escolherResultado('sim')} disabled={acaoResultadoOcupada} loading={concluindo} className="min-h-12 flex-1">{!concluindo && <Check className="size-4" aria-hidden="true" />}{concluindo ? 'Finalizando...' : 'Venda fechada'}</Button>
+                  <Button type="button" variant="secondary" onClick={() => void escolherResultado('negociacao')} disabled={acaoResultadoOcupada} loading={resultadoEmValidacao === 'negociacao'} className="min-h-12 flex-1">{resultadoEmValidacao !== 'negociacao' && <MessageSquareText className="size-4" aria-hidden="true" />}{resultadoEmValidacao === 'negociacao' ? 'Validando...' : 'Negociação'}</Button>
+                  <Button type="button" variant="secondary" onClick={() => void escolherResultado('nao')} disabled={acaoResultadoOcupada} loading={resultadoEmValidacao === 'nao'} className="min-h-12 flex-1">{resultadoEmValidacao !== 'nao' && <X className="size-4" aria-hidden="true" />}{resultadoEmValidacao === 'nao' ? 'Validando...' : 'Venda perdida'}</Button>
                 </>
               ) : (
                 <Button type="button" onClick={() => void concluirAtendimento()} disabled={concluindo} loading={concluindo} className="min-h-12 flex-1">{!concluindo && <Check className="size-4" aria-hidden="true" />}{concluindo ? 'Finalizando...' : 'Finalizar atendimento'}</Button>

@@ -2,12 +2,24 @@
 
 Projeto: prancheta-virtual
 Estado: EM_EXECUCAO
-Fase atual: D-029 autoriza publicação do refinamento D-028; migration aplicada/verificada, commit e deploy em preparação; homologação humana e aceite pendentes
+Fase atual: correção D-030 validada localmente; commit/push/deploy autorizados em preparação; reteste humano e aceite pendentes
 Atualizado em: 16/10/2026
 
-## Refinamento funcional D-028 — nova rodada local (16/10/2026)
+## Correção pós-homologação D-030 (16/10/2026)
+
+Usuário autorizou corrigir feedback visual de Negociação/Venda perdida e autosave da alteração isolada de nome de loja, com commit/push/deploy. Os dois resultados agora ativam loading DS/disabled com flushSync e guard por ref antes de aguardar oportunidade de pintura; rodapé permanece visível e sem animação enquanto ocupado. Validação precede atualização do resultado, evitando alteração/autosave em tentativa inválida. Novo atendimento também fica bloqueado nesse intervalo. Venda fechada mantém sua conclusão existente.
+
+lojasMotivos incluído na comparação canônica da fila, cobrindo alteração isolada/remoção sem confundir ordem de chaves. MCP Supabase em leitura confirmou dados_rascunho JSONB e suporte dos normalizadores/conclusão/edição aos complementos; nenhuma migration necessária/aplicada. Teste da fila cobre escrita inicial, alteração isolada, remoção e preservação do outro complemento.
+
+Validação: 395 testes em 38 arquivos aprovados; ESLint dirigido e diff-check aprovados; npm run build concluído com avisos globais existentes de middleware/renderização dinâmica. Primeira tentativa de Vitest no sandbox falhou em arquivos temporários EPERM sem executar testes; repetição fora do sandbox passou. Browser Chrome em largura mobile observou Validando... e três ações disabled nos dois resultados; erro de departamento com foco e desbloqueio, avanço Negociação/Venda perdida, volta preservada. Loja A → B, sem mudar outro campo, persistiu no PostgreSQL sintético (versões 8 → 9) e foi reaberta por ID mostrando B. Sem console error/warn no teste. Evidência visual output/correcao-loja-browser.png. Nenhum dado comercial fictício criado em produção. Não houve teste em Safari/iPhone físico, nem comprovação da causa exata dos 5–10 segundos relatados; reteste humano pendente.
+
+Publicação em preparação sobre ce23f9c, main/origin, projeto Vercel lebebe-app/prj_2FG9ZqbGLBU4ffzFZIWPIfdefEIJ, production/lebebe.cloud. Allowlist: FichaPageClient, autosave-fila e teste, STATUS/PLANO/DECISOES da Prancheta. Alterações de outros módulos preservadas. Identificação pós-deploy será registrada localmente sem commit extra de documentação que dispare outro build.
+
+## Refinamento funcional D-028 — publicado por D-029 (16/10/2026)
 
 ### Publicação autorizada D-029 — estado vigente
+
+**PUBLICAÇÃO CONCLUÍDA:** commit `ce23f9c7e189181959651380a9246ef0f4f0ccb4`, 28 arquivos da allowlist, enviado para `origin/main`; deployment `dpl_CB114RnswerX4QTKmRz6BANfPpMv` / `lebebe-om8lgffn3-lebebes-projects.vercel.app`, READY/production, alias `lebebe.cloud` sem erro. Build remoto compilou e concluiu; SHA e domínio confirmados via MCP. Rota protegida aberta no Chrome na sessão existente, sem bootstrap nem credenciais: novas sete visitas renderizadas, mantendo Aguardando início sem filial/consultora; nenhum atendimento de teste criado. Homologação comercial completa e em aparelhos reais segue pendente, lojas sem reabertura automática. Identificação pós-deploy registrada localmente no Harness, sem novo commit apenas para disparar outro build. Versão anterior `c07aa4bac667307ba6bae6653a96fa8402ca9b72`/`dpl_DVAxQH4Rt2Nb1JqbSmEUqZnZnjXA`; após escritas com motivos novos, não restaurar leitor antigo que descarte dados. Banco sem reversão destrutiva.
 
 Advisors de segurança executados após DDL: nenhum finding apontou as funções/tabelas alteradas nesta rodada. Permanecem avisos globais fora do escopo: [search_path mutável](https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable), [execução anon de outras SECURITY DEFINER](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable), [execução authenticated de outras SECURITY DEFINER](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable), [proteção de senhas vazadas](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection) e informação [RLS sem policy em outras tabelas](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy). Não alterados nesta publicação.
 
@@ -27,7 +39,7 @@ Validação focal: **37 arquivos / 391 testes aprovados**, incluindo listas/orde
 
 Browser atual: Chrome conectado, componente real → HTTP de fixture → PostgreSQL/WASM local; sem credenciais ou dados comerciais reais. Confirmados gate de três campos, cartão compacto/aviso de nova criança, atalho sem duplicidade, nove motivos de perda com múltiplas seleções/duas lojas, Voltar preservando campos, Não com foco no telefone e nova tentativa mostrando modal, Sim com conclusão/reset, Não cliente simplificado a 390px efetivos sem overflow, Negociação com dois motivos e telefone válido sem modal/lançamento a 1366px, falha 503 preservando dados e exigindo nova confirmação na retentativa, crianças históricas homônimas sem IDs. Não é homologação autenticada do site publicado nem teste em aparelhos físicos. Limitação de transporte inicial da fixture resolvida na entrada local; a restrição anterior D-025 não foi contornada. Gestão completa autenticada, edição real, rede/dispositivos reais e aceite humano continuam pendentes.
 
-### Procedimento controlado — autorizado por D-029; banco aplicado, publicação em execução
+### Procedimento controlado — executado por D-029; banco e publicação concluídos
 
 1. Obter autorização específica para banco; combinar breve suspensão de escritas da Prancheta, preservando os demais módulos. Reconfirmar estado real, hashes, assinatura, constraints, dependências, backup/snapshot e identificação do candidato. Abortá-la se houver drift; não executar repair/replay.
 2. Aplicar exclusivamente a migration acima em transação. Ela amplia checks (inclui valores legados), sem atualizar registros históricos. Qualquer falha de preflight/lock/SQL reverte a transação; não prosseguir parcialmente.
@@ -39,7 +51,7 @@ Evidências locais: `output/refinamento-browser-evidencias.json`, `output/refina
 
 Conferência final do modal: descrição migrada para a API oficial `DialogHeader.description`; DOM confirmou `aria-describedby` associado a elemento existente e Não continuou focando telefone. Reteste após reiniciar a fixture (watch desabilitado, sem confundir código antigo em cache com o atual); nenhum aviso novo de descrição nessa navegação. Lint final aprovado e build completo repetido após a correção. Reexecução final dos três arquivos tocados de testes: 37 testes aprovados, além da matriz completa 391 acima.
 
-Migration concluída e commit/push/deploy autorizados por D-029, em execução. Homologação humana, aparelhos reais e aceite continuam pendentes; publicação não reabre automaticamente as lojas.
+Migration, commit, push e deploy concluídos por D-029. Homologação humana, aparelhos reais e aceite continuam pendentes; publicação não reabre automaticamente as lojas.
 
 ## Publicação anterior para homologação pessoal — D-024 (16/10/2026)
 

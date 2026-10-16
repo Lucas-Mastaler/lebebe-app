@@ -96,6 +96,28 @@ function criarFila(params?: {
   return { fila, save: vi.mocked(save), timers, status, logs }
 }
 
+it('salva alteracao isolada e remocao do nome da loja sem perder o outro complemento', async () => {
+  const { fila, save } = criarFila()
+  const comLojas: AutosavePayload = {
+    ...payloadBase,
+    dadosRascunho: { ...payloadBase.dadosRascunho, resultadoAtendimento: 'nao', motivosResultado: ['outra_loja_fisica', 'outra_loja_internet'], lojasMotivos: { outra_loja_fisica: 'Loja A', outra_loja_internet: 'Internet' } },
+  }
+  expect((await fila.flushNow(comLojas)).ok).toBe(true)
+  const alterado: AutosavePayload = { ...comLojas, dadosRascunho: { ...comLojas.dadosRascunho, lojasMotivos: { outra_loja_fisica: 'Loja B', outra_loja_internet: 'Internet' } } }
+  fila.enqueue(alterado)
+  expect((await fila.flushNow()).ok).toBe(true)
+  const removido: AutosavePayload = { ...alterado, dadosRascunho: { ...alterado.dadosRascunho, lojasMotivos: { outra_loja_internet: 'Internet' } } }
+  fila.enqueue(removido)
+  expect((await fila.flushNow()).ok).toBe(true)
+  expect(save.mock.calls.map(([params]) => params.payload.dadosRascunho.lojasMotivos)).toEqual([
+    comLojas.dadosRascunho.lojasMotivos,
+    alterado.dadosRascunho.lojasMotivos,
+    removido.dadosRascunho.lojasMotivos,
+  ])
+  const reordenado: AutosavePayload = { ...alterado, dadosRascunho: { ...alterado.dadosRascunho, lojasMotivos: { outra_loja_internet: 'Internet', outra_loja_fisica: 'Loja B' } } }
+  expect(serializarPayloadAutosave(alterado)).toBe(serializarPayloadAutosave(reordenado))
+})
+
 it('reconcilia resposta perdida da propria aba antes de salvar a edicao seguinte', async () => {
   const a = payloadComProduto('Primeira edicao')
   const b = payloadComProduto('Segunda edicao')

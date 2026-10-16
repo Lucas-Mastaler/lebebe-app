@@ -4,6 +4,14 @@
 
 Contrato funcional: ESCOPO.md. Decisões: DECISOES.md. Marcar somente tarefas realmente executadas e validadas.
 
+## Correção pós-homologação — D-030
+
+- [x] Feedback imediato nos dois resultados, bloqueio de cliques e rodapé estável durante validação; resultado atualizado somente após validação aprovada.
+- [x] Comparação de lojasMotivos no autosave; teste de alteração isolada/remoção e estabilidade da ordem das chaves.
+- [x] 395 testes/38 arquivos, lint dirigido, build e browser sintético mobile; loja A → B confirmada no PostgreSQL local e reaberta por ID.
+- [ ] Commit, push e deploy autorizados; confirmar SHA/READY/alias após publicação.
+- [ ] Reteste humano no iPhone pelo atalho da tela inicial.
+
 ## Refinamento funcional — D-028 (preparação local)
 
 - [x] Listas por resultado e visita, complementos de loja e compatibilidade histórica na leitura/edição.
@@ -12,7 +20,8 @@ Contrato funcional: ESCOPO.md. Decisões: DECISOES.md. Marcar somente tarefas re
 - [x] Modal de telefone por tentativa, validação SQL/API vinculada ao atendimento/versão/cliente e destaque na gestão.
 - [x] Atalho Produto que não trabalhamos, sem duplicidade.
 - [x] Testes focais/SQL isolado, lint, typecheck executado com 15 falhas preexistentes, build e browser sintético a 390/1366px; limites no STATUS.
-- [ ] Autorização separada para migration remota e publicação; homologação real e aceite humano.
+- [x] D-029: migration 20261016215502 aplicada/verificada, commit ce23f9c enviado à main e deployment READY com lebebe.cloud confirmado.
+- [ ] Homologação de uso no site, aparelhos reais e aceite humano para lojas.
 
 Sequência: contratos/migration → formulário/gestão → regressões locais → preparação de homologação. Reutilizar complemento dos motivos, adicionar somente telefone_recusa_confirmada nullable, manter snapshots antigos e ACLs. Aplicação transacional com preflight de funções e timeouts; abortar divergências. Recuperação preserva novas colunas/dados, suspende escrita e restaura versão compatível, sem desfazer histórico.
 

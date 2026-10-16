@@ -1,5 +1,9 @@
 # Decisões — Prancheta Virtual
 
+## D-030 — Feedback dos resultados e autosave das lojas autorizados (16/10/2026)
+
+Após auditoria do relato de demora em iPhone com atalho da tela inicial, usuário autorizou corrigir feedback visual de Negociação/Venda perdida e a alteração isolada do nome da loja, incluindo commit, push e deploy completos. Reutilizar loading/guard/oportunidade de pintura já existentes na conclusão; validar antes de alterar o resultado nesses dois caminhos e preservar regras comerciais. Incluir lojasMotivos na comparação canônica do autosave. Sem nova migration ou mudança de permissões. Validação sintética não substitui reteste no iPhone físico; não atribuir causa exata aos 5–10 segundos sem perfilamento.
+
 ## D-029 — Migration, commit, push e deploy autorizados (16/10/2026)
 
 Usuário autorizou explicitamente publicar o refinamento D-028, incluindo aplicar a migration preparada, commit e push na main e deploy para homologação em lebebe.cloud. Aplicar somente esta migration, validar schema/ACL e integridade de históricos, publicar allowlist da Prancheta e dependências de testes revisadas, preservar alterações de outros módulos. Sem repair/replay/backfill, automações, novas permissões ou reabertura automática das lojas. Homologação humana permanece posterior à publicação. Autorização substitui os gates de publicação local de D-028, não o escopo funcional.

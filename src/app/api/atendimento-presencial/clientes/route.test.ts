@@ -240,6 +240,53 @@ describe('api atendimento presencial clientes', () => {
     expect(json.clienteExistente).toBe(false)
   })
 
+  it('consulta telefone completo por igualdade normalizada, incluindo DDI, sem busca parcial', async () => {
+    const builder = makeSelectBuilder({ data: [clienteRow], error: null })
+    vi.mocked(createServiceClient).mockReturnValue({ from: vi.fn(() => builder) } as never)
+    const response = await GET(new Request('http://local/api/atendimento-presencial/clientes?telefoneExato=5541984148660'))
+    expect(response.status).toBe(200)
+    expect(builder.eq).toHaveBeenCalledWith('status', 'ativo')
+    expect(builder.eq).toHaveBeenCalledWith('telefone_normalizado', '41984148660')
+    expect(builder.or).not.toHaveBeenCalled()
+    expect((await response.json()).clientes[0].telefoneFormatado).toBe('(41) 98414-8660')
+  })
+
+  it('não consulta telefone incompleto e não expõe clientes em ambiguidade', async () => {
+    const from = vi.fn()
+    vi.mocked(createServiceClient).mockReturnValue({ from } as never)
+    expect((await GET(new Request('http://local/api/atendimento-presencial/clientes?telefoneExato=8660'))).status).toBe(422)
+    expect(from).not.toHaveBeenCalled()
+    const builder = makeSelectBuilder({ data: [clienteRow, { ...clienteRow, id: 'outro-id' }], error: null })
+    vi.mocked(createServiceClient).mockReturnValue({ from: vi.fn(() => builder) } as never)
+    const response = await GET(new Request('http://local/api/atendimento-presencial/clientes?telefoneExato=41984148660'))
+    expect(await response.json()).toEqual({ ok: true, ambiguo: true, clientes: [] })
+  })
+
+  it('não consulta nem revela duplicidade sem autorização', async () => {
+    vi.mocked(requireAtendimentoPresencialClientesAccess).mockResolvedValueOnce({ ok: false, response: NextResponse.json({ ok: false }, { status: 403 }) })
+    const response = await GET(new Request('http://local/api/atendimento-presencial/clientes?telefoneExato=41984148660'))
+    expect(response.status).toBe(403)
+    expect(createServiceClient).not.toHaveBeenCalled()
+  })
+
+  it('retorna erro quando a verificação exata falha, sem tratar falha como ausência', async () => {
+    const builder = makeSelectBuilder({ data: null, error: { code: 'FALHA_SINTETICA' } })
+    vi.mocked(createServiceClient).mockReturnValue({ from: vi.fn(() => builder) } as never)
+    const response = await GET(new Request('http://local/api/atendimento-presencial/clientes?telefoneExato=41984148660'))
+    expect(response.status).toBe(500)
+    expect((await response.json()).ok).toBe(false)
+  })
+
+  it('cria cliente sem parentesco geral com ausência explícita compatível com o schema legado', async () => {
+    const insertBuilder = makeInsertBuilder({ data: { ...clienteRow, parentesco: 'outro', parentesco_outro: 'Não informado' }, error: null })
+    vi.mocked(createServiceClient).mockReturnValue({ from: vi.fn(() => insertBuilder) } as never)
+    const response = await POST(new Request('http://local/api/atendimento-presencial/clientes', {
+      method: 'POST', body: JSON.stringify({ nome: 'Cliente Sintetica' }),
+    }))
+    expect(response.status).toBe(201)
+    expect(insertBuilder.insert).toHaveBeenCalledWith(expect.objectContaining({ parentesco: 'outro', parentesco_outro: 'Não informado' }))
+  })
+
   it('retorna cliente existente quando telefone ja esta cadastrado', async () => {
     const selectBuilder = makeSelectBuilder({ data: clienteRow, error: null })
     vi.mocked(createServiceClient).mockReturnValue({ from: vi.fn(() => selectBuilder) } as never)

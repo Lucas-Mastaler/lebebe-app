@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { chamarAppsScriptProcurarDatas } from '@/lib/procurar-datas/apps-script'
 import { validarAcessoProcurarDatas } from '@/lib/procurar-datas/api'
-import { gerarDiagnosticoAdapterV2Comparar, GET } from './route'
+import { gerarDiagnosticoAdapterV2Comparar, GET } from './handlers'
 
 vi.mock('@/lib/procurar-datas/apps-script', () => ({
   chamarAppsScriptProcurarDatas: vi.fn(),

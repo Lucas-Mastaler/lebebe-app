@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { GET, PATCH } from './route'
+import { NextResponse } from 'next/server'
 import { checkAccessWindowForUser } from '@/lib/auth/access-window'
 import { requireModuleAccess } from '@/lib/auth/module-access'
 import { createServiceClient } from '@/lib/supabase/service'
@@ -113,6 +114,17 @@ function filasContextoEPatch(row = atendimentoConcluido) {
 }
 
 describe('api detalhe de registro atendimento presencial', () => {
+  it('edita v2 nao cliente sem exigir cliente ficticio', async () => {
+    const row = { ...atendimentoConcluido, versao_fluxo: 2, tipo_atendimento: 'nao_cliente', cliente_id: null }
+    const queues = filasContextoEPatch(row as unknown as typeof atendimentoConcluido)
+    queues.atendimento_presencial_atendimentos.push({ data: { ...row, version: 5 } as unknown as typeof atendimentoConcluido, error: null })
+    const { rpc } = mockSupabase(queues, { data: [{ id: atendimentoId, version: 5 }], error: null })
+    const response = await PATCH(new Request('http://local', { method: 'PATCH', body: JSON.stringify({
+      version: 4, clienteId: null, dadosRascunho: { versaoFluxo: 2, tipoAtendimento: 'nao_cliente', motivoVisita: 'outros', consultoraNome: 'Ana' },
+    }) }), { params: Promise.resolve({ id: atendimentoId }) })
+    expect(response.status).toBe(200)
+    expect(rpc).toHaveBeenCalledWith('atendimento_presencial_editar_concluido', expect.objectContaining({ p_numero_lancamento: null }))
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(requireModuleAccess).mockResolvedValue({
@@ -272,4 +284,60 @@ describe('api detalhe de registro atendimento presencial', () => {
     expect(response.status).toBe(200)
     expect(json).toMatchObject({ ok: true, semAlteracoes: true })
   })
+  it('impede downgrade por editor legado antes de chamar RPC', async () => {
+    const { rpc } = mockSupabase(filasContextoEPatch({ ...atendimentoConcluido, versao_fluxo: 2 } as typeof atendimentoConcluido))
+    const response = await PATCH(new Request('http://local', { method: 'PATCH', body: JSON.stringify(payloadEdicaoValido) }), { params: Promise.resolve({ id: atendimentoId }) })
+    expect(response.status).toBe(409)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it.each(['cliente', 'nao_cliente'])('le detalhe v2 %s sem exigir dados comerciais', async (tipo) => {
+    const naoCliente = tipo === 'nao_cliente'
+    mockSupabase({
+      ...filasContextoEPatch({ ...atendimentoConcluido, cliente_id: naoCliente ? null : clienteId,
+        versao_fluxo: 2, tipo_atendimento: tipo, motivo_visita: naoCliente ? 'pedido_informacao' : null,
+        observacao_nao_fechamento: naoCliente ? null : 'Retornar após orçamento.',
+        resultado_atendimento: naoCliente ? null : 'negociacao',
+      } as unknown as typeof atendimentoConcluido),
+      ...(naoCliente ? {} : { atendimento_presencial_clientes: [{ data: { id: clienteId, nome: 'Sintética' }, error: null }] }),
+      atendimento_presencial_criancas: [{ data: [], error: null }],
+      atendimento_presencial_departamentos: [{ data: [], error: null }],
+      atendimento_presencial_produtos_interesse: [{ data: [], error: null }],
+      atendimento_presencial_motivos: [{ data: [], error: null }],
+      atendimento_presencial_historico: [{ data: [{ id: 'h1', snapshot: { versaoFluxo: 2, tipoAtendimento: tipo } }], error: null }],
+    })
+    const response = await GET(new Request('http://local'), { params: Promise.resolve({ id: atendimentoId }) })
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.atendimento).toMatchObject({ versaoFluxo: 2, tipoAtendimento: tipo,
+      motivoVisita: naoCliente ? 'pedido_informacao' : null,
+      observacaoNaoFechamento: naoCliente ? null : 'Retornar após orçamento.',
+      resultadoAtendimento: naoCliente ? null : 'negociacao' })
+    expect(json.historico[0].snapshot.tipoAtendimento).toBe(tipo)
+    if (naoCliente) expect(json.cliente).toBeNull()
+  })
+
+  it.each(['legado', 'v2'])('nega detalhe de outra consultora (%s) antes de carregar relacionamentos', async (fluxo) => {
+    mockSupabase(filasContextoEPatch({ ...atendimentoConcluido, consultora_usuario_id: '123e4567-e89b-12d3-a456-426614174099',
+      ...(fluxo === 'v2' ? { versao_fluxo: 2, tipo_atendimento: 'nao_cliente' } : {}),
+    }))
+    const response = await GET(new Request('http://local'), { params: Promise.resolve({ id: atendimentoId }) })
+    expect(response.status).toBe(403)
+  })
+
+  it('respeita bloqueio do módulo sem criar cliente de serviço', async () => {
+    vi.mocked(requireModuleAccess).mockResolvedValue({ ok: false, response: NextResponse.json({ ok: false }, { status: 403 }) })
+    const response = await GET(new Request('http://local'), { params: Promise.resolve({ id: atendimentoId }) })
+    expect(response.status).toBe(403)
+    expect(requireModuleAccess).toHaveBeenCalledWith('atendimento_presencial_registros')
+    expect(createServiceClient).not.toHaveBeenCalled()
+  })
+
+  it('respeita janela de acesso antes de consultar banco', async () => {
+    vi.mocked(checkAccessWindowForUser).mockResolvedValue({ ok: false } as never)
+    const response = await GET(new Request('http://local'), { params: Promise.resolve({ id: atendimentoId }) })
+    expect(response.status).toBe(403)
+    expect(createServiceClient).not.toHaveBeenCalled()
+  })
+
 })

@@ -11,7 +11,7 @@ import {
   validarPayloadCliente,
   type ClientePresencialRow,
 } from '@/lib/atendimento-presencial/clientes'
-import { mascararTelefoneParaLog } from '@/lib/atendimento-presencial/telefone'
+import { mascararTelefoneParaLog, normalizarTelefone } from '@/lib/atendimento-presencial/telefone'
 
 export const runtime = 'nodejs'
 
@@ -89,6 +89,23 @@ export async function GET(request: Request) {
     if (!auth.ok) return auth.response
 
     const url = new URL(request.url)
+    if (url.searchParams.has('telefoneExato')) {
+      const telefone = normalizarTelefone(url.searchParams.get('telefoneExato'))
+      if (!telefone.valido) return NextResponse.json({ ok: false, field: 'telefone', message: 'Informe o telefone completo com DDD.' }, { status: 422 })
+      const { data, error } = await createServiceClient()
+        .from('atendimento_presencial_clientes')
+        .select(SELECT_CLIENTE_BASE)
+        .eq('status', 'ativo')
+        .eq('telefone_normalizado', telefone.telefoneNormalizado)
+        .range(0, 1)
+      if (error) {
+        console.error('[ATENDIMENTO PRESENCIAL CLIENTES] Erro na correspondencia exata:', error)
+        return NextResponse.json({ ok: false, message: 'Não foi possível conferir o telefone. Tente novamente antes de cadastrar.' }, { status: 500 })
+      }
+      const rows = (data ?? []) as unknown as ClientePresencialRow[]
+      // Ambiguidade bloqueia criação; não escolher nem expor uma lista arbitrária.
+      return NextResponse.json({ ok: true, ambiguo: rows.length > 1, clientes: rows.length === 1 ? rows.map((row) => serializarClientePresencial(row)) : [] })
+    }
     const termo = normalizarTermoBusca(url.searchParams.get('q'))
     const telefoneParam = normalizarTermoBusca(url.searchParams.get('telefone'))
     const nomeParam = normalizarTermoBusca(url.searchParams.get('nome'))

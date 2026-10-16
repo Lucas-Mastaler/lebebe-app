@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { buscarVendasSgiPorTelefone, gerarVariacoesTelefoneHistorico } from './historico-cliente'
+import { buscarVendasSgiPorTelefone, gerarVariacoesTelefoneHistorico, resolverTelefoneHistorico } from './historico-cliente'
 
 function builder(result: unknown) {
   const chain = {
@@ -26,6 +26,14 @@ function mockSupabase(queues: Record<string, unknown[]>) {
 }
 
 describe('historico cliente atendimento presencial', () => {
+  it.each(['(41) 91234-7894','+55 (41) 91234-7894','41912347894'])('normaliza %s somente na leitura quando o legado não tem normalizado', (valor)=>{
+    expect(resolverTelefoneHistorico({telefone_informado:valor,telefone_normalizado:null,telefone_normalizado_ddi:null})).toMatchObject({valido:true,telefoneNormalizado:'41912347894'})
+  })
+  it.each(['7894','sem telefone','00123456789','+55 7894'])('não consulta SGI por telefone incompleto %s',(valor)=>expect(gerarVariacoesTelefoneHistorico(valor)).toEqual([]))
+  it('prioriza normalizado existente válido sem modificar o cadastro',()=>{
+    const cliente={telefone_informado:'7894',telefone_normalizado:'41912347894',telefone_normalizado_ddi:null}
+    expect(resolverTelefoneHistorico(cliente).telefoneNormalizado).toBe('41912347894');expect(cliente.telefone_informado).toBe('7894')
+  })
   it('gera variantes historicas com e sem nono digito e DDI', () => {
     expect(gerarVariacoesTelefoneHistorico('4196246875')).toEqual(expect.arrayContaining([
       '4196246875',

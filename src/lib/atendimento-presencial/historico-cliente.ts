@@ -1,4 +1,5 @@
 import { gerarVariacoesTelefone } from '@/lib/digisac/sgi-sync'
+import { normalizarTelefone } from './telefone'
 import { getDepartamentoLabel, getResultadoLabel, type DepartamentoInteresse, type ResultadoAtendimento } from './ficha-schema'
 
 type SupabaseLike = {
@@ -71,10 +72,20 @@ type PagamentoSgiRow = {
 export function gerarVariacoesTelefoneHistorico(telefoneNormalizado: string | null | undefined, telefoneNormalizadoDdi?: string | null) {
   const variacoes = new Set<string>()
   for (const telefone of [telefoneNormalizado, telefoneNormalizadoDdi]) {
-    if (!telefone) continue
-    gerarVariacoesTelefone(telefone).forEach((item) => variacoes.add(item))
+    const normalizado = normalizarTelefone(telefone)
+    if (!normalizado.valido || !normalizado.telefoneNormalizado) continue
+    gerarVariacoesTelefone(normalizado.telefoneNormalizado).forEach((item) => variacoes.add(item))
   }
   return Array.from(variacoes).filter(Boolean)
+}
+
+export function resolverTelefoneHistorico(cliente: { telefone_informado?: string | null; telefone_normalizado: string | null; telefone_normalizado_ddi: string | null }) {
+  // Apenas leitura. Não completar DDD/dígitos nem gravar uma correção inferida.
+  for (const valor of [cliente.telefone_normalizado, cliente.telefone_normalizado_ddi, cliente.telefone_informado]) {
+    const telefone = normalizarTelefone(valor)
+    if (telefone.valido) return telefone
+  }
+  return normalizarTelefone(null)
 }
 
 function agruparPorDocumento<T extends { documento_saida_id: string }>(rows: T[]) {

@@ -1,0 +1,107 @@
+# Decisões — Prancheta Virtual
+
+## D-018 — Correções urgentes e execução autônoma das Entregas 6–7
+
+Em 15/10/2026 o usuário autorizou investigar produção somente em leitura e corrigir localmente navegação, telefone/histórico SGI, criação/autosave e conclusão/reset; depois implementar Entrega 6 e executar toda homologação isolada/sintética possível da Entrega 7. Autonomia para escolhas técnicas e correções dentro do escopo aprovado; bloqueios parciais não interrompem frentes independentes. Sem dados comerciais fictícios em produção, migrations v2 remotas, repair/replay, commits, push, deploy ou abertura dos gates publicados. Correções urgentes devem ser identificadas separadamente para possível publicação anterior à P1. D-017 permanece pendente; autorização não dispensa aprovação visual humana da revisão da Entrega 5.
+
+## D-016 — Entrega 5 autorizada para desenvolvimento local
+
+Em 15/10/2026 o usuário aprovou visualmente o fluxo sintético da Entrega 4 e autorizou exclusivamente a Entrega 5: crianças permanentes, vínculo/parentesco por cliente, correspondência histórica, seleção/reutilização e confirmação explícita atômica/idempotente independente da conclusão. Novas crianças seguem efetivação na conclusão. A Entrega 4 não está integralmente homologada: banco real/finalização v2 pendentes. Sem alterações reais, migrations em produção, deploy, commit, push ou abertura do salvamento v2. Não antecipar Presente/estimativa de nascimento/idade dinâmica da Entrega 6 nem P2/P3. Estruturas preparadas localmente e testes sintéticos não autorizam ativação.
+
+## D-017 — Simplificação da recuperação local pendente
+
+Adendo à Entrega 5 solicita retirar o aviso e botões de cópias locais, preservando autosave e recuperação segura. A investigação confirmou que existem caches sem atendimentoId, anteriores à criação no servidor, cujo único acesso atual são esses controles. Foi proposta ação discreta Recuperar preenchimento, sob demanda e com escolha explícita, sem versões técnicas. O usuário escolheu “Manter esse ajuste pendente por enquanto”. Não ocultar os controles nem recuperar automaticamente uma cópia antiga; preservar proteção atual até nova decisão. Nenhuma ampliação das outras entregas.
+
+Todas as decisões abaixo foram aprovadas pelo usuário em 15/10/2026. Status: APROVADA, salvo indicação explícita diferente.
+
+## D-001 — Execução limitada à P1 por entregas
+
+Sete entregas aprovadas; concluir e validar Entrega 1 antes de avançar. Registrar quatro documentos e índice antes de alterar código/banco. Sem commits, push, publicação ou migrations em produção sem nova autorização. Operações destrutivas não autorizadas.
+
+## D-002 — Unidade e consultora em login compartilhado
+
+Unidade única automática pelas permissões, inclusive após sucesso; múltiplas unidades: limpar seleção. Sempre limpar consultora após sucesso. Não compartilhar preferências entre dispositivos. Rascunhos existentes mantêm autorização e conflitos por versão.
+
+## D-003 — Resultados e lançamento
+
+Venda fechada conserva sim, exige lançamento inteiro 1–999999 e finaliza na primeira tela, sem motivos. Negociação conserva negociacao e perda conserva nao; ambas usam segunda etapa e lista comercial atual compartilhada. Observação complementar opcional até 300 caracteres. Remover revisão, preservar histórico e motivos antigos na edição.
+
+## D-004 — Não cliente e troca de tipo
+
+Oito motivos sem agrupamento, seleção única, conclusão direta sem dados comerciais fictícios. Troca de tipo preserva ramo oculto no rascunho, mas somente ramo ativo é efetivado. Cadastro de cliente anteriormente salvo permanece. Não cliente fora de indicadores comerciais.
+
+## D-005 — Crianças históricas e parentesco
+
+Criar identidade permanente e vínculo com parentesco; antecipar essa estrutura da P2. Sugestões históricas dispensam redigitação. Confirmação explícita salva cadastro/vínculo imediatamente e de modo atômico/idempotente; não depende da conclusão comercial. Preservar origem com correspondência separada. Não unir por nome. Próximos atendimentos não reconfirmam vínculo salvo. Novas crianças preparadas no rascunho seguem efetivação na conclusão.
+
+## D-006 — Presente e idade aproximada
+
+Presente/Já nasceu? pertence à P1 e ao contexto da criança no atendimento. Reutilizar campos. Estimativa DATE no dia 1, derivada da idade e data do atendimento, exibida dinamicamente e distinguida de data real/previsão. Sem backfill histórico especulativo.
+
+## D-007 — Telefone reservado à P2
+
+Opcional na P1. Obrigatoriedade, presente, atendimento misto, recusa e números evidentemente inválidos serão definidos na P2. Não antecipar exigência.
+
+## D-008 — Erros específicos e incidente de lançamento
+
+Mensagem junto a cada campo/grupo, destaque DS, foco/rolagem, limpeza ao corrigir e preservação de dados. Mensagens gerais apenas para operações. Reproduzir incidente dos quatro números válidos e corrigir causa comprovada; não justificar falha com regra inventada.
+
+## D-009 — Compatibilidade e liberação
+
+Migrations aditivas, leitores/escritores compatíveis antes de ativar escrita nova, histórico preservado e recuperação sem rollback destrutivo. Homologação dos quatro caminhos antes de lojas. P2/P3 fora da autorização.
+
+## D-010 — Autorização condicional da migration da Entrega 1
+
+Usuário autorizou exclusivamente 20261015182000_atendimento_presencial_normalizador_entradas.sql em produção, seguida somente de validações SQL de leitura. Exige hash/objeto esperados, alteração restrita, alvo ainda não aplicado, ausência de divergências históricas e recuperação disponível/validada. Qualquer divergência obriga interromper sem aplicar. Sem atendimentos reais alterados, deploy, commit, push ou Entrega 2. Registrar resultado e parar aguardando próxima autorização. Gate histórico não satisfeito: ver STATUS.md.
+
+## D-011 — Correção urgente por SQL direto, sem registro artificial de migration
+
+Em 15/10/2026 o usuário substituiu a preparação isolada pela autorização explícita de corrigir somente o normalizador em produção via SQL direto, preservando hash, assinatura, permissões, demais validações e recuperação. Aplicado em transação; validação somente leitura aprovada. Migration local preservada, com correção de terminador SQL, mas NÃO registrada como aplicada no remoto. Reconciliação futura deve considerar que o corpo novo já está efetivado e impedir execução duplicada. Homologação publicada somente por tentativa real acompanhada ou atendimento de teste autorizado, sem criar dados comerciais fictícios. Sem frontend publicado, outras migrations, repair, commits, push ou Entrega 2.
+
+## D-012 — Encerramento operacional da Entrega 1 e preparação da Entrega 2
+
+Em 15/10/2026 o usuário informou que as lojas validaram em produção a correção SQL e voltaram a finalizar os atendimentos. Autorizou exclusivamente a preparação da Entrega 2, sem commits, push, deploy ou aplicação de migrations em produção. Essa autorização substitui o impedimento de iniciar a Entrega 2 em D-001/D-011, sem dispensar os critérios técnicos ainda não comprovados: causa da mensagem original de lançamento, homologação individual dos três resultados e demais verificações de interface permanecem exceções explícitas. Não impedem a preparação local, mas continuam pendentes para liberação integrada. Reconciliação do histórico é trabalho separado, sem repair ou replay autorizado. Entrega 3 não autorizada automaticamente.
+
+## D-013 — Execução exclusiva da Entrega 3
+
+Em 15/10/2026 o usuário autorizou desenvolver e testar localmente a leitura compatível, detalhe, edição, histórico e filtros da Entrega 3 sobre os contratos preparados na Entrega 2. Sem modificar registros reais, aplicar migrations em produção, ativar fluxos, alterar permissões, executar repair/replay, commit, push ou deploy. Escrita de teste somente sintética e controlada. Preservar os gates anteriores e registrar dependência da homologação futura com banco v2; não iniciar Entrega 4 nem cadastro permanente de crianças. PLANO somente deve mudar se houver alteração de dependências/planejamento.
+
+## D-014 — Entrega 4 autorizada exclusivamente em preparação local
+
+Em 15/10/2026 o usuário autorizou implementar o formulário dinâmico, identificação inicial, oito visitas, três resultados em até duas etapas, observação de não fechamento e erros locais, com avaliação no localhost. Esta autorização permite avançar apesar da homologação integrada pendente das Entregas 2–3; não declara essas pendências encerradas. Preservar bloqueios de conclusão v2, sem migration, escrita comercial fictícia em produção, commit, push ou deploy. Crianças mantêm o fluxo atual; Entrega 5 não autorizada. Reset após sucesso deve limpar consultora e manter unidade somente quando única autorizada; sucesso v2 só pode ser homologado futuramente em banco controlado.
+
+## D-015 — Sugestões de últimas consultoras na Entrega 4
+
+Requisito adicional explícito de 15/10/2026: manter digitação manual e mostrar até quatro nomes distintos, do uso mais recente ao mais antigo, em botões compactos sob “Últimas consultoras”; ocultar área sem histórico. Deduplicar espaços e maiúsculas/minúsculas. Fonte: atendimentos concluídos existentes, exclusivamente do login autenticado e da unidade selecionada/autorizada, sem usar rascunhos. Sugestões podem ser compartilhadas entre dispositivos desse login/unidade; o valor preenchido não é preferência compartilhada, não é selecionado automaticamente e continua vazio em atendimento novo. Clique apenas preenche o campo; não chama conclusão nem acrescenta etapa, preservando o autosave de rascunho já existente. Consulta paginada até quatro distintos ou esgotamento, sem tabela ou migration nova. Esta decisão complementa D-002 somente quanto às sugestões, mantendo os formulários independentes. Não modifica as demais entregas.
+
+## D-019 — Adendo de cadastro de crianças à consolidação P1
+
+Em 16/10/2026 o usuário autorizou incorporar à consolidação P1 vigente a retirada do parentesco geral da interface/cadastro do cliente, as 13 opções padronizadas por criança com atalhos Mãe/Avó/Tia e cartões selecionáveis acessíveis, preservando a confirmação histórica explícita. Sem tarefa paralela, migrations, deploy, commit ou push exclusivamente pelo adendo. Dados históricos preservados. Compatibilidade técnica local: schema real exige parentesco geral; ausência em novo cadastro usa marcador explícito outro / Não informado, sem inferir relação e sem copiá-lo para crianças. Homologação local sintética aprovada; autenticação/banco real e avaliação humana mantêm gates próprios, conforme STATUS.
+
+## D-020 — Ajustes finais de UX incorporados à P1
+
+Em 16/10/2026 o usuário autorizou rolagem/foco de erros de finalização, botões responsivos iguais para crianças, orientação e indicador condicional do lançamento, verificação de telefone existente e detecção segura de telefone duplicado em novo cadastro com ação explícita Usar cadastro existente. Preservar preenchimento, regras, autorização e parentesco por vínculo. Telefone permanece opcional; não iniciar P2/P3. Consulta exata no endpoint autorizado existente e UNIQUE ativo já presente, sem schema/migration. Consolidação local e testes sintéticos não autorizam nem comprovam publicação ou homologação autenticada. Sem migrations, commit, push ou deploy apenas pelo adendo. Resultados e pendências no STATUS.
+
+## D-021 — Preparação final de banco/homologação e aprovação visual da P1
+
+Em 16/10/2026 o usuário informou que realizou a validação visual das duas etapas e autorizou a preparação final de banco, homologação integrada possível e publicação consolidada. Preservar auditorias/código existentes; conferir urgências/Entregas 2–6 e estado real do Supabase somente em leitura; preparar sequência, pré/pós-verificações, recuperação e pontos de parada. Testes fictícios não podem modificar registros comerciais de produção. Sem ambiente controlado, registrar bloqueio exato e preparar procedimentos, sem declarar homologação completa. Não executar migration repair, migrations de produção, commit, push ou deploy sem nova autorização. Não iniciar P2/P3. Pendência futura de atendimento fora da faixa/catálogo registrada literalmente no ESCOPO, sem fluxo/classificação presumidos. Ajustes indispensáveis de build do pacote urgente integrados ao candidato consolidado com comparação de handlers, sem alterar motor ou regras de negócio. Resultado, gates e autorização seguinte em STATUS/PLANO.
+
+## D-022 — Homologação controlada em produção e alternativa de recuperação
+
+Em 16/10/2026 o usuário substituiu a exigência de segundo Supabase/Preview pela homologação diretamente em produção, com uso da Prancheta suspenso pelas lojas, sem presumir suspensão dos demais módulos. Autorizou migrations 2→5→6 condicionadas à identidade, Entrega 1 já efetivada, hashes/estrutura/ACL/dependências e recuperação, verificando cada estágio e parando diante de risco não resolvido. Preservar dois rascunhos v2 e histórico; sem repair, exclusão comercial ou reabertura automática. A ferramenta registra cada novo evento com timestamp atual e ID fonte no nome, sem reconciliar histórico legado.
+
+Após evidência de plano Free sem backup agendado/PITR e pergunta sobre backup manual, usuário respondeu: “nao temos, pode fazer sem backup, ou outra sugestao para resolver rapidamente”. Adotada cópia lógica criptografada do módulo com restauração offline verificada antes do primeiro DDL, limitada às sete tabelas/funções/estrutura; não é recuperação global do projeto. Chave vinculada à máquina/usuário Windows. Resultado: Entrega 2 aplicada/validada, Entrega 5 não aplicada por falha da integração em duas chamadas, Entrega 6 não tentada; detalhes e retomada em STATUS/PLANO.
+
+Preparar publicação para homologação somente após migrations validadas, candidato/build/testes e restrição efetiva de acesso. Apresentar resultados, estado do banco e recuperação antes de pedir autorização específica para commit/push/deploy. Registros de testes claramente identificados devem evitar contaminação comercial; prefixo isolado não comprova exclusão de relatórios. Não modificar atendimentos reais. Homologação real e aceite precedem reabertura das lojas. P2/P3 e reorganização DEV/PROD fora do escopo.
+
+## D-023 — Acesso alternativo autorizado e execução integral das Entregas 5/6
+
+Em 16/10/2026 o usuário autorizou explicitamente método alternativo já disponível e seguro para aplicar 5/6, preservando hashes, transações, recuperação e verificações, sem repetir indefinidamente autenticação falha. Utilizado editor SQL oficial na sessão autenticada do projeto produtivo confirmado, não conexão PostgreSQL direta inventada. Entrega 2 não reaplicada; 5/6 executadas integralmente e validadas via MCP de leitura, integridade histórica e gates false. Cópia criptografada do módulo revalidada offline; não backup integral. Não foram extraídas credenciais nem alteradas autenticação/permissões para obter acesso.
+
+Execução SQL direta não registra automaticamente 5/6 no histórico remoto. Documentar aplicação real/arquivos/hashes e planejar reconciliação futura própria, sem repair, registro artificial, replay ou duplicação de objetos. Não interpretar ausência no histórico como ausência no schema. Entrega 1 também efetivada por SQL direto anteriormente. Publicação e abertura às lojas continuam dependentes de autorizações específicas e homologação real; registros comerciais fictícios continuam proibidos sem controles explícitos de exclusão das operações/relatórios. Candidato de 54 arquivos preservado; gates adicionais UI/API identificados para ativação controlada futura.
+
+## D-024 — Publicação/ativação P1 para homologação pessoal direta
+
+Em 16/10/2026 o usuário autorizou preparar e executar commit/push/deploy da P1 aprovada e habilitar finalização/edição v2 para testar pessoalmente no lebebe.cloud. Sem Preview, novo banco, novas estruturas de homologação ou permissões adicionais; substitui a exigência de allowlist piloto de D-023. Manter permissões/validações e suspensão operacional das lojas, sem declarar reabertura. Gates SQL existentes podem ser ativados coordenadamente com o código; sem migrations novas ou repair.
+
+Teste identificado pelo prefixo HOMOLOGACAO seguido de espaço/nome no campo Consultora (exemplo HOMOLOGACAO Lucas), respeitando validação existente de letras/espaços e máximo 30 caracteres. Excluir da listagem padrão e sugestões recentes, permitir consulta pelo filtro explícito de consultora. Nomes de clientes/crianças de teste identificados e telefone controlado pelo usuário; sem contaminar cadastros reais. Não criar registros automaticamente nem excluir diretamente sem dependências. Extrações externas precisam excluir o marcador; não inventar flag estrutural. Homologação pessoal segue pendente até execução real; publicação não equivale a aceite ou abertura das lojas.

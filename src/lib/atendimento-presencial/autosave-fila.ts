@@ -40,6 +40,10 @@ export function serializarPayloadAutosave(payload: AutosavePayload) {
   const dados = payload.dadosRascunho
   return JSON.stringify(ordenar({
     dadosRascunho: {
+      versaoFluxo: dados.versaoFluxo,
+      tipoAtendimento: dados.tipoAtendimento,
+      motivoVisita: dados.motivoVisita,
+      observacaoNaoFechamento: dados.observacaoNaoFechamento,
       entradasFormulario: dados.entradasFormulario,
       cliente: dados.cliente,
       consultoraNome: dados.consultoraNome,

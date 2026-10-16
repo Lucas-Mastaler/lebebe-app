@@ -1,0 +1,439 @@
+# Status — Prancheta Virtual
+
+Projeto: prancheta-virtual
+Estado: EM_EXECUCAO
+Fase atual: Publicação P1 autorizada e em execução; ativação coordenada para homologação pessoal em produção — D-024
+Atualizado em: 16/10/2026
+
+## Publicação para homologação pessoal — vigente D-024 (16/10/2026)
+
+Usuário autorizou commit/push/deploy da consolidação e ativação UI/API/SQL, sem Preview, outro banco, estrutura adicional de homologação ou novo sistema de permissões. Lojas orientadas a não usar a Prancheta; permissões existentes preservadas, sem barreira técnica piloto adicional por decisão explícita. Não é reabertura operacional às consultoras. Esta decisão substitui os requisitos de allowlist piloto da preparação D-023.
+
+Código: removidos bloqueios temporários v2 no formulário, editor de registros e APIs de conclusão/edição, conservando validações comerciais, autorização, optimistic concurrency e proteção contra downgrade v2→legado. Conclusão exige releitura do mesmo ID em status concluido com versão inteira maior que a anterior; UI só limpa após resposta coerente. Erros/foco/rolagem/autosave preservados. Urgências e Entregas 1–6 do candidato original permanecem incluídas.
+
+Identificação simples dos testes em campo existente: **Consultora = HOMOLOGACAO Lucas** (prefixo HOMOLOGACAO seguido de espaço/nome; somente letras/espaços, até 30 caracteres). Listagem padrão exclui esse prefixo antes da paginação/total e sugestões recentes o ignoram; filtro explícito dessa consultora permite consultar os testes. Clientes/crianças de teste devem ter nomes identificados; usar telefone controlado pelo usuário, sem associar dados fictícios a clientes reais. Não criar registros automaticamente. O marcador depende do preenchimento correto em cada atendimento, inclusive após reset. Consultas SQL/extrações externas devem excluir esse prefixo por conta própria; não há flag estrutural ou exclusão universal no banco. Não apagar dados diretamente.
+
+Validações: 38 arquivos/426 testes aprovados; 14 grupos browser sintético + PostgreSQL efêmero aprovados com componente habilitado (quatro conclusões/reset, 503/422/resposta inconsistente, conflitos/offline/histórico); lint dirigido aprovado. SQL operacional de ativação ensaiado isoladamente, ambos gates true e ACL inalterada. **Build completo final aprovado, exit 0**, Next 16.1.4/webpack, log output/prancheta-p1-build-publicacao.log. Durante a ativação foram corrigidos consumidor restante do gate no editor e tipagem da releitura Supabase, sem relaxar verificações. Envio em andamento; registrar identificação real após conclusão. Não executar migrations novas/reaplicar antigas; ativação em scripts/prancheta/sql/ativar-p1-homologacao.sql altera somente retorno dos dois gates existentes.
+
+Allowlist de publicação: 54 arquivos de fonte/testes/SQL já preparados, com 13 ajustados nesta ativação; quatro arquivos do Harness da Prancheta e três SQLs auxiliares (ativação, recuperação pós-6 e fixture de recuperação Entrega 1 exigida pelo teste de equivalência). **61 arquivos ao todo**. Fixture antiga de recuperação contém preflight próprio e não pode ser executada sobre o estado pós-6. Nenhuma alteração Mere IA/Moriah, AGENTS, dependência, env, output ou script de dados reais incluída. Manifesto local output/prancheta-p1-publicacao-manifesto.json; migrations originais imutáveis. Diff-check encontra somente linha vazia final preexistente no SQL aprovado da Entrega 1, preservada para não alterar hash; sem erro funcional.
+
+Recuperação: versão anterior publicada commit 88b55c30247a358efcec1c4b845a9c135173cf78, deployment dpl_GF51L3RSt16RnopD2SQmZD9LcvLN, lebebe-et1qk6ufs-lebebes-projects.vercel.app. Em incidente, suspender testes e fechar gates com recuperar-entrega6.sql, preservando vínculos/DATEs/dados novos. Não promover código anterior incapaz de interpretar v2 depois de gravações novas sem avaliação; preferir correção compatível. Cópia criptografada D-022 é limitada ao módulo, não backup integral. Histórico SQL direto 1/5/6 permanece sem reconciliação, sem repair.
+
+Homologação autenticada será pessoal do usuário no lebebe.cloud após publicação/ativação. Não cliente; venda fechada; negociação; venda perdida; crianças novas/permanentes/históricas com confirmação; Presente/idade; rascunhos/autosave/recuperação; conclusão única e limpeza. Testar notebook/celular, foco/erros e unidades/perfis existentes. Agente não gravará registros comerciais fictícios. P2/P3/DEV-PROD fora do escopo.
+
+## Retomada das migrations 5 e 6 — registro anterior D-023 (16/10/2026)
+
+**Entregas 5 e 6 aplicadas integralmente e verificadas em produção, sem reaplicar a Entrega 2. Ambos os gates SQL continuam false.** Nenhum commit, push, deploy, liberação às lojas ou teste comercial fictício executado. Esta seção substitui o bloqueio da integração registrado em D-022 abaixo; não declara homologação autenticada concluída.
+
+### Método, preflight e aplicação
+
+Usuário autorizou método alternativo seguro caso a integração continuasse falhando. MCP de leitura funcional; o erro anterior `Invalid or expired requestState` ocorreu no envio DDL, sem evidência de erro SQL. Ambiente local tem apenas URL/chaves de API Supabase, sem conexão PostgreSQL direta configurada ou clientes psql/pg_dump disponíveis. Utilizado **editor SQL oficial do Supabase, na sessão já autenticada**, projeto lebebe.app/ref phsoawbdvhurroryfnok/main PRODUCTION, Primary Database, banco postgres/schema public/usuário postgres. Nenhuma credencial extraída, impressa ou solicitada; nenhum acesso privilegiado adicional criado para viabilizar a conexão. GRANTs/REVOKEs estruturais dos arquivos aprovados preservados. Não foi feita nova tentativa idêntica ao MCP DDL.
+
+Pré-escrita: verificação etapa 2 aprovada via MCP; somente seu evento no histórico, sete tabelas originais, zero transações/locks relacionados, sem estruturas parciais da Entrega 5. Comparação dos 1.090 registros e dois rascunhos v2 aprovada. Cópia criptografada D-022 reaberta e restaurada offline novamente com sucesso, sem mudar seu conteúdo/limitações. Recuperação não destrutiva preparada conserva dados e fecha gates; DDL aprovado é aditivo, com funções compatíveis e sem backfill, transações/lock_timeout 5s/statement_timeout 30s. Não existe backup global/PITR; não presumir recuperação integral do projeto.
+
+- **Entrega 5, fonte 20261015203309: aplicada com sucesso.** Arquivo integral, SHA256 `98db8f5c2899dc489f214bf2414af3d962d68b273e00e35e79395fa437958d72`, comparado ao texto recebido no editor (normalização somente CRLF/LF de transporte). BEGIN→COMMIT preservado, sem fragmentação/edição. Editor retornou Success. No rows returned. `verificar-p1-etapa5.sql`: `etapa_5_verificada_gates_fechados`. Três novas tabelas vazias, nenhum vínculo/histórico inferido; integridade pos5 aprovada antes de avançar.
+- **Entrega 6, fonte 20261015212015: aplicada com sucesso**, somente após validação pós-5. SHA256 `68c7296d3fffcc603389ac621dc5194d2d0c85400a30ed889d2a02b557bfb53f`; comparação integral no editor, transação preservada. Editor retornou sucesso. `verificar-p1-etapa6.sql`: `etapa_6_verificada_gates_fechados`.
+- Pós-final: dez tabelas do módulo; campos de referência DATE nas crianças históricas e cadastro permanente; zero datas históricas/reclassificações artificiais, novos cadastros/vínculos/correspondências vazios. Zero constraints não validadas, índices inválidos ou transações do módulo em andamento. RLS/policies/ACL das sete tabelas originais idênticas ao baseline; novas tabelas/funções/ACL e constraints conferidas pelo verificador 6. Nenhuma FK de entrada de outros módulos encontrada. Escopo DDL limitado ao módulo; não equivale a teste funcional de todos os demais módulos.
+- **Integridade pos6 aprovada:** sete tabelas/1.090 registros originais iguais à cópia anterior, inclusive valores/datas reais e os dois rascunhos v2 completos. Nenhum registro comercial criado/modificado para teste. Ambos gates SQL false.
+
+### Histórico e evidências
+
+Histórico remoto permanece com **89 eventos**: Entrega 2 no evento 20261016143217/p1_entrega2_fonte_20261015185406. Execução pelo editor SQL não registra automaticamente migrations 5/6; **efetivadas no schema, ausentes no histórico**. Entrega 1 continua efetivada por SQL direto. Não executar repair/replay/db push/INSERT manual para cosmética. Reconciliação posterior deve validar equivalência dos objetos/hashes já efetivados e ter autorização própria; pipeline futuro precisa impedir reaplicação desses três arquivos. Não registrar falsamente que foram executados pelo mecanismo de migrations.
+
+Evidências locais sem PII: `output/prancheta-p1-entrega5-producao.png`, `prancheta-p1-entrega6-producao.png`, `prancheta-p1-integridade-pos5.json`, `prancheta-p1-integridade-pos6.json`. Estado final conferido via MCP em 16/10/2026 às 15:08 UTC (12:08 Brasília). Arquivos aprovados e candidato de **54 arquivos**/SHA do patch reconferidos sem divergências. Nenhum código de aplicação alterado nesta retomada.
+
+### Validação técnica desta retomada
+
+- Vitest focal, cron e três grupos procurar-datas: **38 arquivos/420 testes aprovados**.
+- PostgreSQL efêmero: **50 Entrega 2 + 28 Entrega 5 + 21 Entrega 6 aprovados**; testes de referência estimada/persistência/reutilização e preservação do legado sem mutações comerciais remotas.
+- ESLint dos **50 arquivos de código** da allowlist aprovado; diff-check aprovado.
+- Typecheck global: **15 erros, idênticos aos anteriores**, fora do candidato (auth/agente, Hub alertas/teste, agent-bootstrap), sem nova correção fora do escopo.
+- **Build completo de produção aprovado, exit 0**, Next 16.1.4/webpack. Primeira tentativa no sandbox falhou EPERM ao criar .next/server/app/api/matic; repetido com permissão de filesystem adequada, sem alterar código/configuração. Log `output/prancheta-p1-build-pos-migrations.log`. Mantidos avisos preexistentes middleware/proxy/dynamic server usage, sem relaxar typecheck ou ignorar erros.
+
+### Publicação e homologação
+
+Banco preparado e gates fechados. UI `FichaPageClient.tsx` bloqueia conclusão v2 e exibe aviso de prévia. API `fluxoNovoAindaNaoLiberado` bloqueia conclusão/edição; PATCH também rejeita registro com versao_fluxo. Endpoints de clientes/rascunhos/registros mantêm os módulos/janelas/perfis existentes. Aplicar SQL ou abrir somente gates do banco **não** habilita o fluxo completo.
+
+Publicação segue pendente de autorização específica para commit/push/deploy. Antes de um candidato executável para homologação: definir login(s)/unidade(s) piloto e restrição efetiva no servidor/API/UI, preparar habilitação coordenada desses bloqueios e dos gates, e aprovar estratégia que impeça registros de teste de contaminar relatórios. Nenhuma allowlist, exclusão de relatório, nova coluna test flag ou usuário privilegiado presumido/criado. O candidato original de 54 arquivos, ainda bloqueado, é adequado para revisão e não para testar conclusões reais sem essa preparação adicional.
+
+Procedimento de ativação/recuperação e testes humanos está no PLANO D-023. Homologação autenticada, concorrência multiconexão e celular físico continuam pendentes; não confundir SQL somente leitura/fixtures com E2E real. Nenhuma ação manual de acesso ao banco necessária nesta retomada. Não abrir consultoras ou iniciar P2/P3/DEV-PROD.
+
+## Aplicação controlada em produção — registro anterior, D-022 (16/10/2026)
+
+**Entrega 2 aplicada e validada. Entrega 5 NÃO aplicada após duas falhas de comunicação; Entrega 6 NÃO tentada. Publicação e homologação autenticada ainda pendentes.** Esta seção substitui os impedimentos de ambiente isolado e as afirmações de produção não migrada da preparação D-021 abaixo. Lojas suspenderam a Prancheta; demais módulos continuam operando. Sem commit, push, deploy, repair ou liberação de consultoras.
+
+### Backup e autorização
+
+Painel real confirmou plano Free, sem backup agendado/PITR disponível. Usuário informou não possuir backup manual e autorizou prosseguir sem ele ou adotar alternativa rápida. Foi criada alternativa antes do DDL: cópia lógica das sete tabelas do módulo, 1.090 registros, seis funções e metadados de estrutura/constraints/índices/triggers/RLS/policies/ACL. Arquivo privado criptografado: `C:\Users\lebeb\AppData\Local\LeBebe\Backups\Prancheta\p1-2026-10-16T14-28-17.639Z.enc.json`; SHA256 `99a1de8e72ef428c30712362a2fb29df7ae9236d82b10a38aafef9fa076c4abc`. AES-256-GCM, chave DPAPI CurrentUser: recuperação exige esta máquina/usuário Windows. Nenhum dado pessoal em claro ou chave persistido no repositório.
+
+Restauração dos dados/estrutura testada em PostgreSQL/WASM efêmero, com comparação de valores tipados e hashes de funções. Referências externas receberam placeholders somente nesse ensaio. **Não é backup global, PITR ou teste de restauração remota**: não cobre outros módulos, Auth ou Storage. Recuperação produtiva exige janela, dependências externas reais e revisão dos dados posteriores; não importar automaticamente o snapshot sobre produção ativa. Scripts `backup-modulo-p1.mjs` e `verificar-integridade-p1.mjs` em scripts/prancheta; resumo sem PII em `output/prancheta-p1-backup-resumo.json`.
+
+### Preflight e resultado por migration
+
+- Projeto/banco confirmado: `lebebe.app`, ref `phsoawbdvhurroryfnok`, ACTIVE_HEALTHY, PostgreSQL 17.6.1.063. Entrega 1 já corrigida, três hashes/ACL confirmados; não reaplicada. Etapa 0 aprovada em READ ONLY/ROLLBACK antes do DDL. Hashes exatos dos três arquivos aprovados conferidos; sem edição dos SQLs.
+- Sete tabelas originais com RLS e acesso direto anon/authenticated bloqueado. Consulta de dependências não encontrou FKs de entrada externas, views externas ou corpos de funções públicas fora do módulo referindo diretamente esses objetos. Dependências compartilhadas de usuários/unidades preservadas. A cron de limpeza de rascunhos permanece ativa; dois rascunhos v2 ainda não expirados (primeiro vencimento 20/10/2026 19:41:00.825 UTC), preservados integralmente.
+- **Entrega 2 / fonte 20261015185406: sucesso**, aplicada pelo MCP `apply_migration`, evento real `20261016143217`, nome `p1_entrega2_fonte_20261015185406`. A ferramenta atribui a versão atual; ID original conservado no nome. Histórico antigo não alterado; sem registro artificial da Entrega 1.
+- Pós-2: `verificar-p1-etapa2.sql` retornou `etapa_2_verificada_gates_fechados`; RLS/policies/ACL originais sem alteração. 131 atendimentos com colunas novas ainda NULL, sem reclassificação. Comparação das sete tabelas nos campos originais confirmou **1.090 registros e dois rascunhos v2 preservados**, antes e depois das tentativas da Entrega 5.
+- **Entrega 5 / fonte 20261015203309: não aplicada.** Duas chamadas ao MCP, a segunda após revalidar etapa 2, falharam com `Invalid or expired requestState` / `INVALID_ARGUMENT` / `invalid_request_state`. Não houve erro SQL informado. Após ambas: três tabelas permanentes ausentes, nenhum evento da Entrega 5 no histórico e nenhuma execução correspondente ativa. Verificação etapa 2 e integridade novamente aprovadas após a segunda falha. Interrompidas escritas; não fragmentar/alterar SQL ou usar execute_sql para contornar o mecanismo DDL.
+- **Entrega 6 / fonte 20261015212015: não tentada**, dependência 5 não satisfeita. Manter etapa 2 compatível e gate false; recuperação pós-2 está preparada, mas não foi necessária nem executada.
+
+### Código, testes e retomada
+
+Candidato de 54 arquivos e SHA do patch D-021 reconferidos, sem alteração. Gates UI/API permanecem bloqueando v2. Nesta execução: ensaio de restauração local, preflight remoto 0/2, comparação integral de registros originais e conferências de ACL/dependências/histórico aprovados. Sintaxe Node e ESLint dos dois novos scripts de backup/integridade aprovados; git diff --check aprovado. Os 420 testes, 99 verificações SQL isoladas, lint e build aprovados registrados abaixo pertencem à preparação anterior; build/testes essenciais deverão ser repetidos após concluir 5/6 e preparar a restrição de homologação. Nenhum teste comercial fictício gravado em produção; homologação autenticada não executada.
+
+Próximo passo: resolver a falha de estado da integração Supabase e retomar **somente a Entrega 5**, após revalidar etapa 2, hashes, integridade e cópia recuperável; verificar etapa 5 antes de 6, depois etapa 6 e integridade. Autorização das migrations continua vigente, sem exigir nova confirmação para leituras. Antes de publicar: implementar/conferir restrição efetiva de homologação no servidor/UI/APIs, definir como testes serão excluídos dos relatórios sem alterar atendimentos reais, revalidar candidato/build/testes e apresentar resultados/recuperação. **Commit, push e deploy aguardam autorização específica.** Reabrir lojas somente após homologação autenticada dos fluxos/perfis/unidades e aceite explícito. Sem Preview/segundo Supabase, P2/P3 ou reorganização DEV/PROD.
+
+## Preparação final de banco e homologação — registro anterior, D-021
+
+**Código consolidado consistente com gates fechados; build aprovado. Homologação autenticada NÃO concluída; produção NÃO migrada/publicada.** Usuário informou nesta retomada a aprovação visual das duas etapas; o aceite humano visual está registrado, sem convertê-lo em prova de banco/auth/concorrência reais. Esta seção prevalece sobre estados preliminares abaixo.
+
+### Código e candidato
+
+Urgências de criação/retentativa, idempotência, Ver rascunhos, leitura de telefone/SGI e conclusão/reset permanecem incorporadas à P1/Entregas 2–6. A conferência encontrou somente os ajustes indispensáveis de build já existentes no worktree urgente ainda ausentes do checkout principal. Integrados: assinatura `GET(request: Request)` e teste consumidor; remoção de re-export não suportado na configuração procurar-datas; wrappers de rota com exports permitidos pelo Next, mantendo implementações integrais em `handlers.ts` e testes apontando para elas. Comparação programática confirmou **três handlers IDÊNTICOS** aos arquivos anteriores e aos aprovados no pacote urgente. Frente 0/Controle, sem alterar motor, ranking, Apps Script ou regra comercial.
+
+Candidato revisável: `output/prancheta-p1-consolidada.patch`, **54 arquivos**, base `88b55c30247a358efcec1c4b845a9c135173cf78`, SHA256 `8b976e8988d0c17db5c38c36aeaf0d87b1b0df6c778862ab8cbf7693ca65b21c`. Allowlist e SHA por arquivo em `output/prancheta-p1-candidato.json`; reverse-check aprovado, nenhum patch aplicado/commit/stage. Exclui alterações Mere IA/Moriah, env, dependências, logs, Harness e scripts de validação. Inclui os quatro SQLs locais como fonte/teste; **a Entrega 1 NÃO deve ser reaplicada**. Pacote urgente isolado anterior preservado e não regenerado. Candidato ainda bloqueia v2 em UI/API/SQL; não é versão pronta para reabrir lojas.
+
+Arquivos desta preparação: ajustes de assinatura e testes em atendimentos/route; rotas/configuração e handlers/testes de procurar-datas; `scripts/prancheta/preparar-preflight-p1.mjs`, quatro `sql/verificar-p1-etapa{0,2,5,6}.sql`, `validar-legado-p1-browser.mjs`, reforço do `validar-entrega7-browser.mjs`; artefatos locais em output; Harness/índice. Migrations 2/5/6 **sem alteração de conteúdo**. Não houve correção de erros antigos de auth/Hub nem alterações de permissões.
+
+### Supabase real — leitura de 16/10/2026
+
+Projeto `lebebe.app` / `phsoawbdvhurroryfnok`, ACTIVE_HEALTHY, PostgreSQL 17.6.1.063. Confirmados schemas atuais de atendimentos/crianças/clientes, constraints/FKs validadas, UNIQUE ativo de telefone, dependências de autorização (23 campos em oito tabelas), RLS/policies/ACL das sete tabelas do módulo e ACL/search_path das RPCs. Acesso direto anon/authenticated bloqueado; funções normalizar/concluir/editar restritas a postgres/service_role, preservadas como hoje.
+
+- Entrega 1 D-011 permanece efetivada por SQL direto: MD5 prosrc LF normalizador `cd942ee2f2e617ca5a77003b280bfae4`; concluir `d98926eda99ed0390cc9cbce7563c0b0`; editar `ef7d77f3e5417645767a93f8f2b07f7b`. `validar-normalizador-entrega1.sql` executado em transação READ ONLY/ROLLBACK: `normalizador_validado_sem_mutacao`.
+- `verificar-p1-etapa0.sql` executado no remoto com READ ONLY/ROLLBACK: `etapa_0_verificada_gates_fechados`. Hashes/constraints/ACL esperados satisfeitos. Colunas v2/identidade/referência e três tabelas permanentes ainda ausentes; funções de gate ainda **inexistentes** no remoto, não funções true. Serão criadas false pelos SQLs preparados.
+- Snapshot agregado durante leitura: 131 atendimentos (107 concluídos, 24 rascunhos), 109 crianças, zero origem duplicada por atendimento/local_id e zero local_id ausente; oito Presente e quinze já nascidas. Sem conteúdo pessoal extraído. Há **dois rascunhos** com versaoFluxo 2 no JSON (um tipo cliente, outro sem tipo) e quatro payloads com entradasFormulario; nenhuma coluna v2 existe ainda. Não reclassificar/apagar esses rascunhos: retomada dos dois formatos é caso obrigatório na homologação. Contagens não são backup nem invariantes em produção aberta.
+- Histórico: **88 migrations remotas**, sem registros das Entregas 1/2/5/6. Divergências conhecidas mantidas: create_atendimento local `20260715180000` / remoto `20260715184751`; harden local `20260715181000` / remoto `20260715184940`; criancas_presente_data local `20260722203000` / remoto `20260722225810`. Sem repair, replay, db push, DDL ou registro artificial de histórico.
+
+### Testes e verificações atuais
+
+- Vitest: `node node_modules/vitest/vitest.mjs run src/lib/atendimento-presencial src/app/api/atendimento-presencial src/app/api/cron/atendimento-presencial-limpar-rascunhos src/app/api/procurar-datas/pesquisar src/app/api/procurar-datas/progresso src/app/api/procurar-datas/v2/comparar --pool=threads`: **38 arquivos / 420 testes aprovados**.
+- SQL efêmero: `validar-entrega2.mjs`, `validar-entrega5.mjs`, `validar-entrega6.mjs`, com runtime PGlite já existente: **50 + 28 + 21 verificações aprovadas**, incluindo contratos legados, gates, rejeições, identidade, referências, transações e recuperação. Sem conexão remota.
+- `preparar-preflight-p1.mjs`: sequência exata de aplicação 0→2→5→6 aprovada em PostgreSQL/WASM, gerando quatro verificações somente leitura de hashes/constraints/colunas/RLS/ACL/gates e manifesto `output/prancheta-p1-preflight.json`. A fixture base capturava corpos, sem ACL; foi completada com a ACL real conferida, sem relaxar validações.
+- Browser urgente no consolidado: criação 503/retentativa com mesmo draftClientId, navegação à aba de rascunhos durante POST e um único POST aprovados (`validar-urgentes-browser.mjs`).
+- O smoke `validar-urgentes-legado.mjs`, exclusivo da UI antiga no pacote urgente, deu timeout procurando “Concluir atendimento”, inexistente na P1. Não é aprovação desse script no consolidado. Substituição dirigida `validar-legado-p1-browser.mjs` aprovada em 390×900 e 1366×900: rascunho sem versao/tipo, etapa antiga revisão, consultora/cliente/observações/produto/motivo preservados após escolha explícita de Cliente, navegação em duas etapas e gate bloqueando POST.
+- `validar-entrega7-browser.mjs`: **14 grupos aprovados** no candidato final, com quatro fluxos persistidos em PostgreSQL efêmero, erros HTTP 503/422 e 200 com ID/status inválidos sem sucesso falso, foco/retentativa/reset, isolamento de contextos, conflito entre abas, offline/cache/resposta perdida, histórico confirmado sem conclusão e reutilizado sem reconfirmação. Zero erros JS; APIs/autenticação parcialmente substituídas, não é E2E Supabase.
+- **Build completo aprovado, exit 0**: Next 16.1.4 `next build --webpack`, variáveis de `.env.local` carregadas somente em memória pelo processo Node, sem copiar/exibir secrets. Log `output/prancheta-p1-build.log`. Sem ignoreBuildErrors/mudança de tsconfig/next.config. Logs de dynamic server usage e aviso middleware/proxy já existentes não impediram o build; não corrigidos fora do escopo.
+- ESLint dirigido e diff-check aprovados. Typecheck global mantém **15 erros preexistentes** em testes auth/agente, Hub alertas/teste e agent-bootstrap; nenhum no código consolidado alterado. Log `output/prancheta-p1-typecheck.log`.
+
+### Bloqueio externo, sequência e autorização seguinte
+
+MCP: único projeto Supabase acessível e **zero branches**; Vercel `lebebe-app` sem deployments Preview; env com decrypt=false retorna **403 forbidden**, CLI Vercel não instalada. Nenhum ambiente com autenticação real e banco controlado verificável disponível; não foram criados Preview/branch nem registros fictícios no banco produtivo.
+
+Runbook completo com arquivos exatos, hashes, verificações pré/pós, pontos de parada, recuperação por estágio, matriz autenticada e condições de reabertura está na seção **Preparação final de banco e homologação P1** do PLANO. Ordem preparada: validar Entrega 1 → verificar etapa0 → migration2 → verificar etapa2 → migration5 → verificar etapa5 → migration6 → verificar etapa6 → conferir histórico; sempre gates fechados. Entregas 1 e antigas divergências **não** são reaplicadas. Nenhum SQL de aplicação/recuperação foi executado remotamente.
+
+Próxima autorização necessária: disponibilizar/provisionar **ambiente isolado comprovado**, com credenciais/configuração acessíveis de forma segura e Preview, autorizar aplicação 2→5→6 somente nele e habilitação restrita dos bloqueios de aplicação/SQL para homologação. UI/API têm bloqueios explícitos além dos gates SQL; aplicar migrations sozinho não libera conclusão/edição. Homologação real segue pendente para todos os fluxos, perfis/unidades, concorrência multiconexão e celular físico.
+
+Somente após homologação e aceite final: novas autorizações para janela produtiva, estratégia explícita de registro das novas migrations apesar do histórico divergente (sem repair/replay), banco, commit/push/deploy e abertura coordenada dos gates. Não promover UI de prévia bloqueada às lojas em operação. Pendência futura de público fora da faixa/catálogo registrada no ESCOPO sem solução presumida; P2/P3 não iniciadas.
+
+## Adendo P1 — ajustes finais de UX (16/10/2026)
+
+**Implementado e aprovado localmente; avaliação visual das duas etapas aprovada pelo usuário em D-021; homologação autenticada pendente.** Mesma consolidação/checkout, sem P2/P3, migrations, commit, push ou deploy.
+
+- Finalização agora revela/foca o campo inválido ou o alerta geral, em ambas as etapas e nos três resultados comerciais. Foco com preventScroll, rolagem centralizada com margens para cabeçalho/rodapé fixos; preservada navegação por Tab. Acionamento exclusivo da tentativa/retorno de erro, sem efeito de rolagem ligado ao autosave. Conflito tem alvo próprio como alternativa ao alerta geral.
+- Causa adicional confirmada por screenshot e código: `aplicarRascunhoSalvo` limpava `erro` após o autosave, apagando o bloqueio v2 logo depois de aparecer. Erro de conclusão separado dos avisos operacionais; permanece após salvar rascunho, sem nova rolagem, e limpa em nova tentativa/navegação/reset explícitos. Gate v2 preservado, sem liberar conclusão real.
+- Botões Crianças cadastradas/Cadastrar nova criança em grid: mesma largura, 100% quando empilhados no celular, gap consistente e mínimo 48px, usando Button DS.
+- Lançamento mostra “Obrigatório somente quando a venda for fechada.”; asterisco somente no resultado sim. Validação e faixa existentes preservadas; telefone continua opcional.
+- Telefone existente: leitura de código confirmou API/serialização → cliente selecionado → campo rápido, com proteção da edição manual pendente. MCP somente leitura confirmou campos reais e índice UNIQUE de telefone normalizado ativo; contagem agregada encontrou 92 ativos com informado e normalizado, zero somente-normalizado. Não comprovado defeito real no carregamento e nenhum cadastro corrigido. Fixture antes sem telefone foi enriquecida para testar o caso com dado disponível; isso não é homologação autenticada.
+- Novo cliente: GET existente ganhou `telefoneExato`, protegido pelo mesmo módulo/janela, com normalização e igualdade por telefone ativo; nunca busca parcial nem consulta incompleto. Limita a dois resultados e não expõe lista em ambiguidade. Consulta após 500ms, cancelamento e descarte de respostas obsoletas, prazo 20s; nova conferência ao cadastrar. Duplicado apresenta “Usar cadastro existente”, sem seleção automática. Falha/ambiguidade impedem criação; eventual corrida tratada pelo POST/índice UNIQUE já existentes agora também exige escolha explícita. Preservados nome digitado até escolha, observações, lançamento, departamentos/produtos e proteção contra transportar crianças de outro cliente. Inputs bloqueados durante cadastro; resposta de outro contexto não é aplicada.
+
+Validações deste adendo:
+- `node node_modules/vitest/vitest.mjs run src/lib/atendimento-presencial src/app/api/atendimento-presencial --pool=threads`: **33 arquivos / 366 testes aprovados**. Quatro novos testes de telefone exato: normalização/DDI/igualdade, incompleto/ambiguidade, autorização e falha de consulta.
+- `node scripts/prancheta/validar-ux-final-p1-browser.mjs`: **390×900 e 1366×900**, Edge/HTTP sintético. Foco de campo e Tab; erro geral/bloqueio v2 visível inclusive após autosave; sem rolagem repetida; duas etapas/três resultados; margens verificadas com cabeçalho fixo simulado 96px e barra real; botões iguais/48px; orientação e asterisco; telefone existente e edição manual; pausa na consulta, incompleto, duplicado com ação explícita, ambiguidade, 503 sem criação, resposta atrasada e corrida no POST; rascunho/reabertura preservados. Zero erros JavaScript. JSON/PNGs `output/prancheta-ux-final-*`, screenshots inspecionados.
+- `node scripts/prancheta/validar-entrega7-browser.mjs`: **14 grupos de integração isolada aprovados no estado final**, incluindo resposta HTTP 503 com foco no alerta, resposta HTTP 422 com foco no lançamento preservado, retentativa/conclusão/reset, concorrência por versão, offline/resposta perdida e histórico reutilizado. PostgreSQL/WASM efêmero e autenticação substituída; não equivale a Supabase real.
+- ESLint dirigido, sintaxe do script e diff-check aprovados. Typecheck global mantém **15 erros preexistentes** fora do escopo, nenhum nos arquivos alterados. Log local `output/prancheta-ux-final-typecheck.log`. Build completo não repetido neste adendo.
+
+Prévia atualizada em http://127.0.0.1:3205/?modo=cliente (recarregar a aba já aberta). Reiniciado exclusivamente o harness sintético da prévia; restante do trabalho e pacote urgente preservados. Próximo passo: avaliação visual humana e continuidade da consolidação com os gates vigentes; celular físico, autenticação/API/Supabase reais continuam não homologados.
+
+## Adendo P1 — cadastro de crianças (16/10/2026)
+
+**Implementado e validado localmente; avaliação visual humana disponível.** Incorporado ao checkout da P1, sem tarefa paralela nem alteração do pacote urgente isolado. Gates de homologação autenticada e publicação preservados.
+
+- Cliente vinculada, busca e Nova cliente sem parentesco geral. Cadastro envia somente nome/telefone; seleção não copia parentesco geral para ficha/crianças. Histórico e compatibilidade de rascunhos preservados.
+- MCP somente leitura confirmou `atendimento_presencial_clientes.parentesco` NOT NULL, sem default, e Outro exigindo complemento. Validador passa a aceitar ausência, representada explicitamente por `outro` / `Não informado` somente nos campos legados exigidos pelo schema, sem inferir relação familiar nem transferir esse marcador às crianças. Payloads legados explícitos mantêm validações/complemento. Sem migration, mudança de constraint ou atualização de cliente existente.
+- `ParentescoCriancaField` compartilhado por criança nova e confirmação histórica, com Select da família DS, FormField e Button: Mãe, Pai, Avô, Avó, Tio, Tia, Irmão, Irmã, Padrinho, Madrinha, Amigo, Amiga, Outro. Sugestões rápidas permanentes Mãe/Avó/Tia usam o mesmo callback da lista; sem entrada livre. O vínculo da criança não tinha complemento específico de Outro: preservado como valor Outro, sem campo inventado. Valores históricos preservados.
+- Cartões históricos e permanentes com um único botão nativo cobrindo toda a superfície, foco visível e indicação Selecionar. Histórico abre confirmação e foca nome, sem gravar vínculo. Repetir clique não reinicia preenchimento. POST continua exclusivo de Confirmar cadastro com proteção emCurso original. Permanente reutiliza vínculo já existente.
+
+Validações:
+- Vitest: `node node_modules/vitest/vitest.mjs run src/lib/atendimento-presencial src/app/api/atendimento-presencial --pool=threads` — **33 arquivos / 362 testes aprovados**, incluindo cadastro API sem parentesco geral com compatibilidade do schema legado (mock, sem escrita real).
+- `node scripts/prancheta/validar-adendo-p1-browser.mjs` — Edge **390×900 e 1366×900**: cliente sem parentesco; cadastro envia só nome/telefone; 13 opções na ordem; três atalhos; alteração posterior; Outro; toque/Enter; zero POST antes da confirmação; um POST com duplo clique; autosave/reabertura; sem overflow nem erros JavaScript. Evidências JSON/PNG em `output/prancheta-adendo-p1-*`.
+- `node scripts/prancheta/validar-entrega5-browser.mjs` — regressão aprovada nos dois tamanhos: cartões permanentes/históricos, homônimos, retirada sem exclusão, troca de cliente e reabertura. Scripts 5/6/7 adaptados à lista, sem mudança de contratos das fixtures.
+- `node scripts/prancheta/validar-entrega7-browser.mjs` — **14 grupos aprovados** em HTTP sintético + PostgreSQL/WASM efêmero: quatro conclusões/reset, falha, contextos independentes, conflito, offline/recarga/resposta perdida e histórico reutilizado sem reconfirmação. Não equivale a Supabase/autenticação reais.
+- ESLint dirigido e diff-check aprovados. Typecheck mantém **15 erros fora do escopo** nos testes auth/agente, Hub alertas/teste e agent-bootstrap já registrados; nenhum nos arquivos do adendo. Build completo não repetido neste adendo.
+
+Prévia atualizada: http://127.0.0.1:3205/?modo=cliente. Reiniciado somente seu harness sem watch. Dados/APIs sintéticos; celular físico, Supabase e autenticação reais não homologados. Sem migrations, deploy, commit ou push. Próximo passo: avaliação visual humana e continuidade da consolidação P1, preservando os gates abaixo.
+
+## Liberação urgente isolada — resultado vigente de 16/10/2026
+
+**Candidato tecnicamente preparado: build completo aprovado. Homologação autenticada PENDENTE/BLOQUEADA; publicação não autorizada.** Esta seção prevalece sobre os resultados preliminares das urgências abaixo. Sem commit, push, deploy, migration, repair ou alteração de registros reais.
+
+Worktree preservado: C:\Users\lebeb\.codex\worktrees\prancheta-urgentes\le-bebe. Base 88b55c30247a358efcec1c4b845a9c135173cf78, deployment de produção verificado na revisão anterior. Fontes P1/Entregas 2–7 do checkout principal preservadas; nenhuma nova entrega iniciada ou homologada. Adendo de cópias locais permanece pendente.
+
+### Causa e correções indispensáveis de build
+
+1. src/app/api/atendimento-presencial/atendimentos/route.ts: valor default inferia Request | undefined na assinatura GET. Next.js 16.1.4 exige Request/NextRequest. Alteração mínima: GET(request: Request); teste que usava GET() passou a fornecer Request. HTTP normal já fornece Request; filtros, autorização e consulta preservados. Problema confirmado com git show HEAD, anterior ao patch.
+2. src/app/api/configuracoes/procurar-datas/[chave]/route.ts: removido somente re-export CHAVES_EDITAVEIS_FASE3, rejeitado pelo validador Next. Import e uso interno preservados; consumidores reais já importam de lib/procurar-datas/chaves-editaveis.
+3. Rotas procurar-datas/pesquisar, progresso e v2/comparar: helpers exportados também bloqueavam Next. Implementação integral transferida a handlers.ts adjacente; route.ts mantém apenas métodos HTTP e runtime/maxDuration originais. Testes importam handlers. Comparação automatizada contra git show HEAD confirmou três handlers IDÊNTICOS ao commit-base. Sem mudar motor, ranking, timeout, Apps Script, configurações, permissões ou regras comerciais. Frente 0/Controle; não é avanço do motor nem da P1.
+
+### Validações executadas no candidato
+
+- Vitest final: **30 arquivos / 291 testes aprovados**. Comando: node node_modules/vitest/vitest.mjs run src/lib/atendimento-presencial src/app/api/atendimento-presencial src/app/api/cron/atendimento-presencial-limpar-rascunhos src/app/api/procurar-datas/pesquisar src/app/api/procurar-datas/progresso src/app/api/procurar-datas/v2/comparar --pool=threads.
+- ESLint dirigido de todos os arquivos alterados/adicionados aprovado; git diff --check e git apply --reverse --check do pacote final aprovados.
+- Typecheck standalone: mesmos **15 erros preexistentes** em testes auth/agente, Hub alertas/teste e agent-bootstrap. Nenhum erro novo no pacote. Não foram corrigidos indiscriminadamente, excluídos ou ignorados: etapa TypeScript do build Next passou sem exigir mudanças nesses arquivos.
+- **Build completo de produção aprovado, exit 0**, com next build --webpack. Turbopack não aceita a junction de node_modules externa ao root; configuração de publicação não alterada. Primeiro build após correções de código parou na coleta de dados por falta de RESEND_API_KEY no worktree sem env. Reexecução carregou .env.local do checkout principal apenas em memória com process.loadEnvFile e subprocesso Node; sem copiar/exibir credenciais. A tentativa --env-file foi substituída porque Next propagava argumento incompatível aos workers. Sem ignoreBuildErrors nem mudanças em next.config/tsconfig. Logs locais: build-urgentes.log e typecheck-urgentes.log, fora do pacote.
+- Edge sintético reexecutado: criação 503 preserva preenchimento; retentativa conserva draftClientId; Ver rascunhos aguarda única criação/POST e navega à aba correta. Conclusão 503 ou status inválido não exibe sucesso; confirmação válida limpa consultora; nova edição remove sucesso e permite novo rascunho. Zero erros JavaScript. Scripts validar-urgentes-browser e validar-urgentes-legado no worktree, fora da publicação.
+
+### Homologação em Preview e limites
+
+MCP Vercel list_deployments target=preview retornou zero deployments. Consulta de metadados de env, decrypt=false, retornou **403 forbidden**. Fallback indicado pela ferramenta não disponível: Get-Command vercel não encontrou CLI instalada. Sem Preview existente e sem configuração verificável, não foi possível comprovar banco controlado separado de produção. Nenhum Preview criado, nenhum bootstrap na produção, nenhuma autenticação real nem escrita fictícia realizada.
+
+Pendentes em Preview autenticado com banco controlado: aba de rascunhos, criação, recuperação após falha, retentativa, finalização/reset, mensagens antigas, histórico SGI real e mesmo login em dois dispositivos. Respostas atrasadas e offline/recarga no legado também precisam dessa homologação. Testes sintéticos/com mocks não equivalem a integração autenticada ou prova de concorrência real.
+
+Compatibilidade preservada: sem SQL/migrations/contratos v2; campos telefone_informado/normalizado/DDI e UNIQUE draft_client_id foram confirmados via MCP na revisão anterior. Telefone derivado somente em leitura; nenhum cadastro corrigido automaticamente. Autosave/cache/idempotência mantidos. Hashes SQL antigos não são preflight vigente; não executar replay/repair.
+
+### Pacote final e liberação
+
+scripts/prancheta/urgentes-producao.patch — SHA256 9EFDF4273D83BE7D9C91F1F3AD7E742EA8629AEEBCE014C0F71918263DE5EF64. Exportador exportar-urgentes-isolados.mjs contém allowlist explícita. O gerador preliminar antigo não deve sobrescrever o artefato revisado. **20 arquivos: sete urgentes e treze ajustes indispensáveis de build/testes.** Handlers v2/comparar são código já existente na base publicada, não funcionalidades novas da P1. Scripts, logs, .env, node_modules, migrations, Harness e demais diffs locais não entram na publicação.
+
+- `src/app/api/atendimento-presencial/atendimentos/route.test.ts`
+- `src/app/api/atendimento-presencial/atendimentos/route.ts`
+- `src/app/api/atendimento-presencial/clientes/[id]/historico/route.ts`
+- `src/app/api/configuracoes/procurar-datas/[chave]/route.ts`
+- `src/app/api/procurar-datas/pesquisar/route.test.ts`
+- `src/app/api/procurar-datas/pesquisar/route.ts`
+- `src/app/api/procurar-datas/progresso/route.test.ts`
+- `src/app/api/procurar-datas/progresso/route.ts`
+- `src/app/api/procurar-datas/v2/comparar/route.post.test.ts`
+- `src/app/api/procurar-datas/v2/comparar/route.test.ts`
+- `src/app/api/procurar-datas/v2/comparar/route.ts`
+- `src/app/atendimento-presencial/prancheta/FichaPageClient.tsx`
+- `src/components/atendimento-presencial/HistoricoClienteModal.tsx`
+- `src/lib/atendimento-presencial/historico-cliente.test.ts`
+- `src/lib/atendimento-presencial/historico-cliente.ts`
+- `src/lib/atendimento-presencial/requisicao-limitada.ts`
+- `src/lib/atendimento-presencial/requisicao-limitada.test.ts`
+- `src/app/api/procurar-datas/pesquisar/handlers.ts`
+- `src/app/api/procurar-datas/progresso/handlers.ts`
+- `src/app/api/procurar-datas/v2/comparar/handlers.ts`
+
+Próximo passo: disponibilizar acesso à configuração do projeto ou Preview do candidato com banco controlado verificável; concluir homologação autenticada. Reconfirmar SHA de produção no momento da integração e revalidar caso mudou. Somente após aprovação explícita fazer commit/push/publicação exclusiva do pacote. Não usar diff integral da P1. Nenhuma configuração de produção precisa ser alterada para as correções de código; P1 continua com gates próprios e sem encerramento.
+
+## Execução vigente — D-018
+
+Resultado vigente: trabalho local possível implementado/validado, com patch urgente independente e gates publicados fechados. Não declarar P1 homologada integralmente nem correções aplicadas nas lojas. Nenhum commit, push, deploy, repair, migration remota ou registro real alterado. Avaliação visual humana da Entrega 5 refinada e da Entrega 6 continua pendente.
+
+### A. Correções urgentes — diagnóstico e resultado
+
+- **Ver rascunhos:** destino original já era `/atendimento-presencial/registros?tab=rascunhos`; Registros lê `tab` e respeita abas autorizadas. Causa concreta reproduzida: clique durante criação era rejeitado pela proteção de dados em vez de aguardar a mesma criação. Agora compartilha a Promise de criação, aguarda e sincroniza antes de navegar; falha mantém o formulário e informa erro. O harness antigo também ignorava push/replace; sua instrumentação foi corrigida. Teste verifica destino e parâmetro; redirecionamento Next autenticado da loja ainda não comprovado.
+- **Telefone final 7894:** leitura dirigida encontrou um cadastro ativo com informado/normalizado coerentes e 11 dígitos. A mensagem relatada não foi reproduzida no estado atual; não modificar o cadastro. Fragilidade comprovada: histórico consultava somente os campos normalizados, sem aproveitar telefone original válido em legado; gerador compartilhado aceitava trechos curtos. Correção local usa normalizador do módulo antes das variantes e deriva somente em leitura quando houver telefone válido. Número incompleto continua sem consulta; mensagem pede conferir DDD/número. Sem completar dígitos, gravar telefone ou alterar gerador global DigiSac. Testes usam números sintéticos. Causa histórica específica permanece não confirmada.
+- **Aguardando criação/início:** código tinha tentativa automática única por unidade/nome e botão de retentativa que não fazia nada sem rascunho ativo. Reproduzidos 503 e retentativa. Nova criação é compartilhada, mantém draftClientId, tem prazo de 20s e permite repetir explicitamente ou ao retornar online. GET inicial, PATCH, conclusão e histórico também têm prazo de requisição. Erro mantém formulário/cache; não libera saída em caso de falha. Não há loop automático ilimitado.
+- **Sucesso com dados antigos:** não foi possível reproduzir a sessão histórica da loja. Lacunas confirmadas na conclusão publicada: não limpava novoCliente/estado do telefone/identificadores de tentativa, nem invalidava respostas antigas de cliente/telefone; sucesso podia continuar visível durante nova edição. Corrigidos reset complementar, invalidação, parâmetro antigo encerrado e limpeza da mensagem ao editar. Sucesso exige resposta ok, mesmo ID e status concluido. Quatro fluxos SQL integrados isolados provaram conclusão/reset e novo atendimento limpo; falha simulada preservou dados sem mensagem de sucesso.
+- **Causa comum:** há relação técnica entre criação/retentativa e navegação protegida, e lacunas próprias no reset. Não há evidência para atribuir todos os relatos, especialmente o telefone, a uma única causa.
+
+Publicação antecipada: `scripts/prancheta/urgentes-producao.patch`, gerado por `preparar-patch-urgente.mjs` contra HEAD publicado 88b55c3. Inclui FichaPageClient, HistoricoClienteModal, histórico cliente/API/testes e requisicao-limitada/testes. Artefato passou git apply --check em cópia temporária do HEAD e transpile sintático; não contém contratos v2. Não aplicar o diff inteiro do workspace para liberar só urgências. Candidato revisável para aprovação/publicação separada; homologação autenticada nas lojas ainda necessária. Patch não aplicado.
+
+### B. Entrega 6 — implementação local
+
+- Opção renomeada para Presente, mantendo código técnico presente_outra_pessoa; Já nasceu? explícito Sim/Não reutiliza idade e previsão, também no editor. Troca de ramo limpa campos incompatíveis. Sem transformar Presente em tipo principal.
+- Idade aproximada deriva primeiro dia do mês da data de início do atendimento no fuso America/Sao_Paulo. Referência é preservada na reutilização; idade exibida muda pela data de consulta, inclusive além das faixas de entrada. Exemplo 15/10/2026 + 3 meses → 01/07/2026; consulta maio/2027 → aproximadamente 10 meses. Um ano → 01/10/2025; novembro/2027 → aproximadamente 2 anos.
+- Migration local 20261015212015_atendimento_presencial_presente_idade_aproximada.sql: DATE nullable data_referencia_nascimento no retrato e cadastro permanente, boolean nullable presente_ja_nasceu no retrato; constraint antiga ampliada somente para o ramo explícito Presente/nascido. Preflight por hashes de funções/constraint, dependências 2→5→6 e gates fechados. Sem backfill. Prévia/rascunho usam campos opcionais; normalizador SQL preserva legado. Presente fica no retrato do atendimento; cadastro permanente guarda situação de nascimento/gestação sem carregar o contexto de presente para visitas posteriores.
+- Conclusão calcula referência nova no servidor pela data real do atendimento; seleção permanente busca a DATE já salva, impedindo deslocamento por nova abertura ou valor enviado pelo cliente. Histórico sem referência continua sem data inventada. Previsão não vira nascimento real; schema atual não possui coluna de nascimento real a sobrescrever. Editor/leitores/snapshots preservam referência e flags; editor antigo não apaga os opcionais. Confirmação histórica solicita nascimento quando necessário, sem inferir idade atual da idade antiga.
+- Recuperação não destrutiva em scripts/prancheta/sql/recuperar-entrega6.sql fecha gates, conserva DATEs/identidades/histórico. Testada somente isoladamente.
+
+Arquivos desta rodada: FichaPageClient.tsx, CriancasCadastradas.tsx, RegistrosPageClient.tsx, HistoricoClienteModal.tsx; lib/atendimento-presencial/{ficha-schema,registros,criancas-permanentes,historico-cliente,idade-aproximada,requisicao-limitada}.ts e testes relacionados; API clientes/[id]/historico/route.ts; migration Entrega 6; scripts/prancheta/{preparar-entrega6,validar-entrega6,validar-entrega6-browser,banco-sintetico-p1,homologar-entrega7,validar-entrega7-browser,validar-urgentes-browser,preparar-patch-urgente}.mjs, SQL fonte/recuperação e patch; extensão do harness sintético Entrega 4; Harness deste projeto. Mudanças anteriores preservadas. Sem alteração do escopo P1/P2/P3 ou log congelado.
+
+### C. Entrega 7 — evidências e limites
+
+- Suíte focal: 34 arquivos / 365 testes aprovados (domínio e APIs com mocks), incluindo telefone/normalização, prazo finito, idade/fuso/virada do ano, Presente, datas inválidas, legado e suítes anteriores. `node node_modules/vitest/vitest.mjs run src/lib/atendimento-presencial src/app/api/atendimento-presencial src/app/api/cron/atendimento-presencial-limpar-rascunhos --pool=threads`.
+- SQL isolado PGlite: Entrega 2 mantém 50 verificações; Entrega 5 mantém 28; Entrega 6 tem 21, incluindo DATE correta, Presente/nascido/gestação, edição, reutilização sem deslocamento, legado sem backfill e recuperação com preservação de dados. Testes usam fixture das dependências; não é execução remota.
+- Browser urgente: 503 na criação, botão de retentativa sem ativo, mesma identidade, preservação e destino/aba correta; clique durante POST pendente resulta em somente um POST. `validar-urgentes-browser.mjs` aprovado.
+- Browser Entrega 6: Presente/Sim e Não, idade/previsão compartilhadas, referência exibida, limpeza de ramo incompatível, sem overflow e sem erro JavaScript em 390x900/1366x900. `validar-entrega6-browser.mjs` aprovado; PNGs output/prancheta-entrega6-*.
+- Integração isolada `validar-entrega7-browser.mjs`: 14 grupos aprovados. Componente real → HTTP adaptador de fixture → RPCs reais em PostgreSQL/WASM efêmero. Quatro fluxos persistidos, falha de conclusão sem sucesso falso/perda, reset e atendimento seguinte, reset de unidade única/múltipla, dois contextos do mesmo login independentes, duas abas com conflito e sem sobrescrita, offline/cache/recarga de rascunho identificado, PATCH com resposta perdida/rebase e confirmação histórica independente reutilizada em novo contexto sem reconfirmação/data inventada. Zero erros JavaScript. JSON/PNGs em output/prancheta-entrega7-*.
+- O adaptador HTTP substitui autenticação, APIs de cadastro/consulta e parte da autorização da aplicação; as funções SQL mantêm suas verificações. Gates são habilitados somente no banco efêmero e transform do componente nesse processo de teste; código/API/SQL preparados para publicação continuam bloqueados. Não apresentar como E2E autenticado Supabase.
+- ESLint dirigido aprovado; git diff --check dirigido e sintaxe dos scripts aprovados. Typecheck global continua com 15 erros preexistentes em auth/agente/route.test.ts, hub-vendas/alertas/teste/route.test.ts e agent-bootstrap.test.ts; nenhum erro nas alterações desta rodada. Build Next de produção local aprovado com exit 0; primeira tentativa falhou por download de fontes no sandbox, repetição com rede passou. Logs de static/dynamic render de outras rotas não impediram build e não foram alterados.
+- Produção consultada somente em leitura. Logs de erro/warning dos últimos 30 minutos não retornaram ocorrências do módulo; 24h indisponível pela retenção. Nenhum Preview READY encontrado. CLI Docker existe, mas daemon local indisponível; sem Postgres/psql local. Concorrência PGlite é serializada e não comprova locks multiconexão reais.
+
+### D. Próxima ação e bloqueios reais
+
+1. Revisar/liberar separadamente o patch urgente contra o HEAD verificado, mediante autorização de commit/deploy. Confirmar na sessão real da loja navegação, criação/retentativa e sucesso/reset; obter horário/rascunho do relato se persistir. Telefone investigado não precisa ser alterado com a evidência atual.
+2. Avaliação humana da prévia da P1. Prévia segura em http://127.0.0.1:3205/?modo=cliente continua sem conclusão; ?modo=sem-criancas para formulário novo. Integração SQL local executável via `node scripts/prancheta/homologar-entrega7.mjs`; porta 3207 e banco efêmero, sem credenciais reais. Aprovação visual humana não registrada automaticamente.
+3. Homologação autenticada com banco controlado atualizado e dados sintéticos, incluindo APIs reais, autorização/janelas/unidades, cadastro de cliente real controlado, múltiplas conexões, revogação de acesso, conflitos e resposta perdida na conclusão. Não criar banco de produção nem usar dados comerciais fictícios na produção.
+4. Migrations 2→5→6 exigem autorização antes de produção e novos preflights no momento. Nunca executar db push/replay/repair devido ao histórico divergente. Abrir gates e publicar P1 somente após homologação integrada e aprovação; autorização de migration não basta.
+
+Veredito: preparação técnica local das Entregas 6–7 e correções urgentes concluída na extensão validável; P1 NÃO homologada integralmente/liberada para lojas. Pendências externas e validação visual mantidas, D-017 preservada, P2/P3 fora do trabalho.
+
+Evidência de retomada: produção Vercel READY no commit 88b55c30247a358efcec1c4b845a9c135173cf78, igual ao HEAD consultado; alterações locais P1 não publicadas. MCP confirmou esquema legado e hashes preservados. Resultado vigente e limitações estão nas seções A–D acima.
+
+As lacunas iniciais de criação/retentativa/navegação/reset foram corrigidas localmente e reproduzidas nos testes acima. Não atribuir todos os relatos a uma única causa, nem confundir preparação local com correção publicada.
+
+## Entrega 5 — refinamento visual solicitado em 15/10/2026
+
+O usuário avaliou a prévia sintética e aprovou o funcionamento geral, mas solicitou melhorar a apresentação antes de validar a interface. Refinamento exclusivamente visual: cartões compactos neutros para opções disponíveis, nome em destaque, parentesco secundário e informação de idade/nascimento em linha própria. Históricos em grupo separado, com idade informada, data original, identificação da origem e ação Confirmar. Selecionadas com azul suave e indicador textual/ícone Selecionada. Remoção, recolhimento, duas opções de adição e exclusão das já selecionadas preservados.
+
+Arquivos deste refinamento: FichaPageClient.tsx, CriancasCadastradas.tsx, scripts/prancheta/validar-entrega5-browser.mjs e este STATUS. Sem alterações de banco, API, contratos, persistência ou recuperação; sem migrations, deploy, commit ou push. Entrega 6 não iniciada. Adendo de cópias locais continua pendente conforme D-017.
+
+Verificação técnica em Edge sintético: celular 390x900 e notebook 1366x900; cartões brancos/compactos, históricos separados e datados, destaque exclusivo das selecionadas, sem overflow horizontal; regressão de seleção/remoção/segunda criança/homônimos/troca de cliente/autosave/reabertura. Evidências em output/prancheta-entrega5-browser.json, prancheta-entrega5-lista-refinada-{390,1366}.png e prancheta-entrega5-{390,1366}.png. ESLint e diff check dirigidos aprovados. Não equivale a homologação autenticada ou banco integrado.
+
+**Validação visual humana: PENDENTE de nova confirmação.** Prévia sintética novamente disponível em http://127.0.0.1:3205/?modo=cliente. Aprovação anterior do funcionamento geral não encerra a avaliação visual desta revisão.
+
+## Entrega 5 — preparação local implementada
+
+Autorização vigente: D-016. Desenvolvimento local de complexidade alta/risco crítico (schema, autorização e identidade). Nenhuma migration aplicada, nenhum registro real modificado, sem liberação v2, commit, push ou deploy. Entrega 6 não iniciada.
+
+Implementação:
+- Identidade permanente em atendimento_presencial_criancas_cadastro; vínculo cliente/criança e parentesco próprio em atendimento_presencial_clientes_criancas; correspondência histórica separada em atendimento_presencial_criancas_correspondencias. Duas colunas nullable no retrato existente: crianca_permanente_id e parentesco_vinculo. Sem backfill ou alteração de registros antigos; parentesco geral da cliente preservado como legado.
+- API clientes/[id]/criancas usa módulo/janela da Prancheta e executor da sessão, nunca do payload. RPCs validam rascunho ativo, proprietário, cliente ativo e unidade/permissão; origem histórica deve pertencer ao cliente. RLS ativo e sem acesso direto anon/authenticated; funções SECURITY INVOKER com ACL restrita a service_role. Respostas privadas/no-store.
+- Seleção explícita recolhe a lista, mostra bloco compacto e permite retirar/alterar sem excluir cadastro. Adicionar outra criança abre exatamente Crianças cadastradas/Cadastrar nova criança; sem cadastros/sugestões abre diretamente formulário novo. Não oferece permanentes já selecionadas; limite oito preservado. Atendimento novo começa sem bloco vazio obrigatório. Troca de cliente limpa as crianças do atendimento; respostas antigas são descartadas.
+- Sugestões históricas mostram nome, informação de idade/previsão, data do registro e atendimento de origem; homônimos não são unidos. Confirmação permite corrigir nome e idade/previsão disponíveis, informar parentesco ou associar explicitamente a cadastro já vinculado ao mesmo cliente. Após confirmação, seleciona o cadastro e remove a sugestão. Operação independente da conclusão, atômica e idempotente por cliente/atendimento/origem local + ordem; bloqueio transacional do rascunho seguido do cliente. Correspondência preserva snapshot original. Repetição após resposta perdida devolve o mesmo cadastro.
+- Crianças novas ficam no rascunho e só são efetivadas na transação de conclusão v2; falha desfaz cadastro/vínculo/retrato/conclusão. Seleção permanente valida vínculo antes de concluir. Editor SQL conserva referências omitidas por formulário antigo; detalhe/editor TypeScript preservam os opcionais e detalhe apresenta parentesco do vínculo. Não modifica cadastro permanente durante edição do atendimento.
+- Idade exibida como informação registrada, sem estimar nascimento nem recalcular idade. Presente, estimativa DATE e regras da Entrega 6 continuam fora desta entrega.
+- Migration local 20261015203309_atendimento_presencial_criancas_permanentes.sql depende da Entrega 2 e exige preflight por hashes do normalizador/editor e gate fechado. Gate próprio de confirmação histórica retorna false, assim como o gate comercial v2 anterior. Recuperação não destrutiva fecha ambos e preserva estruturas/dados. Gerador local e SQL fonte em scripts/prancheta; nenhum db push/repair/replay.
+
+Arquivos da Entrega 5:
+- UI: src/app/atendimento-presencial/prancheta/FichaPageClient.tsx, CriancasCadastradas.tsx e src/app/atendimento-presencial/registros/RegistrosPageClient.tsx.
+- Contratos/leitores: src/lib/atendimento-presencial/ficha-schema.ts, registros.ts, criancas-permanentes.ts e criancas-permanentes.test.ts.
+- API: src/app/api/atendimento-presencial/clientes/[id]/criancas/route.ts e route.test.ts.
+- Banco local: supabase/migrations/20261015203309_atendimento_presencial_criancas_permanentes.sql; scripts/prancheta/preparar-entrega5.mjs, validar-entrega5.mjs, sql/entrega5-estrutura.sql e sql/recuperar-entrega5.sql.
+- Prévia/verificação: scripts/prancheta/homologar-entrega4.mjs (extensão das APIs sintéticas preservando cenários anteriores), homologar-entrega5.mjs e validar-entrega5-browser.mjs; evidências em output/prancheta-entrega5-*.
+- Harness: STATUS.md, PLANO.md, DECISOES.md e docs/projetos/README.md. ESCOPO.md preservado. Alterações preexistentes nos arquivos compartilhados preservadas.
+
+Validações:
+- 32 arquivos / 346 testes focais aprovados: `node node_modules/vitest/vitest.mjs run src/lib/atendimento-presencial src/app/api/atendimento-presencial src/app/api/cron/atendimento-presencial-limpar-rascunhos --pool=threads`. Novos testes de domínio e API cobrem vazio/seleção/segunda criança/remoção/opções/parentescos, isolamento, ACL, validação, legado e gate. APIs simuladas.
+- `node scripts/prancheta/validar-entrega5.mjs <pglite/dist/index.js>`: 28 verificações SQL aprovadas. Incluem migration/preflight, confirmação/repetição, homônimos, associação explícita, preservação da origem, autorização/cliente errado, ACL, falha parcial com rollback, efetivação de novas crianças, repetição da conclusão, preservação pelo editor antigo e recuperação. Chamadas Promise.all ao PGlite são serializadas: não equivalem a prova de concorrência PostgreSQL multiconexão.
+- `node scripts/prancheta/validar-entrega5-browser.mjs`: sete grupos aprovados em Edge headless com componente real e APIs em memória. Mobile 390x900 e notebook 1366x900: seleção compacta, opções, exclusão de selecionadas, segunda criança, remoção, homônimos, confirmação sem redigitar/reconfirmar, troca de cliente, cliente sem cadastro, autosave e reabertura. Sem overflow horizontal ou erros JavaScript. Evidências output/prancheta-entrega5-browser.json e PNGs. Não é homologação autenticada ou Supabase.
+- ESLint dos nove arquivos TS/TSX envolvidos aprovado sem avisos; scripts com sintaxe validada; git diff --check dirigido aprovado. Typecheck global continua com 15 erros preexistentes nos testes de auth/agente, Hub alertas/teste e agent-bootstrap; nenhum nos arquivos desta entrega. Evidências em output/prancheta-entrega5-{vitest,lint,typecheck}.txt.
+- MCP somente leitura reconfirmou colunas, constraints, índices, RLS/policies, ACL/hashes das funções e dependências de autorização antes do SQL. Remoto sem estruturas permanentes de crianças ou colunas v2; 88 migrations no momento da consulta. Nenhum dado pessoal usado nas fixtures.
+
+Prévia: `node scripts/prancheta/homologar-entrega5.mjs`, http://127.0.0.1:3205/?modo=cliente; ?modo=sem-criancas para cadastro vazio; ?modo=inicial para início. Somente memória e dados sintéticos. Finalização permanece bloqueada. Cadastro permanente sintético dura a vida da fixture do rascunho, não simula banco real entre dispositivos.
+
+Adendo UX D-017: remoção do aviso de cópias locais ficou PENDENTE por decisão explícita do usuário. Investigação confirmou que os botões também recuperam preenchimentos anteriores à criação do rascunho no servidor; apenas escondê-los impediria esse acesso. Alternativa proposta: ação discreta Recuperar preenchimento, aberta por escolha explícita e com identificação de cliente/consultora/unidade, sem versões/termos técnicos. Usuário escolheu manter o ajuste pendente; aviso, controles, autosave, localStorage e resolução explícita de conflitos preservados.
+
+Pendências para homologação integrada: aplicar Entregas 2/5 somente em banco controlado autorizado, testar RPCs com múltiplas conexões/dispositivos (mesma origem, resposta perdida, revogação de acesso e troca de cliente concorrente), integração completa de conclusão/edição/recarga, dados históricos ambíguos e teclado físico móvel. Testes sintéticos não provam esses itens. Aplicação em produção e abertura de gates exigem autorização separada e Entrega 7. Entrega 6 permanece dependente da estrutura preparada, sem implementação.
+
+Veredito: preparação local validada nos limites acima; Entrega 5 ainda não homologada integralmente. Próxima ação: avaliação humana da prévia e preparação de homologação em banco controlado, sem iniciar automaticamente a Entrega 6.
+
+## Entrega 4 — resultado vigente
+
+A interface sintética foi avaliada pelo usuário e o novo fluxo aprovado visualmente. A tentativa de finalização não funcionou porque o salvamento v2 permanece bloqueado, como previsto. Homologação com banco real e finalização v2 continuam pendentes; esta entrega não está homologada integralmente. Em 15/10/2026 o usuário autorizou o desenvolvimento local da Entrega 5, preservando todos os gates, sem migration em produção, registros reais, deploy, commit ou push. Entrega 6 não autorizada.
+
+Autorizada exclusivamente em preparação local por D-014, com sugestões de últimas consultoras acrescentadas pelo usuário em D-015. Complexidade alta; preservadas alterações preexistentes. Sem migration, escrita comercial em produção, ativação, commit, push ou deploy. Entrega 5 agora preparada conforme seção vigente acima.
+
+Implementado:
+- Identificação na primeira etapa: unidade, nome manual da consultora e tipo Cliente/Não cliente. Unidade única automática; sem seleção automática de consultora. Demais campos aparecem somente após escolha explícita do tipo.
+- Não cliente: oito visitas aprovadas, seleção única, sem campos/requisitos comerciais, crianças ou lançamento. Finalização direta na primeira etapa passa pelas validações e termina no bloqueio v2, antes de chamada à conclusão.
+- Cliente: campos comerciais e crianças atuais preservados. Rodapé com Venda fechada, Negociação e Venda perdida. Lançamento na primeira etapa; Venda fechada valida e tenta finalizar diretamente sem motivos. Negociação/perda abrem exclusivamente a segunda etapa, com motivos atuais e observação separada opcional de até 300 caracteres Unicode. Revisão removida da interface; rascunho legado nessa etapa retorna à primeira tela sem apagar dados.
+- Troca de tipo recolhe os campos sem limpar o ramo oculto. Voltar mantém dados, motivos, lançamento e observação complementar. Autosave/concorrência/cache existentes preservados. Nenhum ramo foi efetivado em banco nesta entrega.
+- Erros de identificação, cliente, crianças/datas/idade, departamentos, lançamento, motivos e complementos aparecem junto ao campo/grupo, com destaque e associações acessíveis. Resumo oficial FormErrorSummary no topo, foco/rolagem ao primeiro erro e limpeza após correção. Cadastro usa validador existente e encaminha field da API para o input correto, com bloqueio de requisição duplicada; erro operacional continua geral.
+- Últimas consultoras: API GET /api/atendimento-presencial/consultoras-recentes?unidadeId=..., protegida pelo módulo da Prancheta, janela, perfil e unidades atuais. Sempre filtra login autenticado + unidade autorizada + status concluido; consulta somente nomes, ordena por concluido_em/id decrescentes e pagina até quatro distintos ou fim. Deduplica espaços/maiúsculas, mantém grafia do uso mais recente, sem tabela/migration ou rascunhos como fonte. Cache privado/no-store. A UI cancela respostas antigas ao trocar unidade e não preenche o campo automaticamente; botões DS compactos, digitação manual preservada. Clique não conclui atendimento; autosave de rascunho existente continua independente das etapas.
+- Novo atendimento limpa consultora, preserva sugestões do contexto e mantém unidade somente quando única autorizada. Caminho de sucesso existente ajustado para o mesmo reset de unidade; sucesso comercial v2 não executado, porque o gate continua fechado.
+
+Validações:
+- `node node_modules/vitest/vitest.mjs run src/lib/atendimento-presencial src/app/api/atendimento-presencial src/app/api/cron/atendimento-presencial-limpar-rascunhos --pool=threads`: 30 arquivos / 328 testes aprovados. Oito testes novos cobrem vazio/um/quatro/mais, repetição/espaços/maiúsculas, paginação além de cem repetidos, filtro exato de login/unidade/concluídos, unidade não autorizada, rejeição de acesso e falha operacional. APIs simuladas, não integração remota.
+- `node scripts/prancheta/validar-entrega4-browser.mjs`: dez grupos de verificações aprovados com Edge headless, componente real e APIs exclusivamente em memória. Cobre identificação, oito visitas, quatro caminhos bloqueados, lançamento vazio/formato/faixa, foco no primeiro inválido, limpeza de erros, motivo obrigatório, observação até 300, retorno/alternância preservando dados, sugestões zero/um/quatro, dois contextos independentes do mesmo login, reset em Novo Atendimento e erro field da API de cadastro. Zero chamadas /concluir e zero erros JavaScript. Celular 390x900 e notebook 1366x900 sem overflow horizontal. Evidência: output/prancheta-entrega4-browser.json e screenshots prancheta-entrega4-*.png. Não é homologação autenticada nem integração Supabase v2.
+- Harness local reproduz o padding do layout autenticado; observação de arquivos desativada para evitar recargas por builds externos. Prévia segura em http://127.0.0.1:3203/ (?modo=inicial ou ?modo=cliente), iniciada com `node scripts/prancheta/homologar-entrega4.mjs`. Todas as APIs são sintéticas e não encaminham chamadas ao banco; conclusão também rejeitada no servidor sintético.
+- ESLint dos arquivos TS/TSX desta entrega aprovado; sintaxe dos dois scripts e diff check dirigido aprovados. Typecheck global mantém os 15 erros preexistentes nos testes de autenticação/Hub; nenhum nos arquivos da Entrega 4.
+- MCP somente leitura confirmou dados_rascunho JSONB e ausência das quatro colunas v2, além dos campos reais de login/unidade/nome/status/data/id e índices existentes por login/data e unidade/data. Nenhum dado pessoal extraído para fixtures e nenhuma mutação remota.
+
+Arquivos desta entrega:
+- src/app/atendimento-presencial/prancheta/FichaPageClient.tsx (alterações anteriores preservadas).
+- src/app/api/atendimento-presencial/consultoras-recentes/route.ts e route.test.ts.
+- src/lib/atendimento-presencial/consultoras-recentes.ts e consultoras-recentes.test.ts.
+- scripts/prancheta/homologar-entrega4.mjs e validar-entrega4-browser.mjs; evidências sintéticas em output/.
+- STATUS/PLANO/ESCOPO/DECISOES deste projeto e sua linha no índice.
+
+Pendências reais: banco v2 preparado e homologado; homologação autenticada/integrada; finalização real e reset após sucesso v2; comportamento com teclado virtual físico, perda de rede/resposta e duplo clique na conclusão integrada. Na consulta de sugestões, histórico muito repetitivo pode exigir várias páginas até encontrar quatro nomes; não foi imposto limite que esconda nomes distintos mais antigos. Sem alteração de índices; otimização futura somente com evidência de necessidade. Crianças permanentes/reutilizáveis continuam exclusivamente na Entrega 5, sem implementação ou início autorizado aqui.
+
+Veredito: preparação local da Entrega 4 validada nos limites acima. Não declarar produção validada nem homologação integrada concluída. Finalização v2 continua bloqueada na UI e APIs; o SQL preparado mantém seu gate fechado e não foi aplicado. Nenhuma abertura de gate.
+
+## Entrega 3 — resultado vigente
+
+Executada exclusivamente em preparação local conforme D-013. A dependência da Entrega 2 permite desenvolver/testar leitores e montagem da edição com fixtures sem aplicar a migration em produção. Nenhum registro real foi modificado.
+
+- Listagem e detalhe consultam a linha completa no servidor, com resposta limitada pela serialização explícita. Isso permite ler o schema atual sem requisitar colunas inexistentes e reconhecer as quatro colunas após aplicação futura da migration. Campos ausentes/null não promovem legado para v2; dados finais não são reconstruídos do rascunho descartado.
+- Não clientes identificados por versão 2 + tipo explícito, com motivo de visita próprio e sem classificação como perda/negociação. Detalhe/editor ocultam cliente, crianças e requisitos comerciais desse ramo. Não foram criados KPIs: o total existente é quantidade de registros, incluindo visitas, não oportunidades. Histórico do cliente permanece restrito ao cliente_id; SGI e pedidos personalizados preservados.
+- Editor reconstrói versão, tipo, visita e observação de não fechamento; preserva crianças, ordem, local_id, datas, motivos históricos/complementos e observações gerais. Montagem de payload conserva campos v2 ausentes de formulário antigo e distingue ausência de limpeza explícita. Resultado sim/nao/negociacao preservado. A API rejeita tentativa de downgrade de linha versionada antes da RPC.
+- Histórico apresenta somente tipo, visita e observação efetivamente presentes no snapshot, incluindo valores anteriores/novos, sem reconstruir informações históricas com o estado atual.
+- Gate da Entrega 2 preservado: formulário de edição v2 preparado, salvamento bloqueado na UI/API/SQL. Edição legada mantém a RPC, versão esperada e regras de acesso existentes. Liberação da edição v2 ainda depende de homologação integrada; esta entrega não a ativa.
+
+Validações desta entrega:
+- `node node_modules/vitest/vitest.mjs run src/lib/atendimento-presencial src/app/api/atendimento-presencial src/app/api/cron/atendimento-presencial-limpar-rascunhos --pool=threads`: 28 arquivos / 320 testes aprovados. Inclui fixtures legadas/v2, oito visitas, três resultados, ida/volta da edição, opcionais, campos v2 desconhecidos pelo editor antigo, snapshots, filtros e bloqueios por módulo/janela/consultora. APIs com Supabase simulado; não é integração remota nem browser/E2E.
+- ESLint dos nove arquivos TypeScript/TSX desta entrega aprovado; diff check dirigido aprovado.
+- `node node_modules/typescript/bin/tsc --noEmit --pretty false`: mesmos 15 erros fora do escopo nos três arquivos de autenticação/Hub já registrados abaixo. Nenhum erro nos arquivos da Entrega 3.
+- MCP somente leitura confirmou colunas atuais (sem v2), constraints/relacionamentos/índices, RLS/policies e hashes/ACL das funções de normalização/edição preservados. Não houve aplicação/reexecução de migration nem repair.
+- Não executados: escrita comercial real, integração Supabase v2, browser/E2E autenticado, validação visual, build ou deploy. Os testes de preservação cobrem DTO/formulário/payload local; a edição SQL v2 isolada continua com a evidência da Entrega 2, sem nova execução nesta entrega.
+
+Arquivos da Entrega 3:
+- `src/lib/atendimento-presencial/registros.ts`, `registros-v2.test.ts`, `rascunhos.ts`, `rascunhos-shared.ts`.
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`.
+- `src/app/api/atendimento-presencial/atendimentos/route.ts`, `route.test.ts`, `[id]/route.ts`, `[id]/route.test.ts` (estes dois últimos já continham alterações anteriores, preservadas).
+- Este STATUS, D-013 em DECISOES e linha do índice. PLANO/ESCOPO preservados por não haver mudança de planejamento/dependências/escopo; checkboxes da Entrega 3 aguardam homologação integrada para encerramento integral.
+
+Veredito: preparação local da Entrega 3 aprovada; homologação integrada pendente. Sem bloqueio ao desenvolvimento local, sem declaração de produção validada. Entrega 4 preparada localmente conforme seção vigente acima.
+
+## Entrega 1 — encerramento operacional com exceções
+
+O usuário informou que a correção da incompatibilidade SQL foi testada pelas lojas em produção e que os atendimentos voltaram a ser finalizados corretamente. Encerramento operacional registrado conforme D-012; autorização explícita para preparar a Entrega 2. Não confundir relato operacional com comprovação individual de todos os critérios técnicos.
+
+A correção SQL direta D-011 continua ativa, confirmada novamente via MCP nesta entrega: normalizador com hash prosrc LF cd942ee2f2e617ca5a77003b280bfae4. Não foi reaplicada. Migration 20261015182000 permanece sem registro remoto; recuperação anterior preservada em scripts/prancheta/sql/restaurar-normalizador-entrega1.sql.
+
+Exceções ainda abertas, que não impedem a preparação local da Entrega 2:
+- Causa exata da mensagem original publicada “Informe o numero do lancamento” não conclusivamente explicada. A incompatibilidade SQL com entradasFormulario foi comprovada separadamente.
+- Homologação individual documentada de venda fechada, negociação e perda, com DOM/payload/API/reabertura, autosave concorrente e mobile, ainda não comprovada integralmente. Não inventar que as lojas executaram essa matriz.
+- Frontend local da Entrega 1 não publicado por este trabalho. Suíte isolada e correção SQL não equivalem a homologação completa do frontend.
+- Reconciliação futura do histórico de migrations separada e sujeita a autorização.
+
+## Entrega 2 — preparação realizada
+
+- Contrato opt-in versaoFluxo: 2; ausência preserva legado. Tipo cliente/nao_cliente, oito motivos de visita e observacaoNaoFechamento opcional, até 300 caracteres Unicode, sem truncamento silencioso.
+- Validador de rascunho e serialização de autosave preservam os novos campos e o ramo comercial oculto. Rascunhos antigos não são promovidos para v2 nem recebem campos novos obrigatórios.
+- Conclusão valida o ramo ativo: cliente mantém cadastro/departamento/resultado; venda fechada v2 exige lançamento 1–999999 e dispensa motivos. Negociação/perda mantêm lista atual e complementos. Não cliente exige consultora/motivo de visita, sem cliente, crianças, resultado ou lançamento fictícios.
+- SQL preparado preserva assinatura, bloqueio por versão, autorização de unidade/perfil, transação e ACL service_role das RPCs. Histórico inclui os campos novos. Edição v2 validada na RPC isolada; mudança de versão de registro concluído é rejeitada.
+- Escrita comercial v2 bloqueada nas APIs de conclusão/edição e no SQL (gate fixo false e trigger que também impede downgrade por editor antigo). Somente a instância sintética de testes habilitou o gate. Não há ativação de fluxos nas lojas.
+- UI e leitores não foram implementados na Entrega 2; leitores/editor agora preparados na Entrega 3 acima. Cadastro permanente de crianças e Entregas 5–7 não iniciados; Entrega 4 preparada localmente conforme seção vigente acima.
+
+## Estruturas de banco propostas — NÃO aplicadas
+
+Migration: supabase/migrations/20261015185406_atendimento_presencial_contratos_fluxo_v2.sql, gerada inicialmente pela CLI.
+
+Quatro colunas nullable em atendimento_presencial_atendimentos: versao_fluxo smallint, tipo_atendimento text, motivo_visita text e observacao_nao_fechamento text. NULL identifica legado, sem backfill. Constraints novas limitam versão, tipo, visita e observação. A constraint de conclusão existente é substituída mantendo o predicado legado e acrescentando somente o ramo explícito não cliente v2. Isso é alteração proposta de constraint, não executada em produção.
+
+O arquivo executa em transação única, com lock_timeout 5s, statement_timeout 30s e preflight por definição da constraint e hashes das três funções reais. Preserva a correção SQL da Entrega 1; não reaplica sua migration. Políticas RLS, permissões, índices e relacionamentos existentes não são alterados. Nenhuma tabela permanente de crianças criada.
+
+Recuperação não destrutiva: scripts/prancheta/sql/recuperar-entrega2.sql. Exige hashes novos, fecha o gate, restaura as três funções capturadas, conserva colunas/dados/constraints/trigger de proteção. scripts/prancheta/sql/base-entrega2.sql contém apenas definições SQL capturadas via MCP, sem dados pessoais. Recuperação testada na instância isolada, nunca executada em produção.
+
+## Evidência atual do Supabase — somente leitura
+
+Projeto lebebe.app / phsoawbdvhurroryfnok, ACTIVE_HEALTHY, PostgreSQL 17. Consultados colunas/tipos, constraints/FKs, índices, triggers, RLS/policies, definições/assinaturas/ACL das RPCs e histórico remoto. Tabelas do módulo com RLS ativo e acesso direto authenticated bloqueado; RPCs relevantes executáveis apenas por postgres/service_role.
+
+Hashes anteriores usados no preflight:
+- normalizar_payload_ficha: cd942ee2f2e617ca5a77003b280bfae4.
+- concluir: d98926eda99ed0390cc9cbce7563c0b0.
+- editar_concluido: ef7d77f3e5417645767a93f8f2b07f7b.
+
+Histórico remoto permanece com 87 migrations, sem as migrations das Entregas 1 e 2. Divergências antigas confirmadas: create_atendimento_presencial_atendimentos local 20260715180000 / remoto 20260715184751; harden local 20260715181000 / remoto 20260715184940; criancas_presente_data local 20260722203000 / remoto 20260722225810. Nenhuma auditoria histórica ampla, repair, replay ou alteração no histórico realizada.
+
+## Validações realizadas
+
+- node node_modules/vitest/vitest.mjs run src/lib/atendimento-presencial src/app/api/atendimento-presencial src/app/api/cron/atendimento-presencial-limpar-rascunhos --pool=threads: 27 arquivos / 296 testes aprovados.
+- node scripts/prancheta/validar-entrega2.mjs <caminho-absoluto-pglite/dist/index.js>: 50 verificações SQL aprovadas em PostgreSQL/WASM isolado. Cobertura: migration/preflight/reaplicação, contratos legados, oito visitas, três resultados v2, 0/300/301, tipos inválidos, lançamento, cliente ativo, ACL, executor sem módulo/unidade, edição indevida, concorrência, preservação histórica, falha após início da mutação com rollback e recuperação por hash. Fixture sintética de dependências; não é integração no Supabase nem homologação autenticada da aplicação.
+- Runtime de teste PGlite instalado somente no diretório temporário, sem alteração de package.json/lockfile. Docker local sem daemon; nenhum banco de desenvolvimento remoto criado.
+- ESLint dos arquivos TypeScript alterados e do harness aprovado; node --check aprovado. Diff check dirigido aprovado.
+- Typecheck global: 15 erros em api/auth/agente/route.test.ts, api/hub-vendas/alertas/teste/route.test.ts e lib/auth/agent-bootstrap.test.ts, já registrados na Entrega 1. Nenhum erro nos arquivos desta entrega. Não corrigidos fora do escopo.
+- Nenhum teste com dado comercial fictício em produção, browser/E2E autenticado, build/deploy ou aplicação da nova migration.
+
+## Arquivos desta entrega
+
+- src/lib/atendimento-presencial/ficha-schema.ts, autosave-fila.ts e fluxo-v2.test.ts.
+- src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts e route.test.ts.
+- src/app/api/atendimento-presencial/atendimentos/[id]/route.ts e route.test.ts; [id]/rascunho/route.test.ts.
+- Migration 20261015185406, scripts/prancheta/validar-entrega2.mjs e scripts/prancheta/sql/base-entrega2.sql / recuperar-entrega2.sql.
+- STATUS.md, PLANO.md, DECISOES.md deste projeto e sua linha no índice. ESCOPO.md preservado.
+
+## Próxima ação e gates
+
+Preparação local das Entregas 2–5 validada nos limites descritos. Entrega 4 aprovada visualmente pelo usuário em ambiente sintético; conclusão bloqueada esperada. Aguardar avaliação da Entrega 5 e homologação autenticada/integrada em banco controlado. Não iniciar Entrega 6 automaticamente.
+
+Antes de aplicar a Entrega 2 em produção: nova autorização explícita para a migration isolada, revalidar schema/constraint/hashes reais, revisar recuperação e executar somente o arquivo aprovado em transação. O histórico divergente impede usar db push como atalho; não executar migrations antigas nem migration repair.
+
+Ativação dos novos fluxos exige leitores/editores preparados e homologados, conclusão das entregas dependentes e homologação integrada D-009. A autorização de aplicar a migration não autoriza abrir o gate. Deploy, commits e push também não autorizados.
+
+Preservadas alterações preexistentes do workspace (Decorisi, Mere IA, procurar-datas, Harness e Entrega 1). Não modificar docs/ia/log_progress.md. Não refazer auditoria completa nem reabrir decisões aprovadas.

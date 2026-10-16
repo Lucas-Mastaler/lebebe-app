@@ -48,6 +48,20 @@ function mockSupabase(queues: Record<string, unknown[]>) {
 }
 
 describe('api lista registros atendimento presencial', () => {
+  it.each([false, true])('homologacao aparece apenas em consulta explicita: %s', async (explicita) => {
+    mockSupabase({
+      app_usuarios_perfis: [{ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null }],
+      app_usuarios_unidades: [{ data: [], error: null }],
+      atendimento_presencial_atendimentos: [{ data: [], error: null }, { data: [{ id: atendimentoId,
+        consultora_nome: 'HOMOLOGACAO Lucas', consultora_usuario_id: usuarioId, unidade_id: unidadeId,
+        versao_fluxo: 2, tipo_atendimento: 'nao_cliente', cliente_id: null, resultado_atendimento: null }], error: null }],
+      usuarios_permitidos: [{ data: [], error: null }],
+      app_unidades: [{ data: [], error: null }],
+    })
+    const response = await GET(new Request(`http://local${explicita ? '?consultora=HOMOLOGACAO%20Lucas' : ''}`))
+    expect(response.status).toBe(200)
+    expect((await response.json()).registros).toHaveLength(explicita ? 1 : 0)
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(requireModuleAccess).mockResolvedValue({
@@ -135,7 +149,7 @@ describe('api lista registros atendimento presencial', () => {
       ],
     })
 
-    const response = await GET()
+    const response = await GET(new Request('http://localhost/api/atendimento-presencial/atendimentos'))
     const json = await response.json()
 
     expect(response.status).toBe(200)
@@ -172,4 +186,38 @@ describe('api lista registros atendimento presencial', () => {
     expect(atendimentoBuilder.in).toHaveBeenCalledWith('cliente_id', [clienteId])
     expect(atendimentoBuilder.ilike).toHaveBeenCalledWith('consultora_nome', 'Ana Clara')
   })
+  it('lista nao cliente com motivo proprio, sem resultado ou consulta de cliente ficticio', async () => {
+    const chain = builder({ data: [{ id: atendimentoId, cliente_id: null, consultora_usuario_id: usuarioId,
+      unidade_id: unidadeId, versao_fluxo: 2, tipo_atendimento: 'nao_cliente', motivo_visita: 'representante',
+      resultado_atendimento: null, consultora_nome: 'Ana', concluido_em: '2026-10-15T12:00:00Z' }], error: null })
+    const from = vi.fn((table: string) => {
+      if (table === 'atendimento_presencial_atendimentos') return chain
+      if (table === 'app_usuarios_perfis') return builder({ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null })
+      if (table === 'app_usuarios_unidades') return builder({ data: [{ app_unidades: { id: unidadeId, chave: 'loja', nome: 'Loja', ativo: true } }], error: null })
+      return builder({ data: [], error: null })
+    })
+    vi.mocked(createServiceClient).mockReturnValue({ from } as never)
+    const response = await GET(new Request('http://local?consultora=Ana&unidadeId=' + unidadeId))
+    expect(response.status).toBe(200)
+    expect((await response.json()).registros[0]).toMatchObject({ clienteId: null, clienteNome: 'Não cliente',
+      versaoFluxo: 2, tipoAtendimento: 'nao_cliente', motivoVisita: 'representante', resultadoAtendimento: null })
+    expect(from).not.toHaveBeenCalledWith('atendimento_presencial_clientes')
+    expect(chain.eq).toHaveBeenCalledWith('consultora_usuario_id', usuarioId)
+    expect(chain.eq).toHaveBeenCalledWith('unidade_id', unidadeId)
+    expect(chain.ilike).toHaveBeenCalledWith('consultora_nome', 'Ana')
+    expect(chain.select).toHaveBeenCalledWith('*')
+  })
+
+  it('exclui registros sem virada quando o filtro de virada esta ativo', async () => {
+    mockSupabase({
+      app_usuarios_perfis: [{ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null }],
+      app_usuarios_unidades: [{ data: [], error: null }],
+      atendimento_presencial_atendimentos: [{ data: [], error: null }, { data: [{ id: atendimentoId, versao_fluxo: 2,
+        tipo_atendimento: 'nao_cliente', cliente_id: null, resultado_atendimento: null }], error: null }],
+    })
+    const response = await GET(new Request('http://local?viradaCartaoDe=01/01'))
+    expect(response.status).toBe(200)
+    expect((await response.json()).registros).toEqual([])
+  })
+
 })

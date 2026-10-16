@@ -29,6 +29,10 @@ export type AtendimentoPresencialDTO = {
   consultoraNomeManual?: string | null
   dadosRascunho: FichaDadosRascunho
   resultadoAtendimento: string | null
+  versaoFluxo?: number | null
+  tipoAtendimento?: 'cliente' | 'nao_cliente' | null
+  motivoVisita?: string | null
+  observacaoNaoFechamento?: string | null
   motivoOutro: string | null
   observacoes: string | null
   numeroLancamento: number | null

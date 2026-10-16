@@ -11,6 +11,7 @@ import {
 import {
   buscarVendasSgiPorTelefone,
   serializarHistoricoAtendimento,
+  resolverTelefoneHistorico,
 } from '@/lib/atendimento-presencial/historico-cliente'
 import { carregarContextoPedidosPersonalizados } from '@/lib/pedidos-personalizados/server/contexto'
 import { buscarPedidosPersonalizadosPorTelefones } from '@/lib/pedidos-personalizados/server/historico'
@@ -40,6 +41,7 @@ const SELECT_ATENDIMENTO = [
 
 type ClienteHistoricoRow = {
   id: string
+  telefone_informado?: string | null
   telefone_normalizado: string | null
   telefone_normalizado_ddi: string | null
 }
@@ -66,7 +68,7 @@ export async function GET(
 
     const { data: clienteData, error: clienteError } = await supabase
       .from('atendimento_presencial_clientes')
-      .select('id, telefone_normalizado, telefone_normalizado_ddi')
+      .select('id, telefone_informado, telefone_normalizado, telefone_normalizado_ddi')
       .eq('id', id)
       .maybeSingle()
 
@@ -77,6 +79,7 @@ export async function GET(
     if (!clienteData) return jsonErro('Cliente nao encontrada', 404)
 
     const cliente = clienteData as ClienteHistoricoRow
+    const telefone = resolverTelefoneHistorico(cliente)
     const atendimentoAtualId = new URL(request.url).searchParams.get('atendimentoAtualId')
     const contextoPedidos = await carregarContextoPedidosPersonalizados(['pedidos_personalizados_gestao'])
 
@@ -95,7 +98,7 @@ export async function GET(
       if (unidadesPermitidas.length === 0) {
         return NextResponse.json({
           ok: true,
-          telefoneDisponivel: Boolean(cliente.telefone_normalizado || cliente.telefone_normalizado_ddi),
+          telefoneDisponivel: telefone.valido,
           atendimentos: [],
           vendas: [],
           fontesConsultadas: ['atendimento_presencial', 'sgi_documentos_saida'],
@@ -138,13 +141,13 @@ export async function GET(
         ? supabase.from('usuarios_permitidos').select('id, email').in('id', consultoraIds)
         : Promise.resolve({ data: [], error: null }),
       buscarVendasSgiPorTelefone(supabase, {
-        telefoneNormalizado: cliente.telefone_normalizado,
-        telefoneNormalizadoDdi: cliente.telefone_normalizado_ddi,
+        telefoneNormalizado: telefone.telefoneNormalizado,
+        telefoneNormalizadoDdi: telefone.telefoneNormalizadoDDI,
         limit: 10,
       }),
       contextoPedidos.ok
         ? buscarPedidosPersonalizadosPorTelefones(contextoPedidos.contexto.supabase, {
-            telefones: [cliente.telefone_normalizado, cliente.telefone_normalizado_ddi],
+            telefones: [telefone.telefoneNormalizado, telefone.telefoneNormalizadoDDI],
             unidadeIds: contextoPedidos.contexto.unidades.map((unidade) => unidade.id),
             limit: 10,
           })

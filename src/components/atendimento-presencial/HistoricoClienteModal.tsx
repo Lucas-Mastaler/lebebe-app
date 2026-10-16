@@ -8,6 +8,7 @@ import { Alert, Badge, Button, Dialog, DialogBody, DialogContent, DialogHeader }
 import type { BadgeProps } from '@/components/design-system'
 import type { HistoricoAtendimentoClienteDTO, HistoricoVendaSgiDTO } from '@/lib/atendimento-presencial/historico-cliente'
 import type { HistoricoPedidoPersonalizadoDTO } from '@/lib/pedidos-personalizados/server/historico'
+import { requisicaoLimitada } from '@/lib/atendimento-presencial/requisicao-limitada'
 
 export type HistoricoClienteModalCliente = {
   id: string
@@ -159,7 +160,7 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
       setHistoricoCarregando(true)
 
       try {
-        const response = await fetch(montarUrlHistoricoCliente(clienteId, atendimentoAtualId), { cache: 'no-store' })
+        const response = await requisicaoLimitada(montarUrlHistoricoCliente(clienteId, atendimentoAtualId), { cache: 'no-store' })
         const data = (await response.json()) as HistoricoClienteResponse
         if (!response.ok || !data.ok) throw new Error(data.message ?? 'Erro ao carregar historico da cliente')
         if (!cancelado) {
@@ -229,7 +230,7 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
 
           {historicoCarregado && historicoCarregado.telefoneDisponivel === false && (
             <Alert tone="warning">
-              Cliente sem telefone normalizado. As compras do SGI nao foram consultadas.
+              Telefone ausente ou incompleto. Confira o DDD e o número no cadastro para consultar as compras do SGI.
             </Alert>
           )}
 

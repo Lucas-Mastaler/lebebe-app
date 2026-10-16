@@ -7,36 +7,15 @@ import {
   listarUnidadesDoContexto,
   type AtendimentoPresencialRow,
 } from '@/lib/atendimento-presencial/rascunhos'
-import { serializarClienteRegistro, type ClienteRegistroRow } from '@/lib/atendimento-presencial/registros'
+import { consultoraDeHomologacao, registroNaoCliente, serializarClienteRegistro, type ClienteRegistroRow } from '@/lib/atendimento-presencial/registros'
 import { converterViradaCartaoInput, valorOrdenavelViradaCartao } from '@/lib/atendimento-presencial/ficha-schema'
 import { escaparTermoIlike, normalizarTermosBuscaNome, normalizarTermoBusca } from '@/lib/atendimento-presencial/clientes'
 import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
 
 export const runtime = 'nodejs'
 
-const SELECT_ATENDIMENTO = [
-  'id',
-  'cliente_id',
-  'consultora_usuario_id',
-  'unidade_id',
-  'status',
-  'draft_client_id',
-  'dados_rascunho',
-  'resultado_atendimento',
-  'numero_lancamento',
-  'virada_cartao_dia',
-  'virada_cartao_mes',
-  'consultora_nome',
-  'concluido_em',
-  'iniciado_em',
-  'ultima_atividade_em',
-  'expira_em',
-  'version',
-  'criado_por',
-  'atualizado_por',
-  'created_at',
-  'updated_at',
-].join(', ')
+// Leitura compativel antes/depois da migration v2; resposta limitada pelos DTOs.
+const SELECT_ATENDIMENTO = '*'
 
 function jsonErro(message: string, status: number) {
   return NextResponse.json({ ok: false, message }, { status })
@@ -132,7 +111,7 @@ async function carregarContextoRegistros() {
   }
 }
 
-export async function GET(request = new Request('http://localhost/api/atendimento-presencial/atendimentos')) {
+export async function GET(request: Request) {
   try {
     const loaded = await carregarContextoRegistros()
     if (!loaded.ok) return loaded.response
@@ -196,6 +175,10 @@ export async function GET(request = new Request('http://localhost/api/atendiment
     }
 
     let rows = (data ?? []) as unknown as AtendimentoPresencialRow[]
+    // Testes só entram na consulta quando sua consultora é filtrada explicitamente.
+    if (!consultoraDeHomologacao(consultora)) {
+      rows = rows.filter((row) => !consultoraDeHomologacao(row.consultora_nome))
+    }
     if (viradaDe || viradaAte) {
       const valorDe = viradaDe ? valorOrdenavelViradaCartao(viradaDe.dia, viradaDe.mes) : null
       const valorAte = viradaAte ? valorOrdenavelViradaCartao(viradaAte.dia, viradaAte.mes) : null
@@ -252,8 +235,11 @@ export async function GET(request = new Request('http://localhost/api/atendiment
       total,
       registros: rows.map((row) => ({
         id: row.id,
+        versaoFluxo: row.versao_fluxo ?? null,
+        tipoAtendimento: row.tipo_atendimento ?? null,
+        motivoVisita: row.motivo_visita ?? null,
         clienteId: row.cliente_id,
-        clienteNome: row.cliente_id ? clientesPorId.get(row.cliente_id)?.nome ?? 'Cliente nao localizada' : 'Cliente nao informada',
+        clienteNome: registroNaoCliente({ versaoFluxo: row.versao_fluxo, tipoAtendimento: row.tipo_atendimento }) ? 'Não cliente' : row.cliente_id ? clientesPorId.get(row.cliente_id)?.nome ?? 'Cliente nao localizada' : 'Cliente nao informada',
         clienteTelefone: row.cliente_id ? clientesPorId.get(row.cliente_id)?.telefone ?? null : null,
         consultoraUsuarioId: row.consultora_usuario_id,
         consultoraEmail: consultorasPorId.get(row.consultora_usuario_id)?.email ?? 'Consultora nao localizada',

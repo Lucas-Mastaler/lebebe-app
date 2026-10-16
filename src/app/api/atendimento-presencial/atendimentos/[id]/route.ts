@@ -19,31 +19,8 @@ import {
 
 export const runtime = 'nodejs'
 
-const SELECT_ATENDIMENTO = [
-  'id',
-  'cliente_id',
-  'consultora_usuario_id',
-  'unidade_id',
-  'status',
-  'draft_client_id',
-  'dados_rascunho',
-  'resultado_atendimento',
-  'motivo_outro',
-  'observacoes',
-  'numero_lancamento',
-  'virada_cartao_dia',
-  'virada_cartao_mes',
-  'consultora_nome',
-  'concluido_em',
-  'iniciado_em',
-  'ultima_atividade_em',
-  'expira_em',
-  'version',
-  'criado_por',
-  'atualizado_por',
-  'created_at',
-  'updated_at',
-].join(', ')
+// Leitura compativel antes/depois da migration v2; resposta limitada pelos DTOs.
+const SELECT_ATENDIMENTO = '*'
 
 function jsonErro(message: string, status: number, extra?: Record<string, unknown>) {
   return NextResponse.json({ ok: false, message, ...extra }, { status })
@@ -259,12 +236,14 @@ export async function PATCH(
     const clienteId = typeof payload.clienteId === 'string' && isUuid(payload.clienteId)
       ? payload.clienteId
       : null
-    if (!clienteId) return jsonErro('Cliente invalida', 400, { field: 'clienteId' })
 
     const validacaoDados = validarFichaDadosRascunho(payload.dadosRascunho)
     if (!validacaoDados.ok) {
       return jsonErro(validacaoDados.message, 400, { field: validacaoDados.field })
     }
+
+    const naoCliente = validacaoDados.dados.versaoFluxo === 2 && validacaoDados.dados.tipoAtendimento === 'nao_cliente'
+    if (!clienteId && !naoCliente) return jsonErro('Cliente invalida', 400, { field: 'clienteId' })
 
     const validacaoConclusao = validarFichaParaConclusao({
       ficha: validacaoDados.dados,
@@ -304,9 +283,13 @@ export async function PATCH(
       return jsonErro('Este atendimento foi alterado por outra pessoa. Recarregue os dados antes de salvar novamente.', 409)
     }
 
+    if (row.versao_fluxo != null && validacaoDados.dados.versaoFluxo !== row.versao_fluxo) {
+      return jsonErro('Nao e permitido converter um atendimento v2 para o fluxo legado.', 409)
+    }
+
     const dadosEdicao = {
       ...validacaoDados.dados,
-      clienteId,
+      ...(!naoCliente ? { clienteId } : {}),
     }
 
     const consultoraNome = typeof payload.consultoraNome === 'string' ? normalizarNomeConsultora(payload.consultoraNome) : ''

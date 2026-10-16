@@ -3,7 +3,7 @@ import {
   getProgressoTimeoutMs,
   PROGRESS_CAPTURE_TIMEOUT_MS,
   PROGRESS_TIMEOUT_MS,
-} from './route'
+} from './handlers'
 
 describe('getProgressoTimeoutMs', () => {
   it('preserva o timeout padrao sem modoCaptura', () => {

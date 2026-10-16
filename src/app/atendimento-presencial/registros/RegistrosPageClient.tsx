@@ -1,5 +1,7 @@
 'use client'
 
+import { calcularReferenciaNascimento, criancaJaNasceu, dataAtendimentoLocal, descreverIdadeAproximada } from '@/lib/atendimento-presencial/idade-aproximada'
+
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ClipboardList, History, Loader2, Pencil, Plus, RefreshCw, Save, X } from 'lucide-react'
@@ -42,6 +44,7 @@ import {
   FICHA_PRODUTO_MAX_CHARS,
   FICHA_PRODUTOS_MAX_ITENS,
   MOTIVOS_RESULTADO_GRUPOS,
+  MOTIVOS_VISITA,
   RESULTADOS_ATENDIMENTO,
   SEXOS_CRIANCA,
   SITUACOES_CRIANCA,
@@ -66,6 +69,9 @@ import {
   type UnidadeIdadeCrianca,
 } from '@/lib/atendimento-presencial/ficha-schema'
 import {
+  descreverContratoHistorico,
+  getMotivoVisitaLabel,
+  registroNaoCliente,
   montarPayloadEdicaoAtendimento,
   normalizarDetalheParaFichaEdicao,
   normalizarObservacoesRegistro,
@@ -322,6 +328,8 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     }
   }
 
+  const selecionadoNaoCliente = selecionado ? registroNaoCliente(selecionado.atendimento) : false
+
   const resumoSelecionado = selecionado ? registros.find((registro) => registro.id === selecionado.atendimento.id) : null
 
   function abrirEdicao(detalhe: RegistroDetalhe) {
@@ -354,6 +362,11 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   }
 
   function atualizarCriancaEdicao(id: string, patch: Partial<FichaCriancaRascunho>) {
+    if (patch.idadeValor !== undefined) {
+      const anterior=fichaEdicao?.criancas.find((c)=>c.id===id)
+      const unidade=patch.idadeUnidade ?? anterior?.idadeUnidade
+      if (unidade && patch.idadeValor>0) patch={...patch,dataReferenciaNascimento:calcularReferenciaNascimento(dataAtendimentoLocal(selecionado?.atendimento.iniciadoEm),unidade,patch.idadeValor)}
+    } else if (Object.hasOwn(patch,'situacao') || Object.hasOwn(patch,'idadeUnidade') || Object.hasOwn(patch,'presenteJaNasceu')) patch={...patch,dataReferenciaNascimento:undefined}
     atualizarFichaEdicao((atual) => ({
       ...atual,
       criancas: atual.criancas.map((crianca) => crianca.id === id ? { ...crianca, ...patch } : crianca),
@@ -678,11 +691,12 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                           title={registro.clienteNome}
                           description={`${registro.unidadeNome} - ${registro.consultoraEmail}`}
                           action={<span className="shrink-0 rounded-md border border-sky-100 bg-white/70 px-3 py-2 text-right">
-                            <span className="block text-[10px] font-bold uppercase tracking-wide text-sky-700">Venda fechada?</span>
-                            <span className="block text-sm font-bold text-slate-900">{formatarVendaFechadaRegistro(registro.resultadoAtendimento)}</span>
+                            <span className="block text-[10px] font-bold uppercase tracking-wide text-sky-700">{registroNaoCliente(registro) ? 'Tipo' : 'Venda fechada?'}</span>
+                            <span className="block text-sm font-bold text-slate-900">{registroNaoCliente(registro) ? 'Não cliente' : formatarVendaFechadaRegistro(registro.resultadoAtendimento)}</span>
                           </span>}
                         />
                         <CardContent className="space-y-1">
+                          {registroNaoCliente(registro) && <p className="text-sm text-slate-600">Motivo da visita: {getMotivoVisitaLabel(registro.motivoVisita)}</p>}
                           {registro.consultoraNomeManual && <p className="text-sm text-slate-600">Consultora: {registro.consultoraNomeManual}</p>}
                           <p className="text-sm text-slate-600">Concluido em {formatarData(registro.concluidoEm)}</p>
                           {registro.numeroLancamento && <p className="text-sm text-slate-600">Lancamento {registro.numeroLancamento}</p>}
@@ -743,8 +757,9 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                 {!carregandoDetalhe && selecionado && (
                   <>
                     <div>
-                      <p className="text-xs font-bold uppercase text-slate-500">Venda fechada?</p>
-                      <p className="font-semibold text-slate-950">{formatarVendaFechadaRegistro(selecionado.atendimento.resultadoAtendimento)}</p>
+                      <p className="text-xs font-bold uppercase text-slate-500">{selecionadoNaoCliente ? 'Tipo de atendimento' : 'Venda fechada?'}</p>
+                      <p className="font-semibold text-slate-950">{selecionadoNaoCliente ? 'Não cliente' : formatarVendaFechadaRegistro(selecionado.atendimento.resultadoAtendimento)}</p>
+                      {selecionadoNaoCliente && <p>Motivo da visita: {getMotivoVisitaLabel(selecionado.atendimento.motivoVisita)}</p>}
                       {selecionado.atendimento.numeroLancamento && <p>Lancamento {selecionado.atendimento.numeroLancamento}</p>}
                       {formatarViradaCartao(selecionado.atendimento.viradaCartaoDia, selecionado.atendimento.viradaCartaoMes) && (
                         <p>Virada do cartao {formatarViradaCartao(selecionado.atendimento.viradaCartaoDia, selecionado.atendimento.viradaCartaoMes)}</p>
@@ -762,7 +777,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                         <Alert tone="success" className="mt-3">{mensagemEdicao}</Alert>
                       )}
                     </div>
-                    <div>
+                    {!selecionadoNaoCliente && <div>
                       <p className="text-xs font-bold uppercase text-slate-500">Cliente</p>
                       {selecionado.cliente ? (
                         <>
@@ -776,11 +791,12 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                       ) : (
                         <p>Cliente nao localizada</p>
                       )}
-                    </div>
+                    </div>}
                     <div>
                       <p className="text-xs font-bold uppercase text-slate-500">Nome da consultora</p>
                       <p>{selecionado.atendimento.consultoraNomeManual ?? 'Nao informado'}</p>
                     </div>
+                    {!selecionadoNaoCliente && <>
                     <div>
                       <p className="text-xs font-bold uppercase text-slate-500">Departamentos</p>
                       <p>{selecionado.departamentos.map((item) => getDepartamentoLabel(item.departamento as DepartamentoInteresse)).join(', ') || 'Nao informado'}</p>
@@ -802,12 +818,21 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                           {selecionado.criancas.map((crianca) => (
                             <div key={crianca.id} className="rounded-md border border-slate-200 p-3">
                               <p className="font-semibold text-slate-950">{crianca.nome || (crianca.nome_nao_informado ? 'Nome nao informado' : crianca.situacao)}</p>
+                              {crianca.parentesco_vinculo && <p className="text-sm">{crianca.parentesco_vinculo}</p>}
+                              {crianca.data_referencia_nascimento && <p className="text-sm">{descreverIdadeAproximada(crianca.data_referencia_nascimento)} · referência estimada {formatarDataISOParaInput(crianca.data_referencia_nascimento)}</p>}
                               <p>{crianca.idade_valor ? `${crianca.idade_valor} ${crianca.idade_unidade}` : crianca.data_prevista_nascimento || crianca.sexo || 'Sem detalhe adicional'}</p>
                             </div>
                           ))}
                         </div>
                       )}
                     </div>
+                    </>}
+                    {selecionado.atendimento.observacaoNaoFechamento != null && (
+                      <div>
+                        <p className="text-xs font-bold uppercase text-slate-500">Observação de não fechamento</p>
+                        <p className="whitespace-pre-wrap">{selecionado.atendimento.observacaoNaoFechamento || 'Sem observação'}</p>
+                      </div>
+                    )}
                     <div>
                       <p className="text-xs font-bold uppercase text-slate-500">Observacoes</p>
                       <p className="whitespace-pre-wrap">{normalizarObservacoesRegistro(selecionado.atendimento) ?? 'Sem observacoes'}</p>
@@ -824,6 +849,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                                 <p>{formatarData(item.created_at)}</p>
                                 <p>{item.perfil ?? item.role ?? 'Perfil nao informado'}</p>
                                 {campos && <p>Campos alterados: {campos}</p>}
+                                {descreverContratoHistorico(item.snapshot).map((linha, index) => <p key={index} className="whitespace-pre-wrap">{linha}</p>)}
                               </div>
                             )
                           })}
@@ -925,7 +951,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
 
                 <div className="grid gap-1 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
                   <p className="text-xs font-bold uppercase text-slate-500">Somente leitura</p>
-                  <p>Cliente: {selecionado.cliente?.nome ?? 'Cliente nao localizada'}</p>
+                  <p>{selecionadoNaoCliente ? 'Não cliente' : `Cliente: ${selecionado.cliente?.nome ?? 'Cliente nao localizada'}`}</p>
                   <p>Unidade: {resumoSelecionado?.unidadeNome ?? selecionado.atendimento.unidadeId}</p>
                   <p>Consultora: {resumoSelecionado?.consultoraEmail ?? selecionado.atendimento.consultoraUsuarioId}</p>
                   <p>Nome da consultora: {selecionado.atendimento.consultoraNomeManual ?? 'Nao informado'}</p>
@@ -946,7 +972,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                   )}
                 </FormField>
 
-                <div className="grid gap-3">
+                {!selecionadoNaoCliente && <div className="grid gap-3">
                   <p className="text-sm font-semibold text-slate-800">Criancas</p>
                   {fichaEdicao.criancas.map((crianca) => (
                     <Card key={crianca.id} className="p-3">
@@ -957,6 +983,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                               value={crianca.situacao}
                               onValueChange={(value) => atualizarCriancaEdicao(crianca.id, {
                                 situacao: value as SituacaoCrianca,
+                                presenteJaNasceu: undefined,
                                 dataPrevistaNascimento: undefined,
                                 idadeUnidade: undefined,
                                 idadeValor: undefined,
@@ -969,7 +996,8 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                             </Select>
                           )}
                         </FormField>
-                        {(crianca.situacao === 'gestacao' || crianca.situacao === 'presente_outra_pessoa') && (
+                        {crianca.situacao === 'presente_outra_pessoa' && <FormField id={`edicao-presente-nasceu-${crianca.id}`} label="Já nasceu?" required>{(field)=><div {...field} className="flex gap-2">{[true,false].map((nasceu)=><OpcaoButton key={String(nasceu)} selected={crianca.presenteJaNasceu===nasceu} onClick={()=>atualizarCriancaEdicao(crianca.id,{presenteJaNasceu:nasceu,idadeUnidade:undefined,idadeValor:undefined,dataPrevistaNascimento:undefined})}>{nasceu?'Sim':'Não'}</OpcaoButton>)}</div>}</FormField>}
+                        {(crianca.situacao === 'gestacao' || (crianca.situacao === 'presente_outra_pessoa' && crianca.presenteJaNasceu === false)) && (
                           <FormField id={`edicao-data-prevista-${crianca.id}`} label="Data prevista de nascimento">
                             {(field) => (
                               <DateField
@@ -980,7 +1008,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                             )}
                           </FormField>
                         )}
-                        {crianca.situacao === 'ja_nasceu' && (
+                        {criancaJaNasceu(crianca) && (
                           <div className="grid gap-2">
                             <div className="grid grid-cols-2 gap-2">
                               {(['meses', 'anos'] as UnidadeIdadeCrianca[]).map((unidade) => (
@@ -1046,9 +1074,10 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                     <Plus className="size-4" aria-hidden="true" />
                     Adicionar crianca
                   </Button>
-                </div>
+                </div>}
                 </Section>
 
+                {!selecionadoNaoCliente && <>
                 <Section title="Necessidades" variant="subsection" collapsible>
                 <div>
                   <p className="text-sm font-semibold text-slate-800">Departamentos</p>
@@ -1148,7 +1177,23 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                 )}
                 </Section>
 
+                </>}
+                {selecionadoNaoCliente && (
+                  <FormField id="edicao-motivo-visita" label="Motivo da visita">
+                    {(field) => (
+                      <Select value={fichaEdicao.motivoVisita} onValueChange={(value) => atualizarFichaEdicao((atual) => ({ ...atual, motivoVisita: value as FichaDadosRascunho['motivoVisita'] }))}>
+                        <SelectTrigger id={field.id} className="w-full"><SelectValue /></SelectTrigger>
+                        <SelectContent>{MOTIVOS_VISITA.map((item) => <SelectItem key={item.chave} value={item.chave}>{item.label}</SelectItem>)}</SelectContent>
+                      </Select>
+                    )}
+                  </FormField>
+                )}
                 <Section title="Observações" variant="subsection" collapsible>
+                {fichaEdicao.versaoFluxo === 2 && !selecionadoNaoCliente && (
+                  <FormField id="edicao-observacao-nao-fechamento" label="Observação de não fechamento" helper="Opcional, até 300 caracteres">
+                    {(field) => <Textarea {...field} value={fichaEdicao.observacaoNaoFechamento ?? ''} onChange={(event) => atualizarFichaEdicao((atual) => ({ ...atual, observacaoNaoFechamento: event.target.value }))} />}
+                  </FormField>
+                )}
                 <FormField id="edicao-observacoes" label="Observacoes">
                   {(field) => (
                     <Textarea

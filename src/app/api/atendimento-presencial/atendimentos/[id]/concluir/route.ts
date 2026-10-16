@@ -82,6 +82,10 @@ function mapearErroRpc(error: { code?: string; message?: string }) {
     return jsonErro('Acesso negado ao rascunho', 403)
   }
   if (error.code === '23514') {
+    if (message.includes('dados_rascunho_chave_invalida')) {
+      console.error('[ATENDIMENTO PRESENCIAL CONCLUIR] Contrato SQL incompativel com os campos do rascunho')
+      return jsonErro('Nao foi possivel finalizar por uma incompatibilidade no salvamento. Seus dados foram preservados.', 500)
+    }
     if (message.includes('consultora_perfil_invalido')) {
       return jsonErro('A consultora responsavel nao possui o perfil de consultora ativo.', 422, { field: 'consultora' })
     }
@@ -176,6 +180,7 @@ export async function POST(
       return jsonErro(validacaoDados.message, 422, { field: validacaoDados.field })
     }
 
+
     const validacaoConclusao = validarFichaParaConclusao({
       ficha: validacaoDados.dados,
       clienteId: row.cliente_id,
@@ -208,7 +213,9 @@ export async function POST(
       .eq('id', id)
       .single()
 
-    if (selectError || !concluido) {
+    const concluidoRow = concluido as unknown as AtendimentoPresencialRow | null
+    if (selectError || !concluidoRow || concluidoRow.id !== id || concluidoRow.status !== 'concluido'
+      || !Number.isSafeInteger(concluidoRow.version) || concluidoRow.version <= expectedVersion) {
       console.error('[ATENDIMENTO PRESENCIAL CONCLUIR] Erro ao recarregar atendimento:', selectError)
       return jsonErro('Erro ao processar requisicao', 500)
     }
@@ -217,7 +224,7 @@ export async function POST(
 
     return NextResponse.json({
       ok: true,
-      atendimento: serializarAtendimentoPresencial(concluido as unknown as AtendimentoPresencialRow),
+      atendimento: serializarAtendimentoPresencial(concluidoRow),
     })
   } catch (error) {
     console.error('[ATENDIMENTO PRESENCIAL CONCLUIR] Erro geral:', error)

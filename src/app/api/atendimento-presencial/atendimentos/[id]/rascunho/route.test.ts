@@ -65,6 +65,21 @@ function mockSupabase(queues: Record<string, unknown[]>) {
 }
 
 describe('api rascunho por id', () => {
+  it('preserva contrato v2 e ramo comercial oculto no autosave', async () => {
+    const dadosRascunho = migrarFichaDadosRascunho({ versaoFluxo: 2, tipoAtendimento: 'nao_cliente', motivoVisita: 'outros',
+      resultadoAtendimento: 'negociacao', motivosResultado: ['preco'], observacaoNaoFechamento: 'Retornar' })
+    mockSupabase({
+      app_usuarios_perfis: [{ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null }],
+      app_usuarios_unidades: [{ data: [{ app_unidades: { id: unidadeId, ativo: true } }], error: null }],
+      atendimento_presencial_atendimentos: [
+        { data: rascunhoRow, error: null }, { data: { ...rascunhoRow, version: 3, dados_rascunho: dadosRascunho }, error: null },
+      ],
+    })
+    const response = await PATCH(new Request('http://local', { method: 'PATCH', body: JSON.stringify({ version: 2, dadosRascunho }) }),
+      { params: Promise.resolve({ id: rascunhoId }) })
+    expect(response.status).toBe(200)
+    expect((await response.json()).rascunho.dadosRascunho).toEqual(dadosRascunho)
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(requireModuleAccess).mockResolvedValue({

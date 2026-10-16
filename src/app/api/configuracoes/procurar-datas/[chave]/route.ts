@@ -5,7 +5,6 @@ import { validarValorConfig } from '@/lib/procurar-datas/validar-config'
 import { CHAVES_EDITAVEIS_FASE3 } from '@/lib/procurar-datas/chaves-editaveis'
 
 // Re-exportar para uso em outros módulos se necessário
-export { CHAVES_EDITAVEIS_FASE3 }
 
 export const runtime = 'nodejs'
 

@@ -108,12 +108,15 @@ export function validarPayloadCliente(body: unknown): ResultadoValidacaoCliente 
     return { ok: false, field: 'nome', message: 'Nome deve ter entre 2 e 120 caracteres' }
   }
 
-  if (typeof payload.parentesco !== 'string' || !parentescosValidos.has(payload.parentesco)) {
+  // Novos formulários coletam parentesco somente por criança. O schema legado
+  // ainda exige estes campos: registrar ausência explícita, sem inferir relação.
+  const semParentescoGeral = payload.parentesco === undefined || payload.parentesco === ''
+  if (!semParentescoGeral && (typeof payload.parentesco !== 'string' || !parentescosValidos.has(payload.parentesco))) {
     return { ok: false, field: 'parentesco', message: 'Parentesco invalido' }
   }
 
-  const parentesco = payload.parentesco as ParentescoCliente
-  const parentescoOutro = typeof payload.parentescoOutro === 'string'
+  const parentesco = semParentescoGeral ? 'outro' : payload.parentesco as ParentescoCliente
+  const parentescoOutro = semParentescoGeral ? 'Não informado' : typeof payload.parentescoOutro === 'string'
     ? payload.parentescoOutro.trim().replace(/\s+/g, ' ')
     : ''
 

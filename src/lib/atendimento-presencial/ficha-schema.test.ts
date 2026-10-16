@@ -13,9 +13,45 @@ import {
   valorOrdenavelViradaCartao,
   validarFichaDadosRascunho,
   validarFichaParaConclusao,
+  validarNumeroLancamento,
+  normalizarNumeroLancamento,
 } from './ficha-schema'
 
 describe('schema da ficha de atendimento presencial', () => {
+  it.each([22, 225, 2234, 34566, 1, 999999])('aceita lancamento %s sem exigir minimo de digitos', (numero) => {
+    expect(validarNumeroLancamento(String(numero))).toEqual({ ok: true, numeroLancamento: numero })
+    expect(validarNumeroLancamento(numero)).toEqual({ ok: true, numeroLancamento: numero })
+    expect(validarFichaParaConclusao({ clienteId: 'cliente-1', numeroLancamento: String(numero), ficha: {
+      consultoraNome: 'Ana', criancas: [], departamentos: ['moveis'], produtosInteresse: [],
+      resultadoAtendimento: 'sim', motivosResultado: ['preco'], etapaAtual: 'revisao',
+    } })).toEqual({ ok: true, numeroLancamento: numero })
+  })
+
+  it.each(['', '   ', undefined, null])('distingue lancamento ausente: %s', (valor) => {
+    expect(validarNumeroLancamento(valor)).toMatchObject({ ok: false, field: 'numeroLancamento', message: 'Informe o numero do lancamento.' })
+  })
+
+  it.each(['22a', '-22', '22.5', '22,5', '2e2', {}, 22.5])('nao converte formato invalido %s em outro lancamento', (valor) => {
+    expect(normalizarNumeroLancamento(valor)).toBeNull()
+    expect(validarNumeroLancamento(valor)).toMatchObject({ ok: false, message: 'Use somente digitos para informar um numero inteiro de lancamento.' })
+  })
+
+  it.each([0, '0', -1, 1000000, '1000000'])('explica faixa invalida para %s', (valor) => {
+    expect(validarNumeroLancamento(valor)).toMatchObject({ ok: false, message: 'O numero do lancamento deve estar entre 1 e 999999.' })
+  })
+
+  it('mantem zeros iniciais e espacos sem nova restricao de digitos', () => {
+    expect(validarNumeroLancamento(' 000022 ')).toEqual({ ok: true, numeroLancamento: 22 })
+    expect(validarNumeroLancamento('0000001')).toEqual({ ok: true, numeroLancamento: 1 })
+  })
+
+  it('preserva texto de lancamento invalido no rascunho em vez de corta-lo ou apagar dados', () => {
+    const entradasFormulario = { novoCliente: { nome: '', telefone: '', parentesco: '' as const, parentescoOutro: '' },
+      dataPrevistaInputs: {}, viradaCartaoInput: '', produtoDigitado: '', numeroLancamento: '1000000', telefonePendente: null }
+    const resultado = validarFichaDadosRascunho({ entradasFormulario, criancas: [], departamentos: ['moveis'],
+      produtosInteresse: ['Berco'], motivosResultado: ['preco'], observacoes: 'Preservar', etapaAtual: 'revisao' })
+    expect(resultado).toMatchObject({ ok: true, dados: { entradasFormulario: { numeroLancamento: '1000000' }, observacoes: 'Preservar', produtosInteresse: ['Berco'] } })
+  })
   it('preserva nome, sexo, data e inputs incompletos em sucessivas normalizacoes do servidor', () => {
     const dados = {
       criancas: [{ id: 'crianca-teste', situacao: 'gestacao', nome: 'Maria Clara', sexo: 'menina', dataPrevistaNascimento: '2027-02-15' }],

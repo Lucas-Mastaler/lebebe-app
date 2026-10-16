@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NextRequest } from 'next/server'
 import { chamarAppsScriptProcurarDatas } from '@/lib/procurar-datas/apps-script'
 import { validarAcessoProcurarDatas } from '@/lib/procurar-datas/api'
-import { isTempoNecessarioValido, POST } from './route'
+import { isTempoNecessarioValido, POST } from './handlers'
 
 vi.mock('@/lib/procurar-datas/apps-script', () => ({
   chamarAppsScriptProcurarDatas: vi.fn(),

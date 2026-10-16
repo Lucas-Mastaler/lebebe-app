@@ -1,5 +1,46 @@
 import type { ParentescoCliente } from './clientes'
 
+export const MOTIVOS_VISITA = [
+  { chave: 'entrega_mercadoria', label: 'Entrega de mercadoria' },
+  { chave: 'entregador_uber_eats', label: 'Entregador/Uber Eats' },
+  { chave: 'vendedor_ambulante', label: 'Vendedor ambulante' },
+  { chave: 'pedido_informacao', label: 'Pedido de informação' },
+  { chave: 'curriculo_entrevista', label: 'Currículo/entrevista' },
+  { chave: 'panfleto', label: 'Panfleto' },
+  { chave: 'representante', label: 'Representante' },
+  { chave: 'outros', label: 'Outros' },
+] as const
+export type MotivoVisita = (typeof MOTIVOS_VISITA)[number]['chave']
+export const OBSERVACAO_NAO_FECHAMENTO_MAX_CHARS = 300
+
+function validarContratoFluxo(payload: Record<string, unknown>):
+  | { ok: true; dados: Partial<FichaDadosRascunho> }
+  | { ok: false; field: string; message: string } {
+  if (payload.versaoFluxo === undefined) {
+    if (['tipoAtendimento', 'motivoVisita', 'observacaoNaoFechamento'].some((key) => payload[key] !== undefined)) {
+      return { ok: false, field: 'versaoFluxo', message: 'Informe a versao do fluxo para os novos campos.' }
+    }
+    return { ok: true, dados: {} }
+  }
+  if (payload.versaoFluxo !== 2) return { ok: false, field: 'versaoFluxo', message: 'Versao do fluxo invalida.' }
+  if (payload.tipoAtendimento !== undefined && !['cliente', 'nao_cliente'].includes(payload.tipoAtendimento as string)) {
+    return { ok: false, field: 'tipoAtendimento', message: 'Tipo de atendimento invalido.' }
+  }
+  if (payload.motivoVisita !== undefined && !MOTIVOS_VISITA.some((item) => item.chave === payload.motivoVisita)) {
+    return { ok: false, field: 'motivoVisita', message: 'Motivo da visita invalido.' }
+  }
+  if (payload.observacaoNaoFechamento !== undefined && (typeof payload.observacaoNaoFechamento !== 'string'
+    || Array.from(payload.observacaoNaoFechamento).length > OBSERVACAO_NAO_FECHAMENTO_MAX_CHARS)) {
+    return { ok: false, field: 'observacaoNaoFechamento', message: 'Observacao de nao fechamento deve ter ate 300 caracteres.' }
+  }
+  return { ok: true, dados: {
+    versaoFluxo: 2,
+    ...(payload.tipoAtendimento !== undefined ? { tipoAtendimento: payload.tipoAtendimento as FichaDadosRascunho['tipoAtendimento'] } : {}),
+    ...(payload.motivoVisita !== undefined ? { motivoVisita: payload.motivoVisita as MotivoVisita } : {}),
+    ...(payload.observacaoNaoFechamento !== undefined ? { observacaoNaoFechamento: payload.observacaoNaoFechamento as string } : {}),
+  } }
+}
+
 export const FICHA_ETAPAS = ['ficha', 'resultado', 'revisao'] as const
 export type FichaEtapa = (typeof FICHA_ETAPAS)[number]
 
@@ -8,7 +49,7 @@ export const FICHA_TOTAL_ETAPAS = 3
 export const SITUACOES_CRIANCA = [
   { chave: 'gestacao', label: 'Gestacao' },
   { chave: 'ja_nasceu', label: 'Ja nasceu' },
-  { chave: 'presente_outra_pessoa', label: 'Presente para outra pessoa' },
+  { chave: 'presente_outra_pessoa', label: 'Presente' },
   { chave: 'nao_informado', label: 'Ainda nao informado' },
 ] as const
 
@@ -115,6 +156,11 @@ export type FichaClienteRascunho = {
 }
 
 export type FichaCriancaRascunho = {
+  presenteJaNasceu?: boolean
+  dataReferenciaNascimento?: string
+  criancaPermanenteId?: string
+  vinculoClienteId?: string
+  parentesco?: string
   id: string
   situacao: SituacaoCrianca
   dataPrevistaNascimento?: string
@@ -126,6 +172,11 @@ export type FichaCriancaRascunho = {
 }
 
 export type FichaDadosRascunho = {
+  // Ausencia identifica o contrato legado; nunca inferir a versao pelo resultado.
+  versaoFluxo?: 2
+  tipoAtendimento?: 'cliente' | 'nao_cliente'
+  motivoVisita?: MotivoVisita
+  observacaoNaoFechamento?: string
   entradasFormulario?: EntradasFormularioRascunho
   cliente?: FichaClienteRascunho
   consultoraNome?: string
@@ -168,6 +219,10 @@ const departamentosValidos = new Set<string>(DEPARTAMENTOS_INTERESSE.map((item) 
 const resultadosValidos = new Set<string>(RESULTADOS_ATENDIMENTO.map((item) => item.chave))
 const motivosValidos = new Set<string>(MOTIVOS_RESULTADO_GRUPOS.flatMap((grupo) => grupo.motivos.map((item) => item.chave)))
 const chavesPermitidas = new Set([
+  'versaoFluxo',
+  'tipoAtendimento',
+  'motivoVisita',
+  'observacaoNaoFechamento',
   'entradasFormulario',
   'cliente',
   'consultoraNome',
@@ -333,6 +388,10 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
 
   const dados = payloadBase()
 
+  const contrato = validarContratoFluxo(payload)
+  if (!contrato.ok) return contrato
+  Object.assign(dados, contrato.dados)
+
   if (payload.entradasFormulario !== undefined) {
     const entrada = payload.entradasFormulario as EntradasFormularioRascunho | null
     const textoValido = (texto: unknown, limite: number): texto is string => typeof texto === 'string' && texto.length <= limite
@@ -343,7 +402,7 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
       || !entrada.dataPrevistaInputs || typeof entrada.dataPrevistaInputs !== 'object' || Array.isArray(entrada.dataPrevistaInputs)
       || Object.entries(entrada.dataPrevistaInputs).some(([id, texto]) => id.length > 80 || !textoValido(texto, 10))
       || !textoValido(entrada.viradaCartaoInput, 5) || !textoValido(entrada.produtoDigitado, FICHA_PRODUTO_MAX_CHARS)
-      || !textoValido(entrada.numeroLancamento, 6)
+      || !textoValido(entrada.numeroLancamento, FICHA_PAYLOAD_MAX_BYTES)
       || (entrada.telefonePendente !== null && (!entrada.telefonePendente
         || !textoValido(entrada.telefonePendente.clienteId, 80) || !textoValido(entrada.telefonePendente.valor, 30)))) {
       return { ok: false, field: 'dadosRascunho', message: 'Revise os campos em edicao do rascunho.' }
@@ -375,6 +434,13 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
       if (typeof item !== 'object' || item === null || Array.isArray(item)) continue
       const row = item as Record<string, unknown>
       const nomeNaoInformado = row.nomeNaoInformado === true
+      if (row.presenteJaNasceu !== undefined && (typeof row.presenteJaNasceu !== 'boolean' || row.situacao !== 'presente_outra_pessoa')) return { ok: false, field: 'criancas', message: 'Revise se a criança presente já nasceu.' }
+      if (row.dataReferenciaNascimento !== undefined && (typeof row.dataReferenciaNascimento !== 'string' || !/^\d{4}-\d{2}-01$/.test(row.dataReferenciaNascimento) || !normalizarDataLocal(row.dataReferenciaNascimento))) return { ok: false, field: 'criancas', message: 'Referência estimada inválida.' }
+      for (const campo of ['criancaPermanenteId', 'vinculoClienteId'] as const) {
+        if (row[campo] !== undefined && (typeof row[campo] !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(row[campo]))) return { ok: false, field: 'criancas', message: 'Vinculo da crianca invalido.' }
+      }
+      if (row.criancaPermanenteId && !row.vinculoClienteId) return { ok: false, field: 'criancas', message: 'Cliente do vinculo e obrigatorio.' }
+      if (row.parentesco !== undefined && (typeof row.parentesco !== 'string' || row.parentesco.trim().length > 60)) return { ok: false, field: 'criancas', message: 'Parentesco da crianca invalido.' }
       const nome = normalizarNomeCrianca(row.nome)
       if (!nomeCriancaValido(row.nome)) {
         return { ok: false, field: 'criancas', message: 'Revise o nome da crianca. Nenhuma alteracao foi salva.' }
@@ -394,6 +460,12 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
         ? row.situacao as SituacaoCrianca
         : 'nao_informado'
       const crianca: FichaCriancaRascunho = { id: row.id, situacao }
+      if (typeof row.presenteJaNasceu === 'boolean') crianca.presenteJaNasceu = row.presenteJaNasceu
+      if (typeof row.dataReferenciaNascimento === 'string') crianca.dataReferenciaNascimento = row.dataReferenciaNascimento
+      for (const campo of ['criancaPermanenteId', 'vinculoClienteId'] as const) {
+        if (typeof row[campo] === 'string') crianca[campo] = row[campo]
+      }
+      if (typeof row.parentesco === 'string' && row.parentesco.trim().length <= 60) crianca.parentesco = row.parentesco.trim()
       if (!nomeCriancaValido(row.nome)) {
         return []
       }
@@ -401,11 +473,11 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
       if (nome) crianca.nome = nome
       if (row.nomeNaoInformado === true) crianca.nomeNaoInformado = true
       if (typeof row.sexo === 'string' && sexosValidos.has(row.sexo)) crianca.sexo = row.sexo as SexoCrianca
-      if (situacao === 'gestacao' || situacao === 'presente_outra_pessoa') {
+      if (situacao === 'gestacao' || (situacao === 'presente_outra_pessoa' && row.presenteJaNasceu !== true)) {
         const dataPrevistaNascimento = normalizarDataLocal(row.dataPrevistaNascimento)
         if (dataPrevistaNascimento) crianca.dataPrevistaNascimento = dataPrevistaNascimento
       }
-      if (situacao === 'ja_nasceu') {
+      if (situacao === 'ja_nasceu' || (situacao === 'presente_outra_pessoa' && row.presenteJaNasceu === true)) {
         const idadeUnidade = row.idadeUnidade === 'meses' || row.idadeUnidade === 'anos' ? row.idadeUnidade : undefined
         const idadeValor = Number(row.idadeValor)
         if (idadeUnidade) crianca.idadeUnidade = idadeUnidade
@@ -485,12 +557,26 @@ export function migrarFichaDadosRascunho(valor: unknown): FichaDadosRascunho {
 }
 
 export function normalizarNumeroLancamento(valor: unknown) {
-  if (typeof valor === 'number' && Number.isInteger(valor)) return valor
+  if (typeof valor === 'number' && Number.isSafeInteger(valor)) return valor
   if (typeof valor !== 'string') return null
-  const somenteDigitos = valor.replace(/\D/g, '')
-  if (!somenteDigitos) return null
-  const numero = Number(somenteDigitos)
-  return Number.isInteger(numero) ? numero : null
+  const texto = valor.trim()
+  if (!/^[0-9]+$/.test(texto)) return null
+  const numero = Number(texto)
+  return Number.isSafeInteger(numero) ? numero : null
+}
+
+export function validarNumeroLancamento(valor: unknown): ValidacaoFichaConclusao {
+  if (valor === undefined || valor === null || (typeof valor === 'string' && !valor.trim())) {
+    return { ok: false, field: 'numeroLancamento', message: 'Informe o numero do lancamento.' }
+  }
+  const numero = normalizarNumeroLancamento(valor)
+  if (numero === null) {
+    return { ok: false, field: 'numeroLancamento', message: 'Use somente digitos para informar um numero inteiro de lancamento.' }
+  }
+  if (numero < 1 || numero > 999999) {
+    return { ok: false, field: 'numeroLancamento', message: 'O numero do lancamento deve estar entre 1 e 999999.' }
+  }
+  return { ok: true, numeroLancamento: numero }
 }
 
 export function validarFichaParaConclusao(params: {
@@ -498,6 +584,20 @@ export function validarFichaParaConclusao(params: {
   clienteId: string | null
   numeroLancamento?: unknown
 }): ValidacaoFichaConclusao {
+  const contrato = validarContratoFluxo(params.ficha)
+  if (!contrato.ok) return contrato
+  if (params.ficha.versaoFluxo === 2 && !params.ficha.tipoAtendimento) {
+    return { ok: false, field: 'tipoAtendimento', message: 'Selecione o tipo de atendimento.' }
+  }
+  if (params.ficha.versaoFluxo === 2 && params.ficha.tipoAtendimento === 'nao_cliente') {
+    if (!validarNomeConsultora(params.ficha.consultoraNome ?? '')) {
+      return { ok: false, field: 'consultoraNome', message: 'Informe o nome da consultora.' }
+    }
+    if (!params.ficha.motivoVisita) {
+      return { ok: false, field: 'motivoVisita', message: 'Selecione o motivo da visita.' }
+    }
+    return { ok: true, numeroLancamento: null }
+  }
   if (!params.clienteId) {
     return { ok: false, field: 'clienteId', message: 'Selecione ou cadastre uma cliente antes de concluir.' }
   }
@@ -507,7 +607,9 @@ export function validarFichaParaConclusao(params: {
   }
 
   for (const crianca of params.ficha.criancas) {
-    if (crianca.situacao === 'ja_nasceu') {
+    if (params.ficha.versaoFluxo === 2 && crianca.situacao === 'presente_outra_pessoa' && typeof crianca.presenteJaNasceu !== 'boolean') return { ok: false, field: 'criancas', message: 'Informe se a criança presente já nasceu.' }
+    if (crianca.vinculoClienteId && crianca.vinculoClienteId !== params.clienteId) return { ok: false, field: 'criancas', message: 'Crianca vinculada a outra cliente.' }
+    if (crianca.situacao === 'ja_nasceu' || (crianca.situacao === 'presente_outra_pessoa' && crianca.presenteJaNasceu === true)) {
       if (crianca.idadeUnidade === 'meses' && (!crianca.idadeValor || crianca.idadeValor < 1 || crianca.idadeValor > 11)) {
         return { ok: false, field: 'criancas', message: 'Informe idade valida em meses.' }
       }
@@ -530,6 +632,9 @@ export function validarFichaParaConclusao(params: {
   if (!params.ficha.resultadoAtendimento) {
     return { ok: false, field: 'resultadoAtendimento', message: 'Selecione o resultado do atendimento.' }
   }
+  if (params.ficha.versaoFluxo === 2 && params.ficha.resultadoAtendimento === 'sim') {
+    return validarNumeroLancamento(params.numeroLancamento)
+  }
   if (params.ficha.motivosResultado.length === 0) {
     return { ok: false, field: 'motivosResultado', message: 'Selecione ao menos um motivo.' }
   }
@@ -542,12 +647,8 @@ export function validarFichaParaConclusao(params: {
     }
   }
 
-  const numeroLancamento = normalizarNumeroLancamento(params.numeroLancamento)
   if (params.ficha.resultadoAtendimento === 'sim') {
-    if (!numeroLancamento || numeroLancamento < 1 || numeroLancamento > 999999) {
-      return { ok: false, field: 'numeroLancamento', message: 'Informe o numero do lancamento.' }
-    }
-    return { ok: true, numeroLancamento }
+    return validarNumeroLancamento(params.numeroLancamento)
   }
 
   return { ok: true, numeroLancamento: null }

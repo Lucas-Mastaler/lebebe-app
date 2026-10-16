@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, Baby, Check, ChevronLeft, ChevronRight, ClipboardList, History, LoaderCircle, MessageSquareText, Plus, RefreshCw, Save, Search, ShoppingBag, UserRound, X } from 'lucide-react'
+import { CriancasCadastradas } from './CriancasCadastradas'
+import { ParentescoCriancaField } from './ParentescoCriancaField'
+import { requisicaoLimitada } from '@/lib/atendimento-presencial/requisicao-limitada'
+import { calcularReferenciaNascimento, criancaJaNasceu, dataAtendimentoLocal, descreverIdadeAproximada } from '@/lib/atendimento-presencial/idade-aproximada'
+import { AlertCircle, Baby, Check, ChevronLeft, ClipboardList, History, LoaderCircle, MessageSquareText, Plus, RefreshCw, Save, Search, ShoppingBag, UserRound, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   Alert,
@@ -12,6 +16,7 @@ import {
   CardContent,
   DateField,
   FormField,
+  FormErrorSummary,
   FormPageContent,
   Input,
   PageContainer,
@@ -41,13 +46,12 @@ import {
   DEPARTAMENTOS_INTERESSE,
   FICHA_CONSULTORA_NOME_MAX_CHARS,
   FICHA_CRIANCAS_MAX_ITENS,
-  FICHA_ETAPAS,
   FICHA_OBSERVACOES_MAX_CHARS,
   FICHA_PRODUTO_MAX_CHARS,
   FICHA_PRODUTOS_MAX_ITENS,
-  FICHA_TOTAL_ETAPAS,
+  MOTIVOS_VISITA,
+  OBSERVACAO_NAO_FECHAMENTO_MAX_CHARS,
   MOTIVOS_RESULTADO_GRUPOS,
-  RESULTADOS_ATENDIMENTO,
   SEXOS_CRIANCA,
   SITUACOES_CRIANCA,
   converterViradaCartaoInput,
@@ -56,13 +60,11 @@ import {
   converterDataInputParaISO,
   criarCriancaRascunho,
   formatarDataISOParaInput,
-  getDepartamentoLabel,
-  getMotivoLabel,
-  getResultadoLabel,
   limparNomeCriancaDigitacao,
   migrarFichaDadosRascunho,
   normalizarNomeConsultora,
   validarFichaParaConclusao,
+  validarNumeroLancamento,
   validarFichaDadosRascunho,
   validarNomeConsultora,
   type DepartamentoInteresse,
@@ -83,12 +85,11 @@ import {
   type AutosaveStatus,
 } from '@/lib/atendimento-presencial/autosave-fila'
 import {
-  PARENTESCOS_CLIENTE,
-  getParentescoLabel,
+  validarPayloadCliente,
   type ClientePresencialDTO,
   type ParentescoCliente,
 } from '@/lib/atendimento-presencial/clientes'
-import { aplicarMascaraTelefoneBR } from '@/lib/atendimento-presencial/telefone'
+import { normalizarTelefone, aplicarMascaraTelefoneBR } from '@/lib/atendimento-presencial/telefone'
 import {
   type AtendimentoPresencialDTO,
   type ContextoAtendimento,
@@ -110,6 +111,7 @@ type ApiConcluirResponse = {
 type ApiClientesResponse = {
   ok: boolean
   message?: string
+  field?: string
   clientes?: Array<ClientePresencialDTO & { correspondenciaExataTelefone?: boolean }>
   cliente?: ClientePresencialDTO
   clienteExistente?: boolean
@@ -133,10 +135,11 @@ type Props = {
 const etapaLabels: Record<FichaEtapa, string> = {
   ficha: 'Prancheta Virtual de Atendimento',
   resultado: 'Resultado',
-  revisao: 'Revisao',
+  revisao: 'Prancheta Virtual de Atendimento',
 }
 
 const payloadInicial: FichaDadosRascunho = {
+  versaoFluxo: 2,
   criancas: [],
   departamentos: [],
   produtosInteresse: [],
@@ -153,28 +156,14 @@ function gerarIdLocal(prefixo = 'local') {
   return `${prefixo}-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
-function indexEtapa(etapa: FichaEtapa) {
-  return Math.max(FICHA_ETAPAS.indexOf(etapa), 0)
-}
-
-function proximaEtapa(etapa: FichaEtapa) {
-  return FICHA_ETAPAS[Math.min(indexEtapa(etapa) + 1, FICHA_ETAPAS.length - 1)]
-}
-
-function etapaAnterior(etapa: FichaEtapa) {
-  return FICHA_ETAPAS[Math.max(indexEtapa(etapa) - 1, 0)]
-}
-
 function normalizarProduto(valor: string) {
   return valor.trim().replace(/\s+/g, ' ').slice(0, FICHA_PRODUTO_MAX_CHARS)
 }
 
-const ID_CRIANCA_INICIAL = 'crianca-inicial'
-
 function criarPayloadInicial(): FichaDadosRascunho {
   return {
     ...payloadInicial,
-    criancas: [criarCriancaRascunho(ID_CRIANCA_INICIAL)],
+    criancas: [],
     departamentos: [],
     produtosInteresse: [],
     motivosResultado: [],
@@ -257,7 +246,7 @@ function SecaoFicha(props: {
 }) {
   const Icon = props.erro ? AlertCircle : props.icon
   return (
-    <div id={props.id} className="scroll-mt-28">
+    <div id={props.id} className="scroll-mt-28" role="region" tabIndex={-1} aria-describedby={props.erro ? `${props.id}-erro` : undefined}>
       <Section
         title={props.titulo}
         description={props.descricao}
@@ -266,7 +255,7 @@ function SecaoFicha(props: {
         className={props.erro ? 'border border-l-4 border-red-300 border-l-red-400 bg-red-50/70' : undefined}
       >
         {props.erro && (
-          <p role="alert" className="text-xs font-medium text-destructive">
+          <p id={`${props.id}-erro`} role="alert" className="text-xs font-medium text-destructive">
             {props.erro}
           </p>
         )}
@@ -280,34 +269,45 @@ function validarEtapa(params: {
   etapa: FichaEtapa
   ficha: FichaDadosRascunho
   clienteSelecionada: ClientePresencialDTO | null
+  dataPrevistaInputs?: Record<string, string>
 }): ErroValidacaoFicha[] {
   const { etapa, ficha, clienteSelecionada } = params
   const erros: ErroValidacaoFicha[] = []
   if (etapa === 'ficha') {
-    if (!clienteSelecionada) {
-      erros.push({ sectionId: 'secao-cliente', fieldId: 'busca-cliente', message: 'Selecione uma cliente.' })
-    }
     const consultoraNomeNormalizado = normalizarNomeConsultora(ficha.consultoraNome)
     if (!consultoraNomeNormalizado || !validarNomeConsultora(consultoraNomeNormalizado)) {
       erros.push({ sectionId: 'secao-consultora-nome', fieldId: 'consultora-nome', message: 'Informe o nome da consultora (apenas letras e espacos, 2 a 30 caracteres).' })
     }
+    if (!ficha.tipoAtendimento) erros.push({ sectionId: 'secao-tipo', message: 'Selecione o tipo de atendimento.' })
+    if (ficha.tipoAtendimento === 'nao_cliente' && !ficha.motivoVisita) erros.push({ sectionId: 'secao-visita', message: 'Selecione o motivo da visita.' })
+    if (ficha.tipoAtendimento === 'cliente' && !clienteSelecionada) {
+      erros.push({ sectionId: 'secao-cliente', fieldId: 'busca-cliente', message: 'Selecione uma cliente.' })
+    }
+    if (ficha.tipoAtendimento !== 'cliente') return erros
     for (const crianca of ficha.criancas) {
+      if (ficha.versaoFluxo === 2 && !crianca.criancaPermanenteId && (crianca.parentesco?.trim().length ?? 0) < 2) erros.push({ sectionId: 'secao-crianca', fieldId: `parentesco-crianca-${crianca.id}`, message: 'Informe o parentesco da criança com a cliente.' })
+      const dataDigitada = params.dataPrevistaInputs?.[crianca.id]
+      if (dataDigitada && !converterDataInputParaISO(dataDigitada)) {
+        erros.push({ sectionId: 'secao-crianca', fieldId: `data-prevista-${crianca.id}`, message: 'Revise a data prevista de nascimento.' })
+      }
       if (crianca.situacao === 'gestacao' && crianca.dataPrevistaNascimento && !/^\d{4}-\d{2}-\d{2}$/.test(crianca.dataPrevistaNascimento)) {
         erros.push({ sectionId: 'secao-crianca', fieldId: `data-prevista-${crianca.id}`, message: 'Revise a data prevista de nascimento.' })
       }
       if (crianca.situacao === 'presente_outra_pessoa' && crianca.dataPrevistaNascimento && !/^\d{4}-\d{2}-\d{2}$/.test(crianca.dataPrevistaNascimento)) {
         erros.push({ sectionId: 'secao-crianca', fieldId: `data-prevista-${crianca.id}`, message: 'Revise a data prevista de nascimento.' })
       }
-      if (crianca.situacao === 'ja_nasceu') {
+      if (crianca.situacao === 'presente_outra_pessoa' && crianca.presenteJaNasceu === undefined) erros.push({ sectionId: 'secao-crianca', fieldId: `presente-nasceu-${crianca.id}`, message: 'Informe se a criança já nasceu.' })
+      if (criancaJaNasceu(crianca)) {
         if (crianca.idadeUnidade === 'meses' && (!crianca.idadeValor || crianca.idadeValor < 1 || crianca.idadeValor > 11)) {
-          erros.push({ sectionId: 'secao-crianca', message: 'Informe idade valida em meses.' })
+          erros.push({ sectionId: 'secao-crianca', fieldId: `idade-${crianca.id}`, message: 'Informe idade valida em meses.' })
         }
         if (crianca.idadeUnidade === 'anos' && (!crianca.idadeValor || crianca.idadeValor < 1 || crianca.idadeValor > 6)) {
-          erros.push({ sectionId: 'secao-crianca', message: 'Informe idade valida em anos.' })
+          erros.push({ sectionId: 'secao-crianca', fieldId: `idade-${crianca.id}`, message: 'Informe idade valida em anos.' })
         }
-        if (!crianca.idadeUnidade) erros.push({ sectionId: 'secao-crianca', message: 'Informe a idade da crianca.' })
+        if (!crianca.idadeUnidade) erros.push({ sectionId: 'secao-crianca', fieldId: `idade-${crianca.id}`, message: 'Informe a idade da crianca.' })
       }
     }
+    if (!ficha.departamentos.length) erros.push({ sectionId: 'secao-departamentos', message: 'Selecione ao menos um departamento.' })
   }
   if (etapa === 'resultado') {
     if (!ficha.resultadoAtendimento) erros.push({ sectionId: 'secao-resultado-fechamento', message: 'Selecione o resultado do atendimento.' })
@@ -328,6 +328,8 @@ function primeiroErroPorSecao(erros: ErroValidacaoFicha[], sectionId: string) {
 
 export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdInicial, rascunhoIdInicial }: Props) {
   const router = useRouter()
+  const [consultorasRecentes, setConsultorasRecentes] = useState<string[]>([])
+  const [erroSugestoes, setErroSugestoes] = useState<string | null>(null)
   const [contexto] = useState<ContextoAtendimento>(contextoInicial)
   const [unidadeId, setUnidadeId] = useState(unidadeIdInicial)
   const [ativo, setAtivo] = useState<AtendimentoPresencialDTO | null>(null)
@@ -336,6 +338,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [clienteId, setClienteId] = useState<string | null>(null)
   const clienteIdRef = useRef<string | null>(null)
   const clienteRequestRef = useRef(0)
+  const [erroCadastro, setErroCadastro] = useState<{ field: string; message: string } | null>(null)
+  const [cadastrandoCliente, setCadastrandoCliente] = useState(false)
+  const cadastroEmCursoRef = useRef(false)
   const [erroCliente, setErroCliente] = useState<string | null>(null)
   const [telefonePendente, setTelefonePendente] = useState<EntradasLocaisRascunho['telefonePendente']>(null)
   const [erroCache, setErroCache] = useState(false)
@@ -347,6 +352,10 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [saindo, setSaindo] = useState(false)
   const [buscaCliente, setBuscaCliente] = useState('')
   const [clientesEncontradas, setClientesEncontradas] = useState<ClientePresencialDTO[]>([])
+  const [duplicidade, setDuplicidade] = useState<{ telefone: string; cliente: ClientePresencialDTO | null; ambiguo: boolean } | null>(null)
+  const [erroDuplicidade, setErroDuplicidade] = useState<string | null>(null)
+  const [conferindoDuplicidade, setConferindoDuplicidade] = useState(false)
+  const duplicidadeGeracaoRef = useRef(0)
   const [buscandoCliente, setBuscandoCliente] = useState(false)
   const [novoCliente, setNovoCliente] = useState({
     nome: '',
@@ -359,12 +368,14 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [produtoDigitado, setProdutoDigitado] = useState('')
   const [statusSync, setStatusSync] = useState<SyncStatus>('ocioso')
   const [erro, setErro] = useState<string | null>(null)
+  const [erroConclusao, setErroConclusao] = useState<string | null>(null)
   const [erroCriacao, setErroCriacao] = useState<string | null>(null)
   const [erroEtapa, setErroEtapa] = useState<string | null>(null)
   const [errosValidacao, setErrosValidacao] = useState<ErroValidacaoFicha[]>([])
   const [numeroLancamento, setNumeroLancamento] = useState('')
   const [concluindo, setConcluindo] = useState(false)
   const [mensagemConclusao, setMensagemConclusao] = useState<string | null>(null)
+  const [rascunhoEncerrado, setRascunhoEncerrado] = useState<string | null>(null)
   const [carregandoRascunhoInicial, setCarregandoRascunhoInicial] = useState(false)
   const [erroRascunhoInicial, setErroRascunhoInicial] = useState<string | null>(null)
   const [iniciando, setIniciando] = useState(false)
@@ -390,6 +401,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const tentativaUnidadeRef = useRef('')
   const tentativaNomeRef = useRef('')
   const autoIniciandoRef = useRef(false)
+  const criacaoPromiseRef = useRef<Promise<AtendimentoPresencialDTO | null> | null>(null)
   const novoAtendimentoRef = useRef(false)
   fichaRef.current = ficha
   clienteSelecionadaRef.current = clienteSelecionada
@@ -439,8 +451,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     setTelefonePendente(valores.telefonePendente)
   }
 
-  const etapaAtual = ficha.etapaAtual
-  const etapaNumero = indexEtapa(etapaAtual) + 1
+  // Revisão legada volta à primeira etapa sem apagar dados.
+  const etapaAtual = ficha.etapaAtual === 'resultado' && ficha.tipoAtendimento === 'cliente'
+    && (ficha.resultadoAtendimento === 'nao' || ficha.resultadoAtendimento === 'negociacao') ? 'resultado' : 'ficha'
+  const etapaNumero = etapaAtual === 'resultado' ? 2 : 1
+  const camposComerciaisVisiveis = ficha.tipoAtendimento === 'cliente'
   const etapaLabelAtual = etapaLabels[etapaAtual]
   const unidadesParaSelecao = useMemo(() => contexto?.unidadesPermitidas ?? [], [contexto])
 
@@ -454,8 +469,26 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     return () => observer.disconnect()
   }, [carregandoRascunhoInicial, erroRascunhoInicial])
 
+  useEffect(() => {
+    const controller = new AbortController()
+    setConsultorasRecentes([])
+    setErroSugestoes(null)
+    if (!unidadeId) return () => controller.abort()
+    void (async () => {
+      try {
+        const response = await fetch(`/api/atendimento-presencial/consultoras-recentes?unidadeId=${encodeURIComponent(unidadeId)}`, { signal: controller.signal, cache: 'no-store' })
+        const data = await response.json() as { ok: boolean; nomes?: string[]; message?: string }
+        if (!response.ok || !data.ok) throw new Error(data.message ?? 'Não foi possível carregar as últimas consultoras.')
+        if (!controller.signal.aborted) setConsultorasRecentes(data.nomes ?? [])
+      } catch (error) {
+        if (!controller.signal.aborted) setErroSugestoes(error instanceof Error ? error.message : 'Não foi possível carregar as últimas consultoras.')
+      }
+    })()
+    return () => controller.abort()
+  }, [usuarioId, unidadeId, mensagemConclusao])
+
   const consultoraNomeNormalizado = useMemo(() => normalizarNomeConsultora(ficha.consultoraNome), [ficha.consultoraNome])
-  const rascunhoIdParam = rascunhoIdInicial
+  const rascunhoIdParam = rascunhoIdInicial === rascunhoEncerrado ? null : rascunhoIdInicial
 
   const podeCriarRascunho = useMemo(() => {
     if (!contexto || iniciando || ativo) return false
@@ -466,23 +499,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     return true
   }, [ativo, contexto, iniciando, consultoraNomeNormalizado, unidadeId, unidadesParaSelecao, rascunhoIdParam])
 
-  const errosEtapaAtual = useMemo(() => validarEtapa({ etapa: etapaAtual, ficha, clienteSelecionada }), [etapaAtual, ficha, clienteSelecionada])
-
-  const mensagemContinuar = useMemo(() => {
-    if (etapaAtual === 'ficha' && !ativo) {
-      if (iniciando) return 'Salvando rascunho...'
-      if (erroCriacao) return erroCriacao
-      if (!unidadeId) return 'Selecione a filial.'
-      if (!consultoraNomeNormalizado || !validarNomeConsultora(consultoraNomeNormalizado)) {
-        return 'Informe o nome da consultora.'
-      }
-      return 'Aguardando criacao do rascunho...'
-    }
-    if (errosEtapaAtual.length > 0) return errosEtapaAtual[0].message
-    return ''
-  }, [etapaAtual, ativo, iniciando, erroCriacao, unidadeId, consultoraNomeNormalizado, errosEtapaAtual])
 
   function atualizarFicha(mutator: (atual: FichaDadosRascunho) => FichaDadosRascunho) {
+    setMensagemConclusao(null)
     setFicha((atual) => mutator(atual))
   }
 
@@ -516,7 +535,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       setErroRascunhoInicial(null)
       setErro(null)
       try {
-        const response = await fetch(`/api/atendimento-presencial/atendimentos/${rascunhoIdParam}/rascunho`, { cache: 'no-store' })
+        const response = await requisicaoLimitada(`/api/atendimento-presencial/atendimentos/${rascunhoIdParam}/rascunho`, { cache: 'no-store' })
         const data = (await response.json()) as ApiRascunhoResponse
         if (!response.ok || !data.ok || !data.rascunho) throw new Error(data.message ?? 'Erro ao carregar rascunho')
         if (cancelled) return
@@ -581,7 +600,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       autoIniciandoRef.current = false
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ativo, iniciando, concluindo, carregandoRascunhoInicial, rascunhoIdParam, unidadeId, unidadesParaSelecao, consultoraNomeNormalizado])
+  }, [ativo, iniciando, concluindo, carregandoRascunhoInicial, rascunhoIdParam, unidadeId, unidadesParaSelecao, consultoraNomeNormalizado, onlineTick])
 
   useEffect(() => {
     setErroCriacao(null)
@@ -594,6 +613,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
 
   useEffect(() => {
     function handleOnline() {
+      tentativaUnidadeRef.current = ''
+      tentativaNomeRef.current = ''
       setOnlineTick((valor) => valor + 1)
     }
     window.addEventListener('online', handleOnline)
@@ -677,7 +698,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       initialSavedPayload: payloadSalvoSerializado,
       recoveryBases,
       save: async ({ payload, expectedVersion }): Promise<AutosaveSaveResult> => {
-        const response = await fetch(`/api/atendimento-presencial/atendimentos/${rascunho.id}/rascunho`, {
+        const response = await requisicaoLimitada(`/api/atendimento-presencial/atendimentos/${rascunho.id}/rascunho`, {
           method: 'PATCH',
           keepalive: true,
           headers: { 'Content-Type': 'application/json' },
@@ -801,9 +822,16 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     if (fila) await fila.flushNow(montarPayloadAutosave())
   }
 
-  async function iniciarRascunho(draftClientId?: string) {
+  function iniciarRascunho(draftClientId?: string) {
+    if (criacaoPromiseRef.current) return criacaoPromiseRef.current
+    const promise = criarRascunhoNoServidor(draftClientId).finally(() => { criacaoPromiseRef.current = null })
+    criacaoPromiseRef.current = promise
+    return promise
+  }
+
+  async function criarRascunhoNoServidor(draftClientId?: string): Promise<AtendimentoPresencialDTO | null> {
     if (!contexto || !podeCriarRascunho) {
-      return
+      return null
     }
     setIniciando(true)
     setErroCriacao(null)
@@ -825,7 +853,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     }
 
     try {
-      const response = await fetch('/api/atendimento-presencial/atendimentos/rascunhos', {
+      const response = await requisicaoLimitada('/api/atendimento-presencial/atendimentos/rascunhos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -841,8 +869,10 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       }
 
       await aplicarRascunhoCriado(data.rascunho)
+      return data.rascunho
     } catch (error) {
       setErroCriacao(error instanceof Error ? error.message : 'Erro ao criar rascunho')
+      return null
     } finally {
       setIniciando(false)
     }
@@ -941,6 +971,10 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     try {
       const response = await fetch(`/api/atendimento-presencial/clientes?q=${encodeURIComponent(termo)}&limit=10`, { cache: 'no-store' })
       const data = (await response.json()) as ApiClientesResponse
+      if ((!response.ok || !data.ok) && response.status < 500) {
+        registrarErrosValidacao([{ sectionId: 'secao-cliente', fieldId: 'busca-cliente', message: data.message ?? 'Revise a busca.' }])
+        return
+      }
       if (!response.ok || !data.ok) throw new Error(data.message ?? 'Erro ao buscar clientes')
       setClientesEncontradas(data.clientes ?? [])
     } catch (error) {
@@ -951,6 +985,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   function selecionarCliente(cliente: ClientePresencialDTO) {
+    const clienteAnterior = clienteIdRef.current
     ++clienteRequestRef.current
     definirClienteId(cliente.id)
     setErroCliente(null)
@@ -959,32 +994,84 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     setClientesEncontradas([])
     atualizarFicha((atual) => ({
       ...atual,
-      cliente: {
-        parentesco: cliente.parentesco,
-        parentescoOutro: cliente.parentescoOutro ?? undefined,
-      },
+      cliente: undefined,
+      criancas: clienteAnterior && clienteAnterior !== cliente.id ? [] : atual.criancas.filter((crianca) => !crianca.vinculoClienteId || crianca.vinculoClienteId === cliente.id),
     }))
   }
 
+  async function consultarDuplicidade(telefone: string, signal?: AbortSignal) {
+    const normalizado = normalizarTelefone(telefone)
+    if (!normalizado.valido || !normalizado.telefoneNormalizado) return null
+    const response = await fetch(`/api/atendimento-presencial/clientes?telefoneExato=${encodeURIComponent(normalizado.telefoneNormalizado)}`, { cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000) })
+    const data = await response.json() as ApiClientesResponse & { ambiguo?: boolean }
+    if (!response.ok || !data.ok) throw new Error(data.message ?? 'Não foi possível conferir o telefone. Tente novamente antes de cadastrar.')
+    const clientes = data.clientes ?? []
+    return { telefone: normalizado.telefoneNormalizado, cliente: clientes.length === 1 ? clientes[0] : null, ambiguo: Boolean(data.ambiguo) || clientes.length > 1 }
+  }
+
+  useEffect(() => {
+    const geracao = ++duplicidadeGeracaoRef.current
+    const controller = new AbortController()
+    setDuplicidade(null)
+    setErroDuplicidade(null)
+    setConferindoDuplicidade(false)
+    if (clienteId || !normalizarTelefone(novoCliente.telefone).valido) return () => controller.abort()
+    const timer = window.setTimeout(() => {
+      setConferindoDuplicidade(true)
+      void consultarDuplicidade(novoCliente.telefone, controller.signal).then((resultado) => {
+        if (geracao === duplicidadeGeracaoRef.current && !controller.signal.aborted) setDuplicidade(resultado)
+      }).catch((error) => {
+        if (geracao === duplicidadeGeracaoRef.current && !controller.signal.aborted) setErroDuplicidade(error instanceof Error ? error.message : 'Não foi possível conferir o telefone.')
+      }).finally(() => {
+        if (geracao === duplicidadeGeracaoRef.current && !controller.signal.aborted) setConferindoDuplicidade(false)
+      })
+    }, 500)
+    return () => { window.clearTimeout(timer); controller.abort() }
+  }, [novoCliente.telefone, clienteId])
+
   async function cadastrarCliente() {
-    if (!novoCliente.parentesco) {
-      setErroEtapa('Selecione o parentesco da cliente.')
+    if (cadastroEmCursoRef.current) return
+    const validacao = validarPayloadCliente({ nome: novoCliente.nome, telefone: novoCliente.telefone })
+    if (!validacao.ok) {
+      setErroCadastro(validacao)
+      window.requestAnimationFrame(() => document.getElementById(`nova-cliente-${validacao.field === 'parentescoOutro' ? 'parentesco-outro' : validacao.field}`)?.focus())
       return
     }
-    setErroEtapa(null)
+    cadastroEmCursoRef.current = true
+    setCadastrandoCliente(true)
+    setErroCadastro(null)
     setErro(null)
     try {
+      const geracao = duplicidadeGeracaoRef.current
+      const resultado = await consultarDuplicidade(novoCliente.telefone)
+      if (!mountedRef.current || geracao !== duplicidadeGeracaoRef.current) return
+      setDuplicidade(resultado)
+      setErroDuplicidade(null)
+      if (resultado?.cliente || resultado?.ambiguo) return
       const response = await fetch('/api/atendimento-presencial/clientes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(novoCliente),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: novoCliente.nome, telefone: novoCliente.telefone }),
       })
       const data = (await response.json()) as ApiClientesResponse
-      if (!response.ok || !data.ok || !data.cliente) throw new Error(data.message ?? 'Erro ao cadastrar cliente')
+      if (!mountedRef.current || geracao !== duplicidadeGeracaoRef.current) return
+      if (!response.ok || !data.ok || !data.cliente) {
+        if (data.field) {
+          setErroCadastro({ field: data.field, message: data.message ?? 'Revise o campo informado.' })
+          document.getElementById(`nova-cliente-${data.field === 'parentescoOutro' ? 'parentesco-outro' : data.field}`)?.focus()
+          return
+        }
+        throw new Error(data.message ?? 'Erro ao cadastrar cliente')
+      }
+      if (data.clienteExistente) {
+        setDuplicidade({ telefone: normalizarTelefone(novoCliente.telefone).telefoneNormalizado ?? '', cliente: data.cliente, ambiguo: false })
+        return
+      }
       selecionarCliente(data.cliente)
       setNovoCliente({ nome: '', telefone: '', parentesco: '', parentescoOutro: '' })
     } catch (error) {
       setErro(error instanceof Error ? error.message : 'Erro ao cadastrar cliente')
+    } finally {
+      cadastroEmCursoRef.current = false
+      setCadastrandoCliente(false)
     }
   }
 
@@ -995,7 +1082,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     setErroCliente(null)
     setClienteSelecionada(null)
     setHistoricoAberto(false)
-    atualizarFicha((atual) => ({ ...atual, cliente: undefined }))
+    atualizarFicha((atual) => ({ ...atual, cliente: undefined, criancas: [] }))
   }
 
   async function recarregarRascunhoDoServidor() {
@@ -1012,26 +1099,37 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   function irParaEtapa(etapa: FichaEtapa) {
+    setErroConclusao(null)
     setErroEtapa(null)
     setErrosValidacao([])
     atualizarFicha((atual) => ({ ...atual, etapaAtual: etapa }))
     window.requestAnimationFrame(() => formContentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
 
+  function revelarAlvo(id: string, fallbackId?: string) {
+    window.requestAnimationFrame(() => {
+      const container = document.getElementById(id) ?? (fallbackId ? document.getElementById(fallbackId) : null)
+      if (!container) return
+      const alvo = container.matches('input, textarea, button, select, [tabindex]') ? container : container.querySelector<HTMLElement>('input:not(:disabled), textarea:not(:disabled), button:not(:disabled), select:not(:disabled), [tabindex]') ?? container
+      alvo.style.scrollMarginTop = '8rem'
+      alvo.style.scrollMarginBottom = `${(actionBarRef.current?.offsetHeight ?? 160) + 24}px`
+      if (!alvo.matches('input, textarea, button, select, a[href], [tabindex]')) alvo.tabIndex = -1
+      alvo.focus({ preventScroll: true })
+      alvo.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }
+
+  function mostrarErroConclusao(message: string) {
+    setErroConclusao(message)
+    revelarAlvo('alerta-geral-prancheta', 'alerta-conflito-prancheta')
+  }
+
   function scrollParaErro(erro: ErroValidacaoFicha) {
-    const section = document.getElementById(erro.sectionId)
-    section?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    if (!erro.fieldId) return
-    const fieldId = erro.fieldId
-    window.setTimeout(() => {
-      const field = document.getElementById(fieldId)
-      if (field instanceof HTMLElement) field.focus()
-    }, 250)
+    revelarAlvo(erro.fieldId ?? erro.sectionId, erro.sectionId)
   }
 
   function etapaParaErro(erro: ErroValidacaoFicha): FichaEtapa {
-    if (erro.sectionId.includes('resultado')) return 'resultado'
-    if (erro.sectionId.includes('revisao')) return 'revisao'
+    if (erro.sectionId.includes('resultado') && erro.sectionId !== 'secao-resultado-fechamento') return 'resultado'
     return 'ficha'
   }
 
@@ -1039,7 +1137,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     const etapaErro = etapaParaErro(erro)
     if (etapaErro !== etapaAtual) {
       setFicha((atual) => ({ ...atual, etapaAtual: etapaErro }))
-      window.setTimeout(() => scrollParaErro(erro), 80)
+      window.requestAnimationFrame(() => scrollParaErro(erro))
       return
     }
     scrollParaErro(erro)
@@ -1051,30 +1149,71 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     if (erros[0]) navegarParaErro(erros[0])
   }
 
+  const valoresErro = useMemo(() => ({
+    'secao-unidade': unidadeId,
+    'secao-consultora-nome': ficha.consultoraNome,
+    'secao-tipo': ficha.tipoAtendimento,
+    'secao-visita': ficha.motivoVisita,
+    'secao-cliente': clienteSelecionada?.id,
+    'secao-crianca': JSON.stringify([ficha.criancas, dataPrevistaInputs]),
+    'secao-departamentos': JSON.stringify(ficha.departamentos),
+    'secao-produtos': JSON.stringify(ficha.produtosInteresse),
+    'secao-observacoes': ficha.observacoes,
+    'secao-resultado-fechamento': ficha.resultadoAtendimento,
+    'secao-resultado-produto': JSON.stringify(ficha.motivosResultado),
+    'secao-resultado-condicao': viradaCartaoInput,
+    'secao-resultado-outro': ficha.motivoOutro,
+    'secao-resultado-observacao': ficha.observacaoNaoFechamento,
+    'secao-lancamento': numeroLancamento,
+  }), [unidadeId, ficha, clienteSelecionada, dataPrevistaInputs, viradaCartaoInput, numeroLancamento])
+  const valoresErroAnteriores = useRef(valoresErro)
+  useEffect(() => {
+    const anteriores = valoresErroAnteriores.current
+    valoresErroAnteriores.current = valoresErro
+    const invalidos = [
+      ...validarEtapa({ etapa: 'ficha', ficha, clienteSelecionada, dataPrevistaInputs }),
+      ...validarEtapa({ etapa: 'resultado', ficha, clienteSelecionada }),
+    ]
+    setErrosValidacao((atuais) => {
+      const restantes = atuais.filter((item) => {
+        const chave = item.sectionId as keyof typeof valoresErro
+        if (valoresErro[chave] === anteriores[chave]) return true
+        if (chave === 'secao-lancamento') return !validarNumeroLancamento(numeroLancamento).ok
+        return invalidos.some((invalido) => invalido.sectionId === chave)
+      })
+      return restantes.length === atuais.length ? atuais : restantes
+    })
+  }, [valoresErro, ficha, clienteSelecionada, numeroLancamento, dataPrevistaInputs])
+  useEffect(() => {
+    if (errosValidacao.length === 0) setErroEtapa(null)
+  }, [errosValidacao])
+  const cadastroAnterior = useRef(novoCliente)
+  useEffect(() => {
+    const anterior = cadastroAnterior.current
+    cadastroAnterior.current = novoCliente
+    if (!erroCadastro) return
+    const field = erroCadastro.field as keyof typeof novoCliente
+    if (anterior[field] !== novoCliente[field]) {
+      const validacao = validarPayloadCliente({ nome: novoCliente.nome, telefone: novoCliente.telefone })
+      if (validacao.ok || validacao.field !== field) setErroCadastro(null)
+    }
+  }, [novoCliente, erroCadastro])
+
   function erroSecao(sectionId: string) {
     return primeiroErroPorSecao(errosValidacao, sectionId)
   }
 
-  function avancar() {
-    if (!ativo) {
-      setErroEtapa('Rascunho nao criado. Preencha filial e consultora para iniciar o atendimento.')
-      return
-    }
-    const erros = validarEtapa({ etapa: etapaAtual, ficha, clienteSelecionada })
-    if (erros.length > 0) {
-      registrarErrosValidacao(erros)
-      return
-    }
-    setErroEtapa(null)
-    setErrosValidacao([])
-    irParaEtapa(proximaEtapa(etapaAtual))
+  function escolherResultado(resultado: ResultadoAtendimento) {
+    const proximaFicha: FichaDadosRascunho = { ...ficha, versaoFluxo: 2, resultadoAtendimento: resultado }
+    atualizarFicha(() => proximaFicha)
+    const erros = validarEtapa({ etapa: 'ficha', ficha: proximaFicha, clienteSelecionada, dataPrevistaInputs })
+    if (!unidadeId) erros.unshift({ sectionId: 'secao-unidade', message: 'Selecione a unidade.' })
+    if (erros.length) return registrarErrosValidacao(erros)
+    if (resultado === 'sim') void concluirAtendimento(proximaFicha)
+    else irParaEtapa('resultado')
   }
 
-  function voltar() {
-    setErroEtapa(null)
-    setErrosValidacao([])
-    irParaEtapa(etapaAnterior(etapaAtual))
-  }
+  function voltar() { irParaEtapa('ficha') }
 
   function adicionarCrianca() {
     if (fichaRef.current.criancas.length >= FICHA_CRIANCAS_MAX_ITENS) {
@@ -1089,6 +1228,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   function atualizarCrianca(id: string, patch: Partial<FichaCriancaRascunho>) {
+    if (patch.idadeValor !== undefined) {
+      const anterior = fichaRef.current.criancas.find((c) => c.id === id)
+      const unidade = patch.idadeUnidade ?? anterior?.idadeUnidade
+      if (unidade && patch.idadeValor > 0) patch = { ...patch, dataReferenciaNascimento: calcularReferenciaNascimento(dataAtendimentoLocal(ativo?.iniciadoEm), unidade, patch.idadeValor) }
+    } else if (Object.hasOwn(patch, 'idadeUnidade') || Object.hasOwn(patch, 'situacao') || Object.hasOwn(patch, 'presenteJaNasceu')) patch = { ...patch, dataReferenciaNascimento: undefined }
     atualizarFicha((atual) => ({
       ...atual,
       criancas: atual.criancas.map((crianca) => crianca.id === id ? { ...crianca, ...patch } : crianca),
@@ -1126,6 +1270,17 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     if (restantes.length === errosValidacao.length) return
     setErrosValidacao(restantes)
     setErroEtapa(restantes.length === 0 ? null : restantes.length === 1 ? restantes[0].message : 'Revise os campos destacados antes de continuar.')
+  }
+
+  function atualizarNumeroLancamento(valor: string) {
+    setNumeroLancamento(valor)
+    const validacao = validarNumeroLancamento(valor)
+    const tinhaErro = errosValidacao.some((item) => item.fieldId === 'numero-lancamento')
+    if (!tinhaErro) return
+    const restantes = errosValidacao.filter((item) => item.fieldId !== 'numero-lancamento')
+    const erros = validacao.ok ? restantes : [...restantes, erroConclusaoParaSecao(validacao.field, validacao.message)]
+    setErrosValidacao(erros)
+    setErroEtapa(erros.length === 0 ? null : erros.length === 1 ? erros[0].message : 'Revise os campos destacados antes de continuar.')
   }
 
   function atualizarViradaCartao(valor: string) {
@@ -1182,16 +1337,22 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   function erroConclusaoParaSecao(field: string | undefined, message: string): ErroValidacaoFicha {
+    if (field === 'unidadeId') return { sectionId: 'secao-unidade', message }
+    if (field === 'tipoAtendimento') return { sectionId: 'secao-tipo', message }
+    if (field === 'motivoVisita') return { sectionId: 'secao-visita', message }
+    if (field === 'observacaoNaoFechamento') return { sectionId: 'secao-resultado-observacao', fieldId: 'observacao-nao-fechamento', message }
+    if (field === 'observacoes') return { sectionId: 'secao-observacoes', fieldId: 'observacoes', message }
+    if (field === 'produtosInteresse') return { sectionId: 'secao-produtos', message }
     if (field === 'consultoraNome') return { sectionId: 'secao-consultora-nome', fieldId: 'consultora-nome', message }
     if (field === 'clienteId') return { sectionId: 'secao-cliente', fieldId: 'busca-cliente', message }
     if (field === 'criancas') return { sectionId: 'secao-crianca', message }
     if (field === 'departamentos') return { sectionId: 'secao-departamentos', message }
-    if (field === 'resultadoAtendimento') return { sectionId: 'secao-resultado-fechamento', message }
+    if (field === 'resultadoAtendimento') return { sectionId: 'secao-tipo', message }
     if (field === 'motivosResultado') return { sectionId: 'secao-resultado-produto', message }
     if (field === 'motivoOutro') return { sectionId: 'secao-resultado-outro', fieldId: 'motivo-outro', message }
     if (field === 'viradaCartao') return { sectionId: 'secao-resultado-condicao', fieldId: 'virada-cartao', message }
-    if (field === 'numeroLancamento') return { sectionId: 'secao-revisao-lancamento', fieldId: 'numero-lancamento', message }
-    return { sectionId: etapaAtual === 'revisao' ? 'secao-revisao' : `secao-${etapaAtual}`, message }
+    if (field === 'numeroLancamento') return { sectionId: 'secao-lancamento', fieldId: 'numero-lancamento', message }
+    return { sectionId: `secao-${etapaAtual}`, message }
   }
 
   async function garantirRascunhoSalvoAntesDeConcluir() {
@@ -1230,6 +1391,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       autosaveQueueRef.current?.stop()
       autosaveQueueRef.current = null
       setAtivo(null)
+      setRascunhoEncerrado(rascunhoIdInicial)
       setFicha(criarPayloadInicial())
       definirClienteId(null)
       setTelefonePendente(null)
@@ -1254,6 +1416,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       setNumeroLancamento('')
       setStatusSync('ocioso')
       setMensagemConclusao(null)
+      setErroConclusao(null)
       setErroRascunhoInicial(null)
       setCarregandoRascunhoInicial(false)
       telefoneClienteSincronizadoRef.current = ''
@@ -1281,7 +1444,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   async function tentarSalvarNovamente() {
-    if (!ativo || conflitoLocalRef.current) return
+    if (conflitoLocalRef.current) return
+    if (!ativo) { await iniciarRascunho(); return }
     const resultado = await autosaveQueueRef.current?.flushNow(montarPayloadAutosave())
     if (resultado && !resultado.ok) setErro(resultado.message)
   }
@@ -1293,7 +1457,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       persistirCacheLocal()
       if (conflitoLocalRef.current) throw new Error('Resolva o conflito antes de sair.')
       if (telefonePendente) throw new Error('O telefone ainda nao foi confirmado. Tente salvar novamente.')
-      if (ativo && autosaveQueueRef.current) {
+      if (!ativo && (criacaoPromiseRef.current || podeCriarRascunho)) {
+        const criado = await (criacaoPromiseRef.current ?? iniciarRascunho())
+        if (!criado) throw new Error('Não foi possível salvar o atendimento. O preenchimento foi preservado; tente salvar novamente.')
+      }
+      if (autosaveQueueRef.current) {
         const resultado = await autosaveQueueRef.current.flushNow(montarPayloadAutosave())
         if (!resultado.ok) throw new Error(resultado.message)
       } else if (ficha.consultoraNome || clienteId) {
@@ -1307,11 +1475,19 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     }
   }
 
-  async function concluirAtendimento() {
-    if (!ativo || concluindoRef.current) return
+  async function concluirAtendimento(fichaConclusao: FichaDadosRascunho = ficha) {
+    if (concluindoRef.current) return
     concluindoRef.current = true
+    setErroConclusao(null)
+    const errosIniciais = validarEtapa({ etapa: 'ficha', ficha: fichaConclusao, clienteSelecionada, dataPrevistaInputs })
+    if (!unidadeId) errosIniciais.unshift({ sectionId: 'secao-unidade', message: 'Selecione a unidade.' })
+    if (errosIniciais.length) {
+      registrarErrosValidacao(errosIniciais)
+      concluindoRef.current = false
+      return
+    }
     const validacao = validarFichaParaConclusao({
-      ficha,
+      ficha: { ...fichaConclusao, versaoFluxo: 2 },
       clienteId: clienteIdRef.current,
       numeroLancamento,
     })
@@ -1322,16 +1498,22 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       return
     }
 
+    if (!ativo) {
+      mostrarErroConclusao('Aguarde a criação do rascunho antes de concluir.')
+      concluindoRef.current = false
+      return
+    }
     setConcluindo(true)
     setErro(null)
     setErroEtapa(null)
+    setErrosValidacao([])
     setMensagemConclusao(null)
     try {
       const rascunhoSalvo = await garantirRascunhoSalvoAntesDeConcluir()
       if (!rascunhoSalvo) throw new Error('Rascunho nao encontrado')
       const consultoraNomeNormalizado = normalizarNomeConsultora(ficha.consultoraNome)
       atualizarFicha((atual) => ({ ...atual, consultoraNome: consultoraNomeNormalizado }))
-      const response = await fetch(`/api/atendimento-presencial/atendimentos/${rascunhoSalvo.id}/concluir`, {
+      const response = await requisicaoLimitada(`/api/atendimento-presencial/atendimentos/${rascunhoSalvo.id}/concluir`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1341,7 +1523,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         }),
       })
       const data = (await response.json()) as ApiConcluirResponse
-      if (!response.ok || !data.ok || !data.atendimento) {
+      if (!response.ok || !data.ok || !data.atendimento || data.atendimento.status !== 'concluido' || data.atendimento.id !== rascunhoSalvo.id) {
+        if (data.field) {
+          registrarErrosValidacao([erroConclusaoParaSecao(data.field, data.message ?? 'Revise o campo informado.')])
+          return
+        }
         throw new Error(data.message ?? 'Erro ao concluir atendimento')
       }
 
@@ -1354,6 +1540,20 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       definirClienteId(null)
       setTelefonePendente(null)
       setFicha(criarPayloadInicial())
+      fichaRef.current = criarPayloadInicial()
+      ++clienteRequestRef.current
+      ++telefoneRequestRef.current
+      setNovoCliente({ nome: '', telefone: '', parentesco: '', parentescoOutro: '' })
+      setTelefoneClienteEdicao('')
+      setErroTelefone(null)
+      telefoneClienteSincronizadoRef.current = ''
+      tentativaUnidadeRef.current = ''
+      tentativaNomeRef.current = ''
+      cacheRecuperadoRef.current = null
+      setCachesRecuperaveis([])
+      setHistoricoAberto(false)
+      if (window.location.search) void router.replace('/atendimento-presencial/prancheta', { scroll: false })
+      setUnidadeId(unidadesParaSelecao.length === 1 ? unidadesParaSelecao[0].id : '')
       setClienteSelecionada(null)
       setBuscaCliente('')
       setClientesEncontradas([])
@@ -1363,9 +1563,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       setProdutoDigitado('')
       setNumeroLancamento('')
       setStatusSync('ocioso')
+      setErroConclusao(null)
       setMensagemConclusao('Atendimento concluido e salvo nos registros.')
+      setRascunhoEncerrado(rascunhoIdInicial)
     } catch (error) {
-      setErro(error instanceof Error ? error.message : 'Erro ao concluir atendimento')
+      mostrarErroConclusao(error instanceof Error ? error.message : 'Erro ao concluir atendimento')
     } finally {
       concluindoRef.current = false
       autosaveQueueRef.current?.resume()
@@ -1450,18 +1652,18 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
 
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-slate-700">Etapa {etapaNumero} de {FICHA_TOTAL_ETAPAS}</p>
+            <p className="text-sm font-semibold text-slate-700">Etapa {etapaNumero} de {2}</p>
             <p className="text-sm text-slate-500">{etapaLabelAtual}</p>
           </div>
           <StatusSync status={statusVisivel} onRetry={() => erroCriacao ? void iniciarRascunho(draftClientIdRef.current ?? undefined) : tentarSalvarNovamente()} />
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
-          <div className="h-full rounded-full bg-primary" style={{ width: `${(etapaNumero / FICHA_TOTAL_ETAPAS) * 100}%` }} />
+          <div className="h-full rounded-full bg-primary" style={{ width: `${(etapaNumero / 2) * 100}%` }} />
         </div>
 
-        {(erro || erroCriacao) && !conflitoLocal && (
-          <Alert tone="danger">
-            <p>{erro ?? erroCriacao}</p>
+        {(erroConclusao || erro || erroCriacao) && !conflitoLocal && (
+          <Alert id="alerta-geral-prancheta" tabIndex={-1} className="scroll-mt-32 outline-none focus-visible:ring-2 focus-visible:ring-destructive/40" tone="danger">
+            <p>{erroConclusao ?? erro ?? erroCriacao}</p>
             {erroCriacao && !iniciando && (
               <Button type="button" variant="secondary" size="sm" onClick={() => void iniciarRascunho(draftClientIdRef.current ?? undefined)} className="mt-2">
                 <RefreshCw className="size-4" aria-hidden="true" />
@@ -1484,7 +1686,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
           <Button type="button" variant="secondary" size="sm" onClick={() => void carregarClientePorId(clienteIdRef.current)}>Carregar cliente novamente</Button>
           <Button type="button" variant="ghost" size="sm" onClick={trocarCliente}>Trocar cliente</Button>
         </Alert>}
-        {conflitoLocal && <Alert tone="danger">
+        {conflitoLocal && <Alert id="alerta-conflito-prancheta" tabIndex={-1} tone="danger">
           <p>Este rascunho foi alterado em outra sessao. Escolha qual versao deseja continuar.</p>
           <Button type="button" variant="secondary" size="sm" onClick={() => resolverConflitoLocal(true)}>Continuar com alteracoes locais</Button>
           <Button type="button" variant="ghost" size="sm" onClick={() => resolverConflitoLocal(false)}>Continuar com versao do servidor</Button>
@@ -1493,7 +1695,14 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
           <p>Existem alteracoes locais recuperaveis neste navegador.</p>
           {cachesRecuperaveis.map((cache) => <Button key={cache.draftClientId} type="button" variant="secondary" size="sm" onClick={() => void recuperarCache(cache)}>Retomar copia local ({new Date(cache.atualizadoEm).toLocaleString('pt-BR')})</Button>)}
         </Alert>}
-        {erroEtapa && !conflitoLocal && <Alert tone="warning">{erroEtapa}</Alert>}
+        {!conflitoLocal && <FormErrorSummary
+          errors={Object.fromEntries(errosValidacao.map((item) => [item.fieldId ?? item.sectionId, item.message]))}
+          onFocusField={(field) => {
+            const item = errosValidacao.find((erro) => (erro.fieldId ?? erro.sectionId) === field)
+            if (item) navegarParaErro(item)
+          }}
+        />}
+        {erroEtapa && errosValidacao.length === 0 && !conflitoLocal && <Alert tone="warning">{erroEtapa}</Alert>}
         {mensagemConclusao && <Alert tone="success">{mensagemConclusao}</Alert>}
 
         {carregandoRascunhoInicial && (
@@ -1524,6 +1733,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
             {etapaAtual === 'ficha' && (
               <SecaoFicha
                 id="secao-unidade"
+                erro={erroSecao('secao-unidade')}
                 titulo="Unidade"
                 descricao={!ativo ? 'Selecione a unidade do atendimento.' : 'Unidade do atendimento. Para alterar, use o botao Novo atendimento.'}
                 icon={ClipboardList}
@@ -1561,7 +1771,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 tone="section-1"
                 erro={erroSecao('secao-consultora-nome')}
               >
-                <FormField id="consultora-nome" label="Nome da consultora" required>
+                <FormField id="consultora-nome" label="Nome da consultora" required error={erroSecao('secao-consultora-nome')}>
                   {(f) => (
                     <Input
                       {...f}
@@ -1574,10 +1784,41 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                     />
                   )}
                 </FormField>
+                {consultorasRecentes.length > 0 && <div className="space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground">Últimas consultoras</p>
+                  <div className="flex flex-wrap gap-2">
+                    {consultorasRecentes.map((nome) => <Button key={nome} type="button" variant="secondary" size="sm"
+                      onClick={() => atualizarFicha((atual) => ({ ...atual, consultoraNome: nome }))}>{nome}</Button>)}
+                  </div>
+                </div>}
+                {erroSugestoes && <p role="status" className="text-xs text-muted-foreground">{erroSugestoes} Você pode digitar o nome normalmente.</p>}
               </SecaoFicha>
             )}
 
-            {etapaAtual === 'ficha' && (
+            {etapaAtual === 'ficha' && <>
+              <SecaoFicha id="secao-tipo" titulo="Tipo de atendimento" icon={UserRound} erro={erroSecao('secao-tipo')}>
+                <div className="grid grid-cols-2 gap-2">
+                  {([{ chave: 'cliente', label: 'Cliente' }, { chave: 'nao_cliente', label: 'Não cliente' }] as const).map((item) => (
+                    <OpcaoButton key={item.chave} selected={ficha.tipoAtendimento === item.chave} onClick={() => {
+                      setErro(null)
+                      setErrosValidacao([])
+                      setErroEtapa(null)
+                      atualizarFicha((atual) => ({ ...atual, versaoFluxo: 2, tipoAtendimento: item.chave }))
+                    }}>{item.label}</OpcaoButton>
+                  ))}
+                </div>
+              </SecaoFicha>
+              {ficha.tipoAtendimento === 'nao_cliente' && (
+                <SecaoFicha id="secao-visita" titulo="Motivo da visita" icon={ClipboardList} erro={erroSecao('secao-visita')}>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {MOTIVOS_VISITA.map((item) => <OpcaoButton key={item.chave} selected={ficha.motivoVisita === item.chave}
+                      onClick={() => atualizarFicha((atual) => ({ ...atual, motivoVisita: item.chave }))}>{item.label}</OpcaoButton>)}
+                  </div>
+                </SecaoFicha>
+              )}
+            </>}
+
+            {etapaAtual === 'ficha' && camposComerciaisVisiveis && (
               <SecaoFicha
                 id="secao-cliente"
                 titulo="Cliente"
@@ -1592,7 +1833,6 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                       <p className="text-xs font-bold uppercase text-sky-700">Cliente vinculada</p>
                       <p className="mt-2 text-base font-semibold text-slate-950">{clienteSelecionada.nome}</p>
                       {clienteSelecionada.telefoneFormatado && <p className="text-sm text-slate-700">{clienteSelecionada.telefoneFormatado}</p>}
-                      <p className="text-sm text-slate-700">{clienteSelecionada.parentescoLabel}</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button type="button" variant="secondary" size="sm" onClick={trocarCliente}>
                           Trocar cliente
@@ -1613,6 +1853,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                       <div className="mt-2 flex gap-2">
                         <Input
                           id="busca-cliente"
+                          aria-invalid={!!erroSecao('secao-cliente')}
+                          aria-describedby={erroSecao('secao-cliente') ? 'secao-cliente-erro' : undefined}
                           value={buscaCliente}
                           onChange={(event) => setBuscaCliente(event.target.value)}
                           onKeyDown={(event) => {
@@ -1641,7 +1883,6 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                           >
                             <p className="font-semibold text-slate-950">{cliente.nome}</p>
                             <p className="text-sm text-slate-600">{cliente.telefoneFormatado ?? 'Sem telefone'}</p>
-                            <p className="text-sm text-slate-600">{cliente.parentescoLabel}</p>
                           </button>
                         ))}
                       </div>
@@ -1651,22 +1892,24 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                       <CardContent className="p-4">
                         <h3 className="text-base font-semibold text-slate-950">Nova cliente</h3>
                         <div className="mt-4 grid gap-4">
-                          <FormField id="nova-cliente-nome" label="Nome">
+                          <FormField id="nova-cliente-nome" label="Nome" required error={erroCadastro?.field === 'nome' ? erroCadastro.message : undefined}>
                             {(f) => (
                               <Input
                                 {...f}
                                 value={novoCliente.nome}
+                                disabled={cadastrandoCliente}
                                 onChange={(event) => setNovoCliente((atual) => ({ ...atual, nome: event.target.value }))}
                                 className="h-12 text-base"
                                 maxLength={120}
                               />
                             )}
                           </FormField>
-                          <FormField id="nova-cliente-telefone" label="Telefone" helper="Opcional">
+                          <FormField id="nova-cliente-telefone" label="Telefone" error={erroCadastro?.field === 'telefone' ? erroCadastro.message : undefined}>
                             {(f) => (
                               <Input
                                 {...f}
                                 value={novoCliente.telefone}
+                                disabled={cadastrandoCliente}
                                 onChange={(event) => atualizarTelefoneCliente(event.target.value)}
                                 className="h-12 text-base"
                                 inputMode="tel"
@@ -1674,34 +1917,14 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                               />
                             )}
                           </FormField>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-700">Parentesco</p>
-                            <div className="mt-2 grid grid-cols-2 gap-2">
-                              {PARENTESCOS_CLIENTE.map((item) => (
-                                <OpcaoButton
-                                  key={item.chave}
-                                  selected={novoCliente.parentesco === item.chave}
-                                  onClick={() => setNovoCliente((atual) => ({ ...atual, parentesco: item.chave }))}
-                                >
-                                  {item.label}
-                                </OpcaoButton>
-                              ))}
-                            </div>
-                          </div>
-                          {novoCliente.parentesco === 'outro' && (
-                            <FormField id="nova-cliente-parentesco-outro" label="Complemento">
-                              {(f) => (
-                                <Input
-                                  {...f}
-                                  value={novoCliente.parentescoOutro}
-                                  onChange={(event) => setNovoCliente((atual) => ({ ...atual, parentescoOutro: event.target.value }))}
-                                  className="h-12 text-base"
-                                  maxLength={60}
-                                />
-                              )}
-                            </FormField>
-                          )}
-                          <Button type="button" onClick={cadastrarCliente} size="lg" className="h-12">
+                          {conferindoDuplicidade && <p role="status" className="text-sm text-muted-foreground">Conferindo telefone…</p>}
+                          {erroDuplicidade && <Alert tone="danger">{erroDuplicidade}</Alert>}
+                          {duplicidade?.ambiguo && <Alert tone="warning">Não foi possível identificar um cadastro único para este telefone. Revise o telefone ou busque o cliente antes de cadastrar.</Alert>}
+                          {duplicidade?.cliente && duplicidade.telefone === normalizarTelefone(novoCliente.telefone).telefoneNormalizado && <Alert tone="info">
+                            <p>Cliente já cadastrado: {duplicidade.cliente.nome}.</p>
+                            <Button type="button" variant="secondary" className="mt-2 min-h-12" disabled={cadastrandoCliente} onClick={() => { if (duplicidade.cliente) selecionarCliente(duplicidade.cliente) }}>Usar cadastro existente</Button>
+                          </Alert>}
+                          <Button type="button" onClick={cadastrarCliente} disabled={cadastrandoCliente || conferindoDuplicidade || !!duplicidade?.cliente || !!duplicidade?.ambiguo} loading={cadastrandoCliente} size="lg" className="h-12">
                             Cadastrar e vincular
                           </Button>
                         </div>
@@ -1712,7 +1935,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
               </SecaoFicha>
             )}
 
-            {etapaAtual === 'ficha' && (
+            {etapaAtual === 'ficha' && camposComerciaisVisiveis && (
               <SecaoFicha
                 id="secao-crianca"
                 titulo="Dados da crianca"
@@ -1722,24 +1945,31 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 erro={erroSecao('secao-crianca')}
               >
                 {ficha.criancas.map((crianca, index) => (
+                  crianca.criancaPermanenteId ? <Card key={crianca.id} className="border-primary/30 bg-primary/5" data-crianca-selecionada><CardContent className="grid gap-2 p-3">
+                    <div className="flex items-start justify-between gap-3"><h3 className="min-w-0 break-words text-sm font-semibold text-slate-950">{crianca.nome || 'Nome não informado'}</h3><span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-primary"><Check className="size-3.5" aria-hidden="true" />Selecionada</span></div>
+                    <p className="text-sm text-muted-foreground">{crianca.parentesco}</p>
+                    <p className="text-xs text-muted-foreground">{crianca.dataReferenciaNascimento ? `${descreverIdadeAproximada(crianca.dataReferenciaNascimento)} · referência estimada ${formatarDataISOParaInput(crianca.dataReferenciaNascimento)}` : crianca.dataPrevistaNascimento ? `Previsão informada: ${formatarDataISOParaInput(crianca.dataPrevistaNascimento)}` : crianca.idadeValor ? `Idade informada: ${crianca.idadeValor} ${crianca.idadeUnidade}` : 'Nascimento não informado'}</p>
+                    <Button type="button" variant="ghost" size="sm" className="justify-self-start" onClick={() => removerCrianca(crianca.id)}>Alterar ou remover seleção</Button>
+                  </CardContent></Card> :
                   <Card key={crianca.id}>
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between gap-3">
                         <h3 className="font-semibold text-slate-950">Crianca {index + 1}</h3>
-                        {ficha.criancas.length > 1 && (
+                        {ficha.criancas.length > 0 && (
                           <Button type="button" variant="ghost" size="icon" onClick={() => removerCrianca(crianca.id)} aria-label={`Remover crianca ${index + 1}`}>
                             <X className="size-4" aria-hidden="true" />
                           </Button>
                         )}
                       </div>
                       <div className="mt-4 grid gap-4">
+                        {ficha.versaoFluxo === 2 && <ParentescoCriancaField id={`parentesco-crianca-${crianca.id}`} value={crianca.parentesco ?? ''} error={errosValidacao.find((item) => item.fieldId === `parentesco-crianca-${crianca.id}`)?.message} onChange={(parentesco) => atualizarCrianca(crianca.id, { parentesco })} />}
                         <FormField id={`situacao-${crianca.id}`} label="Situacao" required>
                           {(f) => (
                             <Select
                               value={crianca.situacao}
                               onValueChange={(value) => {
                                 setDataPrevistaInputs((atual) => ({ ...atual, [crianca.id]: '' }))
-                                atualizarCrianca(crianca.id, { situacao: value as SituacaoCrianca, idadeUnidade: undefined, idadeValor: undefined, dataPrevistaNascimento: undefined })
+                                atualizarCrianca(crianca.id, { situacao: value as SituacaoCrianca, presenteJaNasceu: undefined, idadeUnidade: undefined, idadeValor: undefined, dataPrevistaNascimento: undefined })
                               }}
                             >
                               <SelectTrigger id={f.id} className="h-12 w-full text-base" aria-invalid={f['aria-invalid']} aria-describedby={f['aria-describedby']}>
@@ -1755,8 +1985,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                             </Select>
                           )}
                         </FormField>
-                        {(crianca.situacao === 'gestacao' || crianca.situacao === 'presente_outra_pessoa') && (
-                          <FormField id={`data-prevista-${crianca.id}`} label="Data prevista de nascimento">
+                        {crianca.situacao === 'presente_outra_pessoa' && <FormField id={`presente-nasceu-${crianca.id}`} label="Já nasceu?" required error={errosValidacao.find((item) => item.fieldId === `presente-nasceu-${crianca.id}`)?.message}>{(field) => <div {...field} tabIndex={-1} className="flex gap-2">{[true, false].map((nasceu) => <OpcaoButton key={String(nasceu)} selected={crianca.presenteJaNasceu === nasceu} onClick={() => atualizarCrianca(crianca.id, { presenteJaNasceu: nasceu, idadeUnidade: undefined, idadeValor: undefined, dataPrevistaNascimento: undefined })}>{nasceu ? 'Sim' : 'Não'}</OpcaoButton>)}</div>}</FormField>}
+                        {(crianca.situacao === 'gestacao' || (crianca.situacao === 'presente_outra_pessoa' && crianca.presenteJaNasceu === false)) && (
+                          <FormField id={`data-prevista-${crianca.id}`} label="Data prevista de nascimento" error={errosValidacao.find((item) => item.fieldId === `data-prevista-${crianca.id}`)?.message}>
                             {(f) => (
                               <DateField
                                 {...f}
@@ -1766,9 +1997,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                             )}
                           </FormField>
                         )}
-                        {crianca.situacao === 'ja_nasceu' && (
-                          <div className="grid gap-3">
-                            <p className="text-sm font-semibold text-slate-700">Idade</p>
+                        {criancaJaNasceu(crianca) && (
+                          <div id={`idade-${crianca.id}`} tabIndex={-1} className="grid gap-3" aria-describedby={errosValidacao.some((item) => item.fieldId === `idade-${crianca.id}`) ? `idade-${crianca.id}-erro` : undefined}>
+                            <p className="text-sm font-semibold text-slate-700">Idade aproximada *</p>
+                            {crianca.dataReferenciaNascimento && <p className="text-xs text-muted-foreground">Referência estimada: {formatarDataISOParaInput(crianca.dataReferenciaNascimento)} · {descreverIdadeAproximada(crianca.dataReferenciaNascimento)}</p>}
+                            {errosValidacao.find((item) => item.fieldId === `idade-${crianca.id}`) && <p id={`idade-${crianca.id}-erro`} role="alert" className="text-xs text-destructive">{errosValidacao.find((item) => item.fieldId === `idade-${crianca.id}`)?.message}</p>}
                             <div className="grid grid-cols-2 gap-2">
                               {(['meses', 'anos'] as UnidadeIdadeCrianca[]).map((unidade) => (
                                 <OpcaoButton key={unidade} selected={crianca.idadeUnidade === unidade} onClick={() => atualizarCrianca(crianca.id, { idadeUnidade: unidade, idadeValor: undefined })}>
@@ -1825,14 +2058,14 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                     </CardContent>
                   </Card>
                 ))}
-                <Button type="button" variant="secondary" disabled={ficha.criancas.length >= FICHA_CRIANCAS_MAX_ITENS} onClick={adicionarCrianca} size="lg" className="h-12">
+                {clienteId ? <CriancasCadastradas key={clienteId} clienteId={clienteId} rascunhoId={ativo?.id ?? null} selecionadas={ficha.criancas} sincronizar={garantirRascunhoSalvoAntesDeConcluir} cadastrar={adicionarCrianca} selecionar={(crianca) => atualizarFicha((atual) => ({ ...atual, criancas: atual.criancas.length >= FICHA_CRIANCAS_MAX_ITENS || atual.criancas.some((c) => c.criancaPermanenteId === crianca.criancaPermanenteId) ? atual.criancas : [...atual.criancas, crianca] }))} /> : <Button type="button" variant="secondary" disabled={ficha.criancas.length >= FICHA_CRIANCAS_MAX_ITENS} onClick={adicionarCrianca} size="lg" className="h-12">
                   <Plus className="size-4" aria-hidden="true" />
                   {ficha.criancas.length >= FICHA_CRIANCAS_MAX_ITENS ? 'Limite de oito criancas atingido' : 'Adicionar outra crianca'}
-                </Button>
+                </Button>}
               </SecaoFicha>
             )}
 
-            {etapaAtual === 'ficha' && (
+            {etapaAtual === 'ficha' && camposComerciaisVisiveis && (
               <>
                 <SecaoFicha
                   id="secao-departamentos"
@@ -1899,28 +2132,15 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
 
             {etapaAtual === 'resultado' && (
               <div className="grid gap-6">
-                <SecaoFicha
-                  id="secao-resultado-fechamento"
-                  titulo="Fechamento"
-                  descricao="Informe o desfecho comercial do atendimento."
-                  icon={Check}
-                  tone="section-1"
-                  erro={erroSecao('secao-resultado-fechamento')}
-                >
-                  <div className="grid gap-2">
-                    {RESULTADOS_ATENDIMENTO.map((item) => (
-                      <OpcaoButton
-                        key={item.chave}
-                        selected={ficha.resultadoAtendimento === item.chave}
-                        onClick={() => {
-                          if (item.chave !== 'sim') setNumeroLancamento('')
-                          atualizarFicha((atual) => ({ ...atual, resultadoAtendimento: item.chave as ResultadoAtendimento }))
-                        }}
-                      >
-                        {item.label}
-                      </OpcaoButton>
-                    ))}
-                  </div>
+                <p className="font-semibold">{ficha.resultadoAtendimento === 'negociacao' ? 'Negociação' : 'Venda perdida'}</p>
+                <SecaoFicha id="secao-resultado-observacao" titulo="Observação de não fechamento" icon={MessageSquareText} erro={erroSecao('secao-resultado-observacao')}>
+                  <FormField id="observacao-nao-fechamento" label="Observação de não fechamento" error={erroSecao('secao-resultado-observacao')} helper="Até 300 caracteres">
+                    {(f) => <Textarea {...f} value={ficha.observacaoNaoFechamento ?? ''} onChange={(event) => {
+                      const valor = event.target.value
+                      if (Array.from(valor).length <= OBSERVACAO_NAO_FECHAMENTO_MAX_CHARS) atualizarFicha((atual) => ({ ...atual, observacaoNaoFechamento: valor }))
+                    }} />}
+                  </FormField>
+                  <p className="text-xs text-muted-foreground">{Array.from(ficha.observacaoNaoFechamento ?? '').length}/300</p>
                 </SecaoFicha>
 
                 <SecaoFicha
@@ -1981,7 +2201,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                     tone="section-1"
                     erro={erroSecao('secao-resultado-outro')}
                   >
-                    <FormField id="motivo-outro" label="Complemento" required>
+                    <FormField id="motivo-outro" label="Complemento" required error={erroSecao('secao-resultado-outro')}>
                       {(f) => (
                         <Input
                           {...f}
@@ -1997,7 +2217,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
               </div>
             )}
 
-            {etapaAtual === 'ficha' && (
+            {etapaAtual === 'ficha' && camposComerciaisVisiveis && (
               <SecaoFicha
                 id="secao-observacoes"
                 titulo="Observacoes sobre esse atendimento"
@@ -2021,47 +2241,22 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
               </SecaoFicha>
             )}
 
-            {etapaAtual === 'revisao' && (
-              <div id="secao-revisao" className="grid gap-4 scroll-mt-28">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-950">Revisao</h2>
-                  <p className="mt-1 text-sm text-slate-500">Confira os dados antes de continuar depois.</p>
-                </div>
-                {[
-                  { titulo: 'Unidade', valor: unidadeAtual?.nome ?? 'Nao informada', etapa: 'ficha' as FichaEtapa },
-                  { titulo: 'Nome da consultora', valor: ficha.consultoraNome || 'Nao informado', etapa: 'ficha' as FichaEtapa },
-                  { titulo: 'Cliente', valor: clienteSelecionada?.nome ?? 'Nao vinculada', etapa: 'ficha' as FichaEtapa },
-                  { titulo: 'Telefone', valor: clienteSelecionada?.telefoneFormatado ?? 'Nao informado', etapa: 'ficha' as FichaEtapa },
-                  { titulo: 'Parentesco', valor: clienteSelecionada ? getParentescoLabel(clienteSelecionada.parentesco, clienteSelecionada.parentescoOutro) : 'Nao informado', etapa: 'ficha' as FichaEtapa },
-                  { titulo: 'Criancas', valor: ficha.criancas.length ? `${ficha.criancas.length} registrada(s)` : 'Nao informado', etapa: 'ficha' as FichaEtapa },
-                  { titulo: 'Departamentos', valor: ficha.departamentos.map(getDepartamentoLabel).join(', ') || 'Nao informado', etapa: 'ficha' as FichaEtapa },
-                  { titulo: 'Produtos', valor: ficha.produtosInteresse.join(', ') || 'Nao informado', etapa: 'ficha' as FichaEtapa },
-                  { titulo: 'Resultado', valor: getResultadoLabel(ficha.resultadoAtendimento), etapa: 'resultado' as FichaEtapa },
-                  { titulo: 'Motivos', valor: ficha.motivosResultado.map(getMotivoLabel).join(', ') || 'Nao informado', etapa: 'resultado' as FichaEtapa },
-                  { titulo: 'Virada do cartao', valor: formatarViradaCartao(ficha.viradaCartaoDia, ficha.viradaCartaoMes) || 'Nao informado', etapa: 'resultado' as FichaEtapa },
-                  { titulo: 'Observacoes', valor: ficha.observacoes || 'Sem observacoes', etapa: 'ficha' as FichaEtapa },
-                ].map((item) => (
-                  <Card key={item.titulo}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-bold text-slate-700">{item.titulo}</p>
-                        <Button type="button" variant="ghost" size="sm" onClick={() => irParaEtapa(item.etapa)}>
-                          Editar
-                        </Button>
-                      </div>
-                      <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">{item.valor}</p>
-                    </CardContent>
-                  </Card>
-                ))}
-                <Alert tone="info">Ao concluir, o rascunho sera convertido em registro definitivo.</Alert>
-                {ficha.resultadoAtendimento === 'sim' && (
-                  <div id="secao-revisao-lancamento" className="scroll-mt-28">
-                    <FormField id="numero-lancamento" label="Numero do lancamento" required>
+            {etapaAtual === 'ficha' && camposComerciaisVisiveis && (
+                  <div id="secao-lancamento" className="scroll-mt-28">
+                    <FormField id="numero-lancamento" label="Numero do lancamento" helper="Obrigatório somente quando a venda for fechada." required={ficha.resultadoAtendimento === 'sim'} error={erroSecao('secao-lancamento')}>
                       {(f) => (
                         <Input
                           {...f}
                           value={numeroLancamento}
-                          onChange={(event) => setNumeroLancamento(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                          onChange={(event) => atualizarNumeroLancamento(event.target.value)}
+                          onBlur={() => {
+                            if (!numeroLancamento) return
+                            const validacao = validarNumeroLancamento(numeroLancamento)
+                            if (!validacao.ok) setErrosValidacao((atuais) => [
+                              ...atuais.filter((item) => item.fieldId !== 'numero-lancamento'),
+                              erroConclusaoParaSecao(validacao.field, validacao.message),
+                            ])
+                          }}
                           className="h-12 text-base"
                           inputMode="numeric"
                           placeholder="Informe o lancamento"
@@ -2069,54 +2264,17 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                       )}
                     </FormField>
                   </div>
-                )}
-                {errosValidacao.length > 0 && (
-                  <Alert tone="danger" title="Revise os campos abaixo antes de concluir:">
-                    <div className="mt-3 grid gap-2">
-                      {errosValidacao.map((item, index) => (
-                        <button
-                          key={`revisao-${item.sectionId}-${item.fieldId ?? index}`}
-                          type="button"
-                          onClick={() => navegarParaErro(item)}
-                          className="rounded-md border border-red-200 bg-white px-3 py-2 text-left font-semibold text-red-700"
-                        >
-                          {item.message}
-                        </button>
-                      ))}
-                    </div>
-                  </Alert>
-                )}
-                <Button type="button" onClick={concluirAtendimento} disabled={concluindo} loading={concluindo} size="lg" className="h-12">
-                  Concluir atendimento
-                </Button>
-              </div>
             )}
 
-            {errosValidacao.length > 0 && etapaAtual !== 'revisao' && (
-              <Alert tone="danger" title="Revise os campos abaixo.">
-                <div className="mt-3 grid gap-2">
-                  {errosValidacao.map((item, index) => (
-                    <button
-                      key={`${item.sectionId}-${item.fieldId ?? index}`}
-                      type="button"
-                      onClick={() => navegarParaErro(item)}
-                      className="rounded-md border border-red-200 bg-white px-3 py-2 text-left font-semibold text-red-700"
-                    >
-                      {item.message}
-                    </button>
-                  ))}
-                </div>
-              </Alert>
-            )}
-            <TelefoneClienteRapido
+            {camposComerciaisVisiveis && <TelefoneClienteRapido
               value={clienteSelecionada ? telefoneClienteEdicao : novoCliente.telefone}
               onChange={atualizarTelefoneCliente}
               erro={erroTelefone}
               loading={salvandoTelefone}
-              disabled={!!clienteId && !clienteSelecionada}
+              disabled={cadastrandoCliente || (!!clienteId && !clienteSelecionada)}
               compact={etapaAtual === 'ficha' && !clienteSelecionada}
-            />
-            {telefonePendente && !salvandoTelefone && !erroTelefone && <div className="flex flex-wrap justify-end gap-2 text-xs">
+            />}
+            {camposComerciaisVisiveis && telefonePendente && !salvandoTelefone && !erroTelefone && <div className="flex flex-wrap justify-end gap-2 text-xs">
               <Button type="button" variant="ghost" size="sm" disabled={!clienteSelecionada} onClick={() => clienteSelecionada && void salvarTelefoneCliente(clienteSelecionada, telefonePendente.valor, ++telefoneRequestRef.current)}>Confirmar telefone no cadastro</Button>
               <Button type="button" variant="ghost" size="sm" onClick={descartarEdicaoTelefone}>Descartar edicao do telefone</Button>
             </div>}
@@ -2127,37 +2285,16 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       {!carregandoRascunhoInicial && !erroRascunhoInicial && (
         <div ref={actionBarRef} className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-lg backdrop-blur">
           <div className="mx-auto flex max-w-3xl flex-col gap-2">
-            {mensagemContinuar && (
-              errosEtapaAtual.length > 0 ? (
-                <div className="flex justify-center">
-                  <Badge tone="danger" role="alert">{mensagemContinuar}</Badge>
-                </div>
+            <div className="grid gap-2 sm:flex">
+              {etapaAtual === 'resultado' && <Button type="button" variant="secondary" onClick={voltar} size="lg"><ChevronLeft className="size-4" aria-hidden="true" />Voltar</Button>}
+              {etapaAtual === 'ficha' && camposComerciaisVisiveis ? (
+                <>
+                  <Button type="button" onClick={() => escolherResultado('sim')} disabled={concluindo} className="min-h-12 flex-1"><Check className="size-4" aria-hidden="true" />Venda fechada</Button>
+                  <Button type="button" variant="secondary" onClick={() => escolherResultado('negociacao')} disabled={concluindo} className="min-h-12 flex-1"><MessageSquareText className="size-4" aria-hidden="true" />Negociação</Button>
+                  <Button type="button" variant="secondary" onClick={() => escolherResultado('nao')} disabled={concluindo} className="min-h-12 flex-1"><X className="size-4" aria-hidden="true" />Venda perdida</Button>
+                </>
               ) : (
-                <p className="text-center text-xs font-medium text-slate-600">{mensagemContinuar}</p>
-              )
-            )}
-            <div className="flex gap-2">
-              <Button type="button" variant="secondary" onClick={voltar} disabled={etapaAtual === 'ficha'} size="lg" className="h-12 flex-1">
-                <ChevronLeft className="size-4" aria-hidden="true" />
-                Voltar
-              </Button>
-              {etapaAtual === 'revisao' ? (
-                <Button type="button" onClick={concluirAtendimento} disabled={!ativo || concluindo || errosEtapaAtual.length > 0} loading={concluindo} size="lg" className="h-12 flex-1">
-                  <Check className="size-4" aria-hidden="true" />
-                  Concluir
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={avancar}
-                  disabled={!ativo || iniciando || errosEtapaAtual.length > 0}
-                  loading={iniciando}
-                  size="lg"
-                  className="h-12 flex-1"
-                >
-                  Continuar
-                  {!iniciando && <ChevronRight className="size-4" aria-hidden="true" />}
-                </Button>
+                <Button type="button" onClick={() => void concluirAtendimento()} disabled={concluindo} loading={concluindo} className="min-h-12 flex-1"><Check className="size-4" aria-hidden="true" />Finalizar atendimento</Button>
               )}
             </div>
           </div>

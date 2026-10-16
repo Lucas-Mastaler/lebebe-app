@@ -1,14 +1,21 @@
-import { normalizarNomeConsultora } from './ficha-schema'
+import { MOTIVOS_VISITA, normalizarNomeConsultora } from './ficha-schema'
 import type { AtendimentoPresencialDTO } from './rascunhos-shared'
+
 import type {
   DepartamentoInteresse,
   FichaDadosRascunho,
   MotivoResultado,
+  MotivoVisita,
   ResultadoAtendimento,
   SexoCrianca,
   SituacaoCrianca,
   UnidadeIdadeCrianca,
 } from './ficha-schema'
+
+// Marcador operacional em campo existente; não muda o contrato de persistência.
+export function consultoraDeHomologacao(nome: string | null | undefined) {
+  return normalizarNomeConsultora(nome).toUpperCase().startsWith('HOMOLOGACAO ')
+}
 
 export type AtendimentoRegistroDTO = Omit<AtendimentoPresencialDTO, 'resultadoAtendimento'> & {
   resultadoAtendimento: ResultadoAtendimento | null
@@ -23,6 +30,9 @@ export type ClienteRegistroAtendimentoDTO = {
 }
 
 export type RegistroAtendimentoResumoDTO = {
+  versaoFluxo?: number | null
+  tipoAtendimento?: 'cliente' | 'nao_cliente' | null
+  motivoVisita?: string | null
   id: string
   clienteId: string | null
   clienteNome: string
@@ -42,7 +52,7 @@ export type RegistroAtendimentoResumoDTO = {
 export type RegistroAtendimentoDetalheDTO = {
   atendimento: AtendimentoRegistroDTO
   cliente: ClienteRegistroAtendimentoDTO | null
-  criancas: Array<{ id: string; ordem?: number | null; local_id?: string | null; situacao: string; nome: string | null; nome_nao_informado?: boolean | null; sexo: string | null; idade_unidade: string | null; idade_valor: number | null; data_prevista_nascimento: string | null }>
+  criancas: Array<{ id: string; ordem?: number | null; local_id?: string | null; presente_ja_nasceu?: boolean | null; data_referencia_nascimento?: string | null; crianca_permanente_id?: string | null; parentesco_vinculo?: string | null; situacao: string; nome: string | null; nome_nao_informado?: boolean | null; sexo: string | null; idade_unidade: string | null; idade_valor: number | null; data_prevista_nascimento: string | null }>
   departamentos: Array<{ id: string; ordem?: number | null; departamento: string }>
   produtosInteresse: Array<{ id: string; ordem?: number | null; descricao: string }>
   motivos: Array<{ id: string; ordem?: number | null; motivo: MotivoResultado; complemento: string | null }>
@@ -88,9 +98,20 @@ export function normalizarDetalheParaFichaEdicao(detalhe: Pick<
   const motivoOutro = detalhe.motivos.find((item) => item.motivo === 'outro')?.complemento?.trim()
 
   return {
+    ...(detalhe.atendimento.versaoFluxo === 2 ? {
+      versaoFluxo: 2,
+      tipoAtendimento: detalhe.atendimento.tipoAtendimento ?? undefined,
+      motivoVisita: (detalhe.atendimento.motivoVisita ?? undefined) as MotivoVisita | undefined,
+      observacaoNaoFechamento: detalhe.atendimento.observacaoNaoFechamento ?? undefined,
+    } : {}),
     consultoraNome: detalhe.atendimento.consultoraNomeManual ?? undefined,
     criancas: ordenarPorOrdem(detalhe.criancas).map((crianca) => ({
       id: crianca.local_id?.trim() || crianca.id,
+      presenteJaNasceu: crianca.presente_ja_nasceu ?? undefined,
+      dataReferenciaNascimento: crianca.data_referencia_nascimento ?? undefined,
+      criancaPermanenteId: crianca.crianca_permanente_id ?? undefined,
+      vinculoClienteId: crianca.crianca_permanente_id ? detalhe.atendimento.clienteId ?? undefined : undefined,
+      parentesco: crianca.parentesco_vinculo ?? undefined,
       situacao: crianca.situacao as SituacaoCrianca,
       nome: crianca.nome?.trim() || undefined,
       nomeNaoInformado: crianca.nome_nao_informado === true ? true : undefined,
@@ -103,7 +124,7 @@ export function normalizarDetalheParaFichaEdicao(detalhe: Pick<
     produtosInteresse: ordenarPorOrdem(detalhe.produtosInteresse).map((item) => item.descricao),
     resultadoAtendimento: detalhe.atendimento.resultadoAtendimento ?? undefined,
     motivosResultado,
-    motivoOutro: motivoOutro || undefined,
+    motivoOutro: motivoOutro || detalhe.atendimento.motivoOutro || undefined,
     viradaCartaoDia: detalhe.atendimento.viradaCartaoDia ?? undefined,
     viradaCartaoMes: detalhe.atendimento.viradaCartaoMes ?? undefined,
     observacoes: detalhe.atendimento.observacoes ?? undefined,
@@ -120,6 +141,17 @@ export function montarPayloadEdicaoAtendimento(params: {
   void etapaAtual
   void notaTecnica
 
+  // A versao persistida nunca pode ser removida por um formulario antigo.
+  if (params.detalhe.atendimento.versaoFluxo === 2) {
+    dadosRascunho.versaoFluxo = 2
+    dadosRascunho.tipoAtendimento = params.detalhe.atendimento.tipoAtendimento ?? undefined
+    for (const campo of ['motivoVisita', 'observacaoNaoFechamento'] as const) {
+      if (!Object.hasOwn(params.ficha, campo)) {
+        Object.assign(dadosRascunho, { [campo]: params.detalhe.atendimento[campo] ?? undefined })
+      }
+    }
+  }
+
   return {
     version: params.detalhe.atendimento.version,
     clienteId: params.detalhe.atendimento.clienteId,
@@ -127,4 +159,31 @@ export function montarPayloadEdicaoAtendimento(params: {
     numeroLancamento: params.numeroLancamento,
     consultoraNome: normalizarNomeConsultora(params.ficha.consultoraNome ?? params.detalhe.atendimento.consultoraNomeManual ?? ''),
   }
+}
+
+export function registroNaoCliente(registro: Pick<AtendimentoPresencialDTO, 'versaoFluxo' | 'tipoAtendimento'>) {
+  return registro.versaoFluxo === 2 && registro.tipoAtendimento === 'nao_cliente'
+}
+
+export function getMotivoVisitaLabel(motivo: string | null | undefined) {
+  return MOTIVOS_VISITA.find((item) => item.chave === motivo)?.label ?? motivo ?? 'Não informado'
+}
+
+// Somente valores existentes no snapshot; nunca reconstruir historia com dados atuais.
+export function descreverContratoHistorico(snapshot: Record<string, unknown> | null | undefined): string[] {
+  if (!snapshot) return []
+  const linhas: string[] = []
+  if (typeof snapshot.versaoFluxo === 'number') linhas.push(`Fluxo: ${snapshot.versaoFluxo}`)
+  for (const [key, label] of [
+    ['tipoAtendimento', 'Tipo'], ['tipoAtendimentoAnterior', 'Tipo anterior'], ['tipoAtendimentoNovo', 'Tipo novo'],
+    ['motivoVisita', 'Motivo da visita'], ['motivoVisitaAnterior', 'Motivo da visita anterior'], ['motivoVisitaNovo', 'Motivo da visita novo'],
+    ['observacaoNaoFechamento', 'Observação de não fechamento'], ['observacaoNaoFechamentoAnterior', 'Observação de não fechamento anterior'], ['observacaoNaoFechamentoNova', 'Observação de não fechamento nova'],
+  ]) {
+    const valor = snapshot[key]
+    if (typeof valor !== 'string') continue
+    const texto = key.startsWith('motivoVisita') ? getMotivoVisitaLabel(valor)
+      : key.startsWith('tipoAtendimento') ? (valor === 'nao_cliente' ? 'Não cliente' : valor === 'cliente' ? 'Cliente' : valor) : valor
+    linhas.push(`${label}: ${texto}`)
+  }
+  return linhas
 }

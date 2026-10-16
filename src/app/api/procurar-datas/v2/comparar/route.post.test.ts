@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest, NextResponse } from 'next/server'
-import { POST, compararResultadosVivo } from './route'
-import type { CandidatoNormalizado } from './route'
+import { POST, compararResultadosVivo } from './handlers'
+import type { CandidatoNormalizado } from './handlers'
 import { AppsScriptTimeoutError } from '@/lib/procurar-datas/apps-script'
 
 const validarAcessoMock = vi.hoisted(() => vi.fn())

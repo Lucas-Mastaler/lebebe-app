@@ -3,11 +3,16 @@ import {
   detectarTipoBuscaCliente,
   escaparTermoIlike,
   normalizarTermosBuscaNome,
+  normalizarNomeCliente,
   normalizarTrechoBuscaTelefone,
   validarAtualizacaoTelefoneCliente,
 } from './clientes'
 
 describe('busca de clientes presenciais', () => {
+  it('normaliza novos nomes de clientes em maiusculas sem remover acentos', () => {
+    expect(normalizarNomeCliente('  João   Pedro  ')).toBe('JOÃO PEDRO')
+  })
+
   it('normaliza busca por nome em multiplos termos', () => {
     expect(normalizarTermosBuscaNome('  Lu   Ma  ')).toEqual(['Lu', 'Ma'])
     expect(normalizarTermosBuscaNome('LUCAS MASTALER')).toEqual(['LUCAS', 'MASTALER'])

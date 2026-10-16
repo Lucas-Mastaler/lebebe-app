@@ -5,6 +5,7 @@ import { IdadeCriancaSelector } from './IdadeCriancaSelector'
 import { Alert, Button, Card, CardContent, FormField, Input } from '@/components/design-system'
 import { descreverInformacaoNascimento, opcoesCriancasDisponiveis, selecionarCriancaCadastrada, type CriancaReutilizavel } from '@/lib/atendimento-presencial/criancas-permanentes'
 import type { FichaCriancaRascunho } from '@/lib/atendimento-presencial/ficha-schema'
+import { maiusculasNomeComCursor } from '@/lib/atendimento-presencial/maiusculas-nomes'
 import { criancaJaNasceu } from '@/lib/atendimento-presencial/idade-aproximada'
 
 type Props = {
@@ -101,9 +102,9 @@ export function CriancasCadastradas({ clienteId, rascunhoId, selecionadas, sincr
       <div className="grid gap-2" role="group" aria-label="Crianças cadastradas">
       <h3 className="font-semibold">Crianças cadastradas</h3>
       {disponiveis.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma outra criança cadastrada.</p>}
-      {disponiveis.map((item) => <Card key={item.id} className="shadow-none" data-crianca-opcao="permanente"><Button type="button" variant="ghost" className="h-auto min-h-12 w-full justify-between whitespace-normal rounded-2xl p-3 text-left hover:bg-primary/5 focus-visible:ring-inset" aria-label={`Selecionar ${item.dados.nome || 'Nome não informado'} — ${item.parentesco}`} disabled={limite || ocupado} onClick={() => { selecionar(selecionarCriancaCadastrada(item, clienteId)); setAberto(false); setOpcoes(false) }}>
+      {disponiveis.map((item) => <Card key={item.id} className="shadow-none" data-crianca-opcao="permanente"><Button type="button" variant="ghost" className="h-auto min-h-12 w-full justify-between whitespace-normal rounded-2xl p-3 text-left hover:bg-primary/5 focus-visible:ring-inset" aria-label={`Selecionar ${item.dados.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'} — ${item.parentesco}`} disabled={limite || ocupado} onClick={() => { selecionar(selecionarCriancaCadastrada(item, clienteId)); setAberto(false); setOpcoes(false) }}>
         <span className="min-w-0 space-y-1">
-          <span role="heading" aria-level={4} className="block break-words text-sm font-semibold text-slate-950">{item.dados.nome || 'Nome não informado'}</span>
+          <span role="heading" aria-level={4} className="block break-words text-sm font-semibold text-slate-950">{item.dados.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'}</span>
           <span className="block text-sm text-muted-foreground">{item.parentesco || 'Parentesco não informado'}</span>
           <span className="block text-xs text-muted-foreground">{descreverInformacaoNascimento(item)}</span>
         </span>
@@ -112,9 +113,9 @@ export function CriancasCadastradas({ clienteId, rascunhoId, selecionadas, sincr
       </div>
       {historicas.length > 0 && <div className="grid gap-2 border-t border-slate-200 pt-3" role="group" aria-label="Sugestões históricas">
         <div><h3 className="text-sm font-semibold text-slate-950">Sugestões históricas</h3><p className="mt-1 text-xs text-muted-foreground">Confirme os dados antes de reutilizar.</p></div>
-        {historicas.map((item) => <Card key={item.id} className={confirmando?.id === item.id ? "border-primary shadow-none" : "shadow-none"} data-crianca-opcao="historica"><Button type="button" variant="ghost" className="h-auto min-h-12 w-full justify-between whitespace-normal rounded-2xl p-3 text-left hover:bg-primary/5 focus-visible:ring-inset" aria-pressed={confirmando?.id === item.id} aria-label={`Confirmar ${item.dados.nome || 'Nome não informado'} — ${descreverInformacaoNascimento(item)}`} disabled={limite || ocupado} onClick={() => { if (confirmando?.id === item.id) return; dadosOriginaisRef.current = item.dados; setConfirmando(item); setNome(item.dados.nome ?? ''); setParentesco(''); setAssociarId(''); setErro(null); setRevisando(false); setAberto(false); setOpcoes(false) }}>
+        {historicas.map((item) => <Card key={item.id} className={confirmando?.id === item.id ? "border-primary shadow-none" : "shadow-none"} data-crianca-opcao="historica"><Button type="button" variant="ghost" className="h-auto min-h-12 w-full justify-between whitespace-normal rounded-2xl p-3 text-left hover:bg-primary/5 focus-visible:ring-inset" aria-pressed={confirmando?.id === item.id} aria-label={`Confirmar ${item.dados.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'} — ${descreverInformacaoNascimento(item)}`} disabled={limite || ocupado} onClick={() => { if (confirmando?.id === item.id) return; dadosOriginaisRef.current = item.dados; setConfirmando(item); setNome(item.dados.nome?.toLocaleUpperCase('pt-BR') ?? ''); setParentesco(''); setAssociarId(''); setErro(null); setRevisando(false); setAberto(false); setOpcoes(false) }}>
           <span className="min-w-0 space-y-1">
-            <span role="heading" aria-level={4} className="block break-words text-sm font-semibold text-slate-950">{item.dados.nome || 'Nome não informado'}</span>
+            <span role="heading" aria-level={4} className="block break-words text-sm font-semibold text-slate-950">{item.dados.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'}</span>
             <span className="block text-xs text-muted-foreground">{item.dados.idadeValor && item.dados.idadeUnidade ? `Idade informada: ${item.dados.idadeValor} ${item.dados.idadeUnidade}` : descreverInformacaoNascimento(item)}</span>
             <span className="block text-xs text-muted-foreground">Atendimento em {item.registradoEm.slice(0, 10).split('-').reverse().join('/')}</span>
             <span className="block text-xs text-muted-foreground">Registro {item.atendimentoId?.slice(0, 8)}</span>
@@ -125,12 +126,17 @@ export function CriancasCadastradas({ clienteId, rascunhoId, selecionadas, sincr
     </div>}
     {confirmando && <Card id="confirmacao-crianca-historica" tabIndex={-1} className="scroll-mt-32 scroll-mb-48"><CardContent className="grid gap-3 p-4">
       <h3 className="font-semibold">Confirmar criança histórica</h3>
-      <p className="font-semibold text-primary"><strong className="text-foreground">{confirmando.dados.nome || 'Nome não informado'}</strong> selecionada. Complete os dados abaixo e confirme o cadastro.</p>
+      <p className="font-semibold text-primary"><strong className="text-foreground">{confirmando.dados.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'}</strong> selecionada. Complete os dados abaixo e confirme o cadastro.</p>
       <div className="space-y-2 text-sm">
         <p>{separadorInformacao >= 0 ? <><strong>{informacaoNascimento.slice(0, separadorInformacao + 1)}</strong>{informacaoNascimento.slice(separadorInformacao + 1)}</> : informacaoNascimento}</p>
         <p>O cadastro será salvo mesmo se este atendimento não for concluído.</p>
       </div>
-      {(!dadosOriginaisRef.current?.nome || revisando) && <FormField id="historica-nome" label="Nome" helper="Opcional">{(field) => <Input {...field} value={nome} maxLength={80} disabled={ocupado || !!associarId} onChange={(e) => setNome(e.target.value)} />}</FormField>}
+      {(!dadosOriginaisRef.current?.nome || revisando) && <FormField id="historica-nome" label="Nome" helper="Opcional">{(field) => <Input {...field} value={nome} maxLength={80} disabled={ocupado || !!associarId} onChange={(event) => {
+        const input = event.currentTarget
+        const selecao = maiusculasNomeComCursor(input.value, input.selectionStart ?? input.value.length, input.selectionEnd ?? input.value.length)
+        setNome(selecao.valor)
+        window.requestAnimationFrame(() => { if (document.activeElement === input) input.setSelectionRange(selecao.inicio, selecao.fim) })
+      }} />}</FormField>}
       {confirmando.dados.situacao === 'presente_outra_pessoa' && (dadosOriginaisRef.current?.presenteJaNasceu === undefined || revisando) && <FormField id="historica-presente-nasceu" label="Já nasceu?" required>{(field) => <select {...field} className="w-full rounded-md border p-2" disabled={ocupado || !!associarId} value={confirmando.dados.presenteJaNasceu === undefined ? '' : String(confirmando.dados.presenteJaNasceu)} onChange={(e) => setConfirmando({ ...confirmando, dados: { ...confirmando.dados, presenteJaNasceu: e.target.value === '' ? undefined : e.target.value === 'true', idadeUnidade: undefined, idadeValor: undefined, dataPrevistaNascimento: undefined, dataReferenciaNascimento: undefined } })}><option value="">Selecione</option><option value="true">Sim</option><option value="false">Não</option></select>}</FormField>}
       {criancaJaNasceu(confirmando.dados) && (!dadosOriginaisRef.current?.idadeUnidade || !dadosOriginaisRef.current?.idadeValor || revisando) && <div className="grid gap-3">
         <p className="text-sm font-semibold text-slate-700">Idade informada *</p>
@@ -141,7 +147,7 @@ export function CriancasCadastradas({ clienteId, rascunhoId, selecionadas, sincr
       <Button type="button" variant="ghost" size="sm" disabled={ocupado} onClick={() => setRevisando(!revisando)}>{revisando ? 'Recolher revisão opcional' : 'Revisar dados ou associar a cadastro existente'}</Button>
       {revisando && permanentes.length > 0 && <FormField id="historica-associar" label="Associar a cadastro existente" helper="Opcional; somente se você reconhece a mesma criança">
         {(field) => <select {...field} className="w-full rounded-md border p-2" value={associarId} disabled={ocupado} onChange={(e) => { setAssociarId(e.target.value); const item = permanentes.find((p) => p.id === e.target.value); if (item) setParentesco(item.parentesco ?? '') }}>
-          <option value="">Criar cadastro desta criança histórica</option>{permanentes.map((p) => <option key={p.id} value={p.id}>{p.dados.nome || 'Nome não informado'} — {p.parentesco} — {descreverInformacaoNascimento(p)}</option>)}
+          <option value="">Criar cadastro desta criança histórica</option>{permanentes.map((p) => <option key={p.id} value={p.id}>{p.dados.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'} — {p.parentesco} — {descreverInformacaoNascimento(p)}</option>)}
         </select>}
       </FormField>}
       <div className="flex flex-wrap gap-2"><Button type="button" loading={ocupado} disabled={limite} onClick={() => void confirmar()}>Confirmar cadastro</Button><Button type="button" variant="ghost" disabled={ocupado} onClick={() => { setConfirmando(null); setAberto(true); window.requestAnimationFrame(() => raizRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })) }}>Cancelar</Button></div>

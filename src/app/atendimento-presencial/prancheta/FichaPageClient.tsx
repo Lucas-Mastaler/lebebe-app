@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { aguardarPinturaFeedback } from '@/lib/atendimento-presencial/feedback-renderizacao'
+import { maiusculasNomeComCursor } from '@/lib/atendimento-presencial/maiusculas-nomes'
 import { IdadeCriancaSelector } from './IdadeCriancaSelector'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -463,17 +464,16 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const etapaNumero = etapaAtual === 'resultado' ? 2 : 1
   const camposComerciaisVisiveis = ficha.tipoAtendimento === 'cliente'
   const etapaLabelAtual = etapaLabels[etapaAtual]
+  const barraAcaoVisivel = rodapeVisivel || concluindo || Boolean(mensagemConclusao)
   const unidadesParaSelecao = useMemo(() => contexto?.unidadesPermitidas ?? [], [contexto])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (etapaParaTopoRef.current !== etapaAtual) return
-    const frame = window.requestAnimationFrame(() => {
-      etapaParaTopoRef.current = null
-      const conteudo = formContentRef.current
-      if (conteudo) { conteudo.tabIndex = -1; conteudo.focus({ preventScroll: true }) }
-      window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
-    })
-    return () => window.cancelAnimationFrame(frame)
+    const titulo = document.getElementById('indicador-etapa-prancheta')
+    if (!titulo) return
+    etapaParaTopoRef.current = null
+    titulo.focus({ preventScroll: true })
+    titulo.scrollIntoView({ behavior: 'instant', block: 'start' })
   }, [etapaAtual])
 
   useEffect(() => {
@@ -1330,8 +1330,17 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     atualizarCrianca(id, { dataPrevistaNascimento: dataISO || undefined })
   }
 
-  function atualizarNomeCrianca(id: string, valor: string) {
-    atualizarCrianca(id, { nome: limparNomeCriancaDigitacao(valor), nomeNaoInformado: false })
+  function atualizarNomeCrianca(id: string, input: HTMLInputElement) {
+    const inicioOriginal = input.selectionStart ?? input.value.length
+    const fimOriginal = input.selectionEnd ?? inicioOriginal
+    const valorLimpo = limparNomeCriancaDigitacao(input.value)
+    const inicioLimpo = limparNomeCriancaDigitacao(input.value.slice(0, inicioOriginal)).length
+    const fimLimpo = limparNomeCriancaDigitacao(input.value.slice(0, fimOriginal)).length
+    const selecao = maiusculasNomeComCursor(valorLimpo, inicioLimpo, fimLimpo)
+    atualizarCrianca(id, { nome: selecao.valor, nomeNaoInformado: false })
+    window.requestAnimationFrame(() => {
+      if (document.activeElement === input) input.setSelectionRange(selecao.inicio, selecao.fim)
+    })
   }
 
   function marcarNomeNaoInformado(id: string) {
@@ -1726,7 +1735,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
           }
         />
 
-        <div className="flex items-center justify-between gap-3">
+        <div id="indicador-etapa-prancheta" tabIndex={-1} className="flex scroll-mt-20 items-center justify-between gap-3 outline-none">
           <div>
             <p className="text-sm font-semibold text-slate-700">Etapa {etapaNumero} de {2}</p>
             <p className="text-sm text-slate-500">{etapaLabelAtual}</p>
@@ -1906,7 +1915,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                   <Card className="border-info/40 bg-info/10">
                     <CardContent className="p-4">
                       <p className="text-xs font-bold uppercase text-sky-700">Cliente vinculada</p>
-                      <p className="mt-2 text-base font-semibold text-slate-950">{clienteSelecionada.nome}</p>
+                      <p className="mt-2 text-base font-semibold text-slate-950">{clienteSelecionada.nome.toLocaleUpperCase('pt-BR')}</p>
                       {clienteSelecionada.telefoneFormatado && <p className="text-sm text-slate-700">{clienteSelecionada.telefoneFormatado}</p>}
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button type="button" variant="secondary" size="sm" onClick={trocarCliente}>
@@ -1956,7 +1965,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                             onClick={() => selecionarCliente(cliente)}
                             className="rounded-md border border-input bg-input-background p-4 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-ring"
                           >
-                            <p className="font-semibold text-slate-950">{cliente.nome}</p>
+                            <p className="font-semibold text-slate-950">{cliente.nome.toLocaleUpperCase('pt-BR')}</p>
                             <p className="text-sm text-slate-600">{cliente.telefoneFormatado ?? 'Sem telefone'}</p>
                           </button>
                         ))}
@@ -1973,7 +1982,12 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                                 {...f}
                                 value={novoCliente.nome}
                                 disabled={cadastrandoCliente}
-                                onChange={(event) => setNovoCliente((atual) => ({ ...atual, nome: event.target.value }))}
+                                onChange={(event) => {
+                                  const input = event.currentTarget
+                                  const selecao = maiusculasNomeComCursor(input.value, input.selectionStart ?? input.value.length, input.selectionEnd ?? input.value.length)
+                                  setNovoCliente((atual) => ({ ...atual, nome: selecao.valor }))
+                                  window.requestAnimationFrame(() => { if (document.activeElement === input) input.setSelectionRange(selecao.inicio, selecao.fim) })
+                                }}
                                 className="h-12 text-base"
                                 maxLength={120}
                               />
@@ -1996,7 +2010,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                           {erroDuplicidade && <Alert tone="danger">{erroDuplicidade}</Alert>}
                           {duplicidade?.ambiguo && <Alert tone="warning">Não foi possível identificar um cadastro único para este telefone. Revise o telefone ou busque o cliente antes de cadastrar.</Alert>}
                           {duplicidade?.cliente && duplicidade.telefone === normalizarTelefone(novoCliente.telefone).telefoneNormalizado && <Alert tone="info">
-                            <p>Cliente já cadastrado: {duplicidade.cliente.nome}.</p>
+                            <p>Cliente já cadastrado: {duplicidade.cliente.nome.toLocaleUpperCase('pt-BR')}.</p>
                             <Button type="button" variant="secondary" className="mt-2 min-h-12" disabled={cadastrandoCliente} onClick={() => { if (duplicidade.cliente) selecionarCliente(duplicidade.cliente) }}>Usar cadastro existente</Button>
                           </Alert>}
                           <Button type="button" onClick={cadastrarCliente} disabled={cadastrandoCliente || conferindoDuplicidade || !!duplicidade?.cliente || !!duplicidade?.ambiguo} loading={cadastrandoCliente} size="lg" className="h-12">
@@ -2021,7 +2035,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
               >
                 {ficha.criancas.map((crianca, index) => (
                   crianca.criancaPermanenteId ? <Card key={crianca.id} id={`crianca-selecionada-${crianca.id}`} tabIndex={-1} className="border-primary/30 bg-primary/5" data-crianca-selecionada><CardContent className="grid gap-2 p-3">
-                    <div className="flex items-start justify-between gap-3"><h3 className="min-w-0 break-words text-sm font-semibold text-slate-950">{crianca.nome || 'Nome não informado'}</h3><div className="flex shrink-0 items-center gap-1"><span role="status" className="flex items-center gap-1 text-xs font-semibold text-primary"><Check className="size-3.5" aria-hidden="true" />Selecionada</span><Button type="button" variant="ghost" size="icon" className="min-h-11 min-w-11" aria-label={`Remover seleção de ${crianca.nome || 'criança sem nome informado'}`} onClick={() => removerCrianca(crianca.id)}><X className="size-4" aria-hidden="true" /></Button></div></div>
+                    <div className="flex items-start justify-between gap-3"><h3 title={crianca.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'} className="min-w-0 truncate text-[1.035rem] font-semibold text-slate-950">{crianca.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'}</h3><div className="flex shrink-0 items-center gap-1"><span role="status" className="flex items-center gap-1 text-xs font-semibold text-primary"><Check className="size-3.5" aria-hidden="true" />Selecionada</span><Button type="button" variant="ghost" size="icon" className="min-h-11 min-w-11" aria-label={`Remover seleção de ${crianca.nome?.toLocaleUpperCase('pt-BR') || 'criança sem nome informado'}`} onClick={() => removerCrianca(crianca.id)}><X className="size-4" aria-hidden="true" /></Button></div></div>
                     <p className="text-sm text-muted-foreground">{crianca.parentesco}</p>
                     {crianca.dataReferenciaNascimento ? <div data-idade-estimada><p className="text-base font-semibold text-slate-950">{descreverIdadeAproximada(crianca.dataReferenciaNascimento)}</p><p className="text-xs text-muted-foreground">Referência estimada: {formatarDataISOParaInput(crianca.dataReferenciaNascimento)}</p></div> : <p className="text-sm text-muted-foreground">{crianca.dataPrevistaNascimento ? `Previsão informada: ${formatarDataISOParaInput(crianca.dataPrevistaNascimento)}` : crianca.idadeValor ? `Idade informada: ${crianca.idadeValor} ${crianca.idadeUnidade}` : 'Nascimento não informado'}</p>}
                   </CardContent></Card> :
@@ -2083,9 +2097,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                           {(f) => (
                             <Input
                               {...f}
-                              value={crianca.nome ?? ''}
+                              value={crianca.nome?.toLocaleUpperCase('pt-BR') ?? ''}
                               disabled={crianca.nomeNaoInformado}
-                              onChange={(event) => atualizarNomeCrianca(crianca.id, event.target.value)}
+                              onChange={(event) => atualizarNomeCrianca(crianca.id, event.currentTarget)}
                               className="h-12 text-base"
                               maxLength={80}
                             />
@@ -2346,7 +2360,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       </FormPageContent>
 
       {!carregandoRascunhoInicial && !erroRascunhoInicial && (
-        <div ref={actionBarRef} data-prancheta-rodape inert={!rodapeVisivel} aria-hidden={!rodapeVisivel} style={{ visibility: rodapeVisivel ? 'visible' : 'hidden', opacity: rodapeVisivel ? 1 : 0, transform: rodapeVisivel ? 'translateY(0)' : 'translateY(12px)' }} className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-lg backdrop-blur transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none">
+        <div ref={actionBarRef} data-prancheta-rodape inert={!barraAcaoVisivel} aria-hidden={!barraAcaoVisivel} style={{ visibility: barraAcaoVisivel ? 'visible' : 'hidden', opacity: barraAcaoVisivel ? 1 : 0, transform: barraAcaoVisivel ? 'translateY(0)' : 'translateY(12px)' }} className={`fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 py-3 shadow-lg backdrop-blur ${concluindo || mensagemConclusao ? 'transition-none' : 'transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none'}`}>
           <div className="mx-auto flex max-w-3xl flex-col gap-2">
             <div className="grid gap-2 sm:flex">
               {etapaAtual === 'resultado' && <Button type="button" variant="secondary" onClick={voltar} disabled={concluindo} size="lg"><ChevronLeft className="size-4" aria-hidden="true" />Voltar</Button>}
@@ -2354,12 +2368,12 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 <Button type="button" disabled className="min-h-12 flex-1 bg-success text-white disabled:opacity-100"><Check className="size-4" aria-hidden="true" />Atendimento concluído</Button>
               ) : etapaAtual === 'ficha' && camposComerciaisVisiveis ? (
                 <>
-                  <Button type="button" onClick={() => escolherResultado('sim')} disabled={concluindo} loading={concluindo} className="min-h-12 flex-1"><Check className="size-4" aria-hidden="true" />{concluindo ? 'Finalizando...' : 'Venda fechada'}</Button>
+                  <Button type="button" onClick={() => escolherResultado('sim')} disabled={concluindo} loading={concluindo} className="min-h-12 flex-1">{!concluindo && <Check className="size-4" aria-hidden="true" />}{concluindo ? 'Finalizando...' : 'Venda fechada'}</Button>
                   <Button type="button" variant="secondary" onClick={() => escolherResultado('negociacao')} disabled={concluindo} className="min-h-12 flex-1"><MessageSquareText className="size-4" aria-hidden="true" />Negociação</Button>
                   <Button type="button" variant="secondary" onClick={() => escolherResultado('nao')} disabled={concluindo} className="min-h-12 flex-1"><X className="size-4" aria-hidden="true" />Venda perdida</Button>
                 </>
               ) : (
-                <Button type="button" onClick={() => void concluirAtendimento()} disabled={concluindo} loading={concluindo} className="min-h-12 flex-1"><Check className="size-4" aria-hidden="true" />{concluindo ? 'Finalizando...' : 'Finalizar atendimento'}</Button>
+                <Button type="button" onClick={() => void concluirAtendimento()} disabled={concluindo} loading={concluindo} className="min-h-12 flex-1">{!concluindo && <Check className="size-4" aria-hidden="true" />}{concluindo ? 'Finalizando...' : 'Finalizar atendimento'}</Button>
               )}
             </div>
           </div>
@@ -2371,7 +2385,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         onOpenChange={setHistoricoAberto}
         cliente={clienteSelecionada ? {
           id: clienteSelecionada.id,
-          nome: clienteSelecionada.nome,
+          nome: clienteSelecionada.nome.toLocaleUpperCase('pt-BR'),
           telefoneFormatado: clienteSelecionada.telefoneFormatado,
         } : null}
         atendimentoAtualId={ativo?.id ?? null}

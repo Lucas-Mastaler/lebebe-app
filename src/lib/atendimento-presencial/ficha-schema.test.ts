@@ -65,13 +65,18 @@ describe('schema da ficha de atendimento presencial', () => {
     expect(primeira.ok).toBe(true)
     if (!primeira.ok) return
     const segunda = migrarFichaDadosRascunho(JSON.parse(JSON.stringify(primeira.dados)))
-    expect(segunda.criancas).toEqual(dados.criancas)
+    expect(segunda.criancas).toEqual([{ ...dados.criancas[0], nome: 'MARIA CLARA' }])
     expect(segunda.entradasFormulario).toEqual(dados.entradasFormulario)
     expect(segunda.etapaAtual).toBe('ficha')
   })
 
   it('rejeita nome invalido sem apagar silenciosamente a crianca', () => {
     expect(validarFichaDadosRascunho({ criancas: [{ id: 'crianca-teste', nome: 'Maria123' }] })).toMatchObject({ ok: false, field: 'criancas' })
+  })
+
+  it('normaliza nomes de crianca com acentos em maiusculas ao validar o rascunho', () => {
+    const resultado = validarFichaDadosRascunho({ criancas: [{ id: 'crianca-teste', situacao: 'gestacao', nome: 'joão pedro' }] })
+    expect(resultado).toMatchObject({ ok: true, dados: { criancas: [{ nome: 'JOÃO PEDRO' }] } })
   })
 
   it('preserva unidade da idade antes de informar o valor', () => {
@@ -159,7 +164,7 @@ describe('schema da ficha de atendimento presencial', () => {
 
     expect(resultado).toMatchObject({
       ok: true,
-      dados: { criancas: [{ nome: "Maria Luisa D'Avila-Sao" }] },
+      dados: { criancas: [{ nome: "MARIA LUISA D'AVILA-SAO" }] },
     })
   })
 

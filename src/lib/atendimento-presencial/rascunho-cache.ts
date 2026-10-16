@@ -112,11 +112,19 @@ export function planejarRecuperacaoRascunho(cache: RascunhoCache | null, servido
     ...validacao.dados,
     ...(incluirEntradas ? { entradasFormulario: cache.entradasLocais } : {}),
   } : cache.dadosRascunho
+  const validacaoServidor = servidor.dadosRascunho ? validarFichaDadosRascunho(servidor.dadosRascunho) : null
+  const dadosServidorCanonicos = validacaoServidor?.ok ? validacaoServidor.dados : servidor.dadosRascunho
+  const payloadServidorCanonico = dadosServidorCanonicos
+    ? serializarPayloadAutosave({ dadosRascunho: dadosServidorCanonicos, clienteId: servidor.clienteId })
+    : null
+  const payloadServidorOriginal = servidor.dadosRascunho
+    ? serializarPayloadAutosave({ dadosRascunho: servidor.dadosRascunho, clienteId: servidor.clienteId })
+    : null
   const igual = !!servidor.dadosRascunho && validacao.ok
     && serializarPayloadAutosave({ dadosRascunho: dadosCache, clienteId: cache.clienteId === undefined ? servidor.clienteId : cache.clienteId })
-      === serializarPayloadAutosave({ dadosRascunho: servidor.dadosRascunho, clienteId: servidor.clienteId })
+      === payloadServidorCanonico
   const servidorNaBasePropria = !!servidor.dadosRascunho && Array.isArray(cache.basesRecuperacao)
-    && cache.basesRecuperacao.includes(serializarPayloadAutosave({ dadosRascunho: servidor.dadosRascunho, clienteId: servidor.clienteId }))
+    && (cache.basesRecuperacao.includes(payloadServidorOriginal ?? '') || cache.basesRecuperacao.includes(payloadServidorCanonico ?? ''))
   return {
     usarCache,
     conflito: usarCache && cache.version !== servidor.version && !igual && !servidorNaBasePropria,

@@ -7,7 +7,15 @@ Atualizado em: 16/10/2026
 
 ## Publicação para homologação pessoal — vigente D-024 (16/10/2026)
 
-### Última rodada solicitada — D-026, 16/10/2026
+### Rodadas finais — D-026 e D-027 (16/10/2026)
+
+Preparadas para publicação sobre o candidato D-026, sem mudanças no banco, migrations ou dados reais. Nomes de clientes/crianças são exibidos em maiúsculas com acentos; digitação/colagem converte nomes mantendo posição do cursor. Escritas novas da Prancheta normalizam o nome; nenhum backfill histórico. A comparação de recuperação de rascunhos normaliza ambos os lados para não gerar conflito apenas por diferença de caixa.
+
+Scroll entre etapas agora ocorre em `useLayoutEffect`, após a etapa renderizar: foca o indicador “Etapa N de 2” e usa `scrollIntoView` imediato com margem para cabeçalho. O comportamento anterior emitia scroll suave de `window` num efeito passivo adiado por `requestAnimationFrame`, focando o contêiner inteiro; o código não prova por si só o mecanismo interno específico do Safari. Loading não mantém o check antigo ao mesmo tempo que o botão DS injeta o spinner; a barra fixa também não anima durante conclusão/sucesso e permanece visível no topo pelos três segundos do feedback verde. Crianças históricas mantêm botão de seleção cobrindo toda a área do cartão (mínimo 48px), foco por teclado e etapa explícita de confirmação; seleção não confirma vínculo permanente.
+
+Validação D-027: **36 arquivos / 380 testes do módulo e APIs aprovados**; ESLint dirigido e `git diff --check` aprovados; `npm run build` compilou, validou TypeScript e gerou as rotas. Primeira execução sandboxed não alcançou Google Fonts; repetição com rede concluiu. Avisos globais existentes de middleware e renderização dinâmica não impediram o build. Automação visual/browser não repetida devido ao bloqueio de aprovação anterior; rolagem/toque/animação em celular e notebook requer reteste humano após publicação. Nenhuma alteração P2/P3, permissionamento ou regra comercial.
+
+**PUBLICAÇÃO D-026 CONCLUÍDA:** commit 1d03bde325db07208912b3d68b02bb4468475dfb enviado à main/origin, nove arquivos previstos; deployment dpl_AnubYMrjFnMoTfnZK5RiJDWuZ2j1 / lebebe-j0tfrcnya-lebebes-projects.vercel.app READY/production, alias lebebe.cloud sem erro confirmado pelo MCP (ready 1792179789492). Build remoto concluído. Identificação pós-deploy registrada localmente no Harness, sem commit extra apenas para disparar outro build. Sem novas migrations ou registros reais. Homologação humana/aceite e lojas continuam pendentes.
 
 Implementado: nome da criança histórica em text-foreground; informação original de nascimento/idade/previsão em parágrafo próprio, título em negrito e aviso de persistência separado. Seletor de idade compartilhado entre criança nova/histórica com botões Meses/Anos e números (1–11 meses, 1–6 anos), mesmos limites/cálculos/validações. Nenhuma edição dos snapshots históricos originais. Rodapé entra com opacity/transform em 200 ms, sem mudar altura reservada; movimento reduzido desliga transição e bloqueio por teclado/posição permanece. Troca de etapas agenda foco e topo em efeito dependente da etapa renderizada; erro de validação preserva navegação específica ao campo.
 

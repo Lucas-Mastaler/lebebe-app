@@ -28,8 +28,9 @@ function criarStorage(): StorageLike & { data: Map<string, string> } {
 describe('cache local de rascunho', () => {
   it('retomada apos PATCH concluido ao sair nao cria conflito se o conteudo ja esta no servidor', () => {
     const dados = { criancas: [{ id: 'crianca-teste', situacao: 'gestacao' as const, nome: 'Maria' }], departamentos: [], produtosInteresse: [], motivosResultado: [], etapaAtual: 'ficha' as const }
+    const dadosServidor = { ...dados, criancas: [{ ...dados.criancas[0], nome: 'MARIA' }] }
     const cache: RascunhoCache = { usuarioId: 'usuario', draftClientId: 'draft', atendimentoId: 'atendimento', version: 1, clienteId: null, dadosRascunho: dados, atualizadoEm: '2026-10-15', sincronizado: false }
-    expect(planejarRecuperacaoRascunho(cache, { id: 'atendimento', version: 2, clienteId: null, dadosRascunho: dados }).conflito).toBe(false)
+    expect(planejarRecuperacaoRascunho(cache, { id: 'atendimento', version: 2, clienteId: null, dadosRascunho: dadosServidor }).conflito).toBe(false)
     expect(planejarRecuperacaoRascunho(cache, { id: 'atendimento', version: 2, clienteId: null, dadosRascunho: { ...dados, criancas: [] } }).conflito).toBe(true)
     cache.basesRecuperacao = [serializarPayloadAutosave({ dadosRascunho: { ...dados, criancas: [] }, clienteId: null })]
     expect(planejarRecuperacaoRascunho(cache, { id: 'atendimento', version: 2, clienteId: null, dadosRascunho: { ...dados, criancas: [] } }).conflito).toBe(false)
@@ -96,7 +97,7 @@ describe('recuperacao integral e concorrencia local', () => {
     const storage = criarStorage()
     salvarCacheRascunho(storage, cacheBase)
     const recuperado = carregarCacheRascunho(storage, 'usuario-1', 'draft-1')
-    expect(recuperado?.dadosRascunho.criancas[0].nome).toBe('Teste')
+      expect(recuperado?.dadosRascunho.criancas[0].nome).toBe('Teste')
     expect(planejarRecuperacaoRascunho(recuperado, servidor)).toEqual({ usarCache: true, conflito: false, clienteId: 'cliente-nova' })
   })
 

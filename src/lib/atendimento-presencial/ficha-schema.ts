@@ -324,7 +324,7 @@ export function limparNomeCriancaDigitacao(valor: string) {
 
 export function normalizarNomeCrianca(valor: unknown) {
   if (typeof valor !== 'string') return ''
-  return limparNomeCriancaDigitacao(valor).trim().replace(/\s+/g, ' ')
+  return limparNomeCriancaDigitacao(valor).trim().replace(/\s+/g, ' ').toLocaleUpperCase('pt-BR')
 }
 
 export function nomeCriancaValido(valor: unknown) {

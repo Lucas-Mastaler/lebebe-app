@@ -94,7 +94,7 @@ export type ResultadoAtualizacaoTelefoneCliente =
 
 export function normalizarNomeCliente(valor: unknown) {
   if (typeof valor !== 'string') return ''
-  return valor.trim().replace(/\s+/g, ' ')
+  return valor.trim().replace(/\s+/g, ' ').toLocaleUpperCase('pt-BR')
 }
 
 export function validarPayloadCliente(body: unknown): ResultadoValidacaoCliente {
@@ -196,7 +196,7 @@ export function serializarClientePresencial(
 ): ClientePresencialDTO {
   return {
     id: row.id,
-    nome: row.nome,
+    nome: row.nome.toLocaleUpperCase('pt-BR'),
     telefone: row.telefone_informado,
     telefoneFormatado: row.telefone_normalizado ? formatarTelefone(row.telefone_normalizado) : null,
     parentesco: row.parentesco,

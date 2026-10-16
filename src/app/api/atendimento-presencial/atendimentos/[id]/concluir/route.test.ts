@@ -72,6 +72,21 @@ function mockSupabase(queues: Record<string, unknown[]>, rpcResult: unknown) {
 }
 
 describe('api concluir atendimento presencial', () => {
+  it.each([
+    { atendimentoId: clienteId, version: 3, clienteId, solicitadoERecusado: true },
+    { atendimentoId, version: 2, clienteId, solicitadoERecusado: true },
+    { atendimentoId, version: 3, clienteId, solicitadoERecusado: false },
+  ])('rejeita confirmação de telefone fora desta tentativa %j', async confirmacaoTelefone => {
+    const response = await POST(new Request('http://local', {method:'POST',body:JSON.stringify({version:3,confirmacaoTelefone})}),{params:Promise.resolve({id:atendimentoId})})
+    expect(response.status).toBe(422)
+    expect(createServiceClient).not.toHaveBeenCalled()
+  })
+  it('erro SQL de recusa obrigatória não vira sucesso nem limpa o rascunho', async()=>{
+    mockSupabase({app_usuarios_perfis:[{data:{app_perfis_acesso:{chave:'consultora',ativo:true}},error:null}],app_usuarios_unidades:[{data:[{app_unidades:{id:unidadeId,ativo:true}}],error:null}],atendimento_presencial_atendimentos:[{data:rowRascunho,error:null}]},{data:null,error:{code:'23514',message:'telefone_recusa_obrigatoria'}})
+    const response=await POST(new Request('http://local',{method:'POST',body:JSON.stringify({version:3,numeroLancamento:22})}),{params:Promise.resolve({id:atendimentoId})})
+    expect(response.status).toBe(422)
+    expect(await response.json()).toMatchObject({ok:false,field:'telefoneRecusa'})
+  })
   it.each(['cliente', 'nao_cliente'])('conclui v2 %s apos confirmar persistencia', async (tipoAtendimento) => {
     const rascunho = { ...rowRascunho, cliente_id: tipoAtendimento === 'cliente' ? clienteId : null,
       dados_rascunho: tipoAtendimento === 'cliente'

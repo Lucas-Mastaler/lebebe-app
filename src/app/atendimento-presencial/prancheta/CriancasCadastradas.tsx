@@ -111,21 +111,20 @@ export function CriancasCadastradas({ clienteId, rascunhoId, selecionadas, sincr
         <span className="shrink-0 text-sm font-semibold text-primary">Selecionar →</span>
       </Button></Card>)}
       </div>
-      {historicas.length > 0 && <div className="grid gap-2 border-t border-slate-200 pt-3" role="group" aria-label="Sugestões históricas">
-        <div><h3 className="text-sm font-semibold text-slate-950">Sugestões históricas</h3><p className="mt-1 text-xs text-muted-foreground">Confirme os dados antes de reutilizar.</p></div>
+      {historicas.length > 0 && <div className="grid gap-2 border-t border-slate-200 pt-3" role="group" aria-label="Crianças cadastro antigo">
+        <div><h3 className="text-sm font-semibold text-slate-950">Crianças cadastro antigo</h3><p className="mt-1 text-xs text-muted-foreground">Confirme os dados antes de reutilizar.</p></div>
         {historicas.map((item) => <Card key={item.id} className={confirmando?.id === item.id ? "border-primary shadow-none" : "shadow-none"} data-crianca-opcao="historica"><Button type="button" variant="ghost" className="h-auto min-h-12 w-full justify-between whitespace-normal rounded-2xl p-3 text-left hover:bg-primary/5 focus-visible:ring-inset" aria-pressed={confirmando?.id === item.id} aria-label={`Confirmar ${item.dados.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'} — ${descreverInformacaoNascimento(item)}`} disabled={limite || ocupado} onClick={() => { if (confirmando?.id === item.id) return; dadosOriginaisRef.current = item.dados; setConfirmando(item); setNome(item.dados.nome?.toLocaleUpperCase('pt-BR') ?? ''); setParentesco(''); setAssociarId(''); setErro(null); setRevisando(false); setAberto(false); setOpcoes(false) }}>
           <span className="min-w-0 space-y-1">
             <span role="heading" aria-level={4} className="block break-words text-sm font-semibold text-slate-950">{item.dados.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'}</span>
-            <span className="block text-xs text-muted-foreground">{item.dados.idadeValor && item.dados.idadeUnidade ? `Idade informada: ${item.dados.idadeValor} ${item.dados.idadeUnidade}` : descreverInformacaoNascimento(item)}</span>
+            <span className="block text-xs text-muted-foreground">{item.dados.idadeValor && item.dados.idadeUnidade ? `Idade informada: ${item.dados.idadeValor} ${item.dados.idadeUnidade}` : ''}</span>
             <span className="block text-xs text-muted-foreground">Atendimento em {item.registradoEm.slice(0, 10).split('-').reverse().join('/')}</span>
-            <span className="block text-xs text-muted-foreground">Registro {item.atendimentoId?.slice(0, 8)}</span>
           </span>
           <span className="shrink-0 text-sm font-semibold text-primary">Selecionar →</span>
         </Button></Card>)}
       </div>}
     </div>}
     {confirmando && <Card id="confirmacao-crianca-historica" tabIndex={-1} className="scroll-mt-32 scroll-mb-48"><CardContent className="grid gap-3 p-4">
-      <h3 className="font-semibold">Confirmar criança histórica</h3>
+      <h3 className="font-semibold">Crianças cadastro antigo</h3>
       <p className="font-semibold text-primary"><strong className="text-foreground">{confirmando.dados.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'}</strong> selecionada. Complete os dados abaixo e confirme o cadastro.</p>
       <div className="space-y-2 text-sm">
         <p>{separadorInformacao >= 0 ? <><strong>{informacaoNascimento.slice(0, separadorInformacao + 1)}</strong>{informacaoNascimento.slice(separadorInformacao + 1)}</> : informacaoNascimento}</p>

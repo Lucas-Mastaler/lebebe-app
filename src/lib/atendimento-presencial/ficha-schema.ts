@@ -1,6 +1,6 @@
 import type { ParentescoCliente } from './clientes'
 
-export const MOTIVOS_VISITA = [
+export const MOTIVOS_VISITA_HISTORICOS = [
   { chave: 'entrega_mercadoria', label: 'Entrega de mercadoria' },
   { chave: 'entregador_uber_eats', label: 'Entregador/Uber Eats' },
   { chave: 'vendedor_ambulante', label: 'Vendedor ambulante' },
@@ -10,7 +10,16 @@ export const MOTIVOS_VISITA = [
   { chave: 'representante', label: 'Representante' },
   { chave: 'outros', label: 'Outros' },
 ] as const
-export type MotivoVisita = (typeof MOTIVOS_VISITA)[number]['chave']
+export const MOTIVOS_VISITA = [
+  { chave: 'acompanhante_separado', label: 'Acompanhante (entrou separado)' },
+  { chave: 'pedido_informacao', label: 'Pedido de informação' },
+  { chave: 'ambulante_entregador_ifood_panfleto', label: 'Vendedor ambulante/entregador/iFood/Panfleto' },
+  { chave: 'entrega_mercadoria', label: 'Entrega de mercadoria' },
+  { chave: 'curriculo', label: 'Currículo' },
+  { chave: 'representante', label: 'Representante' },
+  { chave: 'outros', label: 'Outros' },
+] as const
+export type MotivoVisita = (typeof MOTIVOS_VISITA)[number]['chave'] | (typeof MOTIVOS_VISITA_HISTORICOS)[number]['chave']
 export const OBSERVACAO_NAO_FECHAMENTO_MAX_CHARS = 300
 
 function validarContratoFluxo(payload: Record<string, unknown>):
@@ -26,7 +35,7 @@ function validarContratoFluxo(payload: Record<string, unknown>):
   if (payload.tipoAtendimento !== undefined && !['cliente', 'nao_cliente'].includes(payload.tipoAtendimento as string)) {
     return { ok: false, field: 'tipoAtendimento', message: 'Tipo de atendimento invalido.' }
   }
-  if (payload.motivoVisita !== undefined && !MOTIVOS_VISITA.some((item) => item.chave === payload.motivoVisita)) {
+  if (payload.motivoVisita !== undefined && ![...MOTIVOS_VISITA, ...MOTIVOS_VISITA_HISTORICOS].some((item) => item.chave === payload.motivoVisita)) {
     return { ok: false, field: 'motivoVisita', message: 'Motivo da visita invalido.' }
   }
   if (payload.observacaoNaoFechamento !== undefined && (typeof payload.observacaoNaoFechamento !== 'string'
@@ -140,7 +149,37 @@ export const MOTIVOS_RESULTADO_GRUPOS = [
   },
 ] as const
 
-export type MotivoResultado = (typeof MOTIVOS_RESULTADO_GRUPOS)[number]['motivos'][number]['chave']
+export const MOTIVOS_VENDA_PERDIDA = [
+  { chave: 'cor_diferente', label: 'Cor (Queria cor diferente)' },
+  { chave: 'nao_coube_quarto', label: 'Medidas (Não coube no quarto)' },
+  { chave: 'sem_estoque', label: 'Sem estoque' },
+  { chave: 'produto_caro', label: 'Achou caro produto' },
+  { chave: 'frete_caro', label: 'Achou caro o frete' },
+  { chave: 'outra_loja_fisica', label: 'Fechou em outra loja física' },
+  { chave: 'outra_loja_internet', label: 'Fechou em outra loja internet' },
+  { chave: 'nao_respondeu', label: 'Não respondeu mais (vácuo)' },
+  { chave: 'prazo_entrega', label: 'Prazo de entrega' },
+] as const
+export const MOTIVOS_NEGOCIACAO = [
+  { chave: 'virada_cartao', label: 'Virada de cartão' },
+  { chave: 'sem_medidas', label: 'Sem medidas (precisa tirar as medidas)' },
+  { chave: 'ganhar_presente', label: 'Vai ganhar de presente' },
+  { chave: 'conversar_outra_pessoa', label: 'Precisa conversar com outra pessoa' },
+  { chave: 'pesquisando', label: 'Tá pesquisando' },
+  { chave: 'aguardar_nascimento', label: 'Vai aguardar mais perto do nascimento' },
+  { chave: 'inicio_gestacao', label: 'Início de gestação (menos de 3 meses)' },
+] as const
+export type MotivoResultado = (typeof MOTIVOS_RESULTADO_GRUPOS)[number]['motivos'][number]['chave'] | (typeof MOTIVOS_VENDA_PERDIDA)[number]['chave'] | (typeof MOTIVOS_NEGOCIACAO)[number]['chave']
+export const MOTIVOS_LOJA = ['outra_loja_fisica', 'outra_loja_internet'] as const
+export function motivosParaResultado(resultado: ResultadoAtendimento | undefined) {
+  return resultado === 'nao' ? MOTIVOS_VENDA_PERDIDA : resultado === 'negociacao' ? MOTIVOS_NEGOCIACAO : []
+}
+// Apenas os já selecionados antigos são apresentados para leitura/edição, nunca convertidos.
+export function motivosParaEdicao(ficha: FichaDadosRascunho) {
+  const atuais: Array<{chave: MotivoResultado; label: string}> = [...motivosParaResultado(ficha.resultadoAtendimento)]
+  for (const chave of ficha.motivosResultado) if (!atuais.some(item => item.chave === chave)) atuais.push({chave, label: getMotivoLabel(chave)})
+  return atuais
+}
 
 export const FICHA_PRODUTO_MAX_CHARS = 80
 export const FICHA_PRODUTOS_MAX_ITENS = 20
@@ -177,6 +216,7 @@ export type FichaDadosRascunho = {
   tipoAtendimento?: 'cliente' | 'nao_cliente'
   motivoVisita?: MotivoVisita
   observacaoNaoFechamento?: string
+  lojasMotivos?: Partial<Record<(typeof MOTIVOS_LOJA)[number], string>>
   entradasFormulario?: EntradasFormularioRascunho
   cliente?: FichaClienteRascunho
   consultoraNome?: string
@@ -217,12 +257,13 @@ const situacoesValidas = new Set<string>(SITUACOES_CRIANCA.map((item) => item.ch
 const sexosValidos = new Set<string>(SEXOS_CRIANCA.map((item) => item.chave))
 const departamentosValidos = new Set<string>(DEPARTAMENTOS_INTERESSE.map((item) => item.chave))
 const resultadosValidos = new Set<string>(RESULTADOS_ATENDIMENTO.map((item) => item.chave))
-const motivosValidos = new Set<string>(MOTIVOS_RESULTADO_GRUPOS.flatMap((grupo) => grupo.motivos.map((item) => item.chave)))
+const motivosValidos = new Set<string>([...MOTIVOS_RESULTADO_GRUPOS.flatMap((grupo) => grupo.motivos.map((item) => item.chave)), ...MOTIVOS_VENDA_PERDIDA.map(item => item.chave), ...MOTIVOS_NEGOCIACAO.map(item => item.chave)])
 const chavesPermitidas = new Set([
   'versaoFluxo',
   'tipoAtendimento',
   'motivoVisita',
   'observacaoNaoFechamento',
+  'lojasMotivos',
   'entradasFormulario',
   'cliente',
   'consultoraNome',
@@ -522,6 +563,12 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
     )
   }
 
+  if (payload.lojasMotivos !== undefined) {
+    const lojas = payload.lojasMotivos
+    if (!lojas || typeof lojas !== 'object' || Array.isArray(lojas) || Object.entries(lojas).some(([key, value]) => !MOTIVOS_LOJA.includes(key as (typeof MOTIVOS_LOJA)[number]) || typeof value !== 'string' || value.length > 120)) return { ok: false, field: 'lojasMotivos', message: 'Revise os nomes das lojas (até 120 caracteres).' }
+    dados.lojasMotivos = {}
+    for (const motivo of MOTIVOS_LOJA) if (dados.motivosResultado.includes(motivo) && typeof (lojas as Record<string, unknown>)[motivo] === 'string') dados.lojasMotivos[motivo] = normalizarTexto((lojas as Record<string, unknown>)[motivo], 120)
+  }
   const motivoOutro = normalizarTexto(payload.motivoOutro, FICHA_MOTIVO_OUTRO_MAX_CHARS)
   if (motivoOutro) dados.motivoOutro = motivoOutro
 
@@ -664,6 +711,8 @@ export function getResultadoLabel(chave: ResultadoAtendimento | undefined) {
 }
 
 export function getMotivoLabel(chave: MotivoResultado) {
+  const atual = [...MOTIVOS_VENDA_PERDIDA, ...MOTIVOS_NEGOCIACAO].find(item => item.chave === chave)
+  if (atual) return atual.label
   for (const grupo of MOTIVOS_RESULTADO_GRUPOS) {
     const motivo = grupo.motivos.find((item) => item.chave === chave)
     if (motivo) return motivo.label

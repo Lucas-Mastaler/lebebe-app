@@ -1,5 +1,6 @@
 'use client'
 
+
 import { calcularReferenciaNascimento, criancaJaNasceu, dataAtendimentoLocal, descreverIdadeAproximada } from '@/lib/atendimento-presencial/idade-aproximada'
 
 import { useEffect, useMemo, useState } from 'react'
@@ -43,7 +44,8 @@ import {
   FICHA_OBSERVACOES_MAX_CHARS,
   FICHA_PRODUTO_MAX_CHARS,
   FICHA_PRODUTOS_MAX_ITENS,
-  MOTIVOS_RESULTADO_GRUPOS,
+  motivosParaEdicao,
+  MOTIVOS_LOJA,
   MOTIVOS_VISITA,
   RESULTADOS_ATENDIMENTO,
   SEXOS_CRIANCA,
@@ -72,6 +74,7 @@ import {
   descreverContratoHistorico,
   getMotivoVisitaLabel,
   registroNaoCliente,
+  registroSemTelefone,
   montarPayloadEdicaoAtendimento,
   normalizarDetalheParaFichaEdicao,
   normalizarObservacoesRegistro,
@@ -446,6 +449,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       return {
         ...atual,
         motivosResultado,
+        lojasMotivos: Object.fromEntries(Object.entries(atual.lojasMotivos ?? {}).filter(([key]) => motivosResultado.includes(key as MotivoResultado))),
         motivoOutro: selecionado && chave === 'outro' ? undefined : atual.motivoOutro,
         viradaCartaoDia: selecionado && chave === 'virada_cartao' ? undefined : atual.viradaCartaoDia,
         viradaCartaoMes: selecionado && chave === 'virada_cartao' ? undefined : atual.viradaCartaoMes,
@@ -696,6 +700,8 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                           </span>}
                         />
                         <CardContent className="space-y-1">
+                          {registroSemTelefone(registro) && <p className="rounded-md border border-destructive bg-red-50 p-3 text-lg font-bold text-destructive">SEM TELEFONE</p>}
+                          {registro.telefoneRecusaConfirmada === true && <p className="text-sm text-muted-foreground">Telefone solicitado; cliente recusou informar.</p>}
                           {registroNaoCliente(registro) && <p className="text-sm text-slate-600">Motivo da visita: {getMotivoVisitaLabel(registro.motivoVisita)}</p>}
                           {registro.consultoraNomeManual && <p className="text-sm text-slate-600">Consultora: {registro.consultoraNomeManual}</p>}
                           <p className="text-sm text-slate-600">Concluido em {formatarData(registro.concluidoEm)}</p>
@@ -779,9 +785,11 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                     </div>
                     {!selecionadoNaoCliente && <div>
                       <p className="text-xs font-bold uppercase text-slate-500">Cliente</p>
+                      {registroSemTelefone({ ...selecionado.atendimento, clienteTelefone: selecionado.cliente?.telefone ?? null }) && <p className="rounded-md border border-destructive bg-red-50 p-3 text-lg font-bold text-destructive">SEM TELEFONE</p>}
                       {selecionado.cliente ? (
                         <>
                           <p className="font-semibold text-slate-950">{selecionado.cliente.nome}</p>
+                          {selecionado.atendimento.telefoneRecusaConfirmada === true && <p>Telefone solicitado; cliente recusou informar.</p>}
                           {selecionado.cliente.telefone && <p>{selecionado.cliente.telefone}</p>}
                           <Button type="button" variant="secondary" onClick={abrirHistoricoClienteSelecionada} className="mt-3">
                             <History className="size-4" aria-hidden="true" />
@@ -807,7 +815,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                     </div>
                     <div>
                       <p className="text-xs font-bold uppercase text-slate-500">Motivos</p>
-                      <p>{selecionado.motivos.map((item) => item.motivo === 'outro' && item.complemento ? `${getMotivoLabel(item.motivo)}: ${item.complemento}` : getMotivoLabel(item.motivo)).join(', ')}</p>
+                      <p>{selecionado.motivos.map((item) => item.complemento ? `${getMotivoLabel(item.motivo)}: ${item.complemento}` : getMotivoLabel(item.motivo)).join(', ')}</p>
                     </div>
                     <div>
                       <p className="text-xs font-bold uppercase text-slate-500">Criancas</p>
@@ -1128,7 +1136,8 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                     {RESULTADOS_ATENDIMENTO.map((item) => (
                       <OpcaoButton key={item.chave} selected={fichaEdicao.resultadoAtendimento === item.chave} onClick={() => {
                         if (item.chave !== 'sim') setNumeroLancamentoEdicao('')
-                        atualizarFichaEdicao((atual) => ({ ...atual, resultadoAtendimento: item.chave as ResultadoAtendimento }))
+                        atualizarFichaEdicao((atual) => ({ ...atual, resultadoAtendimento: item.chave as ResultadoAtendimento,
+                          ...(atual.resultadoAtendimento !== item.chave ? { motivosResultado: [], lojasMotivos: undefined, motivoOutro: undefined, viradaCartaoDia: undefined, viradaCartaoMes: undefined } : {}) }))
                       }}>
                         {item.label}
                       </OpcaoButton>
@@ -1139,21 +1148,11 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                 <div>
                   <p className="text-sm font-semibold text-slate-800">Motivos</p>
                   <div className="mt-3 grid gap-4">
-                    {MOTIVOS_RESULTADO_GRUPOS.map((grupo) => (
-                      <div key={grupo.chave}>
-                        <p className="mb-2 text-base font-semibold text-slate-800">{grupo.label}</p>
-                        <div className="grid gap-2">
-                          {grupo.motivos.map((motivo) => (
-                            <OpcaoButton key={motivo.chave} selected={fichaEdicao.motivosResultado.includes(motivo.chave)} onClick={() => alternarMotivoEdicao(motivo.chave)}>
-                              {motivo.label}
-                            </OpcaoButton>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+                    {motivosParaEdicao(fichaEdicao).map(motivo => <OpcaoButton key={motivo.chave} selected={fichaEdicao.motivosResultado.includes(motivo.chave)} onClick={() => alternarMotivoEdicao(motivo.chave)}>{motivo.label}</OpcaoButton>)}
                   </div>
                 </div>
 
+                {MOTIVOS_LOJA.filter(motivo => fichaEdicao.motivosResultado.includes(motivo)).map(motivo => <FormField key={motivo} id={'edicao-loja-' + motivo} label={motivo === 'outra_loja_fisica' ? 'Nome da loja física' : 'Nome da loja na internet'} helper="Opcional">{field => <Input {...field} maxLength={120} value={fichaEdicao.lojasMotivos?.[motivo] ?? ''} onChange={event => atualizarFichaEdicao(atual => ({ ...atual, lojasMotivos: { ...atual.lojasMotivos, [motivo]: event.target.value } }))} />}</FormField>)}
                 {fichaEdicao.motivosResultado.includes('virada_cartao') && (
                   <ViradaCartaoField
                     id="edicao-virada-cartao"
@@ -1183,7 +1182,10 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                     {(field) => (
                       <Select value={fichaEdicao.motivoVisita} onValueChange={(value) => atualizarFichaEdicao((atual) => ({ ...atual, motivoVisita: value as FichaDadosRascunho['motivoVisita'] }))}>
                         <SelectTrigger id={field.id} className="w-full"><SelectValue /></SelectTrigger>
-                        <SelectContent>{MOTIVOS_VISITA.map((item) => <SelectItem key={item.chave} value={item.chave}>{item.label}</SelectItem>)}</SelectContent>
+                        <SelectContent>
+                          {MOTIVOS_VISITA.map((item) => <SelectItem key={item.chave} value={item.chave}>{item.label}</SelectItem>)}
+                          {fichaEdicao.motivoVisita && !MOTIVOS_VISITA.some(item => item.chave === fichaEdicao.motivoVisita) && <SelectItem value={fichaEdicao.motivoVisita}>{getMotivoVisitaLabel(fichaEdicao.motivoVisita)} (histórico)</SelectItem>}
+                        </SelectContent>
                       </Select>
                     )}
                   </FormField>

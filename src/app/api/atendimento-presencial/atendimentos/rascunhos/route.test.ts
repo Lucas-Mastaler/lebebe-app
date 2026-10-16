@@ -95,6 +95,13 @@ function mockSupabase(queues: Record<string, unknown[]>) {
 }
 
 describe('api rascunhos atendimento presencial', () => {
+  it.each([false,true])('novo v2 exige tipo, mas repetição recupera rascunho antigo: %s', async existente=>{
+    const {from}=mockSupabase({app_usuarios_perfis:[{data:{app_perfis_acesso:{chave:'consultora',ativo:true}},error:null}],app_usuarios_unidades:[{data:[{app_unidades:{id:unidadeId,chave:'bigorrilho',nome:'Bigorrilho',ativo:true}}],error:null}],atendimento_presencial_atendimentos:[{data:existente?rascunhoRow:null,error:null}]})
+    const response=await POST(new Request('http://local',{method:'POST',body:JSON.stringify({draftClientId,unidadeId,dadosRascunho:{versaoFluxo:2,consultoraNome:'Ana'}})}))
+    expect(response.status).toBe(existente?200:422)
+    expect(from).toHaveBeenCalledTimes(3)
+    expect(await response.json()).toMatchObject(existente?{ok:true,idempotente:true}:{ok:false,field:'tipoAtendimento'})
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(requireModuleAccess).mockResolvedValue(authOk)

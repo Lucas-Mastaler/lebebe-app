@@ -203,7 +203,7 @@ export async function GET(request: Request) {
 
     const [clientesResult, consultorasResult, unidadesResult] = await Promise.all([
       clienteIds.length
-        ? loaded.supabase.from('atendimento_presencial_clientes').select('id, nome, telefone_informado, parentesco, parentesco_outro').in('id', clienteIds)
+        ? loaded.supabase.from('atendimento_presencial_clientes').select('id, nome, telefone_informado, telefone_normalizado, telefone_normalizado_ddi, parentesco, parentesco_outro').in('id', clienteIds)
         : Promise.resolve({ data: [], error: null }),
       consultoraIds.length
         ? loaded.supabase.from('usuarios_permitidos').select('id, email').in('id', consultoraIds)
@@ -236,6 +236,7 @@ export async function GET(request: Request) {
       registros: rows.map((row) => ({
         id: row.id,
         versaoFluxo: row.versao_fluxo ?? null,
+        telefoneRecusaConfirmada: row.telefone_recusa_confirmada ?? null,
         tipoAtendimento: row.tipo_atendimento ?? null,
         motivoVisita: row.motivo_visita ?? null,
         clienteId: row.cliente_id,

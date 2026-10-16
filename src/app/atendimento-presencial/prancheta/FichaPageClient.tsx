@@ -9,11 +9,13 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { CriancasCadastradas } from './CriancasCadastradas'
 import { ParentescoCriancaField } from './ParentescoCriancaField'
+import { getMotivoVisitaLabel } from '@/lib/atendimento-presencial/registros'
 import { requisicaoLimitada } from '@/lib/atendimento-presencial/requisicao-limitada'
 import { calcularReferenciaNascimento, criancaJaNasceu, dataAtendimentoLocal, descreverIdadeAproximada } from '@/lib/atendimento-presencial/idade-aproximada'
 import { AlertCircle, Baby, Check, ChevronLeft, ClipboardList, History, LoaderCircle, MessageSquareText, Plus, RefreshCw, Save, Search, ShoppingBag, UserRound, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
+  Dialog, DialogContent, DialogHeader, DialogFooter,
   Alert,
   Badge,
   Button,
@@ -56,7 +58,8 @@ import {
   FICHA_PRODUTOS_MAX_ITENS,
   MOTIVOS_VISITA,
   OBSERVACAO_NAO_FECHAMENTO_MAX_CHARS,
-  MOTIVOS_RESULTADO_GRUPOS,
+  motivosParaEdicao,
+  MOTIVOS_LOJA,
   SEXOS_CRIANCA,
   SITUACOES_CRIANCA,
   converterViradaCartaoInput,
@@ -390,6 +393,10 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [telefoneClienteEdicao, setTelefoneClienteEdicao] = useState('')
   const [erroTelefone, setErroTelefone] = useState<string | null>(null)
   const [salvandoTelefone, setSalvandoTelefone] = useState(false)
+  const [criancasEmEdicao, setCriancasEmEdicao] = useState<string[]>([])
+  const [criancasConfirmadas, setCriancasConfirmadas] = useState<string[]>([])
+  const [confirmacaoTelefone, setConfirmacaoTelefone] = useState<{ ficha: FichaDadosRascunho; atendimentoId: string; clienteId: string | null } | null>(null)
+  const telefoneParaFocoRef = useRef(false)
   const autosaveQueueRef = useRef<AutosaveSerialQueue | null>(null)
   const formContentRef = useRef<HTMLDivElement | null>(null)
   const actionBarRef = useRef<HTMLDivElement | null>(null)
@@ -423,6 +430,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const pendenciasLocais = temEntradasLocaisPendentes(entradasLocais) || temDadosIntermediariosRascunho(ficha)
 
   function definirClienteId(id: string | null) {
+    if (id !== clienteIdRef.current) {
+      setConfirmacaoTelefone(null)
+      setCriancasConfirmadas([])
+      setCriancasEmEdicao([])
+    }
     clienteIdRef.current = id
     setClienteId(id)
   }
@@ -489,7 +501,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       card.scrollIntoView({ behavior: 'smooth', block: 'center' })
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [ficha.criancas])
+  }, [criancasConfirmadas, criancasEmEdicao, ficha.criancas])
 
   useEffect(() => {
     const viewport = window.visualViewport
@@ -567,9 +579,10 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     if (unidadesParaSelecao.length === 0) return false
     if (!unidadeId || !unidadesParaSelecao.some((unidade) => unidade.id === unidadeId)) return false
     if (!consultoraNomeNormalizado || !validarNomeConsultora(consultoraNomeNormalizado)) return false
+    if (!ficha.tipoAtendimento) return false
     if (rascunhoIdParam) return false
     return true
-  }, [ativo, contexto, iniciando, consultoraNomeNormalizado, unidadeId, unidadesParaSelecao, rascunhoIdParam])
+  }, [ativo, contexto, iniciando, consultoraNomeNormalizado, unidadeId, unidadesParaSelecao, rascunhoIdParam, ficha.tipoAtendimento])
 
 
   function atualizarFicha(mutator: (atual: FichaDadosRascunho) => FichaDadosRascunho) {
@@ -659,7 +672,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       !carregandoRascunhoInicial &&
       !rascunhoIdParam &&
       unidadeValida &&
-      nomeValido
+      nomeValido && Boolean(ficha.tipoAtendimento)
     if (!pode) return
     if (autoIniciandoRef.current) return
     if (tentativaUnidadeRef.current === unidadeId && tentativaNomeRef.current === consultoraNomeNormalizado) return
@@ -672,7 +685,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       autoIniciandoRef.current = false
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ativo, iniciando, concluindo, carregandoRascunhoInicial, rascunhoIdParam, unidadeId, unidadesParaSelecao, consultoraNomeNormalizado, onlineTick])
+  }, [ativo, iniciando, concluindo, carregandoRascunhoInicial, rascunhoIdParam, unidadeId, unidadesParaSelecao, consultoraNomeNormalizado, ficha.tipoAtendimento, onlineTick])
 
   useEffect(() => {
     setErroCriacao(null)
@@ -1277,13 +1290,39 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
 
   function escolherResultado(resultado: ResultadoAtendimento) {
     if (concluindoRef.current) return
-    const proximaFicha: FichaDadosRascunho = { ...ficha, versaoFluxo: 2, resultadoAtendimento: resultado }
+    const trocou = ficha.resultadoAtendimento !== resultado
+    const proximaFicha: FichaDadosRascunho = { ...ficha, versaoFluxo: 2, resultadoAtendimento: resultado, ...(trocou ? { motivosResultado: [], lojasMotivos: undefined, motivoOutro: undefined, viradaCartaoDia: undefined, viradaCartaoMes: undefined } : {}) }
     atualizarFicha(() => proximaFicha)
     if (resultado === 'sim') { void concluirAtendimento(proximaFicha); return }
     const erros = validarEtapa({ etapa: 'ficha', ficha: proximaFicha, clienteSelecionada, dataPrevistaInputs })
     if (!unidadeId) erros.unshift({ sectionId: 'secao-unidade', message: 'Selecione a unidade.' })
     if (erros.length) return registrarErrosValidacao(erros)
     irParaEtapa('resultado')
+  }
+
+  useEffect(() => {
+    if (!telefoneParaFocoRef.current || etapaAtual !== 'ficha') return
+    const campo = document.getElementById('telefone-cliente-rapido')
+    if (!campo) return
+    telefoneParaFocoRef.current = false
+    campo.scrollIntoView({ behavior: 'instant', block: 'center' })
+    campo.focus({ preventScroll: true })
+  }, [etapaAtual, confirmacaoTelefone])
+
+  function voltarAoTelefone() {
+    telefoneParaFocoRef.current = true
+    setConfirmacaoTelefone(null)
+    irParaEtapa('ficha')
+  }
+
+  function confirmarCriancaLocal(id: string) {
+    const atual = fichaRef.current
+    const erros = validarEtapa({ etapa: 'ficha', ficha: atual, clienteSelecionada, dataPrevistaInputs })
+      .filter(erro => erro.sectionId === 'secao-crianca' && erro.fieldId?.endsWith(id))
+    if (erros.length) { registrarErrosValidacao(erros); return }
+    setCriancasConfirmadas(ids => ids.includes(id) ? ids : [...ids, id])
+    setCriancasEmEdicao(ids => ids.filter(item => item !== id))
+    focoCriancaSelecionadaRef.current = 'crianca-selecionada-' + id
   }
 
   function voltar() { irParaEtapa('ficha') }
@@ -1411,6 +1450,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       return {
         ...atual,
         motivosResultado,
+        lojasMotivos: Object.fromEntries(Object.entries(atual.lojasMotivos ?? {}).filter(([key]) => motivosResultado.includes(key as MotivoResultado))),
         motivoOutro: selecionado && chave === 'outro' ? undefined : atual.motivoOutro,
         viradaCartaoDia: selecionado && chave === 'virada_cartao' ? undefined : atual.viradaCartaoDia,
         viradaCartaoMes: selecionado && chave === 'virada_cartao' ? undefined : atual.viradaCartaoMes,
@@ -1474,6 +1514,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       autosaveQueueRef.current = null
       setAtivo(null)
       setRascunhoEncerrado(rascunhoIdInicial)
+      setCriancasConfirmadas([])
+      setCriancasEmEdicao([])
+      setConfirmacaoTelefone(null)
       setFicha(criarPayloadInicial())
       definirClienteId(null)
       setTelefonePendente(null)
@@ -1557,7 +1600,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     }
   }
 
-  async function concluirAtendimento(fichaConclusao: FichaDadosRascunho = ficha) {
+  async function concluirAtendimento(fichaConclusao: FichaDadosRascunho = ficha, recusaNestaTentativa = false) {
     if (concluindoRef.current) return
     concluindoRef.current = true
     flushSync(() => { setConcluindo(true); setErroConclusao(null) })
@@ -1589,6 +1632,13 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       setConcluindo(false)
       return
     }
+    if (fichaConclusao.tipoAtendimento === 'cliente' && !normalizarTelefone(clienteSelecionadaRef.current?.telefone || clienteSelecionadaRef.current?.telefoneFormatado).valido && !recusaNestaTentativa) {
+      setConfirmacaoTelefone({ ficha: fichaConclusao, atendimentoId: ativo.id, clienteId: clienteIdRef.current })
+      concluindoRef.current = false
+      setConcluindo(false)
+      return
+    }
+    setConfirmacaoTelefone(null)
     setErro(null)
     setErroEtapa(null)
     setErrosValidacao([])
@@ -1603,6 +1653,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           version: rascunhoSalvo.version,
+          confirmacaoTelefone: recusaNestaTentativa ? { atendimentoId: rascunhoSalvo.id, version: rascunhoSalvo.version, clienteId: clienteIdRef.current, solicitadoERecusado: true } : null,
           numeroLancamento: validacao.numeroLancamento,
           consultoraNome: consultoraNomeNormalizado,
         }),
@@ -1709,7 +1760,16 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     : iniciando || alteracoesNaoConfirmadas ? 'salvando' : ativo ? 'salvo' : 'ocioso'
 
   return (
-    <PageContainer>
+    <><Dialog open={Boolean(confirmacaoTelefone)} onOpenChange={aberto => { if (!aberto) voltarAoTelefone() }}>
+      <DialogContent className="max-w-md border-destructive bg-red-50" onCloseAutoFocus={event => { event.preventDefault(); if (telefoneParaFocoRef.current) document.getElementById('telefone-cliente-rapido')?.focus() }}>
+        <DialogHeader title="Cliente sem telefone" titleClassName="text-destructive" className="bg-red-50" description={<span className="font-semibold text-destructive">Você realmente pediu o telefone para a cliente e ela não quis te passar?</span>} />
+        <DialogFooter className="gap-2 p-4"><Button type="button" variant="secondary" onClick={voltarAoTelefone}>Não</Button><Button type="button" variant="destructive" disabled={concluindo} onClick={() => {
+          const atual = confirmacaoTelefone
+          if (!atual || atual.atendimentoId !== ativoRef.current?.id || atual.clienteId !== clienteIdRef.current) { setConfirmacaoTelefone(null); return }
+          void concluirAtendimento(atual.ficha, true)
+        }}>Sim</Button></DialogFooter>
+      </DialogContent>
+    </Dialog><PageContainer>
       <FormPageContent ref={formContentRef} className="max-w-3xl space-y-5" style={actionBarHeight ? { paddingBottom: `${actionBarHeight + 24}px` } : undefined}>
         <PageHeader
           eyebrow="Atendimento presencial"
@@ -1895,6 +1955,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
               {ficha.tipoAtendimento === 'nao_cliente' && (
                 <SecaoFicha id="secao-visita" titulo="Motivo da visita" icon={ClipboardList} erro={erroSecao('secao-visita')}>
                   <div className="grid gap-2 sm:grid-cols-2">
+                    {ficha.motivoVisita && !MOTIVOS_VISITA.some(item => item.chave === ficha.motivoVisita) && <p className="text-sm text-muted-foreground">Motivo histórico preservado: {getMotivoVisitaLabel(ficha.motivoVisita)}</p>}
                     {MOTIVOS_VISITA.map((item) => <OpcaoButton key={item.chave} selected={ficha.motivoVisita === item.chave}
                       onClick={() => atualizarFicha((atual) => ({ ...atual, motivoVisita: item.chave }))}>{item.label}</OpcaoButton>)}
                   </div>
@@ -2034,9 +2095,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 erro={erroSecao('secao-crianca')}
               >
                 {ficha.criancas.map((crianca, index) => (
-                  crianca.criancaPermanenteId ? <Card key={crianca.id} id={`crianca-selecionada-${crianca.id}`} tabIndex={-1} className="border-primary/30 bg-primary/5" data-crianca-selecionada><CardContent className="grid gap-2 p-3">
+                  (crianca.criancaPermanenteId || criancasConfirmadas.includes(crianca.id)) && !criancasEmEdicao.includes(crianca.id) ? <Card key={crianca.id} id={`crianca-selecionada-${crianca.id}`} tabIndex={-1} className="border-primary/30 bg-primary/5" data-crianca-selecionada><CardContent className="grid gap-2 p-3">
                     <div className="flex items-start justify-between gap-3"><h3 title={crianca.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'} className="min-w-0 truncate text-[1.035rem] font-semibold text-slate-950">{crianca.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'}</h3><div className="flex shrink-0 items-center gap-1"><span role="status" className="flex items-center gap-1 text-xs font-semibold text-primary"><Check className="size-3.5" aria-hidden="true" />Selecionada</span><Button type="button" variant="ghost" size="icon" className="min-h-11 min-w-11" aria-label={`Remover seleção de ${crianca.nome?.toLocaleUpperCase('pt-BR') || 'criança sem nome informado'}`} onClick={() => removerCrianca(crianca.id)}><X className="size-4" aria-hidden="true" /></Button></div></div>
                     <p className="text-sm text-muted-foreground">{crianca.parentesco}</p>
+                    {!crianca.criancaPermanenteId && <p className="text-xs text-muted-foreground">Incluída no rascunho. Cadastro permanente ao concluir.</p>}
+                    <Button type="button" variant="ghost" onClick={() => setCriancasEmEdicao(ids => [...ids, crianca.id])}>Alterar</Button>
                     {crianca.dataReferenciaNascimento ? <div data-idade-estimada><p className="text-base font-semibold text-slate-950">{descreverIdadeAproximada(crianca.dataReferenciaNascimento)}</p><p className="text-xs text-muted-foreground">Referência estimada: {formatarDataISOParaInput(crianca.dataReferenciaNascimento)}</p></div> : <p className="text-sm text-muted-foreground">{crianca.dataPrevistaNascimento ? `Previsão informada: ${formatarDataISOParaInput(crianca.dataPrevistaNascimento)}` : crianca.idadeValor ? `Idade informada: ${crianca.idadeValor} ${crianca.idadeUnidade}` : 'Nascimento não informado'}</p>}
                   </CardContent></Card> :
                   <Card key={crianca.id}>
@@ -2127,6 +2190,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                             ))}
                           </div>
                         </div>
+                        <Button type="button" onClick={() => confirmarCriancaLocal(crianca.id)}>{crianca.criancaPermanenteId ? 'Confirmar seleção' : 'Cadastrar e vincular'}</Button>
+                        {!crianca.criancaPermanenteId && <p className="text-xs text-muted-foreground">Confirma a inclusão no rascunho; o cadastro permanente é salvo ao concluir.</p>}
                       </div>
                     </CardContent>
                   </Card>
@@ -2190,6 +2255,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                       <Plus className="size-4" aria-hidden="true" />
                     </Button>
                   </div>
+                  <Button type="button" variant="secondary" className="mt-2" disabled={ficha.produtosInteresse.length >= FICHA_PRODUTOS_MAX_ITENS || ficha.produtosInteresse.some(item => item.trim().toLocaleLowerCase('pt-BR') === 'produto que não trabalhamos')} onClick={() => atualizarFicha(atual => ({ ...atual, produtosInteresse: atual.produtosInteresse.length >= FICHA_PRODUTOS_MAX_ITENS || atual.produtosInteresse.some(item => item.trim().toLocaleLowerCase('pt-BR') === 'produto que não trabalhamos') ? atual.produtosInteresse : [...atual.produtosInteresse, 'Produto que não trabalhamos'] }))}>Produto que não trabalhamos</Button>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {ficha.produtosInteresse.map((produto) => (
                       <button
@@ -2235,25 +2301,15 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                     {!ficha.resultadoAtendimento && 'Principais motivos'}
                   </p>
                   <div className="mt-3 grid gap-4">
-                    {MOTIVOS_RESULTADO_GRUPOS.map((grupo) => (
-                      <div key={grupo.chave}>
-                        <p className="mb-2 text-base font-semibold text-slate-800">{grupo.label}</p>
-                        <div className="grid gap-2">
-                          {grupo.motivos.map((motivo) => (
-                            <OpcaoButton key={motivo.chave} selected={ficha.motivosResultado.includes(motivo.chave)} onClick={() => alternarMotivo(motivo.chave)}>
-                              {motivo.label}
-                            </OpcaoButton>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+                    {motivosParaEdicao(ficha).map(motivo => <OpcaoButton key={motivo.chave} selected={ficha.motivosResultado.includes(motivo.chave)} onClick={() => alternarMotivo(motivo.chave)}>{motivo.label}</OpcaoButton>)}
                   </div>
                 </SecaoFicha>
 
+                {MOTIVOS_LOJA.filter(motivo => ficha.motivosResultado.includes(motivo)).map(motivo => <FormField key={motivo} id={'loja-' + motivo} label={motivo === 'outra_loja_fisica' ? 'Nome da loja física' : 'Nome da loja na internet'} helper="Opcional">{field => <Input {...field} maxLength={120} value={ficha.lojasMotivos?.[motivo] ?? ''} onChange={event => atualizarFicha(atual => ({ ...atual, lojasMotivos: { ...atual.lojasMotivos, [motivo]: event.target.value } }))} />}</FormField>)}
                 {ficha.motivosResultado.includes('virada_cartao') && (
                   <SecaoFicha
                     id="secao-resultado-condicao"
-                    titulo="Condicao comercial"
+                    titulo="Virada de cartão"
                     descricao="Registre a data de virada do cartao informada pela cliente."
                     icon={ShoppingBag}
                     tone="section-2"
@@ -2390,6 +2446,6 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         } : null}
         atendimentoAtualId={ativo?.id ?? null}
       />
-    </PageContainer>
+    </PageContainer></>
   )
 }

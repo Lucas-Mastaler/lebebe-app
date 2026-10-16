@@ -163,7 +163,7 @@ export async function GET(
       row.cliente_id
         ? loaded.supabase
           .from('atendimento_presencial_clientes')
-          .select('id, nome, telefone_informado, parentesco, parentesco_outro')
+          .select('id, nome, telefone_informado, telefone_normalizado, telefone_normalizado_ddi, parentesco, parentesco_outro')
           .eq('id', row.cliente_id)
           .maybeSingle()
         : Promise.resolve({ data: null, error: null }),

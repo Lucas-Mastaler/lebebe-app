@@ -217,6 +217,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, rascunho: serializarAtendimentoPresencial(row), idempotente: true })
     }
 
+    if (validacaoDados.dados.versaoFluxo === 2 && !validacaoDados.dados.tipoAtendimento) {
+      return jsonErro('Selecione o tipo de atendimento antes de iniciar o rascunho.', 422, { field: 'tipoAtendimento' })
+    }
+
     const agora = new Date()
     const expiraEm = calcularExpiracaoRascunho(agora)
     const { data: criado, error: insertError } = await supabase

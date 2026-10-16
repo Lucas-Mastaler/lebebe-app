@@ -4,6 +4,18 @@
 
 Contrato funcional: ESCOPO.md. Decisões: DECISOES.md. Marcar somente tarefas realmente executadas e validadas.
 
+## Refinamento funcional — D-028 (preparação local)
+
+- [x] Listas por resultado e visita, complementos de loja e compatibilidade histórica na leitura/edição.
+- [x] Autosave novo condicionado a filial/consultora/tipo; retomada e fila preservadas.
+- [x] Crianças antigas sem IDs; confirmar nova criança no rascunho, cartão compacto e alteração/remoção.
+- [x] Modal de telefone por tentativa, validação SQL/API vinculada ao atendimento/versão/cliente e destaque na gestão.
+- [x] Atalho Produto que não trabalhamos, sem duplicidade.
+- [x] Testes focais/SQL isolado, lint, typecheck executado com 15 falhas preexistentes, build e browser sintético a 390/1366px; limites no STATUS.
+- [ ] Autorização separada para migration remota e publicação; homologação real e aceite humano.
+
+Sequência: contratos/migration → formulário/gestão → regressões locais → preparação de homologação. Reutilizar complemento dos motivos, adicionar somente telefone_recusa_confirmada nullable, manter snapshots antigos e ACLs. Aplicação transacional com preflight de funções e timeouts; abortar divergências. Recuperação preserva novas colunas/dados, suspende escrita e restaura versão compatível, sem desfazer histórico.
+
 ## Entrega 1 — Compatibilidade e validações
 
 Complexidade média; risco elevado. Encerrada operacionalmente em 15/10/2026 conforme validação das lojas e D-012. Exceções técnicas abaixo permanecem abertas, sem impedir exclusivamente a preparação local da Entrega 2.
@@ -113,6 +125,8 @@ Urgências independentes: patch contra HEAD publicado em scripts/prancheta/urgen
 ## Publicação pessoal direta — plano vigente D-024 (16/10/2026)
 
 Rodada D-026: apresentação histórica e idade por toque compartilhada; transição de rodapé e etapas após render; feedback de conclusão com guard, commit DOM e oportunidade de pintura antes de validações/autosave. Testes focais 376/lint/diff e build completo aprovados; publicação em andamento. Navegador limitado conforme D-025, reteste no celular real antes do aceite. P2/P3 e reabertura dependem de decisão posterior.
+
+Publicação D-026 concluída: main/origin 1d03bde325db07208912b3d68b02bb4468475dfb, deployment dpl_AnubYMrjFnMoTfnZK5RiJDWuZ2j1 READY com lebebe.cloud. Registro local pós-deploy. Próxima etapa é aceite humano no celular; não iniciar P2 automaticamente.
 
 Correções UX D-025: testes focais 372/lint/diff e build completo final aprovados. Publicar allowlist de dois componentes e três Harness na main; verificar SHA/READY/alias Vercel. Navegador final dispensado nesta rodada por decisão explícita após bloqueio da revisão automática; usuário valida feedback/rolagem/reset, crianças e rodapé em celular/notebook antes de reabrir lojas. Recuperação para versão P1 95ba0b2 sem alteração de banco.
 

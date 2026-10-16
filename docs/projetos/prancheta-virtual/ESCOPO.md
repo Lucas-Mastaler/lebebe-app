@@ -24,6 +24,10 @@ Modernizar a Prancheta Virtual em até duas etapas, reaproveitando crianças e p
 - Idade aproximada: DATE estimada, dia 1 do mês obtido subtraindo meses/anos da data do atendimento; exibição dd/MM/aaaa e idade dinâmica sinalizada como aproximada. Separar nascimento real e previsão; não inventar datas históricas nem recalcular referência a cada seleção.
 - Adaptar finalizados, detalhe, edição e histórico apenas na medida necessária; manter códigos sim/nao/negociacao e dados legados. Não clientes fora de contagens/denominadores comerciais; não criar dashboard/fórmula nova.
 
+## Refinamento funcional aprovado — D-028 (16/10/2026)
+
+Nova rodada local autorizada pelo pedido anexado: nove motivos de Venda perdida e sete de Negociação separados, sete motivos de Não cliente, lojas física/internet opcionais por motivo, preservação integral de históricos, Crianças cadastro antigo sem IDs visíveis, autosave novo após filial/consultora/tipo, Cadastrar e vincular confirmando somente o rascunho até a conclusão, modal vermelho Sim/Não para Cliente sem telefone válido com recusa estruturada por finalização, destaque SEM TELEFONE na gestão e sugestão Produto que não trabalhamos. Este adendo prevalece sobre as reservas de telefone/motivos abaixo exclusivamente nesses itens. Não autoriza automação, compartilhamento, outras P3, migration remota, commit, push ou deploy.
+
 ## P2/P3 reservadas
 
 Pendência futura, fora da P1 e ainda sem classificação em fase: “Atendimentos de pessoas que procuram produtos fora da faixa etária ou do catálogo atendido pela Le Bébé devem ter uma forma simplificada de registro, sem exigir todo o cadastro comercial. Exemplo: procura por roupas para crianças de 6 anos. Fluxo e classificação ainda não definidos.” Não implementar nem presumir solução.

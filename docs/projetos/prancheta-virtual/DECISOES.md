@@ -1,5 +1,13 @@
 # Decisões — Prancheta Virtual
 
+## D-029 — Migration, commit, push e deploy autorizados (16/10/2026)
+
+Usuário autorizou explicitamente publicar o refinamento D-028, incluindo aplicar a migration preparada, commit e push na main e deploy para homologação em lebebe.cloud. Aplicar somente esta migration, validar schema/ACL e integridade de históricos, publicar allowlist da Prancheta e dependências de testes revisadas, preservar alterações de outros módulos. Sem repair/replay/backfill, automações, novas permissões ou reabertura automática das lojas. Homologação humana permanece posterior à publicação. Autorização substitui os gates de publicação local de D-028, não o escopo funcional.
+
+## D-028 — Refinamento funcional autorizado localmente (16/10/2026)
+
+Pedido atual aprova listas separadas de Negociação/Venda perdida, sete motivos de Não cliente, nomes opcionais das lojas por motivo, apresentação histórica sem IDs, início de novo autosave após filial/consultora/tipo, confirmação compacta de nova criança no rascunho, recusa explícita de telefone por finalização e destaque SEM TELEFONE, e atalho Produto que não trabalhamos. Substitui exclusivamente as reservas anteriores D-003/D-004/D-007 relativas a estes itens. Preservar motivos históricos sem conversão, crianças novas efetivadas somente na conclusão, permissões e demais P2/P3. Preparar migration aditiva e testes locais; nenhuma migration remota, repair, backfill, commit, push ou deploy autorizados nesta rodada. Homologação humana e reabertura de lojas permanecem pendentes.
+
 ## D-018 — Correções urgentes e execução autônoma das Entregas 6–7
 
 Em 15/10/2026 o usuário autorizou investigar produção somente em leitura e corrigir localmente navegação, telefone/histórico SGI, criação/autosave e conclusão/reset; depois implementar Entrega 6 e executar toda homologação isolada/sintética possível da Entrega 7. Autonomia para escolhas técnicas e correções dentro do escopo aprovado; bloqueios parciais não interrompem frentes independentes. Sem dados comerciais fictícios em produção, migrations v2 remotas, repair/replay, commits, push, deploy ou abertura dos gates publicados. Correções urgentes devem ser identificadas separadamente para possível publicação anterior à P1. D-017 permanece pendente; autorização não dispensa aprovação visual humana da revisão da Entrega 5.

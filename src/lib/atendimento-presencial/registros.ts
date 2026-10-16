@@ -1,4 +1,5 @@
-import { MOTIVOS_VISITA, normalizarNomeConsultora } from './ficha-schema'
+import { MOTIVOS_VISITA, MOTIVOS_VISITA_HISTORICOS, normalizarNomeConsultora } from './ficha-schema'
+import { normalizarTelefone } from './telefone'
 import type { AtendimentoPresencialDTO } from './rascunhos-shared'
 
 import type {
@@ -33,6 +34,7 @@ export type RegistroAtendimentoResumoDTO = {
   versaoFluxo?: number | null
   tipoAtendimento?: 'cliente' | 'nao_cliente' | null
   motivoVisita?: string | null
+  telefoneRecusaConfirmada?: boolean | null
   id: string
   clienteId: string | null
   clienteNome: string
@@ -67,6 +69,8 @@ export type ClienteRegistroRow = {
   nome: string
   telefone?: string | null
   telefone_informado?: string | null
+  telefone_normalizado?: string | null
+  telefone_normalizado_ddi?: string | null
   parentesco?: string | null
   parentesco_outro?: string | null
 }
@@ -76,7 +80,7 @@ export function serializarClienteRegistro(row: ClienteRegistroRow | null | undef
   return {
     id: row.id,
     nome: row.nome,
-    telefone: row.telefone ?? row.telefone_informado ?? null,
+    telefone: row.telefone?.trim() || row.telefone_informado?.trim() || row.telefone_normalizado_ddi || row.telefone_normalizado || null,
     parentesco: row.parentesco ?? null,
     parentescoOutro: row.parentesco_outro ?? null,
   }
@@ -124,6 +128,7 @@ export function normalizarDetalheParaFichaEdicao(detalhe: Pick<
     produtosInteresse: ordenarPorOrdem(detalhe.produtosInteresse).map((item) => item.descricao),
     resultadoAtendimento: detalhe.atendimento.resultadoAtendimento ?? undefined,
     motivosResultado,
+    lojasMotivos: Object.fromEntries(detalhe.motivos.filter(item => ['outra_loja_fisica', 'outra_loja_internet'].includes(item.motivo) && item.complemento).map(item => [item.motivo, item.complemento!])),
     motivoOutro: motivoOutro || detalhe.atendimento.motivoOutro || undefined,
     viradaCartaoDia: detalhe.atendimento.viradaCartaoDia ?? undefined,
     viradaCartaoMes: detalhe.atendimento.viradaCartaoMes ?? undefined,
@@ -165,8 +170,12 @@ export function registroNaoCliente(registro: Pick<AtendimentoPresencialDTO, 'ver
   return registro.versaoFluxo === 2 && registro.tipoAtendimento === 'nao_cliente'
 }
 
+export function registroSemTelefone(registro: Pick<RegistroAtendimentoResumoDTO, 'versaoFluxo' | 'tipoAtendimento' | 'clienteTelefone'>) {
+  return !registroNaoCliente(registro) && !normalizarTelefone(registro.clienteTelefone).valido
+}
+
 export function getMotivoVisitaLabel(motivo: string | null | undefined) {
-  return MOTIVOS_VISITA.find((item) => item.chave === motivo)?.label ?? motivo ?? 'Não informado'
+  return [...MOTIVOS_VISITA, ...MOTIVOS_VISITA_HISTORICOS].find((item) => item.chave === motivo)?.label ?? motivo ?? 'Não informado'
 }
 
 // Somente valores existentes no snapshot; nunca reconstruir historia com dados atuais.

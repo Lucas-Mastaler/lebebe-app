@@ -52,6 +52,16 @@ describe('api atendimento presencial clientes por id', () => {
     vi.mocked(requireAtendimentoPresencialClientesAccess).mockResolvedValue(authOk)
   })
 
+
+  it('altera nome por versão sem tocar telefone legado ou vínculos', async () => {
+    const query = makeBuilder({ data: { id: 'cliente-1', nome: 'NOME CORRIGIDO', telefone_informado: '41888888888', telefone_normalizado: '41888888888', telefone_normalizado_ddi: '5541888888888', parentesco: 'mae', parentesco_outro: null, status: 'ativo', version: 3 }, error: null })
+    vi.mocked(createServiceClient).mockReturnValue({ from: vi.fn(() => query) } as never)
+    const response = await PATCH(new Request('http://local', { method: 'PATCH', body: JSON.stringify({ nome: ' Nome corrigido ', version: 2 }) }), { params: Promise.resolve({ id: 'cliente-1' }) })
+    expect(response.status).toBe(200)
+    expect(query.update).toHaveBeenCalledWith({ nome: 'NOME CORRIGIDO', atualizado_por: 'usuario-1' })
+    expect(query.eq).toHaveBeenCalledWith('version', 2)
+    expect((await response.json()).cliente.id).toBe('cliente-1')
+  })
   it('bloqueia quando o modulo nao autoriza', async () => {
     vi.mocked(requireAtendimentoPresencialClientesAccess).mockResolvedValueOnce({
       ok: false,

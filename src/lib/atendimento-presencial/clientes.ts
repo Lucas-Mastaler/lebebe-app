@@ -1,4 +1,5 @@
-import { formatarTelefone, normalizarTelefone } from './telefone'
+import { normalizarNomeConsultora } from './ficha-schema'
+import { formatarTelefone, normalizarTelefoneClienteBR, mensagemTelefoneCliente } from './telefone'
 import { extrairDigitosTelefone } from './telefone'
 
 export const PARENTESCOS_CLIENTE = [
@@ -137,10 +138,10 @@ export function validarPayloadCliente(body: unknown): ResultadoValidacaoCliente 
   }
 
   const telefoneBruto = typeof payload.telefone === 'string' ? payload.telefone.trim() : ''
-  const telefone = telefoneBruto ? normalizarTelefone(telefoneBruto) : null
+  const telefone = telefoneBruto ? normalizarTelefoneClienteBR(telefoneBruto) : null
 
   if (telefone && !telefone.valido) {
-    return { ok: false, field: 'telefone', message: 'Telefone invalido' }
+    return { ok: false, field: 'telefone', message: mensagemTelefoneCliente(typeof payload.telefone === 'string' ? payload.telefone : '') ?? 'Telefone inválido' }
   }
 
   return {
@@ -166,14 +167,14 @@ export function validarAtualizacaoTelefoneCliente(body: unknown): ResultadoAtual
   }
 
   if (payload.telefone !== null && typeof payload.telefone !== 'string') {
-    return { ok: false, field: 'telefone', message: 'Telefone invalido' }
+    return { ok: false, field: 'telefone', message: mensagemTelefoneCliente(typeof payload.telefone === 'string' ? payload.telefone : '') ?? 'Telefone inválido' }
   }
 
   const telefoneInformado = typeof payload.telefone === 'string' ? payload.telefone.trim() : ''
-  const telefone = telefoneInformado ? normalizarTelefone(telefoneInformado) : null
+  const telefone = telefoneInformado ? normalizarTelefoneClienteBR(telefoneInformado) : null
 
   if (telefone && !telefone.valido) {
-    return { ok: false, field: 'telefone', message: 'Telefone invalido' }
+    return { ok: false, field: 'telefone', message: mensagemTelefoneCliente(typeof payload.telefone === 'string' ? payload.telefone : '') ?? 'Telefone inválido' }
   }
 
   return {
@@ -205,7 +206,7 @@ export function serializarClientePresencial(
     status: row.status,
     version: row.version,
     origem: {
-      consultoraNome: row.origem_consultora_nome ?? null,
+      consultoraNome: normalizarNomeConsultora(row.origem_consultora_nome) || null,
       consultoraUsuarioId: row.origem_consultora_usuario_id ?? null,
       unidadeId: row.origem_unidade_id ?? null,
       unidadeNome: origemExtras?.unidadeNome ?? null,
@@ -251,4 +252,26 @@ export function detectarTipoBuscaCliente(valor: string | null | undefined): Tipo
 
 export function escaparTermoIlike(valor: string) {
   return valor.replace(/[\\%_]/g, (match) => `\\${match}`)
+}
+
+export function validarAtualizacaoCliente(body: unknown) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: false as const, field: 'payload', message: 'Payload inválido' }
+  const payload = body as Record<string, unknown>
+  const version = Number(payload.version)
+  if (!Number.isInteger(version) || version < 1) return { ok: false as const, field: 'version', message: 'Versão esperada inválida' }
+  if (!Object.hasOwn(payload, 'nome') && !Object.hasOwn(payload, 'telefone')) return { ok: false as const, field: 'payload', message: 'Informe nome ou telefone para atualizar.' }
+  const campos: Record<string, string | null> = {}
+  if (Object.hasOwn(payload, 'nome')) {
+    const nome = normalizarNomeCliente(payload.nome)
+    if (nome.length < 2 || nome.length > 120) return { ok: false as const, field: 'nome', message: 'Nome deve ter entre 2 e 120 caracteres' }
+    campos.nome = nome
+  }
+  if (Object.hasOwn(payload, 'telefone')) {
+    const telefone = validarAtualizacaoTelefoneCliente(payload)
+    if (!telefone.ok) return telefone
+    campos.telefone_informado = telefone.telefoneInformado
+    campos.telefone_normalizado = telefone.telefoneNormalizado
+    campos.telefone_normalizado_ddi = telefone.telefoneNormalizadoDDI
+  }
+  return { ok: true as const, version, campos }
 }

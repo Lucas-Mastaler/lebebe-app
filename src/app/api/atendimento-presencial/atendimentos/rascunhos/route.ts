@@ -1,3 +1,6 @@
+import { correspondeNome, filtrarDadosListagem, lerFiltrosListagem, lerPaginas } from '@/lib/atendimento-presencial/filtros-listagem'
+import { normalizarNomeConsultora } from '@/lib/atendimento-presencial/ficha-schema'
+import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import {
@@ -60,46 +63,38 @@ async function enriquecerRascunhos(
   rascunhos: AtendimentoPresencialDTO[]
 ) {
   const clienteIds = Array.from(new Set(rascunhos.map((rascunho) => rascunho.clienteId).filter(Boolean)))
-  const consultoraIds = Array.from(new Set(rascunhos.map((rascunho) => rascunho.consultoraUsuarioId).filter(Boolean)))
 
-  const [clientesResult, consultorasResult] = await Promise.all([
-    clienteIds.length > 0
-      ? supabase
-        .from('atendimento_presencial_clientes')
-        .select('id, nome')
-        .in('id', clienteIds)
-      : Promise.resolve({ data: [], error: null }),
-    consultoraIds.length > 0
-      ? supabase
-        .from('usuarios_permitidos')
-        .select('id, email')
-        .in('id', consultoraIds)
-      : Promise.resolve({ data: [], error: null }),
-  ])
-
-  const nomesClientes = new Map(
-    ((clientesResult.data ?? []) as Array<{ id: string; nome: string }>).map((cliente) => [cliente.id, cliente.nome])
-  )
-  const nomesConsultoras = new Map(
-    ((consultorasResult.data ?? []) as Array<{ id: string; email: string }>).map((consultora) => [consultora.id, consultora.email])
-  )
-
-  return rascunhos.map((rascunho) => ({
-    ...rascunho,
-    clienteNome: rascunho.clienteId ? nomesClientes.get(rascunho.clienteId) ?? null : null,
-    consultoraNome: nomesConsultoras.get(rascunho.consultoraUsuarioId) ?? null,
-  }))
+  const clientes = clienteIds.length ? await lerPaginas((de, ate) => supabase.from('atendimento_presencial_clientes').select('id, nome, telefone_informado, telefone_normalizado').in('id', clienteIds as string[]).order('id').range(de, ate)) : []
+  const mapa = new Map(clientes.map(cliente => [cliente.id, cliente]))
+  return rascunhos.map(rascunho => {
+    const ficha = rascunho.dadosRascunho
+    const tipo = ficha.tipoAtendimento ?? null
+    const local = ficha.entradasFormulario?.novoCliente
+    const cliente = rascunho.clienteId ? mapa.get(rascunho.clienteId) : null
+    return {
+      ...rascunho,
+      tipoAtendimento: tipo,
+      motivoVisita: ficha.motivoVisita ?? null,
+      clienteNome: tipo === 'nao_cliente' ? 'Não cliente' : cliente?.nome ?? local?.nome?.trim() ?? null,
+      clienteTelefone: tipo === 'nao_cliente' ? null : cliente?.telefone_informado || cliente?.telefone_normalizado || local?.telefone || null,
+      clienteCadastroPendente: tipo !== 'nao_cliente' && !rascunho.clienteId && Boolean(local?.nome?.trim()),
+      consultoraNome: normalizarNomeConsultora(ficha.consultoraNome || rascunho.consultoraNomeManual) || null,
+    }
+  })
 }
 
 function jsonErro(message: string, status: number, extra?: Record<string, unknown>) {
   return NextResponse.json({ ok: false, message, ...extra }, { status })
 }
 
-export async function GET() {
+export async function GET(request?: Request) {
   try {
     const auth = await requireAtendimentoPresencialFichaAccess()
     if (!auth.ok) return auth.response
 
+    const params = new URL(request?.url ?? 'http://localhost').searchParams
+    let filtros
+    try { filtros = lerFiltrosListagem(params, true) } catch (error) { return jsonErro(error instanceof Error ? error.message : 'Filtros inválidos', 400) }
     const supabase = createServiceClient()
     const contexto = await montarContexto(supabase, auth)
     if (!contexto) return jsonErro('Perfil nao encontrado', 403)
@@ -114,28 +109,35 @@ export async function GET() {
       query = query.eq('consultora_usuario_id', contexto.usuarioId)
     } else if (contexto.perfil !== 'superadmin') {
       if (contexto.unidadesPermitidas.length === 0) {
-        return NextResponse.json({ ok: true, rascunhos: [], contexto, consultorasDisponiveis: [] })
+        return NextResponse.json({ ok: true, rascunhos: [], contexto, consultorasDisponiveis: [], total: 0, page: 1, pageSize: TABLE_PAGE_SIZE })
       }
       query = query.in('unidade_id', contexto.unidadesPermitidas.map((unidade) => unidade.id))
     }
 
-    const { data, error } = await query
-      .order('ultima_atividade_em', { ascending: false })
-      .limit(20)
-
-    if (error) {
-      console.error('[ATENDIMENTO PRESENCIAL RASCUNHOS] Erro ao listar rascunhos:', error)
-      return jsonErro('Erro ao processar requisicao', 500)
-    }
-
+    const data = await lerPaginas((de, ate) => query.order('ultima_atividade_em', { ascending: false }).order('id', { ascending: false }).range(de, ate))
     const rascunhosSerializados = ((data ?? []) as unknown as AtendimentoPresencialRow[]).map(serializarAtendimentoPresencial)
-    const rascunhos = await enriquecerRascunhos(supabase, rascunhosSerializados)
+
+    const enriquecidos = await enriquecerRascunhos(supabase, rascunhosSerializados)
+    const consultorasDisponiveis = Array.from(new Set(enriquecidos.map(item => item.consultoraNome).filter((nome): nome is string => Boolean(nome)))).sort().map(nome => ({ nome }))
+    const unidadeId = params.get('unidadeId') ?? ''
+    if (unidadeId && !unidadePermitida(unidadeId, contexto.unidadesPermitidas)) return jsonErro('Filial não permitida.', 403)
+    const agora = Date.now()
+    const filtrados = enriquecidos.filter(item =>
+      (!unidadeId || item.unidadeId === unidadeId) &&
+      (!params.get('clienteNome') || correspondeNome(item.clienteNome, params.get('clienteNome')!)) &&
+      (!params.get('consultora') || normalizarNomeConsultora(item.consultoraNome) === normalizarNomeConsultora(params.get('consultora'))) &&
+      filtrarDadosListagem({ data: item.ultimaAtividadeEm, tipo: item.tipoAtendimento ?? null, clienteId: item.clienteId, telefone: item.clienteTelefone, expiraEm: item.expiraEm }, filtros, agora))
+    const total = filtrados.length
+    const paginas = Math.max(1, Math.ceil(total / TABLE_PAGE_SIZE))
+    const solicitado = Number(params.get('page') ?? 1)
+    const page = Math.min(Number.isInteger(solicitado) && solicitado > 0 ? solicitado : 1, paginas)
+    const rascunhos = filtrados.slice((page - 1) * TABLE_PAGE_SIZE, page * TABLE_PAGE_SIZE)
 
     return NextResponse.json({
       ok: true,
       rascunhos,
       contexto,
-      consultorasDisponiveis: [],
+      consultorasDisponiveis, total, page, pageSize: TABLE_PAGE_SIZE,
     })
   } catch (error) {
     console.error('[ATENDIMENTO PRESENCIAL RASCUNHOS] Erro geral no GET:', error)

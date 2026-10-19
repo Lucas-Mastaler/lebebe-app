@@ -254,7 +254,7 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
                             <p className="text-sm font-bold text-slate-900">{formatarVendaFechadaHistorico(item.resultado)}</p>
                           </div>
                         </div>
-                        <p className="mt-1 text-sm text-slate-600">{item.unidade ?? 'Unidade nao informada'} | {item.consultora ?? 'Consultora nao informada'}</p>
+                        <p className="mt-1 text-sm text-slate-600">{item.unidade ?? 'Unidade não informada'} | <strong>Consultora do atendimento:</strong> {item.consultora ?? 'Não informada'}</p>
                         <div className="mt-3 grid gap-2 sm:grid-cols-2">
                           <div>
                             <p className="text-[11px] font-bold uppercase text-slate-500">Departamentos</p>

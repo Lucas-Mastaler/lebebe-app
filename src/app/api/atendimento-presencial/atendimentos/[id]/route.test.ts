@@ -89,7 +89,7 @@ const payloadEdicaoValido = {
     ],
     departamentos: ['moveis'],
     produtosInteresse: ['Berco'],
-    consultoraNome: 'Ana',
+    consultoraNome: 'ANA',
     resultadoAtendimento: 'nao',
     motivosResultado: ['virada_cartao'],
     viradaCartaoDia: 15,
@@ -120,7 +120,7 @@ describe('api detalhe de registro atendimento presencial', () => {
     queues.atendimento_presencial_atendimentos.push({ data: { ...row, version: 5 } as unknown as typeof atendimentoConcluido, error: null })
     const { rpc } = mockSupabase(queues, { data: [{ id: atendimentoId, version: 5 }], error: null })
     const response = await PATCH(new Request('http://local', { method: 'PATCH', body: JSON.stringify({
-      version: 4, clienteId: null, dadosRascunho: { versaoFluxo: 2, tipoAtendimento: 'nao_cliente', motivoVisita: 'outros', consultoraNome: 'Ana' },
+      version: 4, clienteId: null, dadosRascunho: { versaoFluxo: 2, tipoAtendimento: 'nao_cliente', motivoVisita: 'outros', consultoraNome: 'ANA' },
     }) }), { params: Promise.resolve({ id: atendimentoId }) })
     expect(response.status).toBe(200)
     expect(rpc).toHaveBeenCalledWith('atendimento_presencial_editar_concluido', expect.objectContaining({ p_numero_lancamento: null }))
@@ -215,7 +215,7 @@ describe('api detalhe de registro atendimento presencial', () => {
       p_usuario_id: usuarioId,
       p_dados: expect.objectContaining({
         clienteId,
-        consultoraNome: 'Ana',
+        consultoraNome: 'ANA',
         resultadoAtendimento: 'nao',
         viradaCartaoDia: 15,
         viradaCartaoMes: 8,

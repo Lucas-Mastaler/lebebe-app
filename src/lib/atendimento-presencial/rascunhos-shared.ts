@@ -24,6 +24,8 @@ export type AtendimentoPresencialDTO = {
   unidadeId: string
   status: StatusAtendimentoPresencial
   draftClientId: string
+  clienteTelefone?: string | null
+  clienteCadastroPendente?: boolean
   clienteNome?: string | null
   consultoraNome?: string | null
   consultoraNomeManual?: string | null

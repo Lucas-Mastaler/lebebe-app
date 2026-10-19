@@ -89,6 +89,35 @@ describe('api lista registros atendimento presencial', () => {
     })
   })
 
+
+  it('combina multisseleções com OR interno, datas e telefone antes de contar clientes únicos', async () => {
+    const rows = [
+      { id: 'a', iniciado_em: '2026-10-09T03:00Z' },
+      { id: 'b', iniciado_em: '2026-10-10T02:59Z' },
+      { id: 'c', iniciado_em: '2026-10-09T02:59Z' },
+    ].map(row => ({ ...row, status: 'concluido', cliente_id: clienteId, consultora_nome: 'ANA', consultora_usuario_id: usuarioId, unidade_id: unidadeId, tipo_atendimento: 'cliente', resultado_atendimento: 'negociacao' }))
+    const dep = builder({ data: [{ atendimento_id: 'a' }, { atendimento_id: 'b' }], error: null })
+    const motivos = builder({ data: [{ atendimento_id: 'a' }], error: null })
+    let consultas = 0
+    vi.mocked(createServiceClient).mockReturnValue({ from: vi.fn((table: string) => {
+      if (table === 'app_usuarios_perfis') return builder({ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null })
+      if (table === 'app_usuarios_unidades') return builder({ data: [{ app_unidades: { id: unidadeId, nome: 'Filial', ativo: true } }], error: null })
+      if (table === 'atendimento_presencial_atendimentos') return builder({ data: consultas++ ? rows : [{ consultora_nome: 'ANA' }], error: null })
+      if (table === 'atendimento_presencial_clientes') return builder({ data: [{ id: clienteId, nome: 'CLIENTE', telefone_informado: '(41) 99646-5656', telefone_normalizado: '41996465656' }], error: null })
+      if (table === 'atendimento_presencial_departamentos') return dep
+      if (table === 'atendimento_presencial_motivos') return motivos
+      return builder({ data: [], error: null })
+    }) } as never)
+    const response = await GET(new Request('http://local?departamentos=moveis&departamentos=enxoval&motivos=virada_cartao&motivos=sem_medidas&atendimentoDe=2026-10-09&atendimentoAte=2026-10-09&telefoneCliente=41996465656&contato=com'))
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.total).toBe(1)
+    expect(json.clientesUnicos).toBe(1)
+    expect(json.visitasNaoClientes).toBe(0)
+    expect(json.registros.map((row: { id: string }) => row.id)).toEqual(['a'])
+    expect(dep.in).toHaveBeenCalledWith('departamento', ['moveis', 'enxoval'])
+    expect(motivos.in).toHaveBeenCalledWith('motivo', ['virada_cartao', 'sem_medidas'])
+  })
   it('lista cliente vinculada por cliente_id sem filtrar status ativo', async () => {
     mockSupabase({
       app_usuarios_perfis: [
@@ -185,7 +214,7 @@ describe('api lista registros atendimento presencial', () => {
     expect(response.status).toBe(200)
     expect(clienteBuilder.ilike).toHaveBeenCalledWith('nome', '%Cliente%')
     expect(atendimentoBuilder.in).toHaveBeenCalledWith('cliente_id', [clienteId])
-    expect(atendimentoBuilder.ilike).toHaveBeenCalledWith('consultora_nome', 'Ana Clara')
+    expect(atendimentoBuilder.ilike).toHaveBeenCalledWith('consultora_nome', 'ANA CLARA')
   })
   it('lista nao cliente com motivo proprio, sem resultado ou consulta de cliente ficticio', async () => {
     const chain = builder({ data: [{ id: atendimentoId, cliente_id: null, consultora_usuario_id: usuarioId,
@@ -205,7 +234,7 @@ describe('api lista registros atendimento presencial', () => {
     expect(from).not.toHaveBeenCalledWith('atendimento_presencial_clientes')
     expect(chain.eq).toHaveBeenCalledWith('consultora_usuario_id', usuarioId)
     expect(chain.eq).toHaveBeenCalledWith('unidade_id', unidadeId)
-    expect(chain.ilike).toHaveBeenCalledWith('consultora_nome', 'Ana')
+    expect(chain.ilike).toHaveBeenCalledWith('consultora_nome', 'ANA')
     expect(chain.select).toHaveBeenCalledWith('*')
   })
 
@@ -235,7 +264,7 @@ describe('api lista registros atendimento presencial', () => {
     expect(chain.in).toHaveBeenCalledWith('unidade_id', [unidadeId])
     expect(chain.eq).toHaveBeenCalledWith('unidade_id', unidadeId)
     expect(chain.in).toHaveBeenCalledWith('cliente_id', [clienteId])
-    expect(chain.ilike).toHaveBeenCalledWith('consultora_nome', 'Maria')
+    expect(chain.ilike).toHaveBeenCalledWith('consultora_nome', 'MARIA')
     if (situacao) expect(chain.eq).toHaveBeenCalledWith('resultado_atendimento', situacao)
     else expect(chain.eq).not.toHaveBeenCalledWith('resultado_atendimento', expect.anything())
   })

@@ -24,19 +24,19 @@ describe('sugestoes de consultoras com isolamento de login e unidade', () => {
     vi.mocked(listarUnidadesDoContexto).mockResolvedValue([{ id: 'marechal', nome: 'Marechal', chave: 'marechal' }])
   })
   it('consulta somente concluidos do login autenticado e da unidade autorizada', async () => {
-    const query = mockConsulta([{ data: [{ consultora_nome: 'Zelia' }, { consultora_nome: 'Ana' }], error: null }])
+    const query = mockConsulta([{ data: [{ consultora_nome: 'ZELIA' }, { consultora_nome: 'ANA' }], error: null }])
     const response = await GET(request())
-    expect(await response.json()).toEqual({ ok: true, nomes: ['Zelia', 'Ana'] })
+    expect(await response.json()).toEqual({ ok: true, nomes: ['ZELIA', 'ANA'] })
     expect(query.eq.mock.calls).toEqual([['consultora_usuario_id', 'login-marechal'], ['unidade_id', 'marechal'], ['status', 'concluido']])
     expect(query.order).toHaveBeenCalledWith('concluido_em', { ascending: false, nullsFirst: false })
     expect(response.headers.get('cache-control')).toBe('private, no-store')
   })
   it('busca paginas adicionais quando cem repeticoes precedem outros nomes', async () => {
     const query = mockConsulta([
-      { data: Array(100).fill({ consultora_nome: 'Ana' }), error: null },
-      { data: ['ana', 'Bia', 'Carla', 'Dora', 'Eva'].map((consultora_nome) => ({ consultora_nome })), error: null },
+      { data: Array(100).fill({ consultora_nome: 'ANA' }), error: null },
+      { data: ['ana', 'BIA', 'CARLA', 'DORA', 'EVA'].map((consultora_nome) => ({ consultora_nome })), error: null },
     ])
-    expect(await (await GET(request())).json()).toEqual({ ok: true, nomes: ['Ana', 'Bia', 'Carla', 'Dora'] })
+    expect(await (await GET(request())).json()).toEqual({ ok: true, nomes: ['ANA', 'BIA', 'CARLA', 'DORA'] })
     expect(query.range.mock.calls).toEqual([[0, 99], [100, 199]])
   })
   it('nao consulta atendimentos de outra unidade', async () => {

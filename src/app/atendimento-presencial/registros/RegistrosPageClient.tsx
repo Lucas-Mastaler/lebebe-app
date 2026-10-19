@@ -3,7 +3,9 @@
 
 import { calcularReferenciaNascimento, criancaJaNasceu, dataAtendimentoLocal, descreverIdadeAproximada } from '@/lib/atendimento-presencial/idade-aproximada'
 
-import { useEffect, useMemo, useState } from 'react'
+import { FiltrosAdicionaisAtendimento } from '@/components/atendimento-presencial/FiltrosAdicionaisAtendimento'
+import { FILTROS_ADICIONAIS, type FiltrosAdicionais } from '@/lib/atendimento-presencial/filtros-listagem'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ClipboardList, History, Loader2, Pencil, Plus, RefreshCw, Save, X } from 'lucide-react'
 import {
@@ -101,12 +103,16 @@ type ApiListaRascunhosResponse = {
   message?: string
   rascunhos?: AtendimentoPresencialDTO[]
   contexto?: ContextoAtendimento
-  consultorasDisponiveis?: never[]
+  total?: number
+  page?: number
+  consultorasDisponiveis?: Array<{ nome: string }>
 }
 
 type ApiListaResponse = {
   ok: boolean
   message?: string
+  clientesUnicos?: number
+  visitasNaoClientes?: number
   registros?: RegistroResumo[]
   consultoras?: Array<{ nome: string }>
   unidades?: Array<{ id: string; nome: string }>
@@ -130,6 +136,7 @@ type ApiEdicaoResponse = {
 function formatarData(valor: string | null) {
   if (!valor) return 'Nao informado'
   return new Date(valor).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -177,12 +184,64 @@ function OpcaoButton(props: {
 }
 
 const FILTROS_FINALIZADOS_INICIAL = {
+  ...FILTROS_ADICIONAIS,
   clienteNome: '',
   consultora: '',
   unidadeId: '',
   situacaoVenda: '',
   viradaCartaoDe: '',
   viradaCartaoAte: '',
+}
+
+
+function resumoFiltros(valores: Record<string, string | string[]>, unidades: Array<{id: string; nome: string}>) {
+  const rotulos: Record<string, string> = { clienteNome: 'Cliente', consultora: 'Consultora do atendimento', unidadeId: 'Filial', situacaoVenda: 'Situação', viradaCartaoDe: 'Virada de', viradaCartaoAte: 'Virada até', atendimentoDe: 'Período de', atendimentoAte: 'Período até', tipoAtendimento: 'Tipo', telefoneCliente: 'Telefone', numeroLancamento: 'Lançamento', contato: 'Telefone disponível', departamentos: 'Departamentos', motivos: 'Motivos', motivoVisita: 'Visita', vinculoCliente: 'Cliente vinculado', expiracao: 'Expiração' }
+  const texto = Object.entries(valores).filter(([,valor]) => Array.isArray(valor) ? valor.length : Boolean(valor)).map(([chave, valor]) => {
+    let label = Array.isArray(valor) ? valor.map(v => chave === 'departamentos' ? getDepartamentoLabel(v as DepartamentoInteresse) : getMotivoLabel(v as MotivoResultado)).join(', ') : valor
+    if (chave === 'unidadeId') label = unidades.find(u => u.id === valor)?.nome ?? 'Filial selecionada'
+    if (chave === 'situacaoVenda') label = situacaoVendaRegistro(String(valor)).label
+    if (chave === 'motivoVisita') label = getMotivoVisitaLabel(String(valor))
+    if (chave === 'tipoAtendimento') label = valor === 'cliente' ? 'Cliente' : valor === 'nao_cliente' ? 'Não cliente' : 'Tipo não informado'
+    if (chave === 'contato') label = valor === 'com' ? 'Com telefone' : 'Sem telefone'
+    if (chave === 'vinculoCliente') label = valor === 'com' ? 'Com cliente vinculado' : 'Sem cliente vinculado'
+    if (chave === 'expiracao') label = 'Próximas 24 horas'
+    return (rotulos[chave] ?? chave) + ': ' + label
+  }).join(' · ')
+  return texto || 'Todos os registros autorizados, sem filtros adicionais.'
+}
+
+function guardarEstadoLista(chave: string, estado: object) {
+  try { sessionStorage.setItem('prancheta-lista-' + chave, JSON.stringify(estado)) }
+  catch { console.warn('[PRANCHETA LISTA] Estado de navegação indisponível nesta sessão.') }
+}
+function lerEstadoLista(chave: string): { filtros?: object; adicionais?: object; page?: number } | null {
+  try {
+    const estado = JSON.parse(sessionStorage.getItem('prancheta-lista-' + chave) ?? 'null')
+    if (!estado || typeof estado !== 'object') return null
+    return { ...estado, page: Number.isInteger(estado.page) && estado.page > 0 ? estado.page : 1 }
+  } catch { console.warn('[PRANCHETA LISTA] Não foi possível recuperar os filtros.'); return null }
+}
+function restaurarFiltros<T extends object>(base: T, valor: object | undefined): T {
+  const novo = { ...base }
+  if (!valor || typeof valor !== 'object') return novo
+  for (const chave of Object.keys(base) as Array<keyof T>) {
+    const campo = (valor as T)[chave]
+    if (typeof campo === 'string' && typeof base[chave] === 'string' || Array.isArray(campo) && Array.isArray(base[chave]) && campo.every(v => typeof v === 'string')) novo[chave] = campo
+  }
+  return novo
+}
+function guardarPosicaoLista() {
+  try { sessionStorage.setItem('prancheta-lista-posicao', String(window.scrollY)) }
+  catch { console.warn('[PRANCHETA LISTA] Posição não pôde ser preservada.') }
+}
+function restaurarPosicaoLista() {
+  try {
+    const valor = sessionStorage.getItem('prancheta-lista-posicao')
+    if (valor !== null) {
+      sessionStorage.removeItem('prancheta-lista-posicao')
+      requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, Number(valor) || 0)))
+    }
+  } catch { console.warn('[PRANCHETA LISTA] Posição não pôde ser restaurada.') }
 }
 
 type Props = {
@@ -192,6 +251,15 @@ type Props = {
 
 export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos }: Props) {
   const router = useRouter()
+  const restauracaoLida = useRef(false)
+  const registrosRequest = useRef(0)
+  const rascunhosRequest = useRef(0)
+  const novosFiltros = useFilterState(FILTROS_ADICIONAIS)
+  const filtrosRascunhos = useFilterState({ ...FILTROS_ADICIONAIS, clienteNome: '', consultora: '', unidadeId: '' })
+  const [paginaRascunhos, setPaginaRascunhos] = useState(1)
+  const [totalRascunhos, setTotalRascunhos] = useState(0)
+  const [consultorasRascunhos, setConsultorasRascunhos] = useState<Array<{ nome: string }>>([])
+  const [contagens, setContagens] = useState({ clientesUnicos: 0, visitasNaoClientes: 0 })
   const searchParams = useSearchParams()
   const [registros, setRegistros] = useState<RegistroResumo[]>([])
   const [paginaRegistros, setPaginaRegistros] = useState(1)
@@ -222,6 +290,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   const [erroRascunhos, setErroRascunhos] = useState<string | null>(null)
 
   async function carregarRegistros(filtrosOverride?: {
+    adicionais?: FiltrosAdicionais
     de?: string
     ate?: string
     clienteNome?: string
@@ -230,6 +299,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     unidadeId?: string
     page?: number
   }) {
+    const requestId = ++registrosRequest.current
     setCarregando(true)
     setErro(null)
     try {
@@ -247,26 +317,37 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       if (filtroConsultora.trim()) params.set('consultora', filtroConsultora.trim())
       if (filtroUnidade) params.set('unidadeId', filtroUnidade)
       if (filtroSituacao) params.set('situacaoVenda', filtroSituacao)
+      const adicionais = filtrosOverride?.adicionais ?? novosFiltros.applied
+      for (const [key, value] of Object.entries(adicionais)) {
+        if (Array.isArray(value)) value.forEach(item => params.append(key, item))
+        else if (value) params.set(key, value)
+      }
       params.set('page', String(pagina))
       const query = params.toString()
       const response = await fetch(`/api/atendimento-presencial/atendimentos${query ? `?${query}` : ''}`, { cache: 'no-store' })
       const data = (await response.json()) as ApiListaResponse
       if (!response.ok || !data.ok) throw new Error(data.message ?? 'Erro ao carregar registros')
+      if (requestId !== registrosRequest.current) return
+      setContagens({ clientesUnicos: data.clientesUnicos ?? 0, visitasNaoClientes: data.visitasNaoClientes ?? 0 })
       setRegistros(data.registros ?? [])
       setConsultorasFinalizados(data.consultoras ?? [])
       setUnidadesFinalizados(data.unidades ?? [])
       setPaginaRegistros(data.page ?? pagina)
       setTotalRegistros(data.total ?? 0)
+      restaurarPosicaoLista()
+      guardarEstadoLista('salvos', { filtros: { ...filtrosFinalizados.applied, clienteNome: filtroCliente, consultora: filtroConsultora, unidadeId: filtroUnidade, situacaoVenda: filtroSituacao, viradaCartaoDe: filtroDe, viradaCartaoAte: filtroAte }, adicionais, page: data.page ?? pagina })
     } catch (error) {
-      setErro(error instanceof Error ? error.message : 'Erro ao carregar registros')
+      if (requestId === registrosRequest.current) setErro(error instanceof Error ? error.message : 'Erro ao carregar registros')
     } finally {
-      setCarregando(false)
+      if (requestId === registrosRequest.current) setCarregando(false)
     }
   }
 
   function aplicarFiltrosFinalizados() {
+    novosFiltros.apply()
     filtrosFinalizados.apply()
     void carregarRegistros({
+      adicionais: novosFiltros.draft,
       de: filtrosFinalizados.draft.viradaCartaoDe,
       ate: filtrosFinalizados.draft.viradaCartaoAte,
       clienteNome: filtrosFinalizados.draft.clienteNome.trim().replace(/\s+/g, ' '),
@@ -278,8 +359,9 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   }
 
   function limparFiltrosFinalizados() {
+    novosFiltros.clear()
     filtrosFinalizados.clear()
-    void carregarRegistros({ de: '', ate: '', clienteNome: '', consultora: '', unidadeId: '', situacaoVenda: '', page: 1 })
+    void carregarRegistros({ adicionais: FILTROS_ADICIONAIS, de: '', ate: '', clienteNome: '', consultora: '', unidadeId: '', situacaoVenda: '', page: 1 })
   }
 
   async function buscarDetalhe(id: string): Promise<RegistroDetalhe> {
@@ -505,20 +587,32 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     }
   }
 
-  async function carregarRascunhos() {
+  async function carregarRascunhos(page = paginaRascunhos, filtros = filtrosRascunhos.applied) {
+    const requestId = ++rascunhosRequest.current
     if (!podeVerRascunhos) return
     setCarregandoRascunhos(true)
     setErroRascunhos(null)
     try {
-      const response = await fetch('/api/atendimento-presencial/atendimentos/rascunhos', { cache: 'no-store' })
+      const params = new URLSearchParams({ page: String(page) })
+      for (const [key, value] of Object.entries(filtros)) {
+        if (Array.isArray(value)) value.forEach(item => params.append(key, item))
+        else if (value) params.set(key, value)
+      }
+      const response = await fetch('/api/atendimento-presencial/atendimentos/rascunhos?' + params, { cache: 'no-store' })
       const data = (await response.json()) as ApiListaRascunhosResponse
       if (!response.ok || !data.ok) throw new Error(data.message ?? 'Erro ao carregar rascunhos')
+      if (requestId !== rascunhosRequest.current) return
+      setTotalRascunhos(data.total ?? 0)
+      setPaginaRascunhos(data.page ?? page)
+      setConsultorasRascunhos(data.consultorasDisponiveis ?? [])
       setRascunhos(data.rascunhos ?? [])
+      guardarEstadoLista('rascunhos', { filtros, page: data.page ?? page })
       setContextoRascunhos(data.contexto ?? null)
+      restaurarPosicaoLista()
     } catch (error) {
-      setErroRascunhos(error instanceof Error ? error.message : 'Erro ao carregar rascunhos')
+      if (requestId === rascunhosRequest.current) setErroRascunhos(error instanceof Error ? error.message : 'Erro ao carregar rascunhos')
     } finally {
-      setCarregandoRascunhos(false)
+      if (requestId === rascunhosRequest.current) setCarregandoRascunhos(false)
     }
   }
 
@@ -551,18 +645,27 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   }, [searchParams, abasPermitidas, tabPadrao, router])
 
   useEffect(() => {
-    if (tabAtual === 'finalizados' && podeVerRegistros) {
-      void carregarRegistros()
+    if (!restauracaoLida.current) {
+      restauracaoLida.current = true
+      const salvo = lerEstadoLista('salvos')
+      const rascunho = lerEstadoLista('rascunhos')
+      const baseSalvos = restaurarFiltros(FILTROS_FINALIZADOS_INICIAL, salvo?.filtros)
+      const adicionaisSalvos = restaurarFiltros(FILTROS_ADICIONAIS, salvo?.adicionais)
+      const baseRascunhos = restaurarFiltros({ ...FILTROS_ADICIONAIS, clienteNome: '', consultora: '', unidadeId: '' }, rascunho?.filtros)
+      for (const chave of Object.keys(baseSalvos) as Array<keyof typeof baseSalvos>) filtrosFinalizados.setField(chave, baseSalvos[chave])
+      for (const chave of Object.keys(adicionaisSalvos) as Array<keyof typeof adicionaisSalvos>) novosFiltros.setField(chave, adicionaisSalvos[chave])
+      for (const chave of Object.keys(baseRascunhos) as Array<keyof typeof baseRascunhos>) filtrosRascunhos.setField(chave, baseRascunhos[chave])
+      filtrosFinalizados.apply(); novosFiltros.apply(); filtrosRascunhos.apply()
+      setPaginaRegistros(salvo?.page ?? 1); setPaginaRascunhos(rascunho?.page ?? 1)
+      if (tabAtual === 'finalizados' && podeVerRegistros) void carregarRegistros({ ...baseSalvos, de: baseSalvos.viradaCartaoDe, ate: baseSalvos.viradaCartaoAte, adicionais: adicionaisSalvos, page: salvo?.page ?? 1 })
+      if (tabAtual === 'rascunhos' && podeVerRascunhos) void carregarRascunhos(rascunho?.page ?? 1, baseRascunhos)
+      return
     }
+    if (tabAtual === 'finalizados' && podeVerRegistros) void carregarRegistros()
+    if (tabAtual === 'rascunhos' && podeVerRascunhos) void carregarRascunhos()
+    // Apenas navegação carrega a lista; digitar filtros nunca dispara consulta.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabAtual, podeVerRegistros])
-
-  useEffect(() => {
-    if (tabAtual === 'rascunhos' && podeVerRascunhos) {
-      void carregarRascunhos()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabAtual, podeVerRascunhos])
+  }, [tabAtual, podeVerRegistros, podeVerRascunhos])
 
   return (
     <PageContainer className="space-y-6">
@@ -592,7 +695,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
               <CardHeader icon={<ClipboardList className="size-4" aria-hidden="true" />} title="Concluídos" />
               <CardContent className="space-y-4">
                 <FilterPanel
-                  dirty={filtrosFinalizados.dirty}
+                  dirty={filtrosFinalizados.dirty || novosFiltros.dirty}
                   onApply={aplicarFiltrosFinalizados}
                   onClear={limparFiltrosFinalizados}
                   applyDisabled={carregando}
@@ -609,7 +712,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                         />
                       )}
                     </FormField>
-                    <FormField id="filtro-consultora" label="Consultora">
+                    <FormField id="filtro-consultora" label="Consultora do atendimento">
                       {(field) => (
                         <Select
                           value={filtrosFinalizados.draft.consultora || 'all'}
@@ -680,7 +783,10 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                       )}
                     </FormField>
                   </FilterFieldGroup>
+                  <FiltrosAdicionaisAtendimento value={novosFiltros.draft} onChange={(campo, valor) => novosFiltros.setField(campo, valor)} />
                 </FilterPanel>
+                <p className="text-sm text-muted-foreground">{resumoFiltros({ ...filtrosFinalizados.applied, ...novosFiltros.applied }, unidadesFinalizados)}</p>
+                <p role="status" className="text-sm font-semibold">{totalRegistros} atendimentos · {contagens.clientesUnicos} clientes únicos · {contagens.visitasNaoClientes} visitas de Não clientes</p>
 
                 <div className="grid gap-3">
                   {carregando && (
@@ -704,7 +810,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                       >
                         <CardHeader
                           title={registro.clienteNome}
-                          description={`${registro.unidadeNome} - ${registro.consultoraEmail}`}
+                          description={registro.unidadeNome}
                           action={<span className="shrink-0 rounded-md border border-sky-100 bg-white/70 px-3 py-2 text-right">
                             <span className="block text-[10px] font-bold uppercase tracking-wide text-sky-700">{registroNaoCliente(registro) ? 'Tipo' : 'Situação da Venda'}</span>
                             <Badge tone={registroNaoCliente(registro) ? 'neutral' : situacaoVendaRegistro(registro.resultadoAtendimento).tone}>{registroNaoCliente(registro) ? 'Não cliente' : situacaoVendaRegistro(registro.resultadoAtendimento).label}</Badge>
@@ -712,12 +818,13 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                         />
                         <CardContent className="space-y-1">
                           {registroSemTelefone(registro) && <p className="rounded-md border border-destructive bg-red-50 p-3 text-lg font-bold text-destructive">SEM TELEFONE</p>}
-                          {registro.telefoneRecusaConfirmada === true && <p className="text-sm text-muted-foreground">Telefone solicitado; cliente recusou informar.</p>}
                           {registroNaoCliente(registro) && <p className="text-sm text-slate-600">Motivo da visita: {getMotivoVisitaLabel(registro.motivoVisita)}</p>}
-                          {registro.consultoraNomeManual && <p className="text-sm text-slate-600">Consultora: {registro.consultoraNomeManual}</p>}
-                          <p className="text-sm text-slate-600">Concluido em {formatarData(registro.concluidoEm)}</p>
-                          {registro.numeroLancamento && <p className="text-sm text-slate-600">Lancamento {registro.numeroLancamento}</p>}
-                          {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes) && <p className="text-sm text-slate-600">Virada do cartao {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes)}</p>}
+                          {registro.consultoraNomeManual && <p className="text-sm text-slate-600"><strong>Consultora do atendimento:</strong> {registro.consultoraNomeManual}</p>}
+                          <p className="text-sm text-slate-600"><strong>Início:</strong> {formatarData(registro.iniciadoEm ?? null)}</p>
+                          <p className="text-sm text-slate-600"><strong>Salvo em:</strong> {formatarData(registro.concluidoEm)}</p>
+                          {!registroNaoCliente(registro) && registro.clienteTelefone && <p className="text-sm text-slate-600"><strong>Telefone:</strong> {registro.clienteTelefone}</p>}
+                          {registro.numeroLancamento && <p className="text-sm text-slate-600"><strong>Lançamento:</strong> {registro.numeroLancamento}</p>}
+                          {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes) && <p className="text-sm text-slate-600"><strong>Virada do cartão:</strong> {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes)}</p>}
                         </CardContent>
                       </button>
                       <div className="px-4 pb-4">
@@ -800,7 +907,6 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                       {selecionado.cliente ? (
                         <>
                           <p className="font-semibold text-slate-950">{selecionado.cliente.nome}</p>
-                          {selecionado.atendimento.telefoneRecusaConfirmada === true && <p>Telefone solicitado; cliente recusou informar.</p>}
                           {selecionado.cliente.telefone && <p>{selecionado.cliente.telefone}</p>}
                           <Button type="button" variant="secondary" onClick={abrirHistoricoClienteSelecionada} className="mt-3">
                             <History className="size-4" aria-hidden="true" />
@@ -812,7 +918,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                       )}
                     </div>}
                     <div>
-                      <p className="text-xs font-bold uppercase text-slate-500">Nome da consultora</p>
+                      <p className="text-xs font-bold uppercase text-slate-500">Consultora do atendimento</p>
                       <p>{selecionado.atendimento.consultoraNomeManual ?? 'Nao informado'}</p>
                     </div>
                     {!selecionadoNaoCliente && <>
@@ -882,7 +988,14 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
           </div>
         </TabsContent>
 
-        <TabsContent value="rascunhos">
+        <TabsContent value="rascunhos"><FilterPanel dirty={filtrosRascunhos.dirty} applyDisabled={carregandoRascunhos} onApply={() => { filtrosRascunhos.apply(); void carregarRascunhos(1, filtrosRascunhos.draft) }} onClear={() => { filtrosRascunhos.clear(); void carregarRascunhos(1, { ...FILTROS_ADICIONAIS, clienteNome: '', consultora: '', unidadeId: '' }) }}>
+                <FilterFieldGroup label="Cliente, consultora e filial">
+                  <FormField id="rascunho-cliente" label="Cliente ou cadastro pendente">{props => <Input {...props} value={filtrosRascunhos.draft.clienteNome} onChange={e => filtrosRascunhos.setField('clienteNome', e.target.value)} />}</FormField>
+                  <FormField id="rascunho-consultora" label="Consultora do atendimento">{props => <Select value={filtrosRascunhos.draft.consultora || 'all'} onValueChange={v => filtrosRascunhos.setField('consultora', v === 'all' ? '' : v)}><SelectTrigger {...props} className="w-full min-w-0"><SelectValue placeholder="Todas" /></SelectTrigger><SelectContent><SelectItem value="all">Todas</SelectItem>{consultorasRascunhos.map(o => <SelectItem key={o.nome} value={o.nome}>{o.nome}</SelectItem>)}</SelectContent></Select>}</FormField>
+                  <FormField id="rascunho-filial" label="Filial">{props => <Select value={filtrosRascunhos.draft.unidadeId || 'all'} onValueChange={v => filtrosRascunhos.setField('unidadeId', v === 'all' ? '' : v)}><SelectTrigger {...props} className="w-full min-w-0"><SelectValue placeholder="Todas" /></SelectTrigger><SelectContent><SelectItem value="all">Todas</SelectItem>{contextoRascunhos?.unidadesPermitidas.map(o => <SelectItem key={o.id} value={o.id}>{o.nome}</SelectItem>)}</SelectContent></Select>}</FormField>
+                </FilterFieldGroup>
+                <FiltrosAdicionaisAtendimento rascunhos value={filtrosRascunhos.draft} onChange={(campo, valor) => filtrosRascunhos.setField(campo, valor)} />
+              </FilterPanel>
           <Card>
             <CardHeader icon={<ClipboardList className="size-4" aria-hidden="true" />} title="Rascunhos em andamento" />
             <CardContent className="space-y-3">
@@ -898,27 +1011,31 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                   title="Nenhum rascunho ativo"
                 />
               )}
-              {rascunhos.map((rascunho) => {
+              <p className="text-sm text-muted-foreground">{resumoFiltros(filtrosRascunhos.applied, contextoRascunhos?.unidadesPermitidas ?? [])}</p>
+              <p role="status" className="text-sm font-semibold">{totalRascunhos} rascunhos encontrados · Página {paginaRascunhos} de {Math.max(1, Math.ceil(totalRascunhos / TABLE_PAGE_SIZE))}</p>
+              {!carregandoRascunhos && !erroRascunhos && rascunhos.map((rascunho) => {
                 const unidade = contextoRascunhos?.unidadesPermitidas.find((item) => item.id === rascunho.unidadeId)
                 return (
                   <Card key={rascunho.id} className="min-w-0 border-amber-300 p-4">
                     <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                      <p className="min-w-0 break-words text-base font-semibold text-slate-950">{nomeClienteRascunho(rascunho.clienteNome)}</p>
+                      <p className="min-w-0 break-words text-base font-semibold text-slate-950">{nomeClienteRascunho(rascunho.clienteNome)}</p>{rascunho.clienteCadastroPendente && <Badge tone="neutral">Cadastro pendente</Badge>}
                       <Badge tone="warning">Rascunho</Badge>
                     </div>
                     <div className="mt-2 grid gap-1 text-sm text-slate-600">
+                      <p><strong>Tipo:</strong> {rascunho.tipoAtendimento === 'nao_cliente' ? 'Não cliente' : rascunho.tipoAtendimento === 'cliente' ? 'Cliente' : 'Tipo não informado'}</p>
+                      {rascunho.tipoAtendimento !== 'nao_cliente' && <p><strong>Telefone:</strong> {rascunho.clienteTelefone || 'Sem telefone'}</p>}
                       <p className="break-words">
-                        Consultora: <span className="font-medium text-slate-800">{nomeConsultoraRascunho(rascunho.consultoraNome)}</span>
+                        <strong>Consultora do atendimento:</strong> <span className="font-medium text-slate-800">{nomeConsultoraRascunho(rascunho.consultoraNome)}</span>
                       </p>
                       <p className="break-words">
-                        Unidade: <span className="font-medium text-slate-800">{unidade?.nome ?? rascunho.unidadeId}</span>
+                        <strong>Filial:</strong> <span className="font-medium text-slate-800">{unidade?.nome ?? rascunho.unidadeId}</span>
                       </p>
-                      <p>Ultima atualizacao: {formatarData(rascunho.ultimaAtividadeEm)}</p>
-                      <p>Expira em: {diasRestantes(rascunho.expiraEm)} dias</p>
+                      <p><strong>Última atividade:</strong> {formatarData(rascunho.ultimaAtividadeEm)}</p>
+                      <p><strong>Expira em:</strong> {diasRestantes(rascunho.expiraEm)} dias</p>
                     </div>
                     <Button
                       type="button"
-                      onClick={() => router.push(`/atendimento-presencial/prancheta?rascunho=${rascunho.id}`)}
+                      onClick={() => { guardarPosicaoLista(); router.push(`/atendimento-presencial/prancheta?rascunho=${rascunho.id}`) }}
                       size="lg"
                       className="mt-3 w-full"
                     >
@@ -927,6 +1044,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                   </Card>
                 )
               })}
+              <div className="flex justify-end gap-2"><Button variant="secondary" disabled={carregandoRascunhos || paginaRascunhos <= 1} onClick={() => void carregarRascunhos(paginaRascunhos - 1)}>Anterior</Button><Button variant="secondary" disabled={carregandoRascunhos || paginaRascunhos * TABLE_PAGE_SIZE >= totalRascunhos} onClick={() => void carregarRascunhos(paginaRascunhos + 1)}>Próxima</Button></div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -972,18 +1090,18 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                   <p className="text-xs font-bold uppercase text-slate-500">Somente leitura</p>
                   <p>{selecionadoNaoCliente ? 'Não cliente' : `Cliente: ${selecionado.cliente?.nome ?? 'Cliente nao localizada'}`}</p>
                   <p>Unidade: {resumoSelecionado?.unidadeNome ?? selecionado.atendimento.unidadeId}</p>
-                  <p>Consultora: {resumoSelecionado?.consultoraEmail ?? selecionado.atendimento.consultoraUsuarioId}</p>
-                  <p>Nome da consultora: {selecionado.atendimento.consultoraNomeManual ?? 'Nao informado'}</p>
+                  <p>Consultora do atendimento: {selecionado.atendimento.consultoraNomeManual ?? 'Não informada'}</p>
+
                 </div>
 
                 <Section title="Dados da ficha" tone="section-1" collapsible>
                 <Section title="Identificação e crianças" variant="subsection" collapsible>
-                <FormField id="edicao-consultora-nome" label="Nome da consultora">
+                <FormField id="edicao-consultora-nome" label="Consultora do atendimento">
                   {(field) => (
                     <Input
                       {...field}
                       value={fichaEdicao.consultoraNome ?? ''}
-                      onChange={(event) => atualizarFichaEdicao((atual) => ({ ...atual, consultoraNome: event.target.value }))}
+                      onChange={(event) => atualizarFichaEdicao((atual) => ({ ...atual, consultoraNome: event.target.value.toLocaleUpperCase('pt-BR') }))}
                       onBlur={(event) => atualizarFichaEdicao((atual) => ({ ...atual, consultoraNome: normalizarNomeConsultora(event.target.value) }))}
                       maxLength={FICHA_CONSULTORA_NOME_MAX_CHARS}
                       placeholder="Digite o nome da consultora"

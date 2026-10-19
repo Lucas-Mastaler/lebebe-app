@@ -1,5 +1,4 @@
 import { MOTIVOS_VISITA, MOTIVOS_VISITA_HISTORICOS, normalizarNomeConsultora } from './ficha-schema'
-import { normalizarTelefone } from './telefone'
 import type { AtendimentoPresencialDTO } from './rascunhos-shared'
 
 import type {
@@ -59,6 +58,7 @@ export type RegistroAtendimentoResumoDTO = {
   numeroLancamento: number | null
   viradaCartaoDia: number | null
   viradaCartaoMes: number | null
+  iniciadoEm?: string
   concluidoEm: string | null
 }
 
@@ -182,7 +182,7 @@ export function registroNaoCliente(registro: Pick<AtendimentoPresencialDTO, 'ver
 }
 
 export function registroSemTelefone(registro: Pick<RegistroAtendimentoResumoDTO, 'versaoFluxo' | 'tipoAtendimento' | 'clienteTelefone'>) {
-  return !registroNaoCliente(registro) && !normalizarTelefone(registro.clienteTelefone).valido
+  return !registroNaoCliente(registro) && !registro.clienteTelefone?.trim()
 }
 
 export function getMotivoVisitaLabel(motivo: string | null | undefined) {

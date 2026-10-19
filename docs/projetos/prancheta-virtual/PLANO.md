@@ -4,6 +4,22 @@
 
 Contrato funcional: ESCOPO.md. Decisões: DECISOES.md. Marcar somente tarefas realmente executadas e validadas.
 
+## Cadastro, filtros e rascunhos — D-031 (19/10/2026)
+
+Plano aprovado expressamente pelo usuário; execução local autorizada. Banco remoto e publicação permanecem em etapa posterior autorizada.
+- [x] Editor compartilhado de nome/telefone na Prancheta e Clientes, PATCH parcial com versão, duplicidade e conflito explícito.
+- [x] Validação BR apenas nas novas escritas do cadastro; máscara sem corte silencioso; telefone legado preservado em alteração somente de nome.
+- [x] Nome canônico de consultora em leitores/escritores locais, sugestões e filtros; nomenclatura Consultora do atendimento.
+- [x] Filtros de início/virada separados, tipo, telefone, lançamento, contato, departamentos/motivos múltiplos e visita; contagens globais antes de paginação.
+- [x] Rascunhos com nome vinculado/pendente, consultora do JSON, filtros operacionais, paginação, ordenação estável e estado de navegação preservado.
+- [x] Cards com hierarquia e retirada da recusa das apresentações operacionais; fato técnico preservado.
+- [x] Migration local de normalização/proteção de novas escritas, com preflight/integridade, transação, ACL e preservação de vínculos/datas.
+- [x] 439 testes em 41 arquivos; SQL PostgreSQL/WASM sintético; browser sintético a 390/1366px, incluindo cadastro relatado e os dois editores; lint dirigido.
+- [x] Build de produção aprovado; typecheck global com 15 falhas preexistentes fora do escopo e nenhum erro nesta entrega; diff dirigido aprovado.
+- [ ] Homologação autenticada/integrada do candidato e em dispositivos físicos; depende do procedimento autorizado, sem contornar D-025/D-026.
+- [x] Aplicação remota autorizada D-032: 20261019145305, banco real reconferido, novos registros e hashes preservados; recarregar formulários.
+- [ ] Commit/push/publicação mediante autorização específica; produção atual preservada.
+
 ## Atendimentos Salvos / Situação da Venda — 19/10/2026
 
 Autorização: implementação/validação locais; publicação autorizada explicitamente em 19/10/2026.
@@ -14,7 +30,7 @@ Autorização: implementação/validação locais; publicação autorizada expli
 - [x] Build de produção e diff dirigido aprovados.
 - [ ] Homologação visual/mobile/autenticada de caso individual; respeitar D-025/D-026.
 - [x] Autorização específica de publicação recebida em 19/10/2026.
-- [ ] Commit/push/deploy do pacote; confirmar SHA remoto, READY e alias.
+- [x] Commit 57389d5 e push confirmados; dpl_Eqc86fZWWbfkmChqWpcDDqk2p4jZ READY/production, lebebe.cloud sem aliasError.
 
 ## Correção pós-homologação — D-030
 

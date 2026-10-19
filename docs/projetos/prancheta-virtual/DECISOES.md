@@ -127,3 +127,17 @@ Autorizou commit/push na main e publicação somente das correções pertinentes
 ## D-026 — Última rodada de UX P1 antes do aceite
 
 Em 16/10/2026 o usuário autorizou os ajustes finais de apresentação/idade da criança histórica, entrada suave do rodapé, rolagem após renderização de etapas e feedback de finalização na primeira oportunidade de pintura. Compartilhar seleção por toque e limites existentes entre criança nova/histórica, preservando validações, cálculo e dados originais. Feedback não dispensa confirmação de persistência. Publicar na main após testes/lint/build/diff aprovados; sem migrations, registros reais, outros módulos, início de P2/P3 ou reabertura às lojas. Validação humana no celular é indispensável. Mantida limitação de automação de navegador registrada em D-025; não contorná-la.
+
+## D-031 — Cadastro, filtros e rascunhos aprovados (19/10/2026)
+
+Usuário aprovou o plano completo, escolheu período pela data de início do atendimento e filtros operacionais nos rascunhos, e substituiu a nomenclatura proposta por **Consultora do atendimento**. Autorizou implementar localmente em seguida. Produção, migration remota, commit/push/deploy ficam para etapa posterior autorizada, após resultados da validação.
+
+Telefone rejeitado foi informado como cadastro de nova cliente na Prancheta. Número relatado passa no normalizador anterior TS/SQL; causa histórica não reproduzida e logs fora da retenção. A nova política usa formato brasileiro, sem inferir inexistência de linha pela repetição de dígitos. Os sete telefones antigos fora do formato novo ficam preservados com aviso; não exigem mudança em edição somente de nome. Contrato genérico compartilhado com outros módulos permanece.
+
+Normalização agrupa somente grafias equivalentes, preservando ANA C como nome diferente de ANA, IDs/vínculos e snapshots de auditoria. Com/Sem telefone usa presença no cadastro atual; Não cliente não entra nessas categorias. Consultora do atendimento é o nome registrado naquele atendimento, não a origem do cliente ou o e-mail do login. Nenhuma exclusão adicional autorizada nesta implementação.
+
+Migration preparada localmente: 20261019145305_prancheta_cadastro_filtros_normalizacao.sql. Atuação remota pendente: revalidar estrutura/trigger real, preparar janela de atualização de versões, conferir integridade antes/depois e aplicar somente esta migration, sem replay/repair. Os novos gatilhos protegem nomes e novas escritas de telefone; RLS e contratos de outros módulos preservados. Integridade transacional desconsidera somente campos canônicos/version/updated_at, abortando mudança em outros dados. Recuperação de aplicação deve conservar valores normalizados e telefones existentes; qualquer desativação de gatilho em produção exige diagnóstico e autorização da janela.
+
+## D-032 — Publicação do cadastro e filtros (19/10/2026)
+
+Usuário autorizou verificar registros novos, aplicar migration e publicar após cessar o preenchimento. Dois atendimentos e dois clientes novos compatíveis e preservados. Migration 20261019145305 aplicada via MCP; contagens e hashes dos dados de negócio idênticos antes/depois. Sem exclusões, repair, replay ou mudança de RLS. Recarregar formulários por atualização de versões. Commit/push/deploy autorizados somente para este pacote, mantendo alterações preexistentes fora dele. Limites de homologação D-031 permanecem.

@@ -73,6 +73,7 @@ function builder(result: unknown) {
     in: vi.fn(() => chain),
     order: vi.fn(() => chain),
     limit: vi.fn(() => chain),
+    range: vi.fn(() => chain),
     insert: vi.fn(() => chain),
     maybeSingle: vi.fn(() => Promise.resolve(result)),
     single: vi.fn(() => Promise.resolve(result)),
@@ -108,6 +109,23 @@ describe('api rascunhos atendimento presencial', () => {
     vi.mocked(checkAccessWindowForUser).mockResolvedValue(windowOk)
   })
 
+
+  it('pagina mais de vinte rascunhos e filtra nome local/consultora antes de contar', async () => {
+    const rows = Array.from({ length: 41 }, (_, index) => ({ ...rascunhoRow, id: 'rascunho-' + index, dados_rascunho: { consultoraNome: index % 2 ? ' Ana ' : 'ana', entradasFormulario: { novoCliente: { nome: 'CLIENTE PENDENTE ' + index, telefone: '41996465656', parentesco: '', parentescoOutro: '' }, dataPrevistaInputs: {}, viradaCartaoInput: '', produtoDigitado: '', numeroLancamento: '', telefonePendente: null } } }))
+    mockSupabase({
+      app_usuarios_perfis: [{ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null }],
+      app_usuarios_unidades: [{ data: [{ app_unidades: { id: unidadeId, nome: 'Filial', ativo: true } }], error: null }],
+      atendimento_presencial_atendimentos: [{ data: rows, error: null }],
+    })
+    const response = await GET(new Request('http://local?consultora=ANA&page=2&clienteNome=PENDENTE&tipoAtendimento=nao_informado'))
+    expect(response.status).toBe(200)
+    const data = await response.json()
+    expect(data.total).toBe(41)
+    expect(data.page).toBe(2)
+    expect(data.rascunhos).toHaveLength(20)
+    expect(data.rascunhos[0]).toMatchObject({ id: 'rascunho-20', clienteNome: 'CLIENTE PENDENTE 20', consultoraNome: 'ANA', clienteCadastroPendente: true })
+    expect(data.consultorasDisponiveis).toEqual([{ nome: 'ANA' }])
+  })
   it('bloqueia quando modulo nao autoriza', async () => {
     vi.mocked(requireModuleAccess).mockResolvedValueOnce({
       ok: false,
@@ -237,6 +255,7 @@ describe('api rascunhos atendimento presencial', () => {
       id: '123e4567-e89b-12d3-a456-426614174008',
       cliente_id: clienteId,
       consultora_usuario_id: consultoraId,
+      dados_rascunho: { consultoraNome: ' ana clara ' },
     }
     const from = mockSupabase({
       app_usuarios_perfis: [
@@ -272,11 +291,11 @@ describe('api rascunhos atendimento presencial', () => {
       expect.objectContaining({
         id: segundoRascunho.id,
         clienteNome: 'Mariana Souza',
-        consultoraNome: 'consultora@example.com',
+        consultoraNome: 'ANA CLARA',
       }),
     ]))
     expect(from.mock.calls.filter(([table]) => table === 'atendimento_presencial_clientes')).toHaveLength(1)
-    expect(from.mock.calls.filter(([table]) => table === 'usuarios_permitidos')).toHaveLength(1)
+    expect(from.mock.calls.filter(([table]) => table === 'usuarios_permitidos')).toHaveLength(0)
   })
 
   it('cria rascunho para gestao ignorando consultoraUsuarioId e usando usuario autenticado', async () => {

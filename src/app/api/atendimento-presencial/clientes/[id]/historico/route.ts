@@ -22,6 +22,7 @@ const SELECT_ATENDIMENTO = [
   'id',
   'cliente_id',
   'consultora_usuario_id',
+  'consultora_nome',
   'unidade_id',
   'status',
   'draft_client_id',
@@ -125,9 +126,8 @@ export async function GET(
 
     const atendimentoIds = rows.map((row) => row.id)
     const unidadeIds = Array.from(new Set(rows.map((row) => row.unidade_id)))
-    const consultoraIds = Array.from(new Set(rows.map((row) => row.consultora_usuario_id)))
 
-    const [departamentosResult, produtosResult, unidadesResult, consultorasResult, vendasResult, pedidosPersonalizados] = await Promise.all([
+    const [departamentosResult, produtosResult, unidadesResult, vendasResult, pedidosPersonalizados] = await Promise.all([
       atendimentoIds.length
         ? supabase.from('atendimento_presencial_departamentos').select('atendimento_id, departamento').in('atendimento_id', atendimentoIds).order('ordem', { ascending: true })
         : Promise.resolve({ data: [], error: null }),
@@ -136,9 +136,6 @@ export async function GET(
         : Promise.resolve({ data: [], error: null }),
       unidadeIds.length
         ? supabase.from('app_unidades').select('id, nome').in('id', unidadeIds)
-        : Promise.resolve({ data: [], error: null }),
-      consultoraIds.length
-        ? supabase.from('usuarios_permitidos').select('id, email').in('id', consultoraIds)
         : Promise.resolve({ data: [], error: null }),
       buscarVendasSgiPorTelefone(supabase, {
         telefoneNormalizado: telefone.telefoneNormalizado,
@@ -154,12 +151,11 @@ export async function GET(
         : Promise.resolve(null),
     ])
 
-    if (departamentosResult.error || produtosResult.error || unidadesResult.error || consultorasResult.error) {
+    if (departamentosResult.error || produtosResult.error || unidadesResult.error) {
       console.error('[ATENDIMENTO PRESENCIAL HISTORICO CLIENTE] Erro ao carregar relacionados:', {
         departamentos: departamentosResult.error,
         produtos: produtosResult.error,
         unidades: unidadesResult.error,
-        consultoras: consultorasResult.error,
       })
       return jsonErro('Erro ao processar requisicao', 500)
     }
@@ -175,7 +171,6 @@ export async function GET(
     }
 
     const unidadesPorId = new Map((unidadesResult.data ?? []).map((unidade) => [unidade.id, unidade.nome]))
-    const consultorasPorId = new Map((consultorasResult.data ?? []).map((consultora) => [consultora.id, consultora.email]))
 
     return NextResponse.json({
       ok: true,
@@ -183,7 +178,6 @@ export async function GET(
       atendimentos: rows.map((row) => serializarHistoricoAtendimento({
         row,
         unidadeNome: unidadesPorId.get(row.unidade_id) ?? null,
-        consultoraEmail: consultorasPorId.get(row.consultora_usuario_id) ?? null,
         departamentos: departamentosPorAtendimento.get(row.id) ?? [],
         produtosInteresse: produtosPorAtendimento.get(row.id) ?? [],
       })),

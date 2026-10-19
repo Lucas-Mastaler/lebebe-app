@@ -1,5 +1,6 @@
 'use client'
 
+import { EditarClienteDialog } from '@/components/atendimento-presencial/EditarClienteDialog'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, History, Phone, Search, UserPlus, Users } from 'lucide-react'
 import {
@@ -23,7 +24,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { HistoricoClienteModal, type HistoricoClienteModalCliente } from '@/components/atendimento-presencial/HistoricoClienteModal'
 import { PARENTESCOS_CLIENTE, type ClientePresencialDTO, type ParentescoCliente } from '@/lib/atendimento-presencial/clientes'
-import { aplicarMascaraTelefoneBR } from '@/lib/atendimento-presencial/telefone'
+import { mascararTelefoneClienteBR } from '@/lib/atendimento-presencial/telefone'
 
 type ApiClientesResponse = {
   ok: boolean
@@ -50,6 +51,7 @@ const parentescoInicial: ParentescoCliente = 'mae'
 const FILTROS_CLIENTES_INICIAL = { busca: '', consultora: '' }
 
 export default function PageClient() {
+  const [clienteEdicao, setClienteEdicao] = useState<ClientePresencialDTO | null>(null)
   const filtros = useFilterState(FILTROS_CLIENTES_INICIAL)
   const [consultoras, setConsultoras] = useState<Array<{ nome: string }>>([])
   const [clientes, setClientes] = useState<Array<ClientePresencialDTO & { correspondenciaExataTelefone?: boolean }>>([])
@@ -279,7 +281,7 @@ export default function PageClient() {
                         <p>Filial origem: <span className="font-medium text-slate-800">{cliente.origem.unidadeNome ?? 'Não identificado'}</span></p>
                       </div>
                       </CardContent>
-                      <CardFooter className="sm:justify-end">
+                      <CardFooter className="flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end"><Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={() => setClienteEdicao(cliente)}>Editar cliente</Button>
                       <Button type="button" variant="secondary" onClick={() => abrirHistoricoCliente(cliente)} className="w-full sm:w-auto">
                         <History className="size-4" aria-hidden="true" />
                         Ver histórico
@@ -325,7 +327,7 @@ export default function PageClient() {
                     <Input
                       {...field}
                       value={telefone}
-                      onChange={(event) => setTelefone(aplicarMascaraTelefoneBR(event.target.value))}
+                      onChange={(event) => setTelefone(mascararTelefoneClienteBR(event.target.value))}
                       placeholder="(41) 99999-9999"
                       inputMode="tel"
                       autoComplete="off"
@@ -370,6 +372,7 @@ export default function PageClient() {
           </Card>
         </div>
       </div>
+      {clienteEdicao && <EditarClienteDialog key={clienteEdicao.id} cliente={clienteEdicao} onClose={() => setClienteEdicao(null)} onSaved={(atualizada) => { setClientes(atuais => atuais.map(item => item.id === atualizada.id ? atualizada : item)); setClienteEdicao(atualizada) }} />}
       <HistoricoClienteModal open={historicoAberto} onOpenChange={setHistoricoAberto} cliente={historicoCliente} />
     </PageContainer>
   )

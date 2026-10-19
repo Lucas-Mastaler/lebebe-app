@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest'
 import {MOTIVOS_VISITA, MOTIVOS_VISITA_HISTORICOS, MOTIVOS_VENDA_PERDIDA, MOTIVOS_NEGOCIACAO, motivosParaResultado, motivosParaEdicao, migrarFichaDadosRascunho, validarFichaDadosRascunho, validarFichaParaConclusao, type FichaDadosRascunho} from './ficha-schema'
 import {normalizarDetalheParaFichaEdicao, montarPayloadEdicaoAtendimento, serializarClienteRegistro, registroSemTelefone, type RegistroAtendimentoDetalheDTO} from './registros'
-const ficha: FichaDadosRascunho={versaoFluxo:2,tipoAtendimento:'cliente',consultoraNome:'Ana',criancas:[],departamentos:['moveis'],produtosInteresse:[],resultadoAtendimento:'nao',motivosResultado:['outra_loja_fisica','outra_loja_internet'],etapaAtual:'resultado',lojasMotivos:{outra_loja_fisica:'Loja Física',outra_loja_internet:'Loja Internet'}}
+const ficha: FichaDadosRascunho={versaoFluxo:2,tipoAtendimento:'cliente',consultoraNome:'ANA',criancas:[],departamentos:['moveis'],produtosInteresse:[],resultadoAtendimento:'nao',motivosResultado:['outra_loja_fisica','outra_loja_internet'],etapaAtual:'resultado',lojasMotivos:{outra_loja_fisica:'Loja Física',outra_loja_internet:'Loja Internet'}}
 describe('refinamento funcional autorizado',()=>{
  it('SEM TELEFONE independe da recusa e inclui histórico; exclui Não cliente',()=>{
   expect(registroSemTelefone({versaoFluxo:null,tipoAtendimento:null,clienteTelefone:null})).toBe(true)

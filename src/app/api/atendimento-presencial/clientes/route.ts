@@ -1,3 +1,4 @@
+import { normalizarNomeConsultora as nomeConsultoraCanonico } from '@/lib/atendimento-presencial/ficha-schema'
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireAtendimentoPresencialClientesAccess } from '@/lib/atendimento-presencial/api-auth'
@@ -44,7 +45,7 @@ function limitarResultado(valor: string | null) {
 }
 
 function normalizarFiltroConsultora(valor: string | null) {
-  return normalizarTermoBusca(valor) || ''
+  return nomeConsultoraCanonico(valor)
 }
 
 function isErroSchemaOrigemCliente(error: { code?: string; message?: string } | null | undefined) {

@@ -1,6 +1,6 @@
 import { gerarVariacoesTelefone } from '@/lib/digisac/sgi-sync'
 import { normalizarTelefone } from './telefone'
-import { getDepartamentoLabel, getResultadoLabel, type DepartamentoInteresse, type ResultadoAtendimento } from './ficha-schema'
+import { getDepartamentoLabel, getResultadoLabel, normalizarNomeConsultora, type DepartamentoInteresse, type ResultadoAtendimento } from './ficha-schema'
 
 type SupabaseLike = {
   from: (table: string) => unknown
@@ -189,11 +189,12 @@ export function serializarHistoricoAtendimento(params: {
     concluido_em?: string | null
     resultado_atendimento?: string | null
     numero_lancamento?: number | null
+    consultora_nome?: string | null
     consultora_usuario_id: string
     unidade_id: string
   }
   unidadeNome: string | null
-  consultoraEmail: string | null
+  consultoraEmail?: string | null
   departamentos: string[]
   produtosInteresse: string[]
 }): HistoricoAtendimentoClienteDTO {
@@ -201,7 +202,7 @@ export function serializarHistoricoAtendimento(params: {
     id: params.row.id,
     data: params.row.concluido_em ?? null,
     unidade: params.unidadeNome,
-    consultora: params.consultoraEmail,
+    consultora: normalizarNomeConsultora(params.row.consultora_nome) || null,
     resultado: getResultadoLabel(params.row.resultado_atendimento as ResultadoAtendimento | undefined),
     departamentos: params.departamentos.map((item) => getDepartamentoLabel(item as DepartamentoInteresse)),
     produtosInteresse: params.produtosInteresse,

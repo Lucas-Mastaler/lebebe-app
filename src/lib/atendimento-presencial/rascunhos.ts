@@ -1,3 +1,4 @@
+import { normalizarNomeConsultora } from './ficha-schema'
 import { NextResponse } from 'next/server'
 import { checkAccessWindowForUser } from '@/lib/auth/access-window'
 import { requireModuleAccess } from '@/lib/auth/module-access'
@@ -108,7 +109,7 @@ export function serializarAtendimentoPresencial(row: AtendimentoPresencialRow): 
     numeroLancamento: row.numero_lancamento ?? null,
     viradaCartaoDia: row.virada_cartao_dia ?? null,
     viradaCartaoMes: row.virada_cartao_mes ?? null,
-    consultoraNomeManual: row.consultora_nome ?? null,
+    consultoraNomeManual: normalizarNomeConsultora(row.consultora_nome) || null,
     concluidoEm: row.concluido_em ?? null,
     iniciadoEm: row.iniciado_em,
     ultimaAtividadeEm: row.ultima_atividade_em,

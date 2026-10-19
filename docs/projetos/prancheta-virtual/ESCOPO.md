@@ -6,6 +6,18 @@
 
 Modernizar a Prancheta Virtual em até duas etapas, reaproveitando crianças e preservando dados comerciais e históricos. P1 aprovada pelo usuário em 15/10/2026; iniciar pela Entrega 1 e concluir sua validação antes das demais.
 
+## Cadastro, filtros e rascunhos — aprovado em 19/10/2026 (D-031)
+
+Editor de cliente existente (nome e telefone) na Prancheta e Clientes, preservando IDs/vínculos e concorrência. Novos telefones e alterações seguem DDD brasileiro existente, celular de nove dígitos iniciado em 9 ou fixo de oito iniciado em 2–5, com máscara/+55 e sem rejeição arbitrária de repetição. Telefones antigos fora desse formato são preservados e avisados; alterar somente nome não obriga corrigir telefone.
+
+Consultora em maiúsculas, trim e espaços internos simples; unificar grafias equivalentes sem aproximar nomes diferentes ou unir contas. Nome da pessoa no atendimento apresentado como **Consultora do atendimento**, separado da conta de login. Normalizar valores operacionais existentes; preservar snapshots técnicos de auditoria.
+
+Atendimentos Salvos: início por dias completos de São Paulo, virada DD/MM separada, tipo, cliente/telefone, lançamento exato, Com telefone/Sem telefone pela presença atual, departamentos e motivos multiselect (OR dentro, AND entre filtros), visita atual/histórica; contagens de atendimentos, clientes únicos e Não clientes antes de paginar. Retirar recusa histórica da apresentação operacional, sem apagar o fato técnico.
+
+Rascunhos: cliente vinculado ou nome em preenchimento com Cadastro pendente, consultora do JSON, filtros básicos e operacionais, tipo não informado explícito, última atividade, vínculos, telefone, expiração em 24h; paginação de 20 itens e ordem estável. Cards com rótulos fortes, informações agrupadas, feedback e navegação preservada. Aplicação/limpeza manuais pelo DS. Sem compartilhamento, automações ou novas exclusões.
+
+Execução local autorizada; migration remota e publicação permanecem em etapa posterior especificamente autorizada.
+
 ## P1 aprovada
 
 - Identificação na primeira tela: unidade, nome manual da consultora e tipo Cliente/Não cliente; demais campos ocultos até selecionar o tipo.

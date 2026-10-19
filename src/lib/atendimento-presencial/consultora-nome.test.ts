@@ -31,11 +31,11 @@ function fichaValida(consultoraNome?: string): FichaDadosRascunho {
 
 describe('normalizarNomeConsultora', () => {
   it('normaliza espacos duplicados', () => {
-    expect(normalizarNomeConsultora('Ana    Clara')).toBe('Ana Clara')
+    expect(normalizarNomeConsultora('Ana    Clara')).toBe('ANA CLARA')
   })
 
   it('faz trim', () => {
-    expect(normalizarNomeConsultora('  Ana Clara  ')).toBe('Ana Clara')
+    expect(normalizarNomeConsultora('  Ana Clara  ')).toBe('ANA CLARA')
   })
 
   it('limita a 30 caracteres', () => {
@@ -134,7 +134,7 @@ describe('validarFichaDadosRascunho - consultoraNome', () => {
     })
     expect(resultado.ok).toBe(true)
     if (resultado.ok) {
-      expect(resultado.dados.consultoraNome).toBe('Ana Clara')
+      expect(resultado.dados.consultoraNome).toBe('ANA CLARA')
     }
   })
 

@@ -1,5 +1,7 @@
 'use client'
 
+import { EditarClienteDialog } from '@/components/atendimento-presencial/EditarClienteDialog'
+import { mensagemTelefoneCliente } from '@/lib/atendimento-presencial/telefone'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { aguardarPinturaFeedback } from '@/lib/atendimento-presencial/feedback-renderizacao'
@@ -96,7 +98,7 @@ import {
   type ClientePresencialDTO,
   type ParentescoCliente,
 } from '@/lib/atendimento-presencial/clientes'
-import { normalizarTelefone, aplicarMascaraTelefoneBR } from '@/lib/atendimento-presencial/telefone'
+import { normalizarTelefone, mascararTelefoneClienteBR } from '@/lib/atendimento-presencial/telefone'
 import {
   type AtendimentoPresencialDTO,
   type ContextoAtendimento,
@@ -391,6 +393,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [iniciandoNovoAtendimento, setIniciandoNovoAtendimento] = useState(false)
   const [onlineTick, setOnlineTick] = useState(0)
   const [historicoAberto, setHistoricoAberto] = useState(false)
+  const [editandoCliente, setEditandoCliente] = useState(false)
   const [telefoneClienteEdicao, setTelefoneClienteEdicao] = useState('')
   const [erroTelefone, setErroTelefone] = useState<string | null>(null)
   const [salvandoTelefone, setSalvandoTelefone] = useState(false)
@@ -967,7 +970,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   function atualizarTelefoneCliente(valor: string) {
-    const telefone = aplicarMascaraTelefoneBR(valor)
+    const telefone = mascararTelefoneClienteBR(valor)
     setErroTelefone(null)
 
     if (!clienteSelecionada) {
@@ -993,6 +996,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   async function salvarTelefoneCliente(cliente: ClientePresencialDTO, telefone: string, requestId: number) {
+    if (telefone === (cliente.telefoneFormatado ?? cliente.telefone ?? '')) { setTelefonePendente(null); return }
+    if (telefone && mensagemTelefoneCliente(telefone)) { setErroTelefone(mensagemTelefoneCliente(telefone)); return }
     const anterior = telefoneSaveRef.current
     let liberar!: () => void
     const atual = new Promise<void>((resolve) => { liberar = resolve })
@@ -1930,12 +1935,12 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 tone="section-1"
                 erro={erroSecao('secao-consultora-nome')}
               >
-                <FormField id="consultora-nome" label="Nome da consultora" required error={erroSecao('secao-consultora-nome')}>
+                <FormField id="consultora-nome" label="Consultora do atendimento" required error={erroSecao('secao-consultora-nome')}>
                   {(f) => (
                     <Input
                       {...f}
                       value={ficha.consultoraNome ?? ''}
-                      onChange={(event) => atualizarFicha((atual) => ({ ...atual, consultoraNome: event.target.value }))}
+                      onChange={(event) => atualizarFicha((atual) => ({ ...atual, consultoraNome: event.target.value.toLocaleUpperCase('pt-BR') }))}
                       onBlur={(event) => atualizarFicha((atual) => ({ ...atual, consultoraNome: normalizarNomeConsultora(event.target.value) }))}
                       className="h-12 text-base"
                       maxLength={FICHA_CONSULTORA_NOME_MAX_CHARS}
@@ -1994,6 +1999,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                       <p className="mt-2 text-base font-semibold text-slate-950">{clienteSelecionada.nome.toLocaleUpperCase('pt-BR')}</p>
                       {clienteSelecionada.telefoneFormatado && <p className="text-sm text-slate-700">{clienteSelecionada.telefoneFormatado}</p>}
                       <div className="mt-3 flex flex-wrap gap-2">
+                        <Button type="button" variant="secondary" size="sm" disabled={Boolean(telefonePendente) || salvandoTelefone} onClick={() => setEditandoCliente(true)}>Editar cliente</Button>
                         <Button type="button" variant="secondary" size="sm" onClick={trocarCliente}>
                           Trocar cliente
                         </Button>
@@ -2451,6 +2457,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         </div>
       )}
 
+      {editandoCliente && clienteSelecionada && <EditarClienteDialog key={clienteSelecionada.id} cliente={clienteSelecionada} onClose={() => setEditandoCliente(false)} onSaved={(atualizada) => { clienteSelecionadaRef.current = atualizada; setClienteSelecionada(atualizada); setTelefoneClienteEdicao(atualizada.telefoneFormatado ?? atualizada.telefone ?? '') }} />}
       <HistoricoClienteModal
         open={historicoAberto}
         onOpenChange={setHistoricoAberto}

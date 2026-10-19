@@ -3,7 +3,7 @@ import { MOTIVOS_VISITA, migrarFichaDadosRascunho, validarFichaDadosRascunho, va
 import { serializarPayloadAutosave } from './autosave-fila'
 
 const legado: FichaDadosRascunho = {
-  consultoraNome: 'Ana', criancas: [], departamentos: ['moveis'], produtosInteresse: [],
+  consultoraNome: 'ANA', criancas: [], departamentos: ['moveis'], produtosInteresse: [],
   resultadoAtendimento: 'sim', motivosResultado: [], etapaAtual: 'ficha',
 }
 const cliente: FichaDadosRascunho = { ...legado, versaoFluxo: 2, tipoAtendimento: 'cliente' }

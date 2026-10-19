@@ -2,10 +2,32 @@
 
 Projeto: prancheta-virtual
 Estado: EM_EXECUCAO
-Fase atual: Atendimentos Salvos / Situação da Venda validados; publicação autorizada em preparação
+Fase atual: Cadastro, filtros e rascunhos D-031; migration D-032 aplicada, publicação em andamento
 Atualizado em: 19/10/2026
 
-## Atendimentos Salvos / Situação da Venda — 19/10/2026 (local)
+## Publicação autorizada D-032 — 19/10/2026
+
+Usuário autorizou migration e deploy após interrupção do preenchimento. MCP confirmou 2 atendimentos e 2 clientes criados durante a edição, sem escritas nos cinco minutos anteriores à janela. Migration aplicada isoladamente como 20261019145305 / prancheta_cadastro_filtros_normalizacao. Nenhuma exclusão, repair ou replay.
+
+Antes/depois: 132 atendimentos e 86 clientes, incluindo os novos. Hash dos dados de negócio preservado: atendimentos 28763b6eda614f554c5370d6ef3b4718; clientes 7ca9a965c38772bad96a2bbd5edfff4a. Desconsideradas somente consultora, versão e updated_at conforme backfill aprovado; telefones, vínculos, conteúdo, datas operacionais e expiração preservados. Normalização alterou versões de 128 atendimentos e 82 clientes. Todos os triggers habilitados, inclusive origem restabelecido; zero consultoras não canônicas. Funções novas SECURITY INVOKER, search_path fixo e execução postgres/service_role. Formulários abertos devem ser recarregados após publicar.
+
+Base remota/produção confirmada: 57389d5a56ff631f17e432edd87c7ee479c926fe / dpl_Eqc86fZWWbfkmChqWpcDDqk2p4jZ. Commit/push/deploy do pacote em andamento. Validações locais D-031 preservadas; nenhuma homologação comercial autenticada ou iPhone físico declarada.
+
+## Cadastro, filtros e rascunhos — D-031 (19/10/2026, local)
+
+Plano aprovado e execução local expressamente autorizada. Implementados editor compartilhado (nome/telefone) na Prancheta e Clientes, PATCH parcial com versão/duplicidade, aviso de telefone legado, regra BR específica das novas escritas e máscara sem cortar excedentes. Normalizador genérico de outros módulos preservado. Nomes da consultora canônicos em maiúsculas/trim/espaços, nomenclatura Consultora do atendimento e leitores/sugestões/filtros coerentes.
+
+Listagens aplicam filtros antes das contagens/paginação. Salvos: início em São Paulo, virada independente, tipo, telefone, lançamento exato, Com/Sem telefone pela presença, departamentos/motivos múltiplos e visita. Contagens de atendimentos/clientes únicos/Não clientes. Rascunhos: cliente vinculado ou nome em preenchimento com Cadastro pendente; consultora real do JSON; tipo não informado; filtros operacionais, total e páginas de 20 com ordenação estável. Estados de filtros/página e posição de retorno preservados por aba; respostas antigas não substituem busca mais recente. Cards com hierarquia; recusa retirada da apresentação operacional e preservada tecnicamente.
+
+Migration preparada, NÃO aplicada: supabase/migrations/20261019145305_prancheta_cadastro_filtros_normalizacao.sql. Novos gatilhos de normalização/validação de novas escritas, backfill de nomes e proteção por hash de dados não alteráveis. Sem exclusão, alteração de RLS, abertura de lojas ou reescrita de snapshots. Backfill preserva data de atividade/expiração e vínculos; incrementa versões pelos triggers existentes, exigindo recarga de formulários na janela futura.
+
+Validação: 439 testes/41 arquivos (módulo, APIs, cron e SSR) aprovados; inclui regressão do número relatado, formatos inválidos, nome sem telefone legado, multisseleções, dias completos, mais de 20 rascunhos e paginação antes de contagens. SQL em PostgreSQL/WASM descartável aprovado: normalização, vínculos/datas, legado, caso relatado, rejeições, ACL e trigger de origem restabelecido. Harness scripts/prancheta/validar-cadastro-filtros-browser.mjs validou componentes reais a 390/1366px com APIs exclusivamente sintéticas: editor geral, telefone legado preservado, filtros manuais, multiselect, página/filtros restaurados, zero overflow/erros JS; cadastro do número relatado e editor na Prancheta sem troca de identidade. Evidências sanitizadas em output/cadastro-*.png e cadastro-browser.json. Lint dirigido aprovado. Build de produção aprovado (exit 0), com os avisos globais existentes de middleware/renderização dinâmica. Typecheck global standalone mantém 15 erros preexistentes nos testes de autenticação/Hub; nenhum arquivo desta entrega. Diff-check dirigido aprovado. Histórico da cliente também passou a usar o nome registrado no atendimento, sem e-mail como fallback.
+
+Limites: nenhuma homologação autenticada/integrada em Supabase, operação comercial real, teste em iPhone físico, migration remota, commit/push/deploy nesta entrega. Caso histórico de rejeição não reproduzido; cadastro atual do número passou em UI/validação/SQL sintéticos, sem inventar sua causa original. D-025/D-026 preservadas; navegador utilizado somente em ambiente sintético local, sem credenciais. Workspace preexistente preservado.
+
+Próximo passo: apresentar candidato e resultados; aguardar autorização específica da janela de produção para migration/publicação e homologação integrada. Não reaplicar migrations antigas, não fazer repair nem novas exclusões.
+
+## Atendimentos Salvos / Situação da Venda — 19/10/2026 (publicado)
 
 Pedido inicial autorizou implementação/validação local. Em 19/10/2026 o usuário autorizou publicar: commit/push/deploy deste pacote. Base atual confirmada: 39f7687294d359cfe9ad61c3893c85484925f08c, produção dpl_5NgCf3SbRKuEpuiRhDZbQXuYxx2R READY, lebebe.cloud. Complexidade média, risco contido de leitura/paginação; sem mudança de conclusão/persistência/permissões.
 
@@ -26,7 +48,7 @@ Sem escrita comercial, migration, RLS/permissões, backfill/reclassificação, c
 
 Arquivos: registros/RegistrosPageClient.tsx e novo teste SSR; API atendimentos/route.ts e route.test.ts; lib/atendimento-presencial/registros.ts e novo situacao-venda.test.ts; STATUS/PLANO deste projeto. Alterações preexistentes preservadas.
 
-Pendências: homologação visual/mobile e caso individual autenticado; mantida limitação D-025/D-026 de não insistir no navegador bloqueado anteriormente. Publicação autorizada em preparação; confirmar commit remoto, READY e alias. Não declarar causa reproduzida nem homologação funcional concluída.
+Pendências: homologação visual/mobile e caso individual autenticado; mantida limitação D-025/D-026 de não insistir no navegador bloqueado anteriormente. PUBLICAÇÃO CONCLUÍDA: commit 57389d5a56ff631f17e432edd87c7ee479c926fe confirmado em refs/heads/main no origin; deployment dpl_Eqc86fZWWbfkmChqWpcDDqk2p4jZ / lebebe-g390etyxz-lebebes-projects.vercel.app READY/production com alias lebebe.cloud e aliasError null, confirmados via MCP. Oito arquivos do pacote, demais alterações preservadas. Sem migration. Versão anterior 39f7687294d359cfe9ad61c3893c85484925f08c / dpl_5NgCf3SbRKuEpuiRhDZbQXuYxx2R. Registro pós-deploy mantido localmente sem commit extra para evitar outro build. Não declarar causa reproduzida nem homologação funcional concluída.
 
 ## Correção pós-homologação D-030 (16/10/2026)
 

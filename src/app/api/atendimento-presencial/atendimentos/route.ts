@@ -1,3 +1,5 @@
+import { filtrarDadosListagem, lerFiltrosListagem, lerPaginas } from '@/lib/atendimento-presencial/filtros-listagem'
+import { normalizarNomeConsultora as nomeConsultoraCanonico } from '@/lib/atendimento-presencial/ficha-schema'
 import { NextResponse } from 'next/server'
 import { checkAccessWindowForUser } from '@/lib/auth/access-window'
 import { requireModuleAccess } from '@/lib/auth/module-access'
@@ -22,7 +24,7 @@ function jsonErro(message: string, status: number) {
 }
 
 function normalizarFiltroConsultora(valor: string | null) {
-  return normalizarTermoBusca(valor) || ''
+  return nomeConsultoraCanonico(valor)
 }
 
 async function carregarConsultorasFinalizados(
@@ -116,6 +118,8 @@ export async function GET(request: Request) {
     const loaded = await carregarContextoRegistros()
     if (!loaded.ok) return loaded.response
     const params = new URL(request.url).searchParams
+    let filtrosNovos
+    try { filtrosNovos = lerFiltrosListagem(params) } catch (error) { return jsonErro(error instanceof Error ? error.message : 'Filtros inválidos', 400) }
     const viradaCartaoDe = params.get('viradaCartaoDe') ?? params.get('viradaCartao')
     const viradaCartaoAte = params.get('viradaCartaoAte')
     const requestedPage = Number(params.get('page') ?? '1')
@@ -142,7 +146,7 @@ export async function GET(request: Request) {
       : null
     if (clienteIdsFiltrados?.erro) return clienteIdsFiltrados.erro
     if (clienteIdsFiltrados && clienteIdsFiltrados.ids.length === 0) {
-      return NextResponse.json({ ok: true, registros: [], consultoras, unidades, page: 1, pageSize: TABLE_PAGE_SIZE, total: 0 })
+      return NextResponse.json({ ok: true, registros: [], consultoras, unidades, page: 1, pageSize: TABLE_PAGE_SIZE, total: 0, clientesUnicos: 0, visitasNaoClientes: 0 })
     }
 
     let query = loaded.supabase
@@ -170,7 +174,7 @@ export async function GET(request: Request) {
       query = query.eq('consultora_usuario_id', loaded.contexto.usuarioId)
     } else if (loaded.contexto.perfil !== 'superadmin') {
       if (loaded.contexto.unidadesPermitidas.length === 0) {
-        return NextResponse.json({ ok: true, registros: [], consultoras, unidades, page: 1, pageSize: TABLE_PAGE_SIZE, total: 0 })
+        return NextResponse.json({ ok: true, registros: [], consultoras, unidades, page: 1, pageSize: TABLE_PAGE_SIZE, total: 0, clientesUnicos: 0, visitasNaoClientes: 0 })
       }
       query = query.in('unidade_id', loaded.contexto.unidadesPermitidas.map((unidade) => unidade.id))
     }
@@ -208,6 +212,22 @@ export async function GET(request: Request) {
         return true
       })
     }
+
+    const clientesBusca = (filtrosNovos.contato || filtrosNovos.telefoneCliente) && rows.some(row => row.cliente_id) ? await lerPaginas((de, ate) => loaded.supabase.from('atendimento_presencial_clientes').select('id, telefone_informado, telefone_normalizado').order('id').range(de, ate)) : []
+    const telefones = new Map(clientesBusca.map(c => [c.id, c.telefone_informado || c.telefone_normalizado || null]))
+    const [departamentosFiltro, motivosFiltro] = await Promise.all([
+      filtrosNovos.departamentos.length ? lerPaginas((de, ate) => loaded.supabase.from('atendimento_presencial_departamentos').select('atendimento_id').in('departamento', filtrosNovos.departamentos).order('id').range(de, ate)) : [],
+      filtrosNovos.motivos.length ? lerPaginas((de, ate) => loaded.supabase.from('atendimento_presencial_motivos').select('atendimento_id').in('motivo', filtrosNovos.motivos).order('id').range(de, ate)) : [],
+    ])
+    const departamentosIds = new Set(departamentosFiltro.map(item => item.atendimento_id))
+    const motivosIds = new Set(motivosFiltro.map(item => item.atendimento_id))
+    rows = rows.filter(row => filtrarDadosListagem({
+      data: row.iniciado_em, tipo: row.tipo_atendimento ?? (row.cliente_id ? 'cliente' : null), clienteId: row.cliente_id,
+      telefone: row.cliente_id ? telefones.get(row.cliente_id) ?? null : null,
+      numeroLancamento: row.numero_lancamento, motivoVisita: row.motivo_visita,
+    }, filtrosNovos) && (!filtrosNovos.departamentos.length || departamentosIds.has(row.id)) && (!filtrosNovos.motivos.length || motivosIds.has(row.id)))
+    const clientesUnicos = new Set(rows.map(row => row.cliente_id).filter(Boolean)).size
+    const visitasNaoClientes = rows.filter(row => row.tipo_atendimento === 'nao_cliente').length
     const total = rows.length
     const totalPages = Math.max(1, Math.ceil(total / TABLE_PAGE_SIZE))
     const currentPage = Math.min(page, totalPages)
@@ -246,6 +266,7 @@ export async function GET(request: Request) {
       ok: true,
       consultoras,
       unidades,
+      clientesUnicos, visitasNaoClientes,
       page: currentPage,
       pageSize: TABLE_PAGE_SIZE,
       total,
@@ -260,13 +281,14 @@ export async function GET(request: Request) {
         clienteTelefone: row.cliente_id ? clientesPorId.get(row.cliente_id)?.telefone ?? null : null,
         consultoraUsuarioId: row.consultora_usuario_id,
         consultoraEmail: consultorasPorId.get(row.consultora_usuario_id)?.email ?? 'Consultora nao localizada',
-        consultoraNomeManual: row.consultora_nome ?? null,
+        consultoraNomeManual: nomeConsultoraCanonico(row.consultora_nome) || null,
         unidadeId: row.unidade_id,
         unidadeNome: unidadesPorId.get(row.unidade_id)?.nome ?? 'Unidade nao localizada',
         resultadoAtendimento: row.resultado_atendimento,
         numeroLancamento: row.numero_lancamento ?? null,
         viradaCartaoDia: row.virada_cartao_dia ?? null,
         viradaCartaoMes: row.virada_cartao_mes ?? null,
+        iniciadoEm: row.iniciado_em,
         concluidoEm: row.concluido_em,
       })),
     })

@@ -193,7 +193,7 @@ describe('api atendimento presencial clientes', () => {
     )
 
     expect(response.status).toBe(200)
-    expect(builder.ilike).toHaveBeenCalledWith('origem_consultora_nome', 'Ana Clara')
+    expect(builder.ilike).toHaveBeenCalledWith('origem_consultora_nome', 'ANA CLARA')
   })
 
   it('escapa curingas em busca por nome', async () => {

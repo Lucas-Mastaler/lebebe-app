@@ -3,7 +3,7 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { requireAtendimentoPresencialClientesAccess } from '@/lib/atendimento-presencial/api-auth'
 import {
   serializarClientePresencial,
-  validarAtualizacaoTelefoneCliente,
+  validarAtualizacaoCliente,
   type ClientePresencialRow,
 } from '@/lib/atendimento-presencial/clientes'
 import { mascararTelefoneParaLog } from '@/lib/atendimento-presencial/telefone'
@@ -106,7 +106,7 @@ export async function PATCH(
       )
     }
 
-    const validacao = validarAtualizacaoTelefoneCliente(body)
+    const validacao = validarAtualizacaoCliente(body)
     if (!validacao.ok) {
       return NextResponse.json(
         { ok: false, message: validacao.message, field: validacao.field },
@@ -115,12 +115,12 @@ export async function PATCH(
     }
 
     const supabase = createServiceClient()
-    if (validacao.telefoneNormalizado) {
+    if (validacao.campos.telefone_normalizado) {
       const { data: existente, error: existenteError } = await supabase
         .from('atendimento_presencial_clientes')
         .select('id')
         .eq('status', 'ativo')
-        .eq('telefone_normalizado', validacao.telefoneNormalizado)
+        .eq('telefone_normalizado', validacao.campos.telefone_normalizado)
         .neq('id', id)
         .maybeSingle()
 
@@ -134,7 +134,7 @@ export async function PATCH(
 
       if (existente) {
         console.warn(
-          `[ATENDIMENTO PRESENCIAL CLIENTES] telefone duplicado=${mascararTelefoneParaLog(validacao.telefoneInformado)}`
+          `[ATENDIMENTO PRESENCIAL CLIENTES] telefone duplicado=${mascararTelefoneParaLog(validacao.campos.telefone_informado)}`
         )
         return NextResponse.json(
           { ok: false, message: 'Telefone ja cadastrado em outra cliente', field: 'telefone' },
@@ -146,9 +146,7 @@ export async function PATCH(
     const { data: atualizado, error: updateError } = await supabase
       .from('atendimento_presencial_clientes')
       .update({
-        telefone_informado: validacao.telefoneInformado,
-        telefone_normalizado: validacao.telefoneNormalizado,
-        telefone_normalizado_ddi: validacao.telefoneNormalizadoDDI,
+        ...validacao.campos,
         atualizado_por: auth.allowedUser.id,
       })
       .eq('id', id)
@@ -158,13 +156,13 @@ export async function PATCH(
       .maybeSingle()
 
     if (updateError) {
-      if (updateError.code === '23505' && validacao.telefoneNormalizado) {
+      if (updateError.code === '23505' && validacao.campos.telefone_normalizado) {
         return NextResponse.json(
           { ok: false, message: 'Telefone ja cadastrado em outra cliente', field: 'telefone' },
           { status: 409 }
         )
       }
-      console.error('[ATENDIMENTO PRESENCIAL CLIENTES] Erro ao atualizar telefone:', updateError)
+      console.error('[ATENDIMENTO PRESENCIAL CLIENTES] Erro ao atualizar cadastro:', updateError)
       return NextResponse.json(
         { ok: false, message: 'Erro ao processar requisicao' },
         { status: 500 }
@@ -189,7 +187,7 @@ export async function PATCH(
     }
 
     console.log(
-      `[ATENDIMENTO PRESENCIAL CLIENTES] telefone atualizado=${mascararTelefoneParaLog(validacao.telefoneInformado)} usuario=${auth.allowedUser.id}`
+      `[ATENDIMENTO PRESENCIAL CLIENTES] cadastro atualizado; telefone=${mascararTelefoneParaLog(validacao.campos.telefone_informado)} usuario=${auth.allowedUser.id}`
     )
 
     return NextResponse.json({
@@ -197,7 +195,7 @@ export async function PATCH(
       cliente: serializarClientePresencial(atualizado as unknown as ClientePresencialRow),
     })
   } catch (error) {
-    console.error('[ATENDIMENTO PRESENCIAL CLIENTES] Erro geral no PATCH de telefone:', error)
+    console.error('[ATENDIMENTO PRESENCIAL CLIENTES] Erro geral no PATCH do cadastro:', error)
     return NextResponse.json(
       { ok: false, message: 'Erro ao processar requisicao' },
       { status: 500 }

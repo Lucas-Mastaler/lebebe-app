@@ -14,7 +14,7 @@ import { ParentescoCriancaField } from './ParentescoCriancaField'
 import { getMotivoVisitaLabel } from '@/lib/atendimento-presencial/registros'
 import { requisicaoLimitada } from '@/lib/atendimento-presencial/requisicao-limitada'
 import { calcularReferenciaNascimento, criancaJaNasceu, dataAtendimentoLocal, descreverIdadeAproximada } from '@/lib/atendimento-presencial/idade-aproximada'
-import { AlertCircle, Baby, Check, ChevronLeft, ClipboardList, History, LoaderCircle, MessageSquareText, Plus, RefreshCw, Save, Search, ShoppingBag, UserRound, X } from 'lucide-react'
+import { AlertCircle, Baby, CalendarDays, Check, ChevronLeft, ClipboardList, History, LoaderCircle, MessageSquareText, Pencil, Plus, RefreshCw, Save, Search, ShoppingBag, UserRound, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   Dialog, DialogContent, DialogHeader, DialogFooter,
@@ -2116,12 +2116,39 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 erro={erroSecao('secao-crianca')}
               >
                 {ficha.criancas.map((crianca, index) => (
-                  (crianca.criancaPermanenteId || criancasConfirmadas.includes(crianca.id)) && !criancasEmEdicao.includes(crianca.id) ? <Card key={crianca.id} id={`crianca-selecionada-${crianca.id}`} tabIndex={-1} className="border-primary/30 bg-primary/5" data-crianca-selecionada><CardContent className="grid gap-2 p-3">
-                    <div className="flex items-start justify-between gap-3"><h3 title={crianca.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'} className="min-w-0 truncate text-[1.035rem] font-semibold text-slate-950">{crianca.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'}</h3><div className="flex shrink-0 items-center gap-1"><span role="status" className="flex items-center gap-1 text-xs font-semibold text-primary"><Check className="size-3.5" aria-hidden="true" />Selecionada</span><Button type="button" variant="ghost" size="icon" className="min-h-11 min-w-11" aria-label={`Remover seleção de ${crianca.nome?.toLocaleUpperCase('pt-BR') || 'criança sem nome informado'}`} onClick={() => removerCrianca(crianca.id)}><X className="size-4" aria-hidden="true" /></Button></div></div>
-                    <p className="text-sm text-muted-foreground">{crianca.parentesco}</p>
-                    {!crianca.criancaPermanenteId && <p className="text-xs text-muted-foreground">Incluída no rascunho. Cadastro permanente ao concluir.</p>}
-                    <Button type="button" variant="ghost" onClick={() => setCriancasEmEdicao(ids => [...ids, crianca.id])}>Alterar</Button>
-                    {crianca.dataReferenciaNascimento ? <div data-idade-estimada><p className="text-base font-semibold text-slate-950">{descreverIdadeAproximada(crianca.dataReferenciaNascimento)}</p><p className="text-xs text-muted-foreground">Referência estimada: {formatarDataISOParaInput(crianca.dataReferenciaNascimento)}</p></div> : <p className="text-sm text-muted-foreground">{crianca.dataPrevistaNascimento ? `Previsão informada: ${formatarDataISOParaInput(crianca.dataPrevistaNascimento)}` : crianca.idadeValor ? `Idade informada: ${crianca.idadeValor} ${crianca.idadeUnidade}` : 'Nascimento não informado'}</p>}
+                  (crianca.criancaPermanenteId || criancasConfirmadas.includes(crianca.id)) && !criancasEmEdicao.includes(crianca.id) ? <Card key={crianca.id} id={`crianca-selecionada-${crianca.id}`} tabIndex={-1} className="overflow-hidden border-primary/30 bg-white shadow-sm" data-crianca-selecionada><CardContent className="grid gap-3 p-4">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <h3 title={crianca.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'} className="min-w-0 break-words text-base font-bold text-slate-950">{crianca.nome?.toLocaleUpperCase('pt-BR') || 'Nome não informado'}</h3>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Badge tone="success"><Check className="mr-1 size-3.5" aria-hidden="true" />Selecionada</Badge>
+                        <Button type="button" variant="ghost" size="icon" className="min-h-11 min-w-11" aria-label={`Remover seleção de ${crianca.nome?.toLocaleUpperCase('pt-BR') || 'criança sem nome informado'}`} onClick={() => removerCrianca(crianca.id)}><X className="size-4" aria-hidden="true" /></Button>
+                      </div>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+                        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><UserRound className="size-3.5" aria-hidden="true" />Parentesco</p>
+                        <p className="mt-1 font-semibold text-slate-900">{crianca.parentesco || 'Não informado'}</p>
+                      </div>
+                      {crianca.dataReferenciaNascimento ? (
+                        <div data-idade-estimada className="rounded-lg border border-sky-200 bg-sky-50/80 px-3 py-2">
+                          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-sky-800"><CalendarDays className="size-3.5" aria-hidden="true" />Idade aproximada</p>
+                          <p className="mt-1 font-semibold text-slate-950">{descreverIdadeAproximada(crianca.dataReferenciaNascimento)}</p>
+                          <p className="text-xs text-slate-600">Referência estimada: {formatarDataISOParaInput(crianca.dataReferenciaNascimento)}</p>
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+                          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><CalendarDays className="size-3.5" aria-hidden="true" />Nascimento e idade</p>
+                          <p className="mt-1 font-semibold text-slate-900">{crianca.dataPrevistaNascimento ? `Previsão informada: ${formatarDataISOParaInput(crianca.dataPrevistaNascimento)}` : crianca.idadeValor ? `Idade informada: ${crianca.idadeValor} ${crianca.idadeUnidade}` : 'Não informado'}</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
+                      {!crianca.criancaPermanenteId ? <p className="text-xs text-muted-foreground">Incluída no rascunho; cadastro permanente ao concluir.</p> : <span />}
+                      <Button type="button" variant="secondary" onClick={() => setCriancasEmEdicao(ids => [...ids, crianca.id])}>
+                        <Pencil className="size-4" aria-hidden="true" />
+                        Alterar dados
+                      </Button>
+                    </div>
                   </CardContent></Card> :
                   <Card key={crianca.id}>
                     <CardContent className="p-4">

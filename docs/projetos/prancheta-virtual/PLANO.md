@@ -18,7 +18,7 @@ Plano aprovado expressamente pelo usuário; execução local autorizada. Banco r
 - [x] Build de produção aprovado; typecheck global com 15 falhas preexistentes fora do escopo e nenhum erro nesta entrega; diff dirigido aprovado.
 - [ ] Homologação autenticada/integrada do candidato e em dispositivos físicos; depende do procedimento autorizado, sem contornar D-025/D-026.
 - [x] Aplicação remota autorizada D-032: 20261019145305, banco real reconferido, novos registros e hashes preservados; recarregar formulários.
-- [ ] Commit/push/publicação mediante autorização específica; produção atual preservada.
+- [x] Commit/push/publicação autorizados D-032: 0c966f5 em origin/main; Vercel READY/production, alias lebebe.cloud confirmado.
 
 ## Atendimentos Salvos / Situação da Venda — 19/10/2026
 

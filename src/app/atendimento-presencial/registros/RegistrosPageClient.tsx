@@ -7,7 +7,7 @@ import { FiltrosAdicionaisAtendimento } from '@/components/atendimento-presencia
 import { FILTROS_ADICIONAIS, type FiltrosAdicionais } from '@/lib/atendimento-presencial/filtros-listagem'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ClipboardList, History, Loader2, Pencil, Plus, RefreshCw, Save, X } from 'lucide-react'
+import { Baby, CalendarDays, ClipboardList, Eye, Heart, History, Loader2, Package, Pencil, Phone, Plus, RefreshCw, Save, UserRound, X } from 'lucide-react'
 import {
   Alert,
   Badge,
@@ -265,6 +265,9 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   const [paginaRegistros, setPaginaRegistros] = useState(1)
   const [totalRegistros, setTotalRegistros] = useState(0)
   const [selecionado, setSelecionado] = useState<RegistroDetalhe | null>(null)
+  const [detalheAberto, setDetalheAberto] = useState(false)
+  const [resumoCarregamento, setResumoCarregamento] = useState<RegistroResumoDTO | null>(null)
+  const [erroDetalhe, setErroDetalhe] = useState<string | null>(null)
   const [carregando, setCarregando] = useState(false)
   const [carregandoDetalhe, setCarregandoDetalhe] = useState(false)
   const [carregandoEdicaoId, setCarregandoEdicaoId] = useState<string | null>(null)
@@ -384,16 +387,20 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
 
   async function carregarDetalhe(id: string, options?: { preservarMensagemEdicao?: boolean }) {
     setCarregandoDetalhe(true)
+    setErroDetalhe(null)
     setErro(null)
     try {
       const detalhe = await buscarDetalhe(id)
       setSelecionado(detalhe)
+      setResumoCarregamento(null)
       setEdicaoAberta(false)
       setFichaEdicao(null)
       if (!options?.preservarMensagemEdicao) setMensagemEdicao(null)
       setErroEdicao(null)
     } catch (error) {
-      setErro(error instanceof Error ? error.message : 'Erro ao carregar atendimento')
+      const mensagem = error instanceof Error ? error.message : 'Erro ao carregar atendimento'
+      setErroDetalhe(mensagem)
+      setErro(mensagem)
     } finally {
       setCarregandoDetalhe(false)
     }
@@ -411,6 +418,13 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     } finally {
       setCarregandoEdicaoId(null)
     }
+  }
+
+  async function verAtendimento(id: string) {
+    setResumoCarregamento(registros.find((registro) => registro.id === id) ?? null)
+    setDetalheAberto(true)
+    setSelecionado(null)
+    await carregarDetalhe(id)
   }
 
   const selecionadoNaoCliente = selecionado ? registroNaoCliente(selecionado.atendimento) : false
@@ -690,7 +704,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
         </SegmentedTabsList>
 
         <TabsContent value="finalizados">
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
+          <div className="grid gap-5">
             <Card>
               <CardHeader icon={<ClipboardList className="size-4" aria-hidden="true" />} title="Concluídos" />
               <CardContent className="space-y-4">
@@ -757,7 +771,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                     </FormField>
                   </FilterFieldGroup>
 
-                  <FilterFieldGroup label="Virada do cartão">
+                  <FilterFieldGroup label="Virada do cartão" className="border-t border-slate-200 pt-4">
                     <FormField id="filtro-virada-cartao-de" label="De" helper="DD/MM">
                       {(field) => (
                         <Input
@@ -802,11 +816,11 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                     />
                   )}
                   {registros.map((registro) => (
-                    <Card key={registro.id}>
+                    <Card key={registro.id} className="overflow-hidden border-sky-200 shadow-sm transition-shadow hover:shadow-md">
                       <button
                         type="button"
-                        onClick={() => void carregarDetalhe(registro.id)}
-                        className="w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                        onClick={() => void verAtendimento(registro.id)}
+                        className="block w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                       >
                         <CardHeader
                           title={registro.clienteNome}
@@ -816,18 +830,61 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                             <Badge tone={registroNaoCliente(registro) ? 'neutral' : situacaoVendaRegistro(registro.resultadoAtendimento).tone}>{registroNaoCliente(registro) ? 'Não cliente' : situacaoVendaRegistro(registro.resultadoAtendimento).label}</Badge>
                           </span>}
                         />
-                        <CardContent className="space-y-1">
-                          {registroSemTelefone(registro) && <p className="rounded-md border border-destructive bg-red-50 p-3 text-lg font-bold text-destructive">SEM TELEFONE</p>}
-                          {registroNaoCliente(registro) && <p className="text-sm text-slate-600">Motivo da visita: {getMotivoVisitaLabel(registro.motivoVisita)}</p>}
-                          {registro.consultoraNomeManual && <p className="text-sm text-slate-600"><strong>Consultora do atendimento:</strong> {registro.consultoraNomeManual}</p>}
-                          <p className="text-sm text-slate-600"><strong>Início:</strong> {formatarData(registro.iniciadoEm ?? null)}</p>
-                          <p className="text-sm text-slate-600"><strong>Salvo em:</strong> {formatarData(registro.concluidoEm)}</p>
-                          {!registroNaoCliente(registro) && registro.clienteTelefone && <p className="text-sm text-slate-600"><strong>Telefone:</strong> {registro.clienteTelefone}</p>}
-                          {registro.numeroLancamento && <p className="text-sm text-slate-600"><strong>Lançamento:</strong> {registro.numeroLancamento}</p>}
-                          {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes) && <p className="text-sm text-slate-600"><strong>Virada do cartão:</strong> {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes)}</p>}
+                        <CardContent className="space-y-3 pt-0">
+                          {registroSemTelefone(registro) && <p className="rounded-lg border border-destructive/30 bg-red-50 px-3 py-2 text-sm font-bold text-destructive">Sem telefone cadastrado</p>}
+                          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><UserRound className="size-3.5" aria-hidden="true" />Consultora do atendimento</p>
+                              <p className="mt-1 font-semibold text-slate-900">{registro.consultoraNomeManual || 'Não informada'}</p>
+                            </div>
+                            {registroNaoCliente(registro) ? (
+                              <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3">
+                                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-sky-800"><Heart className="size-3.5" aria-hidden="true" />Motivo da visita</p>
+                                <p className="mt-1 font-semibold text-slate-900">{getMotivoVisitaLabel(registro.motivoVisita)}</p>
+                              </div>
+                            ) : (
+                              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><CalendarDays className="size-3.5" aria-hidden="true" />Início do atendimento</p>
+                                <p className="mt-1 font-semibold text-slate-900">{formatarData(registro.iniciadoEm ?? null)}</p>
+                              </div>
+                            )}
+                            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><History className="size-3.5" aria-hidden="true" />Salvo em</p>
+                              <p className="mt-1 font-semibold text-slate-900">{formatarData(registro.concluidoEm)}</p>
+                            </div>
+                            {!registroNaoCliente(registro) && registro.clienteTelefone && (
+                              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><Phone className="size-3.5" aria-hidden="true" />Telefone</p>
+                                <p className="mt-1 font-semibold text-slate-900">{registro.clienteTelefone}</p>
+                              </div>
+                            )}
+                            {registro.numeroLancamento && (
+                              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><ClipboardList className="size-3.5" aria-hidden="true" />Número do lançamento</p>
+                                <p className="mt-1 font-semibold text-slate-900">{registro.numeroLancamento}</p>
+                              </div>
+                            )}
+                            {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes) && (
+                              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><CalendarDays className="size-3.5" aria-hidden="true" />Virada do cartão</p>
+                                <p className="mt-1 font-semibold text-slate-900">{formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes)}</p>
+                              </div>
+                            )}
+                          </div>
                         </CardContent>
                       </button>
-                      <div className="px-4 pb-4">
+                      <div className="grid gap-2 border-t border-slate-100 bg-slate-50/60 px-4 py-3 sm:grid-cols-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => void verAtendimento(registro.id)}
+                          disabled={carregandoDetalhe}
+                          size="lg"
+                          className="w-full"
+                        >
+                          <Eye className="size-4" aria-hidden="true" />
+                          Ver atendimento
+                        </Button>
                         <Button
                           type="button"
                           onClick={() => void editarAtendimentoCard(registro.id)}
@@ -863,15 +920,41 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
               </CardContent>
             </Card>
 
-            <Card className="h-fit">
-              <CardHeader icon={<ClipboardList className="size-4" aria-hidden="true" />} title="Detalhe" />
-              <CardContent className="space-y-4 text-sm text-slate-700">
+            <Dialog open={detalheAberto} onOpenChange={setDetalheAberto}>
+              <DialogContent className="w-[96vw] max-w-[96vw] max-h-[90dvh] sm:max-w-[72rem]">
+                <DialogHeader
+                  title={selecionado?.cliente?.nome ? `Atendimento — ${selecionado.cliente.nome}` : selecionado ? 'Atendimento — Não cliente' : 'Atendimento'}
+                  description="Dados salvos deste atendimento"
+                />
+                <DialogBody className="space-y-4 bg-slate-50/70 text-sm text-slate-700 sm:space-y-5">
+                {erroDetalhe && <Alert tone="danger">Não foi possível carregar os dados completos: {erroDetalhe}</Alert>}
                 {carregandoDetalhe && (
-                  <div role="status" className="p-4 text-center">
-                    <Spinner label="Carregando atendimento" />
+                  <div className="space-y-4">
+                    {resumoCarregamento && (
+                      <div className="rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 via-white to-info/10 p-4 sm:p-5">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-wide text-primary">Resumo do atendimento</p>
+                            <p className="mt-1 text-lg font-bold text-slate-950">{resumoCarregamento.clienteNome}</p>
+                          </div>
+                          <Badge tone={registroNaoCliente(resumoCarregamento) ? 'neutral' : situacaoVendaRegistro(resumoCarregamento.resultadoAtendimento).tone}>
+                            {registroNaoCliente(resumoCarregamento) ? 'Não cliente' : situacaoVendaRegistro(resumoCarregamento.resultadoAtendimento).label}
+                          </Badge>
+                        </div>
+                        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                          <div className="rounded-xl border border-white bg-white/80 p-3"><p className="text-xs font-semibold text-slate-500">Consultora do atendimento</p><p className="mt-1 font-semibold text-slate-900">{resumoCarregamento.consultoraNomeManual ?? 'Não informada'}</p></div>
+                          <div className="rounded-xl border border-white bg-white/80 p-3"><p className="text-xs font-semibold text-slate-500">Filial</p><p className="mt-1 font-semibold text-slate-900">{resumoCarregamento.unidadeNome}</p></div>
+                          <div className="rounded-xl border border-white bg-white/80 p-3"><p className="text-xs font-semibold text-slate-500">Início</p><p className="mt-1 font-semibold text-slate-900">{formatarData(resumoCarregamento.iniciadoEm ?? null)}</p></div>
+                        </div>
+                      </div>
+                    )}
+                    <div role="status" className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-slate-600">
+                      <Spinner label="Carregando dados completos do atendimento" />
+                      <span>Buscando ficha, interesses e histórico…</span>
+                    </div>
                   </div>
                 )}
-                {!carregandoDetalhe && !selecionado && (
+                {!carregandoDetalhe && !selecionado && !erroDetalhe && (
                   <EmptyState
                     icon={<ClipboardList className="size-5" aria-hidden="true" />}
                     title="Nenhum atendimento selecionado"
@@ -880,111 +963,127 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                 )}
                 {!carregandoDetalhe && selecionado && (
                   <>
-                    <div>
-                      <p className="text-xs font-bold uppercase text-slate-500">{selecionadoNaoCliente ? 'Tipo de atendimento' : 'Situação da Venda'}</p>
-                      <p className="font-semibold text-slate-950">{selecionadoNaoCliente ? 'Não cliente' : situacaoVendaRegistro(selecionado.atendimento.resultadoAtendimento).label}</p>
-                      {selecionadoNaoCliente && <p>Motivo da visita: {getMotivoVisitaLabel(selecionado.atendimento.motivoVisita)}</p>}
-                      {selecionado.atendimento.numeroLancamento && <p>Lancamento {selecionado.atendimento.numeroLancamento}</p>}
-                      {formatarViradaCartao(selecionado.atendimento.viradaCartaoDia, selecionado.atendimento.viradaCartaoMes) && (
-                        <p>Virada do cartao {formatarViradaCartao(selecionado.atendimento.viradaCartaoDia, selecionado.atendimento.viradaCartaoMes)}</p>
-                      )}
-                      {selecionado.podeEditar ? (
-                        <Button type="button" variant="secondary" className="mt-3" onClick={() => abrirEdicao(selecionado)}>
-                          Editar atendimento
-                        </Button>
-                      ) : (
-                        <Alert tone="info" className="mt-3">
-                          {selecionado.motivoBloqueio ?? 'Voce nao possui permissao para editar este atendimento.'}
-                        </Alert>
-                      )}
-                      {mensagemEdicao && !edicaoAberta && (
-                        <Alert tone="success" className="mt-3">{mensagemEdicao}</Alert>
-                      )}
-                    </div>
-                    {!selecionadoNaoCliente && <div>
-                      <p className="text-xs font-bold uppercase text-slate-500">Cliente</p>
-                      {registroSemTelefone({ ...selecionado.atendimento, clienteTelefone: selecionado.cliente?.telefone ?? null }) && <p className="rounded-md border border-destructive bg-red-50 p-3 text-lg font-bold text-destructive">SEM TELEFONE</p>}
-                      {selecionado.cliente ? (
-                        <>
-                          <p className="font-semibold text-slate-950">{selecionado.cliente.nome}</p>
-                          {selecionado.cliente.telefone && <p>{selecionado.cliente.telefone}</p>}
-                          <Button type="button" variant="secondary" onClick={abrirHistoricoClienteSelecionada} className="mt-3">
-                            <History className="size-4" aria-hidden="true" />
-                            Ver historico
+                    <div className="rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 via-white to-info/10 p-4 sm:p-5">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-wide text-primary">Resumo do atendimento</p>
+                          <p className="mt-1 text-lg font-bold text-slate-950">{selecionado.cliente?.nome ?? 'Atendimento sem cliente vinculado'}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge tone={selecionadoNaoCliente ? 'neutral' : situacaoVendaRegistro(selecionado.atendimento.resultadoAtendimento).tone}>
+                            {selecionadoNaoCliente ? 'Não cliente' : situacaoVendaRegistro(selecionado.atendimento.resultadoAtendimento).label}
+                          </Badge>
+                          {!selecionadoNaoCliente && <Badge tone="brand">Cliente</Badge>}
+                        </div>
+                      </div>
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="rounded-xl border border-white bg-white/80 p-3"><p className="text-xs font-semibold text-slate-500">Consultora do atendimento</p><p className="mt-1 font-semibold text-slate-900">{selecionado.atendimento.consultoraNomeManual ?? 'Não informada'}</p></div>
+                        <div className="rounded-xl border border-white bg-white/80 p-3"><p className="text-xs font-semibold text-slate-500">Filial</p><p className="mt-1 font-semibold text-slate-900">{resumoSelecionado?.unidadeNome ?? selecionado.atendimento.unidadeId}</p></div>
+                        <div className="rounded-xl border border-white bg-white/80 p-3"><p className="text-xs font-semibold text-slate-500">Início</p><p className="mt-1 font-semibold text-slate-900">{formatarData(selecionado.atendimento.iniciadoEm ?? null)}</p></div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        {selecionado.atendimento.numeroLancamento && <Badge tone="info">Lançamento {selecionado.atendimento.numeroLancamento}</Badge>}
+                        {formatarViradaCartao(selecionado.atendimento.viradaCartaoDia, selecionado.atendimento.viradaCartaoMes) && <Badge tone="neutral">Virada do cartão · {formatarViradaCartao(selecionado.atendimento.viradaCartaoDia, selecionado.atendimento.viradaCartaoMes)}</Badge>}
+                        <span className="text-xs text-slate-500">Salvo em {formatarData(selecionado.atendimento.concluidoEm ?? null)}</span>
+                      </div>
+                      <div className="mt-4 flex flex-wrap items-center gap-3">
+                        {selecionado.podeEditar ? (
+                          <Button type="button" onClick={() => abrirEdicao(selecionado)}>
+                            <Pencil className="size-4" aria-hidden="true" />
+                            Editar atendimento
                           </Button>
-                        </>
-                      ) : (
-                        <p>Cliente nao localizada</p>
-                      )}
-                    </div>}
-                    <div>
-                      <p className="text-xs font-bold uppercase text-slate-500">Consultora do atendimento</p>
-                      <p>{selecionado.atendimento.consultoraNomeManual ?? 'Nao informado'}</p>
-                    </div>
-                    {!selecionadoNaoCliente && <>
-                    <div>
-                      <p className="text-xs font-bold uppercase text-slate-500">Departamentos</p>
-                      <p>{selecionado.departamentos.map((item) => getDepartamentoLabel(item.departamento as DepartamentoInteresse)).join(', ') || 'Nao informado'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold uppercase text-slate-500">Produtos</p>
-                      <p>{selecionado.produtosInteresse.map((item) => item.descricao).join(', ') || 'Nao informado'}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold uppercase text-slate-500">Motivos</p>
-                      <p>{selecionado.motivos.map((item) => item.complemento ? `${getMotivoLabel(item.motivo)}: ${item.complemento}` : getMotivoLabel(item.motivo)).join(', ')}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold uppercase text-slate-500">Criancas</p>
-                      {selecionado.criancas.length === 0 ? (
-                        <p>Nao informado</p>
-                      ) : (
-                        <div className="mt-2 grid gap-2">
-                          {selecionado.criancas.map((crianca) => (
-                            <div key={crianca.id} className="rounded-md border border-slate-200 p-3">
-                              <p className="font-semibold text-slate-950">{crianca.nome || (crianca.nome_nao_informado ? 'Nome nao informado' : crianca.situacao)}</p>
-                              {crianca.parentesco_vinculo && <p className="text-sm">{crianca.parentesco_vinculo}</p>}
-                              {crianca.data_referencia_nascimento && <p className="text-sm">{descreverIdadeAproximada(crianca.data_referencia_nascimento)} · referência estimada {formatarDataISOParaInput(crianca.data_referencia_nascimento)}</p>}
-                              <p>{crianca.idade_valor ? `${crianca.idade_valor} ${crianca.idade_unidade}` : crianca.data_prevista_nascimento || crianca.sexo || 'Sem detalhe adicional'}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    </>}
-                    {selecionado.atendimento.observacaoNaoFechamento != null && (
-                      <div>
-                        <p className="text-xs font-bold uppercase text-slate-500">Observação de não fechamento</p>
-                        <p className="whitespace-pre-wrap">{selecionado.atendimento.observacaoNaoFechamento || 'Sem observação'}</p>
+                        ) : (
+                          <Alert tone="info" className="py-2">{selecionado.motivoBloqueio ?? 'Você não possui permissão para editar este atendimento.'}</Alert>
+                        )}
+                        {mensagemEdicao && !edicaoAberta && <Alert tone="success" className="py-2">{mensagemEdicao}</Alert>}
                       </div>
-                    )}
-                    <div>
-                      <p className="text-xs font-bold uppercase text-slate-500">Observacoes</p>
-                      <p className="whitespace-pre-wrap">{normalizarObservacoesRegistro(selecionado.atendimento) ?? 'Sem observacoes'}</p>
                     </div>
-                    {selecionado.historico.length > 0 && (
-                      <div>
-                        <p className="text-xs font-bold uppercase text-slate-500">Historico</p>
-                        <div className="mt-2 grid gap-2">
-                          {selecionado.historico.map((item) => {
-                            const campos = Array.isArray(item.snapshot?.camposAlterados) ? item.snapshot.camposAlterados.join(', ') : null
-                            return (
-                              <div key={item.id} className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                                <p className="font-semibold text-slate-900">{item.acao === 'editado_concluido' ? 'Atendimento editado' : 'Atendimento concluido'}</p>
-                                <p>{formatarData(item.created_at)}</p>
-                                <p>{item.perfil ?? item.role ?? 'Perfil nao informado'}</p>
-                                {campos && <p>Campos alterados: {campos}</p>}
-                                {descreverContratoHistorico(item.snapshot).map((linha, index) => <p key={index} className="whitespace-pre-wrap">{linha}</p>)}
+
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                      {selecionadoNaoCliente ? (
+                        <Section title="Dados da visita" description="Informações registradas pela consultora" icon={<CalendarDays className="size-4" aria-hidden="true" />} tone="section-1">
+                          <div className="rounded-lg border border-white bg-white/80 p-3">
+                            <p className="text-xs font-semibold text-slate-500">Motivo da visita</p>
+                            <p className="mt-1 font-semibold text-slate-900">{getMotivoVisitaLabel(selecionado.atendimento.motivoVisita)}</p>
+                          </div>
+                        </Section>
+                      ) : (
+                        <>
+                          <Section title="Cliente" description="Cadastro vinculado ao atendimento" icon={<UserRound className="size-4" aria-hidden="true" />} tone="section-1">
+                            {registroSemTelefone({ ...selecionado.atendimento, clienteTelefone: selecionado.cliente?.telefone ?? null }) && <Alert tone="warning" title="Sem telefone cadastrado" />}
+                            {selecionado.cliente ? (
+                              <>
+                                <p className="text-base font-semibold text-slate-950">{selecionado.cliente.nome}</p>
+                                <p className="flex items-center gap-2 text-slate-600"><Phone className="size-4 text-slate-400" aria-hidden="true" />{selecionado.cliente.telefone ?? 'Sem telefone'}</p>
+                                <Button type="button" variant="secondary" onClick={abrirHistoricoClienteSelecionada}>
+                                  <History className="size-4" aria-hidden="true" />
+                                  Ver histórico da cliente
+                                </Button>
+                              </>
+                            ) : <p className="text-slate-600">Cliente não localizada.</p>}
+                          </Section>
+                          {selecionado.criancas.length > 0 && (
+                            <Section title="Crianças" description={`${selecionado.criancas.length} vinculada${selecionado.criancas.length === 1 ? '' : 's'} à ficha`} icon={<Baby className="size-4" aria-hidden="true" />} tone="section-2">
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                {selecionado.criancas.map((crianca) => (
+                                  <article key={crianca.id} className="rounded-xl border border-white bg-white/85 p-3 shadow-sm">
+                                    <p className="font-semibold text-slate-950">{crianca.nome || (crianca.nome_nao_informado ? 'Nome não informado' : crianca.situacao)}</p>
+                                    {crianca.parentesco_vinculo && <p className="mt-1 text-sm text-slate-600"><strong>Parentesco:</strong> {crianca.parentesco_vinculo}</p>}
+                                    {crianca.data_referencia_nascimento ? (
+                                      <div className="mt-2 rounded-lg bg-sky-50 px-3 py-2">
+                                        <p className="font-semibold text-slate-900">{descreverIdadeAproximada(crianca.data_referencia_nascimento)}</p>
+                                        <p className="text-xs text-slate-600">Referência estimada: {formatarDataISOParaInput(crianca.data_referencia_nascimento)}</p>
+                                      </div>
+                                    ) : (
+                                      <p className="mt-1 text-sm text-slate-600">{crianca.idade_valor ? `Idade informada: ${crianca.idade_valor} ${crianca.idade_unidade}` : crianca.data_prevista_nascimento ? `Previsão informada: ${formatarDataISOParaInput(crianca.data_prevista_nascimento)}` : crianca.sexo || 'Sem detalhe adicional'}</p>
+                                    )}
+                                  </article>
+                                ))}
                               </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
+                            </Section>
+                          )}
+                          <Section title="Departamentos e produtos" description="Interesses registrados no atendimento" icon={<Package className="size-4" aria-hidden="true" />} tone="section-3">
+                            <div>
+                              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Departamentos</p>
+                              <div className="flex flex-wrap gap-2">{selecionado.departamentos.length ? selecionado.departamentos.map((item) => <Badge key={item.id} tone="brand">{getDepartamentoLabel(item.departamento as DepartamentoInteresse)}</Badge>) : <p className="text-slate-500">Nenhum departamento informado.</p>}</div>
+                            </div>
+                            {selecionado.produtosInteresse.length > 0 && <div className="border-t border-slate-200 pt-3"><p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Produtos de interesse</p><ul className="grid gap-1 sm:grid-cols-2">{selecionado.produtosInteresse.map((item) => <li key={item.id} className="rounded-lg border border-white bg-white/80 px-3 py-2 font-medium text-slate-800">{item.descricao}</li>)}</ul></div>}
+                          </Section>
+                        </>
+                      )}
+                      <Section title="Observações" description="Anotações registradas neste atendimento" icon={<ClipboardList className="size-4" aria-hidden="true" />} tone="section-1">
+                        {selecionado.atendimento.observacaoNaoFechamento != null && <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3"><p className="text-xs font-semibold text-amber-900">Observação de não fechamento</p><p className="mt-1 whitespace-pre-wrap text-slate-700">{selecionado.atendimento.observacaoNaoFechamento || 'Sem observação'}</p></div>}
+                        <p className="whitespace-pre-wrap rounded-lg border border-white bg-white/80 p-3 text-slate-700">{normalizarObservacoesRegistro(selecionado.atendimento) ?? 'Sem observações'}</p>
+                      </Section>
+                      {!selecionadoNaoCliente && (
+                        <Section title="Motivos" description="Razões registradas para o resultado" icon={<Heart className="size-4" aria-hidden="true" />} tone="section-2">
+                          {selecionado.motivos.length > 0 ? <div className="flex flex-wrap gap-2">{selecionado.motivos.map((item) => <Badge key={item.id} tone="warning">{item.complemento ? `${getMotivoLabel(item.motivo)}: ${item.complemento}` : getMotivoLabel(item.motivo)}</Badge>)}</div> : <p className="text-slate-500">Nenhum motivo adicional informado.</p>}
+                        </Section>
+                      )}
+                      {selecionado.historico.length > 0 && (
+                        <Section title="Histórico" description={`${selecionado.historico.length} registro${selecionado.historico.length === 1 ? '' : 's'} de alteração`} icon={<History className="size-4" aria-hidden="true" />} tone="section-3">
+                          <div className="space-y-3 border-l-2 border-primary/20 pl-4">
+                            {selecionado.historico.map((item) => {
+                              const campos = Array.isArray(item.snapshot?.camposAlterados) ? item.snapshot.camposAlterados.join(', ') : null
+                              const editado = item.acao === 'editado_concluido'
+                              return (
+                                <article key={item.id} className="relative rounded-xl border border-slate-200 bg-white p-3 shadow-sm before:absolute before:-left-[1.35rem] before:top-4 before:size-2.5 before:rounded-full before:border-2 before:border-primary before:bg-white">
+                                  <div className="flex flex-wrap items-center justify-between gap-2"><Badge tone={editado ? 'info' : 'success'}>{editado ? 'Atendimento editado' : 'Atendimento concluído'}</Badge><time className="text-xs text-slate-500">{formatarData(item.created_at)}</time></div>
+                                  <p className="mt-2 text-xs font-semibold text-slate-500">{item.perfil ?? item.role ?? 'Perfil não informado'}</p>
+                                  {campos && <p className="mt-1 text-sm"><strong>Campos alterados:</strong> {campos}</p>}
+                                  {descreverContratoHistorico(item.snapshot).map((linha, index) => <p key={index} className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{linha}</p>)}
+                                </article>
+                              )
+                            })}
+                          </div>
+                        </Section>
+                      )}
+                    </div>
                   </>
                 )}
-              </CardContent>
-            </Card>
+                </DialogBody>
+              </DialogContent>
+            </Dialog>
           </div>
         </TabsContent>
 
@@ -1057,7 +1156,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       />
 
       <Dialog open={edicaoAberta} onOpenChange={(open) => { if (!open) setEdicaoAberta(false) }}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="w-[96vw] max-w-[96vw] max-h-[90dvh] sm:max-w-[80rem]">
           <DialogHeader
             title={
               <>

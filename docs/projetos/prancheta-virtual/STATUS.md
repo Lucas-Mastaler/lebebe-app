@@ -2,7 +2,7 @@
 
 Projeto: prancheta-virtual
 Estado: EM_EXECUCAO
-Fase atual: Cadastro, filtros e rascunhos D-031; migration D-032 aplicada, publicação em andamento
+Fase atual: D-031 publicado por D-032; ajustes visuais do modal e redução de espera preparados localmente
 Atualizado em: 19/10/2026
 
 ## Publicação autorizada D-032 — 19/10/2026
@@ -11,21 +11,30 @@ Usuário autorizou migration e deploy após interrupção do preenchimento. MCP 
 
 Antes/depois: 132 atendimentos e 86 clientes, incluindo os novos. Hash dos dados de negócio preservado: atendimentos 28763b6eda614f554c5370d6ef3b4718; clientes 7ca9a965c38772bad96a2bbd5edfff4a. Desconsideradas somente consultora, versão e updated_at conforme backfill aprovado; telefones, vínculos, conteúdo, datas operacionais e expiração preservados. Normalização alterou versões de 128 atendimentos e 82 clientes. Todos os triggers habilitados, inclusive origem restabelecido; zero consultoras não canônicas. Funções novas SECURITY INVOKER, search_path fixo e execução postgres/service_role. Formulários abertos devem ser recarregados após publicar.
 
-Base remota/produção confirmada: 57389d5a56ff631f17e432edd87c7ee479c926fe / dpl_Eqc86fZWWbfkmChqWpcDDqk2p4jZ. Commit/push/deploy do pacote em andamento. Validações locais D-031 preservadas; nenhuma homologação comercial autenticada ou iPhone físico declarada.
+Base remota/produção confirmada: 57389d5a56ff631f17e432edd87c7ee479c926fe / dpl_Eqc86fZWWbfkmChqWpcDDqk2p4jZ. PUBLICAÇÃO CONCLUÍDA D-032: commit 0c966f542f6c7f9b13412aafe97ad636e4b7d162 confirmado em origin/main; deployment dpl_CGXc1jUBX11YtGR9Hk23JhGCKBaz / lebebe-h4k1is7iq-lebebes-projects.vercel.app READY/production, alias lebebe.cloud sem aliasError, SHA confirmado via MCP. Build remoto concluído. Publicados 38 arquivos da allowlist; demais alterações preservadas. Sem homologação comercial autenticada ou iPhone físico. Registro pós-deploy local, sem commit extra apenas para disparar outro build. Validações locais D-031 preservadas.
 
-## Cadastro, filtros e rascunhos — D-031 (19/10/2026, local)
+## Cadastro, filtros e rascunhos — D-031 (19/10/2026, publicado D-032)
 
 Plano aprovado e execução local expressamente autorizada. Implementados editor compartilhado (nome/telefone) na Prancheta e Clientes, PATCH parcial com versão/duplicidade, aviso de telefone legado, regra BR específica das novas escritas e máscara sem cortar excedentes. Normalizador genérico de outros módulos preservado. Nomes da consultora canônicos em maiúsculas/trim/espaços, nomenclatura Consultora do atendimento e leitores/sugestões/filtros coerentes.
 
 Listagens aplicam filtros antes das contagens/paginação. Salvos: início em São Paulo, virada independente, tipo, telefone, lançamento exato, Com/Sem telefone pela presença, departamentos/motivos múltiplos e visita. Contagens de atendimentos/clientes únicos/Não clientes. Rascunhos: cliente vinculado ou nome em preenchimento com Cadastro pendente; consultora real do JSON; tipo não informado; filtros operacionais, total e páginas de 20 com ordenação estável. Estados de filtros/página e posição de retorno preservados por aba; respostas antigas não substituem busca mais recente. Cards com hierarquia; recusa retirada da apresentação operacional e preservada tecnicamente.
 
-Migration preparada, NÃO aplicada: supabase/migrations/20261019145305_prancheta_cadastro_filtros_normalizacao.sql. Novos gatilhos de normalização/validação de novas escritas, backfill de nomes e proteção por hash de dados não alteráveis. Sem exclusão, alteração de RLS, abertura de lojas ou reescrita de snapshots. Backfill preserva data de atividade/expiração e vínculos; incrementa versões pelos triggers existentes, exigindo recarga de formulários na janela futura.
+Migration supabase/migrations/20261019145305_prancheta_cadastro_filtros_normalizacao.sql aplicada via MCP em D-032. Novos gatilhos de normalização/validação de novas escritas, backfill de nomes e proteção por hash de dados não alteráveis. Sem exclusão, alteração de RLS, abertura de lojas ou reescrita de snapshots. Backfill preservou data de atividade/expiração e vínculos; incrementou versões pelos triggers existentes.
 
 Validação: 439 testes/41 arquivos (módulo, APIs, cron e SSR) aprovados; inclui regressão do número relatado, formatos inválidos, nome sem telefone legado, multisseleções, dias completos, mais de 20 rascunhos e paginação antes de contagens. SQL em PostgreSQL/WASM descartável aprovado: normalização, vínculos/datas, legado, caso relatado, rejeições, ACL e trigger de origem restabelecido. Harness scripts/prancheta/validar-cadastro-filtros-browser.mjs validou componentes reais a 390/1366px com APIs exclusivamente sintéticas: editor geral, telefone legado preservado, filtros manuais, multiselect, página/filtros restaurados, zero overflow/erros JS; cadastro do número relatado e editor na Prancheta sem troca de identidade. Evidências sanitizadas em output/cadastro-*.png e cadastro-browser.json. Lint dirigido aprovado. Build de produção aprovado (exit 0), com os avisos globais existentes de middleware/renderização dinâmica. Typecheck global standalone mantém 15 erros preexistentes nos testes de autenticação/Hub; nenhum arquivo desta entrega. Diff-check dirigido aprovado. Histórico da cliente também passou a usar o nome registrado no atendimento, sem e-mail como fallback.
 
-Limites: nenhuma homologação autenticada/integrada em Supabase, operação comercial real, teste em iPhone físico, migration remota, commit/push/deploy nesta entrega. Caso histórico de rejeição não reproduzido; cadastro atual do número passou em UI/validação/SQL sintéticos, sem inventar sua causa original. D-025/D-026 preservadas; navegador utilizado somente em ambiente sintético local, sem credenciais. Workspace preexistente preservado.
+Limites D-032: homologação autenticada/integrada em Supabase, operação comercial real e teste em iPhone físico não executados. Caso histórico de rejeição não reproduzido; cadastro atual do número passou em UI/validação/SQL sintéticos, sem inventar sua causa original. D-025/D-026 preservadas; navegador utilizado somente em ambiente sintético local, sem credenciais. Workspace preexistente preservado.
 
 Próximo passo: apresentar candidato e resultados; aguardar autorização específica da janela de produção para migration/publicação e homologação integrada. Não reaplicar migrations antigas, não fazer repair nem novas exclusões.
+
+
+## Ajustes de apresentação e consulta — 19/10/2026 (local)
+
+Correção solicitada após publicação D-032: filtros salvos com separadores discretos entre os grupos; modais de edição com largura fluida até 80rem e altura limitada à viewport; atendimento salvo abre o detalhe em modal tanto pelo card quanto pelo botão explícito “Ver atendimento”. O painel de detalhe que caía abaixo da lista em telas estreitas foi removido. “Motivo da visita” recebe rótulo em negrito no card. Lint dirigido aprovado; alteração ainda não publicada.
+
+Solicitação adicional de 19/10: modal de detalhe ganhou resumo imediato com dados já presentes no card enquanto a ficha completa carrega; dados agrupados em seções do Design System, com badges, cartões de crianças, alertas e linha do tempo. A leitura do perfil permanece depois da verificação da janela de acesso: o teste do endpoint exige que operações fora da janela retornem 403 sem consultar o banco. Build local não concluiu porque o ambiente não conseguiu acessar Google Fonts (Caveat, Geist e Geist Mono); lint dirigido e diff-check passaram. Sem medição de latência em produção ou validação visual autenticada desta versão. Alteração permanece local e não publicada.
+
+Nova revisão visual de 19/10: detalhe do atendimento agora segue a ordem Cliente, Crianças, Departamentos e produtos, Observações, Motivos e Histórico; no mobile as seções ficam em coluna única. Cartão de criança organiza nome, parentesco, idade/referência e ação “Alterar dados”; cards dos atendimentos usam blocos rotulados para leitura rápida. A API de crianças permanece inalterada: inspeção MCP confirmou 29 cadastros, 29 vínculos permanentes e 2 correspondências históricas; índice de vínculo começa por cliente_id. O carregamento espera o autosave que vincula cliente ao rascunho antes da consulta, exigido pela validação existente. Sem medidas de latência da consulta; tentativa de logs não retornou dados. Lint e diff-check dirigidos aprovados; Vitest bloqueado por EPERM na renomeação de temporários antes de executar os testes. Sem homologação visual autenticada e sem publicação.
 
 ## Atendimentos Salvos / Situação da Venda — 19/10/2026 (publicado)
 

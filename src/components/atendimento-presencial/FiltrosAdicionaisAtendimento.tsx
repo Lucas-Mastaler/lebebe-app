@@ -82,6 +82,7 @@ export function FiltrosAdicionaisAtendimento({
   return (
     <>
       <FilterFieldGroup
+        className="border-t border-slate-200 pt-4"
         label={
           rascunhos
             ? 'Última atividade e identificação'
@@ -158,7 +159,7 @@ export function FiltrosAdicionaisAtendimento({
           ])}
       </FilterFieldGroup>
       {!rascunhos && (
-        <FilterFieldGroup label="Interesses e motivos">
+        <FilterFieldGroup label="Interesses e motivos" className="border-t border-slate-200 pt-4">
           <FormField
             id="salvo-departamentos"
             label="Departamentos de interesse"

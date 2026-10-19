@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ParentescoCriancaField } from './ParentescoCriancaField'
 import { IdadeCriancaSelector } from './IdadeCriancaSelector'
-import { Alert, Button, Card, CardContent, FormField, Input } from '@/components/design-system'
+import { Alert, Button, Card, CardContent, FormField, Input, Spinner } from '@/components/design-system'
 import { descreverInformacaoNascimento, opcoesCriancasDisponiveis, selecionarCriancaCadastrada, type CriancaReutilizavel } from '@/lib/atendimento-presencial/criancas-permanentes'
 import type { FichaCriancaRascunho } from '@/lib/atendimento-presencial/ficha-schema'
 import { maiusculasNomeComCursor } from '@/lib/atendimento-presencial/maiusculas-nomes'
@@ -31,6 +31,7 @@ export function CriancasCadastradas({ clienteId, rascunhoId, selecionadas, sincr
   const [erro, setErro] = useState<string | null>(null)
   const [ocupado, setOcupado] = useState(false)
   const [carregando, setCarregando] = useState(false)
+  const [etapaCarregamento, setEtapaCarregamento] = useState<'salvando' | 'buscando'>('salvando')
   const emCurso = useRef(false)
   const geracao = useRef(0)
   const disponiveis = opcoesCriancasDisponiveis(permanentes, selecionadas, clienteId)
@@ -54,11 +55,13 @@ export function CriancasCadastradas({ clienteId, rascunhoId, selecionadas, sincr
     setPermanentes([]); setHistoricas([]); setConfirmando(null); setErro(null); setAberto(true); setOpcoes(false)
     if (!rascunhoId) return () => { controller.abort() }
     setCarregando(true)
+    setEtapaCarregamento('salvando')
     // A lista exige o cliente já sincronizado no rascunho para impedir BOLA.
     void (async () => {
       try {
         await sincronizar()
         if (atual !== geracao.current) return
+        setEtapaCarregamento('buscando')
         const response = await fetch(`/api/atendimento-presencial/clientes/${clienteId}/criancas?rascunhoId=${rascunhoId}`, { cache: 'no-store', signal: controller.signal })
         const data = await response.json()
         if (atual !== geracao.current) return
@@ -97,7 +100,10 @@ export function CriancasCadastradas({ clienteId, rascunhoId, selecionadas, sincr
 
   return <div ref={raizRef} tabIndex={-1} className="grid gap-3">
     {erro && <Alert tone="danger">{erro}</Alert>}
-    {carregando && <p role="status">Carregando crianças cadastradas…</p>}
+    {carregando && <div role="status" className="flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50/70 px-3 py-2 text-sm text-slate-700">
+      <Spinner label={etapaCarregamento === 'salvando' ? 'Atualizando atendimento' : 'Buscando crianças cadastradas'} />
+      <span>{etapaCarregamento === 'salvando' ? 'Salvando a cliente no atendimento…' : 'Buscando as crianças já cadastradas…'}</span>
+    </div>}
     {aberto && !carregando && <div className="grid gap-4">
       <div className="grid gap-2" role="group" aria-label="Crianças cadastradas">
       <h3 className="font-semibold">Crianças cadastradas</h3>

@@ -7,7 +7,7 @@ detalhado de cada um vive em `<slug>/STATUS.md`; não duplique aqui.
 
 | Projeto | Status | Fase atual | Entrada |
 |---|---|---|---|
-| prancheta-virtual | EM_EXECUCAO | Cadastro/filtros/rascunhos D-031 publicados por D-032; migration com integridade confirmada, 0c966f5 READY em lebebe.cloud; homologação humana pendente | [STATUS.md](prancheta-virtual/STATUS.md) |
+| prancheta-virtual | EM_EXECUCAO | D-031/D-032 publicados; ajustes visuais D-033 no commit 6b9877d, READY em lebebe.cloud; homologação humana pendente | [STATUS.md](prancheta-virtual/STATUS.md) |
 | mere-ia | EM_EXECUCAO | D-020: cinco reais analisados; 2 sintéticos válidos; 8 tentativas; revisão humana pendente, Fase 1C não aprovada | [STATUS.md](mere-ia/STATUS.md) |
 | decorisi-pedidos-personalizados | EM_EXECUCAO | Fases 1–5 validadas; Xadrezia (222 DB/XP) e ajustes do formulário entregues; aguardando rehomologação local; ativação comercial desativada | [STATUS.md](decorisi-pedidos-personalizados/STATUS.md) |
 | higiene-estrutural-repositorio | CONCLUIDO | Ondas 1-6 concluídas (2026-08-11) | [STATUS.md](higiene-estrutural-repositorio/STATUS.md) |

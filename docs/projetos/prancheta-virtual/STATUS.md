@@ -2,7 +2,7 @@
 
 Projeto: prancheta-virtual
 Estado: EM_EXECUCAO
-Fase atual: D-031 publicado por D-032; ajustes visuais do modal e redução de espera preparados localmente
+Fase atual: ajustes visuais publicados em D-033; homologação humana autenticada pendente
 Atualizado em: 19/10/2026
 
 ## Publicação autorizada D-032 — 19/10/2026
@@ -32,7 +32,7 @@ Próximo passo: apresentar candidato e resultados; aguardar autorização espec�
 
 Correção solicitada após publicação D-032: filtros salvos com separadores discretos entre os grupos; modais de edição com largura fluida até 80rem e altura limitada à viewport; atendimento salvo abre o detalhe em modal tanto pelo card quanto pelo botão explícito “Ver atendimento”. O painel de detalhe que caía abaixo da lista em telas estreitas foi removido. “Motivo da visita” recebe rótulo em negrito no card. Lint dirigido aprovado; alteração ainda não publicada.
 
-Solicitação adicional de 19/10: modal de detalhe ganhou resumo imediato com dados já presentes no card enquanto a ficha completa carrega; dados agrupados em seções do Design System, com badges, cartões de crianças, alertas e linha do tempo. A leitura do perfil permanece depois da verificação da janela de acesso: o teste do endpoint exige que operações fora da janela retornem 403 sem consultar o banco. Build local não concluiu porque o ambiente não conseguiu acessar Google Fonts (Caveat, Geist e Geist Mono); lint dirigido e diff-check passaram. Sem medição de latência em produção ou validação visual autenticada desta versão. Alteração permanece local e não publicada.
+Solicitação adicional de 19/10: modal de detalhe ganhou resumo imediato com dados já presentes no card enquanto a ficha completa carrega; dados agrupados em seções do Design System, com badges, cartões de crianças, alertas e linha do tempo. A consulta do perfil permanece depois da verificação da janela de acesso, exigida pelo teste que confirma resposta 403 sem consulta ao banco. A publicação foi concluída no commit 6b9877d5ef0b863606194ce01c0a9fbf95501232, deployment dpl_6cdkU1akdvSXzdhgdAuampFSRWUM READY/production, com alias lebebe.cloud. O primeiro build do pacote apontou um tipo incorreto no resumo do modal; foi corrigido em commit subsequente. Build local final, lint dirigido e 21 testes passaram. Logs de runtime agregados não mostraram eventos de erro/fatal nos 30 minutos consultáveis; o plano não reteve a janela de uma hora. Sem medição de latência em produção ou homologação visual autenticada.
 
 Nova revisão visual de 19/10: detalhe do atendimento agora segue a ordem Cliente, Crianças, Departamentos e produtos, Observações, Motivos e Histórico; no mobile as seções ficam em coluna única. Cartão de criança organiza nome, parentesco, idade/referência e ação “Alterar dados”; cards dos atendimentos usam blocos rotulados para leitura rápida. A API de crianças permanece inalterada: inspeção MCP confirmou 29 cadastros, 29 vínculos permanentes e 2 correspondências históricas; índice de vínculo começa por cliente_id. O carregamento espera o autosave que vincula cliente ao rascunho antes da consulta, exigido pela validação existente. Sem medidas de latência da consulta; tentativa de logs não retornou dados. Lint e diff-check dirigidos aprovados; Vitest bloqueado por EPERM na renomeação de temporários antes de executar os testes. Sem homologação visual autenticada e sem publicação.
 

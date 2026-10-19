@@ -2,8 +2,31 @@
 
 Projeto: prancheta-virtual
 Estado: EM_EXECUCAO
-Fase atual: correção D-030 validada localmente; commit/push/deploy autorizados em preparação; reteste humano e aceite pendentes
-Atualizado em: 16/10/2026
+Fase atual: Atendimentos Salvos / Situação da Venda validados; publicação autorizada em preparação
+Atualizado em: 19/10/2026
+
+## Atendimentos Salvos / Situação da Venda — 19/10/2026 (local)
+
+Pedido inicial autorizou implementação/validação local. Em 19/10/2026 o usuário autorizou publicar: commit/push/deploy deste pacote. Base atual confirmada: 39f7687294d359cfe9ad61c3893c85484925f08c, produção dpl_5NgCf3SbRKuEpuiRhDZbQXuYxx2R READY, lebebe.cloud. Complexidade média, risco contido de leitura/paginação; sem mudança de conclusão/persistência/permissões.
+
+Diagnóstico confirmado em código e MCP Supabase somente leitura:
+- Listagem e detalhe já usam status=concluido, independentemente de sim/negociacao/nao. Frontend não restringe o resultado. Não existe filtro exclusivo de venda fechada nesses caminhos.
+- Snapshot agregado: 52 vendas fechadas, 72 negociações, 31 perdas e 2 Não clientes concluídos, excluindo HOMOLOGACAO. Homologação separada: 2 vendas, 5 negociações e 1 Não cliente. Nenhum cliente concluído com resultado nulo neste snapshot.
+- 36 rascunhos reais sem concluido_em e resultado_atendimento NULL: JSON com 3 negociacao, 3 nao, 3 sim e 27 sem resultado. Selecionar Negociação/Perda avança aos motivos; a conclusão depende de Finalizar atendimento. Esses rascunhos não foram promovidos para salvos.
+- Filtros atuais e exclusão operacional de homologação continuam aplicáveis. 69 negociações e 26 perdas concluídas não têm virada; filtro de virada ativo as exclui corretamente. Isso é hipótese contextual, sem reprodução de caso individual autenticado.
+- Causa específica do desaparecimento de um registro efetivamente concluído NÃO CONFIRMADA. Os seis rascunhos de negociação/perda são situação distinta comprovada; não se presume que sejam os casos relatados.
+
+Implementado: aba Atendimentos Salvos mantendo tab=finalizados e rascunhos separados; Situação da Venda nos cards/detalhes, com Badge DS success/warning/danger para Venda fechada/Em negociação/Venda perdida. Histórico ambíguo usa Não informado/neutral, sem inferência. Não cliente mantém identificação própria e aparece em Todas. Filtro manual DS aplicado no servidor antes de contagem/paginação, combinado aos demais, aplicação/limpeza retorna à página 1. Respostas vazias antecipadas incluem total=0/page=1/pageSize.
+
+Leitura em lotes de 500 evita truncamento pelo teto PostgREST. Ordem principal concluido_em desc preservada, desempate id desc. Essa limitação não ocorreu no volume atual e não explica o incidente. Conjunto continua em memória como antes; grande crescimento pode exigir desenho SQL futuro. Lotes não oferecem snapshot transacional durante escritas concorrentes.
+
+Validação: 39 arquivos/411 testes aprovados (módulo, APIs e SSR), incluindo situações/legado, filtros combinados, restrições por unidade/perfil, contagens/paginação, 1.005 registros em três lotes, nome da aba, controle/rótulo do filtro e preservação de motivos/observações/lançamento na edição dos três resultados. ESLint dirigido aprovado. Build de produção npm run build aprovado (exit 0), compilação, TypeScript e geração de rotas; avisos globais de middleware/renderização dinâmica preservados. Diff-check dirigido aprovado. SSR não prova interação/hidratação nem responsividade. Expectativa SSR sobre texto de SelectValue foi corrigida para controle/rótulo, pois Radix preenche texto após hidratação; suíte repetida aprovada. Tentativas restritas de testes/build encerraram sem diagnóstico; repetição fora do sandbox permitiu execução e compilação.
+
+Sem escrita comercial, migration, RLS/permissões, backfill/reclassificação, commit, push ou deploy. Schema/constraints/FKs/índices/policies reais consultados via MCP. Nenhuma migration necessária. Detalhe/edição mantêm os caminhos e dados existentes.
+
+Arquivos: registros/RegistrosPageClient.tsx e novo teste SSR; API atendimentos/route.ts e route.test.ts; lib/atendimento-presencial/registros.ts e novo situacao-venda.test.ts; STATUS/PLANO deste projeto. Alterações preexistentes preservadas.
+
+Pendências: homologação visual/mobile e caso individual autenticado; mantida limitação D-025/D-026 de não insistir no navegador bloqueado anteriormente. Publicação autorizada em preparação; confirmar commit remoto, READY e alias. Não declarar causa reproduzida nem homologação funcional concluída.
 
 ## Correção pós-homologação D-030 (16/10/2026)
 
@@ -13,7 +36,7 @@ lojasMotivos incluído na comparação canônica da fila, cobrindo alteração i
 
 Validação: 395 testes em 38 arquivos aprovados; ESLint dirigido e diff-check aprovados; npm run build concluído com avisos globais existentes de middleware/renderização dinâmica. Primeira tentativa de Vitest no sandbox falhou em arquivos temporários EPERM sem executar testes; repetição fora do sandbox passou. Browser Chrome em largura mobile observou Validando... e três ações disabled nos dois resultados; erro de departamento com foco e desbloqueio, avanço Negociação/Venda perdida, volta preservada. Loja A → B, sem mudar outro campo, persistiu no PostgreSQL sintético (versões 8 → 9) e foi reaberta por ID mostrando B. Sem console error/warn no teste. Evidência visual output/correcao-loja-browser.png. Nenhum dado comercial fictício criado em produção. Não houve teste em Safari/iPhone físico, nem comprovação da causa exata dos 5–10 segundos relatados; reteste humano pendente.
 
-Publicação em preparação sobre ce23f9c, main/origin, projeto Vercel lebebe-app/prj_2FG9ZqbGLBU4ffzFZIWPIfdefEIJ, production/lebebe.cloud. Allowlist: FichaPageClient, autosave-fila e teste, STATUS/PLANO/DECISOES da Prancheta. Alterações de outros módulos preservadas. Identificação pós-deploy será registrada localmente sem commit extra de documentação que dispare outro build.
+**PUBLICAÇÃO D-030 CONCLUÍDA:** commit 9a21e8152cab3001a8d753a0be416aa86eb21ede, enviado e confirmado em origin/main. Deployment dpl_nP1vWKPfvQdZnj4znq8FX1ZFbn7r / lebebe-pvkrcilx3-lebebes-projects.vercel.app READY/production, alias lebebe.cloud confirmado sem aliasError via MCP. Projeto lebebe-app/prj_2FG9ZqbGLBU4ffzFZIWPIfdefEIJ. Rota publicada abriu autenticada no Chrome com a sessão existente, Aguardando inicio, sem preencher filial/consultora nem criar atendimento. Allowlist de seis arquivos: FichaPageClient, autosave-fila e teste, STATUS/PLANO/DECISOES da Prancheta. Alterações de outros módulos preservadas. Versão anterior ce23f9c/dpl_CB114RnswerX4QTKmRz6BANfPpMv. Identificação pós-deploy registrada localmente sem commit extra de documentação que dispare outro build. Reteste no iPhone real pendente.
 
 ## Refinamento funcional D-028 — publicado por D-029 (16/10/2026)
 

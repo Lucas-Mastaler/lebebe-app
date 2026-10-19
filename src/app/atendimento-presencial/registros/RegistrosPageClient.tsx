@@ -71,6 +71,8 @@ import {
   type UnidadeIdadeCrianca,
 } from '@/lib/atendimento-presencial/ficha-schema'
 import {
+  SITUACOES_VENDA,
+  situacaoVendaRegistro,
   descreverContratoHistorico,
   getMotivoVisitaLabel,
   registroNaoCliente,
@@ -150,13 +152,6 @@ function gerarIdLocal(prefixo = 'local') {
   return `${prefixo}-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
-function formatarVendaFechadaRegistro(resultado: ResultadoAtendimento | null | undefined) {
-  if (resultado === 'sim') return 'Sim'
-  if (resultado === 'nao') return 'Nao'
-  if (resultado === 'negociacao') return 'Em negociacao'
-  return 'Nao informado'
-}
-
 function OpcaoButton(props: {
   selected: boolean
   children: React.ReactNode
@@ -185,6 +180,7 @@ const FILTROS_FINALIZADOS_INICIAL = {
   clienteNome: '',
   consultora: '',
   unidadeId: '',
+  situacaoVenda: '',
   viradaCartaoDe: '',
   viradaCartaoAte: '',
 }
@@ -230,6 +226,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     ate?: string
     clienteNome?: string
     consultora?: string
+    situacaoVenda?: string
     unidadeId?: string
     page?: number
   }) {
@@ -242,12 +239,14 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       const filtroCliente = filtrosOverride?.clienteNome ?? filtrosFinalizados.applied.clienteNome
       const filtroConsultora = filtrosOverride?.consultora ?? filtrosFinalizados.applied.consultora
       const filtroUnidade = filtrosOverride?.unidadeId ?? filtrosFinalizados.applied.unidadeId
+      const filtroSituacao = filtrosOverride?.situacaoVenda ?? filtrosFinalizados.applied.situacaoVenda
       const pagina = filtrosOverride?.page ?? paginaRegistros
       if (filtroDe.trim()) params.set('viradaCartaoDe', filtroDe.trim())
       if (filtroAte.trim()) params.set('viradaCartaoAte', filtroAte.trim())
       if (filtroCliente.trim()) params.set('clienteNome', filtroCliente.trim())
       if (filtroConsultora.trim()) params.set('consultora', filtroConsultora.trim())
       if (filtroUnidade) params.set('unidadeId', filtroUnidade)
+      if (filtroSituacao) params.set('situacaoVenda', filtroSituacao)
       params.set('page', String(pagina))
       const query = params.toString()
       const response = await fetch(`/api/atendimento-presencial/atendimentos${query ? `?${query}` : ''}`, { cache: 'no-store' })
@@ -273,13 +272,14 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       clienteNome: filtrosFinalizados.draft.clienteNome.trim().replace(/\s+/g, ' '),
       consultora: filtrosFinalizados.draft.consultora,
       unidadeId: filtrosFinalizados.draft.unidadeId,
+      situacaoVenda: filtrosFinalizados.draft.situacaoVenda,
       page: 1,
     })
   }
 
   function limparFiltrosFinalizados() {
     filtrosFinalizados.clear()
-    void carregarRegistros({ de: '', ate: '', clienteNome: '', consultora: '', unidadeId: '', page: 1 })
+    void carregarRegistros({ de: '', ate: '', clienteNome: '', consultora: '', unidadeId: '', situacaoVenda: '', page: 1 })
   }
 
   async function buscarDetalhe(id: string): Promise<RegistroDetalhe> {
@@ -582,7 +582,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
 
       <Tabs value={tabAtual} onValueChange={navegarParaTab} className="gap-4">
         <SegmentedTabsList className="w-fit">
-          {podeVerRegistros && <SegmentedTabsTrigger value="finalizados">Atendimentos finalizados</SegmentedTabsTrigger>}
+          {podeVerRegistros && <SegmentedTabsTrigger value="finalizados">Atendimentos Salvos</SegmentedTabsTrigger>}
           {podeVerRascunhos && <SegmentedTabsTrigger value="rascunhos">Rascunhos</SegmentedTabsTrigger>}
         </SegmentedTabsList>
 
@@ -621,6 +621,17 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                             {consultorasFinalizados.map((consultora) => (
                               <SelectItem key={consultora.nome} value={consultora.nome}>{consultora.nome}</SelectItem>
                             ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </FormField>
+                    <FormField id="filtro-situacao-venda" label="Situação da Venda">
+                      {(field) => (
+                        <Select value={filtrosFinalizados.draft.situacaoVenda || 'all'} onValueChange={(value) => filtrosFinalizados.setField('situacaoVenda', value === 'all' ? '' : value)}>
+                          <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Todas</SelectItem>
+                            {SITUACOES_VENDA.map((item) => <SelectItem key={item.chave} value={item.chave}>{item.label}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       )}
@@ -695,8 +706,8 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                           title={registro.clienteNome}
                           description={`${registro.unidadeNome} - ${registro.consultoraEmail}`}
                           action={<span className="shrink-0 rounded-md border border-sky-100 bg-white/70 px-3 py-2 text-right">
-                            <span className="block text-[10px] font-bold uppercase tracking-wide text-sky-700">{registroNaoCliente(registro) ? 'Tipo' : 'Venda fechada?'}</span>
-                            <span className="block text-sm font-bold text-slate-900">{registroNaoCliente(registro) ? 'Não cliente' : formatarVendaFechadaRegistro(registro.resultadoAtendimento)}</span>
+                            <span className="block text-[10px] font-bold uppercase tracking-wide text-sky-700">{registroNaoCliente(registro) ? 'Tipo' : 'Situação da Venda'}</span>
+                            <Badge tone={registroNaoCliente(registro) ? 'neutral' : situacaoVendaRegistro(registro.resultadoAtendimento).tone}>{registroNaoCliente(registro) ? 'Não cliente' : situacaoVendaRegistro(registro.resultadoAtendimento).label}</Badge>
                           </span>}
                         />
                         <CardContent className="space-y-1">
@@ -763,8 +774,8 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                 {!carregandoDetalhe && selecionado && (
                   <>
                     <div>
-                      <p className="text-xs font-bold uppercase text-slate-500">{selecionadoNaoCliente ? 'Tipo de atendimento' : 'Venda fechada?'}</p>
-                      <p className="font-semibold text-slate-950">{selecionadoNaoCliente ? 'Não cliente' : formatarVendaFechadaRegistro(selecionado.atendimento.resultadoAtendimento)}</p>
+                      <p className="text-xs font-bold uppercase text-slate-500">{selecionadoNaoCliente ? 'Tipo de atendimento' : 'Situação da Venda'}</p>
+                      <p className="font-semibold text-slate-950">{selecionadoNaoCliente ? 'Não cliente' : situacaoVendaRegistro(selecionado.atendimento.resultadoAtendimento).label}</p>
                       {selecionadoNaoCliente && <p>Motivo da visita: {getMotivoVisitaLabel(selecionado.atendimento.motivoVisita)}</p>}
                       {selecionado.atendimento.numeroLancamento && <p>Lancamento {selecionado.atendimento.numeroLancamento}</p>}
                       {formatarViradaCartao(selecionado.atendimento.viradaCartaoDia, selecionado.atendimento.viradaCartaoMes) && (

@@ -13,6 +13,17 @@ import type {
   UnidadeIdadeCrianca,
 } from './ficha-schema'
 
+export const SITUACOES_VENDA = [
+  { chave: 'sim', label: 'Venda fechada', tone: 'success' },
+  { chave: 'negociacao', label: 'Em negociação', tone: 'warning' },
+  { chave: 'nao', label: 'Venda perdida', tone: 'danger' },
+] as const
+
+export function situacaoVendaRegistro(resultado: string | null | undefined) {
+  return SITUACOES_VENDA.find((item) => item.chave === resultado)
+    ?? { label: 'Não informado', tone: 'neutral' as const }
+}
+
 // Marcador operacional em campo existente; não muda o contrato de persistência.
 export function consultoraDeHomologacao(nome: string | null | undefined) {
   return normalizarNomeConsultora(nome).toUpperCase().startsWith('HOMOLOGACAO ')

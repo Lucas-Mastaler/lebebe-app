@@ -7,7 +7,7 @@ import {
   listarUnidadesDoContexto,
   type AtendimentoPresencialRow,
 } from '@/lib/atendimento-presencial/rascunhos'
-import { consultoraDeHomologacao, registroNaoCliente, serializarClienteRegistro, type ClienteRegistroRow } from '@/lib/atendimento-presencial/registros'
+import { SITUACOES_VENDA, consultoraDeHomologacao, registroNaoCliente, serializarClienteRegistro, type ClienteRegistroRow } from '@/lib/atendimento-presencial/registros'
 import { converterViradaCartaoInput, valorOrdenavelViradaCartao } from '@/lib/atendimento-presencial/ficha-schema'
 import { escaparTermoIlike, normalizarTermosBuscaNome, normalizarTermoBusca } from '@/lib/atendimento-presencial/clientes'
 import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
@@ -123,6 +123,10 @@ export async function GET(request: Request) {
     const nomeCliente = normalizarTermoBusca(params.get('clienteNome') ?? params.get('nomeCliente'))
     const consultora = normalizarFiltroConsultora(params.get('consultora'))
     const unidadeId = params.get('unidadeId')?.trim() ?? ''
+    const situacaoVenda = params.get('situacaoVenda')?.trim() ?? ''
+    if (situacaoVenda && !SITUACOES_VENDA.some((item) => item.chave === situacaoVenda)) {
+      return jsonErro('Situacao da venda invalida', 400)
+    }
     const viradaDe = viradaCartaoDe ? converterViradaCartaoInput(viradaCartaoDe) : null
     const viradaAte = viradaCartaoAte ? converterViradaCartaoInput(viradaCartaoAte) : null
     if (viradaCartaoDe && !viradaDe) return jsonErro('Virada do cartao inicial invalida', 400)
@@ -138,13 +142,17 @@ export async function GET(request: Request) {
       : null
     if (clienteIdsFiltrados?.erro) return clienteIdsFiltrados.erro
     if (clienteIdsFiltrados && clienteIdsFiltrados.ids.length === 0) {
-      return NextResponse.json({ ok: true, registros: [], consultoras, unidades })
+      return NextResponse.json({ ok: true, registros: [], consultoras, unidades, page: 1, pageSize: TABLE_PAGE_SIZE, total: 0 })
     }
 
     let query = loaded.supabase
       .from('atendimento_presencial_atendimentos')
       .select(SELECT_ATENDIMENTO)
       .eq('status', 'concluido')
+
+    if (situacaoVenda) {
+      query = query.eq('resultado_atendimento', situacaoVenda)
+    }
 
     if (clienteIdsFiltrados) {
       query = query.in('cliente_id', clienteIdsFiltrados.ids)
@@ -162,19 +170,27 @@ export async function GET(request: Request) {
       query = query.eq('consultora_usuario_id', loaded.contexto.usuarioId)
     } else if (loaded.contexto.perfil !== 'superadmin') {
       if (loaded.contexto.unidadesPermitidas.length === 0) {
-        return NextResponse.json({ ok: true, registros: [], consultoras, unidades })
+        return NextResponse.json({ ok: true, registros: [], consultoras, unidades, page: 1, pageSize: TABLE_PAGE_SIZE, total: 0 })
       }
       query = query.in('unidade_id', loaded.contexto.unidadesPermitidas.map((unidade) => unidade.id))
     }
 
-    const { data, error } = await query.order('concluido_em', { ascending: false })
-
-    if (error) {
-      console.error('[ATENDIMENTO PRESENCIAL REGISTROS] Erro ao listar:', error)
-      return jsonErro('Erro ao processar requisicao', 500)
+    // Não limitar filtros/contagens ao teto de uma resposta do PostgREST.
+    const loteSize = 500
+    let rows: AtendimentoPresencialRow[] = []
+    for (let offset = 0; ; offset += loteSize) {
+      const { data, error } = await query
+        .order('concluido_em', { ascending: false })
+        .order('id', { ascending: false })
+        .range(offset, offset + loteSize - 1)
+      if (error) {
+        console.error('[ATENDIMENTO PRESENCIAL REGISTROS] Erro ao listar:', error)
+        return jsonErro('Erro ao processar requisicao', 500)
+      }
+      const lote = (data ?? []) as unknown as AtendimentoPresencialRow[]
+      rows.push(...lote)
+      if (lote.length < loteSize) break
     }
-
-    let rows = (data ?? []) as unknown as AtendimentoPresencialRow[]
     // Testes só entram na consulta quando sua consultora é filtrada explicitamente.
     if (!consultoraDeHomologacao(consultora)) {
       rows = rows.filter((row) => !consultoraDeHomologacao(row.consultora_nome))

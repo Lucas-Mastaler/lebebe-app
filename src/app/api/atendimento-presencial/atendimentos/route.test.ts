@@ -30,6 +30,7 @@ function builder(result: unknown) {
     not: vi.fn(() => chain),
     order: vi.fn(() => chain),
     limit: vi.fn(() => chain),
+    range: vi.fn(() => chain),
     single: vi.fn(() => Promise.resolve(result)),
     then: (resolve: (value: unknown) => unknown, reject: (reason?: unknown) => unknown) =>
       Promise.resolve(result).then(resolve, reject),
@@ -218,6 +219,68 @@ describe('api lista registros atendimento presencial', () => {
     const response = await GET(new Request('http://local?viradaCartaoDe=01/01'))
     expect(response.status).toBe(200)
     expect((await response.json()).registros).toEqual([])
+  })
+
+  it.each(['', 'sim', 'negociacao', 'nao'])('situação %s combina filtros e preserva conclusão e unidade', async (situacao) => {
+    const chain = builder({ data: [], error: null })
+    vi.mocked(createServiceClient).mockReturnValue({ from: vi.fn((table: string) => {
+      if (table === 'app_usuarios_perfis') return builder({ data: { app_perfis_acesso: { chave: 'supervisora_loja', ativo: true } }, error: null })
+      if (table === 'app_usuarios_unidades') return builder({ data: [{ app_unidades: { id: unidadeId, chave: 'loja', nome: 'Loja', ativo: true } }], error: null })
+      if (table === 'atendimento_presencial_clientes') return builder({ data: [{ id: clienteId }], error: null })
+      return chain
+    }) } as never)
+    const response = await GET(new Request('http://local?situacaoVenda=' + situacao + '&clienteNome=Ana&consultora=Maria&unidadeId=' + unidadeId))
+    expect(response.status).toBe(200)
+    expect(chain.eq).toHaveBeenCalledWith('status', 'concluido')
+    expect(chain.in).toHaveBeenCalledWith('unidade_id', [unidadeId])
+    expect(chain.eq).toHaveBeenCalledWith('unidade_id', unidadeId)
+    expect(chain.in).toHaveBeenCalledWith('cliente_id', [clienteId])
+    expect(chain.ilike).toHaveBeenCalledWith('consultora_nome', 'Maria')
+    if (situacao) expect(chain.eq).toHaveBeenCalledWith('resultado_atendimento', situacao)
+    else expect(chain.eq).not.toHaveBeenCalledWith('resultado_atendimento', expect.anything())
+  })
+
+  it.each(['sim', 'negociacao', 'nao', null])('lista resultado %s inclusive legado sem situação com paginação', async (resultado) => {
+    mockSupabase({
+      app_usuarios_perfis: [{ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null }],
+      app_usuarios_unidades: [{ data: [], error: null }],
+      atendimento_presencial_atendimentos: [{ data: [], error: null }, { data: Array.from({ length: 41 }, (_, i) => ({
+        id: String(i), cliente_id: null, consultora_usuario_id: usuarioId, unidade_id: unidadeId,
+        resultado_atendimento: resultado, status: 'concluido', concluido_em: '2026-10-19T12:00:00Z',
+      })), error: null }],
+      usuarios_permitidos: [{ data: [], error: null }], app_unidades: [{ data: [], error: null }],
+    })
+    const response = await GET(new Request('http://local?page=2'))
+    const json = await response.json()
+    expect(json.total).toBe(41)
+    expect(json.page).toBe(2)
+    expect(json.registros.length).toBe(Math.min(json.pageSize, 41 - json.pageSize))
+    expect(json.registros.every((r: { resultadoAtendimento: string | null }) => r.resultadoAtendimento === resultado)).toBe(true)
+  })
+
+  it('rejeita situação desconhecida', async () => {
+    mockSupabase({ app_usuarios_perfis: [{ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null }], app_usuarios_unidades: [{ data: [], error: null }] })
+    expect((await GET(new Request('http://local?situacaoVenda=invalida'))).status).toBe(400)
+  })
+
+  it('conta e pagina além do primeiro lote do Supabase', async () => {
+    const rows = Array.from({ length: 1005 }, (_, i) => ({ id: String(i), cliente_id: null, consultora_usuario_id: usuarioId, unidade_id: unidadeId, resultado_atendimento: 'negociacao', status: 'concluido' }))
+    let inicio = 0, fim = 499
+    const chain = { select: vi.fn(() => chain), eq: vi.fn(() => chain), order: vi.fn(() => chain),
+      range: vi.fn((de: number, ate: number) => { inicio = de; fim = ate; return chain }),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve({ data: rows.slice(inicio, fim + 1), error: null }).then(resolve) }
+    let chamadas = 0
+    vi.mocked(createServiceClient).mockReturnValue({ from: vi.fn((table: string) => {
+      if (table === 'app_usuarios_perfis') return builder({ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null })
+      if (table === 'atendimento_presencial_atendimentos' && chamadas++ > 0) return chain
+      return builder({ data: [], error: null })
+    }) } as never)
+    const json = await (await GET(new Request('http://local?situacaoVenda=negociacao&page=51'))).json()
+    expect(json.total).toBe(1005)
+    expect(json.page).toBe(51)
+    expect(json.registros).toHaveLength(5)
+    expect(chain.range.mock.calls).toEqual([[0,499],[500,999],[1000,1499]])
+    expect(chain.eq).toHaveBeenCalledWith('resultado_atendimento', 'negociacao')
   })
 
 })

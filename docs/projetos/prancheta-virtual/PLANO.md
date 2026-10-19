@@ -4,12 +4,24 @@
 
 Contrato funcional: ESCOPO.md. Decisões: DECISOES.md. Marcar somente tarefas realmente executadas e validadas.
 
+## Atendimentos Salvos / Situação da Venda — 19/10/2026
+
+Autorização: implementação/validação locais; publicação autorizada explicitamente em 19/10/2026.
+- [x] Conferir persistência real, status/conclusão, rascunhos e filtros; separar confirmado de hipótese.
+- [x] Padronizar aba, situação sem inferências e filtro DS combinado com reset de página.
+- [x] Preservar acesso e leitura/edição; contagens vazias e leitura em lotes.
+- [x] 411 testes/39 arquivos, incluindo SSR e 1.005 registros; lint dirigido aprovado.
+- [x] Build de produção e diff dirigido aprovados.
+- [ ] Homologação visual/mobile/autenticada de caso individual; respeitar D-025/D-026.
+- [x] Autorização específica de publicação recebida em 19/10/2026.
+- [ ] Commit/push/deploy do pacote; confirmar SHA remoto, READY e alias.
+
 ## Correção pós-homologação — D-030
 
 - [x] Feedback imediato nos dois resultados, bloqueio de cliques e rodapé estável durante validação; resultado atualizado somente após validação aprovada.
 - [x] Comparação de lojasMotivos no autosave; teste de alteração isolada/remoção e estabilidade da ordem das chaves.
 - [x] 395 testes/38 arquivos, lint dirigido, build e browser sintético mobile; loja A → B confirmada no PostgreSQL local e reaberta por ID.
-- [ ] Commit, push e deploy autorizados; confirmar SHA/READY/alias após publicação.
+- [x] Commit 9a21e81 e push confirmados; deployment dpl_nP1vWKPfvQdZnj4znq8FX1ZFbn7r READY/production com lebebe.cloud e SHA corretos.
 - [ ] Reteste humano no iPhone pelo atalho da tela inicial.
 
 ## Refinamento funcional — D-028 (preparação local)

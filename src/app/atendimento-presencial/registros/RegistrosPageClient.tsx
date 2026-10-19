@@ -266,7 +266,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   const [totalRegistros, setTotalRegistros] = useState(0)
   const [selecionado, setSelecionado] = useState<RegistroDetalhe | null>(null)
   const [detalheAberto, setDetalheAberto] = useState(false)
-  const [resumoCarregamento, setResumoCarregamento] = useState<RegistroResumoDTO | null>(null)
+  const [resumoCarregamento, setResumoCarregamento] = useState<RegistroResumo | null>(null)
   const [erroDetalhe, setErroDetalhe] = useState<string | null>(null)
   const [carregando, setCarregando] = useState(false)
   const [carregandoDetalhe, setCarregandoDetalhe] = useState(false)

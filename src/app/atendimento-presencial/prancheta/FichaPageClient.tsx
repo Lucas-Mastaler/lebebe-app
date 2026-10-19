@@ -2444,7 +2444,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                   <Button type="button" variant="secondary" onClick={() => void escolherResultado('nao')} disabled={acaoResultadoOcupada} loading={resultadoEmValidacao === 'nao'} className="min-h-12 flex-1">{resultadoEmValidacao !== 'nao' && <X className="size-4" aria-hidden="true" />}{resultadoEmValidacao === 'nao' ? 'Validando...' : 'Venda perdida'}</Button>
                 </>
               ) : (
-                <Button type="button" onClick={() => void concluirAtendimento()} disabled={concluindo} loading={concluindo} className="min-h-12 flex-1">{!concluindo && <Check className="size-4" aria-hidden="true" />}{concluindo ? 'Finalizando...' : 'Finalizar atendimento'}</Button>
+                <Button type="button" onClick={() => void concluirAtendimento()} disabled={concluindo} loading={concluindo} className="min-h-[3.3rem] flex-1">{!concluindo && <Check className="size-4" aria-hidden="true" />}{concluindo ? 'Finalizando...' : 'Finalizar atendimento'}</Button>
               )}
             </div>
           </div>

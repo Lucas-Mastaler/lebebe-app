@@ -71,7 +71,7 @@ export type RegistroAtendimentoDetalheDTO = {
   cliente: ClienteRegistroAtendimentoDTO | null
   criancas: Array<{ id: string; ordem?: number | null; local_id?: string | null; presente_ja_nasceu?: boolean | null; data_referencia_nascimento?: string | null; crianca_permanente_id?: string | null; parentesco_vinculo?: string | null; situacao: string; nome: string | null; nome_nao_informado?: boolean | null; sexo: string | null; idade_unidade: string | null; idade_valor: number | null; data_prevista_nascimento: string | null }>
   departamentos: Array<{ id: string; ordem?: number | null; departamento: string }>
-  produtosInteresse: Array<{ id: string; ordem?: number | null; descricao: string }>
+  produtosInteresse: Array<{ id: string; ordem?: number | null; descricao: string; quantidade?: number | null; vendido?: boolean | null }>
   motivos: Array<{ id: string; ordem?: number | null; motivo: MotivoResultado; complemento: string | null }>
   historico: Array<{ id: string; acao: string; created_at: string; perfil?: string | null; role?: string | null; usuario_id?: string | null; snapshot?: Record<string, unknown> | null }>
   podeEditar?: boolean
@@ -140,7 +140,9 @@ export function normalizarDetalheParaFichaEdicao(detalhe: Pick<
       idadeValor: crianca.idade_valor ?? undefined,
     })),
     departamentos: ordenarPorOrdem(detalhe.departamentos).map((item) => item.departamento as DepartamentoInteresse),
-    produtosInteresse: ordenarPorOrdem(detalhe.produtosInteresse).map((item) => item.descricao),
+    ...(detalhe.atendimento.versaoProdutos === 2 ? { versaoProdutos: 2 as const } : {}),
+    produtosInteresse: ordenarPorOrdem(detalhe.produtosInteresse).map((item) => detalhe.atendimento.versaoProdutos === 2
+      ? { descricao: item.descricao, quantidade: item.quantidade ?? null, vendido: item.vendido ?? null } : item.descricao),
     resultadoAtendimento: detalhe.atendimento.resultadoAtendimento ?? undefined,
     motivosResultado,
     lojasMotivos: Object.fromEntries(detalhe.motivos.filter(item => ['outra_loja_fisica', 'outra_loja_internet'].includes(item.motivo) && item.complemento).map(item => [item.motivo, item.complemento!])),

@@ -50,6 +50,7 @@ export function serializarPayloadAutosave(payload: AutosavePayload) {
       criancas: dados.criancas,
       departamentos: dados.departamentos,
       produtosInteresse: dados.produtosInteresse,
+      versaoProdutos: dados.versaoProdutos,
       resultadoAtendimento: dados.resultadoAtendimento,
       motivosResultado: dados.motivosResultado,
       lojasMotivos: dados.lojasMotivos,

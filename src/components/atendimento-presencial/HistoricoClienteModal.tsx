@@ -1,5 +1,7 @@
 'use client'
 
+import { ResumoProdutos } from './ProdutosAtendimento'
+
 import { useEffect, useState, type ReactNode } from 'react'
 import { CreditCard, History, Package, RefreshCw, ShoppingBag, Tag } from 'lucide-react'
 import Link from 'next/link'
@@ -266,7 +268,7 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
                           </div>
                           <div>
                             <p className="text-[11px] font-bold uppercase text-slate-500">Produtos de interesse</p>
-                            <p className="mt-1 text-sm text-slate-700">{item.produtosInteresse.join(', ') || 'Nao informado'}</p>
+                            <ResumoProdutos produtos={item.produtosInteresse} versaoProdutos={item.versaoProdutos} />
                           </div>
                         </div>
                         {item.numeroLancamento && <p className="text-sm text-slate-700">Lancamento: {item.numeroLancamento}</p>}

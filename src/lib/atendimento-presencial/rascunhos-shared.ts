@@ -32,6 +32,7 @@ export type AtendimentoPresencialDTO = {
   dadosRascunho: FichaDadosRascunho
   resultadoAtendimento: string | null
   versaoFluxo?: number | null
+  versaoProdutos?: number | null
   tipoAtendimento?: 'cliente' | 'nao_cliente' | null
   telefoneRecusaConfirmada?: boolean | null
   motivoVisita?: string | null

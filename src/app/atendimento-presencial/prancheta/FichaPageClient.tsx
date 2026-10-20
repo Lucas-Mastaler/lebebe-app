@@ -1,5 +1,13 @@
 'use client'
 
+import { ComemoracaoPv } from '@/components/atendimento-presencial/ComemoracaoPv'
+import { useComemoracaoPv } from '@/components/atendimento-presencial/useComemoracaoPv'
+
+import { ProdutosAtendimento, AvisoProdutosVendidos } from '@/components/atendimento-presencial/ProdutosAtendimento'
+import { ListaEnxovalDialog } from '@/components/atendimento-presencial/ListaEnxovalDialog'
+import { PRODUTOS_V2_HABILITADOS } from '@/lib/atendimento-presencial/produtos-config'
+import { descricaoProduto } from '@/lib/atendimento-presencial/produtos'
+
 import { EditarClienteDialog } from '@/components/atendimento-presencial/EditarClienteDialog'
 import { mensagemTelefoneCliente } from '@/lib/atendimento-presencial/telefone'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -149,6 +157,7 @@ const etapaLabels: Record<FichaEtapa, string> = {
 
 const payloadInicial: FichaDadosRascunho = {
   versaoFluxo: 2,
+  ...(PRODUTOS_V2_HABILITADOS ? { versaoProdutos: 2 as const } : {}),
   criancas: [],
   departamentos: [],
   produtosInteresse: [],
@@ -385,6 +394,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [concluindo, setConcluindo] = useState(false)
   const [resultadoEmValidacao, setResultadoEmValidacao] = useState<ResultadoAtendimento | null>(null)
   const [rodapeVisivel, setRodapeVisivel] = useState(false)
+  const { comemoracao, prepararSom, confirmarVenda, fecharComemoracao } = useComemoracaoPv()
   const [mensagemConclusao, setMensagemConclusao] = useState<string | null>(null)
   const [rascunhoEncerrado, setRascunhoEncerrado] = useState<string | null>(null)
   const [carregandoRascunhoInicial, setCarregandoRascunhoInicial] = useState(false)
@@ -1511,7 +1521,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     const produto = normalizarProduto(produtoDigitado)
     if (!produto) return
     atualizarFicha((atual) => {
-      const jaExiste = atual.produtosInteresse.some((item) => item.toLocaleLowerCase('pt-BR') === produto.toLocaleLowerCase('pt-BR'))
+      const jaExiste = atual.produtosInteresse.some((item) => descricaoProduto(item).toLocaleLowerCase('pt-BR') === produto.toLocaleLowerCase('pt-BR'))
       if (jaExiste || atual.produtosInteresse.length >= FICHA_PRODUTOS_MAX_ITENS) return atual
       return { ...atual, produtosInteresse: [...atual.produtosInteresse, produto] }
     })
@@ -1685,6 +1695,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     manterModalTelefoneAteConcluir = false,
   ) {
     if (concluindoRef.current) return
+    if (fichaConclusao.resultadoAtendimento === 'sim') void prepararSom()
     concluindoRef.current = true
     flushSync(() => { setConcluindo(true); setErroConclusao(null) })
     await aguardarPinturaFeedback()
@@ -1762,6 +1773,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         throw new Error(data.message ?? 'Erro ao concluir atendimento')
       }
 
+      confirmarVenda(data.atendimento, rascunhoSalvo.dadosRascunho)
       removerCacheRascunho(window.localStorage, usuarioId, rascunhoSalvo.draftClientId)
       setConfirmacaoTelefone(null)
       setEtapaConfirmacaoTelefone('pergunta')
@@ -1861,7 +1873,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     : iniciando || alteracoesNaoConfirmadas ? 'salvando' : ativo ? 'salvo' : 'ocioso'
 
   return (
-    <><Dialog open={Boolean(confirmacaoTelefone)} onOpenChange={aberto => { if (!aberto) voltarAoTelefone() }}>
+    <>
+      {comemoracao && <ComemoracaoPv dados={comemoracao} onFechar={fecharComemoracao} />}
+      <Dialog open={Boolean(confirmacaoTelefone)} onOpenChange={aberto => { if (!aberto) voltarAoTelefone() }}>
       <DialogContent className="w-[80vw] max-w-md border-destructive bg-red-50" onCloseAutoFocus={event => { event.preventDefault(); if (telefoneParaFocoRef.current) document.getElementById('telefone-cliente-rapido')?.focus() }}>
         <DialogHeader
           title={etapaConfirmacaoTelefone === 'pergunta' ? 'Cliente sem telefone' : 'Informar telefone da cliente'}
@@ -2421,6 +2435,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                   tone="section-2"
                   erro={erroSecao('secao-produtos')}
                 >
+                  {(PRODUTOS_V2_HABILITADOS || ficha.versaoProdutos === 2) ? <ProdutosAtendimento ficha={ficha} atualizar={atualizarFicha} digitado={produtoDigitado} setDigitado={setProdutoDigitado} /> : <>
                   <label className="text-sm font-semibold text-slate-700" htmlFor="produto-interesse">Produtos de interesse</label>
                   <div className="mt-2 flex gap-2">
                     <Input
@@ -2441,26 +2456,30 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                       <Plus className="size-4" aria-hidden="true" />
                     </Button>
                   </div>
-                  <Button type="button" variant="secondary" className="mt-2" disabled={ficha.produtosInteresse.length >= FICHA_PRODUTOS_MAX_ITENS || ficha.produtosInteresse.some(item => item.trim().toLocaleLowerCase('pt-BR') === 'produto que não trabalhamos')} onClick={() => atualizarFicha(atual => ({ ...atual, produtosInteresse: atual.produtosInteresse.length >= FICHA_PRODUTOS_MAX_ITENS || atual.produtosInteresse.some(item => item.trim().toLocaleLowerCase('pt-BR') === 'produto que não trabalhamos') ? atual.produtosInteresse : [...atual.produtosInteresse, 'Produto que não trabalhamos'] }))}>Produto que não trabalhamos</Button>
+                  <div className="mt-2 flex flex-wrap gap-2"><ListaEnxovalDialog />
+                  <Button type="button" variant="secondary" disabled={ficha.produtosInteresse.length >= FICHA_PRODUTOS_MAX_ITENS || ficha.produtosInteresse.some(item => descricaoProduto(item).trim().toLocaleLowerCase('pt-BR') === 'produto que não trabalhamos')} onClick={() => atualizarFicha(atual => ({ ...atual, produtosInteresse: atual.produtosInteresse.length >= FICHA_PRODUTOS_MAX_ITENS || atual.produtosInteresse.some(item => descricaoProduto(item).trim().toLocaleLowerCase('pt-BR') === 'produto que não trabalhamos') ? atual.produtosInteresse : [...atual.produtosInteresse, 'Produto que não trabalhamos'] }))}>Produto que não trabalhamos</Button>
+                  </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {ficha.produtosInteresse.map((produto) => (
                       <button
-                        key={produto}
+                        key={descricaoProduto(produto)}
                         type="button"
                         onClick={() => atualizarFicha((atual) => ({ ...atual, produtosInteresse: atual.produtosInteresse.filter((item) => item !== produto) }))}
                         className="inline-flex min-h-10 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700"
                       >
-                        {produto}
+                        {descricaoProduto(produto)}
                         <X className="h-4 w-4" aria-hidden="true" />
                       </button>
                     ))}
                   </div>
+                  </>}
                 </SecaoFicha>
               </>
             )}
 
             {etapaAtual === 'resultado' && (
               <div className="grid gap-6">
+                <AvisoProdutosVendidos ficha={ficha} />
                 <p className="font-semibold">{ficha.resultadoAtendimento === 'negociacao' ? 'Negociação' : 'Venda perdida'}</p>
                 <SecaoFicha id="secao-resultado-observacao" titulo="Observação de não fechamento" icon={MessageSquareText} erro={erroSecao('secao-resultado-observacao')}>
                   <FormField id="observacao-nao-fechamento" label="Observação de não fechamento" error={erroSecao('secao-resultado-observacao')} helper="Até 300 caracteres">

@@ -65,6 +65,28 @@ function mockSupabase(queues: Record<string, unknown[]>) {
 }
 
 describe('api rascunho por id', () => {
+  it('bloqueia aba antiga antes de apagar quantidade e venda', async () => {
+    const from = mockSupabase({
+      app_usuarios_perfis: [{ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null }],
+      app_usuarios_unidades: [{ data: [{ app_unidades: { id: unidadeId, ativo: true } }], error: null }],
+      atendimento_presencial_atendimentos: [{ data: { ...rascunhoRow, dados_rascunho: { versaoProdutos: 2, produtosInteresse: [{ descricao: 'BERÇO', quantidade: 2, vendido: true }] } }, error: null }],
+    })
+    const response = await PATCH(new Request('http://local', { method: 'PATCH', body: JSON.stringify({ version: 2, dadosRascunho: { produtosInteresse: ['BERÇO'] } }) }), { params: Promise.resolve({ id: rascunhoId }) })
+    expect(response.status).toBe(422)
+    expect((await response.json()).message).toContain('Atualize a página')
+    expect(from.mock.calls.filter(([table]) => table === 'atendimento_presencial_atendimentos')).toHaveLength(1)
+  })
+  it('autosave mantém metadados de produto já estruturado mesmo com ativação desligada', async () => {
+    const dadosRascunho = migrarFichaDadosRascunho({ versaoProdutos: 2, produtosInteresse: [{ descricao: 'BERÇO', quantidade: 3, vendido: true }] })
+    mockSupabase({
+      app_usuarios_perfis: [{ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null }],
+      app_usuarios_unidades: [{ data: [{ app_unidades: { id: unidadeId, ativo: true } }], error: null }],
+      atendimento_presencial_atendimentos: [{ data: { ...rascunhoRow, dados_rascunho: dadosRascunho }, error: null }, { data: { ...rascunhoRow, version: 3, dados_rascunho: dadosRascunho }, error: null }],
+    })
+    const response = await PATCH(new Request('http://local', { method: 'PATCH', body: JSON.stringify({ version: 2, dadosRascunho }) }), { params: Promise.resolve({ id: rascunhoId }) })
+    expect(response.status).toBe(200)
+    expect((await response.json()).rascunho.dadosRascunho.produtosInteresse).toEqual(dadosRascunho.produtosInteresse)
+  })
   it('preserva contrato v2 e ramo comercial oculto no autosave', async () => {
     const dadosRascunho = migrarFichaDadosRascunho({ versaoFluxo: 2, tipoAtendimento: 'nao_cliente', motivoVisita: 'outros',
       resultadoAtendimento: 'negociacao', motivosResultado: ['preco'], observacaoNaoFechamento: 'Retornar' })

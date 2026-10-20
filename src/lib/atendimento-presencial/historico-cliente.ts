@@ -22,7 +22,8 @@ export type HistoricoAtendimentoClienteDTO = {
   consultora: string | null
   resultado: string | null
   departamentos: string[]
-  produtosInteresse: string[]
+  produtosInteresse: import('./produtos').ProdutoCompativel[]
+  versaoProdutos?: number | null
   numeroLancamento: number | null
 }
 
@@ -196,7 +197,8 @@ export function serializarHistoricoAtendimento(params: {
   unidadeNome: string | null
   consultoraEmail?: string | null
   departamentos: string[]
-  produtosInteresse: string[]
+  produtosInteresse: import('./produtos').ProdutoCompativel[]
+  versaoProdutos?: number | null
 }): HistoricoAtendimentoClienteDTO {
   return {
     id: params.row.id,
@@ -206,6 +208,7 @@ export function serializarHistoricoAtendimento(params: {
     resultado: getResultadoLabel(params.row.resultado_atendimento as ResultadoAtendimento | undefined),
     departamentos: params.departamentos.map((item) => getDepartamentoLabel(item as DepartamentoInteresse)),
     produtosInteresse: params.produtosInteresse,
+    versaoProdutos: params.versaoProdutos,
     numeroLancamento: params.row.numero_lancamento ?? null,
   }
 }

@@ -2,8 +2,48 @@
 
 Projeto: prancheta-virtual
 Estado: EM_EXECUCAO
-Fase atual: D-034 publicado em produção; P1 segue com os gates de homologação registrados abaixo
+Fase atual: D-042 publicação autorizada; migration aplicada, commit/push/deploy em preparação; homologação comercial/física pendente
 Atualizado em: 20/10/2026
+
+## Entregas A/B — D-038/D-039 (20/10/2026)
+
+Refinamento D-041 aprovado e implementado localmente: auxiliares entre entrada e cabeçalho; Marcar/✓ Vendido verde e × com alvo de 44px; edição do nome por Enter/blur/Esc; repetições resultantes de edição preservadas e inclusão normal incrementando a primeira correspondência; percentual sem teto (120%/140%), barra limitada. Mantidos cartões claros e controles agrupados da referência D-040. Comemoração compartilhada com /preview-pv-batido, somente após conclusão válida Venda fechada/PV≥5 com dados sincronizados antes do reset; valores reais e logo oficial BrandLogo, fogos finitos, 5s ou Continuar/×/Esc, redução de movimento e som local suave de três notas ascendentes por 1,5s. Sem repetição por resposta duplicada/recarga nem atendimento automático. Prévia sintética local em localhost:3224 e localhost:3224/preview-pv-batido; sem gravação remota.
+
+Plano aprovado e implementação local solicitada pelo usuário. Produtos/PV: leitura compatível, contrato versaoProdutos=2, lista compartilhada, quantidade/venda, duplicidade exata, indicador de PV e aviso comercial sem bloqueio. Históricos não classificados permanecem desconhecidos; produtos inalterados na edição preservam IDs/datas/grafia. APIs e trigger protegem contra escrita antiga. Sem novos filtros ou mudança de permissões.
+
+Migration aplicada isoladamente pelo MCP em D-042 como 20261020193639_prancheta_produtos_pv; arquivo local alinhado à versão remota, sem replay/repair. Amplia tabelas existentes, sem backfill, aceita nomes repetidos estruturados e remove somente uq_atendimento_presencial_produtos_descricao. Cinco hashes reais e índice conferidos no preflight. Pós-verificação: campos nullable sem defaults, trigger ativo e RLS/policies preservadas. Hash dos 172 produtos originais idêntico (86608eb4d5a1d3700c4f318cfb974274); operação comercial criou mais uma linha durante a janela, sem classificação dos históricos pela migration. Definições anteriores em scripts/prancheta/sql/produtos-base-real.sql. As 31 verificações SQL isoladas passaram novamente com o nome alinhado.
+
+Ativação autorizada em D-042. Vercel MCP retornou 403 para configurar variáveis de produção e não há CLI disponível; usuário confirmou NEXT_PUBLIC_PRANCHETA_PRODUTOS_V2=1 em Production, sem redeploy manual. Próximo build deve incorporar a ativação. Nenhum .env local alterado. Leitores/editores de registros já estruturados permanecem compatíveis com flag desligada; desativá-la não autoriza restaurar escritores antigos nem remover colunas/dados.
+
+Enxoval: oito PNGs enviados nesta conversa, preservados byte a byte em public/listas-enxoval, manifesto e modal paginado ligados à Prancheta. Não houve PDF/upload remoto. Verão 3/4 mantidos conforme fornecidos, sem editar o conteúdo.
+
+Browser local sintético scripts/prancheta/validar-produtos-browser.mjs aprovado em 320/390/1366px, dentro de Section real: quantidades/venda/PV imediato e cores, edição/cancelamento/nome vazio/duplicados, primeira correspondência na inclusão, 120%/140%, limite de 20 linhas, alvos 44px, oito PNGs em ordem, carregamento sob demanda, falha de imagem/nova tentativa, foco/formulário preservados e ausência de overflow/erros JS. Comemoração verificada após resposta sintética confirmada (não antes), sem disparar em 500/negociação/PV3/recarga/resposta duplicada; fechamento em 5s/Continuar/×/Esc, agendamento real de três notas até 1,5s, interrupção antecipada, áudio bloqueado e movimento reduzido. Container query coloca o nome acima dos controles até 280px úteis. Prévia Vite substitui somente o otimizador next/image por img; BrandLogo e PNG oficial são reais. Evidências sanitizadas em output/produtos-pv/. Não comprova sessão autenticada, integração com APIs/SQL reais, percepção sonora em dispositivo ou teste físico.
+
+Suíte módulo/API: 479 testes/44 arquivos aprovados, incluindo produtos e som; 35 testes de fila/cache repetidos após incluir nomes idênticos nos cenários offline/flush/conflito/retomada. ESLint dirigido aprovado. Typecheck standalone: os mesmos 15 erros preexistentes em testes Auth/Hub, sem erros nos arquivos desta entrega. Build local de produção aprovado (exit 0), com os avisos existentes de middleware e renderização dinâmica. Nenhuma fonte ou teste fora do escopo foi alterado para mascarar esses resultados.
+
+Candidato da allowlist aprovado: 475 testes/44 arquivos, ESLint e build com flag=1. Quatro testes extras de consultoras do workspace estão fora da entrega. Seleção parcial inicial corrigida após erro detectado na exportação de validação, antes de commit. Ambiente descartável adaptou apenas a raiz de resolução do Turbopack para acessar dependências locais; configuração publicada intacta. Próximo passo: commit/push da allowlist e confirmar deployment READY/SHA/domínio. Homologação comercial autenticada e dispositivo físico permanecem evidências separadas. Workspace preexistente preservado, com hunks de consultoras/filtros excluídos da seleção.
+
+## Desfecho do telefone na conclusão — D-037 (20/10/2026)
+
+Implementado localmente o segundo passo do modal: “Não pedi o número” abre o campo com máscara e validação existentes; “Confirmar telefone” salva pelo PATCH atual e conclui após sucesso; “Não pedi, cliente já foi embora” conclui sem telefone. Falhas mantêm o modal/digitação para nova tentativa. A opção “Sim, cliente não quis dar” permanece.
+
+Migration local `20261020155331_prancheta_desfecho_telefone.sql`: coluna nullable `telefone_desfecho`, check coerente com conclusão de cliente e com `telefone_recusa_confirmada`; RPC valida opções vinculadas à tentativa e grava o desfecho também no snapshot do histórico. Sem backfill. A booleana permanece true=recusa, false=telefone válido e NULL=cliente ausente sem solicitação.
+
+Validação local: 44 testes em quatro arquivos na implementação inicial; nesta publicação, 31 testes focados, ESLint dos seis arquivos de código/teste e diff-check aprovados. O primeiro teste Vitest foi impedido por `EPERM` no temporário isolado do Windows; repetido com temporário no workspace e aprovado. Build remoto compilado pelo Vercel. Typecheck standalone global mantém erros preexistentes nos testes de Auth/Hub, sem ocorrência nos arquivos desta alteração. Não foi feito teste autenticado/manual em loja.
+
+Migration `20261020155331_prancheta_desfecho_telefone` aplicada pelo MCP Supabase. Verificação posterior: coluna `text` nullable presente, CHECK validado e zero linhas com desfecho, confirmando ausência de backfill. Contagens observadas variaram de 106 concluídos/37 rascunhos para 107/36 durante a janela; nenhuma linha foi atualizada pela migration.
+
+Publicação concluída: commit funcional `c0cc67462cd281da5df7f7f32a0237eb77228cf2` e alinhamento da versão da migration `c0f1bce1f7f35e2b0c6be288129b6be08d0556dd` em `origin/main`. Deployment final Vercel `dpl_GuMLNaYa9zGcVy9suzwVA12jbcbH` `READY`/production, SHA confirmado, alias `lebebe.cloud` sem erro. Permanecem fora do commit/publicação as demais alterações locais pendentes.
+
+## Consultoras sem distinção de acentos — D-036 (20/10/2026)
+
+Migration `20261020135931_prancheta_consultoras_sem_acentos` aplicada e verificada no Supabase. As 14 ocorrências `LETICIA` e 4 `LETÍCIA` passaram a uma única grafia `LETICIA`; nenhuma linha de atendimento foi excluída ou consolidada. Backfill também cobriu `consultoraNome` nos rascunhos e a origem da consultora nos clientes. Hashes de integridade abortariam mudanças fora dos campos canônicos, version e `updated_at`; triggers de origem/normalização permanecem habilitados.
+
+Localmente, o filtro Salvos atualiza consultoras ao abrir o seletor, obtendo nomes dos atendimentos concluídos em páginas de 500, sem cadastro manual. Novos nomes aparecem depois de registrados em atendimento concluído dentro do escopo permitido; sem atendimento salvo, não há histórico que gere opção. “Virada do cartão” foi movida para depois de Interesses e Motivos. Normalizador de aplicação também remove acentos.
+
+Validação local: 73 testes dirigidos e ESLint aprovados; typecheck global mantém 15 erros preexistentes nos testes Auth/Hub, sem erro nos arquivos deste ajuste; `git diff --check` aprovado. Migration está aplicada remotamente. Código ainda não foi commitado, enviado à `main` ou publicado; validação visual autenticada pendente.
+
+Advisors do Supabase foram consultados. Não apontaram a nova função de canonicalização; persistem achados prévios no banco, incluindo `search_path` mutável em `atendimento_presencial_clientes_touch` e FKs sem índice em tabelas da Prancheta. Não foram alterados neste escopo.
 
 ## Publicação autorizada D-032 — 19/10/2026
 

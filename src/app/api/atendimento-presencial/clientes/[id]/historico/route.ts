@@ -18,27 +18,7 @@ import { buscarPedidosPersonalizadosPorTelefones } from '@/lib/pedidos-personali
 
 export const runtime = 'nodejs'
 
-const SELECT_ATENDIMENTO = [
-  'id',
-  'cliente_id',
-  'consultora_usuario_id',
-  'consultora_nome',
-  'unidade_id',
-  'status',
-  'draft_client_id',
-  'dados_rascunho',
-  'resultado_atendimento',
-  'numero_lancamento',
-  'concluido_em',
-  'iniciado_em',
-  'ultima_atividade_em',
-  'expira_em',
-  'version',
-  'criado_por',
-  'atualizado_por',
-  'created_at',
-  'updated_at',
-].join(', ')
+const SELECT_ATENDIMENTO = '*'
 
 type ClienteHistoricoRow = {
   id: string
@@ -132,7 +112,7 @@ export async function GET(
         ? supabase.from('atendimento_presencial_departamentos').select('atendimento_id, departamento').in('atendimento_id', atendimentoIds).order('ordem', { ascending: true })
         : Promise.resolve({ data: [], error: null }),
       atendimentoIds.length
-        ? supabase.from('atendimento_presencial_produtos_interesse').select('atendimento_id, descricao').in('atendimento_id', atendimentoIds).order('ordem', { ascending: true })
+        ? supabase.from('atendimento_presencial_produtos_interesse').select('*').in('atendimento_id', atendimentoIds).order('ordem', { ascending: true })
         : Promise.resolve({ data: [], error: null }),
       unidadeIds.length
         ? supabase.from('app_unidades').select('id, nome').in('id', unidadeIds)
@@ -165,9 +145,9 @@ export async function GET(
       departamentosPorAtendimento.set(row.atendimento_id, [...(departamentosPorAtendimento.get(row.atendimento_id) ?? []), row.departamento])
     }
 
-    const produtosPorAtendimento = new Map<string, string[]>()
-    for (const row of (produtosResult.data ?? []) as Array<{ atendimento_id: string; descricao: string }>) {
-      produtosPorAtendimento.set(row.atendimento_id, [...(produtosPorAtendimento.get(row.atendimento_id) ?? []), row.descricao])
+    const produtosPorAtendimento = new Map<string, import('@/lib/atendimento-presencial/produtos').ProdutoCompativel[]>()
+    for (const row of (produtosResult.data ?? []) as Array<{ atendimento_id: string; descricao: string; quantidade?: number | null; vendido?: boolean | null }>) {
+      produtosPorAtendimento.set(row.atendimento_id, [...(produtosPorAtendimento.get(row.atendimento_id) ?? []), { descricao: row.descricao, quantidade: row.quantidade ?? null, vendido: row.vendido ?? null }])
     }
 
     const unidadesPorId = new Map((unidadesResult.data ?? []).map((unidade) => [unidade.id, unidade.nome]))
@@ -179,7 +159,8 @@ export async function GET(
         row,
         unidadeNome: unidadesPorId.get(row.unidade_id) ?? null,
         departamentos: departamentosPorAtendimento.get(row.id) ?? [],
-        produtosInteresse: produtosPorAtendimento.get(row.id) ?? [],
+        produtosInteresse: (produtosPorAtendimento.get(row.id) ?? []).map(p => row.versao_produtos === 2 ? p : typeof p === 'string' ? p : p.descricao),
+        versaoProdutos: row.versao_produtos ?? null,
       })),
       vendas: vendasResult.vendas,
       ...(pedidosPersonalizados === null ? {} : { pedidosPersonalizados }),

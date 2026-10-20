@@ -401,3 +401,27 @@ describe('regressoes de autosave interrompido', () => {
     expect(save).toHaveBeenCalledTimes(1)
   })
 })
+
+
+it('produtos estruturados com nomes repetidos sobrevivem offline, flush e conflito de outra aba', async () => {
+  const repetido = { descricao: 'BERÇO', quantidade: 2, vendido: false }
+  const inicial: AutosavePayload = { ...payloadBase, dadosRascunho: { ...payloadBase.dadosRascunho, versaoProdutos: 2, produtosInteresse: [{ descricao: 'BERÇO', quantidade: 1, vendido: false }, repetido] } }
+  const vendido: AutosavePayload = { ...inicial, dadosRascunho: { ...inicial.dadosRascunho, produtosInteresse: [{ descricao: 'BERÇO', quantidade: 3, vendido: true }, repetido] } }
+  let online = false
+  const { fila, save } = criarFila({ online: () => online })
+  fila.enqueue(inicial)
+  expect((await fila.flushNow()).ok).toBe(false)
+  expect(save).not.toHaveBeenCalled()
+  online = true
+  expect((await fila.flushNow()).ok).toBe(true)
+  fila.enqueue(vendido)
+  expect((await fila.flushNow()).ok).toBe(true)
+  expect(save.mock.calls.map(([p]) => p.payload.dadosRascunho.produtosInteresse)).toEqual([inicial.dadosRascunho.produtosInteresse, vendido.dadosRascunho.produtosInteresse])
+  expect(fila.getLastSavedPayload()).toBe(serializarPayloadAutosave(vendido))
+  const onConflict = vi.fn()
+  const outra = criarFila({ save: vi.fn(async () => ({ ok: false as const, status: 409, message: 'Outra aba', rascunho: rascunho(3, vendido) })), onConflict })
+  expect((await outra.fila.flushNow(inicial)).ok).toBe(false)
+  expect(onConflict).toHaveBeenCalled()
+  expect(outra.fila.getRascunho().dadosRascunho.produtosInteresse).toEqual(payloadBase.dadosRascunho.produtosInteresse)
+  expect(outra.fila.hasPending()).toBe(true)
+})

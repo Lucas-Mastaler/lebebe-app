@@ -291,6 +291,14 @@ describe('api detalhe de registro atendimento presencial', () => {
     expect(rpc).not.toHaveBeenCalled()
   })
 
+  it('impede editor antigo de descartar quantidade e venda antes da RPC', async () => {
+    const { rpc } = mockSupabase(filasContextoEPatch({ ...atendimentoConcluido, versao_produtos: 2 } as typeof atendimentoConcluido))
+    const response = await PATCH(new Request('http://local', { method: 'PATCH', body: JSON.stringify(payloadEdicaoValido) }), { params: Promise.resolve({ id: atendimentoId }) })
+    expect(response.status).toBe(422)
+    expect((await response.json()).message).toContain('Atualize a página')
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
   it.each(['cliente', 'nao_cliente'])('le detalhe v2 %s sem exigir dados comerciais', async (tipo) => {
     const naoCliente = tipo === 'nao_cliente'
     mockSupabase({

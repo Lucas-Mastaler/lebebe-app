@@ -1,3 +1,4 @@
+import { PRODUTOS_V2_HABILITADOS } from '@/lib/atendimento-presencial/produtos-config'
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import {
@@ -143,6 +144,13 @@ export async function PATCH(
     const loaded = await buscarRascunhoVisivel(id)
     if (!loaded.ok) return loaded.response
 
+    if (validacaoDados.dados.versaoProdutos === 2 && !PRODUTOS_V2_HABILITADOS && loaded.row.dados_rascunho?.versaoProdutos !== 2) {
+      return jsonErro('O registro de quantidade e venda ainda não foi ativado.', 422, { field: 'produtosInteresse' })
+    }
+    if (loaded.row.dados_rascunho?.versaoProdutos === 2 && validacaoDados.dados.versaoProdutos !== 2) {
+      return jsonErro('Atualize a página para preservar as quantidades e vendas dos produtos.', 422, { field: 'produtosInteresse' })
+    }
+
     if (rascunhoExpirado(loaded.row.expira_em)) {
       return jsonErro('Rascunho expirado', 410, {
         rascunho: serializarAtendimentoPresencial(loaded.row),
@@ -193,6 +201,7 @@ export async function PATCH(
       .maybeSingle()
 
     if (updateError) {
+      if (updateError.message?.includes('produtos_cliente_antigo')) return jsonErro('Atualize a página para preservar as quantidades e vendas dos produtos.', 422, { field: 'produtosInteresse' })
       console.error('[ATENDIMENTO PRESENCIAL RASCUNHO] Erro ao atualizar rascunho:', updateError)
       return jsonErro('Erro ao processar requisicao', 500)
     }

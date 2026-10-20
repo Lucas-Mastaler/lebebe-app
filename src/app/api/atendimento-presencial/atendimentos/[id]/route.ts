@@ -1,3 +1,4 @@
+import { PRODUTOS_V2_HABILITADOS } from '@/lib/atendimento-presencial/produtos-config'
 import { NextResponse } from 'next/server'
 import { checkAccessWindowForUser } from '@/lib/auth/access-window'
 import { requireModuleAccess } from '@/lib/auth/module-access'
@@ -60,6 +61,7 @@ function calcularPermissaoEdicao(params: {
 
 function mapearErroRpcEdicao(error: { code?: string; message?: string }) {
   const message = error.message ?? ''
+  if (message.includes('produtos_cliente_antigo')) return jsonErro('Atualize a página para preservar as quantidades e vendas dos produtos.', 422, { field: 'produtosInteresse' })
   if (error.code === 'P0003' || message.includes('version_conflict')) {
     return jsonErro('Este atendimento foi alterado por outra pessoa. Recarregue os dados antes de salvar novamente.', 409)
   }
@@ -283,6 +285,12 @@ export async function PATCH(
       return jsonErro('Este atendimento foi alterado por outra pessoa. Recarregue os dados antes de salvar novamente.', 409)
     }
 
+    if (validacaoDados.dados.versaoProdutos === 2 && !PRODUTOS_V2_HABILITADOS && row.versao_produtos !== 2) {
+      return jsonErro('O registro de quantidade e venda ainda não foi ativado.', 422, { field: 'produtosInteresse' })
+    }
+    if (row.versao_produtos === 2 && validacaoDados.dados.versaoProdutos !== 2) {
+      return jsonErro('Atualize a página para preservar as quantidades e vendas dos produtos.', 422, { field: 'produtosInteresse' })
+    }
     if (row.versao_fluxo != null && validacaoDados.dados.versaoFluxo !== row.versao_fluxo) {
       return jsonErro('Nao e permitido converter um atendimento v2 para o fluxo legado.', 409)
     }

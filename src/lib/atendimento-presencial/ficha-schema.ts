@@ -1,4 +1,5 @@
 import type { ParentescoCliente } from './clientes'
+import { produtoNaoTrabalhado } from './produtos'
 
 export const MOTIVOS_VISITA_HISTORICOS = [
   { chave: 'entrega_mercadoria', label: 'Entrega de mercadoria' },
@@ -212,6 +213,7 @@ export type FichaCriancaRascunho = {
 }
 
 export type FichaDadosRascunho = {
+  versaoProdutos?: 2
   // Ausencia identifica o contrato legado; nunca inferir a versao pelo resultado.
   versaoFluxo?: 2
   tipoAtendimento?: 'cliente' | 'nao_cliente'
@@ -223,7 +225,7 @@ export type FichaDadosRascunho = {
   consultoraNome?: string
   criancas: FichaCriancaRascunho[]
   departamentos: DepartamentoInteresse[]
-  produtosInteresse: string[]
+  produtosInteresse: import('./produtos').ProdutoCompativel[]
   resultadoAtendimento?: ResultadoAtendimento
   motivosResultado: MotivoResultado[]
   motivoOutro?: string
@@ -260,6 +262,7 @@ const departamentosValidos = new Set<string>(DEPARTAMENTOS_INTERESSE.map((item) 
 const resultadosValidos = new Set<string>(RESULTADOS_ATENDIMENTO.map((item) => item.chave))
 const motivosValidos = new Set<string>([...MOTIVOS_RESULTADO_GRUPOS.flatMap((grupo) => grupo.motivos.map((item) => item.chave)), ...MOTIVOS_VENDA_PERDIDA.map(item => item.chave), ...MOTIVOS_NEGOCIACAO.map(item => item.chave)])
 const chavesPermitidas = new Set([
+  'versaoProdutos',
   'versaoFluxo',
   'tipoAtendimento',
   'motivoVisita',
@@ -542,7 +545,21 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
     )
   }
 
-  if (Array.isArray(payload.produtosInteresse)) {
+  if (payload.versaoProdutos !== undefined && payload.versaoProdutos !== 2) return { ok: false, field: 'produtosInteresse', message: 'Versão de produtos inválida.' }
+  if (payload.versaoProdutos === 2) {
+    const produtos = payload.produtosInteresse
+    if (!Array.isArray(produtos) || produtos.length > FICHA_PRODUTOS_MAX_ITENS) return { ok: false, field: 'produtosInteresse', message: 'Informe até 20 produtos.' }
+    for (const item of produtos) {
+      if (!item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).some(key => !['descricao', 'quantidade', 'vendido'].includes(key))
+        || typeof item.descricao !== 'string' || !item.descricao.trim() || Array.from(item.descricao).length > FICHA_PRODUTO_MAX_CHARS
+        || !(item.quantidade === null || (Number.isInteger(item.quantidade) && item.quantidade >= 1 && item.quantidade <= 2147483647))
+        || !(item.vendido === null || typeof item.vendido === 'boolean') || (item.vendido === true && item.quantidade === null)) return { ok: false, field: 'produtosInteresse', message: 'Revise nome, quantidade e venda do produto.' }
+      if (produtoNaoTrabalhado(item) && (item.quantidade !== null || item.vendido !== null)) return { ok: false, field: 'produtosInteresse', message: 'O marcador de produto não trabalhado não tem quantidade ou venda.' }
+    }
+    dados.versaoProdutos = 2
+    dados.produtosInteresse = produtos.map(item => ({ descricao: item.descricao, quantidade: item.quantidade, vendido: item.vendido }))
+  } else if (Array.isArray(payload.produtosInteresse)) {
+    if (payload.produtosInteresse.some(item => typeof item !== 'string')) return { ok: false, field: 'produtosInteresse', message: 'Atualize a página para registrar produtos.' }
     const vistos = new Set<string>()
     dados.produtosInteresse = payload.produtosInteresse.slice(0, FICHA_PRODUTOS_MAX_ITENS).flatMap((item) => {
       const texto = normalizarTexto(item, FICHA_PRODUTO_MAX_CHARS)

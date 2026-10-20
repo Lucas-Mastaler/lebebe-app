@@ -43,6 +43,7 @@ export type AtendimentoPresencialRow = {
   dados_rascunho: DadosRascunho
   resultado_atendimento?: string | null
   versao_fluxo?: number | null
+  versao_produtos?: number | null
   tipo_atendimento?: 'cliente' | 'nao_cliente' | null
   telefone_recusa_confirmada?: boolean | null
   motivo_visita?: string | null
@@ -100,6 +101,7 @@ export function serializarAtendimentoPresencial(row: AtendimentoPresencialRow): 
     dadosRascunho: migrarFichaDadosRascunho(row.dados_rascunho),
     resultadoAtendimento: row.resultado_atendimento ?? null,
     versaoFluxo: row.versao_fluxo ?? null,
+    versaoProdutos: row.versao_produtos ?? null,
     tipoAtendimento: row.tipo_atendimento ?? null,
     telefoneRecusaConfirmada: row.telefone_recusa_confirmada ?? null,
     motivoVisita: row.motivo_visita ?? null,

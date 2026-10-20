@@ -1,0 +1,90 @@
+.container { container-type: inline-size; min-width: 0; }
+.entrada { display: flex; gap: 8px; margin-bottom: 12px; }
+.campo {
+  height: 48px; min-width: 0; flex: 1; border-radius: 12px;
+  background: white; font-size: 16px; box-shadow: 0 2px 3px rgb(15 23 42 / 4%);
+}
+.adicionar { width: 48px; height: 48px; padding: 0; border-radius: 12px; }
+.grade {
+  display: grid; grid-template-columns: minmax(0, 1fr) 104px 72px 44px;
+  align-items: center; gap: 4px; padding: 8px 4px 8px 10px;
+}
+.cabecalho {
+  min-height: 36px; margin-bottom: 6px; border-radius: 10px;
+  background: var(--color-cyan-100); color: var(--color-slate-600);
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .025em;
+}
+.lista { display: grid; gap: 8px; }
+.linha {
+  min-height: 64px; border: 1px solid var(--color-slate-200); border-radius: 12px;
+  background: white; box-shadow: 0 1px 2px rgb(15 23 42 / 2%);
+}
+.nome {
+  min-width: 0; overflow-wrap: anywhere; color: var(--color-slate-900);
+  font-size: 14px; font-weight: 600; line-height: 1.4;
+}
+.quantidade {
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center;
+  padding: 2px 0; border: 1px solid var(--color-slate-100); border-radius: 10px;
+  background: var(--color-cyan-50);
+}
+.controle {
+  display: flex; min-height: 44px; align-items: center; justify-content: center;
+  border-radius: 8px; color: var(--primary); cursor: pointer;
+}
+.controle:hover:not(:disabled) { background: var(--color-cyan-100); }
+.controle:disabled { opacity: .35; cursor: default; }
+.numero {
+  padding: 8px 0; border-radius: 6px; background: white; color: var(--color-slate-900);
+  font-size: 14px; font-weight: 700; text-align: center;
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.toggle, .remover {
+  display: flex; min-height: 44px; align-items: center; justify-content: center;
+  border-radius: 8px; cursor: pointer;
+}
+.toggle { width: 72px; gap: 3px; padding: 4px; color: var(--color-slate-600); font-size: 11px; font-weight: 600; border: 1px solid var(--color-slate-200); border-radius: 999px; }
+.toggle[data-vendido='sim'] { background: var(--color-green-700); color: white; border-color: var(--color-green-700); }
+.toggle[data-vendido='desconhecido'] { border-style: dashed; }
+.remover { width: 44px; color: var(--color-slate-500); }
+.remover:hover { background: var(--color-slate-50); color: var(--color-slate-700); }
+.controle:focus-visible, .toggle:focus-visible, .remover:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 2px;
+}
+.resumoPv { margin-top: 12px; }
+.pv { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 12px; }
+.pvPendente { background: var(--color-rose-50); color: var(--color-red-600); }
+.pvSucesso { background: var(--color-emerald-50); color: var(--color-emerald-700); }
+.pvDesconhecido { background: var(--color-slate-100); color: var(--color-slate-600); }
+.pvIcone { width: 22px; height: 22px; flex-shrink: 0; }
+.pvConteudo { min-width: 0; flex: 1; }
+.pvCabecalho { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 6px; }
+.pvValor { font-size: 16px; line-height: 1.2; }
+.pvMeta {
+  padding-left: 10px; border-left: 1px solid var(--color-slate-300);
+  color: var(--color-slate-600); font-size: 11px; font-weight: 600;
+}
+.pvPercentual { margin-left: auto; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pvBarra { height: 8px; overflow: hidden; border-radius: 999px; background: var(--color-rose-200); }
+.pvSucesso .pvBarra { background: var(--color-emerald-200); }
+.pvLegenda { margin: 4px 2px 0; color: var(--color-slate-500); font-size: 10px; }
+.marcador {
+  max-width: 100%; min-height: 44px; height: auto;
+  padding: 8px 12px; border-radius: 10px; white-space: normal;
+}
+.acoesAuxiliares { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.acoesAuxiliares > button { min-height: 44px; }
+.nomeEditavel { min-height: 44px; text-align: left; cursor: text; border-radius: 6px; }
+.nomeEditavel:hover { background: var(--color-cyan-50); }
+.nomeEditavel:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.editarNome { min-width: 0; width: 100%; height: 44px; font-size: 14px; background: white; }
+/* Largura útil dentro de seções/modais: preservar nome e alvos de 44px. */
+@container (max-width: 280px) {
+  .nome { grid-column: 1 / -1; }
+  .editarNome { grid-column: 1 / -1; }
+  .quantidadePosicao { grid-column: 2; }
+  .pv { gap: 6px; padding: 10px; }
+  .pvIcone { width: 18px; height: 18px; }
+  .pvCabecalho { gap: 4px 6px; }
+  .pvMeta { padding-left: 6px; }
+}

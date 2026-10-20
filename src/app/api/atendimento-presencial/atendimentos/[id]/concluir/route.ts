@@ -14,30 +14,8 @@ import {
 
 export const runtime = 'nodejs'
 
-const SELECT_ATENDIMENTO = [
-  'id',
-  'cliente_id',
-  'consultora_usuario_id',
-  'unidade_id',
-  'status',
-  'draft_client_id',
-  'dados_rascunho',
-  'resultado_atendimento',
-  'motivo_outro',
-  'observacoes',
-  'numero_lancamento',
-  'concluido_em',
-  'iniciado_em',
-  'ultima_atividade_em',
-  'expira_em',
-  'version',
-  'criado_por',
-  'atualizado_por',
-  'created_at',
-  'updated_at',
-  'consultora_nome',
-  'telefone_recusa_confirmada',
-].join(', ')
+// Leitor aditivo: funciona antes e depois da migration de produtos. O DTO limita a resposta.
+const SELECT_ATENDIMENTO = '*'
 
 function jsonErro(message: string, status: number, extra?: Record<string, unknown>) {
   return NextResponse.json({ ok: false, message, ...extra }, { status })

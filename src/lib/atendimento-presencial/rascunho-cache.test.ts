@@ -26,6 +26,16 @@ function criarStorage(): StorageLike & { data: Map<string, string> } {
 }
 
 describe('cache local de rascunho', () => {
+  it('retoma quantidade/venda sem conflito próprio e detecta alteração de outra aba', () => {
+    const dados = { criancas: [], departamentos: [], produtosInteresse: [{ descricao: 'Berço', quantidade: 2, vendido: true }, { descricao: 'Berço', quantidade: 1, vendido: false }], versaoProdutos: 2 as const, motivosResultado: [], etapaAtual: 'ficha' as const }
+    const cache: RascunhoCache = { usuarioId: 'usuario', draftClientId: 'draft-produtos', atendimentoId: 'atendimento', version: 1, clienteId: null, dadosRascunho: dados, atualizadoEm: '2026-10-20', sincronizado: false }
+    const storage = criarStorage()
+    expect(salvarCacheRascunho(storage, cache)).toBe(true)
+    const retomado = carregarCacheRascunho(storage, 'usuario', 'draft-produtos')
+    expect(retomado?.dadosRascunho).toEqual(dados)
+    expect(planejarRecuperacaoRascunho(retomado, { id: 'atendimento', version: 2, clienteId: null, dadosRascunho: dados }).conflito).toBe(false)
+    expect(planejarRecuperacaoRascunho(retomado, { id: 'atendimento', version: 2, clienteId: null, dadosRascunho: { ...dados, produtosInteresse: [{ descricao: 'Berço', quantidade: 3, vendido: true }] } }).conflito).toBe(true)
+  })
   it('retomada apos PATCH concluido ao sair nao cria conflito se o conteudo ja esta no servidor', () => {
     const dados = { criancas: [{ id: 'crianca-teste', situacao: 'gestacao' as const, nome: 'Maria' }], departamentos: [], produtosInteresse: [], motivosResultado: [], etapaAtual: 'ficha' as const }
     const dadosServidor = { ...dados, criancas: [{ ...dados.criancas[0], nome: 'MARIA' }] }

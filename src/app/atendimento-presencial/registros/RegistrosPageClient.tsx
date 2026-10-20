@@ -1,5 +1,9 @@
 'use client'
 
+import { ProdutosAtendimento, ResumoProdutos, AvisoProdutosVendidos } from '@/components/atendimento-presencial/ProdutosAtendimento'
+import { PRODUTOS_V2_HABILITADOS } from '@/lib/atendimento-presencial/produtos-config'
+import { descricaoProduto } from '@/lib/atendimento-presencial/produtos'
+
 
 import { calcularReferenciaNascimento, criancaJaNasceu, dataAtendimentoLocal, descreverIdadeAproximada } from '@/lib/atendimento-presencial/idade-aproximada'
 
@@ -516,7 +520,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     const produto = normalizarProduto(produtoEdicaoDigitado)
     if (!produto) return
     atualizarFichaEdicao((atual) => {
-      const jaExiste = atual.produtosInteresse.some((item) => item.toLocaleLowerCase('pt-BR') === produto.toLocaleLowerCase('pt-BR'))
+      const jaExiste = atual.produtosInteresse.some((item) => descricaoProduto(item).toLocaleLowerCase('pt-BR') === produto.toLocaleLowerCase('pt-BR'))
       if (jaExiste || atual.produtosInteresse.length >= FICHA_PRODUTOS_MAX_ITENS) return atual
       return { ...atual, produtosInteresse: [...atual.produtosInteresse, produto] }
     })
@@ -1033,7 +1037,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                               <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Departamentos</p>
                               <div className="flex flex-wrap gap-2">{selecionado.departamentos.length ? selecionado.departamentos.map((item) => <Badge key={item.id} tone="brand">{getDepartamentoLabel(item.departamento as DepartamentoInteresse)}</Badge>) : <p className="text-slate-500">Nenhum departamento informado.</p>}</div>
                             </div>
-                            {selecionado.produtosInteresse.length > 0 && <div className="border-t border-slate-200 pt-3"><p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Produtos de interesse</p><ul className="grid gap-1 sm:grid-cols-2">{selecionado.produtosInteresse.map((item) => <li key={item.id} className="rounded-lg border border-white bg-white/80 px-3 py-2 font-medium text-slate-800">{item.descricao}</li>)}</ul></div>}
+                            <ResumoProdutos produtos={selecionado.produtosInteresse.map(p => ({ descricao: p.descricao, quantidade: p.quantidade ?? null, vendido: p.vendido ?? null }))} versaoProdutos={selecionado.atendimento.versaoProdutos} />
                           </Section>
                         </>
                       )}
@@ -1315,6 +1319,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                 </Section>
 
                 <Section title="Produtos" variant="subsection" collapsible>
+                  {(PRODUTOS_V2_HABILITADOS || fichaEdicao.versaoProdutos === 2) ? <ProdutosAtendimento ficha={fichaEdicao} atualizar={atualizarFichaEdicao} digitado={produtoEdicaoDigitado} setDigitado={setProdutoEdicaoDigitado} /> : <>
                   <p className="text-sm font-semibold text-slate-800">Produtos de interesse</p>
                   <div className="mt-2 flex gap-2">
                     <Input
@@ -1335,16 +1340,18 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {fichaEdicao.produtosInteresse.map((produto) => (
-                      <button key={produto} type="button" onClick={() => atualizarFichaEdicao((atual) => ({ ...atual, produtosInteresse: atual.produtosInteresse.filter((item) => item !== produto) }))} className="inline-flex min-h-10 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700">
-                        {produto}
+                      <button key={descricaoProduto(produto)} type="button" onClick={() => atualizarFichaEdicao((atual) => ({ ...atual, produtosInteresse: atual.produtosInteresse.filter((item) => item !== produto) }))} className="inline-flex min-h-10 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700">
+                        {descricaoProduto(produto)}
                         <X className="size-4" aria-hidden="true" />
                       </button>
                     ))}
                   </div>
+                  </>}
                 </Section>
 
                 <Section title="Resultado e condições" variant="subsection" collapsible>
                 <div>
+                  <AvisoProdutosVendidos ficha={fichaEdicao} />
                   <p className="text-sm font-semibold text-slate-800">Resultado</p>
                   <div className="mt-2 grid gap-2">
                     {RESULTADOS_ATENDIMENTO.map((item) => (

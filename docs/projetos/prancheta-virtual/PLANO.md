@@ -4,6 +4,50 @@
 
 Contrato funcional: ESCOPO.md. Decisões: DECISOES.md. Marcar somente tarefas realmente executadas e validadas.
 
+## Refinamento de produtos e comemoração (D-041)
+
+- [x] Auxiliares entre entrada e cabeçalho, Marcar/✓ Vendido verde, × visível, alvos de 44px e percentual sem teto.
+- [x] Edição na linha com Enter/blur/Esc, normalização e validação; duplicados permitidos ao editar, inclusão incrementa a primeira linha equivalente.
+- [x] Remover rejeição de repetições estruturadas em TS/SQL e unicidade por descrição somente na migration pendente; MCP real somente leitura confirmou definições/hashes e índice esperado.
+- [x] Compartilhar comemoração entre Prancheta e prévia; confirmar resultado/ID/status após flush/servidor e antes de limpar formulário; impedir repetição por atendimento.
+- [x] Logo oficial BrandLogo, fogos finitos, 5s/Continuar/×/Esc, redução de movimento e som Web Audio local de três notas ascendentes por 1,5s; falha de som sem afetar conclusão.
+- [x] Browser sintético 320/390/1366px: posição/alvos/overflow, edição/duplicados, 120%/140%, comemoração após sucesso, áudio bloqueado, interrupção e duração, fechamento e cena estática.
+- [x] 479 testes/44 arquivos; 35 testes de autosave/cache repetidos após incluir nomes idênticos. 31 verificações SQL isoladas; lint e verificação de tipos dirigidos (15 erros globais preexistentes fora do escopo).
+- [x] Build de produção local aprovado, incluindo a logo oficial compartilhada.
+- [ ] Homologação autenticada/integrada e dispositivo físico, incluindo reprodução sonora no aparelho final.
+- [x] Autorizações para migration remota, ativação e commit/push/deploy recebidas em D-042; migration 20261020193639 aplicada e verificada; usuário confirmou flag Production.
+- [ ] Confirmar commit enviado e deployment READY/SHA/domínio da D-042.
+
+## Entrega A — Produtos e PV (D-038)
+
+- [x] Contrato versionado compatível com textos antigos e objetos; versão incluída na comparação de autosave; leitores/edição/histórico preparados.
+- [x] Migration aditiva local: quantidade/venda nullable, versão no concluído, validação SQL, bloqueio de downgrade no banco e APIs, RPCs atuais preservadas e edição sem recriar produtos inalterados.
+- [x] Lista única compartilhada, maiúsculas/duplicidades exatas, quantidade por toque, venda por linha, marcador genérico fora do PV e legado Não informado; múltiplas correspondências incrementam a primeira conforme D-041.
+- [x] PV derivado imediato no bloco, meta visual 5, informação histórica incompleta e aviso de Negociação/Perda sem bloqueio.
+- [x] PostgreSQL isolado: 31 verificações, incluindo nomes repetidos após edição, preservação de produtos antigos, RPCs, concorrência, ACL da função nova, erro com rollback e reaplicação recusada.
+- [x] Browser local sintético com componentes reais em 320/390/1366px: duplicidade, duplo consumo, quantidade/venda/PV, limites, alvos 44px e ausência de overflow/erros JS.
+- [ ] Homologação integrada/autenticada em banco controlado, com a migration e todas as camadas conectadas.
+- [x] Autorizar/aplicar migration isolada após novo preflight MCP (20261020193639 / D-042). Sem executar migrations antigas ou repair. Próximo build autorizado inclui leitores/proteções e ativação confirmada pelo usuário.
+- [ ] Autorizar commit/push/deploy e confirmar READY/alias; homologação física separada. Sem rollback para escritores que descartem metadados.
+
+## Entrega B — Lista de enxoval (D-039)
+
+- [x] Oito PNGs fornecidos, copiados sem edição/conversão, hashes conferidos e manifesto estático ordenado.
+- [x] Acesso Lista de enxoval na Prancheta, modal DS responsivo, Verão/Inverno, paginação, link do original e tratamento de erro.
+- [x] Browser sintético nos três tamanhos: oito páginas carregadas, somente página visitada solicitada, formulário/foco preservados ao fechar, sem submit acidental ou overflow.
+- [x] Falha de imagem simulada no browser e nova tentativa aprovadas, sem alterar formulário ou produto; layout conferido dentro de Section real.
+- [ ] Homologação autenticada na Prancheta e dispositivos reais.
+- [ ] Publicação independente autorizada e validada. Nenhum banco necessário para B.
+
+## Desfecho do telefone na conclusão — D-037
+
+- [x] Atualizar o modal: distinguir recusa, telefone informado e cliente que já foi embora antes de pedir; salvar telefone válido e concluir automaticamente.
+- [x] Preparar migration local aditiva, sem backfill; manter coluna booleana compatível e registrar o desfecho no snapshot do histórico.
+- [x] Validar opções e vínculo à tentativa no endpoint/RPC; exibir o desfecho no histórico do atendimento.
+- [x] 44 testes dirigidos, ESLint dos arquivos envolvidos, diff-check e build de produção aprovados.
+- [x] Aplicar migration `20261020155331_prancheta_desfecho_telefone` no Supabase; verificada a coluna nullable, constraint validada e zero backfill.
+- [x] Publicar somente os sete arquivos D-037 no commit `c0cc67462cd281da5df7f7f32a0237eb77228cf2`; alinhar o nome da migration ao histórico remoto no commit `c0f1bce1f7f35e2b0c6be288129b6be08d0556dd`. Deployment final `dpl_GuMLNaYa9zGcVy9suzwVA12jbcbH` `READY` em produção com alias `lebebe.cloud`.
+
 ## Cadastro, filtros e rascunhos — D-031 (19/10/2026)
 
 Plano aprovado expressamente pelo usuário; execução local autorizada. Banco remoto e publicação permanecem em etapa posterior autorizada.
@@ -350,3 +394,12 @@ Banco atual exige cliente/resultado/motivos; crianças são por atendimento e pa
 - [x] Publicar o pacote D-034 na `main` e confirmar build Vercel `READY` no alias `lebebe.cloud` (20/10/2026).
 - [x] Preservar regra e fluxo atual da confirmação de telefone, inclusive para venda fechada; sem nova opção.
 - [x] Testes dirigidos (434 aprovados), ESLint e `git diff --check`; build bloqueado por indisponibilidade de Google Fonts.
+
+## Consultoras sem distinção de acentos — D-036 (20/10/2026)
+
+- [x] Posicionar “Virada do cartão” depois do grupo Interesses e Motivos.
+- [x] Atualizar consultoras ao abrir o seletor, lendo registros concluídos por páginas e respeitando o escopo de acesso; sem lista manual.
+- [x] Canonicalizar nomes sem acentos no código e no banco, sem diferenciar LETICIA/LETÍCIA.
+- [x] Aplicar migration remota `20261020135931_prancheta_consultoras_sem_acentos`; backfill de atendimentos, rascunhos e origem em clientes, sem excluir ou unir linhas.
+- [x] 73 testes dirigidos, ESLint e diff-check; TypeScript global com 15 falhas preexistentes fora dos arquivos alterados.
+- [ ] Commit, push, deploy e validação visual autenticada do código.

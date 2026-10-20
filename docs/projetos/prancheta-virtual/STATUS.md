@@ -2,7 +2,7 @@
 
 Projeto: prancheta-virtual
 Estado: EM_EXECUCAO
-Fase atual: migration D-034 aplicada; commit/push e publicação em andamento
+Fase atual: D-034 publicado em produção; P1 segue com os gates de homologação registrados abaixo
 Atualizado em: 20/10/2026
 
 ## Publicação autorizada D-032 — 19/10/2026

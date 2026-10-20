@@ -347,5 +347,6 @@ Banco atual exige cliente/resultado/motivos; crianças são por atendimento e pa
 - [x] Hierarquia dos títulos de grupos do filtro reforçada pelo Design System.
 - [x] Diálogos de confirmação limitados a aproximadamente 80vw e ao max-width atual.
 - [x] Adicionar `cliente_retira` à venda perdida e aos validadores; migration aplicada no Supabase remoto antes da publicação.
+- [x] Publicar o pacote D-034 na `main` e confirmar build Vercel `READY` no alias `lebebe.cloud` (20/10/2026).
 - [x] Preservar regra e fluxo atual da confirmação de telefone, inclusive para venda fechada; sem nova opção.
 - [x] Testes dirigidos (434 aprovados), ESLint e `git diff --check`; build bloqueado por indisponibilidade de Google Fonts.

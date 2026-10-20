@@ -153,3 +153,5 @@ A confirmação de telefone mantém exatamente os ramos e ações atuais. Códig
 ## D-035 — Publicação do pacote D-034 na main (20/10/2026)
 
 Usuário autorizou publicar todas as edições pendentes deste pacote na `main`. Aplicar antes do código a migration aditiva `20261020130618_prancheta_motivo_cliente_retira`, necessária para a chave `cliente_retira`; preservar o fluxo de telefone. Depois, commit/push apenas dos arquivos do pacote e confirmar o deployment de produção/domínio no Vercel. Alterações preexistentes fora do escopo devem permanecer fora do commit.
+
+Publicação concluída: migration `20261020130618` aplicada e verificada; commit `8f0b0f4ff7445122f852a0b40f1f8355b84095b` enviado a `origin/main`. Vercel deployment `dpl_7cDQbF8KiEFJ7YeG2JYsNZvJ8vnf` ficou `READY` em produção, com SHA correspondente e alias `lebebe.cloud` sem erro. Build remoto compilou com sucesso; homologação autenticada comercial e em aparelho físico não foi executada nesta publicação.

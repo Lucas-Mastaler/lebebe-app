@@ -403,6 +403,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [etapaConfirmacaoTelefone, setEtapaConfirmacaoTelefone] = useState<'pergunta' | 'informar'>('pergunta')
   const [telefoneConfirmacao, setTelefoneConfirmacao] = useState('')
   const [erroTelefoneConfirmacao, setErroTelefoneConfirmacao] = useState<string | null>(null)
+  const [clienteDuplicadoTelefoneConfirmacao, setClienteDuplicadoTelefoneConfirmacao] = useState<ClientePresencialDTO | null>(null)
+  const [clienteExistenteSelecionadoTelefone, setClienteExistenteSelecionadoTelefone] = useState<ClientePresencialDTO | null>(null)
   const [confirmandoTelefoneModal, setConfirmandoTelefoneModal] = useState(false)
   const confirmarTelefoneModalRef = useRef(false)
   const telefoneParaFocoRef = useRef(false)
@@ -1000,7 +1002,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     }, 800)
   }
 
-  async function salvarTelefoneCliente(cliente: ClientePresencialDTO, telefone: string, requestId: number): Promise<boolean> {
+  async function salvarTelefoneCliente(cliente: ClientePresencialDTO, telefone: string, requestId: number, onError?: (message: string) => void): Promise<boolean> {
     if (telefone === (cliente.telefoneFormatado ?? cliente.telefone ?? '')) { setTelefonePendente(null); return true }
     if (telefone && mensagemTelefoneCliente(telefone)) { setErroTelefone(mensagemTelefoneCliente(telefone)); return false }
     const anterior = telefoneSaveRef.current
@@ -1035,6 +1037,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       setTelefoneClienteEdicao(data.cliente.telefoneFormatado ?? '')
       return true
     } catch (error) {
+      if (onError) onError(error instanceof Error ? error.message : 'Erro ao atualizar telefone')
       if (requestId === telefoneRequestRef.current && mountedRef.current) {
         setErroTelefone(error instanceof Error ? error.message : 'Erro ao atualizar telefone')
       }
@@ -1342,6 +1345,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     setEtapaConfirmacaoTelefone('pergunta')
     setTelefoneConfirmacao('')
     setErroTelefoneConfirmacao(null)
+    setClienteDuplicadoTelefoneConfirmacao(null)
+    setClienteExistenteSelecionadoTelefone(null)
     irParaEtapa('ficha')
   }
 
@@ -1361,9 +1366,25 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     setErroTelefoneConfirmacao(null)
     try {
       if (telefoneDebounceRef.current) clearTimeout(telefoneDebounceRef.current)
-      const salvo = await salvarTelefoneCliente(cliente, telefone, ++telefoneRequestRef.current)
+      let mensagemFalha: string | null = null
+      const salvo = await salvarTelefoneCliente(cliente, telefone, ++telefoneRequestRef.current, mensagem => { mensagemFalha = mensagem })
       if (!salvo) {
-        setErroTelefoneConfirmacao('Não foi possível salvar o telefone. Confira o número e tente novamente.')
+        try {
+          const duplicidade = await consultarDuplicidade(telefone)
+          if (duplicidade?.cliente) {
+            setClienteDuplicadoTelefoneConfirmacao(duplicidade.cliente)
+            setErroTelefoneConfirmacao(null)
+            return
+          }
+          if (duplicidade?.ambiguo) {
+            setErroTelefoneConfirmacao('Este telefone aparece em mais de um cadastro. Busque a cliente pelo nome antes de continuar.')
+            return
+          }
+        } catch (erroConsulta) {
+          setErroTelefoneConfirmacao(mensagemFalha ?? (erroConsulta instanceof Error ? erroConsulta.message : 'Não foi possível conferir o cadastro deste telefone.'))
+          return
+        }
+        setErroTelefoneConfirmacao(mensagemFalha ?? 'Não foi possível salvar o telefone. Confira o número e tente novamente.')
         return
       }
       await concluirAtendimento(atual.ficha, undefined, true)
@@ -1699,6 +1720,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       setEtapaConfirmacaoTelefone('pergunta')
       setTelefoneConfirmacao('')
       setErroTelefoneConfirmacao(null)
+      setClienteDuplicadoTelefoneConfirmacao(null)
+      setClienteExistenteSelecionadoTelefone(null)
       concluindoRef.current = false
       setConcluindo(false)
       return
@@ -1744,6 +1767,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       setEtapaConfirmacaoTelefone('pergunta')
       setTelefoneConfirmacao('')
       setErroTelefoneConfirmacao(null)
+      setClienteDuplicadoTelefoneConfirmacao(null)
+      setClienteExistenteSelecionadoTelefone(null)
       autosaveQueueRef.current?.stop()
       autosaveQueueRef.current = null
       setAtivo(null)
@@ -1867,14 +1892,30 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                 value={telefoneConfirmacao}
                 aria-invalid={Boolean(erroTelefoneConfirmacao)}
                 aria-describedby={erroTelefoneConfirmacao ? 'erro-telefone-confirmacao' : undefined}
-                onChange={event => { setTelefoneConfirmacao(mascararTelefoneClienteBR(event.target.value)); setErroTelefoneConfirmacao(null) }}
+                onChange={event => { setTelefoneConfirmacao(mascararTelefoneClienteBR(event.target.value)); setErroTelefoneConfirmacao(null); setClienteDuplicadoTelefoneConfirmacao(null); setClienteExistenteSelecionadoTelefone(null) }}
                 placeholder="(00) 00000-0000"
                 disabled={confirmandoTelefoneModal || concluindo}
               />
+              {clienteDuplicadoTelefoneConfirmacao && <Alert tone="info">
+                <p>Este telefone já está cadastrado para <strong>{clienteDuplicadoTelefoneConfirmacao.nome.toLocaleUpperCase('pt-BR')}</strong>.</p>
+                <Button type="button" variant="secondary" className="mt-2 min-h-12" disabled={confirmandoTelefoneModal || concluindo} onClick={() => {
+                  const atual = confirmacaoTelefone
+                  if (!atual || atual.atendimentoId !== ativoRef.current?.id) return
+                  selecionarCliente(clienteDuplicadoTelefoneConfirmacao)
+                  setClienteExistenteSelecionadoTelefone(clienteDuplicadoTelefoneConfirmacao)
+                  setClienteDuplicadoTelefoneConfirmacao(null)
+                  setTelefoneConfirmacao(clienteDuplicadoTelefoneConfirmacao.telefoneFormatado ?? clienteDuplicadoTelefoneConfirmacao.telefone ?? telefoneConfirmacao)
+                  setErroTelefoneConfirmacao(null)
+                  setConfirmacaoTelefone({ ...atual, clienteId: clienteDuplicadoTelefoneConfirmacao.id })
+                }}>Usar cadastro desta cliente</Button>
+              </Alert>}
+              {clienteExistenteSelecionadoTelefone && <Alert tone="success">
+                Cadastro selecionado: <strong>{clienteExistenteSelecionadoTelefone.nome.toLocaleUpperCase('pt-BR')}</strong>. Confirme para concluir o atendimento com este cadastro.
+              </Alert>}
               {erroTelefoneConfirmacao && <p id="erro-telefone-confirmacao" className="text-sm text-destructive" role="alert">{erroTelefoneConfirmacao}</p>}
             </div>
             <Button type="button" variant="primary" className="w-full bg-emerald-600 text-white hover:bg-emerald-700" loading={confirmandoTelefoneModal || concluindo} onClick={() => void confirmarTelefoneEConcluir()}>
-              Confirmar telefone
+              {clienteExistenteSelecionadoTelefone ? 'Concluir com cadastro existente' : 'Confirmar telefone'}
             </Button>
             <Button type="button" variant="secondary" className="w-full" disabled={concluindo || confirmandoTelefoneModal} onClick={() => {
               const atual = confirmacaoTelefone

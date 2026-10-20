@@ -400,6 +400,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [criancasEmEdicao, setCriancasEmEdicao] = useState<string[]>([])
   const [criancasConfirmadas, setCriancasConfirmadas] = useState<string[]>([])
   const [confirmacaoTelefone, setConfirmacaoTelefone] = useState<{ ficha: FichaDadosRascunho; atendimentoId: string; clienteId: string | null } | null>(null)
+  const [etapaConfirmacaoTelefone, setEtapaConfirmacaoTelefone] = useState<'pergunta' | 'informar'>('pergunta')
+  const [telefoneConfirmacao, setTelefoneConfirmacao] = useState('')
+  const [erroTelefoneConfirmacao, setErroTelefoneConfirmacao] = useState<string | null>(null)
+  const [confirmandoTelefoneModal, setConfirmandoTelefoneModal] = useState(false)
+  const confirmarTelefoneModalRef = useRef(false)
   const telefoneParaFocoRef = useRef(false)
   const autosaveQueueRef = useRef<AutosaveSerialQueue | null>(null)
   const formContentRef = useRef<HTMLDivElement | null>(null)
@@ -995,9 +1000,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     }, 800)
   }
 
-  async function salvarTelefoneCliente(cliente: ClientePresencialDTO, telefone: string, requestId: number) {
-    if (telefone === (cliente.telefoneFormatado ?? cliente.telefone ?? '')) { setTelefonePendente(null); return }
-    if (telefone && mensagemTelefoneCliente(telefone)) { setErroTelefone(mensagemTelefoneCliente(telefone)); return }
+  async function salvarTelefoneCliente(cliente: ClientePresencialDTO, telefone: string, requestId: number): Promise<boolean> {
+    if (telefone === (cliente.telefoneFormatado ?? cliente.telefone ?? '')) { setTelefonePendente(null); return true }
+    if (telefone && mensagemTelefoneCliente(telefone)) { setErroTelefone(mensagemTelefoneCliente(telefone)); return false }
     const anterior = telefoneSaveRef.current
     let liberar!: () => void
     const atual = new Promise<void>((resolve) => { liberar = resolve })
@@ -1005,7 +1010,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     await anterior
     setSalvandoTelefone(true)
     try {
-      if (requestId !== telefoneRequestRef.current || clienteIdRef.current !== cliente.id) return
+      if (requestId !== telefoneRequestRef.current || clienteIdRef.current !== cliente.id) return false
       const versaoAtual = clienteSelecionadaRef.current?.version ?? cliente.version
       const response = await fetch(`/api/atendimento-presencial/clientes/${cliente.id}`, {
         method: 'PATCH',
@@ -1013,7 +1018,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         body: JSON.stringify({ telefone: telefone || null, version: versaoAtual }),
       })
       const data = (await response.json()) as ApiClientesResponse
-      if (clienteIdRef.current !== cliente.id) return
+      if (clienteIdRef.current !== cliente.id) return false
       if (data.cliente) {
         // Mesmo uma resposta antiga atualiza a versao, mas nao substitui o texto mais recente.
         const pendente = entradasLocaisRef.current.telefonePendente
@@ -1023,15 +1028,17 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         clienteSelecionadaRef.current = dto
         setClienteSelecionada(dto)
       }
-      if (requestId !== telefoneRequestRef.current) return
+      if (requestId !== telefoneRequestRef.current) return false
       if (!response.ok || !data.ok || !data.cliente) throw new Error(data.message ?? 'Erro ao atualizar telefone')
       setTelefonePendente(null)
       setErroTelefone(null)
       setTelefoneClienteEdicao(data.cliente.telefoneFormatado ?? '')
+      return true
     } catch (error) {
       if (requestId === telefoneRequestRef.current && mountedRef.current) {
         setErroTelefone(error instanceof Error ? error.message : 'Erro ao atualizar telefone')
       }
+      return false
     } finally {
       liberar()
       if (telefoneSaveRef.current === atual) telefoneSaveRef.current = null
@@ -1332,7 +1339,38 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   function voltarAoTelefone() {
     telefoneParaFocoRef.current = true
     setConfirmacaoTelefone(null)
+    setEtapaConfirmacaoTelefone('pergunta')
+    setTelefoneConfirmacao('')
+    setErroTelefoneConfirmacao(null)
     irParaEtapa('ficha')
+  }
+
+  async function confirmarTelefoneEConcluir() {
+    const atual = confirmacaoTelefone
+    const cliente = clienteSelecionadaRef.current
+    if (confirmarTelefoneModalRef.current || !atual || !cliente || atual.atendimentoId !== ativoRef.current?.id || atual.clienteId !== clienteIdRef.current) return
+    const telefone = mascararTelefoneClienteBR(telefoneConfirmacao)
+    const erroValidacao = mensagemTelefoneCliente(telefone)
+    if (erroValidacao || !normalizarTelefone(telefone).valido) {
+      setErroTelefoneConfirmacao(erroValidacao ?? 'Informe um telefone válido.')
+      return
+    }
+
+    confirmarTelefoneModalRef.current = true
+    setConfirmandoTelefoneModal(true)
+    setErroTelefoneConfirmacao(null)
+    try {
+      if (telefoneDebounceRef.current) clearTimeout(telefoneDebounceRef.current)
+      const salvo = await salvarTelefoneCliente(cliente, telefone, ++telefoneRequestRef.current)
+      if (!salvo) {
+        setErroTelefoneConfirmacao('Não foi possível salvar o telefone. Confira o número e tente novamente.')
+        return
+      }
+      await concluirAtendimento(atual.ficha, undefined, true)
+    } finally {
+      confirmarTelefoneModalRef.current = false
+      setConfirmandoTelefoneModal(false)
+    }
   }
 
   function confirmarCriancaLocal(id: string) {
@@ -1620,7 +1658,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     }
   }
 
-  async function concluirAtendimento(fichaConclusao: FichaDadosRascunho = ficha, recusaNestaTentativa = false) {
+  async function concluirAtendimento(
+    fichaConclusao: FichaDadosRascunho = ficha,
+    desfechoTelefone?: 'solicitado_e_recusado' | 'cliente_ausente_sem_solicitacao',
+    manterModalTelefoneAteConcluir = false,
+  ) {
     if (concluindoRef.current) return
     concluindoRef.current = true
     flushSync(() => { setConcluindo(true); setErroConclusao(null) })
@@ -1652,13 +1694,16 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       setConcluindo(false)
       return
     }
-    if (fichaConclusao.tipoAtendimento === 'cliente' && !normalizarTelefone(clienteSelecionadaRef.current?.telefone || clienteSelecionadaRef.current?.telefoneFormatado).valido && !recusaNestaTentativa) {
+    if (fichaConclusao.tipoAtendimento === 'cliente' && !normalizarTelefone(clienteSelecionadaRef.current?.telefone || clienteSelecionadaRef.current?.telefoneFormatado).valido && !desfechoTelefone) {
       setConfirmacaoTelefone({ ficha: fichaConclusao, atendimentoId: ativo.id, clienteId: clienteIdRef.current })
+      setEtapaConfirmacaoTelefone('pergunta')
+      setTelefoneConfirmacao('')
+      setErroTelefoneConfirmacao(null)
       concluindoRef.current = false
       setConcluindo(false)
       return
     }
-    setConfirmacaoTelefone(null)
+    if (!manterModalTelefoneAteConcluir) setConfirmacaoTelefone(null)
     setErro(null)
     setErroEtapa(null)
     setErrosValidacao([])
@@ -1673,7 +1718,14 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           version: rascunhoSalvo.version,
-          confirmacaoTelefone: recusaNestaTentativa ? { atendimentoId: rascunhoSalvo.id, version: rascunhoSalvo.version, clienteId: clienteIdRef.current, solicitadoERecusado: true } : null,
+          confirmacaoTelefone: desfechoTelefone ? {
+            atendimentoId: rascunhoSalvo.id,
+            version: rascunhoSalvo.version,
+            clienteId: clienteIdRef.current,
+            ...(desfechoTelefone === 'solicitado_e_recusado'
+              ? { solicitadoERecusado: true }
+              : { naoSolicitadoClienteAusente: true }),
+          } : null,
           numeroLancamento: validacao.numeroLancamento,
           consultoraNome: consultoraNomeNormalizado,
         }),
@@ -1688,6 +1740,10 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       }
 
       removerCacheRascunho(window.localStorage, usuarioId, rascunhoSalvo.draftClientId)
+      setConfirmacaoTelefone(null)
+      setEtapaConfirmacaoTelefone('pergunta')
+      setTelefoneConfirmacao('')
+      setErroTelefoneConfirmacao(null)
       autosaveQueueRef.current?.stop()
       autosaveQueueRef.current = null
       setAtivo(null)
@@ -1782,12 +1838,53 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   return (
     <><Dialog open={Boolean(confirmacaoTelefone)} onOpenChange={aberto => { if (!aberto) voltarAoTelefone() }}>
       <DialogContent className="w-[80vw] max-w-md border-destructive bg-red-50" onCloseAutoFocus={event => { event.preventDefault(); if (telefoneParaFocoRef.current) document.getElementById('telefone-cliente-rapido')?.focus() }}>
-        <DialogHeader title="Cliente sem telefone" titleClassName="text-destructive" className="bg-red-50" description={<span className="font-semibold text-destructive">Você realmente pediu o telefone para a cliente e ela não quis te passar?</span>} />
-        <DialogFooter className="gap-2 p-4"><Button type="button" variant="secondary" onClick={voltarAoTelefone}>Não</Button><Button type="button" variant="destructive" disabled={concluindo} onClick={() => {
-          const atual = confirmacaoTelefone
-          if (!atual || atual.atendimentoId !== ativoRef.current?.id || atual.clienteId !== clienteIdRef.current) { setConfirmacaoTelefone(null); return }
-          void concluirAtendimento(atual.ficha, true)
-        }}>Sim</Button></DialogFooter>
+        <DialogHeader
+          title={etapaConfirmacaoTelefone === 'pergunta' ? 'Cliente sem telefone' : 'Informar telefone da cliente'}
+          titleClassName="text-destructive"
+          className="bg-red-50"
+          description={etapaConfirmacaoTelefone === 'pergunta'
+            ? <span className="font-semibold text-destructive">Você realmente pediu o telefone para a cliente e ela não quis te passar?</span>
+            : 'Informe um telefone válido para salvar no cadastro e concluir este atendimento.'}
+        />
+        {etapaConfirmacaoTelefone === 'pergunta' ? (
+          <DialogFooter className="gap-2 p-4">
+            <Button type="button" variant="secondary" onClick={() => { setEtapaConfirmacaoTelefone('informar'); setTelefoneConfirmacao(''); setErroTelefoneConfirmacao(null) }}>Não pedi o número</Button>
+            <Button type="button" variant="destructive" disabled={concluindo} onClick={() => {
+              const atual = confirmacaoTelefone
+              if (!atual || atual.atendimentoId !== ativoRef.current?.id || atual.clienteId !== clienteIdRef.current) { setConfirmacaoTelefone(null); return }
+              void concluirAtendimento(atual.ficha, 'solicitado_e_recusado')
+            }}>Sim, cliente não quis dar</Button>
+          </DialogFooter>
+        ) : (
+          <div className="space-y-3 px-4 pb-4">
+            <div className="space-y-1.5">
+              <label htmlFor="telefone-confirmacao-cliente" className="text-sm font-medium text-slate-800">Telefone da cliente</label>
+              <Input
+                id="telefone-confirmacao-cliente"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={telefoneConfirmacao}
+                aria-invalid={Boolean(erroTelefoneConfirmacao)}
+                aria-describedby={erroTelefoneConfirmacao ? 'erro-telefone-confirmacao' : undefined}
+                onChange={event => { setTelefoneConfirmacao(mascararTelefoneClienteBR(event.target.value)); setErroTelefoneConfirmacao(null) }}
+                placeholder="(00) 00000-0000"
+                disabled={confirmandoTelefoneModal || concluindo}
+              />
+              {erroTelefoneConfirmacao && <p id="erro-telefone-confirmacao" className="text-sm text-destructive" role="alert">{erroTelefoneConfirmacao}</p>}
+            </div>
+            <Button type="button" variant="primary" className="w-full bg-emerald-600 text-white hover:bg-emerald-700" loading={confirmandoTelefoneModal || concluindo} onClick={() => void confirmarTelefoneEConcluir()}>
+              Confirmar telefone
+            </Button>
+            <Button type="button" variant="secondary" className="w-full" disabled={concluindo || confirmandoTelefoneModal} onClick={() => {
+              const atual = confirmacaoTelefone
+              if (!atual || atual.atendimentoId !== ativoRef.current?.id || atual.clienteId !== clienteIdRef.current) { setConfirmacaoTelefone(null); return }
+              void concluirAtendimento(atual.ficha, 'cliente_ausente_sem_solicitacao', true)
+            }}>
+              Não pedi, cliente já foi embora
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog><PageContainer>
       <FormPageContent ref={formContentRef} className="max-w-3xl space-y-5" style={actionBarHeight ? { paddingBottom: `${actionBarHeight + 24}px` } : undefined}>

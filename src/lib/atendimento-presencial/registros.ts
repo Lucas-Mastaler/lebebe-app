@@ -198,6 +198,14 @@ export function descreverContratoHistorico(snapshot: Record<string, unknown> | n
   if (!snapshot) return []
   const linhas: string[] = []
   if (typeof snapshot.versaoFluxo === 'number') linhas.push(`Fluxo: ${snapshot.versaoFluxo}`)
+  const desfechosTelefone: Record<string, string> = {
+    telefone_informado: 'Telefone informado',
+    cliente_recusou: 'Telefone solicitado; cliente não quis informar',
+    cliente_ausente_sem_solicitacao: 'Telefone não solicitado; cliente já havia ido embora',
+  }
+  if (typeof snapshot.telefoneDesfecho === 'string' && desfechosTelefone[snapshot.telefoneDesfecho]) {
+    linhas.push(`Telefone: ${desfechosTelefone[snapshot.telefoneDesfecho]}`)
+  }
   for (const [key, label] of [
     ['tipoAtendimento', 'Tipo'], ['tipoAtendimentoAnterior', 'Tipo anterior'], ['tipoAtendimentoNovo', 'Tipo novo'],
     ['motivoVisita', 'Motivo da visita'], ['motivoVisitaAnterior', 'Motivo da visita anterior'], ['motivoVisitaNovo', 'Motivo da visita novo'],

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   montarPayloadEdicaoAtendimento,
+  descreverContratoHistorico,
   normalizarDetalheParaFichaEdicao,
   normalizarObservacoesRegistro,
   serializarClienteRegistro,
@@ -9,6 +10,15 @@ import {
 import type { AtendimentoPresencialDTO } from './rascunhos-shared'
 
 describe('registros atendimento presencial', () => {
+  it('explica os desfechos de telefone no histórico somente quando estão no snapshot', () => {
+    expect(descreverContratoHistorico({ telefoneDesfecho: 'cliente_ausente_sem_solicitacao' })).toEqual([
+      'Telefone: Telefone não solicitado; cliente já havia ido embora',
+    ])
+    expect(descreverContratoHistorico({ telefoneDesfecho: 'cliente_recusou' })).toEqual([
+      'Telefone: Telefone solicitado; cliente não quis informar',
+    ])
+    expect(descreverContratoHistorico({ telefoneDesfecho: null })).toEqual([])
+  })
   it('usa observacoes finais do atendimento concluido, preservando acentos e quebras de linha', () => {
     const atendimento = {
       observacoes: 'Preferencia por móveis claros.\nVoltar contato após almoço.',

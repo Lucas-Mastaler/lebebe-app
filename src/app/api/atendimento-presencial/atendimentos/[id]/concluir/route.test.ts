@@ -76,10 +76,31 @@ describe('api concluir atendimento presencial', () => {
     { atendimentoId: clienteId, version: 3, clienteId, solicitadoERecusado: true },
     { atendimentoId, version: 2, clienteId, solicitadoERecusado: true },
     { atendimentoId, version: 3, clienteId, solicitadoERecusado: false },
+    { atendimentoId, version: 3, clienteId, solicitadoERecusado: true, naoSolicitadoClienteAusente: true },
   ])('rejeita confirmação de telefone fora desta tentativa %j', async confirmacaoTelefone => {
     const response = await POST(new Request('http://local', {method:'POST',body:JSON.stringify({version:3,confirmacaoTelefone})}),{params:Promise.resolve({id:atendimentoId})})
     expect(response.status).toBe(422)
     expect(createServiceClient).not.toHaveBeenCalled()
+  })
+  it.each([
+    { solicitadoERecusado: true },
+    { naoSolicitadoClienteAusente: true },
+  ])('aceita somente um desfecho de telefone vinculado a este atendimento %j', async desfecho => {
+    const rascunho = { ...rowRascunho, dados_rascunho: { ...rowRascunho.dados_rascunho, versaoFluxo: 2, tipoAtendimento: 'cliente' } }
+    const { rpc } = mockSupabase({
+      app_usuarios_perfis: [{ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null }],
+      app_usuarios_unidades: [{ data: [{ app_unidades: { id: unidadeId, ativo: true } }], error: null }],
+      atendimento_presencial_atendimentos: [
+        { data: rascunho, error: null },
+        { data: { ...rascunho, status: 'concluido', version: 4, versao_fluxo: 2, tipo_atendimento: 'cliente' }, error: null },
+      ],
+    }, { data: [{ id: atendimentoId, version: 4 }], error: null })
+    const confirmacaoTelefone = { atendimentoId, version: 3, clienteId, ...desfecho }
+    const response = await POST(new Request('http://local', {
+      method: 'POST', body: JSON.stringify({ version: 3, numeroLancamento: 22, confirmacaoTelefone }),
+    }), { params: Promise.resolve({ id: atendimentoId }) })
+    expect(response.status).toBe(200)
+    expect(rpc).toHaveBeenCalledWith('atendimento_presencial_concluir', expect.objectContaining({ p_confirmacao_telefone: confirmacaoTelefone }))
   })
   it('erro SQL de recusa obrigatória não vira sucesso nem limpa o rascunho', async()=>{
     mockSupabase({app_usuarios_perfis:[{data:{app_perfis_acesso:{chave:'consultora',ativo:true}},error:null}],app_usuarios_unidades:[{data:[{app_unidades:{id:unidadeId,ativo:true}}],error:null}],atendimento_presencial_atendimentos:[{data:rowRascunho,error:null}]},{data:null,error:{code:'23514',message:'telefone_recusa_obrigatoria'}})

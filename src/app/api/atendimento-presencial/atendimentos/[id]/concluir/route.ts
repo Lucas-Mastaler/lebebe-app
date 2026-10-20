@@ -106,7 +106,7 @@ function mapearErroRpc(error: { code?: string; message?: string }) {
       return jsonErro('Numero do lancamento so deve ser informado para resultado Sim.', 422, { field: 'numeroLancamento' })
     }
     if (message.includes('telefone_recusa_obrigatoria')) {
-      return jsonErro('Confirme que solicitou o telefone e a cliente recusou informar.', 422, { field: 'telefoneRecusa' })
+      return jsonErro('Informe como ficou o telefone da cliente antes de concluir.', 422, { field: 'telefoneRecusa' })
     }
     if (message.includes('cliente_obrigatoria')) {
       return jsonErro('Selecione uma cliente antes de concluir.', 422, { field: 'clienteId' })
@@ -154,7 +154,9 @@ export async function POST(
     if (confirmacao !== undefined && confirmacao !== null) {
       if (typeof confirmacao !== 'object' || Array.isArray(confirmacao)) return jsonErro('Confirmação de telefone inválida', 422, { field: 'telefoneRecusa' })
       const c = confirmacao as Record<string, unknown>
-      if (c.atendimentoId !== id || c.version !== expectedVersion || c.solicitadoERecusado !== true || !isUuid(c.clienteId)) return jsonErro('Confirmação de telefone inválida para esta finalização', 422, { field: 'telefoneRecusa' })
+      const recusado = c.solicitadoERecusado === true && c.naoSolicitadoClienteAusente !== true
+      const clienteAusente = c.naoSolicitadoClienteAusente === true && c.solicitadoERecusado !== true
+      if (c.atendimentoId !== id || c.version !== expectedVersion || (!recusado && !clienteAusente) || !isUuid(c.clienteId)) return jsonErro('Confirmação de telefone inválida para esta finalização', 422, { field: 'telefoneRecusa' })
     }
     const loaded = await carregarContexto()
     if (!loaded.ok) return loaded.response

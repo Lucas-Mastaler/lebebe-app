@@ -6,7 +6,7 @@ const migrationPath = path.join(
   process.cwd(),
   'supabase',
   'migrations',
-  '20261020144440_prancheta_desfecho_telefone.sql',
+  '20261020155331_prancheta_desfecho_telefone.sql',
 )
 
 describe('migration de desfecho do telefone', () => {

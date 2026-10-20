@@ -1,6 +1,9 @@
 'use client'
 
 import { ProdutosAtendimento, ResumoProdutos, AvisoProdutosVendidos } from '@/components/atendimento-presencial/ProdutosAtendimento'
+import { ComemoracaoPv } from '@/components/atendimento-presencial/ComemoracaoPv'
+import { useComemoracaoPv } from '@/components/atendimento-presencial/useComemoracaoPv'
+import { ListaEnxovalDialog } from '@/components/atendimento-presencial/ListaEnxovalDialog'
 import { PRODUTOS_V2_HABILITADOS } from '@/lib/atendimento-presencial/produtos-config'
 import { descricaoProduto } from '@/lib/atendimento-presencial/produtos'
 
@@ -287,6 +290,8 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   const [produtoEdicaoDigitado, setProdutoEdicaoDigitado] = useState('')
   const [dataPrevistaEdicaoInputs, setDataPrevistaEdicaoInputs] = useState<Record<string, string>>({})
   const [salvandoEdicao, setSalvandoEdicao] = useState(false)
+  const salvandoEdicaoRef = useRef(false)
+  const { comemoracao, prepararSom, confirmarVenda, fecharComemoracao } = useComemoracaoPv()
   const [mensagemEdicao, setMensagemEdicao] = useState<string | null>(null)
   const [erroEdicao, setErroEdicao] = useState<string | null>(null)
   const [historicoAberto, setHistoricoAberto] = useState(false)
@@ -401,6 +406,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       setFichaEdicao(null)
       if (!options?.preservarMensagemEdicao) setMensagemEdicao(null)
       setErroEdicao(null)
+      return detalhe
     } catch (error) {
       const mensagem = error instanceof Error ? error.message : 'Erro ao carregar atendimento'
       setErroDetalhe(mensagem)
@@ -558,7 +564,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   }
 
   async function salvarEdicao() {
-    if (!selecionado || !fichaEdicao || salvandoEdicao) return
+    if (!selecionado || !fichaEdicao || salvandoEdicaoRef.current) return
     setErroEdicao(null)
     setMensagemEdicao(null)
 
@@ -576,6 +582,9 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       return
     }
 
+    const atendimentoAnterior = selecionado.atendimento
+    if (atendimentoAnterior.resultadoAtendimento !== 'sim' && fichaEdicao.resultadoAtendimento === 'sim' && fichaEdicao.versaoProdutos === 2) void prepararSom()
+    salvandoEdicaoRef.current = true
     setSalvandoEdicao(true)
     try {
       const payload = montarPayloadEdicaoAtendimento({
@@ -595,12 +604,16 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
         return
       }
       setEdicaoAberta(false)
-      await carregarDetalhe(selecionado.atendimento.id, { preservarMensagemEdicao: true })
+      const detalheSalvo = await carregarDetalhe(atendimentoAnterior.id, { preservarMensagemEdicao: true })
+      if (detalheSalvo?.atendimento.id === atendimentoAnterior.id && detalheSalvo.atendimento.version === data.version) {
+        confirmarVenda(detalheSalvo.atendimento, normalizarDetalheParaFichaEdicao(detalheSalvo), { resultadoAnterior: atendimentoAnterior.resultadoAtendimento })
+      }
       await carregarRegistros()
       setMensagemEdicao('Atendimento atualizado.')
     } catch (error) {
       setErroEdicao(error instanceof Error ? error.message : 'Erro ao salvar edicao')
     } finally {
+      salvandoEdicaoRef.current = false
       setSalvandoEdicao(false)
     }
   }
@@ -687,6 +700,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
 
   return (
     <PageContainer className="space-y-6">
+      {comemoracao && <ComemoracaoPv dados={comemoracao} onFechar={fecharComemoracao} />}
       <PageHeader
         icon={<ClipboardList className="size-6" aria-hidden="true" />}
         eyebrow="Atendimento presencial"
@@ -1317,6 +1331,8 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                 </div>
 
                 </Section>
+
+                <ListaEnxovalDialog />
 
                 <Section title="Produtos" variant="subsection" collapsible>
                   {(PRODUTOS_V2_HABILITADOS || fichaEdicao.versaoProdutos === 2) ? <ProdutosAtendimento ficha={fichaEdicao} atualizar={atualizarFichaEdicao} digitado={produtoEdicaoDigitado} setDigitado={setProdutoEdicaoDigitado} /> : <>

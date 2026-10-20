@@ -15,7 +15,8 @@ export function useComemoracaoPv() {
 
   const prepararSom = useCallback(() => som.preparar(), [som])
   const fecharComemoracao = useCallback(() => { som.parar(); setComemoracao(null) }, [som])
-  const confirmarVenda = useCallback((atendimento: { id: string; status: string; resultadoAtendimento: string | null }, dadosSalvos: FichaDadosRascunho) => {
+  const confirmarVenda = useCallback((atendimento: { id: string; status: string; resultadoAtendimento: string | null }, dadosSalvos: FichaDadosRascunho, edicao?: { resultadoAnterior: string | null }) => {
+    if (edicao && (edicao.resultadoAnterior === 'sim' || dadosSalvos.versaoProdutos !== 2)) return false
     const pv = calcularPv(dadosSalvos.produtosInteresse, dadosSalvos.versaoProdutos).valor
     if (atendimento.status !== 'concluido' || atendimento.resultadoAtendimento !== 'sim' || pv < META_PV || exibidos.current.has(atendimento.id)) return false
     exibidos.current.add(atendimento.id)

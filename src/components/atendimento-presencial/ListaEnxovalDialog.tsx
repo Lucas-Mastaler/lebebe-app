@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
+import { BookOpen } from 'lucide-react'
 import { Button, Dialog, DialogContent, DialogHeader, DialogTrigger } from '@/components/design-system'
 import { LISTAS_ENXOVAL } from '@/lib/atendimento-presencial/listas-enxoval'
 
@@ -18,7 +19,7 @@ export function ListaEnxovalDialog() {
     corpo.current?.scrollTo({ top: 0 })
   }
   return <Dialog open={aberto} onOpenChange={setAberto}>
-    <DialogTrigger asChild><Button type="button" variant="secondary">Lista de enxoval</Button></DialogTrigger>
+    <DialogTrigger asChild><Button type="button" variant="secondary" className="min-h-12 w-full"><BookOpen className="size-5" aria-hidden="true" />Ver lista de enxoval</Button></DialogTrigger>
     <DialogContent className="w-[calc(100vw-1rem)] max-w-3xl max-h-[95dvh]">
       <DialogHeader title="Lista de enxoval" description="Consulte o material de Verão ou Inverno." />
       <div className="flex gap-2 px-4" aria-label="Estação">

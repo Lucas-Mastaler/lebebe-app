@@ -2427,6 +2427,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                   </div>
                 </SecaoFicha>
 
+                <ListaEnxovalDialog />
+
                 <SecaoFicha
                   id="secao-produtos"
                   titulo="Produtos de interesse"
@@ -2456,7 +2458,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                       <Plus className="size-4" aria-hidden="true" />
                     </Button>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-2"><ListaEnxovalDialog />
+                  <div className="mt-2 flex flex-wrap gap-2">
                   <Button type="button" variant="secondary" disabled={ficha.produtosInteresse.length >= FICHA_PRODUTOS_MAX_ITENS || ficha.produtosInteresse.some(item => descricaoProduto(item).trim().toLocaleLowerCase('pt-BR') === 'produto que não trabalhamos')} onClick={() => atualizarFicha(atual => ({ ...atual, produtosInteresse: atual.produtosInteresse.length >= FICHA_PRODUTOS_MAX_ITENS || atual.produtosInteresse.some(item => descricaoProduto(item).trim().toLocaleLowerCase('pt-BR') === 'produto que não trabalhamos') ? atual.produtosInteresse : [...atual.produtosInteresse, 'Produto que não trabalhamos'] }))}>Produto que não trabalhamos</Button>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">

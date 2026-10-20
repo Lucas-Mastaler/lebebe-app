@@ -30,14 +30,14 @@ const server = await createServer({
       }
       const html = `<!doctype html><html lang="pt-BR"><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/src/app/globals.css"></head><body><main id="root" class="mx-auto max-w-2xl p-3"></main><script type="module">
         import React, {useState} from 'react';import {ShoppingBag} from 'lucide-react';import{createRoot}from'react-dom/client';
-        import{ProdutosAtendimento}from'/src/components/atendimento-presencial/ProdutosAtendimento.tsx';
+        import{ProdutosAtendimento}from'/src/components/atendimento-presencial/ProdutosAtendimento.tsx';import{ListaEnxovalDialog}from'/src/components/atendimento-presencial/ListaEnxovalDialog.tsx';
         import{Section}from'/src/components/design-system/Section.tsx';
         import{ComemoracaoPv}from'/src/components/atendimento-presencial/ComemoracaoPv.tsx';
         import{useComemoracaoPv}from'/src/components/atendimento-presencial/useComemoracaoPv.ts';
         function Tela(){const modo=new URLSearchParams(location.search).get('modo') ?? ${process.argv.includes('--servir') ? "'referencia'" : 'null'};const inicial=modo==='referencia'?[{descricao:'BERÇO',quantidade:1,vendido:true},{descricao:'CÔMODA',quantidade:1,vendido:true},{descricao:'POLTRONA',quantidade:2,vendido:false},{descricao:'NANINHA',quantidade:1,vendido:true}]:modo==='legado'?['Berço','berco']:modo==='limite'?Array.from({length:20},(_,i)=>({descricao:'PRODUTO '+i,quantidade:1,vendido:false})):[];const[ficha,setFicha]=useState({criancas:[],departamentos:[],motivosResultado:[],etapaAtual:'ficha',...(modo==='legado'?{}:{versaoProdutos:2}),produtosInteresse:inicial,resultadoAtendimento:modo==='referencia'?'sim':'negociacao'});const[digitado,setDigitado]=useState('');window.fixtureFicha=ficha;
-        const{comemoracao,prepararSom,confirmarVenda,fecharComemoracao}=useComemoracaoPv();
+        const{comemoracao,prepararSom,confirmarVenda,fecharComemoracao}=useComemoracaoPv();window.fixtureEditar=(atendimento,dados,resultadoAnterior)=>confirmarVenda(atendimento,dados,{resultadoAnterior});
         async function concluir(){void prepararSom();const dados=structuredClone(ficha);const response=await fetch('/fixture/concluir',{method:'POST'});if(!response.ok)return;const atendimento=await response.json();window.fixtureUltimo={atendimento,dados};confirmarVenda(atendimento,dados)}
-        return React.createElement(React.Fragment,null,React.createElement('form',{onSubmit:e=>{e.preventDefault();window.fixtureSubmit=true}},React.createElement(Section,{title:'Produtos de interesse',description:'Registre produtos em texto livre quando a cliente citar itens específicos.',tone:'section-2',icon:React.createElement(ShoppingBag,{size:20})},React.createElement(ProdutosAtendimento,{ficha,atualizar:setFicha,digitado,setDigitado})),React.createElement('div',{className:'mt-4'},React.createElement(Section,{title:'Observações sobre esse atendimento',tone:'section-2'},React.createElement('label',null,'Observação',React.createElement('input',{'aria-label':'Observação',defaultValue:'PREENCHIMENTO PRESERVADO',className:'mt-2 w-full rounded-lg border bg-white p-3'})))),React.createElement('button',{type:'button',onClick:concluir},'Simular finalização'),React.createElement('button',{type:'button',onClick:()=>confirmarVenda(window.fixtureUltimo.atendimento,window.fixtureUltimo.dados)},'Repetir resposta')),comemoracao&&React.createElement(ComemoracaoPv,{dados:comemoracao,onFechar:fecharComemoracao}));}createRoot(document.getElementById('root')).render(React.createElement(Tela));
+        return React.createElement(React.Fragment,null,React.createElement('form',{onSubmit:e=>{e.preventDefault();window.fixtureSubmit=true}},React.createElement(Section,{title:'Departamentos'},'Departamentos'),React.createElement(ListaEnxovalDialog),React.createElement(Section,{title:'Produtos de interesse',description:'Registre produtos em texto livre quando a cliente citar itens específicos.',tone:'section-2',icon:React.createElement(ShoppingBag,{size:20})},React.createElement(ProdutosAtendimento,{ficha,atualizar:setFicha,digitado,setDigitado})),React.createElement('div',{className:'mt-4'},React.createElement(Section,{title:'Observações sobre esse atendimento',tone:'section-2'},React.createElement('label',null,'Observação',React.createElement('input',{'aria-label':'Observação',defaultValue:'PREENCHIMENTO PRESERVADO',className:'mt-2 w-full rounded-lg border bg-white p-3'})))),React.createElement('button',{type:'button',onClick:concluir},'Simular finalização'),React.createElement('button',{type:'button',onClick:()=>confirmarVenda(window.fixtureUltimo.atendimento,window.fixtureUltimo.dados)},'Repetir resposta')),comemoracao&&React.createElement(ComemoracaoPv,{dados:comemoracao,onFechar:fecharComemoracao}));}createRoot(document.getElementById('root')).render(React.createElement(Tela));
       </script></body></html>`
       res.setHeader('Content-Type', 'text/html')
       res.end(await server.transformIndexHtml(req.url, html))
@@ -116,7 +116,7 @@ try {
     assert.equal(await page.getByRole('button',{name:`Vendido: ${nomeLongo}`,exact:true}).textContent(),'Marcar')
     const ordem = await page.evaluate(()=>{
       const entrada = document.querySelector('input[placeholder="Adicionar produto..."]')
-      const toolbar = [...document.querySelectorAll('button')].find(el=>el.textContent==='Lista de enxoval')
+      const toolbar = [...document.querySelectorAll('button')].find(el=>el.textContent==='PV')
       const header = [...document.querySelectorAll('span')].find(el=>el.textContent==='Vendido')
       return Boolean(entrada.compareDocumentPosition(toolbar)&Node.DOCUMENT_POSITION_FOLLOWING)&&Boolean(toolbar.compareDocumentPosition(header)&Node.DOCUMENT_POSITION_FOLLOWING)
     })
@@ -134,7 +134,7 @@ try {
     const antes = await page.evaluate(() => JSON.stringify(window.fixtureFicha))
     const imagens = []
     page.on('request', req => { if (req.url().includes('/listas-enxoval/')) imagens.push(req.url()) })
-    await page.getByRole('button', { name: 'Lista de enxoval', exact: true }).click()
+    await page.getByRole('button', { name: 'Ver lista de enxoval', exact: true }).click()
     const dialog = page.getByRole('dialog')
     const img = dialog.getByRole('img')
     await img.evaluate(el => el.decode())
@@ -154,10 +154,10 @@ try {
     assert.equal(await page.evaluate(() => JSON.stringify(window.fixtureFicha)), antes)
     assert.equal(await page.getByLabel('Observação', {exact:true}).inputValue(), 'PREENCHIMENTO PRESERVADO')
     assert.equal(await page.evaluate(() => window.fixtureSubmit ?? false),false)
-    assert.ok(await page.getByRole('button',{name:'Lista de enxoval',exact:true}).evaluate(el=>el===document.activeElement))
+    assert.ok(await page.getByRole('button',{name:'Ver lista de enxoval',exact:true}).evaluate(el=>el===document.activeElement))
     if (width === 390) {
       await page.route('**/listas-enxoval/inverno-4.png', route => route.abort())
-      await page.getByRole('button', { name: 'Lista de enxoval', exact: true }).click()
+      await page.getByRole('button', { name: 'Ver lista de enxoval', exact: true }).click()
       await dialog.getByText('Não foi possível carregar esta página.').waitFor()
       await page.unroute('**/listas-enxoval/inverno-4.png')
       await dialog.getByRole('button', { name: 'Tentar novamente', exact: true }).click()
@@ -165,6 +165,17 @@ try {
       assert.equal(await page.evaluate(() => JSON.stringify(window.fixtureFicha)), antes)
       await page.keyboard.press('Escape')
     }
+    await page.goto('http://127.0.0.1:3225')
+    const atalhoPv = page.getByRole('button', { name: 'PV', exact: true })
+    await atalhoPv.click()
+    await atalhoPv.click()
+    assert.deepEqual(await page.evaluate(() => window.fixtureFicha.produtosInteresse), [{ descricao: 'PV', quantidade: 2, vendido: false }])
+    await page.getByRole('button', { name: 'Vendido: PV', exact: true }).click()
+    await page.getByText('PV: 2', { exact: true }).waitFor()
+    const enxoval = await page.getByRole('button', { name: 'Ver lista de enxoval', exact: true }).boundingBox()
+    const produtos = await page.getByRole('heading', { name: 'Produtos de interesse', exact: true }).boundingBox()
+    assert.ok(enxoval.y + enxoval.height <= produtos.y)
+    assert.ok(enxoval.width >= Math.min(width - 24, 600))
     await page.goto('http://127.0.0.1:3225?modo=legado')
     await page.getByText('PV não informado',{exact:true}).waitFor()
     await page.getByLabel('Produtos de interesse',{exact:true}).fill('BERCO')
@@ -186,6 +197,32 @@ try {
     resultados.push({width,produtos:true,enxoval:true,legado:true,limites:true,overflow:false})
     await context.close()
   }
+  const edicaoContext = await browser.newContext({ viewport: { width: 390, height: 844 } })
+  const edicaoPage = await edicaoContext.newPage()
+  edicaoPage.on('pageerror', e => erros.push(e.message))
+  await edicaoPage.goto('http://127.0.0.1:3225')
+  await edicaoPage.getByRole('button', { name: 'PV', exact: true }).waitFor()
+  const casos = [
+    { anterior: 'negociacao', resultado: 'sim', versao: 2, quantidade: 5, esperado: true },
+    { anterior: 'nao', resultado: 'sim', versao: 2, quantidade: 6, esperado: true },
+    { anterior: 'sim', resultado: 'sim', versao: 2, quantidade: 5, esperado: false },
+    { anterior: 'negociacao', resultado: 'negociacao', versao: 2, quantidade: 5, esperado: false },
+    { anterior: 'negociacao', resultado: 'sim', quantidade: 5, esperado: false },
+    { anterior: 'negociacao', resultado: 'sim', versao: 2, quantidade: 4, esperado: false },
+    { anterior: 'negociacao', resultado: 'sim', versao: 2, quantidade: 5, status: 'rascunho', esperado: false },
+  ]
+  for (const [i, caso] of casos.entries()) {
+    const dados = { atendimento: { id: 'edicao-' + i, status: caso.status ?? 'concluido', resultadoAtendimento: caso.resultado }, ficha: { versaoProdutos: caso.versao, produtosInteresse: [{ descricao: 'PV', quantidade: caso.quantidade, vendido: true }] }, anterior: caso.anterior }
+    const confirmar = () => edicaoPage.evaluate(d => window.fixtureEditar(d.atendimento, d.ficha, d.anterior), dados)
+    assert.equal(await confirmar(), caso.esperado)
+    if (caso.esperado) {
+      await edicaoPage.getByRole('heading', { name: 'Parabéns, PV batido!' }).waitFor()
+      assert.equal(await confirmar(), false)
+      await edicaoPage.getByRole('button', { name: 'Continuar', exact: true }).click()
+      await edicaoPage.getByRole('dialog').waitFor({ state: 'detached' })
+    } else assert.equal(await edicaoPage.getByRole('dialog').count(), 0)
+  }
+  await edicaoContext.close()
   const context = await browser.newContext({viewport:{width:390,height:844}})
   await context.addInitScript(()=>{
     const Original=window.AudioContext

@@ -4,7 +4,6 @@ import { useId, useRef, useState } from 'react'
 import styles from './ProdutosAtendimento.module.css'
 import { CheckCircle2, Minus, Plus, Target, X } from 'lucide-react'
 import { Button, Input } from '@/components/design-system'
-import { ListaEnxovalDialog } from './ListaEnxovalDialog'
 import { FICHA_PRODUTO_MAX_CHARS, FICHA_PRODUTOS_MAX_ITENS, type FichaDadosRascunho } from '@/lib/atendimento-presencial/ficha-schema'
 import { maiusculasNomeComCursor } from '@/lib/atendimento-presencial/maiusculas-nomes'
 import { calcularPv, chaveProduto, descricaoProduto, estruturarProduto, incrementarProduto, META_PV, PRODUTO_NAO_TRABALHAMOS, produtoNaoTrabalhado, QUANTIDADE_PRODUTO_MAX, type ProdutoCompativel } from '@/lib/atendimento-presencial/produtos'
@@ -129,8 +128,8 @@ export function ProdutosAtendimento({ ficha, atualizar, digitado, setDigitado }:
       </Button>
     </div>
     <div className={styles.acoesAuxiliares}>
-      <ListaEnxovalDialog />
       <Button type="button" variant="secondary" className={styles.marcador} disabled={ficha.produtosInteresse.some(produtoNaoTrabalhado) || ficha.produtosInteresse.length >= FICHA_PRODUTOS_MAX_ITENS} onClick={adicionarMarcador}>Produto que não trabalhamos</Button>
+      <Button type="button" variant="secondary" className={styles.marcador} disabled={ficha.produtosInteresse.length >= FICHA_PRODUTOS_MAX_ITENS && !ficha.produtosInteresse.some(p => chaveProduto(descricaoProduto(p)) === 'PV')} onClick={() => { consumido.current = false; adicionar('PV') }}>PV</Button>
     </div>
     {erro && <p role="alert" className="mt-2 text-sm text-red-700">{erro}</p>}
     <div className={`${styles.grade} ${styles.cabecalho}`} aria-hidden="true">

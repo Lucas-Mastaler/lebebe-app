@@ -121,12 +121,12 @@ export function FilterPanel({ title = 'Filtros', dirty, onApply, onClear, applyD
  * participa do layout normalmente, só o conteúdo interno não precisa
  * esticar.
  */
-export function FilterFieldGroup({ label, icon, children, className }: { label: string; icon?: React.ReactNode; children: React.ReactNode; className?: string }) {
+export function FilterFieldGroup({ label, icon, children, className, prominent = false }: { label: string; icon?: React.ReactNode; children: React.ReactNode; className?: string; prominent?: boolean }) {
   return (
     <div className={className}>
-      <div className="mb-2 flex items-center gap-1.5">
+      <div className={cn('mb-2 flex items-center gap-1.5', prominent && 'border-b border-sky-100 pb-2')}>
         {icon}
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</h3>
+        <h3 className={cn('uppercase tracking-wide', prominent ? 'text-sm font-bold text-slate-700' : 'text-xs font-semibold text-slate-500')}>{label}</h3>
       </div>
       <div className="flex flex-wrap items-end gap-3">
         {React.Children.map(children, (child) => (

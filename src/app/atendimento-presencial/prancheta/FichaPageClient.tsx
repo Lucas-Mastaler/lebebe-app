@@ -1781,7 +1781,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
 
   return (
     <><Dialog open={Boolean(confirmacaoTelefone)} onOpenChange={aberto => { if (!aberto) voltarAoTelefone() }}>
-      <DialogContent className="max-w-md border-destructive bg-red-50" onCloseAutoFocus={event => { event.preventDefault(); if (telefoneParaFocoRef.current) document.getElementById('telefone-cliente-rapido')?.focus() }}>
+      <DialogContent className="w-[80vw] max-w-md border-destructive bg-red-50" onCloseAutoFocus={event => { event.preventDefault(); if (telefoneParaFocoRef.current) document.getElementById('telefone-cliente-rapido')?.focus() }}>
         <DialogHeader title="Cliente sem telefone" titleClassName="text-destructive" className="bg-red-50" description={<span className="font-semibold text-destructive">Você realmente pediu o telefone para a cliente e ela não quis te passar?</span>} />
         <DialogFooter className="gap-2 p-4"><Button type="button" variant="secondary" onClick={voltarAoTelefone}>Não</Button><Button type="button" variant="destructive" disabled={concluindo} onClick={() => {
           const atual = confirmacaoTelefone

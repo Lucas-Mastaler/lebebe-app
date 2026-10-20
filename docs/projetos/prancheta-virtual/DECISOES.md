@@ -141,3 +141,15 @@ Migration preparada localmente: 20261019145305_prancheta_cadastro_filtros_normal
 ## D-032 — Publicação do cadastro e filtros (19/10/2026)
 
 Usuário autorizou verificar registros novos, aplicar migration e publicar após cessar o preenchimento. Dois atendimentos e dois clientes novos compatíveis e preservados. Migration 20261019145305 aplicada via MCP; contagens e hashes dos dados de negócio idênticos antes/depois. Sem exclusões, repair, replay ou mudança de RLS. Recarregar formulários por atualização de versões. Commit/push/deploy autorizados somente para este pacote, mantendo alterações preexistentes fora dele. Limites de homologação D-031 permanecem.
+
+## D-034 — Parentesco nos cards/filtros, largura dos diálogos e motivo Cliente Retira (20/10/2026)
+
+Pedido atual acrescenta o parentesco da criança ao cabeçalho dos atendimentos salvos e um filtro multisseleção com as 13 opções exibidas pelo seletor de parentesco. Os títulos de grupos dos filtros devem ganhar contraste e separação. Diálogos de confirmação devem respeitar largura de 80% da viewport, limitados ao tamanho máximo existente no componente.
+
+Novo motivo de Venda perdida: `cliente_retira`, exibido como “Cliente Retira (Retirou apenas o item já comprado)”. A validação atual no cliente, na RPC e no CHECK do banco precisa aceitar essa chave. Na aprovação inicial, migration local preparada e aplicação remota não autorizada; autorização posterior e aplicação constam em D-035/STATUS.
+
+A confirmação de telefone mantém exatamente os ramos e ações atuais. Código já confirma venda fechada, negociação e venda perdida quando o telefone é inválido; nenhuma nova opção ou persistência será criada. Na aprovação inicial, a publicação não estava autorizada; autorização posterior registrada em D-035.
+
+## D-035 — Publicação do pacote D-034 na main (20/10/2026)
+
+Usuário autorizou publicar todas as edições pendentes deste pacote na `main`. Aplicar antes do código a migration aditiva `20261020130618_prancheta_motivo_cliente_retira`, necessária para a chave `cliente_retira`; preservar o fluxo de telefone. Depois, commit/push apenas dos arquivos do pacote e confirmar o deployment de produção/domínio no Vercel. Alterações preexistentes fora do escopo devem permanecer fora do commit.

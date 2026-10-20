@@ -2,8 +2,8 @@
 
 Projeto: prancheta-virtual
 Estado: EM_EXECUCAO
-Fase atual: ajustes visuais publicados em D-033; homologação humana autenticada pendente
-Atualizado em: 19/10/2026
+Fase atual: migration D-034 aplicada; commit/push e publicação em andamento
+Atualizado em: 20/10/2026
 
 ## Publicação autorizada D-032 — 19/10/2026
 
@@ -583,3 +583,12 @@ Antes de aplicar a Entrega 2 em produção: nova autorização explícita para a
 Ativação dos novos fluxos exige leitores/editores preparados e homologados, conclusão das entregas dependentes e homologação integrada D-009. A autorização de aplicar a migration não autoriza abrir o gate. Deploy, commits e push também não autorizados.
 
 Preservadas alterações preexistentes do workspace (Decorisi, Mere IA, procurar-datas, Harness e Entrega 1). Não modificar docs/ia/log_progress.md. Não refazer auditoria completa nem reabrir decisões aprovadas.
+
+## D-034 — Parentesco, filtro, confirmação e motivo Cliente Retira (20/10/2026)
+
+Implementação local concluída. Card de atendimento apresenta nome e parentesco da criança; filtro salvo usa multisseleção com as opções do seletor; títulos de seções ficam mais legíveis. Diálogos de confirmação usam largura aproximada de 80vw, com os limites máximos existentes.
+
+Acrescentado o motivo `cliente_retira` (“Cliente Retira (Retirou apenas o item já comprado)”) à interface, filtro e validação. Usuário autorizou a publicação em 20/10 (D-035); migration aplicada no Supabase em 20261020130618. Pós-verificação confirmou a chave na constraint e na função normalizadora, sem escrita de dados comerciais.
+
+Confirmação de telefone permanece sem mudança de regra: venda fechada também pergunta sobre cliente sem telefone; “Sim” persiste recusa e “Não” retorna ao preenchimento. Nenhuma opção/resposta nova foi criada. 434 testes do módulo/API e ESLint dirigido aprovados; build local não concluiu porque o ambiente não conseguiu baixar Caveat, Geist e Geist Mono do Google Fonts. Migration remota aplicada e verificada; commit, push e deploy em andamento.
+Leitura de valores atuais de parentesco: todos os valores não nulos coincidem com as opções do seletor; registros sem parentesco permanecem nulos e não entram em correspondências selecionadas.

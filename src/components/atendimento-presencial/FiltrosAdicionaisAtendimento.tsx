@@ -17,6 +17,7 @@ import {
   MOTIVOS_VISITA_HISTORICOS,
 } from '@/lib/atendimento-presencial/ficha-schema'
 import type { FiltrosAdicionais } from '@/lib/atendimento-presencial/filtros-listagem'
+import { PARENTESCOS_CLIENTE } from '@/lib/atendimento-presencial/clientes'
 
 export const OPCOES_MOTIVOS_FILTRO = Array.from(
   new Map(
@@ -82,6 +83,7 @@ export function FiltrosAdicionaisAtendimento({
   return (
     <>
       <FilterFieldGroup
+        prominent={!rascunhos}
         className="border-t border-slate-200 pt-4"
         label={
           rascunhos
@@ -159,7 +161,7 @@ export function FiltrosAdicionaisAtendimento({
           ])}
       </FilterFieldGroup>
       {!rascunhos && (
-        <FilterFieldGroup label="Interesses e motivos" className="border-t border-slate-200 pt-4">
+        <FilterFieldGroup label="Interesses e motivos" className="border-t border-slate-200 pt-4" prominent>
           <FormField
             id="salvo-departamentos"
             label="Departamentos de interesse"
@@ -197,6 +199,25 @@ export function FiltrosAdicionaisAtendimento({
                     OPCOES_MOTIVOS_FILTRO.filter((o) =>
                       labels.includes(o.label),
                     ).map((o) => o.chave),
+                  )
+                }
+              />
+            )}
+          </FormField>
+          <FormField id="salvo-parentescos" label="Parentesco da criança">
+            {() => (
+              <MultiSelect
+                placeholder="Todos os parentescos"
+                options={PARENTESCOS_CLIENTE.map((o) => o.label)}
+                selected={PARENTESCOS_CLIENTE.filter((o) =>
+                  value.parentescos.includes(o.label),
+                ).map((o) => o.label)}
+                onChange={(labels) =>
+                  onChange(
+                    'parentescos',
+                    PARENTESCOS_CLIENTE.filter((o) => labels.includes(o.label)).map(
+                      (o) => o.label,
+                    ),
                   )
                 }
               />

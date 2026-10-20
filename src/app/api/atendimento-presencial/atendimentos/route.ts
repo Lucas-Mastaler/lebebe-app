@@ -215,17 +215,19 @@ export async function GET(request: Request) {
 
     const clientesBusca = (filtrosNovos.contato || filtrosNovos.telefoneCliente) && rows.some(row => row.cliente_id) ? await lerPaginas((de, ate) => loaded.supabase.from('atendimento_presencial_clientes').select('id, telefone_informado, telefone_normalizado').order('id').range(de, ate)) : []
     const telefones = new Map(clientesBusca.map(c => [c.id, c.telefone_informado || c.telefone_normalizado || null]))
-    const [departamentosFiltro, motivosFiltro] = await Promise.all([
+    const [departamentosFiltro, motivosFiltro, parentescosFiltro] = await Promise.all([
       filtrosNovos.departamentos.length ? lerPaginas((de, ate) => loaded.supabase.from('atendimento_presencial_departamentos').select('atendimento_id').in('departamento', filtrosNovos.departamentos).order('id').range(de, ate)) : [],
       filtrosNovos.motivos.length ? lerPaginas((de, ate) => loaded.supabase.from('atendimento_presencial_motivos').select('atendimento_id').in('motivo', filtrosNovos.motivos).order('id').range(de, ate)) : [],
+      filtrosNovos.parentescos.length ? lerPaginas((de, ate) => loaded.supabase.from('atendimento_presencial_criancas').select('atendimento_id').in('parentesco_vinculo', filtrosNovos.parentescos).order('id').range(de, ate)) : [],
     ])
     const departamentosIds = new Set(departamentosFiltro.map(item => item.atendimento_id))
     const motivosIds = new Set(motivosFiltro.map(item => item.atendimento_id))
+    const parentescosIds = new Set(parentescosFiltro.map(item => item.atendimento_id))
     rows = rows.filter(row => filtrarDadosListagem({
       data: row.iniciado_em, tipo: row.tipo_atendimento ?? (row.cliente_id ? 'cliente' : null), clienteId: row.cliente_id,
       telefone: row.cliente_id ? telefones.get(row.cliente_id) ?? null : null,
       numeroLancamento: row.numero_lancamento, motivoVisita: row.motivo_visita,
-    }, filtrosNovos) && (!filtrosNovos.departamentos.length || departamentosIds.has(row.id)) && (!filtrosNovos.motivos.length || motivosIds.has(row.id)))
+    }, filtrosNovos) && (!filtrosNovos.departamentos.length || departamentosIds.has(row.id)) && (!filtrosNovos.motivos.length || motivosIds.has(row.id)) && (!filtrosNovos.parentescos.length || parentescosIds.has(row.id)))
     const clientesUnicos = new Set(rows.map(row => row.cliente_id).filter(Boolean)).size
     const visitasNaoClientes = rows.filter(row => row.tipo_atendimento === 'nao_cliente').length
     const total = rows.length
@@ -233,11 +235,12 @@ export async function GET(request: Request) {
     const currentPage = Math.min(page, totalPages)
     rows = rows.slice((currentPage - 1) * TABLE_PAGE_SIZE, currentPage * TABLE_PAGE_SIZE)
 
+    const atendimentoIds = rows.map((row) => row.id)
     const clienteIds = Array.from(new Set(rows.map((row) => row.cliente_id).filter((id): id is string => Boolean(id))))
     const consultoraIds = Array.from(new Set(rows.map((row) => row.consultora_usuario_id)))
     const unidadeIds = Array.from(new Set(rows.map((row) => row.unidade_id)))
 
-    const [clientesResult, consultorasResult, unidadesResult] = await Promise.all([
+    const [clientesResult, consultorasResult, unidadesResult, criancasResult, departamentosResult] = await Promise.all([
       clienteIds.length
         ? loaded.supabase.from('atendimento_presencial_clientes').select('id, nome, telefone_informado, telefone_normalizado, telefone_normalizado_ddi, parentesco, parentesco_outro').in('id', clienteIds)
         : Promise.resolve({ data: [], error: null }),
@@ -247,13 +250,21 @@ export async function GET(request: Request) {
       unidadeIds.length
         ? loaded.supabase.from('app_unidades').select('id, nome').in('id', unidadeIds)
         : Promise.resolve({ data: [], error: null }),
+      atendimentoIds.length
+        ? loaded.supabase.from('atendimento_presencial_criancas').select('atendimento_id, nome, nome_nao_informado, parentesco_vinculo, ordem').in('atendimento_id', atendimentoIds).order('ordem', { ascending: true })
+        : Promise.resolve({ data: [], error: null }),
+      atendimentoIds.length
+        ? loaded.supabase.from('atendimento_presencial_departamentos').select('atendimento_id, departamento, ordem').in('atendimento_id', atendimentoIds).order('ordem', { ascending: true })
+        : Promise.resolve({ data: [], error: null }),
     ])
 
-    if (clientesResult.error || consultorasResult.error || unidadesResult.error) {
+    if (clientesResult.error || consultorasResult.error || unidadesResult.error || criancasResult.error || departamentosResult.error) {
       console.error('[ATENDIMENTO PRESENCIAL REGISTROS] Erro ao carregar dados relacionados:', {
         clientes: clientesResult.error,
         consultoras: consultorasResult.error,
         unidades: unidadesResult.error,
+        criancas: criancasResult.error,
+        departamentos: departamentosResult.error,
       })
       return jsonErro('Erro ao processar requisicao', 500)
     }
@@ -261,6 +272,23 @@ export async function GET(request: Request) {
     const clientesPorId = new Map((clientesResult.data ?? []).map((cliente) => [cliente.id, serializarClienteRegistro(cliente as ClienteRegistroRow)]))
     const consultorasPorId = new Map((consultorasResult.data ?? []).map((consultora) => [consultora.id, consultora]))
     const unidadesPorId = new Map((unidadesResult.data ?? []).map((unidade) => [unidade.id, unidade]))
+    const criancasPorAtendimento = new Map<string, string[]>()
+    const criancasResumoPorAtendimento = new Map<string, Array<{ nome: string; parentesco: string | null }>>()
+    for (const crianca of criancasResult.data ?? []) {
+      const nomes = criancasPorAtendimento.get(crianca.atendimento_id) ?? []
+      const nome = crianca.nome?.trim() || 'Nome não informado'
+      nomes.push(nome)
+      criancasPorAtendimento.set(crianca.atendimento_id, nomes)
+      const resumo = criancasResumoPorAtendimento.get(crianca.atendimento_id) ?? []
+      resumo.push({ nome, parentesco: crianca.parentesco_vinculo?.trim() || null })
+      criancasResumoPorAtendimento.set(crianca.atendimento_id, resumo)
+    }
+    const departamentosPorAtendimento = new Map<string, string[]>()
+    for (const item of departamentosResult.data ?? []) {
+      const departamentos = departamentosPorAtendimento.get(item.atendimento_id) ?? []
+      departamentos.push(item.departamento)
+      departamentosPorAtendimento.set(item.atendimento_id, departamentos)
+    }
 
     return NextResponse.json({
       ok: true,
@@ -276,6 +304,10 @@ export async function GET(request: Request) {
         telefoneRecusaConfirmada: row.telefone_recusa_confirmada ?? null,
         tipoAtendimento: row.tipo_atendimento ?? null,
         motivoVisita: row.motivo_visita ?? null,
+        criancasNomes: criancasPorAtendimento.get(row.id) ?? [],
+        criancasResumo: criancasResumoPorAtendimento.get(row.id) ?? [],
+        departamentos: departamentosPorAtendimento.get(row.id) ?? [],
+        observacoes: row.observacoes?.trim() ? row.observacoes : null,
         clienteId: row.cliente_id,
         clienteNome: registroNaoCliente({ versaoFluxo: row.versao_fluxo, tipoAtendimento: row.tipo_atendimento }) ? 'Não cliente' : row.cliente_id ? clientesPorId.get(row.cliente_id)?.nome ?? 'Cliente nao localizada' : 'Cliente nao informada',
         clienteTelefone: row.cliente_id ? clientesPorId.get(row.cliente_id)?.telefone ?? null : null,

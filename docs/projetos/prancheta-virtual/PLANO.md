@@ -339,3 +339,13 @@ Somente após a matriz real, aprovação final e autorizações separadas para b
 ### Riscos legados
 
 Banco atual exige cliente/resultado/motivos; crianças são por atendimento e parentesco é geral. Entradas de edição não são contrato definitivo SQL. Novos dados exigem leitores antes da escrita. Não habilitar formulário nas lojas sem Entrega 7. Rollback preserva dados/colunas e suspende escrita incompatível. P2/P3 somente conforme novo escopo autorizado.
+
+## D-034 — Parentesco, diálogo e motivo Cliente Retira
+
+- [x] Cabeçalho dos cards: criança e parentesco por vínculo; múltiplas crianças e ausência de parentesco.
+- [x] Filtro salvo multisseleção com as 13 opções do seletor; combinar OR interno com AND para filtros diferentes antes de contar/paginar.
+- [x] Hierarquia dos títulos de grupos do filtro reforçada pelo Design System.
+- [x] Diálogos de confirmação limitados a aproximadamente 80vw e ao max-width atual.
+- [x] Adicionar `cliente_retira` à venda perdida e aos validadores; migration aplicada no Supabase remoto antes da publicação.
+- [x] Preservar regra e fluxo atual da confirmação de telefone, inclusive para venda fechada; sem nova opção.
+- [x] Testes dirigidos (434 aprovados), ESLint e `git diff --check`; build bloqueado por indisponibilidade de Google Fonts.

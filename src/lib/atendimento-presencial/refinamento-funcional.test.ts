@@ -10,11 +10,12 @@ describe('refinamento funcional autorizado',()=>{
   expect(registroSemTelefone({versaoFluxo:2,tipoAtendimento:'nao_cliente',clienteTelefone:null})).toBe(false)
  })
  it('oferece as listas exatas e em ordem por resultado',()=>{
-  expect(MOTIVOS_VENDA_PERDIDA.map(i=>i.label)).toEqual(['Cor (Queria cor diferente)','Medidas (Não coube no quarto)','Sem estoque','Achou caro produto','Achou caro o frete','Fechou em outra loja física','Fechou em outra loja internet','Não respondeu mais (vácuo)','Prazo de entrega'])
+  expect(MOTIVOS_VENDA_PERDIDA.map(i=>i.label)).toEqual(['Cor (Queria cor diferente)','Medidas (Não coube no quarto)','Sem estoque','Achou caro produto','Achou caro o frete','Fechou em outra loja física','Fechou em outra loja internet','Não respondeu mais (vácuo)','Prazo de entrega','Cliente Retira (Retirou apenas o item já comprado)'])
   expect(MOTIVOS_NEGOCIACAO.map(i=>i.label)).toEqual(['Virada de cartão','Sem medidas (precisa tirar as medidas)','Vai ganhar de presente','Precisa conversar com outra pessoa','Tá pesquisando','Vai aguardar mais perto do nascimento','Início de gestação (menos de 3 meses)'])
   expect(motivosParaResultado('sim')).toEqual([])
   expect(motivosParaResultado('nao')).toEqual(MOTIVOS_VENDA_PERDIDA)
   expect(motivosParaResultado('negociacao')).toEqual(MOTIVOS_NEGOCIACAO)
+  expect(validarFichaDadosRascunho({...ficha,motivosResultado:['cliente_retira']}).ok).toBe(true)
  })
  it('oferece sete motivos de visita, mantendo antigos aceitos',()=>{
   expect(MOTIVOS_VISITA.map(i=>i.label)).toEqual(['Acompanhante (entrou separado)','Pedido de informação','Vendedor ambulante/entregador/iFood/Panfleto','Entrega de mercadoria','Currículo','Representante','Outros'])

@@ -59,3 +59,11 @@ Sem commits, push ou publicação. Antes de migration validar schema e históric
 ## Aceite
 
 Critérios por entrega e matriz de testes em PLANO.md. Liberação nas lojas depende de homologação integrada dos quatro fluxos, compatibilidade histórica, dispositivos e autorização de produção. Decisões vinculantes em DECISOES.md.
+
+## Adendo aprovado D-034 — 20/10/2026
+
+Nos atendimentos salvos, mostrar parentesco junto ao nome da criança no cabeçalho e disponibilizar filtro multisseleção com as mesmas 13 opções do seletor. Dar mais contraste e divisão aos títulos dos grupos de filtro. Diálogos de confirmação devem ocupar aproximadamente 80% da largura disponível, respeitando o limite máximo definido pelo Design System.
+
+Adicionar às opções de Venda perdida o motivo “Cliente Retira (Retirou apenas o item já comprado)”, com chave persistida `cliente_retira`; atualizar validadores e preparar migration local. A confirmação existente para cliente sem telefone deve permanecer igual e continuar funcionando em venda fechada, negociação e venda perdida, sem opção/resposta nova.
+
+Na aprovação inicial, este adendo autorizava apenas implementação/preparação local. O usuário autorizou posteriormente a aplicação da migration necessária e a publicação do pacote na `main` (D-035).

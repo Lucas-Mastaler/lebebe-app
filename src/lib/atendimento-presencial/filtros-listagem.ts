@@ -10,6 +10,7 @@ export const FILTROS_ADICIONAIS = {
   contato: '',
   departamentos: [] as string[],
   motivos: [] as string[],
+  parentescos: [] as string[],
   motivoVisita: '',
   vinculoCliente: '',
   expiracao: '',
@@ -22,7 +23,7 @@ export function lerFiltrosListagem(
 ): FiltrosAdicionais {
   const filtros = { ...FILTROS_ADICIONAIS }
   for (const key of Object.keys(filtros) as Array<keyof FiltrosAdicionais>) {
-    if (key === 'departamentos' || key === 'motivos')
+    if (key === 'departamentos' || key === 'motivos' || key === 'parentescos')
       filtros[key] = params
         .getAll(key)
         .flatMap((v) => v.split(','))

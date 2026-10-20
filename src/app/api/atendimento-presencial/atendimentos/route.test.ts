@@ -42,7 +42,12 @@ function mockSupabase(queues: Record<string, unknown[]>) {
   vi.mocked(createServiceClient).mockReturnValue({
     from: vi.fn((table: string) => {
       const queue = queues[table]
-      if (!queue || queue.length === 0) throw new Error(`Sem mock para tabela ${table}`)
+      if (!queue || queue.length === 0) {
+        if (table === 'atendimento_presencial_criancas' || table === 'atendimento_presencial_departamentos') {
+          return builder({ data: [], error: null })
+        }
+        throw new Error(`Sem mock para tabela ${table}`)
+      }
       return builder(queue.shift())
     }),
   } as never)
@@ -118,6 +123,34 @@ describe('api lista registros atendimento presencial', () => {
     expect(dep.in).toHaveBeenCalledWith('departamento', ['moveis', 'enxoval'])
     expect(motivos.in).toHaveBeenCalledWith('motivo', ['virada_cartao', 'sem_medidas'])
   })
+  it('filtra parentesco da criança antes das contagens e inclui-o no cabeçalho', async () => {
+    const rows = ['mae', 'pai'].map((_, index) => ({
+      id: index ? 'b' : 'a', iniciado_em: '2026-10-20T12:00:00Z', status: 'concluido',
+      cliente_id: clienteId, consultora_nome: 'ANA', consultora_usuario_id: usuarioId,
+      unidade_id: unidadeId, tipo_atendimento: 'cliente', resultado_atendimento: 'sim',
+    }))
+    const parentescos = builder({ data: [{ atendimento_id: 'a' }], error: null })
+    let consultasAtendimento = 0
+    let consultasCriancas = 0
+    vi.mocked(createServiceClient).mockReturnValue({ from: vi.fn((table: string) => {
+      if (table === 'app_usuarios_perfis') return builder({ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null })
+      if (table === 'app_usuarios_unidades') return builder({ data: [{ app_unidades: { id: unidadeId, nome: 'Filial', ativo: true } }], error: null })
+      if (table === 'atendimento_presencial_atendimentos') return builder({ data: consultasAtendimento++ ? rows : [{ consultora_nome: 'ANA' }], error: null })
+      if (table === 'atendimento_presencial_criancas') return consultasCriancas++ === 0 ? parentescos : builder({ data: [{ atendimento_id: 'a', nome: 'Catarina', parentesco_vinculo: 'Mãe', nome_nao_informado: false, ordem: 1 }], error: null })
+      if (table === 'atendimento_presencial_clientes') return builder({ data: [{ id: clienteId, nome: 'Cliente', telefone_informado: null, telefone_normalizado: null, telefone_normalizado_ddi: null }], error: null })
+      if (table === 'usuarios_permitidos') return builder({ data: [{ id: usuarioId, email: 'ana@example.com' }], error: null })
+      if (table === 'app_unidades') return builder({ data: [{ id: unidadeId, nome: 'Filial' }], error: null })
+      return builder({ data: [], error: null })
+    }) } as never)
+
+    const response = await GET(new Request('http://local?parentescos=M%C3%A3e&parentescos=Pai'))
+    expect(response.status).toBe(200)
+    const json = await response.json()
+    expect(json.total).toBe(1)
+    expect(json.registros[0].id).toBe('a')
+    expect(json.registros[0].criancasResumo).toEqual([{ nome: 'Catarina', parentesco: 'Mãe' }])
+    expect(parentescos.in).toHaveBeenCalledWith('parentesco_vinculo', ['Mãe', 'Pai'])
+  })
   it('lista cliente vinculada por cliente_id sem filtrar status ativo', async () => {
     mockSupabase({
       app_usuarios_perfis: [
@@ -150,6 +183,7 @@ describe('api lista registros atendimento presencial', () => {
             ultima_atividade_em: '2026-07-16T12:00:00.000Z',
             expira_em: '2026-07-21T12:00:00.000Z',
             version: 4,
+            observacoes: 'Preferência por roupinhas neutras.',
             criado_por: usuarioId,
             atualizado_por: usuarioId,
             created_at: '2026-07-16T11:00:00.000Z',
@@ -177,6 +211,12 @@ describe('api lista registros atendimento presencial', () => {
       app_unidades: [
         { data: [{ id: unidadeId, nome: 'Bigorrilho' }], error: null },
       ],
+      atendimento_presencial_criancas: [
+        { data: [{ atendimento_id: atendimentoId, nome: 'Catarina', nome_nao_informado: false, ordem: 1 }], error: null },
+      ],
+      atendimento_presencial_departamentos: [
+        { data: [{ atendimento_id: atendimentoId, departamento: 'ROUPINHAS', ordem: 1 }, { atendimento_id: atendimentoId, departamento: 'MOVEIS', ordem: 2 }], error: null },
+      ],
     })
 
     const response = await GET(new Request('http://localhost/api/atendimento-presencial/atendimentos'))
@@ -188,6 +228,9 @@ describe('api lista registros atendimento presencial', () => {
       clienteId,
       clienteNome: 'Cliente Histórica',
       clienteTelefone: '(41) 99999-2222',
+      criancasNomes: ['Catarina'],
+      departamentos: ['ROUPINHAS', 'MOVEIS'],
+      observacoes: 'Preferência por roupinhas neutras.',
     })
   })
 

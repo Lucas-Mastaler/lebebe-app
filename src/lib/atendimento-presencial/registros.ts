@@ -44,6 +44,10 @@ export type RegistroAtendimentoResumoDTO = {
   versaoFluxo?: number | null
   tipoAtendimento?: 'cliente' | 'nao_cliente' | null
   motivoVisita?: string | null
+  criancasNomes?: string[]
+  criancasResumo?: Array<{ nome: string; parentesco: string | null }>
+  departamentos?: string[]
+  observacoes?: string | null
   telefoneRecusaConfirmada?: boolean | null
   id: string
   clienteId: string | null

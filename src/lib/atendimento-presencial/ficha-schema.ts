@@ -159,6 +159,7 @@ export const MOTIVOS_VENDA_PERDIDA = [
   { chave: 'outra_loja_internet', label: 'Fechou em outra loja internet' },
   { chave: 'nao_respondeu', label: 'Não respondeu mais (vácuo)' },
   { chave: 'prazo_entrega', label: 'Prazo de entrega' },
+  { chave: 'cliente_retira', label: 'Cliente Retira (Retirou apenas o item já comprado)' },
 ] as const
 export const MOTIVOS_NEGOCIACAO = [
   { chave: 'virada_cartao', label: 'Virada de cartão' },

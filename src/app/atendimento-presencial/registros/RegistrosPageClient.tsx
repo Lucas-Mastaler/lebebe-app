@@ -714,7 +714,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                   onClear={limparFiltrosFinalizados}
                   applyDisabled={carregando}
                 >
-                  <FilterFieldGroup label="Cliente, consultora e filial">
+                  <FilterFieldGroup label="Cliente, consultora e filial" prominent>
                     <FormField id="filtro-cliente-nome" label="Cliente">
                       {(field) => (
                         <Input
@@ -771,7 +771,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                     </FormField>
                   </FilterFieldGroup>
 
-                  <FilterFieldGroup label="Virada do cartão" className="border-t border-slate-200 pt-4">
+                  <FilterFieldGroup label="Virada do cartão" className="border-t border-slate-200 pt-4" prominent>
                     <FormField id="filtro-virada-cartao-de" label="De" helper="DD/MM">
                       {(field) => (
                         <Input
@@ -824,52 +824,38 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                       >
                         <CardHeader
                           title={registro.clienteNome}
-                          description={registro.unidadeNome}
+                          description={registro.criancasResumo?.length
+                            ? `Criança: ${registro.criancasResumo.map((crianca) => crianca.parentesco ? `${crianca.nome} · ${crianca.parentesco}` : crianca.nome).join(', ')}`
+                            : registro.criancasNomes?.length
+                            ? `Criança: ${registro.criancasNomes.join(', ')}`
+                            : registroNaoCliente(registro) ? 'Não se aplica' : 'Sem criança informada'}
                           action={<span className="shrink-0 rounded-md border border-sky-100 bg-white/70 px-3 py-2 text-right">
                             <span className="block text-[10px] font-bold uppercase tracking-wide text-sky-700">{registroNaoCliente(registro) ? 'Tipo' : 'Situação da Venda'}</span>
                             <Badge tone={registroNaoCliente(registro) ? 'neutral' : situacaoVendaRegistro(registro.resultadoAtendimento).tone}>{registroNaoCliente(registro) ? 'Não cliente' : situacaoVendaRegistro(registro.resultadoAtendimento).label}</Badge>
                           </span>}
                         />
                         <CardContent className="space-y-3 pt-0">
-                          {registroSemTelefone(registro) && <p className="rounded-lg border border-destructive/30 bg-red-50 px-3 py-2 text-sm font-bold text-destructive">Sem telefone cadastrado</p>}
                           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                             <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
                               <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><UserRound className="size-3.5" aria-hidden="true" />Consultora do atendimento</p>
                               <p className="mt-1 font-semibold text-slate-900">{registro.consultoraNomeManual || 'Não informada'}</p>
                             </div>
-                            {registroNaoCliente(registro) ? (
-                              <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3">
-                                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-sky-800"><Heart className="size-3.5" aria-hidden="true" />Motivo da visita</p>
-                                <p className="mt-1 font-semibold text-slate-900">{getMotivoVisitaLabel(registro.motivoVisita)}</p>
-                              </div>
-                            ) : (
-                              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-                                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><CalendarDays className="size-3.5" aria-hidden="true" />Início do atendimento</p>
-                                <p className="mt-1 font-semibold text-slate-900">{formatarData(registro.iniciadoEm ?? null)}</p>
-                              </div>
-                            )}
-                            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-                              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><History className="size-3.5" aria-hidden="true" />Salvo em</p>
-                              <p className="mt-1 font-semibold text-slate-900">{formatarData(registro.concluidoEm)}</p>
+                            <div className={`rounded-xl border p-3 ${registroSemTelefone(registro) ? 'border-destructive/30 bg-red-50/80' : 'border-slate-200 bg-slate-50/80'}`}>
+                              <p className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${registroSemTelefone(registro) ? 'text-destructive' : 'text-slate-500'}`}><Phone className="size-3.5" aria-hidden="true" />Telefone da cliente</p>
+                              <p className={`mt-1 font-semibold ${registroSemTelefone(registro) ? 'text-destructive' : 'text-slate-900'}`}>{registroNaoCliente(registro) ? 'Não se aplica' : registro.clienteTelefone || 'Sem telefone cadastrado'}</p>
                             </div>
-                            {!registroNaoCliente(registro) && registro.clienteTelefone && (
-                              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-                                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><Phone className="size-3.5" aria-hidden="true" />Telefone</p>
-                                <p className="mt-1 font-semibold text-slate-900">{registro.clienteTelefone}</p>
-                              </div>
-                            )}
-                            {registro.numeroLancamento && (
-                              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-                                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><ClipboardList className="size-3.5" aria-hidden="true" />Número do lançamento</p>
-                                <p className="mt-1 font-semibold text-slate-900">{registro.numeroLancamento}</p>
-                              </div>
-                            )}
-                            {formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes) && (
-                              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-                                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><CalendarDays className="size-3.5" aria-hidden="true" />Virada do cartão</p>
-                                <p className="mt-1 font-semibold text-slate-900">{formatarViradaCartao(registro.viradaCartaoDia, registro.viradaCartaoMes)}</p>
-                              </div>
-                            )}
+                            <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3">
+                              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-sky-800"><Heart className="size-3.5" aria-hidden="true" />Departamento de interesse</p>
+                              <p className="mt-1 font-semibold text-slate-900">{registro.departamentos?.length ? registro.departamentos.map((item) => getDepartamentoLabel(item as DepartamentoInteresse)).join(', ') : 'Não informado'}</p>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><ClipboardList className="size-3.5" aria-hidden="true" />Observações</p>
+                              <p className="mt-1 whitespace-pre-line font-semibold text-slate-900">{registro.observacoes || 'Sem observações'}</p>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><CalendarDays className="size-3.5" aria-hidden="true" />Data do atendimento</p>
+                              <p className="mt-1 font-semibold text-slate-900">{formatarData(registro.iniciadoEm ?? null)}</p>
+                            </div>
                           </div>
                         </CardContent>
                       </button>

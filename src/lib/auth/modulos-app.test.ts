@@ -95,6 +95,7 @@ describe('modulos-app catalog', () => {
     'Prancheta Virtual de Atendimento',
     'Registros de atendimentos',
     'Clientes',
+    'Fluxo das lojas',
     'Procurar datas',
     'Auditoria datas',
     'Performance datas',
@@ -187,22 +188,26 @@ describe('modulos-app catalog', () => {
       'atendimento_presencial_ficha',
       'atendimento_presencial_registros',
       'atendimento_presencial_clientes',
+      'atendimento_presencial_fluxo_lojas',
     ])
     expect(atendimentoPresencial?.items.map((item) => item.label)).toEqual([
       'Prancheta Virtual de Atendimento',
       'Registros de atendimentos',
       'Clientes',
+      'Fluxo das lojas',
     ])
     expect(atendimentoPresencial?.items.map((item) => item.href)).toEqual([
       '/atendimento-presencial/prancheta',
       '/atendimento-presencial/registros',
       '/atendimento-presencial/clientes',
+      '/atendimento-presencial/fluxo-lojas',
     ])
 
     for (const moduleKey of [
       'atendimento_presencial_ficha',
       'atendimento_presencial_registros',
       'atendimento_presencial_clientes',
+      'atendimento_presencial_fluxo_lojas',
     ] as const) {
       const appModule = getAppModuleDefinition(moduleKey)
 

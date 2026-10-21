@@ -110,6 +110,18 @@ export const APP_MODULES = [
     menuLabel: 'Registros de atendimentos',
   },
   {
+    moduleKey: 'atendimento_presencial_fluxo_lojas',
+    nome: 'Fluxo das lojas',
+    descricao: 'Comparação de grupos AlterVision e Pranchetas concluídas',
+    rotaBase: '/atendimento-presencial/fluxo-lojas',
+    categoria: 'atendimento_presencial',
+    publico: false,
+    somenteSuperadmin: false,
+    ativo: true,
+    ordem: 64,
+    access: 'profile',
+  },
+  {
     moduleKey: 'atendimento_presencial_clientes',
     nome: 'Clientes',
     descricao: 'Placeholder protegido de clientes do atendimento presencial',
@@ -387,6 +399,7 @@ export const NAVIGATION_GROUPS = [
       navigationItem('atendimento_presencial_ficha', 'clipboardList'),
       navigationItem('atendimento_presencial_registros', 'clipboardList'),
       navigationItem('atendimento_presencial_clientes', 'users'),
+      navigationItem('atendimento_presencial_fluxo_lojas', 'barChart3'),
     ],
   },
   {
@@ -463,6 +476,7 @@ export function getProfilePermissionGroupLabel(moduleKey: AppModuleKey) {
 }
 
 export const MODULE_KEYS_WITHOUT_AUTOMATIC_PROFILE_GRANT = [
+  'atendimento_presencial_fluxo_lojas',
   'horarios_agendamentos',
   'digisac_finalizacoes_automaticas',
   'procurar_datas_performance',

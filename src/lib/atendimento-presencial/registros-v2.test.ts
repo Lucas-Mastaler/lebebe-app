@@ -83,7 +83,7 @@ describe('leitura e edição compatível dos registros', () => {
     expect(descreverContratoHistorico({ resultadoAnterior: 'sim', resultadoNovo: 'nao' })).toEqual([])
     expect(descreverContratoHistorico({ versaoFluxo: 2, tipoAtendimento: 'nao_cliente', motivoVisita: 'representante',
       observacaoNaoFechamentoAnterior: 'Texto original', observacaoNaoFechamentoNova: '' })).toEqual([
-      'Fluxo: 2', 'Tipo: Não cliente', 'Motivo da visita: Representante',
+      'Tipo: Não cliente', 'Motivo da visita: Representante',
       'Observação de não fechamento anterior: Texto original', 'Observação de não fechamento nova: ',
     ])
     expect(getMotivoVisitaLabel('codigo_futuro')).toBe('codigo_futuro')

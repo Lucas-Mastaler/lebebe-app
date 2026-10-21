@@ -200,7 +200,6 @@ export function getMotivoVisitaLabel(motivo: string | null | undefined) {
 export function descreverContratoHistorico(snapshot: Record<string, unknown> | null | undefined): string[] {
   if (!snapshot) return []
   const linhas: string[] = []
-  if (typeof snapshot.versaoFluxo === 'number') linhas.push(`Fluxo: ${snapshot.versaoFluxo}`)
   const desfechosTelefone: Record<string, string> = {
     telefone_informado: 'Telefone informado',
     cliente_recusou: 'Telefone solicitado; cliente não quis informar',

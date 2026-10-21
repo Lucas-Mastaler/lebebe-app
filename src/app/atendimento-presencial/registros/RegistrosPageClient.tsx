@@ -7,6 +7,7 @@ import { useComemoracaoPv } from '@/components/atendimento-presencial/useComemor
 import { ListaEnxovalDialog } from '@/components/atendimento-presencial/ListaEnxovalDialog'
 import { PRODUTOS_V2_HABILITADOS } from '@/lib/atendimento-presencial/produtos-config'
 import { descricaoProduto } from '@/lib/atendimento-presencial/produtos'
+import { getSectionToneAt, SECTION_TONE_CLASSES } from '@/lib/design-system/section-tones'
 
 
 import { calcularReferenciaNascimento, criancaJaNasceu, dataAtendimentoLocal, descreverIdadeAproximada } from '@/lib/atendimento-presencial/idade-aproximada'
@@ -109,6 +110,15 @@ import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
 
 type RegistroResumo = RegistroAtendimentoResumoDTO
 type RegistroDetalhe = RegistroAtendimentoDetalheDTO
+
+const TONS_CARD_INFORMACOES = {
+  consultora: SECTION_TONE_CLASSES[getSectionToneAt(0)],
+  lancamento: SECTION_TONE_CLASSES[getSectionToneAt(1)],
+  telefone: SECTION_TONE_CLASSES[getSectionToneAt(2)],
+  departamento: SECTION_TONE_CLASSES[getSectionToneAt(0)],
+  observacoes: SECTION_TONE_CLASSES[getSectionToneAt(1)],
+  data: SECTION_TONE_CLASSES[getSectionToneAt(2)],
+}
 
 type ApiListaRascunhosResponse = {
   ok: boolean
@@ -857,26 +867,32 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                             <Badge tone={registroNaoCliente(registro) ? 'neutral' : situacaoVendaRegistro(registro.resultadoAtendimento).tone}>{registroNaoCliente(registro) ? 'Não cliente' : situacaoVendaRegistro(registro.resultadoAtendimento).label}</Badge>
                           </span>}
                         />
-                        <CardContent className="space-y-3 pt-0">
+                        <CardContent className="space-y-3 pt-3">
                           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-                              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><UserRound className="size-3.5" aria-hidden="true" />Consultora do atendimento</p>
+                            <div className={`rounded-xl border p-3 ${TONS_CARD_INFORMACOES.consultora.surface} ${TONS_CARD_INFORMACOES.consultora.border}`}>
+                              <p className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${TONS_CARD_INFORMACOES.consultora.title}`}><UserRound className={`size-3.5 ${TONS_CARD_INFORMACOES.consultora.icon}`} aria-hidden="true" />Consultora do atendimento</p>
                               <p className="mt-1 font-semibold text-slate-900">{registro.consultoraNomeManual || 'Não informada'}</p>
                             </div>
-                            <div className={`rounded-xl border p-3 ${registroSemTelefone(registro) ? 'border-destructive/30 bg-red-50/80' : 'border-slate-200 bg-slate-50/80'}`}>
-                              <p className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${registroSemTelefone(registro) ? 'text-destructive' : 'text-slate-500'}`}><Phone className="size-3.5" aria-hidden="true" />Telefone da cliente</p>
+                            {registro.resultadoAtendimento === 'sim' && registro.numeroLancamento !== null && (
+                              <div className={`rounded-xl border p-3 ${TONS_CARD_INFORMACOES.lancamento.surface} ${TONS_CARD_INFORMACOES.lancamento.border}`}>
+                                <p className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${TONS_CARD_INFORMACOES.lancamento.title}`}><ClipboardList className={`size-3.5 ${TONS_CARD_INFORMACOES.lancamento.icon}`} aria-hidden="true" />Lançamento</p>
+                                <p className="mt-1 font-semibold text-slate-900">{registro.numeroLancamento}</p>
+                              </div>
+                            )}
+                            <div className={`rounded-xl border p-3 ${registroSemTelefone(registro) ? 'border-destructive/30 bg-red-50/80' : `${TONS_CARD_INFORMACOES.telefone.surface} ${TONS_CARD_INFORMACOES.telefone.border}`}`}>
+                              <p className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${registroSemTelefone(registro) ? 'text-destructive' : TONS_CARD_INFORMACOES.telefone.title}`}><Phone className={`size-3.5 ${registroSemTelefone(registro) ? '' : TONS_CARD_INFORMACOES.telefone.icon}`} aria-hidden="true" />Telefone da cliente</p>
                               <p className={`mt-1 font-semibold ${registroSemTelefone(registro) ? 'text-destructive' : 'text-slate-900'}`}>{registroNaoCliente(registro) ? 'Não se aplica' : registro.clienteTelefone || 'Sem telefone cadastrado'}</p>
                             </div>
-                            <div className="rounded-xl border border-sky-200 bg-sky-50/80 p-3">
-                              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-sky-800"><Heart className="size-3.5" aria-hidden="true" />Departamento de interesse</p>
+                            <div className={`rounded-xl border p-3 ${TONS_CARD_INFORMACOES.departamento.surface} ${TONS_CARD_INFORMACOES.departamento.border}`}>
+                              <p className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${TONS_CARD_INFORMACOES.departamento.title}`}><Heart className={`size-3.5 ${TONS_CARD_INFORMACOES.departamento.icon}`} aria-hidden="true" />Departamento de interesse</p>
                               <p className="mt-1 font-semibold text-slate-900">{registro.departamentos?.length ? registro.departamentos.map((item) => getDepartamentoLabel(item as DepartamentoInteresse)).join(', ') : 'Não informado'}</p>
                             </div>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-                              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><ClipboardList className="size-3.5" aria-hidden="true" />Observações</p>
+                            <div className={`rounded-xl border p-3 ${TONS_CARD_INFORMACOES.observacoes.surface} ${TONS_CARD_INFORMACOES.observacoes.border}`}>
+                              <p className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${TONS_CARD_INFORMACOES.observacoes.title}`}><ClipboardList className={`size-3.5 ${TONS_CARD_INFORMACOES.observacoes.icon}`} aria-hidden="true" />Observações</p>
                               <p className="mt-1 whitespace-pre-line font-semibold text-slate-900">{registro.observacoes || 'Sem observações'}</p>
                             </div>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-                              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><CalendarDays className="size-3.5" aria-hidden="true" />Data do atendimento</p>
+                            <div className={`rounded-xl border p-3 ${TONS_CARD_INFORMACOES.data.surface} ${TONS_CARD_INFORMACOES.data.border}`}>
+                              <p className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${TONS_CARD_INFORMACOES.data.title}`}><CalendarDays className={`size-3.5 ${TONS_CARD_INFORMACOES.data.icon}`} aria-hidden="true" />Data do atendimento</p>
                               <p className="mt-1 font-semibold text-slate-900">{formatarData(registro.iniciadoEm ?? null)}</p>
                             </div>
                           </div>

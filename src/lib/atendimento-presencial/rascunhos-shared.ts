@@ -36,6 +36,7 @@ export type AtendimentoPresencialDTO = {
   tipoAtendimento?: 'cliente' | 'nao_cliente' | null
   telefoneRecusaConfirmada?: boolean | null
   motivoVisita?: string | null
+  motivoVisitaOutro?: string | null
   observacaoNaoFechamento?: string | null
   motivoOutro: string | null
   observacoes: string | null

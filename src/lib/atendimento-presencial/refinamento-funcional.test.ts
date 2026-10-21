@@ -17,9 +17,13 @@ describe('refinamento funcional autorizado',()=>{
   expect(motivosParaResultado('negociacao')).toEqual(MOTIVOS_NEGOCIACAO)
   expect(validarFichaDadosRascunho({...ficha,motivosResultado:['cliente_retira']}).ok).toBe(true)
  })
- it('oferece sete motivos de visita, mantendo antigos aceitos',()=>{
-  expect(MOTIVOS_VISITA.map(i=>i.label)).toEqual(['Acompanhante (entrou separado)','Pedido de informação','Vendedor ambulante/entregador/iFood/Panfleto','Entrega de mercadoria','Currículo','Representante','Outros'])
-  for(const {chave} of [...MOTIVOS_VISITA,...MOTIVOS_VISITA_HISTORICOS])expect(validarFichaParaConclusao({ficha:{...ficha,tipoAtendimento:'nao_cliente',motivoVisita:chave,criancas:[],departamentos:[]},clienteId:null}).ok).toBe(true)
+ it('oferece oito motivos de visita, mantendo antigos aceitos',()=>{
+  expect(MOTIVOS_VISITA.map(i=>i.label)).toEqual(['Acompanhante (entrou separado)','Pedido de informação','Vendedor ambulante/entregador/iFood/Panfleto','Entrega de mercadoria','Currículo','Representante','Funcionário','Outros'])
+  for(const {chave} of [...MOTIVOS_VISITA,...MOTIVOS_VISITA_HISTORICOS]){
+   const visita={...ficha,tipoAtendimento:'nao_cliente' as const,motivoVisita:chave,criancas:[],departamentos:[],...(chave==='outros'?{motivoVisitaOutro:'Visita tecnica'}:{})}
+   expect(validarFichaParaConclusao({ficha:visita,clienteId:null}).ok).toBe(true)
+  }
+  expect(validarFichaParaConclusao({ficha:{...ficha,tipoAtendimento:'nao_cliente',motivoVisita:'outros',motivoVisitaOutro:'',criancas:[],departamentos:[]},clienteId:null}).ok).toBe(false)
  })
  it('recupera múltiplos motivos, lojas e identificadores históricos sem conversão',()=>{
   expect(migrarFichaDadosRascunho(ficha)).toEqual(ficha)

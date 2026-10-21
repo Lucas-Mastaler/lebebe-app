@@ -43,6 +43,7 @@ export function serializarPayloadAutosave(payload: AutosavePayload) {
       versaoFluxo: dados.versaoFluxo,
       tipoAtendimento: dados.tipoAtendimento,
       motivoVisita: dados.motivoVisita,
+      motivoVisitaOutro: dados.motivoVisitaOutro,
       observacaoNaoFechamento: dados.observacaoNaoFechamento,
       entradasFormulario: dados.entradasFormulario,
       cliente: dados.cliente,

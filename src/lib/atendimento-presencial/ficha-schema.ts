@@ -18,16 +18,33 @@ export const MOTIVOS_VISITA = [
   { chave: 'entrega_mercadoria', label: 'Entrega de mercadoria' },
   { chave: 'curriculo', label: 'Currículo' },
   { chave: 'representante', label: 'Representante' },
+  { chave: 'funcionario', label: 'Funcionário' },
   { chave: 'outros', label: 'Outros' },
 ] as const
 export type MotivoVisita = (typeof MOTIVOS_VISITA)[number]['chave'] | (typeof MOTIVOS_VISITA_HISTORICOS)[number]['chave']
 export const OBSERVACAO_NAO_FECHAMENTO_MAX_CHARS = 300
+export const MOTIVO_VISITA_OUTRO_MAX_CHARS = 30
+export const MENSAGEM_MOTIVO_VISITA_OUTRO = 'Descreva o motivo de Outros apenas com letras, até 30 caracteres.'
+const REGEX_MOTIVO_VISITA_OUTRO = /^[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u00FF]+( [A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u00FF]+)*$/
+
+export function filtrarTextoMotivoVisitaOutro(valor: string) {
+  return valor.replace(/[^A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u00FF ]/g, '').replace(/ {2,}/g, ' ').slice(0, MOTIVO_VISITA_OUTRO_MAX_CHARS)
+}
+
+export function normalizarMotivoVisitaOutro(valor: unknown) {
+  if (typeof valor !== 'string') return ''
+  return valor.trim().replace(/\s+/g, ' ')
+}
+
+export function motivoVisitaOutroValido(valor: string) {
+  return valor.length >= 1 && valor.length <= MOTIVO_VISITA_OUTRO_MAX_CHARS && REGEX_MOTIVO_VISITA_OUTRO.test(valor)
+}
 
 function validarContratoFluxo(payload: Record<string, unknown>):
   | { ok: true; dados: Partial<FichaDadosRascunho> }
   | { ok: false; field: string; message: string } {
   if (payload.versaoFluxo === undefined) {
-    if (['tipoAtendimento', 'motivoVisita', 'observacaoNaoFechamento'].some((key) => payload[key] !== undefined)) {
+    if (['tipoAtendimento', 'motivoVisita', 'motivoVisitaOutro', 'observacaoNaoFechamento'].some((key) => payload[key] !== undefined)) {
       return { ok: false, field: 'versaoFluxo', message: 'Informe a versao do fluxo para os novos campos.' }
     }
     return { ok: true, dados: {} }
@@ -39,6 +56,17 @@ function validarContratoFluxo(payload: Record<string, unknown>):
   if (payload.motivoVisita !== undefined && ![...MOTIVOS_VISITA, ...MOTIVOS_VISITA_HISTORICOS].some((item) => item.chave === payload.motivoVisita)) {
     return { ok: false, field: 'motivoVisita', message: 'Motivo da visita invalido.' }
   }
+  let motivoVisitaOutro: string | undefined
+  if (payload.tipoAtendimento === 'nao_cliente' && payload.motivoVisita === 'outros' && payload.motivoVisitaOutro != null && payload.motivoVisitaOutro !== '') {
+    if (typeof payload.motivoVisitaOutro !== 'string') {
+      return { ok: false, field: 'motivoVisitaOutro', message: MENSAGEM_MOTIVO_VISITA_OUTRO }
+    }
+    const texto = normalizarMotivoVisitaOutro(payload.motivoVisitaOutro)
+    if (!motivoVisitaOutroValido(texto)) {
+      return { ok: false, field: 'motivoVisitaOutro', message: MENSAGEM_MOTIVO_VISITA_OUTRO }
+    }
+    motivoVisitaOutro = texto
+  }
   if (payload.observacaoNaoFechamento !== undefined && (typeof payload.observacaoNaoFechamento !== 'string'
     || Array.from(payload.observacaoNaoFechamento).length > OBSERVACAO_NAO_FECHAMENTO_MAX_CHARS)) {
     return { ok: false, field: 'observacaoNaoFechamento', message: 'Observacao de nao fechamento deve ter ate 300 caracteres.' }
@@ -47,6 +75,7 @@ function validarContratoFluxo(payload: Record<string, unknown>):
     versaoFluxo: 2,
     ...(payload.tipoAtendimento !== undefined ? { tipoAtendimento: payload.tipoAtendimento as FichaDadosRascunho['tipoAtendimento'] } : {}),
     ...(payload.motivoVisita !== undefined ? { motivoVisita: payload.motivoVisita as MotivoVisita } : {}),
+    ...(motivoVisitaOutro ? { motivoVisitaOutro } : {}),
     ...(payload.observacaoNaoFechamento !== undefined ? { observacaoNaoFechamento: payload.observacaoNaoFechamento as string } : {}),
   } }
 }
@@ -218,6 +247,7 @@ export type FichaDadosRascunho = {
   versaoFluxo?: 2
   tipoAtendimento?: 'cliente' | 'nao_cliente'
   motivoVisita?: MotivoVisita
+  motivoVisitaOutro?: string
   observacaoNaoFechamento?: string
   lojasMotivos?: Partial<Record<(typeof MOTIVOS_LOJA)[number], string>>
   entradasFormulario?: EntradasFormularioRascunho
@@ -266,6 +296,7 @@ const chavesPermitidas = new Set([
   'versaoFluxo',
   'tipoAtendimento',
   'motivoVisita',
+  'motivoVisitaOutro',
   'observacaoNaoFechamento',
   'lojasMotivos',
   'entradasFormulario',
@@ -660,6 +691,9 @@ export function validarFichaParaConclusao(params: {
     }
     if (!params.ficha.motivoVisita) {
       return { ok: false, field: 'motivoVisita', message: 'Selecione o motivo da visita.' }
+    }
+    if (params.ficha.motivoVisita === 'outros' && !motivoVisitaOutroValido(normalizarMotivoVisitaOutro(params.ficha.motivoVisitaOutro))) {
+      return { ok: false, field: 'motivoVisitaOutro', message: MENSAGEM_MOTIVO_VISITA_OUTRO }
     }
     return { ok: true, numeroLancamento: null }
   }

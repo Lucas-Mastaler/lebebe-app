@@ -93,6 +93,12 @@ function mapearErroRpcEdicao(error: { code?: string; message?: string }) {
     return jsonErro('Data de virada do cartao invalida. Ajuste o dia (01 a 31) e o mes (01 a 12) para uma data valida, sem ano.', 400, { field: 'viradaCartao' })
   }
   if (error.code === '23514') {
+    if (message.includes('motivo_visita_outro_invalido')) {
+      return jsonErro('Descreva o motivo de Outros apenas com letras, até 30 caracteres.', 400, { field: 'motivoVisitaOutro' })
+    }
+    if (message.includes('motivo_visita_invalido')) {
+      return jsonErro('Motivo da visita invalido.', 400, { field: 'motivoVisita' })
+    }
     return jsonErro('Dados obrigatorios da edicao nao foram preenchidos corretamente.', 400)
   }
   if (error.code === 'P0001') {

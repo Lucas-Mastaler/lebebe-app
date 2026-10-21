@@ -66,8 +66,13 @@ import {
   FICHA_OBSERVACOES_MAX_CHARS,
   FICHA_PRODUTO_MAX_CHARS,
   FICHA_PRODUTOS_MAX_ITENS,
+  filtrarTextoMotivoVisitaOutro,
+  MENSAGEM_MOTIVO_VISITA_OUTRO,
+  MOTIVO_VISITA_OUTRO_MAX_CHARS,
   MOTIVOS_VISITA,
   OBSERVACAO_NAO_FECHAMENTO_MAX_CHARS,
+  motivoVisitaOutroValido,
+  normalizarMotivoVisitaOutro,
   motivosParaEdicao,
   MOTIVOS_LOJA,
   SEXOS_CRIANCA,
@@ -298,6 +303,9 @@ function validarEtapa(params: {
     }
     if (!ficha.tipoAtendimento) erros.push({ sectionId: 'secao-tipo', message: 'Selecione o tipo de atendimento.' })
     if (ficha.tipoAtendimento === 'nao_cliente' && !ficha.motivoVisita) erros.push({ sectionId: 'secao-visita', message: 'Selecione o motivo da visita.' })
+    if (ficha.tipoAtendimento === 'nao_cliente' && ficha.motivoVisita === 'outros' && !motivoVisitaOutroValido(normalizarMotivoVisitaOutro(ficha.motivoVisitaOutro))) {
+      erros.push({ sectionId: 'secao-visita', fieldId: 'motivo-visita-outro', message: MENSAGEM_MOTIVO_VISITA_OUTRO })
+    }
     if (ficha.tipoAtendimento === 'cliente' && !clienteSelecionada) {
       erros.push({ sectionId: 'secao-cliente', fieldId: 'busca-cliente', message: 'Selecione uma cliente.' })
     }
@@ -1266,7 +1274,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     'secao-unidade': unidadeId,
     'secao-consultora-nome': ficha.consultoraNome,
     'secao-tipo': ficha.tipoAtendimento,
-    'secao-visita': ficha.motivoVisita,
+    'secao-visita': `${ficha.motivoVisita ?? ''}|${ficha.motivoVisitaOutro ?? ''}`,
     'secao-cliente': clienteSelecionada?.id,
     'secao-crianca': JSON.stringify([ficha.criancas, dataPrevistaInputs]),
     'secao-departamentos': JSON.stringify(ficha.departamentos),
@@ -1550,7 +1558,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   function erroConclusaoParaSecao(field: string | undefined, message: string): ErroValidacaoFicha {
     if (field === 'unidadeId') return { sectionId: 'secao-unidade', message }
     if (field === 'tipoAtendimento') return { sectionId: 'secao-tipo', message }
-    if (field === 'motivoVisita') return { sectionId: 'secao-visita', message }
+    if (field === 'motivoVisita' || field === 'motivoVisitaOutro') return { sectionId: 'secao-visita', fieldId: field === 'motivoVisitaOutro' ? 'motivo-visita-outro' : undefined, message }
     if (field === 'observacaoNaoFechamento') return { sectionId: 'secao-resultado-observacao', fieldId: 'observacao-nao-fechamento', message }
     if (field === 'observacoes') return { sectionId: 'secao-observacoes', fieldId: 'observacoes', message }
     if (field === 'produtosInteresse') return { sectionId: 'secao-produtos', message }
@@ -2129,8 +2137,26 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                   <div className="grid gap-2 sm:grid-cols-2">
                     {ficha.motivoVisita && !MOTIVOS_VISITA.some(item => item.chave === ficha.motivoVisita) && <p className="text-sm text-muted-foreground">Motivo histórico preservado: {getMotivoVisitaLabel(ficha.motivoVisita)}</p>}
                     {MOTIVOS_VISITA.map((item) => <OpcaoButton key={item.chave} selected={ficha.motivoVisita === item.chave}
-                      onClick={() => atualizarFicha((atual) => ({ ...atual, motivoVisita: item.chave }))}>{item.label}</OpcaoButton>)}
+                      onClick={() => atualizarFicha((atual) => ({ ...atual, motivoVisita: item.chave, motivoVisitaOutro: item.chave === 'outros' ? atual.motivoVisitaOutro : undefined }))}>{item.label}</OpcaoButton>)}
                   </div>
+                  {ficha.motivoVisita === 'outros' && (
+                    <FormField id="motivo-visita-outro" label="Descreva o motivo" required helper="Apenas letras e espaços, até 30 caracteres." error={errosValidacao.find((item) => item.fieldId === 'motivo-visita-outro')?.message}>
+                      {(field) => (
+                        <Input
+                          {...field}
+                          value={ficha.motivoVisitaOutro ?? ''}
+                          maxLength={MOTIVO_VISITA_OUTRO_MAX_CHARS}
+                          className="h-12 text-base"
+                          placeholder="Exemplo: entrega de amostra"
+                          onChange={(event) => {
+                            const texto = filtrarTextoMotivoVisitaOutro(event.target.value)
+                            atualizarFicha((atual) => ({ ...atual, motivoVisitaOutro: texto }))
+                          }}
+                          onBlur={(event) => atualizarFicha((atual) => ({ ...atual, motivoVisitaOutro: normalizarMotivoVisitaOutro(event.target.value) }))}
+                        />
+                      )}
+                    </FormField>
+                  )}
                 </SecaoFicha>
               )}
             </>}

@@ -33,7 +33,17 @@ describe('contratos da Entrega 2', () => {
     const ficha: FichaDadosRascunho = { ...cliente, tipoAtendimento: 'nao_cliente', motivoVisita: chave,
       resultadoAtendimento: undefined, departamentos: [], criancas: [{ id: 'oculta', situacao: 'ja_nasceu' }] }
     expect(validarFichaDadosRascunho(ficha).ok).toBe(true)
+    if (chave === 'outros') {
+      expect(concluir(ficha, null, null)).toMatchObject({ ok: false, field: 'motivoVisitaOutro' })
+      expect(concluir({ ...ficha, motivoVisitaOutro: 'Entrega de amostra' }, null, null)).toEqual({ ok: true, numeroLancamento: null })
+      expect(validarFichaDadosRascunho({ ...ficha, motivoVisitaOutro: 'Entrega 1' }).ok).toBe(false)
+      expect(validarFichaDadosRascunho({ ...ficha, motivoVisitaOutro: '  entrega de amostra  ' })).toMatchObject({ ok: true, dados: { motivoVisitaOutro: 'entrega de amostra' } })
+      return
+    }
     expect(concluir(ficha, null, null)).toEqual({ ok: true, numeroLancamento: null })
+    const ignorado = validarFichaDadosRascunho({ ...ficha, motivoVisitaOutro: 'Texto ignorado' })
+    expect(ignorado.ok).toBe(true)
+    if (ignorado.ok) expect(ignorado.dados.motivoVisitaOutro).toBeUndefined()
   })
   it.each([0, 300, 301])('limita observacao sem truncar %s caracteres', (tamanho) => {
     const ficha = { ...cliente, observacaoNaoFechamento: 'x'.repeat(tamanho) }
@@ -64,5 +74,6 @@ describe('contratos da Entrega 2', () => {
     for (const campo of ['versaoFluxo', 'tipoAtendimento', 'motivoVisita', 'observacaoNaoFechamento'] as const) {
       expect(serializarPayloadAutosave({ dadosRascunho: { ...dados, [campo]: undefined }, clienteId: 'cliente' })).not.toBe(base)
     }
+    expect(serializarPayloadAutosave({ dadosRascunho: { ...dados, motivoVisitaOutro: 'Entrega de amostra' }, clienteId: 'cliente' })).not.toBe(base)
   })
 })

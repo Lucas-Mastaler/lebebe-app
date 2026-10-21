@@ -121,6 +121,7 @@ export function normalizarDetalheParaFichaEdicao(detalhe: Pick<
       versaoFluxo: 2,
       tipoAtendimento: detalhe.atendimento.tipoAtendimento ?? undefined,
       motivoVisita: (detalhe.atendimento.motivoVisita ?? undefined) as MotivoVisita | undefined,
+      motivoVisitaOutro: detalhe.atendimento.motivoVisita === 'outros' ? detalhe.atendimento.motivoVisitaOutro?.trim() || undefined : undefined,
       observacaoNaoFechamento: detalhe.atendimento.observacaoNaoFechamento ?? undefined,
     } : {}),
     consultoraNome: detalhe.atendimento.consultoraNomeManual ?? undefined,
@@ -167,7 +168,7 @@ export function montarPayloadEdicaoAtendimento(params: {
   if (params.detalhe.atendimento.versaoFluxo === 2) {
     dadosRascunho.versaoFluxo = 2
     dadosRascunho.tipoAtendimento = params.detalhe.atendimento.tipoAtendimento ?? undefined
-    for (const campo of ['motivoVisita', 'observacaoNaoFechamento'] as const) {
+    for (const campo of ['motivoVisita', 'motivoVisitaOutro', 'observacaoNaoFechamento'] as const) {
       if (!Object.hasOwn(params.ficha, campo)) {
         Object.assign(dadosRascunho, { [campo]: params.detalhe.atendimento[campo] ?? undefined })
       }
@@ -211,11 +212,13 @@ export function descreverContratoHistorico(snapshot: Record<string, unknown> | n
   for (const [key, label] of [
     ['tipoAtendimento', 'Tipo'], ['tipoAtendimentoAnterior', 'Tipo anterior'], ['tipoAtendimentoNovo', 'Tipo novo'],
     ['motivoVisita', 'Motivo da visita'], ['motivoVisitaAnterior', 'Motivo da visita anterior'], ['motivoVisitaNovo', 'Motivo da visita novo'],
+    ['motivoVisitaOutro', 'Descrição de Outros'], ['motivoVisitaOutroAnterior', 'Descrição de Outros anterior'], ['motivoVisitaOutroNovo', 'Descrição de Outros nova'],
     ['observacaoNaoFechamento', 'Observação de não fechamento'], ['observacaoNaoFechamentoAnterior', 'Observação de não fechamento anterior'], ['observacaoNaoFechamentoNova', 'Observação de não fechamento nova'],
   ]) {
     const valor = snapshot[key]
     if (typeof valor !== 'string') continue
-    const texto = key.startsWith('motivoVisita') ? getMotivoVisitaLabel(valor)
+    const texto = key === 'motivoVisitaOutro' || key.startsWith('motivoVisitaOutro') ? valor
+      : key.startsWith('motivoVisita') ? getMotivoVisitaLabel(valor)
       : key.startsWith('tipoAtendimento') ? (valor === 'nao_cliente' ? 'Não cliente' : valor === 'cliente' ? 'Cliente' : valor) : valor
     linhas.push(`${label}: ${texto}`)
   }

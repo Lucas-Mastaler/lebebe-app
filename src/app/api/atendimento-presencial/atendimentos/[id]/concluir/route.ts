@@ -98,6 +98,12 @@ function mapearErroRpc(error: { code?: string; message?: string }) {
     if (message.includes('consultora_nome_invalido')) {
       return jsonErro('Nome da consultora invalido.', 422, { field: 'consultoraNome' })
     }
+    if (message.includes('motivo_visita_outro_invalido')) {
+      return jsonErro('Descreva o motivo de Outros apenas com letras, até 30 caracteres.', 422, { field: 'motivoVisitaOutro' })
+    }
+    if (message.includes('motivo_visita_invalido')) {
+      return jsonErro('Motivo da visita invalido.', 422, { field: 'motivoVisita' })
+    }
     return jsonErro('Dados obrigatorios da conclusao nao foram preenchidos', 422)
   }
   return null

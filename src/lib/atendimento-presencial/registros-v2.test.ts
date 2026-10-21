@@ -24,13 +24,13 @@ describe('leitura e edição compatível dos registros', () => {
   it.each(MOTIVOS_VISITA)('identifica não cliente e motivo $label sem requisitos comerciais', ({ chave, label }) => {
     const detalhe = detalheV2()
     Object.assign(detalhe.atendimento, { tipoAtendimento: 'nao_cliente', motivoVisita: chave, clienteId: null,
-      resultadoAtendimento: null, observacaoNaoFechamento: null })
+      resultadoAtendimento: null, observacaoNaoFechamento: null, motivoVisitaOutro: chave === 'outros' ? 'Visita tecnica' : null })
     detalhe.criancas = []; detalhe.departamentos = []; detalhe.produtosInteresse = []; detalhe.motivos = []
     const ficha = normalizarDetalheParaFichaEdicao(detalhe)
     expect(registroNaoCliente(detalhe.atendimento)).toBe(true)
     expect(getMotivoVisitaLabel(ficha.motivoVisita)).toBe(label)
     expect(validarFichaParaConclusao({ ficha, clienteId: null, numeroLancamento: null })).toMatchObject({ ok: true })
-    expect(montarPayloadEdicaoAtendimento({ detalhe, ficha, numeroLancamento: null }).dadosRascunho).toMatchObject({ versaoFluxo: 2, tipoAtendimento: 'nao_cliente', motivoVisita: chave })
+    expect(montarPayloadEdicaoAtendimento({ detalhe, ficha, numeroLancamento: null }).dadosRascunho).toMatchObject({ versaoFluxo: 2, tipoAtendimento: 'nao_cliente', motivoVisita: chave, ...(chave === 'outros' ? { motivoVisitaOutro: 'Visita tecnica' } : {}) })
   })
 
   it.each(['sim', 'nao', 'negociacao'] as const)('mantém resultado %s, crianças, motivos e observações na ida e volta', (resultado) => {

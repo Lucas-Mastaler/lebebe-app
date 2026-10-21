@@ -55,7 +55,11 @@ import {
   FICHA_PRODUTOS_MAX_ITENS,
   motivosParaEdicao,
   MOTIVOS_LOJA,
+  filtrarTextoMotivoVisitaOutro,
+  MENSAGEM_MOTIVO_VISITA_OUTRO,
+  MOTIVO_VISITA_OUTRO_MAX_CHARS,
   MOTIVOS_VISITA,
+  normalizarMotivoVisitaOutro,
   RESULTADOS_ATENDIMENTO,
   SEXOS_CRIANCA,
   SITUACOES_CRIANCA,
@@ -1009,6 +1013,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                           <div className="rounded-lg border border-white bg-white/80 p-3">
                             <p className="text-xs font-semibold text-slate-500">Motivo da visita</p>
                             <p className="mt-1 font-semibold text-slate-900">{getMotivoVisitaLabel(selecionado.atendimento.motivoVisita)}</p>
+                            {selecionado.atendimento.motivoVisita === 'outros' && selecionado.atendimento.motivoVisitaOutro && <p className="mt-1 text-sm text-slate-700">{selecionado.atendimento.motivoVisitaOutro}</p>}
                           </div>
                         </Section>
                       ) : (
@@ -1415,9 +1420,10 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
 
                 </>}
                 {selecionadoNaoCliente && (
+                  <>
                   <FormField id="edicao-motivo-visita" label="Motivo da visita">
                     {(field) => (
-                      <Select value={fichaEdicao.motivoVisita} onValueChange={(value) => atualizarFichaEdicao((atual) => ({ ...atual, motivoVisita: value as FichaDadosRascunho['motivoVisita'] }))}>
+                      <Select value={fichaEdicao.motivoVisita} onValueChange={(value) => atualizarFichaEdicao((atual) => ({ ...atual, motivoVisita: value as FichaDadosRascunho['motivoVisita'], motivoVisitaOutro: value === 'outros' ? atual.motivoVisitaOutro : undefined }))}>
                         <SelectTrigger id={field.id} className="w-full"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {MOTIVOS_VISITA.map((item) => <SelectItem key={item.chave} value={item.chave}>{item.label}</SelectItem>)}
@@ -1426,6 +1432,24 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                       </Select>
                     )}
                   </FormField>
+                  {fichaEdicao.motivoVisita === 'outros' && (
+                    <FormField id="edicao-motivo-visita-outro" label="Descreva o motivo" required helper="Apenas letras e espaços, até 30 caracteres." error={erroEdicao === MENSAGEM_MOTIVO_VISITA_OUTRO ? erroEdicao : undefined}>
+                      {(field) => (
+                        <Input
+                          {...field}
+                          value={fichaEdicao.motivoVisitaOutro ?? ''}
+                          maxLength={MOTIVO_VISITA_OUTRO_MAX_CHARS}
+                          placeholder="Exemplo: entrega de amostra"
+                          onChange={(event) => {
+                            const texto = filtrarTextoMotivoVisitaOutro(event.target.value)
+                            atualizarFichaEdicao((atual) => ({ ...atual, motivoVisitaOutro: texto }))
+                          }}
+                          onBlur={(event) => atualizarFichaEdicao((atual) => ({ ...atual, motivoVisitaOutro: normalizarMotivoVisitaOutro(event.target.value) }))}
+                        />
+                      )}
+                    </FormField>
+                  )}
+                  </>
                 )}
                 <Section title="Observações" variant="subsection" collapsible>
                 {fichaEdicao.versaoFluxo === 2 && !selecionadoNaoCliente && (

@@ -4,7 +4,7 @@ const state = vi.hoisted(() => ({ perfil:'gestao', moduleAllowed:true, windowAll
 vi.mock('server-only',()=>({}))
 vi.mock('@/lib/auth/module-access',()=>({requireModuleAccess:vi.fn(async () => state.moduleAllowed ? {ok:true,allowedUser:{id:'actor',role:state.perfil==='superadmin'?'superadmin':'user'}} : {ok:false,response:NextResponse.json({ok:false},{status:403})})}))
 vi.mock('@/lib/auth/access-window',()=>({checkAccessWindowForUser:vi.fn(async () => ({ok:state.windowAllowed}))}))
-vi.mock('@/lib/atendimento-presencial/rascunhos',()=>({carregarPerfilAtendimento:vi.fn(async()=>state.perfil)}))
+vi.mock('@/lib/atendimento-presencial/rascunhos',async importOriginal=>({...await importOriginal<typeof import('@/lib/atendimento-presencial/rascunhos')>(),carregarPerfilAtendimento:vi.fn(async()=>state.perfil)}))
 const unitM = {id:'078e42b2-ba21-4478-81bd-5b25d5c72766',chave:'marechal',nome:'Marechal'}
 const unitP = {id:'b555a87c-ad0e-4e87-b7a3-5ce6a80a1852',chave:'portao',nome:'Portão'}
 vi.mock('@/lib/supabase/service',()=>({createServiceClient:()=>({from:(table:string)=>{
@@ -16,8 +16,8 @@ vi.mock('@/lib/supabase/service',()=>({createServiceClient:()=>({from:(table:str
     gte:()=>query,lt:()=>query,order:()=>query,range:(a:number,b:number)=>{from=a;to=b;return query},
     maybeSingle:async()=>{const result = await query; return {data:result.data[0]??null,error:result.error}},
     then:(resolve:(value:{data:Array<Record<string,unknown>>;error:unknown})=>unknown)=>{
-      let rows: Array<Record<string,unknown>> = table==='app_unidades'?[unitM,unitP,{id:'feira',chave:'feira',nome:'Feira'}]:table==='app_usuarios_unidades'?[{unidade_id:unitM.id}]:state.rows
-      if(table==='atendimento_presencial_atendimentos') rows=rows.filter(row=>call.filters.every(([op,key,value])=>op==='eq'?row[key]===value:(value as unknown[]).includes(row[key])))
+      let rows: Array<Record<string,unknown>> = table==='app_unidades'?[unitM,unitP,{id:'feira',chave:'feira',nome:'Feira'}]:table==='app_usuarios_unidades'?[{unidade_id:unitM.id}]:table==='atendimento_presencial_atendimentos'?state.rows:table==='atendimento_presencial_clientes'?[{id:'private-client-id',nome:'Cliente sintética',telefone_informado:'41999990000'}]:[]
+      if(table==='atendimento_presencial_atendimentos'||table==='atendimento_presencial_clientes') rows=rows.filter(row=>call.filters.every(([op,key,value])=>op==='eq'?row[key]===value:(value as unknown[]).includes(row[key])))
       return Promise.resolve({data:rows.slice(from,to+1),error:state.fail?{message:'privado'}:null}).then(resolve)
     },
   }
@@ -85,6 +85,7 @@ describe('API real com Supabase e REST simulados: isolamento por unidade',()=>{
     state.perfil='supervisora_loja'
     const response=await originalGET(new Request(url),{params:Promise.resolve({id:base.id})})
     const body=await response.json();expect(body.registro.conclusaoOutroDia).toBe(true);expect(body.registro.id).toBe(base.id)
+    expect(body.detalhe.atendimento.id).toBe(base.id);expect(body.detalhe.cliente.nome).toBe('Cliente sintética');expect(body.detalhe.podeEditar).toBe(false);expect(body.unidadeNome).toBe('Marechal')
     expect((await originalGET(new Request(url),{params:Promise.resolve({id:'c75501a1-e4dc-4a32-985a-266900d3c36f'})})).status).toBe(404)
     state.rows=[{...base,consultora_nome:'HOMOLOGACAO TESTE'}]
     expect((await originalGET(new Request(url),{params:Promise.resolve({id:base.id})})).status).toBe(404)

@@ -6,6 +6,8 @@ import { createServiceClient } from '@/lib/supabase/service'
 import { carregarPerfilAtendimento } from './rascunhos'
 import { allowedUnits, compare, daysBetween, readFlowFilters, selectRecords, pageRecords, type FlowRow, type FlowUnit } from './fluxo-lojas'
 import { getExternalFlow } from '@/lib/altervision/service'
+import { serializarAtendimentoPresencial, type AtendimentoPresencialRow } from './rascunhos'
+import { serializarClienteRegistro, type ClienteRegistroRow, type RegistroAtendimentoDetalheDTO } from './registros'
 
 export const FLOW_MODULE = 'atendimento_presencial_fluxo_lojas'
 export const FLOW_COLUMNS = 'id,unidade_id,status,versao_fluxo,tipo_atendimento,cliente_id,iniciado_em,concluido_em,consultora_nome,resultado_atendimento,motivo_visita'
@@ -71,18 +73,46 @@ export async function loadFlow(request: Request, mode: 'dashboard' | 'table' | '
     return flowJson({ ok: false, message: 'Não foi possível consultar as Pranchetas. Tente atualizar novamente.' }, 500)
   }
 }
-export async function loadOriginal(id: string) {
+export async function loadOriginalDetails(id: string) {
   try {
     const ctx = await flowContext()
     if (!ctx.ok) return ctx.response
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) return flowJson({ ok: false, message: 'ID inválido.' }, 400)
     if (!ctx.units.length) return flowJson({ ok: false, message: 'Atendimento não encontrado.' }, 404)
-    const result = await ctx.supabase.from('atendimento_presencial_atendimentos').select(FLOW_COLUMNS)
+
+    const recordResult = await ctx.supabase.from('atendimento_presencial_atendimentos').select('*')
       .eq('id', id).eq('status', 'concluido').in('unidade_id', ctx.units.map(unit => unit.id)).maybeSingle()
-    if (result.error) throw new Error('flow_original_read')
-    const row = result.data as FlowRow | null
-    const records = row ? selectRecords([row], ctx.units, { de: '1900-01-01', ate: '9999-12-31', unidadeId: '', horaDe: 0, horaAte: 24, tipo: '', consultora: '', situacao: '' }).selected : []
-    if (!records.length) return flowJson({ ok: false, message: 'Atendimento não encontrado.' }, 404)
-    return flowJson({ ok: true, registro: records[0] })
-  } catch { return flowJson({ ok: false, message: 'Não foi possível consultar o atendimento.' }, 500) }
+    if (recordResult.error) throw new Error('flow_detail_record_read')
+    if (!recordResult.data) return flowJson({ ok: false, message: 'Atendimento não encontrado.' }, 404)
+    const row = recordResult.data as unknown as AtendimentoPresencialRow
+    const registros = selectRecords([row as unknown as FlowRow], ctx.units, { de: '1900-01-01', ate: '9999-12-31', unidadeId: '', horaDe: 0, horaAte: 24, tipo: '', consultora: '', situacao: '' }).selected
+    if (!registros.length) return flowJson({ ok: false, message: 'Atendimento não encontrado.' }, 404)
+
+    const [cliente, criancas, departamentos, produtos, motivos, historico] = await Promise.all([
+      row.cliente_id ? ctx.supabase.from('atendimento_presencial_clientes').select('id,nome,telefone_informado,telefone_normalizado,telefone_normalizado_ddi,parentesco,parentesco_outro').eq('id', row.cliente_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+      ctx.supabase.from('atendimento_presencial_criancas').select('*').eq('atendimento_id', id).order('ordem', { ascending: true }),
+      ctx.supabase.from('atendimento_presencial_departamentos').select('*').eq('atendimento_id', id).order('ordem', { ascending: true }),
+      ctx.supabase.from('atendimento_presencial_produtos_interesse').select('*').eq('atendimento_id', id).order('ordem', { ascending: true }),
+      ctx.supabase.from('atendimento_presencial_motivos').select('*').eq('atendimento_id', id).order('ordem', { ascending: true }),
+      ctx.supabase.from('atendimento_presencial_historico').select('*').eq('atendimento_id', id).order('created_at', { ascending: false }),
+    ])
+    if (cliente.error || criancas.error || departamentos.error || produtos.error || motivos.error || historico.error) throw new Error('flow_detail_related_read')
+
+    const detail: RegistroAtendimentoDetalheDTO = {
+      atendimento: serializarAtendimentoPresencial(row) as RegistroAtendimentoDetalheDTO['atendimento'],
+      cliente: serializarClienteRegistro(cliente.data as ClienteRegistroRow | null),
+      criancas: (criancas.data ?? []) as RegistroAtendimentoDetalheDTO['criancas'],
+      departamentos: (departamentos.data ?? []) as RegistroAtendimentoDetalheDTO['departamentos'],
+      produtosInteresse: (produtos.data ?? []) as RegistroAtendimentoDetalheDTO['produtosInteresse'],
+      motivos: (motivos.data ?? []) as RegistroAtendimentoDetalheDTO['motivos'],
+      historico: (historico.data ?? []) as RegistroAtendimentoDetalheDTO['historico'],
+      podeEditar: false,
+      motivoBloqueio: null,
+    }
+    const unidadeNome = ctx.units.find(unit => unit.id === row.unidade_id)?.nome ?? row.unidade_id
+    return flowJson({ ok: true, registro: registros[0], detalhe: detail, unidadeNome })
+  } catch {
+    console.error('[FLUXO LOJAS] Falha na leitura detalhada do atendimento.')
+    return flowJson({ ok: false, message: 'Não foi possível consultar o atendimento.' }, 500)
+  }
 }

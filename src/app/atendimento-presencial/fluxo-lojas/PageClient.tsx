@@ -2,12 +2,13 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { ArrowRight, BarChart3, ChevronDown, ChevronUp, ClipboardCheck, Clock3, RefreshCw, Search, Store } from 'lucide-react'
 import {
-  Alert, Badge, Button, Card, CardContent, DateField, Dialog, DialogBody, DialogContent, DialogHeader,
+  Alert, Badge, Button, Card, CardContent, DateField,
   EmptyState, FilterPanel, FormField, PageContainer, PageHeader, ResponsiveTable, Spinner, useAsyncAction, useFilterState,
 } from '@/components/design-system'
+import { DetalhesAtendimentoDialog, type DetalheAtendimentoLoadingSummary } from '@/components/atendimento-presencial/DetalhesAtendimentoDialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { localParts, readFlowFilters, type Comparison, type FlowDashboard, type FlowRecord } from '@/lib/atendimento-presencial/fluxo-lojas'
-import { getMotivoVisitaLabel, situacaoVendaRegistro } from '@/lib/atendimento-presencial/registros'
+import { getMotivoVisitaLabel, situacaoVendaRegistro, type RegistroAtendimentoDetalheDTO } from '@/lib/atendimento-presencial/registros'
 import { parseBrDate } from '@/lib/design-system/dates'
 import { FlowChart } from './FlowCharts'
 import { FlowOverview } from './FlowOverview'
@@ -75,7 +76,8 @@ export default function PageClient() {
   const [error, setError] = useState<string | null>(null)
   const [hourlyOpen, setHourlyOpen] = useState(false)
   const [selection, setSelection] = useState<Comparison | null>(null)
-  const [detail, setDetail] = useState<FlowRecord | null>(null)
+  const [detail, setDetail] = useState<RegistroAtendimentoDetalheDTO | null>(null)
+  const [detailSummary, setDetailSummary] = useState<DetalheAtendimentoLoadingSummary | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
@@ -93,12 +95,12 @@ export default function PageClient() {
     try {
       const params = flowParams(applied); params.set('page', String(page))
       const scope = params.toString().replace(/&page=\d+$/, '')
-      if (scope !== lastScope.current) { setData(null); setDetail(null); setDetailOpen(false) }
+      if (scope !== lastScope.current) { setData(null); setDetail(null); setDetailSummary(null); setDetailOpen(false) }
       const response = await fetch(`${API}${force ? '/atualizar' : tableOnly ? '/atendimentos' : ''}?${params}`, { method: force ? 'POST' : 'GET', cache: 'no-store', signal: controller.signal })
       const body = await response.json()
       if (generationId !== generation.current) return
       if (!response.ok || !body.ok) {
-        if ([401,403].includes(response.status)) { setData(null); setDetail(null); setDetailOpen(false) }
+        if ([401,403].includes(response.status)) { setData(null); setDetail(null); setDetailSummary(null); setDetailOpen(false) }
         throw new Error(body.message ?? 'Não foi possível consultar o comparativo.')
       }
       if (tableOnly) setData(old => old ? { ...old, tabela: body } : null)
@@ -120,11 +122,32 @@ export default function PageClient() {
   useEffect(() => () => { detailFlight.current?.abort() }, [])
   async function original(id: string) {
     detailFlight.current?.abort(); const controller = new AbortController(); detailFlight.current = controller
+    const summaryRow = data?.tabela.registros.find(record => record.id === id)
     setDetailOpen(true); setDetail(null); setDetailError(null); setDetailLoading(true)
+    setDetailSummary(summaryRow ? {
+      clienteNome: summaryRow.tipo === 'nao_cliente' ? 'Atendimento sem cliente vinculado' : 'Cliente do atendimento',
+      consultoraNomeManual: summaryRow.consultora,
+      unidadeNome: summaryRow.filial,
+      iniciadoEm: summaryRow.iniciadoEm,
+      resultadoAtendimento: summaryRow.resultado as RegistroAtendimentoDetalheDTO['atendimento']['resultadoAtendimento'],
+      versaoFluxo: summaryRow.tipo === 'nao_cliente' ? 2 : null,
+      tipoAtendimento: summaryRow.tipo,
+    } : null)
     try {
       const response = await fetch(`${API}/atendimentos/${id}`, { cache: 'no-store', signal: controller.signal }); const body = await response.json()
       if (!response.ok || !body.ok) throw new Error(body.message ?? 'Falha ao consultar atendimento.')
-      if (!controller.signal.aborted) setDetail(body.registro)
+      if (!controller.signal.aborted) {
+        setDetail(body.detalhe)
+        setDetailSummary({
+          clienteNome: body.detalhe.cliente?.nome ?? 'Atendimento sem cliente vinculado',
+          consultoraNomeManual: body.detalhe.atendimento.consultoraNomeManual,
+          unidadeNome: body.unidadeNome,
+          iniciadoEm: body.detalhe.atendimento.iniciadoEm,
+          resultadoAtendimento: body.detalhe.atendimento.resultadoAtendimento as RegistroAtendimentoDetalheDTO['atendimento']['resultadoAtendimento'],
+          versaoFluxo: body.detalhe.atendimento.versaoFluxo,
+          tipoAtendimento: body.detalhe.atendimento.tipoAtendimento,
+        })
+      }
     } catch (error) { if (!controller.signal.aborted) setDetailError(error instanceof Error ? error.message : 'Falha ao consultar atendimento.') }
     finally { if (!controller.signal.aborted) setDetailLoading(false) }
   }
@@ -192,9 +215,6 @@ export default function PageClient() {
       </section>
 
     </>}
-    <Dialog open={detailOpen} onOpenChange={open => { setDetailOpen(open); if (!open) { detailFlight.current?.abort(); setDetail(null) } }}><DialogContent><DialogHeader title="Detalhes do atendimento" description="Confira as informações deste atendimento. Não é possível editar por aqui." /><DialogBody>
-      {detailLoading && <p role="status">Consultando atendimento…</p>}{detailError && <Alert tone="danger">{detailError}</Alert>}
-      {detail && <div className="space-y-3">{recordContent(detail)}<p className="text-sm">Conclusão: {stamp(detail.concluidoEm)}</p><p className="break-all text-xs text-muted-foreground">ID: {detail.id}</p><p className="text-xs">Os horários são os que foram registrados no atendimento.</p></div>}
-    </DialogBody></DialogContent></Dialog>
+    <DetalhesAtendimentoDialog open={detailOpen} onOpenChange={open => { setDetailOpen(open); if (!open) { detailFlight.current?.abort(); setDetail(null); setDetailSummary(null) } }} detalhe={detail} carregando={detailLoading} erro={detailError} resumoCarregamento={detailSummary} unidadeNome={detailSummary?.unidadeNome} leituraSomente />
   </PageContainer>
 }

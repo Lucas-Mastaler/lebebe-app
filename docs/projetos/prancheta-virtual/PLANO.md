@@ -1,5 +1,7 @@
 # Plano — Prancheta Virtual
 
+Atualização de publicação (22/10/2026): commit/push seletivos concluídos em 311bdbf; deployment de produção dpl_3pp2hFYhTmrG7FddaY3QHSaUqbWE READY e alias lebebe.cloud/SHA conferidos. Etapa de envio Git encerrada; homologação autenticada permanece pendente por timeout de conexão do ambiente. Ver evidências e limites no STATUS.
+
 Autorização vigente de 22/10/2026: agente pode executar commit/push/deploy seletivos D-049/D-050, preservando alterações de outras tarefas. Preparar e validar o candidato exato antes de publicar.
 
 ## Histórico comercial compartilhado — D-050 (22/10/2026)

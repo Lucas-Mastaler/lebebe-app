@@ -1,11 +1,12 @@
 'use client'
 
-import { ResumoProdutos } from './ProdutosAtendimento'
+import { IndicadorPv } from './ProdutosAtendimento'
+import { estruturarProduto, produtoNaoTrabalhado } from '@/lib/atendimento-presencial/produtos'
 import { DiagnosticosVendaSgi } from './VendaSgiAtendimento'
 import type { ResolucaoVendasSgi } from '@/lib/atendimento-presencial/vendas-sgi-diagnostico'
 
 import { useEffect, useState, type ReactNode } from 'react'
-import { CreditCard, History, Package, RefreshCw, ShoppingBag, Tag } from 'lucide-react'
+import { ChevronDown, CreditCard, History, Package, RefreshCw, ShoppingBag, Tag } from 'lucide-react'
 import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
 import { Alert, Badge, Button, Dialog, DialogBody, DialogContent, DialogHeader } from '@/components/design-system'
@@ -49,7 +50,7 @@ function formatarDataCurta(valor: string | null) {
   if (!valor) return 'Sem data'
   const data = new Date(valor)
   if (Number.isNaN(data.getTime())) return valor
-  return data.toLocaleDateString('pt-BR')
+  return data.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
 }
 
 function formatarDinheiro(valor: number | null) {
@@ -95,8 +96,8 @@ function HistoricoSecao({
 
 function HistoricoInfoCard({ label, value, emphasis = false }: { label: string; value: ReactNode; emphasis?: boolean }) {
   return (
-    <div className="rounded-md border border-white/70 bg-white/80 px-3 py-2 shadow-sm">
-      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
+    <div className="rounded-xl border border-white bg-white/80 p-3 shadow-sm">
+      <p className="text-xs font-semibold text-slate-500">{label}</p>
       <div className={`mt-1 text-sm ${emphasis ? 'font-bold text-slate-950' : 'font-semibold text-slate-800'}`}>{value}</div>
     </div>
   )
@@ -111,6 +112,17 @@ const HISTORICO_CHIP_TONE: Record<'blue' | 'amber' | 'green' | 'slate', BadgePro
 
 function HistoricoChip({ children, variant = 'slate' }: { children: ReactNode; variant?: 'blue' | 'amber' | 'green' | 'slate' }) {
   return <Badge tone={HISTORICO_CHIP_TONE[variant]}>{children}</Badge>
+}
+
+function HistoricoToggleDetalhes({ tone = 'primary' }: { tone?: 'primary' | 'amber' }) {
+  const toneClass = tone === 'amber' ? 'text-amber-800' : 'text-primary'
+  return (
+    <span className={`flex items-center justify-end gap-1 text-xs font-semibold ${toneClass}`}>
+      <span className="group-open:hidden">Ver detalhes</span>
+      <span className="hidden group-open:inline">Recolher detalhes</span>
+      <ChevronDown className="size-4 transition-transform group-open:rotate-180" aria-hidden="true" />
+    </span>
+  )
 }
 
 /**
@@ -133,6 +145,97 @@ export function formatarVendaFechadaHistorico(resultado: string | null) {
   if (normalizado === 'nao' || normalizado === 'n\u00e3o') return 'Nao'
   if (normalizado === 'negociacao' || normalizado === 'negocia\u00e7\u00e3o') return 'Em negociacao'
   return resultado
+}
+
+export function situacaoAtendimentoHistorico(resultado: string | null): { label: string; tone: BadgeProps['tone'] } {
+  const valor = (resultado ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase()
+  if (valor === 'sim') return { label: 'Venda fechada', tone: 'success' }
+  if (valor === 'nao') return { label: 'Venda perdida', tone: 'danger' }
+  if (['negociacao', 'em negociacao', 'ainda em negociacao'].includes(valor)) return { label: 'Em negociação', tone: 'warning' }
+  return { label: resultado && valor !== 'nao informado' ? resultado : 'Não informada', tone: 'neutral' }
+}
+
+export function HistoricoAtendimentoCard({ item }: { item: HistoricoAtendimentoClienteDTO }) {
+  const situacao = situacaoAtendimentoHistorico(item.resultado)
+  return (
+    <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm break-words sm:p-4">
+      <details className="group">
+        <summary className="cursor-pointer list-none rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary [&::-webkit-details-marker]:hidden">
+          <div className="rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 via-white to-info/10 p-3 sm:p-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-[1.2fr_1.1fr_1fr_1.25fr_1fr_auto] sm:items-center">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Data de conclusão do atendimento</p>
+                <p className="mt-1 font-bold text-slate-950">{formatarDataCurta(item.data)}</p>
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Situação da venda</p>
+                <div className="mt-1"><Badge tone={situacao.tone}>{situacao.label}</Badge></div>
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Filial</p>
+                <p className="mt-1 break-words text-sm font-semibold text-slate-800">{item.unidade || 'Não informada'}</p>
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Consultora do atendimento</p>
+                <p className="mt-1 break-words text-sm font-semibold text-slate-800">{item.consultora || 'Não informada'}</p>
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Lançamento informado</p>
+                <p className="mt-1 break-words text-sm font-bold text-slate-950">{item.numeroLancamento ?? 'Não informado'}</p>
+              </div>
+              <div className="col-span-2 flex items-center justify-end gap-1 text-xs font-semibold text-primary sm:col-span-1">
+                <HistoricoToggleDetalhes />
+              </div>
+            </div>
+          </div>
+        </summary>
+
+        <div className="pt-3">
+          <section className="rounded-md border border-amber-100 bg-amber-50/60 p-3">
+            <h5 className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-amber-800">
+              <Tag className="size-4 shrink-0" aria-hidden="true" />Departamentos de interesse
+            </h5>
+            <div className="flex flex-wrap gap-1.5">
+              {item.departamentos.length ? item.departamentos.map(departamento => (
+                <HistoricoChip key={departamento} variant="amber">{departamento}</HistoricoChip>
+              )) : <p className="text-sm text-slate-600">Não informados</p>}
+            </div>
+          </section>
+
+          <section className="mt-3 min-w-0 rounded-md border border-sky-100 bg-sky-50/60 p-3">
+            <h5 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-sky-800">
+              <Package className="size-4 shrink-0" aria-hidden="true" />Produtos de interesse
+            </h5>
+            <p className="mt-1 text-xs text-slate-600">Informações registradas na Prancheta, independentes dos itens oficiais do SGI.</p>
+            {item.produtosInteresse.length ? (
+              <ul className="mt-3 grid gap-2">
+                {item.produtosInteresse.map((produto, index) => {
+                  const registro = estruturarProduto(produto)
+                  const naoTrabalhado = produtoNaoTrabalhado(produto)
+                  return (
+                    <li key={index} className="min-w-0 rounded-md border border-sky-100 bg-white p-3">
+                      <p className="break-words text-sm font-semibold text-slate-900">{registro.descricao}</p>
+                      {naoTrabalhado ? <p className="mt-1 text-xs text-slate-600">Produto que não trabalhamos. Não entra no cálculo de peças vendidas.</p> : (
+                        <dl className="mt-2 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                          <div><dt className="text-xs text-slate-500">Quantidade</dt><dd className="font-semibold text-slate-800">{registro.quantidade ?? 'Não informada'}</dd></div>
+                          <div><dt className="mb-1 text-xs text-slate-500">Venda do item</dt><dd><Badge tone={registro.vendido === null ? 'neutral' : registro.vendido ? 'success' : 'warning'}>{registro.vendido === null ? 'Não informada' : registro.vendido ? 'Vendido' : 'Não vendido'}</Badge></dd></div>
+                        </dl>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : <p className="mt-3 text-sm text-slate-600">Nenhum produto de interesse informado.</p>}
+          </section>
+
+          <section className="mt-3 rounded-md border border-slate-200 bg-slate-50/70 p-3">
+            <h5 className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-700">Peças vendidas na Prancheta (PV)</h5>
+            <IndicadorPv produtos={item.produtosInteresse} versaoProdutos={item.versaoProdutos} />
+          </section>
+        </div>
+      </details>
+    </article>
+  )
 }
 
 export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimentoAtualId }: Props) {
@@ -187,6 +290,8 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
   }, [open, clienteId, clienteNome, clienteTelefone, atendimentoAtualId, tentativa])
 
   const historicoCarregado = historicoCliente && historicoClienteId === cliente?.id ? historicoCliente : null
+  const rotulosFontes: Record<string, string> = { atendimento_presencial: 'Prancheta Virtual', sgi_documentos_saida: 'SGI', pedidos_personalizados: 'Pedidos personalizados' }
+  const fontes = historicoCarregado?.fontesConsultadas?.map(fonte => rotulosFontes[fonte]).filter(Boolean) ?? []
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -194,7 +299,7 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
         <DialogHeader
           title={
             <>
-              Historico da cliente
+              Histórico da cliente
               {cliente?.nome && <span className="ml-2 font-normal text-slate-500">- {cliente.nome}</span>}
             </>
           }
@@ -204,16 +309,16 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
           {!cliente && <Alert tone="warning">Selecione uma cliente para consultar o historico.</Alert>}
 
           {cliente && (
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Historico da cliente</p>
-              <div className="mt-1 flex flex-wrap items-end justify-between gap-2">
+            <div className="rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 via-white to-info/10 px-4 py-4 sm:px-5">
+              <p className="text-xs font-bold uppercase tracking-wide text-primary">Histórico da cliente</p>
+              <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <p className="text-base font-bold text-slate-950">{cliente.nome}</p>
-                  <p className="text-sm text-slate-600">{cliente.telefoneFormatado ?? 'Telefone nao informado'}</p>
+                  <p className="text-xl font-bold leading-tight text-slate-950">{cliente.nome}</p>
+                  <p className="mt-1 text-sm text-slate-600">{cliente.telefoneFormatado ?? 'Telefone não informado'}</p>
                 </div>
-                {historicoCarregado?.fontesConsultadas?.length ? (
+                {fontes.length ? (
                   <p className="text-xs font-medium text-slate-500">
-                    Fontes: {historicoCarregado.fontesConsultadas.join(', ')}
+                    Fontes: {fontes.join(', ')}
                   </p>
                 ) : null}
               </div>
@@ -245,39 +350,13 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
               <HistoricoSecao
                 icon={History}
                 title="Atendimentos presenciais anteriores"
-                subtitle="Registros concluidos no modulo Atendimento Presencial."
-                variant="slate"
+                subtitle="Registros concluídos na Prancheta Virtual. Quantidades e vendas dos itens refletem o que foi preenchido no atendimento."
+                variant="blue"
               >
                 {historicoCarregado.atendimentos?.length ? (
                   <HistoricoListaLonga>
                     <div className="grid gap-3">
-                      {historicoCarregado.atendimentos.map((item) => (
-                        <article key={item.id} className="overflow-hidden rounded-md border border-slate-200 bg-white p-3 shadow-sm break-words">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="font-semibold text-slate-950">{formatarDataCurta(item.data)}</p>
-                          <div className="shrink-0 rounded-md border border-sky-100 bg-sky-50 px-3 py-2 text-right">
-                            <p className="text-[10px] font-bold uppercase tracking-wide text-sky-700">Venda fechada?</p>
-                            <p className="text-sm font-bold text-slate-900">{formatarVendaFechadaHistorico(item.resultado)}</p>
-                          </div>
-                        </div>
-                        <p className="mt-1 text-sm text-slate-600">{item.unidade ?? 'Unidade não informada'} | <strong>Consultora do atendimento:</strong> {item.consultora ?? 'Não informada'}</p>
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                          <div>
-                            <p className="text-[11px] font-bold uppercase text-slate-500">Departamentos</p>
-                            <div className="mt-1 flex flex-wrap gap-1.5">
-                              {item.departamentos.length ? item.departamentos.map((departamento) => (
-                                <HistoricoChip key={departamento} variant="slate">{departamento}</HistoricoChip>
-                              )) : <span className="text-sm text-slate-500">Nao informado</span>}
-                            </div>
-                          </div>
-                          <div>
-                            <p className="text-[11px] font-bold uppercase text-slate-500">Produtos de interesse</p>
-                            <ResumoProdutos produtos={item.produtosInteresse} versaoProdutos={item.versaoProdutos} />
-                          </div>
-                        </div>
-                        {item.numeroLancamento && <p className="text-sm text-slate-700">Lancamento: {item.numeroLancamento}</p>}
-                        </article>
-                      ))}
+                      {historicoCarregado.atendimentos.map(item => <HistoricoAtendimentoCard key={item.id} item={item} />)}
                     </div>
                   </HistoricoListaLonga>
                 ) : (
@@ -295,29 +374,57 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
                   <HistoricoListaLonga>
                     <div className="grid gap-4">
                       {historicoCarregado.vendas.map((item) => (
-                        <article key={item.documentoId ?? item.numeroLancamento} className="overflow-hidden rounded-md border border-slate-200 bg-white p-3 sm:p-4 shadow-sm break-words">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Resumo da compra</p>
-                            <h4 className="text-lg font-bold text-slate-950">Lancamento {item.numeroLancamento || 'Nao informado'}</h4>
-                            {item.origemAssociacao === 'prancheta' && <Badge tone="info">Identificada pela Prancheta</Badge>}
-                          </div>
-                          <div className="shrink-0 rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-right">
-                            <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">Valor total</p>
-                            <p className="text-base font-bold text-emerald-800">{formatarDinheiro(item.valorTotal)}</p>
-                          </div>
-                        </div>
+                        <details key={item.documentoId ?? item.numeroLancamento} className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm break-words">
+                          <summary className="cursor-pointer list-none rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary [&::-webkit-details-marker]:hidden">
+                            <div className="rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 via-white to-info/10 p-3 sm:p-4">
+                              <div className="grid grid-cols-2 gap-3 sm:grid-cols-[1.1fr_1fr_1fr_1fr_auto] sm:items-center">
+                                <div className="min-w-0">
+                                  <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Data da compra</p>
+                                  <p className="mt-1 font-bold text-slate-950">{formatarDataCurta(item.data)}</p>
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Filial</p>
+                                  <p className="mt-1 break-words text-sm font-semibold text-slate-800">{item.filial ?? 'Filial não informada'}</p>
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Lançamento</p>
+                                  <p className="mt-1 break-words text-sm font-bold text-slate-950">{item.numeroLancamento || 'Não informado'}</p>
+                                  {item.origemAssociacao === 'prancheta' && <Badge tone="info">Identificada pela Prancheta</Badge>}
+                                </div>
+                                <div className="min-w-0 rounded-xl border border-white bg-white/80 px-3 py-2 shadow-sm sm:text-right">
+                                  <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700">Valor total</p>
+                                  <p className="mt-1 font-bold text-emerald-800">{formatarDinheiro(item.valorTotal)}</p>
+                                </div>
+                                <div className="col-span-2 sm:col-span-1"><HistoricoToggleDetalhes /></div>
+                              </div>
+                            </div>
+                          </summary>
 
-                        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                          <HistoricoInfoCard label="Data" value={formatarDataCurta(item.data)} />
-                          <HistoricoInfoCard label="Filial" value={item.filial ?? 'Filial nao informada'} />
-                          <HistoricoInfoCard label="Vendedor" value={item.vendedor ?? 'Vendedor nao informado'} />
-                          <HistoricoInfoCard label="Status" value={item.status ?? 'Status nao informado'} />
-                          <HistoricoInfoCard label="Itens" value={`${item.produtos?.length || item.itens.length || 0} produto(s)`} />
-                          <HistoricoInfoCard label="Lancamento" value={item.numeroLancamento || 'Nao informado'} emphasis />
-                        </div>
+                          <div className="space-y-4 p-3 sm:p-4">
+                            <div className="rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 via-white to-info/10 p-4 sm:p-5">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-bold uppercase tracking-wide text-primary">Resumo da compra</p>
+                                  <h4 className="mt-1 text-lg font-bold text-slate-950">Lançamento {item.numeroLancamento || 'Não informado'}</h4>
+                                  {item.origemAssociacao === 'prancheta' && <Badge tone="info">Identificada pela Prancheta</Badge>}
+                                </div>
+                                <div className="shrink-0 rounded-xl border border-white bg-white/80 px-3 py-2 text-right shadow-sm">
+                                  <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">Valor total</p>
+                                  <p className="text-base font-bold text-emerald-800">{formatarDinheiro(item.valorTotal)}</p>
+                                </div>
+                              </div>
 
-                        <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
+                              <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                <HistoricoInfoCard label="Data" value={formatarDataCurta(item.data)} />
+                                <HistoricoInfoCard label="Filial" value={item.filial ?? 'Filial não informada'} />
+                                <HistoricoInfoCard label="Vendedor" value={item.vendedor ?? 'Vendedor não informado'} />
+                                <HistoricoInfoCard label="Status" value={item.status ?? 'Status não informado'} />
+                                <HistoricoInfoCard label="Itens" value={`${item.produtos?.length || item.itens.length || 0} produto(s)`} />
+                                <HistoricoInfoCard label="Lançamento" value={item.numeroLancamento || 'Não informado'} emphasis />
+                              </div>
+                            </div>
+
+                            <div className="grid gap-3 lg:grid-cols-[1fr_1fr]">
                           <div className="rounded-md border border-amber-100 bg-amber-50/60 p-3">
                             <div className="mb-2 flex items-center gap-2">
                               <Tag className="h-4 w-4 text-amber-700" aria-hidden="true" />
@@ -343,7 +450,7 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
                           </div>
                         </div>
 
-                        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50/70 p-3">
+                            <div className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
                           <div className="mb-3 flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
                               <Package className="h-4 w-4 text-slate-600" aria-hidden="true" />
@@ -383,8 +490,9 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
                           ) : (
                             <p className="text-sm text-slate-500">{item.itens.join(', ') || 'Nao informado'}</p>
                           )}
-                        </div>
-                        </article>
+                            </div>
+                          </div>
+                        </details>
                       ))}
                     </div>
                   </HistoricoListaLonga>
@@ -398,30 +506,60 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
                   icon={Package}
                   title="Pedidos personalizados"
                   subtitle="Pedidos Moriah encontrados pelo telefone normalizado da cliente."
-                variant="amber"
-              >
+                  variant="amber"
+                >
                   {historicoCarregado.pedidosPersonalizados.length ? (
                     <HistoricoListaLonga>
                       <div className="grid gap-3">
                         {historicoCarregado.pedidosPersonalizados.map((pedido) => (
-                          <article key={pedido.id} className="rounded-md border border-amber-100 bg-white p-3 shadow-sm">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                              <p className="font-bold text-slate-950">{formatarDataCurta(pedido.createdAt)} · {pedido.unidade}</p>
-                              <p className="mt-1 text-sm text-slate-600">{pedido.status}</p>
+                          <details key={pedido.id} className="group overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
+                            <summary className="cursor-pointer list-none rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary [&::-webkit-details-marker]:hidden">
+                              <div className="rounded-2xl border border-amber-100 bg-amber-50/60 p-3 sm:p-4">
+                                <div className="grid grid-cols-2 gap-3 sm:grid-cols-[1.1fr_1fr_1fr_1fr_1fr_auto] sm:items-center">
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] font-bold uppercase tracking-wide text-amber-800">Data do pedido</p>
+                                    <p className="mt-1 font-bold text-slate-950">{formatarDataCurta(pedido.createdAt)}</p>
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Status</p>
+                                    <p className="mt-1 break-words text-sm font-semibold text-slate-800">{pedido.status}</p>
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Filial</p>
+                                    <p className="mt-1 break-words text-sm font-semibold text-slate-800">{pedido.unidade}</p>
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Lançamento</p>
+                                    <p className="mt-1 break-words text-sm font-semibold text-slate-800">{pedido.numeroLancamento ?? 'Não informado'}</p>
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Pedido de compra</p>
+                                    <p className="mt-1 break-words text-sm font-semibold text-slate-800">{pedido.numeroPedidoCompra ?? 'Não informado'}</p>
+                                  </div>
+                                  <div className="col-span-2 sm:col-span-1"><HistoricoToggleDetalhes tone="amber" /></div>
+                                </div>
+                              </div>
+                            </summary>
+
+                            <div className="space-y-3 p-3 sm:p-4">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                  <p className="font-bold text-slate-950">{formatarDataCurta(pedido.createdAt)} · {pedido.unidade}</p>
+                                  <p className="mt-1 text-sm text-slate-600">{pedido.status}</p>
+                                </div>
+                                <Button asChild type="button" size="sm" variant="secondary">
+                                  <Link href={`/pedidos-personalizados?pedidoId=${pedido.id}`}>Abrir detalhe</Link>
+                                </Button>
+                              </div>
+                              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                <HistoricoInfoCard label="Lançamento" value={pedido.numeroLancamento ?? 'Não informado'} />
+                                <HistoricoInfoCard label="Pedido de compra" value={pedido.numeroPedidoCompra ?? 'Não informado'} />
+                                <HistoricoInfoCard label="Tapetes" value={pedido.quantidadeTapetes} />
+                                <HistoricoInfoCard label="Pedido ao fornecedor" value={formatarDataCurta(pedido.dataPedidoFornecedor)} />
+                                <HistoricoInfoCard label="Data de entrega" value={formatarDataCurta(pedido.dataEntrega)} />
+                              </div>
                             </div>
-                            <Button asChild type="button" size="sm" variant="secondary">
-                              <Link href={`/pedidos-personalizados?pedidoId=${pedido.id}`}>Abrir detalhe</Link>
-                            </Button>
-                          </div>
-                          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                            <HistoricoInfoCard label="Lançamento" value={pedido.numeroLancamento ?? 'Não informado'} />
-                            <HistoricoInfoCard label="Pedido de compra" value={pedido.numeroPedidoCompra ?? 'Não informado'} />
-                            <HistoricoInfoCard label="Tapetes" value={pedido.quantidadeTapetes} />
-                            <HistoricoInfoCard label="Pedido ao fornecedor" value={formatarDataCurta(pedido.dataPedidoFornecedor)} />
-                            <HistoricoInfoCard label="Data de entrega" value={formatarDataCurta(pedido.dataEntrega)} />
-                          </div>
-                          </article>
+                          </details>
                         ))}
                       </div>
                     </HistoricoListaLonga>

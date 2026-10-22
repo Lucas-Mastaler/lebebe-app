@@ -143,6 +143,16 @@ describe('cadastro presencial e filtros aprovados', () => {
       ),
     ).toBe(true)
   })
+  it('busca 8707 em qualquer parte do telefone sem exigir número completo', () => {
+    const filtros = lerFiltrosListagem(new URLSearchParams('telefoneCliente=8707'))
+    const base = { data: '2026-10-20T12:00Z', tipo: 'cliente', clienteId: 'cliente' }
+    for (const telefone of ['(41) 99642-8707', '+55 (41) 98707-1234', '8707123456']) {
+      expect(filtrarDadosListagem({ ...base, telefone }, filtros)).toBe(true)
+    }
+    expect(filtrarDadosListagem({ ...base, telefone: '(41) 99999-1234' }, filtros)).toBe(false)
+    expect(filtrarDadosListagem({ ...base, telefone: null }, filtros)).toBe(false)
+    expect(filtrarDadosListagem({ ...base, tipo: 'nao_cliente', telefone: '41996428707' }, filtros)).toBe(false)
+  })
   it('filtra rascunhos sem atribuir tipo, vínculo ou telefone fictícios', () => {
     const now = Date.parse('2026-10-19T12:00Z')
     const item = {

@@ -41,10 +41,12 @@ export function FiltrosAdicionaisAtendimento({
   value,
   onChange,
   rascunhos = false,
+  ocultarTelefone = false,
 }: {
   value: FiltrosAdicionais
   onChange: (campo: keyof FiltrosAdicionais, valor: string | string[]) => void
   rascunhos?: boolean
+  ocultarTelefone?: boolean
 }) {
   const prefixo = rascunhos ? 'rascunho' : 'salvo'
   function selecao(
@@ -123,7 +125,7 @@ export function FiltrosAdicionaisAtendimento({
             ? [{ chave: 'nao_informado', label: 'Tipo não informado' }]
             : []),
         ])}
-        <FormField id={`${prefixo}-telefone`} label="Telefone da cliente">
+        {!ocultarTelefone && <FormField id={`${prefixo}-telefone`} label="Telefone da cliente">
           {(props) => (
             <Input
               {...props}
@@ -133,7 +135,7 @@ export function FiltrosAdicionaisAtendimento({
               placeholder="Telefone ou trecho"
             />
           )}
-        </FormField>
+        </FormField>}
         {selecao('contato', 'Telefone disponível', [
           { chave: 'com', label: 'Com telefone' },
           { chave: 'sem', label: 'Sem telefone' },

@@ -772,6 +772,17 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                         />
                       )}
                     </FormField>
+                    <FormField id="filtro-cliente-telefone" label="Telefone da cliente" helper="Telefone completo ou trecho, como 8707. Aplique no botão Filtrar.">
+                      {(field) => (
+                        <Input
+                          {...field}
+                          inputMode="tel"
+                          value={novosFiltros.draft.telefoneCliente}
+                          onChange={(event) => novosFiltros.setField('telefoneCliente', event.target.value)}
+                          placeholder="Ex.: 8707"
+                        />
+                      )}
+                    </FormField>
                     <FormField id="filtro-consultora" label="Consultora do atendimento">
                       {(field) => (
                         <Select
@@ -818,7 +829,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                     </FormField>
                   </FilterFieldGroup>
 
-                  <FiltrosAdicionaisAtendimento value={novosFiltros.draft} onChange={(campo, valor) => novosFiltros.setField(campo, valor)} />
+                  <FiltrosAdicionaisAtendimento ocultarTelefone value={novosFiltros.draft} onChange={(campo, valor) => novosFiltros.setField(campo, valor)} />
                   <FilterFieldGroup label="Virada do cartão" className="border-t border-slate-200 pt-4" prominent>
                     <FormField id="filtro-virada-cartao-de" label="De" helper="DD/MM">
                       {(field) => (

@@ -1,5 +1,13 @@
 # Plano — Prancheta Virtual
 
+## Nomes e filtros de consultoras — D-051 (22/10/2026)
+
+- [x] Confirmar migration 20261020135931, função/gatilhos e nomes canônicos reais; sem reaplicação.
+- [x] Preparar candidato seletivo, excluindo mudanças paralelas e seções documentais anteriores não publicadas.
+- [x] Validar testes, lint e build do candidato; 76 focados aprovados, build normal exit 0, lint sem erros; duas falhas anteriores na regressão preservadas.
+- [ ] Commit/push em main e confirmar deployment de produção READY/SHA/domínio.
+- [x] Homologação local na sessão existente: filtro atualizado, nomes e ordem dos campos; produção permanece gate separado.
+
 Atualização de publicação (22/10/2026): commit/push seletivos concluídos em 311bdbf; deployment de produção dpl_3pp2hFYhTmrG7FddaY3QHSaUqbWE READY e alias lebebe.cloud/SHA conferidos. Etapa de envio Git encerrada; homologação autenticada permanece pendente por timeout de conexão do ambiente. Ver evidências e limites no STATUS.
 
 Autorização vigente de 22/10/2026: agente pode executar commit/push/deploy seletivos D-049/D-050, preservando alterações de outras tarefas. Preparar e validar o candidato exato antes de publicar.

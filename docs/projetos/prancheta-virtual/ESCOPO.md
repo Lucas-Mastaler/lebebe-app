@@ -1,5 +1,9 @@
 # Escopo — Prancheta Virtual
 
+## Nomes e filtros de consultoras — D-051 aprovada em 22/10/2026
+
+Publicar as melhorias locais de normalização de consultoras sem acentos e de filtros de Registros: opções atualizadas ao abrir, consulta paginada dos nomes e nova ordem dos grupos de filtros. Incluir testes e migration já aplicada, sem replay. Não publicar alterações de pedidos personalizados, Harness geral, Mere IA ou outras frentes. Sem mudança de permissão ou regra comercial.
+
 ## Histórico comercial compartilhado — D-050 aprovada em 22/10/2026
 
 Substitui exclusivamente as limitações comerciais de D-049: histórico SGI por telefone e por Prancheta disponível entre todas as filiais para usuários já autorizados ao Atendimento Presencial, com ou sem telefone e sem vínculo próprio de atendimento. Preservar autenticação/janela, bloqueios globais de identidade, dados oficiais, deduplicação e limite dez. Atendimentos completos, diagnósticos internos, edição, cadastro, pedidos personalizados e módulos administrativos conservam seus controles próprios. Validar SQL/APIs/regressão/build e publicação; não executar commit/push nem contornar o fluxo Git existente. Sem alteração no importador, unicidade, indicadores ou dados comerciais.

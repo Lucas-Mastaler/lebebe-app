@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { NextResponse } from 'next/server'
 import { GET } from './route'
 import { checkAccessWindowForUser } from '@/lib/auth/access-window'
 import { requireModuleAccess } from '@/lib/auth/module-access'
@@ -54,6 +55,41 @@ function mockSupabase(queues: Record<string, unknown[]>) {
 }
 
 describe('api lista registros atendimento presencial', () => {
+  it('nega opções de consultoras sem acesso ao módulo antes do cliente de serviço', async () => {
+    vi.mocked(requireModuleAccess).mockResolvedValue({ ok: false, response: NextResponse.json({ ok: false }, { status: 403 }) })
+    const response = await GET(new Request('http://local?opcoes=consultoras'))
+    expect(response.status).toBe(403)
+    expect(createServiceClient).not.toHaveBeenCalled()
+  })
+  it.each(['consultora', 'supervisora_loja'])('opções de consultoras preservam escopo %s sem retornar detalhes', async perfil => {
+    const nomes = builder({ data: [{ consultora_nome: 'Letícia' }], error: null })
+    vi.mocked(createServiceClient).mockReturnValue({ from: vi.fn((table: string) => {
+      if (table === 'app_usuarios_perfis') return builder({ data: { app_perfis_acesso: { chave: perfil, ativo: true } }, error: null })
+      if (table === 'app_usuarios_unidades') return builder({ data: [{ app_unidades: { id: unidadeId, chave: 'bigorrilho', nome: 'Loja', ativo: true } }], error: null })
+      if (table === 'atendimento_presencial_atendimentos') return nomes
+      throw new Error('Consulta inesperada')
+    }) } as never)
+    const response = await GET(new Request('http://local?opcoes=consultoras&perfil=superadmin'))
+    expect(await response.json()).toEqual({ ok: true, consultoras: [{ nome: 'LETICIA' }] })
+    expect(nomes.select).toHaveBeenCalledWith('consultora_nome')
+    if (perfil === 'consultora') expect(nomes.eq).toHaveBeenCalledWith('consultora_usuario_id', usuarioId)
+    else expect(nomes.in).toHaveBeenCalledWith('unidade_id', [unidadeId])
+  })
+  it('atualiza opções de consultora diretamente dos atendimentos salvos', async () => {
+    mockSupabase({
+      app_usuarios_perfis: [{ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null }],
+      app_usuarios_unidades: [{ data: [], error: null }],
+      atendimento_presencial_atendimentos: [
+        { data: Array.from({ length: 500 }, () => ({ consultora_nome: 'LETÍCIA' })), error: null },
+        { data: [{ consultora_nome: 'LETICIA' }, { consultora_nome: 'NIEGE' }], error: null },
+      ],
+    })
+
+    const response = await GET(new Request('http://local/api/atendimento-presencial/atendimentos?opcoes=consultoras'))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true, consultoras: [{ nome: 'LETICIA' }, { nome: 'NIEGE' }] })
+  })
+
   it.each([false, true])('homologacao aparece apenas em consulta explicita: %s', async (explicita) => {
     mockSupabase({
       app_usuarios_perfis: [{ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null }],
@@ -237,8 +273,15 @@ describe('api lista registros atendimento presencial', () => {
   it('combina filtro por nome do cliente e consultora do atendimento', async () => {
     const atendimentoBuilder = builder({ data: [], error: null })
     const clienteBuilder = builder({ data: [{ id: clienteId }], error: null })
+    let consultasAtendimento = 0
     const from = vi.fn((table: string) => {
-      if (table === 'atendimento_presencial_atendimentos') return atendimentoBuilder
+      if (table === 'atendimento_presencial_atendimentos') {
+        consultasAtendimento += 1
+        if (consultasAtendimento === 1) {
+          return builder({ data: [{ consultora_nome: 'LETÍCIA' }, { consultora_nome: 'LETICIA' }, { consultora_nome: 'NIEGE' }], error: null })
+        }
+        return atendimentoBuilder
+      }
       if (table === 'atendimento_presencial_clientes') return clienteBuilder
       if (table === 'app_usuarios_perfis') {
         return builder({ data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null })
@@ -251,13 +294,14 @@ describe('api lista registros atendimento presencial', () => {
     vi.mocked(createServiceClient).mockReturnValue({ from } as never)
 
     const response = await GET(
-      new Request('http://local/api/atendimento-presencial/atendimentos?clienteNome=Cliente&consultora=Ana%20Clara')
+      new Request('http://local/api/atendimento-presencial/atendimentos?clienteNome=Cliente&consultora=Let%C3%ADcia')
     )
 
     expect(response.status).toBe(200)
     expect(clienteBuilder.ilike).toHaveBeenCalledWith('nome', '%Cliente%')
     expect(atendimentoBuilder.in).toHaveBeenCalledWith('cliente_id', [clienteId])
-    expect(atendimentoBuilder.ilike).toHaveBeenCalledWith('consultora_nome', 'ANA CLARA')
+    expect(atendimentoBuilder.ilike).toHaveBeenCalledWith('consultora_nome', 'LETICIA')
+    expect((await response.json()).consultoras).toEqual([{ nome: 'LETICIA' }, { nome: 'NIEGE' }])
   })
   it('lista nao cliente com motivo proprio, sem resultado ou consulta de cliente ficticio', async () => {
     const chain = builder({ data: [{ id: atendimentoId, cliente_id: null, consultora_usuario_id: usuarioId,

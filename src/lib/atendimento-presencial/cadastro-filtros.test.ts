@@ -84,12 +84,13 @@ describe('cadastro presencial e filtros aprovados', () => {
       campos: { telefone_informado: null, telefone_normalizado: null },
     })
   })
-  it('unifica grafias sem unir nomes distintos nem remover acentos', () => {
+  it('unifica caixa, espaços e acentos sem unir nomes distintos', () => {
     expect(
       ['ana', 'Ana', ' ANA ', 'ana  '].map(normalizarNomeConsultora),
     ).toEqual(['ANA', 'ANA', 'ANA', 'ANA'])
     expect(normalizarNomeConsultora(' Ana   C ')).toBe('ANA C')
-    expect(normalizarNomeConsultora('Márcia')).toBe('MÁRCIA')
+    expect(normalizarNomeConsultora('Márcia')).toBe('MARCIA')
+    expect(normalizarNomeConsultora('LETÍCIA')).toBe(normalizarNomeConsultora('LETICIA'))
   })
   it('busca sobrenome além dos primeiros trinta caracteres do cadastro', () => {
     expect(

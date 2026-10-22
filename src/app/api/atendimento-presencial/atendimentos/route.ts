@@ -18,6 +18,7 @@ export const runtime = 'nodejs'
 
 // Leitura compativel antes/depois da migration v2; resposta limitada pelos DTOs.
 const SELECT_ATENDIMENTO = '*'
+const CONSULTORAS_PAGE_SIZE = 500
 
 function jsonErro(message: string, status: number) {
   return NextResponse.json({ ok: false, message }, { status })
@@ -35,28 +36,36 @@ async function carregarConsultorasFinalizados(
     unidadesPermitidas: Array<{ id: string }>
   }
 ) {
-  let query = supabase
-    .from('atendimento_presencial_atendimentos')
-    .select('consultora_nome')
-    .eq('status', 'concluido')
-    .not('consultora_nome', 'is', null)
-
-  if (contexto.perfil === 'consultora') {
-    query = query.eq('consultora_usuario_id', contexto.usuarioId)
-  } else if (contexto.perfil !== 'superadmin') {
-    if (contexto.unidadesPermitidas.length === 0) return []
-    query = query.in('unidade_id', contexto.unidadesPermitidas.map((unidade) => unidade.id))
-  }
-
-  const { data, error } = await query
-    .order('consultora_nome', { ascending: true })
-
-  if (error) throw error
   const nomes = new Set<string>()
-  for (const row of (data ?? []) as Array<{ consultora_nome: string | null }>) {
-    const nome = normalizarFiltroConsultora(row.consultora_nome)
-    if (nome) nomes.add(nome)
+
+  if (contexto.perfil !== 'consultora' && contexto.perfil !== 'superadmin' && contexto.unidadesPermitidas.length === 0) return []
+
+  for (let inicio = 0; ; inicio += CONSULTORAS_PAGE_SIZE) {
+    let query = supabase
+      .from('atendimento_presencial_atendimentos')
+      .select('consultora_nome')
+      .eq('status', 'concluido')
+      .not('consultora_nome', 'is', null)
+
+    if (contexto.perfil === 'consultora') {
+      query = query.eq('consultora_usuario_id', contexto.usuarioId)
+    } else if (contexto.perfil !== 'superadmin') {
+      query = query.in('unidade_id', contexto.unidadesPermitidas.map((unidade) => unidade.id))
+    }
+
+    const { data, error } = await query
+      .order('consultora_nome', { ascending: true })
+      .range(inicio, inicio + CONSULTORAS_PAGE_SIZE - 1)
+
+    if (error) throw error
+    const rows = (data ?? []) as Array<{ consultora_nome: string | null }>
+    for (const row of rows) {
+      const nome = normalizarFiltroConsultora(row.consultora_nome)
+      if (nome) nomes.add(nome)
+    }
+    if (rows.length < CONSULTORAS_PAGE_SIZE) break
   }
+
   return Array.from(nomes).map((nome) => ({ nome }))
 }
 
@@ -118,6 +127,10 @@ export async function GET(request: Request) {
     const loaded = await carregarContextoRegistros()
     if (!loaded.ok) return loaded.response
     const params = new URL(request.url).searchParams
+    if (params.get('opcoes') === 'consultoras') {
+      const consultoras = await carregarConsultorasFinalizados(loaded.supabase, loaded.contexto)
+      return NextResponse.json({ ok: true, consultoras })
+    }
     let filtrosNovos
     try { filtrosNovos = lerFiltrosListagem(params) } catch (error) { return jsonErro(error instanceof Error ? error.message : 'Filtros inválidos', 400) }
     const viradaCartaoDe = params.get('viradaCartaoDe') ?? params.get('viradaCartao')

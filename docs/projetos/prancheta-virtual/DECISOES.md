@@ -1,5 +1,9 @@
 # Decisões — Prancheta Virtual
 
+## D-051 — Publicação de nomes e filtros de consultoras (22/10/2026)
+
+Usuário aprovou verificar e publicar em main as duas melhorias pendentes: nomes de consultora sem diferenças de acentuação e filtros de Registros com opções atualizadas ao abrir, carregamento paginado completo e filtros adicionais antes de Virada do cartão. Preservar autenticação, janela, escopo por perfil/unidade e dados comerciais. Migration 20261020135931 já aplicada e confirmada no MCP, função/gatilhos vigentes e nomes canônicos; não reaplicar nem fazer novo backfill. Publicar somente este pacote, testes e suas seções documentais, preservando alterações de outras tarefas.
+
 Complemento D-050 (22/10/2026): usuário autorizou o agente a executar commit, push e deploy somente dos arquivos desta entrega. Substitui a reserva anterior de commit/push ao usuário; demais limites e exclusão de alterações paralelas permanecem.
 
 ## D-050 — Histórico comercial entre filiais; publicação pelo Git (22/10/2026)

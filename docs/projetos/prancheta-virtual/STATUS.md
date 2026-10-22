@@ -1,5 +1,11 @@
 # Status — Prancheta Virtual
 
+Validação D-051 (22/10/2026): candidato seletivo aprovado no build normal (exit 0, TypeScript e 124 páginas, sem excluir testes; apenas raiz Turbopack adaptada na cópia com junction), 76/76 testes focados; regressão 526/528, mesmas duas falhas anteriores de Não cliente. Lint: zero erros/cinco avisos anteriores em Registros. Browser local na sessão existente, somente leitura: filtro atualizado ao abrir com LETICIA sem duplicação de acento, grupos Período/Interesses antes de Virada do cartão, lista fechada sem aplicar filtro nem alterar atendimento; console sem erros observados. Migration real já aplicada, sem replay/DML. Commit/push seletivos autorizados; confirmar deployment READY/SHA/domínio após o envio. Evidências em output/release-consultoras-20261022. Teste autenticado de produção é gate separado.
+
+## Nomes e filtros de consultoras — D-051 (22/10/2026)
+
+Publicação autorizada em main pelo usuário. Banco conferido via MCP: migration 20261020135931 já aplicada; função canonizadora usa unaccent e os gatilhos estão ativos. Amostra atual: 183 atendimentos e 133 cadastros, nenhum nome de consultora/origem fora do padrão. Nenhuma migration reaplicada, nenhum DML executado. Candidato seletivo preparado com sete arquivos de código/testes/migration e somente as quatro novas seções documentais D-051. API de opções preserva autenticação/janela/escopo, retorna somente nomes; testes adicionais verificam acesso negado, consultora própria e unidade da supervisora. Validação e publicação em andamento.
+
 ## Publicação SGI D-049/D-050 confirmada — 22/10/2026
 
 Estado vigente: PUBLICADO_COM_HOMOLOGACAO_AUTENTICADA_PENDENTE. Substitui os estados de bloqueio anteriores abaixo. Commit 311bdbf5482aecc86d57117558800345b1aea8c2 enviado a origin/main; Vercel dpl_3pp2hFYhTmrG7FddaY3QHSaUqbWE READY, SHA confirmado e domínio https://lebebe.cloud associado sem aliasError. Somente os 24 arquivos da integração entraram no commit; nos cinco arquivos mistos entraram apenas os trechos D-049/D-050. Os 17 diffs staged anteriores foram preservados, inclusive os trechos paralelos dos mesmos arquivos. Nenhum force push, replay de migration ou deploy alternativo.

@@ -16,6 +16,12 @@ const migrationPath = path.join(
   'migrations',
   '20260718100000_atendimento_presencial_consultora_nome.sql'
 )
+const migrationAccentPath = path.join(
+  process.cwd(),
+  'supabase',
+  'migrations',
+  '20261020135931_prancheta_consultoras_sem_acentos.sql'
+)
 
 function fichaValida(consultoraNome?: string): FichaDadosRascunho {
   return {
@@ -36,6 +42,11 @@ describe('normalizarNomeConsultora', () => {
 
   it('faz trim', () => {
     expect(normalizarNomeConsultora('  Ana Clara  ')).toBe('ANA CLARA')
+  })
+
+  it('remove diferenças de acentuação do nome da consultora', () => {
+    expect(normalizarNomeConsultora('Letícia')).toBe('LETICIA')
+    expect(normalizarNomeConsultora('Vitória')).toBe('VITORIA')
   })
 
   it('limita a 30 caracteres', () => {
@@ -199,6 +210,22 @@ describe('migration consultora_nome - validacao SQL', () => {
   it('nao contem limite 120 para consultora_nome', () => {
     const consultoraNomeMatches = sql.match(/consultora_nome[^;]*?> 120/g)
     expect(consultoraNomeMatches).toBeNull()
+  })
+})
+
+describe('migration consultoras sem acentos', () => {
+  const sql = readFileSync(migrationAccentPath, 'utf8')
+
+  it('aplica unaccent no registro, rascunho e origem do cliente', () => {
+    expect(sql).toContain("extensions.unaccent(")
+    expect(sql).toContain("NEW.dados_rascunho->>'consultoraNome'")
+    expect(sql).toContain('origem_consultora_nome')
+  })
+
+  it('protege dados fora dos campos normalizados e restaura o trigger de origem', () => {
+    expect(sql).toContain('prancheta_consultoras_integridade')
+    expect(sql).toContain("'Integridade divergente: campos fora da normalizacao de consultoras'")
+    expect(sql).toContain('ENABLE TRIGGER trg_atendimento_presencial_clientes_preencher_origem')
   })
 })
 

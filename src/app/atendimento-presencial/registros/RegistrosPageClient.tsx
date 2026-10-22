@@ -88,13 +88,13 @@ import {
 import {
   SITUACOES_VENDA,
   situacaoVendaRegistro,
-  descreverContratoHistorico,
+
   getMotivoVisitaLabel,
   registroNaoCliente,
   registroSemTelefone,
   montarPayloadEdicaoAtendimento,
   normalizarDetalheParaFichaEdicao,
-  normalizarObservacoesRegistro,
+
   type RegistroAtendimentoDetalheDTO,
   type RegistroAtendimentoResumoDTO,
 } from '@/lib/atendimento-presencial/registros'
@@ -367,6 +367,17 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       if (requestId === registrosRequest.current) setErro(error instanceof Error ? error.message : 'Erro ao carregar registros')
     } finally {
       if (requestId === registrosRequest.current) setCarregando(false)
+    }
+  }
+
+  async function atualizarConsultorasFinalizados() {
+    try {
+      const response = await fetch('/api/atendimento-presencial/atendimentos?opcoes=consultoras', { cache: 'no-store' })
+      const data = await response.json() as { ok?: boolean; consultoras?: Array<{ nome: string }>; message?: string }
+      if (!response.ok || !data.ok) throw new Error(data.message ?? 'Erro ao atualizar consultoras')
+      setConsultorasFinalizados(data.consultoras ?? [])
+    } catch (error) {
+      console.error('[PRANCHETA REGISTROS] Erro ao atualizar opções de consultora:', error)
     }
   }
 
@@ -765,6 +776,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                       {(field) => (
                         <Select
                           value={filtrosFinalizados.draft.consultora || 'all'}
+                          onOpenChange={(open) => { if (open) void atualizarConsultorasFinalizados() }}
                           onValueChange={(value) => filtrosFinalizados.setField('consultora', value === 'all' ? '' : value)}
                         >
                           <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
@@ -806,6 +818,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                     </FormField>
                   </FilterFieldGroup>
 
+                  <FiltrosAdicionaisAtendimento value={novosFiltros.draft} onChange={(campo, valor) => novosFiltros.setField(campo, valor)} />
                   <FilterFieldGroup label="Virada do cartão" className="border-t border-slate-200 pt-4" prominent>
                     <FormField id="filtro-virada-cartao-de" label="De" helper="DD/MM">
                       {(field) => (
@@ -832,7 +845,6 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                       )}
                     </FormField>
                   </FilterFieldGroup>
-                  <FiltrosAdicionaisAtendimento value={novosFiltros.draft} onChange={(campo, valor) => novosFiltros.setField(campo, valor)} />
                 </FilterPanel>
                 <p className="text-sm text-muted-foreground">{resumoFiltros({ ...filtrosFinalizados.applied, ...novosFiltros.applied }, unidadesFinalizados)}</p>
                 <p role="status" className="text-sm font-semibold">{totalRegistros} atendimentos · {contagens.clientesUnicos} clientes únicos · {contagens.visitasNaoClientes} visitas de Não clientes</p>

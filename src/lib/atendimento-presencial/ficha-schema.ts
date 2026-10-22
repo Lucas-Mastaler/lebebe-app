@@ -433,7 +433,7 @@ const REGEX_CONSULTORA_NOME = /^[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u00FF]+
 
 export function normalizarNomeConsultora(valor: unknown): string {
   if (typeof valor !== 'string') return ''
-  return valor.trim().replace(/\s+/g, ' ').toLocaleUpperCase('pt-BR').slice(0, FICHA_CONSULTORA_NOME_MAX_CHARS)
+  return valor.trim().replace(/\s+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleUpperCase('pt-BR').slice(0, FICHA_CONSULTORA_NOME_MAX_CHARS)
 }
 
 export function validarNomeConsultora(valor: string): boolean {

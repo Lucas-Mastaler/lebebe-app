@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createInitialFilterState, filterReducer, isDirty } from './filters'
+import { countActiveFilters, createInitialFilterState, filterReducer, isDirty } from './filters'
 
 interface Filtros {
   cliente: string
@@ -46,5 +46,19 @@ describe('filterReducer (FLT-EXEC=MANUAL + FLT-CLR=C)', () => {
     expect(isDirty(state)).toBe(true)
     state = filterReducer(state, { type: 'APPLY' })
     expect(isDirty(state)).toBe(false)
+  })
+})
+
+describe('countActiveFilters (FLT=B)', () => {
+  it('conta só os campos diferentes do valor inicial, inclusive inicial não vazio', () => {
+    expect(countActiveFilters(vazio, vazio)).toBe(0)
+    expect(countActiveFilters({ cliente: 'Ana', status: 'todos' }, vazio)).toBe(1)
+    expect(countActiveFilters({ cliente: 'Ana', status: 'aberto' }, vazio)).toBe(2)
+  })
+
+  it('trata lista vazia como inativa e lista com item como ativa', () => {
+    const inicial = { departamentos: [] as string[], telefone: '' }
+    expect(countActiveFilters(inicial, inicial)).toBe(0)
+    expect(countActiveFilters({ departamentos: ['quarto'], telefone: '' }, inicial)).toBe(1)
   })
 })

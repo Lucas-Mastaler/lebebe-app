@@ -13,6 +13,23 @@ componentes, patterns, Interaction Standards). Reutilize tokens,
 componentes (`src/components/design-system/`) e regras de comportamento
 já aprovados em vez de reinventar localmente.
 
+## Filtros — padrão v2 (`FLT=B`, D-058, aprovado em 2026-10-22)
+
+Toda tela com filtros usa `FilterPanel` (já v2 por default; `variant="v1"`
+é só escape). Regras obrigatórias:
+
+- Todo `FilterFieldGroup` tem `label` + `icon` (lucide, sem className de
+  cor/tamanho) + `description` curta; sem campos soltos fora de grupo.
+- Sem "(opcional)" em campo de filtro; obrigatório mantém "*".
+- Escolha única curta (até ~3 opções) → `FilterChips`; listas longas →
+  `Select`/`MultiSelect`; `SelectTrigger` sempre `w-full`.
+- Prefira `activeCount={countActiveFilters(applied, INICIAL)}`.
+- Modelo vivo: `/atendimento-presencial/registros?tab=finalizados` e o
+  bloco "Filtros v2" em `/design-system`. Detalhes em
+  `docs/design-system/components-e-patterns.md` ("Filtros v2") e
+  `README.md` (checklist de filtros). Mudar esse padrão exige decisão
+  humana registrada em `docs/projetos/design-system/DECISOES.md`.
+
 ## Compatibilidade — não alterar `src/components/ui/*`
 
 `src/components/ui/*` (Button, Input, Select, Tabs, Dialog, Table etc.,

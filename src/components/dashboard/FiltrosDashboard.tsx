@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { CalendarDays, ChevronDown, Store } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
@@ -154,7 +154,7 @@ export function FiltrosDashboard({ onPesquisar, isLoading }: FiltrosProps) {
       onClear={handleClear}
       applyDisabled={!isRangeValid || isLoading}
     >
-      <FilterFieldGroup label="Período">
+      <FilterFieldGroup label="Período" icon={<CalendarDays />} description="Intervalo de datas da análise.">
         <FormField id="dashboard-data-inicio" label="Data início" required>
           {(fieldProps) => <DateField value={filters.draft.dataInicio} onChange={(value) => filters.setField('dataInicio', value)} {...fieldProps} />}
         </FormField>
@@ -163,7 +163,7 @@ export function FiltrosDashboard({ onPesquisar, isLoading }: FiltrosProps) {
         </FormField>
       </FilterFieldGroup>
 
-      <FilterFieldGroup label="Abrangência">
+      <FilterFieldGroup label="Abrangência" icon={<Store />} description="Filiais, consultoras e conexões consideradas.">
         <FormField id="dashboard-loja" label="Loja (Filial)">
           {({ id }) => (
             <MultiSelectFilter

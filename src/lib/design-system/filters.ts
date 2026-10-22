@@ -40,3 +40,12 @@ export function filterReducer<T extends FilterValues>(state: FilterState<T>, eve
 export function isDirty<T extends FilterValues>(state: FilterState<T>): boolean {
   return JSON.stringify(state.draft) !== JSON.stringify(state.applied)
 }
+
+/**
+ * Quantos campos diferem do valor inicial (FLT=B, contador do cabeçalho).
+ * Compara com o inicial em vez de checar "vazio" porque um filtro pode
+ * começar em um valor neutro não vazio (ex.: `status: 'todos'`).
+ */
+export function countActiveFilters<T extends FilterValues>(values: T, initial: T): number {
+  return (Object.keys(initial) as Array<keyof T>).filter((field) => JSON.stringify(values[field]) !== JSON.stringify(initial[field])).length
+}

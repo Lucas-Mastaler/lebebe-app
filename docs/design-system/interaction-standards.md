@@ -83,6 +83,9 @@ visível, o erro some em tempo real assim que o valor volta a ficar válido
 `*` no label (`Nome *`); opcional sempre leva `(opcional)` explícito
 (`Observações (opcional)`) — os dois marcados, sem ambiguidade em nenhum
 campo. Label sempre visível; placeholder nunca substitui label.
+**Exceção — campos de filtro (`FLT=B`, D-058, 2026-10-22):** dentro de um
+`FilterPanel` v2 (padrão) todo campo é opcional por natureza, então o
+sufixo "(opcional)" **não aparece**; campo `required` continua com "*".
 
 **Máscaras e formatos (`MSK=C` — progressiva):** formatação aparece
 conforme os dígitos avançam, sem separador fixo antes da hora. Ver

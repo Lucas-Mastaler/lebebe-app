@@ -1,5 +1,8 @@
+'use client'
+
 import * as React from 'react'
 import { cn } from '@/lib/utils'
+import { useFilterPanelVariant } from './filterPanelVariant'
 import { requiredSuffix } from '@/lib/design-system/validation'
 import { typography } from '@/lib/design-system/typography'
 
@@ -34,12 +37,14 @@ export function FormField({ id, label, required = false, helper, error, classNam
   const errorId = error ? `${id}-error` : undefined
   const describedBy = [helperId, errorId].filter(Boolean).join(' ') || undefined
   const suffix = requiredSuffix(required)
+  // Dentro de um FilterPanel v2: rótulo forte e sem "(opcional)" (todo filtro é opcional).
+  const emFiltroV2 = useFilterPanelVariant() === 'v2' && !required
 
   return (
-    <div className={cn('space-y-1', className)}>
-      <label htmlFor={id} className={typography.label}>
+    <div className={cn(emFiltroV2 ? 'space-y-1.5' : 'space-y-1', className)}>
+      <label htmlFor={id} className={emFiltroV2 ? 'block text-sm font-semibold text-slate-800' : typography.label}>
         {label}
-        <span className={suffix.kind === 'required' ? 'text-destructive' : 'text-slate-400'}>{suffix.text}</span>
+        {!emFiltroV2 && <span className={suffix.kind === 'required' ? 'text-destructive' : 'text-slate-400'}>{suffix.text}</span>}
       </label>
       {children({ id, 'aria-invalid': Boolean(error), 'aria-describedby': describedBy })}
       {helper && !error && (

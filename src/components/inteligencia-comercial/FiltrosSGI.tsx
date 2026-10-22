@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { AlertCircle } from 'lucide-react'
-import { Alert, FilterPanel, Input } from '@/components/design-system'
+import { AlertCircle, CalendarDays, Store } from 'lucide-react'
+import { Alert, FilterFieldGroup, FilterPanel, Input } from '@/components/design-system'
 import { MultiSelect } from '@/components/ui/multi-select'
 import type { SgiFiltros } from '@/types/sgi'
 
@@ -141,11 +141,10 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
       onClear={handleLimpar}
       applyDisabled={isLoading || Boolean(dateError)}
     >
-      <div className="space-y-3">
-        {/* First row: dates and simple inputs */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-slate-500">Data início</label>
+      <>
+        <FilterFieldGroup label="Período e identificação" icon={<CalendarDays />} description="Datas da venda e como localizar o cliente ou o lançamento.">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-semibold text-slate-800">Data início</label>
             <Input
               type="date"
               min={DEFAULT_INICIO}
@@ -156,8 +155,8 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
             />
           </div>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-slate-500">Data fim</label>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-semibold text-slate-800">Data fim</label>
             <Input
               type="date"
               min={DEFAULT_INICIO}
@@ -168,8 +167,8 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
             />
           </div>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-slate-500">Nº Lançamento</label>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-semibold text-slate-800">Nº Lançamento</label>
             <Input
               placeholder="ex: 28598"
               value={form.numeroLancamento ?? ''}
@@ -179,8 +178,8 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
             />
           </div>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-slate-500">Cliente</label>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-semibold text-slate-800">Cliente</label>
             <Input
               placeholder="Nome do cliente"
               value={form.cliente ?? ''}
@@ -190,8 +189,8 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
             />
           </div>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-slate-500">Telefone</label>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-semibold text-slate-800">Telefone</label>
             <Input
               placeholder="(41) 99999-9999"
               value={formatTelefoneDisplay(form.telefone ?? '')}
@@ -203,12 +202,11 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
               Digite apenas DDD + número, sem código do país. Ex.: 41999999999
             </p>
           </div>
-        </div>
+        </FilterFieldGroup>
 
-        {/* Second row: multi-select filters - flex to occupy full line */}
-        <div className="flex flex-wrap gap-3">
-          <div className="flex flex-col gap-1 min-w-[140px] flex-1">
-            <label className="text-xs text-slate-500">Filial</label>
+        <FilterFieldGroup label="Filial, vendedor e operação" icon={<Store />} description="Onde, quem e qual tipo de operação.">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-semibold text-slate-800">Filial</label>
             {loadingOptions ? (
               <div className="h-9 bg-slate-100 rounded-md animate-pulse" />
             ) : (
@@ -221,8 +219,8 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
             )}
           </div>
 
-          <div className="flex flex-col gap-1 min-w-[140px] flex-1">
-            <label className="text-xs text-slate-500">Vendedor</label>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-semibold text-slate-800">Vendedor</label>
             {loadingOptions ? (
               <div className="h-9 bg-slate-100 rounded-md animate-pulse" />
             ) : (
@@ -236,8 +234,8 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
             )}
           </div>
 
-          <div className="flex flex-col gap-1 min-w-[140px] flex-1">
-            <label className="text-xs text-slate-500">Operação</label>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-semibold text-slate-800">Operação</label>
             {loadingOptions ? (
               <div className="h-9 bg-slate-100 rounded-md animate-pulse" />
             ) : (
@@ -250,8 +248,8 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
             )}
           </div>
 
-          <div className="flex flex-col gap-1 min-w-[140px] flex-1">
-            <label className="text-xs text-slate-500">Status</label>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-semibold text-slate-800">Status</label>
             {loadingOptions ? (
               <div className="h-9 bg-slate-100 rounded-md animate-pulse" />
             ) : (
@@ -263,8 +261,8 @@ export function FiltrosSGI({ onPesquisar, isLoading }: FiltrosSGIProps) {
               />
             )}
           </div>
-        </div>
-      </div>
+        </FilterFieldGroup>
+      </>
 
       {dateError && <Alert tone="danger" title="Período inválido"><AlertCircle className="size-4" />{dateError}</Alert>}
     </FilterPanel>

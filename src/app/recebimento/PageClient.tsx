@@ -245,7 +245,7 @@ export default function RecebimentoPage() {
 
         <TabsContent value="recebimentos" className="mt-6 space-y-4">
           <FilterPanel dirty={filtros.dirty} onApply={aplicarFiltros} onClear={limparFiltros}>
-            <FilterFieldGroup label="Filtros">
+            <FilterFieldGroup label="Filtros" icon={<Search />} description="Datas e número da NF dos recebimentos.">
               <FormField id="filtro-data-inicio" label="Data Início">
                 {(f) => (
                   <DateField
@@ -1011,7 +1011,7 @@ function NotasVinculadasTab() {
   return (
     <div className="space-y-4">
       <FilterPanel dirty={filtros.dirty} onApply={aplicarFiltros} onClear={limparFiltros}>
-        <FilterFieldGroup label="Filtros">
+        <FilterFieldGroup label="Filtros" icon={<Search />} description="Datas e número da NF.">
           <FormField id="filtro-notas-data-inicio" label="Data de">
             {(f) => (
               <DateField

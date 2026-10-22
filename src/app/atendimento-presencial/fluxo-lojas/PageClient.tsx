@@ -3,7 +3,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { ArrowRight, BarChart3, ChevronDown, ChevronUp, ClipboardCheck, Clock3, RefreshCw, Search, Store } from 'lucide-react'
 import {
   Alert, Badge, Button, Card, CardContent, DateField,
-  EmptyState, FilterPanel, FormField, PageContainer, PageHeader, ResponsiveTable, Spinner, useAsyncAction, useFilterState,
+  EmptyState, FilterFieldGroup, FilterPanel, FormField, PageContainer, PageHeader, ResponsiveTable, Spinner, useAsyncAction, useFilterState,
 } from '@/components/design-system'
 import { DetalhesAtendimentoDialog, type DetalheAtendimentoLoadingSummary } from '@/components/atendimento-presencial/DetalhesAtendimentoDialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -178,16 +178,19 @@ export default function PageClient() {
       <FlowOverview data={data} loading={loading} onUnit={selectUnit} />
     </>}
     <FilterPanel title="Período e filtros" dirty={filters.dirty} applyDisabled={loading} onApply={() => { setSelection(null); filters.apply() }} onClear={() => { setSelection(null); filters.clear() }}>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <FilterFieldGroup label="Período e horário" icon={<Clock3 />} description="Dia a analisar e faixa de horas do atendimento.">
         <Options label="Período" value={filters.draft.periodo} onChange={value => filters.setField('periodo',value)} options={[[ 'hoje','Hoje'],['ontem','Ontem'],['7dias','Últimos 7 dias'],['personalizado','Personalizado']]} />
-        {filters.draft.periodo === 'personalizado' && <><FormField id="fluxo-de" label="Data inicial">{field => <DateField {...field} value={filters.draft.de} onChange={value => filters.setField('de',value)} />}</FormField><FormField id="fluxo-ate" label="Data final">{field => <DateField {...field} value={filters.draft.ate} onChange={value => filters.setField('ate',value)} />}</FormField></>}
-        <Options label="Filial" value={filters.draft.unidadeId} onChange={value => filters.setField('unidadeId',value)} options={ [['','Todas as lojas disponíveis'],...(data?.unidades ?? []).map(unit => [unit.id,unit.nome] as [string,string])]} />
+        {filters.draft.periodo === 'personalizado' && <FormField id="fluxo-de" label="Data inicial">{field => <DateField {...field} value={filters.draft.de} onChange={value => filters.setField('de',value)} />}</FormField>}
+        {filters.draft.periodo === 'personalizado' && <FormField id="fluxo-ate" label="Data final">{field => <DateField {...field} value={filters.draft.ate} onChange={value => filters.setField('ate',value)} />}</FormField>}
         <Options label="A partir das" value={filters.draft.horaDe} onChange={value => filters.setField('horaDe',value)} options={Array.from({length:14},(_,i) => [String(i+8),`${i+8}h`])} />
         <Options label="Até as" value={filters.draft.horaAte} onChange={value => filters.setField('horaAte',value)} options={Array.from({length:14},(_,i) => [String(i+9),`${i+9}h`])} />
+      </FilterFieldGroup>
+      <FilterFieldGroup label="Atendimento" icon={<Store />} description="Filial, tipo de atendimento, consultora e resultado da venda.">
+        <Options label="Filial" value={filters.draft.unidadeId} onChange={value => filters.setField('unidadeId',value)} options={ [['','Todas as lojas disponíveis'],...(data?.unidades ?? []).map(unit => [unit.id,unit.nome] as [string,string])]} />
         <Options label="Tipo de atendimento" value={filters.draft.tipo} onChange={value => filters.setField('tipo',value)} options={[[ '','Todos'],['cliente','Cliente'],['nao_cliente','Não cliente']]} />
         <Options label="Consultora" value={filters.draft.consultora} onChange={value => filters.setField('consultora',value)} options={[[ '','Todas'],...(data?.consultoras ?? []).map(name => [name,name] as [string,string])]} />
         <Options label="Situação da venda" value={filters.draft.situacao} onChange={value => filters.setField('situacao',value)} options={[[ '','Todas'],['sim','Venda fechada'],['negociacao','Em negociação'],['nao','Venda perdida']]} />
-      </div>
+      </FilterFieldGroup>
     </FilterPanel>
     {error && <Alert tone="danger" title="Falha na atualização">{error}{data && ' Os dados anteriores permanecem visíveis e podem estar desatualizados.'}</Alert>}
     {loading && <p role="status" className="flex items-center gap-2 text-sm"><Spinner />{data ? 'Atualizando dados…' : 'Carregando dados…'}</p>}

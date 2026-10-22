@@ -938,13 +938,13 @@ export function GestaoPedidosPersonalizados() {
   return (
     <div className="space-y-5">
       <FilterPanel title="Filtros" dirty={filtrosAlterados} onApply={aplicarFiltros} onClear={limparFiltros}>
-        <FilterFieldGroup label="Busca" icon={<UserSearch className="size-4 text-slate-400" aria-hidden="true" />}>
+        <FilterFieldGroup label="Busca" icon={<UserSearch />} description="Cliente, consultora e número do lançamento.">
           <Input aria-label="Filtrar por cliente" placeholder="Cliente" value={filtros.cliente} onChange={(e) => setFiltros({ ...filtros, cliente: e.target.value })} />
           <Input aria-label="Filtrar por consultora" placeholder="Consultora" value={filtros.consultora} onChange={(e) => setFiltros({ ...filtros, consultora: e.target.value })} />
           <Input aria-label="Filtrar por lançamento" placeholder="Nº lançamento" inputMode="numeric" value={filtros.numeroLancamento} onChange={(e) => setFiltros({ ...filtros, numeroLancamento: e.target.value.replace(/\D/g, '').slice(0, 6) })} />
         </FilterFieldGroup>
 
-        <FilterFieldGroup label="Datas" icon={<CalendarRange className="size-4 text-slate-400" aria-hidden="true" />}>
+        <FilterFieldGroup label="Datas" icon={<CalendarRange />} description="Cadastro, pedido ao fornecedor e demais datas.">
           <FormField id="data-inicial" label="Cadastro inicial">{(f) => <Input {...f} type="date" value={filtros.dataInicial} onChange={(e) => setFiltros({ ...filtros, dataInicial: e.target.value })} />}</FormField>
           <FormField id="data-final" label="Cadastro final">{(f) => <Input {...f} type="date" value={filtros.dataFinal} onChange={(e) => setFiltros({ ...filtros, dataFinal: e.target.value })} />}</FormField>
           <FormField id="pedido-fornecedor-inicial" label="Data do pedido ao fornecedor — início">{(f) => <Input {...f} type="date" value={filtros.dataPedidoFornecedorInicial} onChange={(e) => setFiltros({ ...filtros, dataPedidoFornecedorInicial: e.target.value })} />}</FormField>
@@ -953,7 +953,7 @@ export function GestaoPedidosPersonalizados() {
           <FormField id="entrega-final" label="Previsão de entrega — fim">{(f) => <Input {...f} type="date" value={filtros.dataEntregaFinal} onChange={(e) => setFiltros({ ...filtros, dataEntregaFinal: e.target.value })} />}</FormField>
         </FilterFieldGroup>
 
-        <FilterFieldGroup label="Classificação" icon={<SlidersHorizontal className="size-4 text-slate-400" aria-hidden="true" />}>
+        <FilterFieldGroup label="Classificação" icon={<SlidersHorizontal />} description="Fornecedor, unidade e status.">
           <Select value={filtros.fornecedor || 'TODOS'} onValueChange={(v) => setFiltros({ ...filtros, fornecedor: v === 'TODOS' ? '' : v as FiltrosGestao['fornecedor'] })}><SelectTrigger className="w-full" aria-label="Filtrar por fornecedor"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="TODOS">Todos os fornecedores</SelectItem><SelectItem value="moriah_tapetes">Moriah Tapetes</SelectItem><SelectItem value="decorisi">Decorisi</SelectItem><SelectItem value="lebebe_exclusive">Le Bébé Exclusive</SelectItem></SelectContent></Select>
           <Select value={filtros.unidade || 'TODAS'} onValueChange={(v) => setFiltros({ ...filtros, unidade: v === 'TODAS' ? '' : v as FiltrosGestao['unidade'] })}><SelectTrigger className="w-full" aria-label="Filtrar por unidade"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="TODAS">Todas as unidades</SelectItem>{opcoes?.unidades.map((u) => <SelectItem key={u.chave} value={u.chave}>{u.nome}</SelectItem>)}</SelectContent></Select>
           <Select value={filtros.status || 'TODOS'} onValueChange={(v) => setFiltros({ ...filtros, status: v === 'TODOS' ? '' : v as FiltrosGestao['status'] })}><SelectTrigger className="w-full" aria-label="Filtrar por status"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="TODOS">Todos os status</SelectItem>{opcoes?.status?.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent></Select>

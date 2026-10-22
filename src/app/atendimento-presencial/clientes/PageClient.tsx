@@ -208,7 +208,7 @@ export default function PageClient() {
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
           <div className="flex flex-col gap-5">
             <FilterPanel title="Buscar cliente" dirty={filtros.dirty} onApply={aplicarFiltros} onClear={limparFiltros} applyDisabled={buscando}>
-              <FilterFieldGroup label="Cliente e consultora">
+              <FilterFieldGroup label="Cliente e consultora" icon={<Users />} description="Busque pelo nome ou telefone e filtre pela consultora de origem.">
                 <FormField id="filtro-busca-cliente" label="Nome ou telefone">
                   {(field) => (
                     <Input

@@ -625,7 +625,12 @@ vazio quando há poucos campos (achado real do piloto de
 `/chamados-finalizados`: 2 campos num grid de 2-3 colunas fixas deixavam
 uma sobra grande no fim da linha, parecendo conteúdo faltando).
 
-**Implementação (`FilterFieldGroup`):** flexbox — `flex flex-wrap
+**Nota (D-058, 2026-10-22):** na v2 (padrão) `FilterFieldGroup` é um
+bloco com título/ícone/descrição à esquerda e os campos à direita, com
+`items-start` (a descrição abaixo vale para a v1 legada). Ver
+`components-e-patterns.md`, "Filtros v2".
+
+**Implementação v1 (`FilterFieldGroup`):** flexbox — `flex flex-wrap
 items-end gap-3` no container, cada campo envolvido em
 `min-w-[220px] flex-1`. **Não é CSS Grid `auto-fit`/`minmax`** — foi a
 primeira tentativa e foi descartada: `grid-template-columns:

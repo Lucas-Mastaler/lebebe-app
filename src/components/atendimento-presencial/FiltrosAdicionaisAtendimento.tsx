@@ -1,5 +1,12 @@
 'use client'
-import { FilterFieldGroup, FormField, Input } from '@/components/design-system'
+import { CalendarDays, Heart } from 'lucide-react'
+import {
+  FilterChips,
+  FilterField,
+  FilterFieldGroup,
+  Input,
+  useFilterPanelVariant,
+} from '@/components/design-system'
 import {
   Select,
   SelectContent,
@@ -37,6 +44,8 @@ export const OPCOES_VISITA_FILTRO = Array.from(
   ).values(),
 )
 
+const MAX_OPCOES_CHIPS = 2
+
 export function FiltrosAdicionaisAtendimento({
   value,
   onChange,
@@ -48,7 +57,9 @@ export function FiltrosAdicionaisAtendimento({
   rascunhos?: boolean
   ocultarTelefone?: boolean
 }) {
+  const v2 = useFilterPanelVariant() === 'v2'
   const prefixo = rascunhos ? 'rascunho' : 'salvo'
+  const separadorV1 = v2 ? undefined : 'border-t border-slate-200 pt-4'
   function selecao(
     campo:
       | 'tipoAtendimento'
@@ -59,8 +70,27 @@ export function FiltrosAdicionaisAtendimento({
     label: string,
     opcoes: Array<{ chave: string; label: string }>,
   ) {
+    const id = `${prefixo}-${campo}`
+    if (v2 && opcoes.length <= MAX_OPCOES_CHIPS) {
+      return (
+        <FilterField id={id} label={label} active={Boolean(value[campo])}>
+          {(props) => (
+            <FilterChips
+              id={props.id}
+              aria-label={label}
+              value={value[campo]}
+              onChange={(v) => onChange(campo, v)}
+              options={[
+                { value: '', label: 'Todos' },
+                ...opcoes.map((o) => ({ value: o.chave, label: o.label })),
+              ]}
+            />
+          )}
+        </FilterField>
+      )
+    }
     return (
-      <FormField id={`${prefixo}-${campo}`} label={label}>
+      <FilterField id={id} label={label} active={Boolean(value[campo])}>
         {(props) => (
           <Select
             value={value[campo] || 'all'}
@@ -79,25 +109,28 @@ export function FiltrosAdicionaisAtendimento({
             </SelectContent>
           </Select>
         )}
-      </FormField>
+      </FilterField>
     )
   }
   return (
     <>
       <FilterFieldGroup
         prominent={!rascunhos}
-        className="border-t border-slate-200 pt-4"
+        className={separadorV1}
+        icon={v2 ? <CalendarDays /> : undefined}
+        description="Quando o atendimento começou e como identificar o registro."
         label={
           rascunhos
             ? 'Última atividade e identificação'
             : 'Período do atendimento e identificação'
         }
       >
-        <FormField
+        <FilterField
           id={`${prefixo}-data-de`}
           label={
             rascunhos ? 'Última atividade — de' : 'Início do atendimento — de'
           }
+          active={Boolean(value.atendimentoDe)}
         >
           {(props) => (
             <Input
@@ -107,8 +140,8 @@ export function FiltrosAdicionaisAtendimento({
               onChange={(e) => onChange('atendimentoDe', e.target.value)}
             />
           )}
-        </FormField>
-        <FormField id={`${prefixo}-data-ate`} label="Até">
+        </FilterField>
+        <FilterField id={`${prefixo}-data-ate`} label="Até" active={Boolean(value.atendimentoAte)}>
           {(props) => (
             <Input
               {...props}
@@ -117,7 +150,7 @@ export function FiltrosAdicionaisAtendimento({
               onChange={(e) => onChange('atendimentoAte', e.target.value)}
             />
           )}
-        </FormField>
+        </FilterField>
         {selecao('tipoAtendimento', 'Tipo de atendimento', [
           { chave: 'cliente', label: 'Cliente' },
           { chave: 'nao_cliente', label: 'Não cliente' },
@@ -125,7 +158,7 @@ export function FiltrosAdicionaisAtendimento({
             ? [{ chave: 'nao_informado', label: 'Tipo não informado' }]
             : []),
         ])}
-        {!ocultarTelefone && <FormField id={`${prefixo}-telefone`} label="Telefone da cliente">
+        {!ocultarTelefone && <FilterField id={`${prefixo}-telefone`} label="Telefone da cliente" active={Boolean(value.telefoneCliente)}>
           {(props) => (
             <Input
               {...props}
@@ -135,13 +168,13 @@ export function FiltrosAdicionaisAtendimento({
               placeholder="Telefone ou trecho"
             />
           )}
-        </FormField>}
+        </FilterField>}
         {selecao('contato', 'Telefone disponível', [
           { chave: 'com', label: 'Com telefone' },
           { chave: 'sem', label: 'Sem telefone' },
         ])}
         {!rascunhos && (
-          <FormField id="salvo-lancamento" label="Número do lançamento">
+          <FilterField id="salvo-lancamento" label="Número do lançamento" active={Boolean(value.numeroLancamento)}>
             {(props) => (
               <Input
                 {...props}
@@ -150,7 +183,7 @@ export function FiltrosAdicionaisAtendimento({
                 onChange={(e) => onChange('numeroLancamento', e.target.value)}
               />
             )}
-          </FormField>
+          </FilterField>
         )}
         {rascunhos &&
           selecao('vinculoCliente', 'Cadastro vinculado', [
@@ -163,10 +196,17 @@ export function FiltrosAdicionaisAtendimento({
           ])}
       </FilterFieldGroup>
       {!rascunhos && (
-        <FilterFieldGroup label="Interesses e motivos" className="border-t border-slate-200 pt-4" prominent>
-          <FormField
+        <FilterFieldGroup
+          label="Interesses e motivos"
+          className={separadorV1}
+          prominent
+          icon={v2 ? <Heart /> : undefined}
+          description="O que a cliente buscou, o resultado da negociação e o motivo da visita."
+        >
+          <FilterField
             id="salvo-departamentos"
             label="Departamentos de interesse"
+            active={value.departamentos.length > 0}
           >
             {() => (
               <MultiSelect
@@ -185,8 +225,8 @@ export function FiltrosAdicionaisAtendimento({
                 }
               />
             )}
-          </FormField>
-          <FormField id="salvo-motivos" label="Motivos da negociação/perda">
+          </FilterField>
+          <FilterField id="salvo-motivos" label="Motivos da negociação/perda" active={value.motivos.length > 0}>
             {() => (
               <MultiSelect
                 enableSearch
@@ -205,8 +245,8 @@ export function FiltrosAdicionaisAtendimento({
                 }
               />
             )}
-          </FormField>
-          <FormField id="salvo-parentescos" label="Parentesco da criança">
+          </FilterField>
+          <FilterField id="salvo-parentescos" label="Parentesco da criança" active={value.parentescos.length > 0}>
             {() => (
               <MultiSelect
                 placeholder="Todos os parentescos"
@@ -224,7 +264,7 @@ export function FiltrosAdicionaisAtendimento({
                 }
               />
             )}
-          </FormField>
+          </FilterField>
           {selecao('motivoVisita', 'Motivo da visita', OPCOES_VISITA_FILTRO)}
         </FilterFieldGroup>
       )}

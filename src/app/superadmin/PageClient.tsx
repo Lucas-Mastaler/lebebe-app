@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ShieldCheck, Ban, X } from 'lucide-react'
+import { ShieldCheck, Ban, Search, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { AuditoriaAcesso } from '@/types/supabase'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -742,7 +742,7 @@ export default function SuperAdminPageClient({
               <CardHeader title="Auditoria de Acessos" />
               <CardContent>
                 <FilterPanel dirty={filtrosAuditoria.dirty} onApply={aplicarFiltrosAuditoria} onClear={limparFiltrosAuditoria}>
-                  <FilterFieldGroup label="Filtros">
+                  <FilterFieldGroup label="Filtros" icon={<Search />} description="Email do usuário e ação registrada.">
                     <FormField id="filtro-email" label="Email">
                       {(f) => (
                         <Input

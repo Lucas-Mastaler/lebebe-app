@@ -1893,3 +1893,72 @@
   sessão — a conta autenticada não está na whitelist de acesso do módulo
   (`matic-emails.ts`); fica pendente de validação manual do usuário.
 - Status: **implementado, aguardando validação visual manual do usuário.**
+
+## D-058 — Filtros v2 (`FLT=B`): padrão oficial (aprovado em 2026-10-22; antes piloto em Registros › Atendimentos Salvos)
+
+> **Atualização 2026-10-22 (aprovada pelo usuário):** `FilterPanel` passa a
+> ter `variant="v2"` como default em todo o sistema; `v1` fica como escape.
+> `FormField` lê a variante via contexto (`filterPanelVariant.ts`) e, dentro
+> de painel v2, usa rótulo `font-semibold` sem "(opcional)" (`required`
+> mantém "*"). `activeCount` passou a opcional (sem ele, sem contador, para
+> não mostrar "Nenhum filtro aplicado" quando há filtro). Ícones antigos de
+> `FilterFieldGroup` são recoloridos pela marca. Aba Rascunhos e as demais
+> telas herdam sem edição. Pendente: validação visual do usuário e decisão
+> de publicar. O texto abaixo é o registro original da proposta.
+>
+> **Auditoria de ícones (2026-10-22):** todas as telas com `FilterPanel`
+> passaram a ter `FilterFieldGroup` com `icon` + `description` (Dashboard,
+> Agendamentos, Horários, Clientes, Rascunhos, Fluxo de Lojas, SGI,
+> Auditoria/Performance de Procurar Datas, Pós-venda, Recebimento,
+> Superadmin, Digisac; Hub, Pedidos e Chamados ganharam descrição). Regra
+> registrada em `.agents/rules/design-system.md` e no checklist do
+> `docs/design-system/README.md`.
+
+- Data: 2026-10-22
+- Pedido: o usuário apontou que, em
+  `/atendimento-presencial/registros?tab=finalizados`, o campo "Telefone da
+  cliente" (com helper abaixo) subiu e ficou desalinhado dos vizinhos, e que
+  os filtros do DS em geral são difíceis de ler (títulos de seção fracos,
+  difícil localizar o campo). Referências trazidas: formulário de filtros com
+  rótulos fortes e campos bem delimitados; painel em blocos com título à
+  esquerda e opções em chips.
+- Causa do desalinhamento (v1, confirmada no código e em screenshot):
+  `FilterFieldGroup` alinha os slots pela base (`items-end`); um campo com
+  `helper` fica mais alto e empurra rótulo + controle para cima. Achado
+  extra: `React.Children.map` também cria um slot vazio para filhos
+  condicionais `false` (ex.: `ocultarTelefone`), abrindo um buraco na linha.
+  Nenhum dos dois foi corrigido na v1 (mudaria todas as telas).
+- Proposta (`variant="v2"` no `FilterPanel`, default continua `v1`):
+  - Cabeçalho com ícone, título `text-base` e contador "N filtros aplicados"
+    (`activeCount`, via `countActiveFilters(applied, inicial)`), visível
+    também com o painel recolhido; "Limpar filtros" e "Recolher" no header.
+  - Cada `FilterFieldGroup` vira um bloco (borda + fundo `slate-50`), com
+    título `font-bold` escuro, ícone e `description` curta numa coluna à
+    esquerda (≥ `lg`), campos à direita; empilha no mobile. Filhos `false`
+    não geram slot.
+  - Campos alinham pelo topo (`items-start`): `hint` abaixo do controle não
+    desalinha mais os vizinhos.
+  - `FilterField`: rótulo `text-sm font-semibold text-slate-800`, sem
+    "(opcional)" (filtro já é opcional por natureza), ponto da marca quando o
+    campo tem valor no rascunho (`active`). Em painel `v1` renderiza
+    exatamente o `FormField` anterior.
+  - `FilterChips`: escolha única curta (até ~3 opções) à vista, `radiogroup`
+    com setas; o slot cresce até a largura natural dos chips antes de
+    quebrar linha. Listas longas continuam em `Select`/`MultiSelect`.
+  - Rodapé separado (`border-t`), "Filtrar" à direita (`FILTER-ACTION-ALIGN=A`
+    mantido). `FLT-EXEC=MANUAL`, `FLT-CLR=C` e `FLT-COLLAPSE=A` inalterados.
+- Piloto: só a aba `finalizados` de Registros. A aba `rascunhos` usa o
+  mesmo `FiltrosAdicionaisAtendimento`, mas continua `v1` (o bloco lê a
+  variante via `useFilterPanelVariant()`). Nenhuma query, parâmetro, valor
+  de filtro ou regra mudou; o telefone usa placeholder no lugar do helper.
+- Referência viva: `/design-system`, bloco "Filtros v2 — PROPOSTA FLT=B".
+- QA: `eslint` sem erro novo; `tsc` sem erro nos arquivos tocados (erros
+  pré-existentes em testes de auth/hub-vendas); `filters.test.ts` + suíte de
+  atendimento-presencial verdes (394). Validação visual em página temporária
+  (removida) com os componentes reais em 1366px e 390px: alinhamento,
+  chips, teclado, contador, recolher/mostrar e limpar conferidos. A rota real
+  não foi aberta autenticada nesta sessão.
+- Status: **PROPOSTA — aguardando aprovação humana** do visual na rota real.
+  Se aprovada, a adoção nas demais telas é uma tela por vez (trocar
+  `FormField` → `FilterField` e passar `variant="v2"`); só depois disso o
+  default pode virar `v2`.

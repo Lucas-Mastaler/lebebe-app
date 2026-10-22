@@ -133,7 +133,7 @@ export default function PageClient() {
       />
 
       <FilterPanel dirty={filtros.dirty} onApply={aplicarFiltros} onClear={limparFiltros}>
-        <FilterFieldGroup label="Filtros">
+        <FilterFieldGroup label="Filtros" icon={<Gauge />} description="Período, motor, status, provider e cache.">
           <FormField id="filtro-periodo" label="Período">
             {(f) => (
               <Select

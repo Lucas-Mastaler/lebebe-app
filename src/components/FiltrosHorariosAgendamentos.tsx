@@ -140,7 +140,7 @@ export function FiltrosHorariosAgendamentos({ onPesquisar, onLimpar, isLoading }
 
     return (
         <FilterPanel dirty={filters.dirty} onApply={handlePesquisar} onClear={handleClear} applyDisabled={!canSearch || isLoading}>
-            <FilterFieldGroup label="Período">
+            <FilterFieldGroup label="Período" icon={<Clock />} description="Dia e faixa de horário a pesquisar.">
                 <FormField id="data-pesquisar" label="Data a pesquisar" required error={dateTouched ? dateError : undefined}>{(field) => <DateField {...field} value={filters.draft.dataPesquisar} onChange={(value) => filters.setField('dataPesquisar', value)} onBlur={() => setDateTouched(true)} min={hoje} />}</FormField>
                 <FormField id="hora-inicio" label="Hora início" required error={startTouched && !isHoraInicioValida ? 'Informe um horário válido.' : undefined}>{(field) => <SeletorHorario {...field} value={filters.draft.horaInicio} onChange={(value) => filters.setField('horaInicio', value)} onBlur={() => setStartTouched(true)} disabled={filters.draft.diaTodo} />}</FormField>
                 <FormField id="hora-fim" label="Hora fim" required error={endTouched && !isHoraFimValida ? 'Informe um horário válido.' : undefined}>{(field) => <SeletorHorario {...field} value={filters.draft.horaFim} onChange={(value) => filters.setField('horaFim', value)} onBlur={() => setEndTouched(true)} disabled={filters.draft.diaTodo} />}</FormField>

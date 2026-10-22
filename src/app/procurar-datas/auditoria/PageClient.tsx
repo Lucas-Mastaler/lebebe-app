@@ -397,7 +397,7 @@ export default function PageClient() {
           </> : <p className="text-sm text-slate-500">{consumoCarregando ? 'Carregando consumo...' : 'Resumo de consumo indisponível.'}</p>}
         </Section>
         <FilterPanel dirty={filtros.dirty} onApply={pesquisar} onClear={limpar}>
-          <FilterFieldGroup label="Período">
+          <FilterFieldGroup label="Período" icon={<CalendarCheck />} description="Intervalo de datas das buscas auditadas.">
             <FormField id="filtro-data-inicial" label="Data inicial">
               {(f) => <DateField {...f} value={filtros.draft.dataInicial} onChange={(v) => filtros.setField('dataInicial', v)} />}
             </FormField>
@@ -406,7 +406,7 @@ export default function PageClient() {
             </FormField>
           </FilterFieldGroup>
 
-          <FilterFieldGroup label="Busca">
+          <FilterFieldGroup label="Busca" icon={<Search />} description="Usuário, CEP, cidade, UF e rua pesquisados.">
             <FormField id="filtro-email" label="Usuário/email">
               {(f) => <Input {...f} value={filtros.draft.email} onChange={(e) => filtros.setField('email', e.target.value)} placeholder="email" />}
             </FormField>
@@ -431,7 +431,7 @@ export default function PageClient() {
             </FormField>
           </FilterFieldGroup>
 
-          <FilterFieldGroup label="Status e pré-agendamento">
+          <FilterFieldGroup label="Status e pré-agendamento" icon={<ListChecks />} description="Resultado da busca e dados do pré-agendamento.">
             <FormField id="filtro-status" label="Status">
               {(f) => (
                 <Select value={filtros.draft.status || 'TODOS'} onValueChange={(v) => filtros.setField('status', v === 'TODOS' ? '' : v)}>

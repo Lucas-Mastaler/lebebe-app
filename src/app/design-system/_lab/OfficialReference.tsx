@@ -9,6 +9,8 @@ import {
   Combobox,
   DateField,
   EmptyState,
+  FilterChips,
+  FilterField,
   FilterFieldGroup,
   FilterPanel,
   FormErrorSummary,
@@ -32,6 +34,7 @@ import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { SegmentedTabsList, SegmentedTabsTrigger } from '@/components/design-system/SegmentedTabs'
 import { ChevronLeft, ChevronRight, Star, Sparkles, LayoutGrid } from 'lucide-react'
 import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
+import { countActiveFilters } from '@/lib/design-system/filters'
 import { getSectionToneAt } from '@/lib/design-system/section-tones'
 import { cn } from '@/lib/utils'
 
@@ -104,6 +107,7 @@ function FilterDemo() {
   const filiaisDemo = ['Bigorrilho', 'Feira', 'Marechal', 'Portão', 'Centro', 'Cabral', 'Juvevê', 'Mercês', 'Batel', 'Água Verde', 'Santa Felicidade', 'Cajuru']
   return (
     <FilterPanel
+      variant="v1"
       dirty={filters.dirty}
       onApply={() => {
         filters.apply()
@@ -136,6 +140,61 @@ function FilterDemo() {
         painel inicia expandido e nunca se recolhe sozinho; &quot;Filtrar&quot; fica ancorado à
         direita do rodapé (`FLT-ACTION-ALIGN=A`).
       </p>
+    </FilterPanel>
+  )
+}
+
+const FILTROS_V2_INICIAL = { cliente: '', telefone: '', status: '', tipo: '', dataInicio: '', filiais: [] as string[] }
+
+function FilterV2Demo() {
+  const filters = useFilterState(FILTROS_V2_INICIAL)
+  const filiaisDemo = ['Bigorrilho', 'Feira', 'Marechal', 'Portão']
+  return (
+    <FilterPanel
+      activeCount={countActiveFilters(filters.applied, FILTROS_V2_INICIAL)}
+      dirty={filters.dirty}
+      onApply={filters.apply}
+      onClear={filters.clear}
+    >
+      <FilterFieldGroup label="Cliente" icon={<User />} description="Quem foi atendida e como encontrá-la.">
+        <FilterField id="lab-v2-cliente" label="Nome da cliente" active={Boolean(filters.draft.cliente)}>
+          {(f) => <Input {...f} value={filters.draft.cliente} onChange={(e) => filters.setField('cliente', e.target.value)} placeholder="Pesquisar por nome" />}
+        </FilterField>
+        <FilterField id="lab-v2-telefone" label="Telefone" hint="Completo ou só um trecho." active={Boolean(filters.draft.telefone)}>
+          {(f) => <Input {...f} inputMode="tel" value={filters.draft.telefone} onChange={(e) => filters.setField('telefone', e.target.value)} placeholder="Ex.: 8707" />}
+        </FilterField>
+        <FilterField id="lab-v2-tipo" label="Tipo de atendimento" active={Boolean(filters.draft.tipo)}>
+          {(f) => (
+            <FilterChips
+              id={f.id}
+              aria-label="Tipo de atendimento"
+              value={filters.draft.tipo}
+              onChange={(v) => filters.setField('tipo', v)}
+              options={[{ value: '', label: 'Todos' }, { value: 'cliente', label: 'Cliente' }, { value: 'nao_cliente', label: 'Não cliente' }]}
+            />
+          )}
+        </FilterField>
+      </FilterFieldGroup>
+      <FilterFieldGroup label="Pedido" icon={<Package />} description="Situação, data e filial do pedido.">
+        <FilterField id="lab-v2-status" label="Status" active={Boolean(filters.draft.status)}>
+          {(f) => (
+            <Select value={filters.draft.status || 'all'} onValueChange={(v) => filters.setField('status', v === 'all' ? '' : v)}>
+              <SelectTrigger {...f} className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="aberto">Aberto</SelectItem>
+                <SelectItem value="fechado">Fechado</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+        </FilterField>
+        <FilterField id="lab-v2-data" label="Data a partir de" active={Boolean(filters.draft.dataInicio)}>
+          {(f) => <DateField {...f} value={filters.draft.dataInicio} onChange={(v) => filters.setField('dataInicio', v)} placeholder="dd/mm/aaaa" />}
+        </FilterField>
+        <FilterField id="lab-v2-filiais" label="Filiais" active={filters.draft.filiais.length > 0}>
+          {() => <MultiSelect options={filiaisDemo} selected={filters.draft.filiais} onChange={(v) => filters.setField('filiais', v)} placeholder="Todas as filiais" />}
+        </FilterField>
+      </FilterFieldGroup>
     </FilterPanel>
   )
 }
@@ -765,9 +824,15 @@ export function OfficialReference() {
           <ComboboxDemo />
         </ShowcaseBlock>
 
-        <ShowcaseBlock title="Filtros (FLT=A, FLT-EXEC=MANUAL, FLT-CLR=C, FLT-COLLAPSE=A)">
+        <ShowcaseBlock title="Filtros v1 (FLT=A) — LEGADO, só via variant=&quot;v1&quot;">
           <FilterDemo />
         </ShowcaseBlock>
+
+        <div className="lg:col-span-2">
+          <ShowcaseBlock title="Filtros v2 — PADRÃO OFICIAL FLT=B (D-058, aprovado em 2026-10-22)">
+            <FilterV2Demo />
+          </ShowcaseBlock>
+        </div>
 
         <ShowcaseBlock title="Empty state (EST=B)">
           <EmptyState title="Nenhum pedido encontrado" description="Ajuste os filtros ou crie um novo pedido." action={<Button size="sm">Novo pedido</Button>} />

@@ -648,7 +648,7 @@ export default function FinalizacoesAutomaticasPageClient() {
           onApply={() => { filters.apply(); setPage(1); }}
           onClear={() => { filters.clear(); setPage(1); }}
         >
-          <FilterFieldGroup label="Pesquisa e status">
+          <FilterFieldGroup label="Pesquisa e status" icon={<Search />} description="Busque por contato, telefone ou protocolo e filtre por status.">
             <Input
               type="text"
               placeholder="Buscar por contato, telefone ou protocolo..."

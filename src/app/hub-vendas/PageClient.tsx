@@ -565,7 +565,7 @@ export default function PageClient({ podeGerenciar }: { podeGerenciar: boolean }
 
       {/* Filtro global de período */}
       <FilterPanel title="Período" dirty={periodoFilters.dirty} onApply={aplicarPeriodo} onClear={limparPeriodo} applyDisabled={carregandoPeriodo}>
-        <FilterFieldGroup label="Intervalo de datas" icon={<Clock className="size-4 text-slate-400" />}>
+        <FilterFieldGroup label="Intervalo de datas" icon={<Clock />} description="Período analisado no painel.">
           <FormField id="hub-vendas-periodo-de" label="De">
             {(f) => <DateField {...f} value={periodoFilters.draft.de} onChange={(v) => periodoFilters.setField('de', v)} disabled={carregandoPeriodo} />}
           </FormField>
@@ -997,7 +997,7 @@ export default function PageClient({ podeGerenciar }: { podeGerenciar: boolean }
         </div>
 
         <FilterPanel title="Filtros de filas e envios" dirty={filasFilters.dirty} onApply={aplicarFiltrosFila} onClear={limparFiltrosFila} applyDisabled={loadingFilas}>
-          <FilterFieldGroup label="Cliente e telefone" icon={<Phone className="size-4 text-slate-400" />}>
+          <FilterFieldGroup label="Cliente e telefone" icon={<Phone />} description="Quem recebeu a mensagem e como localizá-la.">
             <FormField id="hub-vendas-filtro-cliente" label="Cliente">
               {(f) => <Input {...f} value={filasFilters.draft.cliente} onChange={(e) => filasFilters.setField('cliente', e.target.value)} placeholder="Nome do cliente" />}
             </FormField>
@@ -1006,7 +1006,7 @@ export default function PageClient({ podeGerenciar }: { podeGerenciar: boolean }
             </FormField>
           </FilterFieldGroup>
 
-          <FilterFieldGroup label="Loja e status" icon={<Store className="size-4 text-slate-400" />}>
+          <FilterFieldGroup label="Loja e status" icon={<Store />} description="Loja de origem e situação do envio.">
             <FormField id="hub-vendas-filtro-loja" label="Loja">
               {(f) => (
                 <Select value={filasFilters.draft.loja || 'all'} onValueChange={(v) => filasFilters.setField('loja', (v === 'all' ? '' : v) as LojaFiltro)}>

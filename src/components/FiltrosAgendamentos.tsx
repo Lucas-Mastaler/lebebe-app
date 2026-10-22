@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { CalendarDays, Search, SlidersHorizontal } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DEPARTAMENTOS_FIXOS } from '@/lib/digisac/departamentosFixos'
 import { parseBrDate } from '@/lib/design-system/dates'
@@ -104,7 +105,7 @@ export function FiltrosAgendamentos({
       onClear={handleClear}
       applyDisabled={!canSearch || isLoading}
     >
-      <FilterFieldGroup label="Período">
+      <FilterFieldGroup label="Período" icon={<CalendarDays />} description="Datas de agendamento e de criação.">
         <FormField id="data-agendamento-inicio" label="Data do agendamento (início)">
           {(field) => <DateField {...field} value={filters.draft.dataAgendamentoInicio} onChange={(value) => filters.setField('dataAgendamentoInicio', value)} />}
         </FormField>
@@ -119,7 +120,7 @@ export function FiltrosAgendamentos({
         </FormField>
       </FilterFieldGroup>
 
-      <FilterFieldGroup label="Critérios">
+      <FilterFieldGroup label="Critérios" icon={<SlidersHorizontal />} description="Filial, atendente, status e conversa aberta.">
         <FormField id="filial" label="Filial">
           {(field) => (
             <Select value={filters.draft.departmentId} onValueChange={(value) => filters.setField('departmentId', value)}>
@@ -163,7 +164,7 @@ export function FiltrosAgendamentos({
         </FormField>
       </FilterFieldGroup>
 
-      <FilterFieldGroup label="Resultado atual">
+      <FilterFieldGroup label="Resultado atual" icon={<Search />} description="Refina a lista já carregada, sem nova consulta.">
         <FormField id="cliente-nome" label="Nome do cliente">
           {(field) => <Input {...field} value={clienteNomeFiltro} onChange={(event) => onClienteNomeChange(event.target.value)} placeholder="Filtrar por nome do cliente..." disabled={!hasResults} />}
         </FormField>

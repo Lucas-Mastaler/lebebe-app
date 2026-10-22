@@ -18,6 +18,10 @@
   (`FORM-PAGE-WIDTH`, D-050); `Select`/`Combobox` na família
   `FORM-CONTROL-SURFACE` e ação "Filtrar" ancorada à direita
   (`FILTER-ACTION-ALIGN=A`, D-051).
+- **Filtros v2 (`FLT=B`, D-058, 2026-10-22) — padrão oficial, aprovado:**
+  default de todo `FilterPanel` (`v1` só como escape). Todas as telas com
+  filtros herdam o novo visual; aguardando conferência visual do usuário
+  nas rotas reais e decisão de publicar.
 - **Estratégia oficial de loading:** `LoadingLeBebe` (institucional),
   `Spinner` (local), `Skeleton`/`SkeletonRows` (estrutura conhecida) e
   `Progress` (progresso real, com `tone` opcional desde D-057), com

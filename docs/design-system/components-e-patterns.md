@@ -474,6 +474,46 @@ disponível; não existe um caminho de layout que devolva o botão ao canto
 esquerdo. `FLT-EXEC=MANUAL` inalterado — é só reposicionamento visual do
 mesmo botão.
 
+### Filtros v2 — `FLT=B` (PADRÃO OFICIAL desde 2026-10-22, D-058)
+
+É o default de todo `FilterPanel` (`variant="v2"`); `variant="v1"` (FLT=A)
+existe só como escape. `FormField` dentro de um painel v2 herda sozinho o
+rótulo forte e esconde "(opcional)" (campo `required` mantém o "*"), então
+telas antigas não precisam trocar para `FilterField`. `activeCount` é
+opcional: sem ele o cabeçalho não mostra contador. Referência viva em
+`/design-system`.
+
+**Regra de composição (auditoria 2026-10-22):** todo `FilterFieldGroup`
+leva `label`, `icon` (lucide puro, a v2 aplica cor/tamanho) e
+`description`; não deixe campos soltos fora de um grupo (ex.: Fluxo de
+Lojas e SGI foram reestruturados em grupos). Filhos condicionais devem ser
+um `{cond && <Campo/>}` por campo — nunca um fragmento com vários campos,
+que viraria um único slot. As seções acima sobre FLT=A descrevem a v1
+legada.
+
+```tsx
+<FilterPanel variant="v2" activeCount={countActiveFilters(filters.applied, INICIAL)} dirty={filters.dirty} onApply={...} onClear={...}>
+  <FilterFieldGroup label="Cliente" icon={<User />} description="Quem foi atendida e como encontrá-la.">
+    <FilterField id="f-nome" label="Nome" active={Boolean(filters.draft.nome)}>
+      {(f) => <Input {...f} value={filters.draft.nome} onChange={...} />}
+    </FilterField>
+    <FilterField id="f-tipo" label="Tipo" active={Boolean(filters.draft.tipo)}>
+      {(f) => <FilterChips id={f.id} aria-label="Tipo" value={filters.draft.tipo} onChange={...} options={[{ value: '', label: 'Todos' }, ...]} />}
+    </FilterField>
+  </FilterFieldGroup>
+</FilterPanel>
+```
+
+- Seções em blocos, título forte + descrição à esquerda (≥ `lg`).
+- Campos alinham pelo topo; `hint` curto abaixo do controle não desalinha a
+  linha. Prefira placeholder quando a dica cabe nele.
+- `FilterField` não mostra "(opcional)"; `active` marca o campo preenchido.
+  Dentro de painel `v1` ele é idêntico ao `FormField`.
+- `FilterChips` só para escolha única com até ~3 opções curtas.
+- Blocos compartilhados entre telas podem ler `useFilterPanelVariant()`.
+- Comportamento (`FLT-EXEC=MANUAL`, `FLT-CLR=C`, `FLT-COLLAPSE=A`,
+  `FILTER-ACTION-ALIGN=A`) é o mesmo da v1.
+
 ### `MultiSelect` — trigger inteiro e overlay portalizado
 
 `src/components/ui/multi-select.tsx` é o MultiSelect compartilhado atual.

@@ -142,7 +142,7 @@ export function FiltrosChamadosFinalizados({ onPesquisar, onLimpar, isLoading }:
 
   return (
     <FilterPanel dirty={filters.dirty} onApply={handleFiltrar} onClear={handleLimpar} applyDisabled={!isRangeValid || isLoading}>
-      <FilterFieldGroup label="Datas" icon={<Calendar className="size-4 text-slate-400" />}>
+      <FilterFieldGroup label="Datas" icon={<Calendar />} description="Intervalo do último chamado fechado.">
         <FormField id="chamados-data-inicio" label="Data do último chamado fechado (início)" required>
           {(f) => <DateField {...f} value={filters.draft.dataInicio} onChange={(v) => filters.setField('dataInicio', v)} />}
         </FormField>
@@ -151,7 +151,7 @@ export function FiltrosChamadosFinalizados({ onPesquisar, onLimpar, isLoading }:
         </FormField>
       </FilterFieldGroup>
 
-      <FilterFieldGroup label="Loja e consultora" icon={<Store className="size-4 text-slate-400" />}>
+      <FilterFieldGroup label="Loja e consultora" icon={<Store />} description="Filiais e consultoras do atendimento.">
         <MultiSelectPopover
           label="Loja (Filial)"
           query={lojaQuery}

@@ -97,6 +97,17 @@ nada nesta lista aparecer explicitamente pedido na tarefa:
 
 **Filtros (`FilterPanel`/`FilterFieldGroup`):**
 
+- **Padrão oficial = v2 (`FLT=B`, D-058, 2026-10-22).** `FilterPanel` já
+  é v2 por default — não passe `variant`. Todo `FilterFieldGroup` leva
+  `label` + `icon` (lucide, sem className de cor/tamanho) + `description`
+  curta dizendo o que a seção filtra; nunca deixe campos soltos fora de um
+  grupo. Modelo: `/atendimento-presencial/registros?tab=finalizados`.
+- Rótulos de campo: não escreva "(opcional)" (a v2 já omite); use
+  `FilterField`/`FormField`; `FilterChips` só para escolha única com até ~3
+  opções curtas; `activeCount={countActiveFilters(applied, INICIAL)}` é
+  recomendado, mas opcional.
+- Mudar o padrão de filtros exige decisão humana (D-058).
+
 - Todo `SelectTrigger` dentro do painel tem `className="w-full"`
   explícito? A base (`ui/select.tsx`) é `w-fit` por padrão — sem o
   override, o campo fica visualmente estreito ao lado de `Input`/

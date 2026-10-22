@@ -283,7 +283,7 @@ export function PageClient() {
 
       <div className="mt-6">
         <FilterPanel dirty={filtros.dirty} onApply={aplicarFiltros} onClear={limparFiltros}>
-          <FilterFieldGroup label="Filtros">
+          <FilterFieldGroup label="Filtros" icon={<Search />} description="Status, solicitação e busca por telefone ou ticket.">
             <FormField id="filtro-status" label="Status">
               {(f) => (
                 <Select value={filtros.draft.status || 'TODOS'} onValueChange={(v) => filtros.setField('status', v === 'TODOS' ? '' : v)}>

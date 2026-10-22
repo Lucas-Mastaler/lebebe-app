@@ -8,6 +8,7 @@ import { ListaEnxovalDialog } from '@/components/atendimento-presencial/ListaEnx
 import { PRODUTOS_V2_HABILITADOS } from '@/lib/atendimento-presencial/produtos-config'
 import { descricaoProduto } from '@/lib/atendimento-presencial/produtos'
 import { getSectionToneAt, SECTION_TONE_CLASSES } from '@/lib/design-system/section-tones'
+import { countActiveFilters } from '@/lib/design-system/filters'
 
 
 import { calcularReferenciaNascimento, criancaJaNasceu, dataAtendimentoLocal, descreverIdadeAproximada } from '@/lib/atendimento-presencial/idade-aproximada'
@@ -16,7 +17,7 @@ import { FiltrosAdicionaisAtendimento } from '@/components/atendimento-presencia
 import { FILTROS_ADICIONAIS, type FiltrosAdicionais } from '@/lib/atendimento-presencial/filtros-listagem'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Baby, CalendarDays, ClipboardList, Eye, Heart, History, Loader2, Package, Pencil, Phone, Plus, RefreshCw, Save, UserRound, X } from 'lucide-react'
+import { Baby, CalendarDays, ClipboardList, CreditCard, Eye, Heart, History, Loader2, Package, Pencil, Phone, Plus, RefreshCw, Save, UserRound, X } from 'lucide-react'
 import {
   Alert,
   Badge,
@@ -30,6 +31,7 @@ import {
   DialogContent,
   DialogHeader,
   EmptyState,
+  FilterField,
   FilterFieldGroup,
   FilterPanel,
   FormField,
@@ -755,13 +757,19 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
               <CardHeader icon={<ClipboardList className="size-4" aria-hidden="true" />} title="Concluídos" />
               <CardContent className="space-y-4">
                 <FilterPanel
+                  variant="v2"
+                  activeCount={countActiveFilters({ ...filtrosFinalizados.applied, ...novosFiltros.applied }, FILTROS_FINALIZADOS_INICIAL)}
                   dirty={filtrosFinalizados.dirty || novosFiltros.dirty}
                   onApply={aplicarFiltrosFinalizados}
                   onClear={limparFiltrosFinalizados}
                   applyDisabled={carregando}
                 >
-                  <FilterFieldGroup label="Cliente, consultora e filial" prominent>
-                    <FormField id="filtro-cliente-nome" label="Cliente">
+                  <FilterFieldGroup
+                    label="Cliente, consultora e filial"
+                    icon={<UserRound />}
+                    description="Quem foi atendida, quem atendeu, onde e como terminou a venda."
+                  >
+                    <FilterField id="filtro-cliente-nome" label="Cliente" active={Boolean(filtrosFinalizados.draft.clienteNome.trim())}>
                       {(field) => (
                         <Input
                           {...field}
@@ -771,19 +779,19 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                           placeholder="Pesquisar por nome"
                         />
                       )}
-                    </FormField>
-                    <FormField id="filtro-cliente-telefone" label="Telefone da cliente" helper="Telefone completo ou trecho, como 8707. Aplique no botão Filtrar.">
+                    </FilterField>
+                    <FilterField id="filtro-cliente-telefone" label="Telefone da cliente" active={Boolean(novosFiltros.draft.telefoneCliente.trim())}>
                       {(field) => (
                         <Input
                           {...field}
                           inputMode="tel"
                           value={novosFiltros.draft.telefoneCliente}
                           onChange={(event) => novosFiltros.setField('telefoneCliente', event.target.value)}
-                          placeholder="Ex.: 8707"
+                          placeholder="Número ou trecho (ex.: 8707)"
                         />
                       )}
-                    </FormField>
-                    <FormField id="filtro-consultora" label="Consultora do atendimento">
+                    </FilterField>
+                    <FilterField id="filtro-consultora" label="Consultora do atendimento" active={Boolean(filtrosFinalizados.draft.consultora)}>
                       {(field) => (
                         <Select
                           value={filtrosFinalizados.draft.consultora || 'all'}
@@ -799,8 +807,8 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                           </SelectContent>
                         </Select>
                       )}
-                    </FormField>
-                    <FormField id="filtro-situacao-venda" label="Situação da Venda">
+                    </FilterField>
+                    <FilterField id="filtro-situacao-venda" label="Situação da Venda" active={Boolean(filtrosFinalizados.draft.situacaoVenda)}>
                       {(field) => (
                         <Select value={filtrosFinalizados.draft.situacaoVenda || 'all'} onValueChange={(value) => filtrosFinalizados.setField('situacaoVenda', value === 'all' ? '' : value)}>
                           <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
@@ -810,8 +818,8 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                           </SelectContent>
                         </Select>
                       )}
-                    </FormField>
-                    <FormField id="filtro-filial" label="Filial">
+                    </FilterField>
+                    <FilterField id="filtro-filial" label="Filial" active={Boolean(filtrosFinalizados.draft.unidadeId)}>
                       {(field) => (
                         <Select
                           value={filtrosFinalizados.draft.unidadeId || 'all'}
@@ -826,12 +834,16 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                           </SelectContent>
                         </Select>
                       )}
-                    </FormField>
+                    </FilterField>
                   </FilterFieldGroup>
 
                   <FiltrosAdicionaisAtendimento ocultarTelefone value={novosFiltros.draft} onChange={(campo, valor) => novosFiltros.setField(campo, valor)} />
-                  <FilterFieldGroup label="Virada do cartão" className="border-t border-slate-200 pt-4" prominent>
-                    <FormField id="filtro-virada-cartao-de" label="De" helper="DD/MM">
+                  <FilterFieldGroup
+                    label="Virada do cartão"
+                    icon={<CreditCard />}
+                    description="Dia e mês da virada do cartão, no formato DD/MM."
+                  >
+                    <FilterField id="filtro-virada-cartao-de" label="De" active={Boolean(filtrosFinalizados.draft.viradaCartaoDe)}>
                       {(field) => (
                         <Input
                           {...field}
@@ -842,8 +854,8 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                           maxLength={5}
                         />
                       )}
-                    </FormField>
-                    <FormField id="filtro-virada-cartao-ate" label="Até" helper="DD/MM">
+                    </FilterField>
+                    <FilterField id="filtro-virada-cartao-ate" label="Até" active={Boolean(filtrosFinalizados.draft.viradaCartaoAte)}>
                       {(field) => (
                         <Input
                           {...field}
@@ -854,7 +866,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                           maxLength={5}
                         />
                       )}
-                    </FormField>
+                    </FilterField>
                   </FilterFieldGroup>
                 </FilterPanel>
                 <p className="text-sm text-muted-foreground">{resumoFiltros({ ...filtrosFinalizados.applied, ...novosFiltros.applied }, unidadesFinalizados)}</p>
@@ -987,7 +999,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
         </TabsContent>
 
         <TabsContent value="rascunhos"><FilterPanel dirty={filtrosRascunhos.dirty} applyDisabled={carregandoRascunhos} onApply={() => { filtrosRascunhos.apply(); void carregarRascunhos(1, filtrosRascunhos.draft) }} onClear={() => { filtrosRascunhos.clear(); void carregarRascunhos(1, { ...FILTROS_ADICIONAIS, clienteNome: '', consultora: '', unidadeId: '' }) }}>
-                <FilterFieldGroup label="Cliente, consultora e filial">
+                <FilterFieldGroup label="Cliente, consultora e filial" icon={<UserRound />} description="Quem foi atendida, quem atendeu e em qual filial.">
                   <FormField id="rascunho-cliente" label="Cliente ou cadastro pendente">{props => <Input {...props} value={filtrosRascunhos.draft.clienteNome} onChange={e => filtrosRascunhos.setField('clienteNome', e.target.value)} />}</FormField>
                   <FormField id="rascunho-consultora" label="Consultora do atendimento">{props => <Select value={filtrosRascunhos.draft.consultora || 'all'} onValueChange={v => filtrosRascunhos.setField('consultora', v === 'all' ? '' : v)}><SelectTrigger {...props} className="w-full min-w-0"><SelectValue placeholder="Todas" /></SelectTrigger><SelectContent><SelectItem value="all">Todas</SelectItem>{consultorasRascunhos.map(o => <SelectItem key={o.nome} value={o.nome}>{o.nome}</SelectItem>)}</SelectContent></Select>}</FormField>
                   <FormField id="rascunho-filial" label="Filial">{props => <Select value={filtrosRascunhos.draft.unidadeId || 'all'} onValueChange={v => filtrosRascunhos.setField('unidadeId', v === 'all' ? '' : v)}><SelectTrigger {...props} className="w-full min-w-0"><SelectValue placeholder="Todas" /></SelectTrigger><SelectContent><SelectItem value="all">Todas</SelectItem>{contextoRascunhos?.unidadesPermitidas.map(o => <SelectItem key={o.id} value={o.id}>{o.nome}</SelectItem>)}</SelectContent></Select>}</FormField>

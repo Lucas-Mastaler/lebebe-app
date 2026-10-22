@@ -15,6 +15,7 @@ import {
   gerarResumoFornecedorDetalhe,
   gerarResumoRascunhoDetalhe,
   requisitosPendentesTransicao,
+  errosCamposTransicao,
   renomeacaoProdutoSgiEstaPendente,
   renomeacaoProdutoSgiFoiConcluida,
   solicitarProdutoSgiGestao,
@@ -195,6 +196,38 @@ describe('modelo da gestão de pedidos personalizados', () => {
     expect(requisitosPendentesTransicao(comAnexo, { ...base, destino: 'EM PRODUÇÃO' })).toHaveLength(1)
     expect(requisitosPendentesTransicao(comAnexo, { ...base, destino: 'EM PRODUÇÃO', dataEntrega: '2026-08-20' })).toEqual([])
     expect(requisitosPendentesTransicao({ ...detalhe, status: 'EM PRODUÇÃO' }, { ...base, destino: 'RECEBIDO' })).toHaveLength(1)
+  })
+
+  it.each([
+    ['VENDA FECHADA', 'AGUARDANDO LAYOUT', ['numeroPedidoCompra', 'dataPedidoFornecedor', 'comprador']],
+    ['VENDA FECHADA', 'EM PRODUÇÃO', ['numeroPedidoCompra', 'dataPedidoFornecedor', 'comprador', 'dataEntrega']],
+    ['AGUARDANDO LAYOUT', 'AGUARDANDO APROVAÇÃO DO CLIENTE', []],
+    ['AGUARDANDO APROVAÇÃO DO CLIENTE', 'AGUARDANDO LAYOUT', []],
+    ['AGUARDANDO APROVAÇÃO DO CLIENTE', 'EM PRODUÇÃO', ['dataEntrega']],
+    ['EM PRODUÇÃO', 'RECEBIDO', ['dataRecebimento']],
+    ['EM PRODUÇÃO', 'CANCELADO', ['justificativa']],
+  ] as const)('associa os erros aos campos de %s → %s', (status, destino, campos) => {
+    const pedido = { ...detalhe, status, fornecedor: { chave: 'decorisi', nome: 'Decorisi' } }
+    const transicao = { destino, numeroPedidoCompra: '', dataPedidoFornecedor: '', comprador: '', dataEntrega: '', dataRecebimento: '', justificativa: '' }
+    expect(Object.keys(errosCamposTransicao(pedido, transicao))).toEqual(campos)
+    const preenchida = { ...transicao, numeroPedidoCompra: '00123', dataPedidoFornecedor: '2026-08-07', comprador: 'ANA', dataEntrega: '2026-08-20', dataRecebimento: '2026-08-20', justificativa: 'Solicitação do cliente' }
+    expect(errosCamposTransicao(pedido, preenchida)).toEqual({})
+  })
+
+  it('separa a pendência de anexo Moriah dos erros dos campos do modal', () => {
+    const transicao = { destino: 'EM PRODUÇÃO' as const, numeroPedidoCompra: '', dataPedidoFornecedor: '', comprador: '', dataEntrega: '', dataRecebimento: '', justificativa: '' }
+    expect(errosCamposTransicao({ ...detalhe, status: 'AGUARDANDO APROVAÇÃO DO CLIENTE' }, transicao)).toEqual({
+      anexos: 'Adicione pelo menos um anexo ao pedido.',
+      dataEntrega: 'Informe a previsão de data de entrega do fornecedor.',
+    })
+  })
+
+  it.each(['moriah_tapetes', 'decorisi', 'lebebe_exclusive'])('marca lançamento na etapa correta de %s', (chave) => {
+    const pedido = { ...detalhe, fornecedor: { chave, nome: chave }, status: chave === 'lebebe_exclusive' ? 'VENDA FECHADA' as const : 'RASCUNHO' as const, numeroLancamento: null }
+    const transicao = { destino: chave === 'lebebe_exclusive' ? 'EM PRODUÇÃO' as const : 'VENDA FECHADA' as const, numeroPedidoCompra: '00123', dataPedidoFornecedor: '2026-08-07', comprador: 'ANA', dataEntrega: '2026-08-20', dataRecebimento: '', justificativa: '' }
+    const erros = errosCamposTransicao(pedido, transicao)
+    expect(erros.numeroLancamento).toBeTruthy()
+    expect(errosCamposTransicao({ ...pedido, numeroLancamento: '000001' }, transicao).numeroLancamento).toBeUndefined()
   })
 
   it('exige lançamento antes de fechar uma venda', () => {

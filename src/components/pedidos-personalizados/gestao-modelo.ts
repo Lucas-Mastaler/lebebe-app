@@ -243,40 +243,49 @@ export function camposComerciaisPendentesTransicao(
   return []
 }
 
-export function requisitosPendentesTransicao(
+export type ErrosCamposTransicao = Partial<Record<keyof EstadoTransicaoGestao | 'numeroLancamento' | 'anexos', string>>
+
+export function errosCamposTransicao(
   pedido: PedidoDetalhe,
   transicao: EstadoTransicaoGestao
-): string[] {
-  if (!transicao.destino) return ['Selecione o status de destino.']
-  const pendencias: string[] = []
+): ErrosCamposTransicao {
+  if (!transicao.destino) return { destino: 'Selecione o status de destino.' }
+  const erros: ErrosCamposTransicao = {}
   const temAnexo = pedido.tapetes.some((tapete) => tapete.anexos.length > 0)
   if (camposComerciaisPendentesTransicao(pedido, transicao.destino).includes('numeroLancamento')
       && !/^\d{1,6}$/.test(pedido.numeroLancamento ?? '')) {
-    pendencias.push(pedido.fornecedor?.chave === 'lebebe_exclusive'
+    erros.numeroLancamento = pedido.fornecedor?.chave === 'lebebe_exclusive'
       ? 'Informe o número de lançamento da venda antes de continuar.'
-      : 'Informe um número de lançamento válido antes de fechar a venda.')
+      : 'Informe um número de lançamento válido antes de fechar a venda.'
   }
   if (pedido.status === 'VENDA FECHADA'
       && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(transicao.destino)) {
-    if (!/^\d{1,5}$/.test(transicao.numeroPedidoCompra.trim())) pendencias.push('Informe o pedido de compra.')
-    if (!transicao.dataPedidoFornecedor) pendencias.push('Informe a data do pedido ao fornecedor.')
-    if (!/^\p{L}+(?: \p{L}+)*$/u.test(transicao.comprador.trim()) || transicao.comprador.trim().length < 2) pendencias.push('Informe o comprador.')
+    if (!/^\d{1,5}$/.test(transicao.numeroPedidoCompra.trim())) erros.numeroPedidoCompra = 'Informe o pedido de compra.'
+    if (!transicao.dataPedidoFornecedor) erros.dataPedidoFornecedor = 'Informe a data do pedido ao fornecedor.'
+    if (!/^\p{L}+(?: \p{L}+)*$/u.test(transicao.comprador.trim()) || transicao.comprador.trim().length < 2) erros.comprador = 'Informe o comprador.'
   }
   if (pedido.fornecedor?.chave === 'moriah_tapetes'
       && ['AGUARDANDO APROVAÇÃO DO CLIENTE', 'EM PRODUÇÃO'].includes(transicao.destino)
       && !temAnexo) {
-    pendencias.push('Adicione pelo menos um anexo ao pedido.')
+    erros.anexos = 'Adicione pelo menos um anexo ao pedido.'
   }
   if (transicao.destino === 'EM PRODUÇÃO' && !transicao.dataEntrega) {
-    pendencias.push('Informe a previsão de data de entrega do fornecedor.')
+    erros.dataEntrega = 'Informe a previsão de data de entrega do fornecedor.'
   }
   if (transicao.destino === 'RECEBIDO' && !transicao.dataRecebimento) {
-    pendencias.push('Informe a data de recebimento.')
+    erros.dataRecebimento = 'Informe a data de recebimento.'
   }
   if (transicao.destino === 'CANCELADO' && !transicao.justificativa.trim()) {
-    pendencias.push('Informe a justificativa do cancelamento.')
+    erros.justificativa = 'Informe a justificativa do cancelamento.'
   }
-  return pendencias
+  return erros
+}
+
+export function requisitosPendentesTransicao(
+  pedido: PedidoDetalhe,
+  transicao: EstadoTransicaoGestao
+): string[] {
+  return Object.values(errosCamposTransicao(pedido, transicao))
 }
 
 export type PaginaPedidos = {

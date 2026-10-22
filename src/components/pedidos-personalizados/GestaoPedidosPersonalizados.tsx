@@ -79,7 +79,7 @@ import {
   payloadAtualizacaoComercial,
   payloadAtualizacaoProdutos,
   camposComerciaisPendentesTransicao,
-  requisitosPendentesTransicao,
+  errosCamposTransicao,
   renomeacaoProdutoSgiEstaPendente,
   renomeacaoProdutoSgiFoiConcluida,
   solicitarProdutoSgiGestao,
@@ -516,15 +516,16 @@ export function GestaoPedidosPersonalizados() {
   const exigeLancamentoNaTransicao = detalhe
     ? camposComerciaisPendentesTransicao(detalhe, transicao.destino).includes('numeroLancamento')
     : false
-  const pendenciasTransicao = useMemo(
+  const errosTransicao = useMemo(
     () => detalhe
-      ? requisitosPendentesTransicao(
+      ? errosCamposTransicao(
           exigeLancamentoNaTransicao ? { ...detalhe, numeroLancamento: numeroLancamentoTransicao || null } : detalhe,
           transicao
         )
-      : ['Pedido não carregado.'],
+      : { destino: 'Pedido não carregado.' },
     [detalhe, transicao, exigeLancamentoNaTransicao, numeroLancamentoTransicao]
   )
+  const pendenciasTransicao = Object.values(errosTransicao)
   const filtrosAlterados = useMemo(() => JSON.stringify(filtros) !== JSON.stringify(filtrosAplicados), [filtros, filtrosAplicados])
 
   async function copiarResumoFornecedor() {
@@ -1484,7 +1485,7 @@ export function GestaoPedidosPersonalizados() {
           <DialogBody className="space-y-4">
             <Alert tone="warning" title="Confirme antes de fechar">Depois do fechamento, a composição e os preços comerciais não poderão ser alterados.</Alert>
             <div className="rounded-lg border bg-slate-50 p-4 text-sm"><p className="text-slate-500">Total autoritativo</p><p className="mt-1 text-2xl font-bold">{cotacaoDecorisiFechamento ? (Number(cotacaoDecorisiFechamento.totalCentavos) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '—'}</p></div>
-            <FormField id="decorisi-numero-lancamento" label="Número de lançamento" required>{(f) => <Input {...f} inputMode="numeric" maxLength={6} value={numeroLancamentoDecorisi} onChange={(e) => setNumeroLancamentoDecorisi(e.target.value.replace(/\D/g, '').slice(0, 6))} />}</FormField>
+            <FormField id="decorisi-numero-lancamento" label="Número de lançamento" required error={!/^\d{1,6}$/.test(numeroLancamentoDecorisi) ? 'Informe um número de lançamento válido antes de fechar a venda.' : undefined}>{(f) => <Input {...f} inputMode="numeric" maxLength={6} value={numeroLancamentoDecorisi} onChange={(e) => setNumeroLancamentoDecorisi(e.target.value.replace(/\D/g, '').slice(0, 6))} />}</FormField>
           </DialogBody>
           <DialogFooter><Button type="button" variant="secondary" disabled={salvando} onClick={() => setFechandoDecorisi(false)}>Cancelar</Button><Button type="button" loading={salvando} disabled={!/^\d{1,6}$/.test(numeroLancamentoDecorisi)} onClick={() => void confirmarFechamentoDecorisi()}><CheckCircle2 />Confirmar fechamento</Button></DialogFooter>
         </DialogContent>
@@ -1579,8 +1580,8 @@ export function GestaoPedidosPersonalizados() {
                 description="Este pedido será marcado como cancelado. Confirme somente se realmente deseja encerrar este pedido."
               />
               {detalhe && <DialogBody className="space-y-4">
-                <FormField id="transicao-justificativa" label="Justificativa" required>
-                  {(f) => <div><textarea {...f} required maxLength={500} rows={4} className="w-full rounded-md border border-slate-300 bg-input-background px-3 py-2 text-sm" value={transicao.justificativa} onChange={(e) => setTransicao({ ...transicao, justificativa: e.target.value })} /><p className="text-right text-xs text-slate-500">{transicao.justificativa.length}/500</p></div>}
+                <FormField id="transicao-justificativa" label="Justificativa" required error={errosTransicao.justificativa}>
+                  {(f) => <div><textarea {...f} required maxLength={500} rows={4} className="w-full rounded-md border border-slate-300 bg-input-background px-3 py-2 text-sm aria-invalid:border-destructive aria-invalid:ring-destructive/20" value={transicao.justificativa} onChange={(e) => setTransicao({ ...transicao, justificativa: e.target.value })} /><p className="text-right text-xs text-slate-500">{transicao.justificativa.length}/500</p></div>}
                 </FormField>
                 {pendenciasTransicao.length > 0 && <Alert tone="warning" title="Para confirmar, falta:"><ul className="list-disc space-y-1 pl-5">{pendenciasTransicao.map((pendencia) => <li key={pendencia}>{pendencia}</li>)}</ul></Alert>}
               </DialogBody>}
@@ -1603,9 +1604,9 @@ export function GestaoPedidosPersonalizados() {
                   <ArrowRight className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
                   <Badge tone="info">{transicao.destino || 'Selecione o destino'}</Badge>
                 </div>
-                <FormField id="status-destino" label="Destino" required>
+                <FormField id="status-destino" label="Destino" required error={errosTransicao.destino}>
                   {/* CANCELADO some daqui de propósito: o botão dedicado "Cancelar pedido" (mesma regra `podeCancelarPedido`) cobre esse caso com uma confirmação mais direta — ver §6 do pedido. */}
-                  {(f) => <Select value={transicao.destino} onValueChange={(destino) => setTransicao((atual) => ({ ...atual, destino: destino as StatusPedidoPersonalizado }))}><SelectTrigger id={f.id}><SelectValue /></SelectTrigger><SelectContent>{destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave as 'decorisi' | 'lebebe_exclusive' | 'moriah_tapetes', decorisiDispensaLayout(detalhe.decorisiItens ?? [])).filter((status) => status !== 'CANCELADO').map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select>}
+                  {(f) => <Select value={transicao.destino} onValueChange={(destino) => setTransicao((atual) => ({ ...atual, destino: destino as StatusPedidoPersonalizado }))}><SelectTrigger {...f}><SelectValue /></SelectTrigger><SelectContent>{destinosPermitidosStatus(detalhe.status, detalhe.fornecedor?.chave as 'decorisi' | 'lebebe_exclusive' | 'moriah_tapetes', decorisiDispensaLayout(detalhe.decorisiItens ?? [])).filter((status) => status !== 'CANCELADO').map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}</SelectContent></Select>}
                 </FormField>
                 {detalhe.status === 'RASCUNHO' && transicao.destino === 'VENDA FECHADA' && (
                   <Alert tone="warning" title="Fechar venda?">
@@ -1614,20 +1615,20 @@ export function GestaoPedidosPersonalizados() {
                   </Alert>
                 )}
                 {exigeLancamentoNaTransicao && (
-                  <FormField id="transicao-numero-lancamento" label="Número de lançamento" required helper="Necessário para fechar a venda. Fica salvo junto aos dados comerciais do pedido.">
+                  <FormField id="transicao-numero-lancamento" label="Número de lançamento" required helper="Necessário para fechar a venda. Fica salvo junto aos dados comerciais do pedido." error={errosTransicao.numeroLancamento}>
                     {(f) => <Input {...f} inputMode="numeric" maxLength={6} value={numeroLancamentoTransicao} onChange={(e) => setNumeroLancamentoTransicao(e.target.value.replace(/\D/g, '').slice(0, 6))} />}
                   </FormField>
                 )}
                 {detalhe.status === 'VENDA FECHADA' && ['AGUARDANDO LAYOUT', 'EM PRODUÇÃO'].includes(transicao.destino) && <div className="grid gap-3 sm:grid-cols-2">
-                  <FormField id="transicao-pedido" label="Nº do pedido de compra">{(f) => <Input {...f} inputMode="numeric" maxLength={5} value={transicao.numeroPedidoCompra} onChange={(e) => setTransicao({ ...transicao, numeroPedidoCompra: e.target.value.replace(/\D/g, '').slice(0, 5) })} />}</FormField>
-                  <FormField id="transicao-data-fornecedor" label="Data do pedido ao fornecedor">{(f) => <Input {...f} type="date" max={dataOperacionalBrasil()} value={transicao.dataPedidoFornecedor} onChange={(e) => setTransicao({ ...transicao, dataPedidoFornecedor: e.target.value })} />}</FormField>
-                  <FormField id="transicao-comprador" label="Comprador" className="sm:col-span-2">{(f) => <Input {...f} maxLength={40} value={transicao.comprador} onChange={(e) => setTransicao({ ...transicao, comprador: e.target.value })} />}</FormField>
+                  <FormField id="transicao-pedido" label="Nº do pedido de compra" required error={errosTransicao.numeroPedidoCompra}>{(f) => <Input {...f} inputMode="numeric" maxLength={5} value={transicao.numeroPedidoCompra} onChange={(e) => setTransicao({ ...transicao, numeroPedidoCompra: e.target.value.replace(/\D/g, '').slice(0, 5) })} />}</FormField>
+                  <FormField id="transicao-data-fornecedor" label="Data do pedido ao fornecedor" required error={errosTransicao.dataPedidoFornecedor}>{(f) => <Input {...f} type="date" max={dataOperacionalBrasil()} value={transicao.dataPedidoFornecedor} onChange={(e) => setTransicao({ ...transicao, dataPedidoFornecedor: e.target.value })} />}</FormField>
+                  <FormField id="transicao-comprador" label="Comprador" className="sm:col-span-2" required error={errosTransicao.comprador}>{(f) => <Input {...f} maxLength={40} value={transicao.comprador} onChange={(e) => setTransicao({ ...transicao, comprador: e.target.value })} />}</FormField>
                 </div>}
                 {transicao.destino === 'EM PRODUÇÃO' && <div className="space-y-3">
-                  <FormField id="transicao-data-entrega" label="Previsão de Data de entrega do fornecedor">{(f) => <Input {...f} type="date" value={transicao.dataEntrega} onChange={(e) => setTransicao({ ...transicao, dataEntrega: e.target.value })} />}</FormField>
+                  <FormField id="transicao-data-entrega" label="Previsão de Data de entrega do fornecedor" required error={errosTransicao.dataEntrega}>{(f) => <Input {...f} type="date" value={transicao.dataEntrega} onChange={(e) => setTransicao({ ...transicao, dataEntrega: e.target.value })} />}</FormField>
                   <Alert tone="warning">Ao entrar em produção, os dados comerciais ficam bloqueados.</Alert>
                 </div>}
-                {transicao.destino === 'RECEBIDO' && <FormField id="transicao-data-recebimento" label="Data de recebimento" helper="A data de hoje é sugerida, mas pode ser alterada.">{(f) => <Input {...f} type="date" value={transicao.dataRecebimento} onChange={(e) => setTransicao({ ...transicao, dataRecebimento: e.target.value })} />}</FormField>}
+                {transicao.destino === 'RECEBIDO' && <FormField id="transicao-data-recebimento" label="Data de recebimento" helper="A data de hoje é sugerida, mas pode ser alterada." required error={errosTransicao.dataRecebimento}>{(f) => <Input {...f} type="date" value={transicao.dataRecebimento} onChange={(e) => setTransicao({ ...transicao, dataRecebimento: e.target.value })} />}</FormField>}
                 {pendenciasTransicao.length > 0 && <Alert tone="warning" title="Para confirmar, falta:"><ul className="list-disc space-y-1 pl-5">{pendenciasTransicao.map((pendencia) => <li key={pendencia}>{pendencia}</li>)}</ul></Alert>}
               </DialogBody>}
               <DialogFooter className="shrink-0 flex-col-reverse gap-2 border-t bg-white px-6 py-4 sm:flex-col sm:items-stretch">

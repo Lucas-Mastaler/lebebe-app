@@ -28,6 +28,10 @@ export type HistoricoAtendimentoClienteDTO = {
 }
 
 export type HistoricoVendaSgiDTO = {
+  documentoId?: string
+  numeroDocumento?: string | null
+  origemAssociacao?: 'telefone' | 'prancheta' | 'sgi'
+  pagamentos?: Array<{ forma: string | null; valor: number | null; parcelas: number | null }>
   numeroLancamento: string
   data: string | null
   filial: string | null
@@ -169,6 +173,7 @@ export async function buscarVendasSgiPorTelefone(
         .map((produto) => produto.departamento)
         .filter((item): item is string => Boolean(item && item !== 'Nao classificado' && item !== 'Não classificado'))))
       return {
+        documentoId: doc.id,
         numeroLancamento: String(doc.numero_lancamento ?? ''),
         data: doc.data_fechamento,
         filial: doc.filial,

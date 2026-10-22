@@ -1,5 +1,25 @@
 # Decisões — Prancheta Virtual
 
+Complemento D-050 (22/10/2026): usuário autorizou o agente a executar commit, push e deploy somente dos arquivos desta entrega. Substitui a reserva anterior de commit/push ao usuário; demais limites e exclusão de alterações paralelas permanecem.
+
+## D-050 — Histórico comercial entre filiais; publicação pelo Git (22/10/2026)
+
+Usuário aprovou explicitamente substituir a restrição comercial de D-049: pessoas já autorizadas ao Atendimento Presencial consultam as compras do cliente em todas as filiais, por telefone ou pela associação segura da Prancheta, inclusive sem telefone e sem atendimento próprio prévio. Mantidos os dez documentos mais recentes após união/deduplicação. Isto não libera registros completos, edição, módulos administrativos nem pedidos personalizados de outras unidades.
+
+O parâmetro de atendimento exato continua restrito ao detalhe autorizado; histórico usa NULL exclusivamente no backend. Candidatos e ambiguidades continuam globais; diagnósticos são contados somente no escopo original de unidade/consultora. A resposta comercial não inclui IDs, início, observações ou conteúdo interno dos atendimentos de origem. Função permanece STABLE/INVOKER, executável apenas por service_role, com autenticação/módulo/janela e contexto verificados nas APIs. Não alterar grants de usuários, RLS, tabelas, índices ou importador.
+
+Publicação autorizada somente pelo mecanismo estabelecido, sem commit/push pelo agente e sem contorno. MCP Vercel confirmou produção de origem Git/main, SHA 5765d72b6f91bdb38b72f7c536bae3455f162b3a, deployment dpl_HKC7A6QCszwLDP6u9AM61We6ymww, domínio lebebe.cloud. Correção local depende de commit/push pelo usuário para entrar nesse fluxo. Não publicar árvore anterior nem enviar arquivos por mecanismo alternativo. A nova função pode ser aplicada independentemente: só acrescenta a leitura comercial já autorizada e mantém o contrato/ACL anterior.
+
+## D-049 — Associação dinâmica SGI por cadastro da Prancheta (21/10/2026)
+
+Usuário aprovou implementação: lançamento exato + filial explicitamente mapeada + diferença absoluta de até dois dias de calendário entre início do atendimento e fechamento SGI, em America/Sao_Paulo. Atendimento concluído/venda fechada, cliente ativo/nome preenchido, documento válido e importação concluída sem erros. Telefone é opcional na associação complementar por cliente_id; não localizar por nome, criar cadastro, sobrescrever cliente/SGI ou persistir vínculos. Unir com a busca telefônica existente, deduplicar pelo ID SGI e limitar dez após a união. Ambiguidades globais pertinentes bloqueiam antes dos filtros de apresentação; detalhes de concorrentes nunca são expostos.
+
+Função SQL STABLE/SECURITY INVOKER, restrita a service_role, sem cron/worker/tabela/índice novo. API fornece usuário/perfil/unidades autenticados e valida a janela de acesso. Consultora continua limitada aos atendimentos próprios e unidades autorizadas; a busca telefônica exige atendimento próprio concluído, inclusive negociação/perda, enquanto a associação complementar exige venda fechada. Variantes telefônicas anteriores só são usadas se ainda corresponderem ao cadastro no snapshot SQL. Nome/telefone contraditório bloqueia a associação complementar. Mudanças antigas de nome/telefone não podem ser reconstruídas sem snapshots independentes, que não existem nos dados auditados.
+
+Pendência técnica SEPARADA: UNIQUE(numero_lancamento) e upsert global podem sobrescrever documentos de filiais diferentes. Não corrigir chave/importador/constraints nesta entrega; datas não recuperam registros sobrescritos. Importação Python e indicadores permanecem intactos. Usuário proibiu commit/push; publicação do app não foi executada.
+
+Revisão automática rejeitou uma variante que retirava o vínculo próprio da consultora da busca telefônica. Ela não foi aplicada. A alternativa aprovada preserva explicitamente o vínculo próprio; não houve concessão de perfil/módulo ou ampliação de unidades.
+
 ## D-042 — Migration e publicação de Produtos/PV, enxoval e comemoração (20/10/2026)
 
 Usuário aprovou a prévia e autorizou commit, push, deploy e migration desta entrega. Aplicada isoladamente pelo MCP como 20261020193639 / prancheta_produtos_pv, após conferir os cinco hashes reais, índice único e ausência das novas colunas. Nome local alinhado à versão registrada pelo Supabase, sem replay/repair. Pós-verificação: três campos nullable sem defaults, trigger ativo, validação de nomes repetidos aceita, RLS/policies preservadas, helper sem EXECUTE para anon/authenticated. Hash dos 172 produtos anteriores preservado: 86608eb4d5a1d3700c4f318cfb974274; uma nova linha comercial foi criada pela operação durante a janela, sem classificação dos históricos pela migration.

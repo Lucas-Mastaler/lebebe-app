@@ -1,6 +1,8 @@
 'use client'
 
 import { ResumoProdutos } from './ProdutosAtendimento'
+import { DiagnosticosVendaSgi } from './VendaSgiAtendimento'
+import type { ResolucaoVendasSgi } from '@/lib/atendimento-presencial/vendas-sgi-diagnostico'
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { CreditCard, History, Package, RefreshCw, ShoppingBag, Tag } from 'lucide-react'
@@ -24,6 +26,7 @@ type HistoricoClienteResponse = {
   telefoneDisponivel?: boolean
   atendimentos?: HistoricoAtendimentoClienteDTO[]
   vendas?: HistoricoVendaSgiDTO[]
+  diagnosticosSgi?: ResolucaoVendasSgi['diagnosticos']
   pedidosPersonalizados?: HistoricoPedidoPersonalizadoDTO[]
   fontesConsultadas?: string[]
 }
@@ -232,12 +235,13 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
 
           {historicoCarregado && historicoCarregado.telefoneDisponivel === false && (
             <Alert tone="warning">
-              Telefone ausente ou incompleto. Confira o DDD e o número no cadastro para consultar as compras do SGI.
+              Telefone ausente ou incompleto. As compras identificadas pela Prancheta continuam disponíveis neste cadastro.
             </Alert>
           )}
 
           {historicoCarregado && (
             <>
+              <DiagnosticosVendaSgi diagnosticos={historicoCarregado.diagnosticosSgi} />
               <HistoricoSecao
                 icon={History}
                 title="Atendimentos presenciais anteriores"
@@ -284,18 +288,19 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
               <HistoricoSecao
                 icon={ShoppingBag}
                 title="Compras anteriores no SGI"
-                subtitle="Compras encontradas pelo telefone da cliente."
+                subtitle="Compras identificadas pelo telefone ou pela Prancheta."
                 variant="blue"
               >
                 {historicoCarregado.vendas?.length ? (
                   <HistoricoListaLonga>
                     <div className="grid gap-4">
                       {historicoCarregado.vendas.map((item) => (
-                        <article key={item.numeroLancamento} className="overflow-hidden rounded-md border border-slate-200 bg-white p-3 sm:p-4 shadow-sm break-words">
+                        <article key={item.documentoId ?? item.numeroLancamento} className="overflow-hidden rounded-md border border-slate-200 bg-white p-3 sm:p-4 shadow-sm break-words">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0 flex-1">
                             <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Resumo da compra</p>
                             <h4 className="text-lg font-bold text-slate-950">Lancamento {item.numeroLancamento || 'Nao informado'}</h4>
+                            {item.origemAssociacao === 'prancheta' && <Badge tone="info">Identificada pela Prancheta</Badge>}
                           </div>
                           <div className="shrink-0 rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-right">
                             <p className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">Valor total</p>
@@ -384,7 +389,7 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
                     </div>
                   </HistoricoListaLonga>
                 ) : (
-                  <p className="rounded-md border border-dashed border-sky-200 bg-white/80 p-3 text-sm text-slate-500">Nenhuma compra anterior encontrada pelo telefone da cliente.</p>
+                  <p className="rounded-md border border-dashed border-sky-200 bg-white/80 p-3 text-sm text-slate-500">Nenhuma compra anterior identificada pelo telefone ou pela Prancheta.</p>
                 )}
               </HistoricoSecao>
 

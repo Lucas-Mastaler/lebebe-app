@@ -67,6 +67,8 @@ export type RegistroAtendimentoResumoDTO = {
 }
 
 export type RegistroAtendimentoDetalheDTO = {
+  vendaSgi?: import('./historico-cliente').HistoricoVendaSgiDTO | null
+  diagnosticosSgi?: import('./vendas-sgi-diagnostico').ResolucaoVendasSgi['diagnosticos']
   atendimento: AtendimentoRegistroDTO
   cliente: ClienteRegistroAtendimentoDTO | null
   criancas: Array<{ id: string; ordem?: number | null; local_id?: string | null; presente_ja_nasceu?: boolean | null; data_referencia_nascimento?: string | null; crianca_permanente_id?: string | null; parentesco_vinculo?: string | null; situacao: string; nome: string | null; nome_nao_informado?: boolean | null; sexo: string | null; idade_unidade: string | null; idade_valor: number | null; data_prevista_nascimento: string | null }>

@@ -1,5 +1,28 @@
 # Plano — Prancheta Virtual
 
+Autorização vigente de 22/10/2026: agente pode executar commit/push/deploy seletivos D-049/D-050, preservando alterações de outras tarefas. Preparar e validar o candidato exato antes de publicar.
+
+## Histórico comercial compartilhado — D-050 (22/10/2026)
+
+- [x] Conferir as três migrations anteriores e a função real pelo MCP; nenhuma reaplicada.
+- [x] Separar histórico comercial global de detalhe/diagnóstico da Prancheta, preservando contexto de acesso e ambiguidades globais.
+- [x] Aplicar migration adicional 20261022140458, alinhada ao registro remoto; ACL somente backend confirmada.
+- [x] Validar cenários entre filiais, sem telefone, telefone legado, deduplicação, ambiguidades, bloqueio de detalhe/edição e ausência de metadados restritos.
+- [x] Executar 41 cenários SQL, regressão de 525 testes, lint, typecheck e build isolado, com falhas anteriores explicitadas no STATUS.
+- [x] Conferir caso real 30225/14005/R$49,80 e desempenho completo em leitura; confirmar mecanismo Git/main → Vercel e preservar todo o índice existente.
+- [ ] Usuário revisar/selecionar e realizar commit/push. Publicação bloqueada por esta dependência expressa, sem mecanismo alternativo.
+- [ ] Confirmar novo SHA/deployment/domínio e homologar APIs/telas autenticadas em produção após publicação.
+
+## Vinculação SGI pela Prancheta — D-049 (21/10/2026)
+
+- [x] Implementar função de leitura com escopo explícito, ambiguidades globais, identidade, calendário SP e prontidão da importação; sem gravação de vínculo.
+- [x] Integrar histórico/detalhe, cliente sem telefone, união/deduplicação por documento e limite após união; corrigir textos da busca.
+- [x] Ajustar acesso contextual às três telas existentes, mantendo janela, unidades e atendimento próprio da consultora; bloquear execução direta anon/authenticated.
+- [x] Aplicar somente as três migrations da função por MCP (20261021211003/20261021211542/20261021212454), alinhar nomes locais sem replay; proteger telefone alterado entre leitura API e snapshot SQL.
+- [x] Validar SQL com dados sintéticos, integração real em leitura, privilégios, advisors, dados comerciais/cadastros preservados, desempenho completo e telas locais na sessão existente.
+- [x] Executar regressão, lint, typecheck e build, distinguindo falhas preexistentes e build isolado do código de aplicação. Resultados e inventário no STATUS.
+- [ ] Publicação e homologação comercial de produção: não executadas nesta tarefa; sem commit/push/deploy. QA em aparelho físico e perfis reais adicionais permanecem gates separados.
+
 **Estado do planejamento:** DEFINIDO
 
 Contrato funcional: ESCOPO.md. Decisões: DECISOES.md. Marcar somente tarefas realmente executadas e validadas.

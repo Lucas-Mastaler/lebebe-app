@@ -1,5 +1,13 @@
 # Escopo — Prancheta Virtual
 
+## Histórico comercial compartilhado — D-050 aprovada em 22/10/2026
+
+Substitui exclusivamente as limitações comerciais de D-049: histórico SGI por telefone e por Prancheta disponível entre todas as filiais para usuários já autorizados ao Atendimento Presencial, com ou sem telefone e sem vínculo próprio de atendimento. Preservar autenticação/janela, bloqueios globais de identidade, dados oficiais, deduplicação e limite dez. Atendimentos completos, diagnósticos internos, edição, cadastro, pedidos personalizados e módulos administrativos conservam seus controles próprios. Validar SQL/APIs/regressão/build e publicação; não executar commit/push nem contornar o fluxo Git existente. Sem alteração no importador, unicidade, indicadores ou dados comerciais.
+
+## Vinculação SGI pela Prancheta — D-049 aprovada em 21/10/2026
+
+Associação complementar dinâmica ao cliente_id, inclusive sem telefone, por lançamento exato, filial e +/-2 dias de calendário SP. Exigir cliente ativo/nome preenchido, atendimento concluído/venda fechada, documento válido/importação concluída sem erros; bloquear ambiguidades globais e contradições antes de apresentar apenas dados autorizados. Integrar detalhe do atendimento e histórico do cliente; preservar a identificação telefônica com escopo explícito, deduplicar por ID SGI e ordenar/limitar dez após a união. Função SQL somente leitura/backend, diagnósticos objetivos e logs sem PII. Sem persistir associação, alterar cadastro/SGI/indicadores, criar cron/worker/tabela ou mudar o importador/chave global. Pendência do upsert global registrada separadamente em D-049. Sem commit, push ou publicação do app nesta execução.
+
 ## Publicação autorizada — D-042 (20/10/2026)
 
 Após aprovação visual, usuário autorizou aplicar a migration desta entrega e executar commit, push e deploy de Produtos/PV, enxoval e comemoração. Autorização inclui ativação; usuário confirmou a variável Production no Vercel após 403 da integração. Preservar alterações locais não relacionadas e validar o SHA/build/domínio. Homologação comercial autenticada e em dispositivo físico permanece evidência separada.

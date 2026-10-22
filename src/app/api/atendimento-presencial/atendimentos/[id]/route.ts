@@ -1,4 +1,5 @@
 import { PRODUTOS_V2_HABILITADOS } from '@/lib/atendimento-presencial/produtos-config'
+import { resolverVendasSgi } from '@/lib/atendimento-presencial/vendas-sgi'
 import { NextResponse } from 'next/server'
 import { checkAccessWindowForUser } from '@/lib/auth/access-window'
 import { requireModuleAccess } from '@/lib/auth/module-access'
@@ -167,6 +168,10 @@ export async function GET(
       return jsonErro('Acesso negado ao atendimento', 403)
     }
 
+    if (loaded.contexto.perfil !== 'superadmin' && !loaded.contexto.unidadesPermitidas.some(unidade => unidade.id === row.unidade_id)) {
+      return jsonErro('Acesso negado ao atendimento', 403)
+    }
+
     const [cliente, criancas, departamentos, produtos, motivos, historico] = await Promise.all([
       row.cliente_id
         ? loaded.supabase
@@ -194,8 +199,21 @@ export async function GET(
       return jsonErro('Erro ao processar requisicao', 500)
     }
 
+    const resolucaoSgi = row.resultado_atendimento === 'sim' && row.cliente_id && cliente.data
+      ? await resolverVendasSgi(loaded.supabase, {
+          clienteId: row.cliente_id,
+          usuarioId: loaded.contexto.usuarioId,
+          perfil: loaded.contexto.perfil,
+          unidades: loaded.contexto.unidadesPermitidas,
+          atendimentoId: id,
+          cliente: cliente.data,
+        })
+      : { vendas: [], diagnosticos: {} }
+
     return NextResponse.json({
       ok: true,
+      vendaSgi: resolucaoSgi.vendas[0] ?? null,
+      diagnosticosSgi: resolucaoSgi.diagnosticos,
       atendimento: serializarAtendimentoPresencial(row),
       cliente: serializarClienteRegistro(cliente.data as ClienteRegistroRow | null),
       criancas: criancas.data ?? [],

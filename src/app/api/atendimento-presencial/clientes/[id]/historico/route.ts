@@ -4,17 +4,17 @@ import {
   carregarPerfilAtendimento,
   isUuid,
   listarUnidadesDoContexto,
-  requireAtendimentoPresencialFichaAccess,
   usuarioPodeAcessarRascunho,
   type AtendimentoPresencialRow,
 } from '@/lib/atendimento-presencial/rascunhos'
 import {
-  buscarVendasSgiPorTelefone,
   serializarHistoricoAtendimento,
   resolverTelefoneHistorico,
 } from '@/lib/atendimento-presencial/historico-cliente'
 import { carregarContextoPedidosPersonalizados } from '@/lib/pedidos-personalizados/server/contexto'
 import { buscarPedidosPersonalizadosPorTelefones } from '@/lib/pedidos-personalizados/server/historico'
+import { requireAtendimentoPresencialHistoricoAccess } from '@/lib/atendimento-presencial/api-auth'
+import { resolverVendasSgi } from '@/lib/atendimento-presencial/vendas-sgi'
 
 export const runtime = 'nodejs'
 
@@ -39,7 +39,7 @@ export async function GET(
     const { id } = await params
     if (!isUuid(id)) return jsonErro('ID da cliente invalido', 400)
 
-    const auth = await requireAtendimentoPresencialFichaAccess()
+    const auth = await requireAtendimentoPresencialHistoricoAccess()
     if (!auth.ok) return auth.response
 
     const supabase = createServiceClient()
@@ -73,19 +73,11 @@ export async function GET(
     if (atendimentoAtualId && isUuid(atendimentoAtualId)) {
       query = query.neq('id', atendimentoAtualId)
     }
+    if (perfil !== 'superadmin') {
+      query = query.in('unidade_id', unidadesPermitidas.map(unidade => unidade.id))
+    }
     if (perfil === 'consultora') {
       query = query.eq('consultora_usuario_id', auth.allowedUser.id)
-    } else if (perfil !== 'superadmin') {
-      if (unidadesPermitidas.length === 0) {
-        return NextResponse.json({
-          ok: true,
-          telefoneDisponivel: telefone.valido,
-          atendimentos: [],
-          vendas: [],
-          fontesConsultadas: ['atendimento_presencial', 'sgi_documentos_saida'],
-        })
-      }
-      query = query.in('unidade_id', unidadesPermitidas.map((unidade) => unidade.id))
     }
 
     const { data: atendimentoData, error: atendimentoError } = await query
@@ -117,10 +109,12 @@ export async function GET(
       unidadeIds.length
         ? supabase.from('app_unidades').select('id, nome').in('id', unidadeIds)
         : Promise.resolve({ data: [], error: null }),
-      buscarVendasSgiPorTelefone(supabase, {
-        telefoneNormalizado: telefone.telefoneNormalizado,
-        telefoneNormalizadoDdi: telefone.telefoneNormalizadoDDI,
-        limit: 10,
+      resolverVendasSgi(supabase, {
+        clienteId: id,
+        usuarioId: auth.allowedUser.id,
+        perfil,
+        unidades: unidadesPermitidas,
+        cliente,
       }),
       contextoPedidos.ok
         ? buscarPedidosPersonalizadosPorTelefones(contextoPedidos.contexto.supabase, {
@@ -163,6 +157,7 @@ export async function GET(
         versaoProdutos: row.versao_produtos ?? null,
       })),
       vendas: vendasResult.vendas,
+      diagnosticosSgi: vendasResult.diagnosticos,
       ...(pedidosPersonalizados === null ? {} : { pedidosPersonalizados }),
       fontesConsultadas: [
         'atendimento_presencial',

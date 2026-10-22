@@ -114,6 +114,34 @@ function filasContextoEPatch(row = atendimentoConcluido) {
 }
 
 describe('api detalhe de registro atendimento presencial', () => {
+  it('GET inclui a venda da Prancheta sem telefone com escopo do usuário', async () => {
+    const queues = {
+      ...filasContextoEPatch({ ...atendimentoConcluido, resultado_atendimento: 'sim', numero_lancamento: 30225 } as unknown as typeof atendimentoConcluido),
+      atendimento_presencial_clientes: [{ data: { id: clienteId, nome: 'ANA', telefone_normalizado: null, telefone_normalizado_ddi: null, telefone_informado: null }, error: null }],
+      atendimento_presencial_criancas: [{ data: [], error: null }],
+      atendimento_presencial_departamentos: [{ data: [], error: null }],
+      atendimento_presencial_produtos_interesse: [{ data: [], error: null }],
+      atendimento_presencial_motivos: [{ data: [], error: null }],
+      atendimento_presencial_historico: [{ data: [], error: null }],
+    }
+    const { rpc } = mockSupabase(queues, { data: { vendas: [{ documentoId: 'sgi-id', valorTotal: 49.8 }], diagnosticos: { associado: 1 } }, error: null })
+    const response = await GET(new Request('http://local?perfil=superadmin'), { params: Promise.resolve({ id: atendimentoId }) })
+    expect(await response.json()).toMatchObject({ vendaSgi: { documentoId: 'sgi-id', valorTotal: 49.8 }, diagnosticosSgi: { associado: 1 } })
+    expect(rpc).toHaveBeenCalledWith('atendimento_presencial_resolver_vendas_sgi', expect.objectContaining({ p_atendimento_id: atendimentoId, p_cliente_id: clienteId, p_perfil: 'consultora', p_unidades: [unidadeId] }))
+  })
+  it('GET bloqueia atendimento próprio de unidade não autorizada antes dos detalhes/SGI', async () => {
+    const queues = filasContextoEPatch({ ...atendimentoConcluido, unidade_id: '10000000-0000-4000-8000-000000000099' })
+    const { rpc } = mockSupabase(queues)
+    expect((await GET(new Request('http://local'), { params: Promise.resolve({ id: atendimentoId }) })).status).toBe(403)
+    expect(rpc).not.toHaveBeenCalled()
+  })
+  it('PATCH mantém bloqueio de edição de outra consultora antes da RPC', async () => {
+    const queues = filasContextoEPatch({ ...atendimentoConcluido, consultora_usuario_id: '10000000-0000-4000-8000-000000000099' })
+    const { rpc } = mockSupabase(queues)
+    const response = await PATCH(new Request('http://local', { method: 'PATCH', body: JSON.stringify(payloadEdicaoValido) }), { params: Promise.resolve({ id: atendimentoId }) })
+    expect(response.status).toBe(403)
+    expect(rpc).not.toHaveBeenCalled()
+  })
   it('edita v2 nao cliente sem exigir cliente ficticio', async () => {
     const row = { ...atendimentoConcluido, versao_fluxo: 2, tipo_atendimento: 'nao_cliente', cliente_id: null }
     const queues = filasContextoEPatch(row as unknown as typeof atendimentoConcluido)

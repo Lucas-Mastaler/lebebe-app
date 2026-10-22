@@ -1081,6 +1081,15 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     await carregarClientePorId(id)
   }
 
+  function irParaTelefoneCliente() {
+    const bloco = document.getElementById('bloco-telefone-cliente')
+    const campo = document.getElementById('telefone-cliente-rapido')
+    if (!bloco && !campo) return
+    const reduzirMovimento = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ;(bloco ?? campo)?.scrollIntoView({ behavior: reduzirMovimento ? 'instant' : 'smooth', block: 'center' })
+    window.setTimeout(() => campo?.focus({ preventScroll: true }), reduzirMovimento ? 0 : 400)
+  }
+
   async function buscarClientes() {
     const termo = buscaCliente.trim()
     if (termo.length < 2) {
@@ -1879,6 +1888,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const statusVisivel: SyncStatus = conflitoLocal ? 'conflito' : erroCriacao || (erroCache && alteracoesNaoConfirmadas) || ['offline', 'erro', 'conflito'].includes(statusSync)
     ? 'erro'
     : iniciando || alteracoesNaoConfirmadas ? 'salvando' : ativo ? 'salvo' : 'ocioso'
+  const telefonePendenteInvalido = Boolean(telefonePendente && mensagemTelefoneCliente(telefonePendente.valor))
 
   return (
     <>
@@ -2003,7 +2013,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
             )}
           </Alert>
         )}
-        {telefonePendente && erroTelefone && !conflitoLocal && <Alert tone="danger">Nao foi possivel atualizar o telefone no cadastro. O texto permanece no rascunho.
+        {telefonePendente && erroTelefone && !telefonePendenteInvalido && !conflitoLocal && <Alert tone="danger">Nao foi possivel atualizar o telefone no cadastro. O texto permanece no rascunho.
           <Button type="button" variant="secondary" size="sm" disabled={!clienteSelecionada || salvandoTelefone} onClick={() => clienteSelecionada && void salvarTelefoneCliente(clienteSelecionada, telefonePendente.valor, ++telefoneRequestRef.current)}>Tentar salvar telefone</Button>
           <Button type="button" variant="ghost" size="sm" onClick={descartarEdicaoTelefone}>Descartar edicao do telefone</Button>
         </Alert>}
@@ -2186,6 +2196,16 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                           Ver historico
                         </Button>
                       </div>
+                      {salvandoTelefone ? (
+                        <p className="mt-3 text-sm text-slate-700">Salvando o telefone da cliente. A edição libera quando terminar.</p>
+                      ) : telefonePendente ? (
+                        <div className="mt-3 grid gap-2">
+                          <p className="text-sm text-slate-700">Para editar a cliente, primeiro arrume o telefone no final da página.</p>
+                          <div>
+                            <Button type="button" variant="secondary" size="sm" onClick={irParaTelefoneCliente}>Arrumar telefone</Button>
+                          </div>
+                        </div>
+                      ) : null}
                     </CardContent>
                   </Card>
                 )}
@@ -2632,17 +2652,19 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                   </div>
             )}
 
-            {camposComerciaisVisiveis && <TelefoneClienteRapido
-              value={clienteSelecionada ? telefoneClienteEdicao : novoCliente.telefone}
-              onChange={atualizarTelefoneCliente}
-              erro={erroTelefone}
-              loading={salvandoTelefone}
-              disabled={cadastrandoCliente || (!!clienteId && !clienteSelecionada)}
-              compact={etapaAtual === 'ficha' && !clienteSelecionada}
-            />}
-            {camposComerciaisVisiveis && telefonePendente && !salvandoTelefone && !erroTelefone && <div className="flex flex-wrap justify-end gap-2 text-xs">
-              <Button type="button" variant="ghost" size="sm" disabled={!clienteSelecionada} onClick={() => clienteSelecionada && void salvarTelefoneCliente(clienteSelecionada, telefonePendente.valor, ++telefoneRequestRef.current)}>Confirmar telefone no cadastro</Button>
-              <Button type="button" variant="ghost" size="sm" onClick={descartarEdicaoTelefone}>Descartar edicao do telefone</Button>
+            {camposComerciaisVisiveis && <div id="bloco-telefone-cliente" className="scroll-mb-32 grid gap-2">
+              <TelefoneClienteRapido
+                value={clienteSelecionada ? telefoneClienteEdicao : novoCliente.telefone}
+                onChange={atualizarTelefoneCliente}
+                erro={erroTelefone}
+                loading={salvandoTelefone}
+                disabled={cadastrandoCliente || (!!clienteId && !clienteSelecionada)}
+                compact={etapaAtual === 'ficha' && !clienteSelecionada}
+              />
+              {telefonePendente && !salvandoTelefone && <div className="flex flex-wrap gap-2">
+                {!telefonePendenteInvalido && <Button type="button" variant="secondary" size="sm" disabled={!clienteSelecionada} onClick={() => { if (clienteSelecionada && telefonePendente) void salvarTelefoneCliente(clienteSelecionada, telefonePendente.valor, ++telefoneRequestRef.current) }}>Confirmar telefone no cadastro</Button>}
+                <Button type="button" variant="secondary" size="sm" onClick={descartarEdicaoTelefone}>Descartar edição do telefone</Button>
+              </div>}
             </div>}
           </div>
         )}

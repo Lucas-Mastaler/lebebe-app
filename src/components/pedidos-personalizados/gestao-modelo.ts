@@ -457,15 +457,16 @@ export function detalheParaAdministrativo(pedido: PedidoDetalhe): EstadoAdminist
 }
 
 /**
- * Modo `completo` é o comportamento já existente do "Resumo para o fornecedor"
- * (inclui custo). Modo `rascunho` gera o "Resumo pra por na venda", exibido só
- * enquanto o pedido está em RASCUNHO: nunca inclui custo, preço de venda ou
- * nome/letra — apenas os dados de identificação e produto/referência/quantidade
- * necessários para a consultora colar nas observações da venda.
+ * Modo `completo` é o "Resumo para o fornecedor". Modo `rascunho` gera o
+ * "Resumo pra por na venda", exibido só enquanto o pedido está em RASCUNHO:
+ * nunca inclui custo, preço de venda, nome do fornecedor ou nome/letra —
+ * apenas os dados de identificação e produto/referência/quantidade necessários
+ * para a consultora colar nas observações da venda. O resumo completo também
+ * nunca inclui custo nem nome do fornecedor.
  */
 function montarResumoDetalhe(pedido: PedidoDetalhe, modo: 'completo' | 'rascunho') {
   if (pedido.fornecedor?.chave === 'decorisi') {
-    const linhas = ['FORNECEDOR: DECORISI', `UNIDADE: ${pedido.unidade.nome}`, `CONSULTORA: ${pedido.consultora}`, `CLIENTE: ${pedido.cliente}`,
+    const linhas = [`UNIDADE: ${pedido.unidade.nome}`, `CONSULTORA: ${pedido.consultora}`, `CLIENTE: ${pedido.cliente}`,
       ...(pedido.numeroLancamento ? [`LANÇAMENTO: ${pedido.numeroLancamento}`] : [])]
     for (const item of pedido.decorisiItens ?? []) {
       linhas.push('', `PRODUTO ${item.ordem}: ${item.tipo === 'PAPEL' ? 'PAPEL' : 'PAINEL'} — ${item.classificacao === 'CATALOGO' ? 'CATÁLOGO' : 'PERSONALIZADO'}`)
@@ -480,7 +481,6 @@ function montarResumoDetalhe(pedido: PedidoDetalhe, modo: 'completo' | 'rascunho
   }
   if (pedido.fornecedor?.chave === 'lebebe_exclusive') {
     const linhas = [
-      'FORNECEDOR: LEBEBE EXCLUSIVE',
       `UNIDADE: ${pedido.unidade.nome}`,
       `CONSULTORA: ${pedido.consultora}`,
       `CLIENTE: ${pedido.cliente}`,
@@ -494,12 +494,8 @@ function montarResumoDetalhe(pedido: PedidoDetalhe, modo: 'completo' | 'rascunho
         `REFERÊNCIA: ${item.referencia}`,
         `QUANTIDADE: ${item.quantidade}`,
       )
-      if (modo === 'completo') {
-        linhas.push(
-          `CUSTO UNITÁRIO: ${item.custoUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`,
-          `CUSTO TOTAL: ${item.totalCusto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
-        )
-        if (item.nomeOuLetra?.trim()) linhas.push(`NOME OU LETRA: ${item.nomeOuLetra.trim().toLocaleUpperCase('pt-BR')}`)
+      if (modo === 'completo' && item.nomeOuLetra?.trim()) {
+        linhas.push(`NOME OU LETRA: ${item.nomeOuLetra.trim().toLocaleUpperCase('pt-BR')}`)
       }
     }
     return linhas.join('\n')

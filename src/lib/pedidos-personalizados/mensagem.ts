@@ -14,7 +14,6 @@ export function gerarMensagemPedidoPersonalizado(
 ): ResultadoValidacao<string> {
   const erros: ProblemaPedidoPersonalizado<CodigoErroPedidoPersonalizado>[] = []
   const linhas = [
-    'FORNECEDOR: MORIAH TAPETES',
     `UNIDADE: ${UNIDADE_PARA_EXIBICAO[pedido.unidade]}`,
     `CONSULTORA: ${pedido.consultora}`,
     `CLIENTE: ${pedido.cliente}`,

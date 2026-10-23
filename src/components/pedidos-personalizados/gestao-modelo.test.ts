@@ -50,10 +50,10 @@ const detalhe: PedidoDetalhe = {
 }
 
 describe('modelo da gestão de pedidos personalizados', () => {
-  it('resumo Decorisi preserva fornecedor, composição e subtotal congelado', () => {
+  it('resumo Decorisi preserva composição e subtotal congelado sem fornecedor nem custo', () => {
     const pedido = { ...detalhe, fornecedor: { chave: 'decorisi', nome: 'DECORISI' }, tapetes: [], decorisiItens: [{ id: 'arte', ordem: 1, tipo: 'PAINEL' as const, classificacao: 'CATALOGO' as const, referencia: 'PF200', descricao: null, observacoes: null, layoutAlteracoes: 0, snapshotComercial: { quantidade: '1.0201', subtotalCentavos: '23462' }, medidas: [{ id: 'medida', ordem: 1, ambiente: null, larguraCm: 101, alturaCm: 101 }], anexos: [] }] }
     const texto = gerarResumoFornecedorDetalhe(pedido)
-    expect(texto).toContain('FORNECEDOR: DECORISI')
+    expect(texto).not.toMatch(/FORNECEDOR|DECORISI|CUSTO/)
     expect(texto).toContain('101 × 101 cm')
     expect(texto).toContain('1.0201 m²')
     expect(texto).toContain('234,62')
@@ -303,11 +303,10 @@ describe('modelo da gestão de pedidos personalizados', () => {
     expect(resumoRascunho).toContain('PRODUTO: Produto Exclusive')
     expect(resumoRascunho).toContain('REFERÊNCIA: REF-EXCLUSIVE-1')
     expect(resumoRascunho).toContain('QUANTIDADE: 2')
-    expect(resumoRascunho).not.toMatch(/CUSTO|PREÇO|89,50|179,00|199,90|399,80|MARIA/)
+    expect(resumoRascunho).not.toMatch(/CUSTO|PREÇO|FORNECEDOR|LEBEBE EXCLUSIVE|89,50|179,00|199,90|399,80|MARIA/)
 
     const resumoCompleto = gerarResumoFornecedorDetalhe(exclusive) ?? ''
-    expect(resumoCompleto).toContain('CUSTO UNITÁRIO')
-    expect(resumoCompleto).toContain('CUSTO TOTAL')
+    expect(resumoCompleto).not.toMatch(/CUSTO|PREÇO|FORNECEDOR|LEBEBE EXCLUSIVE|89,50|179,00|199,90|399,80/)
     expect(resumoCompleto).toContain('NOME OU LETRA: MARIA')
   })
 

@@ -57,7 +57,7 @@ describe('mensagem comercial de Pedidos Personalizados', () => {
   it('gera mensagem mínima de um tapete retangular', () => {
     const resultado = gerarMensagemPedidoPersonalizado(normalizar([tapete()]), PRODUTOS)
     expect(resultado.valido).toBe(true)
-    expect(resultado.dados).toContain('FORNECEDOR: MORIAH TAPETES')
+    expect(resultado.dados).not.toMatch(/FORNECEDOR|MORIAH TAPETES|CUSTO/)
     expect(resultado.dados).toContain('UNIDADE: BIGORRILHO')
     expect(resultado.dados).toContain('CONSULTORA: NIÉGE SILVA')
     expect(resultado.dados).toContain('CLIENTE: CLIENTE BEBÊ')

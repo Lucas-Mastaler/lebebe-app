@@ -436,7 +436,6 @@ export function FormularioLebebeExclusive({
   const resumo = useMemo(() => {
     if (selecionados.size === 0) return ''
     const linhas = [
-      'FORNECEDOR: LEBEBE EXCLUSIVE',
       `UNIDADE: ${opcoes.unidades.find((item) => item.chave === identificacaoAtual.unidade)?.nome ?? ''}`,
       `CONSULTORA: ${identificacaoAtual.consultora.trim().toLocaleUpperCase('pt-BR')}`,
       `CLIENTE: ${identificacaoAtual.cliente.trim().toLocaleUpperCase('pt-BR')}`,

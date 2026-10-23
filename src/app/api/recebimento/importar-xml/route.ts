@@ -1,207 +1,75 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { validateMaticUser } from '@/lib/auth/matic-auth'
+import { requireModuleAccess } from '@/lib/auth/module-access'
+import { lerXmlRecebimento, XmlImportError, XML_MAX_BYTES, XML_MAX_FILES } from '@/lib/recebimento/xml-upload'
+import { salvarXmlDrive, sha256Xml } from '@/lib/google/drive-xml'
+import type { ResultadoXml } from '@/lib/recebimento/xml-upload-contract'
 
-// POST /api/recebimento/importar-xml — upload and parse NFe XML files
+export const runtime = 'nodejs'
+
 export async function POST(request: NextRequest) {
+  const access = await requireModuleAccess('recebimento')
+  if (!access.ok) return access.response
   const auth = await validateMaticUser()
-  if (!auth.authorized) {
-    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  if (!auth.authorized) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  if (Number(request.headers.get('content-length')) > 4 * 1024 * 1024) {
+    return NextResponse.json({ error: 'Envie até 4 MB por requisição.' }, { status: 413 })
   }
-
-  const formData = await request.formData()
-  const files = formData.getAll('xml') as File[]
-
-  if (!files || files.length === 0) {
-    return NextResponse.json({ error: 'Nenhum arquivo XML enviado' }, { status: 400 })
+  let form: FormData
+  try { form = await request.formData() }
+  catch { return NextResponse.json({ error: 'Não foi possível ler os arquivos enviados.' }, { status: 400 }) }
+  const files = form.getAll('xml')
+  if (!files.length || files.length > XML_MAX_FILES || files.some(file => typeof file === 'string')) {
+    return NextResponse.json({ error: 'Selecione de 1 a 10 arquivos XML.' }, { status: 400 })
   }
-
+  if ((files as File[]).reduce((total, file) => total + file.size, 0) > 4 * 1024 * 1024) {
+    return NextResponse.json({ error: 'Envie até 4 MB por requisição.' }, { status: 413 })
+  }
   const supabase = await createClient()
-  const results: Array<{ file: string; status: string; numero_nf?: string; error?: string }> = []
-
-  for (const file of files) {
-    const fileName = file.name
+  const results = []
+  for (const [index, file] of (files as File[]).entries()) {
+    const result: ResultadoXml = { file: file.name, status: 'erro', banco: 'erro', drive: 'nao_enviado' }
     try {
-      const xmlText = await file.text()
-      const parsed = parseNFeXML(xmlText)
-
-      if (!parsed) {
-        results.push({ file: fileName, status: 'erro', error: 'XML inválido ou não é NFe' })
-        continue
+      if (!/\.xml$/i.test(file.name)) throw new XmlImportError('arquivo_invalido', 'Selecione um arquivo com extensão .xml.')
+      if (!file.size || file.size > XML_MAX_BYTES) throw new XmlImportError('arquivo_invalido', 'Cada XML deve ter até 2 MB e não pode estar vazio.')
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      const nota = await lerXmlRecebimento(bytes)
+      const hash = sha256Xml(bytes)
+      result.numero_nf = nota.numero_nf
+      const { data, error } = await supabase.rpc('importar_xml_recebimento', { p_nota: nota, p_sha256: hash })
+      if (error) {
+        const conflito = error.message?.includes('XML_CONFLITO') || error.code === '23505'
+        console.error('[RECEBIMENTO XML]', { etapa: 'banco', indice: index, codigo: error.code, conflito })
+        throw new XmlImportError(conflito ? 'conflito' : 'banco', conflito
+          ? 'A nota já existe com dados diferentes. Nenhuma informação foi substituída.'
+          : 'Não foi possível cadastrar a nota e seus itens. Nenhuma alteração desta importação foi confirmada.')
       }
-
-      console.log(`[LOG] Processando XML: ${fileName} - NF ${parsed.numero_nf}`)
-
-      // Normalize numero_nf (only digits)
-      const numeroNfNorm = parsed.numero_nf.replace(/\D/g, '')
-
-      // Upsert NFe (idempotent)
-      const { data: nfe, error: nfeError } = await supabase
-        .from('nfe')
-        .upsert(
-          {
-            numero_nf: numeroNfNorm,
-            data_emissao: parsed.data_emissao,
-            peso_total: parsed.peso_total,
-            volumes_total: parsed.volumes_total,
-            obs: parsed.obs || null,
-            is_os: parsed.is_os,
-          },
-          { onConflict: 'numero_nf' }
-        )
-        .select()
-        .single()
-
-      if (nfeError) {
-        console.error(`[LOG] Erro ao inserir NF ${numeroNfNorm}:`, nfeError)
-        results.push({ file: fileName, status: 'erro', numero_nf: numeroNfNorm, error: nfeError.message })
-        continue
-      }
-
-      // Delete existing items to re-import (idempotent)
-      await supabase
-        .from('nfe_itens')
-        .delete()
-        .eq('nfe_id', nfe.id)
-
-      // Insert items
-      for (const item of parsed.itens) {
-        // Look up matic_sku for volumes_por_item
-        const { data: sku } = await supabase
-          .from('matic_sku')
-          .select('volumes_por_item')
-          .eq('codigo_produto', item.codigo_produto)
-          .single()
-
-        const volumesPorItem = sku?.volumes_por_item || 1
-        const volumesPrevistosTotal = item.quantidade * volumesPorItem
-
-        const { error: itemError } = await supabase
-          .from('nfe_itens')
-          .insert({
-            nfe_id: nfe.id,
-            codigo_produto: item.codigo_produto,
-            descricao: item.descricao,
-            quantidade: item.quantidade,
-            volumes_por_item: volumesPorItem,
-            volumes_previstos_total: volumesPrevistosTotal,
-            status: 'pendente',
-          })
-
-        if (itemError) {
-          console.error(`[LOG] Erro ao inserir item ${item.codigo_produto}:`, itemError)
-        }
-      }
-
-      // Insert assistencias (OS/OC) if found
-      if (parsed.assistencias.length > 0) {
-        await supabase
-          .from('nfe_assistencias')
-          .delete()
-          .eq('nfe_id', nfe.id)
-
-        for (const os of parsed.assistencias) {
-          await supabase
-            .from('nfe_assistencias')
-            .insert({
-              nfe_id: nfe.id,
-              os_oc_numero: os,
-            })
-        }
-      }
-
-      console.log(`[LOG] NF ${numeroNfNorm} importada: ${parsed.itens.length} itens, ${parsed.assistencias.length} OS/OC`)
-      results.push({ file: fileName, status: 'ok', numero_nf: numeroNfNorm })
-    } catch (err) {
-      console.error(`[LOG] Erro ao processar ${fileName}:`, err)
-      results.push({ file: fileName, status: 'erro', error: String(err) })
+      if (!data?.nfe_id) throw new XmlImportError('banco', 'Não foi possível confirmar o cadastro da nota. Tente novamente com o mesmo XML.')
+      result.nfe_id = data.nfe_id
+      result.banco = data.banco
+      result.status = 'parcial'
+      result.drive = 'pendente'
+      const drive = await salvarXmlDrive({ bytes, numeroNf: nota.numero_nf, fileId: data.drive_file_id,
+        reservarId: async (id) => {
+          const { error: reserveError } = await supabase.from('nfe').update({ xml_drive_file_id: id }).eq('id', data.nfe_id).eq('xml_sha256', hash).is('xml_drive_file_id', null)
+          if (reserveError) throw new XmlImportError('drive_reserva', 'A nota foi cadastrada, mas não foi possível preparar o envio ao Drive. Tente novamente.')
+          const { data: reserved, error: readError } = await supabase.from('nfe').select('xml_drive_file_id').eq('id', data.nfe_id).eq('xml_sha256', hash).single()
+          if (readError || !reserved?.xml_drive_file_id) throw new XmlImportError('drive_reserva', 'A nota foi cadastrada, mas o envio ao Drive não pôde ser confirmado. Tente novamente.')
+          return reserved.xml_drive_file_id
+        },
+      })
+      const { error: updateError } = await supabase.from('nfe').update({ xml_drive_status: 'salvo' }).eq('id', data.nfe_id).eq('xml_sha256', hash).eq('xml_drive_file_id', drive.fileId)
+      if (updateError) throw new XmlImportError('drive_confirmacao', 'O XML está no Drive, mas a confirmação no aplicativo ficou pendente. Envie o mesmo XML novamente.')
+      result.drive = drive.status
+      result.status = 'ok'
+    } catch (error) {
+      result.error = error instanceof XmlImportError ? error.message : result.banco !== 'erro'
+        ? 'A nota foi cadastrada; o envio ao Drive ficou pendente. Envie o mesmo XML para tentar novamente.'
+        : 'Não foi possível concluir a importação. Envie o mesmo XML para tentar novamente.'
+      console.error('[RECEBIMENTO XML]', { etapa: result.banco === 'erro' ? 'validacao_ou_banco' : 'drive', indice: index, codigo: error instanceof XmlImportError ? error.code : 'inesperado' })
     }
+    results.push(result)
   }
-
   return NextResponse.json({ results })
-}
-
-// =========================================================
-// XML Parser (simple regex-based for NFe XML)
-// =========================================================
-
-interface ParsedNFe {
-  numero_nf: string
-  data_emissao: string
-  peso_total: number
-  volumes_total: number
-  obs: string
-  is_os: boolean
-  itens: Array<{
-    codigo_produto: string
-    descricao: string
-    quantidade: number
-  }>
-  assistencias: string[]
-}
-
-function parseNFeXML(xml: string): ParsedNFe | null {
-  try {
-    // Extract nNF
-    const nNF = extractTag(xml, 'nNF')
-    if (!nNF) return null
-
-    // Extract dhEmi
-    const dhEmi = extractTag(xml, 'dhEmi') || extractTag(xml, 'dEmi') || ''
-    const dataEmissao = dhEmi.substring(0, 10) // YYYY-MM-DD
-
-    // Extract volumes info
-    const pesoL = parseFloat(extractTag(xml, 'pesoL') || '0')
-    const qVol = parseInt(extractTag(xml, 'qVol') || '0')
-
-    // Extract products (det blocks)
-    const itens: ParsedNFe['itens'] = []
-    const detRegex = /<det[^>]*>[\s\S]*?<\/det>/g
-    let detMatch
-    while ((detMatch = detRegex.exec(xml)) !== null) {
-      const det = detMatch[0]
-      const cProd = extractTag(det, 'cProd') || ''
-      const xProd = extractTag(det, 'xProd') || ''
-      const qCom = parseFloat(extractTag(det, 'qCom') || '0')
-
-      if (cProd) {
-        itens.push({
-          codigo_produto: cProd,
-          descricao: xProd,
-          quantidade: Math.round(qCom),
-        })
-      }
-    }
-
-    // Detect OS/OC in infCpl
-    const infCpl = extractTag(xml, 'infCpl') || ''
-    const assistencias: string[] = []
-    const osRegex = /(?:OS|OC|O\.S\.|O\.C\.)\s*[:\-]?\s*(\d+)/gi
-    let osMatch
-    while ((osMatch = osRegex.exec(infCpl)) !== null) {
-      assistencias.push(osMatch[1])
-    }
-
-    const isOs = assistencias.length > 0
-
-    return {
-      numero_nf: nNF,
-      data_emissao: dataEmissao,
-      peso_total: pesoL,
-      volumes_total: qVol,
-      obs: infCpl,
-      is_os: isOs,
-      itens,
-      assistencias,
-    }
-  } catch (err) {
-    console.error('[LOG] Erro ao parsear XML:', err)
-    return null
-  }
-}
-
-function extractTag(xml: string, tag: string): string | null {
-  const regex = new RegExp(`<${tag}[^>]*>([^<]*)</${tag}>`)
-  const match = regex.exec(xml)
-  return match ? match[1].trim() : null
 }

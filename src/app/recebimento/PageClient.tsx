@@ -10,6 +10,7 @@ import {
 import { createClient } from '@/lib/supabase/client'
 import { isMaticEmail } from '@/lib/auth/matic-emails'
 import { toast } from 'sonner'
+import VincularXmlModal from './VincularXmlModal'
 import { dateToIso, parseBrDate } from '@/lib/design-system/dates'
 import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
 import { calcularMetricasDeTempo } from '@/lib/recebimento/metricas-tempo'
@@ -93,6 +94,8 @@ export default function RecebimentoPage() {
   const [loading, setLoading] = useState(false)
   const [authorized, setAuthorized] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showXmlModal, setShowXmlModal] = useState(false)
+  const [xmlRevision, setXmlRevision] = useState(0)
   const [activeTab, setActiveTab] = useState<TabType>('recebimentos')
   const filtros = useFilterState<FiltrosRecebimento>(FILTROS_VAZIOS)
 
@@ -214,6 +217,10 @@ export default function RecebimentoPage() {
             <Button variant="secondary" onClick={() => router.push('/recebimento/produtos')}>
               <Edit className="size-4" />
               <span className="hidden sm:inline">Produtos</span>
+            </Button>
+            <Button variant="secondary" onClick={() => setShowXmlModal(true)}>
+              <FileText className="size-4" />
+              Vincular XML
             </Button>
             <Button onClick={() => setShowCreateModal(true)}>
               <Plus className="size-4" />
@@ -342,7 +349,7 @@ export default function RecebimentoPage() {
         </TabsContent>
 
         <TabsContent value="notas" className="mt-6">
-          <NotasVinculadasTab />
+          <NotasVinculadasTab refreshVersion={xmlRevision} />
         </TabsContent>
 
         <TabsContent value="divergencias" className="mt-6">
@@ -354,6 +361,7 @@ export default function RecebimentoPage() {
         </TabsContent>
       </Tabs>
 
+      {showXmlModal && <VincularXmlModal onClose={() => setShowXmlModal(false)} onImported={() => setXmlRevision(value => value + 1)} />}
       {showCreateModal && (
         <CreateRecebimentoModal
           onClose={() => setShowCreateModal(false)}
@@ -667,7 +675,7 @@ function CreateRecebimentoModal({
   const [nfesPreview, setNfesPreview] = useState<Array<{id: string; numero_nf: string; data_emissao: string; volumes_total: number}>>([])
   const [selectedNfes, setSelectedNfes] = useState<Set<string>>(new Set())
 
-  async function handleBuscarNfes() {
+  async function handleBuscarNfes(somenteCadastradas = false) {
     const inicioDate = parseBrDate(periodoInicio)
     const fimDate = parseBrDate(periodoFim)
     if (!inicioDate || !fimDate) {
@@ -687,22 +695,24 @@ function CreateRecebimentoModal({
     try {
       // 1) Reaproveita o mecanismo de importação já existente (busca no Gmail,
       // parseia e faz upsert idempotente em nfe/nfe_itens/nfe_assistencias).
-      const importRes = await fetch('/api/nfe/importar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inicio: inicioIso, fim: fimIso }),
-      })
-      const importData = await importRes.json().catch(() => null) as ImportarNfePeriodoResponse | null
+      if (!somenteCadastradas) {
+        const importRes = await fetch('/api/nfe/importar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ inicio: inicioIso, fim: fimIso }),
+        })
+        const importData = await importRes.json().catch(() => null) as ImportarNfePeriodoResponse | null
 
-      if (!importRes.ok || !importData?.ok) {
-        const msg = importData?.erro || `Erro ao importar NFs do período (HTTP ${importRes.status})`
-        setError(msg)
-        toast.error(msg)
-        return
-      }
+        if (!importRes.ok || !importData?.ok) {
+          const msg = importData?.erro || `Erro ao importar NFs do período (HTTP ${importRes.status})`
+          setError(msg)
+          toast.error(msg)
+          return
+        }
 
-      if (importData.erros && importData.erros.length > 0) {
-        toast.warning(`${importData.erros.length} nota(s) não puderam ser importadas. As demais NFs do período continuam disponíveis abaixo.`)
+        if (importData.erros && importData.erros.length > 0) {
+          toast.warning(`${importData.erros.length} nota(s) não puderam ser importadas. As demais NFs do período continuam disponíveis abaixo.`)
+        }
       }
 
       // 2) A lista exibida vem sempre da consulta à tabela nfe (fonte de
@@ -822,12 +832,16 @@ function CreateRecebimentoModal({
 
             <Button
               variant="secondary"
-              onClick={handleBuscarNfes}
+              onClick={() => handleBuscarNfes()}
               className="w-full"
               disabled={loadingPreview || saving}
               loading={loadingPreview}
             >
               Buscar NFs no Período
+            </Button>
+
+            <Button variant="secondary" className="w-full" onClick={() => handleBuscarNfes(true)} disabled={loadingPreview || saving}>
+              Consultar notas já cadastradas
             </Button>
 
             {/* Preview de NFs */}
@@ -913,7 +927,7 @@ function CreateRecebimentoModal({
 // Notas Vinculadas Tab
 // =========================================================
 
-function NotasVinculadasTab() {
+function NotasVinculadasTab({ refreshVersion }: { refreshVersion: number }) {
   const [nfes, setNfes] = useState<Array<{
     id: string
     numero_nf: string
@@ -975,6 +989,12 @@ function NotasVinculadasTab() {
   useEffect(() => {
     void loadNfes(1, FILTROS_NOTAS_VAZIOS)
   }, [loadNfes])
+
+  useEffect(() => {
+    if (refreshVersion > 0) void loadNfes(currentPage, filtros.applied)
+    // O upload atualiza a consulta aplicada sem limpar os filtros do operador.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshVersion])
 
   function aplicarFiltros() {
     filtros.apply()

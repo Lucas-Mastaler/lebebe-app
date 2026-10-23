@@ -2,13 +2,16 @@
 
 import { useRef, useState } from 'react'
 import { UploadCloud } from 'lucide-react'
-import { Alert, Button, Dialog, DialogBody, DialogContent, DialogHeader, FormField, Input } from '@/components/design-system'
+import { Alert, Button, Dialog, DialogBody, DialogContent, DialogHeader, FormField, Input, Tabs, TabsContent, SegmentedTabsList, SegmentedTabsTrigger } from '@/components/design-system'
+import ConsultarChaveNfe from './ConsultarChaveNfe'
 import { XML_MAX_BYTES, XML_MAX_FILES, type ResultadoXml } from '@/lib/recebimento/xml-upload-contract'
 
-export default function VincularXmlModal({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
+export default function VincularXmlModal({ onClose, onImported }: { onClose: () => void; onImported: (results: ResultadoXml[]) => void }) {
   const [files, setFiles] = useState<File[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [consultando, setConsultando] = useState(false)
+  const [opcao, setOpcao] = useState('xml')
   const [results, setResults] = useState<ResultadoXml[]>([])
   const [progress, setProgress] = useState(0)
   const [dragging, setDragging] = useState(false)
@@ -29,7 +32,7 @@ export default function VincularXmlModal({ onClose, onImported }: { onClose: () 
     setBusy(true)
     setResults([])
     setProgress(0)
-    let cadastrou = false
+    const importados: ResultadoXml[] = []
     try {
       for (const [index, file] of files.entries()) {
         let result: ResultadoXml
@@ -44,21 +47,30 @@ export default function VincularXmlModal({ onClose, onImported }: { onClose: () 
         } catch {
           result = { file: file.name, status: 'erro', banco: 'erro', drive: 'nao_enviado', error: 'A conexão foi interrompida. O resultado não pôde ser confirmado. Envie o mesmo XML para verificar e concluir.' }
         }
-        cadastrou ||= result.banco !== 'erro'
+        if (result.banco !== 'erro') importados.push(result)
         setResults(previous => [...previous, result])
         setProgress(index + 1)
       }
     } finally {
       setBusy(false)
-      if (cadastrou) onImported()
+      if (importados.length) onImported(importados)
     }
   }
 
   return (
-    <Dialog open onOpenChange={open => { if (!open && !busy) onClose() }}>
+    <Dialog open onOpenChange={open => { if (!open && !busy && !consultando) onClose() }}>
       <DialogContent className="max-w-lg">
         <DialogHeader title="Vincular XML" description="Cadastre a nota e seus produtos para continuar no Novo recebimento." />
         <DialogBody className="space-y-4">
+          <Tabs value={opcao} onValueChange={setOpcao}>
+            <SegmentedTabsList aria-label="Como vincular a nota">
+              <SegmentedTabsTrigger value="xml" disabled={busy || consultando}>Enviar XML</SegmentedTabsTrigger>
+              <SegmentedTabsTrigger value="chave" disabled={busy || consultando}>Consultar pela chave</SegmentedTabsTrigger>
+            </SegmentedTabsList>
+            <TabsContent value="chave" forceMount hidden={opcao !== 'chave'}>
+              <ConsultarChaveNfe busy={consultando} onBusyChange={setConsultando} onImported={onImported} />
+            </TabsContent>
+            <TabsContent value="xml" forceMount hidden={opcao !== 'xml'} className="space-y-4">
           <FormField id="xml-recebimento" label="Arquivos XML" required error={error || undefined} helper="Até 10 arquivos por vez, com até 2 MB cada.">
             {field => (
               <div
@@ -97,10 +109,12 @@ export default function VincularXmlModal({ onClose, onImported }: { onClose: () 
               </Alert>
             ))}
           </div>
+            </TabsContent>
+          </Tabs>
         </DialogBody>
         <div className="flex shrink-0 justify-end gap-3 border-t border-border px-6 py-4">
-          <Button variant="secondary" disabled={busy} onClick={onClose}>Fechar</Button>
-          {!concluido && <Button loading={busy} disabled={busy || !files.length || Boolean(error)} onClick={importar}>{results.length ? 'Tentar novamente' : 'Confirmar importação'}</Button>}
+          <Button variant="secondary" disabled={busy || consultando} onClick={onClose}>Fechar</Button>
+          {opcao === 'xml' && !concluido && <Button loading={busy} disabled={busy || !files.length || Boolean(error)} onClick={importar}>{results.length ? 'Tentar novamente' : 'Confirmar importação'}</Button>}
         </div>
       </DialogContent>
     </Dialog>

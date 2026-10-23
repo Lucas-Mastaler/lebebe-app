@@ -9,4 +9,5 @@ export type ResultadoXml = {
   numero_nf?: string
   nfe_id?: string
   error?: string
+  error_code?: string
 }

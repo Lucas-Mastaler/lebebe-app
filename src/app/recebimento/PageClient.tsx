@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Package, Plus, Calendar, Truck, ChevronRight, FileText, Weight, X,
@@ -11,6 +11,8 @@ import { createClient } from '@/lib/supabase/client'
 import { isMaticEmail } from '@/lib/auth/matic-emails'
 import { toast } from 'sonner'
 import VincularXmlModal from './VincularXmlModal'
+import { buscarNotasNoPeriodo, conciliarSelecao, type NotaPreview } from '@/lib/recebimento/novo-recebimento'
+import type { ResultadoXml } from '@/lib/recebimento/xml-upload-contract'
 import { dateToIso, parseBrDate } from '@/lib/design-system/dates'
 import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
 import { calcularMetricasDeTempo } from '@/lib/recebimento/metricas-tempo'
@@ -21,6 +23,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogBody, ConfirmDialog,
   Tabs, TabsContent, SegmentedTabsList, SegmentedTabsTrigger,
   KpiCard,
+  useAsyncAction,
 } from '@/components/design-system'
 
 interface Recebimento {
@@ -94,7 +97,6 @@ export default function RecebimentoPage() {
   const [loading, setLoading] = useState(false)
   const [authorized, setAuthorized] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [showXmlModal, setShowXmlModal] = useState(false)
   const [xmlRevision, setXmlRevision] = useState(0)
   const [activeTab, setActiveTab] = useState<TabType>('recebimentos')
   const filtros = useFilterState<FiltrosRecebimento>(FILTROS_VAZIOS)
@@ -217,10 +219,6 @@ export default function RecebimentoPage() {
             <Button variant="secondary" onClick={() => router.push('/recebimento/produtos')}>
               <Edit className="size-4" />
               <span className="hidden sm:inline">Produtos</span>
-            </Button>
-            <Button variant="secondary" onClick={() => setShowXmlModal(true)}>
-              <FileText className="size-4" />
-              Vincular XML
             </Button>
             <Button onClick={() => setShowCreateModal(true)}>
               <Plus className="size-4" />
@@ -361,10 +359,10 @@ export default function RecebimentoPage() {
         </TabsContent>
       </Tabs>
 
-      {showXmlModal && <VincularXmlModal onClose={() => setShowXmlModal(false)} onImported={() => setXmlRevision(value => value + 1)} />}
       {showCreateModal && (
         <CreateRecebimentoModal
           onClose={() => setShowCreateModal(false)}
+          onNotasChanged={() => setXmlRevision(value => value + 1)}
           onSuccess={(id) => {
             setShowCreateModal(false)
             router.push(`/recebimento/${id}`)
@@ -662,9 +660,11 @@ interface ImportarNfePeriodoResponse {
 function CreateRecebimentoModal({
   onClose,
   onSuccess,
+  onNotasChanged,
 }: {
   onClose: () => void
   onSuccess: (id: string) => void
+  onNotasChanged: () => void
 }) {
   const [periodoInicio, setPeriodoInicio] = useState('')
   const [periodoFim, setPeriodoFim] = useState('')
@@ -672,83 +672,103 @@ function CreateRecebimentoModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [loadingPreview, setLoadingPreview] = useState(false)
-  const [nfesPreview, setNfesPreview] = useState<Array<{id: string; numero_nf: string; data_emissao: string; volumes_total: number}>>([])
+  const [nfesPreview, setNfesPreview] = useState<NotaPreview[]>([])
+  const [aviso, setAviso] = useState('')
+  const [showVincularXml, setShowVincularXml] = useState(false)
+  const notasAtuais = useRef<NotaPreview[]>([])
+  const notasImportadas = useRef(new Set<string>())
+  const buscando = useRef(false)
   const [selectedNfes, setSelectedNfes] = useState<Set<string>>(new Set())
+  const buscaPeriodo = useAsyncAction(handleBuscarNfes)
 
-  async function handleBuscarNfes(somenteCadastradas = false) {
-    const inicioDate = parseBrDate(periodoInicio)
-    const fimDate = parseBrDate(periodoFim)
-    if (!inicioDate || !fimDate) {
-      setError('Informe o período')
-      return
-    }
-    if (loadingPreview) return
+  function mostrarNotas(notas: NotaPreview[]) {
+    const anteriores = notasAtuais.current
+    notasAtuais.current = notas
+    setNfesPreview(notas)
+    setSelectedNfes(selecionadas => conciliarSelecao(anteriores, notas, selecionadas))
+  }
 
-    setLoadingPreview(true)
-    setError('')
+  function alterarPeriodo(valor: string, setter: (value: string) => void) {
+    setter(valor)
+    notasAtuais.current = []
     setNfesPreview([])
     setSelectedNfes(new Set())
+    setAviso('')
+    setError('')
+  }
 
-    const inicioIso = dateToIso(inicioDate)
-    const fimIso = dateToIso(fimDate)
-
-    try {
-      // 1) Reaproveita o mecanismo de importação já existente (busca no Gmail,
-      // parseia e faz upsert idempotente em nfe/nfe_itens/nfe_assistencias).
-      if (!somenteCadastradas) {
-        const importRes = await fetch('/api/nfe/importar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ inicio: inicioIso, fim: fimIso }),
-        })
-        const importData = await importRes.json().catch(() => null) as ImportarNfePeriodoResponse | null
-
-        if (!importRes.ok || !importData?.ok) {
-          const msg = importData?.erro || `Erro ao importar NFs do período (HTTP ${importRes.status})`
-          setError(msg)
-          toast.error(msg)
-          return
-        }
-
-        if (importData.erros && importData.erros.length > 0) {
-          toast.warning(`${importData.erros.length} nota(s) não puderam ser importadas. As demais NFs do período continuam disponíveis abaixo.`)
-        }
-      }
-
-      // 2) A lista exibida vem sempre da consulta à tabela nfe (fonte de
-      // verdade), não do array `nfs` retornado pelo import — isso garante que
-      // NFes importadas anteriormente por outra via (ex.: upload manual de
-      // XML) também apareçam.
-      const supabase = createClient()
-      const { data, error: nfeError } = await supabase
-        .from('nfe')
-        .select('id, numero_nf, data_emissao, volumes_total')
-        .gte('data_emissao', inicioIso)
-        .lte('data_emissao', fimIso)
-        .order('numero_nf', { ascending: false })
-
-      if (nfeError) {
-        setError('Erro ao buscar NFs: ' + nfeError.message)
-        toast.error('Erro ao buscar NFs: ' + nfeError.message)
-        return
-      }
-
-      if (!data || data.length === 0) {
-        toast.warning('Nenhuma NF encontrada no período selecionado')
-        return
-      }
-
-      setNfesPreview(data)
-      // Selecionar todas por padrão
-      setSelectedNfes(new Set(data.map(nf => nf.id)))
-      toast.success(`${data.length} NF(s) encontrada(s)`)
-    } catch (err) {
-      console.error('Erro ao buscar/importar NFes:', err)
-      setError('Erro de conexão ao buscar NFs')
-      toast.error('Erro de conexão ao buscar NFs')
-    } finally {
-      setLoadingPreview(false)
+  function obterPeriodo() {
+    const inicio = parseBrDate(periodoInicio), fim = parseBrDate(periodoFim)
+    if (!inicio || !fim || fim < inicio || (fim.getTime() - inicio.getTime()) / 86400000 > 90) {
+      setError('Informe um período válido de até 90 dias, com a data final igual ou posterior à inicial.')
+      return null
     }
+    return { inicio: dateToIso(inicio), fim: dateToIso(fim) }
+  }
+
+  async function lerNotas(periodo: { inicio: string; fim: string }): Promise<NotaPreview[]> {
+    const supabase = createClient()
+    const notas: NotaPreview[] = []
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await supabase.from('nfe').select('id, numero_nf, data_emissao, volumes_total')
+        .gte('data_emissao', periodo.inicio).lte('data_emissao', periodo.fim)
+        .order('numero_nf', { ascending: false }).range(offset, offset + 999)
+      if (error) throw new Error('leitura_notas')
+      notas.push(...(data ?? []))
+      if (!data || data.length < 1000) return notas
+    }
+  }
+
+  async function handleBuscarNfes() {
+    if (buscando.current || saving) return
+    const periodo = obterPeriodo()
+    if (!periodo) return
+    buscando.current = true
+    setLoadingPreview(true)
+    setError('')
+    setAviso('')
+    try {
+      const avisoBusca = await buscarNotasNoPeriodo({
+        lerCadastradas: () => lerNotas(periodo),
+        mostrar: mostrarNotas,
+        buscarEmail: async () => {
+          const response = await fetch('/api/nfe/importar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(periodo) })
+          const body = await response.json() as ImportarNfePeriodoResponse
+          return { ok: response.ok && body.ok, erros: body.erros }
+        },
+      })
+      setAviso(avisoBusca || (notasAtuais.current.length ? '' : 'Nenhuma nota encontrada no período escolhido. Você também pode vincular um XML manualmente.'))
+    } catch { setError('Não foi possível carregar as notas cadastradas. Tente novamente mais tarde.') }
+    finally { buscando.current = false; setLoadingPreview(false) }
+  }
+
+  function registrarImportadas(results: ResultadoXml[]) {
+    for (const result of results) if (result.banco !== 'erro' && result.nfe_id) notasImportadas.current.add(result.nfe_id)
+    onNotasChanged()
+  }
+
+  async function voltarDoXml() {
+    setShowVincularXml(false)
+    if (!notasImportadas.current.size) return
+    const importadas = new Set(notasImportadas.current)
+    notasImportadas.current.clear()
+    if (!periodoInicio || !periodoFim) {
+      setAviso('Nota vinculada. Informe o período de emissão para encontrá-la na lista e criar o recebimento.')
+      return
+    }
+    const periodo = obterPeriodo()
+    if (!periodo) return
+    buscando.current = true
+    setLoadingPreview(true)
+    setError('')
+    try {
+      const notas = await lerNotas(periodo)
+      mostrarNotas(notas)
+      const presentes = new Set(notas.map(nota => nota.id))
+      setAviso([...importadas].some(id => !presentes.has(id))
+        ? 'Uma ou mais notas vinculadas estão fora do período escolhido. Ajuste as datas para incluí-las no recebimento.' : '')
+    } catch { setError('A nota foi vinculada, mas não foi possível atualizar esta lista. Use Buscar NFs no período para atualizar.') }
+    finally { buscando.current = false; setLoadingPreview(false) }
   }
 
   function toggleNfe(nfeId: string) {
@@ -764,7 +784,7 @@ function CreateRecebimentoModal({
   }
 
   async function handleCreate() {
-    if (saving) return
+    if (saving || buscando.current || showVincularXml) return
 
     const inicioDate = parseBrDate(periodoInicio)
     const fimDate = parseBrDate(periodoFim)
@@ -812,7 +832,8 @@ function CreateRecebimentoModal({
   }
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+    <>
+    <Dialog open={!showVincularXml} onOpenChange={(open) => { if (!open && !showVincularXml && !saving && !loadingPreview) onClose() }}>
       <DialogContent className="max-w-md">
         <DialogHeader title="Novo Recebimento" />
         <DialogBody>
@@ -820,19 +841,19 @@ function CreateRecebimentoModal({
             <div className="grid grid-cols-2 gap-3">
               <FormField id="periodo-inicio" label="Período Início" required>
                 {(f) => (
-                  <DateField id={f.id} value={periodoInicio} onChange={setPeriodoInicio} aria-invalid={f['aria-invalid']} disabled={saving} />
+                  <DateField id={f.id} value={periodoInicio} onChange={value => alterarPeriodo(value, setPeriodoInicio)} aria-invalid={f['aria-invalid']} disabled={saving || loadingPreview} />
                 )}
               </FormField>
               <FormField id="periodo-fim" label="Período Fim" required>
                 {(f) => (
-                  <DateField id={f.id} value={periodoFim} onChange={setPeriodoFim} aria-invalid={f['aria-invalid']} disabled={saving} />
+                  <DateField id={f.id} value={periodoFim} onChange={value => alterarPeriodo(value, setPeriodoFim)} aria-invalid={f['aria-invalid']} disabled={saving || loadingPreview} />
                 )}
               </FormField>
             </div>
 
             <Button
               variant="secondary"
-              onClick={() => handleBuscarNfes()}
+              onClick={() => { void buscaPeriodo.run() }}
               className="w-full"
               disabled={loadingPreview || saving}
               loading={loadingPreview}
@@ -840,10 +861,12 @@ function CreateRecebimentoModal({
               Buscar NFs no Período
             </Button>
 
-            <Button variant="secondary" className="w-full" onClick={() => handleBuscarNfes(true)} disabled={loadingPreview || saving}>
-              Consultar notas já cadastradas
+            <Button variant="secondary" className="w-full" onClick={() => setShowVincularXml(true)} disabled={loadingPreview || saving}>
+              Vincular XML manual
             </Button>
 
+            {loadingPreview && <p role="status" className="text-sm text-muted-foreground">Buscando notas. Se houver uma falha temporária no e-mail, tentaremos novamente até duas vezes.</p>}
+            {aviso && <Alert tone="warning">{aviso}</Alert>}
             {/* Preview de NFs */}
             {nfesPreview.length > 0 && (
               <div className="max-h-60 overflow-y-auto rounded-lg border border-slate-200 p-3">
@@ -852,6 +875,7 @@ function CreateRecebimentoModal({
                     {nfesPreview.length} NF(s) encontrada(s)
                   </p>
                   <button
+                    disabled={loadingPreview || saving}
                     onClick={() => {
                       if (selectedNfes.size === nfesPreview.length) {
                         setSelectedNfes(new Set())
@@ -869,6 +893,7 @@ function CreateRecebimentoModal({
                     <label key={nf.id} className="flex cursor-pointer items-center gap-2 rounded p-2 hover:bg-slate-50">
                       <input
                         type="checkbox"
+                        disabled={loadingPreview || saving}
                         checked={selectedNfes.has(nf.id)}
                         onChange={() => toggleNfe(nf.id)}
                         className="size-4 rounded border-slate-300 text-primary focus:ring-primary"
@@ -878,7 +903,7 @@ function CreateRecebimentoModal({
                           NF {nf.numero_nf}
                         </p>
                         <p className="text-xs text-slate-500">
-                          {new Date(nf.data_emissao).toLocaleDateString('pt-BR')} • {nf.volumes_total} vol
+                          {nf.data_emissao.split('-').reverse().join('/')} • {nf.volumes_total} vol
                         </p>
                       </div>
                     </label>
@@ -909,7 +934,7 @@ function CreateRecebimentoModal({
           </div>
         </DialogBody>
         <div className="flex shrink-0 gap-3 border-t border-slate-100 px-6 py-4">
-          <Button variant="secondary" onClick={onClose} className="flex-1" disabled={saving}>
+          <Button variant="secondary" onClick={onClose} className="flex-1" disabled={saving || loadingPreview}>
             Cancelar
           </Button>
           {nfesPreview.length > 0 && (
@@ -920,6 +945,8 @@ function CreateRecebimentoModal({
         </div>
       </DialogContent>
     </Dialog>
+    {showVincularXml && <VincularXmlModal onClose={() => { void voltarDoXml() }} onImported={registrarImportadas} />}
+    </>
   )
 }
 

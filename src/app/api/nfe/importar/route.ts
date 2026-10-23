@@ -1,33 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
 import { JWT } from "google-auth-library";
+import { createHash } from "node:crypto";
+import { lerEmailComRepeticao, falhaTemporariaEmail } from "@/lib/recebimento/email-retry";
+import { XmlImportError, XML_MAX_BYTES } from "@/lib/recebimento/xml-upload";
+import { notaDoEmail } from "@/lib/recebimento/email-nfe";
+import { sha256Xml } from "@/lib/google/drive-xml";
 import { parsearNFe, type NFeData } from "@/lib/recebimento/nfe-parser";
 import { validateMaticUser } from "@/lib/auth/matic-auth";
 import { createClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
-
-// ─────────────────────────────────────────────────────────
-// Helper: remove leading zeros and trim spaces for matching (02685 -> 2685)
-// ─────────────────────────────────────────────────────────
-function normalizeCode(code: string): string {
-  if (!code) return '0'
-  return code.trim().replace(/^0+/, '') || '0'
-}
-
-// ─────────────────────────────────────────────────────────
-// Tipos
-// ─────────────────────────────────────────────────────────
-
-type SkuMatic = {
-  volumes_por_item: number;
-  codigo_produto: string;
-  ref_meia?: string;
-  ref_inteira?: string;
-}
-
-// ─────────────────────────────────────────────────────────
-// 1.0 – Validação de entrada
-// ─────────────────────────────────────────────────────────
+export const maxDuration = 120;
+const GOOGLE_READ_OPTIONS = { timeout: 15000, retry: false } as const;
 
 function validarEntrada(body: Record<string, unknown>): string | null {
   const { inicio, fim } = body;
@@ -94,12 +78,12 @@ async function listarMensagens(
   let pageToken: string | undefined;
 
   do {
-    const res = await gmail.users.messages.list({
+    const res = await lerEmailComRepeticao(() => gmail.users.messages.list({
       userId: "me",
       q: query,
       pageToken,
       maxResults: 100,
-    });
+    }, GOOGLE_READ_OPTIONS));
 
     if (res.data.messages) {
       for (const m of res.data.messages) {
@@ -159,54 +143,9 @@ function isXmlPart(part: GmailPart): boolean {
 // 4.1 – Baixar attachments XML
 // ─────────────────────────────────────────────────────────
 
-interface AttachmentResult {
-  messageId: string;
-  filename: string;
-  xmlContent: string;
-}
-
-async function baixarAttachmentsXml(
-  gmail: ReturnType<typeof google.gmail>,
-  messageId: string
-): Promise<AttachmentResult[]> {
-  const msg = await gmail.users.messages.get({
-    userId: "me",
-    id: messageId,
-  });
-
-  const allParts = coletarPartsRecursivo(
-    (msg.data.payload as GmailPart) ?? {}
-  );
-  const xmlParts = allParts.filter(
-    (p) => isXmlPart(p) && p.body?.attachmentId
-  );
-
-  console.log(
-    `[NFE][GMAIL] Mensagem ${messageId}: xml_attachments=${xmlParts.length}`
-  );
-
-  const results: AttachmentResult[] = [];
-
-  for (const part of xmlParts) {
-    const attachmentId = part.body!.attachmentId!;
-    const filename = part.filename ?? "attachment.xml";
-
-    const att = await gmail.users.messages.attachments.get({
-      userId: "me",
-      messageId,
-      id: attachmentId,
-    });
-
-    const base64Data = att.data.data;
-    if (!base64Data) continue;
-
-    const buffer = decodeBase64Url(base64Data);
-    const xmlContent = buffer.toString("utf-8");
-
-    results.push({ messageId, filename, xmlContent });
-  }
-
-  return results;
+async function listarAttachmentsXml(gmail: ReturnType<typeof google.gmail>, messageId: string): Promise<GmailPart[]> {
+  const msg = await lerEmailComRepeticao(() => gmail.users.messages.get({ userId: "me", id: messageId }, GOOGLE_READ_OPTIONS));
+  return coletarPartsRecursivo((msg.data.payload as GmailPart) ?? {}).filter(part => isXmlPart(part) && part.body?.attachmentId);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -257,6 +196,7 @@ export async function POST(request: NextRequest) {
 
     // 3.1 – Fallback: tentar posvenda@lebebe.com.br se não encontrou nada
     let gmailAtivo = gmail;
+    let mailbox = process.env.GMAIL_IMPERSONATE_USER ?? "lucas@lebebe.com.br";
     if (messageIds.length === 0) {
       const fallbackEmail = "posvenda@lebebe.com.br";
       console.log(`[NFE][GMAIL] Nenhuma mensagem encontrada. Tentando fallback: ${fallbackEmail}`);
@@ -266,126 +206,50 @@ export async function POST(request: NextRequest) {
       if (fallbackIds.length > 0) {
         messageIds = fallbackIds;
         gmailAtivo = gmailFallback;
+        mailbox = fallbackEmail;
       }
     }
 
-    // 4.0 + 5.0 – Processar cada mensagem
+    // O comprovante só é gravado na mesma transação que confirma nota e itens.
+    const supabase = await createClient();
     const nfs: NFeData[] = [];
     const erros: { message_id: string; erro: string }[] = [];
-
+    let salvas = 0, ignorados = 0;
     for (const msgId of messageIds) {
-      try {
-        const attachments = await baixarAttachmentsXml(gmailAtivo, msgId);
-
-        if (attachments.length === 0) {
-          erros.push({ message_id: msgId, erro: "Nenhum anexo XML encontrado." });
-          continue;
-        }
-
-        for (const att of attachments) {
-          try {
-            const nfeData = await parsearNFe(att.xmlContent, msgId);
-            nfs.push(nfeData);
-          } catch (parseErr) {
-            const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
-            erros.push({ message_id: msgId, erro: `Erro ao parsear ${att.filename}: ${msg}` });
+      let parts: GmailPart[];
+      try { parts = await listarAttachmentsXml(gmailAtivo, msgId); }
+      catch { erros.push({ message_id: msgId, erro: "Não foi possível ler uma das mensagens após as tentativas permitidas." }); continue; }
+      if (!parts.length) { erros.push({ message_id: msgId, erro: "Nenhum anexo XML encontrado." }); continue; }
+      for (const part of parts) {
+        try {
+          const attachmentId = part.body!.attachmentId!;
+          const origem = createHash('sha256').update(JSON.stringify([mailbox.toLowerCase(), msgId, attachmentId])).digest('hex');
+          const { data: processado, error: cacheError } = await supabase.from('nfe_email_anexos').select('nfe_id').eq('origem_sha256', origem).maybeSingle();
+          if (cacheError) throw new Error('controle_email');
+          if (processado) { ignorados++; continue; }
+          const att = await lerEmailComRepeticao(() => gmailAtivo.users.messages.attachments.get({ userId: "me", messageId: msgId, id: attachmentId }, GOOGLE_READ_OPTIONS));
+          if (!att.data.data) throw new XmlImportError('anexo_vazio', 'O anexo XML está vazio.');
+          const bytes = decodeBase64Url(att.data.data);
+          if (bytes.length > XML_MAX_BYTES) throw new XmlImportError('anexo_grande', 'Um dos XMLs ultrapassa o tamanho permitido de 2 MB.');
+          const xml = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+          if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new XmlImportError('anexo_invalido', 'O anexo XML possui um formato que não pode ser importado.');
+          const nf = await parsearNFe(xml, msgId);
+          const nota = notaDoEmail(nf);
+          const { data, error } = await supabase.rpc('importar_anexo_email_recebimento', { p_origem_sha256: origem, p_nota: nota, p_sha256: sha256Xml(bytes) });
+          if (error || !data?.nfe_id) {
+            console.error('[NFE EMAIL]', { etapa: 'cadastro', codigo: error?.code ?? 'nao_confirmado' });
+            erros.push({ message_id: msgId, erro: error?.message?.includes('XML_CONFLITO') ? 'Uma nota já cadastrada possui dados diferentes. Nenhum dado foi substituído.' : 'Não foi possível confirmar uma das notas. Ela poderá ser verificada na próxima busca.' });
+            continue;
           }
+          salvas++;
+          // Mantém o contrato usado pela tela de importação do Pós-venda.
+          nfs.push(nf);
+        } catch (error) {
+          console.error('[NFE EMAIL]', { etapa: 'anexo', codigo: error instanceof XmlImportError ? error.code : 'leitura_ou_controle' });
+          erros.push({ message_id: msgId, erro: error instanceof XmlImportError ? error.message : 'Não foi possível concluir um dos anexos. Os demais continuam disponíveis.' });
         }
-      } catch (msgErr) {
-        const msg = msgErr instanceof Error ? msgErr.message : String(msgErr);
-        erros.push({ message_id: msgId, erro: msg });
       }
     }
-
-    console.log("[NFE][GMAIL] Total NFs processadas:", nfs.length);
-    if (erros.length > 0) {
-      console.log("[NFE][GMAIL] Erros encontrados:", erros.length);
-    }
-
-    // 5.5 – Persistir no Supabase (upsert nfe + nfe_itens)
-    const supabase = await createClient();
-    let salvas = 0;
-
-    for (const nf of nfs) {
-      try {
-        const numeroNfNorm = nf.numero_nf.replace(/\D/g, "");
-        const dataEmissaoDate = String(nf.data_emissao).substring(0, 10);
-
-        const { data: nfeRow, error: nfeError } = await supabase
-          .from("nfe")
-          .upsert(
-            {
-              numero_nf: numeroNfNorm,
-              data_emissao: dataEmissaoDate,
-              peso_total: parseFloat(nf.peso_total) || 0,
-              volumes_total: parseInt(nf.volumes_total) || 0,
-              obs: nf.obs || null,
-              is_os: nf.is_os,
-            },
-            { onConflict: "numero_nf" }
-          )
-          .select()
-          .single();
-
-        if (nfeError) {
-          console.error(`[NFE][GMAIL] Erro upsert NF ${numeroNfNorm}:`, nfeError.message);
-          erros.push({ message_id: nf.message_id, erro: `Supabase upsert NF: ${nfeError.message}` });
-          continue;
-        }
-
-        // Limpar itens antigos e reinserir
-        await supabase.from("nfe_itens").delete().eq("nfe_id", nfeRow.id);
-
-        for (const item of nf.itens) {
-          // Busca SKU por codigo_produto, ref_meia ou ref_inteira (com fallback)
-          const codigoNormalizado = normalizeCode(item.codigo_produto)
-          
-          const { data: skus } = await supabase
-            .from("matic_sku")
-            .select("volumes_por_item, codigo_produto, ref_meia, ref_inteira")
-            .or(`codigo_produto.eq.${item.codigo_produto},ref_meia.eq.${codigoNormalizado},ref_inteira.eq.${codigoNormalizado}`)
-
-          // Prioridade: codigo_produto > ref_meia > ref_inteira
-          let sku = skus?.find((s: SkuMatic) => s.codigo_produto === item.codigo_produto)
-          if (!sku) sku = skus?.find((s: SkuMatic) => normalizeCode(s.ref_meia || '') === codigoNormalizado)
-          if (!sku) sku = skus?.find((s: SkuMatic) => normalizeCode(s.ref_inteira || '') === codigoNormalizado)
-
-          const volumesPorItem = sku?.volumes_por_item || 1;
-          const qtd = Math.round(parseFloat(item.quantidade) || 0);
-          const volumesPrevistosTotal = qtd * volumesPorItem;
-
-          await supabase.from("nfe_itens").insert({
-            nfe_id: nfeRow.id,
-            n_item: parseInt(item.n_item) || null,
-            codigo_produto: item.codigo_produto,
-            descricao: item.descricao,
-            quantidade: qtd,
-            volumes_por_item: volumesPorItem,
-            volumes_previstos_total: volumesPrevistosTotal,
-            status: "pendente",
-          });
-        }
-
-        // Salvar assistências (OS/OC)
-        if (nf.assistencias.length > 0) {
-          await supabase.from("nfe_assistencias").delete().eq("nfe_id", nfeRow.id);
-          for (const os of nf.assistencias) {
-            await supabase.from("nfe_assistencias").insert({
-              nfe_id: nfeRow.id,
-              os_oc_numero: os,
-            });
-          }
-        }
-
-        salvas++;
-        console.log(`[NFE][GMAIL] NF ${numeroNfNorm} salva: ${nf.itens.length} itens, ${nf.assistencias.length} OS`);
-      } catch (dbErr) {
-        const msg = dbErr instanceof Error ? dbErr.message : String(dbErr);
-        erros.push({ message_id: nf.message_id, erro: `DB: ${msg}` });
-      }
-    }
-
-    console.log(`[NFE][GMAIL] Total NFs salvas no banco: ${salvas}/${nfs.length}`);
 
     // 6.0 – Resposta final
     return NextResponse.json({
@@ -393,13 +257,13 @@ export async function POST(request: NextRequest) {
       query,
       total_mensagens: messageIds.length,
       total_salvas: salvas,
+      total_ignorados: ignorados,
       nfs,
       erros,
     });
   } catch (err) {
     // 7.0 – Tratamento de erros genérico
-    const message = err instanceof Error ? err.message : "Erro interno desconhecido.";
-    console.error("[NFE][GMAIL] Erro fatal:", message);
-    return NextResponse.json({ ok: false, erro: message }, { status: 500 });
+    console.error("[NFE EMAIL]", { etapa: "busca", temporario: falhaTemporariaEmail(err) });
+    return NextResponse.json({ ok: false, erro: "Não foi possível concluir a busca por novas notas no e-mail. Você pode continuar com as notas já cadastradas." }, { status: 503 });
   }
 }

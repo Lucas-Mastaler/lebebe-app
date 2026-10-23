@@ -10,6 +10,7 @@ interface NFeItem {
 }
 
 export interface NFeData {
+  chave_acesso?: string;
   message_id: string;
   numero_nf: string;
   data_emissao: string;
@@ -124,6 +125,7 @@ export async function parsearNFe(
   }
 
   return {
+    chave_acesso: String(infNFe.$?.Id ?? '').replace(/^NFe/, ''),
     message_id: messageId,
     numero_nf: String(numero_nf),
     data_emissao: String(data_emissao),

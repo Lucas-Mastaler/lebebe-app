@@ -1,3 +1,4 @@
+import { chaveValida } from './nfe-chave'
 import { parseStringPromise } from 'xml2js'
 import { parsearNFe } from './nfe-parser'
 import { XML_MAX_BYTES } from './xml-upload-contract'
@@ -23,15 +24,10 @@ function exigir(ok: unknown, message: string): asserts ok {
   if (!ok) throw new XmlImportError('xml_invalido', message)
 }
 
-export function chaveValida(chave: string): boolean {
-  if (!/^\d{44}$/.test(chave)) return false
-  let soma = 0
-  for (let i = 42, peso = 2; i >= 0; i--, peso = peso === 9 ? 2 : peso + 1) soma += Number(chave[i]) * peso
-  const resto = 11 - soma % 11
-  return Number(chave[43]) === (resto >= 10 ? 0 : resto)
-}
+export { chaveValida } from './nfe-chave'
+export interface IdentidadeXml { chaveEsperada: string; cnpjDestinatario: string; ambiente: '1' | '2' }
 
-export async function lerXmlRecebimento(bytes: Uint8Array): Promise<NotaXml> {
+export async function lerXmlRecebimento(bytes: Uint8Array, identidade?: IdentidadeXml): Promise<NotaXml> {
   exigir(bytes.length > 0 && bytes.length <= XML_MAX_BYTES, 'Selecione um XML de até 2 MB.')
   let xml: string
   try { xml = new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
@@ -59,6 +55,12 @@ export async function lerXmlRecebimento(bytes: Uint8Array): Promise<NotaXml> {
     && String(inf.emit?.CNPJ) === chave.slice(6, 20), 'A chave de acesso diverge dos dados da NF-e.')
   const protocolo = documento?.nfeProc?.protNFe?.infProt
   exigir(!protocolo || (String(protocolo.chNFe) === chave && ['100', '150'].includes(String(protocolo.cStat))), 'O protocolo da NF-e está inválido ou não indica autorização.')
+  if (identidade) {
+    exigir(chave === identidade.chaveEsperada, 'O XML recebido não corresponde à chave consultada.')
+    exigir(String(inf.dest?.CNPJ) === identidade.cnpjDestinatario, 'O destinatário da nota não corresponde ao CNPJ autorizado para esta consulta.')
+    exigir(String(ide.tpAmb) === identidade.ambiente && String(protocolo?.tpAmb) === identidade.ambiente, 'O ambiente do XML não corresponde ao ambiente da consulta.')
+    exigir(protocolo, 'O serviço não retornou o XML completo com protocolo de autorização.')
+  }
   const parsed = await parsearNFe(xml, '')
   const data = parsed.data_emissao.slice(0, 10)
   exigir(/^\d{4}-\d{2}-\d{2}$/.test(data) && !Number.isNaN(Date.parse(data)) && new Date(data).toISOString().slice(0, 10) === data, 'Data de emissão inválida ou ausente.')

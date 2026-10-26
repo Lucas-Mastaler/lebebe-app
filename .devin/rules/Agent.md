@@ -13,7 +13,8 @@ regras — é a porta de entrada que ensina onde estão as fontes reais.
 2. `.agents/rules/*.md` — regras contextuais por módulo, carregadas só
    quando o gatilho da tarefa bate: `banco-supabase.md`, `recebimento.md`,
    `procurar-datas.md`, `inteligencia-comercial.md`,
-   `novas-telas-permissoes.md`. Ver `.agents/rules/README.md` para o
+   `novas-telas-permissoes.md`, `confidencialidade-custos.md`. Ver
+   `.agents/rules/README.md` e a tabela de `AGENTS.md` §7 para o
    catálogo completo.
 3. `.agents/skills/*/SKILL.md` — procedimentos reutilizáveis:
    `auditar-tarefa`, `criar-plano`, `executar-plano`, `validar-entrega`,

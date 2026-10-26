@@ -43,6 +43,7 @@ import {
   permiteVerAvancoStatus,
   podeCancelarPedido,
 } from '@/lib/pedidos-personalizados/status-fluxo'
+import { deveExibirCustoInterno } from '@/lib/auth/custo-interno'
 import { usePermissoes } from '@/lib/hooks/usePermissoes'
 import { TIPO_TAPETE_PARA_EXIBICAO } from '@/lib/pedidos-personalizados'
 import type { StatusPedidoPersonalizado } from '@/lib/pedidos-personalizados'
@@ -86,7 +87,7 @@ import {
   transicionarStatusGestao,
   validarAdministrativo,
 } from './gestao-modelo'
-import type { ContagensStatusGestao, ErrosAdministrativos, EstadoAdministrativo, EstadoTransicaoGestao, FiltrosGestao, PaginaPedidos, PedidoDetalhe, TapeteDetalhe } from './gestao-modelo'
+import type { ContagensStatusGestao, ErrosAdministrativos, EstadoAdministrativo, EstadoTransicaoGestao, FiltrosGestao, PaginaPedidos, PedidoDetalhe, ProdutoExclusiveDetalhe, TapeteDetalhe } from './gestao-modelo'
 import { dataOperacionalBrasil } from '@/lib/pedidos-personalizados/prazo'
 
 function formatarData(valor: string) {
@@ -311,7 +312,13 @@ function CampoAdministrativo({
 }
 
 export function GestaoPedidosPersonalizados() {
-  const { acessoTotal: acessoTotalPermissoes, perfilChave } = usePermissoes()
+  const { acessoTotal: acessoTotalPermissoes, perfilChave, loading: carregandoPermissoes, error: erroPermissoes } = usePermissoes()
+  const exibirCusto = deveExibirCustoInterno({
+    loading: carregandoPermissoes,
+    error: erroPermissoes,
+    acessoTotal: acessoTotalPermissoes,
+    perfilChave,
+  })
   const podeVerAvancoStatus = useCallback(
     (status: StatusPedidoPersonalizado) => permiteVerAvancoStatus(status, perfilChave, acessoTotalPermissoes),
     [perfilChave, acessoTotalPermissoes]
@@ -1286,7 +1293,7 @@ export function GestaoPedidosPersonalizados() {
                 </section>
               ) : detalhe.fornecedor?.chave === 'lebebe_exclusive' ? (
                 <section className="space-y-4" aria-labelledby="produtos-exclusive-titulo">
-                  <div className="flex flex-wrap items-center justify-between gap-3"><h3 id="produtos-exclusive-titulo" className="flex items-center gap-2 font-semibold text-slate-900"><PackageCheck className="size-5 text-violet-700" />Produtos do pedido</h3><p className="text-sm font-semibold">Venda: {detalhe.itens.reduce((soma, item) => soma + item.totalVenda, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} · Custo: {detalhe.itens.reduce((soma, item) => soma + item.totalCusto, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p></div>
+                  <div className="flex flex-wrap items-center justify-between gap-3"><h3 id="produtos-exclusive-titulo" className="flex items-center gap-2 font-semibold text-slate-900"><PackageCheck className="size-5 text-violet-700" />Produtos do pedido</h3><p className="text-sm font-semibold">Venda: {detalhe.itens.reduce((soma, item) => soma + item.totalVenda, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}{exibirCusto ? ` · Custo: ${detalhe.itens.reduce((soma, item) => soma + (item.totalCusto ?? 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}` : ''}</p></div>
                   <ResponsiveTable
                     columns={[
                       { key: 'colecao', header: 'Coleção', width: 'content', render: (r) => r.colecao },
@@ -1295,7 +1302,7 @@ export function GestaoPedidosPersonalizados() {
                       { key: 'quantidade', header: 'Qtd.', width: 'compact', render: (r) => r.quantidade },
                       { key: 'nomeOuLetra', header: 'Nome ou letra', width: 'standard', render: (r) => r.nomeOuLetra || '—' },
                       { key: 'precoUnitario', header: 'Preço unit.', width: 'compact', className: 'text-right', render: (r) => r.precoUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
-                      { key: 'custoUnitario', header: 'Custo unit.', width: 'compact', className: 'text-right', render: (r) => r.custoUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
+                      ...(exibirCusto ? [{ key: 'custoUnitario', header: 'Custo unit.', width: 'compact' as const, className: 'text-right', render: (r: ProdutoExclusiveDetalhe) => (r.custoUnitario ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }] : []),
                       { key: 'totalVenda', header: 'Total', width: 'compact', className: 'text-right font-bold', render: (r) => r.totalVenda.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) },
                     ]}
                     rows={detalhe.itens}
@@ -1331,7 +1338,7 @@ export function GestaoPedidosPersonalizados() {
                       </Badge>
                     </div>
                     <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                      <div><dt className="text-slate-500">Custo</dt><dd className="font-semibold">{(detalhe.produtoSgi?.custo ?? detalhe.itens.reduce((soma, item) => soma + item.totalCusto, 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</dd></div>
+                      {exibirCusto ? <div><dt className="text-slate-500">Custo</dt><dd className="font-semibold">{(detalhe.produtoSgi?.custo ?? detalhe.itens.reduce((soma, item) => soma + (item.totalCusto ?? 0), 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</dd></div> : null}
                       <div><dt className="text-slate-500">Preço</dt><dd className="font-semibold">{(detalhe.produtoSgi?.preco ?? detalhe.itens.reduce((soma, item) => soma + item.totalVenda, 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</dd></div>
                       <div><dt className="text-slate-500">Etapa</dt><dd className="font-semibold">{(detalhe.produtoSgi?.etapa ?? 'NAO_INICIADO').replaceAll('_', ' ')}</dd></div>
                       <div><dt className="text-slate-500">Código SGI</dt><dd className="font-semibold">{detalhe.produtoSgi?.codigoSgi ?? '—'}</dd></div>

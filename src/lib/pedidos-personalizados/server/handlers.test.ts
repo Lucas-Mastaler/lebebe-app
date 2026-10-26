@@ -54,6 +54,7 @@ function contexto(overrides: Partial<ContextoPedidosPersonalizados> = {}): Conte
     allowedUser: { id: USUARIO_ID, email: 'tecnico@example.com', role: 'user', ativo: true },
     moduloAutorizado: 'pedidos_personalizados_gestao',
     unidades,
+    podeVerCustoInterno: true,
     ...overrides,
   }
 }
@@ -487,7 +488,7 @@ describe('listagem de pedidos personalizados', () => {
       dataEntregaFinal: '2026-08-31',
       situacaoPrazo: 'PRESTES A VENCER',
       codigoProduto: '21158',
-    }), unidades)
+    }), unidades, { incluirCusto: true })
   })
 })
 

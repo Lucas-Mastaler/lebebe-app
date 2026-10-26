@@ -67,9 +67,9 @@ export type ProdutoExclusiveDetalhe = {
   descricao: string
   referencia: string
   precoUnitario: number
-  custoUnitario: number
+  custoUnitario?: number
   totalVenda: number
-  totalCusto: number
+  totalCusto?: number
 }
 
 export type CorDetalhe = { id: string; ordem: number; numero: string; codigo: string; nome: string }
@@ -170,7 +170,7 @@ export type ProdutoSgiDetalhe = {
   status: 'PENDENTE' | 'PROCESSANDO' | 'ERRO' | 'CONCLUIDO'
   etapa: 'NAO_INICIADO' | 'PRODUTO_DUPLICADO' | 'PRODUTO_RENOMEADO' | 'CUSTO_CRIADO' | 'CUSTO_FINALIZADO' | 'PRECO_ATUALIZADO' | 'CONCLUIDO'
   nomeProduto: string
-  custo: number
+  custo?: number
   preco: number
   produtoIdSgi: string | null
   codigoSgi: string | null

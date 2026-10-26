@@ -25,6 +25,8 @@ Este arquivo é um pointer curto. As regras gerais completas vivem em
   oficial sem confirmação no legado.
 - Novas telas e permissões: `.agents/rules/novas-telas-permissoes.md` +
   checklist completo em `docs/ia/padrao-novas-telas-permissoes.md`.
+- Custo interno: `.agents/rules/confidencialidade-custos.md`. Os perfis
+  `consultora` e `supervisora_loja` não recebem esses campos.
 - Continuidade entre agentes: `.devin/rules/continuidade-agente.md`
   (adaptador) — `docs/ia/log_progress.md` está congelado, nunca escrever.
 

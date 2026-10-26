@@ -93,6 +93,7 @@ Garantir que toda nova tela interna nasca integrada ao sistema de permissoes por
 - [ ] Nunca depender apenas de bloqueio visual na Sidebar
 - [ ] Service role apenas server-side
 - [ ] Bearer/internal token apenas para fluxos tecnicos
+- [ ] Se a tela ou a API usar custo interno, aplicar `.agents/rules/confidencialidade-custos.md` antes de entregar os dados
 
 ### 3.5 Documentacao e testes
 
@@ -277,6 +278,7 @@ Qualquer agente de IA (Cascade, Copilot, etc) ao criar uma nova tela neste proje
 3. **Atualizar a documentacao canonica afetada** ao finalizar, se houver; **atualizar o Projeto Multifase** quando a tarefa fizer parte de um (`docs/ia/log_progress.md` esta congelado — nenhuma entrada global automatica)
 4. **Testar** com pelo menos superadmin, perfil autorizado e perfil nao autorizado
 5. **Nao considerar a tela pronta** enquanto nao estiver cadastrada em `app_modulos`, protegida por wrapper e visivel na gestao de perfis
+6. **Se houver custo interno**, seguir `.agents/rules/confidencialidade-custos.md`. O checklist da secao 3.4 aponta para essa regra; ela nao e repetida aqui.
 
 ---
 

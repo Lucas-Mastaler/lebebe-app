@@ -8,6 +8,7 @@ import { requireModuleAccess, type ModuleKey } from '@/lib/auth/module-access'
 import { createServiceClient } from '@/lib/supabase/service'
 import { UNIDADE_PARA_EXIBICAO, UNIDADES_PEDIDO_PERSONALIZADO } from '../constantes'
 import type { UnidadePedidoPersonalizado } from '../tipos'
+import { podeVerCustoInterno } from '@/lib/auth/custo-interno'
 import { jsonErro } from './http'
 
 export type UnidadeEscopoPedido = {
@@ -22,6 +23,8 @@ export type ContextoPedidosPersonalizados = {
   allowedUser: AllowedUser
   moduloAutorizado: ModuleKey
   unidades: UnidadeEscopoPedido[]
+  /** Ausente significa omissão de custo. O carregamento real sempre define o valor. */
+  podeVerCustoInterno?: boolean
   metricasPerformance?: MetricasPerformanceContexto
 }
 
@@ -78,6 +81,27 @@ async function exigirUmDosModulos(modulos: readonly ModuleKey[]) {
     response: primeiraResposta ?? jsonErro('ACESSO_NEGADO', 'Acesso negado.', 403),
     autenticacaoMs,
     permissaoMs: performance.now() - inicioPermissao,
+  }
+}
+
+async function resolverPodeVerCustoInterno(
+  supabase: ReturnType<typeof createServiceClient>,
+  allowedUser: AllowedUser,
+) {
+  if (allowedUser.role === 'superadmin') return true
+  try {
+    const { data, error } = await supabase
+      .from('app_usuarios_perfis')
+      .select('app_perfis_acesso!inner(chave, ativo)')
+      .eq('usuario_id', allowedUser.id)
+      .maybeSingle()
+    if (error || !data) return false
+    const bruto = data.app_perfis_acesso as { chave: string; ativo: boolean } | { chave: string; ativo: boolean }[] | null
+    const perfil = Array.isArray(bruto) ? bruto[0] : bruto
+    if (!perfil || perfil.ativo !== true || typeof perfil.chave !== 'string') return false
+    return podeVerCustoInterno({ acessoTotal: false, perfilChave: perfil.chave })
+  } catch {
+    return false
   }
 }
 
@@ -154,9 +178,12 @@ export async function carregarContextoPedidosPersonalizados(
     const supabase = createServiceClient()
     const clienteSupabaseMs = performance.now() - inicioCliente
     const inicioUnidades = performance.now()
-    const unidades = opcoes.carregarUnidades === false
-      ? []
-      : await listarUnidadesPermitidas(supabase, acesso.auth.allowedUser)
+    const [unidades, verCusto] = await Promise.all([
+      opcoes.carregarUnidades === false
+        ? Promise.resolve([])
+        : listarUnidadesPermitidas(supabase, acesso.auth.allowedUser),
+      resolverPodeVerCustoInterno(supabase, acesso.auth.allowedUser),
+    ])
     const unidadesMs = performance.now() - inicioUnidades
     return {
       ok: true,
@@ -165,6 +192,7 @@ export async function carregarContextoPedidosPersonalizados(
         allowedUser: acesso.auth.allowedUser,
         moduloAutorizado: acesso.auth.moduleKey,
         unidades,
+        podeVerCustoInterno: verCusto,
         metricasPerformance: {
           autenticacaoMs: acesso.autenticacaoMs,
           permissaoMs: acesso.permissaoMs,

@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
-import { carregarContextoPedidosPersonalizados } from './contexto'
+import { carregarContextoPedidosPersonalizados, type ContextoPedidosPersonalizados } from './contexto'
 import { ehObjeto, ehUuid, jsonErro, lerJsonLimitado } from './http'
 import {
   RepositorioPedidosPersonalizados,
@@ -27,13 +27,13 @@ function textoOpcional(valor: unknown, limite = 500): string | null | undefined 
   return typeof valor === 'string' && valor.length <= limite ? valor : undefined
 }
 
-export function serializarIntegracaoProdutoSgi(row: IntegracaoProdutoSgiRow | null) {
+export function serializarIntegracaoProdutoSgi(row: IntegracaoProdutoSgiRow | null, incluirCusto = true) {
   if (!row) return null
   return {
     status: row.status_integracao,
     etapa: row.etapa,
     nomeProduto: row.nome_produto_sgi,
-    custo: Number(row.custo_enviado),
+    ...(incluirCusto ? { custo: Number(row.custo_enviado) } : {}),
     preco: Number(row.preco_enviado),
     produtoIdSgi: row.produto_id_sgi,
     codigoSgi: row.codigo_sgi,
@@ -51,13 +51,20 @@ export function serializarIntegracaoProdutoSgi(row: IntegracaoProdutoSgiRow | nu
   }
 }
 
-export async function solicitarProdutoSgi(_request: Request, pedidoId: string) {
+export async function solicitarProdutoSgi(
+  _request: Request,
+  pedidoId: string,
+  deps: {
+    carregarContexto?: typeof carregarContextoPedidosPersonalizados
+    criarRepositorio?: (supabase: ContextoPedidosPersonalizados['supabase']) => Pick<RepositorioPedidosPersonalizados, 'buscarPedidoNoEscopo' | 'solicitarProdutoSgi'>
+  } = {},
+) {
   if (!ehUuid(pedidoId)) return jsonErro('ID_INVALIDO', 'ID do pedido inválido.', 400)
 
-  const acesso = await carregarContextoPedidosPersonalizados(['pedidos_personalizados_gestao'])
+  const acesso = await (deps.carregarContexto ?? carregarContextoPedidosPersonalizados)(['pedidos_personalizados_gestao'])
   if (!acesso.ok) return acesso.response
 
-  const repositorio = new RepositorioPedidosPersonalizados(acesso.contexto.supabase)
+  const repositorio = (deps.criarRepositorio ?? ((supabase) => new RepositorioPedidosPersonalizados(supabase)))(acesso.contexto.supabase)
   const atual = await repositorio.buscarPedidoNoEscopo(
     pedidoId,
     acesso.contexto.unidades.map((unidade) => unidade.id)
@@ -95,7 +102,7 @@ export async function solicitarProdutoSgi(_request: Request, pedidoId: string) {
 
   return NextResponse.json({
     ok: true,
-    produtoSgi: serializarIntegracaoProdutoSgi(resultado.data),
+    produtoSgi: serializarIntegracaoProdutoSgi(resultado.data, acesso.contexto.podeVerCustoInterno === true),
   }, { status: resultado.data.status_integracao === 'CONCLUIDO' ? 200 : 202 })
 }
 

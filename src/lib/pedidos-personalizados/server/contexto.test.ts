@@ -29,12 +29,30 @@ function acesso(role = 'user') {
   }
 }
 
+function fromComPerfil(perfil: unknown, erroPerfil: unknown = null) {
+  return vi.fn((tabela: string) => {
+    if (tabela === 'app_usuarios_perfis') {
+      const chain = {
+        select: vi.fn(() => chain),
+        eq: vi.fn(() => chain),
+        maybeSingle: vi.fn(() => Promise.resolve({ data: perfil, error: erroPerfil })),
+      }
+      return chain
+    }
+    return builder({
+      data: [{ app_unidades: { id: '1', chave: 'bigorrilho', nome: 'BIGORRILHO', ativo: true } }],
+      error: null,
+    })
+  })
+}
+
 function builder(resultado: unknown) {
   const chain = {
     select: vi.fn(() => chain),
     eq: vi.fn(() => chain),
     in: vi.fn(() => chain),
     order: vi.fn(() => Promise.resolve(resultado)),
+    maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null })),
   }
   return chain
 }
@@ -167,6 +185,62 @@ describe('contexto e escopo de pedidos personalizados', () => {
     expect(resultado.ok).toBe(true)
     if (resultado.ok) expect(resultado.contexto.unidades).toEqual([])
     expect(from).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['consultora', false],
+    ['supervisora_loja', false],
+    ['gestao', true],
+    ['pos_venda', true],
+  ])('resolve custo interno para o perfil %s', async (chave, esperado) => {
+    vi.mocked(requireModuleAccess).mockResolvedValue(acesso())
+    vi.mocked(createServiceClient).mockReturnValue({
+      from: fromComPerfil({ app_perfis_acesso: { chave, ativo: true } }),
+    } as never)
+    const resultado = await carregarContextoPedidosPersonalizados(['pedidos_personalizados_gestao'])
+    expect(resultado.ok).toBe(true)
+    if (resultado.ok) expect(resultado.contexto.podeVerCustoInterno).toBe(esperado)
+  })
+
+  it('superadmin vê custo sem consultar o perfil', async () => {
+    vi.mocked(requireModuleAccess).mockResolvedValue(acesso('superadmin'))
+    const from = vi.fn(() => builder({ data: [], error: null }))
+    vi.mocked(createServiceClient).mockReturnValue({ from } as never)
+    const resultado = await carregarContextoPedidosPersonalizados(['pedidos_personalizados_gestao'])
+    expect(resultado.ok).toBe(true)
+    if (resultado.ok) expect(resultado.contexto.podeVerCustoInterno).toBe(true)
+    expect(from).not.toHaveBeenCalledWith('app_usuarios_perfis')
+  })
+
+  it.each([
+    ['erro na consulta', { data: null, error: { message: 'falha' } }],
+    ['perfil ausente', { data: null, error: null }],
+    ['perfil inativo', { data: { app_perfis_acesso: { chave: 'gestao', ativo: false } }, error: null }],
+    ['chave inválida', { data: { app_perfis_acesso: { chave: 1, ativo: true } }, error: null }],
+  ])('omite custo quando a autorização falha: %s', async (_nome, respostaPerfil) => {
+    vi.mocked(requireModuleAccess).mockResolvedValue(acesso())
+    vi.mocked(createServiceClient).mockReturnValue({
+      from: fromComPerfil(respostaPerfil.data, respostaPerfil.error),
+    } as never)
+    const resultado = await carregarContextoPedidosPersonalizados(['pedidos_personalizados_gestao'])
+    expect(resultado.ok).toBe(true)
+    if (resultado.ok) expect(resultado.contexto.podeVerCustoInterno).toBe(false)
+  })
+
+  it('omite custo quando a consulta de perfil lança exceção', async () => {
+    vi.mocked(requireModuleAccess).mockResolvedValue(acesso())
+    vi.mocked(createServiceClient).mockReturnValue({
+      from: vi.fn((tabela: string) => {
+        if (tabela === 'app_usuarios_perfis') throw new Error('falha')
+        return builder({
+          data: [{ app_unidades: { id: '1', chave: 'bigorrilho', nome: 'BIGORRILHO', ativo: true } }],
+          error: null,
+        })
+      }),
+    } as never)
+    const resultado = await carregarContextoPedidosPersonalizados(['pedidos_personalizados_gestao'])
+    expect(resultado.ok).toBe(true)
+    if (resultado.ok) expect(resultado.contexto.podeVerCustoInterno).toBe(false)
   })
 
   it('bloqueia fora da janela e não cria service role', async () => {

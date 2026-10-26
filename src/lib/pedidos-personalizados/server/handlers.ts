@@ -157,7 +157,7 @@ function validarRelacoesCatalogo(
   return payload.dados
 }
 
-function serializarItemListagem(valor: unknown) {
+function serializarItemListagem(valor: unknown, incluirCusto: boolean) {
   const row = valor as Record<string, unknown>
   const unidade = row.unidade as { chave?: string } | null
   const fornecedor = row.fornecedor as { chave?: string; nome?: string } | null
@@ -198,7 +198,8 @@ function serializarItemListagem(valor: unknown) {
     ),
     recebidoEm: row.recebido_em,
     produtoSgi: serializarIntegracaoProdutoSgi(
-      (row.produto_sgi as IntegracaoProdutoSgiRow | null | undefined) ?? null
+      (row.produto_sgi as IntegracaoProdutoSgiRow | null | undefined) ?? null,
+      incluirCusto,
     ),
   }
 }
@@ -212,7 +213,7 @@ function serializarDetalhe(valor: {
   historico: unknown[]
   observacoes?: unknown[]
   produtoSgi: IntegracaoProdutoSgiRow | null
-}) {
+}, incluirCusto: boolean) {
   const pedido = valor.pedido as Record<string, unknown>
   const fornecedor = pedido.fornecedor as Record<string, unknown> | null
   const unidade = pedido.unidade as Record<string, unknown> | null
@@ -241,7 +242,7 @@ function serializarDetalhe(valor: {
     version: pedido.version,
     createdAt: pedido.created_at,
     updatedAt: pedido.updated_at,
-    produtoSgi: serializarIntegracaoProdutoSgi(valor.produtoSgi),
+    produtoSgi: serializarIntegracaoProdutoSgi(valor.produtoSgi, incluirCusto),
     tapetes: valor.tapetes.map((item) => {
       const tapete = item as Record<string, unknown>
       return {
@@ -281,9 +282,9 @@ function serializarDetalhe(valor: {
         descricao: produto.descricao_snapshot,
         referencia: produto.referencia_snapshot,
         precoUnitario: Number(produto.preco_unitario_snapshot),
-        custoUnitario: Number(produto.custo_unitario_snapshot),
+        ...(incluirCusto ? { custoUnitario: Number(produto.custo_unitario_snapshot) } : {}),
         totalVenda: Number(produto.total_venda),
-        totalCusto: Number(produto.total_custo),
+        ...(incluirCusto ? { totalCusto: Number(produto.total_custo) } : {}),
       }
     }),
     decorisiItens: (valor.decorisiItens ?? []).map((item) => {
@@ -638,13 +639,14 @@ export async function listarPedidos(
   }
 
   const repo = deps.criarRepositorio(acesso.contexto)
-  const resultado = await repo.listar(validacao.filtros, acesso.contexto.unidades)
+  const incluirCusto = acesso.contexto.podeVerCustoInterno === true
+  const resultado = await repo.listar(validacao.filtros, acesso.contexto.unidades, { incluirCusto })
   if (resultado.error) return falhaBanco(log, resultado.error)
   const totalPaginas = Math.max(Math.ceil(resultado.data.total / 20), 1)
   registrarResultado(log, 'sucesso', 'PEDIDOS_LISTADOS')
   return NextResponse.json({
     ok: true,
-    itens: resultado.data.itens.map(serializarItemListagem),
+    itens: resultado.data.itens.map((item) => serializarItemListagem(item, incluirCusto)),
     pagina: validacao.filtros.pagina,
     totalPaginas,
     totalRegistros: resultado.data.total,
@@ -692,7 +694,8 @@ export async function obterDetalhePedido(
   }
 
   const repo = deps.criarRepositorio(acesso.contexto)
-  const detalhe = await repo.carregarDetalhe(pedidoId, acesso.contexto.unidades.map((item) => item.id), acesso.contexto.allowedUser.id)
+  const incluirCusto = acesso.contexto.podeVerCustoInterno === true
+  const detalhe = await repo.carregarDetalhe(pedidoId, acesso.contexto.unidades.map((item) => item.id), acesso.contexto.allowedUser.id, { incluirCusto })
   if (detalhe.error) return falhaBanco(log, detalhe.error)
   if (!detalhe.data) {
     registrarResultado(log, 'erro', 'PEDIDO_NAO_ENCONTRADO')
@@ -700,7 +703,7 @@ export async function obterDetalhePedido(
   }
 
   registrarResultado(log, 'sucesso', 'PEDIDO_CARREGADO')
-  return NextResponse.json({ ok: true, pedido: serializarDetalhe(detalhe.data) })
+  return NextResponse.json({ ok: true, pedido: serializarDetalhe(detalhe.data, incluirCusto) })
 }
 
 export async function adicionarObservacao(

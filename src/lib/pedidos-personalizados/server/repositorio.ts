@@ -507,7 +507,8 @@ export class RepositorioPedidosPersonalizados {
 
   async listar(
     filtros: FiltrosPedidos,
-    unidades: readonly UnidadeEscopoPedido[]
+    unidades: readonly UnidadeEscopoPedido[],
+    opcoes: { incluirCusto?: boolean } = {},
   ): Promise<ResultadoBanco<{ itens: unknown[]; total: number }>> {
     const unidadeIds = unidades.map((unidade) => unidade.id)
     if (unidadeIds.length === 0) return { data: { itens: [], total: 0 }, error: null }
@@ -605,6 +606,14 @@ export class RepositorioPedidosPersonalizados {
     const produtoSgiPorPedido = new Map<string, IntegracaoProdutoSgiRow>()
     if (pedidoIds.length > 0) {
       const temDecorisi = rows.some((row) => (row.fornecedor as { chave?: string } | null)?.chave === 'decorisi')
+      const colunasSgiListagem: string = [
+        'pedido_id', 'status_integracao', 'etapa', 'unidade_snapshot',
+        'numero_lancamento_snapshot', 'nome_produto_sgi', 'cliente_snapshot', 'operacao_pendente', 'lancamento_aplicado_em', 'status_renomeacao', 'erro_renomeacao_codigo', 'erro_renomeacao_mensagem',
+        ...(opcoes.incluirCusto === false ? [] : ['custo_enviado']),
+        'preco_enviado', 'produto_id_sgi', 'codigo_sgi', 'tentativas',
+        'erro_codigo', 'erro_mensagem', 'solicitado_em', 'iniciado_em',
+        'concluido_em', 'updated_at',
+      ].join(', ')
       const [tapetesResultado, itensExclusiveResultado, itensDecorisiResultado, historicoResultado, produtoSgiResultado] = await Promise.all([
         this.supabase
           .from('pedidos_personalizados_moriah_tapetes')
@@ -628,13 +637,7 @@ export class RepositorioPedidosPersonalizados {
           .order('created_at', { ascending: false }),
         this.supabase
           .from('pedidos_personalizados_lebebe_exclusive_sgi')
-          .select(`
-            pedido_id, status_integracao, etapa, unidade_snapshot,
-            numero_lancamento_snapshot, nome_produto_sgi, cliente_snapshot, operacao_pendente, lancamento_aplicado_em, status_renomeacao, erro_renomeacao_codigo, erro_renomeacao_mensagem, custo_enviado,
-            preco_enviado, produto_id_sgi, codigo_sgi, tentativas,
-            erro_codigo, erro_mensagem, solicitado_em, iniciado_em,
-            concluido_em, updated_at
-          `)
+          .select(colunasSgiListagem)
           .in('pedido_id', pedidoIds),
       ])
       if (tapetesResultado.error) return { data: null, error: tapetesResultado.error }
@@ -816,8 +819,10 @@ export class RepositorioPedidosPersonalizados {
   async carregarDetalhe(
     pedidoId: string,
     unidadeIds: readonly string[],
-    usuarioId?: string
+    usuarioId?: string,
+    opcoes: { incluirCusto?: boolean } = {},
   ): Promise<ResultadoBanco<{ pedido: unknown; tapetes: unknown[]; itens: unknown[]; decorisiItens: unknown[]; cotacaoDecorisi: unknown; historico: unknown[]; observacoes: unknown[]; produtoSgi: IntegracaoProdutoSgiRow | null } | null>> {
+    const incluirCusto = opcoes.incluirCusto !== false
     if (unidadeIds.length === 0) return { data: null, error: null }
     const { data: pedido, error: pedidoError } = await this.supabase
       .from('pedidos_personalizados_pedidos')
@@ -846,13 +851,17 @@ export class RepositorioPedidosPersonalizados {
       .order('ordem', { ascending: true })
     if (tapetesError) return { data: null, error: tapetesError }
 
+    const colunasItens: string = [
+      'id', 'ordem', 'quantidade', 'nome_ou_letra', 'colecao_snapshot',
+      'descricao_snapshot', 'referencia_snapshot', 'preco_unitario_snapshot',
+      ...(incluirCusto ? ['custo_unitario_snapshot'] : []),
+      'total_venda',
+      ...(incluirCusto ? ['total_custo'] : []),
+      'produto_id',
+    ].join(', ')
     const { data: itens, error: itensError } = await this.supabase
       .from('pedidos_personalizados_lebebe_exclusive_itens')
-      .select(`
-        id, ordem, quantidade, nome_ou_letra, colecao_snapshot,
-        descricao_snapshot, referencia_snapshot, preco_unitario_snapshot,
-        custo_unitario_snapshot, total_venda, total_custo, produto_id
-      `)
+      .select(colunasItens)
       .eq('pedido_id', pedidoId)
       .order('ordem', { ascending: true })
     if (itensError) return { data: null, error: itensError }
@@ -881,17 +890,19 @@ export class RepositorioPedidosPersonalizados {
       if (!cotacao.error) cotacaoDecorisi = cotacao.data
     }
 
+    const colunasSgiDetalhe: string = [
+      'pedido_id', 'status_integracao', 'etapa', 'modelo_produto_id_sgi', 'modelo_nome_esperado',
+      'unidade_snapshot', 'numero_lancamento_snapshot', 'nome_produto_sgi', 'cliente_snapshot', 'operacao_pendente', 'lancamento_aplicado_em', 'status_renomeacao', 'erro_renomeacao_codigo', 'erro_renomeacao_mensagem',
+      ...(incluirCusto ? ['custo_enviado', 'procedimento_custo_sgi'] : []),
+      'preco_enviado', 'produto_id_sgi', 'codigo_sgi',
+      'numero_lancamento_entrada_sgi', 'documento_entrada_id_sgi',
+      'procedimento_finalizacao_sgi', 'tabela_preco_id_sgi', 'item_tabela_preco_id_sgi',
+      'tentativas', 'erro_codigo', 'erro_mensagem', 'eventos', 'solicitado_em',
+      'iniciado_em', 'concluido_em', 'updated_at',
+    ].join(', ')
     const { data: produtoSgi, error: produtoSgiError } = await this.supabase
       .from('pedidos_personalizados_lebebe_exclusive_sgi')
-      .select(`
-        pedido_id, status_integracao, etapa, modelo_produto_id_sgi, modelo_nome_esperado,
-        unidade_snapshot, numero_lancamento_snapshot, nome_produto_sgi, cliente_snapshot, operacao_pendente, lancamento_aplicado_em, status_renomeacao, erro_renomeacao_codigo, erro_renomeacao_mensagem,
-        custo_enviado, preco_enviado, produto_id_sgi, codigo_sgi,
-        procedimento_custo_sgi, numero_lancamento_entrada_sgi, documento_entrada_id_sgi,
-        procedimento_finalizacao_sgi, tabela_preco_id_sgi, item_tabela_preco_id_sgi,
-        tentativas, erro_codigo, erro_mensagem, eventos, solicitado_em,
-        iniciado_em, concluido_em, updated_at
-      `)
+      .select(colunasSgiDetalhe)
       .eq('pedido_id', pedidoId)
       .maybeSingle()
     if (produtoSgiError) return { data: null, error: produtoSgiError }

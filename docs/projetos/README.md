@@ -7,6 +7,7 @@ detalhado de cada um vive em `<slug>/STATUS.md`; não duplique aqui.
 
 | Projeto | Status | Fase atual | Entrada |
 |---|---|---|---|
+| confidencialidade-custos | EM_EXECUCAO | Fase 2 validada e publicada | [STATUS.md](confidencialidade-custos/STATUS.md) |
 | prancheta-virtual | EM_EXECUCAO | D-031/D-032 publicados; ajustes visuais D-033 no commit 6b9877d, READY em lebebe.cloud; homologação humana pendente | [STATUS.md](prancheta-virtual/STATUS.md) |
 | mere-ia | EM_EXECUCAO | D-020: cinco reais analisados; 2 sintéticos válidos; 8 tentativas; revisão humana pendente, Fase 1C não aprovada | [STATUS.md](mere-ia/STATUS.md) |
 | decorisi-pedidos-personalizados | EM_EXECUCAO | Fases 1–5 validadas; Xadrezia (222 DB/XP) e ajustes do formulário entregues; aguardando rehomologação local; ativação comercial desativada | [STATUS.md](decorisi-pedidos-personalizados/STATUS.md) |

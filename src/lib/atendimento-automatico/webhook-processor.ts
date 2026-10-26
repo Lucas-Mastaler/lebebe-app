@@ -1,6 +1,12 @@
 import { createServiceClient } from '@/lib/supabase/service';
 import { normalizarTextoDigisac } from '@/lib/digisac/triagem';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
+import { DEPARTAMENTO_POS_VENDA_ID } from '@/lib/digisac/departamentosFixos';
+import {
+  atendimentoAutomaticoEncerrado,
+  estadoEncerraAtendimentoAutomatico,
+  transferirAtendimentoPosVenda,
+} from '@/lib/digisac/transferencia-pos-venda';
 import type { DigisacMensagem } from '@/lib/digisac/sgi-sync';
 import { buscarAgendamentosPorDocumento, atualizarDataAgendaGoogleOriginalMere } from '@/lib/google/sheets-service-account';
 import type { GrupoAgendamento, EventoReagendamentoPlanilha } from '@/lib/google/sheets-service-account';
@@ -1036,6 +1042,41 @@ async function construirMetadataComResposta(
     }
   }
 
+  if (estadoEncerraAtendimentoAutomatico(params.estado)) {
+    try {
+      const supabase = createServiceClient();
+      await supabase
+        .from('atendimento_automatico_sessoes')
+        .update({
+          metadata: { ...metadata },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', params.sessaoId);
+    } catch (erro) {
+      const mensagem = erro instanceof Error ? erro.message : 'erro_desconhecido';
+      console.error(`[posvenda-transferencia] nao persistiu a resposta antes da transferencia sessaoId=${params.sessaoId} erro=${mensagem}`);
+    }
+
+    try {
+      metadata.transferencia_pos_venda = await transferirAtendimentoPosVenda({
+        sessaoId: params.sessaoId,
+        contactId: params.contactId,
+        ticketId: params.ticketId,
+      });
+    } catch (erro) {
+      const mensagem = erro instanceof Error ? erro.message : 'erro_desconhecido';
+      console.error(`[posvenda-transferencia] falha isolada sessaoId=${params.sessaoId} erro=${mensagem}`);
+      metadata.transferencia_pos_venda = {
+        status: 'erro',
+        motivo: 'falha_isolada',
+        departmentId: DEPARTAMENTO_POS_VENDA_ID,
+        ticketId: params.ticketId,
+        httpStatus: null,
+        em: new Date().toISOString(),
+      };
+    }
+  }
+
   return metadata;
 }
 
@@ -1171,23 +1212,32 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
       }
 
       sessaoId = sessaoExistente.id;
-      const pausaAte = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-      await supabase
-        .from('atendimento_automatico_sessoes')
-        .update({
-          status: 'pausado_humano',
-          estado: 'pausado_humano',
-          pausa_ate: pausaAte,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', sessaoId);
-
-      await supabase.from('atendimento_automatico_eventos').insert({
-        sessao_id: sessaoId,
-        tipo: 'pausa_humano',
-        descricao: 'Humano interno detectado, sessao pausada por 24h',
+      const fluxoEncerrado = atendimentoAutomaticoEncerrado({
+        estado: sessaoExistente.estado,
+        metadata: sessaoExistente.metadata as Record<string, unknown> | null,
       });
+
+      if (!fluxoEncerrado) {
+        const pausaAte = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+        await supabase
+          .from('atendimento_automatico_sessoes')
+          .update({
+            status: 'pausado_humano',
+            estado: 'pausado_humano',
+            pausa_ate: pausaAte,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', sessaoId);
+
+        await supabase.from('atendimento_automatico_eventos').insert({
+          sessao_id: sessaoId,
+          tipo: 'pausa_humano',
+          descricao: 'Humano interno detectado, sessao pausada por 24h',
+        });
+      } else {
+        console.log(`[posvenda-webhook] humano apos fim do fluxo, sessao mantida sessaoId=${sessaoId}`);
+      }
 
       await supabase.from('atendimento_automatico_mensagens').insert({
         sessao_id: sessaoId,
@@ -1202,7 +1252,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         metadata: { serviceId, departmentId },
       });
 
-      console.log(`[posvenda-webhook] humano detectado, sessao pausada sessaoId=${sessaoId}`);
+      console.log(`[posvenda-webhook] humano detectado sessaoId=${sessaoId} fluxoEncerrado=${fluxoEncerrado}`);
       return { ok: true, saved: true, origem: 'humano' };
     }
 
@@ -1710,6 +1760,9 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           }
         }
 
+        // Problema independente, fora desta alteracao: o atalho 1/2 grava
+        // pedido_confirmado_acao_recebida e a mensagem promete avaliar datas,
+        // mas a maquina nao tem transicao seguinte. Nao tratar como fim de fluxo.
         // Se ha apenas 1 grupo e solicitacao de alterar_entrega, 1/2 sao acoes de alteracao
         if (
           sessaoExistente.tipo_solicitacao === 'alterar_entrega' &&
@@ -1878,6 +1931,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           } else {
             const acaoExistente = metadataAtual?.acao_alteracao as string | undefined;
             if (acaoExistente) {
+              // Mesmo problema independente do atalho 1/2: estado sem transicao seguinte.
               novoEstado = 'pedido_confirmado_acao_recebida';
               resposta = respostaPedidoConfirmadoAlterarAcaoJaEscolhida();
             } else {
@@ -4227,13 +4281,37 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         updated_at: new Date().toISOString(),
       };
 
-      // Se estava pausado_humano e pausa ja expirou, reativar
-      if (sessaoExistente.status === 'pausado_humano') {
+      const metadataSessao = sessaoExistente.metadata as Record<string, unknown> | null;
+      const fluxoEncerrado = atendimentoAutomaticoEncerrado({
+        estado: sessaoExistente.estado,
+        metadata: metadataSessao,
+      });
+
+      // Se estava pausado_humano e pausa ja expirou, reativar.
+      // Sessao ja encerrada nao volta ao fluxo automatico.
+      if (sessaoExistente.status === 'pausado_humano' && !fluxoEncerrado) {
         const pausaAte = sessaoExistente.pausa_ate;
         if (!pausaAte || new Date(pausaAte) < new Date()) {
           updateData.status = 'ativa';
           updateData.estado = 'aguardando_documento';
           updateData.pausa_ate = null;
+        }
+      }
+
+      if (fluxoEncerrado) {
+        try {
+          const transferencia = await transferirAtendimentoPosVenda({
+            sessaoId,
+            contactId,
+            ticketId,
+          });
+          updateData.metadata = {
+            ...(metadataSessao ?? {}),
+            transferencia_pos_venda: transferencia,
+          };
+        } catch (erro) {
+          const mensagem = erro instanceof Error ? erro.message : 'erro_desconhecido';
+          console.error(`[posvenda-transferencia] falha isolada na mensagem posterior sessaoId=${sessaoId} erro=${mensagem}`);
         }
       }
 

@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/service';
+import { assumirChamadoAutomacao, consultarControleChamado, estadoAguardaCliente } from './controle-chamado';
 import { normalizarTextoDigisac } from '@/lib/digisac/triagem';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
 import { DEPARTAMENTO_POS_VENDA_ID } from '@/lib/digisac/departamentosFixos';
@@ -1005,6 +1006,17 @@ async function construirMetadataComResposta(
     resposta_sugerida_em: new Date().toISOString(),
   };
 
+  if (process.env.ATENDIMENTO_POSVENDA_AUTO_REPLY_ENABLED === 'true'
+    && metadata.controle_automacao_user_id && params.ticketId && params.contactId) {
+    const ticket = await consultarControleChamado(params.ticketId, params.contactId);
+    if (!ticket || ticket.isOpen !== true || ticket.endedAt
+      || ticket.departmentId !== DEPARTAMENTO_POS_VENDA_ID
+      || ticket.userId !== metadata.controle_automacao_user_id) {
+      console.warn(`[posvenda-controle] envio cancelado sessaoId=${params.sessaoId} motivo=controle_perdido`);
+      throw new Error('controle_chamado_perdido');
+    }
+  }
+
   const envio = await processarEnvioAutomatico({
     sessaoId: params.sessaoId,
     estado: params.estado,
@@ -1019,6 +1031,10 @@ async function construirMetadataComResposta(
   if (envio.enviado) {
     metadata.resposta_automatica_enviada = true;
     metadata.resposta_automatica_enviada_em = new Date().toISOString();
+    // Somente respostas enviadas com sucesso e fluxo ainda aberto iniciam a espera.
+    metadata.aguardando_cliente_desde = estadoAguardaCliente(params.estado)
+      ? metadata.resposta_automatica_enviada_em : null;
+    metadata.aguardando_cliente_message_id = envio.digisac_message_id ?? null;
     if (envio.digisac_message_id) {
       metadata.resposta_automatica_digisac_message_id = envio.digisac_message_id;
       // Acumular lista de ids para reconhecer eco de multiplas mensagens automaticas
@@ -1042,7 +1058,12 @@ async function construirMetadataComResposta(
     }
   }
 
-  if (estadoEncerraAtendimentoAutomatico(params.estado)) {
+  const erroEnvio = (envio.erro && !['ja_enviada', 'telefone_nao_autorizado'].includes(envio.erro))
+    || (envio.enviado && !envio.digisac_message_id);
+  if (estadoEncerraAtendimentoAutomatico(params.estado) || params.estado === 'erro_tecnico_busca_agenda' || erroEnvio) {
+    metadata.aguardando_cliente_desde = null;
+    metadata.atendimento_automatico_encerrado = true;
+    metadata.devolucao_pos_venda_pendente = true;
     try {
       const supabase = createServiceClient();
       await supabase
@@ -1062,7 +1083,11 @@ async function construirMetadataComResposta(
         sessaoId: params.sessaoId,
         contactId: params.contactId,
         ticketId: params.ticketId,
+        ...(typeof metadata.controle_automacao_user_id === 'string'
+          ? { expectedUserId: metadata.controle_automacao_user_id } : {}),
       });
+      metadata.devolucao_pos_venda_pendente =
+        (metadata.transferencia_pos_venda as { status: string }).status !== 'aceita';
     } catch (erro) {
       const mensagem = erro instanceof Error ? erro.message : 'erro_desconhecido';
       console.error(`[posvenda-transferencia] falha isolada sessaoId=${params.sessaoId} erro=${mensagem}`);
@@ -1078,6 +1103,32 @@ async function construirMetadataComResposta(
   }
 
   return metadata;
+}
+
+async function registrarFalhaControle(params: {
+  sessaoId: string; ticketId: string; contactId: string; motivo: string;
+  metadata: Record<string, unknown> | null;
+}) {
+  const supabase = createServiceClient();
+  const precisaDevolver = !['atribuido_humano', 'outro_departamento', 'ticket_indisponivel'].includes(params.motivo);
+  const metadata: Record<string, unknown> = { ...params.metadata,
+    controle_automacao_user_id: process.env.DIGISAC_BOT_USER_ID,
+    atendimento_automatico_encerrado: true, aguardando_cliente_desde: null,
+    motivo_transferencia_humano: params.motivo, devolucao_pos_venda_pendente: precisaDevolver };
+  const { error } = await supabase.from('atendimento_automatico_sessoes')
+    .update({ status: 'transferido_humano', estado: 'transferido_humano', metadata,
+      updated_at: new Date().toISOString() }).eq('id', params.sessaoId);
+  if (error) throw new Error('erro_registrar_falha_controle');
+  if (!precisaDevolver || !process.env.DIGISAC_BOT_USER_ID) return;
+  const transferencia = await transferirAtendimentoPosVenda({
+    sessaoId: params.sessaoId, ticketId: params.ticketId, contactId: params.contactId,
+    expectedUserId: process.env.DIGISAC_BOT_USER_ID,
+  });
+  const { error: erroFim } = await supabase.from('atendimento_automatico_sessoes')
+    .update({ metadata: { ...metadata, transferencia_pos_venda: transferencia,
+      devolucao_pos_venda_pendente: transferencia.status !== 'aceita' }, updated_at: new Date().toISOString() })
+    .eq('id', params.sessaoId);
+  if (erroFim) throw new Error('erro_persistir_falha_controle');
 }
 
 export async function processarWebhookPosVenda(rawPayload: unknown): Promise<ResultadoWebhook> {
@@ -1132,7 +1183,7 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
       return { ok: true, ignored: true, reason: 'service_id_diferente' };
     }
 
-    const ticketId = (msg.ticketId as string | undefined) ?? null;
+    let ticketId = (msg.ticketId as string | undefined) ?? null;
     if (!ticketId) {
       console.log('[posvenda-webhook] ignorado por filtro técnico: sem ticketId');
       return { ok: true, ignored: true, reason: 'sem_ticket_id' };
@@ -1356,6 +1407,34 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
           console.log(`[posvenda-webhook] cliente bloqueado (${bloqueioAtivo.tipo}), mensagem salva`);
           return { ok: true, saved: true, origem: 'cliente' };
         }
+      }
+
+      // Atualiza atividade antes de consultas lentas: invalida a seleção do cron.
+      // A comparação de updated_at impede processar uma sessão encerrada pelo cron.
+      if (process.env.ATENDIMENTO_POSVENDA_AUTO_REPLY_ENABLED === 'true'
+        && !atendimentoAutomaticoEncerrado({ estado: sessaoExistente.estado, metadata: sessaoExistente.metadata })) {
+        if (sessaoExistente.status !== 'ativa') {
+          return { ok: true, ignored: true, reason: 'sessao_fora_do_automatico' };
+        }
+        const agora = new Date().toISOString();
+        const { data: atividade, error: erroAtividade } = await supabase.from('atendimento_automatico_sessoes')
+          .update({ ultima_mensagem_em: agora, updated_at: agora })
+          .eq('id', sessaoId).eq('status', 'ativa').eq('updated_at', sessaoExistente.updated_at)
+          .select('id').maybeSingle();
+        if (erroAtividade || !atividade) return { ok: false, error: 'sessao_alterada_concorrentemente' };
+        const controle = await assumirChamadoAutomacao(ticketId, contactId);
+        if (!controle.ok) {
+          console.warn(`[posvenda-controle] sessaoId=${sessaoId} motivo=${controle.motivo}`);
+          await registrarFalhaControle({ sessaoId, ticketId, contactId, motivo: controle.motivo,
+            metadata: sessaoExistente.metadata });
+          return { ok: true, ignored: true, reason: controle.motivo };
+        }
+        ticketId = controle.ticketId;
+        sessaoExistente.metadata = { ...(sessaoExistente.metadata ?? {}), controle_automacao_user_id: controle.userId };
+        const { error: erroControle } = await supabase.from('atendimento_automatico_sessoes')
+          .update({ digisac_ticket_id: ticketId, metadata: sessaoExistente.metadata })
+          .eq('id', sessaoId);
+        if (erroControle) return { ok: false, error: 'erro_persistir_controle' };
       }
 
       // Maquina de estados
@@ -4298,12 +4377,14 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
         }
       }
 
-      if (fluxoEncerrado) {
+      if (fluxoEncerrado && metadataSessao?.motivo_transferencia_humano !== 'inatividade_cliente') {
         try {
           const transferencia = await transferirAtendimentoPosVenda({
             sessaoId,
             contactId,
             ticketId,
+            ...(typeof metadataSessao?.controle_automacao_user_id === 'string'
+              ? { expectedUserId: metadataSessao.controle_automacao_user_id } : {}),
           });
           updateData.metadata = {
             ...(metadataSessao ?? {}),
@@ -4411,6 +4492,14 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
       } : {}),
     };
 
+    if (process.env.ATENDIMENTO_POSVENDA_AUTO_REPLY_ENABLED === 'true') {
+      // Se houver timeout após o POST de atribuição, o cron recupera a sessão.
+      metadataInicial.controle_automacao_user_id = process.env.DIGISAC_BOT_USER_ID;
+      metadataInicial.atendimento_automatico_encerrado = true;
+      metadataInicial.devolucao_pos_venda_pendente = true;
+      metadataInicial.motivo_transferencia_humano = 'falha_assumir_chamado';
+    }
+
     const { data: novaSessao, error: errSessao } = await supabase
       .from('atendimento_automatico_sessoes')
       .insert({
@@ -4436,6 +4525,28 @@ export async function processarWebhookPosVenda(rawPayload: unknown): Promise<Res
     }
 
     sessaoId = novaSessao.id;
+
+    // A sessão já existe para rastrear inclusive falhas de atribuição.
+    if (process.env.ATENDIMENTO_POSVENDA_AUTO_REPLY_ENABLED === 'true') {
+      const controle = await assumirChamadoAutomacao(ticketId, contactId);
+      if (!controle.ok) {
+        console.warn(`[posvenda-controle] inicio recusado sessaoId=${sessaoId} motivo=${controle.motivo}`);
+        await registrarFalhaControle({ sessaoId, ticketId, contactId, motivo: controle.motivo,
+          metadata: metadataInicial });
+        await supabase.from('atendimento_automatico_eventos').insert({
+          sessao_id: sessaoId, tipo: 'falha_assumir_chamado', descricao: controle.motivo,
+        });
+        return { ok: true, ignored: true, reason: controle.motivo };
+      }
+      ticketId = controle.ticketId;
+      metadataInicial.controle_automacao_user_id = controle.userId;
+      metadataInicial.atendimento_automatico_encerrado = false;
+      metadataInicial.devolucao_pos_venda_pendente = false;
+      delete metadataInicial.motivo_transferencia_humano;
+      const { error: erroControle } = await supabase.from('atendimento_automatico_sessoes')
+        .update({ digisac_ticket_id: ticketId, metadata: metadataInicial }).eq('id', sessaoId);
+      if (erroControle) return { ok: false, error: 'erro_persistir_controle' };
+    }
 
     await supabase.from('atendimento_automatico_eventos').insert({
       sessao_id: sessaoId,

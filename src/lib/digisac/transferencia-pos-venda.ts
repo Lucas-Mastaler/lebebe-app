@@ -56,6 +56,7 @@ export function atendimentoAutomaticoEncerrado(params: {
   estado: string | null | undefined;
   metadata: Record<string, unknown> | null | undefined;
 }): boolean {
+  if (params.metadata?.atendimento_automatico_encerrado === true) return true;
   if (estadoEncerraAtendimentoAutomatico(params.estado)) return true;
   const bloco = params.metadata?.transferencia_pos_venda;
   if (!bloco || typeof bloco !== 'object') return false;
@@ -282,8 +283,16 @@ async function executarTransferencia(params: {
   reservaId: string;
   token: string;
   byUserId: string;
+  expectedUserId?: string;
 }): Promise<ResultadoTransferenciaPosVenda> {
   const antes = await consultarTicket(params.ticketId);
+  if (params.expectedUserId && (!antes || antes.contactId !== params.contactId
+    || antes.isOpen !== true || antes.endedAt
+    || (antes.userId !== params.expectedUserId && !ticketTransferido(antes, params.contactId)))) {
+    const final = resultado({ status: 'erro', motivo: 'controle_chamado_alterado', ticketId: params.ticketId });
+    await concluirReserva(params.supabase, params.reservaId, params.token, final);
+    return final;
+  }
   if (antes && ticketTransferido(antes, params.contactId)) {
     const vinculo = await vincularTicketConfirmado(params.supabase, params.sessaoId, params.ticketId, antes.id);
     const final = resultado({
@@ -363,6 +372,7 @@ export async function transferirAtendimentoPosVenda(params: {
   sessaoId: string;
   contactId: string | null;
   ticketId: string | null;
+  expectedUserId?: string;
 }): Promise<ResultadoTransferenciaPosVenda> {
   const supabase = params.supabase ?? createServiceClient();
   try {
@@ -391,6 +401,7 @@ export async function transferirAtendimentoPosVenda(params: {
       reservaId: reserva.id,
       token: reserva.token,
       byUserId,
+      expectedUserId: params.expectedUserId,
     });
     console.log(`[posvenda-transferencia] sessaoId=${params.sessaoId} status=${final.status} motivo=${final.motivo ?? '-'} http=${final.httpStatus ?? '-'} ticketId=${final.ticketId ?? '-'}`);
     return final;

@@ -4,6 +4,8 @@ import { buscarAgendamentosPorDocumento } from '@/lib/google/sheets-service-acco
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
 import { transferirAtendimentoPosVenda } from '@/lib/digisac/transferencia-pos-venda';
+import { assumirChamadoAutomacao, consultarControleChamado } from './controle-chamado';
+import * as autoReply from './auto-reply';
 import type { GrupoAgendamento, AgendamentoEncontrado } from '@/lib/google/sheets-service-account';
 
 vi.mock('@/lib/google/sheets-service-account', () => ({
@@ -16,6 +18,11 @@ vi.mock('@/lib/supabase/service', () => ({
 
 vi.mock('@/lib/digisac/clienteDigisac', () => ({
   fetchDigisac: vi.fn(),
+}));
+
+vi.mock('./controle-chamado', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./controle-chamado')>(),
+  assumirChamadoAutomacao: vi.fn(), consultarControleChamado: vi.fn(),
 }));
 
 vi.mock('@/lib/digisac/transferencia-pos-venda', () => {
@@ -53,6 +60,7 @@ type SessaoFake = {
   telefone: string;
   estado: string;
   status: string;
+  updated_at?: string;
   tipo_solicitacao: string;
   documento_informado: string | null;
   metadata: Record<string, unknown> | null;
@@ -73,8 +81,10 @@ function criarSupabaseFake() {
           return this;
         },
         eq() {
-          if (this._mode === 'update') return Promise.resolve({ data: null, error: null });
           return this;
+        },
+        then(resolve: (value: { data: null; error: null }) => unknown) {
+          return Promise.resolve({ data: null, error: null }).then(resolve);
         },
         or() {
           return this;
@@ -204,6 +214,49 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+describe('controle do chamado durante atendimento automático', () => {
+  function habilitarControle() {
+    process.env.ATENDIMENTO_POSVENDA_AUTO_REPLY_ENABLED = 'true';
+    vi.mocked(assumirChamadoAutomacao).mockResolvedValue({ ok: true, ticketId: 'ticket-1', userId: 'bot' });
+    vi.mocked(consultarControleChamado).mockResolvedValue({ id: 'ticket-1', contactId: 'contact-1',
+      userId: 'bot', isOpen: true, endedAt: null, departmentId: '50e84096-8d47-4960-b32d-3b4000eee516' });
+    return vi.spyOn(autoReply, 'processarEnvioAutomatico')
+      .mockResolvedValue({ enviado: true, digisac_message_id: 'resposta-real-1' });
+  }
+
+  it('confirma a atribuição e inicia espera somente após envio confirmado', async () => {
+    const enviar = habilitarControle();
+    sessaoAtual = sessaoBase({ estado: 'aguardando_documento', updated_at: '2026-10-26T18:00:00Z' });
+    vi.mocked(buscarAgendamentosPorDocumento).mockResolvedValue({ ok: true, agendamentos: [], grupos: [], total: 0, total_grupos: 0 });
+    vi.useFakeTimers();
+    const processamento = processarWebhookPosVenda(payload('10976025914', 'msg-controle'));
+    await vi.waitFor(() => expect(buscarAgendamentosPorDocumento).toHaveBeenCalled());
+    await vi.advanceTimersByTimeAsync(5000); await processamento;
+    expect(assumirChamadoAutomacao).toHaveBeenCalledWith('ticket-1', 'contact-1');
+    expect(enviar).toHaveBeenCalled();
+    expect(updates.findLast(u => u.data.estado === 'pedido_nao_localizado')?.data.metadata).toMatchObject({
+      controle_automacao_user_id: 'bot', aguardando_cliente_message_id: 'resposta-real-1',
+      aguardando_cliente_desde: expect.any(String),
+    });
+  });
+
+  it('chamado de humano não consulta agenda nem responde', async () => {
+    const enviar = habilitarControle();
+    vi.mocked(assumirChamadoAutomacao).mockResolvedValue({ ok: false, motivo: 'atribuido_humano' });
+    expect(await processarWebhookPosVenda(payload('sim', 'msg-humano'))).toMatchObject({ ignored: true, reason: 'atribuido_humano' });
+    expect(enviar).not.toHaveBeenCalled(); expect(buscarAgendamentosPorDocumento).not.toHaveBeenCalled();
+  });
+
+  it('humano que assume durante a consulta impede resposta e transferência', async () => {
+    const enviar = habilitarControle();
+    vi.mocked(consultarControleChamado).mockResolvedValue({ id: 'ticket-1', contactId: 'contact-1',
+      userId: 'victor', isOpen: true, endedAt: null, departmentId: '50e84096-8d47-4960-b32d-3b4000eee516' });
+    await processarWebhookPosVenda(payload('nao', 'msg-perdeu-controle'));
+    expect(enviar).not.toHaveBeenCalled(); expect(transferirAtendimentoPosVenda).not.toHaveBeenCalled();
+  });
 });
 
 describe('processarWebhookPosVenda - relocalizacao de pedido negado', () => {

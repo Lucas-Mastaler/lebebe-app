@@ -344,4 +344,12 @@ describe('transferirAtendimentoPosVenda', () => {
     expect(banco.sessoes[0].digisac_ticket_id).toBe(TICKET)
     expect(vi.mocked(fetchDigisac).mock.calls.every(([endpoint]) => endpoint === `/tickets/${TICKET}`)).toBe(true)
   })
+
+  it('não remove humano que assumiu depois da seleção do cron', async () => {
+    vi.mocked(fetchDigisac).mockResolvedValue(ticket({ userId: 'victor' }))
+    const resultado = await transferirAtendimentoPosVenda({ supabase: criarBanco() as never,
+      sessaoId: SESSAO, contactId: CONTATO, ticketId: TICKET, expectedUserId: BOT })
+    expect(resultado).toMatchObject({ status: 'erro', motivo: 'controle_chamado_alterado' })
+    expect(fetchDigisacRaw).not.toHaveBeenCalled()
+  })
 })

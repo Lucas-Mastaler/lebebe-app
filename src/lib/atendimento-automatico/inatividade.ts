@@ -2,7 +2,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
 import { atendimentoAutomaticoEncerrado, transferirAtendimentoPosVenda } from '@/lib/digisac/transferencia-pos-venda';
 import { consultarControleChamado, estadoAguardaCliente } from './controle-chamado';
-import { DEPARTAMENTO_POS_VENDA_ID } from '@/lib/digisac/departamentosFixos';
+import { DEPARTAMENTO_POS_VENDA_ID, DEPARTAMENTO_POS_VENDA_AUTO_ATENDIMENTO_ID } from '@/lib/digisac/departamentosFixos';
 import type { DigisacMensagem } from '@/lib/digisac/sgi-sync';
 
 export const INATIVIDADE_CLIENTE_MS = 60 * 60 * 1000;
@@ -100,7 +100,8 @@ export async function devolverSessoesInativas(params: { simulacao?: boolean } = 
       const ticket = await consultarControleChamado(sessao.digisac_ticket_id, sessao.digisac_contact_id);
       if (!ticket) throw new Error('ticket_nao_confirmado');
       if (ticket.isOpen !== true || ticket.endedAt
-        || ticket.departmentId !== DEPARTAMENTO_POS_VENDA_ID
+        || (ticket.departmentId !== DEPARTAMENTO_POS_VENDA_AUTO_ATENDIMENTO_ID
+          && !(pendente && ticket.departmentId === DEPARTAMENTO_POS_VENDA_ID))
         || (ticket.userId !== userId && !(pendente && ticket.userId === null))) {
         await cancelarEspera(sessao);
         contadores.ignoradas++; continue;

@@ -222,7 +222,7 @@ describe('controle do chamado durante atendimento automático', () => {
     process.env.ATENDIMENTO_POSVENDA_AUTO_REPLY_ENABLED = 'true';
     vi.mocked(assumirChamadoAutomacao).mockResolvedValue({ ok: true, ticketId: 'ticket-1', userId: 'bot' });
     vi.mocked(consultarControleChamado).mockResolvedValue({ id: 'ticket-1', contactId: 'contact-1',
-      userId: 'bot', isOpen: true, endedAt: null, departmentId: '50e84096-8d47-4960-b32d-3b4000eee516' });
+      userId: 'bot', isOpen: true, endedAt: null, departmentId: '1e3df0cb-dcaa-420f-b7eb-07476e500da9' });
     return vi.spyOn(autoReply, 'processarEnvioAutomatico')
       .mockResolvedValue({ enviado: true, digisac_message_id: 'resposta-real-1' });
   }
@@ -253,7 +253,7 @@ describe('controle do chamado durante atendimento automático', () => {
   it('humano que assume durante a consulta impede resposta e transferência', async () => {
     const enviar = habilitarControle();
     vi.mocked(consultarControleChamado).mockResolvedValue({ id: 'ticket-1', contactId: 'contact-1',
-      userId: 'victor', isOpen: true, endedAt: null, departmentId: '50e84096-8d47-4960-b32d-3b4000eee516' });
+      userId: 'victor', isOpen: true, endedAt: null, departmentId: '1e3df0cb-dcaa-420f-b7eb-07476e500da9' });
     await processarWebhookPosVenda(payload('nao', 'msg-perdeu-controle'));
     expect(enviar).not.toHaveBeenCalled(); expect(transferirAtendimentoPosVenda).not.toHaveBeenCalled();
   });

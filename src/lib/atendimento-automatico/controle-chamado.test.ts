@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { assumirChamadoAutomacao } from './controle-chamado';
 import { fetchDigisac, fetchDigisacRaw } from '@/lib/digisac/clienteDigisac';
-import { DEPARTAMENTO_POS_VENDA_ID } from '@/lib/digisac/departamentosFixos';
+import { DEPARTAMENTO_POS_VENDA_AUTO_ATENDIMENTO_ID } from '@/lib/digisac/departamentosFixos';
 
 vi.mock('@/lib/digisac/clienteDigisac', () => ({ fetchDigisac: vi.fn(), fetchDigisacRaw: vi.fn() }));
 const ticket = (userId: string | null = null) => ({
-  id: 'ticket-1', contactId: 'contato-1', departmentId: DEPARTAMENTO_POS_VENDA_ID,
+  id: 'ticket-1', contactId: 'contato-1', departmentId: DEPARTAMENTO_POS_VENDA_AUTO_ATENDIMENTO_ID,
   userId, isOpen: true, endedAt: null,
 });
 beforeEach(() => { vi.resetAllMocks(); process.env.DIGISAC_BOT_USER_ID = 'automacao'; });

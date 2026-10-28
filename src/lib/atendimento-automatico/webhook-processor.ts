@@ -2,7 +2,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { assumirChamadoAutomacao, consultarControleChamado, estadoAguardaCliente } from './controle-chamado';
 import { normalizarTextoDigisac } from '@/lib/digisac/triagem';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
-import { DEPARTAMENTO_POS_VENDA_ID } from '@/lib/digisac/departamentosFixos';
+import { DEPARTAMENTO_POS_VENDA_ID, DEPARTAMENTO_POS_VENDA_AUTO_ATENDIMENTO_ID } from '@/lib/digisac/departamentosFixos';
 import {
   atendimentoAutomaticoEncerrado,
   estadoEncerraAtendimentoAutomatico,
@@ -1010,7 +1010,7 @@ async function construirMetadataComResposta(
     && metadata.controle_automacao_user_id && params.ticketId && params.contactId) {
     const ticket = await consultarControleChamado(params.ticketId, params.contactId);
     if (!ticket || ticket.isOpen !== true || ticket.endedAt
-      || ticket.departmentId !== DEPARTAMENTO_POS_VENDA_ID
+      || ticket.departmentId !== DEPARTAMENTO_POS_VENDA_AUTO_ATENDIMENTO_ID
       || ticket.userId !== metadata.controle_automacao_user_id) {
       console.warn(`[posvenda-controle] envio cancelado sessaoId=${params.sessaoId} motivo=controle_perdido`);
       throw new Error('controle_chamado_perdido');

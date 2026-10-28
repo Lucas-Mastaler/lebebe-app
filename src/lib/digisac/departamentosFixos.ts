@@ -4,6 +4,8 @@ export interface DepartamentoFixo {
 }
 
 export const DEPARTAMENTO_POS_VENDA_ID = '50e84096-8d47-4960-b32d-3b4000eee516';
+/** Fila onde a Mère (automação) atende; PÓS VENDA fica só para a passagem a humano. */
+export const DEPARTAMENTO_POS_VENDA_AUTO_ATENDIMENTO_ID = '1e3df0cb-dcaa-420f-b7eb-07476e500da9';
 
 export const DEPARTAMENTOS_FIXOS: DepartamentoFixo[] = [
     { name: 'NÃO ATRIBUIDAS- vendas', id: '128d06a0-df1c-4194-9495-6c3aafd0993a' },

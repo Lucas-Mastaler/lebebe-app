@@ -1,6 +1,6 @@
 import { fetchDigisac, fetchDigisacRaw } from '@/lib/digisac/clienteDigisac';
 import { lerTicketDigisac } from '@/lib/digisac/transferencia-pos-venda';
-import { DEPARTAMENTO_POS_VENDA_ID } from '@/lib/digisac/departamentosFixos';
+import { DEPARTAMENTO_POS_VENDA_AUTO_ATENDIMENTO_ID } from '@/lib/digisac/departamentosFixos';
 
 export type ControleChamado =
   | { ok: true; ticketId: string; userId: string }
@@ -31,14 +31,14 @@ export async function assumirChamadoAutomacao(ticketId: string, contactId: strin
   try {
     const antes = await consultarControleChamado(ticketId, contactId);
     if (!antes || antes.isOpen !== true || antes.endedAt) return { ok: false, motivo: 'ticket_indisponivel' };
-    if (antes.departmentId !== DEPARTAMENTO_POS_VENDA_ID) return { ok: false, motivo: 'outro_departamento' };
+    if (antes.departmentId !== DEPARTAMENTO_POS_VENDA_AUTO_ATENDIMENTO_ID) return { ok: false, motivo: 'outro_departamento' };
     if (antes.userId === userId) return { ok: true, ticketId, userId };
     if (antes.userId) return { ok: false, motivo: 'atribuido_humano' };
 
     const response = await fetchDigisacRaw(`/contacts/${encodeURIComponent(contactId)}/ticket/transfer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ departmentId: DEPARTAMENTO_POS_VENDA_ID, userId, byUserId: userId, comments: '' }),
+      body: JSON.stringify({ departmentId: DEPARTAMENTO_POS_VENDA_AUTO_ATENDIMENTO_ID, userId, byUserId: userId, comments: '' }),
     });
     if (!response.ok) return { ok: false, motivo: `atribuicao_http_${response.status}` };
     // A transferência pode criar outro ticket; somente aceita o ID retornado e confirmado.
@@ -50,7 +50,7 @@ export async function assumirChamadoAutomacao(ticketId: string, contactId: strin
     } catch { /* Resposta sem JSON: confirma o ticket original por GET. */ }
     const depois = await consultarControleChamado(novoId, contactId);
     if (!depois || depois.isOpen !== true || depois.endedAt
-      || depois.departmentId !== DEPARTAMENTO_POS_VENDA_ID || depois.userId !== userId) {
+      || depois.departmentId !== DEPARTAMENTO_POS_VENDA_AUTO_ATENDIMENTO_ID || depois.userId !== userId) {
       return { ok: false, motivo: 'atribuicao_nao_confirmada' };
     }
     console.log(`[posvenda-controle] atribuido ticketId=${novoId}`);

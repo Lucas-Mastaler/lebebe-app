@@ -4,7 +4,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { fetchDigisac } from '@/lib/digisac/clienteDigisac';
 import { consultarControleChamado } from './controle-chamado';
 import { transferirAtendimentoPosVenda } from '@/lib/digisac/transferencia-pos-venda';
-import { DEPARTAMENTO_POS_VENDA_ID } from '@/lib/digisac/departamentosFixos';
+import { DEPARTAMENTO_POS_VENDA_ID, DEPARTAMENTO_POS_VENDA_AUTO_ATENDIMENTO_ID } from '@/lib/digisac/departamentosFixos';
 
 vi.mock('@/lib/supabase/service', () => ({ createServiceClient: vi.fn() }));
 vi.mock('@/lib/digisac/clienteDigisac', () => ({ fetchDigisac: vi.fn() }));
@@ -49,7 +49,7 @@ beforeEach(() => {
   escritas = [];
   vi.mocked(createServiceClient).mockReturnValue(banco() as never);
   vi.mocked(consultarControleChamado).mockResolvedValue({ id: 't1', userId: 'bot', contactId: 'c1',
-    isOpen: true, endedAt: null, departmentId: DEPARTAMENTO_POS_VENDA_ID });
+    isOpen: true, endedAt: null, departmentId: DEPARTAMENTO_POS_VENDA_AUTO_ATENDIMENTO_ID });
   vi.mocked(fetchDigisac).mockResolvedValue({ data: [{ id: 'm1', ticketId: 't1', type: 'chat', isFromMe: true, timestamp: passado }] });
   vi.mocked(transferirAtendimentoPosVenda).mockResolvedValue({ status: 'aceita', motivo: null,
     departmentId: DEPARTAMENTO_POS_VENDA_ID, ticketId: 't1', httpStatus: 200, em: new Date().toISOString() });
@@ -68,7 +68,7 @@ it('simulação não reserva, altera sessão nem transfere', async () => {
 });
 it('atendente assumiu: cancela somente a espera, preservando o chamado', async () => {
   vi.mocked(consultarControleChamado).mockResolvedValue({ id: 't1', userId: 'victor', contactId: 'c1', isOpen: true,
-    endedAt: null, departmentId: DEPARTAMENTO_POS_VENDA_ID });
+    endedAt: null, departmentId: DEPARTAMENTO_POS_VENDA_AUTO_ATENDIMENTO_ID });
   expect(await devolverSessoesInativas()).toMatchObject({ ignoradas: 1, devolvidas: 0 });
   expect(transferirAtendimentoPosVenda).not.toHaveBeenCalled();
 });

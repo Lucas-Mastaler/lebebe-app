@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processarWebhookPosVenda } from '@/lib/atendimento-automatico/webhook-processor';
 
+import { registrarEventoDigisacNaoMensagem } from '@/lib/digisac/eventos-service';
+
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
@@ -20,6 +22,7 @@ export async function POST(request: NextRequest) {
     }
 
     const rawPayload: unknown = await request.json();
+    registrarEventoDigisacNaoMensagem('posvenda', rawPayload);
     const resultado = await processarWebhookPosVenda(rawPayload);
 
     return NextResponse.json(resultado, { status: 200 });

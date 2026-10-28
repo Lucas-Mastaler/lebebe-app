@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { processarTriagemLojaDigisac } from '@/lib/digisac/triagem';
 import { HUB_VENDAS_SERVICE_ID } from '@/lib/digisac/hub-vendas/constants';
 import { processarWebhookHubVendas } from '@/lib/digisac/hub-vendas/processar-webhook';
+import { registrarEventoDigisacNaoMensagem } from '@/lib/digisac/eventos-service';
 
 export const runtime = 'nodejs';
 
@@ -65,6 +66,7 @@ export async function POST(request: NextRequest) {
 
     const rawPayload: unknown = await request.json();
     console.log(`[DIGISAC-WEBHOOK] Evento recebido ${JSON.stringify(extrairResumoSeguro(rawPayload))}`);
+    registrarEventoDigisacNaoMensagem('geral', rawPayload);
 
     if (!secret && !secretAusenteAvisado) {
       secretAusenteAvisado = true

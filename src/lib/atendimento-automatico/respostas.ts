@@ -38,6 +38,7 @@ export type TipoRespostaSugerida =
   | 'fallback_confirmacao_endereco'
   | 'transferido_humano_muitas_tentativas'
   | 'consultando_datas'
+  | 'aviso_consultando_pedido'
   | 'datas_encontradas'
   | 'sem_datas_disponiveis'
   | 'erro_consulta_datas'
@@ -147,6 +148,14 @@ export function montarMensagemRetiradaDisponivel(dataDisponivel: string): Respos
   return {
     texto: `Perfeito.\n\nSeu pedido está previsto para poder retirar a partir do dia ${dataMensagem}, na nossa filial do Hauer, em horário de funcionamento da loja, das 10h às 18h, de segunda a sexta.\n\n*Te ajudo em algo mais?*`,
     tipo: 'pedido_confirmado_retirada',
+  };
+}
+
+/** Aviso imediato após o CPF/CNPJ, antes da busca do pedido (opções 1 e 2). */
+export function respostaAvisoConsultandoPedido(): RespostaSugerida {
+  return {
+    texto: 'Só um momento, vou verificar e já te retorno... ⏳',
+    tipo: 'aviso_consultando_pedido',
   };
 }
 

@@ -36,6 +36,7 @@ import {
   respostaTransferidoHumanoOutroAssunto,
   montarMensagemRetiradaDisponivel,
   respostaPedidoNaoLocalizado,
+  respostaAvisoConsultandoPedido,
   respostaErroTecnicoBuscaAgenda,
   respostaConfirmacaoReagendamentoAmbigua,
   respostaConfirmarReagendamentoFinal,
@@ -666,6 +667,43 @@ async function aguardarMilissegundos(tempoMs: number): Promise<void> {
 
 type ModoBuscaDocumento = 'inicial' | 'retentativa_pedido_negado';
 
+/**
+ * Avisa o cliente que o CPF/CNPJ foi recebido, antes da busca do pedido.
+ * Registra o id da mensagem para o eco não ser tratado como humano. Falha aqui nunca interrompe o fluxo.
+ */
+async function enviarAvisoConsultandoPedido(params: {
+  sessaoId: string;
+  metadataAtual: Record<string, unknown> | null;
+  contactId: string | null;
+  ticketId: string;
+  messageId: string;
+  telefoneAutorizado: boolean;
+}): Promise<Record<string, unknown> | null> {
+  const base = params.metadataAtual;
+  if (process.env.ATENDIMENTO_POSVENDA_AUTO_REPLY_ENABLED !== 'true' || !base?.controle_automacao_user_id) return base;
+  try {
+    const envio = await processarEnvioAutomatico({
+      sessaoId: params.sessaoId,
+      estado: 'aguardando_documento',
+      resposta: respostaAvisoConsultandoPedido(),
+      digisacMessageId: params.messageId,
+      contactId: params.contactId,
+      ticketId: params.ticketId,
+      metadataAtual: base,
+      telefoneAutorizado: params.telefoneAutorizado,
+    });
+    if (!envio?.enviado || !envio.digisac_message_id) return base;
+    const ids = (base.respostas_automaticas_enviadas_ids as string[] | undefined) ?? [];
+    const nova = { ...base, respostas_automaticas_enviadas_ids: [...ids, envio.digisac_message_id] };
+    await createServiceClient().from('atendimento_automatico_sessoes')
+      .update({ metadata: nova }).eq('id', params.sessaoId);
+    return nova;
+  } catch (erro) {
+    console.warn(`[posvenda-webhook] aviso de consulta nao enviado sessaoId=${params.sessaoId} erro=${erro instanceof Error ? erro.message : 'desconhecido'}`);
+    return base;
+  }
+}
+
 async function prepararBuscaAgendaPorDocumento(params: {
   documento: string;
   documentoAnterior: string | null;
@@ -682,6 +720,8 @@ async function prepararBuscaAgendaPorDocumento(params: {
   motivoFalha?: string;
   metadataBusca: Record<string, unknown>;
 }> {
+  // Vale para o CPF inicial e para o novo CPF informado após a negativa.
+  params = { ...params, metadataAtual: await enviarAvisoConsultandoPedido(params) };
   const buscaAgendaEm = new Date().toISOString();
   const buscaInicioMs = Date.now();
   let resultadoBusca = await buscarAgendamentosPorDocumento(params.documento);

@@ -150,7 +150,7 @@ export async function GET(request: Request) {
     const unidadeId = params.get('unidadeId')?.trim() ?? ''
     const situacaoVenda = params.get('situacaoVenda')?.trim() ?? ''
     const filtroEssenciaisValidado = analisarFiltroEssenciaisRegistro({
-      produto: params.get('produtoEssencial'),
+      produtos: (params.get('produtosEssenciais') ?? '').split(',').filter(Boolean),
       situacao: params.get('situacaoEssencial'),
     })
     if (!filtroEssenciaisValidado.ok) return jsonErro(filtroEssenciaisValidado.mensagem, 400)

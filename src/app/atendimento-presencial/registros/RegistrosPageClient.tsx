@@ -51,6 +51,7 @@ import {
   useFilterState,
 } from '@/components/design-system'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { MultiSelect } from '@/components/ui/multi-select'
 import { HistoricoClienteModal, type HistoricoClienteModalCliente } from '@/components/atendimento-presencial/HistoricoClienteModal'
 import { ViradaCartaoField } from '@/components/atendimento-presencial/ViradaCartaoField'
 import { validarViradaCartaoInput } from '@/lib/atendimento-presencial/virada-cartao-input'
@@ -216,7 +217,7 @@ const FILTROS_FINALIZADOS_INICIAL = {
   consultora: '',
   unidadeId: '',
   situacaoVenda: '',
-  produtoEssencial: '',
+  produtosEssenciais: [] as string[],
   situacaoEssencial: '',
   viradaCartaoDe: '',
   viradaCartaoAte: '',
@@ -224,12 +225,12 @@ const FILTROS_FINALIZADOS_INICIAL = {
 
 
 function resumoFiltros(valores: Record<string, string | string[]>, unidades: Array<{id: string; nome: string}>) {
-  const rotulos: Record<string, string> = { clienteNome: 'Cliente', consultora: 'Consultora do atendimento', unidadeId: 'Filial', situacaoVenda: 'Situação', produtoEssencial: 'Produto essencial', situacaoEssencial: 'Resposta essencial', viradaCartaoDe: 'Virada de', viradaCartaoAte: 'Virada até', atendimentoDe: 'Período de', atendimentoAte: 'Período até', tipoAtendimento: 'Tipo', telefoneCliente: 'Telefone', numeroLancamento: 'Lançamento', contato: 'Telefone disponível', departamentos: 'Departamentos', motivos: 'Motivos', motivoVisita: 'Visita', vinculoCliente: 'Cliente vinculado', expiracao: 'Expiração' }
+  const rotulos: Record<string, string> = { clienteNome: 'Cliente', consultora: 'Consultora do atendimento', unidadeId: 'Filial', situacaoVenda: 'Situação', produtosEssenciais: 'Produtos essenciais', situacaoEssencial: 'Resposta essencial', viradaCartaoDe: 'Virada de', viradaCartaoAte: 'Virada até', atendimentoDe: 'Período de', atendimentoAte: 'Período até', tipoAtendimento: 'Tipo', telefoneCliente: 'Telefone', numeroLancamento: 'Lançamento', contato: 'Telefone disponível', departamentos: 'Departamentos', motivos: 'Motivos', motivoVisita: 'Visita', vinculoCliente: 'Cliente vinculado', expiracao: 'Expiração' }
   const texto = Object.entries(valores).filter(([,valor]) => Array.isArray(valor) ? valor.length : Boolean(valor)).map(([chave, valor]) => {
     let label = Array.isArray(valor) ? valor.map(v => chave === 'departamentos' ? getDepartamentoLabel(v as DepartamentoInteresse) : getMotivoLabel(v as MotivoResultado)).join(', ') : valor
     if (chave === 'unidadeId') label = unidades.find(u => u.id === valor)?.nome ?? 'Filial selecionada'
     if (chave === 'situacaoVenda') label = situacaoVendaRegistro(String(valor)).label
-    if (chave === 'produtoEssencial') label = PRODUTOS_ESSENCIAIS[String(valor) as keyof typeof PRODUTOS_ESSENCIAIS] ?? String(valor)
+    if (chave === 'produtosEssenciais') label = (valor as string[]).map((produto) => PRODUTOS_ESSENCIAIS[produto as keyof typeof PRODUTOS_ESSENCIAIS] ?? produto).join(', ')
     if (chave === 'situacaoEssencial') label = valor === 'sim' ? 'Sim' : valor === 'nao' ? 'Não' : 'Não informado'
     if (chave === 'motivoVisita') label = getMotivoVisitaLabel(String(valor))
     if (chave === 'tipoAtendimento') label = valor === 'cliente' ? 'Cliente' : valor === 'nao_cliente' ? 'Não cliente' : 'Tipo não informado'
@@ -335,7 +336,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     clienteNome?: string
     consultora?: string
     situacaoVenda?: string
-    produtoEssencial?: string
+    produtosEssenciais?: string[]
     situacaoEssencial?: string
     unidadeId?: string
     page?: number
@@ -351,7 +352,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       const filtroConsultora = filtrosOverride?.consultora ?? filtrosFinalizados.applied.consultora
       const filtroUnidade = filtrosOverride?.unidadeId ?? filtrosFinalizados.applied.unidadeId
       const filtroSituacao = filtrosOverride?.situacaoVenda ?? filtrosFinalizados.applied.situacaoVenda
-      const filtroProdutoEssencial = filtrosOverride?.produtoEssencial ?? filtrosFinalizados.applied.produtoEssencial
+      const filtroProdutosEssenciais = filtrosOverride?.produtosEssenciais ?? filtrosFinalizados.applied.produtosEssenciais
       const filtroSituacaoEssencial = filtrosOverride?.situacaoEssencial ?? filtrosFinalizados.applied.situacaoEssencial
       const pagina = filtrosOverride?.page ?? paginaRegistros
       if (filtroDe.trim()) params.set('viradaCartaoDe', filtroDe.trim())
@@ -360,7 +361,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       if (filtroConsultora.trim()) params.set('consultora', filtroConsultora.trim())
       if (filtroUnidade) params.set('unidadeId', filtroUnidade)
       if (filtroSituacao) params.set('situacaoVenda', filtroSituacao)
-      if (filtroProdutoEssencial) params.set('produtoEssencial', filtroProdutoEssencial)
+      if (filtroProdutosEssenciais.length) params.set('produtosEssenciais', filtroProdutosEssenciais.join(','))
       if (filtroSituacaoEssencial) params.set('situacaoEssencial', filtroSituacaoEssencial)
       const adicionais = filtrosOverride?.adicionais ?? novosFiltros.applied
       for (const [key, value] of Object.entries(adicionais)) {
@@ -380,7 +381,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       setPaginaRegistros(data.page ?? pagina)
       setTotalRegistros(data.total ?? 0)
       restaurarPosicaoLista()
-      guardarEstadoLista('salvos', { filtros: { ...filtrosFinalizados.applied, clienteNome: filtroCliente, consultora: filtroConsultora, unidadeId: filtroUnidade, situacaoVenda: filtroSituacao, produtoEssencial: filtroProdutoEssencial, situacaoEssencial: filtroSituacaoEssencial, viradaCartaoDe: filtroDe, viradaCartaoAte: filtroAte }, adicionais, page: data.page ?? pagina })
+      guardarEstadoLista('salvos', { filtros: { ...filtrosFinalizados.applied, clienteNome: filtroCliente, consultora: filtroConsultora, unidadeId: filtroUnidade, situacaoVenda: filtroSituacao, produtosEssenciais: filtroProdutosEssenciais, situacaoEssencial: filtroSituacaoEssencial, viradaCartaoDe: filtroDe, viradaCartaoAte: filtroAte }, adicionais, page: data.page ?? pagina })
     } catch (error) {
       if (requestId === registrosRequest.current) setErro(error instanceof Error ? error.message : 'Erro ao carregar registros')
     } finally {
@@ -410,7 +411,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       consultora: filtrosFinalizados.draft.consultora,
       unidadeId: filtrosFinalizados.draft.unidadeId,
       situacaoVenda: filtrosFinalizados.draft.situacaoVenda,
-      produtoEssencial: filtrosFinalizados.draft.produtoEssencial,
+      produtosEssenciais: filtrosFinalizados.draft.produtosEssenciais,
       situacaoEssencial: filtrosFinalizados.draft.situacaoEssencial,
       page: 1,
     })
@@ -419,7 +420,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   function limparFiltrosFinalizados() {
     novosFiltros.clear()
     filtrosFinalizados.clear()
-    void carregarRegistros({ adicionais: FILTROS_ADICIONAIS, de: '', ate: '', clienteNome: '', consultora: '', unidadeId: '', situacaoVenda: '', produtoEssencial: '', situacaoEssencial: '', page: 1 })
+    void carregarRegistros({ adicionais: FILTROS_ADICIONAIS, de: '', ate: '', clienteNome: '', consultora: '', unidadeId: '', situacaoVenda: '', produtosEssenciais: [], situacaoEssencial: '', page: 1 })
   }
 
   async function buscarDetalhe(id: string): Promise<RegistroDetalhe> {
@@ -888,18 +889,26 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                     icon={<PackageCheck />}
                     description="Filtra pelas respostas registradas naquele atendimento, sem consultar o estado atual da criança."
                   >
-                    <FilterField id="filtro-produto-essencial-registro" label="Produto" active={Boolean(filtrosFinalizados.draft.produtoEssencial)}>
-                      {(field) => <Select value={filtrosFinalizados.draft.produtoEssencial || 'all'} onValueChange={(value) => {
-                        const produto = value === 'all' ? '' : value
-                        filtrosFinalizados.setField('produtoEssencial', produto)
-                        if (!produto) filtrosFinalizados.setField('situacaoEssencial', '')
-                      }}>
-                        <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Todos" /></SelectTrigger>
-                        <SelectContent><SelectItem value="all">Todos</SelectItem>{Object.entries(PRODUTOS_ESSENCIAIS).map(([chave, nome]) => <SelectItem key={chave} value={chave}>{nome}</SelectItem>)}</SelectContent>
-                      </Select>}
+                    <FilterField id="filtro-produto-essencial-registro" label="Produtos" active={filtrosFinalizados.draft.produtosEssenciais.length > 0}>
+                      {(field) => (
+                        <MultiSelect
+                          id={field.id}
+                          aria-describedby={field['aria-describedby']}
+                          options={Object.keys(PRODUTOS_ESSENCIAIS)}
+                          selected={filtrosFinalizados.draft.produtosEssenciais}
+                          onChange={(produtos) => {
+                            filtrosFinalizados.setField('produtosEssenciais', produtos)
+                            if (!produtos.length) filtrosFinalizados.setField('situacaoEssencial', '')
+                          }}
+                          placeholder="Todos os produtos"
+                          ariaLabel="Produtos essenciais"
+                          getOptionLabel={(value) => PRODUTOS_ESSENCIAIS[value as keyof typeof PRODUTOS_ESSENCIAIS]}
+                          compactSummary
+                        />
+                      )}
                     </FilterField>
                     <FilterField id="filtro-resposta-essencial-registro" label="Resposta naquele atendimento" active={Boolean(filtrosFinalizados.draft.situacaoEssencial)}>
-                      {(field) => <Select disabled={!filtrosFinalizados.draft.produtoEssencial} value={filtrosFinalizados.draft.situacaoEssencial || 'all'} onValueChange={(value) => filtrosFinalizados.setField('situacaoEssencial', value === 'all' ? '' : value)}>
+                      {(field) => <Select disabled={!filtrosFinalizados.draft.produtosEssenciais.length} value={filtrosFinalizados.draft.situacaoEssencial || 'all'} onValueChange={(value) => filtrosFinalizados.setField('situacaoEssencial', value === 'all' ? '' : value)}>
                         <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
                         <SelectContent><SelectItem value="all">Todas</SelectItem><SelectItem value="sim">Sim confirmado</SelectItem><SelectItem value="nao">Não confirmado</SelectItem><SelectItem value="nao_informado">Não informado nesta visita</SelectItem></SelectContent>
                       </Select>}

@@ -89,8 +89,8 @@ async function buscarCorrespondenciasEssenciaisCliente(
     carregarTodasPaginas<EstadoAtualEssencialFiltro>((inicio, fim) =>
       supabase
         .from('atendimento_presencial_essenciais_estado')
-        .select('crianca_id, resposta, registrado_em')
-        .eq('produto', filtro.produto)
+        .select('crianca_id, produto, resposta, registrado_em')
+        .in('produto', filtro.produtos)
         .order('crianca_id')
         .range(inicio, fim)
     ),
@@ -174,7 +174,7 @@ export async function GET(request: Request) {
     const page = Math.max(Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1, 1)
     const consultoraOrigem = normalizarFiltroConsultora(url.searchParams.get('consultoraOrigem'))
     const resultadoFiltroEssencial = analisarFiltroEssencialCliente({
-      produto: url.searchParams.get('produtoEssencial'),
+      produtos: (url.searchParams.get('produtosEssenciais') ?? '').split(',').filter(Boolean),
       situacao: url.searchParams.get('situacaoEssencial'),
       fase: url.searchParams.get('faseEssencial'),
     })

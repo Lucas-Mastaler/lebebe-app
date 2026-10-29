@@ -14,7 +14,7 @@ export type FaseFiltroEssencial = (typeof FASES_FILTRO_ESSENCIAIS)[number]['chav
 export type SituacaoFiltroEssencial = RespostaEssencial | 'nao_informado'
 
 export type FiltroEssencialCliente = {
-  produto: keyof typeof PRODUTOS_ESSENCIAIS
+  produtos: Array<keyof typeof PRODUTOS_ESSENCIAIS>
   situacao: SituacaoFiltroEssencial | ''
   fase: FaseFiltroEssencial | ''
 }
@@ -32,6 +32,7 @@ export type VinculoClienteCriancaEssencial = {
 
 export type EstadoAtualEssencialFiltro = {
   crianca_id: string
+  produto: keyof typeof PRODUTOS_ESSENCIAIS
   resposta: RespostaEssencial
   registrado_em: string
 }
@@ -48,17 +49,17 @@ export type CorrespondenciaEssencialCliente = {
 }
 
 export function analisarFiltroEssencialCliente(valor: {
-  produto: string | null
+  produtos: string[]
   situacao: string | null
   fase: string | null
 }):
   | { ok: true; filtro: FiltroEssencialCliente | null }
   | { ok: false; mensagem: string } {
-  const produto = valor.produto ?? ''
+  const produtos = Array.from(new Set(valor.produtos)).filter(Boolean)
   const situacao = valor.situacao ?? ''
   const fase = valor.fase ?? ''
 
-  if (produto && !Object.hasOwn(PRODUTOS_ESSENCIAIS, produto)) {
+  if (produtos.some((produto) => !Object.hasOwn(PRODUTOS_ESSENCIAIS, produto))) {
     return { ok: false, mensagem: 'Selecione um produto essencial válido.' }
   }
   if (situacao && situacao !== 'sim' && situacao !== 'nao' && situacao !== 'nao_informado') {
@@ -67,15 +68,15 @@ export function analisarFiltroEssencialCliente(valor: {
   if (fase && !FASES_FILTRO_ESSENCIAIS.some((item) => item.chave === fase)) {
     return { ok: false, mensagem: 'Selecione uma fase válida.' }
   }
-  if (!produto && (situacao || fase)) {
+  if (!produtos.length && (situacao || fase)) {
     return { ok: false, mensagem: 'Selecione um produto essencial antes de filtrar por situação ou fase.' }
   }
-  if (!produto) return { ok: true, filtro: null }
+  if (!produtos.length) return { ok: true, filtro: null }
 
   return {
     ok: true,
     filtro: {
-      produto: produto as FiltroEssencialCliente['produto'],
+      produtos: produtos as FiltroEssencialCliente['produtos'],
       situacao: situacao as FiltroEssencialCliente['situacao'],
       fase: fase as FiltroEssencialCliente['fase'],
     },
@@ -113,7 +114,7 @@ export function filtrarCorrespondenciasEssenciaisCliente(
   hoje = dataAtendimentoLocal()
 ) {
   const perfilPorId = new Map(perfis.map((perfil) => [perfil.id, perfil]))
-  const estadoPorCrianca = new Map(estados.map((estado) => [estado.crianca_id, estado]))
+  const estadoPorProdutoCrianca = new Map(estados.map((estado) => [`${estado.crianca_id}:${estado.produto}`, estado]))
   const faseLabels = new Map(FASES_FILTRO_ESSENCIAIS.map((fase) => [fase.chave, fase.label]))
   const porCliente = new Map<string, CorrespondenciaEssencialCliente[]>()
   const vistos = new Set<string>()
@@ -128,9 +129,11 @@ export function filtrarCorrespondenciasEssenciaisCliente(
     const fase = faseAtualCriancaEssencial(perfil, hoje)
     if (filtro.fase && filtro.fase !== fase) continue
 
-    const estado = estadoPorCrianca.get(vinculo.crianca_id)
-    const resposta: SituacaoFiltroEssencial = estado?.resposta ?? 'nao_informado'
-    if (filtro.situacao && filtro.situacao !== resposta) continue
+    const correspondenciasProduto = filtro.produtos.map((produto) => {
+      const estado = estadoPorProdutoCrianca.get(`${vinculo.crianca_id}:${produto}`)
+      return { produto, estado, resposta: (estado?.resposta ?? 'nao_informado') as SituacaoFiltroEssencial }
+    })
+    if (filtro.situacao && correspondenciasProduto.some((item) => item.resposta !== filtro.situacao)) continue
 
     const dados = perfil.dados && typeof perfil.dados === 'object' && !Array.isArray(perfil.dados)
       ? perfil.dados as Record<string, unknown>
@@ -138,17 +141,17 @@ export function filtrarCorrespondenciasEssenciaisCliente(
     const nome = typeof dados.nome === 'string' && dados.nome.trim()
       ? dados.nome.trim()
       : 'Nome não informado'
-    const correspondencia: CorrespondenciaEssencialCliente = {
-      produto: filtro.produto,
-      produtoNome: PRODUTOS_ESSENCIAIS[filtro.produto],
+    const correspondencias = correspondenciasProduto.map(({ produto, estado, resposta }) => ({
+      produto,
+      produtoNome: PRODUTOS_ESSENCIAIS[produto],
       criancaId: perfil.id,
       criancaNome: nome,
       fase,
       faseLabel: faseLabels.get(fase) ?? 'Fase não informada',
       resposta,
       registradoEm: estado?.registrado_em ?? null,
-    }
-    porCliente.set(vinculo.cliente_id, [...(porCliente.get(vinculo.cliente_id) ?? []), correspondencia])
+    }))
+    porCliente.set(vinculo.cliente_id, [...(porCliente.get(vinculo.cliente_id) ?? []), ...correspondencias])
   }
 
   return porCliente

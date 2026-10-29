@@ -15,13 +15,18 @@ interface MultiSelectProps {
   placeholder?: string
   className?: string
   enableSearch?: boolean
+  id?: string
+  ariaLabel?: string
+  'aria-describedby'?: string
+  getOptionLabel?: (value: string) => string
+  compactSummary?: boolean
 }
 
 export function toggleMultiSelectValue(selected: string[], value: string) {
   return selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value]
 }
 
-export function MultiSelect({ options, selected, onChange, placeholder = 'Selecione...', className, enableSearch = false }: MultiSelectProps) {
+export function MultiSelect({ options, selected, onChange, placeholder = 'Selecione...', className, enableSearch = false, id, ariaLabel, 'aria-describedby': ariaDescribedBy, getOptionLabel = (value) => value, compactSummary = false }: MultiSelectProps) {
   const [open, setOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -46,7 +51,9 @@ export function MultiSelect({ options, selected, onChange, placeholder = 'Seleci
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={selected.length === 0 ? placeholder : `${selected.length} opções selecionadas`}
+          id={id}
+          aria-label={ariaLabel ?? (selected.length === 0 ? placeholder : `${selected.length} opções selecionadas`)}
+          aria-describedby={ariaDescribedBy}
           className={cn(
             'flex h-9 w-full cursor-pointer items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-left text-sm transition-colors',
             'hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2',
@@ -55,11 +62,13 @@ export function MultiSelect({ options, selected, onChange, placeholder = 'Seleci
         >
           {selected.length === 0 ? (
             <span className="truncate text-slate-400">{placeholder}</span>
+          ) : compactSummary ? (
+            <span className="min-w-0 flex-1 truncate text-sm text-slate-700">{selected.length} produto{selected.length === 1 ? '' : 's'} selecionado{selected.length === 1 ? '' : 's'}</span>
           ) : (
             <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
               {selected.slice(0, 3).map((value) => (
                 <span key={value} className="truncate rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
-                  {value}
+                  {getOptionLabel(value)}
                 </span>
               ))}
               {selected.length > 3 && <span className="shrink-0 text-xs text-slate-500">+{selected.length - 3}</span>}
@@ -98,7 +107,7 @@ export function MultiSelect({ options, selected, onChange, placeholder = 'Seleci
                     className="inline-flex max-w-full items-center gap-1 rounded-full bg-white px-2 py-0.5 text-xs text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
                     aria-label={`Remover ${value}`}
                   >
-                    <span className="truncate">{value}</span>
+                  <span className="truncate">{getOptionLabel(value)}</span>
                     <X className="size-3 shrink-0" aria-hidden="true" />
                   </button>
                 ))}
@@ -131,7 +140,7 @@ export function MultiSelect({ options, selected, onChange, placeholder = 'Seleci
               return (
                 <label key={option} className={cn('flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-slate-50', checked && 'bg-slate-100')}>
                   <Checkbox checked={checked} onCheckedChange={() => toggleOption(option)} />
-                  <span className="min-w-0 flex-1 truncate">{option}</span>
+                  <span className="min-w-0 flex-1 truncate">{getOptionLabel(option)}</span>
                   {checked && <Check className="size-4 shrink-0 text-slate-500" aria-hidden="true" />}
                 </label>
               )

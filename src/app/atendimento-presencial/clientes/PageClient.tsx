@@ -24,6 +24,7 @@ import {
 } from '@/components/design-system'
 import { countActiveFilters } from '@/lib/design-system/filters'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { MultiSelect } from '@/components/ui/multi-select'
 import { HistoricoClienteModal, type HistoricoClienteModalCliente } from '@/components/atendimento-presencial/HistoricoClienteModal'
 import { type ClientePresencialDTO } from '@/lib/atendimento-presencial/clientes'
 import { mascararTelefoneClienteBR } from '@/lib/atendimento-presencial/telefone'
@@ -53,7 +54,7 @@ type ApiCriarClienteResponse = {
 const FILTROS_CLIENTES_INICIAL = {
   busca: '',
   consultora: '',
-  produtoEssencial: '',
+  produtosEssenciais: [] as string[],
   situacaoEssencial: '',
   faseEssencial: '',
 }
@@ -83,11 +84,11 @@ export default function PageClient() {
     return true
   }, [nome, salvando])
 
-  async function buscarClientes(options?: { page?: number; busca?: string; consultora?: string; produtoEssencial?: string; situacaoEssencial?: string; faseEssencial?: string }) {
+  async function buscarClientes(options?: { page?: number; busca?: string; consultora?: string; produtosEssenciais?: string[]; situacaoEssencial?: string; faseEssencial?: string }) {
     const page = options?.page ?? 1
     const termo = options?.busca ?? filtros.applied.busca
     const consultora = options?.consultora ?? filtros.applied.consultora
-    const produtoEssencial = options?.produtoEssencial ?? filtros.applied.produtoEssencial
+    const produtosEssenciais = options?.produtosEssenciais ?? filtros.applied.produtosEssenciais
     const situacaoEssencial = options?.situacaoEssencial ?? filtros.applied.situacaoEssencial
     const faseEssencial = options?.faseEssencial ?? filtros.applied.faseEssencial
 
@@ -99,7 +100,7 @@ export default function PageClient() {
       const params = new URLSearchParams()
       if (termo.trim()) params.set('q', termo.trim())
       if (consultora.trim()) params.set('consultoraOrigem', consultora.trim())
-      if (produtoEssencial) params.set('produtoEssencial', produtoEssencial)
+      if (produtosEssenciais.length) params.set('produtosEssenciais', produtosEssenciais.join(','))
       if (situacaoEssencial) params.set('situacaoEssencial', situacaoEssencial)
       if (faseEssencial) params.set('faseEssencial', faseEssencial)
       params.set('page', String(page))
@@ -245,27 +246,35 @@ export default function PageClient() {
                 </FormField>
               </FilterFieldGroup>
               <FilterFieldGroup label="Produtos essenciais" icon={<PackageCheck />} description="Busque pela resposta atual da criança. Atendimentos antigos não alteram esse estado.">
-                <FilterField id="filtro-produto-essencial-cliente" label="Produto" active={Boolean(filtros.draft.produtoEssencial)}>
-                  {(field) => <Select value={filtros.draft.produtoEssencial || 'all'} onValueChange={(value) => {
-                    const produto = value === 'all' ? '' : value
-                    filtros.setField('produtoEssencial', produto)
-                    if (!produto) {
-                      filtros.setField('situacaoEssencial', '')
-                      filtros.setField('faseEssencial', '')
-                    }
-                  }}>
-                    <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Todos" /></SelectTrigger>
-                    <SelectContent><SelectItem value="all">Todos</SelectItem>{Object.entries(PRODUTOS_ESSENCIAIS).map(([chave, nome]) => <SelectItem key={chave} value={chave}>{nome}</SelectItem>)}</SelectContent>
-                  </Select>}
+                <FilterField id="filtro-produto-essencial-cliente" label="Produtos" active={filtros.draft.produtosEssenciais.length > 0}>
+                  {(field) => (
+                    <MultiSelect
+                      id={field.id}
+                      aria-describedby={field['aria-describedby']}
+                      options={Object.keys(PRODUTOS_ESSENCIAIS)}
+                      selected={filtros.draft.produtosEssenciais}
+                      onChange={(produtos) => {
+                        filtros.setField('produtosEssenciais', produtos)
+                        if (!produtos.length) {
+                          filtros.setField('situacaoEssencial', '')
+                          filtros.setField('faseEssencial', '')
+                        }
+                      }}
+                      placeholder="Todos os produtos"
+                      ariaLabel="Produtos essenciais"
+                      getOptionLabel={(value) => PRODUTOS_ESSENCIAIS[value as keyof typeof PRODUTOS_ESSENCIAIS]}
+                      compactSummary
+                    />
+                  )}
                 </FilterField>
                 <FilterField id="filtro-situacao-essencial-cliente" label="Resposta atual" active={Boolean(filtros.draft.situacaoEssencial)}>
-                  {(field) => <Select disabled={!filtros.draft.produtoEssencial} value={filtros.draft.situacaoEssencial || 'all'} onValueChange={(value) => filtros.setField('situacaoEssencial', value === 'all' ? '' : value)}>
+                  {(field) => <Select disabled={!filtros.draft.produtosEssenciais.length} value={filtros.draft.situacaoEssencial || 'all'} onValueChange={(value) => filtros.setField('situacaoEssencial', value === 'all' ? '' : value)}>
                     <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
                     <SelectContent><SelectItem value="all">Todas</SelectItem><SelectItem value="sim">Sim</SelectItem><SelectItem value="nao">Não</SelectItem><SelectItem value="nao_informado">Não informado</SelectItem></SelectContent>
                   </Select>}
                 </FilterField>
                 <FilterField id="filtro-fase-essencial-cliente" label="Fase atual" active={Boolean(filtros.draft.faseEssencial)}>
-                  {(field) => <Select disabled={!filtros.draft.produtoEssencial} value={filtros.draft.faseEssencial || 'all'} onValueChange={(value) => filtros.setField('faseEssencial', value === 'all' ? '' : value)}>
+                  {(field) => <Select disabled={!filtros.draft.produtosEssenciais.length} value={filtros.draft.faseEssencial || 'all'} onValueChange={(value) => filtros.setField('faseEssencial', value === 'all' ? '' : value)}>
                     <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
                     <SelectContent><SelectItem value="all">Todas</SelectItem>{FASES_FILTRO_ESSENCIAIS.map((fase) => <SelectItem key={fase.chave} value={fase.chave}>{fase.label}</SelectItem>)}</SelectContent>
                   </Select>}

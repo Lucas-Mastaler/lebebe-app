@@ -42,8 +42,8 @@ describe('essenciais oficiais', () => {
     expect(pendenciaEssenciais([{ ...c, situacao: 'ja_nasceu', dataReferenciaNascimento: '2024-01-01' }], {}, {}, '2026-10-28')).toBeNull()
   })
   it('inclui quantidade 1 com venda não marcada e não incrementa no segundo clique', () => {
-    const primeiro = incluirEssencialNoInteresse([], 'Berço')
-    expect(primeiro.produtos).toEqual([{ descricao: 'Berço', quantidade: 1, vendido: false }])
+    const primeiro = incluirEssencialNoInteresse([], '  Berço  ')
+    expect(primeiro.produtos).toEqual([{ descricao: 'BERCO', quantidade: 1, vendido: false }])
     expect(incluirEssencialNoInteresse(primeiro.produtos, '  BERCO  ').produtos).toBe(primeiro.produtos)
     expect(incluirEssencialNoInteresse(Array(20).fill('x'), 'novo').resultado).toBe('limite')
   })

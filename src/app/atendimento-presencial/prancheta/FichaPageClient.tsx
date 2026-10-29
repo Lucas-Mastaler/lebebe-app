@@ -2494,10 +2494,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                   hoje={dataAtendimentoLocal(ativo?.iniciadoEm)} carregando={essenciais.carregando} erro={essenciais.erro} tentar={essenciais.tentar}
                   erroValidacao={erroSecao('secao-essenciais')}
                   responder={(id, produto, resposta) => atualizarFicha(atual => ({ ...atual, essenciais: { ...atual.essenciais, [id]: { ...atual.essenciais?.[id], [produto]: resposta } } }))}
+                  interesses={ficha.produtosInteresse}
                   adicionar={nome => {
                     const resultado = incluirEssencialNoInteresse(fichaRef.current.produtosInteresse, nome)
                     if (resultado.resultado === 'adicionado') atualizarFicha(atual => ({ ...atual, versaoProdutos: 2, produtosInteresse: incluirEssencialNoInteresse(atual.produtosInteresse, nome).produtos }))
-                    return resultado.resultado === 'limite' ? 'Limite de 20 produtos atingido.' : resultado.resultado === 'existente' ? 'Este produto já está nos interesses.' : 'Produto adicionado aos interesses com quantidade 1.'
+                    return resultado.resultado === 'limite' ? 'Limite de 20 produtos atingido.' : null
                   }}
                   confirmarFase={id => { setCriancasEmEdicao(atual => atual.includes(id) ? atual : [...atual, id]); document.getElementById('secao-crianca')?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }}
                   historico={() => setHistoricoAberto(true)}

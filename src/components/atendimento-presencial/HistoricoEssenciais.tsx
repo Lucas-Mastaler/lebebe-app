@@ -12,10 +12,13 @@ export function ResumoEssenciais({ itens }: { itens: SnapshotEssenciais[] }) {
       {itens.map(item => <article key={`${item.atendimentoId}/${item.criancaId}`} className="rounded-xl border border-white bg-white/85 p-3 text-sm shadow-sm">
         <p><strong>{item.nome || 'Nome não informado'}</strong> · {rotuloFaseEssenciais(item.fase)}</p>
         <p className="text-xs text-slate-600">{new Date(item.registradoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })} · {item.filial} · {item.consultora}</p>
-        {item.respostas.length ? <ul className="mt-2 space-y-2">
-          {item.respostas.map(r => <li key={r.produto} className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span><strong>{PRODUTOS_ESSENCIAIS[r.produto]}:</strong> {r.resposta === 'sim' ? 'Sim' : 'Não'}</span>
-            <Badge tone={r.confirmada ? 'success' : 'info'}>{r.confirmada ? 'Confirmado neste atendimento' : 'Atendimento anterior'}</Badge>
+        {item.respostas.length ? <ul className="mt-2 grid grid-cols-1 gap-1.5 min-[400px]:grid-cols-2">
+          {item.respostas.map(r => <li key={r.produto} className="min-w-0 rounded-lg border border-slate-100 bg-white/50 px-2 py-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <strong className="min-w-0">{PRODUTOS_ESSENCIAIS[r.produto]}:</strong>
+              <Badge tone={r.resposta === 'sim' ? 'success' : 'danger'}>{r.resposta === 'sim' ? 'Sim' : 'Não'}</Badge>
+            </div>
+            <Badge className="mt-1.5 max-w-full whitespace-normal" tone={r.confirmada ? 'success' : 'info'}>{r.confirmada ? 'Confirmado neste atendimento' : 'Atendimento anterior'}</Badge>
           </li>)}
         </ul> : <p>Sem questionário para esta fase.</p>}
       </article>)}

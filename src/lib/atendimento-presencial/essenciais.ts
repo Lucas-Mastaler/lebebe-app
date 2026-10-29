@@ -75,5 +75,5 @@ export function pendenciaEssenciais(criancas: FichaCriancaRascunho[], respostas:
 export function incluirEssencialNoInteresse(produtos: ProdutoCompativel[], nome: string, limite = 20) {
   if (produtos.some(p => chaveProduto(typeof p === 'string' ? p : p.descricao) === chaveProduto(nome))) return { produtos, resultado: 'existente' as const }
   if (produtos.length >= limite) return { produtos, resultado: 'limite' as const }
-  return { produtos: [...produtos, { descricao: nome, quantidade: 1, vendido: false }], resultado: 'adicionado' as const }
+  return { produtos: [...produtos, { descricao: chaveProduto(nome), quantidade: 1, vendido: false }], resultado: 'adicionado' as const }
 }

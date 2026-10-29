@@ -19,6 +19,9 @@
 .ativa { background:var(--essencial-ativo); color:var(--essencial-texto); font-weight:600; }
 .pendente { font-size:11px; color:#865068; margin-top:5px; }
 .interesse { display:flex; align-items:center; gap:3px; color:var(--essencial-texto); font-size:10px; margin-top:5px; min-height:28px; cursor:pointer; text-align:left; }
+.interesseProduto,.interesseAdicionado { display:flex; width:100%; align-items:center; gap:5px; margin-top:5px; min-height:26px; padding:4px 7px; border:1px solid; border-radius:6px; font-size:10px; text-align:left; }
+.interesseProduto { border-color:#f9a8d4; background:#fff7fb; color:#db2777; cursor:pointer; }
+.interesseAdicionado { border-color:#bbf7d0; background:#f0fdf4; color:#15803d; font-weight:600; }
 .totais { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); align-items:center; margin-top:18px; border-radius:999px; background:#fce9f1; padding:12px 8px; }
 .totais>div { display:grid; text-align:center; gap:2px; font-size:14px; color:#627084; }
 .totais>div+div { border-left:1px solid #dba6bb; }

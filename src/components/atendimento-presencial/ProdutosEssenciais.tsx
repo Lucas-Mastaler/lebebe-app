@@ -1,16 +1,17 @@
 'use client'
 import { useState } from 'react'
-import { Baby, ChevronDown, ChevronUp, Plus } from 'lucide-react'
+import { Baby, CheckCircle2, ChevronDown, ChevronUp, Plus } from 'lucide-react'
 import { Button } from '@/components/design-system'
 import type { FichaCriancaRascunho } from '@/lib/atendimento-presencial/ficha-schema'
 import { faseEssenciais, pendenciaEssenciais, PRODUTOS_ESSENCIAIS, produtosEssenciaisDaFase, respostaEssencial, rotuloFaseEssenciais, type EssenciaisRascunho, type EstadoEssenciais, type ProdutoEssencial, type RespostaEssencial } from '@/lib/atendimento-presencial/essenciais'
+import { chaveProduto, descricaoProduto, type ProdutoCompativel } from '@/lib/atendimento-presencial/produtos'
 import styles from './essenciais.module.css'
 
 type Props = {
   criancas: FichaCriancaRascunho[]; respostas: EssenciaisRascunho; anteriores: EstadoEssenciais; hoje: string;
   carregando: boolean; erro: string | null; erroValidacao?: string; tentar: () => void;
   responder: (crianca: string, produto: ProdutoEssencial, resposta: RespostaEssencial) => void;
-  adicionar: (nome: string) => string; confirmarFase: (id: string) => void; historico: () => void;
+  interesses: ProdutoCompativel[]; adicionar: (nome: string) => string | null; confirmarFase: (id: string) => void; historico: () => void;
 }
 
 export function ProdutosEssenciais(props: Props) {
@@ -48,7 +49,9 @@ export function ProdutosEssenciais(props: Props) {
         <div className={styles.grade}>{linhas.map(l => <div key={l.produto} className={styles.item} role="group" aria-label={PRODUTOS_ESSENCIAIS[l.produto]}>
           <div className={styles.linha}><span className={styles.produto}>{PRODUTOS_ESSENCIAIS[l.produto]}</span><div className={styles.opcoes}>{(['sim', 'nao'] as const).map(valor => <button type="button" key={valor} aria-pressed={l.resposta === valor} aria-label={`${PRODUTOS_ESSENCIAIS[l.produto]}: ${valor === 'sim' ? 'Sim' : 'Não'}`} className={`${styles.opcao} ${l.resposta === valor ? styles.ativa : ''}`} onClick={() => props.responder(c.id, l.produto, valor)}>{valor === 'sim' ? 'Sim' : 'Não'}</button>)}</div></div>
           {l.anterior && !props.respostas[c.id]?.[l.produto] && <details className={styles.pendente}><summary>{l.anterior.resposta === 'nao' ? 'Não anterior · confirme novamente' : 'Sim informado anteriormente'}</summary><p>{l.anterior.consultora} · {l.anterior.filial} · {new Date(l.anterior.registradoEm).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p></details>}
-          {l.resposta === 'nao' && <button type="button" className={styles.interesse} onClick={() => setFeedback(props.adicionar(PRODUTOS_ESSENCIAIS[l.produto]))}><Plus size={12} aria-hidden="true" />Adicionar ao interesse</button>}
+          {l.resposta === 'nao' && (props.interesses.some(item => chaveProduto(descricaoProduto(item)) === chaveProduto(PRODUTOS_ESSENCIAIS[l.produto]))
+            ? <span className={styles.interesseAdicionado} role="status"><CheckCircle2 size={14} aria-hidden="true" />Adicionado aos interesses</span>
+            : <button type="button" className={styles.interesseProduto} onClick={() => setFeedback(props.adicionar(PRODUTOS_ESSENCIAIS[l.produto]) ?? '')}><Plus size={14} aria-hidden="true" />Adicionar aos interesses</button>)}
         </div>)}</div>
       </div>}
       <button type="button" className={styles.interesse} onClick={props.historico}>Consultar respostas anteriores</button>

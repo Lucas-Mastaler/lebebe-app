@@ -366,7 +366,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [ficha, setFicha] = useState<FichaDadosRascunho>(() => criarPayloadInicial())
   const [clienteSelecionada, setClienteSelecionada] = useState<ClientePresencialDTO | null>(null)
   const [clienteId, setClienteId] = useState<string | null>(null)
-  const essenciais = useEssenciais(clienteId, ativo?.id, ficha.versaoEssenciais === 1 && ficha.tipoAtendimento !== 'nao_cliente')
+  const essenciais = useEssenciais(clienteId, ativo?.id, ficha.versaoEssenciais === 1 && ficha.tipoAtendimento !== 'nao_cliente', ativo?.clienteId === clienteId)
   const pendenciaAtualEssenciais = ficha.versaoEssenciais === 1 && ficha.tipoAtendimento !== 'nao_cliente'
     ? essenciais.carregando ? 'Aguarde a consulta das respostas anteriores.' : essenciais.erro ?? pendenciaEssenciais(ficha.criancas, ficha.essenciais ?? {}, essenciais.anteriores, dataAtendimentoLocal(ativo?.iniciadoEm)) : null
   const clienteIdRef = useRef<string | null>(null)

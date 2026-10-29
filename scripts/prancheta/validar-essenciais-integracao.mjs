@@ -24,7 +24,7 @@ try {
     ALTER TABLE atendimento_presencial_criancas ADD CONSTRAINT atendimento_presencial_criancas_idade_valor_check CHECK(idade_valor IS NULL OR idade_valor>=1);
   `)
   await db.exec(readFileSync('scripts/prancheta/sql/essenciais-base-referencia.sql', 'utf8'))
-  await db.exec(readFileSync('supabase/migrations/20261028193311_prancheta_produtos_essenciais.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20261029105543_prancheta_produtos_essenciais.sql', 'utf8'))
   await db.exec(`CREATE OR REPLACE FUNCTION atendimento_presencial_fluxo_v2_habilitado() RETURNS boolean LANGUAGE sql AS $$SELECT true$$;
     CREATE OR REPLACE FUNCTION atendimento_presencial_criancas_habilitado() RETURNS boolean LANGUAGE sql AS $$SELECT true$$;`)
   const base = { versaoFluxo: 2, tipoAtendimento: 'cliente', versaoProdutos: 2, consultoraNome: 'ANA', departamentos: ['moveis'], produtosInteresse: [], motivosResultado: [], resultadoAtendimento: 'sim', etapaAtual: 'ficha', criancas: [] }

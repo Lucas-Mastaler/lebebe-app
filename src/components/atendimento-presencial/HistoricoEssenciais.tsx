@@ -1,18 +1,25 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/design-system'
+import { ClipboardCheck } from 'lucide-react'
+import { Badge, Button, Section } from '@/components/design-system'
 import { ESSENCIAIS_HABILITADOS, PRODUTOS_ESSENCIAIS, rotuloFaseEssenciais, type SnapshotEssenciais } from '@/lib/atendimento-presencial/essenciais'
 import { requisicaoLimitada } from '@/lib/atendimento-presencial/requisicao-limitada'
 
 export function ResumoEssenciais({ itens }: { itens: SnapshotEssenciais[] }) {
   if (!itens.length) return null
-  return <section aria-label="Histórico de produtos essenciais" className="space-y-3 rounded-xl border border-pink-200 bg-pink-50/50 p-4">
-    <h3 className="font-semibold">Produtos essenciais — respostas no atendimento</h3>
-    {itens.map(item => <article key={`${item.atendimentoId}/${item.criancaId}`} className="rounded-lg bg-white p-3 text-sm">
-      <p><strong>{item.nome || 'Nome não informado'}</strong> · {rotuloFaseEssenciais(item.fase)}</p>
-      <p className="text-xs text-slate-600">{new Date(item.registradoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })} · {item.filial} · {item.consultora}</p>
-      {item.respostas.length ? <ul className="mt-2 space-y-1">{item.respostas.map(r => <li key={r.produto}><strong>{PRODUTOS_ESSENCIAIS[r.produto]}:</strong> {r.resposta === 'sim' ? 'Sim' : 'Não'}{r.confirmada ? ' · confirmado neste atendimento' : ' · resposta anterior'}</li>)}</ul> : <p>Sem questionário para esta fase.</p>}
-    </article>)}
+  return <section aria-label="Histórico de produtos essenciais">
+    <Section title="Produtos essenciais" description="Respostas e confirmações registradas no atendimento" icon={<ClipboardCheck className="size-4" aria-hidden="true" />} tone="section-2">
+      {itens.map(item => <article key={`${item.atendimentoId}/${item.criancaId}`} className="rounded-xl border border-white bg-white/85 p-3 text-sm shadow-sm">
+        <p><strong>{item.nome || 'Nome não informado'}</strong> · {rotuloFaseEssenciais(item.fase)}</p>
+        <p className="text-xs text-slate-600">{new Date(item.registradoEm).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })} · {item.filial} · {item.consultora}</p>
+        {item.respostas.length ? <ul className="mt-2 space-y-2">
+          {item.respostas.map(r => <li key={r.produto} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span><strong>{PRODUTOS_ESSENCIAIS[r.produto]}:</strong> {r.resposta === 'sim' ? 'Sim' : 'Não'}</span>
+            <Badge tone={r.confirmada ? 'success' : 'info'}>{r.confirmada ? 'Confirmado neste atendimento' : 'Atendimento anterior'}</Badge>
+          </li>)}
+        </ul> : <p>Sem questionário para esta fase.</p>}
+      </article>)}
+    </Section>
   </section>
 }
 

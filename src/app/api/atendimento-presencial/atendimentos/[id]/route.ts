@@ -18,6 +18,8 @@ import {
   validarFichaDadosRascunho,
   validarFichaParaConclusao,
 } from '@/lib/atendimento-presencial/ficha-schema'
+import { calcularAlteracoesEssenciaisAtendimento, validarConfirmacoesEssenciaisEdicao, type AlteracaoEssencialAtendimento, type ConfirmacoesEssenciaisEdicao } from '@/lib/atendimento-presencial/essenciais-edicao'
+import type { ProdutoEssencial } from '@/lib/atendimento-presencial/essenciais'
 
 export const runtime = 'nodejs'
 
@@ -217,6 +219,40 @@ export async function GET(
       essenciais = resposta.data?.historico ?? []
     }
 
+    let historicoRetorno = historico.data ?? []
+    const idsHistorico = historicoRetorno.map((item) => item.id)
+    if (row.versao_essenciais === 1 && idsHistorico.length > 0) {
+      const revisoes = await loaded.supabase
+        .from('atendimento_presencial_essenciais_revisoes')
+        .select('historico_id, crianca_id, produto, resposta_anterior, resposta_nova, confirmada_anterior, confirmada_nova')
+        .in('historico_id', idsHistorico)
+      if (revisoes.error && revisoes.error.code !== 'PGRST205' && revisoes.error.code !== '42P01') {
+        console.error('[ATENDIMENTO PRESENCIAL REGISTRO] Falha ao consultar revisões essenciais:', { code: revisoes.error.code })
+        return jsonErro('Não foi possível consultar as revisões de Produtos Essenciais.', 503)
+      }
+      if (revisoes.error) {
+        console.warn('[ATENDIMENTO PRESENCIAL REGISTRO] Migração de revisões essenciais ainda não aplicada.', { code: revisoes.error.code })
+      } else {
+        const alteracoesPorHistorico = new Map<string, Array<{ criancaId: string; produto: string; respostaAnterior: 'sim' | 'nao'; respostaNova: 'sim' | 'nao'; confirmadaAnterior: boolean; confirmadaNova: boolean }>>()
+        for (const revisao of revisoes.data ?? []) {
+          const alteracoes = alteracoesPorHistorico.get(revisao.historico_id) ?? []
+          alteracoes.push({
+            criancaId: revisao.crianca_id,
+            produto: revisao.produto,
+            respostaAnterior: revisao.resposta_anterior,
+            respostaNova: revisao.resposta_nova,
+            confirmadaAnterior: revisao.confirmada_anterior,
+            confirmadaNova: revisao.confirmada_nova,
+          })
+          alteracoesPorHistorico.set(revisao.historico_id, alteracoes)
+        }
+        historicoRetorno = historicoRetorno.map((item) => ({
+          ...item,
+          ...(alteracoesPorHistorico.has(item.id) ? { essenciaisAlterados: alteracoesPorHistorico.get(item.id) } : {}),
+        }))
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       essenciais,
@@ -228,7 +264,7 @@ export async function GET(
       departamentos: departamentos.data ?? [],
       produtosInteresse: produtos.data ?? [],
       motivos: motivos.data ?? [],
-      historico: historico.data ?? [],
+      historico: historicoRetorno,
       ...calcularPermissaoEdicao({
         row,
         perfil: loaded.contexto.perfil,
@@ -317,6 +353,16 @@ export async function PATCH(
       return jsonErro('Este atendimento foi alterado por outra pessoa. Recarregue os dados antes de salvar novamente.', 409)
     }
 
+    const respostasEssenciaisEnviadas = validacaoDados.dados.essenciais ?? {}
+    if (row.versao_essenciais === 1) {
+      if (validacaoDados.dados.versaoEssenciais !== 1) return jsonErro('Atualize a página para preservar as respostas essenciais deste atendimento.', 409)
+      if (!validarConfirmacoesEssenciaisEdicao(payload.confirmacoesEssenciais, validacaoDados.dados.criancas.map((crianca) => crianca.id))) {
+        return jsonErro('Revise as confirmações de Produtos Essenciais.', 400, { field: 'essenciais' })
+      }
+    } else if (validacaoDados.dados.versaoEssenciais === 1 || Object.keys(respostasEssenciaisEnviadas).length > 0) {
+      return jsonErro('Este atendimento não possui coleta de Produtos Essenciais. As respostas atuais da criança não podem ser inseridas retroativamente.', 409, { field: 'essenciais' })
+    }
+
     if (validacaoDados.dados.versaoProdutos === 2 && !PRODUTOS_V2_HABILITADOS && row.versao_produtos !== 2) {
       return jsonErro('O registro de quantidade e venda ainda não foi ativado.', 422, { field: 'produtosInteresse' })
     }
@@ -334,16 +380,47 @@ export async function PATCH(
 
     const consultoraNome = typeof payload.consultoraNome === 'string' ? normalizarNomeConsultora(payload.consultoraNome) : ''
 
-    const { data: rpcData, error: rpcError } = await loaded.supabase.rpc('atendimento_presencial_editar_concluido', {
+    let alteracoesEssenciais: AlteracaoEssencialAtendimento[] = []
+    if (row.versao_essenciais === 1) {
+      const [criancasSalvas, snapshotsSalvos] = await Promise.all([
+        loaded.supabase.from('atendimento_presencial_criancas').select('id, local_id, crianca_permanente_id').eq('atendimento_id', id),
+        loaded.supabase.from('atendimento_presencial_essenciais_snapshots').select('crianca_id, respostas').eq('atendimento_id', id),
+      ])
+      if (criancasSalvas.error || snapshotsSalvos.error) {
+        console.error('[ATENDIMENTO PRESENCIAL REGISTRO PATCH] Falha ao carregar snapshots da edição:', {
+          criancas: criancasSalvas.error?.code,
+          essenciais: snapshotsSalvos.error?.code,
+        })
+        return jsonErro('Não foi possível validar as respostas essenciais deste atendimento.', 503)
+      }
+      const calculo = calcularAlteracoesEssenciaisAtendimento({
+        criancas: (criancasSalvas.data ?? []) as Array<{ id: string; local_id: string | null; crianca_permanente_id: string | null }>,
+        snapshots: (snapshotsSalvos.data ?? []).map((snapshot) => ({
+          criancaId: snapshot.crianca_id,
+          respostas: Array.isArray(snapshot.respostas) ? snapshot.respostas as Array<{ produto: ProdutoEssencial; resposta: 'sim' | 'nao'; confirmada: boolean }> : [],
+        })),
+        respostas: respostasEssenciaisEnviadas,
+        confirmacoes: (payload.confirmacoesEssenciais ?? {}) as ConfirmacoesEssenciaisEdicao,
+      })
+      if (!calculo.ok) return jsonErro(calculo.mensagem, 409, { field: 'essenciais' })
+      alteracoesEssenciais = calculo.alteracoes
+    }
+
+    const usarRpcComEssenciais = row.versao_essenciais === 1 && alteracoesEssenciais.length > 0
+    const { data: rpcData, error: rpcError } = await loaded.supabase.rpc(usarRpcComEssenciais ? 'atendimento_presencial_editar_concluido_com_essenciais' : 'atendimento_presencial_editar_concluido', {
       p_atendimento_id: id,
       p_expected_version: expectedVersion,
       p_usuario_id: loaded.contexto.usuarioId,
       p_dados: dadosEdicao,
       p_numero_lancamento: validacaoConclusao.numeroLancamento,
       p_consultora_nome: consultoraNome || null,
+      ...(usarRpcComEssenciais ? { p_essenciais: alteracoesEssenciais } : {}),
     })
 
     if (rpcError) {
+      if (usarRpcComEssenciais && (rpcError.code === 'PGRST202' || rpcError.code === '42883')) {
+        return jsonErro('A revisão histórica de Produtos Essenciais depende da migração aditiva ainda não aplicada.', 503, { field: 'essenciais' })
+      }
       const response = mapearErroRpcEdicao(rpcError)
       if (response) return response
       console.error('[ATENDIMENTO PRESENCIAL REGISTRO PATCH] Erro ao editar atendimento:', rpcError)

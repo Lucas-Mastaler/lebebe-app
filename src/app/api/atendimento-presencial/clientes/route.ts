@@ -2,6 +2,16 @@ import { normalizarNomeConsultora as nomeConsultoraCanonico } from '@/lib/atendi
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/service'
 import { requireAtendimentoPresencialClientesAccess } from '@/lib/atendimento-presencial/api-auth'
+import { ESSENCIAIS_HABILITADOS } from '@/lib/atendimento-presencial/essenciais'
+import {
+  analisarFiltroEssencialCliente,
+  filtrarCorrespondenciasEssenciaisCliente,
+  type CorrespondenciaEssencialCliente,
+  type EstadoAtualEssencialFiltro,
+  type FiltroEssencialCliente,
+  type PerfilCriancaEssencial,
+  type VinculoClienteCriancaEssencial,
+} from '@/lib/atendimento-presencial/filtro-essenciais-clientes'
 import {
   detectarTipoBuscaCliente,
   escaparTermoIlike,
@@ -37,6 +47,56 @@ const SELECT_CLIENTE_COM_ORIGEM = [
   'origem_unidade_id',
   'origem_atendimento_id',
 ].join(', ')
+
+const TAMANHO_PAGINA_ESSENCIAIS_CLIENTE = 500
+
+async function carregarTodasPaginas<T>(
+  consultar: (inicio: number, fim: number) => PromiseLike<{
+    data: T[] | null
+    error: { code?: string; message: string } | null
+  }>
+) {
+  const itens: T[] = []
+  for (let inicio = 0; ; inicio += TAMANHO_PAGINA_ESSENCIAIS_CLIENTE) {
+    const { data, error } = await consultar(inicio, inicio + TAMANHO_PAGINA_ESSENCIAIS_CLIENTE - 1)
+    if (error) throw error
+    const pagina = data ?? []
+    itens.push(...pagina)
+    if (pagina.length < TAMANHO_PAGINA_ESSENCIAIS_CLIENTE) return itens
+  }
+}
+
+async function buscarCorrespondenciasEssenciaisCliente(
+  supabase: ReturnType<typeof createServiceClient>,
+  filtro: FiltroEssencialCliente
+) {
+  const [vinculos, perfis, estados] = await Promise.all([
+    carregarTodasPaginas<VinculoClienteCriancaEssencial>((inicio, fim) =>
+      supabase
+        .from('atendimento_presencial_clientes_criancas')
+        .select('cliente_id, crianca_id')
+        .order('cliente_id')
+        .order('crianca_id')
+        .range(inicio, fim)
+    ),
+    carregarTodasPaginas<PerfilCriancaEssencial>((inicio, fim) =>
+      supabase
+        .from('atendimento_presencial_criancas_cadastro')
+        .select('id, dados, data_referencia_nascimento')
+        .order('id')
+        .range(inicio, fim)
+    ),
+    carregarTodasPaginas<EstadoAtualEssencialFiltro>((inicio, fim) =>
+      supabase
+        .from('atendimento_presencial_essenciais_estado')
+        .select('crianca_id, resposta, registrado_em')
+        .eq('produto', filtro.produto)
+        .order('crianca_id')
+        .range(inicio, fim)
+    ),
+  ])
+  return filtrarCorrespondenciasEssenciaisCliente(filtro, vinculos, perfis, estados)
+}
 
 function limitarResultado(valor: string | null) {
   const parsed = Number.parseInt(valor ?? '', 10)
@@ -113,6 +173,18 @@ export async function GET(request: Request) {
     const limit = limitarResultado(url.searchParams.get('pageSize') ?? url.searchParams.get('limit'))
     const page = Math.max(Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1, 1)
     const consultoraOrigem = normalizarFiltroConsultora(url.searchParams.get('consultoraOrigem'))
+    const resultadoFiltroEssencial = analisarFiltroEssencialCliente({
+      produto: url.searchParams.get('produtoEssencial'),
+      situacao: url.searchParams.get('situacaoEssencial'),
+      fase: url.searchParams.get('faseEssencial'),
+    })
+    if (!resultadoFiltroEssencial.ok) {
+      return NextResponse.json({ ok: false, message: resultadoFiltroEssencial.mensagem }, { status: 422 })
+    }
+    const filtroEssencial = resultadoFiltroEssencial.filtro
+    if (filtroEssencial && !ESSENCIAIS_HABILITADOS) {
+      return NextResponse.json({ ok: false, message: 'Produtos essenciais ainda não foram ativados.' }, { status: 409 })
+    }
     const from = (page - 1) * limit
     const to = from + limit - 1
 
@@ -159,12 +231,17 @@ export async function GET(request: Request) {
     }
 
     const supabase = createServiceClient()
+    const essenciaisPorCliente = filtroEssencial
+      ? await buscarCorrespondenciasEssenciaisCliente(supabase, filtroEssencial)
+      : null
+    const idsClientesEssenciais = essenciaisPorCliente ? Array.from(essenciaisPorCliente.keys()) : null
     const executarConsultaClientes = async (select: string, usarOrigem: boolean) => {
       let query = supabase
         .from('atendimento_presencial_clientes')
         .select(select, { count: 'exact' })
         .eq('status', 'ativo')
 
+      if (idsClientesEssenciais) query = query.in('id', idsClientesEssenciais)
       if (usarOrigem && consultoraOrigem) {
         query = query.ilike('origem_consultora_nome', escaparTermoIlike(consultoraOrigem))
       }
@@ -197,11 +274,16 @@ export async function GET(request: Request) {
     }
 
     let origemDisponivel = true
-    let { data, error, count } = await executarConsultaClientes(SELECT_CLIENTE_COM_ORIGEM, true)
+    let resultadoConsulta: Awaited<ReturnType<typeof executarConsultaClientes>> | null = null
+    if (!idsClientesEssenciais || idsClientesEssenciais.length > 0) {
+      resultadoConsulta = await executarConsultaClientes(SELECT_CLIENTE_COM_ORIGEM, true)
+    }
+    let { data, error, count } = resultadoConsulta ?? { data: [], error: null, count: 0 }
 
     if (isErroSchemaOrigemCliente(error)) {
       origemDisponivel = false
-      ;({ data, error, count } = await executarConsultaClientes(SELECT_CLIENTE_BASE, false))
+      resultadoConsulta = await executarConsultaClientes(SELECT_CLIENTE_BASE, false)
+      ;({ data, error, count } = resultadoConsulta)
     }
 
     if (error) {
@@ -224,6 +306,9 @@ export async function GET(request: Request) {
       correspondenciaExataTelefone:
         Boolean(telefoneTrecho) &&
         Boolean(row.telefone_normalizado?.includes(telefoneTrecho) || row.telefone_normalizado_ddi?.includes(telefoneTrecho)),
+      ...(essenciaisPorCliente
+        ? { essenciaisCorrespondentes: essenciaisPorCliente.get(row.id) ?? [] as CorrespondenciaEssencialCliente[] }
+        : {}),
     }))
     const consultoras = origemDisponivel ? await carregarConsultorasOrigem(supabase) : []
 

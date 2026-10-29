@@ -13,6 +13,14 @@ import { SITUACOES_VENDA, consultoraDeHomologacao, registroNaoCliente, serializa
 import { converterViradaCartaoInput, valorOrdenavelViradaCartao } from '@/lib/atendimento-presencial/ficha-schema'
 import { escaparTermoIlike, normalizarTermosBuscaNome, normalizarTermoBusca } from '@/lib/atendimento-presencial/clientes'
 import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
+import { ESSENCIAIS_HABILITADOS } from '@/lib/atendimento-presencial/essenciais'
+import {
+  analisarFiltroEssenciaisRegistro,
+  filtrarAtendimentosPorEssenciais,
+  type CorrespondenciaEssencialRegistro,
+  type CriancaFiltroEssenciaisRegistro,
+  type SnapshotFiltroEssenciaisRegistro,
+} from '@/lib/atendimento-presencial/filtro-essenciais-registros'
 
 export const runtime = 'nodejs'
 
@@ -141,6 +149,13 @@ export async function GET(request: Request) {
     const consultora = normalizarFiltroConsultora(params.get('consultora'))
     const unidadeId = params.get('unidadeId')?.trim() ?? ''
     const situacaoVenda = params.get('situacaoVenda')?.trim() ?? ''
+    const filtroEssenciaisValidado = analisarFiltroEssenciaisRegistro({
+      produto: params.get('produtoEssencial'),
+      situacao: params.get('situacaoEssencial'),
+    })
+    if (!filtroEssenciaisValidado.ok) return jsonErro(filtroEssenciaisValidado.mensagem, 400)
+    const filtroEssenciais = filtroEssenciaisValidado.filtro
+    if (filtroEssenciais && !ESSENCIAIS_HABILITADOS) return jsonErro('Produtos essenciais ainda não foram ativados.', 409)
     if (situacaoVenda && !SITUACOES_VENDA.some((item) => item.chave === situacaoVenda)) {
       return jsonErro('Situacao da venda invalida', 400)
     }
@@ -241,6 +256,44 @@ export async function GET(request: Request) {
       telefone: row.cliente_id ? telefones.get(row.cliente_id) ?? null : null,
       numeroLancamento: row.numero_lancamento, motivoVisita: row.motivo_visita,
     }, filtrosNovos) && (!filtrosNovos.departamentos.length || departamentosIds.has(row.id)) && (!filtrosNovos.motivos.length || motivosIds.has(row.id)) && (!filtrosNovos.parentescos.length || parentescosIds.has(row.id)))
+    let essenciaisPorAtendimento = new Map<string, CorrespondenciaEssencialRegistro[]>()
+    if (filtroEssenciais) {
+      const idsAtendimentos = rows.map((row) => row.id)
+      const snapshots: SnapshotFiltroEssenciaisRegistro[] = []
+      const criancas: CriancaFiltroEssenciaisRegistro[] = []
+      for (let inicio = 0; inicio < idsAtendimentos.length; inicio += 100) {
+        const idsLote = idsAtendimentos.slice(inicio, inicio + 100)
+        const dados = await lerPaginas((de, ate) => loaded.supabase
+          .from('atendimento_presencial_essenciais_snapshots')
+          .select('atendimento_id, crianca_id, nome, respostas')
+          .in('atendimento_id', idsLote)
+          .order('atendimento_id')
+          .order('crianca_id')
+          .range(de, ate))
+        snapshots.push(...dados as SnapshotFiltroEssenciaisRegistro[])
+      }
+      if (filtroEssenciais.situacao === 'nao_informado') {
+        const idsLegados = rows.filter((row) => row.versao_essenciais !== 1).map((row) => row.id)
+        for (let inicio = 0; inicio < idsLegados.length; inicio += 100) {
+          const idsLote = idsLegados.slice(inicio, inicio + 100)
+          const dados = await lerPaginas((de, ate) => loaded.supabase
+            .from('atendimento_presencial_criancas')
+            .select('atendimento_id, nome, nome_nao_informado')
+            .in('atendimento_id', idsLote)
+            .order('atendimento_id')
+            .order('ordem')
+            .range(de, ate))
+          criancas.push(...dados as CriancaFiltroEssenciaisRegistro[])
+        }
+      }
+      essenciaisPorAtendimento = filtrarAtendimentosPorEssenciais({
+        atendimentos: rows.map((row) => ({ id: row.id, versao_essenciais: row.versao_essenciais })),
+        criancas,
+        snapshots,
+        filtro: filtroEssenciais,
+      })
+      rows = rows.filter((row) => essenciaisPorAtendimento.has(row.id))
+    }
     const clientesUnicos = new Set(rows.map(row => row.cliente_id).filter(Boolean)).size
     const visitasNaoClientes = rows.filter(row => row.tipo_atendimento === 'nao_cliente').length
     const total = rows.length
@@ -320,6 +373,7 @@ export async function GET(request: Request) {
         criancasNomes: criancasPorAtendimento.get(row.id) ?? [],
         criancasResumo: criancasResumoPorAtendimento.get(row.id) ?? [],
         departamentos: departamentosPorAtendimento.get(row.id) ?? [],
+        ...(filtroEssenciais ? { essenciaisCorrespondencias: essenciaisPorAtendimento.get(row.id) ?? [] } : {}),
         observacoes: row.observacoes?.trim() ? row.observacoes : null,
         clienteId: row.cliente_id,
         clienteNome: registroNaoCliente({ versaoFluxo: row.versao_fluxo, tipoAtendimento: row.tipo_atendimento }) ? 'Não cliente' : row.cliente_id ? clientesPorId.get(row.cliente_id)?.nome ?? 'Cliente nao localizada' : 'Cliente nao informada',

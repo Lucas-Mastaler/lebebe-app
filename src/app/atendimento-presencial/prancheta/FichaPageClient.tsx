@@ -6,7 +6,7 @@ import { useComemoracaoPv } from '@/components/atendimento-presencial/useComemor
 import { ProdutosAtendimento, AvisoProdutosVendidos } from '@/components/atendimento-presencial/ProdutosAtendimento'
 import { ListaEnxovalDialog } from '@/components/atendimento-presencial/ListaEnxovalDialog'
 import { PRODUTOS_V2_HABILITADOS } from '@/lib/atendimento-presencial/produtos-config'
-import { descricaoProduto } from '@/lib/atendimento-presencial/produtos'
+import { descricaoProduto, temProdutoVendido } from '@/lib/atendimento-presencial/produtos'
 
 import { EditarClienteDialog } from '@/components/atendimento-presencial/EditarClienteDialog'
 import { mensagemTelefoneCliente } from '@/lib/atendimento-presencial/telefone'
@@ -508,7 +508,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   // Revisão legada volta à primeira etapa sem apagar dados.
-  const etapaAtual = ficha.etapaAtual === 'resultado' && ficha.tipoAtendimento === 'cliente'
+  const temProdutoVendidoNoAtendimento = temProdutoVendido(ficha.produtosInteresse)
+  const etapaAtual = !temProdutoVendidoNoAtendimento && ficha.etapaAtual === 'resultado' && ficha.tipoAtendimento === 'cliente'
     && (ficha.resultadoAtendimento === 'nao' || ficha.resultadoAtendimento === 'negociacao') ? 'resultado' : 'ficha'
   const etapaNumero = etapaAtual === 'resultado' ? 2 : 1
   const camposComerciaisVisiveis = ficha.tipoAtendimento === 'cliente'
@@ -2708,6 +2709,11 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
               {etapaAtual === 'resultado' && <Button type="button" variant="secondary" onClick={voltar} disabled={concluindo} size="lg"><ChevronLeft className="size-4" aria-hidden="true" />Voltar</Button>}
               {mensagemConclusao ? (
                 <Button type="button" disabled className="min-h-12 flex-1 bg-success text-white disabled:opacity-100"><Check className="size-4" aria-hidden="true" />Atendimento concluído</Button>
+              ) : etapaAtual === 'ficha' && camposComerciaisVisiveis && temProdutoVendidoNoAtendimento ? (
+                <>
+                  <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 sm:flex-1">Há produto marcado como vendido. Para finalizar, selecione “Venda fechada”.</p>
+                  <Button type="button" onClick={() => void escolherResultado('sim')} disabled={acaoResultadoOcupada} loading={concluindo} className="min-h-12 flex-1">{!concluindo && <Check className="size-4" aria-hidden="true" />}{concluindo ? 'Finalizando...' : 'Venda fechada'}</Button>
+                </>
               ) : etapaAtual === 'ficha' && camposComerciaisVisiveis ? (
                 <>
                   <Button type="button" onClick={() => void escolherResultado('sim')} disabled={acaoResultadoOcupada} loading={concluindo} className="min-h-12 flex-1">{!concluindo && <Check className="size-4" aria-hidden="true" />}{concluindo ? 'Finalizando...' : 'Venda fechada'}</Button>

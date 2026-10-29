@@ -33,6 +33,10 @@ export function calcularPv(produtos: ProdutoCompativel[], versaoProdutos?: numbe
   return { valor, informado, incompleto: conhecidos.length !== itens.length }
 }
 
+export function temProdutoVendido(produtos: ProdutoCompativel[]) {
+  return produtos.some((produto) => !produtoNaoTrabalhado(produto) && estruturarProduto(produto).vendido === true)
+}
+
 export function incrementarProduto(produto: ProdutoCompativel): ProdutoAtendimento {
   const item = estruturarProduto(produto)
   return produtoNaoTrabalhado(item) ? item : { ...item, quantidade: Math.min(QUANTIDADE_PRODUTO_MAX, (item.quantidade ?? 0) + 1) }

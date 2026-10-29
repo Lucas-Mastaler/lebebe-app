@@ -51,7 +51,9 @@ function builder(result: unknown) {
   const chain = {
     select: vi.fn(() => chain),
     eq: vi.fn(() => chain),
+    in: vi.fn(() => chain),
     order: vi.fn(() => chain),
+    range: vi.fn(() => chain),
     maybeSingle: vi.fn(() => Promise.resolve(result)),
     single: vi.fn(() => Promise.resolve(result)),
     then: (resolve: (value: unknown) => unknown, reject: (reason?: unknown) => unknown) =>
@@ -61,16 +63,21 @@ function builder(result: unknown) {
 }
 
 function mockSupabase(queues: Record<string, unknown[]>, rpcResult?: unknown) {
-  const rpc = vi.fn(() => Promise.resolve(rpcResult ?? { data: null, error: null }))
+  const rpc = vi.fn((functionName: string) => Promise.resolve(
+    typeof rpcResult === 'function'
+      ? (rpcResult as (name: string) => unknown)(functionName)
+      : rpcResult ?? { data: null, error: null }
+  ))
+  const from = vi.fn((table: string) => {
+    const queue = queues[table]
+    if (!queue || queue.length === 0) throw new Error(`Sem mock para tabela ${table}`)
+    return builder(queue.shift())
+  })
   vi.mocked(createServiceClient).mockReturnValue({
-    from: vi.fn((table: string) => {
-      const queue = queues[table]
-      if (!queue || queue.length === 0) throw new Error(`Sem mock para tabela ${table}`)
-      return builder(queue.shift())
-    }),
+    from,
     rpc,
   } as never)
-  return { rpc }
+  return { from, rpc }
 }
 
 const payloadEdicaoValido = {
@@ -99,7 +106,24 @@ const payloadEdicaoValido = {
   numeroLancamento: null,
 }
 
-function filasContextoEPatch(row = atendimentoConcluido) {
+const payloadEdicaoComEssenciais = {
+  ...payloadEdicaoValido,
+  confirmacoesEssenciais: { 'crianca-local-1': { poltrona: true } },
+  dadosRascunho: {
+    ...payloadEdicaoValido.dadosRascunho,
+    versaoEssenciais: 1,
+    essenciais: { 'crianca-local-1': { poltrona: 'sim' as const } },
+  },
+}
+
+function filasComSnapshotEssenciais(respostas: Array<{ produto: string; resposta: 'sim' | 'nao'; confirmada: boolean }>) {
+  const queues = filasContextoEPatch({ ...atendimentoConcluido, versao_essenciais: 1 } as typeof atendimentoConcluido)
+  queues.atendimento_presencial_criancas = [{ data: [{ id: 'crianca-db-1', local_id: 'crianca-local-1', crianca_permanente_id: 'crianca-permanente-1' }], error: null }]
+  queues.atendimento_presencial_essenciais_snapshots = [{ data: [{ crianca_id: 'crianca-permanente-1', respostas }], error: null }]
+  return queues
+}
+
+function filasContextoEPatch(row = atendimentoConcluido): Record<string, unknown[]> {
   return {
     app_usuarios_perfis: [
       { data: { app_perfis_acesso: { chave: 'consultora', ativo: true } }, error: null },
@@ -135,6 +159,34 @@ describe('api detalhe de registro atendimento presencial', () => {
     expect((await GET(new Request('http://local'), { params: Promise.resolve({ id: atendimentoId }) })).status).toBe(403)
     expect(rpc).not.toHaveBeenCalled()
   })
+  it('GET da edição carrega a resposta do snapshot exato do atendimento', async () => {
+    const row = { ...atendimentoConcluido, versao_essenciais: 1 }
+    const queues = {
+      ...filasContextoEPatch(row as typeof atendimentoConcluido),
+      atendimento_presencial_clientes: [{ data: { id: clienteId, nome: 'Cliente', telefone_informado: null }, error: null }],
+      atendimento_presencial_criancas: [{ data: [{
+        id: 'crianca-db-1', local_id: 'crianca-local-1', crianca_permanente_id: 'crianca-permanente-1',
+        ordem: 1, situacao: 'ja_nasceu', nome: 'Alice', nome_nao_informado: false, sexo: null,
+        idade_unidade: 'meses', idade_valor: 6, data_referencia_nascimento: '2026-04-01',
+      }], error: null }],
+      atendimento_presencial_departamentos: [{ data: [], error: null }],
+      atendimento_presencial_produtos_interesse: [{ data: [], error: null }],
+      atendimento_presencial_motivos: [{ data: [], error: null }],
+      atendimento_presencial_historico: [{ data: [], error: null }],
+    }
+    const snapshot = { atendimentoId, criancaId: 'crianca-permanente-1', nome: 'Alice', fase: 6,
+      respostas: [{ produto: 'poltrona', resposta: 'nao', confirmada: true }] }
+    const { rpc } = mockSupabase(queues, (nome: string) => nome === 'atendimento_presencial_historico_essenciais'
+      ? { data: { historico: [snapshot] }, error: null }
+      : { data: null, error: null })
+
+    const response = await GET(new Request('http://local'), { params: Promise.resolve({ id: atendimentoId }) })
+    const json = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(json.essenciais).toEqual([snapshot])
+    expect(rpc).toHaveBeenCalledWith('atendimento_presencial_historico_essenciais', expect.objectContaining({ p_atendimento: atendimentoId }))
+  })
   it('PATCH mantém bloqueio de edição de outra consultora antes da RPC', async () => {
     const queues = filasContextoEPatch({ ...atendimentoConcluido, consultora_usuario_id: '10000000-0000-4000-8000-000000000099' })
     const { rpc } = mockSupabase(queues)
@@ -148,7 +200,7 @@ describe('api detalhe de registro atendimento presencial', () => {
     queues.atendimento_presencial_atendimentos.push({ data: { ...row, version: 5 } as unknown as typeof atendimentoConcluido, error: null })
     const { rpc } = mockSupabase(queues, { data: [{ id: atendimentoId, version: 5 }], error: null })
     const response = await PATCH(new Request('http://local', { method: 'PATCH', body: JSON.stringify({
-      version: 4, clienteId: null, dadosRascunho: { versaoFluxo: 2, tipoAtendimento: 'nao_cliente', motivoVisita: 'outros', consultoraNome: 'ANA' },
+      version: 4, clienteId: null, dadosRascunho: { versaoFluxo: 2, tipoAtendimento: 'nao_cliente', motivoVisita: 'outros', motivoVisitaOutro: 'RETIRADA DE CATALOGO', consultoraNome: 'ANA' },
     }) }), { params: Promise.resolve({ id: atendimentoId }) })
     expect(response.status).toBe(200)
     expect(rpc).toHaveBeenCalledWith('atendimento_presencial_editar_concluido', expect.objectContaining({ p_numero_lancamento: null }))
@@ -251,6 +303,58 @@ describe('api detalhe de registro atendimento presencial', () => {
       p_numero_lancamento: null,
       p_consultora_nome: null,
     })
+  })
+
+  it('edita uma resposta do snapshot usando a RPC transacional, sem consultar estado compartilhado', async () => {
+    const { from, rpc } = mockSupabase(filasComSnapshotEssenciais([{ produto: 'poltrona', resposta: 'nao', confirmada: true }]), {
+      data: [{ id: atendimentoId, version: 5 }], error: null,
+    })
+    const response = await PATCH(new Request('http://local', {
+      method: 'PATCH', body: JSON.stringify(payloadEdicaoComEssenciais),
+    }), { params: Promise.resolve({ id: atendimentoId }) })
+
+    expect(response.status).toBe(200)
+    expect(rpc).toHaveBeenCalledWith('atendimento_presencial_editar_concluido_com_essenciais', expect.objectContaining({
+      p_atendimento_id: atendimentoId,
+      p_essenciais: [{ localId: 'crianca-local-1', produto: 'poltrona', resposta: 'sim', confirmada: true }],
+    }))
+    expect(from.mock.calls.map(([table]) => table)).not.toContain('atendimento_presencial_essenciais_estado')
+  })
+
+  it('permite editar somente observações de atendimento v1 sem criar revisão essencial', async () => {
+    const body = { ...payloadEdicaoComEssenciais, dadosRascunho: { ...payloadEdicaoComEssenciais.dadosRascunho, essenciais: { 'crianca-local-1': { poltrona: 'nao' as const } } } }
+    const { rpc } = mockSupabase(filasComSnapshotEssenciais([{ produto: 'poltrona', resposta: 'nao', confirmada: true }]), {
+      data: [{ id: atendimentoId, version: 5 }], error: null,
+    })
+    const response = await PATCH(new Request('http://local', { method: 'PATCH', body: JSON.stringify(body) }), { params: Promise.resolve({ id: atendimentoId }) })
+
+    expect(response.status).toBe(200)
+    expect(rpc).toHaveBeenCalledWith('atendimento_presencial_editar_concluido', expect.any(Object))
+    expect(rpc).not.toHaveBeenCalledWith('atendimento_presencial_editar_concluido_com_essenciais', expect.anything())
+  })
+
+  it('não retropreenche essenciais em atendimento anterior à implantação', async () => {
+    const { rpc } = mockSupabase(filasContextoEPatch())
+    const response = await PATCH(new Request('http://local', {
+      method: 'PATCH', body: JSON.stringify(payloadEdicaoComEssenciais),
+    }), { params: Promise.resolve({ id: atendimentoId }) })
+
+    expect(response.status).toBe(409)
+    expect((await response.json()).message).toContain('não possui coleta')
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it('falha sem salvar a edição geral quando a RPC transacional ainda não existe', async () => {
+    const { rpc } = mockSupabase(filasComSnapshotEssenciais([{ produto: 'poltrona', resposta: 'nao', confirmada: true }]), {
+      data: null, error: { code: 'PGRST202', message: 'Could not find the function' },
+    })
+    const response = await PATCH(new Request('http://local', {
+      method: 'PATCH', body: JSON.stringify(payloadEdicaoComEssenciais),
+    }), { params: Promise.resolve({ id: atendimentoId }) })
+
+    expect(response.status).toBe(503)
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc).toHaveBeenCalledWith('atendimento_presencial_editar_concluido_com_essenciais', expect.any(Object))
   })
 
   it('bloqueia edicao quando a versao local esta desatualizada antes da RPC', async () => {

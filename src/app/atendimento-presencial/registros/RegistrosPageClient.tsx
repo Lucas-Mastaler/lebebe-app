@@ -1,23 +1,26 @@
 'use client'
 
-import { ProdutosAtendimento, ResumoProdutos, AvisoProdutosVendidos } from '@/components/atendimento-presencial/ProdutosAtendimento'
+import { ProdutosAtendimento, AvisoProdutosVendidos } from '@/components/atendimento-presencial/ProdutosAtendimento'
+import { ProdutosEssenciais } from '@/components/atendimento-presencial/ProdutosEssenciais'
 import { DetalhesAtendimentoDialog } from '@/components/atendimento-presencial/DetalhesAtendimentoDialog'
 import { ComemoracaoPv } from '@/components/atendimento-presencial/ComemoracaoPv'
 import { useComemoracaoPv } from '@/components/atendimento-presencial/useComemoracaoPv'
 import { ListaEnxovalDialog } from '@/components/atendimento-presencial/ListaEnxovalDialog'
 import { PRODUTOS_V2_HABILITADOS } from '@/lib/atendimento-presencial/produtos-config'
 import { descricaoProduto } from '@/lib/atendimento-presencial/produtos'
+import { ESSENCIAIS_HABILITADOS, incluirEssencialNoInteresse, PRODUTOS_ESSENCIAIS, type ProdutoEssencial } from '@/lib/atendimento-presencial/essenciais'
+import { mapearSnapshotEssenciaisParaEdicao, type ConfirmacoesEssenciaisEdicao } from '@/lib/atendimento-presencial/essenciais-edicao'
 import { getSectionToneAt, SECTION_TONE_CLASSES } from '@/lib/design-system/section-tones'
 import { countActiveFilters } from '@/lib/design-system/filters'
 
 
-import { calcularReferenciaNascimento, criancaJaNasceu, dataAtendimentoLocal, descreverIdadeAproximada } from '@/lib/atendimento-presencial/idade-aproximada'
+import { calcularReferenciaNascimento, criancaJaNasceu, dataAtendimentoLocal } from '@/lib/atendimento-presencial/idade-aproximada'
 
 import { FiltrosAdicionaisAtendimento } from '@/components/atendimento-presencial/FiltrosAdicionaisAtendimento'
 import { FILTROS_ADICIONAIS, type FiltrosAdicionais } from '@/lib/atendimento-presencial/filtros-listagem'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Baby, CalendarDays, ClipboardList, CreditCard, Eye, Heart, History, Loader2, Package, Pencil, Phone, Plus, RefreshCw, Save, UserRound, X } from 'lucide-react'
+import { CalendarDays, ClipboardList, CreditCard, Eye, Heart, Loader2, PackageCheck, Pencil, Phone, Plus, RefreshCw, Save, UserRound, X } from 'lucide-react'
 import {
   Alert,
   Badge,
@@ -213,17 +216,21 @@ const FILTROS_FINALIZADOS_INICIAL = {
   consultora: '',
   unidadeId: '',
   situacaoVenda: '',
+  produtoEssencial: '',
+  situacaoEssencial: '',
   viradaCartaoDe: '',
   viradaCartaoAte: '',
 }
 
 
 function resumoFiltros(valores: Record<string, string | string[]>, unidades: Array<{id: string; nome: string}>) {
-  const rotulos: Record<string, string> = { clienteNome: 'Cliente', consultora: 'Consultora do atendimento', unidadeId: 'Filial', situacaoVenda: 'Situação', viradaCartaoDe: 'Virada de', viradaCartaoAte: 'Virada até', atendimentoDe: 'Período de', atendimentoAte: 'Período até', tipoAtendimento: 'Tipo', telefoneCliente: 'Telefone', numeroLancamento: 'Lançamento', contato: 'Telefone disponível', departamentos: 'Departamentos', motivos: 'Motivos', motivoVisita: 'Visita', vinculoCliente: 'Cliente vinculado', expiracao: 'Expiração' }
+  const rotulos: Record<string, string> = { clienteNome: 'Cliente', consultora: 'Consultora do atendimento', unidadeId: 'Filial', situacaoVenda: 'Situação', produtoEssencial: 'Produto essencial', situacaoEssencial: 'Resposta essencial', viradaCartaoDe: 'Virada de', viradaCartaoAte: 'Virada até', atendimentoDe: 'Período de', atendimentoAte: 'Período até', tipoAtendimento: 'Tipo', telefoneCliente: 'Telefone', numeroLancamento: 'Lançamento', contato: 'Telefone disponível', departamentos: 'Departamentos', motivos: 'Motivos', motivoVisita: 'Visita', vinculoCliente: 'Cliente vinculado', expiracao: 'Expiração' }
   const texto = Object.entries(valores).filter(([,valor]) => Array.isArray(valor) ? valor.length : Boolean(valor)).map(([chave, valor]) => {
     let label = Array.isArray(valor) ? valor.map(v => chave === 'departamentos' ? getDepartamentoLabel(v as DepartamentoInteresse) : getMotivoLabel(v as MotivoResultado)).join(', ') : valor
     if (chave === 'unidadeId') label = unidades.find(u => u.id === valor)?.nome ?? 'Filial selecionada'
     if (chave === 'situacaoVenda') label = situacaoVendaRegistro(String(valor)).label
+    if (chave === 'produtoEssencial') label = PRODUTOS_ESSENCIAIS[String(valor) as keyof typeof PRODUTOS_ESSENCIAIS] ?? String(valor)
+    if (chave === 'situacaoEssencial') label = valor === 'sim' ? 'Sim' : valor === 'nao' ? 'Não' : 'Não informado'
     if (chave === 'motivoVisita') label = getMotivoVisitaLabel(String(valor))
     if (chave === 'tipoAtendimento') label = valor === 'cliente' ? 'Cliente' : valor === 'nao_cliente' ? 'Não cliente' : 'Tipo não informado'
     if (chave === 'contato') label = valor === 'com' ? 'Com telefone' : 'Sem telefone'
@@ -305,6 +312,9 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   const [viradaCartaoEdicaoInput, setViradaCartaoEdicaoInput] = useState('')
   const [mostrarErroViradaCartaoEdicao, setMostrarErroViradaCartaoEdicao] = useState(false)
   const [produtoEdicaoDigitado, setProdutoEdicaoDigitado] = useState('')
+  const [confirmacoesEssenciaisEdicao, setConfirmacoesEssenciaisEdicao] = useState<ConfirmacoesEssenciaisEdicao>({})
+  const [coletasEssenciaisEdicao, setColetasEssenciaisEdicao] = useState<Record<string, boolean>>({})
+  const [fasesEssenciaisEdicao, setFasesEssenciaisEdicao] = useState<Record<string, number | null>>({})
   const [dataPrevistaEdicaoInputs, setDataPrevistaEdicaoInputs] = useState<Record<string, string>>({})
   const [salvandoEdicao, setSalvandoEdicao] = useState(false)
   const salvandoEdicaoRef = useRef(false)
@@ -325,6 +335,8 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     clienteNome?: string
     consultora?: string
     situacaoVenda?: string
+    produtoEssencial?: string
+    situacaoEssencial?: string
     unidadeId?: string
     page?: number
   }) {
@@ -339,6 +351,8 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       const filtroConsultora = filtrosOverride?.consultora ?? filtrosFinalizados.applied.consultora
       const filtroUnidade = filtrosOverride?.unidadeId ?? filtrosFinalizados.applied.unidadeId
       const filtroSituacao = filtrosOverride?.situacaoVenda ?? filtrosFinalizados.applied.situacaoVenda
+      const filtroProdutoEssencial = filtrosOverride?.produtoEssencial ?? filtrosFinalizados.applied.produtoEssencial
+      const filtroSituacaoEssencial = filtrosOverride?.situacaoEssencial ?? filtrosFinalizados.applied.situacaoEssencial
       const pagina = filtrosOverride?.page ?? paginaRegistros
       if (filtroDe.trim()) params.set('viradaCartaoDe', filtroDe.trim())
       if (filtroAte.trim()) params.set('viradaCartaoAte', filtroAte.trim())
@@ -346,6 +360,8 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       if (filtroConsultora.trim()) params.set('consultora', filtroConsultora.trim())
       if (filtroUnidade) params.set('unidadeId', filtroUnidade)
       if (filtroSituacao) params.set('situacaoVenda', filtroSituacao)
+      if (filtroProdutoEssencial) params.set('produtoEssencial', filtroProdutoEssencial)
+      if (filtroSituacaoEssencial) params.set('situacaoEssencial', filtroSituacaoEssencial)
       const adicionais = filtrosOverride?.adicionais ?? novosFiltros.applied
       for (const [key, value] of Object.entries(adicionais)) {
         if (Array.isArray(value)) value.forEach(item => params.append(key, item))
@@ -364,7 +380,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       setPaginaRegistros(data.page ?? pagina)
       setTotalRegistros(data.total ?? 0)
       restaurarPosicaoLista()
-      guardarEstadoLista('salvos', { filtros: { ...filtrosFinalizados.applied, clienteNome: filtroCliente, consultora: filtroConsultora, unidadeId: filtroUnidade, situacaoVenda: filtroSituacao, viradaCartaoDe: filtroDe, viradaCartaoAte: filtroAte }, adicionais, page: data.page ?? pagina })
+      guardarEstadoLista('salvos', { filtros: { ...filtrosFinalizados.applied, clienteNome: filtroCliente, consultora: filtroConsultora, unidadeId: filtroUnidade, situacaoVenda: filtroSituacao, produtoEssencial: filtroProdutoEssencial, situacaoEssencial: filtroSituacaoEssencial, viradaCartaoDe: filtroDe, viradaCartaoAte: filtroAte }, adicionais, page: data.page ?? pagina })
     } catch (error) {
       if (requestId === registrosRequest.current) setErro(error instanceof Error ? error.message : 'Erro ao carregar registros')
     } finally {
@@ -394,6 +410,8 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       consultora: filtrosFinalizados.draft.consultora,
       unidadeId: filtrosFinalizados.draft.unidadeId,
       situacaoVenda: filtrosFinalizados.draft.situacaoVenda,
+      produtoEssencial: filtrosFinalizados.draft.produtoEssencial,
+      situacaoEssencial: filtrosFinalizados.draft.situacaoEssencial,
       page: 1,
     })
   }
@@ -401,7 +419,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   function limparFiltrosFinalizados() {
     novosFiltros.clear()
     filtrosFinalizados.clear()
-    void carregarRegistros({ adicionais: FILTROS_ADICIONAIS, de: '', ate: '', clienteNome: '', consultora: '', unidadeId: '', situacaoVenda: '', page: 1 })
+    void carregarRegistros({ adicionais: FILTROS_ADICIONAIS, de: '', ate: '', clienteNome: '', consultora: '', unidadeId: '', situacaoVenda: '', produtoEssencial: '', situacaoEssencial: '', page: 1 })
   }
 
   async function buscarDetalhe(id: string): Promise<RegistroDetalhe> {
@@ -474,7 +492,11 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
 
   function abrirEdicao(detalhe: RegistroDetalhe) {
     const ficha = normalizarDetalheParaFichaEdicao(detalhe)
+    const estadoEssenciais = mapearSnapshotEssenciaisParaEdicao(detalhe.criancas, detalhe.essenciais ?? [])
     setFichaEdicao(ficha)
+    setConfirmacoesEssenciaisEdicao(estadoEssenciais.confirmacoes)
+    setColetasEssenciaisEdicao(Object.fromEntries(ficha.criancas.map((crianca) => [crianca.id, detalhe.atendimento.versaoEssenciais !== 1 || estadoEssenciais.coletadas[crianca.id] !== true])))
+    setFasesEssenciaisEdicao(estadoEssenciais.fases)
     setNumeroLancamentoEdicao(detalhe.atendimento.numeroLancamento ? String(detalhe.atendimento.numeroLancamento) : '')
     setViradaCartaoEdicaoInput(formatarViradaCartao(ficha.viradaCartaoDia, ficha.viradaCartaoMes))
     setMostrarErroViradaCartaoEdicao(false)
@@ -499,6 +521,23 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
 
   function atualizarFichaEdicao(mutator: (atual: FichaDadosRascunho) => FichaDadosRascunho) {
     setFichaEdicao((atual) => atual ? mutator(atual) : atual)
+  }
+
+  function responderEssencialEdicao(criancaId: string, produto: ProdutoEssencial, resposta: 'sim' | 'nao') {
+    atualizarFichaEdicao((atual) => ({ ...atual, essenciais: { ...atual.essenciais, [criancaId]: { ...atual.essenciais?.[criancaId], [produto]: resposta } } }))
+    setConfirmacoesEssenciaisEdicao((atual) => ({ ...atual, [criancaId]: { ...atual[criancaId], [produto]: true } }))
+  }
+
+  function adicionarEssencialAoInteresseEdicao(nome: string) {
+    if (!fichaEdicao) return 'Este produto já está nos interesses.'
+    const inclusaoEsperada = incluirEssencialNoInteresse(fichaEdicao.produtosInteresse, nome)
+    atualizarFichaEdicao((atual) => {
+      const inclusao = incluirEssencialNoInteresse(atual.produtosInteresse, nome)
+      return inclusao.produtos === atual.produtosInteresse ? atual : { ...atual, produtosInteresse: inclusao.produtos }
+    })
+    if (inclusaoEsperada.resultado === 'adicionado') return 'Produto adicionado aos interesses com quantidade 1.'
+    if (inclusaoEsperada.resultado === 'limite') return 'O limite de produtos de interesse foi atingido.'
+    return 'Este produto já está nos interesses.'
   }
 
   function atualizarCriancaEdicao(id: string, patch: Partial<FichaCriancaRascunho>) {
@@ -526,7 +565,11 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     atualizarFichaEdicao((atual) => ({
       ...atual,
       criancas: atual.criancas.filter((crianca) => crianca.id !== id),
+      essenciais: Object.fromEntries(Object.entries(atual.essenciais ?? {}).filter(([criancaId]) => criancaId !== id)),
     }))
+    setConfirmacoesEssenciaisEdicao((atual) => Object.fromEntries(Object.entries(atual).filter(([criancaId]) => criancaId !== id)))
+    setColetasEssenciaisEdicao((atual) => Object.fromEntries(Object.entries(atual).filter(([criancaId]) => criancaId !== id)))
+    setFasesEssenciaisEdicao((atual) => Object.fromEntries(Object.entries(atual).filter(([criancaId]) => criancaId !== id)))
     setDataPrevistaEdicaoInputs((atual) => {
       const proximo = { ...atual }
       delete proximo[id]
@@ -622,6 +665,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
         detalhe: selecionado,
         ficha: fichaEdicao,
         numeroLancamento: validacao.numeroLancamento,
+        confirmacoesEssenciais: confirmacoesEssenciaisEdicao,
       })
       const response = await fetch(`/api/atendimento-presencial/atendimentos/${selecionado.atendimento.id}`, {
         method: 'PATCH',
@@ -840,6 +884,28 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
 
                   <FiltrosAdicionaisAtendimento ocultarTelefone value={novosFiltros.draft} onChange={(campo, valor) => novosFiltros.setField(campo, valor)} />
                   <FilterFieldGroup
+                    label="Produtos essenciais no atendimento"
+                    icon={<PackageCheck />}
+                    description="Filtra pelas respostas registradas naquele atendimento, sem consultar o estado atual da criança."
+                  >
+                    <FilterField id="filtro-produto-essencial-registro" label="Produto" active={Boolean(filtrosFinalizados.draft.produtoEssencial)}>
+                      {(field) => <Select value={filtrosFinalizados.draft.produtoEssencial || 'all'} onValueChange={(value) => {
+                        const produto = value === 'all' ? '' : value
+                        filtrosFinalizados.setField('produtoEssencial', produto)
+                        if (!produto) filtrosFinalizados.setField('situacaoEssencial', '')
+                      }}>
+                        <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Todos" /></SelectTrigger>
+                        <SelectContent><SelectItem value="all">Todos</SelectItem>{Object.entries(PRODUTOS_ESSENCIAIS).map(([chave, nome]) => <SelectItem key={chave} value={chave}>{nome}</SelectItem>)}</SelectContent>
+                      </Select>}
+                    </FilterField>
+                    <FilterField id="filtro-resposta-essencial-registro" label="Resposta naquele atendimento" active={Boolean(filtrosFinalizados.draft.situacaoEssencial)}>
+                      {(field) => <Select disabled={!filtrosFinalizados.draft.produtoEssencial} value={filtrosFinalizados.draft.situacaoEssencial || 'all'} onValueChange={(value) => filtrosFinalizados.setField('situacaoEssencial', value === 'all' ? '' : value)}>
+                        <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
+                        <SelectContent><SelectItem value="all">Todas</SelectItem><SelectItem value="sim">Sim confirmado</SelectItem><SelectItem value="nao">Não confirmado</SelectItem><SelectItem value="nao_informado">Não informado nesta visita</SelectItem></SelectContent>
+                      </Select>}
+                    </FilterField>
+                  </FilterFieldGroup>
+                  <FilterFieldGroup
                     label="Virada do cartão"
                     icon={<CreditCard />}
                     description="Dia e mês da virada do cartão, no formato DD/MM."
@@ -906,6 +972,10 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                           </span>}
                         />
                         <CardContent className="space-y-3 pt-3">
+                          {!!registro.essenciaisCorrespondencias?.length && <div className="rounded-xl border border-pink-200 bg-pink-50/60 p-3">
+                            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-pink-800"><PackageCheck className="size-3.5" aria-hidden="true" />Produtos essenciais neste atendimento</p>
+                            <div className="mt-2 flex flex-wrap gap-2">{registro.essenciaisCorrespondencias.map((item) => <span key={`${item.criancaId}:${item.produto}`} className="inline-flex flex-wrap items-center gap-1.5 rounded-lg border border-white bg-white/80 px-2.5 py-1.5 text-sm text-slate-700"><strong>{item.criancaNome}</strong><span>· {item.produtoNome}</span><Badge tone={item.resposta === 'sim' ? 'success' : item.resposta === 'nao' ? 'danger' : 'neutral'}>{item.resposta === 'sim' ? 'Sim' : item.resposta === 'nao' ? 'Não' : 'Não informado'}</Badge></span>)}</div>
+                          </div>}
                           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                             <div className={`rounded-xl border p-3 ${TONS_CARD_INFORMACOES.consultora.surface} ${TONS_CARD_INFORMACOES.consultora.border}`}>
                               <p className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${TONS_CARD_INFORMACOES.consultora.title}`}><UserRound className={`size-3.5 ${TONS_CARD_INFORMACOES.consultora.icon}`} aria-hidden="true" />Consultora do atendimento</p>
@@ -1239,6 +1309,26 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                 </div>
 
                 </Section>
+
+                {(ESSENCIAIS_HABILITADOS || fichaEdicao.versaoEssenciais === 1) && <ProdutosEssenciais
+                  criancas={fichaEdicao.criancas}
+                  respostas={fichaEdicao.essenciais ?? {}}
+                  anteriores={{}}
+                  hoje={dataAtendimentoLocal(selecionado?.atendimento.iniciadoEm)}
+                  carregando={false}
+                  erro={null}
+                  tentar={() => {}}
+                  responder={responderEssencialEdicao}
+                  interesses={fichaEdicao.produtosInteresse}
+                  adicionar={adicionarEssencialAoInteresseEdicao}
+                  confirmarFase={() => {}}
+                  historico={abrirHistoricoClienteSelecionada}
+                  confirmacoes={confirmacoesEssenciaisEdicao}
+                  fasesRegistradas={fasesEssenciaisEdicao}
+                  semColetaPorCrianca={coletasEssenciaisEdicao}
+                  edicaoHistorica
+                  descricaoExpandida={fichaEdicao.versaoEssenciais === 1 ? 'Respostas registradas neste atendimento.' : 'Produtos essenciais não foram coletados nesta ocasião.'}
+                />}
 
                 <ListaEnxovalDialog />
 

@@ -2,7 +2,7 @@
 
 import { EditarClienteDialog } from '@/components/atendimento-presencial/EditarClienteDialog'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, History, Phone, Search, UserPlus, Users } from 'lucide-react'
+import { Baby, ChevronLeft, ChevronRight, History, PackageCheck, Phone, Search, UserPlus, Users } from 'lucide-react'
 import {
   Alert,
   Badge,
@@ -13,6 +13,7 @@ import {
   CardHeader,
   EmptyState,
   FilterFieldGroup,
+  FilterField,
   FilterPanel,
   FormField,
   Input,
@@ -21,15 +22,18 @@ import {
   Spinner,
   useFilterState,
 } from '@/components/design-system'
+import { countActiveFilters } from '@/lib/design-system/filters'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { HistoricoClienteModal, type HistoricoClienteModalCliente } from '@/components/atendimento-presencial/HistoricoClienteModal'
-import { PARENTESCOS_CLIENTE, type ClientePresencialDTO, type ParentescoCliente } from '@/lib/atendimento-presencial/clientes'
+import { type ClientePresencialDTO } from '@/lib/atendimento-presencial/clientes'
 import { mascararTelefoneClienteBR } from '@/lib/atendimento-presencial/telefone'
+import { FASES_FILTRO_ESSENCIAIS, type CorrespondenciaEssencialCliente } from '@/lib/atendimento-presencial/filtro-essenciais-clientes'
+import { PRODUTOS_ESSENCIAIS } from '@/lib/atendimento-presencial/essenciais'
 
 type ApiClientesResponse = {
   ok: boolean
   message?: string
-  clientes?: Array<ClientePresencialDTO & { correspondenciaExataTelefone?: boolean }>
+  clientes?: Array<ClientePresencialDTO & { correspondenciaExataTelefone?: boolean; essenciaisCorrespondentes?: CorrespondenciaEssencialCliente[] }>
   consultoras?: Array<{ nome: string }>
   meta?: {
     page: number
@@ -46,15 +50,19 @@ type ApiCriarClienteResponse = {
   clienteExistente?: boolean
 }
 
-const parentescoInicial: ParentescoCliente = 'mae'
-
-const FILTROS_CLIENTES_INICIAL = { busca: '', consultora: '' }
+const FILTROS_CLIENTES_INICIAL = {
+  busca: '',
+  consultora: '',
+  produtoEssencial: '',
+  situacaoEssencial: '',
+  faseEssencial: '',
+}
 
 export default function PageClient() {
   const [clienteEdicao, setClienteEdicao] = useState<ClientePresencialDTO | null>(null)
   const filtros = useFilterState(FILTROS_CLIENTES_INICIAL)
   const [consultoras, setConsultoras] = useState<Array<{ nome: string }>>([])
-  const [clientes, setClientes] = useState<Array<ClientePresencialDTO & { correspondenciaExataTelefone?: boolean }>>([])
+  const [clientes, setClientes] = useState<Array<ClientePresencialDTO & { correspondenciaExataTelefone?: boolean; essenciaisCorrespondentes?: CorrespondenciaEssencialCliente[] }>>([])
   const [pagina, setPagina] = useState(1)
   const [totalClientes, setTotalClientes] = useState(0)
   const [totalPaginas, setTotalPaginas] = useState(1)
@@ -63,8 +71,6 @@ export default function PageClient() {
 
   const [nome, setNome] = useState('')
   const [telefone, setTelefone] = useState('')
-  const [parentesco, setParentesco] = useState<ParentescoCliente>(parentescoInicial)
-  const [parentescoOutro, setParentescoOutro] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [erroCadastro, setErroCadastro] = useState<string | null>(null)
   const [feedbackCadastro, setFeedbackCadastro] = useState<string | null>(null)
@@ -74,14 +80,16 @@ export default function PageClient() {
   const podeEnviar = useMemo(() => {
     if (salvando) return false
     if (nome.trim().length < 2) return false
-    if (parentesco === 'outro' && parentescoOutro.trim().length < 2) return false
     return true
-  }, [nome, parentesco, parentescoOutro, salvando])
+  }, [nome, salvando])
 
-  async function buscarClientes(options?: { page?: number; busca?: string; consultora?: string }) {
+  async function buscarClientes(options?: { page?: number; busca?: string; consultora?: string; produtoEssencial?: string; situacaoEssencial?: string; faseEssencial?: string }) {
     const page = options?.page ?? 1
     const termo = options?.busca ?? filtros.applied.busca
     const consultora = options?.consultora ?? filtros.applied.consultora
+    const produtoEssencial = options?.produtoEssencial ?? filtros.applied.produtoEssencial
+    const situacaoEssencial = options?.situacaoEssencial ?? filtros.applied.situacaoEssencial
+    const faseEssencial = options?.faseEssencial ?? filtros.applied.faseEssencial
 
     setBuscando(true)
     setErroBusca(null)
@@ -91,6 +99,9 @@ export default function PageClient() {
       const params = new URLSearchParams()
       if (termo.trim()) params.set('q', termo.trim())
       if (consultora.trim()) params.set('consultoraOrigem', consultora.trim())
+      if (produtoEssencial) params.set('produtoEssencial', produtoEssencial)
+      if (situacaoEssencial) params.set('situacaoEssencial', situacaoEssencial)
+      if (faseEssencial) params.set('faseEssencial', faseEssencial)
       params.set('page', String(page))
       params.set('pageSize', '20')
 
@@ -117,19 +128,19 @@ export default function PageClient() {
   }
 
   useEffect(() => {
-    void buscarClientes({ page: 1, busca: '', consultora: '' })
+    void buscarClientes({ page: 1, ...FILTROS_CLIENTES_INICIAL })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function aplicarFiltros(event?: FormEvent) {
     event?.preventDefault()
     filtros.apply()
-    void buscarClientes({ page: 1, busca: filtros.draft.busca, consultora: filtros.draft.consultora })
+    void buscarClientes({ page: 1, ...filtros.draft })
   }
 
   function limparFiltros() {
     filtros.clear()
-    void buscarClientes({ page: 1, busca: '', consultora: '' })
+    void buscarClientes({ page: 1, ...FILTROS_CLIENTES_INICIAL })
   }
 
   async function cadastrarCliente(event: FormEvent) {
@@ -147,8 +158,6 @@ export default function PageClient() {
         body: JSON.stringify({
           nome,
           telefone: telefone.trim() || undefined,
-          parentesco,
-          parentescoOutro: parentesco === 'outro' ? parentescoOutro : undefined,
         }),
       })
       const data = (await response.json()) as ApiCriarClienteResponse
@@ -171,8 +180,6 @@ export default function PageClient() {
       if (!data.clienteExistente) {
         setNome('')
         setTelefone('')
-        setParentesco(parentescoInicial)
-        setParentescoOutro('')
       }
     } catch (error) {
       setErroCadastro(error instanceof Error ? error.message : 'Erro ao cadastrar cliente')
@@ -192,7 +199,7 @@ export default function PageClient() {
 
   function mudarPagina(proximaPagina: number) {
     if (proximaPagina < 1 || proximaPagina > totalPaginas || buscando) return
-    void buscarClientes({ page: proximaPagina, busca: filtros.applied.busca, consultora: filtros.applied.consultora })
+    void buscarClientes({ page: proximaPagina, ...filtros.applied })
   }
 
   return (
@@ -207,7 +214,7 @@ export default function PageClient() {
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
           <div className="flex flex-col gap-5">
-            <FilterPanel title="Buscar cliente" dirty={filtros.dirty} onApply={aplicarFiltros} onClear={limparFiltros} applyDisabled={buscando}>
+            <FilterPanel title="Buscar cliente" activeCount={countActiveFilters(filtros.applied, FILTROS_CLIENTES_INICIAL)} dirty={filtros.dirty} onApply={aplicarFiltros} onClear={limparFiltros} applyDisabled={buscando}>
               <FilterFieldGroup label="Cliente e consultora" icon={<Users />} description="Busque pelo nome ou telefone e filtre pela consultora de origem.">
                 <FormField id="filtro-busca-cliente" label="Nome ou telefone">
                   {(field) => (
@@ -236,6 +243,33 @@ export default function PageClient() {
                     </Select>
                   )}
                 </FormField>
+              </FilterFieldGroup>
+              <FilterFieldGroup label="Produtos essenciais" icon={<PackageCheck />} description="Busque pela resposta atual da criança. Atendimentos antigos não alteram esse estado.">
+                <FilterField id="filtro-produto-essencial-cliente" label="Produto" active={Boolean(filtros.draft.produtoEssencial)}>
+                  {(field) => <Select value={filtros.draft.produtoEssencial || 'all'} onValueChange={(value) => {
+                    const produto = value === 'all' ? '' : value
+                    filtros.setField('produtoEssencial', produto)
+                    if (!produto) {
+                      filtros.setField('situacaoEssencial', '')
+                      filtros.setField('faseEssencial', '')
+                    }
+                  }}>
+                    <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Todos" /></SelectTrigger>
+                    <SelectContent><SelectItem value="all">Todos</SelectItem>{Object.entries(PRODUTOS_ESSENCIAIS).map(([chave, nome]) => <SelectItem key={chave} value={chave}>{nome}</SelectItem>)}</SelectContent>
+                  </Select>}
+                </FilterField>
+                <FilterField id="filtro-situacao-essencial-cliente" label="Resposta atual" active={Boolean(filtros.draft.situacaoEssencial)}>
+                  {(field) => <Select disabled={!filtros.draft.produtoEssencial} value={filtros.draft.situacaoEssencial || 'all'} onValueChange={(value) => filtros.setField('situacaoEssencial', value === 'all' ? '' : value)}>
+                    <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
+                    <SelectContent><SelectItem value="all">Todas</SelectItem><SelectItem value="sim">Sim</SelectItem><SelectItem value="nao">Não</SelectItem><SelectItem value="nao_informado">Não informado</SelectItem></SelectContent>
+                  </Select>}
+                </FilterField>
+                <FilterField id="filtro-fase-essencial-cliente" label="Fase atual" active={Boolean(filtros.draft.faseEssencial)}>
+                  {(field) => <Select disabled={!filtros.draft.produtoEssencial} value={filtros.draft.faseEssencial || 'all'} onValueChange={(value) => filtros.setField('faseEssencial', value === 'all' ? '' : value)}>
+                    <SelectTrigger id={field.id} className="w-full"><SelectValue placeholder="Todas" /></SelectTrigger>
+                    <SelectContent><SelectItem value="all">Todas</SelectItem>{FASES_FILTRO_ESSENCIAIS.map((fase) => <SelectItem key={fase.chave} value={fase.chave}>{fase.label}</SelectItem>)}</SelectContent>
+                  </Select>}
+                </FilterField>
               </FilterFieldGroup>
             </FilterPanel>
 
@@ -267,7 +301,6 @@ export default function PageClient() {
                     <Card key={cliente.id}>
                       <CardHeader
                         title={cliente.nome}
-                        description={cliente.parentescoLabel}
                         action={cliente.correspondenciaExataTelefone ? <Badge tone="success">Telefone encontrado</Badge> : undefined}
                       />
                       <CardContent>
@@ -280,6 +313,12 @@ export default function PageClient() {
                         <p>Consultora origem: <span className="font-medium text-slate-800">{cliente.origem.consultoraNome ?? 'Não identificado'}</span></p>
                         <p>Filial origem: <span className="font-medium text-slate-800">{cliente.origem.unidadeNome ?? 'Não identificado'}</span></p>
                       </div>
+                      {!!cliente.essenciaisCorrespondentes?.length && <div className="mt-3 rounded-lg border border-pink-200 bg-pink-50/70 p-3">
+                        <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-pink-800"><Baby className="size-3.5" aria-hidden="true" />Correspondências atuais de Produtos Essenciais</p>
+                        <ul className="mt-2 space-y-2 text-sm">{cliente.essenciaisCorrespondentes.map((item) => <li key={`${item.criancaId}:${item.produto}`} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-slate-700">
+                          <span className="font-semibold">{item.criancaNome}</span><span>·</span><span>{item.produtoNome}</span><Badge tone={item.resposta === 'sim' ? 'success' : item.resposta === 'nao' ? 'danger' : 'neutral'}>{item.resposta === 'sim' ? 'Sim' : item.resposta === 'nao' ? 'Não' : 'Não informado'}</Badge><span className="text-xs text-slate-500">{item.faseLabel}{item.registradoEm ? ` · confirmado em ${new Date(item.registradoEm).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}` : ''}</span>
+                        </li>)}</ul>
+                      </div>}
                       </CardContent>
                       <CardFooter className="flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end"><Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={() => setClienteEdicao(cliente)}>Editar cliente</Button>
                       <Button type="button" variant="secondary" onClick={() => abrirHistoricoCliente(cliente)} className="w-full sm:w-auto">
@@ -335,31 +374,6 @@ export default function PageClient() {
                   )}
                 </FormField>
 
-                <div>
-                  <p className="text-sm font-medium text-slate-700">Parentesco</p>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    {PARENTESCOS_CLIENTE.map((item) => (
-                      <OpcaoButton key={item.chave} selected={parentesco === item.chave} onClick={() => setParentesco(item.chave)}>
-                        {item.label}
-                      </OpcaoButton>
-                    ))}
-                  </div>
-                </div>
-
-                {parentesco === 'outro' && (
-                  <FormField id="cadastro-parentesco-outro" label="Complemento">
-                    {(field) => (
-                      <Input
-                        {...field}
-                        value={parentescoOutro}
-                        onChange={(event) => setParentescoOutro(event.target.value)}
-                        placeholder="Informe o parentesco"
-                        autoComplete="off"
-                      />
-                    )}
-                  </FormField>
-                )}
-
                 {erroCadastro && <Alert tone="danger">{erroCadastro}</Alert>}
                 {feedbackCadastro && <Alert tone="success">{feedbackCadastro}</Alert>}
 
@@ -375,22 +389,5 @@ export default function PageClient() {
       {clienteEdicao && <EditarClienteDialog key={clienteEdicao.id} cliente={clienteEdicao} onClose={() => setClienteEdicao(null)} onSaved={(atualizada) => { setClientes(atuais => atuais.map(item => item.id === atualizada.id ? atualizada : item)); setClienteEdicao(atualizada) }} />}
       <HistoricoClienteModal open={historicoAberto} onOpenChange={setHistoricoAberto} cliente={historicoCliente} />
     </PageContainer>
-  )
-}
-
-function OpcaoButton(props: { selected: boolean; children: React.ReactNode; onClick: () => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={props.selected}
-      onClick={props.onClick}
-      disabled={props.disabled}
-      className={[
-        'min-h-11 rounded-md border px-3 py-2 text-left text-sm font-semibold outline-none transition focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:border-ring',
-        props.selected ? 'border-primary bg-primary/10 text-primary' : 'border-input bg-input-background text-slate-700',
-      ].join(' ')}
-    >
-      {props.children}
-    </button>
   )
 }

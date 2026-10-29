@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calcularPv, chaveProduto, estruturarProduto, incrementarProduto, produtoNaoTrabalhado, PRODUTO_NAO_TRABALHAMOS, QUANTIDADE_PRODUTO_MAX } from './produtos'
+import { calcularPv, chaveProduto, estruturarProduto, incrementarProduto, produtoNaoTrabalhado, PRODUTO_NAO_TRABALHAMOS, QUANTIDADE_PRODUTO_MAX, temProdutoVendido } from './produtos'
 import { validarFichaDadosRascunho, migrarFichaDadosRascunho } from './ficha-schema'
 import { serializarPayloadAutosave } from './autosave-fila'
 import { normalizarDetalheParaFichaEdicao } from './registros'
@@ -31,6 +31,11 @@ describe('Produtos estruturados e PV', () => {
     expect(calcularPv(['Berço', item('CAMA', 2, true)], 2)).toEqual({ valor: 2, informado: true, incompleto: true })
     expect(estruturarProduto('Berço')).toEqual(item('Berço', null, null))
     expect(produtoNaoTrabalhado('produto que nao trabalhamos')).toBe(true)
+  })
+  it('detecta venda explícita sem tratar quantidade nem marcador como venda', () => {
+    expect(temProdutoVendido([item('BERÇO', 1, true)])).toBe(true)
+    expect(temProdutoVendido([item('BERÇO', 0, false), item(PRODUTO_NAO_TRABALHAMOS, null, null)])).toBe(false)
+    expect(temProdutoVendido(['BERÇO'])).toBe(false)
   })
   it('normaliza e retoma os dois formatos sem converter histórico', () => {
     expect(migrarFichaDadosRascunho(dados)).toMatchObject(dados)

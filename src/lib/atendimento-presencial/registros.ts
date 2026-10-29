@@ -11,6 +11,8 @@ import type {
   SituacaoCrianca,
   UnidadeIdadeCrianca,
 } from './ficha-schema'
+import { mapearSnapshotEssenciaisParaEdicao } from './essenciais-edicao'
+import type { ConfirmacoesEssenciaisEdicao } from './essenciais-edicao'
 
 export const SITUACOES_VENDA = [
   { chave: 'sim', label: 'Venda fechada', tone: 'success' },
@@ -41,6 +43,7 @@ export type ClienteRegistroAtendimentoDTO = {
 }
 
 export type RegistroAtendimentoResumoDTO = {
+  essenciaisCorrespondencias?: import('./filtro-essenciais-registros').CorrespondenciaEssencialRegistro[]
   versaoFluxo?: number | null
   tipoAtendimento?: 'cliente' | 'nao_cliente' | null
   motivoVisita?: string | null
@@ -76,7 +79,10 @@ export type RegistroAtendimentoDetalheDTO = {
   departamentos: Array<{ id: string; ordem?: number | null; departamento: string }>
   produtosInteresse: Array<{ id: string; ordem?: number | null; descricao: string; quantidade?: number | null; vendido?: boolean | null }>
   motivos: Array<{ id: string; ordem?: number | null; motivo: MotivoResultado; complemento: string | null }>
-  historico: Array<{ id: string; acao: string; created_at: string; perfil?: string | null; role?: string | null; usuario_id?: string | null; snapshot?: Record<string, unknown> | null }>
+  historico: Array<{
+    id: string; acao: string; created_at: string; perfil?: string | null; role?: string | null; usuario_id?: string | null; snapshot?: Record<string, unknown> | null
+    essenciaisAlterados?: Array<{ criancaId: string; produto: string; respostaAnterior: 'sim' | 'nao'; respostaNova: 'sim' | 'nao'; confirmadaAnterior: boolean; confirmadaNova: boolean }>
+  }>
   podeEditar?: boolean
   motivoBloqueio?: string | null
   limiteEdicaoEm?: string | null
@@ -114,10 +120,13 @@ function ordenarPorOrdem<T extends { ordem?: number | null }>(itens: T[]) {
 
 export function normalizarDetalheParaFichaEdicao(detalhe: Pick<
   RegistroAtendimentoDetalheDTO,
-  'atendimento' | 'criancas' | 'departamentos' | 'produtosInteresse' | 'motivos'
+  'atendimento' | 'criancas' | 'departamentos' | 'produtosInteresse' | 'motivos' | 'essenciais'
 >): FichaDadosRascunho {
   const motivosResultado = ordenarPorOrdem(detalhe.motivos).map((item) => item.motivo)
   const motivoOutro = detalhe.motivos.find((item) => item.motivo === 'outro')?.complemento?.trim()
+  const essenciaisDoAtendimento = detalhe.atendimento.versaoEssenciais === 1
+    ? mapearSnapshotEssenciaisParaEdicao(detalhe.criancas, detalhe.essenciais ?? []).respostas
+    : undefined
 
   return {
     ...(detalhe.atendimento.versaoFluxo === 2 ? {
@@ -128,7 +137,7 @@ export function normalizarDetalheParaFichaEdicao(detalhe: Pick<
       observacaoNaoFechamento: detalhe.atendimento.observacaoNaoFechamento ?? undefined,
     } : {}),
     consultoraNome: detalhe.atendimento.consultoraNomeManual ?? undefined,
-    ...(detalhe.atendimento.versaoEssenciais === 1 ? { versaoEssenciais: 1 as const, essenciais: {} } : {}),
+    ...(essenciaisDoAtendimento ? { versaoEssenciais: 1 as const, essenciais: essenciaisDoAtendimento } : {}),
     criancas: ordenarPorOrdem(detalhe.criancas).map((crianca) => ({
       id: crianca.local_id?.trim() || crianca.id,
       presenteJaNasceu: crianca.presente_ja_nasceu ?? undefined,
@@ -163,6 +172,7 @@ export function montarPayloadEdicaoAtendimento(params: {
   detalhe: RegistroAtendimentoDetalheDTO
   ficha: FichaDadosRascunho
   numeroLancamento: number | null
+  confirmacoesEssenciais?: ConfirmacoesEssenciaisEdicao
 }) {
   const { etapaAtual, notaTecnica, ...dadosRascunho } = params.ficha
   void etapaAtual
@@ -183,6 +193,7 @@ export function montarPayloadEdicaoAtendimento(params: {
     version: params.detalhe.atendimento.version,
     clienteId: params.detalhe.atendimento.clienteId,
     dadosRascunho,
+    ...(params.detalhe.atendimento.versaoEssenciais === 1 ? { confirmacoesEssenciais: params.confirmacoesEssenciais ?? {} } : {}),
     numeroLancamento: params.numeroLancamento,
     consultoraNome: normalizarNomeConsultora(params.ficha.consultoraNome ?? params.detalhe.atendimento.consultoraNomeManual ?? ''),
   }

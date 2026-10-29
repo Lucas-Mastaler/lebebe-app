@@ -1,6 +1,7 @@
 'use client'
 
 import { IndicadorPv } from './ProdutosAtendimento'
+import { HistoricoEssenciaisCliente } from './HistoricoEssenciais'
 import { estruturarProduto, produtoNaoTrabalhado } from '@/lib/atendimento-presencial/produtos'
 import { DiagnosticosVendaSgi } from './VendaSgiAtendimento'
 import type { ResolucaoVendasSgi } from '@/lib/atendimento-presencial/vendas-sgi-diagnostico'
@@ -344,6 +345,7 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
             </Alert>
           )}
 
+          {cliente && <HistoricoEssenciaisCliente key={cliente.id} clienteId={cliente.id} />}
           {historicoCarregado && (
             <>
               <DiagnosticosVendaSgi diagnosticos={historicoCarregado.diagnosticosSgi} />

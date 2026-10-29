@@ -1,3 +1,4 @@
+import { ESSENCIAIS_HABILITADOS } from '@/lib/atendimento-presencial/essenciais'
 import { PRODUTOS_V2_HABILITADOS } from '@/lib/atendimento-presencial/produtos-config'
 import { correspondeNome, filtrarDadosListagem, lerFiltrosListagem, lerPaginas } from '@/lib/atendimento-presencial/filtros-listagem'
 import { normalizarNomeConsultora } from '@/lib/atendimento-presencial/ficha-schema'
@@ -178,6 +179,7 @@ export async function POST(request: Request) {
 
     const validacaoDados = validarDadosRascunho(payload.dadosRascunho)
     if (!validacaoDados.ok) return jsonErro(validacaoDados.message, 422, { field: validacaoDados.field })
+    if (validacaoDados.dados.versaoEssenciais === 1 && !ESSENCIAIS_HABILITADOS) return jsonErro('Produtos essenciais ainda não foram ativados.', 422, { field: 'essenciais' })
     if (validacaoDados.dados.versaoProdutos === 2 && !PRODUTOS_V2_HABILITADOS) {
       return jsonErro('O registro de quantidade e venda ainda não foi ativado.', 422, { field: 'produtosInteresse' })
     }

@@ -34,6 +34,7 @@ export const DRAFT_PAYLOAD_MAX_BYTES = 4096
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export type AtendimentoPresencialRow = {
+  versao_essenciais?: number | null
   id: string
   cliente_id: string | null
   consultora_usuario_id: string
@@ -93,6 +94,7 @@ export function validarDadosRascunho(valor: unknown): ValidacaoRascunho {
 
 export function serializarAtendimentoPresencial(row: AtendimentoPresencialRow): AtendimentoPresencialDTO {
   return {
+    versaoEssenciais: row.versao_essenciais ?? null,
     id: row.id,
     clienteId: row.cliente_id,
     consultoraUsuarioId: row.consultora_usuario_id,

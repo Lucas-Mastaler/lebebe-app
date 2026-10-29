@@ -210,8 +210,16 @@ export async function GET(
         })
       : { vendas: [], diagnosticos: {} }
 
+    let essenciais = []
+    if (row.versao_essenciais === 1 && row.cliente_id) {
+      const resposta = await loaded.supabase.rpc('atendimento_presencial_historico_essenciais', { p_cliente: row.cliente_id, p_executor: loaded.contexto.usuarioId, p_atendimento: id, p_pagina: 0 })
+      if (resposta.error) { console.error('[PRANCHETA ESSENCIAIS] Falha no detalhe', { code: resposta.error.code }); return jsonErro('Não foi possível consultar os produtos essenciais deste atendimento.', 503) }
+      essenciais = resposta.data?.historico ?? []
+    }
+
     return NextResponse.json({
       ok: true,
+      essenciais,
       vendaSgi: resolucaoSgi.vendas[0] ?? null,
       diagnosticosSgi: resolucaoSgi.diagnosticos,
       atendimento: serializarAtendimentoPresencial(row),

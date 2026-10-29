@@ -14,6 +14,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { aguardarPinturaFeedback } from '@/lib/atendimento-presencial/feedback-renderizacao'
 import { maiusculasNomeComCursor } from '@/lib/atendimento-presencial/maiusculas-nomes'
+import { ProdutosEssenciais } from '@/components/atendimento-presencial/ProdutosEssenciais'
+import { useEssenciais } from '@/components/atendimento-presencial/useEssenciais'
+import { ESSENCIAIS_HABILITADOS, pendenciaEssenciais, incluirEssencialNoInteresse } from '@/lib/atendimento-presencial/essenciais'
 import { IdadeCriancaSelector } from './IdadeCriancaSelector'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -186,6 +189,7 @@ function normalizarProduto(valor: string) {
 function criarPayloadInicial(): FichaDadosRascunho {
   return {
     ...payloadInicial,
+    ...(ESSENCIAIS_HABILITADOS ? { versaoEssenciais: 1 as const, essenciais: {} } : {}),
     criancas: [],
     departamentos: [],
     produtosInteresse: [],
@@ -324,7 +328,7 @@ function validarEtapa(params: {
       }
       if (crianca.situacao === 'presente_outra_pessoa' && crianca.presenteJaNasceu === undefined) erros.push({ sectionId: 'secao-crianca', fieldId: `presente-nasceu-${crianca.id}`, message: 'Informe se a criança já nasceu.' })
       if (criancaJaNasceu(crianca)) {
-        if (crianca.idadeUnidade === 'meses' && (!crianca.idadeValor || crianca.idadeValor < 1 || crianca.idadeValor > 11)) {
+        if (crianca.idadeUnidade === 'meses' && (!Number.isInteger(crianca.idadeValor) || crianca.idadeValor! < (ficha.versaoEssenciais === 1 ? 0 : 1) || crianca.idadeValor! > 11)) {
           erros.push({ sectionId: 'secao-crianca', fieldId: `idade-${crianca.id}`, message: 'Informe idade valida em meses.' })
         }
         if (crianca.idadeUnidade === 'anos' && (!crianca.idadeValor || crianca.idadeValor < 1 || crianca.idadeValor > 6)) {
@@ -362,6 +366,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [ficha, setFicha] = useState<FichaDadosRascunho>(() => criarPayloadInicial())
   const [clienteSelecionada, setClienteSelecionada] = useState<ClientePresencialDTO | null>(null)
   const [clienteId, setClienteId] = useState<string | null>(null)
+  const essenciais = useEssenciais(clienteId, ativo?.id, ficha.versaoEssenciais === 1 && ficha.tipoAtendimento !== 'nao_cliente')
+  const pendenciaAtualEssenciais = ficha.versaoEssenciais === 1 && ficha.tipoAtendimento !== 'nao_cliente'
+    ? essenciais.carregando ? 'Aguarde a consulta das respostas anteriores.' : essenciais.erro ?? pendenciaEssenciais(ficha.criancas, ficha.essenciais ?? {}, essenciais.anteriores, dataAtendimentoLocal(ativo?.iniciadoEm)) : null
   const clienteIdRef = useRef<string | null>(null)
   const clienteRequestRef = useRef(0)
   const [erroCadastro, setErroCadastro] = useState<{ field: string; message: string } | null>(null)
@@ -1126,6 +1133,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       ...atual,
       cliente: undefined,
       criancas: clienteAnterior && clienteAnterior !== cliente.id ? [] : atual.criancas.filter((crianca) => !crianca.vinculoClienteId || crianca.vinculoClienteId === cliente.id),
+      ...(clienteAnterior && clienteAnterior !== cliente.id && atual.versaoEssenciais === 1 ? { essenciais: {} } : {}),
     }))
   }
 
@@ -1212,7 +1220,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     setErroCliente(null)
     setClienteSelecionada(null)
     setHistoricoAberto(false)
-    atualizarFicha((atual) => ({ ...atual, cliente: undefined, criancas: [] }))
+    atualizarFicha((atual) => ({ ...atual, cliente: undefined, criancas: [], ...(atual.versaoEssenciais === 1 ? { essenciais: {} } : {}) }))
   }
 
   async function recarregarRascunhoDoServidor() {
@@ -1286,6 +1294,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     'secao-visita': `${ficha.motivoVisita ?? ''}|${ficha.motivoVisitaOutro ?? ''}`,
     'secao-cliente': clienteSelecionada?.id,
     'secao-crianca': JSON.stringify([ficha.criancas, dataPrevistaInputs]),
+    'secao-essenciais': pendenciaAtualEssenciais,
     'secao-departamentos': JSON.stringify(ficha.departamentos),
     'secao-produtos': JSON.stringify(ficha.produtosInteresse),
     'secao-observacoes': ficha.observacoes,
@@ -1295,7 +1304,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     'secao-resultado-outro': ficha.motivoOutro,
     'secao-resultado-observacao': ficha.observacaoNaoFechamento,
     'secao-lancamento': numeroLancamento,
-  }), [unidadeId, ficha, clienteSelecionada, dataPrevistaInputs, viradaCartaoInput, numeroLancamento])
+  }), [unidadeId, ficha, clienteSelecionada, dataPrevistaInputs, viradaCartaoInput, numeroLancamento, pendenciaAtualEssenciais])
   const valoresErroAnteriores = useRef(valoresErro)
   useEffect(() => {
     const anteriores = valoresErroAnteriores.current
@@ -1309,11 +1318,12 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         const chave = item.sectionId as keyof typeof valoresErro
         if (valoresErro[chave] === anteriores[chave]) return true
         if (chave === 'secao-lancamento') return !validarNumeroLancamento(numeroLancamento).ok
+        if (chave === 'secao-essenciais') return Boolean(pendenciaAtualEssenciais)
         return invalidos.some((invalido) => invalido.sectionId === chave)
       })
       return restantes.length === atuais.length ? atuais : restantes
     })
-  }, [valoresErro, ficha, clienteSelecionada, numeroLancamento, dataPrevistaInputs])
+  }, [valoresErro, ficha, clienteSelecionada, numeroLancamento, dataPrevistaInputs, pendenciaAtualEssenciais])
   useEffect(() => {
     if (errosValidacao.length === 0) setErroEtapa(null)
   }, [errosValidacao])
@@ -1449,7 +1459,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     if (patch.idadeValor !== undefined) {
       const anterior = fichaRef.current.criancas.find((c) => c.id === id)
       const unidade = patch.idadeUnidade ?? anterior?.idadeUnidade
-      if (unidade && patch.idadeValor > 0) patch = { ...patch, dataReferenciaNascimento: calcularReferenciaNascimento(dataAtendimentoLocal(ativo?.iniciadoEm), unidade, patch.idadeValor) }
+      if (unidade && patch.idadeValor >= 0) patch = { ...patch, dataReferenciaNascimento: calcularReferenciaNascimento(dataAtendimentoLocal(ativo?.iniciadoEm), unidade, patch.idadeValor) }
     } else if (Object.hasOwn(patch, 'idadeUnidade') || Object.hasOwn(patch, 'situacao') || Object.hasOwn(patch, 'presenteJaNasceu')) patch = { ...patch, dataReferenciaNascimento: undefined }
     atualizarFicha((atual) => ({
       ...atual,
@@ -1461,6 +1471,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     atualizarFicha((atual) => ({
       ...atual,
       criancas: atual.criancas.filter((crianca) => crianca.id !== id),
+      ...(atual.essenciais ? { essenciais: Object.fromEntries(Object.entries(atual.essenciais).filter(([chave]) => chave !== id)) } : {}),
     }))
     setDataPrevistaInputs((atual) => {
       const proximo = { ...atual }
@@ -1573,6 +1584,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     if (field === 'produtosInteresse') return { sectionId: 'secao-produtos', message }
     if (field === 'consultoraNome') return { sectionId: 'secao-consultora-nome', fieldId: 'consultora-nome', message }
     if (field === 'clienteId') return { sectionId: 'secao-cliente', fieldId: 'busca-cliente', message }
+    if (field === 'essenciais') return { sectionId: 'secao-essenciais', message }
     if (field === 'criancas') return { sectionId: 'secao-crianca', message }
     if (field === 'departamentos') return { sectionId: 'secao-departamentos', message }
     if (field === 'resultadoAtendimento') return { sectionId: 'secao-tipo', message }
@@ -1717,6 +1729,10 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     flushSync(() => { setConcluindo(true); setErroConclusao(null) })
     await aguardarPinturaFeedback()
     const errosIniciais = validarEtapa({ etapa: 'ficha', ficha: fichaConclusao, clienteSelecionada, dataPrevistaInputs })
+    if (fichaConclusao.versaoEssenciais === 1 && fichaConclusao.tipoAtendimento !== 'nao_cliente') {
+      const pendencia = essenciais.carregando ? 'Aguarde a consulta das respostas anteriores.' : essenciais.erro ?? pendenciaEssenciais(fichaConclusao.criancas, fichaConclusao.essenciais ?? {}, essenciais.anteriores, dataAtendimentoLocal(ativo?.iniciadoEm))
+      if (pendencia) errosIniciais.push({ sectionId: 'secao-essenciais', message: pendencia })
+    }
     if (!unidadeId) errosIniciais.unshift({ sectionId: 'secao-unidade', message: 'Selecione a unidade.' })
     if (errosIniciais.length) {
       registrarErrosValidacao(errosIniciais)
@@ -2366,7 +2382,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                               value={crianca.situacao}
                               onValueChange={(value) => {
                                 setDataPrevistaInputs((atual) => ({ ...atual, [crianca.id]: '' }))
-                                atualizarCrianca(crianca.id, { situacao: value as SituacaoCrianca, presenteJaNasceu: undefined, idadeUnidade: undefined, idadeValor: undefined, dataPrevistaNascimento: undefined })
+                                atualizarCrianca(crianca.id, { situacao: value as SituacaoCrianca, presenteJaNasceu: undefined, idadeUnidade: undefined, idadeValor: undefined, dataReferenciaNascimento: undefined, dataPrevistaNascimento: undefined })
                               }}
                             >
                               <SelectTrigger id={f.id} className="h-12 w-full text-base" aria-invalid={f['aria-invalid']} aria-describedby={f['aria-describedby']}>
@@ -2382,7 +2398,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                             </Select>
                           )}
                         </FormField>
-                        {crianca.situacao === 'presente_outra_pessoa' && <FormField id={`presente-nasceu-${crianca.id}`} label="Já nasceu?" required error={errosValidacao.find((item) => item.fieldId === `presente-nasceu-${crianca.id}`)?.message}>{(field) => <div {...field} tabIndex={-1} className="flex gap-2">{[true, false].map((nasceu) => <OpcaoButton key={String(nasceu)} selected={crianca.presenteJaNasceu === nasceu} onClick={() => atualizarCrianca(crianca.id, { presenteJaNasceu: nasceu, idadeUnidade: undefined, idadeValor: undefined, dataPrevistaNascimento: undefined })}>{nasceu ? 'Sim' : 'Não'}</OpcaoButton>)}</div>}</FormField>}
+                        {crianca.situacao === 'presente_outra_pessoa' && <FormField id={`presente-nasceu-${crianca.id}`} label="Já nasceu?" required error={errosValidacao.find((item) => item.fieldId === `presente-nasceu-${crianca.id}`)?.message}>{(field) => <div {...field} tabIndex={-1} className="flex gap-2">{[true, false].map((nasceu) => <OpcaoButton key={String(nasceu)} selected={crianca.presenteJaNasceu === nasceu} onClick={() => atualizarCrianca(crianca.id, { presenteJaNasceu: nasceu, idadeUnidade: undefined, idadeValor: undefined, dataReferenciaNascimento: undefined, dataPrevistaNascimento: undefined })}>{nasceu ? 'Sim' : 'Não'}</OpcaoButton>)}</div>}</FormField>}
                         {(crianca.situacao === 'gestacao' || (crianca.situacao === 'presente_outra_pessoa' && crianca.presenteJaNasceu === false)) && (
                           <FormField id={`data-prevista-${crianca.id}`} label="Data prevista de nascimento" error={errosValidacao.find((item) => item.fieldId === `data-prevista-${crianca.id}`)?.message}>
                             {(f) => (
@@ -2399,7 +2415,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                             <p className="text-sm font-semibold text-slate-700">Idade aproximada *</p>
                             {crianca.dataReferenciaNascimento && <div data-idade-estimada><p className="text-base font-semibold text-slate-950">{descreverIdadeAproximada(crianca.dataReferenciaNascimento)}</p><p className="text-xs text-muted-foreground">Referência estimada: {formatarDataISOParaInput(crianca.dataReferenciaNascimento)}</p></div>}
                             {errosValidacao.find((item) => item.fieldId === `idade-${crianca.id}`) && <p id={`idade-${crianca.id}-erro`} role="alert" className="text-xs text-destructive">{errosValidacao.find((item) => item.fieldId === `idade-${crianca.id}`)?.message}</p>}
-                            <IdadeCriancaSelector unidade={crianca.idadeUnidade} valor={crianca.idadeValor} onChange={(idade) => atualizarCrianca(crianca.id, idade)} />
+                            <IdadeCriancaSelector permitirRecemNascido={ficha.versaoEssenciais === 1} unidade={crianca.idadeUnidade} valor={crianca.idadeValor} onChange={(idade) => atualizarCrianca(crianca.id, idade)} />
                           </div>
                         )}
                         <FormField id={`nome-crianca-${crianca.id}`} label="Nome da crianca" helper="Opcional">
@@ -2472,6 +2488,20 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                     ))}
                   </div>
                 </SecaoFicha>
+
+                {ficha.versaoEssenciais === 1 && <ProdutosEssenciais
+                  criancas={ficha.criancas} respostas={ficha.essenciais ?? {}} anteriores={essenciais.anteriores}
+                  hoje={dataAtendimentoLocal(ativo?.iniciadoEm)} carregando={essenciais.carregando} erro={essenciais.erro} tentar={essenciais.tentar}
+                  erroValidacao={erroSecao('secao-essenciais')}
+                  responder={(id, produto, resposta) => atualizarFicha(atual => ({ ...atual, essenciais: { ...atual.essenciais, [id]: { ...atual.essenciais?.[id], [produto]: resposta } } }))}
+                  adicionar={nome => {
+                    const resultado = incluirEssencialNoInteresse(fichaRef.current.produtosInteresse, nome)
+                    if (resultado.resultado === 'adicionado') atualizarFicha(atual => ({ ...atual, versaoProdutos: 2, produtosInteresse: incluirEssencialNoInteresse(atual.produtosInteresse, nome).produtos }))
+                    return resultado.resultado === 'limite' ? 'Limite de 20 produtos atingido.' : resultado.resultado === 'existente' ? 'Este produto já está nos interesses.' : 'Produto adicionado aos interesses com quantidade 1.'
+                  }}
+                  confirmarFase={id => { setCriancasEmEdicao(atual => atual.includes(id) ? atual : [...atual, id]); document.getElementById('secao-crianca')?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }}
+                  historico={() => setHistoricoAberto(true)}
+                />}
 
                 <ListaEnxovalDialog />
 

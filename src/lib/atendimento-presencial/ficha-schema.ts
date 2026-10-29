@@ -1,5 +1,6 @@
 import type { ParentescoCliente } from './clientes'
 import { produtoNaoTrabalhado } from './produtos'
+import { validarEssenciaisRascunho } from './essenciais'
 
 export const MOTIVOS_VISITA_HISTORICOS = [
   { chave: 'entrega_mercadoria', label: 'Entrega de mercadoria' },
@@ -242,6 +243,8 @@ export type FichaCriancaRascunho = {
 }
 
 export type FichaDadosRascunho = {
+  versaoEssenciais?: 1
+  essenciais?: import('./essenciais').EssenciaisRascunho
   versaoProdutos?: 2
   // Ausencia identifica o contrato legado; nunca inferir a versao pelo resultado.
   versaoFluxo?: 2
@@ -292,6 +295,8 @@ const departamentosValidos = new Set<string>(DEPARTAMENTOS_INTERESSE.map((item) 
 const resultadosValidos = new Set<string>(RESULTADOS_ATENDIMENTO.map((item) => item.chave))
 const motivosValidos = new Set<string>([...MOTIVOS_RESULTADO_GRUPOS.flatMap((grupo) => grupo.motivos.map((item) => item.chave)), ...MOTIVOS_VENDA_PERDIDA.map(item => item.chave), ...MOTIVOS_NEGOCIACAO.map(item => item.chave)])
 const chavesPermitidas = new Set([
+  'versaoEssenciais',
+  'essenciais',
   'versaoProdutos',
   'versaoFluxo',
   'tipoAtendimento',
@@ -557,7 +562,7 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
         const idadeUnidade = row.idadeUnidade === 'meses' || row.idadeUnidade === 'anos' ? row.idadeUnidade : undefined
         const idadeValor = Number(row.idadeValor)
         if (idadeUnidade) crianca.idadeUnidade = idadeUnidade
-        if (idadeUnidade === 'meses' && Number.isInteger(idadeValor) && idadeValor >= 1 && idadeValor <= 11) {
+        if (idadeUnidade === 'meses' && Number.isInteger(idadeValor) && row.idadeValor !== undefined && idadeValor >= (payload.versaoEssenciais === 1 ? 0 : 1) && idadeValor <= 11) {
           crianca.idadeUnidade = 'meses'
           crianca.idadeValor = idadeValor
         }
@@ -568,6 +573,14 @@ export function validarFichaDadosRascunho(valor: unknown): ValidacaoFichaRascunh
       }
       return [crianca]
     })
+  }
+
+  if (payload.versaoEssenciais !== undefined && payload.versaoEssenciais !== 1) return { ok: false, field: 'essenciais', message: 'Versão de essenciais inválida.' }
+  if (payload.essenciais !== undefined && payload.versaoEssenciais !== 1) return { ok: false, field: 'essenciais', message: 'Versão de essenciais obrigatória.' }
+  if (payload.versaoEssenciais === 1) {
+    if (!validarEssenciaisRascunho(payload.essenciais ?? {}, dados.criancas)) return { ok: false, field: 'essenciais', message: 'Revise as respostas dos produtos essenciais.' }
+    dados.versaoEssenciais = 1
+    dados.essenciais = (payload.essenciais ?? {}) as import('./essenciais').EssenciaisRascunho
   }
 
   if (Array.isArray(payload.departamentos)) {
@@ -709,7 +722,7 @@ export function validarFichaParaConclusao(params: {
     if (params.ficha.versaoFluxo === 2 && crianca.situacao === 'presente_outra_pessoa' && typeof crianca.presenteJaNasceu !== 'boolean') return { ok: false, field: 'criancas', message: 'Informe se a criança presente já nasceu.' }
     if (crianca.vinculoClienteId && crianca.vinculoClienteId !== params.clienteId) return { ok: false, field: 'criancas', message: 'Crianca vinculada a outra cliente.' }
     if (crianca.situacao === 'ja_nasceu' || (crianca.situacao === 'presente_outra_pessoa' && crianca.presenteJaNasceu === true)) {
-      if (crianca.idadeUnidade === 'meses' && (!crianca.idadeValor || crianca.idadeValor < 1 || crianca.idadeValor > 11)) {
+      if (crianca.idadeUnidade === 'meses' && (!Number.isInteger(crianca.idadeValor) || crianca.idadeValor! < (params.ficha.versaoEssenciais === 1 ? 0 : 1) || crianca.idadeValor! > 11)) {
         return { ok: false, field: 'criancas', message: 'Informe idade valida em meses.' }
       }
       if (crianca.idadeUnidade === 'anos' && (!crianca.idadeValor || crianca.idadeValor < 1 || crianca.idadeValor > 6)) {

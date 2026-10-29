@@ -67,6 +67,7 @@ export type RegistroAtendimentoResumoDTO = {
 }
 
 export type RegistroAtendimentoDetalheDTO = {
+  essenciais?: import('./essenciais').SnapshotEssenciais[]
   vendaSgi?: import('./historico-cliente').HistoricoVendaSgiDTO | null
   diagnosticosSgi?: import('./vendas-sgi-diagnostico').ResolucaoVendasSgi['diagnosticos']
   atendimento: AtendimentoRegistroDTO
@@ -127,6 +128,7 @@ export function normalizarDetalheParaFichaEdicao(detalhe: Pick<
       observacaoNaoFechamento: detalhe.atendimento.observacaoNaoFechamento ?? undefined,
     } : {}),
     consultoraNome: detalhe.atendimento.consultoraNomeManual ?? undefined,
+    ...(detalhe.atendimento.versaoEssenciais === 1 ? { versaoEssenciais: 1 as const, essenciais: {} } : {}),
     criancas: ordenarPorOrdem(detalhe.criancas).map((crianca) => ({
       id: crianca.local_id?.trim() || crianca.id,
       presenteJaNasceu: crianca.presente_ja_nasceu ?? undefined,

@@ -151,6 +151,8 @@ export async function PATCH(
       return jsonErro('Atualize a página para preservar as quantidades e vendas dos produtos.', 422, { field: 'produtosInteresse' })
     }
 
+    if (loaded.row.dados_rascunho?.versaoEssenciais !== validacaoDados.dados.versaoEssenciais) return jsonErro('A versão de essenciais deste atendimento deve ser preservada. Recarregue o rascunho.', 409, { field: 'essenciais' })
+
     if (rascunhoExpirado(loaded.row.expira_em)) {
       return jsonErro('Rascunho expirado', 410, {
         rascunho: serializarAtendimentoPresencial(loaded.row),

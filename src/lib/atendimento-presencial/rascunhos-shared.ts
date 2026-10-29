@@ -18,6 +18,7 @@ export type ConsultoraAtendimento = {
 export type StatusAtendimentoPresencial = 'rascunho' | 'concluido'
 
 export type AtendimentoPresencialDTO = {
+  versaoEssenciais?: number | null
   id: string
   clienteId: string | null
   consultoraUsuarioId: string

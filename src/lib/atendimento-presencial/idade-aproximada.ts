@@ -2,7 +2,7 @@ export function dataAtendimentoLocal(instante = new Date().toISOString()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(instante))
 }
 export function calcularReferenciaNascimento(dataAtendimento: string, unidade: 'meses' | 'anos', idade: number) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dataAtendimento) || !Number.isInteger(idade) || idade < 1) throw new Error('Idade ou data inválida')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dataAtendimento) || !Number.isInteger(idade) || idade < 0 || (unidade === 'anos' && idade === 0)) throw new Error('Idade ou data inválida')
   const data = new Date(`${dataAtendimento}T12:00:00Z`)
   if (Number.isNaN(data.getTime()) || data.toISOString().slice(0, 10) !== dataAtendimento) throw new Error('Idade ou data inválida')
   const [ano, mes] = dataAtendimento.split('-').map(Number)

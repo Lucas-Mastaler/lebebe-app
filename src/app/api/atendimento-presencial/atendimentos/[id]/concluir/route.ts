@@ -61,6 +61,7 @@ function mapearErroRpc(error: { code?: string; message?: string }) {
     return jsonErro('Acesso negado ao rascunho', 403)
   }
   if (error.code === '23514') {
+    if (message.includes('essenciais_')) return jsonErro(message.includes('fase') ? 'Confirme gestação ou idade das crianças antes de concluir.' : 'Responda ou reconfirme os produtos essenciais antes de concluir.', 422, { field: 'essenciais' })
     if (message.includes('dados_rascunho_chave_invalida')) {
       console.error('[ATENDIMENTO PRESENCIAL CONCLUIR] Contrato SQL incompativel com os campos do rascunho')
       return jsonErro('Nao foi possivel finalizar por uma incompatibilidade no salvamento. Seus dados foram preservados.', 500)

@@ -8,6 +8,7 @@ import { allowedUnits, compare, daysBetween, readFlowFilters, selectRecords, pag
 import { getExternalFlow } from '@/lib/altervision/service'
 import { serializarAtendimentoPresencial, type AtendimentoPresencialRow } from './rascunhos'
 import { serializarClienteRegistro, type ClienteRegistroRow, type RegistroAtendimentoDetalheDTO } from './registros'
+import type { SnapshotEssenciais } from './essenciais'
 
 export const FLOW_MODULE = 'atendimento_presencial_fluxo_lojas'
 export const FLOW_COLUMNS = 'id,unidade_id,status,versao_fluxo,tipo_atendimento,cliente_id,iniciado_em,concluido_em,consultora_nome,resultado_atendimento,motivo_visita'
@@ -88,15 +89,18 @@ export async function loadOriginalDetails(id: string) {
     const registros = selectRecords([row as unknown as FlowRow], ctx.units, { de: '1900-01-01', ate: '9999-12-31', unidadeId: '', horaDe: 0, horaAte: 24, tipo: '', consultora: '', situacao: '' }).selected
     if (!registros.length) return flowJson({ ok: false, message: 'Atendimento não encontrado.' }, 404)
 
-    const [cliente, criancas, departamentos, produtos, motivos, historico] = await Promise.all([
+    const [cliente, criancas, departamentos, produtos, motivos, historico, essenciais] = await Promise.all([
       row.cliente_id ? ctx.supabase.from('atendimento_presencial_clientes').select('id,nome,telefone_informado,telefone_normalizado,telefone_normalizado_ddi,parentesco,parentesco_outro').eq('id', row.cliente_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
       ctx.supabase.from('atendimento_presencial_criancas').select('*').eq('atendimento_id', id).order('ordem', { ascending: true }),
       ctx.supabase.from('atendimento_presencial_departamentos').select('*').eq('atendimento_id', id).order('ordem', { ascending: true }),
       ctx.supabase.from('atendimento_presencial_produtos_interesse').select('*').eq('atendimento_id', id).order('ordem', { ascending: true }),
       ctx.supabase.from('atendimento_presencial_motivos').select('*').eq('atendimento_id', id).order('ordem', { ascending: true }),
       ctx.supabase.from('atendimento_presencial_historico').select('*').eq('atendimento_id', id).order('created_at', { ascending: false }),
+      row.versao_essenciais === 1
+        ? ctx.supabase.from('atendimento_presencial_essenciais_snapshots').select('crianca_id,nome,fase,respostas,filial,consultora,registrado_em').eq('atendimento_id', id)
+        : Promise.resolve({ data: [], error: null }),
     ])
-    if (cliente.error || criancas.error || departamentos.error || produtos.error || motivos.error || historico.error) throw new Error('flow_detail_related_read')
+    if (cliente.error || criancas.error || departamentos.error || produtos.error || motivos.error || historico.error || essenciais.error) throw new Error('flow_detail_related_read')
 
     const detail: RegistroAtendimentoDetalheDTO = {
       atendimento: serializarAtendimentoPresencial(row) as RegistroAtendimentoDetalheDTO['atendimento'],
@@ -106,6 +110,10 @@ export async function loadOriginalDetails(id: string) {
       produtosInteresse: (produtos.data ?? []) as RegistroAtendimentoDetalheDTO['produtosInteresse'],
       motivos: (motivos.data ?? []) as RegistroAtendimentoDetalheDTO['motivos'],
       historico: (historico.data ?? []) as RegistroAtendimentoDetalheDTO['historico'],
+      essenciais: (essenciais.data ?? []).map((item: { crianca_id: string; nome: string; fase: number; respostas: SnapshotEssenciais['respostas']; filial: string; consultora: string; registrado_em: string }) => ({
+        atendimentoId: id, criancaId: item.crianca_id, nome: item.nome, fase: item.fase,
+        respostas: item.respostas, filial: item.filial, consultora: item.consultora, registradoEm: item.registrado_em,
+      })),
       podeEditar: false,
       motivoBloqueio: null,
     }

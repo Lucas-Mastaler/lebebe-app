@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextResponse } from 'next/server'
-const state = vi.hoisted(() => ({ perfil:'gestao', moduleAllowed:true, windowAllowed:true, calls: [] as Array<{table:string;filters:Array<[string,string,unknown]>}>, rows:[] as Array<Record<string,unknown>>, fail:false }))
+const state = vi.hoisted(() => ({ perfil:'gestao', moduleAllowed:true, windowAllowed:true, calls: [] as Array<{table:string;filters:Array<[string,string,unknown]>}>, rows:[] as Array<Record<string,unknown>>, snapshots:[] as Array<Record<string,unknown>>, fail:false }))
 vi.mock('server-only',()=>({}))
 vi.mock('@/lib/auth/module-access',()=>({requireModuleAccess:vi.fn(async () => state.moduleAllowed ? {ok:true,allowedUser:{id:'actor',role:state.perfil==='superadmin'?'superadmin':'user'}} : {ok:false,response:NextResponse.json({ok:false},{status:403})})}))
 vi.mock('@/lib/auth/access-window',()=>({checkAccessWindowForUser:vi.fn(async () => ({ok:state.windowAllowed}))}))
@@ -17,7 +17,8 @@ vi.mock('@/lib/supabase/service',()=>({createServiceClient:()=>({from:(table:str
     maybeSingle:async()=>{const result = await query; return {data:result.data[0]??null,error:result.error}},
     then:(resolve:(value:{data:Array<Record<string,unknown>>;error:unknown})=>unknown)=>{
       let rows: Array<Record<string,unknown>> = table==='app_unidades'?[unitM,unitP,{id:'feira',chave:'feira',nome:'Feira'}]:table==='app_usuarios_unidades'?[{unidade_id:unitM.id}]:table==='atendimento_presencial_atendimentos'?state.rows:table==='atendimento_presencial_clientes'?[{id:'private-client-id',nome:'Cliente sintética',telefone_informado:'41999990000'}]:[]
-      if(table==='atendimento_presencial_atendimentos'||table==='atendimento_presencial_clientes') rows=rows.filter(row=>call.filters.every(([op,key,value])=>op==='eq'?row[key]===value:(value as unknown[]).includes(row[key])))
+      if(table==='atendimento_presencial_essenciais_snapshots') rows=state.snapshots
+      if(table==='atendimento_presencial_atendimentos'||table==='atendimento_presencial_clientes'||table==='atendimento_presencial_essenciais_snapshots') rows=rows.filter(row=>call.filters.every(([op,key,value])=>op==='eq'?row[key]===value:(value as unknown[]).includes(row[key])))
       return Promise.resolve({data:rows.slice(from,to+1),error:state.fail?{message:'privado'}:null}).then(resolve)
     },
   }
@@ -32,8 +33,18 @@ import { getExternalFlow } from '@/lib/altervision/service'
 import { requireModuleAccess } from '@/lib/auth/module-access'
 const base = {id:'51f795e3-5466-41cb-9887-32659775f67a',unidade_id:unitM.id,status:'concluido',versao_fluxo:2,tipo_atendimento:'cliente',cliente_id:'private-client-id',iniciado_em:'2026-10-19T13:00:00Z',concluido_em:'2026-10-20T14:00:00Z',consultora_nome:'ANA',resultado_atendimento:'sim',motivo_visita:null}
 const url='http://localhost/api/atendimento-presencial/fluxo-lojas?de=2026-10-19&ate=2026-10-19&horaDe=10&horaAte=12'
-beforeEach(()=>{state.perfil='gestao';state.moduleAllowed=true;state.windowAllowed=true;state.calls=[];state.fail=false;state.rows=[base,{...base,id:'c75501a1-e4dc-4a32-985a-266900d3c36f',unidade_id:unitP.id},{...base,id:'test',consultora_nome:'HOMOLOGACAO TESTE'},{...base,id:'draft',status:'rascunho'}];vi.clearAllMocks()})
+beforeEach(()=>{state.perfil='gestao';state.moduleAllowed=true;state.windowAllowed=true;state.calls=[];state.snapshots=[];state.fail=false;state.rows=[base,{...base,id:'c75501a1-e4dc-4a32-985a-266900d3c36f',unidade_id:unitP.id},{...base,id:'test',consultora_nome:'HOMOLOGACAO TESTE'},{...base,id:'draft',status:'rascunho'}];vi.clearAllMocks()})
 describe('API real com Supabase e REST simulados: isolamento por unidade',()=>{
+  it('inclui essenciais somente do atendimento já autorizado, sem ler snapshots de outra unidade',async()=>{
+    state.perfil='supervisora_loja';state.rows=[{...base,versao_essenciais:1},{...base,id:'c75501a1-e4dc-4a32-985a-266900d3c36f',unidade_id:unitP.id,versao_essenciais:1}]
+    state.snapshots=[{atendimento_id:base.id,crianca_id:'child',nome:'Criança sintética',fase:0,respostas:[{produto:'banheira',resposta:'nao',confirmada:true}],filial:'Marechal',consultora:'ANA',registrado_em:'2026-10-20T14:00:00Z'},{atendimento_id:'outro',nome:'Não pode aparecer'}]
+    const response=await originalGET(new Request(url),{params:Promise.resolve({id:base.id})});const body=await response.json()
+    expect(response.status).toBe(200);expect(body.detalhe.essenciais).toHaveLength(1)
+    expect(body.detalhe.essenciais[0]).toMatchObject({atendimentoId:base.id,criancaId:'child',fase:0,respostas:[{produto:'banheira',resposta:'nao',confirmada:true}]})
+    const count=state.calls.filter(c=>c.table==='atendimento_presencial_essenciais_snapshots').length
+    expect((await originalGET(new Request(url),{params:Promise.resolve({id:'c75501a1-e4dc-4a32-985a-266900d3c36f'})})).status).toBe(404)
+    expect(state.calls.filter(c=>c.table==='atendimento_presencial_essenciais_snapshots')).toHaveLength(count)
+  })
   it('Gestão consulta todas as mapeadas sem expor clientes/payloads',async()=>{
     const response=await GET(new Request(url));const body=await response.json()
     expect(response.status).toBe(200);expect(body.resumo.total).toBe(2);expect(body.tabela.total).toBe(2)

@@ -416,6 +416,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       produtosInteresse: data.produtosInteresse ?? [],
       motivos: data.motivos ?? [],
       historico: data.historico ?? [],
+      essenciais: data.essenciais ?? [],
       vendaSgi: data.vendaSgi ?? null,
       diagnosticosSgi: data.diagnosticosSgi ?? {},
       podeEditar: data.podeEditar ?? false,

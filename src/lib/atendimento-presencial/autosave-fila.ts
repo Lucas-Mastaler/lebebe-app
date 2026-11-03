@@ -52,6 +52,8 @@ export function serializarPayloadAutosave(payload: AutosavePayload) {
       departamentos: dados.departamentos,
       produtosInteresse: dados.produtosInteresse,
       versaoProdutos: dados.versaoProdutos,
+      versaoEssenciais: dados.versaoEssenciais,
+      essenciais: dados.essenciais,
       resultadoAtendimento: dados.resultadoAtendimento,
       motivosResultado: dados.motivosResultado,
       lojasMotivos: dados.lojasMotivos,

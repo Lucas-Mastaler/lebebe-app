@@ -55,6 +55,31 @@ function payloadComProduto(produto: string): AutosavePayload {
   }
 }
 
+it('persiste respostas essenciais alteradas isoladamente antes de concluir e ao reabrir', async () => {
+  const { fila, save } = criarFila()
+  const primeiro: AutosavePayload = { ...payloadBase, dadosRascunho: { ...payloadBase.dadosRascunho,
+    versaoEssenciais: 1, essenciais: { crianca: { banheira: 'sim' } } } }
+  await fila.flushNow(primeiro)
+  const completo: AutosavePayload = { ...primeiro, dadosRascunho: { ...primeiro.dadosRascunho,
+    essenciais: { crianca: { banheira: 'sim', coleito: 'sim', poltrona: 'sim' } } } }
+  fila.enqueue(completo)
+  const resultado = await fila.flushNow(completo)
+  expect(save).toHaveBeenCalledTimes(2)
+  expect(resultado.ok).toBe(true)
+  expect(fila.getRascunho().dadosRascunho.essenciais).toEqual(completo.dadosRascunho.essenciais)
+  const reaberta = new AutosaveSerialQueue({ draftId: 'draft-1', initialVersion: fila.getVersion(),
+    initialRascunho: fila.getRascunho(), initialSavedPayload: fila.getLastSavedPayload(), save })
+  expect(reaberta.getRascunho().dadosRascunho.essenciais).toEqual(completo.dadosRascunho.essenciais)
+  const reconfirmado: AutosavePayload = { ...completo, dadosRascunho: { ...completo.dadosRascunho,
+    essenciais: { crianca: { ...completo.dadosRascunho.essenciais!.crianca, banheira: 'nao' } } } }
+  await reaberta.flushNow(reconfirmado)
+  expect(save).toHaveBeenCalledTimes(3)
+  expect(serializarPayloadAutosave(completo)).not.toBe(serializarPayloadAutosave(reconfirmado))
+  expect(serializarPayloadAutosave(payloadBase)).not.toBe(serializarPayloadAutosave(primeiro))
+  fila.stop()
+  reaberta.stop()
+})
+
 function criarFila(params?: {
   recoveryBases?: string[]
   save?: (params: { payload: AutosavePayload; expectedVersion: number }) => Promise<AutosaveSaveResult>

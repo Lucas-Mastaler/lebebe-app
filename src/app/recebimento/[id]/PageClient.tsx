@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import {
   ArrowLeft,
@@ -17,11 +17,14 @@ import {
   Filter,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Button as ActionButton } from '@/components/design-system/Button'
+import { Alert } from '@/components/design-system/Alert'
+import { useAsyncAction } from '@/components/design-system/useAsyncAction'
+import type { ResultadoConferencia } from '@/lib/recebimento/conferencia-volumes'
 import { createClient } from '@/lib/supabase/client'
 import { isMaticEmail } from '@/lib/auth/matic-emails'
 import { OSItemCard } from './OSItemCard'
 import { toast } from 'sonner'
-import { fetchWithRetry } from '@/lib/fetch-with-retry'
 import { registroPodeFinalizar } from '@/lib/recebimento/finalizacao'
 import { validarCorrecaoManual } from '@/lib/recebimento/correcao-manual-tempo'
 import {
@@ -120,6 +123,13 @@ export default function ConferenciaPage() {
   const [timerRunning, setTimerRunning] = useState(false)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [showFinalizar, setShowFinalizar] = useState(false)
+  const pendentesRef = useRef(new Set<string>())
+  const revisaoConferencia = useRef(0)
+  const consultasRef = useRef(new Set<string>())
+  const [itensPendentes, setItensPendentes] = useState(new Set<string>())
+  const [conferindoTudo, setConferindoTudo] = useState(new Set<string>())
+  const [errosConferencia, setErrosConferencia] = useState<Record<string, string>>({})
+  const [reconciliarItens, setReconciliarItens] = useState(new Set<string>())
   const [showCancelar, setShowCancelar] = useState(false)
   const [localModal, setLocalModal] = useState<RecebimentoItem | null>(null)
   const [divModal, setDivModal] = useState<RecebimentoItem | null>(null)
@@ -205,10 +215,13 @@ export default function ConferenciaPage() {
   }, [router])
 
   const loadRecebimento = useCallback(async () => {
+    if (pendentesRef.current.size > 0) return
+    const revisao = revisaoConferencia.current
     try {
       const res = await fetch(`/api/recebimento/${recebimentoId}`)
       if (res.ok) {
         const data = await res.json()
+        if (pendentesRef.current.size > 0 || revisao !== revisaoConferencia.current) return
         setRecebimento(data)
         // Load timer state from database
         setTimerRunning(data.timer_rodando || false)
@@ -448,6 +461,89 @@ export default function ConferenciaPage() {
       return nomeA.localeCompare(nomeB)
     })
 
+  function liberarItem(itemId: string) {
+    pendentesRef.current.delete(itemId)
+    setItensPendentes(new Set(pendentesRef.current))
+    setReconciliarItens(prev => { const next = new Set(prev); next.delete(itemId); return next })
+    setConferindoTudo(prev => { const next = new Set(prev); next.delete(itemId); return next })
+  }
+
+  function aplicarConferencia(itemId: string, resultado: ResultadoConferencia) {
+    setRecebimento(prev => {
+      if (!prev) return prev
+      const itens = prev.itens.map(it => it.id !== itemId ? it : {
+        ...it,
+        recebimento_item_volumes: resultado.volumes,
+        volumes_recebidos_total: resultado.item_total_recebido,
+        volumes_previstos_total: resultado.item_total_previsto,
+        status_calculado: resultado.item_status,
+      })
+      return { ...prev, itens, total_recebido: itens.reduce((total, it) => total + it.volumes_recebidos_total, 0) }
+    })
+  }
+
+  async function reconciliarItem(itemId: string) {
+    if (consultasRef.current.has(itemId)) return
+    consultasRef.current.add(itemId)
+    try {
+      const res = await fetch(`/api/recebimento/${recebimentoId}`, { cache: 'no-store' })
+      if (!res.ok) throw new Error('Falha na consulta de reconciliação')
+      const atual: RecebimentoDetail = await res.json()
+      const itemAtual = atual.itens.find(it => it.id === itemId)
+      if (!itemAtual) throw new Error('Produto não encontrado na reconciliação')
+      // Only replace this item: other cards may have requests in flight.
+      setRecebimento(prev => {
+        if (!prev) return prev
+        const itens = prev.itens.map(it => it.id === itemId ? itemAtual : it)
+        return { ...prev, status: atual.status, itens, total_recebido: itens.reduce((total, it) => total + it.volumes_recebidos_total, 0) }
+      })
+      liberarItem(itemId)
+    } catch (error) {
+      console.error('[RECEBIMENTO] Falha ao consultar conferência', { itemId, error })
+      setReconciliarItens(prev => new Set(prev).add(itemId))
+      setErrosConferencia(prev => ({ ...prev, [itemId]: 'Não foi possível confirmar o estado do produto. Consulte novamente para liberar a conferência.' }))
+    } finally {
+      consultasRef.current.delete(itemId)
+    }
+  }
+
+  async function alterarQuantidade(itemId: string, alteracao?: { volumeNumero: number; delta: number }) {
+    // Synchronous guard survives a card disappearing under active filters.
+    if (pendentesRef.current.has(itemId) || showFinalizar || localModal || recebimento?.status !== 'aberto') return
+    revisaoConferencia.current++
+    pendentesRef.current.add(itemId)
+    if (!alteracao) setConferindoTudo(prev => new Set(prev).add(itemId))
+    setItensPendentes(new Set(pendentesRef.current))
+    setErrosConferencia(prev => ({ ...prev, [itemId]: '' }))
+    let consultarEstado = false
+    try {
+      const url = alteracao
+        ? `/api/recebimento/${recebimentoId}/item/${itemId}/volume/${alteracao.volumeNumero}`
+        : `/api/recebimento/${recebimentoId}/item/${itemId}/conferir-todos`
+      // A lost response may already be committed. Never retry a delta automatically.
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        ...(alteracao ? { body: JSON.stringify({ delta: alteracao.delta }) } : {}),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        consultarEstado = res.status >= 500
+        setErrosConferencia(prev => ({ ...prev, [itemId]: data.error || 'Não foi possível salvar a conferência.' }))
+      } else {
+        aplicarConferencia(itemId, data)
+        notificarPausaCriada(data.pausa_criada)
+      }
+    } catch (error) {
+      consultarEstado = true
+      console.error('[RECEBIMENTO] Resposta de conferência não confirmada', { itemId, error })
+      setErrosConferencia(prev => ({ ...prev, [itemId]: 'A resposta não foi confirmada. O estado do produto será consultado antes de liberar novas alterações.' }))
+    } finally {
+      if (consultarEstado) await reconciliarItem(itemId)
+      else liberarItem(itemId)
+    }
+  }
+
   // Check if can finalize
   const canFinalize = recebimento.itens.every(item =>
     registroPodeFinalizar(item.volumes_recebidos_total, item.volumes_previstos_total, item.divergencia_tipo)
@@ -518,8 +614,8 @@ export default function ConferenciaPage() {
             </Button>
             <Button
               size="sm"
-              onClick={() => setShowFinalizar(true)}
-              disabled={!canFinalize}
+              onClick={() => { if (pendentesRef.current.size === 0) setShowFinalizar(true) }}
+              disabled={!canFinalize || itensPendentes.size > 0}
               className="text-[10px] sm:text-xs px-2 sm:px-3"
             >
               Finalizar
@@ -662,6 +758,16 @@ export default function ConferenciaPage() {
         </div>
       </div>
 
+      {reconciliarItens.size > 0 && (
+        <Alert tone="danger" className="mb-3">
+          Há conferência sem confirmação. Consulte o estado salvo antes de continuar.
+          {[...reconciliarItens].map(itemId => (
+            <ActionButton key={itemId} variant="secondary" size="sm" onClick={() => reconciliarItem(itemId)}>
+              Consultar novamente
+            </ActionButton>
+          ))}
+        </Alert>
+      )}
       {/* Items list */}
       <div className="space-y-3">
         {activeTab === 'itens' ? (
@@ -670,32 +776,14 @@ export default function ConferenciaPage() {
               <ItemCard
                 key={item.id}
                 item={item}
-                recebimentoId={recebimentoId}
                 isFechado={isFechado || isCancelado}
-                onVolumeUpdate={(itemId, volumeNumero, newQtd, newTotal) => {
-                  setRecebimento(prev => {
-                    if (!prev) return prev
-                    const newItens = prev.itens.map(it => {
-                      if (it.id !== itemId) return it
-                      const newVolumes = it.recebimento_item_volumes.map(v =>
-                        v.volume_numero === volumeNumero ? { ...v, qtd_recebida: newQtd } : v
-                      )
-                      const newStatus = newTotal >= it.volumes_previstos_total ? 'concluido'
-                        : newTotal > 0 ? 'parcial' : 'pendente'
-                      return {
-                        ...it,
-                        volumes_recebidos_total: newTotal,
-                        recebimento_item_volumes: newVolumes,
-                        status_calculado: newStatus,
-                      }
-                    })
-                    const totalRec = newItens.reduce((s, i) => s + i.volumes_recebidos_total, 0)
-                    return { ...prev, itens: newItens, total_recebido: totalRec }
-                  })
-                }}
-                onLocalClick={() => setLocalModal(item)}
+                pendente={itensPendentes.has(item.id)}
+                conferindoTudo={conferindoTudo.has(item.id)}
+                erro={errosConferencia[item.id]}
+                onAlterarQuantidade={alteracao => alterarQuantidade(item.id, alteracao)}
+                onLocalClick={() => { if (pendentesRef.current.size === 0) setLocalModal(item) }}
+                localBloqueado={itensPendentes.size > 0}
                 onDivClick={() => setDivModal(item)}
-                onPausaCriada={notificarPausaCriada}
               />
             ))}
           </>
@@ -809,22 +897,29 @@ export default function ConferenciaPage() {
 
 function ItemCard({
   item,
-  recebimentoId,
   isFechado,
-  onVolumeUpdate,
+  onAlterarQuantidade,
+  pendente,
+  conferindoTudo,
+  erro,
+  localBloqueado,
   onLocalClick,
   onDivClick,
-  onPausaCriada,
 }: {
   item: RecebimentoItem
-  recebimentoId: string
   isFechado: boolean
-  onVolumeUpdate: (itemId: string, volumeNumero: number, newQtd: number, newTotal: number) => void
+  onAlterarQuantidade: (alteracao?: { volumeNumero: number; delta: number }) => Promise<void>
+  pendente: boolean
+  conferindoTudo: boolean
+  erro?: string
+  localBloqueado: boolean
   onLocalClick: () => void
   onDivClick: () => void
-  onPausaCriada?: (pausa: PausaRevisavel | null | undefined) => void
 }) {
-  const [loadingVolume, setLoadingVolume] = useState<number | null>(null)
+  const conferirTodos = useAsyncAction(async () => { await onAlterarQuantidade() })
+  const todosConferidos = item.recebimento_item_volumes.length > 0
+    && item.recebimento_item_volumes.every(v => v.qtd_recebida === v.qtd_prevista)
+    && item.volumes_recebidos_total === item.volumes_previstos_total
 
   const status = item.status_calculado
   const bgColor =
@@ -835,52 +930,6 @@ function ItemCard({
   const totalPct = item.volumes_previstos_total > 0
     ? Math.round((item.volumes_recebidos_total / item.volumes_previstos_total) * 100)
     : 0
-
-  async function handleDelta(volumeNumero: number, delta: number) {
-    if (isFechado) return
-    setLoadingVolume(volumeNumero)
-    
-    // Optimistic update - save previous state for rollback
-    const volume = item.recebimento_item_volumes.find(v => v.volume_numero === volumeNumero)
-    const prevQtdRecebida = volume?.qtd_recebida || 0
-    const prevTotalRecebido = item.volumes_recebidos_total
-    
-    // Apply optimistic update
-    const newQtdRecebida = Math.max(0, prevQtdRecebida + delta)
-    const newTotalRecebido = prevTotalRecebido - prevQtdRecebida + newQtdRecebida
-    onVolumeUpdate(item.id, volumeNumero, newQtdRecebida, newTotalRecebido)
-    
-    try {
-      const res = await fetchWithRetry(
-        `/api/recebimento/${recebimentoId}/item/${item.id}/volume/${volumeNumero}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ delta }),
-        },
-        3, // 3 retries
-        500 // 500ms initial delay
-      )
-      
-      if (res.ok) {
-        const data = await res.json()
-        // Update with server response to ensure consistency
-        onVolumeUpdate(item.id, volumeNumero, data.qtd_recebida, data.item_total_recebido)
-        onPausaCriada?.(data.pausa_criada)
-      } else {
-        // Rollback on error
-        onVolumeUpdate(item.id, volumeNumero, prevQtdRecebida, prevTotalRecebido)
-        toast.error('Não foi possível atualizar o volume. Tente novamente.')
-      }
-    } catch (err) {
-      console.error('Erro ao atualizar volume:', err)
-      // Rollback on error
-      onVolumeUpdate(item.id, volumeNumero, prevQtdRecebida, prevTotalRecebido)
-      toast.error('Erro de conexão ao atualizar volume')
-    } finally {
-      setLoadingVolume(null)
-    }
-  }
 
   return (
     <div className={`rounded-xl border-2 p-4 transition-all ${bgColor}`}>
@@ -913,12 +962,26 @@ function ItemCard({
             {item.sku_descricao || item.nfe_item?.descricao}
           </p>
         </div>
-        {status === 'concluido' && (
+        {!isFechado ? (
+          <ActionButton
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="ml-2 min-h-10 whitespace-normal text-center"
+            aria-label={'Conferir todos os volumes de ' + (item.sku_descricao || item.nfe_item?.descricao || 'produto')}
+            loading={conferindoTudo || conferirTodos.loading}
+            disabled={pendente || todosConferidos}
+            onClick={() => { void conferirTodos.run() }}
+          >
+            {conferindoTudo || conferirTodos.loading ? 'Conferindo…' : todosConferidos ? 'Conferido' : 'Conferir todos'}
+          </ActionButton>
+        ) : status === 'concluido' && (
           <div className="ml-2 p-1 rounded-full bg-green-100">
             <CheckCircle2 className="w-4 h-4 text-green-600" />
           </div>
         )}
       </div>
+      {erro && <Alert tone="danger" className="mb-3 text-xs">{erro}</Alert>}
 
       {/* Local info */}
       <div className="flex items-center gap-2 text-xs mb-3">
@@ -1003,8 +1066,8 @@ function ItemCard({
                   {/* - Button (only show if volume has items) */}
                   {vol.qtd_recebida > 0 && (
                     <button
-                      onClick={() => handleDelta(vol.volume_numero, -1)}
-                      disabled={loadingVolume === vol.volume_numero}
+                      onClick={() => onAlterarQuantidade({ volumeNumero: vol.volume_numero, delta: -1 })}
+                      disabled={pendente}
                       className="flex-shrink-0 w-10 h-10 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-30 flex items-center justify-center transition-all shadow-sm active:scale-95"
                     >
                       <span className="text-slate-600 font-bold text-lg">−</span>
@@ -1013,8 +1076,8 @@ function ItemCard({
                   
                   {/* + Button */}
                   <button
-                    onClick={() => handleDelta(vol.volume_numero, 1)}
-                    disabled={volComplete || loadingVolume === vol.volume_numero}
+                    onClick={() => onAlterarQuantidade({ volumeNumero: vol.volume_numero, delta: 1 })}
+                    disabled={volComplete || pendente}
                     className="flex-shrink-0 w-10 h-10 rounded-lg bg-[#00A5E6] hover:bg-[#0090cc] disabled:opacity-30 disabled:bg-slate-200 flex items-center justify-center transition-all shadow-sm active:scale-95"
                   >
                     {volComplete ? (
@@ -1035,6 +1098,7 @@ function ItemCard({
         <div className="flex gap-2 mt-3">
           <button
             onClick={onLocalClick}
+            disabled={localBloqueado}
             className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
           >
             <MapPin className="w-3.5 h-3.5" />

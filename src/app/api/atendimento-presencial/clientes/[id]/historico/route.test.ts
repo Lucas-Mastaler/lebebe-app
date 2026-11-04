@@ -14,7 +14,7 @@ function setup() {
   const chains: Array<{ in: ReturnType<typeof vi.fn> }> = []
   const from = vi.fn((table: string) => {
     const result = { data: table === 'atendimento_presencial_clientes' ? { id, telefone_informado: null, telefone_normalizado: null, telefone_normalizado_ddi: null } : [], error: null }
-    const chain = { select: vi.fn(() => chain), eq: vi.fn(() => chain), in: vi.fn(() => chain), neq: vi.fn(() => chain), order: vi.fn(() => chain), limit: vi.fn(async () => result), maybeSingle: vi.fn(async () => result) }
+    const chain = { select: vi.fn(() => chain), eq: vi.fn(() => chain), in: vi.fn(() => chain), neq: vi.fn(() => chain), order: vi.fn(() => chain), range: vi.fn(async () => result), limit: vi.fn(async () => result), maybeSingle: vi.fn(async () => result) }
     chains.push(chain)
     return chain
   })
@@ -34,7 +34,7 @@ describe('histórico SGI de clientes', () => {
     expect(r.status).toBe(200)
     expect(await r.json()).toMatchObject({ telefoneDisponivel: false, vendas: [{ documentoId: 'sgi-id' }], diagnosticosSgi: { associado: 1 } })
     expect(rpc).toHaveBeenCalledExactlyOnceWith('atendimento_presencial_resolver_vendas_sgi', expect.objectContaining({ p_perfil: 'consultora', p_unidades: [unidade], p_usuario_id: 'usuario', p_variacoes_telefone: [] }))
-    expect(chains[1].in).toHaveBeenCalledWith('unidade_id',[unidade])
+    expect(chains[1].in).not.toHaveBeenCalled()
   })
   it('nega antes de usar cliente de serviço', async () => {
     vi.mocked(requireAtendimentoPresencialHistoricoAccess).mockResolvedValue({ ok: false, response: new Response(null, { status: 403 }) } as never)

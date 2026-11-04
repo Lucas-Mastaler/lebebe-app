@@ -1,6 +1,7 @@
 'use client'
 
 import { ResumoProdutos } from '@/components/atendimento-presencial/ProdutosAtendimento'
+import { NegociacoesPanel } from './NegociacoesPanel'
 import { ResumoEssenciais } from './HistoricoEssenciais'
 import { VendaSgiAtendimento } from './VendaSgiAtendimento'
 import { Alert, Badge, Button, Dialog, DialogBody, DialogContent, DialogHeader, EmptyState, Section, Spinner } from '@/components/design-system'
@@ -74,6 +75,7 @@ export function DetalhesAtendimentoDialog({ open, onOpenChange, detalhe, carrega
         </div>}
         {!carregando && !detalhe && !erro && <EmptyState icon={<ClipboardList className="size-5" aria-hidden="true" />} title="Nenhum atendimento selecionado" description="Selecione um atendimento para consultar os dados salvos." />}
         {!carregando && detalhe && <>
+          {!registroNaoCliente(detalhe.atendimento) && <NegociacoesPanel clienteId={detalhe.atendimento.clienteId ?? undefined} origemId={detalhe.atendimento.resultadoAtendimento === 'negociacao' ? detalhe.atendimento.id : undefined} vendaId={detalhe.atendimento.resultadoAtendimento === 'sim' ? detalhe.atendimento.id : undefined} />}
           <div className="rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 via-white to-info/10 p-4 sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-primary">Resumo do atendimento</p><p className="mt-1 text-lg font-bold text-slate-950">{detalhe.cliente?.nome ?? 'Atendimento sem cliente vinculado'}</p></div><div className="flex flex-wrap gap-2"><Badge tone={naoCliente ? 'neutral' : situacaoVendaRegistro(atendimento!.resultadoAtendimento).tone}>{naoCliente ? 'Não cliente' : situacaoVendaRegistro(atendimento!.resultadoAtendimento).label}</Badge>{!naoCliente && <Badge tone="brand">Cliente</Badge>}</div></div>
             <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3"><Info label="Consultora do atendimento" value={atendimento!.consultoraNomeManual ?? 'Não informada'} /><Info label="Filial" value={unidadeNome ?? atendimento!.unidadeId} /><Info label="Início" value={formatarData(atendimento!.iniciadoEm)} /></div>

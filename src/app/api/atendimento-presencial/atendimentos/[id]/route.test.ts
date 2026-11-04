@@ -153,10 +153,13 @@ describe('api detalhe de registro atendimento presencial', () => {
     expect(await response.json()).toMatchObject({ vendaSgi: { documentoId: 'sgi-id', valorTotal: 49.8 }, diagnosticosSgi: { associado: 1 } })
     expect(rpc).toHaveBeenCalledWith('atendimento_presencial_resolver_vendas_sgi', expect.objectContaining({ p_atendimento_id: atendimentoId, p_cliente_id: clienteId, p_perfil: 'consultora', p_unidades: [unidadeId] }))
   })
-  it('GET bloqueia atendimento próprio de unidade não autorizada antes dos detalhes/SGI', async () => {
+  it('GET compartilha consulta comercial de outra unidade sem permitir edição', async () => {
     const queues = filasContextoEPatch({ ...atendimentoConcluido, unidade_id: '10000000-0000-4000-8000-000000000099' })
+    for (const tabela of ['atendimento_presencial_clientes','atendimento_presencial_criancas','atendimento_presencial_departamentos','atendimento_presencial_produtos_interesse','atendimento_presencial_motivos','atendimento_presencial_historico']) queues[tabela] = [{ data: tabela === 'atendimento_presencial_clientes' ? null : [], error: null }]
     const { rpc } = mockSupabase(queues)
-    expect((await GET(new Request('http://local'), { params: Promise.resolve({ id: atendimentoId }) })).status).toBe(403)
+    const resposta = await GET(new Request('http://local'), { params: Promise.resolve({ id: atendimentoId }) })
+    expect(resposta.status).toBe(200)
+    expect(await resposta.json()).toMatchObject({ podeEditar: false, historico: [] })
     expect(rpc).not.toHaveBeenCalled()
   })
   it('GET da edição carrega a resposta do snapshot exato do atendimento', async () => {
@@ -457,12 +460,15 @@ describe('api detalhe de registro atendimento presencial', () => {
     if (naoCliente) expect(json.cliente).toBeNull()
   })
 
-  it.each(['legado', 'v2'])('nega detalhe de outra consultora (%s) antes de carregar relacionamentos', async (fluxo) => {
-    mockSupabase(filasContextoEPatch({ ...atendimentoConcluido, consultora_usuario_id: '123e4567-e89b-12d3-a456-426614174099',
-      ...(fluxo === 'v2' ? { versao_fluxo: 2, tipo_atendimento: 'nao_cliente' } : {}),
-    }))
+  it.each(['legado', 'v2'])('compartilha detalhe comercial de outra consultora sem editar (%s)', async (fluxo) => {
+    const queues = filasContextoEPatch({ ...atendimentoConcluido, consultora_usuario_id: '123e4567-e89b-12d3-a456-426614174099',
+      ...(fluxo === 'v2' ? { versao_fluxo: 2, tipo_atendimento: 'cliente' } : {}),
+    })
+    for (const tabela of ['atendimento_presencial_clientes','atendimento_presencial_criancas','atendimento_presencial_departamentos','atendimento_presencial_produtos_interesse','atendimento_presencial_motivos','atendimento_presencial_historico']) queues[tabela] = [{ data: tabela === 'atendimento_presencial_clientes' ? null : [], error: null }]
+    mockSupabase(queues)
     const response = await GET(new Request('http://local'), { params: Promise.resolve({ id: atendimentoId }) })
-    expect(response.status).toBe(403)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ podeEditar: false, historico: [] })
   })
 
   it('respeita bloqueio do módulo sem criar cliente de serviço', async () => {

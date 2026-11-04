@@ -11,6 +11,7 @@ import { ChevronDown, CreditCard, History, Package, RefreshCw, ShoppingBag, Tag 
 import Link from 'next/link'
 import type { LucideIcon } from 'lucide-react'
 import { Alert, Badge, Button, Dialog, DialogBody, DialogContent, DialogHeader } from '@/components/design-system'
+import { NegociacoesPanel } from './NegociacoesPanel'
 import type { BadgeProps } from '@/components/design-system'
 import type { HistoricoAtendimentoClienteDTO, HistoricoVendaSgiDTO } from '@/lib/atendimento-presencial/historico-cliente'
 import type { HistoricoPedidoPersonalizadoDTO } from '@/lib/pedidos-personalizados/server/historico'
@@ -23,6 +24,8 @@ export type HistoricoClienteModalCliente = {
 }
 
 type HistoricoClienteResponse = {
+  pagina?: number
+  mais?: boolean
   ok: boolean
   message?: string
   telefoneDisponivel?: boolean
@@ -248,6 +251,8 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
   const [historicoCarregando, setHistoricoCarregando] = useState(false)
   const [historicoErro, setHistoricoErro] = useState<string | null>(null)
   const [tentativa, setTentativa] = useState(0)
+  const [paginaHistorico, setPaginaHistorico] = useState({ clienteId: '', pagina: 1 })
+  const pagina = paginaHistorico.clienteId === clienteId ? paginaHistorico.pagina : 1
 
   useEffect(() => {
     if (!open) return
@@ -269,7 +274,8 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
       setHistoricoCarregando(true)
 
       try {
-        const response = await requisicaoLimitada(montarUrlHistoricoCliente(clienteId, atendimentoAtualId), { cache: 'no-store' })
+        const url = montarUrlHistoricoCliente(clienteId, atendimentoAtualId)
+        const response = await requisicaoLimitada(`${url}${url.includes('?') ? '&' : '?'}pagina=${pagina}`, { cache: 'no-store' })
         const data = (await response.json()) as HistoricoClienteResponse
         if (!response.ok || !data.ok) throw new Error(data.message ?? 'Erro ao carregar historico da cliente')
         if (!cancelado) {
@@ -288,7 +294,7 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
     return () => {
       cancelado = true
     }
-  }, [open, clienteId, clienteNome, clienteTelefone, atendimentoAtualId, tentativa])
+  }, [open, clienteId, clienteNome, clienteTelefone, atendimentoAtualId, tentativa, pagina])
 
   const historicoCarregado = historicoCliente && historicoClienteId === cliente?.id ? historicoCliente : null
   const rotulosFontes: Record<string, string> = { atendimento_presencial: 'Prancheta Virtual', sgi_documentos_saida: 'SGI', pedidos_personalizados: 'Pedidos personalizados' }
@@ -307,6 +313,8 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
         />
 
         <DialogBody className="grid auto-rows-max content-start gap-5">
+          {clienteId && <NegociacoesPanel clienteId={clienteId} />}
+          {clienteId && historicoCarregado && <div className="flex items-center justify-between gap-2"><Button variant="secondary" disabled={pagina <= 1 || historicoCarregando} onClick={() => setPaginaHistorico({ clienteId, pagina: pagina - 1 })}>Atendimentos anteriores</Button><span>Página {pagina}</span><Button variant="secondary" disabled={!historicoCarregado.mais || historicoCarregando} onClick={() => setPaginaHistorico({ clienteId, pagina: pagina + 1 })}>Atendimentos mais antigos</Button></div>}
           {!cliente && <Alert tone="warning">Selecione uma cliente para consultar o historico.</Alert>}
 
           {cliente && (

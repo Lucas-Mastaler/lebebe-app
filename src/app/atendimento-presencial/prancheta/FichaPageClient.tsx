@@ -127,6 +127,7 @@ type ApiRascunhoResponse = {
 }
 
 type ApiConcluirResponse = {
+  negociacaoEncerrada?: boolean
   ok: boolean
   message?: string
   field?: string
@@ -407,6 +408,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   const [errosValidacao, setErrosValidacao] = useState<ErroValidacaoFicha[]>([])
   const [numeroLancamento, setNumeroLancamento] = useState('')
   const [concluindo, setConcluindo] = useState(false)
+  const [confirmarRetornoIndependente, setConfirmarRetornoIndependente] = useState<{ ficha: FichaDadosRascunho; desfecho?: 'solicitado_e_recusado' | 'cliente_ausente_sem_solicitacao' } | null>(null)
   const [resultadoEmValidacao, setResultadoEmValidacao] = useState<ResultadoAtendimento | null>(null)
   const [rodapeVisivel, setRodapeVisivel] = useState(false)
   const { comemoracao, prepararSom, confirmarVenda, fecharComemoracao } = useComemoracaoPv()
@@ -1723,6 +1725,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     fichaConclusao: FichaDadosRascunho = ficha,
     desfechoTelefone?: 'solicitado_e_recusado' | 'cliente_ausente_sem_solicitacao',
     manterModalTelefoneAteConcluir = false,
+    concluirIndependente = false,
   ) {
     if (concluindoRef.current) return
     if (fichaConclusao.resultadoAtendimento === 'sim') void prepararSom()
@@ -1786,6 +1789,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           version: rascunhoSalvo.version,
+          concluirIndependente,
           confirmacaoTelefone: desfechoTelefone ? {
             atendimentoId: rascunhoSalvo.id,
             version: rascunhoSalvo.version,
@@ -1799,6 +1803,10 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         }),
       })
       const data = (await response.json()) as ApiConcluirResponse
+      if (data.negociacaoEncerrada) {
+        setConfirmarRetornoIndependente({ ficha: fichaConclusao, desfecho: desfechoTelefone })
+        return
+      }
       if (!response.ok || !data.ok || !data.atendimento || data.atendimento.status !== 'concluido' || data.atendimento.id !== rascunhoSalvo.id) {
         if (data.field) {
           registrarErrosValidacao([erroConclusaoParaSecao(data.field, data.message ?? 'Revise o campo informado.')])
@@ -1910,6 +1918,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   return (
     <>
       {comemoracao && <ComemoracaoPv dados={comemoracao} onFechar={fecharComemoracao} />}
+      <Dialog open={Boolean(confirmarRetornoIndependente)} onOpenChange={open => { if (!open) setConfirmarRetornoIndependente(null) }}>
+        <DialogContent><DialogHeader title="Negociação já encerrada" description="Outra operação encerrou a negociação. Seus dados continuam neste rascunho. Você pode registrar esta visita de forma independente, sem encerrar a negociação novamente." /><DialogFooter className="gap-2 p-4"><Button variant="secondary" onClick={() => setConfirmarRetornoIndependente(null)}>Continuar no rascunho</Button><Button disabled={concluindo} onClick={() => { const pedido = confirmarRetornoIndependente; if (pedido) { setConfirmarRetornoIndependente(null); void concluirAtendimento(pedido.ficha, pedido.desfecho, false, true) } }}>Registrar atendimento independente</Button></DialogFooter></DialogContent>
+      </Dialog>
       <Dialog open={Boolean(confirmacaoTelefone)} onOpenChange={aberto => { if (!aberto) voltarAoTelefone() }}>
       <DialogContent className="w-[80vw] max-w-md border-destructive bg-red-50" onCloseAutoFocus={event => { event.preventDefault(); if (telefoneParaFocoRef.current) document.getElementById('telefone-cliente-rapido')?.focus() }}>
         <DialogHeader

@@ -696,3 +696,51 @@ Acrescentado o motivo `cliente_retira` (“Cliente Retira (Retirou apenas o item
 
 Confirmação de telefone permanece sem mudança de regra: venda fechada também pergunta sobre cliente sem telefone; “Sim” persiste recusa e “Não” retorna ao preenchimento. Nenhuma opção/resposta nova foi criada. 434 testes do módulo/API e ESLint dirigido aprovados; build local não concluiu porque o ambiente não conseguiu baixar Caveat, Geist e Geist Mono do Google Fonts. Migration remota aplicada e verificada; commit, push e deploy em andamento.
 Leitura de valores atuais de parentesco: todos os valores não nulos coincidem com as opções do seletor; registros sem parentesco permanecem nulos e não entram em correspondências selecionadas.
+
+## Continuidade de negociações — IMPLEMENTAÇÃO LOCAL VALIDADA (04/11/2026)
+
+D-060 implementada localmente conforme o anexo aprovado. Não aplicada nem publicada. O `.env.local` continua produtivo: executar o localhost habitual NÃO instala esta migration e não equivale ao laboratório isolado descrito abaixo. Nenhum dado comercial remoto foi escrito; nenhum commit, push ou deploy executado.
+
+### Entrega
+
+- Migration aditiva `20261104131151_prancheta_negociacoes.sql`: cinco tabelas com RLS/ACL restritas, FKs, índices, encerramento ativo único e eventos idempotentes; transação com lock/statement timeout. Não faz backfill nem altera/exclui registros existentes. Novo trigger protege cliente/resultado de visitas vinculadas e duplicação presencial/digital por filial/lançamento.
+- RPCs de busca, materialização, retorno, conclusão vinculada, digital/rascunho/correção/anulação, perda, vínculo retroativo e correção transacional do vínculo. Preservam o resultado da visita original. A conclusão presencial chama a RPC oficial existente de seis argumentos; crianças, essenciais e demais validações permanecem naquele fluxo.
+- API `/api/atendimento-presencial/negociacoes` com identidade obtida da sessão, módulos/janela, filial/perfil, versão, idempotência, validação digital e erros 403/409/422. Leitura comercial entre filiais não concede PATCH ou acesso administrativo ao histórico alheio; atendimento não comercial alheio continua protegido.
+- `NegociacoesPanel` reutiliza Design System, ProdutosAtendimento/ResumoProdutos e PV. Entradas em Registros, detalhes e histórico da cliente; busca por nome/telefone/período/situação/canal, paginação no servidor, seleção explícita por cliente_id. Negociações legadas aparecem sem materialização prévia.
+- Retorno abre a Prancheta oficial em novo rascunho, preservando cliente, identidades das crianças e interesses; não copia lançamento, resultado, motivos, vendas ou confirmações anteriores. Digital não cria visita; exige produto vendido/quantidade, canal, data, filial, consultora e lançamento. Correção/anulação exigem motivo e conservam revisão; anulação reabre a negociação. Vínculos retroativos entre filiais podem ser removidos/corrigidos de forma auditada.
+- Rótulos do editor usam Venda fechada/Venda perdida/Em negociação; correção do resultado original fica explícita e separada da atualização comercial.
+
+### D-060 comprovada em PostgreSQL nativo
+
+O primeiro teste com múltiplas conexões revelou que `FOR UPDATE` na negociação bloqueava a FK da criação de outro retorno. Corrigido para `FOR NO KEY UPDATE`, que mantém exclusividade comercial e permite `KEY SHARE` das FKs. Materialização existente usa leitura direta, sem tentar reinserir a negociação a cada rascunho. Lock de idempotência limita-se ao mesmo executor/operação.
+
+PostgreSQL portátil 17.6, somente loopback, fixtures sintéticas, encerrado ao final: duas conexões concorrentes sob `service_role` e terceira conexão de controle. Um encerramento aguardou o outro (`pg_blocking_pids` confirmado); criação de retorno e autosave terminaram antes do primeiro commit. Depois dele, a segunda conclusão recebeu conflito, com um único encerramento e ambos os rascunhos preservados. Retry simultâneo da mesma operação retornou o mesmo rascunho. `authenticated` sem EXECUTE e `service_role` sem escrita direta confirmados.
+
+Backup sintético exportado e restaurado em outro banco do mesmo cluster: 27 tabelas comparadas integralmente, inclusive eventos, rascunhos e encerramentos. Recuperação `scripts/prancheta/sql/suspender-negociacoes.sql` testada: revoga novas mutações sem excluir dados; consultas e proteções permanecem. Isso NÃO é backup nem restauração de produção.
+
+### Validações e evidências
+
+- Vitest ampliado: **641 aprovados / 1 falha preexistente**, 59 arquivos. Comando: `node node_modules/vitest/vitest.mjs run src/lib/atendimento-presencial src/app/api/atendimento-presencial src/app/api/cron/atendimento-presencial-limpar-rascunhos src/lib/altervision --pool=threads --maxWorkers=2`. A falha “conclui v2 nao_cliente apos confirmar persistencia” também falha no HEAD `2a2108845dba8d767fe9e00e0684c21b09704cad`: espera 200 para Outros sem complemento, recebe 422. Não alterar regra comercial para satisfazer o teste.
+- Subconjunto novo: **37 aprovados** (19 de domínio + 18 APIs/PostgreSQL isolado); inclui paginação/contagem com 23 negociações, identidade, edição entre perfis/filiais, rascunhos, proteção da visita, conflito/idempotência, digital/correção/anulação, perda, vínculo/correção, recuperação e ACL. Script SQL complementar: **12 verificações aprovadas**.
+- Navegador Edge/Playwright, 1366 e 390 px: UI oficial → APIs reais → PostgreSQL/WASM isolado. Digital sem vendido recusado, quantidade, rascunho/reabertura, conclusão/correção/anulação; retorno em outra filial; segundo rascunho finalizado mediante confirmação independente, observações preservadas e um só encerramento. Zero exceções JavaScript/overflow horizontal. Autenticação do laboratório é fixture; não é homologação autenticada Supabase/Preview nem celular físico.
+- TypeScript completo de `src`, comparado com HEAD em árvore equivalente/dependências físicas: **17 erros preexistentes, zero novos**. Build Next/Turbopack completo **exit 0**, com arquivos de aplicação do candidato comparados por SHA-256 ao workspace. Excluída a mudança alheia em FormularioNovoPedido. ESLint dirigido, sintaxe dos quatro scripts e diff-check aprovados.
+- AlterVision/fluxo das lojas permanece lendo apenas atendimentos concluídos. Digital/perda sem visita/vínculo não inserem atendimento; contagem preservada nos testes. Retorno presencial concluído representa nova visita legítima. Nenhuma integração nova com SGI/AlterVision/IA; Feira e mapeamentos atuais não foram alterados.
+- MCP produtivo somente leitura reconfirmou assinatura/ACL das RPCs existentes e RLS das tabelas base. Novas estruturas ausentes em produção, como esperado.
+
+Evidências locais em `output/negociacoes-{regressoes-final,integracao-final,build-final,lint-final,typecheck-final,typecheck-head,teste-head,postgres,browser}.log`; comparação TypeScript em `output/negociacoes-typecheck-comparacao.json`; resultado PostgreSQL em `output/negociacoes-postgres-resultado.json`; screenshots e resultado do navegador em `output/negociacoes-browser/`. Esses artefatos contêm dados sintéticos e não fazem parte da publicação. Runtimes portáteis somente em `output/`, sem alteração de dependências do aplicativo.
+
+### Pendências reais / próximo passo
+
+Implementação e validações locais encerradas; **homologação autenticada em ambiente isolado e celular físico pendentes**. Banco disponível via `.env.local` é produção; não usar dados reais para suprir essa etapa. Permanecem os 17 erros e a falha de teste preexistentes, fora do escopo. Checklist de publicação/backup/recuperação no PLANO. Requer autorização específica para migration remota, commit, push e deploy; nenhuma dessas operações está autorizada por esta entrega.
+
+## D-061 — Publicação autorizada e em execução (04/11/2026)
+
+Estado vigente: usuário autorizou explicitamente migration, main e deploy após solicitar o modal da imagem de referência. Esta autorização substitui o limite local descrito acima. Modal ajustado com carrinho, identificação da cliente, badge de fechamento digital, card de produtos e PV, ações largas em coluna. Responsáveis/canal continuam editáveis em bloco compacto; regras e componente de produtos são compartilhados. Browser desktop/mobile repetido, 59 testes dirigidos e build final aprovados; TypeScript continua com os mesmos 17 erros anteriores, sem regressão. Suíte SQL opcional pode receber PRANCHETA_PGLITE_RUNTIME no CI; 18 testes de integração foram executados localmente, não pulados.
+
+Backup atualizado AES-256-GCM/DPAPI CurrentUser das 15 tabelas produtivas, com leitura duplicada para estabilidade e restauração PostgreSQL offline (dados/tipos/constraints/índices). DDL/ACL/funções/triggers preservados no envelope; dependências externas são placeholders apenas no ensaio. Arquivo somente em output/negociacoes-release/, fora do commit. Hash criptografado: 1b849c78abc4ee7f212e8b4c2d000bec72019740b555a71801974e5f15aa7ff6. Não é PITR/global.
+
+Migration principal aplicada via MCP como prancheta_negociacoes, versão remota 20261104174947, SQL local 20261104131151, SHA-256 38397f70bd0f1c78b7ec5ebe8154248f0d293cb3df8f7642cb4e6361dfc77aa0. Hashes e contagens das 15 tabelas anteriores idênticos antes/depois: nenhum registro existente modificado.
+
+Verificação real encontrou DEFAULT PRIVILEGES concedendo escrita ao service_role, que GRANT SELECT não remove. Corrigido antes do deploy por migration aditiva 20261104175043_prancheta_negociacoes_acl_service.sql, aplicada como versão remota 20261104175130. Teste reproduz GRANT ALL e valida a correção. Confirmados RLS, authenticated sem SELECT/EXECUTE, service_role com somente SELECT nas cinco tabelas e EXECUTE nas nove RPCs. Sem INSERT/UPDATE/DELETE direto. Leitura comercial real retorna 85 negociações antigas, sem materializar nenhuma e sem criar venda/dado de teste. Diferenças entre timestamps locais e os atribuídos pelo MCP registradas; não executar db push/repair/replay como atalho.
+
+Commit/push/deploy em andamento. Homologação manual autenticada/celular físico permanece pendente por decisão explícita de publicar; não relatada como aprovada. Nenhuma escrita comercial experimental.

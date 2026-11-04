@@ -2,7 +2,7 @@
 
 import { useId, useRef, useState } from 'react'
 import styles from './ProdutosAtendimento.module.css'
-import { CheckCircle2, Minus, Plus, Target, X } from 'lucide-react'
+import { CheckCircle2, Minus, Package, Plus, Target, X } from 'lucide-react'
 import { Button, Input } from '@/components/design-system'
 import { FICHA_PRODUTO_MAX_CHARS, FICHA_PRODUTOS_MAX_ITENS, type FichaDadosRascunho } from '@/lib/atendimento-presencial/ficha-schema'
 import { maiusculasNomeComCursor } from '@/lib/atendimento-presencial/maiusculas-nomes'
@@ -44,9 +44,10 @@ type Props = {
   atualizar: (update: (ficha: FichaDadosRascunho) => FichaDadosRascunho) => void
   digitado: string
   setDigitado: (value: string) => void
+  apresentacaoDigital?: boolean
 }
 
-export function ProdutosAtendimento({ ficha, atualizar, digitado, setDigitado }: Props) {
+export function ProdutosAtendimento({ ficha, atualizar, digitado, setDigitado, apresentacaoDigital = false }: Props) {
   const id = useId()
   const entrada = useRef<HTMLInputElement>(null)
   const consumido = useRef(false)
@@ -97,7 +98,7 @@ export function ProdutosAtendimento({ ficha, atualizar, digitado, setDigitado }:
       return { ...atual, versaoProdutos: 2, produtosInteresse: [...atual.produtosInteresse.map(estruturarProduto), { descricao: PRODUTO_NAO_TRABALHAMOS, quantidade: null, vendido: null }] }
     })
   }
-  return <div className={styles.container}>
+  const controles = <>
     <label htmlFor={id} className="sr-only">Produtos de interesse</label>
     <div className={styles.entrada}>
       <Input
@@ -194,6 +195,9 @@ export function ProdutosAtendimento({ ficha, atualizar, digitado, setDigitado }:
       })}
     </ul>
     {ficha.produtosInteresse.some(p => !produtoNaoTrabalhado(p) && (estruturarProduto(p).quantidade === null || estruturarProduto(p).vendido === null)) && <p className="mt-2 text-xs text-slate-600">N/I: não informado no histórico. Os dados só mudam quando você os preencher.</p>}
+  </>
+  return <div className={[styles.container, apresentacaoDigital ? styles.digital : ''].join(' ')}>
+    {apresentacaoDigital ? <section className={styles.digitalCard}><h3 className={styles.digitalTitulo}><Package aria-hidden="true" />Produtos vendidos neste lançamento</h3><div className={styles.digitalControles}>{controles}</div></section> : controles}
     <IndicadorPv produtos={ficha.produtosInteresse} versaoProdutos={ficha.versaoProdutos} />
     <AvisoProdutosVendidos ficha={ficha} />
   </div>

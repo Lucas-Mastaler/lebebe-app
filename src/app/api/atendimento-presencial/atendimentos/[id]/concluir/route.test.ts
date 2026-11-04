@@ -63,6 +63,7 @@ function builder(result: unknown) {
 function mockSupabase(queues: Record<string, unknown[]>, rpcResult: unknown) {
   const rpc = vi.fn(() => Promise.resolve(rpcResult))
   const from = vi.fn((table: string) => {
+    if (table === 'atendimento_presencial_negociacao_retornos' && !queues[table]) return builder({ data: null, error: null })
     const queue = queues[table]
     if (!queue || queue.length === 0) throw new Error(`Sem mock para tabela ${table}`)
     return builder(queue.shift())

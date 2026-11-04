@@ -111,3 +111,13 @@ No filtro de atendimentos salvos, posicionar “Virada do cartão” após Inter
 Normalizar nomes de consultora com trim, espaços simples, maiúsculas e remoção de acentos: grafias como LETICIA/LETÍCIA representam o mesmo nome canônico, sem fundir nomes que diferem por outras palavras (por exemplo, ANA e ANA C). Aplicar o mesmo contrato em atendimentos, rascunhos e origem da consultora em clientes; preservar cada linha, ID e vínculo.
 
 O pedido autoriza a atualização dos dados e da normalização no banco remoto. Publicação do código em `main`/produção não foi solicitada neste adendo.
+
+## Continuidade de negociações — aprovação final de 04/11/2026 (D-060)
+
+Implementar e validar todos os fluxos exclusivamente localmente. Esta aprovação ativa a parte de acompanhamento/compra posterior antes reservada à P3, sem WhatsApp automático, integração SGI/IA ou publicação. Consulta comercial entre filiais separada de edição presencial; vínculo final por cliente_id com confirmação explícita. Retorno presencial na Prancheta oficial, fechamento digital sem visita, perda sem retorno e vinculação retroativa auditada entre filiais. Uma venda encerra uma negociação; compra parcial encerra com venda; retornos sem decisão mantêm aberta. Lançamento numérico existente de 1 a 999999.
+
+REGRA DEFINITIVA: rascunhos absolutamente independentes, inclusive vários da mesma negociação/cliente em diferentes filiais. Nenhuma exclusividade, bloqueio de criação/autosave/retomada ou alteração automática de outro rascunho. Somente conclusão/encerramento/vínculo comerciais definitivos usam exclusividade transacional. Se outro atendimento já encerrou a negociação, preservar o rascunho e oferecer conclusão independente mediante confirmação.
+
+Fechamento digital exige canal, cliente/negociação, data, filial, consultora, lançamento e pelo menos um produto vendido com quantidade inteira válida. Compartilhar produtos, quantidade, Vendido, PV e visual da Prancheta. Permitir correção auditada dos campos e anulação confirmada com motivo; recalcular negociação transacionalmente sem excluir histórico ou alterar visita original. Digital não gera atendimento nem aumenta fluxo AlterVision. Negociações antigas aparecem abertas sem materialização prévia. Preservar Feira, permissões atuais de edição, crianças, essenciais, PV e autosave.
+
+D-061 (04/11/2026): usuário aprovou ajustar o modal à imagem de referência e autorizou migration, commit/push na main e deploy desta funcionalidade. Preservar regras/campos; publicação com backup produtivo atualizado e validações técnicas, mantendo homologação manual autenticada pendente. Autorização não abrange outras frentes nem registros comerciais fictícios.

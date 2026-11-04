@@ -3,6 +3,7 @@ import { resolverVendasSgi } from '@/lib/atendimento-presencial/vendas-sgi'
 import { NextResponse } from 'next/server'
 import { checkAccessWindowForUser } from '@/lib/auth/access-window'
 import { requireModuleAccess } from '@/lib/auth/module-access'
+import { requireAtendimentoPresencialHistoricoAccess } from '@/lib/atendimento-presencial/api-auth'
 import { createServiceClient } from '@/lib/supabase/service'
 import {
   carregarPerfilAtendimento,
@@ -96,6 +97,7 @@ function mapearErroRpcEdicao(error: { code?: string; message?: string }) {
     return jsonErro('Data de virada do cartao invalida. Ajuste o dia (01 a 31) e o mes (01 a 12) para uma data valida, sem ano.', 400, { field: 'viradaCartao' })
   }
   if (error.code === '23514') {
+    if (message.includes('negociacao_visita_vinculada')) return jsonErro('Este atendimento possui uma negociação vinculada. Use a atualização comercial ou corrija o vínculo antes de alterar a cliente ou o resultado.', 422)
     if (message.includes('motivo_visita_outro_invalido')) {
       return jsonErro('Descreva o motivo de Outros apenas com letras, até 30 caracteres.', 400, { field: 'motivoVisitaOutro' })
     }
@@ -110,8 +112,8 @@ function mapearErroRpcEdicao(error: { code?: string; message?: string }) {
   return null
 }
 
-async function carregarContextoRegistros() {
-  const auth = await requireModuleAccess('atendimento_presencial_registros')
+async function carregarContextoRegistros(somenteLeitura = false) {
+  const auth = somenteLeitura ? await requireAtendimentoPresencialHistoricoAccess() : await requireModuleAccess('atendimento_presencial_registros')
   if (!auth.ok) return { ok: false as const, response: auth.response }
 
   const windowAccess = await checkAccessWindowForUser({
@@ -144,7 +146,7 @@ export async function GET(
     const { id } = await params
     if (!isUuid(id)) return jsonErro('ID do atendimento invalido', 400)
 
-    const loaded = await carregarContextoRegistros()
+    const loaded = await carregarContextoRegistros(true)
     if (!loaded.ok) return loaded.response
 
     const { data, error } = await loaded.supabase
@@ -161,18 +163,14 @@ export async function GET(
     if (!data) return jsonErro('Atendimento nao encontrado', 404)
 
     const row = data as unknown as AtendimentoPresencialRow
-    if (!usuarioPodeAcessarRascunho({
+    const podeAcessarEdicao = usuarioPodeAcessarRascunho({
       row,
       authUserId: loaded.contexto.usuarioId,
       perfil: loaded.contexto.perfil,
       unidadesPermitidas: loaded.contexto.unidadesPermitidas,
-    })) {
-      return jsonErro('Acesso negado ao atendimento', 403)
-    }
-
-    if (loaded.contexto.perfil !== 'superadmin' && !loaded.contexto.unidadesPermitidas.some(unidade => unidade.id === row.unidade_id)) {
-      return jsonErro('Acesso negado ao atendimento', 403)
-    }
+    }) && (loaded.contexto.perfil === 'superadmin' || loaded.contexto.unidadesPermitidas.some(unidade => unidade.id === row.unidade_id))
+    if (loaded.contexto.perfil !== 'superadmin' && !loaded.contexto.unidadesPermitidas.length) return jsonErro('Nenhuma filial autorizada', 403)
+    if (!podeAcessarEdicao && row.cliente_id === null) return jsonErro('Acesso negado ao atendimento', 403)
 
     const [cliente, criancas, departamentos, produtos, motivos, historico] = await Promise.all([
       row.cliente_id
@@ -264,13 +262,13 @@ export async function GET(
       departamentos: departamentos.data ?? [],
       produtosInteresse: produtos.data ?? [],
       motivos: motivos.data ?? [],
-      historico: historicoRetorno,
-      ...calcularPermissaoEdicao({
+      historico: podeAcessarEdicao ? historicoRetorno : [],
+      ...(podeAcessarEdicao ? calcularPermissaoEdicao({
         row,
         perfil: loaded.contexto.perfil,
         usuarioId: loaded.contexto.usuarioId,
         role: loaded.contexto.perfil === 'superadmin' ? 'superadmin' : undefined,
-      }),
+      }) : { podeEditar: false, motivoBloqueio: 'Consulta comercial compartilhada. Você não possui permissão para editar este atendimento.', limiteEdicaoEm: null }),
     })
   } catch (error) {
     console.error('[ATENDIMENTO PRESENCIAL REGISTRO] Erro geral:', error)

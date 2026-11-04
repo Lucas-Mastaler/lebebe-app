@@ -436,3 +436,34 @@ Banco atual exige cliente/resultado/motivos; crianças são por atendimento e pa
 - [x] Aplicar migration remota `20261020135931_prancheta_consultoras_sem_acentos`; backfill de atendimentos, rascunhos e origem em clientes, sem excluir ou unir linhas.
 - [x] 73 testes dirigidos, ESLint e diff-check; TypeScript global com 15 falhas preexistentes fora dos arquivos alterados.
 - [ ] Commit, push, deploy e validação visual autenticada do código.
+
+## Continuidade de negociações — execução D-060 (04/11/2026)
+
+- [x] Retomar auditoria aprovada e registrar decisões finais/limites.
+- [x] Preparar migration aditiva: negociações, vínculos, digital/produtos, encerramentos e eventos; nenhuma unicidade de rascunho por negociação/cliente.
+- [x] Implementar e validar RPCs: retorno idempotente por operação, encerramento presencial/digital/perda, vínculo retroativo/correção, correção/anulação digital. Bloqueios/versão apenas nas operações efetivas; preservar resultado original.
+- [x] Compartilhar consulta comercial paginada entre filiais, mantendo edição/rascunhos protegidos no backend/SQL, Feira e omissão de custos.
+- [x] Implementar busca por telefone/nome/data com confirmação de cliente_id/negociação e reconhecimento de negociações antigas sem backfill obrigatório.
+- [x] Separar edição e atualização comercial na interface; corrigir rótulos para Venda fechada/Venda perdida/Em negociação.
+- [x] Reutilizar Prancheta oficial para retornos com prefill seguro e rascunhos independentes; se negociação encerrada, oferecer conclusão independente sem perder dados.
+- [x] Implementar formulário digital familiar com produtos, quantidade, Vendido, PV, lançamento e rascunho próprio; correção/anulação auditadas.
+- [x] Implementar perda sem visita e vínculo retroativo/correção com histórico, filtros/paginação e sem duplicar vendas/visitas.
+- [x] Testar PostgreSQL isolado, APIs, 17 cenários obrigatórios do anexo, regressões, ESLint, typecheck/baseline, build e visual desktop/mobile isolado.
+- [x] Preparar backup/recuperação e checklist para publicação posterior; entregar inventário e resultados reais. Não executar nenhuma etapa remota de mutação ou Git.
+
+Aceite central: duas filiais criam rascunhos da mesma negociação; uma fecha venda; a outra mantém dados/autosave intactos e consegue registrar visita independente, sem duplicar encerramento. Validar também correção/anulação digital, vínculo entre filiais, cliente incompatível, múltiplos candidatos, legado e preservação de contagens AlterVision.
+
+Validação local concluída conforme STATUS: 641 testes aprovados e uma falha comprovadamente preexistente no HEAD; 37 testes novos de domínio/API/SQL; 12 verificações SQL complementares; PostgreSQL nativo 17.6 com múltiplas conexões e recuperação/restauração de 27 tabelas sintéticas; Edge desktop/mobile com APIs reais no banco isolado. Build exit 0, ESLint dirigido e zero regressões TypeScript (17 erros antigos). Homologação autenticada e celular físico não foram executados.
+
+### Checklist de publicação D-060 — NÃO EXECUTAR sem autorização específica
+
+Autorização recebida em D-061. Backup/restauração, preflight e migrations principal/ACL concluídos conforme STATUS. Novas estruturas com RLS/ACL verificadas; hashes das 15 tabelas existentes preservados. A homologação manual autenticada permanece pendente e não foi apresentada como concluída. Commit/push/deploy em execução, limitado à allowlist. Migration complementar remove DML herdado do service_role; publicada junto da principal, sem reexecutar migrations antigas.
+
+- [ ] Homologar sessão/perfis e fluxos em Preview/banco isolado, incluindo dispositivos físicos; não usar `.env.local` produtivo para gerar casos fictícios.
+- [ ] Confirmar allowlist do diff no momento da publicação. Código principal: `negociacoes.ts/.test.ts`, API `negociacoes/route.ts/.test.ts`, integração da conclusão, leitura comercial/detalhe/histórico, `NegociacoesPanel`, Ficha/Registros/Detalhes/HistoricoCliente. SQL: somente `20261104131151_prancheta_negociacoes.sql`. Excluir output, runtimes, ambientes e alterações alheias, especialmente FormularioNovoPedido.
+- [ ] Rever schema/assinaturas, triggers, grants, RLS, constraints e histórico remoto via MCP; conferir SHA-256 do SQL revisado. Não usar `db push` para reaplicar migrations antigas.
+- [ ] Confirmar backup produtivo atualizado e recuperação verificável: tabelas atuais da Prancheta e, se já existirem no ambiente-alvo, cinco tabelas de negociações. Exportar com proteção local autorizada, conferir contagens/checksum e restaurar em banco separado antes da aplicação. Backup sintético desta entrega não substitui esse backup.
+- [ ] Aplicar somente a migration autorizada em transação; se falhar, confirmar rollback completo. Nenhuma reescrita/backfill de atendimentos antigos.
+- [ ] Publicar código e banco compatíveis, verificar RPC/ACL e disponibilidade, acompanhar erros 403/409/422/503, conferir commit/deploy READY e executar checagens não destrutivas.
+- [ ] Se necessário suspender novas operações: executar o script não destrutivo `scripts/prancheta/sql/suspender-negociacoes.sql` com autorização. Conserva tabelas/dados/consultas/trigger; os endpoints novos passam a recusar mutações. Não restaurar app antigo que finalize retornos ignorando o wrapper. Para reabrir, diagnosticar e restaurar somente os GRANT EXECUTE explícitos das sete RPCs da migration. Não excluir encerramentos nem reescrever visitas como recuperação.
+- [ ] Homologar funcionalmente com os usuários e atualizar STATUS com o resultado remoto real. Commit, push, migration e deploy permanecem não realizados nesta entrega.

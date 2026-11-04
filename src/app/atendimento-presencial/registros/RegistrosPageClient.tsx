@@ -53,6 +53,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MultiSelect } from '@/components/ui/multi-select'
 import { HistoricoClienteModal, type HistoricoClienteModalCliente } from '@/components/atendimento-presencial/HistoricoClienteModal'
+import { NegociacoesPanel } from '@/components/atendimento-presencial/NegociacoesPanel'
 import { ViradaCartaoField } from '@/components/atendimento-presencial/ViradaCartaoField'
 import { validarViradaCartaoInput } from '@/lib/atendimento-presencial/virada-cartao-input'
 import {
@@ -68,7 +69,6 @@ import {
   MOTIVO_VISITA_OUTRO_MAX_CHARS,
   MOTIVOS_VISITA,
   normalizarMotivoVisitaOutro,
-  RESULTADOS_ATENDIMENTO,
   SEXOS_CRIANCA,
   SITUACOES_CRIANCA,
   converterDataInputParaISO,
@@ -308,6 +308,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   const [consultorasFinalizados, setConsultorasFinalizados] = useState<Array<{ nome: string }>>([])
   const [unidadesFinalizados, setUnidadesFinalizados] = useState<Array<{ id: string; nome: string }>>([])
   const [edicaoAberta, setEdicaoAberta] = useState(false)
+  const [corrigirResultado, setCorrigirResultado] = useState(false)
   const [fichaEdicao, setFichaEdicao] = useState<FichaDadosRascunho | null>(null)
   const [numeroLancamentoEdicao, setNumeroLancamentoEdicao] = useState('')
   const [viradaCartaoEdicaoInput, setViradaCartaoEdicaoInput] = useState('')
@@ -492,6 +493,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   const resumoSelecionado = selecionado ? registros.find((registro) => registro.id === selecionado.atendimento.id) : null
 
   function abrirEdicao(detalhe: RegistroDetalhe) {
+    setCorrigirResultado(false)
     const ficha = normalizarDetalheParaFichaEdicao(detalhe)
     const estadoEssenciais = mapearSnapshotEssenciaisParaEdicao(detalhe.criancas, detalhe.essenciais ?? [])
     setFichaEdicao(ficha)
@@ -789,6 +791,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
         ) : undefined}
       />
 
+      <NegociacoesPanel />
       {erro && <Alert tone="danger">{erro}</Alert>}
 
       <Tabs value={tabAtual} onValueChange={navegarParaTab} className="gap-4">
@@ -1373,11 +1376,14 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                 </Section>
 
                 <Section title="Resultado e condições" variant="subsection" collapsible>
+                <Alert tone="info">Este é o resultado da visita original. Para registrar uma compra posterior ou encerrar uma negociação, use a atualização comercial.</Alert>
+                {selecionado && <NegociacoesPanel clienteId={selecionado.atendimento.clienteId ?? undefined} origemId={selecionado.atendimento.resultadoAtendimento === 'negociacao' ? selecionado.atendimento.id : undefined} vendaId={selecionado.atendimento.resultadoAtendimento === 'sim' ? selecionado.atendimento.id : undefined} />}
+                {!corrigirResultado && <div className="my-3 rounded-xl border border-sky-200 bg-sky-50 p-4"><p className="text-lg font-bold">{situacaoVendaRegistro(fichaEdicao.resultadoAtendimento).label}</p><Button variant="secondary" onClick={() => setCorrigirResultado(true)}>Corrigir resultado registrado</Button></div>}
                 <div>
                   <AvisoProdutosVendidos ficha={fichaEdicao} />
                   <p className="text-sm font-semibold text-slate-800">Resultado</p>
-                  <div className="mt-2 grid gap-2">
-                    {RESULTADOS_ATENDIMENTO.map((item) => (
+                  <div className={corrigirResultado ? 'mt-2 grid gap-2' : 'hidden'}>
+                    {SITUACOES_VENDA.map((item) => (
                       <OpcaoButton key={item.chave} selected={fichaEdicao.resultadoAtendimento === item.chave} onClick={() => {
                         if (item.chave !== 'sim') setNumeroLancamentoEdicao('')
                         atualizarFichaEdicao((atual) => ({ ...atual, resultadoAtendimento: item.chave as ResultadoAtendimento,

@@ -189,16 +189,20 @@ export async function POST(
 
     const consultoraNome = typeof payload.consultoraNome === 'string' ? normalizarNomeConsultora(payload.consultoraNome) : ''
 
-    const { error: rpcError } = await loaded.supabase.rpc('atendimento_presencial_concluir', {
+    const vinculo = await loaded.supabase.from('atendimento_presencial_negociacao_retornos').select('negociacao_id').eq('atendimento_id', id).maybeSingle()
+    if (vinculo.error && !['42P01', 'PGRST205'].includes(vinculo.error.code)) return jsonErro('Não foi possível conferir o vínculo de retorno. Seus dados foram preservados.', 503)
+    const { error: rpcError } = await loaded.supabase.rpc(vinculo.data ? 'atendimento_presencial_negociacao_concluir_retorno' : 'atendimento_presencial_concluir', {
       p_atendimento_id: id,
       p_expected_version: expectedVersion,
       p_usuario_id: loaded.contexto.usuarioId,
       p_numero_lancamento: validacaoConclusao.numeroLancamento,
       p_consultora_nome: consultoraNome || null,
       p_confirmacao_telefone: confirmacao ?? null,
+      ...(vinculo.data ? { p_independente: payload.concluirIndependente === true } : {}),
     })
 
     if (rpcError) {
+      if (rpcError.message === 'negociacao_encerrada_confirmar_independente') return jsonErro('Esta negociação já foi encerrada por outra operação. Você pode registrar este atendimento de forma independente, preservando todos os dados.', 409, { negociacaoEncerrada: true })
       const response = mapearErroRpc(rpcError)
       if (response) return response
       console.error('[ATENDIMENTO PRESENCIAL CONCLUIR] Erro ao concluir atendimento:', rpcError)

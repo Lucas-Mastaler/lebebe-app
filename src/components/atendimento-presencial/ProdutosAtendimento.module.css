@@ -1,4 +1,17 @@
 .container { container-type: inline-size; min-width: 0; }
+.digitalCard { overflow: hidden; border: 1px solid var(--color-cyan-200); border-left: 3px solid var(--primary); border-radius: 16px; background: linear-gradient(115deg, white, var(--color-cyan-50)); }
+.digitalTitulo { display: flex; align-items: center; gap: 10px; padding: 14px 16px; color: var(--color-slate-950); background: var(--color-cyan-50); font-size: clamp(16px, 2vw, 21px); font-weight: 750; line-height: 1.25; }
+.digitalTitulo svg { width: 26px; height: 26px; flex-shrink: 0; color: var(--primary); }
+.digitalControles { padding: 16px 12px; }
+.digital .cabecalho { text-transform: none; font-size: 13px; letter-spacing: 0; }
+.digital .resumoPv { margin-top: 16px; }
+.digital .pv { padding: 16px; border: 1px solid white; border-radius: 16px; gap: 16px; }
+.digital .pvIcone { width: 42px; height: 42px; padding: 7px; box-sizing: content-box; border-radius: 16px; background: rgb(255 255 255 / 40%); }
+.digital .pvValor { font-size: 22px; }
+.digital .pvMeta { font-size: 13px; }
+.digital .pvPercentual { padding: 3px 10px; border-radius: 99px; background: rgb(255 255 255 / 40%); font-size: 17px; }
+.digital .pvBarra { height: 12px; }
+@container (max-width: 350px) { .digitalControles { padding: 12px 8px; } .digital .pv { padding: 12px; gap: 8px; } .digital .pvIcone { width: 24px; height: 24px; } .digital .pvValor { font-size: 18px; } .digital .pvMeta { font-size: 11px; } }
 .entrada { display: flex; gap: 8px; margin-bottom: 12px; }
 .campo {
   height: 48px; min-width: 0; flex: 1; border-radius: 12px;

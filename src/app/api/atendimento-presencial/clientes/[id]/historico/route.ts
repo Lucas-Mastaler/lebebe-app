@@ -4,7 +4,6 @@ import {
   carregarPerfilAtendimento,
   isUuid,
   listarUnidadesDoContexto,
-  usuarioPodeAcessarRascunho,
   type AtendimentoPresencialRow,
 } from '@/lib/atendimento-presencial/rascunhos'
 import {
@@ -46,6 +45,8 @@ export async function GET(
     const perfil = await carregarPerfilAtendimento(supabase, auth.allowedUser)
     if (!perfil) return jsonErro('Perfil nao encontrado', 403)
     const unidadesPermitidas = await listarUnidadesDoContexto(supabase, auth.allowedUser, perfil)
+    const pagina = Number(new URL(request.url).searchParams.get('pagina') ?? 1)
+    if (!Number.isSafeInteger(pagina) || pagina < 1) return jsonErro('Página inválida.', 400)
 
     const { data: clienteData, error: clienteError } = await supabase
       .from('atendimento_presencial_clientes')
@@ -73,28 +74,19 @@ export async function GET(
     if (atendimentoAtualId && isUuid(atendimentoAtualId)) {
       query = query.neq('id', atendimentoAtualId)
     }
-    if (perfil !== 'superadmin') {
-      query = query.in('unidade_id', unidadesPermitidas.map(unidade => unidade.id))
-    }
-    if (perfil === 'consultora') {
-      query = query.eq('consultora_usuario_id', auth.allowedUser.id)
-    }
+    // Consulta comercial entre filiais. Permissões de edição continuam nas APIs próprias.
+    if (perfil !== 'superadmin' && !unidadesPermitidas.length) query = query.in('unidade_id', [])
 
     const { data: atendimentoData, error: atendimentoError } = await query
       .order('concluido_em', { ascending: false })
-      .limit(10)
+      .range((pagina - 1) * 10, pagina * 10)
 
     if (atendimentoError) {
       console.error('[ATENDIMENTO PRESENCIAL HISTORICO CLIENTE] Erro ao carregar atendimentos:', atendimentoError)
       return jsonErro('Erro ao processar requisicao', 500)
     }
 
-    const rows = ((atendimentoData ?? []) as unknown as AtendimentoPresencialRow[]).filter((row) => usuarioPodeAcessarRascunho({
-      row,
-      authUserId: auth.allowedUser.id,
-      perfil,
-      unidadesPermitidas,
-    }))
+    const rows = ((atendimentoData ?? []) as unknown as AtendimentoPresencialRow[]).slice(0, 10)
 
     const atendimentoIds = rows.map((row) => row.id)
     const unidadeIds = Array.from(new Set(rows.map((row) => row.unidade_id)))
@@ -148,6 +140,8 @@ export async function GET(
 
     return NextResponse.json({
       ok: true,
+      pagina,
+      mais: (atendimentoData?.length ?? 0) > 10,
       telefoneDisponivel: vendasResult.telefoneDisponivel,
       atendimentos: rows.map((row) => serializarHistoricoAtendimento({
         row,

@@ -1,0 +1,19 @@
+.digital { max-width: 760px; border: 1px solid white; border-radius: 24px; background: linear-gradient(120deg,#fff,#f1faff); box-shadow: 0 20px 60px rgb(26 85 118 / 18%); }
+.header { padding: 24px; border-bottom: 1px solid var(--color-sky-100); background: transparent; }
+.titulo { display: flex; align-items: flex-start; gap: 20px; color: var(--color-slate-950); font-size: clamp(22px,3vw,30px); font-weight: 750; line-height: 1.2; }
+.carrinho { display: flex; align-items: center; justify-content: center; width: 76px; height: 76px; flex-shrink: 0; border-radius: 24px; background: var(--color-cyan-100); color: var(--primary); }
+.carrinho svg { width: 42px; height: 42px; }
+.cliente,.canal { display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; padding: 6px 14px; margin-top: 8px; border-radius: 99px; font-size: 16px; font-weight: 600; line-height: 1.25; }
+.cliente { color: var(--color-sky-800); background: var(--color-sky-100); }
+.canal { color: var(--color-green-700); background: var(--color-emerald-50); }
+.cliente svg,.canal svg { width: 20px; height: 20px; flex-shrink: 0; }
+.body { padding: 20px 24px; }
+.body input,.body textarea { border-color: var(--color-slate-200); border-radius: 12px; background: rgb(255 255 255 / 80%); }
+.body input { min-height: 48px; font-size: 16px; }
+.body textarea { min-height: 88px; }
+.responsavel { font-size: 12px; color: var(--color-slate-600); }
+.responsavel summary { cursor: pointer; padding: 4px 0; }
+.footer { display: grid; grid-template-columns: 1fr; gap: 10px; padding: 0 24px 20px; }
+.footer button { min-height: 48px; width: 100%; border-radius: 15px; font-size: 17px; }
+.footer button:first-child { background: linear-gradient(100deg,#00ade0,#009ed5); }
+@media(max-width:480px) { .header { padding: 18px 16px; } .titulo { gap: 12px; font-size: 22px; } .carrinho { width: 48px; height: 54px; border-radius: 17px; } .carrinho svg { width: 29px; height: 29px; } .cliente,.canal { padding: 5px 9px; font-size: 12px; } .body { padding: 16px 14px; } .footer { padding: 0 14px 14px; } }

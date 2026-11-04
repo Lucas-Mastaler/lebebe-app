@@ -40,6 +40,12 @@ export function validarVendaDigital(valor: unknown, agora = new Date()): Validac
     const item = produto as Record<string, unknown>
     const descricao = typeof item.descricao === 'string' ? chaveProduto(item.descricao) : ''
     if (!descricao || Array.from(descricao).length > FICHA_PRODUTO_MAX_CHARS || nomes.has(descricao)) return falha('produtos', 'Revise nomes e produtos repetidos.')
+    if (produtoNaoTrabalhado({ descricao, quantidade: null, vendido: null })) {
+      if (item.quantidade !== null || (item.vendido !== null && item.vendido !== false)) return falha('produtos', 'O marcador de produto não trabalhado não pode registrar venda ou quantidade.')
+      nomes.add(descricao)
+      produtos.push({ descricao, quantidade: null, vendido: null })
+      continue
+    }
     if (typeof item.vendido !== 'boolean') return falha('produtos', 'Confirme quais produtos foram vendidos.')
     if (item.quantidade !== null && (!Number.isInteger(item.quantidade) || Number(item.quantidade) < 1 || Number(item.quantidade) > QUANTIDADE_PRODUTO_MAX)) return falha('produtos', 'Informe quantidades inteiras válidas.')
     if (item.vendido && (item.quantidade === null || produtoNaoTrabalhado({ descricao, quantidade: null, vendido: false }))) return falha('produtos', 'Informe a quantidade de cada produto vendido.')

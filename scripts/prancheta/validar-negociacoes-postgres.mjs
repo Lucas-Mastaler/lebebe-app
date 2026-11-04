@@ -38,7 +38,7 @@ try{
  const origem=randomUUID()
  await c.query("INSERT INTO atendimento_presencial_atendimentos(id,cliente_id,consultora_usuario_id,unidade_id,status,concluido_em,iniciado_em,resultado_atendimento) VALUES($1,$2,$3,$4,'concluido',now()-interval '7 days',now()-interval '7 days','negociacao')",[origem,cliente,usuario,unidade])
  await c.query('SELECT atendimento_presencial_negociacao_materializar($1,$2)',[origem,usuario])
- const dados={clienteId:cliente,unidadeId:unidade,consultora:'ANA',canal:'whatsapp',fechadoEm:new Date().toISOString(),numeroLancamento:123456,produtos:[{descricao:'BERCO',quantidade:1,vendido:true}]}
+ const dados={clienteId:cliente,unidadeId:unidade,consultora:'ANA',canal:'whatsapp',fechadoEm:new Date().toISOString(),numeroLancamento:123456,produtos:[{descricao:'BERCO',quantidade:1,vendido:true},{descricao:'PRODUTO QUE NAO TRABALHAMOS',quantidade:null,vendido:null}]}
  const fechar=(db,id)=>db.query('SELECT atendimento_presencial_negociacao_digital($1,$2,$3,$4,$5,0,$6) r',[origem,usuario,randomUUID(),'concluir',id,dados])
  const ficha={versaoFluxo:2,tipoAtendimento:'cliente',versaoProdutos:2,versaoEssenciais:1,essenciais:{},criancas:[],departamentos:['moveis'],produtosInteresse:[],motivosResultado:[],etapaAtual:'ficha'}
  const retorno=(db,op)=>db.query('SELECT atendimento_presencial_negociacao_criar_retorno($1,$2,$3,$4,$5) id',[origem,usuario,op,unidade,ficha])

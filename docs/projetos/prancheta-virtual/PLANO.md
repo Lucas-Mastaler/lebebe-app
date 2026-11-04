@@ -467,3 +467,11 @@ Autorização recebida em D-061. Backup/restauração, preflight e migrations pr
 - [x] Publicar código e banco compatíveis, verificar RPC/ACL e disponibilidade, conferir commit/deploy READY e executar checagens não destrutivas. Login/permissões mantidos; sem erros/fatais de runtime na janela consultada.
 - [ ] Se necessário suspender novas operações: executar o script não destrutivo `scripts/prancheta/sql/suspender-negociacoes.sql` com autorização. Conserva tabelas/dados/consultas/trigger; os endpoints novos passam a recusar mutações. Não restaurar app antigo que finalize retornos ignorando o wrapper. Para reabrir, diagnosticar e restaurar somente os GRANT EXECUTE explícitos das sete RPCs da migration. Não excluir encerramentos nem reescrever visitas como recuperação.
 - [ ] Homologar funcionalmente com os usuários e atualizar STATUS com o resultado remoto real. Commit, push, migration e deploy permanecem não realizados nesta entrega.
+
+### D-062 — Acesso direto pelo card
+
+- [x] Botão entre Ver e Editar para visitas em negociação, reutilizando NegociacoesPanel com origemId, sem abrir edição e sem nova API.
+- [x] Validar três ações no desktop, empilhamento no mobile e abertura do mesmo fluxo com a negociação correta.
+- [x] Corrigir marcador digital informativo preservando contrato de quantidade/venda nulas e PV; SQL complementar aplicado após backup de 20 tabelas e ensaio isolado.
+- [x] 39 testes dirigidos, navegador desktop/mobile, PostgreSQL nativo, build e ESLint; sem novas regressões TypeScript.
+- [ ] Homologação manual autenticada pelo usuário; não efetuar vendas fictícias em produção.

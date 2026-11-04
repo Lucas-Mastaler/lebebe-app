@@ -245,3 +245,7 @@ Implementar correção e anulação auditadas de vendas digitais, exigindo motiv
 ## D-061 — Referência visual digital e publicação autorizada (04/11/2026)
 
 Usuário pediu que o modal de venda digital siga a imagem anexada: cabeçalho destacado com carrinho, cliente e badge digital; card de produtos vendidos, PV destacado e ações largas em coluna. Manter regras/campos existentes, com responsáveis e canal acessíveis em bloco compacto. Em seguida autorizou explicitamente subir as mudanças na main, aplicar migration e fazer deploy. Esta autorização substitui o limite exclusivamente local da D-060 para este pacote; não inclui outras frentes ou dados comerciais fictícios. Backup produtivo atualizado e restauração offline concluídos antes da aplicação. Homologação autenticada e celular físico permanecem pendentes, sem serem apresentados como aprovados.
+
+## D-062 — Atualização comercial diretamente no card (04/11/2026)
+
+Usuário solicitou o botão Atualizar situação da negociação no card de Registros, entre Ver atendimento e Editar atendimento, seguindo a imagem. A ação reutiliza NegociacoesPanel com o ID exato da negociação, sem abrir a edição ou criar outro fluxo. Exibir em visitas cujo resultado original é negociação; consultar o estado comercial atual ao clicar. Desktop com três colunas, celular com ações empilhadas. Commit solicitado explicitamente; autorização de publicação D-061 permanece vigente.

@@ -1,6 +1,6 @@
 'use client'
 import { useRef, useState } from 'react'
-import { ArrowLeft, CalendarDays, Check, Monitor, Phone, Save, Search, ShoppingCart, UserRound } from 'lucide-react'
+import { ArrowLeft, CalendarDays, Check, Monitor, Phone, RefreshCw, Save, Search, ShoppingCart, UserRound } from 'lucide-react'
 import styles from './NegociacoesPanel.module.css'
 import { Alert, Button, Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, FilterFieldGroup, FilterPanel, FormField, Input, Section, Textarea } from '@/components/design-system'
 import { ProdutosAtendimento, ResumoProdutos } from './ProdutosAtendimento'
@@ -18,7 +18,7 @@ const EVENTOS: Record<string, string> = { criar_retorno: 'Retorno iniciado', con
 const fichaInicial = (): FichaDadosRascunho => ({ criancas: [], departamentos: [], motivosResultado: [], produtosInteresse: [], versaoProdutos: 2, etapaAtual: 'ficha' })
 function dataLocal(valor: string | Date) { const data = new Date(valor); return new Date(data.getTime() - data.getTimezoneOffset() * 60000).toISOString().slice(0, 16) }
 
-export function NegociacoesPanel({ origemId, clienteId, vendaId }: { origemId?: string; clienteId?: string; vendaId?: string }) {
+export function NegociacoesPanel({ origemId, clienteId, vendaId, triggerClassName }: { origemId?: string; clienteId?: string; vendaId?: string; triggerClassName?: string }) {
   const [aberto, setAberto] = useState(false)
   const [linhas, setLinhas] = useState<Linha[]>([])
   const [selecionada, setSelecionada] = useState<Linha | null>(null)
@@ -120,7 +120,7 @@ export function NegociacoesPanel({ origemId, clienteId, vendaId }: { origemId?: 
 
   const modalDigital = modo === 'digital' || modo === 'corrigir'
   return <>
-    <Button variant="secondary" size="lg" onClick={() => { setModo(''); setSelecionada(null); setMensagem(''); setAberto(true); const f = origemId ? { ...INICIAL, situacao: '' } : INICIAL; setFiltros(f); setAplicados(f); void carregar(1, f) }}>{vendaId ? 'Vincular negociação anterior' : origemId ? 'Atualizar situação da negociação' : 'Consultar negociações'}</Button>
+    <Button variant="secondary" size="lg" className={triggerClassName} onClick={() => { setModo(''); setSelecionada(null); setMensagem(''); setAberto(true); const f = origemId ? { ...INICIAL, situacao: '' } : INICIAL; setFiltros(f); setAplicados(f); void carregar(1, f) }}>{origemId && <RefreshCw className="size-4 shrink-0" aria-hidden="true" />}{vendaId ? 'Vincular negociação anterior' : origemId ? 'Atualizar situação da negociação' : 'Consultar negociações'}</Button>
     <Dialog open={aberto} onOpenChange={value => { if (!ocupado) setAberto(value) }}>
       <DialogContent className={`w-[96vw] max-w-4xl sm:max-w-4xl [&_select]:min-h-11 [&_select]:w-full [&_select]:rounded-lg [&_select]:border [&_select]:bg-background [&_select]:p-2 ${modalDigital ? styles.digital : ''}`}><DialogHeader className={modalDigital ? styles.header : undefined} title={modalDigital && selecionada ? <span className={styles.titulo}><span className={styles.carrinho}><ShoppingCart aria-hidden="true" /></span><span>{modo === 'corrigir' ? 'Corrigir venda digital' : 'Venda fechada digital'}<span className={styles.cliente}><UserRound aria-hidden="true" />{selecionada.nome}</span><span className={styles.canal}><Monitor aria-hidden="true" />Fechamento digital</span></span></span> : modo && selecionada ? `${modo === 'anular' ? 'Venda digital' : 'Atualizar negociação'} · ${selecionada.nome}` : 'Continuidade de negociações'} description={modalDigital ? undefined : 'Resultado da visita original preservado. Vínculos e atualizações comerciais ficam registrados separadamente.'} />
         <DialogBody className={`space-y-4 ${modalDigital ? styles.body : ''}`}>

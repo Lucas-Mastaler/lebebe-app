@@ -29,6 +29,7 @@ export async function prepararBancoNegociacoes(db) {
  UPDATE atendimento_presencial_essenciais_config SET ativo=true;`)
  await db.exec(readFileSync('supabase/migrations/20261104131151_prancheta_negociacoes.sql','utf8'))
  await db.exec(readFileSync('supabase/migrations/20261104175043_prancheta_negociacoes_acl_service.sql','utf8'))
+ await db.exec(readFileSync('supabase/migrations/20261104180238_prancheta_negociacoes_marcador_produto.sql','utf8'))
 }
 
 // Adaptador PostgREST mínimo para executar as APIs reais no PostgreSQL isolado.

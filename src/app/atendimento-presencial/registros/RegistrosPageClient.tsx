@@ -1018,7 +1018,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                           </div>
                         </CardContent>
                       </button>
-                      <div className="grid gap-2 border-t border-slate-100 bg-slate-50/60 px-4 py-3 sm:grid-cols-2">
+                      <div className={`grid gap-2 border-t border-slate-100 bg-slate-50/60 px-4 py-3 ${registro.resultadoAtendimento === 'negociacao' ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
                         <Button
                           type="button"
                           variant="secondary"
@@ -1030,6 +1030,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                           <Eye className="size-4" aria-hidden="true" />
                           Ver atendimento
                         </Button>
+                        {registro.resultadoAtendimento === 'negociacao' && <NegociacoesPanel origemId={registro.id} clienteId={registro.clienteId ?? undefined} triggerClassName="w-full min-w-0 whitespace-normal border border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100" />}
                         <Button
                           type="button"
                           onClick={() => void editarAtendimentoCard(registro.id)}

@@ -39,6 +39,7 @@ beforeAll(async () => {
   // Reproduz o DEFAULT PRIVILEGES produtivo antes de validar a correção aditiva.
   await db.exec('GRANT ALL ON atendimento_presencial_negociacoes,atendimento_presencial_negociacao_retornos,atendimento_presencial_vendas_digitais,atendimento_presencial_negociacao_encerramentos,atendimento_presencial_negociacao_eventos TO service_role')
   await db.exec(readFileSync('supabase/migrations/20261104175043_prancheta_negociacoes_acl_service.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20261104180238_prancheta_negociacoes_marcador_produto.sql', 'utf8'))
 }, 30000)
 afterAll(async () => { if (db) await db.close() })
 beforeEach(async () => {
@@ -65,6 +66,13 @@ beforeEach(async () => {
 })
 
 describe.skipIf(!existsSync(runtimeSql))('API e PostgreSQL isolado de negociações (runtime SQL opcional)', () => {
+  it('conclui digital com marcador informativo sem contá-lo como produto vendido', async () => {
+    const dados = digital()
+    const response = await pedido({ acao: 'concluir', origemId: origem, operacaoId: uuid(), id: vendaId, version: 0, dados: { ...dados, produtos: [...dados.produtos, { descricao: 'PRODUTO QUE NAO TRABALHAMOS', quantidade: null, vendido: null }] } })
+    expect(response.status).toBe(200)
+    const row = (await db.query('select dados from atendimento_presencial_vendas_digitais where id=$1', [vendaId])).rows[0]
+    expect((row.dados as { produtos: unknown[] }).produtos).toEqual([...dados.produtos, { descricao: 'PRODUTO QUE NAO TRABALHAMOS', quantidade: null, vendido: null }])
+  })
   it('retorna negociação antiga antes de materializar e pagina no servidor', async () => {
     const antes = await contar('atendimento_presencial_negociacoes')
     const response = await GET(new Request(`http://local?origemId=${origem}&situacao=aberta`))

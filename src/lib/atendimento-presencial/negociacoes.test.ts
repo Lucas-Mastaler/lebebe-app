@@ -30,6 +30,12 @@ describe('venda digital sem visita presencial', () => {
   it('não vende o marcador de produto não trabalhado', () => {
     expect(validarVendaDigital({ ...venda, produtos: [{ descricao: 'PRODUTO QUE NÃO TRABALHAMOS', quantidade: 1, vendido: true }] }, agora).ok).toBe(false)
   })
+  it('preserva marcador sem quantidade/venda junto de um produto vendido', () => {
+    const marcador = { descricao: 'PRODUTO QUE NÃO TRABALHAMOS', quantidade: null, vendido: null }
+    const resultado = validarVendaDigital({ ...venda, produtos: [...venda.produtos, marcador] }, agora)
+    expect(resultado).toMatchObject({ ok: true, dados: { produtos: [{ descricao: 'BERCO', quantidade: 2, vendido: true }, { descricao: 'PRODUTO QUE NAO TRABALHAMOS', quantidade: null, vendido: null }] } })
+    expect(validarVendaDigital({ ...venda, produtos: [marcador] }, agora)).toMatchObject({ ok: false, field: 'produtos' })
+  })
   it('exige canal e descrição do outro canal', () => {
     expect(validarVendaDigital({ ...venda, canal: '' }, agora)).toMatchObject({ ok: false, field: 'canal' })
     expect(validarVendaDigital({ ...venda, canal: 'outro' }, agora)).toMatchObject({ ok: false, field: 'canalOutro' })

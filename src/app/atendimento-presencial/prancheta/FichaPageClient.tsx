@@ -23,7 +23,7 @@ import { toast } from 'sonner'
 import { CriancasCadastradas } from './CriancasCadastradas'
 import { ParentescoCriancaField } from './ParentescoCriancaField'
 import { getMotivoVisitaLabel } from '@/lib/atendimento-presencial/registros'
-import { requisicaoLimitada } from '@/lib/atendimento-presencial/requisicao-limitada'
+import { requisicaoLimitada, mensagemErroRequisicao } from '@/lib/atendimento-presencial/requisicao-limitada'
 import { calcularReferenciaNascimento, criancaJaNasceu, dataAtendimentoLocal, descreverIdadeAproximada } from '@/lib/atendimento-presencial/idade-aproximada'
 import { AlertCircle, Baby, CalendarDays, Check, ChevronLeft, ClipboardList, History, LoaderCircle, MessageSquareText, Pencil, Plus, RefreshCw, Save, Search, ShoppingBag, UserRound, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -1145,7 +1145,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   async function consultarDuplicidade(telefone: string, signal?: AbortSignal) {
     const normalizado = normalizarTelefone(telefone)
     if (!normalizado.valido || !normalizado.telefoneNormalizado) return null
-    const response = await fetch(`/api/atendimento-presencial/clientes?telefoneExato=${encodeURIComponent(normalizado.telefoneNormalizado)}`, { cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000) })
+    const response = await requisicaoLimitada(`/api/atendimento-presencial/clientes?telefoneExato=${encodeURIComponent(normalizado.telefoneNormalizado)}`, { cache: 'no-store', signal }, 20000, 'A conferência do telefone demorou para responder. Confira sua conexão e tente novamente antes de cadastrar.')
     const data = await response.json() as ApiClientesResponse & { ambiguo?: boolean }
     if (!response.ok || !data.ok) throw new Error(data.message ?? 'Não foi possível conferir o telefone. Tente novamente antes de cadastrar.')
     const clientes = data.clientes ?? []
@@ -1164,7 +1164,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       void consultarDuplicidade(novoCliente.telefone, controller.signal).then((resultado) => {
         if (geracao === duplicidadeGeracaoRef.current && !controller.signal.aborted) setDuplicidade(resultado)
       }).catch((error) => {
-        if (geracao === duplicidadeGeracaoRef.current && !controller.signal.aborted) setErroDuplicidade(error instanceof Error ? error.message : 'Não foi possível conferir o telefone.')
+        if (geracao === duplicidadeGeracaoRef.current && !controller.signal.aborted) setErroDuplicidade(mensagemErroRequisicao(error, 'Não foi possível conferir o telefone. Confira sua conexão e tente novamente antes de cadastrar.'))
       }).finally(() => {
         if (geracao === duplicidadeGeracaoRef.current && !controller.signal.aborted) setConferindoDuplicidade(false)
       })
@@ -1211,7 +1211,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       selecionarCliente(data.cliente)
       setNovoCliente({ nome: '', telefone: '', parentesco: '', parentescoOutro: '' })
     } catch (error) {
-      setErro(error instanceof Error ? error.message : 'Erro ao cadastrar cliente')
+      setErro(mensagemErroRequisicao(error, 'Não foi possível confirmar o cadastro da cliente. Seus dados continuam na tela. Confira sua conexão e tente novamente; vamos verificar se o telefone já está cadastrado antes de criar outra cliente.'))
     } finally {
       cadastroEmCursoRef.current = false
       setCadastrandoCliente(false)

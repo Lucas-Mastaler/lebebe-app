@@ -5,7 +5,7 @@ import { requireModuleAccess } from '@/lib/auth/module-access'
 import { checkAccessWindowForUser } from '@/lib/auth/access-window'
 import { carregarPerfilAtendimento, listarUnidadesDoContexto, isUuid, serializarAtendimentoPresencial, requireAtendimentoPresencialFichaAccess, type AtendimentoPresencialRow } from '@/lib/atendimento-presencial/rascunhos'
 import { normalizarTelefone } from '@/lib/atendimento-presencial/telefone'
-import { prepararFichaRetorno, validarVendaDigital } from '@/lib/atendimento-presencial/negociacoes'
+import { explicarConflitoNegociacao, mensagemAtualizacao, prepararFichaRetorno, validarVendaDigital } from '@/lib/atendimento-presencial/negociacoes'
 import { normalizarDetalheParaFichaEdicao, type RegistroAtendimentoDetalheDTO } from '@/lib/atendimento-presencial/registros'
 import { normalizarNomeConsultora } from '@/lib/atendimento-presencial/ficha-schema'
 
@@ -21,6 +21,13 @@ export async function GET(request: Request) {
   const unidades = await listarUnidadesDoContexto(supabase, auth.allowedUser, perfil)
   if (!unidades.length) return erro('Nenhuma filial autorizada.', 403)
   const params = new URL(request.url).searchParams
+  if (params.has('origens')) {
+    const origens = (params.get('origens') ?? '').split(',').filter(Boolean)
+    if (!origens.length || origens.length > 100 || origens.some(id => !isUuid(id))) return erro('Identificadores inválidos.', 400)
+    const r = await supabase.rpc('atendimento_presencial_negociacoes_resumos', { p_executor: auth.allowedUser.id, p_origens: origens })
+    if (r.error) return erro('Não foi possível consultar a situação atual da negociação.', r.error.code === '42501' ? 403 : 503)
+    return NextResponse.json({ ok: true, resumos: r.data }, { headers: { 'Cache-Control': 'private, no-store' } })
+  }
   if (params.get('telefone')) { const telefone = normalizarTelefone(params.get('telefone')); if (telefone.valido) params.set('telefone', telefone.telefoneNormalizado!) }
   const pagina = Number(params.get('pagina') ?? 1)
   if (!Number.isSafeInteger(pagina) || pagina < 1) return erro('Página inválida.', 400)
@@ -29,8 +36,20 @@ export async function GET(request: Request) {
     const valor = params.get(campo)
     if (valor && (!/^\d{4}-\d{2}-\d{2}$/.test(valor) || !Number.isFinite(Date.parse(`${valor}T12:00:00Z`)) || new Date(`${valor}T12:00:00Z`).toISOString().slice(0, 10) !== valor)) return erro('Período inválido.', 400)
   }
-  const { data, error } = await supabase.rpc('atendimento_presencial_negociacoes_buscar', {
-    p_executor: auth.allowedUser.id, p_pagina: pagina, p_filtros: Object.fromEntries(params),
+  const candidatos = params.get('modo') === 'atendimentos'
+  if (candidatos && !isUuid(params.get('origemId'))) return erro('Identifique a negociação original.', 400)
+  if (params.get('unidadeId') && !isUuid(params.get('unidadeId'))) return erro('Filial inválida.', 400)
+  let resumoDaOrigem: import('@/lib/atendimento-presencial/negociacoes').ResumoNegociacao | undefined
+  if (params.get('origemId')) {
+    const id = params.get('origemId')!
+    const contexto = await supabase.rpc('atendimento_presencial_negociacoes_resumos', { p_executor: auth.allowedUser.id, p_origens: [id] })
+    if (contexto.error) return erro('Não foi possível identificar a negociação.', contexto.error.code === '42501' ? 403 : 503)
+    resumoDaOrigem = contexto.data?.[id]
+    if (contexto.data?.[id]?.origemId) params.set('origemId', contexto.data[id].origemId)
+    if (candidatos && resumoDaOrigem && resumoDaOrigem.situacao !== 'aberta') return erro(`Esta negociação já foi encerrada ${resumoDaOrigem.situacao === 'venda' ? 'com venda' : 'como perdida'}${resumoDaOrigem.encerradoEm ? ' em ' + new Date(resumoDaOrigem.encerradoEm).toLocaleString('pt-BR', {timeZone:'America/Sao_Paulo'}) : ''}. Consulte o registro no histórico antes de vincular outro atendimento.`, 409)
+  }
+  const { data, error } = await supabase.rpc(candidatos ? 'atendimento_presencial_negociacoes_candidatos' : 'atendimento_presencial_negociacoes_buscar', {
+    p_executor: auth.allowedUser.id, p_pagina: pagina, p_filtros: Object.fromEntries(params), ...(candidatos ? { p_origem: params.get('origemId') } : {}),
   })
   if (error) {
     console.error('[NEGOCIACOES GET]', { code: error.code })
@@ -38,6 +57,7 @@ export async function GET(request: Request) {
     if (['23514', '22P02', '22007', '22008'].includes(error.code)) return erro('Revise os filtros da consulta.', 400)
     return erro(error.code === 'PGRST202' ? 'A estrutura de negociações ainda não está instalada neste ambiente.' : 'Não foi possível consultar as negociações.', 503)
   }
+  if (resumoDaOrigem && data?.negociacoes?.length) data.negociacoes = data.negociacoes.map((linha: { origem_id: string }) => ({...linha, ...resumoDaOrigem}))
   const mutacao = await autorizarMutacao()
   const ficha = await requireAtendimentoPresencialFichaAccess()
   return NextResponse.json({ ok: true, ...data, unidades, podeGerir: mutacao.ok, podeCriarRetorno: ficha.ok }, { headers: { 'Cache-Control': 'private, no-store' } })
@@ -68,7 +88,25 @@ export async function POST(request: Request) {
   const supabase = createServiceClient()
   let rpc: string
   let args: Record<string, unknown>
-  if (p.acao === 'retorno') {
+  if (p.acao === 'anular' && isUuid(p.atendimentoId)) {
+    if (!Number.isInteger(p.version) || typeof p.motivo !== 'string' || p.motivo.trim().length < 2) return erro('Informe a versão e o motivo da anulação.', 422)
+    const registro = await supabase.from('atendimento_presencial_atendimentos').select('id,version,negociacao_origem_id').eq('id', p.atendimentoId).single()
+    const origem = await supabase.from('atendimento_presencial_negociacoes').select('origem_id').eq('id', registro.data?.negociacao_origem_id).single()
+    if (registro.error || origem.error || origem.data?.origem_id !== p.origemId) return erro('Venda digital incompatível com esta negociação.', 422)
+    const referencia = await supabase.from('atendimento_presencial_vendas_digitais').select('version').eq('atendimento_id', p.atendimentoId).single()
+    if (referencia.error) return erro('Não foi possível conferir a versão da venda.', 503)
+    if (referencia.data?.version !== p.version) {
+      const repetida = await supabase.from('atendimento_presencial_negociacao_eventos').select('id').eq('executor_id', auth.allowedUser.id).eq('operacao_id', p.operacaoId).maybeSingle()
+      if (repetida.error || !repetida.data) return erro('A venda foi alterada. Reabra os dados antes de anular.', 409)
+      // A RPC confere novamente identidade e motivo antes de devolver o replay.
+    }
+    rpc = 'atendimento_presencial_digital_anular'
+    args = { p_atendimento: p.atendimentoId, p_executor: auth.allowedUser.id, p_version: registro.data.version, p_operacao: p.operacaoId, p_motivo: p.motivo }
+  } else if (p.acao === 'associar') {
+    if (!isUuid(p.atendimentoId) || !Number.isInteger(p.version)) return erro('Selecione o atendimento e a versão.', 422)
+    rpc = 'atendimento_presencial_negociacao_associar_atendimento'
+    args = { p_origem: p.origemId, p_atendimento: p.atendimentoId, p_executor: auth.allowedUser.id, p_operacao: p.operacaoId, p_version: p.version }
+  } else if (p.acao === 'retorno' || p.acao === 'digital_integral') {
     const fichaAccess = await requireAtendimentoPresencialFichaAccess()
     if (!fichaAccess.ok) return fichaAccess.response
     if (!isUuid(p.unidadeId) || typeof p.consultora !== 'string' || !normalizarNomeConsultora(p.consultora)) return erro('Confirme a filial e a consultora do retorno.', 422)
@@ -85,8 +123,12 @@ export async function POST(request: Request) {
     const detalhe = { atendimento, criancas: resultados[1].data, departamentos: resultados[2].data, produtosInteresse: resultados[3].data, motivos: [] } as Pick<RegistroAtendimentoDetalheDTO, 'atendimento' | 'criancas' | 'departamentos' | 'produtosInteresse' | 'motivos'>
     const ficha = prepararFichaRetorno(normalizarDetalheParaFichaEdicao(detalhe))
     ficha.consultoraNome = normalizarNomeConsultora(p.consultora)
-    rpc = 'atendimento_presencial_negociacao_criar_retorno'
+    rpc = p.acao === 'digital_integral' ? 'atendimento_presencial_digital_criar' : 'atendimento_presencial_negociacao_criar_retorno'
     args = { p_origem: p.origemId, p_executor: auth.allowedUser.id, p_operacao: p.operacaoId, p_unidade: p.unidadeId, p_dados: ficha }
+    if (p.acao === 'digital_integral') {
+      if (!['whatsapp', 'telefone', 'outro'].includes(String(p.canal)) || typeof p.dataComercial !== 'string' || !Number.isFinite(Date.parse(p.dataComercial))) return erro('Confirme o canal e a data do fechamento.', 422)
+      args = { ...args, p_canal: p.canal, p_outro: typeof p.canalOutro === 'string' ? p.canalOutro : null, p_data: p.dataComercial }
+    }
   } else if (p.acao === 'corrigir_vinculo') {
     if (!isUuid(p.novaOrigemId) || !Number.isInteger(p.version) || !Number.isInteger(p.novaVersion) || typeof p.motivo !== 'string' || p.motivo.trim().length < 2) return erro('Selecione a negociação correta e informe o motivo.', 422)
     rpc = 'atendimento_presencial_negociacao_corrigir_vinculo'
@@ -97,8 +139,8 @@ export async function POST(request: Request) {
     args = { p_origem: p.origemId, p_executor: auth.allowedUser.id, p_operacao: p.operacaoId, p_version: p.version, p_acao: p.acao, p_dados: p.dados }
   } else if (p.acao === 'vincular') {
     if (!isUuid(p.vendaId) || !Number.isInteger(p.version)) return erro('Identifique a venda e a versão.', 422)
-    rpc = 'atendimento_presencial_negociacao_vincular'
-    args = { p_origem: p.origemId, p_venda: p.vendaId, p_executor: auth.allowedUser.id, p_operacao: p.operacaoId, p_version: p.version }
+    rpc = 'atendimento_presencial_negociacao_associar_atendimento'
+    args = { p_origem: p.origemId, p_atendimento: p.vendaId, p_executor: auth.allowedUser.id, p_operacao: p.operacaoId, p_version: p.version }
   } else if (['rascunho', 'concluir', 'corrigir', 'anular'].includes(String(p.acao))) {
     if (!isUuid(p.id) || !Number.isInteger(p.version) || Number(p.version) < 0) return erro('Identifique a venda digital e sua versão.', 422)
     let dados: unknown = p.dados
@@ -120,9 +162,16 @@ export async function POST(request: Request) {
   if (error) {
     console.error('[NEGOCIACOES POST]', { action: p.acao, code: error.code, origem: p.origemId })
     if (error.code === '42501') return erro('Sem permissão para esta operação.', 403)
-    if (error.code === 'P0003' || error.code === '23505') return erro('A negociação foi atualizada ou já possui encerramento. Seus dados foram preservados; consulte o estado atual.', 409)
+    if (error.code === 'P0003' || error.code === '23505') {
+      const contexto = await supabase.rpc('atendimento_presencial_negociacoes_resumos', { p_executor: auth.allowedUser.id, p_origens: [p.origemId] })
+      const resumo = contexto.error ? undefined : contexto.data?.[String(p.origemId)] as import('@/lib/atendimento-presencial/negociacoes').ResumoNegociacao | undefined
+      const encerrada = error.code === 'P0003' && resumo && resumo.situacao !== 'aberta'
+      const message = encerrada ? `Esta negociação já foi encerrada ${resumo.situacao === 'venda' ? 'com venda' : 'como perdida'}${resumo.encerradoEm ? ' em ' + new Date(resumo.encerradoEm).toLocaleString('pt-BR', {timeZone:'America/Sao_Paulo'}) : ''}. Consulte o registro no histórico. Seus rascunhos continuam salvos.` : explicarConflitoNegociacao(error.code, error.message ?? '')
+      return NextResponse.json({ok:false,message,contextoNegociacao:resumo}, {status:409})
+    }
+    if (error.message?.includes('lancamento_ja_utilizado') || error.message?.includes('venda_digital_existente')) return erro(explicarConflitoNegociacao(error.code, error.message), 422)
     if (['23514', '22P02', '22007', '22008', '22003'].includes(error.code)) return erro('Os dados não são compatíveis com esta negociação. Revise a cliente, a venda e o lançamento.', 422)
     return erro('Não foi possível salvar a operação.', 503)
   }
-  return NextResponse.json({ ok: true, resultado: data }, { headers: { 'Cache-Control': 'private, no-store' } })
+  return NextResponse.json({ ok: true, resultado: data, message: mensagemAtualizacao(String(p.acao), data) }, { headers: { 'Cache-Control': 'private, no-store' } })
 }

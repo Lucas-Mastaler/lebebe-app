@@ -5,7 +5,7 @@ import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
 
 export type FlowUnit = { id: string; chave: string; nome: string }
 export type FlowFilters = { de: string; ate: string; unidadeId: string; horaDe: number; horaAte: number; tipo: string; consultora: string; situacao: string }
-export type FlowRow = { id: string; unidade_id: string; status: string; versao_fluxo: number | null; tipo_atendimento: string | null; cliente_id: string | null; iniciado_em: string; concluido_em: string | null; consultora_nome: string | null; resultado_atendimento: string | null; motivo_visita: string | null }
+export type FlowRow = { natureza?: 'presencial' | 'digital'; id: string; unidade_id: string; status: string; versao_fluxo: number | null; tipo_atendimento: string | null; cliente_id: string | null; iniciado_em: string; concluido_em: string | null; consultora_nome: string | null; resultado_atendimento: string | null; motivo_visita: string | null }
 export type FlowRecord = { id: string; unidadeId: string; filial: string; iniciadoEm: string; concluidoEm: string | null; consultora: string; tipo: 'cliente' | 'nao_cliente'; resultado: string | null; motivo: string | null; duracaoMinutos: number | null; conclusaoOutroDia: boolean }
 export type Comparison = { chave: string; label: string; unidadeId?: string; hora?: number; grupos: number | null; gruposObservados: number; clientes: number; naoClientes: number; total: number; diferenca: number | null; cobertura: 'complete' | 'partial' | 'missing'; horasComDado: number; horasEsperadas: number }
 export type FlowDashboard = { filtros: FlowFilters; unidades: FlowUnit[]; consultoras: string[]; resumo: Comparison; porFilial: Comparison[]; porHora: Comparison[]; externo: Omit<ExternalFlow, 'hourly' | 'daily' | 'adjusted'>; diario: Array<{ dia: string; unidadeId: string; medido: number | null; ajustado: number | null; somaHoraria: number | null; divergente: boolean }>; avisos: string[]; pranchetasAtualizadasEm: string }
@@ -49,6 +49,7 @@ export function selectRecords(rows: FlowRow[], units: FlowUnit[], filters: FlowF
   const byUnit = new Map(units.map(unit => [unit.id, unit]))
   for (const row of rows) {
     const unit = byUnit.get(row.unidade_id)
+    if (row.natureza === 'digital') continue
     if (!unit || row.status !== 'concluido' || consultoraDeHomologacao(row.consultora_nome)) continue
     const tipo = classify(row)
     if (!tipo || !Number.isFinite(Date.parse(row.iniciado_em))) { invalid++; continue }

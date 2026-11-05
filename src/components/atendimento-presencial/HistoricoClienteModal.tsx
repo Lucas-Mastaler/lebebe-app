@@ -3,6 +3,7 @@
 import { IndicadorPv } from './ProdutosAtendimento'
 import { HistoricoEssenciaisCliente } from './HistoricoEssenciais'
 import { estruturarProduto, produtoNaoTrabalhado } from '@/lib/atendimento-presencial/produtos'
+import { ConsultarAtendimento } from './ConsultarAtendimento'
 import { DiagnosticosVendaSgi } from './VendaSgiAtendimento'
 import type { ResolucaoVendasSgi } from '@/lib/atendimento-presencial/vendas-sgi-diagnostico'
 
@@ -168,7 +169,7 @@ export function HistoricoAtendimentoCard({ item }: { item: HistoricoAtendimentoC
           <div className="rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 via-white to-info/10 p-3 sm:p-4">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-[1.2fr_1.1fr_1fr_1.25fr_1fr_auto] sm:items-center">
               <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-primary">Data de conclusão do atendimento</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-primary">{item.natureza === 'digital' ? 'Venda digital' : 'Visita presencial'}{item.vendaAnulada ? ' · Anulada' : ''}</p>
                 <p className="mt-1 font-bold text-slate-950">{formatarDataCurta(item.data)}</p>
               </div>
               <div className="min-w-0">
@@ -185,7 +186,7 @@ export function HistoricoAtendimentoCard({ item }: { item: HistoricoAtendimentoC
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Lançamento informado</p>
-                <p className="mt-1 break-words text-sm font-bold text-slate-950">{item.numeroLancamento ?? 'Não informado'}</p>
+                <ConsultarAtendimento id={item.id} label="Ver ficha completa" /><p className="mt-1 break-words text-sm font-bold text-slate-950">{item.numeroLancamento ?? 'Não informado'}</p>
               </div>
               <div className="col-span-2 flex items-center justify-end gap-1 text-xs font-semibold text-primary sm:col-span-1">
                 <HistoricoToggleDetalhes />
@@ -359,7 +360,7 @@ export function HistoricoClienteModal({ open, onOpenChange, cliente, atendimento
               <DiagnosticosVendaSgi diagnosticos={historicoCarregado.diagnosticosSgi} />
               <HistoricoSecao
                 icon={History}
-                title="Atendimentos presenciais anteriores"
+                title="Histórico de visitas e vendas digitais"
                 subtitle="Registros concluídos na Prancheta Virtual. Quantidades e vendas dos itens refletem o que foi preenchido no atendimento."
                 variant="blue"
               >

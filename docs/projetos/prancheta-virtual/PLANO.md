@@ -475,3 +475,66 @@ Autorização recebida em D-061. Backup/restauração, preflight e migrations pr
 - [x] Corrigir marcador digital informativo preservando contrato de quantidade/venda nulas e PV; SQL complementar aplicado após backup de 20 tabelas e ensaio isolado.
 - [x] 39 testes dirigidos, navegador desktop/mobile, PostgreSQL nativo, build e ESLint; sem novas regressões TypeScript.
 - [ ] Homologação manual autenticada pelo usuário; não efetuar vendas fictícias em produção.
+
+### D-063 — Correção integral da jornada
+
+- [x] Auditar fluxo e schema real; remover exclusivamente vínculo de teste autorizado, com validação atômica e preservação auditada.
+- [x] Preparar migration aditiva com preflight e suspensão não destrutiva: candidatos paginados compartilhados, associação de três resultados e resumo atual por lote.
+- [x] Reutilizar vinculação de venda e bloquear identidade/cronologia/conflitos/raízes próprias/reassociação; versionar/auditar operações definitivas sem bloquear rascunhos.
+- [x] Entrada A/B por negociação conhecida, escolhas de resultado/canal/visita e reaproveitamento de Prancheta/digital/perda.
+- [x] Busca de atendimentos existentes com prévia, confirmação do efeito, feedback específico e acesso ao associado.
+- [x] Situação comercial distinta do resultado original em card/detalhes; atualização imediata após mutações.
+- [x] Testes de domínio/API/PostgreSQL isolado/concorrência/D-060 e navegador desktop/mobile; lint/typecheck/baseline/build/diff.
+- [x] Consolidar resultados e checklist futuro sem publicar a correção local.
+
+### D-064 — Prancheta única
+- [x] Banco aditivo, contexto digital protegido, gate desativado e recuperação.
+- [x] Prancheta única, APIs, autosave/cache/identidade e conclusão atômica.
+- [x] Consumidores, histórico completo, correção/anulação e legado.
+- [x] Domínio/API/SQL nativo/concorrência/navegador, lint/typecheck/build/diff.
+
+Allowlist candidata D-063/D-064 (revisar hunks preexistentes do Harness na publicação; não incluir output, secrets ou outras frentes):
+
+- `scripts/prancheta/banco-negociacoes-isolado.mjs`
+- `scripts/prancheta/validar-negociacoes-browser.mjs`
+- `scripts/prancheta/validar-negociacoes-postgres.mjs`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/concluir/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/rascunho/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/[id]/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/rascunhos/route.ts`
+- `src/app/api/atendimento-presencial/atendimentos/route.ts`
+- `src/app/api/atendimento-presencial/fluxo-lojas/route.test.ts`
+- `src/app/api/atendimento-presencial/negociacoes/route.test.ts`
+- `src/app/api/atendimento-presencial/negociacoes/route.ts`
+- `src/app/atendimento-presencial/prancheta/FichaPageClient.tsx`
+- `src/app/atendimento-presencial/registros/RegistrosPageClient.tsx`
+- `src/components/atendimento-presencial/DetalhesAtendimentoDialog.tsx`
+- `src/components/atendimento-presencial/HistoricoClienteModal.tsx`
+- `src/components/atendimento-presencial/NegociacoesPanel.tsx`
+- `src/lib/atendimento-presencial/fluxo-lojas-server.ts`
+- `src/lib/atendimento-presencial/fluxo-lojas.ts`
+- `src/lib/atendimento-presencial/historico-cliente.ts`
+- `src/lib/atendimento-presencial/negociacoes.test.ts`
+- `src/lib/atendimento-presencial/negociacoes.ts`
+- `src/lib/atendimento-presencial/rascunho-cache.ts`
+- `src/lib/atendimento-presencial/rascunhos-shared.ts`
+- `src/lib/atendimento-presencial/rascunhos.ts`
+- `src/components/atendimento-presencial/NegociacaoJornada.tsx`
+- `src/components/atendimento-presencial/ConsultarAtendimento.tsx`
+- `src/components/atendimento-presencial/SituacaoNegociacao.tsx`
+- `supabase/migrations/20261104193112_prancheta_negociacoes_fluxo_explicito.sql`
+- `supabase/migrations/20261105130000_prancheta_unica_digital.sql`
+- `scripts/prancheta/validar-digital-integral.mjs`
+- `scripts/prancheta/sql/suspender-fluxo-negociacoes-d063.sql`
+- `scripts/prancheta/sql/suspender-prancheta-digital-integral.sql`
+- Harness: ESCOPO.md, DECISOES.md, PLANO.md e STATUS.md do projeto prancheta-virtual, somente hunks desta funcionalidade.
+
+### Publicação coordenada D-063/D-064 — 05/11/2026
+
+- [x] Autorização de produção, backup atualizado e restauração isolada.
+- [x] Build completo do candidato final e validação SQL final.
+- [x] Aplicar somente migrations D-063/D-064; verificar dados/ACL/gate desativado.
+- [ ] Commit/push seletivos, deploy READY e ativação coordenada.
+- [ ] Verificações básicas de produção; homologação manual separada.
+
+Allowlist complementar: src/components/atendimento-presencial/AcaoNegociacao.tsx, componente visual compartilhado pelos cards aprovados.

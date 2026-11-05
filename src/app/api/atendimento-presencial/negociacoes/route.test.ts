@@ -40,6 +40,7 @@ beforeAll(async () => {
   await db.exec('GRANT ALL ON atendimento_presencial_negociacoes,atendimento_presencial_negociacao_retornos,atendimento_presencial_vendas_digitais,atendimento_presencial_negociacao_encerramentos,atendimento_presencial_negociacao_eventos TO service_role')
   await db.exec(readFileSync('supabase/migrations/20261104175043_prancheta_negociacoes_acl_service.sql', 'utf8'))
   await db.exec(readFileSync('supabase/migrations/20261104180238_prancheta_negociacoes_marcador_produto.sql', 'utf8'))
+  await db.exec(readFileSync('supabase/migrations/20261104193112_prancheta_negociacoes_fluxo_explicito.sql', 'utf8'))
 }, 30000)
 afterAll(async () => { if (db) await db.close() })
 beforeEach(async () => {
@@ -66,6 +67,56 @@ beforeEach(async () => {
 })
 
 describe.skipIf(!existsSync(runtimeSql))('API e PostgreSQL isolado de negociações (runtime SQL opcional)', () => {
+  it.each(['sim', 'nao', 'negociacao'])('D-063 associa atendimento existente %s sem criar visita ou alterar histórico', async resultado => {
+    const alvo = uuid()
+    await db.query("insert into atendimento_presencial_atendimentos(id,cliente_id,consultora_usuario_id,unidade_id,status,resultado_atendimento,iniciado_em,concluido_em,numero_lancamento) values($1,$2,$3,$4,'concluido',$5,now(),now(),$6)", [alvo, cliente, usuario, unidade, resultado, resultado === 'sim' ? contador++ : null])
+    const antes = await db.query('select to_jsonb(a) snapshot from atendimento_presencial_atendimentos a where id=any($1::uuid[]) order by id', [[origem, alvo]])
+    const total = await contar('atendimento_presencial_atendimentos')
+    const body = { acao: 'associar', origemId: origem, atendimentoId: alvo, operacaoId: uuid(), version: 1 }
+    const response = await pedido(body)
+    expect(response.status).toBe(200)
+    const r = await response.json()
+    expect(r.message).toBe(resultado === 'sim' ? 'Negociação encerrada com venda.' : resultado === 'nao' ? 'Negociação encerrada como perdida.' : 'Retorno vinculado. Negociação continua aberta.')
+    expect(r.resultado.atendimentoId).toBe(alvo)
+    expect((await pedido(body)).status).toBe(200)
+    expect((await pedido({ ...body, operacaoId: uuid() })).status).toBe(409)
+    expect(await contar('atendimento_presencial_atendimentos')).toBe(total)
+    expect(await db.query('select to_jsonb(a) snapshot from atendimento_presencial_atendimentos a where id=any($1::uuid[]) order by id', [[origem, alvo]])).toEqual(antes)
+    const resumo = await (await GET(new Request(`http://local?origens=${origem}`))).json()
+    expect(resumo.resumos[origem].situacao).toBe(resultado === 'sim' ? 'venda' : resultado === 'nao' ? 'perda' : 'aberta')
+    if (resultado === 'negociacao') {
+      const contexto = await (await GET(new Request(`http://local?origemId=${alvo}`))).json()
+      expect(contexto.negociacoes[0].origem_id).toBe(origem)
+    }
+  })
+  it('D-063 consulta candidatos entre filiais, antes de paginar, sem misturar clientes ou rascunhos', async () => {
+    const outra = uuid()
+    await db.query("insert into app_unidades(id,ativo,nome) values($1,true,'Portão')", [outra])
+    for (let i = 0; i < 23; i++) await db.query("insert into atendimento_presencial_atendimentos(id,cliente_id,consultora_usuario_id,unidade_id,status,resultado_atendimento,iniciado_em,concluido_em) values($1,$2,$3,$4,'concluido','negociacao',now(),now())", [uuid(), cliente, usuario, outra])
+    const r1 = await (await GET(new Request(`http://local?modo=atendimentos&origemId=${origem}&unidadeId=${outra}&resultado=negociacao`))).json()
+    const r2 = await (await GET(new Request(`http://local?modo=atendimentos&origemId=${origem}&unidadeId=${outra}&resultado=negociacao&pagina=2`))).json()
+    expect(r1.total).toBe(23); expect(r1.atendimentos).toHaveLength(20); expect(r2.atendimentos).toHaveLength(3)
+    expect(new Set([...r1.atendimentos, ...r2.atendimentos].map((c: { id: string }) => c.id)).size).toBe(23)
+    expect(r1.atendimentos.every((c: { filial: string; bloqueio: string | null }) => c.filial === 'Portão' && !c.bloqueio)).toBe(true)
+  })
+  it('D-063 rejeita identidade, cronologia, rascunho e acompanhamento próprio', async () => {
+    const outroCliente = uuid()
+    await db.query("insert into atendimento_presencial_clientes(id,status) values($1,'ativo')", [outroCliente])
+    for (const caso of ['cliente', 'data', 'rascunho', 'raiz']) {
+      const alvo = uuid()
+      await db.query("insert into atendimento_presencial_atendimentos(id,cliente_id,consultora_usuario_id,unidade_id,status,resultado_atendimento,iniciado_em,concluido_em,dados_rascunho) values($1,$2,$3,$4,$5,CASE WHEN $5='concluido' THEN 'negociacao' ELSE NULL END,$6,CASE WHEN $5='concluido' THEN now() ELSE NULL END,$7)", [alvo, caso === 'cliente' ? outroCliente : cliente, usuario, unidade, caso === 'rascunho' ? 'rascunho' : 'concluido', caso === 'data' ? '2020-01-01T00:00:00Z' : new Date().toISOString(), { criancas: [], essenciais: {}, versaoEssenciais: 1 }])
+      if (caso === 'raiz') await db.query('select atendimento_presencial_negociacao_materializar($1,$2)', [alvo, usuario])
+      expect((await pedido({ acao: 'associar', origemId: origem, atendimentoId: alvo, operacaoId: uuid(), version: 1 })).status).toBe(caso === 'raiz' ? 409 : 422)
+    }
+    expect((await (await GET(new Request(`http://local?origens=${origem}`))).json()).resumos[origem].situacao).toBe('aberta')
+  })
+  it('D-063 concorrência não permite o mesmo atendimento em duas negociações', async () => {
+    const outraOrigem = uuid(), alvo = uuid()
+    await db.query("insert into atendimento_presencial_atendimentos(id,cliente_id,consultora_usuario_id,unidade_id,status,resultado_atendimento,iniciado_em,concluido_em) values($1,$2,$3,$4,'concluido','negociacao',now()-interval '2 days',now()-interval '2 days'),($5,$2,$3,$4,'concluido','nao',now(),now())", [outraOrigem, cliente, usuario, unidade, alvo])
+    const rs = await Promise.all([origem, outraOrigem].map(id => pedido({ acao: 'associar', origemId: id, atendimentoId: alvo, operacaoId: uuid(), version: 1 })))
+    expect(rs.map(r => r.status).sort()).toEqual([200, 409])
+    expect((await db.query('select count(*)::int total from atendimento_presencial_negociacao_encerramentos where atendimento_id=$1 and not anulado', [alvo])).rows[0].total).toBe(1)
+  })
   it('conclui digital com marcador informativo sem contá-lo como produto vendido', async () => {
     const dados = digital()
     const response = await pedido({ acao: 'concluir', origemId: origem, operacaoId: uuid(), id: vendaId, version: 0, dados: { ...dados, produtos: [...dados.produtos, { descricao: 'PRODUTO QUE NAO TRABALHAMOS', quantidade: null, vendido: null }] } })
@@ -238,6 +289,10 @@ describe.skipIf(!existsSync(runtimeSql))('API e PostgreSQL isolado de negociaç�
       await db.query('insert into app_usuarios_unidades values($1,$2)', [executor, outra])
       const consulta = (await db.query('select atendimento_presencial_negociacoes_buscar($1,1,$2) r', [executor, { origemId: origem }])).rows[0].r as { negociacoes: unknown[] }
       expect(consulta.negociacoes).toHaveLength(1)
+      const resumo = (await db.query('select atendimento_presencial_negociacoes_resumos($1,$2) r', [executor, [origem]])).rows[0].r as Record<string, { situacao: string }>
+      expect(resumo[origem].situacao).toBe('venda')
+      const candidatos = (await db.query('select atendimento_presencial_negociacoes_candidatos($1,$2,1,$3) r', [executor, origem, {}])).rows[0].r as { total: number }
+      expect(Number(candidatos.total)).toBeGreaterThanOrEqual(0)
       await expect(db.query('select atendimento_presencial_negociacao_digital($1,$2,$3,$4,$5,$6,$7,$8)', [origem, executor, uuid(), 'corrigir', vendaId, concluida.resultado.version, dados, 'Não autorizado'])).rejects.toMatchObject({ code: '42501' })
       if (perfil === 'supervisora_loja') {
         await db.query('insert into app_usuarios_unidades values($1,$2)', [executor, unidade])

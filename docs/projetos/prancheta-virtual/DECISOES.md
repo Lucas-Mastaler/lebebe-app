@@ -249,3 +249,17 @@ Usuário pediu que o modal de venda digital siga a imagem anexada: cabeçalho de
 ## D-062 — Atualização comercial diretamente no card (04/11/2026)
 
 Usuário solicitou o botão Atualizar situação da negociação no card de Registros, entre Ver atendimento e Editar atendimento, seguindo a imagem. A ação reutiliza NegociacoesPanel com o ID exato da negociação, sem abrir a edição ou criar outro fluxo. Exibir em visitas cujo resultado original é negociação; consultar o estado comercial atual ao clicar. Desktop com três colunas, celular com ações empilhadas. Commit solicitado explicitamente; autorização de publicação D-061 permanece vigente.
+
+## D-063 — Fluxo explícito e atendimento existente nos três resultados (04/11/2026)
+
+Auditoria aprovada e correção completa local autorizada pelo anexo 276e3883-b61c-42f6-af1e-d81e4f1bd0e9. Entrada por negociação conhecida oferece Vincular atendimento existente ou Registrar atualização agora. Vincular venda encerra com venda; perda encerra com perda; negociação associa retorno mantendo aberta. Não criar visita, alterar resultado original, duplicar PV/venda ou mover registro de outra negociação. Atualização nova distingue venda presencial/digital, retorno em negociação e perda com/sem visita, reutilizando componentes existentes. Card separa resultado histórico e situação atual, atualiza após ação e mostra feedback específico. D-060 preservada integralmente. Novas RPCs/migration somente locais, sem commit/push/deploy/migration remota até autorização posterior.
+
+Única mutação produtiva autorizada: desfazer o vínculo de teste de 04/11/2026 15:19:52 BRT. Identidade/evento/encerramento/versão e ausência de dependências conferidos em transação; RPC existente de desvinculação executada com motivo. Encerramento soft-anulado, negociação versão 3 sem encerramento ativo, eventos vincular/desvincular mantidos. Hashes dos atendimentos/cliente/produtos/crianças/departamentos/motivos/histórico vinculados idênticos antes/depois. Nenhum outro registro comercial autorizado.
+
+## D-064 — Prancheta única presencial/digital (05/11/2026)
+
+Aprovada alternativa A pelo anexo 03f322b9-8995-4b44-9ba3-3b74d8b6f1ed. Usar literalmente FichaPageClient e ciclo oficial de rascunho, crianças, essenciais, produtos/PV, conclusão e histórico. Natureza/canal protegidos no banco; digital nasce da negociação e não troca cliente nem conclui como Não cliente/negociação/perda. Encerramento digital transacional; registros antigos legíveis, sem backfill fictício. Todas as contagens físicas excluem digital antes da paginação/totalização. Ações: Encerrar negociação (venda/perda), Registrar nova visita e Vincular atendimento existente. D-060 integral. Correção/anulação auditadas não revertem automaticamente respostas posteriores. Implementação e testes exclusivamente locais; nenhuma migration remota, dado comercial real, commit/push/deploy autorizados. D-063 local deve ser integrada, sem reaplicar migrations remotas existentes.
+
+### Publicação D-063/D-064 autorizada (05/11/2026)
+
+Usuário autorizou explicitamente migration, commit/push na main e deploy em produção após aprovar os fluxos e o modal. Publicar somente o pacote da Prancheta, com backup atualizado/restauração isolada, preservação das linhas existentes, ACL e gate digital ativado apenas após deploy compatível READY. Sem novos testes comerciais em produção; homologação manual autenticada permanece separada.

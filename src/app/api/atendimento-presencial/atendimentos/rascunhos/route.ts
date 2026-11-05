@@ -24,6 +24,7 @@ import type { AtendimentoPresencialDTO } from '@/lib/atendimento-presencial/rasc
 export const runtime = 'nodejs'
 
 const SELECT_RASCUNHO = [
+  'natureza', 'negociacao_origem_id', 'canal_digital', 'data_comercial', 'venda_anulada',
   'id',
   'cliente_id',
   'consultora_usuario_id',

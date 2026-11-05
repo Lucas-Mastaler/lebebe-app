@@ -18,6 +18,12 @@ export type ConsultoraAtendimento = {
 export type StatusAtendimentoPresencial = 'rascunho' | 'concluido'
 
 export type AtendimentoPresencialDTO = {
+  natureza?: 'presencial' | 'digital'
+  negociacaoOrigemId?: string | null
+  canalDigital?: string | null
+  canalDigitalOutro?: string | null
+  dataComercial?: string | null
+  vendaAnulada?: boolean
   versaoEssenciais?: number | null
   id: string
   clienteId: string | null

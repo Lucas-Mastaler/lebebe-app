@@ -4,6 +4,22 @@ import { chaveProduto, produtoNaoTrabalhado, estruturarProduto, QUANTIDADE_PRODU
 export const CANAIS_DIGITAIS = ['whatsapp', 'telefone', 'outro'] as const
 export type CanalDigital = typeof CANAIS_DIGITAIS[number]
 export type SituacaoNegociacao = 'aberta' | 'venda' | 'perda'
+export type ResumoNegociacao = { origemId: string; situacao: SituacaoNegociacao; canal: string | null; encerradoEm: string | null; atendimentoId: string | null; rascunhos?: number }
+export function explicarConflitoNegociacao(code: string, message: string) {
+  if (message.includes('negociacao_encerrada')) return 'Esta negociação já foi encerrada com uma venda ou perda concluída. Consulte o histórico para ver o registro. Seus rascunhos continuam salvos.'
+  if (message.includes('lancamento_ja_utilizado') || message.includes('venda_digital_existente') || (code === '23505' && message.includes('numero_lancamento'))) return 'Este número de lançamento já está registrado nesta filial. Confira o lançamento antes de continuar.'
+  if (message.includes('atendimento_ja_associado') || message.includes('origem_ja_associada')) return 'Este atendimento já está vinculado a uma negociação. Consulte o vínculo antes de continuar.'
+  if (code === '23505') return 'Esta ação pode já estar registrada. Reabra a negociação e confira o histórico antes de tentar novamente. Um rascunho em aberto não causa esse bloqueio.'
+  return 'Esta tela ficou desatualizada após uma alteração na negociação. Reabra a negociação para carregar os dados atuais. Os rascunhos existentes continuam salvos.'
+}
+export function efeitoVinculacao(resultado: string) {
+  return resultado === 'sim' ? 'Esta venda encerrará a negociação.' : resultado === 'nao' ? 'Este atendimento encerrará a negociação como perdida.' : 'Este retorno será vinculado e a negociação continuará aberta.'
+}
+export function mensagemAtualizacao(acao: string, resultado?: { resultado?: string }) {
+  if (acao === 'associar') return resultado?.resultado === 'sim' ? 'Negociação encerrada com venda.' : resultado?.resultado === 'nao' ? 'Negociação encerrada como perdida.' : 'Retorno vinculado. Negociação continua aberta.'
+  const mensagens: Record<string, string> = { vincular: 'Negociação encerrada com venda.', retorno: 'Atendimento presencial vinculado. O rascunho não encerra a negociação.', rascunho: 'Rascunho digital salvo.', concluir: 'Venda digital registrada. Negociação encerrada com venda.', corrigir: 'Venda digital corrigida.', anular: 'Venda digital anulada. Negociação reaberta.', perda: 'Negociação encerrada como perdida.', desvincular: 'Vínculo removido. Negociação reaberta.', corrigir_vinculo: 'Vínculo corrigido.' }
+  return mensagens[acao] || 'Atualização concluída.'
+}
 export type VendaDigital = {
   clienteId: string; negociacaoId: string; unidadeId: string; consultora: string
   canal: CanalDigital; canalOutro?: string; fechadoEm: string; numeroLancamento: number

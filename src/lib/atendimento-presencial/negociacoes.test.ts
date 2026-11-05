@@ -1,9 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { decidirConclusaoRetorno, prepararFichaRetorno, validarVendaDigital } from './negociacoes'
+import { decidirConclusaoRetorno, efeitoVinculacao, explicarConflitoNegociacao, mensagemAtualizacao, prepararFichaRetorno, validarVendaDigital } from './negociacoes'
 import type { FichaDadosRascunho } from './ficha-schema'
 
 const id = '10000000-0000-4000-8000-000000000001'
 const agora = new Date('2026-11-04T18:00:00Z')
+it('distingue tela desatualizada, duplicidade e encerramento efetivo', () => {
+  expect(explicarConflitoNegociacao('P0003', 'version_conflict')).toContain('desatualizada')
+  expect(explicarConflitoNegociacao('P0003', 'version_conflict')).not.toContain('já foi encerrada')
+  expect(explicarConflitoNegociacao('23505', 'duplicate key')).toContain('ação pode já estar registrada')
+  expect(explicarConflitoNegociacao('P0003', 'negociacao_encerrada')).toContain('venda ou perda concluída')
+})
+
+it.each([
+  ['sim', 'Esta venda encerrará a negociação.', 'Negociação encerrada com venda.'],
+  ['nao', 'Este atendimento encerrará a negociação como perdida.', 'Negociação encerrada como perdida.'],
+  ['negociacao', 'Este retorno será vinculado e a negociação continuará aberta.', 'Retorno vinculado. Negociação continua aberta.'],
+])('explica o efeito e confirma a associação %s', (resultado, efeito, mensagem) => {
+  expect(efeitoVinculacao(resultado)).toBe(efeito)
+  expect(mensagemAtualizacao('associar', { resultado })).toBe(mensagem)
+})
 const venda = { clienteId: id, negociacaoId: id, unidadeId: id, consultora: 'ANA', canal: 'whatsapp',
   fechadoEm: '2026-11-04T14:00:00-03:00', numeroLancamento: '123456', observacoes: '',
   produtos: [{ descricao: 'Berço', quantidade: 2, vendido: true }] }

@@ -52,7 +52,7 @@ async function carregarConsultorasFinalizados(
     let query = supabase
       .from('atendimento_presencial_atendimentos')
       .select('consultora_nome')
-      .eq('status', 'concluido')
+      .eq('status', 'concluido').eq('natureza', 'presencial')
       .not('consultora_nome', 'is', null)
 
     if (contexto.perfil === 'consultora') {
@@ -180,7 +180,7 @@ export async function GET(request: Request) {
     let query = loaded.supabase
       .from('atendimento_presencial_atendimentos')
       .select(SELECT_ATENDIMENTO)
-      .eq('status', 'concluido')
+      .eq('status', 'concluido').eq('natureza', 'presencial')
 
     if (situacaoVenda) {
       query = query.eq('resultado_atendimento', situacaoVenda)

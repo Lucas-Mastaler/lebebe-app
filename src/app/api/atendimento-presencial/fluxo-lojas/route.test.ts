@@ -16,7 +16,7 @@ vi.mock('@/lib/supabase/service',()=>({createServiceClient:()=>({from:(table:str
     gte:()=>query,lt:()=>query,order:()=>query,range:(a:number,b:number)=>{from=a;to=b;return query},
     maybeSingle:async()=>{const result = await query; return {data:result.data[0]??null,error:result.error}},
     then:(resolve:(value:{data:Array<Record<string,unknown>>;error:unknown})=>unknown)=>{
-      let rows: Array<Record<string,unknown>> = table==='app_unidades'?[unitM,unitP,{id:'feira',chave:'feira',nome:'Feira'}]:table==='app_usuarios_unidades'?[{unidade_id:unitM.id}]:table==='atendimento_presencial_atendimentos'?state.rows:table==='atendimento_presencial_clientes'?[{id:'private-client-id',nome:'Cliente sintética',telefone_informado:'41999990000'}]:[]
+      let rows: Array<Record<string,unknown>> = table==='app_unidades'?[unitM,unitP,{id:'feira',chave:'feira',nome:'Feira'}]:table==='app_usuarios_unidades'?[{unidade_id:unitM.id}]:table==='atendimento_presencial_atendimentos'?state.rows.map(row=>({natureza:'presencial',...row})):table==='atendimento_presencial_clientes'?[{id:'private-client-id',nome:'Cliente sintética',telefone_informado:'41999990000'}]:[]
       if(table==='atendimento_presencial_essenciais_snapshots') rows=state.snapshots
       if(table==='atendimento_presencial_atendimentos'||table==='atendimento_presencial_clientes'||table==='atendimento_presencial_essenciais_snapshots') rows=rows.filter(row=>call.filters.every(([op,key,value])=>op==='eq'?row[key]===value:(value as unknown[]).includes(row[key])))
       return Promise.resolve({data:rows.slice(from,to+1),error:state.fail?{message:'privado'}:null}).then(resolve)
@@ -35,6 +35,13 @@ const base = {id:'51f795e3-5466-41cb-9887-32659775f67a',unidade_id:unitM.id,stat
 const url='http://localhost/api/atendimento-presencial/fluxo-lojas?de=2026-10-19&ate=2026-10-19&horaDe=10&horaAte=12'
 beforeEach(()=>{state.perfil='gestao';state.moduleAllowed=true;state.windowAllowed=true;state.calls=[];state.snapshots=[];state.fail=false;state.rows=[base,{...base,id:'c75501a1-e4dc-4a32-985a-266900d3c36f',unidade_id:unitP.id},{...base,id:'test',consultora_nome:'HOMOLOGACAO TESTE'},{...base,id:'draft',status:'rascunho'}];vi.clearAllMocks()})
 describe('API real com Supabase e REST simulados: isolamento por unidade',()=>{
+  it('exclui digitais antes de totalizar e paginar, mesmo com centenas de fechamentos',async()=>{
+    state.rows=[...Array.from({length:600},(_,i)=>({...base,id:`digital-${i}`,natureza:'digital'})),base]
+    const response=await tableGET(new Request(url));const body=await response.json()
+    expect(response.status).toBe(200)
+    expect(JSON.stringify(body)).not.toContain('digital-')
+    expect(state.calls.filter(c=>c.table==='atendimento_presencial_atendimentos').every(c=>c.filters.some(([op,key,value])=>op==='eq'&&key==='natureza'&&value==='presencial'))).toBe(true)
+  })
   it('inclui essenciais somente do atendimento já autorizado, sem ler snapshots de outra unidade',async()=>{
     state.perfil='supervisora_loja';state.rows=[{...base,versao_essenciais:1},{...base,id:'c75501a1-e4dc-4a32-985a-266900d3c36f',unidade_id:unitP.id,versao_essenciais:1}]
     state.snapshots=[{atendimento_id:base.id,crianca_id:'child',nome:'Criança sintética',fase:0,respostas:[{produto:'banheira',resposta:'nao',confirmada:true}],filial:'Marechal',consultora:'ANA',registrado_em:'2026-10-20T14:00:00Z'},{atendimento_id:'outro',nome:'Não pode aparecer'}]

@@ -405,14 +405,16 @@ export async function PATCH(
     }
 
     const usarRpcComEssenciais = row.versao_essenciais === 1 && alteracoesEssenciais.length > 0
-    const { data: rpcData, error: rpcError } = await loaded.supabase.rpc(usarRpcComEssenciais ? 'atendimento_presencial_editar_concluido_com_essenciais' : 'atendimento_presencial_editar_concluido', {
+    const digital = row.natureza === 'digital'
+    if (digital && (typeof payload.motivoDigital !== 'string' || payload.motivoDigital.trim().length < 2)) return jsonErro('Informe o motivo da correção da venda digital.', 422)
+    const { data: rpcData, error: rpcError } = await loaded.supabase.rpc(digital ? 'atendimento_presencial_digital_editar' : usarRpcComEssenciais ? 'atendimento_presencial_editar_concluido_com_essenciais' : 'atendimento_presencial_editar_concluido', {
       p_atendimento_id: id,
       p_expected_version: expectedVersion,
       p_usuario_id: loaded.contexto.usuarioId,
       p_dados: dadosEdicao,
       p_numero_lancamento: validacaoConclusao.numeroLancamento,
       p_consultora_nome: consultoraNome || null,
-      ...(usarRpcComEssenciais ? { p_essenciais: alteracoesEssenciais } : {}),
+      ...(digital ? { p_essenciais: alteracoesEssenciais, p_metadados: payload.metadadosDigitais ?? {}, p_motivo: payload.motivoDigital } : usarRpcComEssenciais ? { p_essenciais: alteracoesEssenciais } : {}),
     })
 
     if (rpcError) {

@@ -510,12 +510,13 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   // Revisão legada volta à primeira etapa sem apagar dados.
+  const modoDigital = ativo?.natureza === 'digital'
   const temProdutoVendidoNoAtendimento = temProdutoVendido(ficha.produtosInteresse)
   const etapaAtual = !temProdutoVendidoNoAtendimento && ficha.etapaAtual === 'resultado' && ficha.tipoAtendimento === 'cliente'
     && (ficha.resultadoAtendimento === 'nao' || ficha.resultadoAtendimento === 'negociacao') ? 'resultado' : 'ficha'
   const etapaNumero = etapaAtual === 'resultado' ? 2 : 1
   const camposComerciaisVisiveis = ficha.tipoAtendimento === 'cliente'
-  const etapaLabelAtual = etapaLabels[etapaAtual]
+  const etapaLabelAtual = modoDigital ? 'Venda fechada digitalmente' : etapaLabels[etapaAtual]
   const acaoResultadoOcupada = concluindo || resultadoEmValidacao !== null
   const barraAcaoVisivel = rodapeVisivel || acaoResultadoOcupada || Boolean(mensagemConclusao)
   const unidadesParaSelecao = useMemo(() => contexto?.unidadesPermitidas ?? [], [contexto])
@@ -780,6 +781,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
       const ok = salvarCacheRascunho(window.localStorage, {
         draftClientId: rascunho?.draftClientId ?? draftClientIdRef.current,
         usuarioId, atendimentoId: rascunho?.id ?? null,
+        natureza: rascunho?.natureza ?? 'presencial',
         version: version ?? fila?.getVersion() ?? rascunho?.version ?? null,
         clienteId: clienteIdRef.current, unidadeId: unidadeIdRef.current, editorId: obterEditorId(),
         dadosRascunho: fichaRef.current, entradasLocais: entradasLocaisRef.current,
@@ -1217,6 +1219,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   function trocarCliente() {
+    if (modoDigital) return
     if (telefonePendente) { setErroTelefone('Salve ou descarte a edicao do telefone antes de trocar a cliente.'); return }
     ++clienteRequestRef.current
     definirClienteId(null)
@@ -1347,6 +1350,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   async function escolherResultado(resultado: ResultadoAtendimento) {
+    if (modoDigital && (resultado !== 'sim' || !temProdutoVendidoNoAtendimento)) { setErro('Marque pelo menos um produto vendido para concluir esta venda digital.'); return }
     if (concluindoRef.current || validandoResultadoRef.current) return
     const trocou = ficha.resultadoAtendimento !== resultado
     const proximaFicha: FichaDadosRascunho = { ...ficha, versaoFluxo: 2, resultadoAtendimento: resultado, ...(trocou ? { motivosResultado: [], lojasMotivos: undefined, motivoOutro: undefined, viradaCartaoDia: undefined, viradaCartaoMes: undefined } : {}) }
@@ -1514,8 +1518,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
   }
 
   function atualizarNumeroLancamento(valor: string) {
-    setNumeroLancamento(valor)
-    const validacao = validarNumeroLancamento(valor)
+    const digitos = valor.replace(/\D/g, '').slice(0, 6)
+    setNumeroLancamento(digitos)
+    const validacao = validarNumeroLancamento(digitos)
     const tinhaErro = errosValidacao.some((item) => item.fieldId === 'numero-lancamento')
     if (!tinhaErro) return
     const restantes = errosValidacao.filter((item) => item.fieldId !== 'numero-lancamento')
@@ -1990,8 +1995,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
     </Dialog><PageContainer>
       <FormPageContent ref={formContentRef} className="max-w-3xl space-y-5" style={actionBarHeight ? { paddingBottom: `${actionBarHeight + 24}px` } : undefined}>
         <PageHeader
-          eyebrow="Atendimento presencial"
-          title="Prancheta Virtual de Atendimento"
+          eyebrow={modoDigital ? 'Atendimento Digital' : 'Atendimento presencial'}
+          title={modoDigital ? "Venda fechada digitalmente" : "Prancheta Virtual de Atendimento"}
           action={
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <Button
@@ -2047,7 +2052,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
         </Alert>}
         {erroCliente && !conflitoLocal && <Alert tone="warning">{erroCliente}
           <Button type="button" variant="secondary" size="sm" onClick={() => void carregarClientePorId(clienteIdRef.current)}>Carregar cliente novamente</Button>
-          <Button type="button" variant="ghost" size="sm" onClick={trocarCliente}>Trocar cliente</Button>
+          <Button type="button" variant="ghost" size="sm" disabled={modoDigital} onClick={trocarCliente}>Trocar cliente</Button>
         </Alert>}
         {conflitoLocal && <Alert id="alerta-conflito-prancheta" tabIndex={-1} tone="danger">
           <p>Este rascunho foi alterado em outra sessao. Escolha qual versao deseja continuar.</p>
@@ -2161,7 +2166,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
               <SecaoFicha id="secao-tipo" titulo="Tipo de atendimento" icon={UserRound} erro={erroSecao('secao-tipo')}>
                 <div className="grid grid-cols-2 gap-2">
                   {([{ chave: 'cliente', label: 'Cliente' }, { chave: 'nao_cliente', label: 'Não cliente' }] as const).map((item) => (
-                    <OpcaoButton key={item.chave} selected={ficha.tipoAtendimento === item.chave} onClick={() => {
+                    <OpcaoButton disabled={modoDigital && item.chave !== 'cliente'} key={item.chave} selected={ficha.tipoAtendimento === item.chave} onClick={() => {
                       setErro(null)
                       setErrosValidacao([])
                       setErroEtapa(null)
@@ -2216,7 +2221,7 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                       {clienteSelecionada.telefoneFormatado && <p className="text-sm text-slate-700">{clienteSelecionada.telefoneFormatado}</p>}
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button type="button" variant="secondary" size="sm" disabled={Boolean(telefonePendente) || salvandoTelefone} onClick={() => setEditandoCliente(true)}>Editar cliente</Button>
-                        <Button type="button" variant="secondary" size="sm" onClick={trocarCliente}>
+                        <Button type="button" variant="secondary" size="sm" disabled={modoDigital} onClick={trocarCliente}>
                           Trocar cliente
                         </Button>
                         <Button type="button" variant="secondary" size="sm" onClick={() => setHistoricoAberto(true)}>
@@ -2688,6 +2693,8 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                           }}
                           className="h-12 text-base"
                           inputMode="numeric"
+                          maxLength={6}
+                          pattern="[0-9]*"
                           placeholder="Informe o lancamento"
                         />
                       )}
@@ -2720,9 +2727,9 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
               {etapaAtual === 'resultado' && <Button type="button" variant="secondary" onClick={voltar} disabled={concluindo} size="lg"><ChevronLeft className="size-4" aria-hidden="true" />Voltar</Button>}
               {mensagemConclusao ? (
                 <Button type="button" disabled className="min-h-12 flex-1 bg-success text-white disabled:opacity-100"><Check className="size-4" aria-hidden="true" />Atendimento concluído</Button>
-              ) : etapaAtual === 'ficha' && camposComerciaisVisiveis && temProdutoVendidoNoAtendimento ? (
+              ) : etapaAtual === 'ficha' && camposComerciaisVisiveis && (temProdutoVendidoNoAtendimento || modoDigital) ? (
                 <>
-                  <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 sm:flex-1">Há produto marcado como vendido. Para finalizar, selecione “Venda fechada”.</p>
+                  <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 sm:flex-1">{modoDigital ? "Para concluir a venda digital, marque os produtos vendidos e informe o lançamento." : "Há produto marcado como vendido. Para finalizar, selecione “Venda fechada”."}</p>
                   <Button type="button" onClick={() => void escolherResultado('sim')} disabled={acaoResultadoOcupada} loading={concluindo} className="min-h-12 flex-1">{!concluindo && <Check className="size-4" aria-hidden="true" />}{concluindo ? 'Finalizando...' : 'Venda fechada'}</Button>
                 </>
               ) : etapaAtual === 'ficha' && camposComerciaisVisiveis ? (

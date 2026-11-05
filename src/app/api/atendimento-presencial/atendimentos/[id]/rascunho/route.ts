@@ -17,6 +17,7 @@ import {
 export const runtime = 'nodejs'
 
 const SELECT_RASCUNHO = [
+  'natureza', 'negociacao_origem_id', 'canal_digital', 'canal_digital_outro', 'data_comercial', 'venda_anulada',
   'id',
   'cliente_id',
   'consultora_usuario_id',
@@ -183,6 +184,7 @@ export async function PATCH(
     }
 
     const agora = new Date()
+    if (loaded.row.natureza === 'digital' && (validacaoDados.dados.tipoAtendimento !== 'cliente' || (clienteIdAtualizado !== undefined && clienteIdAtualizado !== loaded.row.cliente_id))) return jsonErro('Esta venda digital deve permanecer vinculada à cliente da negociação.', 422)
     const expiraEm = calcularExpiracaoRascunho(agora)
     const updatePayload: Record<string, unknown> = {
       dados_rascunho: validacaoDados.dados,

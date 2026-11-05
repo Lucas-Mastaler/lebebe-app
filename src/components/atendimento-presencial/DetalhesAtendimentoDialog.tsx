@@ -2,6 +2,7 @@
 
 import { ResumoProdutos } from '@/components/atendimento-presencial/ProdutosAtendimento'
 import { NegociacoesPanel } from './NegociacoesPanel'
+import { SituacaoAtualNegociacao, useSituacoesNegociacoes } from './SituacaoNegociacao'
 import { ResumoEssenciais } from './HistoricoEssenciais'
 import { VendaSgiAtendimento } from './VendaSgiAtendimento'
 import { Alert, Badge, Button, Dialog, DialogBody, DialogContent, DialogHeader, EmptyState, Section, Spinner } from '@/components/design-system'
@@ -26,6 +27,7 @@ type Props = {
   onHistoricoCliente?: (detalhe: RegistroAtendimentoDetalheDTO) => void
   mensagemEdicao?: string | null
   edicaoAberta?: boolean
+  ocultarAtualizacaoComercial?: boolean
 }
 
 function formatarData(valor: string | null | undefined) {
@@ -55,8 +57,9 @@ function LinhaHistorico({ texto }: { texto: string }) {
   return <><strong>{texto.slice(0, separador + 1)}</strong>{texto.slice(separador + 1)}</>
 }
 
-export function DetalhesAtendimentoDialog({ open, onOpenChange, detalhe, carregando, erro, resumoCarregamento, unidadeNome, leituraSomente = false, onEditar, onHistoricoCliente, mensagemEdicao, edicaoAberta = false }: Props) {
+export function DetalhesAtendimentoDialog({ open, onOpenChange, detalhe, carregando, erro, resumoCarregamento, unidadeNome, leituraSomente = false, onEditar, onHistoricoCliente, mensagemEdicao, edicaoAberta = false, ocultarAtualizacaoComercial = false }: Props) {
   const atendimento = detalhe?.atendimento
+  const estados = useSituacoesNegociacoes(open && atendimento?.resultadoAtendimento === 'negociacao' ? [atendimento.id] : [])
   const viradaCartao = formatarViradaCartao(atendimento?.viradaCartaoDia, atendimento?.viradaCartaoMes)
   const naoCliente = atendimento ? registroNaoCliente(atendimento) : resumoCarregamento ? registroNaoCliente(resumoCarregamento) : false
   const titulo = detalhe?.cliente?.nome ? `Atendimento — ${detalhe.cliente.nome}` : detalhe ? 'Atendimento — Não cliente' : resumoCarregamento?.clienteNome ? `Atendimento — ${resumoCarregamento.clienteNome}` : 'Atendimento'
@@ -75,9 +78,11 @@ export function DetalhesAtendimentoDialog({ open, onOpenChange, detalhe, carrega
         </div>}
         {!carregando && !detalhe && !erro && <EmptyState icon={<ClipboardList className="size-5" aria-hidden="true" />} title="Nenhum atendimento selecionado" description="Selecione um atendimento para consultar os dados salvos." />}
         {!carregando && detalhe && <>
-          {!registroNaoCliente(detalhe.atendimento) && <NegociacoesPanel clienteId={detalhe.atendimento.clienteId ?? undefined} origemId={detalhe.atendimento.resultadoAtendimento === 'negociacao' ? detalhe.atendimento.id : undefined} vendaId={detalhe.atendimento.resultadoAtendimento === 'sim' ? detalhe.atendimento.id : undefined} />}
+          {atendimento?.natureza === 'digital' && <Alert tone={atendimento.vendaAnulada ? "warning" : "info"}>Venda fechada digitalmente{atendimento.vendaAnulada ? " · Anulada" : ""} · {atendimento.canalDigital} · {atendimento.dataComercial ? formatarData(atendimento.dataComercial) : ""}</Alert>}
+          {!ocultarAtualizacaoComercial && atendimento?.natureza !== 'digital' && !registroNaoCliente(detalhe.atendimento) && <NegociacoesPanel situacaoAtual={estados.resumos[detalhe.atendimento.id]?.situacao} clienteId={detalhe.atendimento.clienteId ?? undefined} origemId={detalhe.atendimento.resultadoAtendimento === 'negociacao' ? detalhe.atendimento.id : undefined} vendaId={detalhe.atendimento.resultadoAtendimento === 'sim' ? detalhe.atendimento.id : undefined} />}
+          {atendimento?.resultadoAtendimento === 'negociacao' && <SituacaoAtualNegociacao resumo={estados.resumos[atendimento.id]} erro={estados.erro} />}
           <div className="rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 via-white to-info/10 p-4 sm:p-5">
-            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-primary">Resumo do atendimento</p><p className="mt-1 text-lg font-bold text-slate-950">{detalhe.cliente?.nome ?? 'Atendimento sem cliente vinculado'}</p></div><div className="flex flex-wrap gap-2"><Badge tone={naoCliente ? 'neutral' : situacaoVendaRegistro(atendimento!.resultadoAtendimento).tone}>{naoCliente ? 'Não cliente' : situacaoVendaRegistro(atendimento!.resultadoAtendimento).label}</Badge>{!naoCliente && <Badge tone="brand">Cliente</Badge>}</div></div>
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wide text-primary">Resumo do atendimento</p><p className="mt-1 text-lg font-bold text-slate-950">{detalhe.cliente?.nome ?? 'Atendimento sem cliente vinculado'}</p></div><div className="flex flex-wrap gap-2">{atendimento?.resultadoAtendimento === 'negociacao' && <span className="w-full text-xs font-semibold text-slate-600">Resultado da visita original</span>}<Badge tone={naoCliente ? 'neutral' : situacaoVendaRegistro(atendimento!.resultadoAtendimento).tone}>{naoCliente ? 'Não cliente' : situacaoVendaRegistro(atendimento!.resultadoAtendimento).label}</Badge>{!naoCliente && <Badge tone="brand">Cliente</Badge>}</div></div>
             <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3"><Info label="Consultora do atendimento" value={atendimento!.consultoraNomeManual ?? 'Não informada'} /><Info label="Filial" value={unidadeNome ?? atendimento!.unidadeId} /><Info label="Início" value={formatarData(atendimento!.iniciadoEm)} /></div>
             <div className="mt-3 flex flex-wrap items-center gap-2">{atendimento!.numeroLancamento && <Badge tone="info">Lançamento {atendimento!.numeroLancamento}</Badge>}{formatarViradaCartao(atendimento!.viradaCartaoDia, atendimento!.viradaCartaoMes) && <Badge tone="neutral">Virada do cartão · {formatarViradaCartao(atendimento!.viradaCartaoDia, atendimento!.viradaCartaoMes)}</Badge>}<span className="text-xs text-slate-500">Salvo em {formatarData(atendimento!.concluidoEm)}</span></div>
             {!leituraSomente && <div className="mt-4 flex flex-wrap items-center gap-3">{detalhe.podeEditar && onEditar ? <Button type="button" onClick={() => onEditar(detalhe)}><Pencil className="size-4" aria-hidden="true" />Editar atendimento</Button> : <Alert tone="info" className="py-2">{detalhe.motivoBloqueio ?? 'Você não possui permissão para editar este atendimento.'}</Alert>}{mensagemEdicao && !edicaoAberta && <Alert tone="success" className="py-2">{mensagemEdicao}</Alert>}</div>}

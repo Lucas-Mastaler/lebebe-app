@@ -54,6 +54,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { MultiSelect } from '@/components/ui/multi-select'
 import { HistoricoClienteModal, type HistoricoClienteModalCliente } from '@/components/atendimento-presencial/HistoricoClienteModal'
 import { NegociacoesPanel } from '@/components/atendimento-presencial/NegociacoesPanel'
+import { SituacaoAtualNegociacao, useSituacoesNegociacoes } from '@/components/atendimento-presencial/SituacaoNegociacao'
 import { ViradaCartaoField } from '@/components/atendimento-presencial/ViradaCartaoField'
 import { validarViradaCartaoInput } from '@/lib/atendimento-presencial/virada-cartao-input'
 import {
@@ -294,6 +295,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
   const [contagens, setContagens] = useState({ clientesUnicos: 0, visitasNaoClientes: 0 })
   const searchParams = useSearchParams()
   const [registros, setRegistros] = useState<RegistroResumo[]>([])
+  const estadosNegociacoes = useSituacoesNegociacoes(registros.filter(r => r.resultadoAtendimento === 'negociacao').map(r => r.id))
   const [paginaRegistros, setPaginaRegistros] = useState(1)
   const [totalRegistros, setTotalRegistros] = useState(0)
   const [selecionado, setSelecionado] = useState<RegistroDetalhe | null>(null)
@@ -488,11 +490,26 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
     await carregarDetalhe(id)
   }
 
+  const [motivoDigital, setMotivoDigital] = useState('')
+  const [metaDigital, setMetaDigital] = useState({canal:'whatsapp',outro:'',data:''})
+  const edicaoDireta = searchParams.get('editar')
+  const edicaoDiretaAberta = useRef<string | null>(null)
+  useEffect(() => {
+    if (!edicaoDireta || edicaoDiretaAberta.current === edicaoDireta || !/^[0-9a-f-]{36}$/i.test(edicaoDireta)) return
+    edicaoDiretaAberta.current = edicaoDireta
+    void editarAtendimentoCard(edicaoDireta)
+    // A ação usa o ID da URL uma vez; o servidor revalida a permissão de edição.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edicaoDireta])
+
   const selecionadoNaoCliente = selecionado ? registroNaoCliente(selecionado.atendimento) : false
 
   const resumoSelecionado = selecionado ? registros.find((registro) => registro.id === selecionado.atendimento.id) : null
 
   function abrirEdicao(detalhe: RegistroDetalhe) {
+    setMotivoDigital('')
+    const dataVenda = detalhe.atendimento.dataComercial ? new Date(detalhe.atendimento.dataComercial) : null
+    setMetaDigital({canal:detalhe.atendimento.canalDigital || 'whatsapp',outro:detalhe.atendimento.canalDigitalOutro || '',data:dataVenda ? new Date(dataVenda.getTime()-dataVenda.getTimezoneOffset()*60000).toISOString().slice(0,19) : ''})
     setCorrigirResultado(false)
     const ficha = normalizarDetalheParaFichaEdicao(detalhe)
     const estadoEssenciais = mapearSnapshotEssenciaisParaEdicao(detalhe.criancas, detalhe.essenciais ?? [])
@@ -673,7 +690,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       const response = await fetch(`/api/atendimento-presencial/atendimentos/${selecionado.atendimento.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({...payload, ...(selecionado.atendimento.natureza === 'digital' ? {motivoDigital,metadadosDigitais:{canal:metaDigital.canal,outro:metaDigital.outro,data:new Date(metaDigital.data).toISOString()}} : {})}),
       })
       const data = (await response.json()) as ApiEdicaoResponse
       if (!response.ok || !data.ok) throw new Error(data.message ?? 'Erro ao salvar edicao')
@@ -688,6 +705,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
       }
       await carregarRegistros()
       setMensagemEdicao('Atendimento atualizado.')
+      if (atendimentoAnterior.natureza === 'digital') setDetalheAberto(true)
     } catch (error) {
       setErroEdicao(error instanceof Error ? error.message : 'Erro ao salvar edicao')
     } finally {
@@ -980,7 +998,9 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                             : registroNaoCliente(registro) ? 'Não se aplica' : 'Sem criança informada'}
                           action={<span className="shrink-0 rounded-md border border-sky-100 bg-white/70 px-3 py-2 text-right">
                             <span className="block text-[10px] font-bold uppercase tracking-wide text-sky-700">{registroNaoCliente(registro) ? 'Tipo' : 'Situação da Venda'}</span>
+                            {registro.resultadoAtendimento === 'negociacao' && <p className="text-xs font-semibold text-slate-600">Resultado da visita original</p>}
                             <Badge tone={registroNaoCliente(registro) ? 'neutral' : situacaoVendaRegistro(registro.resultadoAtendimento).tone}>{registroNaoCliente(registro) ? 'Não cliente' : situacaoVendaRegistro(registro.resultadoAtendimento).label}</Badge>
+                            {registro.resultadoAtendimento === 'negociacao' && <SituacaoAtualNegociacao resumo={estadosNegociacoes.resumos[registro.id]} erro={estadosNegociacoes.erro} />}
                           </span>}
                         />
                         <CardContent className="space-y-3 pt-3">
@@ -1030,7 +1050,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
                           <Eye className="size-4" aria-hidden="true" />
                           Ver atendimento
                         </Button>
-                        {registro.resultadoAtendimento === 'negociacao' && <NegociacoesPanel origemId={registro.id} clienteId={registro.clienteId ?? undefined} triggerClassName="w-full min-w-0 whitespace-normal border border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100" />}
+                        {registro.resultadoAtendimento === 'negociacao' && <NegociacoesPanel situacaoAtual={estadosNegociacoes.resumos[registro.id]?.situacao} origemId={registro.id} clienteId={registro.clienteId ?? undefined} triggerClassName="w-full min-w-0 whitespace-normal border border-blue-400 bg-blue-50 text-blue-700 hover:bg-blue-100" />}
                         <Button
                           type="button"
                           onClick={() => void editarAtendimentoCard(registro.id)}
@@ -1179,6 +1199,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
               <>
                 {mensagemEdicao && <Alert tone="success">{mensagemEdicao}</Alert>}
                 {erroEdicao && <Alert tone="danger">{erroEdicao}</Alert>}
+                {selecionado.atendimento.natureza === 'digital' && <Section title="Venda digital"><FormField id="digital-edicao-data" label="Data/hora da venda" required>{field => <Input {...field} type="datetime-local" step={1} value={metaDigital.data} onChange={e=>setMetaDigital({...metaDigital,data:e.target.value})} />}</FormField><FormField id="digital-edicao-canal" label="Canal" required>{field => <select {...field} value={metaDigital.canal} onChange={e=>setMetaDigital({...metaDigital,canal:e.target.value})}><option value="whatsapp">WhatsApp</option><option value="telefone">Telefone</option><option value="outro">Outro contato remoto</option></select>}</FormField>{metaDigital.canal === 'outro' && <FormField id="digital-edicao-outro" label="Qual canal?" required>{field => <Input {...field} value={metaDigital.outro} onChange={e=>setMetaDigital({...metaDigital,outro:e.target.value})} />}</FormField>}<FormField id="digital-edicao-motivo" label="Motivo da correção" required>{field => <Textarea {...field} value={motivoDigital} onChange={e=>setMotivoDigital(e.target.value)} />}</FormField></Section>}
 
                 <div className="grid gap-1 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
                   <p className="text-xs font-bold uppercase text-slate-500">Somente leitura</p>
@@ -1378,7 +1399,7 @@ export default function RegistrosPageClient({ podeVerRegistros, podeVerRascunhos
 
                 <Section title="Resultado e condições" variant="subsection" collapsible>
                 <Alert tone="info">Este é o resultado da visita original. Para registrar uma compra posterior ou encerrar uma negociação, use a atualização comercial.</Alert>
-                {selecionado && <NegociacoesPanel clienteId={selecionado.atendimento.clienteId ?? undefined} origemId={selecionado.atendimento.resultadoAtendimento === 'negociacao' ? selecionado.atendimento.id : undefined} vendaId={selecionado.atendimento.resultadoAtendimento === 'sim' ? selecionado.atendimento.id : undefined} />}
+                {selecionado && <NegociacoesPanel situacaoAtual={estadosNegociacoes.resumos[selecionado.atendimento.id]?.situacao} clienteId={selecionado.atendimento.clienteId ?? undefined} origemId={selecionado.atendimento.resultadoAtendimento === 'negociacao' ? selecionado.atendimento.id : undefined} vendaId={selecionado.atendimento.resultadoAtendimento === 'sim' ? selecionado.atendimento.id : undefined} />}
                 {!corrigirResultado && <div className="my-3 rounded-xl border border-sky-200 bg-sky-50 p-4"><p className="text-lg font-bold">{situacaoVendaRegistro(fichaEdicao.resultadoAtendimento).label}</p><Button variant="secondary" onClick={() => setCorrigirResultado(true)}>Corrigir resultado registrado</Button></div>}
                 <div>
                   <AvisoProdutosVendidos ficha={fichaEdicao} />

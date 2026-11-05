@@ -16,6 +16,9 @@ type QueryBuilder = PromiseLike<{ data: unknown; error: unknown }> & {
 }
 
 export type HistoricoAtendimentoClienteDTO = {
+  natureza?: string
+  canalDigital?: string | null
+  vendaAnulada?: boolean
   id: string
   data: string | null
   unidade: string | null
@@ -192,6 +195,10 @@ export async function buscarVendasSgiPorTelefone(
 export function serializarHistoricoAtendimento(params: {
   row: {
     id: string
+    natureza?: string
+    canal_digital?: string | null
+    data_comercial?: string | null
+    venda_anulada?: boolean
     concluido_em?: string | null
     resultado_atendimento?: string | null
     numero_lancamento?: number | null
@@ -207,7 +214,8 @@ export function serializarHistoricoAtendimento(params: {
 }): HistoricoAtendimentoClienteDTO {
   return {
     id: params.row.id,
-    data: params.row.concluido_em ?? null,
+    natureza: params.row.natureza ?? 'presencial', canalDigital: params.row.canal_digital, vendaAnulada: params.row.venda_anulada,
+    data: params.row.data_comercial ?? params.row.concluido_em ?? null,
     unidade: params.unidadeNome,
     consultora: normalizarNomeConsultora(params.row.consultora_nome) || null,
     resultado: getResultadoLabel(params.row.resultado_atendimento as ResultadoAtendimento | undefined),

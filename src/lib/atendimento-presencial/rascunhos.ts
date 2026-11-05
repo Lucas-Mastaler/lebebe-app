@@ -34,6 +34,12 @@ export const DRAFT_PAYLOAD_MAX_BYTES = 4096
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 export type AtendimentoPresencialRow = {
+  natureza?: 'presencial' | 'digital'
+  negociacao_origem_id?: string | null
+  canal_digital?: string | null
+  canal_digital_outro?: string | null
+  data_comercial?: string | null
+  venda_anulada?: boolean
   versao_essenciais?: number | null
   id: string
   cliente_id: string | null
@@ -94,6 +100,8 @@ export function validarDadosRascunho(valor: unknown): ValidacaoRascunho {
 
 export function serializarAtendimentoPresencial(row: AtendimentoPresencialRow): AtendimentoPresencialDTO {
   return {
+    natureza: row.natureza ?? 'presencial', negociacaoOrigemId: row.negociacao_origem_id ?? null,
+    canalDigital: row.canal_digital ?? null, canalDigitalOutro: row.canal_digital_outro ?? null, dataComercial: row.data_comercial ?? null, vendaAnulada: row.venda_anulada ?? false,
     versaoEssenciais: row.versao_essenciais ?? null,
     id: row.id,
     clienteId: row.cliente_id,

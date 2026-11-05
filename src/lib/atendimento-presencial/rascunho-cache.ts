@@ -4,6 +4,7 @@ import { serializarPayloadAutosave } from './autosave-fila'
 export type EntradasLocaisRascunho = EntradasFormularioRascunho
 
 export type RascunhoCache = {
+  natureza?: 'presencial' | 'digital'
   draftClientId: string
   usuarioId: string
   atendimentoId: string | null

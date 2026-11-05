@@ -19,17 +19,28 @@ export async function prepararBancoNegociacoes(db) {
  ALTER TABLE atendimento_presencial_atendimentos ADD COLUMN telefone_recusa_confirmada boolean;
  ALTER TABLE atendimento_presencial_atendimentos ADD COLUMN telefone_desfecho text;
  ALTER TABLE atendimento_presencial_atendimentos ADD COLUMN motivo_visita_outro text;
+ ALTER TABLE atendimento_presencial_historico ADD COLUMN created_at timestamptz DEFAULT now();
+ ALTER TABLE atendimento_presencial_historico ADD COLUMN id uuid DEFAULT gen_random_uuid() UNIQUE;
+ ALTER TABLE atendimento_presencial_departamentos ADD COLUMN id uuid DEFAULT gen_random_uuid() UNIQUE;
+ ALTER TABLE atendimento_presencial_produtos_interesse ADD COLUMN id uuid DEFAULT gen_random_uuid() UNIQUE;
+ ALTER TABLE atendimento_presencial_motivos ADD COLUMN id uuid DEFAULT gen_random_uuid() UNIQUE;
  ALTER TABLE atendimento_presencial_produtos_interesse ADD COLUMN quantidade integer;
  ALTER TABLE atendimento_presencial_produtos_interesse ADD COLUMN vendido boolean;
  ALTER TABLE atendimento_presencial_criancas ADD CONSTRAINT atendimento_presencial_criancas_idade_valor_check CHECK(idade_valor IS NULL OR idade_valor>=1);`)
  await db.exec(readFileSync('scripts/prancheta/sql/essenciais-base-referencia.sql','utf8'))
  await db.exec(readFileSync('supabase/migrations/20261029105543_prancheta_produtos_essenciais.sql','utf8'))
+ const edicaoProdutos=readFileSync('supabase/migrations/20261020193639_prancheta_produtos_pv.sql','utf8').match(/CREATE OR REPLACE FUNCTION public\.atendimento_presencial_editar_concluido[\s\S]*?\$function\$;/)?.[0]
+ if(!edicaoProdutos)throw new Error('RPC oficial de edição de produtos ausente na fixture')
+ await db.exec(edicaoProdutos)
+ await db.exec(readFileSync('supabase/migrations/20261029133606_prancheta_essenciais_edicao_historica.sql','utf8'))
  await db.exec(`CREATE OR REPLACE FUNCTION atendimento_presencial_fluxo_v2_habilitado() RETURNS boolean LANGUAGE sql AS $$SELECT true$$;
  CREATE OR REPLACE FUNCTION atendimento_presencial_criancas_habilitado() RETURNS boolean LANGUAGE sql AS $$SELECT true$$;
  UPDATE atendimento_presencial_essenciais_config SET ativo=true;`)
  await db.exec(readFileSync('supabase/migrations/20261104131151_prancheta_negociacoes.sql','utf8'))
  await db.exec(readFileSync('supabase/migrations/20261104175043_prancheta_negociacoes_acl_service.sql','utf8'))
  await db.exec(readFileSync('supabase/migrations/20261104180238_prancheta_negociacoes_marcador_produto.sql','utf8'))
+ await db.exec(readFileSync('supabase/migrations/20261104193112_prancheta_negociacoes_fluxo_explicito.sql','utf8'))
+ await db.exec(readFileSync('supabase/migrations/20261105130000_prancheta_unica_digital.sql','utf8'))
 }
 
 // Adaptador PostgREST mínimo para executar as APIs reais no PostgreSQL isolado.

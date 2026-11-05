@@ -49,7 +49,7 @@ export async function loadFlow(request: Request, mode: 'dashboard' | 'table' | '
       // Envelope UTC amplo; a função comum aplica o dia/hora IANA exato antes de contar.
       for (let offset = 0; ; offset += 500) {
         const result = await ctx.supabase.from('atendimento_presencial_atendimentos').select(FLOW_COLUMNS)
-          .eq('status', 'concluido').in('unidade_id', units.map(unit => unit.id))
+          .eq('status', 'concluido').eq('natureza', 'presencial').in('unidade_id', units.map(unit => unit.id))
           .gte('iniciado_em', `${filters.de}T00:00:00Z`).lt('iniciado_em', `${end.toISOString().slice(0,10)}T00:00:00Z`)
           .order('iniciado_em', { ascending: false }).order('id', { ascending: false }).range(offset, offset + 499)
         if (result.error) throw new Error('flow_records_read')
@@ -82,7 +82,7 @@ export async function loadOriginalDetails(id: string) {
     if (!ctx.units.length) return flowJson({ ok: false, message: 'Atendimento não encontrado.' }, 404)
 
     const recordResult = await ctx.supabase.from('atendimento_presencial_atendimentos').select('*')
-      .eq('id', id).eq('status', 'concluido').in('unidade_id', ctx.units.map(unit => unit.id)).maybeSingle()
+      .eq('id', id).eq('status', 'concluido').eq('natureza', 'presencial').in('unidade_id', ctx.units.map(unit => unit.id)).maybeSingle()
     if (recordResult.error) throw new Error('flow_detail_record_read')
     if (!recordResult.data) return flowJson({ ok: false, message: 'Atendimento não encontrado.' }, 404)
     const row = recordResult.data as unknown as AtendimentoPresencialRow

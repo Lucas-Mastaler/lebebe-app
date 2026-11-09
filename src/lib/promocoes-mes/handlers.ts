@@ -12,6 +12,7 @@ import {
   obterPromocaoComUrls,
   reconciliarStorage,
 } from './repositorio'
+import { lerFiltrosPromocoes } from './filtros'
 import { hojeOperacional } from './vigencia'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -39,12 +40,14 @@ const exigirAdmin = () => requireModuleAccess('promocoes_mes')
 // Leitura das vigentes: quem acessa a Prancheta Virtual.
 const exigirLeitura = () => requireModuleAccess('atendimento_presencial_ficha')
 
-export async function listarAdmin() {
+export async function listarAdmin(request?: Request) {
   const acesso = await exigirAdmin()
   if (!acesso.ok) return acesso.response
   try {
     const hoje = hojeOperacional()
-    return ok({ promocoes: await listarPromocoesAdmin(createServiceClient(), hoje) })
+    const filtros = lerFiltrosPromocoes(request ? new URL(request.url).searchParams : new URLSearchParams())
+    const { promocoes, meta } = await listarPromocoesAdmin(createServiceClient(), hoje, filtros)
+    return ok({ promocoes, meta })
   } catch (e) { return erro(e) }
 }
 

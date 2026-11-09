@@ -6,6 +6,7 @@ import {
   MAX_ARQUIVOS_PROMOCAO,
   type FormularioPromocao,
 } from './formulario'
+import { escaparLike, type FiltrosPromocoes } from './filtros'
 import { classificarVigencia, type SituacaoPromocao } from './vigencia'
 
 export class ErroPromocao extends Error {
@@ -142,13 +143,29 @@ async function buscarArquivos(client: SupabaseClient, ids: string[]) {
   return (data ?? []) as ArquivoRow[]
 }
 
-export async function listarPromocoesAdmin(client: SupabaseClient, hoje: string) {
-  const { data, error } = await client.from('promocoes_mes').select('id, titulo, inicio, fim, created_at, updated_at')
-    .order('inicio', { ascending: false }).order('created_at', { ascending: false })
+export type PaginaPromocoes = { promocoes: Promocao[]; meta: { page: number; pageSize: number; total: number; totalPages: number } }
+
+/** Listagem administrativa: filtros e paginação aplicados no banco (a situação é derivada de `hoje` em BRT). */
+export async function listarPromocoesAdmin(client: SupabaseClient, hoje: string, filtros: FiltrosPromocoes): Promise<PaginaPromocoes> {
+  let consulta = client.from('promocoes_mes').select('id, titulo, inicio, fim, created_at, updated_at', { count: 'exact' })
+  if (filtros.titulo) consulta = consulta.ilike('titulo', `%${escaparLike(filtros.titulo)}%`)
+  if (filtros.inicioDe) consulta = consulta.gte('inicio', filtros.inicioDe)
+  if (filtros.fimAte) consulta = consulta.lte('fim', filtros.fimAte)
+  if (filtros.situacao === 'VIGENTE') consulta = consulta.lte('inicio', hoje).gte('fim', hoje)
+  if (filtros.situacao === 'FUTURA') consulta = consulta.gt('inicio', hoje)
+  if (filtros.situacao === 'ENCERRADA') consulta = consulta.lt('fim', hoje)
+  const de = (filtros.page - 1) * filtros.pageSize
+  const { data, error, count } = await consulta
+    .order('inicio', { ascending: false }).order('created_at', { ascending: false }).order('id', { ascending: true })
+    .range(de, de + filtros.pageSize - 1)
   if (error) throw new ErroPromocao('CONSULTA_FALHOU', 500, 'Não foi possível consultar as promoções.')
   const rows = (data ?? []) as PromocaoRow[]
   const arquivos = await buscarArquivos(client, rows.map((r) => r.id))
-  return rows.map((r) => mapear(r, arquivos, hoje))
+  const total = count ?? rows.length
+  return {
+    promocoes: rows.map((r) => mapear(r, arquivos, hoje)),
+    meta: { page: filtros.page, pageSize: filtros.pageSize, total, totalPages: Math.max(1, Math.ceil(total / filtros.pageSize)) },
+  }
 }
 
 export async function obterPromocaoComUrls(client: SupabaseClient, id: string, hoje: string) {

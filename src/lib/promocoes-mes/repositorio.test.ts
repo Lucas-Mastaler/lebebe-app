@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
+import type { FiltrosPromocoes } from './filtros'
 import type { FormularioPromocao } from './formulario'
-import { criarPromocao, excluirPromocao, listarVigentes, reconciliarStorage } from './repositorio'
+import { criarPromocao, excluirPromocao, listarPromocoesAdmin, listarVigentes, reconciliarStorage } from './repositorio'
 
 type Estado = {
   promocoes: Array<Record<string, string>>
@@ -23,6 +24,7 @@ function criarFake(parcial: Partial<Estado> = {}) {
     const dados = () => (nome === 'promocoes_mes' ? estado.promocoes : nome === 'promocoes_mes_arquivos' ? estado.arquivos : estado.pendencias) as Array<Record<string, unknown>>
     let linhas = [...dados()]
     let acao: 'select' | 'delete' = 'select'
+    let total: number | null = null
     const api: Record<string, unknown> = {}
     const resultado = () => {
       if (acao === 'delete') {
@@ -32,7 +34,7 @@ function criarFake(parcial: Partial<Estado> = {}) {
         if (nome === 'promocoes_mes') estado.arquivos = estado.arquivos.filter((a) => estado.promocoes.some((p) => p.id === a.promocao_id))
         return { data: null, error: null }
       }
-      return { data: linhas, error: null }
+      return { data: linhas, error: null, count: total ?? linhas.length }
     }
     Object.assign(api, {
       select: () => api,
@@ -41,6 +43,14 @@ function criarFake(parcial: Partial<Estado> = {}) {
       in: (c: string, v: unknown[]) => { linhas = linhas.filter((l) => v.includes(l[c])); return api },
       lte: (c: string, v: string) => { estado.filtros.push(['lte', c, v]); linhas = linhas.filter((l) => String(l[c]) <= v); return api },
       gte: (c: string, v: string) => { estado.filtros.push(['gte', c, v]); linhas = linhas.filter((l) => String(l[c]) >= v); return api },
+      ilike: (c: string, padrao: string) => {
+        estado.filtros.push(['ilike', c, padrao])
+        const termo = padrao.replace(/^%|%$/g, '').toLowerCase()
+        linhas = linhas.filter((l) => String(l[c]).toLowerCase().includes(termo)); return api
+      },
+      gt: (c: string, v: string) => { estado.filtros.push(['gt', c, v]); linhas = linhas.filter((l) => String(l[c]) > v); return api },
+      lt: (c: string, v: string) => { estado.filtros.push(['lt', c, v]); linhas = linhas.filter((l) => String(l[c]) < v); return api },
+      range: (de: number, ate: number) => { total = linhas.length; linhas = linhas.slice(de, ate + 1); return api },
       maybeSingle: async () => ({ data: linhas[0] ?? null, error: null }),
       delete: () => { acao = 'delete'; return api },
       upsert: async (novas: Array<Record<string, unknown>>) => { estado.pendencias.push(...novas); return { error: null } },
@@ -153,5 +163,34 @@ describe('repositório de promoções', () => {
     expect(aplicado.removidos).toBe(1)
     expect(estado.objetos.has('p1/velho.png')).toBe(false)
     expect(estado.objetos.has('p1/recente.png')).toBe(true)
+  })
+
+  it('listagem admin filtra por título, datas e situação e pagina no banco', async () => {
+    const { client, estado } = criarFake()
+    const mk = (id: string, titulo: string, inicio: string, fim: string) => ({ id, titulo, inicio, fim, created_at: '', updated_at: '' })
+    estado.promocoes.push(
+      mk('a', 'Black Friday', '2026-11-10', '2026-11-20'),
+      mk('b', 'Enxoval 50%', '2026-11-01', '2026-11-10'),
+      mk('c', 'Futura Natal', '2026-12-01', '2026-12-25'),
+      mk('d', 'Encerrada', '2026-10-01', '2026-11-09'),
+    )
+    const base: FiltrosPromocoes = { titulo: '', inicioDe: '', fimAte: '', situacao: '', page: 1, pageSize: 10 }
+    const ids = async (f: Partial<FiltrosPromocoes>) =>
+      (await listarPromocoesAdmin(client, '2026-11-10', { ...base, ...f })).promocoes.map((p) => p.id).sort()
+
+    expect(await ids({ situacao: 'VIGENTE' })).toEqual(['a', 'b'])
+    expect(await ids({ situacao: 'FUTURA' })).toEqual(['c'])
+    expect(await ids({ situacao: 'ENCERRADA' })).toEqual(['d'])
+    expect(await ids({ titulo: 'black' })).toEqual(['a'])
+    expect(await ids({ inicioDe: '2026-11-05' })).toEqual(['a', 'c'])
+    expect(await ids({ fimAte: '2026-11-10' })).toEqual(['b', 'd'])
+    expect(estado.filtros).toContainEqual(['ilike', 'titulo', '%black%'])
+    const escapado = criarFake()
+    await listarPromocoesAdmin(escapado.client, '2026-11-10', { ...base, titulo: '50%' })
+    expect(escapado.estado.filtros).toContainEqual(['ilike', 'titulo', '%50\\%%'])
+
+    const pagina = await listarPromocoesAdmin(client, '2026-11-10', { ...base, pageSize: 3, page: 2 })
+    expect(pagina.promocoes).toHaveLength(1)
+    expect(pagina.meta).toEqual({ page: 2, pageSize: 3, total: 4, totalPages: 2 })
   })
 })

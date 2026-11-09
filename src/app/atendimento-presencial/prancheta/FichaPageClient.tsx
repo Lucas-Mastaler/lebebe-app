@@ -5,6 +5,7 @@ import { useComemoracaoPv } from '@/components/atendimento-presencial/useComemor
 
 import { ProdutosAtendimento, AvisoProdutosVendidos } from '@/components/atendimento-presencial/ProdutosAtendimento'
 import { ListaEnxovalDialog } from '@/components/atendimento-presencial/ListaEnxovalDialog'
+import { PromocoesMesDialog } from '@/components/atendimento-presencial/PromocoesMesDialog'
 import { PRODUTOS_V2_HABILITADOS } from '@/lib/atendimento-presencial/produtos-config'
 import { descricaoProduto, temProdutoVendido } from '@/lib/atendimento-presencial/produtos'
 
@@ -2521,7 +2522,10 @@ export default function FichaPageClient({ usuarioId, contextoInicial, unidadeIdI
                   historico={() => setHistoricoAberto(true)}
                 />}
 
-                <ListaEnxovalDialog />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <ListaEnxovalDialog />
+                  <PromocoesMesDialog />
+                </div>
 
                 <SecaoFicha
                   id="secao-produtos"

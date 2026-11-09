@@ -160,6 +160,19 @@ export const APP_MODULES = [
     menuLabel: 'Gestão de pedidos personalizados',
   },
   {
+    moduleKey: 'promocoes_mes',
+    nome: 'PROMOCOES DO MES',
+    descricao: 'Cadastro e gestao das promocoes do mes exibidas na Prancheta Virtual',
+    rotaBase: '/promocoes-do-mes',
+    categoria: 'interno',
+    publico: false,
+    somenteSuperadmin: false,
+    ativo: true,
+    ordem: 68,
+    access: 'profile',
+    menuLabel: 'Promoções do Mês',
+  },
+  {
     moduleKey: 'agendamentos',
     nome: 'AGENDAMENTOS',
     descricao: 'Consulta e gestao de agendamentos',
@@ -390,6 +403,7 @@ export const NAVIGATION_GROUPS = [
       navigationItem('hub_vendas_recuperacao', 'bot'),
       navigationItem('pedidos_personalizados_novo', 'clipboardList'),
       navigationItem('pedidos_personalizados_gestao', 'package'),
+      navigationItem('promocoes_mes', 'shoppingBag'),
     ],
   },
   {

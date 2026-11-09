@@ -92,6 +92,7 @@ describe('modulos-app catalog', () => {
     'Hub Vendas',
     'Novo pedido personalizado',
     'Gestão de pedidos personalizados',
+    'Promoções do Mês',
     'Prancheta Virtual de Atendimento',
     'Registros de atendimentos',
     'Clientes',
@@ -256,6 +257,19 @@ describe('modulos-app catalog', () => {
     expect(getAppModuleDefinition('pedidos_personalizados_gestao')?.rotaBase).toBe(
       '/pedidos-personalizados'
     )
+  })
+
+  it('registra Promoções do Mês no grupo VENDAS, liberável por perfil e com migration que concede ao gestao', () => {
+    const modulo = getAppModuleDefinition('promocoes_mes')
+    const item = navigationItems.find((navItem) => navItem.moduleKey === 'promocoes_mes')
+
+    expect(modulo?.rotaBase).toBe('/promocoes-do-mes')
+    expect(modulo?.access).toBe('profile')
+    expect(modulo?.somenteSuperadmin).toBe(false)
+    expect(item?.label).toBe('Promoções do Mês')
+    expect(getProfilePermissionGroupLabel('promocoes_mes')).toBe('VENDAS')
+    expect(MODULE_KEYS_WITHOUT_AUTOMATIC_PROFILE_GRANT).not.toContain('promocoes_mes')
+    expect(readProjectFile('src/app/promocoes-do-mes/page.tsx')).toContain("checkModuleAndWindowAccess('promocoes_mes')")
   })
 
   it('mantem Auditoria Acessos fora da matriz comum de perfis', () => {

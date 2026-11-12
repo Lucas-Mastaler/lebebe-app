@@ -1,3 +1,8 @@
+export function adjustedTotal(days: Array<{ ajustado: number | null }>): number | null {
+  if (!days.length || days.some(day => day.ajustado === null)) return null
+  return days.reduce<number>((total, day) => total + (day.ajustado ?? 0), 0)
+}
+
 export function differenceText(difference: number | null) {
   if (difference === null) return 'Aguardando contagem completa para comparar'
   if (difference === 0) return 'Mesma quantidade de grupos AlterVision e Pranchetas'

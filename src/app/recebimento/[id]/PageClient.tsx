@@ -1971,8 +1971,8 @@ function FinalizarModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl my-8" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black/40 p-4" onClick={onClose}>
+      <div className="my-0 max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-2xl bg-white p-6 shadow-xl [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch]" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
             <CheckCircle2 className="w-5 h-5 text-green-600" />

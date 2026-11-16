@@ -15,6 +15,7 @@ import { buscarNotasNoPeriodo, conciliarSelecao, type NotaPreview } from '@/lib/
 import type { ResultadoXml } from '@/lib/recebimento/xml-upload-contract'
 import { dateToIso, parseBrDate } from '@/lib/design-system/dates'
 import { TABLE_PAGE_SIZE } from '@/lib/design-system/pagination'
+import { HistoricoCategorias } from '@/components/recebimento/ResumoCategorias'
 import { calcularMetricasDeTempo } from '@/lib/recebimento/metricas-tempo'
 import {
   PageContainer, PageHeader, Button, IconButton, Card, CardHeader, CardContent, CardFooter,
@@ -355,7 +356,7 @@ export default function RecebimentoPage() {
         </TabsContent>
 
         <TabsContent value="dashboard" className="mt-6">
-          <DashboardTab recebimentos={recebimentos} />
+          <div className="space-y-6"><HistoricoCategorias /><DashboardTab recebimentos={recebimentos} /></div>
         </TabsContent>
       </Tabs>
 

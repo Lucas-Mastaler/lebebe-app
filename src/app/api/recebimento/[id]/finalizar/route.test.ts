@@ -284,6 +284,21 @@ describe('POST /api/recebimento/[id]/finalizar — pausas revisáveis', () => {
     return queues
   }
 
+  it('duração manual prevalece sobre timer e pausa pendente, inclusive na planilha', async () => {
+    vi.mocked(encerrarTimerParaFinalizacao).mockResolvedValue(13 * 3600)
+    mockSupabase(queuesComPausas([{ id: 'p1', status: 'pendente', decisao: null, duracao_pausa_segundos: 2520 }]), updatePayloads)
+    const response = await POST(requestBody({ duracao_manual_segundos: 5400 }), { params: Promise.resolve({ id: recebimentoId }) })
+    expect(response.status).toBe(200)
+    expect(updatePayloads.find(p => p.tabela === 'recebimentos')).toMatchObject({ timer_segundos_totais: 5400, tempo_correcao_manual: true, tempo_manual_inicio: null, tempo_manual_fim: null })
+    expect(enviarRecebimentoParaPlanilha).toHaveBeenCalledWith(expect.objectContaining({ tempo_total_formatado: '01:30:00' }))
+  })
+
+  it('rejeita duração manual inválida antes de modificar o recebimento', async () => {
+    const response = await POST(requestBody({ duracao_manual_segundos: 43201 }), { params: Promise.resolve({ id: recebimentoId }) })
+    expect(response.status).toBe(400)
+    expect(encerrarTimerParaFinalizacao).not.toHaveBeenCalled()
+  })
+
   it('pausa pendente: bloqueia a finalização ANTES de tocar no timer (ordem correta — sem estado parcial)', async () => {
     vi.mocked(encerrarTimerParaFinalizacao).mockResolvedValue(3 * 3600)
     mockSupabase(queuesComPausas([{ id: 'p1', status: 'pendente', decisao: null, duracao_pausa_segundos: 2520 }]), updatePayloads)

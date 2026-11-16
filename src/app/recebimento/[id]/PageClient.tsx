@@ -15,8 +15,12 @@ import {
   Play,
   Pause,
   Filter,
+  Info,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { ResumoCategorias } from '@/components/recebimento/ResumoCategorias'
+import { quantidadeAgrupada } from '@/lib/recebimento/categorias'
 import { Button as ActionButton } from '@/components/design-system/Button'
 import { Alert } from '@/components/design-system/Alert'
 import { useAsyncAction } from '@/components/design-system/useAsyncAction'
@@ -26,7 +30,7 @@ import { isMaticEmail } from '@/lib/auth/matic-emails'
 import { OSItemCard } from './OSItemCard'
 import { toast } from 'sonner'
 import { registroPodeFinalizar } from '@/lib/recebimento/finalizacao'
-import { validarCorrecaoManual } from '@/lib/recebimento/correcao-manual-tempo'
+import { validarCorrecaoManual, validarDuracaoManual } from '@/lib/recebimento/correcao-manual-tempo'
 import {
   calcularSegundosReintegrados,
   calcularTempoExibido,
@@ -123,6 +127,7 @@ export default function ConferenciaPage() {
   const [timerRunning, setTimerRunning] = useState(false)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [showFinalizar, setShowFinalizar] = useState(false)
+  const [showCategorias, setShowCategorias] = useState(false)
   const pendentesRef = useRef(new Set<string>())
   const revisaoConferencia = useRef(0)
   const consultasRef = useRef(new Set<string>())
@@ -559,6 +564,13 @@ export default function ConferenciaPage() {
 
   return (
     <div className="max-w-2xl mx-auto pb-24">
+      <Dialog open={showCategorias} onOpenChange={setShowCategorias}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogTitle>Resumo do recebimento</DialogTitle>
+          <DialogDescription>Quantidades e volumes por categoria.</DialogDescription>
+          <ResumoCategorias itens={recebimento.itens.filter(item => !item.is_os).map(item => ({ descricao: item.nfe_item?.descricao || '', quantidade: quantidadeAgrupada(item.volumes_previstos_total, item.volumes_por_item), previstos: item.volumes_previstos_total, conferidos: item.volumes_recebidos_total }))} />
+        </DialogContent>
+      </Dialog>
       {/* Header */}
       <div className="flex items-center gap-2 sm:gap-3 mb-4">
         <button onClick={() => router.push('/recebimento')} className="p-1.5 sm:p-2 -ml-2 rounded-xl hover:bg-slate-100 flex-shrink-0">
@@ -570,6 +582,7 @@ export default function ConferenciaPage() {
             {recebimento.numero_recebimento && (
               <span className="text-xs text-slate-400 font-mono">#{recebimento.numero_recebimento}</span>
             )}
+            <button type="button" aria-label="Ver resumo por categoria" onClick={() => setShowCategorias(true)} className="rounded-lg p-2 hover:bg-slate-100"><Info className="h-4 w-4 text-slate-600" /></button>
             {!isFechado && !isCancelado && (
               <div className="flex items-center gap-1 sm:gap-1.5 bg-slate-100 rounded-lg px-1.5 sm:px-2 py-1">
                 <button
@@ -1758,6 +1771,9 @@ function FinalizarModal({
 }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [horasManuais, setHorasManuais] = useState('')
+  const [minutosManuais, setMinutosManuais] = useState('')
+  const temDuracaoManual = horasManuais !== '' || minutosManuais !== ''
   const [problemasPendentes, setProblemasPendentes] = useState<ProblemaPendente[]>([])
   const [problemasResolvidos, setProblemasResolvidos] = useState<Set<string>>(new Set())
   const [formData, setFormData] = useState({
@@ -1843,7 +1859,7 @@ function FinalizarModal({
     // Pausas pendentes bloqueiam a finalização — o backend também valida
     // isso (nunca confiar só no frontend), mas aqui evitamos uma requisição
     // inútil e já guiamos o operador para a seção de revisão.
-    if (existePendente) {
+    if (existePendente && !temDuracaoManual) {
       setError('Existem períodos de pausa que precisam ser revisados antes de finalizar o recebimento.')
       return
     }
@@ -1851,7 +1867,16 @@ function FinalizarModal({
     // Quando o fallback de >12h está visível, valida no cliente com a MESMA
     // regra do servidor antes de gastar uma requisição — mas quem decide de
     // verdade é sempre o backend (ver finalizar/route.ts).
-    if (precisaCorrecao) {
+    if (temDuracaoManual) {
+      const horas = Number(horasManuais || 0)
+      const minutos = Number(minutosManuais || 0)
+      const validacao = validarDuracaoManual(horas * 3600 + minutos * 60)
+      if (!Number.isInteger(horas) || !Number.isInteger(minutos) || horas < 0 || minutos < 0 || minutos > 59 || !validacao.valido) {
+        setError('Informe horas e minutos válidos, com duração maior que zero e de até 12 horas.')
+        return
+      }
+    }
+    if (precisaCorrecao && !temDuracaoManual) {
       const validacao = validarCorrecaoManual({
         inicio: correcaoManual.inicio ? new Date(correcaoManual.inicio).toISOString() : null,
         fim: correcaoManual.fim ? new Date(correcaoManual.fim).toISOString() : null,
@@ -1871,6 +1896,7 @@ function FinalizarModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           quem_finalizou: formData.quemFinalizou,
+          ...(temDuracaoManual ? { duracao_manual_segundos: Number(horasManuais || 0) * 3600 + Number(minutosManuais || 0) * 60 } : {}),
           quantidade_chapas: parseInt(formData.quantidadeChapas) || 0,
           motorista_ajudou: formData.motoristaAjudou,
           problema_proximos_carregamentos: formData.problemaProximosCarregamentos,
@@ -1951,6 +1977,14 @@ function FinalizarModal({
 
         {error && <p className="text-sm text-red-500 mb-4 p-3 bg-red-50 rounded-lg">{error}</p>}
 
+        <div className="rounded-lg border border-orange-300 bg-orange-50 p-3 mb-4">
+          <p className="font-semibold text-orange-900">Ajuste manual da duração</p>
+          <p className="text-sm text-orange-800">Use apenas se o tempo automático estiver incorreto. O valor informado substitui o tempo calculado, incluindo as pausas.</p>
+          <div className="mt-2 flex gap-3">
+            <label className="text-sm text-orange-900">Horas<input type="number" min="0" max="12" inputMode="numeric" value={horasManuais} onChange={e => setHorasManuais(e.target.value)} className="ml-2 w-16 rounded border border-orange-300 p-1" /></label>
+            <label className="text-sm text-orange-900">Minutos<input type="number" min="0" max="59" inputMode="numeric" value={minutosManuais} onChange={e => setMinutosManuais(e.target.value)} className="ml-2 w-16 rounded border border-orange-300 p-1" /></label>
+          </div>
+        </div>
         {pausasOrdenadas.length > 0 && (
           <div className="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
             <h4 className="text-sm font-semibold text-slate-800 mb-1">Períodos de pausa</h4>
@@ -2173,7 +2207,7 @@ function FinalizarModal({
           <Button
             onClick={handleFinalizar}
             className="flex-1 bg-green-600 hover:bg-green-700"
-            disabled={saving || existePendente || (precisaCorrecao && (!correcaoManual.inicio || !correcaoManual.fim))}
+            disabled={saving || (existePendente && !temDuracaoManual) || (precisaCorrecao && !temDuracaoManual && (!correcaoManual.inicio || !correcaoManual.fim))}
           >
             {saving ? 'Finalizando...' : 'Finalizar'}
           </Button>

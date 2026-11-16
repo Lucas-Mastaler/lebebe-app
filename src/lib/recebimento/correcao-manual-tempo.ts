@@ -69,3 +69,11 @@ export function validarCorrecaoManual(input: CorrecaoManualInput): ResultadoVali
 
   return { valido: true, segundos, inicioIso: inicio.toISOString(), fimIso: fim.toISOString() }
 }
+
+/** Valida duração total informada diretamente, em segundos. */
+export function validarDuracaoManual(valor: unknown): { valido: true; segundos: number } | { valido: false; erro: string } {
+  if (typeof valor !== 'number' || !Number.isInteger(valor) || valor <= 0 || valor > LIMITE_TEMPO_RECEBIMENTO_SEGUNDOS) {
+    return { valido: false, erro: 'Informe uma duração maior que zero e de até 12 horas.' }
+  }
+  return { valido: true, segundos: valor }
+}

@@ -6,7 +6,7 @@ import { dispararAutomacaoBaixaEncomendas } from '@/lib/integracoes/automacao-vp
 import { isDescricaoVolumeAvulso } from '@/lib/recebimento/volume-avulso'
 import { registroPodeFinalizar } from '@/lib/recebimento/finalizacao'
 import { encerrarTimerParaFinalizacao } from '@/lib/recebimento/timer-activity'
-import { precisaCorrecaoManual, validarCorrecaoManual } from '@/lib/recebimento/correcao-manual-tempo'
+import { precisaCorrecaoManual, validarCorrecaoManual, validarDuracaoManual } from '@/lib/recebimento/correcao-manual-tempo'
 import { existePausaPendente, listarPausas, somarSegundosReintegrados } from '@/lib/recebimento/pausas-revisao'
 
 // Helper: remove leading zeros and trim spaces for matching (02685 -> 2685)
@@ -27,6 +27,9 @@ export async function POST(
 
   const { id } = await params
   const body = await request.json().catch(() => ({}))
+  const duracaoInformada = body.duracao_manual_segundos != null
+  const duracaoManual = duracaoInformada ? validarDuracaoManual(body.duracao_manual_segundos) : null
+  if (duracaoManual && !duracaoManual.valido) return NextResponse.json({ error: duracaoManual.erro }, { status: 400 })
   const supabase = await createClient()
 
   // Verify recebimento exists and is open
@@ -347,7 +350,7 @@ export async function POST(
   // estar todas decididas ANTES de qualquer cálculo de tempo — nunca confiar
   // só no frontend para bloquear isso.
   const pausas = await listarPausas(supabase, id)
-  if (existePausaPendente(pausas)) {
+  if (!duracaoManual && existePausaPendente(pausas)) {
     return NextResponse.json({
       error: 'Existem períodos de pausa que precisam ser revisados antes de finalizar o recebimento.',
       requer_revisao_pausas: true,
@@ -381,7 +384,10 @@ export async function POST(
   let manualInicioIso: string | null = null
   let manualFimIso: string | null = null
 
-  if (precisaCorrecaoManual(tempoEfetivoSegundos)) {
+  if (duracaoManual?.valido) {
+    duracaoOficialSegundos = duracaoManual.segundos
+    correcaoManualAplicada = true
+  } else if (precisaCorrecaoManual(tempoEfetivoSegundos)) {
     const validacao = validarCorrecaoManual({
       inicio: body.correcao_manual_inicio,
       fim: body.correcao_manual_fim,

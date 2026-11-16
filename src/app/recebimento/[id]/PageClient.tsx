@@ -16,10 +16,12 @@ import {
   Pause,
   Filter,
   Info,
+  Boxes,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { ResumoCategorias } from '@/components/recebimento/ResumoCategorias'
+import { NotasDoRecebimento, type NotaDoRecebimento } from '@/components/recebimento/NotasDoRecebimento'
 import { quantidadeAgrupada } from '@/lib/recebimento/categorias'
 import { Button as ActionButton } from '@/components/design-system/Button'
 import { Alert } from '@/components/design-system/Alert'
@@ -104,7 +106,7 @@ interface RecebimentoDetail {
   ultima_atividade_conferencia: string | null
   numero_recebimento?: number
   itens: RecebimentoItem[]
-  nfes: Array<{ nfe_id: string; nfe: { numero_nf: string } | null }>
+  nfes: NotaDoRecebimento[]
   pausas: PausaRevisavel[]
 }
 
@@ -565,10 +567,16 @@ export default function ConferenciaPage() {
   return (
     <div className="max-w-2xl mx-auto pb-24">
       <Dialog open={showCategorias} onOpenChange={setShowCategorias}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
-          <DialogTitle>Resumo do recebimento</DialogTitle>
-          <DialogDescription>Quantidades e volumes por categoria.</DialogDescription>
+        <DialogContent className="max-h-[90dvh] max-w-[calc(100%-1.5rem)] gap-0 overflow-y-auto p-0 sm:max-w-2xl">
+          <div className="flex items-center gap-3 border-b border-slate-100 bg-primary/5 px-5 pb-4 pt-5 pr-12 sm:gap-4 sm:px-6 sm:pr-14">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 sm:size-12"><Boxes className="size-6" aria-hidden="true" /></span>
+            <div><DialogTitle className="text-lg font-bold text-slate-900 sm:text-xl">Resumo do recebimento</DialogTitle>
+            <DialogDescription className="mt-1 text-sm text-slate-600">Confira as notas e acompanhe os móveis e volumes.</DialogDescription></div>
+          </div>
+          <div className="space-y-5 p-4 sm:p-6">
+          <NotasDoRecebimento notas={recebimento.nfes || []} />
           <ResumoCategorias itens={recebimento.itens.filter(item => !item.is_os).map(item => ({ descricao: item.nfe_item?.descricao || '', quantidade: quantidadeAgrupada(item.volumes_previstos_total, item.volumes_por_item), previstos: item.volumes_previstos_total, conferidos: item.volumes_recebidos_total }))} />
+          </div>
         </DialogContent>
       </Dialog>
       {/* Header */}
